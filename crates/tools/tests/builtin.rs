@@ -468,6 +468,7 @@ static LISTING: Definition = Definition {
     }],
     views: &[],
     pickers: &[],
+    facts: None,
 };
 
 impl Tool for Listing {

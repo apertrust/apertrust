@@ -2,6 +2,8 @@
 
 Tool `primaries`, version 2. It works on layers, has no Auto and is switched (decision 32).
 
+Its header's tooltip says what it is for (`tool-primaries-description`, [gui.md](../gui.md#the-headers-tooltip)): "Moves the red, green and blue primaries, shifting every colour made of them. Reach for it for broad, smooth colour grading."
+
 It is darktable's rgb primaries in the first pass (decision 2). darktable's page has no tabs, sections or presets, only eight sliders, here in `gui_init`'s order under darktable's labels in British spelling (decision 29).
 
 It drives one operation, `primaries` ([../ports/primaries.md](../ports/primaries.md)), which an unedited photo does not run. The operation is planned while the tool is on, as in darktable, where rgb primaries is off until the user turns it on (decision 32). The tool owns all eight of the operation's parameters; none is fixed.

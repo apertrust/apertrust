@@ -164,8 +164,10 @@ pub fn section(
     let title = tr(ui.ctx(), "section-scopes");
     let mut action = None;
     // A utility: options only, drawn disabled while nothing is behind them.
+    let about = crate::tools::about(&apertrust_ui::translator(ui.ctx()), "scopes", None);
     let out = Section::new(&title, open)
         .options(false)
+        .about(about)
         .peek(peek)
         .show(ui, |ui| {
             let mut scopes = Histogram::new(view).overlays(false);

@@ -2,6 +2,8 @@
 
 Tool `tone_curve`, version 1. It works on layers and has no Auto.
 
+Its header's tooltip says what it is for (`tool-tone_curve-description`, [gui.md](../gui.md#the-headers-tooltip)): "Reshapes the photo’s tones with a curve, brightening or darkening any range of them. Reach for it to fine-tune contrast."
+
 It drives one `rgbcurve` instance. An unedited photo does not run it, so it is planned only while the curve is off the identity (decision 28). The identity curve is untouched.
 
 **Decision 2** (rewrite first, improve later): the first pass shows darktable's RGB curve and RGB levels as tools of their own ([README.md](README.md)). The built Luma curve below becomes RGB curve's linked curve, as separate work, planned:

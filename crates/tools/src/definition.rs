@@ -79,6 +79,11 @@ pub struct Definition {
     /// Nothing is stored under them: the session measures the photo and the tool's
     /// [`crate::Tool::pick`] writes its controls.
     pub pickers: &'static [Picker],
+    /// darktable's facts about the module the tool is, from its `description()` at the
+    /// reference release (`docs/gui.md`, The header's tooltip): what its header's tooltip
+    /// says after the tool's sentence, `tool-<tool>-description`. `None` for a tool that
+    /// is not one of darktable's.
+    pub facts: Option<crate::about::Facts>,
 }
 
 /// One of the tool's colour pickers (decision 79; `docs/pickers.md`, Declaring
@@ -1778,6 +1783,7 @@ mod tests {
         presets: &[],
         views: &[],
         pickers: &[],
+        facts: None,
     };
 
     fn control(id: &str) -> &'static Control {
@@ -1903,6 +1909,7 @@ mod tests {
         presets: &[],
         views: &[],
         pickers: &[],
+        facts: None,
     };
 
     /// [`PAGE`] with its first tab's rows in place of its own.
@@ -2956,6 +2963,7 @@ mod tests {
             presets: &[],
             views: &[],
             pickers: &[],
+            facts: None,
         };
         assert_eq!(
             with(TWICE).check(),
@@ -3024,6 +3032,7 @@ mod tests {
             presets: &[],
             views: &[],
             pickers: &[],
+            facts: None,
         };
         assert_eq!(with(&CONTROLS[..1], VIEWED).check(), Ok(()));
         assert_eq!(with(&CONTROLS[..1], ALONE).check(), Ok(()));

@@ -262,6 +262,7 @@ static DEFINITION: Definition = Definition {
             settings: &[],
         },
     ],
+    facts: None,
 };
 
 static OWNS: [Owned; 4] = [
@@ -567,6 +568,7 @@ static FAULTY: Definition = Definition {
     presets: &[],
     views: &[],
     pickers: &[],
+    facts: None,
 };
 
 impl Tool for Faulty {
@@ -666,6 +668,7 @@ static DEFAULTLESS: Definition = Definition {
     presets: &[],
     views: &[],
     pickers: &[],
+    facts: None,
 };
 
 impl Tool for Defaultless {
@@ -787,6 +790,7 @@ static TWIN: Definition = Definition {
         },
     ],
     pickers: &[],
+    facts: None,
 };
 
 impl Tool for Twin {

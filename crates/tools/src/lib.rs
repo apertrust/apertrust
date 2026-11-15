@@ -41,6 +41,7 @@
 // The settings' generated statics name their choices' types by this crate's name.
 extern crate self as apertrust_tools;
 
+pub mod about;
 pub mod agx;
 pub mod check;
 pub mod colour_balance_rgb;

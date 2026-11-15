@@ -28,6 +28,7 @@
 //! theme. Menus are the popup
 //! service's plain lists, never egui's `Popup`.
 
+mod about;
 mod action_row;
 mod alert;
 mod button;
@@ -61,6 +62,7 @@ mod toggle_row;
 mod top_panel;
 mod value_field;
 
+pub use about::{About, Place};
 pub use action_row::ActionRow;
 pub use alert::{AlertBody, AlertResponse, ButtonOrder};
 pub use button::Button;

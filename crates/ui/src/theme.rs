@@ -153,6 +153,7 @@ pub struct Theme {
     pub sizes: Sizes,
     pub shape: Shape,
     pub overlay: OverlaySizes,
+    pub about: AboutSizes,
     pub elevation: Elevation,
     pub motion: Motion,
     /// The built-in theme this one is or extends, whatever it is named; none for a theme
@@ -524,6 +525,37 @@ pub struct OverlaySizes {
     /// The least half-pixel, 4 points (`:365`): the point marks' unit, a crosshair reaching
     /// 4 or 5 of them and a centre's radius one. Half a frame pixel, rounded, when larger.
     pub half_pixel: f32,
+}
+
+/// A section header's tooltip's own sizes, in points (`docs/gui.md`, The header's
+/// tooltip): its widths and where it goes, its padding, and its grid of rows. Its other
+/// sizes are the scale's: 8 points from the panel and between its columns
+/// (`spacing.m`), 4 under the header (`spacing.xs`), 2 under a cut name (`spacing.xxs`).
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AboutSizes {
+    /// The widest it is beside the side panel, about 55 characters a line: 340.
+    pub width: f32,
+    /// The widest it is under the header, in a narrow window: 304.
+    pub narrow_width: f32,
+    /// The room beside the panel under which it goes under the header: 336.
+    pub room: f32,
+    /// Its padding at its sides, 10, and at its foot, 9; at its top `spacing.m`.
+    pub padding_x: f32,
+    pub padding_bottom: f32,
+    /// The line height of its description and rows, 17, of a cut name, 18, and of
+    /// darktable's quieter lines, 15.
+    pub line: f32,
+    pub name_line: f32,
+    pub quiet_line: f32,
+    /// Between the hairline and the first row, 7; between rows, 3; and more above
+    /// darktable's lines, 5. Above the hairline, `spacing.m`.
+    pub rule_below: f32,
+    pub row_gap: f32,
+    pub quiet_gap: f32,
+    /// The icons' column, 13, and the labels' least width, 64.
+    pub icon_column: f32,
+    pub label_column: f32,
 }
 
 /// The shadow beneath menus, drawn popups and tooltips, in points.

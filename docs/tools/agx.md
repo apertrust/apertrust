@@ -2,6 +2,8 @@
 
 Tool `agx`, version 1. It works on the background only until layers come; with them a layer may choose it as its own tone mapper, replacing the background's within the layer's mask (decision 33). It has no Auto.
 
+Its header's tooltip says what it is for (`tool-agx-description`, [gui.md](../gui.md#the-headers-tooltip)): "Fits the light the camera caught into what a screen or a print can show, with natural highlights and colours. The default tone mapper, inspired by Blender’s AgX."
+
 It is darktable's AgX in the first pass (decision 2), the tone mapper of Edit's Adjust tab. It has darktable's page: the Settings and Primaries tabs, the controls in `gui_init`'s order under darktable's labels in British spelling, and darktable's three collapsible sections as collapsible groups. Each row shows where darktable's `gui_changed` shows it (decision 29).
 
 It drives one operation, `agx` ([../ports/agx.md](../ports/agx.md)), which every photo runs, and owns all 35 of its parameters, each with its control. Its defaults are the operation's, darktable's scene-referred defaults ([README.md](README.md), rule 4), so an untouched tool sets nothing.

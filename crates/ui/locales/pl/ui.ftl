@@ -46,6 +46,13 @@ section-toggle = Otwórz lub zamknij: { $section }. Przytrzymaj H nad sekcją, a
 section-tabs = Karty: { $section }
 section-tab-later = Pojawi się w jednej z kolejnych wersji
 section-not-applied = Nie zastosowano
+section-about-kind = Rodzaj
+section-about-works-on = Działa na
+section-about-measures = Mierzy
+section-about-input = Wejście
+section-about-process = Przetwarzanie
+section-about-output = Wyjście
+section-about-row = { $label }: { $value }
 choice-option-later = Pojawi się w jednej z kolejnych wersji
 choice-option-unavailable = Niedostępne dla tego zdjęcia
 

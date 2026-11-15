@@ -56,6 +56,7 @@
 
 use apertrust_plugin::{ImageContext, Value};
 
+use crate::about::{Fact, Facts, Purpose};
 use crate::definition::{
     ChoiceStyle, Control, ControlKind, Definition, Picker, PickerKind, Quad, Range, Row, Slider,
     Space, Tab, Unit, slider_step,
@@ -546,6 +547,13 @@ static DEFINITION: Definition = Definition {
     presets: &[],
     views: &[],
     pickers: &PICKERS,
+    // darktable's `description()` in src/iop/agx.c at the reference release.
+    facts: Some(Facts {
+        purpose: Purpose::CorrectiveAndCreative,
+        input: Fact::LinearRgbSceneReferred,
+        process: Fact::NonLinearRgb,
+        output: Fact::LinearRgbDisplayReferred,
+    }),
 };
 
 /// Every parameter of `agx`: the tool is darktable's and owns them all, each with its

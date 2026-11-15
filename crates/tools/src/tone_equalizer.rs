@@ -49,6 +49,7 @@
 use apertrust_color::tone_equalizer::Curve;
 use apertrust_plugin::{ImageContext, Value};
 
+use crate::about::{Fact, Facts, Purpose};
 use crate::definition::{
     ChoiceStyle, Control, ControlKind, Definition, Row, SettingRow, Slider, Tab, Unit, Widget,
 };
@@ -286,6 +287,13 @@ static DEFINITION: Definition = Definition {
     presets: &[],
     views: &[],
     pickers: &[],
+    // darktable's `description()` in src/iop/toneequal.c at the reference release.
+    facts: Some(Facts {
+        purpose: Purpose::CorrectiveAndCreative,
+        input: Fact::LinearRgbSceneReferred,
+        process: Fact::QuasiLinearRgb,
+        output: Fact::QuasiLinearRgbSceneReferred,
+    }),
 };
 
 /// Every parameter of `toneequal`, each by the control of its name: the tool is

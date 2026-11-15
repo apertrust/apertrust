@@ -2,6 +2,8 @@
 
 Tool `temperature`, version 1. Background only, with no Auto.
 
+Its header's tooltip says what it is for (`tool-temperature-description`, [gui.md](../gui.md#the-headers-tooltip)): "Balances the camera’s red, green and blue so that white comes out white, and helps demosaic. Usually left as it is: set the colour of the light in Colour calibration."
+
 It is darktable's white balance module as its page has it, over the raw-stage `temperature` operation (raw 3, `docs/ports/temperature.md`; decision 27). Every raw runs the operation, so the tool adds none. It has no first step, and at its defaults it sets nothing and leaves the plan, the cache keys and the frame as they were.
 
 A change runs the raw stage and demosaic again (decision 12; `docs/engine.md`, Pipes). The light the photo is adapted for is Colour calibration's CAT tab's (`colour-calibration.md`), as in darktable's scene-referred workflow.

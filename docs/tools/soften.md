@@ -2,6 +2,8 @@
 
 Tool `soften`, version 2. It works on layers, has no Auto and is switched (decision 32).
 
+Its header's tooltip says what it is for (`tool-soften-description`, [gui.md](../gui.md#the-headers-tooltip)): "Adds a soft glow by blending a blurred, brighter copy over the photo. Reach for it for a dreamy look."
+
 It is darktable's soften in the first pass (decision 2). darktable's page has no tabs, sections or presets, only four sliders, here in `gui_init`'s order under darktable's labels in British spelling (decision 29): Size, Saturation, Brightness and Mix. darktable's panel shows them as "50.00%", "100.00%", "+0.33 EV" and "50.00%" at its defaults.
 
 It drives one operation, `soften` ([../ports/soften.md](../ports/soften.md)), which an unedited photo does not run: it is planned while the tool is on. The tool owns all four of the operation's parameters; none is fixed ([README.md](README.md), Effect).

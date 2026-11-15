@@ -385,6 +385,11 @@ pub fn button_menu(button: Id) -> Id {
     button.with("popup")
 }
 
+/// Whether any popup is open, drawn or the service's.
+pub fn any_open(ctx: &Context) -> bool {
+    drawn::with(ctx, |popups| popups.any_open())
+}
+
 pub fn is_open(ctx: &Context, id: Id) -> bool {
     anchor(ctx, id).is_some()
 }

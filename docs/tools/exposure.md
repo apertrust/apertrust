@@ -2,6 +2,8 @@
 
 Tool `exposure`, version 2. It works on layers and has Auto. It drives one operation, `exposure`, which an unedited photo runs, and owns every parameter of it.
 
+Its header's tooltip says what it is for (`tool-exposure-description`, [gui.md](../gui.md#the-headers-tooltip)): "Brightens or darkens the photo as if you had exposed it differently in the camera, keeping its colours. Usually the first tool to reach for."
+
 It is darktable's exposure module in the first pass (decision 2: rewrite first, improve later). It has darktable's page, every control `gui_init` shows, in its order under its labels, on one untitled tab (decision 29): Mode, Compensate camera exposure, Highlight preservation mode, Exposure, Percentile and Target level in automatic mode, Black level correction, and the Area exposure mapping group. The unported ones are drawn disabled ([Controls](#controls); [README.md](README.md)).
 
 Exposure is darktable's slider, `exposure.exposure` itself, its default the photo's: +0.7 EV on a colour raw, 0 otherwise (decision 30). Black level correction is darktable's offset over the photo's black (decision 22). Contrast and Pivot, colour balance rgb's `contrast` and `grey_fulcrum`, and Brightness, `midtones_Y`, belong to the Colour balance RGB tool ([colour-balance-rgb.md](colour-balance-rgb.md); decision 2), whose table holds their rows.

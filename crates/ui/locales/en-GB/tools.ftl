@@ -1,6 +1,6 @@
 # The tools' words in British English, the source language (docs/gui.md, Tool panels
 # from definitions). Each id follows from the tool's definition in apertrust-tools:
-#   tool-<tool>-title, tool-<tool>-auto, tool-<tool>-tab-<tab>,
+#   tool-<tool>-title, tool-<tool>-description, tool-<tool>-auto, tool-<tool>-tab-<tab>,
 #   tool-<tool>-group-<group>, tool-<tool>-collapsible-<group>,
 #   tool-<tool>-control-<control>-label, -full and -promise,
 #   tool-<tool>-control-<control>-option-<option>, a tool's setting's
@@ -15,6 +15,7 @@
 ## black/white point, its labels and tooltips in British English.
 
 tool-rawprepare-title = Raw black/white point
+tool-rawprepare-description = Sets where black and white lie in the camera’s raw data, as the sensor recorded them. Usually left as it is: change it only with great care.
 tool-rawprepare-control-raw_black_level_separate_0-label = Black level 0
 tool-rawprepare-control-raw_black_level_separate_0-full = Black level 0
 tool-rawprepare-control-raw_black_level_separate_0-promise = Black level 0.
@@ -40,6 +41,7 @@ tool-rawprepare-control-flat_field-option-embedded = Embedded GainMap
 ## highlight reconstruction, its labels and tooltips in British English.
 
 tool-highlights-title = Highlight reconstruction
+tool-highlights-description = Keeps clipped highlights from turning magenta and tries to recover their colour. Reach for it when the brightest areas look flat or tinted.
 tool-highlights-control-mode-label = Method
 tool-highlights-control-mode-full = Method
 tool-highlights-control-mode-promise = Highlight reconstruction method.
@@ -99,6 +101,7 @@ tool-highlights-control-scales-option-px_4096 = 4096 px (insanely slow)
 ## British English, the method's two tooltips, for Bayer and X-Trans sensors, in one.
 
 tool-demosaic-title = Demosaic
+tool-demosaic-description = Turns the sensor’s mosaic of red, green and blue into full-colour pixels. Usually left as it is: change it when fine detail shows mazes or false colour.
 tool-demosaic-control-demosaicing_method-label = Method
 tool-demosaic-control-demosaicing_method-full = Demosaicing method
 tool-demosaic-control-demosaicing_method-promise = Demosaicing method. For a Bayer sensor PPG and RCD are fast, AMaZE and LMMSE are slow; LMMSE is suited best for high ISO images; VNG4 is good in rare cases avoiding maze patterns. For an X-Trans sensor Markesteijn 3-pass and frequency domain chroma are slow. Dual demosaicers increase processing time by blending a VNG variant in a second pass.
@@ -173,6 +176,7 @@ tool-demosaic-control-cs_center-promise = Adjust to the sharp image centre.
 ## A full name says which group a short label is in, as darktable's shortcuts do.
 
 tool-agx-title = AgX
+tool-agx-description = Fits the light the camera caught into what a screen or a print can show, with natural highlights and colours. The default tone mapper, inspired by Blender’s AgX.
 tool-agx-tab-settings = Settings
 tool-agx-tab-primaries = Primaries
 tool-agx-group-input_exposure_range = Input exposure range
@@ -322,6 +326,7 @@ tool-agx-control-blue_unrotation-promise = Reverse the colour shift in blues.
 ## names the folders it loads ICC files from, which Apertrust does not read yet.
 
 tool-colorout-title = Output colour profile
+tool-colorout-description = Converts the finished picture into the colours of the file you export. Usually left at sRGB, which suits screens and the web.
 tool-colorout-control-type-label = Export profile
 tool-colorout-control-type-full = Export profile
 tool-colorout-control-type-promise = The colour profile the image is exported in.
@@ -342,6 +347,7 @@ tool-colorout-control-type-option-brg = BRG (for testing)
 ## and tooltips in British English.
 
 tool-temperature-title = White balance
+tool-temperature-description = Balances the camera’s red, green and blue so that white comes out white, and helps demosaic. Usually left as it is: set the colour of the light in Colour calibration.
 tool-temperature-preset-settings-label = Settings
 tool-temperature-preset-settings-full = White balance settings
 tool-temperature-preset-settings-promise = Chooses the white balance setting: the coefficients and where they come from.
@@ -384,6 +390,7 @@ tool-temperature-control-various-promise = What a four-colour sensor's emerald p
 ## the stored orientation under its Transform label only as the photo itself.
 
 tool-flip-title = Orientation
+tool-flip-description = Turns the photo a quarter turn at a time, or mirrors it. Reach for it when a photo shows on its side.
 tool-flip-control-orientation-label = Transform
 tool-flip-control-orientation-full = Transform
 tool-flip-control-orientation-promise = Flip or rotate the image by steps of 90°.
@@ -414,6 +421,7 @@ tool-flip-action-flip_vertically-promise = Mirror the image top to bottom.
 ## correction are its invariants table's.
 
 tool-exposure-title = Exposure
+tool-exposure-description = Brightens or darkens the photo as if you had exposed it differently in the camera, keeping its colours. Usually the first tool to reach for.
 tool-exposure-auto = Sets Exposure so the photo's tones sit around middle grey. A kept Exposure stays as it is.
 tool-exposure-control-mode-label = Mode
 tool-exposure-control-mode-full = Mode
@@ -457,6 +465,7 @@ tool-exposure-picker-exposure-promise = Sets the exposure adjustment using the s
 ## their promises say what each describes.
 
 tool-channelmixerrgb-title = Colour calibration
+tool-channelmixerrgb-description = Sets the colour of the light, mixes the colour channels, or turns the photo black and white as film would. Reach for it to remove a colour cast.
 tool-channelmixerrgb-tab-cat = CAT
 tool-channelmixerrgb-control-adaptation-label = Adaptation
 tool-channelmixerrgb-control-adaptation-full = Adaptation
@@ -660,6 +669,7 @@ tool-channelmixerrgb-setting-patch_scale-promise = How much of each patch is rea
 ## darktable gives a band no tooltip, so its promise says which tones it corrects.
 
 tool-toneequal-title = Tone equalizer
+tool-toneequal-description = Relights the scene: brightens or darkens areas by how bright they are, as if you had lit it differently. Reach for it to open shadows or hold back a bright sky.
 tool-toneequal-tab-simple = Simple
 tool-toneequal-tab-advanced = Advanced
 tool-toneequal-tab-masking = Masking
@@ -740,6 +750,7 @@ tool-toneequal-setting-display_exposure_mask-promise = Shows the mask the bands 
 ## is in, as darktable's shortcuts do.
 
 tool-colorbalancergb-title = Colour balance RGB
+tool-colorbalancergb-description = Colour grading: shifts the colour of the shadows, mid-tones and highlights separately, each picked out by a soft mask. Reach for it to give a photo its colour mood.
 tool-colorbalancergb-tab-master = Master
 tool-colorbalancergb-tab-four_ways = 4 ways
 tool-colorbalancergb-tab-masks = Masks
@@ -871,6 +882,7 @@ tool-colorbalancergb-picker-grey_fulcrum-promise = Pick colour from the photo
 ## Tone curve (docs/tools/tone-curve.md)
 
 tool-tone_curve-title = Tone curve
+tool-tone_curve-description = Reshapes the photo’s tones with a curve, brightening or darkening any range of them. Reach for it to fine-tune contrast.
 tool-tone_curve-tab-luma = Luma
 tool-tone_curve-tab-rgb = RGB
 tool-tone_curve-tab-red = Red
@@ -895,6 +907,7 @@ tool-tone_curve-control-preserve_colour-option-basic_power = Basic power
 ## tooltips in British English.
 
 tool-hazeremoval-title = Haze removal
+tool-hazeremoval-description = Removes haze and fog, bringing back contrast and colour in distant parts of the scene. Reach for it on landscapes that look washed out.
 tool-hazeremoval-control-strength-label = Strength
 tool-hazeremoval-control-strength-full = Strength
 tool-hazeremoval-control-strength-promise = Amount of haze reduction.
@@ -906,6 +919,7 @@ tool-hazeremoval-control-distance-promise = Limit haze removal up to a specific 
 ## and tooltips in British English.
 
 tool-primaries-title = RGB primaries
+tool-primaries-description = Moves the red, green and blue primaries, shifting every colour made of them. Reach for it for broad, smooth colour grading.
 tool-primaries-control-red_hue-label = Red hue
 tool-primaries-control-red_hue-full = Red hue
 tool-primaries-control-red_hue-promise = Shifts red towards yellow or magenta.
@@ -935,6 +949,7 @@ tool-primaries-control-achromatic_tint_purity-promise = Tint purity.
 ## English.
 
 tool-grain-title = Grain
+tool-grain-description = Adds grain like that of film, fine or coarse. Reach for it to give a photo the texture of film.
 tool-grain-control-scale-label = Coarseness
 tool-grain-control-scale-full = Coarseness
 tool-grain-control-scale-promise = The grain size (~ISO of the film).
@@ -949,6 +964,7 @@ tool-grain-control-midtones_bias-promise = Amount of mid-tones bias from the pho
 ## British English.
 
 tool-soften-title = Soften
+tool-soften-description = Adds a soft glow by blending a blurred, brighter copy over the photo. Reach for it for a dreamy look.
 tool-soften-control-size-label = Size
 tool-soften-control-size-full = Size
 tool-soften-control-size-promise = The size of blur.
@@ -966,6 +982,7 @@ tool-soften-control-amount-promise = The mix of effect.
 ## in British English.
 
 tool-vignette-title = Vignetting
+tool-vignette-description = Darkens or lightens the photo towards its edges, as a lens does. Reach for it to draw the eye to the centre.
 tool-vignette-control-scale-label = Fall-off start
 tool-vignette-control-scale-full = Fall-off start
 tool-vignette-control-scale-promise = The radii scale of vignette for start of fall-off.
@@ -1000,3 +1017,44 @@ tool-vignette-control-dithering-promise = Add some level of random noise to prev
 tool-vignette-control-dithering-option-off = Off
 tool-vignette-control-dithering-option-output_8bit = 8-bit output
 tool-vignette-control-dithering-option-output_16bit = 16-bit output
+
+## What each utility is for, and the words of a header's tooltip (docs/gui.md, The
+## header's tooltip): a utility's sentence, tool-<utility>-description; what a tool is
+## for and what it works on, from darktable's purpose, input and output, tool-kind-<kind>
+## and tool-works-<place>; and darktable's input, process and output lines word for
+## word, tool-fact-<darktable's words>, each one of darktable's own strings.
+
+tool-scopes-description = Shows how the photo’s tones and colours are spread: histogram, waveform, RGB parade or vectorscope. Reach for it to judge exposure and colour as you edit.
+tool-history-description = Lists every change to the photo’s edit, newest first. Reach for it to go back to an earlier step.
+
+tool-kind-corrective = Fixes a problem
+tool-kind-creative = Creates a look
+tool-kind-corrective-and-creative = Fixes a problem and shapes the look
+tool-kind-corrective-or-creative = Fixes a problem or creates a look
+tool-kind-mandatory = Needed by every photo
+tool-kind-utility = Edits nothing of its own
+
+tool-works-raw = The camera’s raw data
+tool-works-scene = The light as captured
+tool-works-scene-to-display = From the light as captured to the finished picture
+tool-works-display = The finished picture
+
+tool-fact-linear-raw-scene-referred = linear, raw, scene-referred
+tool-fact-linear-raw = linear, raw
+tool-fact-reconstruction-raw = reconstruction, raw
+tool-fact-linear-rgb-scene-referred = linear, RGB, scene-referred
+tool-fact-linear-rgb-display-referred = linear, RGB, display-referred
+tool-fact-linear-rgb = linear, RGB
+tool-fact-linear-rgb-or-xyz = linear, RGB or XYZ
+tool-fact-quasi-linear-rgb = quasi-linear, RGB
+tool-fact-quasi-linear-rgb-scene-referred = quasi-linear, RGB, scene-referred
+tool-fact-non-linear-rgb = non-linear, RGB
+tool-fact-non-linear-rgb-scene-referred = non-linear, RGB, scene-referred
+tool-fact-non-linear-rgb-display-referred = non-linear, RGB, display-referred
+tool-fact-non-linear-lab = non-linear, Lab
+tool-fact-non-linear-lab-display-referred = non-linear, Lab, display-referred
+tool-fact-linear-or-non-linear-lab-display-referred = linear or non-linear, Lab, display-referred
+tool-fact-non-linear-rgb-or-lab-display-referred = non-linear, RGB or Lab, display-referred
+tool-fact-geometric-rgb = geometric, RGB
+tool-fact-frequential-rgb = frequential, RGB
+tool-fact-defined-by-profile = defined by profile

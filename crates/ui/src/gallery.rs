@@ -25,16 +25,16 @@ use egui::emath::GuiRounding as _;
 use egui::{Align2, Color32, FontFamily, FontId, Frame, RichText, Sense, Stroke, Ui, pos2, vec2};
 
 use crate::components::{
-    ActionRow, Available, Axis, Button, ButtonState, CellPicture, CellRating, CellStatus,
+    About, ActionRow, Available, Axis, Button, ButtonState, CellPicture, CellRating, CellStatus,
     CentralBar, CentralBarAction, Checkbox, Choice, ChoiceAction, ChoiceStyle, Clipped,
     CollapsibleGroup, ColourLabel, ColourLabels, Curve, CurveAction, Equalizer, EqualizerAction,
     FileManager, GridCell, GridPanel, GridPanelAction, Histogram, HistogramBins, IconButton, Job,
     JobFailure, JobMessage, JobPhase, Jobs, Margin, Mark, Marker, MaskHistogram, PanelBody,
     PanelEdge, PanelEdgeAction, PanelTab, Patch, Patches, PhotoCaption, PhotoFrame, PickerButton,
-    PickerMarks, PickerPlace, Quad, Rail, RailLine, RailNode, SaveState, Scale, Scope, ScopeView,
-    Section, SectionAction, Segmented, SliderAction, SliderRow, Swatch, SwatchFill, Swatches,
-    TabBar, TabBarAction, Thumb, Toggle, ToggleRow, ToolButton, TopPanel, TopPanelAction, Track,
-    VectorscopeBins, WaveformBins, Zoom, group_label,
+    PickerMarks, PickerPlace, Place, Quad, Rail, RailLine, RailNode, SaveState, Scale, Scope,
+    ScopeView, Section, SectionAction, Segmented, SliderAction, SliderRow, Swatch, SwatchFill,
+    Swatches, TabBar, TabBarAction, Thumb, Toggle, ToggleRow, ToolButton, TopPanel, TopPanelAction,
+    Track, VectorscopeBins, WaveformBins, Zoom, group_label,
 };
 use crate::fonts::{MEDIUM, SEMIBOLD};
 use crate::i18n::{Args, Locale, Translator};
@@ -1945,7 +1945,15 @@ fn side_panel(page: &mut Ui, t: &Theme, demo: &mut Demo) {
     let mut scope_action = None;
     PanelBody::new()
         .pinned(|ui| {
+            let tr = |id: &str| crate::tr(ui.ctx(), id);
+            let scopes = About {
+                description: tr("tool-scopes-description"),
+                kind: Some(tr("tool-kind-utility")),
+                place: Some(Place::Measures(tr("tool-works-display"))),
+                facts: None,
+            };
             let out = Section::new("Scopes", open[0])
+                .about(scopes)
                 .peek(peek)
                 .show(ui, |ui| scope_action = gradient.scopes(view).show(ui));
             pinned_out.push((0, "Scopes", out));
@@ -1964,7 +1972,22 @@ fn side_panel(page: &mut Ui, t: &Theme, demo: &mut Demo) {
                 let i = k + 2;
                 let mut section = Section::new(title, open[i]).edits().peek(peek);
                 if title == "Exposure" {
-                    section = section.tabs(&["Basic", "Advanced"], exposure_tab);
+                    // Its header's tooltip, as the app gives every tool's.
+                    let tr = |id: &str| crate::tr(ui.ctx(), id);
+                    let facts = [
+                        "linear-rgb-scene-referred",
+                        "linear-rgb",
+                        "linear-rgb-scene-referred",
+                    ]
+                    .map(|fact| tr(&format!("tool-fact-{fact}")));
+                    section = section
+                        .tabs(&["Basic", "Advanced"], exposure_tab)
+                        .about(About {
+                            description: tr("tool-exposure-description"),
+                            kind: Some(tr("tool-kind-corrective-and-creative")),
+                            place: Some(Place::WorksOn(tr("tool-works-scene"))),
+                            facts: Some(facts),
+                        });
                 }
                 let out = section.show(ui, |ui| {
                     if title == "Exposure" {

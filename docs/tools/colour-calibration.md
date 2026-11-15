@@ -2,6 +2,8 @@
 
 Tool `channelmixerrgb`, version 1. Background only, with no Auto.
 
+Its header's tooltip says what it is for (`tool-channelmixerrgb-description`, [gui.md](../gui.md#the-headers-tooltip)): "Sets the colour of the light, mixes the colour channels, or turns the photo black and white as film would. Reach for it to remove a colour cast."
+
 It is darktable's color calibration as its page has it, every tab, the CAT tab first (decision 27: "keep both tools the same as in darktable"; [README.md](README.md), Colour calibration). It owns every parameter of its operation, `channelmixerrgb` (working 28.5, `docs/ports/channelmixerrgb.md`). It covers the light the photo is adapted for, a channel mix, a camera calibration's matrix and a black and white conversion. The raw-stage white balance is White balance's ([white-balance.md](white-balance.md)), as in darktable.
 
 Every colour raw runs the operation (decision 27), so the tool adds none. It has no first step, and at its defaults it sets nothing and leaves the plan, the cache keys and the frame as they were.

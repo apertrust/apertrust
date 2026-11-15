@@ -66,6 +66,7 @@ use apertrust_engine::session::{
     ControlState, ControlValue, CoordinateState, Mark, PickKeys, PickerRef, ToolState,
 };
 use apertrust_plugin::ImageContext;
+use apertrust_tools::about::{self, Facts};
 use apertrust_tools::{
     Button, ButtonIcon, ChoiceStyle, ControlKind, Controls, Definition, MAX_POINTS, PickerKind,
     Quad, Row, SettingRow, Slider, Tool, Track, Unit, View, Widget, check, messages,
@@ -719,6 +720,7 @@ pub fn section(
     let resettable = state.edited || !definition.switched;
     let mut section = Section::new(&title, open)
         .edits()
+        .about(about(&words, id, definition.facts.as_ref()))
         .reset(editable && resettable)
         .presets(false)
         .peek(peek)
@@ -780,6 +782,41 @@ pub fn section(
         });
     }
     changes
+}
+
+/// What the header's tooltip of the tool or utility `id` says (`docs/gui.md`, The header's
+/// tooltip), in `words`: its sentence; for a utility ([`apertrust_tools::about::UTILITIES`]),
+/// that it edits nothing and what it measures; for a tool with darktable's `facts`, its
+/// kind and what it works on in plain words and darktable's lines word for word; for a tool
+/// that is not darktable's, its sentence alone.
+pub fn about(words: &Translator, id: &str, facts: Option<&Facts>) -> parts::About {
+    let description = words.text(&messages::description(id));
+    if let Some(utility) = about::utility(id) {
+        return parts::About {
+            description,
+            kind: Some(words.text(about::Kind::EditsNothing.message())),
+            place: utility
+                .measures
+                .map(|place| parts::Place::Measures(words.text(place.message()))),
+            facts: None,
+        };
+    }
+    let Some(facts) = facts else {
+        return parts::About {
+            description,
+            ..Default::default()
+        };
+    };
+    parts::About {
+        description,
+        kind: Some(words.text(facts.kind().message())),
+        place: facts
+            .works_on()
+            .map(|place| parts::Place::WorksOn(words.text(place.message()))),
+        facts: Some(
+            [facts.input, facts.process, facts.output].map(|fact| words.text(&fact.message())),
+        ),
+    }
 }
 
 fn control<'s>(state: &'s ToolState, id: &str) -> Option<&'s ControlState> {
@@ -2041,6 +2078,45 @@ mod tests {
         for (control, shown) in tool.definition().controls.iter().zip(&mut state.controls) {
             shown.available = !control.unported && tool.available(control.id, &values, &image);
         }
+    }
+
+    /// A header's tooltip: a utility edits nothing and says what it measures, whatever
+    /// facts it is given; darktable's tool has its rows; a tool that is not darktable's
+    /// has its sentence alone.
+    #[test]
+    fn a_header_s_tooltip_tells_utilities_darktable_s_tools_and_others_apart() {
+        let words = Translator::new(apertrust_ui::Locale::EnGb);
+        let scopes = about(&words, "scopes", None);
+        assert_eq!(scopes.kind.as_deref(), Some("Edits nothing of its own"));
+        assert_eq!(
+            scopes.place,
+            Some(parts::Place::Measures("The finished picture".to_owned()))
+        );
+        assert_eq!(scopes.facts, None);
+        let history = about(&words, "history", Exposure.definition().facts.as_ref());
+        assert_eq!(history.kind.as_deref(), Some("Edits nothing of its own"));
+        assert_eq!((history.place, history.facts), (None, None));
+
+        let exposure = about(&words, "exposure", Exposure.definition().facts.as_ref());
+        assert_eq!(
+            exposure.kind.as_deref(),
+            Some("Fixes a problem and shapes the look")
+        );
+        assert_eq!(
+            exposure.place,
+            Some(parts::Place::WorksOn("The light as captured".to_owned()))
+        );
+        assert_eq!(
+            exposure.facts.map(|lines| lines[1].clone()).as_deref(),
+            Some("linear, RGB")
+        );
+
+        let sample = about(&words, "sample", Sample.definition().facts.as_ref());
+        assert_eq!(sample.description, words.text("tool-sample-description"));
+        assert_eq!(
+            (sample.kind, sample.place, sample.facts),
+            (None, None, None)
+        );
     }
 
     /// The tool's views' coordinates at its defaults, as the session reports them for
@@ -3792,6 +3868,7 @@ mod tests {
         presets: &[],
         views: &[],
         pickers: &[],
+        facts: None,
     };
 
     impl Tool for LocalContrast {

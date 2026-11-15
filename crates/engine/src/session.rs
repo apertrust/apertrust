@@ -5582,6 +5582,7 @@ mod tests {
         presets: &[],
         views: &[],
         pickers: &[],
+        facts: None,
     };
 
     static RIVAL_OWNS: [Owned; 1] = [Owned::new("exposure", "exposure")];
@@ -5987,6 +5988,7 @@ mod tests {
         presets: &[],
         views: &[],
         pickers: &[],
+        facts: None,
     };
 
     impl Tool for Lists {
@@ -7093,6 +7095,7 @@ mod tests {
             }],
         }],
         pickers: &[],
+        facts: None,
     };
 
     impl Tool for Brittle {
@@ -7900,6 +7903,7 @@ mod tests {
         }],
         views: &[],
         pickers: &[],
+        facts: None,
     };
 
     /// [`Touchy`]'s level for `image`: its width.

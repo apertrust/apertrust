@@ -29,6 +29,34 @@ pub fn title(tool: &str) -> String {
     format!("tool-{tool}-title")
 }
 
+/// What the tool does and when to reach for it, a sentence or two, first in its header's
+/// tooltip: `tool-<tool>-description`. A utility's, which has no definition, is the same
+/// under its id ([`crate::about::UTILITIES`]).
+pub fn description(tool: &str) -> String {
+    format!("tool-{tool}-description")
+}
+
+/// One of darktable's input, process and output lines ([`crate::about::Fact`]):
+/// `tool-fact-` and darktable's words, lower case, each run of anything but letters and
+/// digits a hyphen, so "linear, RGB, scene-referred" is
+/// `tool-fact-linear-rgb-scene-referred`.
+pub fn fact(darktable: &str) -> String {
+    let mut id = String::from("tool-fact");
+    let mut gap = true;
+    for c in darktable.chars() {
+        if c.is_ascii_alphanumeric() {
+            if gap {
+                id.push('-');
+            }
+            id.push(c.to_ascii_lowercase());
+            gap = false;
+        } else {
+            gap = true;
+        }
+    }
+    id
+}
+
 /// Auto's tooltip, which names its target: `tool-<tool>-auto`.
 pub fn auto(tool: &str) -> String {
     format!("tool-{tool}-auto")
@@ -173,17 +201,18 @@ pub fn unit_value(unit: Unit) -> String {
     format!("unit-{}-value", unit.id())
 }
 
-/// Every message the definition implies, each once: its title, Auto's tooltip if it has
-/// Auto, each titled tab, each group label, a row of pickers' label among them, each
+/// Every message the definition implies, each once: its title, its description, Auto's
+/// tooltip if it has Auto, each titled tab, each group label, a row of pickers' label among them, each
 /// collapsible group's title, the words of each row that has its own, each
 /// setting's words and options, each action's words, each control's label, full name and
 /// promise, each option, each view's coordinate's label, full name and promise, as a
 /// control's, each preset row's label, full name, promise and options, each unit it uses,
 /// Custom if it has a preset row, the patches' words if it has patches, and each picker's
-/// words its button and the central bar use ([`picker_words`]).
+/// words its button and the central bar use ([`picker_words`]), then, where it has
+/// darktable's facts, its kind's and what it works on, and each of darktable's lines.
 pub fn of(definition: &Definition) -> Vec<String> {
     let tool = definition.id;
-    let mut ids = vec![title(tool)];
+    let mut ids = vec![title(tool), description(tool)];
     if definition.auto {
         ids.push(auto(tool));
     }
@@ -255,6 +284,11 @@ pub fn of(definition: &Definition) -> Vec<String> {
     if !definition.presets.is_empty() {
         ids.push(PRESET_CUSTOM.to_owned());
     }
+    if let Some(facts) = definition.facts {
+        ids.push(facts.kind().message().to_owned());
+        ids.extend(facts.works_on().map(|place| place.message().to_owned()));
+        ids.extend([facts.input, facts.process, facts.output].map(|fact| fact.message()));
+    }
     // A control's rows in two modes may share their words.
     let mut seen = BTreeSet::new();
     ids.retain(|id| seen.insert(id.clone()));
@@ -274,6 +308,7 @@ mod tests {
             of(Sample.definition()),
             [
                 "tool-sample-title",
+                "tool-sample-description",
                 "tool-sample-tab-grain",
                 "tool-sample-tab-shape",
                 "tool-sample-group-grain",
@@ -397,6 +432,7 @@ mod tests {
             presets: &[],
             views: &[],
             pickers: &[],
+            facts: None,
         };
         LOCAL_CONTRAST.check().unwrap();
         let ids = of(&LOCAL_CONTRAST);
@@ -409,10 +445,10 @@ mod tests {
                 "tool-bilat-control-sigma_r-as-highlights-promise",
             ]
         );
-        assert_eq!(&ids[1..4], words);
+        assert_eq!(&ids[2..5], words);
         // The control's own words stay, for the CLI and MCP.
         assert!(ids.contains(&label("bilat", "sigma_r")));
-        assert_eq!(ids.len(), 1 + 3 + 3 + 3 + 3);
+        assert_eq!(ids.len(), 2 + 3 + 3 + 3 + 3);
     }
 
     #[test]
@@ -452,12 +488,14 @@ mod tests {
             presets: &[],
             views: &[],
             pickers: &[],
+            facts: None,
         };
         CHECKER.check().unwrap();
         assert_eq!(
             of(&CHECKER),
             [
                 "tool-mixer-title",
+                "tool-mixer-description",
                 "tool-mixer-setting-chart-label",
                 "tool-mixer-setting-chart-full",
                 "tool-mixer-setting-chart-promise",
@@ -502,12 +540,14 @@ mod tests {
             presets: &[],
             views: &[],
             pickers: &[],
+            facts: None,
         };
         LEVELS.check().unwrap();
         assert_eq!(
             of(&LEVELS),
             [
                 "tool-levels-title",
+                "tool-levels-description",
                 "tool-levels-action-auto_tune-label",
                 "tool-levels-action-auto_tune-full",
                 "tool-levels-action-auto_tune-promise",

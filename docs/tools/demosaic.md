@@ -2,6 +2,8 @@
 
 Tool `demosaic`, version 1. It works on the background only and has no Auto.
 
+Its header's tooltip says what it is for (`tool-demosaic-description`, [gui.md](../gui.md#the-headers-tooltip)): "Turns the sensor’s mosaic of red, green and blue into full-colour pixels. Usually left as it is: change it when fine detail shows mazes or false colour."
+
 It is darktable's demosaic in the first pass (decision 2). It has darktable's page, which has no tabs or presets and one collapsible section: the controls in `gui_init`'s order under darktable's labels in British spelling, each row shown where darktable's `gui_changed` shows it (decision 29).
 
 It drives one operation, `demosaic` ([../ports/demosaic.md](../ports/demosaic.md)), which every raw runs, and owns all twelve of its parameters. Its defaults are the operation's for the photo ([README.md](README.md), rule 4), so an untouched tool sets nothing.

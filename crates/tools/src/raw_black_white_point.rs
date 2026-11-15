@@ -39,6 +39,7 @@
 
 use apertrust_plugin::{ImageContext, Value};
 
+use crate::about::{Fact, Facts, Purpose};
 use crate::definition::{ChoiceStyle, Control, ControlKind, Definition, Row, Slider, Tab};
 use crate::{Base, ControlValue, Controls, Owned, Setting, Tool, ToolValues};
 
@@ -139,6 +140,13 @@ static DEFINITION: Definition = Definition {
     presets: &[],
     views: &[],
     pickers: &[],
+    // darktable's `description()` in src/iop/rawprepare.c at the reference release.
+    facts: Some(Facts {
+        purpose: Purpose::Mandatory,
+        input: Fact::LinearRawSceneReferred,
+        process: Fact::LinearRaw,
+        output: Fact::LinearRawSceneReferred,
+    }),
 };
 
 /// Every parameter of `rawprepare`: the tool is darktable's and owns them all, the crop

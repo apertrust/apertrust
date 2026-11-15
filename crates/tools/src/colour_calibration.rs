@@ -52,6 +52,7 @@ use apertrust_color::Adaptation;
 use apertrust_color::illuminants::{self, Illuminant, TEMPERATURE_RANGE};
 use apertrust_plugin::{ImageContext, Value};
 
+use crate::about::{Fact, Facts, Purpose};
 use crate::definition::{
     ChoiceStyle, Control, ControlKind, Coordinate, Definition, Row, SettingRow, Slider, Tab, Unit,
     View,
@@ -541,6 +542,13 @@ static DEFINITION: Definition = Definition {
     presets: &[],
     views: &VIEWS,
     pickers: &[],
+    // darktable's `description()` in src/iop/channelmixerrgb.c at the reference release.
+    facts: Some(Facts {
+        purpose: Purpose::CorrectiveOrCreative,
+        input: Fact::LinearRgbSceneReferred,
+        process: Fact::LinearRgbOrXyz,
+        output: Fact::LinearRgbSceneReferred,
+    }),
 };
 
 /// Every parameter of `channelmixerrgb`: the CAT tab's, the mixer's, and `version`.

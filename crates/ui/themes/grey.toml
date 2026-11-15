@@ -137,6 +137,21 @@ dash = 4.0
 handle = 10.0
 half_pixel = 4.0
 
+[about]
+width = 340.0
+narrow_width = 304.0
+room = 336.0
+padding_x = 10.0
+padding_bottom = 9.0
+line = 17.0
+name_line = 18.0
+quiet_line = 15.0
+rule_below = 7.0
+row_gap = 3.0
+quiet_gap = 5.0
+icon_column = 13.0
+label_column = 64.0
+
 [elevation]
 shadow_offset = [0, 2]
 shadow_blur = 12

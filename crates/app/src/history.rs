@@ -915,7 +915,9 @@ pub fn tab(
     PanelBody::new()
         .header(|ui| {
             let os = ui.ctx().os();
+            let about = crate::tools::about(&words, "history", None);
             let section = Section::new(&title, open)
+                .about(about)
                 .utility_reset(&reset)
                 .reset(state.resettable)
                 .options(history.is_some())
