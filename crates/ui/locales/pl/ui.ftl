@@ -1042,14 +1042,12 @@ export-scale = Skala
 export-scale-tip = Liczba całkowita, ułamek dziesiętny lub prosty ułamek, na przykład 1/2. 0 lub puste to 1.
 # Rozmiar aktywnego zdjęcia pod wierszami; $file to jego nazwa.
 export-size = { $file } będzie miało { $width } × { $height } px.
-export-size-capped = { $file } będzie miało { $width } × { $height } px (bez powiększania: „Zezwalaj na powiększanie” to Nie).
+export-size-capped = { $file } będzie miało { $width } × { $height } px (bez powiększania: „Zezwalaj na powiększanie” jest wyłączone).
 export-size-full = { $file } będzie miało { $width } × { $height } px (pełny rozmiar).
 export-size-no-limit = { $file } będzie miało { $width } × { $height } px (pełny rozmiar: nie ustawiono limitu).
 export-upscale = Zezwalaj na powiększanie
 export-high-quality = Przepróbkowanie wysokiej jakości
 export-high-quality-tip = Przepróbkowanie wysokiej jakości podczas eksportu: wszystkie operacje w pełnym rozmiarze, potem zmniejszenie.
-export-no = Nie
-export-yes = Tak
 export-masks = Zapisuj maski
 export-masks-later = Zapisuj maski jako warstwy w eksportowanych obrazach. Potrafią to tylko TIFF, OpenEXR i XCF, a warstwy pojawią się w kolejnej wersji.
 export-profile = Profil
