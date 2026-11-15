@@ -2,7 +2,7 @@
 
 The library is how Apertrust finds photos and keeps what is known about them: one photo, folder mode, the Library and the Project. This document describes its design and its API: what each mode holds, the code's layers, the commands and events clients use, how a folder is listed and indexed, the sidecars, how photos are found again on several computers, the cache and the thumbnails.
 
-[decisions/](decisions/README.md) holds the decisions it rests on, 46 to 55 and 71 above all, [architecture.md](architecture.md) the design around it, and [roadmap.md](roadmap.md#the-librarys-steps) the library's steps. How events in general are sent and taken in is [events.md](events.md), and how a client sends commands is the [session protocol](session-protocol.md). The crate's state is in [crates.md](crates.md#apertrust-library).
+[decisions/](decisions/README.md) holds the decisions it rests on, 46 to 55, 71 and 85 above all, [architecture.md](architecture.md) the design around it, and [roadmap.md](roadmap.md#the-librarys-steps) the library's steps. How events in general are sent and taken in is [events.md](events.md), and how a client sends commands is the [session protocol](session-protocol.md). The crate's state is in [crates.md](crates.md#apertrust-library).
 
 **Status.**
 
@@ -33,7 +33,7 @@ A window holds one of them at a time. The first rows are for choosing between th
 | What it lacks | Every other photo: no grid of its folder, no folder tree, and no place in the recents | Albums, smart albums, search beyond the open folder, photos on drives that are not connected | Folder roles and the job's settings | Import library…: a project stays one job |
 | What it leaves on disk | The photo's `.apxmp`, once something changes | Each photo's `.apxmp`, once something about it changes; nothing else of Apertrust's | A folder with `Name.aplibrary` and a hidden `.apertrust/`; the sidecars beside the photos or in it; an id file at the top of each folder added | A folder with `Name.approject`, `.apertrust/` and its role folders |
 | How it opens | Opening a photo by any route: Open With or a double-click on a raw or its edit; File › Open…; raws dropped onto the window; `apertrust FILE` | File › Open Folder…; a folder dropped onto the window; Browse's Folders; Open Recent or the start window; `apertrust FOLDER`; Open This Folder from one photo | File › New Library…, or from the open folder, in place; then Open…, Open Recent, the start window or a double-click on `Name.aplibrary` | File › New Project…, from a template or not, or Export as Project… from an album; then Open…, Open Recent, the start window or a double-click on `Name.approject` |
-| Its photos | The one, or those opened together | The folder's | Copied into its `Photos/`, or referenced where they are | Copied into its Capture, or referenced where they are |
+| Its photos | The one, or those opened together | The folder's, where they are; Import… (planned) copies a card's or another folder's into a folder of its own and opens it | Copied into its `Photos/`, or referenced where they are | Copied into its Capture, or referenced where they are |
 | Its edits | Beside the photo | Beside the photos | Beside the photos, or in its own folder, mirrored by path | As a library's |
 | Index | None beyond the photo | In memory while open | Built from its files as it opens; a cache on each machine (decision 55) | As a library's |
 | Albums and smart albums | No | No | Yes, nested | Yes |
@@ -81,7 +81,7 @@ Built first, and partly built.
 - The listing and the sidecars, read 16 at a time, make an index in memory, gone when the folder closes ([Listing and the index](#listing-and-the-index)).
 - Browse, the Photos tab's first tool, has Folders alone, the open folder's tree; Albums and Smart albums are not shown, and Make This Folder a Library… is in Browse's options ([In the window](#in-the-window)). Filters filters the open folder from its index (planned, decision 73).
 - Its keyword list is the keywords its photos hold; their properties (synonyms, private, category) and Recent are in the user data folder's `keywords.toml`, of the same form as a library's (planned, decision 73).
-- Import… (planned) copies photos from a card or another folder into a destination named with darktable's patterns, then opens it.
+- Import… (planned, decision 85) copies photos from a card or another folder into a destination named with darktable's patterns, then opens it ([Import in folder mode](#import-in-folder-mode)).
 - It lacks albums, smart albums, search beyond the open folder and photos on drives that are not connected. New Library… (planned) makes the open folder a library, in place. The CLI works this way.
 
 ### A library
@@ -133,8 +133,54 @@ In every mode, as darktable's import module does.
 
 - **In place,** darktable's "add to library": Open Folder… in folder mode; Add Folder… or Import… in place in a library, the folder becoming a root.
 - **By copy,** darktable's "copy & import", with its base folder, subfolder and file name patterns and variables, job code, date override and original names. The base folder is `$(PICTURES_FOLDER)/Apertrust` in folder mode, the library's `Photos/`, or a project's next capture folder.
-- Importing writes no sidecar unless it sets something on the photo, never rewrites one, and recognises a photo already imported by its fingerprint, not its name and date.
+- Importing never writes the source's files and never overwrites one; it writes a sidecar beside a copy only where it sets something on the photo, a renamed photo's camera name among them, and recognises a photo already imported by its size and camera name, confirmed by its fingerprint, not by its date.
 - Import's settings take `import.*` ids, where darktable's copy & import uses `session/…`.
+
+### Import in folder mode
+
+Decision 85, planned: the library's step 20, in slices 20a to 20c ([roadmap.md](roadmap.md#the-librarys-steps)). The sheet that shows it is [gui.md](gui.md#the-import-sheet)'s, on the sheets' frame (decision 86); this is its library side, in `apertrust-library`.
+
+```mermaid
+flowchart LR
+    source["The source<br/>a card's DCIM or a folder"] -->|"ListSource: names, sizes,<br/>capture times"| check{"In the base folder's tree,<br/>the source left out?<br/>same size and camera name,<br/>then the fingerprint"}
+    check -->|"no: new, checked"| copy["Import: one photo at a time,<br/>in path order, a temporary,<br/>a rename that never replaces"]
+    check -->|"yes: marked, unchecked"| skip["Left out unless checked"]
+    copy --> dest["The destination<br/>opened, its grid filling"]
+```
+
+**The source** is a place and a folder in it: a card, any mounted volume with a `DCIM` folder at its top, whose `DCIM` is always listed whole, or a folder, with its subfolders where Include subfolders is on. `LibraryCommand::ListSource { source, include_subfolders }` lists it as a cancellable job of kind `import-source` on darktable's `UserBackground` queue, with no progress, so it shows in the sheet alone, never in the spinner or the jobs window. It sends `LibraryEvent::SourceListed` chunks, each file's path relative to the source, size and modified time, then their capture times, read 16 at a time as a folder's are; a cloud file not on the disk is listed by name and size alone, its capture time never read in the background ([Shares, offline drives and cloud folders](#shares-offline-drives-and-cloud-folders)). A new source cancels the listing before it, and so does closing the sheet, as a new `Open` or a `Close` cancels a folder's `Subfolders`: `LibraryCommand::CancelListing { listing }`, naming the `ListSource`'s number, which a client has without the job's id. Raws only in 20a, the listing counting the other files it leaves out; non-raws, and a raw and its JPEG as one, with 20b.
+
+**Already imported** is told by the destination alone; no record is kept and nothing is written on the source.
+
+- **The tree:** the base folder's pattern expanded up to its first variable that is not a fixed folder's (`$(HOME)`, `$(PICTURES_FOLDER)` and the like), and everything under it: `~/Pictures/Apertrust` by default. It is walked for each raw's name and size, as [the tree's walk](#the-trees-walk) reads entries, with a size added; on a share, step 7's bulk listing keeps that fast. The source's own folders are left out of the walk, so a source inside the tree never matches itself.
+- **Candidates:** a file there of the size and camera name of the source photo's main file, its raw, or from 20b its only image file, a JPEG alone among them: its own file name, or the camera name its `.apxmp` keeps in `xmpMM:PreservedFileName`, read only for a file whose size matches. Every copy Import names otherwise than its source keeps that name, one with `_01` added included, so a renamed copy is found as surely as one under its own name.
+- **Confirmed by the fingerprint** of both files ([Fingerprints](#fingerprints)); a photo with no candidate is new without reading it. A card of 5,000 photos already imported reads about 640 MB from it, about 7 s on a UHS-I card by estimate; a new card reads nothing beyond its listing.
+- **A probable match:** the fingerprint reads 128 KiB of each file, so two different photos of one name and size whose first and last 64 KiB agree would be taken for one. The mark only leaves the photo unchecked and shown, naming its copy, so the person can check it; the copy never skips on the fingerprint alone. A candidate that is a cloud file not on the disk, whose fingerprint is never read ([Fingerprints](#fingerprints)), leaves the photo marked as probably imported, unchecked and shown with the candidate's name, until that file is on the disk, opened or made available offline; size and name alone never skip a copy.
+- **A photo of several files** (20b: a raw and its JPEG) counts as imported once each of its files is there; one whose raw is there and whose JPEG is not counts as new for its JPEG alone.
+- `LibraryEvent::SourceChecked` gives each photo's state and, for one already there, where its copy is. The check runs as the listing ends, in the same job, and again when the base folder changes: the change cancels a check still running, which sends nothing more, and each check is numbered within its listing, its `SourceChecked` naming that number and the base folder it checked; the sheet keeps only the latest check's, so neither another base folder's nor an earlier check of the same one replaces it. The check runs again when an import into that tree ends, and meanwhile the sheet marks each photo imported as `Imported` names it.
+- A photo moved out of the tree, or imported under another base folder, counts as new; another computer importing into the same share sees what this one imported.
+
+**The preview,** `LibraryCommand::PreviewImport { photos, settings }`, a job on `UserForeground` with no progress, as Export's preview, answers `LibraryEvent::ImportPreview`: each checked photo's destination path, the folders the patterns make, the clashes, how many of the checked photos were imported before and will be copied again, those to be skipped as already at their destination left out (the sheet's footer warns of them), the photos already at their destination with a sidecar of their own that differs from the source's, the size, the destination disk's free space and the problems that disable Import (an unknown variable, a folder that cannot be made or written, a destination that is the source or lies inside it, too little space, an override date darktable cannot read).
+
+**The copy,** `LibraryCommand::Import { photos, settings }`, a cancellable job of kind `import` on `UserForeground`, as darktable's `dt_control_import` (decision 57), its row "Importing 214 photos", "120 of 214", "now DSCF1120.RAF", its destination the destination folder:
+
+- one photo at a time, in the order of their paths, as darktable's import job sorts them (`_sort_filename`), whatever the sheet's sort, so the sequence numbers follow it; a raw and its JPEG keeping one name;
+- each file streamed into a hidden temporary in the destination folder (`.~NAME.XXXXXX.tmp`, as the safe write names one), then renamed into place by a rename that refuses to replace a file, so a copy is whole or absent and nothing is ever overwritten; its modified time set to the source's;
+- a photo landing as one: its sidecars and its JPEG first, its main file renamed into place last, its raw where it has one, else its only image file (20b), so it counts as landed once its main file is there; one whose main file did not land has the files it copied removed, as its temporary is; a name counts as taken where any of a photo's files is there, so a sidecar a crash left is never overwritten;
+- a photo whose raw is there already and whose JPEG is not (20b) gets its JPEG alone, beside the raw's copy, under its name, the raw untouched; so does a photo skipped as already there (below) whose sidecars are missing beside its copy, each copied under the copy's name and never over a file there; a sidecar there that differs from the source's, or a JPEG there of the copy's name that differs from the source's (20b), is left as it is, the preview listing the photo among the clashes and `Imported` naming it as one whose sidecar or JPEG was not copied;
+- a name taken: the sequence continues after the last file there; under original names `_01` is added, then `_02`; a photo whose file at its destination, under its name or one of its `_01` names there, is the same byte for byte, compared whole as the copy reads the source, is skipped; any other checked photo is copied, one imported before included;
+- carried with each photo and renamed with it: its `.apxmp` and `.apdata`, and darktable's `.xmp` as it is (decision 51); the source's are never written, and the copy's `.apxmp` names its new photo;
+- a copy named otherwise than its source, by a pattern or with `_01` added, keeps its camera name in `xmpMM:PreservedFileName` in its `.apxmp`, as darktable writes it, so the check finds it by that name; otherwise a sidecar only where Metadata sets something (20b), as ordinary steps noted Import; no initial rating by default;
+- `LibraryEvent::Imported` chunks name each source and its copy, with their `Import`'s number, by which the sheet marks only the photos of imports it sent from the listing it shows;
+- a photo's own failure is that photo's and the import goes on; the source or the destination failing stops it; the copies made stay. Try again (`RetryJob`) copies what is left, the check skipping each file that landed; Cancel leaves no temporary and no photo half landed.
+
+**The destination opens** as the first photo lands, where After import says so: the app opens it as a way in, with no photo opened, and the session adds each photo copied into the folder the grid panel shows to its index and sends it to clients as the folder's photos added, the event step 10's outside changes send, so the grid panel fills without reading the folder again; a photo the folder's listing has found already is not added twice. Where the patterns make several subfolders, their deepest common folder opens as the root and the first subfolder is chosen in its tree, as a click chooses it; the others list as they are chosen, each listing only its own photos as any folder does.
+
+**Cards** (20c): `LibraryEvent::Volumes` lists the cards and drives as they come and go, from `apertrust-display`'s platform code; counting a card's new photos is a `SystemBackground` job of the same check.
+
+**Their numbers:** `SourceListed`, `SourceChecked` and the `Thumbnail`s `SourceThumbnails` asks for carry their `ListSource`'s number in `open`, `ImportPreview` its `PreviewImport`'s and `Imported` its `Import`'s; `Volumes`, which answers no command, carries none. The Import sheet keeps the latest `ListSource`'s and the latest `PreviewImport`'s numbers and drops an older one's events, as the grid does an older open's; the folder's filter never applies to them, and an import's `Imported` events reach the destination's grid through the folder's photos added.
+
+**Through the storage interface:** the listing, the check and the copy use `apertrust_base::fs` and the listing until step 21b, then move behind [the storage interface](#four-layers) with the rest.
 
 ### Import library…
 
@@ -262,6 +308,7 @@ Decision 54's layer 4, in `crates/library/src/ops.rs`. Clients see only `Library
 | `LibraryCommand::Open(Source)` | `Source::Folder(PathBuf)`, a folder in folder mode: its photos, not its subfolders' | Opens the folder in place of the one open, whose reading stops. A cancellable job reads it; its events follow. Opening a folder opens no photo: `Command::Open` does. |
 | `LibraryCommand::Close` | none | Closes the folder open, stopping its reading; answered at once by `LibraryEvent::Closed`. |
 | `LibraryCommand::Thumbnails` | `photos: Vec<String>`, the open folder's photos by file name, the first the most wanted; `size: u32`, the most pixels on a thumbnail's longer side | Asks for the photos' thumbnails, each a job of its own ([Jobs and queues](#jobs-and-queues)), each answered by `LibraryEvent::Thumbnail`. A new `Open` or a `Close` cancels those not yet sent; with no folder open nothing is read. |
+| `LibraryCommand::SourceThumbnails` | `listing`, the `ListSource`'s number; `photos: Vec<PathBuf>`, the source's files by path relative to it; `size: u32` | Planned with Import's step 20a ([Import in folder mode](#import-in-folder-mode)): the thumbnails of an Import source's photos, the camera's embedded pictures, read with no folder open and cached by fingerprint, each answered by `LibraryEvent::Thumbnail` in the listing's number, which the Import sheet keeps as it keeps its listing's events |
 | `LibraryCommand::Subfolders` | `folder: PathBuf`, a folder inside the tree's root | Lists its subfolders for Browse's tree, a cancellable job on `UserBackground` as the open folder's reading ([Jobs and queues](#jobs-and-queues)), answered by `LibraryEvent::SubfoldersOf`; a folder outside the tree's root, the first folder opened, kept while each later `Open` lies inside it, is refused, so the siblings of the folder open now can be listed. A new `Open` or a `Close` cancels it; with no folder open nothing is listed. |
 | `LibraryCommand::RawThumbnails` | `RawThumbnails`, the setting `library.raw_thumbnails_from` | From which size a photo with no edit shows a render of its raw rather than the camera's embedded picture, for the thumbnails and opening pictures from then on ([Thumbnails](#thumbnails)); answered by nothing. |
 
@@ -298,7 +345,7 @@ Orphan sidecars, those with no raw, are found by the listing and counted by `lib
 
 ### Numbers
 
-Each command gets its number from `Session::send` ([events.md](events.md#numbers)). An open's events carry that open's number, its thumbnails' too, whichever `Thumbnails` asked for them; `Closed` carries the close's. A client keeps the number of its latest `Open` or `Close` and drops every `LibraryEvent` naming another, so what an earlier open sends on its way never reaches the grid.
+Each command gets its number from `Session::send` ([events.md](events.md#numbers)). An open's events carry that open's number, its thumbnails' too, whichever `Thumbnails` asked for them; `Closed` carries the close's. A client keeps the number of its latest `Open` or `Close` and drops every one of the folder's events naming another, so what an earlier open sends on its way never reaches the grid. Import's events are not the folder's and are kept by their own rule ([Import in folder mode](#import-in-folder-mode)).
 
 ### Jobs and queues
 
@@ -332,7 +379,7 @@ Each `LibraryCommand::Subfolders` is a job on `UserBackground`, beside the folde
 - its body `ops::subfolders`, handed the tree's root, the first folder opened, kept while each later `Open` lies inside it (`ops::inside`), an observer and a cancel closure as the folder's is, which refuses a folder outside that root, relative or holding a `..`, and lists through layer 3, `listing::subfolders`: a folders-only listing on the listing's own thread, waited for while the cancel is asked every 20 ms, so a share that hangs holds only that thread, never a worker or the quit;
 - a new `Open` or a `Close` cancels it, and with no folder open it is not added.
 
-The library's other long commands are to run on darktable's queues too: move, copy, rename, delete and Import… on `UserForeground`; each call into a root on that root's queue with its deadline (decisions 53 and 57, planned).
+The library's other long commands are to run on darktable's queues too: move, copy, rename, delete and Import… on `UserForeground`, a source's listing for Import… on `UserBackground` ([Import in folder mode](#import-in-folder-mode)); each call into a root on that root's queue with its deadline (decisions 53 and 57, planned).
 
 ### Order, chunks and done
 
@@ -593,14 +640,14 @@ Roots are folders Apertrust tracks as a unit, each carrying its id at its top: a
 
 ### Fingerprints
 
-The fingerprint is the file's size plus BLAKE3 over its first and last 64 KiB (`blake3` with pure Rust features only, no C, decision 5), in the sidecar and the cache. It re-pairs a sidecar with a raw renamed outside Apertrust, recognises a moved photo and photos already there on import, and keys the thumbnails. It is computed only when a photo is opened or thumbnailed, when its sidecar is first written, and for a lost sidecar's few candidates, never for a cloud file not on the disk: 35 ms a raw over SMB. A whole-file hash would cost 0.36 s for a 30 MB raw at the NAS's 84 MB/s.
+The fingerprint is the file's size plus BLAKE3 over its first and last 64 KiB (`blake3` with pure Rust features only, no C, decision 5), in the sidecar and the cache. It re-pairs a sidecar with a raw renamed outside Apertrust, recognises a moved photo and photos already there on import, and keys the thumbnails. It is computed only when a photo is opened or thumbnailed, when its sidecar is first written, for a lost sidecar's few candidates and for Import's candidates of the same size and camera name, never for a cloud file not on the disk: 35 ms a raw over SMB. A whole-file hash would cost 0.36 s for a 30 MB raw at the NAS's 84 MB/s.
 
 - **Its text,** `apertrust:fingerprint`, is the size in bytes, a colon and 64 hex digits, the BLAKE3 hash of the first 64 KiB then the last 64 KiB, each the whole file where it is shorter: `30482117:4d0ef789…`. Built with step 8.2: `sidecar::fingerprint` from those bytes, `sidecar::read_fingerprint` from a file, reading only them.
 - Its uses are not built yet; the index's `file_hash` is a sidecar's, not a raw's.
 
 ### Names
 
-A sidecar matches its photo by exact bytes, as built, else (planned) in NFC with case folding when one photo matches, the fingerprint confirming. Apertrust never renames the person's files, and the names it makes pass Windows' and OneDrive's rules on every system. A rename outside Apertrust is re-paired by size and fingerprint, the activity saying so (step 18); Move, Rename and Copy inside Apertrust carry sidecars, `.apdata` and attached files (step 19).
+A sidecar matches its photo by exact bytes, as built, else (planned) in NFC with case folding when one photo matches, the fingerprint confirming. Apertrust never renames the person's files, Import naming only the copies it makes, and the names it makes pass Windows' and OneDrive's rules on every system. A rename outside Apertrust is re-paired by size and fingerprint, the activity saying so (step 18); Move, Rename and Copy inside Apertrust carry sidecars, `.apdata` and attached files (step 19).
 
 ### Listing in bulk
 
@@ -612,7 +659,7 @@ The open folder as it opens, as built; planned: when the window comes to the fro
 
 ### Writing
 
-Only sidecars, a library's files and a root's id file are written into the person's folders, never lock files, caches or indexes. Every write goes through the safe write ([Safe writes](#safe-writes)), on the library's threads, never the interface's or the engine's. The export's disk writes share it.
+Only sidecars, a library's files, a root's id file and the copies Import makes are written into the person's folders, never lock files, caches or indexes, and nothing into an Import's source. Every write goes through the safe write ([Safe writes](#safe-writes)), on the library's threads, never the interface's or the engine's. The export's disk writes share it.
 
 ### Shares, offline drives and cloud folders
 
@@ -717,7 +764,9 @@ The decided design (decisions 53 and 57):
 - where there are any, hidden files and folders skipped, old temporary files removed, names that are not text, subfolders not listed and files that could not be read;
 - the times of the listing and the reading, under `-d perf`.
 
-Planned: `apertrust-cli library` running layers 2 to 4 in its process, `scan` today, later `list`, `query --json`, `rate`, `label`, `tag`, `album`, `import`, `import-library`, `export-project`, `relink`, `check`, `rebuild` and `conflicts` (step 35). Scripting comes later as a protocol client.
+Planned: `apertrust-cli library` running layers 2 to 4 in its process, `scan` today, later `list`, `query --json`, `rate`, `label`, `tag`, `album`, `import-library`, `export-project`, `relink`, `check`, `rebuild` and `conflicts` (step 35). Scripting comes later as a protocol client.
+
+Planned with step 20a: `apertrust-cli import SOURCE... [--base-folder P] [--subfolder P] [--file-name P | --original-names] [--job-code X] [--date D] [--all] [--dry-run]` (decision 85), the one import command in every mode: only new photos unless `--all`, `--dry-run` printing the preview, the `import.*` settings its defaults and `--conf import.base_folder=…` for one run.
 
 ## The steps
 
