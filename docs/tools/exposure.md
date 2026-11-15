@@ -1,6 +1,6 @@
 # Exposure
 
-Tool `exposure`, version 3. It works on layers and has Auto. It drives one operation, `exposure`, which an unedited photo runs, and owns every parameter of it.
+Tool `exposure`, version 3. It works on layers and has Auto, which it loses with the redesign (planned): its second step sets the definition's `auto` to false, leaving automatic mode its one automatic way (decision 88; [The page as redesigned](#the-page-as-redesigned-planned)). It drives one operation, `exposure`, which an unedited photo runs, and owns every parameter of it.
 
 Its header's tooltip says what it is for (`tool-exposure-description`, [gui.md](../gui.md#the-headers-tooltip)): "Brightens or darkens the photo as if you had exposed it differently in the camera, keeping its colours. Usually the first tool to reach for."
 
@@ -19,6 +19,64 @@ Exposure is darktable's slider, `exposure.exposure` itself, its default the phot
 - Its picker is built ([The picker](#the-picker); [pickers.md](../pickers.md), decision 79): its quad on Exposure, its pick in both area modes, the area exposure mapping's settings kept in settings, and the patches with the L readout.
 - A tolerance or a choice marked "proposed" is open; the [design choices](#design-choices) are settled.
 - Measures and test images are in [README.md](README.md).
+- Its page as redesigned is planned (decision 88): [The page as redesigned](#the-page-as-redesigned-planned). Until its steps land, the sections below describe darktable's page as built.
+
+## The page as redesigned (planned)
+
+Exposure's page is the wireframe's board for the Exposure tool, the one exception to darktable's page in the first pass (decisions 2 and 29; decision 88). Its controls, their ids, ranges, defaults and bindings, its operation and its processing stay as [Controls](#controls) has them, so no edit, render, tool version or golden case changes. Where this page and the board differ, the board wins.
+
+**Manual mode,** top to bottom:
+
+1. **Mode**, a segmented switch, Manual | Automatic, in place of darktable's list (`ChoiceStyle::Segmented`). On an image that is not a raw the photo lists Manual alone (`Tool::options`): Automatic is drawn disabled, its tooltip "Automatic needs a raw photo's histogram", and Manual stays selectable, so an edit pasted there holding Automatic shows it chosen and disabled until Manual is chosen, rendering as manual mode meanwhile; holding Manual, the switch is disabled whole, a choice whose photo lists only the option it holds (decision 30).
+2. **Exposure**, its picker on its quad. The picker's tooltip and its hint over the photo say what a pick will do, by Picker target (`Picker::words_by`).
+3. **Picker target**, a choice setting under Exposure, in place of Area exposure mapping: **Middle grey**, the default; **Lightness**, its slider under it (`Row::WhenSetting`); **Reference**, the reference row under it (`Row::Reference`). Each option has a tooltip.
+4. **The warning lines**, only after a pick that reads clipped pixels or falls short of its target, one line each, both where both hold, the clipped one first; then **Last pick**, a one-line readout of the last pick (`Row::LastPick`).
+5. **Compensate camera exposure**, its label with the camera's bias, "(−⅔ EV)" (`Tool::label_value`, `ValueFormat::Thirds`); hidden on a photo with no bias (`Tool::visible`), where darktable shows it with "+0.0 EV".
+6. **Highlight preservation mode**, its label with the exposure it gives back, "(+1.0 EV)" (`ValueFormat::Decimals(1)`); hidden where the camera held nothing back, as darktable hides it.
+7. **Black level correction**, a plain slider with darktable's four decimals.
+
+**Automatic mode:** Mode, then Percentile as **Measure at**, Target level as **Place it at**, the computed exposure (decision 87's `Row::Computed`) as **This photo**, then Black level correction. Measure at shows darktable's two decimals, "50.00%", as a slider's value does, and its tooltip names the median.
+
+**The two pickers.**
+
+- **`exposure`** always sets the exposure, toward the target's L: 50 for Middle grey, the Lightness setting, or the reference's. The arithmetic and the black's margin are [The picker](#the-picker)'s correction, unchanged (E50). Like darktable's, it leaves Black level correction aside, so the area lands on its target only while Black level correction is 0; with one set it lands off by what the black moves it (an area of 0.05 toward 0.184 with a black of 0.01 lands 0.27 EV short). It fills Last pick: before, the area's L at the current exposure by measure mode's arithmetic; after, at the exposure written, the black included, so the readout shows where it lands; and the change of Exposure. Its warnings are independent (`PickWarnings`): `clipped` where any channel's maximum over the area reaches 0.99 × the input's processed maximum (`Reading::input_maximum`), and `short` where Exposure is held at ±18 EV and the area falls short.
+- **`reference`**, on the Reference row: an area of the exposure operation's input, writing no control (`writes: &[]`). It measures the area by measure mode's arithmetic and hands its L back as `reference_lightness` (`Shown::settings`); the app keeps it with the open photo's path as `reference_photo`.
+- **The reference** is kept until it is set again, across photos, folders and restarts, and cleared from the row's ⋯. With Reference chosen and none set, Exposure's picker is disabled (`Tool::picker_ready`) and the session refuses its `On` (`NotReady`). Clearing the reference while that picker is on, or choosing Reference with none set, sends the settings as `Settings`; the session finds the picker no longer ready, applies nothing and turns it off, and its button is drawn disabled with the tooltip saying why.
+- **Measure mode and area mode go:** the reference picker measures, and Exposure's always sets.
+
+**Settings,** none in an edit, each `owner = "tool:exposure"`: `tools.exposure.target` (`PickerTarget`: `middle_grey`, the default, `lightness`, `reference`); `tools.exposure.lightness`, as it is; `tools.exposure.reference_lightness` (0 to 100 %, one decimal, optional) and `tools.exposure.reference_photo` (text, optional), set and cleared together. `tools.exposure.area_mode` goes; an old key in a settings file stays an unknown key.
+
+**No explanatory text in the panel:** explanations are tooltips, results one-line readouts, and only the two warnings show inline.
+
+**Words,** British English the source, American English, Ukrainian and Polish in the same change:
+
+| Where | Words |
+| --- | --- |
+| Exposure's picker, tooltip and hint over the photo | Middle grey: "Make an area middle grey". Lightness: "Make an area L 92 %". Reference: "Match an area to IMG_2041 (L 62 %)". Reference with none set: disabled, "Set a reference first, with the picker on the Reference row" |
+| The reference row's picker | Tooltip "Set the reference from an area"; hint over the photo "Drag over the area to keep as the reference" |
+| Picker target's options, tooltips | Middle grey: "The picked area becomes a normal mid-tone (L 50 %)". Lightness: "The picked area becomes the brightness you set". Reference: "The picked area matches the one measured on another photo" |
+| Lightness | 0 to 100 %, darktable's ramp of greys as its track; tooltip "The lightness the picked area is given, CIE L*" |
+| The reference row | Its patch, "L 62 % · IMG_2041", or "· this photo"; the photo gone: its name dimmed; none set: "none"; measuring: "measuring…"; ⋯: Clear Reference, Set Reference from an Area |
+| Last pick | "L 41 % → L 50 % · +0.55 EV", the two patches before the values; tooltip "The area picked, before and after, and the exposure it took"; read once by screen readers |
+| Warnings, inline, one line each, in the warning colour, both where both hold, in this order | "The area has clipped pixels", tooltip "Its lightness reads low: pick an area with no clipped highlights"; "Exposure at +18 EV: the area is L 12 %, short of 50 %", its tooltip what limited the pick ("Exposure reached its end of +18 EV"), adding "Black level was moved to keep black below white" only where the pick moved the black |
+| Compensate camera exposure | The label with the camera's bias, "(−⅔ EV)", after it in `text_secondary` |
+| Highlight preservation mode | The label with the exposure it gives back, "(+1.0 EV)" |
+| Black level correction | Tooltip "For lifting clipped blacks, not for deeper blacks: use AgX's black relative exposure" |
+| Mode's Automatic, disabled | Tooltip "Automatic needs a raw photo's histogram" |
+| Automatic | Measure at = Percentile, Place it at = Target level, each tooltip starting with darktable's name; This photo = the computed exposure |
+
+**Keyboard and screen readers:** each picker is a toggle button named by its action; Esc ends a pick; Picker target is a choice row, a combo box; Last pick is a polite live region; a hidden row is absent from the tree.
+
+**Steps,** one pull request each, each reviewed before the next, each leaving the tool usable:
+
+1. The camera's rows: `Tool::visible` and `label_value`, `ControlState::visible` and `label_value`, `ToggleRow::value`, the renderer and the messages.
+2. Automatic mode's page: Mode segmented, listing Manual alone on an image that is not a raw, Automatic drawn disabled with its reason (a `Segmented` option disabled); Measure at, Place it at and This photo; Black level correction's tooltip; `auto: false`, Exposure gone from the Auto list.
+3. Picker target with Middle grey and Lightness: `PickerTarget`, `tools.exposure.target`, `Row::WhenSetting`, a tooltip per option in `Choice`, `Picker::words_by`; Area exposure mapping, area mode and measure mode removed; the pick by target; E52.
+4. The reference: Reference added to `PickerTarget` and Picker target, the `reference` picker, `Row::Reference` and `ReferenceRow`, its two settings, `picker_ready` in the tools, the session and the app, the picker turned off when it stops being ready, the check that its photo is still there, and ⋯; E53 and E54.
+5. Last pick and the warnings: `Shown::last` and `warnings`, `Reading::input_maximum`, `Row::LastPick`, `ReadoutRow::patches`, the warning row and the live region.
+6. Checked against the board in every variant, dark and light, and the snapshots reviewed.
+
+**Rows it adds,** tolerances proposed: E52, E53 and E54 in [Invariants](#invariants); E51 goes with Auto. E0, E3 and E14 stay as they are, proving the render unchanged.
 
 ## Controls
 
@@ -99,10 +157,12 @@ These are the tooltips (`tool-exposure-control-<control>-promise`), each turned 
 | E37 | The raw's histogram | Exposure +1 in manual mode; then automatic, then its settings moved | Whether the histogram is counted | None in manual mode; counted once in automatic mode, over the declared image, and kept | Exact | The synthetic raw |
 | E33 | Highlight preservation mode | Off, on raws whose camera held 0.5 EV and 2 EV back; off, on a raw that held none back | Tool output: E4's factor | Darkens by what was held back; with none held back, changes nothing | 0.02 EV (proposed); exact | Ramp with a bias of −0.67 EV, holding 0.5, 2 and 0 EV back |
 | E50 | The picker | A pick on a flat patch, correction, at target lightnesses 30, 50 and 75 % | Exposure's output: the patch's luminance, Y through the input profile the pick reads it through | Becomes the target lightness's grey, 18.4 % at darktable's default 50 %; only Exposure changes | 0.01 EV (proposed) | Five flat patches, four greys from 0.05 to 1 and one of colour, on colour raws with biases 0 and −0.67 EV |
-| E51 | Auto, later | Auto, with Exposure kept and not kept | Values, marks and history | Moves only Exposure, and only if it is not kept; marks it Auto; one undo reverts it | Exact | Ramp |
+| E52 | Picker target, planned (decision 88) | A pick toward Middle grey and toward Lightness at 50 %, on the same area | The values written | The same | Exact | E50's patches |
+| E53 | The reference, planned (decision 88) | A reference set on one photo, then a pick toward it on another, Black level correction at 0 on both | Exposure's output: the area's L | The reference's L. The pick leaves Black level correction aside, as darktable's does, so with one set the area lands off by what the black moves it (0.27 EV short for an area of 0.05 toward 0.184 with a black of 0.01), which Last pick shows; that case is not this row's | 0.01 EV (proposed) | E50's patches on photos with biases 0 and −0.67 EV |
+| E54 | The reference picker, planned (decision 88) | A pick of the reference | The edit and its history | Unchanged, no step | Exact | E50's patches |
 | E60 | Each control on a layer, Phase 4 | E4's and E30's values on a full-mask layer at 100 % | Scene, inside the mask | Changes the image as the same values do on the background | As the row it repeats | Ramp |
 
-E51 waits for Auto's statistic, read back as the pickers' readings are (decision 79).
+E52 to E54 come with the redesign's steps 3 and 4 ([The page as redesigned](#the-page-as-redesigned-planned)).
 
 ## Results
 
@@ -144,7 +204,7 @@ A synthetic image is already white balanced, so the tests' colour calibration ad
 
 - **Compensate camera exposure is drawn disabled** on a photo that records no bias, as an action that cannot run is (`ui-conventions`), with the tooltip naming the camera's bias as 0. Built through `Tool::available`; the tooltip still says what the control does, since a disabled control's tooltip cannot say why yet (`docs/gui.md`, the renderer's gaps). darktable's labels add the bias, "compensate camera exposure (+0.7 EV)" and "highlight preservation mode (0.5 EV)"; a label with a value of the photo's waits for the renderer.
 - **Mode** is a list, manual and automatic. The whole row is disabled on an image that is not a raw, as darktable makes it insensitive; every raw the engine develops is one of 16 bits in one channel, darktable's test.
-- **Highlight preservation mode is drawn disabled** on a photo whose camera held no exposure back, as a control that cannot act is (decision 30), on as darktable's default is. darktable hides it there; hiding a control per photo is not decided ([port spec](../ports/exposure.md#open-questions)).
+- **Highlight preservation mode is drawn disabled** on a photo whose camera held no exposure back, as a control that cannot act is (decision 30), on as darktable's default is. darktable hides it there; hiding it, and Compensate camera exposure on a photo with no bias, is planned with the redesign (decision 88, `Tool::visible`).
 - **Automatic mode** shows Percentile, Target level and the computed EC readout in place of Compensate camera exposure, Highlight preservation mode and Exposure, whose picker it hides with it, as darktable's stack does; Black level correction and Area exposure mapping stay.
 - **While closed** the section shows only its title and buttons, no summary of the controls set (docs/gui.md).
 - **Tracks:** Exposure's spans darktable's soft range, −3 to +4 EV, and a value typed or scripted beyond it, anywhere in the range's ±18 EV, widens it, as darktable's does, until the row is reset; Black level correction's spans darktable's soft range, −0.1 to +0.1, and widens the same way ([Sliders against darktable](#sliders-against-darktable)).
@@ -178,7 +238,6 @@ darktable's picker on Exposure (`exposure.c:1211-1218`), an area picker of the e
 - **Compensate camera exposure's default:** the exposure operation's, on for any raw and off for an image that is not one, so its untouched value never changes the render. It is drawn disabled on a photo that records no bias.
 - **Decimals shown:** darktable's (`dt_bauhaus_slider_set_digits`), Exposure 3 and Black level correction 4. So Alt's tenth of a step, 0.005 EV and 0.0001, darktable's finest, is sent as shown. A value is rounded to them before it is sent, so a step finer than the row shows sends nothing a reader cannot see.
 - **The picker:** declared in the definition, `exposure`, an area picker writing Exposure and Black level and reading the area exposure mapping's settings, named by its slider's quad (`Quad::Picker(id)`), as darktable's page has it and Colour balance RGB's pickers are ([The picker](#the-picker)).
-- **Auto's tooltip:** "Sets Exposure so the photo's tones sit around middle grey. A kept Exposure stays as it is."
 - **Control ids:** darktable's parameter names, as Colour balance RGB's and RGB primaries' are: `mode`, `compensate_hilite_pres`, `deflicker_percentile`, `deflicker_target_level`. Exposure, Black level correction and Compensate camera exposure have ids of their own, `exposure`, `black_level` and `camera_bias`, which saved edits hold.
 - **Automatic mode's parameters:** in the operation's schema since version 2, so its tool's version 3 holds them with no migration: their defaults do not change.
 - **Highlight preservation mode's default:** on, as darktable turns it on for a module's first instance and the operation's default is (decision 21), so a Canon raw with its Auto Lighting Optimizer on renders 0.5 EV brighter than before, as darktable renders it. The whole-pipeline comparison still writes darktable's compensation off and the exposure Apertrust applies (decision 62).
@@ -193,5 +252,5 @@ darktable's picker on Exposure (`exposure.c:1211-1218`), an area picker of the e
 - **Built (version 3):** automatic mode, darktable's deflicker, with E32 and E34 to E37 and its computed EC readout (decision 87); the tool's version unchanged, its defaults being too.
 - **Built (version 3):** Highlight preservation mode ported, with E33: the held-back exposure read from the maker notes as darktable reads it, given back by default ([port spec](../ports/exposure.md)).
 - **Built (Phase 2, decision 79's 79.7):** the picker, with E50 ([The picker](#the-picker)): its pick in correction and measure modes, the Area exposure mapping's settings kept in settings, the patches and the L readout.
-- **Later in Phase 2:** Auto with E51.
+- **Planned (Phase 2, decision 88):** the page as redesigned, in six steps, with E52 to E54 ([The page as redesigned](#the-page-as-redesigned-planned)); Auto dropped.
 - **Phase 4:** layers, with E60.

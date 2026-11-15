@@ -1345,6 +1345,7 @@ darktable's exposure page, on one untitled tab.
 - Ranges: Exposure holds darktable's −18 to +18 EV. Black level correction holds darktable's −1 to +1 over the photo's black; a black that reaches the white the photo renders goes 0.01 below it.
 - Version 2: an edit's version 1 Exposure, in exact stops, is left out with a warning. Version 3: Highlight preservation mode ported, on by default, an older edit's stored Exposure entry reading it off, as it rendered; an edit with no Exposure entry has nothing to migrate and takes the default, on, as an unedited photo does.
 - Its invariant rows are tests on the synthetic ramp and sweep, and locally on the corpus.
+- Planned (decision 88): the page as redesigned, in six steps ([tools/exposure.md](tools/exposure.md#the-page-as-redesigned-planned)): `Tool::visible`, `label_value` and `picker_ready`; `Row::WhenSetting`, `Row::Reference` and `Row::LastPick`; `Picker::words_by`; `Shown::last` and `warnings`; `Reading::input_maximum`; `PickerTarget` and the `reference` picker; `auto: false`; `AreaMode` and the area exposure mapping removed.
 
 #### Colour calibration
 
