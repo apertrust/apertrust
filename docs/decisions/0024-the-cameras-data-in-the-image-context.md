@@ -24,6 +24,8 @@ Operations need facts about the camera beyond the mosaic: a DNG's colour matrix,
 
 **The exposure a highlight-preserving mode held back** (`Camera::highlight_preservation`), darktable's `exif_highlight_preservation`, estimated from the maker notes as darktable reads them through Exiv2 0.28, over rawler's public parsers; the exposure operation gives it back ([ports/exposure.md](../ports/exposure.md)).
 
+**The raw's histogram** is in the image context too, though no decoder gives it: the engine counts it on the GPU, once per photo, for an operation that reads it (`ImageContext::raw_histogram`, [0087](0087-the-raws-histogram-counted-once-for-an-operation-that-reads-it.md)).
+
 **White balance presets** (planned): `apertrust-raw` embeds darktable's `data/wb_presets.json` and parses it once with serde_json, by darktable's reading rules (names lowercased, a missing `tuning` read as 0), looks the camera up by `make` and `alias`, then `model`, and carries its entries in the file's order (`Camera::white_balance_presets`) for the temperature operation and the White balance tool ([0027](0027-both-of-darktables-white-balances.md)).
 
 **darktable's data files** live verbatim in the top-level `data/`, each embedded and parsed once by the crate that reads it, a test holding its SHA-256 ([0045](0045-a-top-level-data-folder.md)): `noiseprofiles.json` by the denoise operation, `wb_presets.json` by `apertrust-raw`.
