@@ -1319,14 +1319,12 @@ export-scale = Scale
 export-scale-tip = An integer, a decimal number or a simple fraction, such as 1/2. 0 or empty is 1.
 # The active photo's size under the rows; $file is its name.
 export-size = { $file } will be { $width } × { $height } px.
-export-size-capped = { $file } will be { $width } × { $height } px (not upscaled: Allow upscaling is No).
+export-size-capped = { $file } will be { $width } × { $height } px (not upscaled: Allow upscaling is off).
 export-size-full = { $file } will be { $width } × { $height } px (full size).
 export-size-no-limit = { $file } will be { $width } × { $height } px (full size: no limit set).
 export-upscale = Allow upscaling
 export-high-quality = High quality resampling
 export-high-quality-tip = Do high quality resampling during export: every operation at full size, then scaled down.
-export-no = No
-export-yes = Yes
 export-masks = Store masks
 export-masks-later = Store masks as layers in exported images. Only TIFF, OpenEXR and XCF can, and layers come with a later version.
 export-profile = Profile

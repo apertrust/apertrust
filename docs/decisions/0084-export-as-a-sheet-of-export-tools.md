@@ -6,7 +6,7 @@ Export holds darktable's export module row for row ([0056](0056-export-as-an-eng
 
 ## Decision
 
-**Export… opens the Export sheet** ([0086](0086-import-and-export-as-one-sheet-pattern.md)): the photos it was opened with, checked, in a grid beside a column of five export tools. Planned: until Export is on the sheet, the dialog keeps working as built ([gui.md](../gui.md#as-built)).
+**Export… opens the Export sheet** ([0086](0086-import-and-export-as-one-sheet-pattern.md)): the photos it was opened with, checked, in a grid beside a column of five export tools. Planned: until Export is on the sheet, the dialog keeps working as built, its rows drawn with the side panel's controls ([gui.md](../gui.md#as-built)).
 
 ### The grid
 

@@ -23,6 +23,8 @@
 //! modes, Allow upscaling, High quality resampling, and Profile with Image settings and
 //! sRGB. Every other row is drawn, disabled, saying it is to come: the other storages and
 //! formats, Store masks, Intent, Style, Metadata and Multi-preset export. The Presets column holds Default settings alone.
+//! The rows are the side panel's controls laid out as a tool's: Blended choices, toggles
+//! and sliders, one-line rows stacked with no spacing between them.
 //!
 //! **The settings** are the `export.*` settings, one [`Values`], read from the app's store
 //! when the dialog opens and offered back to it as they change (`Asked::values`), so Close
@@ -55,7 +57,7 @@ use apertrust_export::size::{self, Request};
 use apertrust_export::variables::{self, PatternError};
 use apertrust_ui::components::{
     Button, Choice, ChoiceAction, ChoiceStyle, CollapsibleGroup, PathField, SliderAction,
-    SliderRow, TextField, ValueField, Variable, group_label, quiet_scroll,
+    SliderRow, TextField, ToggleRow, ValueField, Variable, field_inset, group_label, quiet_scroll,
 };
 use apertrust_ui::i18n::Args;
 use apertrust_ui::{Theme, theme, tr, translator};
@@ -609,7 +611,9 @@ impl Export {
     fn settings_column(&mut self, ui: &mut Ui, t: &Theme) -> bool {
         let ctx = ui.ctx().clone();
         let later = tr(&ctx, "export-later");
-        ui.spacing_mut().item_spacing = vec2(t.spacing.s, t.spacing.xs);
+        // Rows stack as a tool's do, each carrying its own gaps (docs/gui.md, How the rows
+        // are laid out).
+        ui.spacing_mut().item_spacing = vec2(t.spacing.s, 0.0);
         let mut list_was_open = false;
 
         // Storage options.
@@ -622,8 +626,7 @@ impl Export {
         ];
         let storages: Vec<&str> = storages.iter().map(String::as_str).collect();
         let label = tr(&ctx, "export-target-storage");
-        let _ = Choice::new(&label, &storages, 1)
-            .style(ChoiceStyle::Boxed)
+        let _ = choice(&label, &storages, 1)
             .disabled_options(&[0, 2, 3], &later)
             .show(ui);
 
@@ -647,7 +650,7 @@ impl Export {
             .iter()
             .position(|(c, _)| *c == OnConflict::Overwrite);
         let unasked: Vec<usize> = overwrite.filter(|_| !self.alerts).into_iter().collect();
-        if let Some(ChoiceAction::Set(i)) = Choice::new(&label, &conflicts, current)
+        if let Some(ChoiceAction::Set(i)) = choice(&label, &conflicts, current)
             .disabled_options(&unasked, &no_alert)
             .show(ui)
         {
@@ -662,25 +665,21 @@ impl Export {
         // Global options.
         group_label(ui, &tr(&ctx, "export-global-options"));
         self.size_rows(ui, t);
-        let no_yes = [tr(&ctx, "export-no"), tr(&ctx, "export-yes")];
-        let no_yes: Vec<&str> = no_yes.iter().map(String::as_str).collect();
+        // Toggles, as a tool draws a boolean, where darktable's are No and Yes (D15).
         let label = tr(&ctx, "export-upscale");
-        if let Some(ChoiceAction::Set(i)) =
-            Choice::new(&label, &no_yes, usize::from(self.values.upscale)).show(ui)
-        {
-            self.values.upscale = i == 1;
+        if let Some(on) = ToggleRow::new(&label, self.values.upscale).show(ui) {
+            self.values.upscale = on;
         }
         let label = tr(&ctx, "export-high-quality");
         let promise = tr(&ctx, "export-high-quality-tip");
-        if let Some(ChoiceAction::Set(i)) =
-            Choice::new(&label, &no_yes, usize::from(self.values.high_quality))
-                .promise(&promise)
-                .show(ui)
+        if let Some(on) = ToggleRow::new(&label, self.values.high_quality)
+            .promise(&promise)
+            .show(ui)
         {
-            self.values.high_quality = i == 1;
+            self.values.high_quality = on;
         }
         let label = tr(&ctx, "export-masks");
-        let _ = Choice::new(&label, &no_yes, 0)
+        let _ = ToggleRow::new(&label, false)
             .enabled(false)
             .promise(&tr(&ctx, "export-masks-later"))
             .show(ui);
@@ -694,20 +693,19 @@ impl Export {
             tr(&ctx, "export-intent-absolute"),
         ];
         let intents: Vec<&str> = intents.iter().map(String::as_str).collect();
-        let _ = Choice::new(&label, &intents, 0)
+        let _ = choice(&label, &intents, 0)
             .enabled(false)
             .promise(&tr(&ctx, "export-intent-tip"))
             .show(ui);
         let label = tr(&ctx, "export-style");
         let none = [tr(&ctx, "export-style-none")];
         let none: Vec<&str> = none.iter().map(String::as_str).collect();
-        let _ = Choice::new(&label, &none, 0)
+        let _ = choice(&label, &none, 0)
             .enabled(false)
             .promise(&tr(&ctx, "export-style-later"))
             .show(ui);
 
-        // Groups to come.
-        ui.add_space(t.spacing.m);
+        // Groups to come, each 4 points under the row before it, as in a tool.
         for id in ["export-metadata", "export-multi-preset"] {
             let title = tr(&ctx, id);
             CollapsibleGroup::new(&title, false)
@@ -724,7 +722,12 @@ impl Export {
     fn path_rows(&mut self, ui: &mut Ui, t: &Theme) -> bool {
         let ctx = ui.ctx().clone();
         let label = tr(&ctx, "export-path");
-        ui.label(RichText::new(&label).size(t.text.body));
+        // The label on a line of its own, a row high, and the field on the next, as no row
+        // of a tool's holds a text field.
+        ui.horizontal(|ui| {
+            ui.set_min_height(t.sizes.panel_line);
+            ui.label(RichText::new(&label).size(t.text.body));
+        });
         let listed: Vec<Variable> = variables::list()
             .iter()
             .map(|v| Variable {
@@ -737,6 +740,7 @@ impl Export {
         let width = ui.available_width();
         let mut output = None;
         ui.horizontal(|ui| {
+            ui.set_min_height(t.sizes.panel_line);
             let button = ui.fonts_mut(|f| {
                 f.layout_no_wrap(
                     choose.clone(),
@@ -922,7 +926,7 @@ impl Export {
             FileFormat::Jpeg => JPEG,
             FileFormat::Png => PNG,
         };
-        if let Some(ChoiceAction::Set(i)) = Choice::new(&label, &names, current)
+        if let Some(ChoiceAction::Set(i)) = choice(&label, &names, current)
             .disabled_options(&unbuilt, &later)
             .show(ui)
         {
@@ -953,9 +957,8 @@ impl Export {
                     .position(|(s, _)| *s == self.values.jpeg_subsample)
                     .unwrap_or(0);
                 let promise = tr(&ctx, "export-jpeg-subsample-tip");
-                if let Some(ChoiceAction::Set(i)) = Choice::new(&label, &options, current)
-                    .promise(&promise)
-                    .show(ui)
+                if let Some(ChoiceAction::Set(i)) =
+                    choice(&label, &options, current).promise(&promise).show(ui)
                 {
                     self.values.jpeg_subsample = Subsample::OPTIONS[i].0;
                 }
@@ -968,8 +971,7 @@ impl Export {
                     .iter()
                     .position(|(b, _)| *b == self.values.png_bit_depth)
                     .unwrap_or(0);
-                if let Some(ChoiceAction::Set(i)) = Choice::new(&label, &options, current).show(ui)
-                {
+                if let Some(ChoiceAction::Set(i)) = choice(&label, &options, current).show(ui) {
                     self.values.png_bit_depth = BitDepth::OPTIONS[i].0;
                 }
                 let label = tr(&ctx, "export-png-compression");
@@ -997,7 +999,7 @@ impl Export {
             .iter()
             .position(|(m, _)| *m == self.values.size_mode)
             .unwrap_or(0);
-        if let Some(ChoiceAction::Set(i)) = Choice::new(&label, &modes, current).show(ui) {
+        if let Some(ChoiceAction::Set(i)) = choice(&label, &modes, current).show(ui) {
             self.values.size_mode = SizeMode::OPTIONS[i].0;
         }
         let v = &mut self.values;
@@ -1048,7 +1050,7 @@ impl Export {
                 let name = tr(&ctx, "export-dpi");
                 let unit = tr(&ctx, "export-dpi-unit");
                 let mut new = None;
-                end_row(ui, t, &name, |ui| {
+                end_row(ui, t, &name, field_inset(t), |ui| {
                     let field = ValueField::new(
                         egui::Id::unique("export dpi"),
                         &name,
@@ -1088,7 +1090,7 @@ impl Export {
             SizeMode::Scale => {
                 let name = tr(&ctx, "export-scale");
                 let mut new = None;
-                end_row(ui, t, &name, |ui| {
+                end_row(ui, t, &name, 0.0, |ui| {
                     let (_, text) =
                         TextField::new(egui::Id::unique("export scale"), &name, &v.scale)
                             .width(80.0)
@@ -1162,7 +1164,7 @@ impl Export {
             Profile::Srgb => 1,
         };
         let promise = tr(&ctx, "export-profile-tip");
-        if let Some(ChoiceAction::Set(i)) = Choice::new(&label, &options, current)
+        if let Some(ChoiceAction::Set(i)) = choice(&label, &options, current)
             .promise(&promise)
             .disabled_options(&unbuilt, &later)
             .show(ui)
@@ -1194,6 +1196,9 @@ impl Export {
                 .max_rect(rect.shrink2(vec2(t.spacing.xl, 0.0)))
                 .layout(egui::Layout::left_to_right(egui::Align::Center)),
         );
+        // The theme's gap between buttons, as an alert's; the footer leaves the dialog's
+        // zero spacing.
+        row.spacing_mut().item_spacing.x = t.spacing.s;
         let close_words = tr(&ctx, "export-close");
         let mut args = Args::new();
         args.set("count", PHOTOS as f64);
@@ -1420,17 +1425,19 @@ fn note(ui: &mut Ui, t: &Theme, text: impl Into<String>, colour: Color32) {
     ui.add(Label::new(RichText::new(text.into()).size(t.text.small).color(colour)).wrap());
 }
 
-/// A row of the dialog: `label` at its start, the fields `add` draws at its end. The
+/// A row of the dialog laid out as a tool's one-line row: `panel_line` high, `label` at
+/// its start, the fields `add` draws at its end, `inset` short of it, so a field's box ends
+/// with the row and a unit after the fields where slider values end ([`field_inset`]). The
 /// fields are added from the row's start, in reading order for readers and Tab, after a
 /// space as wide as the last pass found them, so a pass that finds them changed is drawn
 /// again.
-fn end_row(ui: &mut Ui, t: &Theme, label: &str, add: impl FnOnce(&mut Ui)) {
+fn end_row(ui: &mut Ui, t: &Theme, label: &str, inset: f32, add: impl FnOnce(&mut Ui)) {
     let id = ui.make_persistent_id(("export row", label));
     let width: Option<f32> = ui.data(|d| d.get_temp(id));
     ui.horizontal(|ui| {
-        ui.set_min_height(t.sizes.field);
+        ui.set_min_height(t.sizes.panel_line);
         ui.label(RichText::new(label).size(t.text.body));
-        ui.add_space((ui.available_width() - width.unwrap_or(0.0)).max(0.0));
+        ui.add_space((ui.available_width() - width.unwrap_or(0.0) - inset).max(0.0));
         let start = ui.cursor().min.x;
         add(ui);
         let measured = ui.min_rect().max.x - start;
@@ -1439,6 +1446,12 @@ fn end_row(ui: &mut Ui, t: &Theme, label: &str, add: impl FnOnce(&mut Ui)) {
             ui.ctx().request_discard("an export row measured");
         }
     });
+}
+
+/// A dropdown row as a tool panel draws one: Blended, darktable's combobox, the option at
+/// the row's end with no box (decision 42).
+fn choice<'a>(label: &'a str, options: &'a [&'a str], selected: usize) -> Choice<'a> {
+    Choice::new(label, options, selected).style(ChoiceStyle::Blended)
 }
 
 /// The pixels of a print length in centimetres (`cm`) or inches at `dpi`, as darktable's
@@ -1464,7 +1477,7 @@ fn size_fields(
 ) -> [Option<f64>; 2] {
     let ctx = ui.ctx().clone();
     let mut changed = [None; 2];
-    end_row(ui, t, name, |ui| {
+    end_row(ui, t, name, field_inset(t), |ui| {
         for (i, (value, side)) in [(width, "export-width"), (height, "export-height")]
             .into_iter()
             .enumerate()

@@ -316,14 +316,14 @@ fn every_row_of_the_first_card_is_there_by_its_name() {
         "File format",
         "Chroma subsampling",
         "Set size",
-        "Allow upscaling",
-        "High quality resampling",
-        "Store masks",
         "Profile",
         "Intent",
         "Style",
     ] {
         harness.get_by_role_and_label(Role::ComboBox, combo);
+    }
+    for toggle in ["Allow upscaling", "High quality resampling", "Store masks"] {
+        harness.get_by_role_and_label(Role::CheckBox, toggle);
     }
     harness.get_by_role_and_label(Role::TextInput, "Path");
     harness.get_by_role_and_label(Role::Slider, "Quality");
@@ -500,14 +500,25 @@ fn changing_the_resolution_and_back_returns_the_pixels_as_darktable_keeps_the_en
 }
 
 #[test]
-fn allow_upscaling_and_high_quality_resampling_are_choices_between_no_and_yes() {
+fn allow_upscaling_and_high_quality_resampling_are_toggles() {
     let mut harness = open();
-    choose(&mut harness, "Allow upscaling", "Yes");
-    choose(&mut harness, "High quality resampling", "Yes");
+    for toggle in ["Allow upscaling", "High quality resampling"] {
+        let node = harness.get_by_role_and_label(Role::CheckBox, toggle);
+        node.scroll_to_me();
+        settle(&mut harness);
+        harness
+            .get_by_role_and_label(Role::CheckBox, toggle)
+            .click();
+        settle(&mut harness);
+    }
     let now = held(&mut harness);
     assert!(now.upscale && now.high_quality);
-    choose(&mut harness, "High quality resampling", "No");
-    assert!(!held(&mut harness).high_quality);
+    harness
+        .get_by_role_and_label(Role::CheckBox, "High quality resampling")
+        .click();
+    settle(&mut harness);
+    let now = held(&mut harness);
+    assert!(now.upscale && !now.high_quality);
 }
 
 #[test]
@@ -703,9 +714,10 @@ fn default_settings_is_ticked_while_the_settings_are_the_defaults_and_resets_the
 #[test]
 fn every_row_not_built_is_drawn_disabled() {
     let mut harness = open();
-    for combo in ["Store masks", "Intent", "Style"] {
+    for combo in ["Intent", "Style"] {
         assert!(disabled(&harness, Role::ComboBox, combo), "{combo}");
     }
+    assert!(disabled(&harness, Role::CheckBox, "Store masks"));
     harness.get_by_label("Choose…");
     assert!(
         harness
@@ -1005,7 +1017,7 @@ fn the_active_photo_s_file_and_size_are_said_under_their_rows() {
     answer(&mut harness, 3, preview());
     assert!(says(
         &harness,
-        "IMG_2041.ARW will be 6000 × 4000 px (not upscaled: Allow upscaling is No)."
+        "IMG_2041.ARW will be 6000 × 4000 px (not upscaled: Allow upscaling is off)."
     ));
 }
 

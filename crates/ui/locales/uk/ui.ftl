@@ -1041,14 +1041,12 @@ export-scale = Масштаб
 export-scale-tip = Ціле число, десятковий дріб або простий дріб, як-от 1/2. 0 чи порожньо — це 1.
 # Розмір активного знімка під рядками; $file — його назва.
 export-size = { $file } матиме { $width } × { $height } px.
-export-size-capped = { $file } матиме { $width } × { $height } px (без збільшення: «Дозволити збільшення» — Ні).
+export-size-capped = { $file } матиме { $width } × { $height } px (без збільшення: «Дозволити збільшення» вимкнено).
 export-size-full = { $file } матиме { $width } × { $height } px (повний розмір).
 export-size-no-limit = { $file } матиме { $width } × { $height } px (повний розмір: межі не задано).
 export-upscale = Дозволити збільшення
 export-high-quality = Передискретизація високої якості
 export-high-quality-tip = Передискретизація високої якості під час експорту: усі операції в повному розмірі, потім зменшення.
-export-no = Ні
-export-yes = Так
 export-masks = Зберігати маски
 export-masks-later = Зберігати маски шарами в експортованих зображеннях. Це вміють лише TIFF, OpenEXR і XCF, а шари з'являться в наступній версії.
 export-profile = Профіль

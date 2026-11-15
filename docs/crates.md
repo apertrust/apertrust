@@ -752,7 +752,7 @@ The actions registry and the default keyboard map:
 `src/export.rs` (decision 56; [docs/gui.md](gui.md#as-built), The Export sheet, As built): a sheet on the Mac, a modal window on Windows and Linux (`impl Dialog for Export`).
 
 - File › Export… (`export`, Cmd+E) opens it, enabled with a photo open. Where the host shows no alert (`dialog_host::platform::shows_alerts`, the Mac's only so far), `Export::alerts(false)` lists Overwrite disabled and rests Export while it is chosen.
-- `Dialog::show(&mut Ui)` is its content: darktable's File on disk, JPEG and PNG, Set size's four modes, Allow upscaling, High quality resampling, and Profile (Image settings, sRGB). Every other row is drawn disabled, saying why. Its choices are Boxed. Planned: the Export sheet in its place, the photos it was opened with checked beside five export tools, every row a tool's setting, its choices Blended (decisions 84 and 86; [docs/gui.md](gui.md#the-export-sheet)).
+- `Dialog::show(&mut Ui)` is its content: darktable's File on disk, JPEG and PNG, Set size's four modes, Allow upscaling, High quality resampling, and Profile (Image settings, sRGB). Every other row is drawn disabled, saying why. Its rows are drawn as a tool's: its choices Blended, its booleans toggles. Planned: the Export sheet in its place, the photos it was opened with checked beside five export tools, every row a tool's setting, its choices Blended (decisions 84 and 86; [docs/gui.md](gui.md#the-export-sheet)).
 - The fifteen `export.*` settings are `export::Values` in `Settings::export`, kept as they change. The app's store opens on the export registry too, and `--conf export.…` is read.
 - Its feedback lines come from the session: `PreviewExport` on the first frame and on every change, through `export::commands`; `Event::ExportPreview` is handed back by `Dialogs::preview`, the highest `through` kept.
 - Export sends `Command::Export` for the active photo and closes the sheet.
@@ -892,7 +892,7 @@ In `crates/ui/src/components`. Each reports its role, full name and value to Acc
 - `popup::Service`, which an app installs in a context (`popup::install`) to show the requests it takes itself, answering between frames through `popup::answered`; the next frame's `popup::answer` gives the answer. The drawn popups show the rest, and everything where no service is installed;
 - an item's alternate (`Item::alternate`), shown and chosen in its place while Alt (Option) is held, as macOS's alternate menu items, the line keeping its id so the focus stays; Enter with Alt alone is the popup's;
 - a request's opener (`Request::opened_by`) is the control the focus goes back to, set by `Choice` and `components::pull_down`, since a press leaves the focus on nothing;
-- `components::pull_down`, a menu hung from a button, and `components::context_menu`, one opening at the pointer on a right-click, or under the control on the menu key or Shift+F10, are public for the app's own controls.
+- `components::pull_down`, a menu hung from a button, and `components::context_menu`, one opening at the pointer on a right-click, or under the control on the menu key or Shift+F10, are public for the app's own controls, and so is `components::field_inset`, where a field's text, a slider's value at rest and a Blended option end.
 
 ### The central bar and the grid panel
 

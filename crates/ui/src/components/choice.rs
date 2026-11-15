@@ -77,7 +77,7 @@ use crate::{Icon, Theme, theme, translator};
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum ChoiceStyle {
     /// The sunken box at the row's end: the Settings dialog, the other panels and utility
-    /// sections, the Export dialog, Customise tabs.
+    /// sections, Customise tabs.
     #[default]
     Boxed,
     /// darktable's combobox, in tool panels: the option at the row's end with no box,

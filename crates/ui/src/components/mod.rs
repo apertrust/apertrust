@@ -218,8 +218,9 @@ fn truncated(text: &str, font: FontId, width: f32, colour: Color32) -> LayoutJob
 }
 
 /// How far text sits from the ends of a value field or a dropdown's box: the wireframe's 4
-/// points of padding inside its 1-point border, as the browser draws it.
-fn field_inset(t: &Theme) -> f32 {
+/// points of padding inside its 1-point border, as the browser draws it; also where a
+/// slider's value at rest and a Blended option end.
+pub fn field_inset(t: &Theme) -> f32 {
     t.spacing.xs + t.shape.hairline
 }
 
