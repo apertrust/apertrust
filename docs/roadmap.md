@@ -237,6 +237,7 @@ Goal: usable for daily editing, and the editor sets the sliders for a goal. Migr
 - [x] Exports run as background jobs beside live editing, with a jobs window for progress and cancel.
 - [x] The Export dialog on the Mac: File on disk, JPEG and PNG, darktable's four size modes, high-quality resampling, the overwrite question, and Export Again (decision 56; [gui.md](gui.md#the-export-dialog)).
 - [x] The Export dialog on Windows and Linux, as a modal window, with Overwrite's alert on Linux.
+- [ ] The Export dialog drawn as a tool: every row a tool's setting, its choices Blended, Allow upscaling, High quality resampling and Store masks as toggles, and tall enough that its default rows fit without scrolling (decision 84; [gui.md](gui.md#drawn-as-a-tool)).
 - [ ] Alerts on Windows, for Overwrite and the quit question; Linux's are built.
 - [ ] Export presets, and several presets in one go.
 - [ ] Metadata in exported files, and styles applied on export.

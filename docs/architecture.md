@@ -207,7 +207,7 @@ Details: [pickers.md](pickers.md).
 
 ### Export
 
-An export is a job of the engine's session, beside live editing: darktable's sizes, resample, formats, variables and file-on-disk rules, written by `apertrust-export`, which has no GPU (decision 56).
+An export is a job of the engine's session, beside live editing: darktable's sizes, resample, formats, variables and file-on-disk rules, written by `apertrust-export`, which has no GPU (decision 56). The Export dialog holds darktable's export module row for row, drawn as a tool whose every row is a setting, its choices Blended, in a dialog tall enough for its default rows (decision 84, planned).
 
 Details: [engine.md, Export jobs](engine.md#export-jobs), [gui.md, The Export dialog](gui.md#the-export-dialog).
 
