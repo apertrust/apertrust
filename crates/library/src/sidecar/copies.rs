@@ -758,12 +758,26 @@ fn entry_problems(node: &Node, place: &str, problems: &mut Vec<Problem>) {
                 continue;
             }
         };
+        // Apertrust's own fields, each once: the reader keeps a repeated one's last value
+        // and drops the rest. An operation's schema is a whole number, or the reader drops it.
+        let mut seen = Vec::new();
         for field in fields {
             let plain =
                 matches!(field.node.value, Value::Simple(_)) && field.node.qualifiers.is_empty();
             let namespace = field.name.namespace.as_str();
-            let own = namespace == NAMESPACE && known.contains(&field.name.local.as_str());
-            if !plain || !(own || namespace == values) {
+            let local = field.name.local.as_str();
+            let own = namespace == NAMESPACE && known.contains(&local);
+            let repeated = own && seen.contains(&local);
+            let schema = own
+                && local == "schema"
+                && field
+                    .node
+                    .as_str()
+                    .is_none_or(|text| text.trim().parse::<u32>().is_err());
+            if own {
+                seen.push(local);
+            }
+            if !plain || !(own || namespace == values) || repeated || schema {
                 problems.push(unknown(&field_name(field)));
             }
         }
