@@ -8,7 +8,7 @@ Exposure is darktable's slider, `exposure.exposure` itself, its default the phot
 
 **Edits version 1 saved.** Version 1's Exposure solved for exact stops through the photo's black, so its value means another exposure on every photo. Version 2's migration leaves it out with a warning, its mark with it, and Exposure renders at the photo's default; no release wrote such an edit. Black level correction and Compensate camera exposure keep their values. Contrast and Pivot, which an older version 1 had, are left out with a warning each, the photo editable.
 
-**Status:** built, in `crates/tools/src/exposure.rs`. The app draws it in the Base tab from its definition (`docs/gui.md`, Tool panels from definitions), after the Tone equalizer and before Demosaic (decision 38).
+**Status:** built, in `crates/tools/src/exposure.rs`. The app draws it from its definition (`docs/gui.md`, Tool panels from definitions). Its tab is Edit's Adjust, after Colour calibration and before the tone mapper (decision 38); until Edit's tabs by editing stage are built, the app draws it in Base, after the Tone equalizer and before Orientation.
 
 - Rows E0, E3, E4, E6 to E9, E14, E30 to E32 and E50 are tests in `crates/tools/tests/exposure.rs`, with the migration's; [Results](#results) gives what they measured.
 - Its picker is built ([The picker](#the-picker); [pickers.md](../pickers.md), decision 79): its quad on Exposure, its pick in both area modes, the area exposure mapping's settings kept in settings, and the patches with the L readout.

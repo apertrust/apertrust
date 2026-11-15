@@ -2,11 +2,11 @@
 
 Tool `colorout`, version 1. It works on the background only and has no Auto.
 
-It is darktable's output color profile in the first pass (decision 2). darktable's page has no tabs, sections or presets, and shows one control, Export profile, here under its label in British English (decision 29). darktable's scene-referred preset puts it in no group, so it takes Colour, first, the group darktable's other layouts give it (decision 38; [README.md](README.md), In no group).
+It is darktable's output color profile in the first pass (decision 2). darktable's page has no tabs, sections or presets, and shows one control, Export profile, here under its label in British English (decision 29). Its tab is Edit's Raw, last, after Input colour profile (decision 38; [README.md](README.md), Raw). darktable's scene-referred preset puts it in no group; the darktable workspace gives it Colour, first, the group darktable's other layouts give it ([README.md](README.md), The darktable workspace).
 
 It drives one operation, `colorout` (display 70, [../ports/colorout.md](../ports/colorout.md)), which every photo runs, so it adds no operation. It has no first step, and at its default it sets nothing and leaves the plan as it was. It owns both parameters of the operation.
 
-**Status:** built, in `crates/tools/src/output_colour_profile.rs`. The app draws it in the Colour tab from its definition (`docs/gui.md`, Tool panels from definitions), first, before Colour balance RGB.
+**Status:** built, in `crates/tools/src/output_colour_profile.rs`. The app draws it from its definition (`docs/gui.md`, Tool panels from definitions) in Edit's Raw tab, last (decision 38); until Edit's tabs by editing stage are built, the app draws it in Colour, first, before Colour balance RGB.
 
 - Its rows are tests in `crates/tools/tests/output_colour_profile.rs` and the tool's source, and the panel's in `crates/app/src/tools.rs`; [Results](#results) gives what they measured.
 - Every row is exact or darktable's own default, so none has a proposed tolerance; the [design choices](#design-choices) are settled.

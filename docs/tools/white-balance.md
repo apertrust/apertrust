@@ -6,7 +6,7 @@ It is darktable's white balance module as its page has it, over the raw-stage `t
 
 A change runs the raw stage and demosaic again (decision 12; `docs/engine.md`, Pipes). The light the photo is adapted for is Colour calibration's CAT tab's (`colour-calibration.md`), as in darktable's scene-referred workflow.
 
-**Status:** built, in `crates/tools/src/white_balance.rs` (decision 27), after Demosaic in `TOOLS`. The app draws it in the Base tab from its definition (`docs/gui.md`, Tool panels from definitions), after Highlight reconstruction and before Raw black/white point (decision 38). darktable's model of temperature and tint is `apertrust_color::white_balance`. Its id is its operation's ([README.md](README.md), rule 1).
+**Status:** built, in `crates/tools/src/white_balance.rs` (decision 27), after Demosaic in `TOOLS`. The app draws it from its definition (`docs/gui.md`, Tool panels from definitions). Its tab is Edit's Adjust, first, before Colour calibration (decision 38); until Edit's tabs by editing stage are built, the app draws it in Base, after Highlight reconstruction and before Raw black/white point. darktable's model of temperature and tint is `apertrust_color::white_balance`. Its id is its operation's ([README.md](README.md), rule 1).
 
 - A first-pass table (decision 22): the rows every table has, and darktable's match.
 - Every row is a test in `crates/tools/tests/white_balance.rs`, the corpus's in `w_rows_on_the_corpus`; [Results](#results) gives what they measured.

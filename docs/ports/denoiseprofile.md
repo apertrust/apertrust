@@ -10,7 +10,7 @@ Golden cases planned (darktable tests on `mire1.cr2`, a Canon EOS 40D at ISO 160
 
 Denoise (profiled) removes sensor noise using a model of the camera's noise measured at each ISO: noise of variance a·x + b at signal x, Poissonian (photon) noise plus Gaussian (read) noise. A variance-stabilising transform (a generalised Anscombe transform, darktable's "v2" with an extra exponent, the shadows setting) makes the noise level the same everywhere, so one threshold fits the whole image; then either an edge-aware à-trous wavelet decomposition is soft-thresholded scale by scale, each threshold from the band's measured variance (BayesShrink), or each pixel becomes a weighted mean of pixels whose surrounding patches look alike (non-local means). The inverse transform, with a bias correction, brings the image back. The wavelets can work on RGB or on Y0U0V0, a luminance and two colour-difference channels weighted by the white balance, so luma and chroma noise are treated apart, which is darktable's default.
 
-In Apertrust it is the operation behind the first pass's Denoise (profiled) tool, in the Correct tab (decisions 2 and 38; `docs/tools/README.md`, Denoise (profiled)).
+In Apertrust it is the operation behind the first pass's Denoise (profiled) tool, in Edit's Detail tab (decisions 2 and 38; `docs/tools/README.md`, Denoise (profiled)).
 
 ## Pipeline
 

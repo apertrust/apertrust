@@ -10,92 +10,112 @@ The tools users edit with. In the first pass each is darktable's own: one tool p
 
 Every tool's operation keeps darktable's place, darktable's v5.0 order throughout (decision 22; `src/common/iop_order.c`; [engine.md](../engine.md), Order): the tone equalizer at camera RGB 24.0, RGB curve and RGB levels at 42 and 43, before the tone mapper.
 
-The side panel's tabs are Photos, Base, Colour, Correct, Effect and History (decision 38): darktable's "workflow: scene-referred" groups under darktable's labels, between Apertrust's own Photos and History, with no quick access panel or active-modules tab. Each tool sits in darktable's group and is listed as darktable's right panel lists it, in pipeline order with the last tool at the top. The app's `TAB_TOOLS` holds these lists for the built tools, the Edit workspace's defaults, and a test holds them to `OPERATIONS` reversed; a person can reorder, pin, move and float sections on screen, never the processing order (decision 83). How the bar looks and behaves is [gui.md](../gui.md)'s (The side panel).
+The Edit workspace's tabs are Photos, Adjust, Detail, Geometry, Effects, Raw and History (decision 38): the tools grouped by editing stage, so that a normal edit stays in one tab, between Apertrust's own Photos and History, with no quick access panel or active-modules tab. Each tab lists its tools top to bottom in editing order, the order a person reaches for them; Raw, the raw stage's tools and the colour profiles, lists them in processing order. The lists are display order only: the processing order stays the pipeline's whatever a tab lists. These lists are the Edit workspace's decided defaults, built with [the roadmap's item](../roadmap.md#editing): the app's `TAB_TOOLS` will hold them for the built tools, and a test will hold them to decision 38's lists and each tool to exactly one of Edit's tabs. A person can reorder, pin, move and float sections on screen, never the processing order (decision 83). How the bar looks and behaves is [gui.md](../gui.md)'s (The side panel).
 
-The tables below are in that order:
+darktable's scene-referred groups are kept as the darktable workspace (decision 38, planned with named workspaces in Phase 3; [below](#the-darktable-workspace)). Until Edit's tabs by editing stage are built, the app shows darktable's groups in Edit, as `TAB_TOOLS` holds them now; each built tool's page names both places.
+
+The tables below are in Edit's order:
 
 - **Built** means the tool is in `apertrust-tools`'s `TOOLS` and in the app; the details are on its page.
 - **Switched** means a tool darktable leaves off on a new photo ([rule 4](#the-rules)).
 - A **slot** is darktable's: the stage, then the order number.
 
-### Base
+### Adjust
 
-darktable's base group, with RGB levels and RGB curve after the tone mapper, Demosaic after Rotate and perspective and Raw black/white point last ([In no group](#in-no-group)). The Edit workspace opens on this tab.
+Light and colour together, since a scene-referred edit interleaves them. The tab shows the edit's tone mapper, one of AgX, Sigmoid and Filmic RGB ([Tone mappers](#tone-mappers)). darktable's color harmonizer is not in the first pass. The Edit workspace opens on this tab.
 
 | Tool | darktable module | Operation, slot | Layers | Status | Docs |
 | --- | --- | --- | --- | --- | --- |
-| Local contrast | local contrast | `bilat`, display 54 | Yes | Operation ported, both modes; tool planned (Phase 3), switched | [port](../ports/bilat.md) |
+| White balance | white balance | `temperature`, raw 3 | Background only | Built; the camera's presets with Finetune designed (decision 27), to build | [page](white-balance.md), [port](../ports/temperature.md) |
+| Colour calibration | color calibration | `channelmixerrgb`, working 28.5 | Background only, until layers | Built, every tab, the CAT tab with follow writes; runs on every colour raw (decision 27) | [page](colour-calibration.md), [port](../ports/channelmixerrgb.md) |
+| Exposure | exposure | `exposure`, camera RGB 21 | Yes | Built; its unported controls at their defaults, Contrast and Pivot left for Colour balance RGB | [page](exposure.md) |
 | AgX | AgX | `agx`, working 45.5 | Background; on layers when they come, as a replacement | Built, the default tone mapper; its pickers, actions and Show curve to come | [page](agx.md), [port](../ports/agx.md) |
 | Sigmoid | sigmoid | `sigmoid`, darktable's 45.3 | Background; on layers when they come, as a replacement | Operation ported; tool planned (Phase 3), a tone mapper | [port](../ports/sigmoid.md) |
 | Filmic RGB | filmic rgb | `filmicrgb`, darktable's 46.0 | Background; on layers when they come, as a replacement | Operation ported, v3 to v7; tool planned (Phase 3), a tone mapper | [port](../ports/filmicrgb.md) |
-| RGB levels | rgb levels | `rgblevels`, working 43 | Yes | Operation ported; tool planned (Phase 3), switched | [port](../ports/rgblevels.md) |
-| RGB curve | rgb curve | `rgbcurve`, working 42 | Yes | Operation ported; built as the Tone curve's Luma curve, to be reshaped into RGB curve | [page](tone-curve.md), [port](../ports/rgbcurve.md) |
-| Crop | crop | `crop`, camera RGB 24.5 | Background only | Planned (Phase 3) | — |
 | Tone equalizer | tone equalizer | `toneequal`, camera RGB 24.0 | Yes | Built, switched (decision 32); the guided filters, wands and mask histogram to come | [page](tone-equalizer.md), [port](../ports/toneequal.md) |
-| Exposure | exposure | `exposure`, camera RGB 21 | Yes | Built; its unported controls at their defaults, Contrast and Pivot left for Colour balance RGB | [page](exposure.md) |
-| Orientation | orientation | `flip`, camera RGB 16 | Background only | Built, darktable's page; runs on every photo at auto, the photo's own orientation; its guides and presets to come | [page](orientation.md), [port](../ports/flip.md) |
-| Rotate and perspective | rotate and perspective | `ashift`, camera RGB 15 | Background only | Planned (Phase 2) | — |
-| Demosaic | demosaic | `demosaic`, raw 8 | Background only | Built; RCD and Markesteijn 1-pass ported, the method listing the sensor's methods | [page](demosaic.md), [port](../ports/demosaic.md) |
-| Highlight reconstruction | highlight reconstruction | `highlights`, raw 4 | Background only | Built; inpaint opposed ported, the threshold starting at the photo's own | [page](highlight-reconstruction.md), [port](../ports/highlights.md) |
-| White balance | white balance | `temperature`, raw 3 | Background only | Built; the camera's presets with Finetune designed (decision 27), to build | [page](white-balance.md), [port](../ports/temperature.md) |
-| Raw black/white point | raw black/white point | `rawprepare`, raw 1 | Background only | Built; its levels start at the raw's own, flat field correction not ported | [page](raw-black-white-point.md), [port](../ports/rawprepare.md) |
-
-- **Crop** has no angle of its own, as darktable's crop has none: its straighten line writes Rotate and perspective's rotation.
-- **RGB curve** keeps decision 31's fixed ends at (0, 0) and (1, 1); black and white are RGB levels'. Its graph is darktable's (decision 22).
-- **Demosaic** keeps capture sharpening, in the raw stage, as darktable has it.
-- **Local contrast,** once on, starts at darktable's local laplacian filter, detail 125 %, highlights and shadows 50 % and midtone range 0.5.
-
-### Colour
-
-darktable's color group, with Output colour profile first and Input colour profile last. darktable's color harmonizer is not in the first pass.
-
-| Tool | darktable module | Operation, slot | Layers | Status | Docs |
-| --- | --- | --- | --- | --- | --- |
-| Output colour profile | output color profile | `colorout`, display 70 | Background only | Built; an edit chooses sRGB only until the display converts from the edit's profile (decision 26) | [page](output-colour-profile.md), [port](../ports/colorout.md) |
+| Local contrast | local contrast | `bilat`, display 54 | Yes | Operation ported, both modes; tool planned (Phase 3), switched | [port](../ports/bilat.md) |
+| Haze removal | haze removal | `hazeremoval`, camera RGB 14 | Yes | Built, switched at darktable's 0.2 (decision 32) | [page](haze-removal.md), [port](../ports/hazeremoval.md) |
+| RGB curve | rgb curve | `rgbcurve`, working 42 | Yes | Operation ported; built as the Tone curve's Luma curve, to be reshaped into RGB curve | [page](tone-curve.md), [port](../ports/rgbcurve.md) |
+| RGB levels | rgb levels | `rgblevels`, working 43 | Yes | Operation ported; tool planned (Phase 3), switched | [port](../ports/rgblevels.md) |
 | Colour balance RGB | color balance rgb | `colorbalancergb`, working 41.5 | Yes | Built, switched (decision 32); the graph, mask display and pickers to come | [page](colour-balance-rgb.md), [port](../ports/colorbalancergb.md) |
 | Colour equalizer | color equalizer | `colorequal`, working 41.2 | Yes | Operation ported; tool planned (Phase 2), switched | [port](../ports/colorequal.md) |
 | RGB primaries | rgb primaries | `primaries`, working 28.9 | Yes | Built, switched (decision 32); the painted tracks to come | [page](rgb-primaries.md), [port](../ports/primaries.md) |
-| Colour calibration | color calibration | `channelmixerrgb`, working 28.5 | Background only, until layers | Built, every tab, the CAT tab with follow writes; runs on every colour raw (decision 27) | [page](colour-calibration.md), [port](../ports/channelmixerrgb.md) |
-| Input colour profile | input color profile | `colorin`, camera RGB 28 | Background only | Operation ported, runs on every photo; tool planned (Phase 2) | [port](../ports/colorin.md) |
 
-- **Input colour profile** owns every colorin parameter, the camera profile included.
 - **Colour calibration's** grey tab is darktable's black and white: any grey weight off 0 makes the photo grey.
+- **Local contrast,** once on, starts at darktable's local laplacian filter, detail 125 %, highlights and shadows 50 % and midtone range 0.5.
+- **RGB curve** keeps decision 31's fixed ends at (0, 0) and (1, 1); black and white are RGB levels'. Its graph is darktable's (decision 22).
 - **The colour equalizer** has no untouched value at darktable's defaults, so it is switched (decision 32).
 
-### Correct
+### Detail
 
-darktable's correct group. darktable's raw chromatic aberrations (`cacorrect`) is left out, since every change would rerun demosaic; its hot pixels, liquify, raster mask and astrophoto denoise are not in the first pass.
+What works at the scale of pixels: noise, sharpness and spots. darktable's raw chromatic aberrations (`cacorrect`) is left out, since every change would rerun demosaic; its hot pixels, liquify, raster mask and astrophoto denoise are not in the first pass.
 
 | Tool | darktable module | Operation, slot | Layers | Status | Docs |
 | --- | --- | --- | --- | --- | --- |
-| Sharpen | sharpen | `sharpen`, working 35 | Yes | Planned (Phase 3), switched | — |
-| Haze removal | haze removal | `hazeremoval`, camera RGB 14 | Yes | Built, switched at darktable's 0.2 (decision 32) | [page](haze-removal.md), [port](../ports/hazeremoval.md) |
-| Chromatic aberrations | chromatic aberrations | `cacorrectrgb`, camera RGB 13.5 | Background only | Planned (Phase 3) | — |
-| Lens correction | lens correction | `lens`, camera RGB 13 | Background only | Planned (Phase 3), switched; the embedded-metadata method specified (decision 25), Lensfun's later | [port](../ports/lens.md) |
 | Denoise (profiled) | denoise (profiled) | `denoiseprofile`, camera RGB 9 | Yes | Planned (Phase 2), switched | [port](../ports/denoiseprofile.md) |
+| Sharpen | sharpen | `sharpen`, working 35 | Yes | Planned (Phase 3), switched | — |
+| Diffuse or sharpen | diffuse or sharpen | `diffuse`, working, between 28.5 and 29 | Yes | Planned (Phase 3) | — |
+| Retouch | retouch | `retouch`, camera RGB 20 | Retouch layers themselves | Planned (Phase 4) as retouch layers, heal and clone, ported from darktable's master (decision 74) | [layers](../layers.md#retouch-layers) |
 
 - **Sharpen,** once on, starts at darktable's radius 2, amount 0.5 and threshold 0.5.
+- **Diffuse or sharpen** is one tool, darktable's, with darktable's presets (lens deblur, local contrast, dehaze, bloom and others) but its two "sharpen demosaicing" ones (no AA filter and AA filter). darktable's manual has those used on an instance moved before input colour, and tools keep their place in the pipeline, layers included (decision 34). Demosaic's capture sharpening does that job at that place, as darktable has it.
 - **darktable's retouch** is not a tool of the first pass: it is ported as retouch layers, heal and clone, with layers in Phase 4 ([layers.md](../layers.md#retouch-layers), decisions 34 and 74).
+
+### Geometry
+
+What changes the frame and corrects the lens: where the pixels land.
+
+| Tool | darktable module | Operation, slot | Layers | Status | Docs |
+| --- | --- | --- | --- | --- | --- |
+| Crop | crop | `crop`, camera RGB 24.5 | Background only | Planned (Phase 3) | — |
+| Rotate and perspective | rotate and perspective | `ashift`, camera RGB 15 | Background only | Planned (Phase 2) | — |
+| Orientation | orientation | `flip`, camera RGB 16 | Background only | Built, darktable's page; runs on every photo at auto, the photo's own orientation; its guides and presets to come | [page](orientation.md), [port](../ports/flip.md) |
+| Lens correction | lens correction | `lens`, camera RGB 13 | Background only | Planned (Phase 3), switched; the embedded-metadata method specified (decision 25), Lensfun's later | [port](../ports/lens.md) |
+| Chromatic aberrations | chromatic aberrations | `cacorrectrgb`, camera RGB 13.5 | Background only | Planned (Phase 3) | — |
+
+- **Crop** has no angle of its own, as darktable's crop has none: its straighten line writes Rotate and perspective's rotation.
 - **Chromatic aberrations** keeps darktable's advanced parameters on its main page, under a group label (decision 29).
 
-### Effect
+### Effects
 
-darktable's effect group, with Soften after Vignetting and Bloom after Grain. darktable's contrast equalizer, framing, enlarge canvas, graduated density, composite, watermark, censorize and blurs are not in the first pass.
+The finishing looks. darktable's contrast equalizer, framing, enlarge canvas, graduated density, composite, watermark, censorize and blurs are not in the first pass.
 
 | Tool | darktable module | Operation, slot | Layers | Status | Docs |
 | --- | --- | --- | --- | --- | --- |
 | Vignetting | vignetting | `vignette`, display 68 | Yes | Built, switched at darktable's −0.5 (decision 32), without dithering | [page](vignetting.md), [port](../ports/vignette.md) |
-| Soften | soften | `soften`, display 66 | Yes | Built, switched at darktable's 50 % (decision 32) | [page](soften.md), [port](../ports/soften.md) |
 | Grain | grain | `grain`, display 65 | Background only | Built, switched at darktable's 25 % (decision 32) | [page](grain.md), [port](../ports/grain.md) |
+| Soften | soften | `soften`, display 66 | Yes | Built, switched at darktable's 50 % (decision 32) | [page](soften.md), [port](../ports/soften.md) |
 | Bloom | bloom | `bloom`, display 61 | Yes | Operation ported; tool planned (Phase 3), switched | [port](../ports/bloom.md) |
-| Diffuse or sharpen | diffuse or sharpen | `diffuse`, working, between 28.5 and 29 | Yes | Planned (Phase 3) | — |
 
 - **Bloom** blooms every pixel above about L 89.4 even at strength 0, so it has no untouched value; once on it starts at darktable's 20 %, 90 % and 25 %.
-- **Diffuse or sharpen** is one tool, darktable's, with darktable's presets (lens deblur, local contrast, dehaze, bloom and others) but its two "sharpen demosaicing" ones (no AA filter and AA filter). darktable's manual has those used on an instance moved before input colour, and tools keep their place in the pipeline, layers included (decision 34). Demosaic's capture sharpening does that job at that place, as darktable has it.
 
-### In no group
+### Raw
 
-darktable's scene-referred preset lists these modules in no group; darktable reaches them through its active-modules tab, which Apertrust does not have. Each joins the tab darktable's other layouts give it, at its place in that tab's order (decision 38). darktable's module search is planned separately.
+The raw stage's tools and the colour profiles, set up rather than edited and rarely touched, in a tab of their own, out of the way, in processing order.
+
+| Tool | darktable module | Operation, slot | Layers | Status | Docs |
+| --- | --- | --- | --- | --- | --- |
+| Raw black/white point | raw black/white point | `rawprepare`, raw 1 | Background only | Built; its levels start at the raw's own, flat field correction not ported | [page](raw-black-white-point.md), [port](../ports/rawprepare.md) |
+| Highlight reconstruction | highlight reconstruction | `highlights`, raw 4 | Background only | Built; inpaint opposed ported, the threshold starting at the photo's own | [page](highlight-reconstruction.md), [port](../ports/highlights.md) |
+| Demosaic | demosaic | `demosaic`, raw 8 | Background only | Built; RCD and Markesteijn 1-pass ported, the method listing the sensor's methods | [page](demosaic.md), [port](../ports/demosaic.md) |
+| Input colour profile | input color profile | `colorin`, camera RGB 28 | Background only | Operation ported, runs on every photo; tool planned (Phase 2) | [port](../ports/colorin.md) |
+| Output colour profile | output color profile | `colorout`, display 70 | Background only | Built; an edit chooses sRGB only until the display converts from the edit's profile (decision 26) | [page](output-colour-profile.md), [port](../ports/colorout.md) |
+
+- **Demosaic** keeps capture sharpening, in the raw stage, as darktable has it.
+- **Input colour profile** owns every colorin parameter, the camera profile included.
+
+### The darktable workspace
+
+A built-in workspace beside Edit, for people coming from darktable (decision 38), planned with named workspaces in Phase 3; id `darktable`, named "darktable". Its tabs are Photos, Base, Colour, Correct, Effect and History: darktable's "workflow: scene-referred" groups under darktable's labels. Each tool sits in darktable's group and is listed as darktable's right panel lists it, in pipeline order with the last tool at the top; a test holds each list to `OPERATIONS` reversed. It opens on Base.
+
+| Tab | Tools, top to bottom |
+| --- | --- |
+| Base | Local contrast, the edit's tone mapper, RGB levels, RGB curve, Crop, Tone equalizer, Exposure, Orientation, Rotate and perspective, Demosaic, Highlight reconstruction, White balance, Raw black/white point |
+| Colour | Output colour profile, Colour balance RGB, Colour equalizer, RGB primaries, Colour calibration, Input colour profile |
+| Correct | Sharpen, Retouch (retouch layers, Phase 4), Haze removal, Chromatic aberrations, Lens correction, Denoise (profiled) |
+| Effect | Vignetting, Soften, Grain, Bloom, Diffuse or sharpen |
+
+darktable's scene-referred preset lists some modules in no group; darktable reaches them through its active-modules tab, which Apertrust does not have. Each joins the tab darktable's other layouts give it, at its place in that tab's order. darktable's module search is planned separately.
 
 | Tool | darktable's other placements | Its tab |
 | --- | --- | --- |
@@ -113,9 +133,9 @@ darktable's scene-referred preset lists these modules in no group; darktable rea
 - **Photos,** Apertrust's own tab, first (decisions 37, 38 and 73): Browse, pinned, with Folders in folder mode (Phase 2) and Albums and Smart albums (Phase 5); Filters, Keywords, Metadata and Styles (Phase 3).
 - **Styles** are darktable's styles, bundles of module values with no parameters of their own, with content tabs All and Favourites. Applying one is one change, or a layer with opacity (Phase 4). It is in the Photos tab because darktable's styles module is a lighttable module.
 - **History,** Apertrust's own tab, last (decision 38): Snapshots, planned, then the edit's history ([history.md](../history.md#the-history-tab)), with no Scopes. The Colour picker, darktable's color picker utility, is hidden by default, its place to be decided ([pickers.md](../pickers.md#the-colour-picker), decision 79, planned).
-- **Scopes** (decision 19): pinned over the tools in every tab but the Photos tab, as darktable's histogram sits over its groups. Its drags send Exposure's commands, so nothing is owned twice.
-- **Layers** (Phase 4): Apertrust's own model, pinned in the four groups' tabs. A layer's mask, opacity and blend mode become the blend settings of each instance it adds; it owns no operation parameter.
-- **AI denoise and AI erase** are Apertrust's own models (Phase 6), not darktable's, so in no darktable group; their tab is decided with their design.
+- **Scopes** (decision 19): pinned over the tools of every editing tab, in neither the Photos tab nor History, as darktable's histogram sits over its groups. Its drags send Exposure's commands, so nothing is owned twice.
+- **Layers** (Phase 4): Apertrust's own model, pinned in the editing tabs. A layer's mask, opacity and blend mode become the blend settings of each instance it adds; it owns no operation parameter.
+- **AI denoise and AI erase** are Apertrust's own models (Phase 6), not darktable's; their tab is decided with their design.
 
 ## The rules
 
@@ -182,9 +202,9 @@ A parameter with no editing meaning and no darktable widget is fixed at darktabl
 
 ### Tone mappers
 
-AgX now, Sigmoid and Filmic RGB as they come, each a tool of its own, as in darktable, in the Base tab (decision 38).
+AgX now, Sigmoid and Filmic RGB as they come, each a tool of its own, as in darktable, in the Adjust tab after Exposure (decision 38).
 
-- A setting chooses the tone mapper for new photos and which tool the Base tab shows.
+- A setting chooses the tone mapper for new photos and which tool the Adjust tab shows.
 - Each edit names its tone mapper's tool and keeps it; an edit that names none is AgX's. Exactly one tone mapper operation is planned.
 - A photo using another tone mapper shows that tool, with a note. Switching an existing photo is an explicit action, one undo step.
 - The background has exactly one tone mapper, its parameters global. Planned with layers: a layer may choose its own tone mapper, any of the three, which replaces the background's within its mask, never stacked on it, so a pixel is tone-mapped once; darktable's masked tone-mapper instances import onto such layers (decision 33).

@@ -30,7 +30,7 @@ Filmic rgb is one of darktable's three scene-referred tone mappers, beside sigmo
 
 Algorithmically, a logarithmic encoding maps the scene's black and white relative exposures to [0, 1]; a spline, linear over a latitude around middle grey with polynomial or rational toe and shoulder, maps that to display values, which a power ("hardness") takes to linear display light. Five colour sciences say how the curve meets colour: per channel or on a norm of the pixel, with a desaturation at the extremes (v3 to v5), or with a gamut mapping in Filmlight's Yrg against the display (v6, v7). Highlight reconstruction inpaints clipped areas with noise and diffuses it with an à trous B-spline wavelet decomposition, in RGB and then on the pixels' ratios.
 
-In the first pass it is the Filmic RGB tool, a tone mapper of its own in the Base tab, one tone mapper per edit (decision 2; `docs/tools/README.md`, Filmic RGB).
+In the first pass it is the Filmic RGB tool, a tone mapper of its own in Edit's Adjust tab, one tone mapper per edit (decision 2; `docs/tools/README.md`, Filmic RGB).
 
 ## Pipeline
 

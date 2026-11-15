@@ -6,11 +6,11 @@ darktable offers several tone mappers (AgX, sigmoid, filmic rgb), each a module,
 
 ## Decision
 
-**Tone mappers are tools of their own, as in darktable:** AgX now, Sigmoid and Filmic RGB as their tools come. They sit in the Base tab, where darktable's scene-referred workflow has its tone mapper ([0038](0038-side-panel-tabs-as-darktables-groups.md)).
+**Tone mappers are tools of their own, as in darktable:** AgX now, Sigmoid and Filmic RGB as their tools come. They sit in the Adjust tab, after Exposure ([0038](0038-the-side-panels-tabs-by-editing-stage.md)), and in the darktable workspace's Base, where darktable's scene-referred workflow has its tone mapper.
 
 **The background has exactly one tone mapper, chosen per edit:**
 
-- **A setting chooses the tone mapper for new photos** and which tool the Base tab shows.
+- **A setting chooses the tone mapper for new photos** and which tool the Adjust tab shows.
 - **Each edit names its tone mapper's tool and keeps it;** an edit that names none is AgX's. Exactly one tone mapper operation is planned for the background, its parameters global.
 - **A photo using another tone mapper shows that tool,** with a note.
 - **Switching an existing photo is an explicit action,** one undo step; the setting never changes the tone mapper of edits already made.

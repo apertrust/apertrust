@@ -554,20 +554,20 @@ In `src/folder.rs`, `src/library.rs`, `src/dialogs.rs`, `src/dropped.rs` and `sr
 ### The side panel
 
 - It is as wide as its edge is dragged or moved with the keys: 240 to 600 points, 320 at first, at most half the window but never under 240, kept in settings.
-- **Tabs** are darktable's scene-referred groups between Apertrust's own two (decision 38; [docs/gui.md](gui.md), The tabs: darktable's groups): Photos, Base, Colour, Correct, Effect and History (`TABS`).
-  - Kept by darktable's ids (`base`, `color`, `correct`, `effect`), and `photos` and `history`. Edit opens on Base. Each tab is chosen through its action, `panel-tab-1` to `panel-tab-6` (`ActionId::PANEL_TABS`, as many as `TABS`, checked as the app compiles), which a click, a key and Side Panel Tab's item run; History, the sixth, has no default key. A tab with nothing behind it would be drawn disabled (`TABS_ENABLED`); none is.
-  - `photos` opens the first tab, and `library`, which earlier builds kept for it, is unknown (decision 38). An unknown id (such as `adjust`) is read as unknown and Base is shown with a warning; both are kept until the user chooses a tab.
-- **Tools by tab** (`TAB_TOOLS`): each tool in darktable's group, those in none in the one darktable's other layouts give them, in darktable's order, the last in the pipeline at the top. A test holds the order to `OPERATIONS` reversed. They are the Edit workspace's defaults; planned, the layout model in `layout.rs`, each tab's pinned and scrolling sections and the floating ones kept in settings and changed by dragging a header, its ⋯, keys and the file (decision 83).
+- **Tabs,** as built, are darktable's scene-referred groups between Apertrust's own two: Photos, Base, Colour, Correct, Effect and History (`TABS`). Planned (decision 38; [docs/gui.md](gui.md), The tabs, by editing stage): Edit's tabs by editing stage, Photos, Adjust, Detail, Geometry, Effects, Raw and History, opening on Adjust, the built lists becoming the darktable workspace's, chosen once named workspaces come.
+  - Kept by darktable's ids (`base`, `color`, `correct`, `effect`), and `photos` and `history`; Edit's will be `adjust`, `detail`, `geometry`, `effects` and `raw`. Edit opens on Base as built. Each tab is chosen through its action, `panel-tab-1` to `panel-tab-6` (`ActionId::PANEL_TABS`, as many as `TABS`, checked as the app compiles; `panel-tab-7` with Edit's seven), which a click, a key and Side Panel Tab's item run; History, the sixth, has no default key. A tab with nothing behind it would be drawn disabled (`TABS_ENABLED`); none is.
+  - `photos` opens the first tab, and `library`, which earlier builds kept for it, is unknown (decision 38). An unknown id (such as `profile`) is read as unknown and the first editing tab is shown with a warning; both are kept until the user chooses a tab.
+- **Tools by tab** (`TAB_TOOLS`), as built: each tool in darktable's group, those in none in the one darktable's other layouts give them, in darktable's order, the last in the pipeline at the top. A test holds the order to `OPERATIONS` reversed. Planned: Edit's lists in editing order, held by a test to decision 38's, these lists kept as the darktable workspace's with their test. They are the workspaces' defaults; planned, the layout model in `layout.rs`, each tab's pinned and scrolling sections and the floating ones kept in settings and changed by dragging a header, its ⋯, keys and the file (decision 83).
 
-| Tab | Tools |
+| Tab, as built | Tools |
 | --- | --- |
-| Base | AgX, Tone curve, Tone equalizer, Exposure, Demosaic, Highlight reconstruction, White balance, Raw black/white point |
+| Base | AgX, Tone curve, Tone equalizer, Exposure, Orientation, Demosaic, Highlight reconstruction, White balance, Raw black/white point |
 | Colour | Output colour profile, Colour balance RGB, RGB primaries, Colour calibration |
 | Correct | Haze removal |
 | Effect | Vignetting, Soften, Grain |
 
 - The sections' open state is kept in settings.
-- **The Scopes section** (`src/scopes.rs`) is pinned over the four groups' tabs' tools, not the Photos tab's nor History's. Its `Histogram` is fed by the session's latest reading (the histogram, the waveform, the RGB parade and the vectorscope, and what clips). It asks the session with `Command::Scopes` for the totals while it shows and for the graph while it is open. Its view and open state are kept in settings.
+- **The Scopes section** (`src/scopes.rs`) is pinned over the editing tabs' tools, not the Photos tab's nor History's. Its `Histogram` is fed by the session's latest reading (the histogram, the waveform, the RGB parade and the vectorscope, and what clips). It asks the session with `Command::Scopes` for the totals while it shows and for the graph while it is open. Its view and open state are kept in settings.
 
 ### The tool panel renderer
 
