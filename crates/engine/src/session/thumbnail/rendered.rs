@@ -44,9 +44,17 @@ pub const THUMBNAIL_SETTLE: Duration = Duration::from_secs(1);
 /// departure tries at once.
 const RETRY_AFTER: Duration = Duration::from_secs(30);
 
-/// The sizes the client asked of each photo of the current folder, by path, with the
-/// folder's open.
-type Asked = Arc<Mutex<BTreeMap<PathBuf, (u64, BTreeSet<u32>)>>>;
+/// The sizes the client asked of each photo of the current folder, or opened alone, by
+/// path, with the number of the open or close they were asked in.
+type Asked = Arc<Mutex<BTreeMap<PathBuf, AskedOf>>>;
+
+/// What the client asked of one photo.
+struct AskedOf {
+    open: u64,
+    /// Whether it was asked for as a photo opened alone, its events naming its path.
+    alone: bool,
+    sizes: BTreeSet<u32>,
+}
 
 /// A thumbnail job under way, for the saved edit of `hash`.
 struct Running {
@@ -85,16 +93,31 @@ impl State {
         self.not_before.remove(path);
     }
 
+    /// The client asked for the thumbnail of `photo` of `folder` at `size`, in the open
+    /// numbered `open`.
     pub(crate) fn asked(&mut self, open: u64, folder: &Path, photo: &str, size: u32) {
         if Path::new(photo).file_name() != Some(std::ffi::OsStr::new(photo)) {
             return;
         }
+        self.ask(open, folder.join(photo), false, size);
+    }
+
+    /// The client asked for the thumbnail of the photo opened alone at `path` at `size`,
+    /// the latest open or close numbered `open`.
+    pub(crate) fn asked_alone(&mut self, open: u64, path: &Path, size: u32) {
+        self.ask(open, path.to_owned(), true, size);
+    }
+
+    fn ask(&mut self, open: u64, path: PathBuf, alone: bool, size: u32) {
         let mut asked = self.asked.lock().unwrap_or_else(PoisonError::into_inner);
-        let entry = asked
-            .entry(folder.join(photo))
-            .or_insert_with(|| (open, BTreeSet::new()));
-        entry.0 = open;
-        entry.1.insert(size);
+        let entry = asked.entry(path).or_insert_with(|| AskedOf {
+            open,
+            alone,
+            sizes: BTreeSet::new(),
+        });
+        // Asked for again the other way, it is told that way from now on.
+        (entry.open, entry.alone) = (open, alone);
+        entry.sizes.insert(size);
     }
 
     /// Before a live frame of the photo at `path` is submitted, its pipeline updated:
@@ -672,15 +695,25 @@ impl Render {
             };
             super::publish_if_current(&cancel, || {
                 let asked = self.asked.lock().unwrap_or_else(PoisonError::into_inner);
-                if let Some((open, sizes)) = asked.get(&self.path)
-                    && sizes.contains(&size)
+                if let Some(of) = asked.get(&self.path)
+                    && of.sizes.contains(&size)
                 {
-                    self.outbox.send(Event::Library(LibraryEvent::Thumbnail {
-                        open: *open,
-                        photo: photo.clone(),
-                        size,
-                        image,
-                    }));
+                    let open = of.open;
+                    let event = match of.alone {
+                        true => LibraryEvent::PhotoThumbnail {
+                            open,
+                            path: self.path.clone(),
+                            size,
+                            image,
+                        },
+                        false => LibraryEvent::Thumbnail {
+                            open,
+                            photo: photo.clone(),
+                            size,
+                            image,
+                        },
+                    };
+                    self.outbox.send(Event::Library(event));
                 }
             });
         }

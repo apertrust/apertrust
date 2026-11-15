@@ -1961,6 +1961,7 @@ mod tests {
             paths,
             photos,
             active,
+            thumbnails: Default::default(),
         }
     }
 

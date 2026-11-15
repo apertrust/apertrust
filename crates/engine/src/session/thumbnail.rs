@@ -40,13 +40,18 @@
 //! end as a JPEG ends, cut short or not a JPEG at all, is a miss, read again and written
 //! over.
 //!
-//! Under `-d perf`, one line for each [`LibraryCommand::Thumbnails`] once its last job has
-//! ended: how many came from the cache and how many were read, each with their time, and
-//! how many were written; under `-d verbose`, a line for each thumbnail.
+//! A photo opened alone's thumbnail ([`LibraryCommand::PhotoThumbnails`]) is served the
+//! same way, as the file of its own folder, its event then naming its path ([`named`]).
+//!
+//! Under `-d perf`, one line for each [`LibraryCommand::Thumbnails`] or
+//! [`LibraryCommand::PhotoThumbnails`] once its last job has ended: how many came from the
+//! cache and how many were read, each with their time, and how many were written; under
+//! `-d verbose`, a line for each thumbnail.
 //!
 //! [`LibraryCommand::Thumbnails`]: super::LibraryCommand::Thumbnails
+//! [`LibraryCommand::PhotoThumbnails`]: super::LibraryCommand::PhotoThumbnails
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::{Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
@@ -103,6 +108,33 @@ pub(crate) struct Asked<'a> {
     pub photo: &'a str,
     pub size: u32,
     pub raw: RawThumbnails,
+}
+
+/// A thumbnail a client asked for: `photo` of `folder`, and, for a photo opened alone,
+/// its path as asked, which its event names in place of the file name.
+pub(crate) struct Wanted {
+    pub folder: PathBuf,
+    pub photo: String,
+    pub alone: Option<PathBuf>,
+}
+
+/// `event` as the client asked for its thumbnail: a photo alone's, at `alone`, as
+/// [`LibraryEvent::PhotoThumbnail`]; a folder's as it is.
+pub(crate) fn named(event: LibraryEvent, alone: Option<&PathBuf>) -> LibraryEvent {
+    match (event, alone) {
+        (
+            LibraryEvent::Thumbnail {
+                open, size, image, ..
+            },
+            Some(path),
+        ) => LibraryEvent::PhotoThumbnail {
+            open,
+            path: path.clone(),
+            size,
+            image,
+        },
+        (event, _) => event,
+    }
 }
 
 /// Sends the thumbnail `asked` names to `observer` as [`library::thumbnail`] does, from the

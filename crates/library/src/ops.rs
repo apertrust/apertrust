@@ -23,7 +23,7 @@
 //! its photos, each with what its sidecar says, then their capture times, closing it,
 //! walking the whole tree under the folder opened for each folder's raw count and
 //! subfolders ([`walk`]), listing a subfolder's own subfolders for Browse's tree
-//! ([`subfolders`]), and its photos' thumbnails
+//! ([`subfolders`]), and its photos' thumbnails, or those of photos opened alone
 //! ([`thumbnail`]), the camera's embedded pictures until Apertrust renders its own. The
 //! session runs [`open`] and [`thumbnail`] as jobs' bodies and hands each an observer,
 //! which turns each [`LibraryEvent`] into its own event, and a cancel closure, the job's;
@@ -73,6 +73,12 @@ pub enum LibraryCommand {
     /// most `size` pixels on their longer side, the first the most wanted; answered by a
     /// [`LibraryEvent::Thumbnail`] for each. A new open or a close drops those not yet sent.
     Thumbnails { photos: Vec<String>, size: u32 },
+    /// Asks for thumbnails of photos opened alone (`docs/library.md`, One photo), each
+    /// named by its path, at most `size` pixels on their longer side, the first the most
+    /// wanted; answered by a [`LibraryEvent::PhotoThumbnail`] for each, in the number of
+    /// the latest open or close. Only each photo's own file is read, never its folder. A
+    /// new open or a close drops those not yet sent.
+    PhotoThumbnails { paths: Vec<PathBuf>, size: u32 },
     /// Lists the subfolders of `folder`, one inside the tree of the folder opened, as Browse
     /// opens it: the tree's root is the first folder opened, kept while each later open lies
     /// inside it ([`inside`]). Answered by [`LibraryEvent::SubfoldersOf`]. A new open or a
@@ -141,6 +147,15 @@ pub enum LibraryEvent {
         size: u32,
         image: Option<Thumbnail>,
     },
+    /// A thumbnail of a photo opened alone at `size`, as [`LibraryCommand::PhotoThumbnails`]
+    /// asked, named by its path as asked, in the number of the latest open or close: what
+    /// [`LibraryEvent::Thumbnail`] carries of a folder's photo.
+    PhotoThumbnail {
+        open: u64,
+        path: PathBuf,
+        size: u32,
+        image: Option<Thumbnail>,
+    },
     /// More folders of the tree under the folder opened, walked breadth first after the
     /// folder's own listing ([`walk`]): each with its raws counted and its subfolders
     /// named, or why it could not be read. `open` is the number of the open that made the
@@ -165,6 +180,7 @@ impl LibraryEvent {
             | LibraryEvent::Taken { open, .. }
             | LibraryEvent::Closed { open }
             | LibraryEvent::Thumbnail { open, .. }
+            | LibraryEvent::PhotoThumbnail { open, .. }
             | LibraryEvent::Walked { open, .. } => open,
         }
     }
