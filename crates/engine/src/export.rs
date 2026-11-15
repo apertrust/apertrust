@@ -51,7 +51,7 @@ use std::time::Instant;
 use apertrust_plugin::{ImageContext, ImageDesc, PassKind, Resource};
 use thiserror::Error;
 
-use crate::compute::{ComputeError, GpuImage, Timings};
+use crate::compute::{ComputeError, GpuImage, Timings, read_back};
 use crate::gpu::GpuContext;
 use crate::jobs::{GpuTask, Step, TaskError};
 pub use crate::pipeline::BUDGET;
@@ -59,6 +59,7 @@ use crate::pipeline::{
     self, Instance, Limits, Parts, Pipe, Pipeline, Plan, PlanError, Resample, SMALLEST_TILE,
     reads_the_whole_image, runs, split,
 };
+use crate::raw_histogram;
 
 /// The narrowest tile a row or column of tiles may end with. A tile at the image's edge
 /// gets the operations' border on one side only, demosaic's 12 so far, and demosaic needs
@@ -170,6 +171,9 @@ pub async fn export_at(
 pub(crate) trait Hand {
     /// Hands `submit` and waits for its step.
     fn hand(&mut self, submit: Submit) -> Result<Rendered, TaskError>;
+    /// Hands `commands`, the engine's own, and waits for their step, which asks for their
+    /// readback's mapping: the raw's histogram's count (decision 87).
+    fn hand_commands(&mut self, commands: Commands) -> Result<Readback, TaskError>;
     /// Waits for a readback's mapping.
     fn wait(&mut self, mapping: &Mapping) -> Result<MapResult, TaskError>;
     /// The most bytes a row strip of a pass before the tiles binds of an image, asked as
@@ -228,6 +232,7 @@ async fn render_export(
     mut turns: Turns<'_>,
 ) -> Result<Exported, ExportError> {
     let start = Instant::now();
+    let image = &with_raw_histogram(gpu, instances, image, &input, &mut turns).await?;
     let pipe = resample.map_or(Pipe::Export, Pipe::Resampled);
     let tile = |region| Pipe::Tile { region, resample };
     let limits = match tiling {
@@ -492,6 +497,51 @@ fn render_in_parts(
     Ok(hand.hand(submit)?.pipeline)
 }
 
+/// `image` with the raw's histogram, counted from `input` where an instance reads it and
+/// `image` holds none (decision 87): here, waiting, or handed as the renders are.
+async fn with_raw_histogram(
+    gpu: &GpuContext,
+    instances: &[Instance<'_>],
+    image: &ImageContext,
+    input: &GpuImage,
+    turns: &mut Turns<'_>,
+) -> Result<ImageContext, ExportError> {
+    let mut image = image.clone();
+    let Some(camera) = &image.camera else {
+        return Ok(image);
+    };
+    if image.raw_histogram.is_some() || !raw_histogram::read_by(instances, &image) {
+        return Ok(image);
+    }
+    let mut counting = raw_histogram::record(gpu, input, camera.declared).await?;
+    let bytes = match turns {
+        Turns::Waiting => {
+            gpu.submit(counting.commands.take());
+            read_back(gpu, &counting.readback)?
+        }
+        Turns::Handed(hand) => {
+            let commands = Commands {
+                commands: counting.commands.take(),
+                readback: Some(counting.readback.clone()),
+            };
+            let Readback {
+                buffer, mapping, ..
+            } = hand.hand_commands(commands)?;
+            hand.wait(&mapping)?.map_err(|error| {
+                TaskError::Failed(format!("reading the raw's histogram back: {error}"))
+            })?;
+            let bytes = buffer
+                .get_mapped_range(..)
+                .expect("its mapping was answered")
+                .to_vec();
+            buffer.unmap();
+            bytes
+        }
+    };
+    image.raw_histogram = Some(counting.finish(&bytes));
+    Ok(image)
+}
+
 /// Renders `pipeline` once and reads its output back: here, waiting, its timings kept in
 /// `renders`, or handed with a buffer the CPU maps, into which its submission copies the
 /// output, its mapping waited for here, so a readback takes the engine thread no step of
@@ -566,7 +616,7 @@ pub(crate) struct Rendered {
 /// A readback asked for: the buffer the submission copies the output into, for the
 /// worker to copy and unmap once mapped, so the engine thread never copies an image, and
 /// where its mapping is heard.
-struct Readback {
+pub(crate) struct Readback {
     buffer: wgpu::Buffer,
     mapping: Mapping,
     /// When it was submitted, for `-d perf`'s trace (spike X1).
@@ -588,6 +638,35 @@ impl Submit {
     #[cfg(test)]
     pub(crate) fn reads_back(&self) -> bool {
         self.readback.is_some()
+    }
+}
+
+/// The engine's own commands recorded on a job's worker, with the buffer they copy their
+/// result into: the raw's histogram's count (decision 87). The engine thread submits them
+/// in one step and asks for the buffer's mapping, for which the worker waits, as for a
+/// render's readback.
+pub(crate) struct Commands {
+    commands: Option<wgpu::CommandBuffer>,
+    readback: Option<wgpu::Buffer>,
+}
+
+impl GpuTask for Commands {
+    type Output = Readback;
+
+    fn step(&mut self, gpu: &GpuContext) -> Result<Step<Readback>, String> {
+        gpu.submit(self.commands.take());
+        let buffer = self.readback.take().expect("its commands are one step");
+        let (sender, mapping) = mpsc::channel();
+        buffer.map_async(wgpu::MapMode::Read, .., move |result| {
+            // A worker that has stopped waiting hears nothing.
+            let _ = sender.send(result);
+        });
+        let submitted = Instant::now();
+        Ok(Step::Done(Readback {
+            buffer,
+            mapping,
+            submitted,
+        }))
     }
 }
 
@@ -1048,6 +1127,15 @@ mod tests {
                 if let Step::Done(rendered) = step {
                     return Ok(rendered);
                 }
+            }
+        }
+
+        fn hand_commands(&mut self, mut commands: Commands) -> Result<Readback, TaskError> {
+            let step = commands.step(self.gpu).map_err(TaskError::Failed)?;
+            self.gpu.wait().unwrap();
+            match step {
+                Step::Done(readback) => Ok(readback),
+                _ => unreachable!("commands are one step"),
             }
         }
 

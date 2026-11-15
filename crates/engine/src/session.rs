@@ -150,6 +150,7 @@ pub use crate::picker::{
     ToolReading,
 };
 use crate::pipeline::{self, Kernels, Limits, Pipe, Pipeline, PlanError};
+use crate::raw_histogram;
 use crate::scopes::Meter;
 pub use crate::scopes::{Graphs, Reading};
 use crate::sidecar;
@@ -789,6 +790,18 @@ pub struct ToolState {
     pub presets: Vec<PresetState>,
     /// Every coordinate of every lossless view, in the definition's order.
     pub views: Vec<CoordinateState>,
+    /// Every computed value, in the definition's order (decision 87).
+    pub computed: Vec<ComputedState>,
+}
+
+/// A computed value ([`apertrust_tools::Row::Computed`]): the number its operation
+/// computes from the photo as the edit renders it, as `prepare` computes it
+/// (`Operation::computed`), asked only while the tool's controls show the row; `None`
+/// while hidden, and while the operation computes none, as without a raw's histogram.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ComputedState {
+    pub id: &'static str,
+    pub value: Option<f32>,
 }
 
 /// One coordinate of a lossless view (decision 2), which a client sets, resets and keeps
@@ -1033,6 +1046,52 @@ pub(crate) struct Decoded {
     pub(crate) shot: Shot,
 }
 
+/// What `computed`'s operation computes from the photo as `instances` render it
+/// (`Operation::computed`, decision 87): its parameters over its defaults on its input as
+/// an export plans the operations up to it, so on the levels rawprepare leaves. `None`
+/// where the edit plans no instance of the operation, or the plan fails.
+fn computed(
+    instances: &[pipeline::Instance],
+    image: &ImageContext,
+    sensor: ImageDesc,
+    computed: &apertrust_tools::Computed,
+) -> Option<f32> {
+    let target = instances
+        .iter()
+        .find(|instance| instance.operation.manifest().id == computed.operation)?;
+    let slot = &target.operation.manifest().slot;
+    let before: Vec<pipeline::Instance> = instances
+        .iter()
+        .filter(|instance| {
+            instance
+                .operation
+                .manifest()
+                .slot
+                .pipeline_order(slot)
+                .is_le()
+        })
+        .cloned()
+        .collect();
+    let start = Instant::now();
+    let plan = pipeline::plan(&before, image, sensor, Pipe::Export, &Limits::NONE).ok()?;
+    let ms = start.elapsed().as_secs_f64() * 1e3;
+    tracing::trace!(target: "perf", "computed {}: planned to {} in {ms:.2} ms", computed.id, computed.operation);
+    let at = plan
+        .operations
+        .iter()
+        .position(|operation| operation.id == computed.operation)?;
+    let input = match at {
+        0 => plan.input,
+        _ => plan.operations[at - 1].output_desc,
+    };
+    let operation = target.operation;
+    let params = operation
+        .schema()
+        .resolve_over(&operation.defaults(image), &target.params)
+        .ok()?;
+    operation.computed(computed.id, &params, image, &input)
+}
+
 /// The options each choice of `tools` lists on `image`, by tool and control
 /// (decision 30): [`edit::listed`], every option where a tool's code panics or gives a
 /// list that does not hold together, warned of once for the photo.
@@ -1185,7 +1244,11 @@ impl Session {
                     let wait = if polling {
                         Some(POLL_INTERVAL)
                     } else {
-                        [engine.thumbnail_wait(), wake].into_iter().flatten().min()
+                        // A stale frame's retry too.
+                        [engine.thumbnail_wait(), wake, engine.stale_wait()]
+                            .into_iter()
+                            .flatten()
+                            .min()
                     };
                     let first =
                         if let Some(wait) = wait.filter(|_| !stopping.load(Ordering::Relaxed)) {
@@ -1239,23 +1302,7 @@ impl Session {
                         }
                         continue;
                     }
-                    let work = || {
-                        let mut events = if batch.is_empty() {
-                            Vec::new()
-                        } else {
-                            engine.apply(batch)
-                        };
-                        if let Some(stage) = staged {
-                            events.extend(engine.stage(*stage));
-                        }
-                        // A newer sidecar the writer found, taken in.
-                        events.extend(engine.newer_file(false));
-                        // What arrived meanwhile, during the batch's render included.
-                        events.extend(engine.scopes());
-                        events.extend(engine.picked());
-                        engine.thumbnail_tick(false);
-                        events
-                    };
+                    let work = || engine.turn(batch, staged);
                     let events = match catch_unwind(AssertUnwindSafe(work)) {
                         Ok(events) => events,
                         Err(panic) => {
@@ -1926,7 +1973,20 @@ struct Engine {
     /// A GPU error each render raises, for a test.
     #[cfg(test)]
     poison: Option<Poison>,
+    /// Whether counting the raw's histogram fails, for a test.
+    #[cfg(test)]
+    fail_histogram: bool,
+    /// Whether a stale frame's refresh raises a GPU error, for a test.
+    #[cfg(test)]
+    poison_refresh: bool,
 }
+
+/// How many turns try to render a frame left at manual mode's exposure, once the raw's
+/// histogram is counted after a failure, before it is left as it is (decision 87).
+const STALE_FRAME_TRIES: u32 = 3;
+
+/// How long the engine thread waits before it tries a stale frame again (decision 87).
+const STALE_FRAME_RETRY: Duration = Duration::from_millis(100);
 
 /// When a test makes a render raise a GPU error.
 #[cfg(test)]
@@ -2198,6 +2258,14 @@ struct Open {
     /// The tools the History tab's eye hides from the live frame ([`Command::Hide`]):
     /// view state, never in the edit, gone with the photo.
     hidden: BTreeSet<&'static str>,
+    /// Whether counting the raw's histogram failed, reported once for the photo
+    /// (decision 87).
+    histogram_failed: bool,
+    /// Whether the frame shown renders automatic mode as manual mode, the histogram
+    /// counted since after a failure (decision 87).
+    stale_frame: bool,
+    /// The turns that tried to render a stale frame and published none.
+    stale_tries: u32,
 }
 
 /// A gesture under way (decision 42): the run of `SetControl { done: false }` on one
@@ -2327,6 +2395,10 @@ impl Engine {
             clear_hold: None,
             #[cfg(test)]
             poison: None,
+            #[cfg(test)]
+            fail_histogram: false,
+            #[cfg(test)]
+            poison_refresh: false,
         };
         (engine, rejected)
     }
@@ -2348,6 +2420,42 @@ impl Engine {
                 mapped_at_creation: false,
             });
         }
+    }
+
+    /// One turn of the engine thread, a batch of commands or none, as after a timer's
+    /// wake: the batch, what an open's job read, a newer sidecar, the scopes' and the
+    /// pickers' readings, the thumbnail due, and the frame again where the raw's histogram
+    /// was counted outside a batch since a failure (decision 87).
+    fn turn(&mut self, batch: Vec<(Instant, Command)>, staged: Option<Box<Stage>>) -> Vec<Event> {
+        let mut events = if batch.is_empty() {
+            Vec::new()
+        } else {
+            self.apply(batch)
+        };
+        if let Some(stage) = staged {
+            events.extend(self.stage(*stage));
+        }
+        // A newer sidecar the writer found, taken in.
+        events.extend(self.newer_file(false));
+        // What arrived meanwhile, during the batch's render included.
+        events.extend(self.scopes());
+        events.extend(self.picked());
+        self.thumbnail_tick(false);
+        // A histogram counted after a failure, by a batch, a newer sidecar or the tick: the
+        // values and the frame again, last in the turn, so that only a frame of its own
+        // published proves the frame shown applies it, whatever the turn rendered before.
+        if self.stale() {
+            let refreshed = self.guarded(|engine| engine.stale_frame());
+            self.settle_stale_frame(&refreshed);
+            events.extend(refreshed);
+        }
+        events
+    }
+
+    /// How long the engine thread may wait before a stale frame is tried again, while one
+    /// is (decision 87); `None` otherwise.
+    fn stale_wait(&self) -> Option<Duration> {
+        self.stale().then_some(STALE_FRAME_RETRY)
     }
 
     /// Applies a batch of commands, then renders once if any of them changed the image.
@@ -2704,6 +2812,9 @@ impl Engine {
                     error: Box::new(error),
                 })),
             }
+        }
+        if values {
+            self.count_raw_histogram(&mut events);
         }
         if let Some(open) = &mut self.open
             && values
@@ -3319,6 +3430,7 @@ impl Engine {
             open.held.prune(&open.edit);
             open.unsaved = true;
         }
+        self.count_raw_histogram(&mut events);
         let Some(open) = &mut self.open else {
             return events;
         };
@@ -3536,6 +3648,9 @@ impl Engine {
             pipeline: None,
             history,
             hidden: BTreeSet::new(),
+            histogram_failed: false,
+            stale_frame: false,
+            stale_tries: 0,
         });
         photo
     }
@@ -3612,6 +3727,10 @@ impl Engine {
         photo.shot = metadata.shot;
         photo.input = Some(input);
         self.opening = None;
+        self.count_raw_histogram(events);
+        let Some(photo) = &mut self.open else {
+            return Ok(());
+        };
         let values = photo.values(self.operations, &self.tools, self.applied);
         events.push(Event::Values(values));
         events.extend(self.history_event());
@@ -4100,6 +4219,139 @@ impl Engine {
         again
     }
 
+    /// Counts the raw's histogram of the live photo where its edit reads it, as the frame
+    /// shows it or as its file holds it, which its rendered thumbnail renders, and its image
+    /// context holds none (decision 87): once per photo, on the GPU, waiting for its
+    /// counts, before the values that report its computed value and the frame that applies
+    /// it, and before its rendered thumbnail. Nothing while no instance reads it, so a
+    /// photo in manual mode costs nothing. A failure is reported once for the photo; the
+    /// frame then renders automatic mode as manual mode, and the next values report or
+    /// thumbnail tries again. Counted after a failure where the shown edit reads it, the
+    /// frame shown no longer renders the edit, which [`Self::stale`] tells the
+    /// next batch; its rendered thumbnail is due again at once.
+    fn count_raw_histogram(&mut self, events: &mut Vec<Event>) {
+        let Some(open) = &self.open else {
+            return;
+        };
+        if open.input.is_none() || open.image.raw_histogram.is_some() || open.image.camera.is_none()
+        {
+            return;
+        }
+        let shown = edit::instances(&open.shown(), self.operations, &self.tools, &open.image);
+        let saved = edit::instances(
+            &open.saved_edit(),
+            self.operations,
+            &self.tools,
+            &open.image,
+        );
+        let shown_reads = raw_histogram::read_by(&shown.instances, &open.image);
+        let either: Vec<pipeline::Instance> = (shown.instances.into_iter())
+            .chain(saved.instances)
+            .collect();
+        // In error scopes of its own: a GPU error is no histogram, never a panic, whether
+        // a batch's guard is round it or not.
+        let (counted, gpu_error) = self.caught(|engine| {
+            #[cfg(test)]
+            if engine.fail_histogram {
+                return Err(ComputeError::Binding {
+                    operation: raw_histogram::KERNEL.name,
+                    pass: "main",
+                    bytes: 0,
+                    limit: 0,
+                });
+            }
+            let Some(open) = &engine.open else {
+                return Ok(None);
+            };
+            let Some(input) = &open.input else {
+                return Ok(None);
+            };
+            let counted = raw_histogram::for_instances(&engine.gpu, &either, &open.image, input);
+            pollster::block_on(counted)
+        });
+        let Some(open) = &mut self.open else {
+            return;
+        };
+        let error = match (counted, gpu_error) {
+            (Ok(Some(histogram)), None) => {
+                open.image.raw_histogram = Some(histogram);
+                let failed = std::mem::take(&mut open.histogram_failed);
+                open.stale_frame |= failed && shown_reads;
+                // A thumbnail that waited for it is planned at the next tick.
+                let path = open.sidecar.with_extension("");
+                self.rendered_thumbnails.due(&path);
+                return;
+            }
+            (Ok(None), None) => return,
+            (_, Some(error)) => SessionError::Gpu(error),
+            (Err(error), None) => error.into(),
+        };
+        if open.histogram_failed {
+            tracing::debug!(target: "pipe", "the raw's histogram, again: {error}");
+        } else {
+            tracing::error!(target: "pipe", "the raw's histogram: {error}");
+            open.histogram_failed = true;
+            events.push(Event::Failed(error));
+        }
+    }
+
+    /// The values and the frame again where the frame shown renders automatic mode as
+    /// manual mode, the raw's histogram counted since a failure (decision 87); nothing
+    /// otherwise.
+    fn stale_frame(&mut self) -> Vec<Event> {
+        let mut events = Vec::new();
+        if !self.stale() {
+            return events;
+        }
+        #[cfg(test)]
+        if self.poison_refresh {
+            Self::poison(Some(&Poison::Always), &self.gpu, false);
+        }
+        if let Some(open) = &mut self.open {
+            events.push(Event::Values(open.values(
+                self.operations,
+                &self.tools,
+                self.applied,
+            )));
+        }
+        match self.render(Instant::now(), &mut events) {
+            Ok(Some(frame)) => events.push(Event::Frame(frame)),
+            Ok(None) => {}
+            Err(error) => events.push(Event::Failed(error)),
+        }
+        events
+    }
+
+    /// Whether the frame shown renders automatic mode as manual mode, the raw's histogram
+    /// counted since after a failure (decision 87): the turn renders it again.
+    fn stale(&self) -> bool {
+        self.open.as_ref().is_some_and(|open| open.stale_frame)
+    }
+
+    /// After a refresh's `events`, as published: a stale frame is fresh once the refresh's
+    /// frame went out, and stays stale for the next turn where none did, as after a GPU
+    /// error the guard dropped it, at most [`STALE_FRAME_TRIES`] turns, then left as it is,
+    /// said once (decision 87).
+    fn settle_stale_frame(&mut self, events: &[Event]) {
+        let Some(open) = &mut self.open else {
+            return;
+        };
+        if !open.stale_frame {
+            return;
+        }
+        if events.iter().any(|event| matches!(event, Event::Frame(_))) {
+            open.stale_frame = false;
+            open.stale_tries = 0;
+            return;
+        }
+        open.stale_tries += 1;
+        if open.stale_tries >= STALE_FRAME_TRIES {
+            tracing::error!(target: "pipe", "the frame stays at manual mode's exposure: rendering it with the raw's histogram failed {STALE_FRAME_TRIES} times");
+            open.stale_frame = false;
+            open.stale_tries = 0;
+        }
+    }
+
     /// [`Self::render`]'s one try, measuring at the tool picker's operation with
     /// `probe`; `reduced` says whether a reduction there went into its submission.
     fn render_frame(
@@ -4322,9 +4574,12 @@ impl Open {
         let mut edited = false;
         // On a photo open for viewing only, no control can change anything.
         let editable = self.view_only.is_none();
-        let tools_state = tools
+        // The computed values shown, by tool and row, computed once the edit is bound.
+        let mut shown_computed = Vec::new();
+        let mut tools_state: Vec<ToolState> = tools
             .iter()
-            .map(|tool| {
+            .enumerate()
+            .map(|(at, tool)| {
                 let definition = tool.definition();
                 let set = self.edit.tools.get(definition.id);
                 // Every control's value: the edit's over its default for the photo.
@@ -4420,6 +4675,12 @@ impl Open {
                 edited |= tool_edited;
                 let presets = self.presets(*tool, &controls);
                 let views = self.views(*tool, &controls, &values);
+                let computed = definition.computed(&values);
+                for (row, (value, shown)) in computed.iter().enumerate() {
+                    if *shown {
+                        shown_computed.push((at, row, **value));
+                    }
+                }
                 ToolState {
                     tool: definition.id,
                     enabled,
@@ -4428,6 +4689,13 @@ impl Open {
                     controls,
                     presets,
                     views,
+                    computed: computed
+                        .iter()
+                        .map(|(value, _)| ComputedState {
+                            id: value.id,
+                            value: None,
+                        })
+                        .collect(),
                 }
             })
             .collect();
@@ -4460,6 +4728,10 @@ impl Open {
         let instances = edit::instances(&self.shown(), operations, tools, &self.image).instances;
         let extent = pipeline::extent(&instances, &self.image)
             .unwrap_or([self.image.width, self.image.height]);
+        for (at, row, shown) in shown_computed {
+            let value = computed(&instances, &self.image, self.sensor, &shown);
+            tools_state[at].computed[row].value = value;
+        }
         Values {
             tools: tools_state,
             settings,
@@ -6220,8 +6492,180 @@ mod tests {
         assert!(control(values, "exposure", "black_level").available);
         // Nor does its camera hold exposure back in a highlight-preserving mode.
         assert!(!control(values, "exposure", "compensate_hilite_pres").available);
-        // A control not ported can act on no photo.
-        assert!(!control(values, "exposure", "deflicker_percentile").available);
+        // Automatic mode's controls act on a raw.
+        assert!(control(values, "exposure", "mode").available);
+        assert!(control(values, "exposure", "deflicker_percentile").available);
+        remove(&path);
+    }
+
+    /// A frame left at manual mode by a failed count, the histogram counted later outside
+    /// a batch by a thumbnail's retry, is rendered again in that turn, a timer's with no
+    /// command, with values that report the computed exposure (decision 87); and a GPU
+    /// error rendering it is reported, the photo still open.
+    #[test]
+    fn a_stale_frame_is_rendered_again_in_a_turn_with_no_command() {
+        use apertrust_tools::exposure::Exposure;
+        let path = scratch("stale-frame");
+        let mut driven = Driven::new(&[&Exposure]);
+        driven.open(&path);
+        driven.run([Command::SetControl {
+            tool: "exposure".to_owned(),
+            control: "mode".to_owned(),
+            value: ControlValue::Choice(1),
+            done: true,
+        }]);
+        // Nothing stale, nothing sent.
+        let events = driven.engine.turn(Vec::new(), None);
+        assert!(
+            !events
+                .iter()
+                .any(|e| matches!(e, Event::Values(_) | Event::Frame(_)))
+        );
+        driven.engine.open.as_mut().unwrap().stale_frame = true;
+        let events = driven.engine.turn(Vec::new(), None);
+        assert!(failures(&events).is_empty(), "{events:?}");
+        let computed = values(&events).tools[0].computed[0].value;
+        assert!(computed.is_some(), "{events:?}");
+        assert!(events.iter().any(|e| matches!(e, Event::Frame(_))));
+        // Once.
+        let events = driven.engine.turn(Vec::new(), None);
+        assert!(!events.iter().any(|e| matches!(e, Event::Frame(_))));
+        // A GPU error rendering it: reported, the photo open, the frame still stale; the
+        // next turn, healthy, publishes it.
+        driven.engine.poison = Some(Poison::Always);
+        driven.engine.open.as_mut().unwrap().stale_frame = true;
+        let events = driven.engine.turn(Vec::new(), None);
+        assert!(
+            matches!(failures(&events)[..], [SessionError::Gpu(_)]),
+            "{events:?}"
+        );
+        assert!(driven.engine.open.is_some());
+        assert!(driven.engine.stale());
+        driven.engine.poison = None;
+        let events = driven.engine.turn(Vec::new(), None);
+        assert!(failures(&events).is_empty(), "{events:?}");
+        assert!(events.iter().any(|e| matches!(e, Event::Frame(_))));
+        assert!(!driven.engine.stale());
+        // A frame the turn published before its refresh, as a batch's, or a newer
+        // sidecar's after it recovered the histogram, proves nothing: the refresh failing,
+        // the frame stays stale, and the thread wakes to try again.
+        driven.engine.open.as_mut().unwrap().stale_frame = true;
+        assert_eq!(driven.engine.stale_wait(), Some(STALE_FRAME_RETRY));
+        driven.engine.poison_refresh = true;
+        let batch = vec![(
+            Instant::now(),
+            Command::SetControl {
+                tool: "exposure".to_owned(),
+                control: "deflicker_target_level".to_owned(),
+                value: ControlValue::Number(-3.0),
+                done: true,
+            },
+        )];
+        let events = driven.engine.turn(batch, None);
+        let frames = events
+            .iter()
+            .filter(|e| matches!(e, Event::Frame(_)))
+            .count();
+        assert_eq!(frames, 1, "the batch's: {events:?}");
+        assert!(
+            matches!(failures(&events)[..], [SessionError::Gpu(_)]),
+            "{events:?}"
+        );
+        assert!(driven.engine.stale());
+        driven.engine.poison_refresh = false;
+        let events = driven.engine.turn(Vec::new(), None);
+        assert!(events.iter().any(|e| matches!(e, Event::Frame(_))));
+        assert!(!driven.engine.stale());
+        assert_eq!(driven.engine.stale_wait(), None);
+        // Failing every time: tried STALE_FRAME_TRIES turns, then left.
+        driven.engine.poison = Some(Poison::Always);
+        driven.engine.open.as_mut().unwrap().stale_frame = true;
+        for turn in 1..=STALE_FRAME_TRIES {
+            let events = driven.engine.turn(Vec::new(), None);
+            assert!(
+                matches!(failures(&events)[..], [SessionError::Gpu(_)]),
+                "{events:?}"
+            );
+            assert_eq!(
+                driven.engine.stale(),
+                turn < STALE_FRAME_TRIES,
+                "turn {turn}"
+            );
+        }
+        let events = driven.engine.turn(Vec::new(), None);
+        assert!(failures(&events).is_empty(), "{events:?}");
+        driven.engine.poison = None;
+        driven.writes();
+        remove(&path);
+    }
+
+    /// The rendered thumbnail renders the edit as its file holds it: with Exposure hidden
+    /// by the History tab's eye, so the frame shows manual mode, automatic mode set still
+    /// counts the raw's histogram, and the thumbnail's plan applies it (decision 87).
+    #[test]
+    fn automatic_mode_on_a_hidden_tool_still_counts_for_the_thumbnail() {
+        use apertrust_tools::exposure::Exposure;
+        let path = scratch("hidden-automatic");
+        let mut driven = Driven::new(&[&Exposure]);
+        driven.open(&path);
+        let events = driven.run([Command::Hide {
+            tool: "exposure".to_owned(),
+            hidden: true,
+        }]);
+        assert!(failures(&events).is_empty(), "{events:?}");
+        let events = driven.run([Command::SetControl {
+            tool: "exposure".to_owned(),
+            control: "mode".to_owned(),
+            value: ControlValue::Choice(1),
+            done: true,
+        }]);
+        assert!(failures(&events).is_empty(), "{events:?}");
+        let open = driven.engine.open.as_ref().unwrap();
+        assert!(
+            open.image.raw_histogram.is_some(),
+            "counted for the saved edit"
+        );
+        assert!(driven.engine.thumbnail_plan(open).is_ok());
+        driven.writes();
+        remove(&path);
+    }
+
+    /// Exposure's automatic mode reports the exposure it computes from the raw's histogram
+    /// with the values that show it, before the frame that applies it (decision 87): none
+    /// in manual mode, where nothing is counted; a target level 2 EV higher puts it 2 EV
+    /// higher.
+    #[test]
+    fn automatic_mode_reports_the_exposure_it_computes_with_the_values() {
+        use apertrust_tools::exposure::Exposure;
+        let path = scratch("computed");
+        let mut driven = Driven::new(&[&Exposure]);
+        let computed = |events: &[Event]| {
+            let values = values(events);
+            let [computed] = values.tools[0].computed.as_slice() else {
+                panic!("one computed value: {values:?}");
+            };
+            assert_eq!(computed.id, "computed_exposure");
+            computed.value
+        };
+        let opened = driven.open(&path);
+        assert_eq!(computed(&opened), None);
+        let set = |control: &str, value| Command::SetControl {
+            tool: "exposure".to_owned(),
+            control: control.to_owned(),
+            value,
+            done: true,
+        };
+        let events = driven.run([set("mode", ControlValue::Choice(1))]);
+        assert!(failures(&events).is_empty(), "{events:?}");
+        let first = computed(&events).expect("computed in automatic mode");
+        assert!(first.is_finite());
+        let events = driven.run([set("deflicker_target_level", ControlValue::Number(-2.0))]);
+        let second = computed(&events).expect("computed in automatic mode");
+        assert!((second - first - 2.0).abs() < 1e-5, "{first} then {second}");
+        // Back in manual mode the computed value is hidden, none.
+        let events = driven.run([set("mode", ControlValue::Choice(0))]);
+        assert_eq!(computed(&events), None);
+        driven.writes();
         remove(&path);
     }
 
@@ -11509,6 +11953,92 @@ mod tests {
             assert_eq!(driven.engine.jobs.control.pending(), 0);
             assert_eq!(driven.engine.thumbnail_wait(), None);
             drop((driven, cache));
+            remove(&path);
+        }
+
+        /// Automatic mode set in the batch that closes the photo, which reports no values,
+        /// is counted for its thumbnail before the photo leaves, and rendered (decision 87).
+        #[test]
+        fn leaving_in_automatic_mode_counts_the_histogram_and_renders_the_thumbnail() {
+            use apertrust_tools::exposure::Exposure;
+            let (mut driven, cache, path) = cached_with("rendered-automatic", &[&Exposure]);
+            driven.run([
+                Command::SetControl {
+                    tool: "exposure".to_owned(),
+                    control: "mode".to_owned(),
+                    value: ControlValue::Choice(1),
+                    done: true,
+                },
+                Command::Close,
+            ]);
+            driven.engine.writer.flush(None);
+            assert!(driven.engine.open.is_none());
+            let hash = library_hash(&sidecar::path_for(&path));
+            written(&mut driven, &cache, &path, &hash);
+            finish(&mut driven);
+            drop(driven);
+            remove(&path);
+        }
+
+        /// A frame published in a turn before its thumbnail's tick counts the raw's
+        /// histogram, after a failed count, is no proof of it: the turn publishes the frame
+        /// again with the computed exposure (decision 87).
+        #[test]
+        fn a_frame_before_the_tick_counts_is_rendered_again_in_the_same_turn() {
+            use apertrust_tools::exposure::Exposure;
+            let (mut driven, _cache, path) = cached_with("rendered-stale", &[&Exposure]);
+            driven.engine.fail_histogram = true;
+            let events = driven.run([Command::SetControl {
+                tool: "exposure".to_owned(),
+                control: "mode".to_owned(),
+                value: ControlValue::Choice(1),
+                done: true,
+            }]);
+            assert!(matches!(failures(&events)[..], [SessionError::Compute(_)]));
+            assert!(
+                driven
+                    .engine
+                    .open
+                    .as_ref()
+                    .unwrap()
+                    .image
+                    .raw_histogram
+                    .is_none()
+            );
+            driven.engine.writer.flush(None);
+            settled(&mut driven, &path);
+            driven.engine.fail_histogram = false;
+            // A resize renders a frame and reports no values, so nothing counts before the
+            // tick, which counts for the thumbnail.
+            let resize = (
+                Instant::now(),
+                Command::Resize {
+                    width: 30,
+                    height: 20,
+                },
+            );
+            let events = driven.engine.turn(vec![resize], None);
+            assert!(failures(&events).is_empty(), "{events:?}");
+            assert!(
+                driven
+                    .engine
+                    .open
+                    .as_ref()
+                    .unwrap()
+                    .image
+                    .raw_histogram
+                    .is_some()
+            );
+            let frames = events
+                .iter()
+                .filter(|e| matches!(e, Event::Frame(_)))
+                .count();
+            assert_eq!(frames, 2, "{events:?}");
+            let computed = values(&events).tools[0].computed[0].value;
+            assert!(computed.is_some(), "{events:?}");
+            assert!(!driven.engine.stale());
+            finish(&mut driven);
+            drop(driven);
             remove(&path);
         }
 

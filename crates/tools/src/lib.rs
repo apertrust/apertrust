@@ -74,9 +74,9 @@ use std::collections::BTreeMap;
 use apertrust_plugin::{ImageContext, Operation, ParamValues, Value};
 
 pub use definition::{
-    Button, ButtonIcon, ChoiceStyle, Control, ControlError, ControlKind, Coordinate, Definition,
-    DefinitionError, MAX_POINTS, MIN_GAP, Picker, PickerKind, PresetRow, Quad, Range, Row,
-    SettingRow, Slider, Space, Tab, Track, Unit, View, Widget, slider_step,
+    Button, ButtonIcon, ChoiceStyle, Computed, Control, ControlError, ControlKind, Coordinate,
+    Definition, DefinitionError, MAX_POINTS, MIN_GAP, Picker, PickerKind, PresetRow, Quad, Range,
+    Row, SettingRow, Slider, Space, Tab, Track, Unit, View, Widget, slider_step,
 };
 use pick::{PickKeys, Picked, Reading};
 pub use values::{ControlValue, Controls, Mark, ToolValues};

@@ -20,8 +20,8 @@
 
 use apertrust_ui::components::{
     ActionRow, Button, Checkbox, Choice, ChoiceAction, ChoiceBox, ChoiceStyle, CollapsibleGroup,
-    IconButton, Mark, Marker, Quad, Segmented, SliderAction, SliderRow, Swatch, SwatchFill,
-    Swatches, ToggleRow,
+    IconButton, Mark, Marker, Quad, ReadoutRow, Segmented, SliderAction, SliderRow, Swatch,
+    SwatchFill, Swatches, ToggleRow,
 };
 use apertrust_ui::{Builtin, Icon, Locale, Theme, Translator};
 use egui::accesskit::Role;
@@ -679,6 +679,52 @@ fn a_toggle_row_reports_its_full_name_and_ignores_input_while_disabled() {
     toggle.click();
     harness.run();
     assert_eq!(harness.state().2, [false]);
+}
+
+#[test]
+fn a_readout_row_says_its_label_and_value_in_the_language_s_format() {
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(320.0, 60.0))
+        .with_context_setup(|ctx| apertrust_ui::install(ctx, Theme::default()))
+        .build_ui_state(
+            |ui, value: &mut Option<f64>| {
+                ReadoutRow::new("Computed EC", *value)
+                    .signed(true)
+                    .unit("unit-ev-value")
+                    .show(ui);
+            },
+            Some(-1.234),
+        );
+    harness.run();
+    harness.get_by_role_and_label(Role::Label, "Computed EC −1.23 EV");
+    *harness.state_mut() = Some(0.5);
+    harness.run();
+    harness.get_by_role_and_label(Role::Label, "Computed EC +0.50 EV");
+    // With no value, the label alone.
+    *harness.state_mut() = None;
+    harness.run();
+    harness.get_by_role_and_label(Role::Label, "Computed EC");
+}
+
+/// A label too long for the row is cut with … before the value, which is never cut;
+/// screen readers hear the whole label.
+#[test]
+fn a_readout_row_cuts_a_long_label_before_its_value() {
+    let label = "Korekcja ekspozycji wyliczona dla tego zdjęcia z jego histogramu surowego";
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(240.0, 40.0))
+        .with_context_setup(|ctx| apertrust_ui::install(ctx, Theme::default()))
+        .build_ui(|ui| {
+            ReadoutRow::new(label, Some(-12.34))
+                .signed(true)
+                .unit("unit-ev-value")
+                .show(ui);
+        });
+    harness.run();
+    let heard = format!("{label} −12.34 EV");
+    let node = harness.get_by_role_and_label(Role::Label, &heard);
+    assert!(node.rect().width() <= 240.0);
+    harness.snapshot("readout-row-long-label");
 }
 
 #[test]

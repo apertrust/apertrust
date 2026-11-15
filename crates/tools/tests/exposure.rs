@@ -799,11 +799,11 @@ fn version_2_renders_with_highlight_preservation_mode_off() {
     assert_eq!(exposure(&saved), 1.5 - bias + 0.5);
 }
 
-// E32: the controls whose parameters are not ported.
+// E32: automatic mode, its percentile and its target level, every value taken.
 
-/// What a script or a pasted edit may give the controls not ported, each off its
-/// default, as the edit's file writes it, and automatic.
-const NOT_PORTED: [(&str, f32, &str); 5] = [
+/// What a script or a pasted edit may give automatic mode's controls, the ends of their
+/// ranges, as the edit's file writes them, and automatic.
+const AUTOMATIC: [(&str, f32, &str); 5] = [
     ("deflicker_percentile", 0.0, "0"),
     ("deflicker_percentile", 100.0, "100"),
     ("deflicker_target_level", -18.0, "-18"),
@@ -811,25 +811,22 @@ const NOT_PORTED: [(&str, f32, &str); 5] = [
     ("mode", 1.0, "automatic"),
 ];
 
-/// Each refused as a command, the edit as it was, and left out of a pasted edit with a
-/// warning, the control beside it kept, so no edit holds a value the render ignores.
+/// Each taken as a command and from a pasted edit, beside Exposure +1, with no warning:
+/// nothing of Exposure is refused as not ported any more.
 #[test]
-fn e32_what_is_not_ported_takes_only_its_default() {
+fn e32_automatic_mode_and_its_settings_are_taken_over_their_ranges() {
     let exposed = edit_of(&[("exposure", 1.0)]);
     let xml = sidecar::to_xml(&exposed, OPERATIONS, TOOLS, "0.0.0");
-    for (control, value, text) in NOT_PORTED {
+    for (control, value, text) in AUTOMATIC {
         let mut edit = exposed.clone();
-        assert!(
-            edit.set_control(
-                &Exposure,
-                control,
-                value_of(control, value),
-                &common::photo()
-            )
-            .is_err(),
-            "E32: {control} {value}"
-        );
-        assert_eq!(edit, exposed, "E32: {control} {value}");
+        edit.set_control(
+            &Exposure,
+            control,
+            value_of(control, value),
+            &common::photo(),
+        )
+        .unwrap_or_else(|error| panic!("E32: {control} {value}: {error}"));
+        assert_ne!(edit, exposed, "E32: {control} {value}");
 
         let pasted = xml.replace(
             "control:exposure=\"1\"",
@@ -838,9 +835,159 @@ fn e32_what_is_not_ported_takes_only_its_default() {
         assert_ne!(pasted, xml);
         let loaded =
             sidecar::from_xml(&pasted, OPERATIONS, TOOLS, apertrust_tools::RETIRED).unwrap();
-        assert_eq!(loaded.edit, exposed, "E32: {control}={text} pasted");
-        assert_eq!(loaded.warnings.len(), 1, "{:?}", loaded.warnings);
+        // A command marks what it sets; a pasted edit holds its values alone.
+        let held = loaded.edit.tool("exposure").expect("E32: Exposure pasted");
+        assert_eq!(
+            held.get(control),
+            Some(&value_of(control, value)),
+            "E32: {control}={text} pasted"
+        );
+        assert_eq!(held.get("exposure"), Some(&value_of("exposure", 1.0)));
+        assert!(loaded.warnings.is_empty(), "{:?}", loaded.warnings);
     }
+}
+
+// E34 to E37: automatic mode.
+
+/// A scene on the small raw's sensor, black 0, white 4000: a gradient of values from 100
+/// to 900, each a multiple of 4, so the scene at 2^k for k from −2 to +1 is the same
+/// scene exposed k EV apart, exactly, none clipping.
+fn bracketed(k: i32) -> Vec<u16> {
+    let (width, height) = (96, 72);
+    (0..width * height)
+        .map(|i| {
+            let (x, y) = (i % width, i / width);
+            let c = [0, 1, 1, 2][((y % 2) * 2 + x % 2) as usize];
+            let level = 100 + 4 * ((150 * x / width + 50 * y / height + 10 * c) as u32);
+            (f64::from(level) * 2f64.powi(k)) as u16
+        })
+        .collect()
+}
+
+/// Automatic mode at `percentile` and `target`, and these other controls.
+fn automatic(percentile: f32, target: f32, more: &[(&str, f32)]) -> Edit {
+    let mut set = vec![
+        ("mode", 1.0),
+        ("deflicker_percentile", percentile),
+        ("deflicker_target_level", target),
+    ];
+    set.extend_from_slice(more);
+    edit_of(&set)
+}
+
+/// The exposure automatic mode computes on `bench`'s raw, from the histogram its render
+/// counted, as the exposure operation's `computed` gives it on rawprepare's levels.
+fn computed(bench: &Bench, percentile: f32, target: f32) -> f32 {
+    let histogram = bench.image.raw_histogram.as_ref().expect("counted");
+    let base = Base::new(OPERATIONS, &bench.image);
+    let blacks: f32 = apertrust_operations::rawprepare::BLACK
+        .iter()
+        .map(|name| base.params("rawprepare").unwrap().int(name) as f32)
+        .sum();
+    let white = base.params("rawprepare").unwrap().int("raw_white_point");
+    histogram.exposure(
+        percentile,
+        target,
+        (blacks / 4.0).round() as u32,
+        white as u32,
+    )
+}
+
+/// E34: one scene exposed 2 EV under to 1 EV over, in automatic mode, renders the same
+/// at Exposure's output, black 0, so its exposures differ by exactly the brackets'.
+#[test]
+fn e34_a_series_of_one_scene_converges_in_automatic_mode() {
+    let (_, image) = small_raw(-0.67);
+    // Black level at the photo's own black's opposite: the black 0, so the scale is the
+    // exposure's alone.
+    let edit = automatic(50.0, -4.0, &[("black_level", 1.0 / 4096.0)]);
+    let mut renders = Vec::new();
+    for k in [-2, -1, 0, 1] {
+        let mut bench = Bench::mosaic(&bracketed(k), image.clone(), Pipe::Export);
+        let rendered = bench.edit(&edit, Measure::Tool);
+        renders.push((computed(&bench, 50.0, -4.0), rendered));
+    }
+    let (base, first) = &renders[2];
+    for ((exposure, rendered), k) in renders.iter().zip([-2.0, -1.0, 0.0, 1.0]) {
+        // k EV apart, to the f32 the operation rounds each to.
+        let apart = f64::from(*exposure) + k - f64::from(*base);
+        assert!(
+            apart.abs() < 1e-6,
+            "E34: the computed exposure at {k} EV: {apart:e}"
+        );
+        // Exposure applies the same factor; demosaic, not scale-invariant to the last
+        // bit, leaves a spread.
+        let (spread, median) = factor(&first.pixels, &rendered.pixels);
+        println!("E34 at {k:+} EV: {exposure} EV, spread {spread:.2e}, median {median:.7}");
+        assert!(
+            spread < 1e-3 && (median - 1.0).abs() < 1e-5,
+            "E34 at {k} EV: spread {spread:.2e}, median {median}"
+        );
+    }
+}
+
+/// E35: automatic mode renders as manual mode at the exposure it computes, with the
+/// camera's bias and the held-back exposure not added, darktable replacing them, at
+/// percentiles 10, 50 and 90 and target levels −4 and −2.
+#[test]
+fn e35_automatic_mode_renders_as_manual_mode_at_its_exposure() {
+    let viewport = Pipe::Viewport {
+        width: 40,
+        height: 30,
+    };
+    for pipe in [Pipe::Export, viewport] {
+        let (mosaic, image) = small_raw(-0.67);
+        let image = holding_back(image);
+        let mut bench = Bench::mosaic(&mosaic, image, pipe);
+        for percentile in [10.0, 50.0, 90.0] {
+            for target in [-4.0, -2.0] {
+                let auto = bench.edit(&automatic(percentile, target, &[]), Measure::Tool);
+                let exposure = computed(&bench, percentile, target);
+                let manual = edit_of(&[
+                    ("exposure", exposure),
+                    ("camera_bias", 0.0),
+                    ("compensate_hilite_pres", 0.0),
+                ]);
+                let manual = bench.edit(&manual, Measure::Tool);
+                assert!(
+                    auto.pixels == manual.pixels,
+                    "E35 in {pipe:?} at {percentile} %, {target} EV: {exposure} EV"
+                );
+            }
+        }
+    }
+}
+
+/// E36: on an image that is not a raw, which has no histogram, automatic mode renders as
+/// manual mode, byte for byte, as darktable's `commit_params` leaves it.
+#[test]
+fn e36_automatic_mode_on_an_image_that_is_not_a_raw_renders_as_manual_mode() {
+    let (picture, mut image) = ramp(0.0);
+    image.camera = None;
+    let mut bench = Bench::picture(&picture, image, Pipe::Export);
+    let manual = bench.edit(&edit_of(&[("exposure", 1.0)]), Measure::Frame);
+    let auto = bench.edit(&automatic(90.0, -2.0, &[("exposure", 1.0)]), Measure::Frame);
+    assert!(exact(&manual, &auto), "E36");
+}
+
+/// E37: manual mode counts no histogram, so a photo in it costs nothing more: the raw's
+/// histogram is counted only once automatic mode is set, then kept.
+#[test]
+fn e37_only_automatic_mode_counts_the_histogram_once() {
+    let (mosaic, image) = small_raw(0.0);
+    let mut bench = Bench::mosaic(&mosaic, image, Pipe::Export);
+    bench.edit(&edit_of(&[("exposure", 1.0)]), Measure::Tool);
+    assert!(bench.image.raw_histogram.is_none(), "E37: manual mode");
+    bench.edit(&automatic(50.0, -4.0, &[]), Measure::Tool);
+    let counted = bench
+        .image
+        .raw_histogram
+        .clone()
+        .expect("E37: automatic mode");
+    // Over the declared image, 84×62.
+    assert_eq!(counted.pixels(), 84 * 62);
+    bench.edit(&automatic(90.0, -2.0, &[]), Measure::Tool);
+    assert_eq!(bench.image.raw_histogram, Some(counted), "E37: kept");
 }
 
 // The corpus, locally.

@@ -28,7 +28,7 @@ Light and colour together, since a scene-referred edit interleaves them. The tab
 | --- | --- | --- | --- | --- | --- |
 | White balance | white balance | `temperature`, raw 3 | Background only | Built; the camera's presets with Finetune designed (decision 27), to build | [page](white-balance.md), [port](../ports/temperature.md) |
 | Colour calibration | color calibration | `channelmixerrgb`, working 28.5 | Background only, until layers | Built, every tab, the CAT tab with follow writes; runs on every colour raw (decision 27) | [page](colour-calibration.md), [port](../ports/channelmixerrgb.md) |
-| Exposure | exposure | `exposure`, camera RGB 21 | Yes | Built; its unported controls at their defaults, Contrast and Pivot left for Colour balance RGB | [page](exposure.md), [port](../ports/exposure.md) |
+| Exposure | exposure | `exposure`, camera RGB 21 | Yes | Built, every control ported, automatic mode with its computed EC readout (decision 87); Contrast and Pivot left for Colour balance RGB | [page](exposure.md), [port](../ports/exposure.md) |
 | AgX | AgX | `agx`, working 45.5 | Background; on layers when they come, as a replacement | Built, the default tone mapper; its pickers, actions and Show curve to come | [page](agx.md), [port](../ports/agx.md) |
 | Sigmoid | sigmoid | `sigmoid`, darktable's 45.3 | Background; on layers when they come, as a replacement | Operation ported; tool planned (Phase 3), a tone mapper | [port](../ports/sigmoid.md) |
 | Filmic RGB | filmic rgb | `filmicrgb`, darktable's 46.0 | Background; on layers when they come, as a replacement | Operation ported, v3 to v7; tool planned (Phase 3), a tone mapper | [port](../ports/filmicrgb.md) |

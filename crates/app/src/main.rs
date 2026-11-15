@@ -6571,6 +6571,7 @@ mod tests {
                     controls,
                     presets: Vec::new(),
                     views,
+                    computed: Vec::new(),
                 }],
                 settings: Vec::new(),
                 edited,
@@ -6731,6 +6732,7 @@ mod tests {
                         available: true,
                     })
                     .collect(),
+                computed: Vec::new(),
             }],
             settings: Vec::new(),
             edited: false,
@@ -8614,6 +8616,7 @@ mod tests {
                 .collect(),
             presets: Vec::new(),
             views: Vec::new(),
+            computed: Vec::new(),
         };
         // Its Shape tab, where the Midtones group is.
         let mut panels = tools::Panels::default();
@@ -8719,6 +8722,7 @@ mod tests {
                 .collect(),
             presets: Vec::new(),
             views: Vec::new(),
+            computed: Vec::new(),
         };
         Harness::builder()
             .with_size(egui::vec2(360.0, 700.0))

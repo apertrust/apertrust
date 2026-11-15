@@ -428,6 +428,8 @@ tool-exposure-control-deflicker_percentile-promise = W którym miejscu histogram
 tool-exposure-control-deflicker_target_level-label = Docelowy poziom
 tool-exposure-control-deflicker_target_level-full = Docelowy poziom
 tool-exposure-control-deflicker_target_level-promise = Gdzie ustawić poziom ekspozycji dla przetworzonych zdjęć, w stopniach EV poniżej prześwietlenia.
+tool-exposure-computed-computed_exposure-label = Wyliczone EC
+tool-exposure-computed-computed_exposure-promise = Jaka korekcja ekspozycji została rzeczywiście zastosowana.
 tool-exposure-control-black_level-label = Korekta poziomu czerni
 tool-exposure-control-black_level-full = Korekta poziomu czerni
 tool-exposure-control-black_level-promise = Ustala, który poziom staje się czernią. Zachowuje biel. 0 = bez zmian.

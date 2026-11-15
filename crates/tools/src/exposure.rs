@@ -19,15 +19,17 @@
 //! edits with it, in the first pass (decision 2): darktable's page, its controls in
 //! `gui_init`'s order under its labels, with no tabs.
 //!
-//! - **Mode:** manual, or automatic, darktable's deflicker, which needs the raw histogram
-//!   and is not ported, so it is listed, drawn disabled and refused.
+//! - **Mode:** manual, or automatic, darktable's deflicker: the exposure that puts a
+//!   percentile of the raw's histogram at a level below the white point, worked out from
+//!   each photo, so a series comes out matched. Unavailable on an image that is not a raw,
+//!   where an edit holding automatic renders as manual.
 //! - **In manual mode:** Compensate camera exposure, whether the camera's exposure
 //!   compensation is undone; Highlight preservation mode, whether the exposure a
 //!   camera's highlight-preserving mode held back is given back, on by default; and
 //!   Exposure, darktable's slider, `exposure.exposure` itself, −18 to +18 EV, its default
 //!   the photo's: +0.7 EV on a colour raw, 0 otherwise (decision 30).
-//! - **In automatic mode:** Percentile and Target level, not ported. darktable's computed
-//!   EC readout waits for a row that draws a readout.
+//! - **In automatic mode:** Percentile and Target level, and darktable's computed EC, the
+//!   exposure the operation applies, a computed value (`Row::Computed`).
 //! - **Black level correction,** darktable's offset over the photo's own black.
 //! - **Area exposure mapping,** a collapsible group of darktable's settings for its
 //!   picker, which no edit stores, kept in settings ([`crate::settings`]), and the area's
@@ -36,12 +38,10 @@
 //!   exposure that maps the area to the target lightness, or measures the target the area
 //!   gives.
 //!
-//! It drives `exposure`, which every photo runs, and owns every parameter of it. The
-//! controls whose parameters are not ported are marked so (`Control::unported`): drawn
-//! disabled, they take only their defaults, the only values the operation renders, as
-//! Mode takes only manual. Contrast and its pivot, which it once bound through colour
-//! balance rgb, are the Colour balance RGB tool's `contrast` and `grey_fulcrum`
-//! (decision 2), and Brightness that tool's `midtones_y`.
+//! It drives `exposure`, which every photo runs, and owns every parameter of it. Contrast
+//! and its pivot, which it once bound through colour balance rgb, are the Colour balance
+//! RGB tool's `contrast` and `grey_fulcrum` (decision 2), and Brightness that tool's
+//! `midtones_y`.
 
 use apertrust_base::settings::Choice;
 use apertrust_color::{
@@ -52,8 +52,8 @@ use apertrust_plugin::{ImageContext, Value};
 
 use crate::about::{Fact, Facts, Purpose};
 use crate::definition::{
-    ChoiceStyle, Control, ControlKind, Definition, Picker, PickerKind, Quad, Row, SettingRow,
-    Slider, Space, Tab, Unit,
+    ChoiceStyle, Computed, Control, ControlKind, Definition, Picker, PickerKind, Quad, Row,
+    SettingRow, Slider, Space, Tab, Unit,
 };
 use crate::pick::{Patch, PickKeys, Picked, Reading, Shown};
 use crate::transfer::Transfer;
@@ -66,6 +66,11 @@ const EXPOSURE: &str = "exposure";
 
 /// darktable's modes, `dt_iop_exposure_mode_t`, as the operation's choices.
 const MODES: [&str; 2] = ["manual", "automatic"];
+const AUTOMATIC: u32 = 1;
+
+/// The computed value automatic mode shows, the exposure the operation applies: what
+/// the exposure operation's `computed` gives by this id (decision 87).
+const COMPUTED_EXPOSURE: &str = "computed_exposure";
 
 /// The controls, in the page's order. Exposure, Black level correction and Compensate
 /// camera exposure keep their first ids; the others are darktable's parameter names.
@@ -75,7 +80,7 @@ static CONTROLS: [Control; 7] = [
         kind: ControlKind::Choice {
             options: &MODES,
             default: 0,
-            unported: &["automatic"],
+            unported: &[],
         },
         unit: None,
         unported: false,
@@ -120,7 +125,7 @@ static CONTROLS: [Control; 7] = [
             default: 50.0,
         },
         unit: Some(Unit::Percent),
-        unported: true,
+        unported: false,
     },
     Control {
         id: "deflicker_target_level",
@@ -131,7 +136,7 @@ static CONTROLS: [Control; 7] = [
             default: -4.0,
         },
         unit: Some(Unit::Ev),
-        unported: true,
+        unported: false,
     },
     // An offset over the photo's own black (decision 22), over darktable's range, ±1, the
     // track over its soft range, ±0.1 (decision 30). [`BlackLevel`] keeps the black
@@ -243,6 +248,13 @@ static DEFINITION: Definition = Definition {
                 rows: &[
                     Row::Slider(Slider::new("deflicker_percentile")),
                     Row::Slider(Slider::new("deflicker_target_level")),
+                    // darktable's "computed EC", `%.2f EV`.
+                    Row::Computed(Computed {
+                        id: COMPUTED_EXPOSURE,
+                        operation: EXPOSURE,
+                        unit: Some(Unit::Ev),
+                        decimals: 2,
+                    }),
                 ],
             },
             Row::Slider(Slider::new("black_level").decimals(4).soft(-0.1, 0.1)),
@@ -327,9 +339,9 @@ impl Tool for Exposure {
     /// Compensate camera exposure does nothing on a photo that records no bias,
     /// Highlight preservation mode nothing on one whose camera held no exposure back,
     /// where darktable hides it (`gui_update`), and Mode nothing on an image that is not
-    /// a raw, where darktable makes it insensitive; none depends on the tool's values.
-    /// The controls not ported are unavailable everywhere, as the session reports every
-    /// such control.
+    /// a raw of one 16-bit channel, where darktable makes it insensitive: one with no
+    /// camera, since the engine develops only 16-bit mosaics. None depends on the tool's
+    /// values.
     fn available(&self, control: &str, _: &Controls, image: &ImageContext) -> bool {
         match control {
             "camera_bias" => camera_bias(image) != 0.0,
@@ -339,12 +351,22 @@ impl Tool for Exposure {
         }
     }
 
-    /// Mode and the controls not ported take only their defaults, so this sets only
-    /// `exposure`, `black`, `compensate_exposure_bias` and `compensate_hilite_pres`.
-    /// Exposure is written as it is, as darktable's slider writes it; the black, only
-    /// while Black level is set, since the photo's own black lies below any white.
+    /// Mode, Percentile and Target level are the parameters themselves, written where set,
+    /// as are `compensate_exposure_bias` and `compensate_hilite_pres`. Exposure is written
+    /// as it is, as darktable's slider writes it; the black, only while Black level is set,
+    /// since the photo's own black lies below any white, held below the white manual mode
+    /// renders; in automatic mode within darktable's ±1 alone, the operation holding it
+    /// below the white the photo's histogram gives.
     fn bind(&self, values: &ToolValues, image: &ImageContext, base: &Base) -> Vec<Setting> {
         let mut settings = Vec::new();
+        if let Some(mode) = values.choice("mode") {
+            settings.push(Setting::new(EXPOSURE, "mode", Value::Choice(mode)));
+        }
+        for param in ["deflicker_percentile", "deflicker_target_level"] {
+            if let Some(value) = values.number(param) {
+                settings.push(Setting::new(EXPOSURE, param, Value::Float(value)));
+            }
+        }
         let mut flag = |control: &str, param: &'static str| match values.flag(control) {
             Some(on) => {
                 settings.push(Setting::new(EXPOSURE, param, Value::Bool(on)));
@@ -359,7 +381,14 @@ impl Tool for Exposure {
             .number("exposure")
             .unwrap_or_else(|| base.float(EXPOSURE, "exposure"));
         if let Some(level) = values.number("black_level") {
-            let white = rendered_white(exposure, bias);
+            // In automatic mode the white is the one the photo's histogram gives, which the
+            // operation holds the black below (decision 87): here only darktable's ±1.
+            let automatic = values.choice("mode") == Some(AUTOMATIC);
+            let white = if automatic {
+                f32::INFINITY
+            } else {
+                rendered_white(exposure, bias)
+            };
             let black = BlackLevel::new(base.float(EXPOSURE, "black"), white).value(level);
             settings.push(Setting::new(EXPOSURE, "black", Value::Float(black)));
         }
@@ -856,22 +885,12 @@ mod tests {
     }
 
     #[test]
-    fn what_is_not_ported_takes_only_its_default() {
-        // Automatic, darktable's deflicker, is listed and refused.
+    fn automatic_mode_its_percentile_and_target_level_set_the_operation() {
+        // Every control is ported: automatic, Percentile and Target level over their
+        // ranges.
+        assert!(DEFINITION.controls.iter().all(|control| !control.unported));
         let mode = Exposure.definition().control("mode").unwrap();
-        assert!(mode.check(&ControlValue::Choice(1)).is_err());
-        assert!(mode.check(&ControlValue::Choice(0)).is_ok());
-        // Mode is live on a raw, as darktable's is, and not on another image.
-        assert!(available("mode", &raw(-0.67)));
-        assert!(!available("mode", &ImageContext::full(8, 8)));
-        // Percentile and Target level take their defaults only, as automatic is refused.
-        let unported: Vec<&str> = DEFINITION
-            .controls
-            .iter()
-            .filter(|control| control.unported)
-            .map(|control| control.id)
-            .collect();
-        assert_eq!(unported, ["deflicker_percentile", "deflicker_target_level"]);
+        assert!(mode.check(&ControlValue::Choice(1)).is_ok());
         for (control, value) in [
             ("deflicker_percentile", number(0.0)),
             ("deflicker_percentile", number(100.0)),
@@ -879,14 +898,74 @@ mod tests {
             ("deflicker_target_level", number(18.0)),
         ] {
             let control = DEFINITION.control(control).unwrap();
-            assert_eq!(
-                control.check(&value),
-                Err(crate::ControlError::NotPorted {
-                    control: control.id
-                })
-            );
-            assert_eq!(control.check(&control.default()), Ok(()));
+            assert_eq!(control.check(&value), Ok(()));
         }
+        // Mode is live on a raw, as darktable's is, and not on another image.
+        assert!(available("mode", &raw(-0.67)));
+        assert!(!available("mode", &ImageContext::full(8, 8)));
+        // Each is its parameter, written where set.
+        let settings = bind(
+            &[
+                ("mode", ControlValue::Choice(1)),
+                ("deflicker_percentile", number(90.0)),
+                ("deflicker_target_level", number(-2.5)),
+            ],
+            &raw(-0.67),
+        );
+        assert_eq!(
+            settings,
+            [
+                Setting::new(EXPOSURE, "mode", Value::Choice(1)),
+                Setting::new(EXPOSURE, "deflicker_percentile", Value::Float(90.0)),
+                Setting::new(EXPOSURE, "deflicker_target_level", Value::Float(-2.5)),
+            ]
+        );
+    }
+
+    #[test]
+    fn automatic_mode_leaves_the_black_to_the_white_it_computes() {
+        let image = raw(-0.67);
+        let black = Base::new(OPERATIONS, &image).float(EXPOSURE, "black") + 0.01;
+        let level = [("exposure", number(8.0)), ("black_level", number(0.01))];
+        // Manual mode at +8 EV holds +0.01 below its white, 2^−8.67.
+        let manual = bind(&level, &image);
+        let white = rendered_white(8.0, -0.67);
+        assert!(manual.contains(&Setting::new(EXPOSURE, "black", Value::Float(white - 0.01))));
+        // Automatic mode keeps the offset over the photo's black, whatever Exposure's white:
+        // the operation bounds it at the white its histogram gives.
+        let mut set = level.to_vec();
+        set.push(("mode", ControlValue::Choice(1)));
+        let automatic = bind(&set, &image);
+        assert!(
+            automatic.contains(&Setting::new(EXPOSURE, "black", Value::Float(black))),
+            "{automatic:?}"
+        );
+    }
+
+    #[test]
+    fn the_computed_exposure_shows_in_automatic_mode_only() {
+        let mut values = DEFINITION.defaults();
+        let computed = DEFINITION.computed(&values);
+        let [(computed, shown)] = computed.as_slice() else {
+            panic!("one computed value: {computed:?}");
+        };
+        assert_eq!(
+            **computed,
+            Computed {
+                id: COMPUTED_EXPOSURE,
+                operation: EXPOSURE,
+                unit: Some(Unit::Ev),
+                decimals: 2,
+            }
+        );
+        assert!(!shown);
+        values.set("mode", ControlValue::Choice(1));
+        assert_eq!(DEFINITION.computed(&values), [(*computed, true)]);
+        // The operation computes it by the same id.
+        assert_eq!(
+            COMPUTED_EXPOSURE,
+            apertrust_operations::exposure::COMPUTED_EXPOSURE
+        );
     }
 
     /// darktable's exposure sliders (`src/iop/exposure.c`, the params and

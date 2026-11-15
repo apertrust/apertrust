@@ -63,6 +63,7 @@ mod manifest;
 mod operation;
 mod params;
 mod pass;
+mod raw_histogram;
 
 pub use image::{
     Camera, DngCorrection, Extent, Format, FujifilmCorrection, ImageContext, ImageDesc,
@@ -74,3 +75,4 @@ pub use operation::{
 };
 pub use params::{Kind, Param, ParamError, ParamValues, Schema, Value};
 pub use pass::{Kernel, PassHeader};
+pub use raw_histogram::{RAW_HISTOGRAM_BINS, RawHistogram};

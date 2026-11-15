@@ -180,6 +180,11 @@ impl Operation for Rawprepare {
         // Margins fit in 16 bits, so these sums cannot overflow.
         let margin = |name| params.int(name) as u32;
         let (left, top) = (margin("left"), margin("top"));
+        // darktable `commit_params`: the black its later modules read, the four levels
+        // averaged and rounded, and the white point (`dsc.rawprepare`, decision 87).
+        let blacks: f32 = BLACK.iter().map(|&name| params.int(name) as f32).sum();
+        let raw_black = (blacks / 4.0).round() as u32;
+        let raw_white = params.int("raw_white_point") as u32;
         // A crop that leaves nothing gives an empty output, which planning refuses.
         let output = ImageDesc {
             width: input.width.saturating_sub(left + margin("right")),
@@ -188,6 +193,8 @@ impl Operation for Rawprepare {
             sensor_origin: [left, top],
             // darktable sets the processed maximum to 1 here.
             maximum: [1.0; 3],
+            raw_black,
+            raw_white,
             ..*input
         };
         // darktable `commit_params`: subtract black, divide by white less black. A white
@@ -288,6 +295,8 @@ mod tests {
             prepared.output,
             ImageDesc {
                 sensor_origin: [3, 2],
+                raw_black: 1023,
+                raw_white: 13600,
                 ..ImageDesc::new(32, 24, Format::Mosaic)
             }
         );
@@ -306,8 +315,14 @@ mod tests {
             values: vec![1030.0, 1030.0, 1026.0, 1026.0],
         };
         let (_, sub, _) =
-            kernel_params(&prepare(&raw(black, 13600.0), &ParamValues::new()).unwrap());
+            kernel_params(&prepare(&raw(black.clone(), 13600.0), &ParamValues::new()).unwrap());
         assert_eq!(sub, [1030.0, 1030.0, 1026.0, 1026.0]);
+        // Later operations read their mean, rounded, as darktable's `dsc.rawprepare`.
+        let prepared = prepare(&raw(black, 13600.0), &ParamValues::new()).unwrap();
+        assert_eq!(
+            (prepared.output.raw_black, prepared.output.raw_white),
+            (1028, 13600)
+        );
         // A 1×2 pattern repeats across the columns.
         let columns = Pattern {
             width: 2,
@@ -315,8 +330,11 @@ mod tests {
             values: vec![500.0, 510.0],
         };
         let (_, sub, _) =
-            kernel_params(&prepare(&raw(columns, 4095.0), &ParamValues::new()).unwrap());
+            kernel_params(&prepare(&raw(columns.clone(), 4095.0), &ParamValues::new()).unwrap());
         assert_eq!(sub, [500.0, 510.0, 500.0, 510.0]);
+        // 505, as darktable's `roundf` gives it.
+        let prepared = prepare(&raw(columns, 4095.0), &ParamValues::new()).unwrap();
+        assert_eq!(prepared.output.raw_black, 505);
     }
 
     #[test]

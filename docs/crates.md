@@ -162,6 +162,14 @@ The groundwork for orientation:
 - read back through two staging buffers mapped without waiting (`readback`, the staging pair the colour pickers share), and sent as `Event::Scopes`;
 - a failure turns the scopes off, never the frame.
 
+### The raw's histogram
+
+`raw_histogram` (decision 87): the raw's histogram, counted for an operation that reads it (`Operation::reads_raw_histogram`, `read_by`), once per photo.
+
+- The engine's kernel, `slang/raw_histogram.slang`, in `pipeline::KERNELS`: each photosite of a region of the 16-bit mosaic in the bin of its value, 65536 words of integer atomics, four photosites an invocation; a mosaic larger than one binding in row windows, every window's dispatch in one submission (`count`, or `record` and `Counting::finish` for a caller that submits it itself).
+- Over the declared image (`for_instances`, `fill`), read back once and kept in the photo's image context: by the session before its values report and its rendered thumbnail (`Engine::count_raw_histogram`), where the edit as shown or as saved reads it; a failure reported once for the photo, an export failing, and by `export_at` before it plans, a job's handed to the engine thread (`Hand::hand_commands`, `export::Commands`).
+- The session reports what an operation computes for a tool's computed value (`Operation::computed`) with the tool's state (`ToolState::computed`, `ComputedState`), from a plan of the operations up to it, while the row shows.
+
 ### Colour pickers
 
 `picker` and `session/pickers.rs` (decision 79; [pickers.md](pickers.md)), 79.1 and 79.3 of its plan: the Colour picker's own picker, and tool pickers.
@@ -411,6 +419,7 @@ The golden-image harness against darktable-cli (decision 61). AGENTS.md lists it
 - the whole-pipeline exit test, `pipeline` (decision 62);
 - `pipeline IMAGE... --width W --height H [--hq BOOL --darktable-hq BOOL --upscale BOOL]`: an export at a size against darktable-cli's at that size, measured without a bound, with the 99th percentile (decision 56). `--darktable-hq` is darktable's side's `--hq`, `--hq`'s by default;
 - `--add CASE` puts a grain, vignetting, tone equalizer, haze removal, colour equalizer, colour balance rgb, local contrast, bloom or soften case's operation on Apertrust's side and darktable's module on the other;
+- `pipeline IMAGE... --automatic PERCENTILE,TARGET`: Exposure in automatic mode on both sides, darktable's deflicker; Apertrust meters darktable's own crop, recovered from its render as `raw-defaults` recovers it, through `raw_histogram::count`, a region only the harness gives (decisions 63 and 87), and the line gives the exposure computed there and over the declared image the engine meters;
 - `export RAW -o OUT.png [--darktable-xmp FILE] [--add CASE]...`: `apertrust-cli`'s export of the exit test's operations (the declared image, plus the cases'), with darktable's history for the same render written for darktable-cli.
 
 **Timing against darktable.** `tools/compare-cpu.sh` runs darktable-cli against Apertrust on lavapipe or WARP and on the GPU, on one machine, from both programs' `-d perf` lines, and writes tables into `target/compare-cpu/results.md` (the pipeline timings). `--raws` and `--paths` (`dt-cpu`, `dt-opencl`, `software`, `gpu`) choose what runs. With `--add` it exports golden cases' operations, darktable's modules on its side, and the exit test's history on both sides through `apertrust-golden export`, at a size if asked (`--size PX --hq BOOL`), GPU only, with no warm export or preview. `--wait-quiet PERCENT` waits for a quiet CPU (macOS).
@@ -855,7 +864,7 @@ In `crates/ui/src/components`. Each reports its role, full name and value to Acc
 
 **Checkboxes, text buttons and icon buttons** ([docs/gui.md](gui.md#checkboxes-text-buttons-and-icon-buttons)): `Checkbox`, `Button` (default, or primary with `Button::primary`; at least a width, with the keys that do the same at its end, `Button::width` and `Button::keys`) and `ToolButton`, the bars' quiet one, drawn from one plate, and `IconButton`, drawn with none, its icon `text_secondary` at rest, `text_strong` under the pointer, `accent_text` held down and its filled form while on (decision 81), all with one focus ring with a point of ground inside it (`components/plate.rs`); `ButtonState` draws any of them in one state, as the gallery's strip of states does.
 
-**Others:** `Segmented`, `Swatches`, `ToggleRow` for a tool's checkboxes, `ActionRow` for its buttons, drawn disabled until what they run is built, and `ButtonsRow`, a control's label with darktable's icon buttons inline (`ButtonsAction`), as Orientation's transform row.
+**Others:** `Segmented`, `Swatches`, `ToggleRow` for a tool's checkboxes, `ActionRow` for its buttons, drawn disabled until what they run is built, `ReadoutRow` for a number the photo gives, its label at the start and its value at the end where a slider's ends (decision 87), and `ButtonsRow`, a control's label with darktable's icon buttons inline (`ButtonsAction`), as Orientation's transform row.
 
 **`TextField` and `PathField`** (`components/text_field.rs`): a one-line text well, every edit reported whole, with a hint and an error outline. The path field has a list of variables with their descriptions, part of the row while the caret stands after `$(` and the letters of a name. A click, or ↓ ↑ and Enter, inserts one, closed; Escape closes the list alone (`PathOutput::list_open`).
 
@@ -1169,6 +1178,7 @@ The operation interface.
 - **Passes** with explicit bindings and scratch buffers; `Kernel` and the 48-byte pass header; passes' row strips (`Strips`, decision 14).
 - **Full resolution:** `Resource::FullResolution` with `ImageContext::full_resolution`, for an operation whose estimate the viewport computes at full resolution (`Operation::whole_image_at_full_resolution`, decision 15).
 - **The stage at the pipe's scale:** `ImageDesc::scaled_extent` (decision 15), set by the planner for every RGBA image and returned by `ImageContext::whole_image` in every pipe, so after an export's resample a whole-image pass covers the export's size.
+- **Statistics of the raw** (decision 87): `RawHistogram`, the raw's histogram with darktable's percentile search, its conversion to EV and the exposure that puts a percentile at a target, given as `ImageContext::raw_histogram` to an operation that asks (`Operation::reads_raw_histogram`); `ImageDesc::raw_black` and `raw_white`, rawprepare's levels as darktable's `dsc.rawprepare`; `Operation::computed`, a number its setup computes for its tool's readout row.
 - **Geometry:** `Operation::geometry` and `Geometry`, darktable's region and point maps for operations that move pixels, with `ImageDesc`'s extent and origin and `Extent` (decision 16). No built-in operation returns one yet.
 - **For kernels:** `pass.slang` and `components.slang` (`add_at`, `set_at`).
 
@@ -1223,6 +1233,7 @@ Tools (decision 28): what the user edits with, bound to operation parameters. No
 - **darktable's page** as darktable has it (decision 29): content tabs, collapsible groups (`Row::Group`), rows that follow a choice or toggle's mode (`Row::When`), a control's row per mode with words of its own (`Slider::label`), and rows before and after every tab's.
 - **Unported options and controls.** Every option darktable lists for a choice on some photo is there; those not ported are marked and refused as values. A whole control not ported is marked so (`Control::unported`), takes only its default and is reported unavailable.
 - **Settings and actions.** darktable's own settings for a tool, which no edit stores, are rows of no control (`Row::Setting`), drawn disabled until what uses them keeps them in settings: the settings schema's `[tools.<module>]`, `owner = "tool:<tool>"`, generated by the crate's `build.rs` into `settings::registry` and found by id (`settings::setting`), a test holding each to its row; Exposure's area mode (`exposure::AreaMode`) and lightness so far. A picker's input and target patches are `Row::Patches`, the target painted from the tool's settings (`pick::Patch::of_lch`). Its buttons, actions that write controls and are never stored, are drawn disabled until what they run is built (`Row::Action`).
+- **Computed values** (`Row::Computed`, `Computed`, decision 87): a number the tool's operation computes for the panel (`Operation::computed`, by the value's id), with its unit and decimals, its words `messages::computed`'s; `Definition::computed` lists them with whether the controls' modes show them; `Definition::check` refuses two of one id (`DuplicateComputed`) and `check::accept` one of an operation the tool owns no parameter of (`ComputedOperation`). Exposure's computed EC.
 - **Button rows** (`Row::Buttons`): a control's label, darktable's reset label, with darktable's buttons inline, each an action the tool runs on the values shown (`Tool::action`, its writes sent as `SetControl`, one change), as Orientation's rotate and flip; and darktable's guides widget (`Row::Guides`), drawn disabled until a tool's guides come.
 - A slider row's soft range, darktable's, is the track's span inside the control's range (`Slider::soft`).
 - A titled tab or a collapsible group without rows is drawn disabled, its rows to come.
@@ -1326,11 +1337,11 @@ darktable's white balance over the raw-stage `temperature` (decision 27).
 
 darktable's exposure page, on one untitled tab.
 
-- Mode, its automatic option not ported.
+- Mode, manual or automatic, darktable's deflicker (decision 87).
 - In manual mode: Compensate camera exposure; Highlight preservation mode, on by default, drawn disabled on a photo whose camera held no exposure back; and Exposure, darktable's slider, `exposure.exposure` itself, its default the photo's, +0.7 EV on a colour raw (decision 30).
-- In automatic mode: Percentile and Target level, not ported.
+- In automatic mode: Percentile, Target level and the computed EC (`Row::Computed`).
 - Black level correction, and the Area exposure mapping group's picker settings.
-- It owns every `exposure` parameter and drives only it; the unported controls are drawn disabled and take only their defaults. Its hidden Contrast and Pivot are left for Colour balance RGB (decision 2).
+- It owns every `exposure` parameter and drives only it; every control is ported. Its hidden Contrast and Pivot are left for Colour balance RGB (decision 2).
 - Ranges: Exposure holds darktable's −18 to +18 EV. Black level correction holds darktable's −1 to +1 over the photo's black; a black that reaches the white the photo renders goes 0.01 below it.
 - Version 2: an edit's version 1 Exposure, in exact stops, is left out with a warning. Version 3: Highlight preservation mode ported, on by default, an older edit's stored Exposure entry reading it off, as it rendered; an edit with no Exposure entry has nothing to migrate and takes the default, on, as an unedited photo does.
 - Its invariant rows are tests on the synthetic ramp and sweep, and locally on the corpus.

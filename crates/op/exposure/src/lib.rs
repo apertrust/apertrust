@@ -16,15 +16,21 @@
 
 //! Exposure, ported from darktable (`src/iop/exposure.c`): manual mode, with
 //! the camera's exposure bias and the exposure a highlight-preserving mode held back
-//! compensated (`docs/ports/exposure.md`). Deflicker needs the raw histogram, so it is
-//! not ported yet: its parameters are in the schema, as darktable's are, and any value
-//! but the one rendered is refused. The kernel computes its scale from the black level
-//! and the exposure, so the operation's setup only packs them.
+//! compensated, and automatic mode, darktable's deflicker, which puts a percentile of the
+//! raw's histogram at a target level below the white point (`docs/ports/exposure.md`).
+//! The kernel computes its scale from the black level and the exposure, so the
+//! operation's setup only packs them; automatic mode's exposure comes from the raw's
+//! histogram, which the engine counts on the GPU and hands over in the image context
+//! (decision 87).
 
 use apertrust_plugin::{
     Domain, ImageContext, ImageDesc, Kernel, Kind, Manifest, NotPorted, Operation, Param,
     ParamValues, Prepared, Provenance, Schema, Slot, Stage, Value,
 };
+
+/// The id of what [`Operation::computed`] gives: the exposure automatic mode applies,
+/// darktable's "computed EC".
+pub const COMPUTED_EXPOSURE: &str = "computed_exposure";
 
 /// Generated from `slang/exposure.slang`.
 pub const KERNEL: Kernel = Kernel {
@@ -58,9 +64,14 @@ static MANIFEST: Manifest = Manifest {
 /// darktable's modes, `dt_iop_exposure_mode_t`: manual, and automatic, its deflicker.
 const MODES: [&str; 2] = ["manual", "automatic"];
 const MANUAL: u32 = 0;
+const AUTOMATIC: u32 = 1;
 
-/// The deflicker's percentile and target level at darktable's defaults, the only values
-/// ported: they act only in automatic mode.
+/// How far below the white a black that reaches it is put: darktable's margin, which its
+/// `gui_changed` keeps and the Exposure tool's Black level correction too (decision 30).
+const WHITE_MARGIN: f32 = 0.01;
+
+/// The deflicker's percentile and target level at darktable's defaults: they act only in
+/// automatic mode.
 const PERCENTILE: f32 = 50.0;
 const TARGET_LEVEL: f32 = -4.0;
 
@@ -122,18 +133,26 @@ static SCHEMA: Schema = Schema {
     ],
 };
 
-/// What of `params` is not ported, if anything: automatic mode and the deflicker's
-/// settings off darktable's defaults.
-fn not_ported(params: &ParamValues) -> Option<&'static str> {
-    if params.choice("mode") != MANUAL {
-        Some("automatic mode, darktable's deflicker, which needs the raw histogram")
-    } else if params.float("deflicker_percentile") != PERCENTILE
-        || params.float("deflicker_target_level") != TARGET_LEVEL
-    {
-        Some("deflicker settings other than darktable's defaults")
-    } else {
-        None
+/// The exposure automatic mode applies on `input`, as darktable's deflicker computes it
+/// (`_compute_correction`): the one that puts the percentile of the raw's histogram at the
+/// target level below rawprepare's white point. `None` in manual mode, and where the
+/// image context holds no histogram, an image that is not a raw, where automatic mode
+/// renders as manual mode.
+pub fn automatic_exposure(
+    params: &ParamValues,
+    image: &ImageContext,
+    input: &ImageDesc,
+) -> Option<f32> {
+    if params.choice("mode") != AUTOMATIC {
+        return None;
     }
+    let histogram = image.raw_histogram.as_ref()?;
+    Some(histogram.exposure(
+        params.float("deflicker_percentile"),
+        params.float("deflicker_target_level"),
+        input.raw_black,
+        input.raw_white,
+    ))
 }
 
 /// darktable `_get_exposure_bias`: the camera's exposure compensation, trusted only
@@ -207,20 +226,49 @@ impl Operation for Exposure {
         values
     }
 
+    /// Automatic mode meters the raw's histogram.
+    fn reads_raw_histogram(&self, params: &ParamValues) -> bool {
+        params.choice("mode") == AUTOMATIC
+    }
+
+    /// [`COMPUTED_EXPOSURE`]: the exposure automatic mode applies, where it computes one.
+    fn computed(
+        &self,
+        id: &str,
+        params: &ParamValues,
+        image: &ImageContext,
+        input: &ImageDesc,
+    ) -> Option<f32> {
+        (id == COMPUTED_EXPOSURE)
+            .then(|| automatic_exposure(params, image, input))
+            .flatten()
+    }
+
+    /// The black and the exposure: in automatic mode the one its histogram gives, which
+    /// replaces the compensated exposure as darktable's `_process_common_setup` does, or
+    /// without a histogram manual mode's; there the black still applies, put 0.01 below the
+    /// white that exposure renders where it reaches it, the tool's rule, so the kernel's
+    /// `2^−e − b` stays positive whatever the photo gives, the tool leaving it within ±1
+    /// alone. In manual mode the tool holds it so itself.
     fn prepare(
         &self,
         params: &ParamValues,
         image: &ImageContext,
         input: &ImageDesc,
     ) -> Result<Prepared, NotPorted> {
-        if let Some(what) = not_ported(params) {
-            return Err(NotPorted {
-                operation: "exposure",
-                what,
-            });
-        }
+        let exposure = automatic_exposure(params, image, input)
+            .unwrap_or_else(|| effective_exposure(params, image));
+        let black = params.float("black");
+        // The tool's rule, darktable's margin (decision 30): a black that reaches the white
+        // goes 0.01 below it, any other is kept.
+        let white = (-exposure).exp2();
+        let black = if params.choice("mode") == AUTOMATIC && black >= white {
+            white - WHITE_MARGIN
+        } else {
+            black
+        };
         // `ExposureParams` in the kernel: black, then exposure.
-        let bytes = [params.float("black"), effective_exposure(params, image)]
+        let bytes = [black, exposure]
             .iter()
             .flat_map(|v| v.to_le_bytes())
             .collect();
@@ -327,10 +375,8 @@ mod tests {
     }
 
     #[test]
-    fn only_manual_mode_is_ported() {
+    fn parameters_written_at_their_defaults_render_as_none_are() {
         let image = raw(true, -0.67);
-        let input = ImageDesc::rgba(8, 8);
-        // Every parameter written at its default renders as none is.
         let mut defaults = ParamValues::new();
         defaults.set("mode", Value::Choice(MANUAL));
         defaults.set("deflicker_percentile", Value::Float(PERCENTILE));
@@ -340,18 +386,171 @@ mod tests {
             kernel_params(&image, &defaults),
             kernel_params(&image, &ParamValues::new())
         );
-        for (name, value) in [
-            ("mode", Value::Choice(1)),
-            ("deflicker_percentile", Value::Float(60.0)),
-            ("deflicker_target_level", Value::Float(-3.0)),
-        ] {
-            let mut values = ParamValues::new();
-            values.set(name, value);
-            let params = SCHEMA
-                .resolve_over(&Exposure.defaults(&image), &values)
-                .unwrap();
-            assert!(Exposure.prepare(&params, &image, &input).is_err(), "{name}");
+    }
+
+    /// A colour raw with a camera bias of −1 EV and 0.5 EV held back whose histogram
+    /// holds `count` photosites at each of `values`, and the input rawprepare leaves with
+    /// black 512 and white 16896, 14 bits above it.
+    fn metered(values: &[(usize, u32)]) -> (ImageContext, ImageDesc) {
+        let mut image = preserving(-1.0, 0.5);
+        let mut counts = vec![0; apertrust_plugin::RAW_HISTOGRAM_BINS];
+        for &(value, count) in values {
+            counts[value] += count;
         }
+        image.raw_histogram = apertrust_plugin::RawHistogram::new(counts);
+        let input = ImageDesc {
+            raw_black: 512,
+            raw_white: 512 + 16384,
+            ..ImageDesc::rgba(8, 8)
+        };
+        (image, input)
+    }
+
+    /// The kernel's two parameters for `values` over the defaults on `input`.
+    fn prepared(image: &ImageContext, input: &ImageDesc, values: &ParamValues) -> [f32; 2] {
+        let params = SCHEMA
+            .resolve_over(&Exposure.defaults(image), values)
+            .unwrap();
+        let prepared = Exposure.prepare(&params, image, input).unwrap();
+        let bytes = &prepared.passes[0].params;
+        [0, 4].map(|at| f32::from_le_bytes(bytes[at..at + 4].try_into().unwrap()))
+    }
+
+    fn automatic(percentile: f32, target: f32) -> ParamValues {
+        let mut values = ParamValues::new();
+        values.set("mode", Value::Choice(AUTOMATIC));
+        values.set("deflicker_percentile", Value::Float(percentile));
+        values.set("deflicker_target_level", Value::Float(target));
+        values
+    }
+
+    #[test]
+    fn automatic_mode_puts_the_percentile_at_the_target_level() {
+        // Half the photosites an eighth of the range above the black, −3 EV, half a
+        // quarter, −2 EV.
+        let (image, input) = metered(&[(512 + 2048, 50), (512 + 4096, 50)]);
+        // The median is the first value reaching half, −3 EV, so −4 needs −1 EV. The
+        // camera's bias and the held-back exposure are not added, as darktable replaces
+        // the compensated exposure; the black still applies.
+        assert_eq!(
+            prepared(&image, &input, &automatic(50.0, -4.0)),
+            [-1.0 / 4096.0, -1.0]
+        );
+        assert_eq!(prepared(&image, &input, &automatic(90.0, -4.0))[1], -2.0);
+        assert_eq!(prepared(&image, &input, &automatic(90.0, -1.5))[1], 0.5);
+        // Exposure itself changes nothing in automatic mode.
+        let mut values = automatic(50.0, -4.0);
+        values.set("exposure", Value::Float(3.0));
+        assert_eq!(prepared(&image, &input, &values)[1], -1.0);
+        // rawprepare's levels, as its output carries them, convert the value.
+        let lifted = ImageDesc {
+            raw_black: 512 + 1024,
+            ..input
+        };
+        let ev = (2048f64 - 1024.0).log2() - (16384f64 - 1024.0).log2();
+        assert_eq!(
+            prepared(&image, &lifted, &automatic(50.0, -4.0))[1],
+            (-4.0 - ev) as f32
+        );
+    }
+
+    #[test]
+    fn automatic_mode_holds_the_black_below_the_white_it_renders() {
+        // Every photosite at 2⁻¹⁰ of the range: the median at −10 EV, so −4 needs +6 EV,
+        // a white of 2⁻⁶.
+        let (image, input) = metered(&[(512 + 16, 100)]);
+        // Black level correction's +0.1 over the photo's black, which Exposure's +0.7 EV
+        // keeps below its white of 0.616, reaches this one, so it goes 0.01 below it.
+        let mut values = automatic(50.0, -4.0);
+        values.set("black", Value::Float(0.1));
+        let [black, exposure] = prepared(&image, &input, &values);
+        assert_eq!(exposure, 6.0);
+        assert_eq!(black, 2f32.powi(-6) - WHITE_MARGIN);
+        assert!((-exposure).exp2() - black > 0.0);
+        // A black already below it is kept, even within 0.01 of it: the margin is only
+        // for one that reaches it, as the tool's.
+        values.set("black", Value::Float(-0.001));
+        assert_eq!(prepared(&image, &input, &values)[0], -0.001);
+        values.set("black", Value::Float(2f32.powi(-6) - 0.005));
+        assert_eq!(prepared(&image, &input, &values)[0], 2f32.powi(-6) - 0.005);
+        // At the white exactly, and above it: 0.01 below.
+        for black in [2f32.powi(-6), 0.5] {
+            values.set("black", Value::Float(black));
+            assert_eq!(
+                prepared(&image, &input, &values)[0],
+                2f32.powi(-6) - WHITE_MARGIN
+            );
+        }
+        // Black 0 at +10 EV, a white of 2⁻¹⁰: kept, the scale 1024.
+        let (image, input) = metered(&[(512 + 1, 100)]);
+        let mut values = automatic(50.0, -4.0);
+        values.set("black", Value::Float(0.0));
+        assert_eq!(prepared(&image, &input, &values), [0.0, 10.0]);
+        // Where the photo computes a lower exposure than manual mode's, a white above the
+        // black manual mode's +8 EV would have pushed down: the black as set, unlowered.
+        // Every photosite at a quarter of the range, −2 EV, so −3 needs −1 EV, a white of 2.
+        let (image, input) = metered(&[(512 + 4096, 100)]);
+        let mut values = automatic(50.0, -3.0);
+        values.set("exposure", Value::Float(8.0));
+        values.set("black", Value::Float(-1.0 / 4096.0 + 0.01));
+        assert_eq!(
+            prepared(&image, &input, &values),
+            [-1.0 / 4096.0 + 0.01, -1.0]
+        );
+        // Without a histogram, at manual mode's +8 EV and its white, a black that reaches
+        // it is held there.
+        let mut plain = image.clone();
+        plain.raw_histogram = None;
+        let [black, exposure] = prepared(&plain, &input, &values);
+        assert_eq!(black, (-exposure).exp2() - WHITE_MARGIN);
+        // Manual mode's rule there: exposure 7, both compensations off, black 0 stays 0,
+        // below the white of 2⁻⁷; 0.01, above it, goes 0.01 below it.
+        values.set("exposure", Value::Float(7.0));
+        values.set("compensate_exposure_bias", Value::Bool(false));
+        values.set("compensate_hilite_pres", Value::Bool(false));
+        values.set("black", Value::Float(0.0));
+        assert_eq!(prepared(&plain, &input, &values), [0.0, 7.0]);
+        values.set("black", Value::Float(0.01));
+        assert_eq!(
+            prepared(&plain, &input, &values),
+            [2f32.powi(-7) - WHITE_MARGIN, 7.0]
+        );
+    }
+
+    #[test]
+    fn automatic_mode_without_a_histogram_renders_as_manual_mode() {
+        let (mut image, input) = metered(&[(600, 1)]);
+        image.raw_histogram = None;
+        let manual = prepared(&image, &input, &ParamValues::new());
+        assert_eq!(prepared(&image, &input, &automatic(30.0, -2.0)), manual);
+        // An image that is not a raw has none.
+        let plain = ImageContext::full(8, 8);
+        assert_eq!(
+            prepared(&plain, &input, &automatic(30.0, -2.0)),
+            prepared(&plain, &input, &ParamValues::new())
+        );
+    }
+
+    #[test]
+    fn only_automatic_mode_reads_the_histogram_and_computes_an_exposure() {
+        let (image, input) = metered(&[(512 + 1000, 10)]);
+        let resolve = |values: &ParamValues| {
+            SCHEMA
+                .resolve_over(&Exposure.defaults(&image), values)
+                .unwrap()
+        };
+        let manual = resolve(&ParamValues::new());
+        assert!(!Exposure.reads_raw_histogram(&manual));
+        let none = Exposure.computed(COMPUTED_EXPOSURE, &manual, &image, &input);
+        assert_eq!(none, None);
+        let auto = resolve(&automatic(50.0, -4.0));
+        assert!(Exposure.reads_raw_histogram(&auto));
+        // The readout is what the kernel gets.
+        assert_eq!(
+            Exposure.computed(COMPUTED_EXPOSURE, &auto, &image, &input),
+            Some(prepared(&image, &input, &automatic(50.0, -4.0))[1])
+        );
+        assert_eq!(Exposure.computed("other", &auto, &image, &input), None);
     }
 
     #[test]

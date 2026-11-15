@@ -427,6 +427,8 @@ tool-exposure-control-deflicker_percentile-promise = Місце в гістог�
 tool-exposure-control-deflicker_target_level-label = Цільовий рівень
 tool-exposure-control-deflicker_target_level-full = Цільовий рівень
 tool-exposure-control-deflicker_target_level-promise = Задає цільовий рівень для автоматичної корекції експозиції, в EV щодо точки білого камери.
+tool-exposure-computed-computed_exposure-label = Обчислена корекція експозиції
+tool-exposure-computed-computed_exposure-promise = Яка корекція експозиції насправді була використана.
 tool-exposure-control-black_level-label = Корекція рівня чорного
 tool-exposure-control-black_level-full = Корекція рівня чорного
 tool-exposure-control-black_level-promise = Задає, який рівень стає чорним. Зберігає білий. 0 = без змін.

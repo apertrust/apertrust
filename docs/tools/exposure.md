@@ -4,7 +4,7 @@ Tool `exposure`, version 3. It works on layers and has Auto. It drives one opera
 
 Its header's tooltip says what it is for (`tool-exposure-description`, [gui.md](../gui.md#the-headers-tooltip)): "Brightens or darkens the photo as if you had exposed it differently in the camera, keeping its colours. Usually the first tool to reach for."
 
-It is darktable's exposure module in the first pass (decision 2: rewrite first, improve later). It has darktable's page, every control `gui_init` shows, in its order under its labels, on one untitled tab (decision 29): Mode, Compensate camera exposure, Highlight preservation mode, Exposure, Percentile and Target level in automatic mode, Black level correction, and the Area exposure mapping group. The unported ones are drawn disabled ([Controls](#controls); [README.md](README.md)).
+It is darktable's exposure module in the first pass (decision 2: rewrite first, improve later). It has darktable's page, every control `gui_init` shows, in its order under its labels, on one untitled tab (decision 29): Mode, Compensate camera exposure, Highlight preservation mode, Exposure, Percentile and Target level in automatic mode, Black level correction, and the Area exposure mapping group, with darktable's computed EC readout under Target level ([Controls](#controls); [README.md](README.md)). Every control is ported.
 
 Exposure is darktable's slider, `exposure.exposure` itself, its default the photo's: +0.7 EV on a colour raw, 0 otherwise (decision 30). Black level correction is darktable's offset over the photo's black (decision 22). Contrast and Pivot, colour balance rgb's `contrast` and `grey_fulcrum`, and Brightness, `midtones_Y`, belong to the Colour balance RGB tool ([colour-balance-rgb.md](colour-balance-rgb.md); decision 2), whose table holds their rows.
 
@@ -14,39 +14,34 @@ Exposure is darktable's slider, `exposure.exposure` itself, its default the phot
 
 **Status:** built, in `crates/tools/src/exposure.rs`. The app draws it from its definition (`docs/gui.md`, Tool panels from definitions). Its tab is Edit's Adjust, after Colour calibration and before the tone mapper (decision 38).
 
-- Rows E0, E3, E4, E6 to E9, E14, E30 to E33 and E50 are tests in `crates/tools/tests/exposure.rs`, with the migration's; [Results](#results) gives what they measured.
+- Rows E0, E3, E4, E6 to E9, E14, E30 to E37 and E50 are tests in `crates/tools/tests/exposure.rs`, with the migration's; [Results](#results) gives what they measured.
+- Automatic mode is built, darktable's deflicker: the raw's histogram counted on the GPU once per photo while it is on, and the exposure it computes shown as a computed value ([Automatic mode](#automatic-mode); [port spec](../ports/exposure.md#automatic-mode-deflicker); decision 87).
 - Its picker is built ([The picker](#the-picker); [pickers.md](../pickers.md), decision 79): its quad on Exposure, its pick in both area modes, the area exposure mapping's settings kept in settings, and the patches with the L readout.
 - A tolerance or a choice marked "proposed" is open; the [design choices](#design-choices) are settled.
 - Measures and test images are in [README.md](README.md).
 
 ## Controls
 
-In the first pass Exposure is darktable's page, every control on it in `gui_init`'s order, on one untitled tab with no toggle (decision 29). The Row column gives each control's label and when it shows: darktable shows Compensate camera exposure, Highlight preservation mode and Exposure in manual mode and Percentile and Target level in automatic mode (`Row::When`).
+In the first pass Exposure is darktable's page, every control on it in `gui_init`'s order, on one untitled tab with no toggle (decision 29). The Row column gives each control's label and when it shows: darktable shows Compensate camera exposure, Highlight preservation mode and Exposure in manual mode and Percentile, Target level and the computed EC readout in automatic mode (`Row::When`).
 
 | Control | Row | Kind and range | Default | Changes | Keeps | Binding |
 | --- | --- | --- | --- | --- | --- | --- |
-| `mode` | Mode, always | Choice: manual; automatic, darktable's deflicker, listed, drawn disabled and refused (it needs the raw histogram) | Manual | How the exposure is set | — | Sets nothing: manual, the only option it can hold, is `exposure.mode`'s default. Drawn disabled on an image that is not a raw, as darktable makes it insensitive. darktable also disables it on a raw that is not one 16-bit channel, a linear DNG, which the engine does not render yet |
+| `mode` | Mode, always | Choice: manual; automatic, darktable's deflicker | Manual | How the exposure is set: by hand, or from each photo's raw histogram | Black level correction, in both | `exposure.mode` = the option, set only where set. Drawn disabled on an image that is not a raw, as darktable makes it insensitive on any but a raw of one 16-bit channel, the only raws the engine develops; there an edit holding automatic renders as manual mode, as darktable's `commit_params` leaves it |
 | `camera_bias` | Compensate camera exposure, in manual mode | Toggle | The photo's: on for a colour raw | Whether the camera's exposure compensation is undone | Everything, on a photo with no bias | `exposure.compensate_exposure_bias` = the value, set only when it differs from the photo's |
 | `compensate_hilite_pres` | Highlight preservation mode, in manual mode; drawn disabled on a photo whose camera held no exposure back, where darktable hides it | Toggle | On, as darktable's first instance | Whether the exposure the camera held back in a highlight-preserving mode is given back: Canon's Auto Lighting Optimizer, Fujifilm's DR200 and DR400, Nikon's HLG and Active D-Lighting, Olympus's gradation, as darktable estimates it from the maker notes ([port spec](../ports/exposure.md#the-held-back-exposure-_check_highlight_preservation)) | Everything, on a photo with none held back | `exposure.compensate_hilite_pres` = the value, set only where set; the operation adds the held-back exposure, within −1 to +4 EV, after taking off the camera's bias, as darktable's `commit_params` does |
 | `exposure` | Exposure, in manual mode, with darktable's picker on its quad (E50) | Number, −18 to +18 EV, darktable's range, step 0.05, its track over darktable's soft range, −3 to +4 EV (decision 30) | The photo's: +0.7 EV on a colour raw, 0 on a monochrome raw or an image that is not a raw, as darktable's `reload_defaults` sets it | The brightness of every pixel | Contrast and colour: the ratio between any two pixels or channels | `exposure.exposure` = the value, darktable's slider's; the operation subtracts the camera's bias while Compensate camera exposure is on, as darktable's `commit_params` does |
-| `deflicker_percentile` | Percentile, in automatic mode | Number, 0 to 100 %, step 1, not ported: drawn disabled | 50 % | Where automatic mode meters the raw histogram | — | None: it takes only its default, so `exposure.deflicker_percentile` stays 50 |
-| `deflicker_target_level` | Target level, in automatic mode | Number, −18 to +18 EV, step 0.1, not ported: drawn disabled | −4 EV | Where automatic mode puts that level, below overexposure | — | None: it takes only its default, so `exposure.deflicker_target_level` stays −4 |
-| `black_level` | Black level correction, always | Number, −1 to +1, darktable's range, step 0.001, its track over darktable's soft range, −0.1 to +0.1 (decision 30) | 0: the photo's black | Where black sits, as darktable's black level correction | The white point | `exposure.black` = the photo's default (−2⁻¹² for a colour raw) plus the value, within darktable's ±1; a black that reaches the white the photo renders, w = 2^−(e − β), is put 0.01 below it, darktable's margin, so the kernel never divides by zero (decision 30) |
+| `deflicker_percentile` | Percentile, in automatic mode | Number, 0 to 100 %, step 1 | 50 %, the median | Where automatic mode meters the raw's histogram: the raw value that share of the declared image's photosites reaches | Contrast and colour | `exposure.deflicker_percentile` = the value, set only where set |
+| `deflicker_target_level` | Target level, in automatic mode | Number, −18 to +18 EV, step 0.1 | −4 EV | Where automatic mode puts the metered value, in EV below the white point | Contrast and colour | `exposure.deflicker_target_level` = the value, set only where set; the operation applies `target − ev`, ev the metered value's `log2(max(v − b, 1)) − log2(w − b)` on rawprepare's black b and white w, in place of Exposure and both compensations |
+| `black_level` | Black level correction, always | Number, −1 to +1, darktable's range, step 0.001, its track over darktable's soft range, −0.1 to +0.1 (decision 30) | 0: the photo's black | Where black sits, as darktable's black level correction | The white point | `exposure.black` = the photo's default (−2⁻¹² for a colour raw) plus the value, within darktable's ±1. In manual mode the tool puts a black that reaches the white the photo renders, w = 2^−(e − β), 0.01 below it, darktable's margin, so the kernel never divides by zero (decision 30). In automatic mode the tool binds it within ±1 alone, and the operation's `prepare` puts a black that reaches the white the photo renders, 2^−e at the computed exposure or at manual mode's without a histogram, 0.01 below it, the tool's own rule (decision 87) |
 
 **Area exposure mapping**, last, is darktable's collapsible section, closed at first. It holds darktable's settings for its picker, which no edit stores ([README.md](README.md), rule 12), kept in settings as `tools.exposure.area_mode` and `tools.exposure.lightness` (`Row::Setting`): Area mode, correction or measure, correction by default; the input's and the target's patches side by side under their headings, Input and Target, the input's L readout under its patch (`Row::Patches`); then Lightness, the target, 0 to 100 %, 50 % by default, as darktable's darktablerc has it.
 
 - **The input patch** is the area the last pick read on the photo, made grey of its lightness, and its readout darktable's "L: 45.2%", "L: N/A" before a pick; both stay as the picker turns off, and go, back to "L: N/A", where darktable's `gui_update` zeroes them (`exposure.c:707-710`): undo, redo, a move through history, the edit's reset or Exposure's, another photo.
 - **The target patch** is the grey of Lightness, as darktable paints it, and Lightness shows its percent, its track darktable's ramp of the greys of each lightness (`_paint_hue`, `exposure.c:1123-1151`).
 - darktable lays the target's patch and Lightness in a column beside the input's; the side panel's width puts Lightness on a row of its own under both.
-- darktable's computed EC readout, which automatic mode shows under Target level, waits for a row that draws a readout.
+**Computed EC**, under Target level in automatic mode, is darktable's readout of the exposure automatic mode applies, `%.2f EV` (`exposure.c:1236-1245`): a computed value (`Row::Computed`), drawn as the design system's readout row (`ReadoutRow`), its label "Computed EC" at the start and the value at the end, "+0.51 EV", the tooltip darktable's "What exposure correction has actually been used." The session reports it with the values, from the exposure operation's `computed` on the edit as it renders (`ToolState::computed`), so it shows as soon as the photo is live and its histogram counted, where darktable's stays blank until its preview pipe has run. Where automatic mode has no histogram, on an image that is not a raw or after a count that failed, it is blank, and the photo renders as manual mode.
 
-**What is not ported.** Automatic is refused as every unported option is (decision 29). Percentile and Target level are unported controls (`Control::unported`). Each takes only its default:
-
-- a command setting another value is refused;
-- an edit holding one is read with it left out, with a warning, so no edit stores a value the render ignores, and nothing needs migrating once they are ported;
-- the session reports them unavailable, so they are drawn disabled.
-
-Their parameters stay at darktable's defaults, the only values the operation renders, and the operation refuses any other as not ported (E32).
+**What is not ported.** Nothing: Mode, Percentile and Target level are ported with automatic mode, and every value of their ranges is taken (E32).
 
 **Owners.** Exposure owns every `exposure` parameter, darktable's `mode`, `black`, `exposure`, `deflicker_percentile`, `deflicker_target_level`, `compensate_exposure_bias` and `compensate_hilite_pres`. Contrast, Pivot and Brightness are the Colour balance RGB tool's `contrast`, `grey_fulcrum` and `midtones_y`, darktable's parameters, and Colour balance RGB owns every `colorbalancergb` parameter (decisions 28 and 32).
 
@@ -59,8 +54,8 @@ Audited against darktable's `src/iop/exposure.c`, its params and `gui_init` ([RE
 | Slider | darktable: range, soft range | Digits | darktable's step | Apertrust: range, track | Decimals, step | Differs |
 | --- | --- | --- | --- | --- | --- | --- |
 | Exposure (`exposure`) | −18 to +18 EV; −3 to +4 EV | 3 | 0.05 EV | −18 to +18 EV; −3 to +4 EV | 3; 0.05 EV | No. The value shown is darktable's, +0.700 EV on a colour raw as first shown. A value typed or scripted beyond the soft range widens the track, as darktable's does |
-| Percentile (`deflicker_percentile`), not ported | 0 to 100 %; none | 2 | 1 % | 0 to 100 %; the range | 2; 1 % | No |
-| Target level (`deflicker_target_level`), not ported | −18 to +18 EV; none | 2 | 0.1 EV | −18 to +18 EV; the range | 2; 0.1 EV | No |
+| Percentile (`deflicker_percentile`) | 0 to 100 %; none | 2 | 1 % | 0 to 100 %; the range | 2; 1 % | No |
+| Target level (`deflicker_target_level`) | −18 to +18 EV; none | 2 | 0.1 EV | −18 to +18 EV; the range | 2; 0.1 EV | No |
 | Black level correction (`black_level`) | −1 to +1, the black itself; −0.1 to +0.1 | 4 | 0.001 | −1 to +1, an offset over the photo's own black (decision 22); −0.1 to +0.1 | 4; 0.001 | No. darktable's slider shows the black, −0.0002 on a colour raw, ours the offset over it, 0 there. The black is held within darktable's ±1, so on a colour raw the control's bottom 2⁻¹² changes nothing, and one that reaches the white the photo renders goes 0.01 below it (decision 30) |
 | Lightness (`lightness`), Area exposure mapping's setting | 0 to 100 %; none | 1 | 1 % | 0 to 100 %; the range | 1; 1 | No |
 
@@ -68,7 +63,7 @@ Exposure steps by darktable's 0.05 EV, Shift 0.5 EV and Alt 0.005 EV, darktable'
 
 ### Tooltips
 
-These are the tooltips (`tool-exposure-control-<control>-promise`), each turned into the rows named. Exposure, Highlight preservation mode, Percentile and Target level have darktable's tooltips; Mode, which has none in darktable, has words of the same kind. Of Mode, Percentile and Target level nothing is ported but what E32 holds.
+These are the tooltips (`tool-exposure-control-<control>-promise`), each turned into the rows named. Exposure, Highlight preservation mode, Percentile and Target level have darktable's tooltips, and so does the computed EC readout; Mode, which has none in darktable, has words of the same kind.
 
 | Control | Tooltip | Rows |
 | --- | --- | --- |
@@ -76,7 +71,7 @@ These are the tooltips (`tool-exposure-control-<control>-promise`), each turned 
 | Black level correction | Sets which level is black. Keeps white. 0 = untouched. | E30 |
 | Compensate camera exposure | Undoes the exposure compensation set on the camera. | E31 |
 | Highlight preservation mode | darktable's | E33 |
-| Mode, Percentile, Target level | darktable's | E32 |
+| Mode, Percentile, Target level | darktable's | E32, E34 to E37 |
 
 ### Transfer functions
 
@@ -97,7 +92,11 @@ These are the tooltips (`tool-exposure-control-<control>-promise`), each turned 
 | E14 | Exposure with another control | Exposure +1, then Black level correction or Compensate camera exposure; and the other way round | Frame | The same whichever was set first | Exact | Ramp; 90D |
 | E30 | Black level correction | −1, −0.1, −0.01, +0.01, +0.1, +1: the range's ends and the track's | Tool output, on the ramp | The level set as black renders 0; the grey Exposure renders at 1.0 stays at 1.0; greys between stretch linearly. Where a value puts black at or above the white the photo renders, black goes 0.01 below it (decision 30): at +1 on photos with a bias up to +0.7 EV, at +0.1 on photos with a bias below −2.6 EV; at −1 on a colour raw it stops at −1, darktable's lowest. The margin amplifies the GPU's `exp2` error, which this row measures there | 1e-5 relative (proposed) | Ramp; 90D |
 | E31 | Compensate camera exposure | Off, on a raw with bias −0.67 EV; off, on a raw with none | Tool output: E4's factor | Darkens by the bias, 0.67 EV; with no bias, changes nothing | 0.02 EV (proposed); exact | Ramp in both contexts; 90D, Z 6 |
-| E32 | What is not ported | Percentile 0 and 100; Target level −18 and +18; Mode automatic; each beside Exposure +1, as a command and pasted into a saved edit | The edit | The command is refused and the edit stays as it was; the pasted value is left out with one warning, Exposure +1 kept, so the edit is the one without it | Exact | None: no render, since the edit never holds one |
+| E32 | Mode, Percentile and Target level, over their ranges | Percentile 0 and 100; Target level −18 and +18; Mode automatic; each beside Exposure +1, as a command and pasted into a saved edit | The edit | Each taken, Exposure +1 kept, with no warning | Exact | None: the edit |
+| E34 | Automatic mode across a series | Automatic at 50 % and −4 EV, Black level correction putting the black at 0, on one scene's raw exposed 2 EV under to 1 EV over | The exposure it computes; tool output | Exposures exactly the brackets apart; one image for the series | 1e-6 EV; 1e-3 relative spread (proposed) | A synthetic raw at 2⁻², 2⁻¹, 1 and 2 times, none clipping |
+| E35 | Automatic mode | Percentiles 10, 50 and 90 and target levels −4 and −2 EV | Tool output | The frame manual mode renders at the exposure it computes, with both compensations off, as darktable replaces them | Exact | The synthetic raw holding 0.5 EV back with a bias of −0.67 EV, through the export and the viewport |
+| E36 | Automatic mode on an image that is not a raw | Automatic at 90 % and −2 EV, beside Exposure +1 | Frame | Manual mode's, as darktable's `commit_params` leaves it | Exact | Ramp with no camera |
+| E37 | The raw's histogram | Exposure +1 in manual mode; then automatic, then its settings moved | Whether the histogram is counted | None in manual mode; counted once in automatic mode, over the declared image, and kept | Exact | The synthetic raw |
 | E33 | Highlight preservation mode | Off, on raws whose camera held 0.5 EV and 2 EV back; off, on a raw that held none back | Tool output: E4's factor | Darkens by what was held back; with none held back, changes nothing | 0.02 EV (proposed); exact | Ramp with a bias of −0.67 EV, holding 0.5, 2 and 0 EV back |
 | E50 | The picker | A pick on a flat patch, correction, at target lightnesses 30, 50 and 75 % | Exposure's output: the patch's luminance, Y through the input profile the pick reads it through | Becomes the target lightness's grey, 18.4 % at darktable's default 50 %; only Exposure changes | 0.01 EV (proposed) | Five flat patches, four greys from 0.05 to 1 and one of colour, on colour raws with biases 0 and −0.67 EV |
 | E51 | Auto, later | Auto, with Exposure kept and not kept | Values, marks and history | Moves only Exposure, and only if it is not kept; marks it Auto; one undo reverts it | Exact | Ramp |
@@ -133,19 +132,32 @@ A synthetic image is already white balanced, so the tests' colour calibration ad
 | E14 | Holds, exactly: one pipeline sets the first control and then both, another the second and then both, for Exposure with Black level and with Compensate camera exposure, on the ramp and the 90D (viewport and export) |
 | E30 | Holds, at Exposure's output: within 5.1e-7 relative at −1, −0.1, −0.01, +0.01, +0.1 and +1, at biases 0, −0.67 and −5 EV, the black held at −1 included; where the black goes 0.01 below the white, 1.3e-7, 1.3e-7 and 4.1e-7 at biases 0, −0.67 and −5 EV. lavapipe and WARP wait for CI |
 | E31 | Holds, at Exposure's output: off darkens by 0.6697 EV on a −0.67 EV raw, one factor for every pixel within a spread of 1.8e-7; with no bias, exactly nothing changes |
-| E32 | Holds, exactly: each command refused with the edit unchanged, each pasted value left out with one warning |
+| E32 | Holds, exactly: each command taken and each pasted value kept, with no warning |
+| E34 | Holds: the computed exposures +0.9214, −0.0786, −1.0786 and −2.0786 EV, the brackets apart within one f32 step; at Exposure's output the series within spreads of 1.6e-4, 5.3e-5 and 2.6e-5 relative of the scene at 1, at 2 EV under, 1 under and 1 over, demosaic not scale-invariant to the last bit, median factors 1 within 1e-7 |
+| E35 | Holds, exactly, at all six settings, in the export and the viewport |
+| E36 | Holds, exactly |
+| E37 | Holds: nothing counted in manual mode; 84 × 62 photosites counted once automatic is set, the same counts kept as its settings move |
 | E33 | Holds, at Exposure's output: off darkens by 0.4996 EV where 0.5 EV was held back and by 1.9973 EV where 2 EV was, one factor for every pixel within a spread of 1.9e-7; with none held back, exactly nothing changes |
 | E50 | Holds, at Exposure's output: each pick writes Exposure alone, and every patch lands within 0.0066 EV of its target, at biases 0 and −0.67 EV and targets 30, 50 and 75 %; the furthest is the darkest, 0.05, which the photo's own black of −2⁻¹², left aside by darktable's rule, moves most |
 
 ## In the panel
 
 - **Compensate camera exposure is drawn disabled** on a photo that records no bias, as an action that cannot run is (`ui-conventions`), with the tooltip naming the camera's bias as 0. Built through `Tool::available`; the tooltip still says what the control does, since a disabled control's tooltip cannot say why yet (`docs/gui.md`, the renderer's gaps). darktable's labels add the bias, "compensate camera exposure (+0.7 EV)" and "highlight preservation mode (0.5 EV)"; a label with a value of the photo's waits for the renderer.
-- **Mode** is a list, its automatic option drawn disabled, so the list reads as darktable's and says what is missing. The whole row is disabled only on an image that is not a raw; darktable also disables it on a raw that is not one 16-bit channel, which the engine does not render yet.
+- **Mode** is a list, manual and automatic. The whole row is disabled on an image that is not a raw, as darktable makes it insensitive; every raw the engine develops is one of 16 bits in one channel, darktable's test.
 - **Highlight preservation mode is drawn disabled** on a photo whose camera held no exposure back, as a control that cannot act is (decision 30), on as darktable's default is. darktable hides it there; hiding a control per photo is not decided ([port spec](../ports/exposure.md#open-questions)).
-- **The unported controls:** Percentile and Target level are drawn disabled. They show only in automatic mode, so never yet.
+- **Automatic mode** shows Percentile, Target level and the computed EC readout in place of Compensate camera exposure, Highlight preservation mode and Exposure, whose picker it hides with it, as darktable's stack does; Black level correction and Area exposure mapping stay.
 - **While closed** the section shows only its title and buttons, no summary of the controls set (docs/gui.md).
 - **Tracks:** Exposure's spans darktable's soft range, −3 to +4 EV, and a value typed or scripted beyond it, anywhere in the range's ±18 EV, widens it, as darktable's does, until the row is reset; Black level correction's spans darktable's soft range, −0.1 to +0.1, and widens the same way ([Sliders against darktable](#sliders-against-darktable)).
 - **Keyboard:** every row is a `SliderRow`, a toggle or a list, so arrows step, Shift steps ten and Alt a tenth, Home and End go to the track's ends, Delete resets, and Enter edits the value. The toggle, egui's checkbox, has Space but no marker or reset yet. The histogram drag (right of the middle for Exposure, left for Black level correction), with the scopes, sends the same `SetControl` commands.
+
+## Automatic mode
+
+darktable's deflicker ([port spec](../ports/exposure.md#automatic-mode-deflicker)): the exposure that puts the Percentile of the raw's histogram at the Target level below the white point, worked out from each photo, so an edit pasted onto a series of frames brings them to one level, a time-lapse's or a bracketed series'.
+
+- **The histogram** is every photosite of the declared image, whatever its colour, its 16-bit value as decoded, before rawprepare. The engine counts it on the GPU once per photo, only while automatic mode is on (decision 87), so manual mode costs nothing (E37). darktable meters rawspeed's crop, which differs on most raws by a few photosites at the edges, moving the exposure by at most 0.012 EV on the corpus ([port spec](../ports/exposure.md#deliberate-differences)).
+- **The exposure** is `target − ev`, ev the metered value in EV below rawprepare's white point: Raw black/white point's levels move it, as they move darktable's. It replaces Exposure and both compensations; Black level correction still applies (E35), put 0.01 below the white the computed exposure renders by the operation where it reaches it, the tool binding it in automatic mode within darktable's ±1 alone, since its own bound knows only Exposure's white.
+- **On an image that is not a raw** there is no histogram, and automatic mode renders as manual mode (E36).
+- **The computed EC readout** shows the exposure applied, reported with the values, before the frame that applies it.
 
 ## The picker
 
@@ -168,17 +180,17 @@ darktable's picker on Exposure (`exposure.c:1211-1218`), an area picker of the e
 - **The picker:** declared in the definition, `exposure`, an area picker writing Exposure and Black level and reading the area exposure mapping's settings, named by its slider's quad (`Quad::Picker(id)`), as darktable's page has it and Colour balance RGB's pickers are ([The picker](#the-picker)).
 - **Auto's tooltip:** "Sets Exposure so the photo's tones sit around middle grey. A kept Exposure stays as it is."
 - **Control ids:** darktable's parameter names, as Colour balance RGB's and RGB primaries' are: `mode`, `compensate_hilite_pres`, `deflicker_percentile`, `deflicker_target_level`. Exposure, Black level correction and Compensate camera exposure have ids of their own, `exposure`, `black_level` and `camera_bias`, which saved edits hold.
-- **The parameters not ported:** in the operation's schema at darktable's defaults, schema version 2, so Exposure owns them all; any other value is refused as not ported.
+- **Automatic mode's parameters:** in the operation's schema since version 2, so its tool's version 3 holds them with no migration: their defaults do not change.
 - **Highlight preservation mode's default:** on, as darktable turns it on for a module's first instance and the operation's default is (decision 21), so a Canon raw with its Auto Lighting Optimizer on renders 0.5 EV brighter than before, as darktable renders it. The whole-pipeline comparison still writes darktable's compensation off and the exposure Apertrust applies (decision 62).
-- **Their controls' values:** unported controls (`Control::unported`). They take only their defaults and are refused otherwise, as an unported option is; the session reports them unavailable, so they are drawn disabled, and the operation's refusal never meets an edit.
-- **Mode's sensitivity:** disabled on an image that is not a raw, as darktable's `gui_update` makes it; live on a raw, so its list shows automatic disabled. darktable also disables it on a raw that is not one 16-bit channel, which the engine does not render yet.
+- **Mode's sensitivity:** disabled on an image that is not a raw, as darktable's `gui_update` makes it, where darktable also resets the mode to manual in the history; Apertrust leaves the edit as it is, rendering it as manual mode, since an edit pasted onto a series must keep its rule for the raws in it.
 - **The area exposure mapping:** Area mode, the patches and Lightness, the picker's settings as `Row::Setting`s kept in settings and the patches as `Row::Patches`, in a group closed at first. darktable keeps its area mode nowhere and puts it back to correction at every `gui_update` (`exposure.c:742`): another photo, undo and redo, a history move, the module's reset. Apertrust keeps it in settings, as it keeps Lightness, a deliberate difference.
-- **The computed EC readout:** left out until a row draws a readout; it shows only in automatic mode, which cannot be chosen.
+- **The computed EC readout:** a computed value's row, the value the session reports from the operation's own computation, signed and with its unit as a slider's value is, as the wireframe shows it; darktable's `%.2f EV` has no plus sign.
 - **Edits version 1 saved:** their Exposure, in exact stops, is left out with a warning; no release wrote one (decision 48).
 
 ## Phases
 
 - **Built (Phase 2, step 6 of `docs/gui.md`, and the first pass, decision 2):** darktable's page, with rows E0, E3, E4, E6 to E9, E14 and E30 to E32: Mode, Compensate camera exposure, Highlight preservation mode, Exposure, Percentile, Target level, Black level correction and the Area exposure mapping group, with no Advanced controls (decision 29).
+- **Built (version 3):** automatic mode, darktable's deflicker, with E32 and E34 to E37 and its computed EC readout (decision 87); the tool's version unchanged, its defaults being too.
 - **Built (version 3):** Highlight preservation mode ported, with E33: the held-back exposure read from the maker notes as darktable reads it, given back by default ([port spec](../ports/exposure.md)).
 - **Built (Phase 2, decision 79's 79.7):** the picker, with E50 ([The picker](#the-picker)): its pick in correction and measure modes, the Area exposure mapping's settings kept in settings, the patches and the L readout.
 - **Later in Phase 2:** Auto with E51.

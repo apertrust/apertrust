@@ -242,6 +242,12 @@ impl State {
             == Some(hash)
     }
 
+    /// `path`'s thumbnail due at the next tick, whatever retry it waited for: the raw's
+    /// histogram it waited for is counted (decision 87).
+    pub(in crate::session) fn due(&mut self, path: &Path) {
+        self.not_before.remove(path);
+    }
+
     fn finish(&self, path: &Path, hash: [u8; 32]) {
         self.done
             .lock()
@@ -352,6 +358,13 @@ impl Engine {
         if let Some((tool, error)) = bound.failed.first() {
             return Err(format!("tool {tool} left out: {error}"));
         }
+        // An edit reading the raw's histogram renders none until it is counted, rather
+        // than a thumbnail of another exposure that would be kept (decision 87).
+        if open.image.raw_histogram.is_none()
+            && crate::raw_histogram::read_by(&bound.instances, &open.image)
+        {
+            return Err("the raw's histogram is not counted yet".to_owned());
+        }
         let defaults = edit::instances(&Edit::default(), self.operations, &self.tools, &open.image);
         let unchanged = bound.instances.len() == defaults.instances.len()
             && (bound.instances.iter().zip(&defaults.instances)).all(|(a, b)| {
@@ -404,6 +417,13 @@ impl Engine {
         let Some(upkeep) = self.cache.clone() else {
             return;
         };
+        // The raw's histogram where the saved edit reads it, as the photo leaves with no
+        // values report too, and at each retry (decision 87).
+        let mut failed = Vec::new();
+        self.count_raw_histogram(&mut failed);
+        for event in failed {
+            tracing::warn!(target: "pipe", "thumbnail: {event:?}");
+        }
         let photo = path
             .file_name()
             .unwrap_or_default()
@@ -420,6 +440,24 @@ impl Engine {
             return;
         };
         let raw = self.raw_thumbnails;
+        // An edit reading the raw's histogram whose count failed tries again later, never
+        // marked done; a count that succeeds plans it at once (decision 87).
+        if open.image.raw_histogram.is_none() {
+            let saved = edit::instances(
+                &open.saved_edit(),
+                self.operations,
+                &self.tools,
+                &open.image,
+            );
+            if crate::raw_histogram::read_by(&saved.instances, &open.image) {
+                tracing::debug!(target: "pipe", "thumbnail of {photo}: waits for the raw's histogram");
+                let retry = Instant::now() + RETRY_AFTER;
+                self.rendered_thumbnails
+                    .not_before
+                    .insert(path, (hash, retry));
+                return;
+            }
+        }
         let plan = self.thumbnail_plan(open);
         // What darktable's rule shows at each size of the photo with no edit, from what its
         // open read of the raw: a render, the embedded picture, or `None` where only the

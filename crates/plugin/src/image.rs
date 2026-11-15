@@ -19,6 +19,8 @@
 
 use std::fmt;
 
+use crate::RawHistogram;
+
 /// How a buffer holds the image (`docs/engine.md`, Data).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Format {
@@ -79,6 +81,12 @@ pub struct ImageDesc {
     /// D65 reference, as temperature's preset "as shot to reference" asks: darktable's
     /// `dev->chroma.late_correction`.
     pub late_correction: bool,
+    /// rawprepare's black, its four levels averaged and rounded, and its white point, in
+    /// raw units, as its parameters set them: darktable's `dsc.rawprepare`, which
+    /// exposure's automatic mode turns a raw value into EV with (decision 87). 0 before
+    /// rawprepare, and on an image that is not a raw.
+    pub raw_black: u32,
+    pub raw_white: u32,
     /// Its stage's image at full resolution (decision 16): the developed image, or after
     /// an operation that moves pixels, that operation's output. The planner sets it for
     /// every RGBA image; a mosaic's is (0, 0), since it lies on the sensor, in no stage.
@@ -118,6 +126,8 @@ impl ImageDesc {
             maximum: [1.0; 3],
             white_balance: [1.0; 3],
             late_correction: false,
+            raw_black: 0,
+            raw_white: 0,
             extent,
             scaled_extent: extent,
             origin: [0, 0],
@@ -202,6 +212,13 @@ pub struct ImageContext {
     /// give it: its full resolution in tiles, or an operation between it and the
     /// downscale.
     pub full_resolution: Option<ImageDesc>,
+    /// The raw's histogram, for `prepare` alone, once the engine has counted it: it
+    /// counts it on the GPU, once per photo, only while an operation reads it
+    /// ([`Operation::reads_raw_histogram`](crate::Operation)), and hands it to every
+    /// `prepare` from then on (decision 87). `None` on an image that is not a raw, and
+    /// until an operation asks; an operation that reads it renders without it as it can,
+    /// exposure's automatic mode as manual mode.
+    pub raw_histogram: Option<RawHistogram>,
 }
 
 impl ImageContext {
@@ -216,6 +233,7 @@ impl ImageContext {
             camera: None,
             output_profile: None,
             full_resolution: None,
+            raw_histogram: None,
         }
     }
 

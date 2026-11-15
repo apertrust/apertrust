@@ -83,6 +83,7 @@ Every variant of `Event` today, with its kind. "Through" is the number of comman
 - for a number, its range, track and step for the tool's values (`ControlState::range`, from `Tool::range`; the definition's where the tool's code panics or gives one that does not hold, warned of once);
 - for a choice, the options this photo lists (`ControlState::options`, computed once as the photo opens; every option where the tool's code fails, warned of once);
 - each preset row's matching option (`PresetState`) and each view's coordinates (`CoordinateState`, [engine.md](engine.md#preset-rows-and-lossless-views));
+- each computed value, the number its operation computes from the photo as the edit renders it, while its row shows, else none (`ToolState::computed`, `ComputedState`, decision 87; [engine.md](engine.md#the-raws-histogram));
 - whether the tool is edited.
 
 Then come `settings`, the parameters no tool owns of the operations an unedited photo runs, over the photo's defaults; `edited`, whether anything differs from its default (today marks alone do not count; planned, kept and Auto marks count too, so Reset clears them); and `through`. Whether each tool is on, `ToolState::enabled`, a switched tool counting as edited while on (decision 32). Whether the History tab's eye hides each tool from the view, `ToolState::hidden` (decision 78), its controls, `enabled` and `edited` staying the edit's; a `Hide` that changes it is answered by `Values`.

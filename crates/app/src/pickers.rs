@@ -1406,6 +1406,7 @@ mod tests {
                 controls,
                 presets: Vec::new(),
                 views: Vec::new(),
+                computed: Vec::new(),
             }],
             settings: Vec::new(),
             edited: false,

@@ -443,6 +443,8 @@ tool-exposure-control-deflicker_percentile-promise = Where in the histogram to m
 tool-exposure-control-deflicker_target_level-label = Target level
 tool-exposure-control-deflicker_target_level-full = Target level
 tool-exposure-control-deflicker_target_level-promise = Where to place the exposure of processed photos, in EV below overexposure.
+tool-exposure-computed-computed_exposure-label = Computed EC
+tool-exposure-computed-computed_exposure-promise = What exposure correction has actually been used.
 tool-exposure-control-black_level-label = Black level correction
 tool-exposure-control-black_level-full = Black level correction
 tool-exposure-control-black_level-promise = Sets which level is black. Keeps white. 0 = untouched.

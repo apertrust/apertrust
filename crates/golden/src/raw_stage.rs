@@ -352,11 +352,13 @@ pub fn pipeline_xmp(
     stage: &RawStage,
     black: f32,
     exposure: f32,
+    automatic: Option<Automatic>,
     channel_mixer: &[u8],
     agx: &[u8],
 ) -> Result<String> {
     let xmp = history(stage, &["exposure", "channelmixerrgb", "agx", "flip"])?;
-    let xmp = set_params_and_version(&xmp, "exposure", 7, &exposure_params_v7(black, exposure))?;
+    let params = exposure_params_v7(black, exposure, automatic);
+    let xmp = set_params_and_version(&xmp, "exposure", 7, &params)?;
     ensure!(
         channel_mixer.len() == 160,
         "channelmixerrgb v3 params of {} bytes",
@@ -367,17 +369,30 @@ pub fn pipeline_xmp(
     set_params_and_version(&xmp, "agx", 7, agx)
 }
 
-/// darktable `dt_iop_exposure_params_t` version 7 in manual mode: mode, black,
-/// exposure, deflicker percentile and target level at darktable's defaults, then the
-/// flags to compensate the camera's exposure bias and highlight preservation, both off.
-fn exposure_params_v7(black: f32, exposure: f32) -> Vec<u8> {
-    const MANUAL: i32 = 0;
+/// Exposure's automatic mode, darktable's deflicker: its percentile, in %, and its target
+/// level, in EV (decision 87).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Automatic {
+    pub percentile: f32,
+    pub target: f32,
+}
+
+/// darktable `dt_iop_exposure_params_t` version 7: mode, black, exposure, deflicker
+/// percentile and target level, then the flags to compensate the camera's exposure bias
+/// and highlight preservation, both off. In manual mode without `automatic`, the
+/// deflicker's at darktable's defaults; in automatic mode with it, which ignores the
+/// exposure and both flags.
+fn exposure_params_v7(black: f32, exposure: f32, automatic: Option<Automatic>) -> Vec<u8> {
+    let (mode, percentile, target) = match automatic {
+        None => (0i32, 50.0f32, -4.0f32),
+        Some(Automatic { percentile, target }) => (1, percentile, target),
+    };
     [
-        MANUAL.to_le_bytes(),
+        mode.to_le_bytes(),
         black.to_le_bytes(),
         exposure.to_le_bytes(),
-        50.0f32.to_le_bytes(),
-        (-4.0f32).to_le_bytes(),
+        percentile.to_le_bytes(),
+        target.to_le_bytes(),
         0i32.to_le_bytes(),
         0i32.to_le_bytes(),
     ]
@@ -1024,7 +1039,7 @@ mod tests {
             &apertrust_operations::agx::Settings::scene_referred_default(),
         );
         let stage = stage();
-        let xmp = pipeline_xmp(&stage, -1.0 / 4096.0, 0.25, &channel_mixer(), &agx).unwrap();
+        let xmp = pipeline_xmp(&stage, -1.0 / 4096.0, 0.25, None, &channel_mixer(), &agx).unwrap();
 
         // Exposure as darktable's version 7: manual, black, exposure, deflicker
         // defaults, and neither compensation.
@@ -1074,12 +1089,30 @@ mod tests {
     }
 
     #[test]
+    fn pipeline_xmp_writes_automatic_mode_with_its_percentile_and_target() {
+        let agx = crate::ports::agx_params_v7(
+            &apertrust_operations::agx::Settings::scene_referred_default(),
+        );
+        let automatic = Automatic {
+            percentile: 90.0,
+            target: -2.5,
+        };
+        let xmp = pipeline_xmp(&stage(), 0.0, 0.7, Some(automatic), &channel_mixer(), &agx);
+        let exposure = module_params(&xmp.unwrap(), "exposure").unwrap();
+        assert_eq!(exposure.version, 7);
+        // darktable's EXPOSURE_MODE_DEFLICKER, then the deflicker's settings.
+        assert_eq!(word(&exposure.bytes, 0), 1i32.to_le_bytes());
+        assert_eq!(word(&exposure.bytes, 12), 90.0f32.to_le_bytes());
+        assert_eq!(word(&exposure.bytes, 16), (-2.5f32).to_le_bytes());
+    }
+
+    #[test]
     fn pipeline_xmp_refuses_params_of_another_size() {
         let agx = crate::ports::agx_params_v7(
             &apertrust_operations::agx::Settings::scene_referred_default(),
         );
-        assert!(pipeline_xmp(&stage(), 0.0, 0.0, &channel_mixer(), &[0; 140]).is_err());
-        assert!(pipeline_xmp(&stage(), 0.0, 0.0, &[0; 156], &agx).is_err());
+        assert!(pipeline_xmp(&stage(), 0.0, 0.0, None, &channel_mixer(), &[0; 140]).is_err());
+        assert!(pipeline_xmp(&stage(), 0.0, 0.0, None, &[0; 156], &agx).is_err());
     }
 
     #[test]

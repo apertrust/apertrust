@@ -90,6 +90,7 @@ pub fn image_context(raw: &RawImage) -> ImageContext {
         output_profile: None,
         // The viewport planner's, for one operation's `prepare` (decision 15).
         full_resolution: None,
+        raw_histogram: None,
     }
 }
 

@@ -425,6 +425,12 @@ pub enum Row {
         control: &'static str,
         buttons: &'static [Button],
     },
+    /// A computed value: a number the tool's operation computes from the photo for the
+    /// panel, darktable's label beside a value it fills in as the image renders, as
+    /// Exposure's "computed EC" (decision 87). One line, its label at the start and the
+    /// value at the end, read-only. It is no control; its value comes from the session with
+    /// the tool's state (`ToolState::computed`), none while the operation computes none.
+    Computed(Computed),
     /// darktable's guides widget, which it adds to a module with
     /// `IOP_FLAGS_GUIDES_WIDGET` (`dt_guides_init_module_widget`): its show guides
     /// toggle, the overlay while the module has focus, kept in darktablerc and never in
@@ -432,6 +438,19 @@ pub enum Row {
     /// ([`crate::messages::GUIDES`]). Until the tool's guides come the panel draws it
     /// disabled, off.
     Guides,
+}
+
+/// A [`Row::Computed`]: its id, unique among the tool's computed values, whose words are
+/// `tool-<tool>-computed-<id>-label` and `-promise`, the operation that computes it
+/// ([`apertrust_plugin::Operation::computed`], asked with the same id), one whose
+/// parameters the tool owns, and how its value shows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Computed {
+    pub id: &'static str,
+    pub operation: &'static str,
+    pub unit: Option<Unit>,
+    /// Decimals the value shows.
+    pub decimals: u8,
 }
 
 /// One button of a [`Row::Buttons`]: its action's id, whose words are an action's
@@ -474,6 +493,7 @@ impl Row {
             | Row::Action { .. }
             | Row::Pickers { .. }
             | Row::Patches { .. }
+            | Row::Computed(_)
             | Row::Guides => &[],
             Row::Custom { controls, .. } => controls,
         }
@@ -812,6 +832,8 @@ pub enum DefinitionError {
     UnknownSetting(&'static str),
     #[error("two actions are called {0}")]
     DuplicateAction(&'static str),
+    #[error("two computed values are called {0}")]
+    DuplicateComputed(&'static str),
     #[error(
         "rows follow {0}: not a choice or a toggle of the tool, no value or one it cannot hold, or among those rows"
     )]
@@ -929,6 +951,28 @@ impl Definition {
         defaults
     }
 
+    /// Every computed value's row, in the panel's order, with whether it shows while the
+    /// controls hold `values`: each mode it is in holding one of the values it shows for,
+    /// as [`Control::text`] writes them.
+    pub fn computed(&self, values: &Controls) -> Vec<(&Computed, bool)> {
+        self.placed()
+            .into_iter()
+            .filter_map(|placed| match placed.row {
+                Row::Computed(computed) => {
+                    let shown = placed.at.modes.iter().all(|(control, is)| {
+                        let text = self
+                            .control(control)
+                            .zip(values.get(control))
+                            .map(|(control, value)| control.text(value));
+                        text.is_some_and(|text| is.contains(&text.as_str()))
+                    });
+                    Some((computed, shown))
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
     /// Every row in the order the panel lists them, each before the rows inside it: those
     /// before every tab's, the tabs', then those after, with the rows of groups and modes.
     pub fn rows(&self) -> impl Iterator<Item = &Row> {
@@ -1033,7 +1077,8 @@ impl Definition {
             return Err(DefinitionError::Id(id));
         }
         let placed = self.placed();
-        let (mut labels, mut groups, mut settings, mut actions) = (
+        let (mut labels, mut groups, mut settings, mut actions, mut computed) = (
+            BTreeSet::new(),
             BTreeSet::new(),
             BTreeSet::new(),
             BTreeSet::new(),
@@ -1115,6 +1160,14 @@ impl Definition {
                     }
                     if !actions.insert(*id) {
                         return Err(DefinitionError::DuplicateAction(id));
+                    }
+                }
+                Row::Computed(Computed { id, .. }) => {
+                    if !is_id(id) {
+                        return Err(DefinitionError::Id(id));
+                    }
+                    if !computed.insert(*id) {
+                        return Err(DefinitionError::DuplicateComputed(id));
                     }
                 }
                 Row::Buttons { buttons, .. } => {

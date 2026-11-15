@@ -27,6 +27,7 @@ use apertrust_engine::compute::GpuImage;
 use apertrust_engine::edit::{self, Edit};
 use apertrust_engine::gpu::{GpuContext, GpuOptions};
 use apertrust_engine::pipeline::{self, Instance, Limits, Pipe, Pipeline};
+use apertrust_engine::raw_histogram;
 use apertrust_operations::OPERATIONS;
 use apertrust_plugin::{Camera, ImageContext, Pattern, Value};
 use apertrust_tools::TOOLS;
@@ -278,6 +279,12 @@ impl Bench {
     }
 
     pub fn render(&mut self, instances: &[Instance]) -> Rendered {
+        // The raw's histogram where an instance reads it, as the session and an export
+        // count it before they plan (decision 87).
+        if !self.synthetic {
+            let counted = raw_histogram::fill(gpu(), instances, &mut self.image, &self.input);
+            pollster::block_on(counted).unwrap();
+        }
         let plan = pipeline::plan(
             instances,
             &self.image,
