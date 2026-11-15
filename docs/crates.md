@@ -749,10 +749,10 @@ The actions registry and the default keyboard map:
 
 ### The Export dialog
 
-`src/export.rs` (decision 56; [docs/gui.md](gui.md), The Export dialog): a sheet on the Mac, a modal window on Windows and Linux (`impl Dialog for Export`).
+`src/export.rs` (decision 56; [docs/gui.md](gui.md#as-built), The Export sheet, As built): a sheet on the Mac, a modal window on Windows and Linux (`impl Dialog for Export`).
 
 - File › Export… (`export`, Cmd+E) opens it, enabled with a photo open. Where the host shows no alert (`dialog_host::platform::shows_alerts`, the Mac's only so far), `Export::alerts(false)` lists Overwrite disabled and rests Export while it is chosen.
-- `Dialog::show(&mut Ui)` is its content: darktable's File on disk, JPEG and PNG, Set size's four modes, Allow upscaling, High quality resampling, and Profile (Image settings, sRGB). Every other row is drawn disabled, saying why. Its choices are Boxed; planned, the dialog drawn as a tool, every row a tool's setting, its choices Blended (decision 84; [docs/gui.md](gui.md#drawn-as-a-tool)).
+- `Dialog::show(&mut Ui)` is its content: darktable's File on disk, JPEG and PNG, Set size's four modes, Allow upscaling, High quality resampling, and Profile (Image settings, sRGB). Every other row is drawn disabled, saying why. Its choices are Boxed. Planned: the Export sheet in its place, the photos it was opened with checked beside five export tools, every row a tool's setting, its choices Blended (decisions 84 and 86; [docs/gui.md](gui.md#the-export-sheet)).
 - The fifteen `export.*` settings are `export::Values` in `Settings::export`, kept as they change. The app's store opens on the export registry too, and `--conf export.…` is read.
 - Its feedback lines come from the session: `PreviewExport` on the first frame and on every change, through `export::commands`; `Event::ExportPreview` is handed back by `Dialogs::preview`, the highest `through` kept.
 - Export sends `Command::Export` for the active photo and closes the sheet.
@@ -796,6 +796,7 @@ The session's events enter the app in one place (decision 59, `src/mirror.rs`): 
 - **Slider popups** (decision 42; [docs/gui.md](gui.md), Slider values and choices): a slider popup's cancel sent as `CancelGesture`, the tool shown as reported when the gesture began until a report includes it.
 - Windows' Alt pressed and released alone, opening the ☰'s menu.
 - **Colour pickers** (decision 79; [pickers.md](pickers.md)): each other tool's pickers drawn as its pick lands; and the Colour picker section, hidden by default, its place to be decided.
+- **Sheets** (decisions 84 and 86; [docs/gui.md](gui.md#sheets)): the sheets' modality, the view's keys and the top panel resting under one; Export on its sheet in `export.rs`'s place, its photos written as the selection after an export; each tool's place declared and tested.
 
 ## apertrust-ui
 
@@ -971,6 +972,8 @@ From decision 42 ([docs/gui.md](gui.md), Slider values and choices):
 - `Choice`'s list as the service's dropdown, with darktable's type-to-filter.
 
 From decision 79 ([pickers.md](pickers.md)): the Colour picker section's rows (79.16) and stored samples' marks.
+
+From decision 86 ([docs/gui.md](gui.md#sheets), Sheets): the setting rows a sheet's tools lack (a slider with no kept marker, the path, note, field and size rows, an indented toggle); `Sheet`, its regions, bar, column and footer; `GridCell`'s check-box caption and mark slot; `Checks`, plain data.
 
 ## apertrust-display
 
@@ -1463,7 +1466,7 @@ What an export writes and where, with no GPU (decision 56). The engine's session
 
 ### Planned
 
-The rest of the Export dialog's build ([docs/gui.md](gui.md), The Export dialog).
+Export on its sheet, presets, For sharing and Full size JPEG among them, and metadata ([docs/gui.md](gui.md#the-build-in-cards), The Export sheet).
 
 ## apertrust-library
 

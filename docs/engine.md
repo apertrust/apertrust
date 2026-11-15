@@ -1789,7 +1789,7 @@ Decision 79; the design in full is [pickers.md](pickers.md). One active picker p
 
 ## Export jobs
 
-Decision 56, under decision 2's rule, for the Export dialog ([gui.md](gui.md), The Export dialog). What an export writes and where lives in `apertrust-export`, a crate with no GPU: the settings, darktable's size computation, darktable's variables, the file-on-disk rules and the format writers. The engine's session runs the job.
+Decision 56, under decision 2's rule, for Export ([gui.md](gui.md#the-export-sheet), The Export sheet). What an export writes and where lives in `apertrust-export`, a crate with no GPU: the settings, darktable's size computation, darktable's variables, the file-on-disk rules and the format writers. The engine's session runs the job.
 
 Built:
 
@@ -1824,7 +1824,7 @@ The rest is planned.
   - A photo's own (its raw missing or unreadable, a binding or a render failing, the encoder) is that photo's, and the job goes on, as darktable-cli's loop does.
   - A failure of the destination (the folder cannot be created or written, the disk is full, read-only or gone) ends the job failed, as darktable's export job stops at a failed store (`_control_export_job_run`), since every later photo would fail the same way; the photos after it are reported not reached.
 - **Cancel** (`CancelJob { job }`, decision 57) takes effect before the job's next submission: the photo in progress is dropped and its temporary file removed, so nothing is left under its name; the photos written stay; a queued job is removed.
-- **Quitting:** dropping the session shuts its control down: the running export is cancelled and the queued ones discarded, as `CancelJob` does. The app asks the person first ([gui.md](gui.md), The Export dialog); the CLI waits for its job.
+- **Quitting:** dropping the session shuts its control down: the running export is cancelled and the queued ones discarded, as `CancelJob` does. The app asks the person first ([gui.md](gui.md#the-export-sheet), The Export sheet); the CLI waits for its job.
 - **Memory:** the live pipeline and the export's together, which spike X1 measures; a failed allocation follows [Limits and errors](#limits-and-errors).
 
 **How it is built** (`crates/engine/src/export_job.rs`):
@@ -1907,6 +1907,7 @@ Event::ExportPreview { through, preview }   the dialog's lines, for the latest P
 - **`PreviewExport`** runs as a `UserForeground` job with no progress (decision 57), an older one cancelled as a new one comes, never on the engine thread, since a NAS can take seconds to say which files exist; the latest answer wins.
   - It expands the active photo's name in full and the others' from what is known without decoding them (their file, folder and sequence).
   - It counts the files already there by On conflict's rule, and reports the active photo's output size, the pattern's errors (D8) and the folder's preflight.
+  - Planned with the Export sheet (decision 84): the command names the photo whose notes the sheet shows, `focus`, the sheet's active photo, and the preview expands that one's name in full and reports its output size: the open photo's from memory, another's planned from its saved edit over its raw's dimensions, read with the metadata and without decoding the image. Each photo's file and action are already listed, which the sheet draws as its cells' marks.
   - The preflight asks that the nearest folder that exists on the path be one the program can write, and reports a missing volume (`/Volumes/NAME` on the Mac, a drive letter on Windows, a folder under `/media` or `/run/media` on Linux) as a disk that is not connected. It advises; the export reports what actually fails.
 
 **How the preview is built** (`crates/engine/src/export_preview.rs`, `Disk::foresee` and `disk::preflight` in `apertrust-export`):

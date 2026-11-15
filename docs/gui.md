@@ -12,7 +12,7 @@ What the interface looks like and how it behaves is designed on the [UI wirefram
 | --- | --- |
 | How it fits together | [What is built](#what-is-built), [Goals](#goals), [Why egui](#why-egui), [Display colour](#display-colour), [Layers](#layers), [A frame](#a-frame) |
 | Foundations | [Design system](#design-system) (tokens, themes, components, [on-photo overlays](#on-photo-overlays)), [Translation](#translation) |
-| The window and the platform | [The window frame and menus](#the-window-frame-and-menus), [The menu bar](#the-menu-bar), [Popups](#popups), [Dialogs and alerts](#dialogs-and-alerts), [The Export dialog](#the-export-dialog), [The start window](#the-start-window) |
+| The window and the platform | [The window frame and menus](#the-window-frame-and-menus), [The menu bar](#the-menu-bar), [Popups](#popups), [Dialogs and alerts](#dialogs-and-alerts), [Sheets](#sheets), [The Export sheet](#the-export-sheet), [The start window](#the-start-window) |
 | The panels | [The shell](#the-shell) (the layouts, selection, workspaces, the top panel, the side panel, the photo frame, the central bar, the caption, the grid panel), [Tool panels from definitions](#tool-panels-from-definitions) |
 | Controls | [Slider values and choices](#slider-values-and-choices), [Painted widgets](#painted-widgets): [the curve](#the-curve), [the equalizer](#the-equalizer), [the scopes](#the-scopes) |
 | Keys and settings | [Keyboard and actions](#keyboard-and-actions), [Settings and workspace](#settings-and-workspace) |
@@ -34,7 +34,7 @@ Steps 1 to 5 of the [build order](#build-order) are built, step 6 has its render
 - The actions registry and the [default keyboard map](#the-default-keyboard-map) in `crates/app/src/actions.rs`.
 - [The settings file](#settings-and-workspace), `settings.toml`, in the user data folder (decision 43).
 - The Mac's [window frame](#the-frame) and native [menu bar](#the-menus), and the frames of Windows and Linux with the ☰ and its drawn menu (decision 39), on the first piece of [the popup service](#popups) (decision 40).
-- The dialog host, with Settings, the Export dialog, the jobs window, the log window and the system's alerts ([Dialogs and alerts](#dialogs-and-alerts), [The Export dialog](#the-export-dialog), [The log window](#the-log-window)).
+- The dialog host, with Settings, the Export dialog, the jobs window, the log window and the system's alerts ([Dialogs and alerts](#dialogs-and-alerts), [The Export sheet](#as-built), [The log window](#the-log-window)).
 - Folder mode's first parts: File › Open Folder… and Open…, drag and drop onto the window, View › Browse, Browse's Folders in the Photos tab, the grid panel's cells and the central panel's empty states ([File](#file), [The grid panel](#the-grid-panel), [The central panel's layouts](#the-central-panels-layouts)); Open Recent, File › Close, reopening what was open last and [the start window](#the-start-window).
 
 Still to come:
@@ -264,7 +264,7 @@ An interface for photo editing must not be too contrasty, so:
 - **Rows and frames:**
   - the slider row, in two lines ([how the rows are laid out](#how-the-rows-are-laid-out)): the label and marker, the row's buttons and the value, read-only with its unit at rest and a field while edited (decision 42), over a track the content's full width. Its handle is the marker the user chooses, Triangle, Circle or Square, Square by default, and stays whole at the track's ends (decision 75); under the pointer it brightens, and while dragged it keeps its fill and size with an accent border just inside its edge (`slider_handle_hover`, `slider_handle_active`), the circle and the square adding a short centre line in the accent, while the value stays in the text colour; the cursor stays the arrow; the curve's handles look the same. It shows the kept and Auto markers, the fill from the default, colour tracks and the Match tick, and spans darktable's soft range where it has one, widening to show a value beyond it;
   - the checkbox row (`ToggleRow`), one line: the design system's checkbox, then its label, which toggles it too; the action row (`ActionRow`), one text button;
-  - the dropdown row, always one line, Blended in tool panels and the Export dialog and Boxed elsewhere (decisions 42 and 84, [Choice rows: two styles](#choice-rows-two-styles));
+  - the dropdown row, always one line, Blended in tool panels and the sheets' tools and Boxed elsewhere (decisions 42 and 86, [Choice rows: two styles](#choice-rows-two-styles));
   - the section frame (`Section`): a header 30 points high with chevron, title and action icons, centred vertically, and no summary when closed; underlined `Tabs`, each as wide as its name, their padding and then their names shrinking when they do not fit; group labels; collapsible groups (`CollapsibleGroup`), darktable's collapsible sections (decision 29); the body; peeking while H is held (`Section::peek`);
   - the side panel's `TabBar` (icon tabs, a tab with nothing behind it yet drawn disabled, never chosen, saying it is to come, » and ⋮ menus), `PanelBody` (pinned sections, a band, scrolling sections, a quiet scroll bar, `quiet_scroll`, and a section's header kept over its scrolling body, `PanelBody::header`, with a hairline and a soft shadow under it while the body scrolls under it) and `PanelEdge`; a section's header drawn apart, `Section::show_header`, its body with `section_body`, laid out as `Section::show` lays them. Planned with the side panel's layout (decision 83, [Moving, pinning and floating sections](#moving-pinning-and-floating-sections)): the draggable header (`Section::draggable`), the drop targets of `PanelBody` and `TabBar` with the insertion line, and the floating panel's frame.
 - **Painted widgets:** colour wheels (ring, puck, saturation and luminance arcs), [the curve](#the-curve), [the equalizer](#the-equalizer)'s bands, hue curve, [the scopes](#the-scopes) (histogram, waveform, parade, vectorscope, with their controls on hover), the grid panel's thumbnails (`GridCell`), layer rows.
@@ -628,7 +628,7 @@ macOS only: the app menu, which macOS titles with the app's name.
 | Import library… | `import-library` | — | Phase 5, in a library (decision 46) |
 | Export as Project… | `export-as-project` | — | Phase 5, after the library, on an album (decision 46) |
 | Add Folder… | `add-folder` | — | Phase 5, in a library or project (decision 46) |
-| Export…; Export 12 Photos… with several selected | `export` | Ctrl+E | Built on the Mac, for the active photo ([The Export dialog](#the-export-dialog)) |
+| Export…; Export 12 Photos… with several selected | `export` | Ctrl+E | Built on the Mac, Windows and Linux, for the active photo, as a dialog; planned, the Export sheet with the selected photos checked ([The Export sheet](#the-export-sheet)) |
 | Export Again; Export 12 Photos Again with several selected: the last export's settings, with no dialog, as darktable's Ctrl+E does | `export-again` | None by default, so anyone used to darktable can bind Ctrl+E to it | Built on the Mac, for the active photo ([Export Again](#export-again)) |
 | Print… | `print` | Ctrl+P | New, with the Print sheet, after Phase 5 (decision 37) |
 | — | | | |
@@ -665,7 +665,7 @@ macOS only: the app menu, which macOS titles with the app's name.
 - **Import library…**, a library's command and never a project's, brings another library or a project in as one album named after it, by copy (the default) or reference. The sheet says first what a copy costs ("Copies 2,140 photos, 61 GB") and, for a project, what stays behind ("Leaves 212 photos in Trash and 40 in Output"), and asks once about photos already here, Keep both or Link.
 - **Export as Project…** makes an album, with the albums inside it, a standalone project, by copy (the default) or reference.
 - **Add Folder…** adds a folder to the library in place, as a root, writing its id file once (decision 53).
-- **Export…** is a dialog on every selected photo; **Print…** a full-window sheet on them ([Dialogs, sheets and the slideshow](#dialogs-sheets-and-the-slideshow)). With more than one selected, Export's words say how many. Ctrl+E opens the dialog and Return exports, where darktable's Ctrl+E exports at once with the last settings; **Export Again** does that, with no key by default.
+- **Export…** opens the Export sheet with every selected photo checked, a dialog as built; **Print…** a full-window sheet on them ([Dialogs, sheets and the slideshow](#dialogs-sheets-and-the-slideshow)). With more than one selected, Export's words say how many. Ctrl+E opens it and Return exports, where darktable's Ctrl+E exports at once with the last settings; **Export Again** does that, with no key by default.
 
 #### Edit
 
@@ -1093,7 +1093,7 @@ Every dialog is a proper system modal window, and every confirmation the system'
 
 - The dialog host, `crates/app/src/dialog_host.rs`, on every platform: every dialog is built one way ([How a dialog is built now](#how-a-dialog-is-built-now)).
 - Settings: a modeless window of its own on the Mac, a modal window of the host on Windows and Linux.
-- The sheet on the Mac, started from the run loop, which the Export dialog uses ([The Export dialog](#the-export-dialog)).
+- The sheet on the Mac, started from the run loop, which the Export dialog uses ([The Export sheet](#as-built)).
 - The jobs window, modeless ([The jobs window](#the-jobs-window)).
 - The alerts on the Mac, `NSAlert` as a sheet, and on Linux, Apertrust's drawn alert in a dialog window, with Export's overwrite question and the quit alert as their first confirmations ([The alerts](#the-alerts)).
 - Wayland's parent relationship, with modality kept by the app. Windows' owner disabling and X11's native modality are [still to build](#still-to-build).
@@ -1102,7 +1102,7 @@ Every dialog is a proper system modal window, and every confirmation the system'
 
 | | macOS | Windows | Linux, X11 | Linux, Wayland |
 | --- | --- | --- | --- | --- |
-| Export, Customise tabs, the prompts for a name | A sheet on the window, the Mac's own form for a task on it | An owned window, its owner disabled while it is open | A dialog window transient for the main window, its modal state set | A toplevel whose parent is the main window, its modality kept by the app |
+| Export as built, Customise tabs, the prompts for a name | A sheet on the window, the Mac's own form for a task on it | An owned window, its owner disabled while it is open | A dialog window transient for the main window, its modal state set | A toplevel whose parent is the main window, its modality kept by the app |
 | Settings | A window of its own, modeless, leaving the main window taking input, as Apple's Settings windows are | As above | As above | As above |
 | The frame | A sheet has none; a window AppKit's title bar, minimise and zoom dimmed, as Apple asks of Settings | Decorations off, the system's undecorated shadow and Windows 11's rounded corners, and the host's strip, with the window's title and its close, no icon (decision 69) | Decorations off and the host's strip (decision 69) | As X11 |
 | Who keeps the main window's input from it | AppKit | Windows, the owner being disabled | The app, as X11 leaves it to the client | The app, as the protocol leaves it to the client |
@@ -1307,60 +1307,107 @@ Spike D1 tried one native modal test dialog through the host, on every platform.
 
 X11 keeps the dialog window type and the app's input blocking. Its `WM_TRANSIENT_FOR` and `_NET_WM_STATE_MODAL` are later work, when a concrete compatibility problem calls for them.
 
-Print and Import are full-window sheets inside the main window (decisions 37 and 41): they take the window's size for the page preview or the card's thumbnails, and are places to work rather than dialogs.
+Import, Export and Print are full-window sheets inside the main window, drawn by the design system rather than the dialog host (decisions 37, 41 and 86; [Sheets](#sheets)): they take the window's size for their thumbnails or the page preview, and are places to work rather than dialogs. Export is a dialog of the host until it is on its sheet.
 
-## The Export dialog
+## Sheets
 
-A modal window, as in commercial raw editors, not a side panel tool, doing what darktable's export module does, row for row (`src/libs/export.c`, `export_metadata.c`, `src/imageio/storage/*.c` and `format/*.c` at the reference release). It is drawn on the wireframe's Export board.
+Import… and Export… open one kind of sheet, full-window inside the main window (decision 86, planned): a sheet bar, a grid of photos with check boxes, a column of tools beside it and a footer. The two sheets differ only in their grid's content and marks, their tools, their notes and their footer's words ([The Export sheet](#the-export-sheet); Import's with its own decision). The wireframe is to gain a Sheets board drawn from this section, with Import's and Export's boards on it.
 
-- Ctrl+E (Cmd+E) opens the dialog and Return exports. File › Export Again does darktable's export at once with the last settings, with no key by default ([Export Again](#export-again)).
-- How it is built, the export job in the engine's session, darktable's size and resampling, the writers and the file on disk, is decision 56's ([engine.md](engine.md), Export jobs).
-- darktable's labels are lower case; the dialog writes them in sentence case and British English ("B&W as greyscale").
-- The **first build** is Phase 3's first slice, built on the Mac; anything outside it is drawn disabled, saying why. Its later parts, presets and metadata among them, are in [the phases](#the-phases).
+- **Drawn by the design system** on `panel`, the same on every platform: never one of AppKit's sheets, nor a window of the dialog host. It covers the window below the top panel.
+- **Built in this order** ([roadmap.md](roadmap.md#export)): the setting rows; the sheet frame; then Import's first slice and Export on the sheet, in either order; then the rest, presets, reordering and a larger look at one photo among them. The Export dialog keeps working, [as built](#as-built), until Export is on the sheet.
 
-```mermaid
-sequenceDiagram
-    participant D as Export dialog
-    participant A as App and mirror
-    participant S as Session
-    participant J as Jobs window
-    D->>S: PreviewExport (first frame, every change)
-    S-->>D: ExportPreview { through, preview }: names, conflicts, size, errors
-    D->>A: Export pressed
-    opt On conflict Overwrite and the question on
-        A->>A: NSAlert "Export in overwrite mode?"
-    end
-    A->>S: Command::Export { photos, settings }
-    Note over D: the dialog closes
-    S-->>A: Event::Job Added (UserExport): title, total, destination
-    A->>J: Show::Open
-    S-->>A: Event::Job Title, Detail, Progress, Destination
-    A->>J: the row: bar, "3 of 12 done · now …", ✕
+```text
+┌ top panel: its actions at rest; the jobs spinner and the window's controls live ─────────────────┐
+├ sheet bar ──────────────────────────────────────────────────┬────────────────────────────────────┤
+│ Import  EOS_DIGITAL · 412 photos, 3 imported before         │ Presets               Custom ▾  ⋯  │
+│ [Select all] [Select none] [Select new]  Checked only  ⇅  ⊕ │                                    │
+├ grid ───────────────────────────────────────────────────────┼ tools column, 440 ─────────────────┤
+│ ┌────┐ ┌────┐ ┌────┐ ┌────┐                                 │ ▾ Import from               ↺  ⋯   │
+│ │    │ │  ✓ │ │    │ │    │  an unchecked picture at half   │ ▾ Import to                 ↺  ⋯   │
+│ └────┘ └────┘ └────┘ └────┘  strength; a mark at its corner │   setting rows, path rows, notes   │
+│ ☑ DSCF1033 ☐ DSCF1034 ☑ …                                   │ ▸ Metadata                  ↺  ⋯   │
+├ footer, 52 ─────────────────────────────────────────────────┴────────────────────────────────────┤
+│ 209 of 412 photos · 6.2 GB → ~/Pictures/Apertrust/20261115_Wedding                               │
+│ Copies only; nothing on EOS_DIGITAL is changed.        ☐ Keep open   [Close] [Import 209 photos] │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Its form
+### A sheet's regions
 
-- **On the Mac, a sheet** (decision 41). It opens where AppKit puts it, centred over the main window, and cannot be moved; macOS 27 dims the whole main window behind it, the photo included (no sheet can hang under the top panel there). A sheet shows no title, so "Export 12 photos" is its own heading, 16-point Medium, in a 44-point header with a hairline under it. The main window takes no input while the sheet is open.
-- **On Windows an owned modal window, on Linux a transient modal one** (decision 41). The host's strip carries "Export 12 photos" ([0069](decisions/0069-dialogs-on-windows-and-linux-framed-by-the-host.md)), so the content drops the heading and the window is 44 points shorter. Windows puts Export before Close; Linux follows GNOME (Close, then Export) or KDE (Export, then Close). Dropdowns are drawn popups there (decision 40); on the Mac a plain list is the native pop-up menu.
-- **Size and content:** 640 points wide, drawn in Apertrust's tokens on `panel`. A Presets column of 200 points, then the settings column, drawn as a tool whose every row is a setting, 580 points high by default and the only part that scrolls ([Drawn as a tool](#drawn-as-a-tool), decision 84, planned). The footer holds "Exports run in the background; you can keep working.", Close, and the accent button **Export N photos**.
-- **Close keeps the settings as left,** as darktable keeps its conf: the dialog's settings are the `export.*` settings, written as they change (decision 56; [engine.md](engine.md), Export jobs).
-- **Alerts on the Mac** are `NSAlert` sheets on the Export sheet itself, attached at its top edge, centred and in front of it; the Export sheet takes no input while one asks.
-  - An alert asked of the main window would wait until the Export sheet closes (`beginSheet`), and a critical alert is meant for time-critical content.
-  - Another sheet asked for meanwhile, such as an AI model download question, queues until the Export sheet closes.
-- **Alerts on Windows and Linux** are owned by the dialog's window: a task dialog on Windows, and on Linux Apertrust's own alert ([The alerts](#the-alerts)).
+| Region | Where and how big | Holds |
+| --- | --- | --- |
+| **The sheet bar** | Across the sheet, as tall as the central bar, its 2-point separator under it; parted at the column's edge | Over the grid: the heading, the sheet's name in 16-point Medium then its source or photos and their count in `text_secondary`; the Select buttons; Import's Checked only; Sort; Zoom. Over the column: the presets row ([Presets](#presets-whole-sheet-only)) |
+| **The grid** | The rest of the sheet's width, between the bar and the footer | The grid panel's `GridCell`s with a check-box caption |
+| **The tools column** | 440 points by default, resizable at its edge (`PanelEdge`) from 296 to 600, and to no more than half the sheet where that leaves more than 296: 296 is the floor, below a 592-point sheet too; kept per sheet (`import.column_width`, `export.column_width`, owner `app`) | The sheet's tools, scrolling with the quiet scroll bar in its end margin |
+| **The footer** | 52 points across the sheet, a hairline above | The summary on two lines at its start; Keep open, Close and the primary button at its end |
 
-### Drawn as a tool
+- **The column sits on the side panel's side,** the right today and the left when the side panel moves there, the grid on the grid panel's: opening a sheet, thumbnails appear where thumbnails were and tools where tools were, and reading down the column ends above the primary button. With the grid panel at the right or the bottom, the column still follows the side panel.
+- **Why 440:** Export's rows were measured at 415 points (the path row, the notes, Polish's print size row at 407), and Import's path rows and sample-path notes are the same rows; at 320 the default paths are cut and every note wraps in Ukrainian and Polish. A 1280-point window still leaves the grid about 840 points, seven Medium cells across.
+- **The interface scale** multiplies all of it.
 
-The dialog's controls look and behave exactly as a tool's in the side panel: it is a tool shown in a dialog (decision 84, planned; the dialog [as built](#as-built) is the earlier form). Its settings are darktable's export settings, kept in `settings.toml` and never in an edit, which is what a tool's own settings are, so its settings column is drawn as a tool's page whose every row is a tool's setting (`Row::Setting`, [Tool panels from definitions](#tool-panels-from-definitions)), with the tool panel's components, sizes and rhythm ([How the rows are laid out](#how-the-rows-are-laid-out)).
+### Choosing photos
 
-- **What follows from a setting's row:**
-  - choices Blended ([Choice rows: two styles](#choice-rows-two-styles)), unbuilt options and rows disabled, saying why;
-  - no kept marker on any row, nothing here being an edit: a slider's marker place stays empty, so its label, value, track and handle stay where a tool's are, with no ○ under the pointer, no marker focus stop and no `ToggleKeep`; the handle is untouched;
+**The checks are what goes,** not the window's selection, in which a plain click selects one alone and would drop hundreds of chosen photos; the grid panel's gestures do the analogous, safe thing instead.
+
+| Input | On the picture | On the check box |
+| --- | --- | --- |
+| Click | Makes it the sheet's active photo, the notes following; the checks unchanged | Turns its check on or off; makes it the last touched |
+| Ctrl-click (Cmd on a Mac) | Turns its check on or off and makes it active | As a click |
+| Shift-click | Checks every photo from the active one to it; never unchecks; the active photo stays | Sets every cell from the last touched to it as the last touched was set |
+| Double-click | Nothing until the larger look comes | — |
+| Drag, right-click | Nothing | — |
+
+- **The sheet's active photo is its own:** it never changes the window's active photo or selection. The grid scrolls to it as the sheet opens.
+- **The checks are made fresh at each opening,** from the listing (Import) or the photos Export was opened with, and dropped on Close; Keep open keeps them while the sheet stays, but Import clears them as its copies are now imported.
+- **The Select buttons,** quiet text buttons as darktable has them, act on the cells shown: **Select all**, **Select none**, then **Select new** (Import: exactly the photos not imported before, darktable's "select new") or **Select edited** (Export: exactly the photos with an edit, the pencil's rule). Below about 520 points of grid width they fold into one **Select ▾** pull-down holding the same items.
+- **Checked only,** Import's alone, a toggle (Lucide's `list-checks`, filled while on), hides the unchecked cells to review exactly what goes, off at each opening. Export has none: its grid shows the set it was opened with.
+- **The model** is plain data in `apertrust-ui`, `Checks`: the checked set, the active photo and the last touched, unit-tested once for both sheets.
+
+### A sheet's cell
+
+The grid panel's `GridCell` ([The cell](#the-cell)), at the sheet's Zoom (`import.thumbnails`, `export.thumbnails`, Medium by default, the grid panel's four sizes):
+
+- **The picture,** fitted in its square, at half strength while unchecked, so what stays behind reads at a glance and never by colour alone.
+- **The caption,** always shown: the check box at its start, then the file name cut in its middle; Export's has the grid panel's rating line above it, read-only. A cell is at least as tall as its caption needs.
+- **The rings:** the sheet's active photo's 3-point `frame_ring`; no selected ring, the checks being the choice here; the focus ring outside.
+- **The marks,** at the picture's bottom right on `thumb_scrim`: the grid panel's own, then the destination mark in the same slot in both sheets, saying what happens at the destination: Import's photo imported before, Export's file already there and what On conflict does with it.
+- **The tooltip:** the file name, the capture time, the size and the camera; Import adds the file's modified time, Export the output file and its conflict.
+- **Only the cells in sight are drawn,** so 5,000 photos cost what a screenful does.
+
+### The tools column
+
+Each tool is a section with the tool panel's header and rows ([How the rows are laid out](#how-the-rows-are-laid-out)), so a row looks and behaves in a sheet as in the side panel.
+
+- **The header,** 30 points: the chevron, the title, ↺ and ⋯; a click anywhere on it but ↺ and ⋯ opens or closes the tool, its open state kept per sheet as a side panel section's is. No on switch and no peeking with H: nothing in a sheet edits a photo.
+  - **↺** sets every setting the tool owns to darktable's default, those of a storage or a format not shown included, written at once; drawn at rest when they are all at their defaults.
+  - **⋯** holds only Move Up and Move Down; a right-click on the header, Shift+F10 or the Menu key opens it. It is drawn disabled until reordering is built, its tooltip saying so. A tool has no presets of its own ([Presets](#presets-whole-sheet-only)).
+- **Reordering only:** dragging a header, ⋯'s Move Up and Move Down, and Alt+↑ and Alt+↓ on a focused header, decision 83's operations and announcements on a list of the sheet's own (`import.order`, `export.order`, owner `app`), the default order each sheet's. No pinning, no floating and no other tab. Until reordering is built the order is the default.
+- **A tool belongs to one place** (decision 86): the side panel's tools and utilities, Export's export tools or Import's import tools, declared with each tool. Export and import tools never appear in the side panel: no workspace, Customise tabs, drag, Move to Tab or drop on a tab's icon can put one there, and a layout naming one skips it ([Workspaces](#workspaces), [Moving, pinning and floating sections](#moving-pinning-and-floating-sections)). No side-panel tool appears in a sheet. The three Metadata tools, the side panel's, Import's and Export's, are three tools, their ids apart and their titles' tooltips saying which. A test walks every tool and checks each list holds only its place's.
+- **A tool's states:**
+
+| State | Shows |
+| --- | --- |
+| Closed | The header alone |
+| Open | The header and its rows |
+| Hover on the header | The `hover` band; ↺ and ⋯ in `text_strong` under the pointer |
+| Focused header | The focus ring round the header |
+| At its defaults | ↺ at rest |
+| A problem in its rows | Its field outlined, the note in `error`; a closed tool with a problem opens and scrolls into view once, as the problem appears |
+| Not built yet | Its header drawn disabled and closed, "Comes in a later version" in its tooltip |
+| A preset pointed at | The preset's values in its rows, the banner on the first tool |
+| Being dragged (with reordering) | The lifted header and the insertion line |
+
+#### A sheet's rows
+
+- **Every row is a tool setting's row** (`Row::Setting`, [Tool panels from definitions](#tool-panels-from-definitions)), since a sheet's settings are kept in `settings.toml` and never in an edit, which is what a tool's own settings are:
+  - choices Blended ([Choice rows: two styles](#choice-rows-two-styles)), unbuilt options and rows disabled, saying why, never hidden;
+  - a boolean a toggle (`ToggleRow`, 24 points, on the edges of the rows round it), where darktable has a combobox of No and Yes;
+  - no kept marker on any row, nothing here being an edit: a slider's marker place stays empty, so its label, value, track and handle stay where a tool's are, with no ○ under the pointer, no marker focus stop and no `ToggleKeep`;
   - no history and no Undo step: a change is a setting written at once; Cmd+Z in a field undoes typing only;
-  - a slider's reset as a tool's: a double-click on its label or track, or Delete on it, puts back darktable's default (Quality 95); choices have no reset, as a tool's have none yet. Delete in a size field sets 0, in Scale 1.
-- **Allow upscaling, High quality resampling and Store masks are toggles** (`ToggleRow`, 24 points, on the edges of the rows round them), where darktable's are comboboxes of No and Yes (D15). Store masks is drawn disabled until layers.
-- **Section labels:** Storage options, Format options and Global options stay darktable's section labels, drawn as a tool panel draws them (`group_label`, 8 points above, 2 below), never collapsible. Metadata and Multi-preset export are the only collapsible groups, as in darktable, their open state kept as a tool's groups' is.
-- **No tool header:** the dialog's title, Default settings (D2) and the Presets column (D1) are its title, reset and presets; it has no ⋯, since nothing in a dialog moves, pins or floats (decision 83).
+  - a slider's reset as a tool's: a double-click on its label or track, or Delete on it, puts back darktable's default (Export's Quality 95); a choice is reset by its tool's ↺. Delete in a size field sets 0, in Scale 1.
+- **Group labels** where darktable has section labels inside a tool (Export's Metadata), drawn as a tool panel draws them (`group_label`, 8 points above, 2 below).
+- **A focused Blended choice** takes Return to open its list, and a focused slider its fine-control popup (decision 42), as in a tool; the sheet's Return presses the primary button only where neither, nor a button, is focused.
+- **To screen readers and the keyboard** each row and header is what it is in a tool panel: a header a Button with its expanded state, a choice a ComboBox, a slider a Slider with no marker stop, a toggle a CheckBox, a note row a label read after its row, a problem announced once as it appears.
 
 #### The rows the tool panel lacks
 
@@ -1370,78 +1417,170 @@ Each is built from what the tool panel already draws and added to the design sys
 | --- | --- |
 | A slider with no kept marker | The tool's slider row, its marker's place left empty; a tool's settings' sliders use it too |
 | Path | One 24-point line: the label at the start; 12 points; `PathField` taking the rest, in the value field's look (`sunken`, 18 high, the small radius, the small text, 5 points inset); 4 points; the folder `IconButton`, 18 × 18 with no plate (decision 81), where a quad sits. The variable list hangs under the field, part of the row |
-| Note | A line the session says under a row: the small text, 12 points on 16-point lines, from the content's start edge, wrapping at its width and anywhere in a path; `text_secondary`, `warning` for a replace and `error` for what stops Export, those two with the 12-point warning sign at the start and the text hanging after it; 0 above, 4 below. A path problem's fix is an `ActionRow` under it, **Use $(FILE_NAME)** |
-| Field | One 24-point line: the label at the start, the field's end on the content's end edge: a number in a value field (54 points, wider only when its text needs it, right-aligned; Scale, PDF's dpi), a text in a 180-point field (PDF's Title and Border); the label cut first, never the field |
-| Size | One 24-point line: the label at the start (Size in pixels, Size in centimetres, Size in inches); at the end `ValueField` (54) · 4 · × · 4 · `ValueField` (54) · 4 · the unit, and in the print modes · 8 · @ · 8 · `ValueField` (54) · 4 · dpi; ×, @ and the units in the small text, `text_secondary`; the last unit's ink ending 5 points from the row's end, where slider values and choice chevrons end. Over the format's limit the field is outlined in `error`. Polish's print row, the widest, is 407 of 415 points |
-| Indented toggle | `ToggleRow` with its checkbox 20 points in, so its label lines up after its parent's checkbox: Metadata's Private tags, Synonyms and Omit hierarchy |
+| Note | A line the session says under a row: the small text, 12 points on 16-point lines, from the content's start edge, wrapping at its width and anywhere in a path; `text_secondary`, `warning` for what may surprise and `error` for what stops the job, those two with the 12-point warning sign at the start and the text hanging after it; 0 above, 4 below. A problem's fix is an `ActionRow` under it, such as **Use $(FILE_NAME)** |
+| Field | One 24-point line: the label at the start, the field's end on the content's end edge: a number in a value field (54 points, wider only when its text needs it, right-aligned), a text in a 180-point field; the label cut first, never the field |
+| Size | One 24-point line: the label at the start; at the end `ValueField` (54) · 4 · × · 4 · `ValueField` (54) · 4 · the unit, and in the print modes · 8 · @ · 8 · `ValueField` (54) · 4 · dpi; ×, @ and the units in the small text, `text_secondary`; the last unit's ink ending 5 points from the row's end, where slider values and choice chevrons end. Over the format's limit the field is outlined in `error`. Where the row is narrower than it needs, its label goes on a line above the fields |
+| Indented toggle | `ToggleRow` with its checkbox 20 points in, so its label lines up after its parent's checkbox |
 
-PDF's Paper size is a Blended choice of its four sizes until PDF is built; the Redefined tag / Formula table waits for metadata. Copy's label is a note in `text`.
+- **The tools' bodies have the tool panel's 12-point sides,** the header's chevron at 8, so at 440 points the rows are 415 wide and stretch with the column, as a tool's rows do in a widened side panel: labels at the start, values, options and chevrons on one end column 5 points in. The scroll bar lies in the end margin, so rows never move when it appears.
+- **Rows stack with no spacing,** each carrying its own padding, as in the side panel: 4 under each header, 8 at an open tool's end, then its hairline; 8 before a group label and 2 after. The hover band runs 4 points past the content at each end, and the focus ring goes round the whole row.
+- **Before the session's first answer,** a note keeps one line's height, empty, so nothing below it moves when it arrives.
 
-#### Width and spacing
+### Presets: whole-sheet only
 
-- **640 points wide:** the Presets column 200, a separator 1 and the settings column 439.
-- **The column's sides are the tool panel's 12 points,** so its rows are 415 points wide and stretch to it, as a tool's rows do in a widened side panel (240 to 600 points): labels at the start, values, options and chevrons on one end column 5 points in. The scroll bar lies in the end margin, so rows never move when it appears.
-- **Rows stack with no spacing,** each carrying its own padding: 8 before a section label and 2 after; 4 before a collapsible group and 4 after its last row while open; 8 at the column's end. The hover band runs 4 points past the content at each end, and the focus ring goes round the whole row.
+Each sheet has presets of all its tools' settings, as darktable's import and export modules have, never of one tool's alone. A preset never holds the source (Import from's place and folder) or the checks.
 
-#### Height and scrolling
+- **The presets row,** in the column's part of the sheet bar, drawn as the side panel's preset row (`Row::Preset`'s look, a Blended choice): **Presets** at its start, the matching preset's name or Custom at its end with the chevron, cut at its end and whole in its tooltip; then ⋯ with Save as Preset…, Update "Wedding card", Rename… and Delete…, darktable's "delete preset?" and "update preset?" as alerts, and later Import and Export of preset files.
+- **Its list,** drawn on every platform since it previews on hover, opens from the row towards the grid, so the column stays in view: **Default settings** first, built in, setting every tool to darktable's defaults; then the sheet's built-in presets (Export's For sharing and Full size JPEG, decision 84; Import's with its own decision); then the person's own, a ✓ on the one matching.
+- **Pointing at a preset** shows its settings in the column, with a banner on the first tool ("Showing Web 2048. Click to use it."), and the footer's summary follows, until the pointer leaves the list (the quality bar: presets preview on hover). ↑ and ↓ preview from the keyboard; Return or Space chooses; F2 renames.
+- **Where they are kept:** `presets/export.toml` and `presets/import.toml` in the user data folder, read by the client, so the CLI reads the ones the sheet stores.
+- **Until presets are built,** the row is drawn disabled, showing Default settings, its tooltip "Presets come in a later version".
 
-The settings column is 580 points high by default, the default rows' height in the three languages:
+### The footer
 
-| Part | Points |
-| --- | --- |
-| 3 section labels (8 + 14 + 2) | 72 |
-| 11 choice rows | 264 |
-| Path and Size in pixels | 48 |
-| Quality | 37 |
-| Metadata and Multi-preset export (4 + 24 each) | 56 |
-| The column's end | 8 |
-| **Fixed rows** | **485** |
-| The file-name note, 1 line or 2 with a deeper folder | 20 or 36 |
-| The size note, 1 line in English and Ukrainian, 2 in Polish | 20 or 36 |
-| The conflict note, on a second export only: 1 line in English, 2 in Ukrainian and Polish | 0, 20 or 36 |
+- **The summary,** two lines at its start:
+  - the first in `text`: the count, then the size or the format and size, then the destination cut in its middle, home as `~` ("209 of 412 photos · 6.2 GB → ~/Pictures/Apertrust/20261115_Wedding", "12 photos · JPEG · 2048 px → ~/Pictures/2026-10 Wedding/apertrust_exported"); with nothing checked, "No photos checked";
+  - the second, smaller, says what may surprise before anything happens: in `warning` with the warning sign, photos imported before that will be copied again ("380 of these were imported before; they will be copied again.") or files that will be replaced ("Replaces 3 files already there", and where some photos' names are known only as they are exported, "Replaces at least 3 files already there; 2 photos' names are known only as they are exported"); else, while the primary button is disabled, why ("Check the photos to export.", "Still listing EOS_DIGITAL", "Import to: Unknown variable $(MONT)."); else the sheet's reassurance ("Copies only; nothing on EOS_DIGITAL is changed.", "Exports run in the background; you can keep working.").
+- **Keep open** (`ToggleRow`; `import.keep_open`, `export.keep_open`, owner `app`, off by default and kept), before the buttons, as darktable's import dialog has "keep this window open" by its buttons: with it on, the sheet stays after the job starts, and the second line confirms each start ("Started: 40 photos → …/client") until the next change.
+- **Close and the primary button,** in the platform's order (`dialog_host::buttons`): the Mac and GNOME Close then the primary, Windows and KDE the primary first. Close, not Cancel, since the settings were kept as they changed and Cancel would read as cancelling a job a press started.
+- **The primary button** ("Import 209 photos", "Export 12 photos"), the accent button, is disabled while nothing is checked, while Import's listing or check runs, or while a problem stands. It stays focusable; its reason is in its tooltip, in the footer's second line and its accessible description, naming the tool it comes from.
 
-So every default row, Multi-preset export's included, fits in English and Ukrainian (525 to 577 points) and in Polish on a first export (557); a second export in Polish (593) scrolls by up to 13 points.
+### Keys
 
-| Form | Default | Least |
+| Key | Where | Does |
 | --- | --- | --- |
-| The Mac's sheet: header 44, the column, footer 52 | 676 | 526 |
-| Windows and Linux: the host's strip 32, the column, footer 52 | 664 | 514 |
-| The settings column | 580 | 430 |
+| Ctrl+I, Ctrl+E (Cmd on a Mac) | The window, nothing modal up | Opens Import…, Export… |
+| ←, →, ↑, ↓, Home, End | A cell focused | Move the focus and the sheet's active photo, the notes following, the grid scrolling to keep it in sight |
+| Space | A cell focused | Turns its check on or off |
+| Shift+Space | A cell focused | Sets every cell from the last touched to it as the last touched was set |
+| Shift with the arrows | A cell focused | Moves and checks the cells passed |
+| Ctrl+A, Ctrl+Shift+A | The grid focused | Select all, Select none |
+| Return | Anywhere but a text field being typed in, an open list, or a focused button, choice or slider, which take it themselves: a button presses itself, Close among them | The primary button, when enabled; a focused cell included, so the larger look of one photo takes another key when it comes |
+| Ctrl+Return (Cmd+Return) | Anywhere in the sheet but an open list, whose keys are its own | The primary button, when enabled |
+| Esc, Cmd+., Cmd+W | The sheet | The innermost first (a list, the variable list, a field being typed in), then the sheet, keeping its settings and dropping its checks |
+| F6, Shift+F6 | The sheet | Three regions: the bar and the grid, landing on the active cell; the presets row and the column; the footer |
+| Alt+↑, Alt+↓ | A tool's header focused | Moves it in the column, once reordering is built |
 
-- **The Mac:** the sheet is 676 points high, or the main window's height less 74 where that is less, as a sheet hangs inside its window.
-- **Windows and Linux:** the window is 664 high, or the work area of the main window's monitor less 8 where that is less.
-- **Never under the least:** the column keeps 430 at least. The least main window, 600 high, leaves exactly 526 on the Mac, so wherever the app's window fits at the interface's default scale, the dialog does.
-- **The room wins over the least:** where a larger interface scale on a small screen leaves less than the least, the column takes what the room leaves, so the header and the footer, with Close and Export, always stay inside the main window or the work area.
-- **The smallest screens at their default scaling** fit the default: a 13-inch MacBook at 1440 × 900 leaves the sheet 731 points, a 13.6-inch MacBook Air 775; a 13-inch Windows laptop at 1920 × 1080 and 150 %, 1280 × 720 points with its 48-point taskbar, leaves a 672-point work area, which sets the default; GNOME at 1280 × 800 points leaves 768.
-- **Only the settings column gives way,** scrolling with the quiet scroll bar. The header, the footer and the Presets column's + − ⋯ bar stay in view; the presets list scrolls on its own when it holds more than fit.
-- **The height is fixed while the dialog is open.** A format with more rows (TIFF, PDF), an opened group, a wrapped note or the hover preview's banner scrolls the column; the window never jumps.
-- **Focus follows into view:** a row reached by Tab or F6 below the fold scrolls up to show it whole; opening a group at the bottom scrolls to show its row and as many of its rows as fit.
-- **The interface scale** multiplies all of it, so at a larger scale the column shrinks towards its least and scrolls sooner.
-- **Before the session's first preview,** the file-name and size notes keep one line's height, empty, so nothing below them moves when they arrive.
-- **The host tells the dialog its room,** the main window's height on the Mac and the work area elsewhere, before its first, hidden frame.
+- **The sheet opens** with the keyboard focus on the grid's active cell and no focus ring until a key is pressed, so the arrows, Space and Return work at once. Tab and F6 stay inside the sheet.
+- **Access keys,** on Windows and Linux: &Import or &Export, &Close, &Presets, &Keep open.
 
-#### What stays the dialog's own
+### Modality
 
-The window and its forms (decisions 41 and 69), the title, the Presets column and its hover preview, the footer, Return, Escape, F6 and the alerts are unchanged ([Keyboard](#keyboard)). A focused Blended choice takes Return to open its list, and a focused slider to open its fine-control popup (decision 42), as in a tool. Each row is to screen readers and the keyboard what it is in a tool panel: a choice a ComboBox, a slider a Slider with no marker stop, a toggle a CheckBox, a note row a label read after its row, a path or size problem announced once as it appears. A script sees the same `export.*` settings and commands: the restyle adds no command.
+- **While a sheet is open,** the view's keys and the top panel's actions rest, drawn at rest, not greyed, and the menus that act on the view are disabled; the window can still be moved, resized, minimised and closed.
+- **The jobs spinner stays live,** and View › Jobs still opens the jobs window, so a running import or export is watched while the next is set up.
+- **One sheet at a time:** Import… is disabled under Export's sheet and the reverse. An alert a sheet asks, Export's overwrite question among them, is the main window's: an `NSAlert` sheet on the Mac, a task dialog owned by it on Windows, Apertrust's alert on Linux; its Cancel returns to the sheet as it was.
+- **Closing the window** with a sheet open closes the sheet first; Quit asks only when a job runs, as always.
+
+### Screen readers
+
+- The sheet is a region named by its heading, "Import" or "Export", under a dialog-role node.
+- The grid is a list named by its source or photos, count and checks ("EOS_DIGITAL, 412 photos, 209 checked"); each cell a list item named by its file (Export's with the rating and labels, as the grid panel's), its check box a CheckBox "Import DSCF1033.RAF" or "Export IMG_2041.ARW", described by the destination mark's words.
+- The bar's grid part is a toolbar ("Import grid bar", "Export grid bar"), Checked only a toggle button; the tools are sections, as in the side panel.
+- A problem is announced once, assertively; the checked count politely, at most every 0.5 s.
+
+### Sizes and small windows
+
+| Window | The sheet's room, less the 44-point top panel, the bar and the 52-point footer | Column | Grid |
+| --- | --- | --- | --- |
+| 1440 × 900, a 13-inch Mac | About 768 high | 440; Export's default tools fit | About 1000 wide: eight Medium cells |
+| 1280 × 720, Windows at 150 % | About 540 high | 440; Export's column scrolls by about 100 points | About 840: seven Medium cells |
+| 960 wide | — | 440 | About 520: four Medium cells; the Select buttons fold into Select ▾ |
+| 800 wide | — | Narrows from 440 towards 296 once the grid is down to two cells | Two cells or more |
+| 500 × 600, the least window | About 468 high | 296; notes wrap; the size row's label on a line above its fields | The 204 left: two Small cells, shown at Small without changing the kept Zoom; Checked only, Sort and Zoom as icons |
+
+- **The column and the grid scroll on their own;** the bar and the footer always stay in view.
+- **The footer narrows** by cutting the summary's path, keeping its count and size; Keep open, Close and the primary button are never cut, and Keep open keeps its words.
+
+## The Export sheet
+
+Export… opens the Export sheet ([Sheets](#sheets)): the photos it was opened with, checked, in a grid beside a column of five export tools that do what darktable's export module does, row for row (`src/libs/export.c`, `export_metadata.c`, `src/imageio/storage/*.c` and `format/*.c` at the reference release). Decision 84, planned; until Export is on the sheet, the dialog [as built](#as-built) keeps working, a sheet of AppKit's on the Mac and a modal window on Windows and Linux. The wireframe's Export board is to be redrawn on the sheet.
+
+- Ctrl+E (Cmd+E) opens it and Return exports. File › Export Again does darktable's export at once with the last settings, with no key by default ([Export Again](#export-again)).
+- How it is built, the export job in the engine's session, darktable's size and resampling, the writers and the file on disk, is decision 56's ([engine.md](engine.md), Export jobs).
+- darktable's labels are lower case; the sheet writes them in sentence case and British English ("B&W as greyscale").
+- Anything not built is drawn disabled, saying why. Its later parts, presets and metadata among them, are in [the phases](#the-phases).
+
+```mermaid
+sequenceDiagram
+    participant D as Export sheet
+    participant A as App and mirror
+    participant S as Session
+    participant J as Jobs window
+    D->>S: PreviewExport (on opening, every change and every active photo)
+    S-->>D: ExportPreview { through, preview }: names, conflicts, size, errors
+    D->>A: Export pressed
+    opt On conflict Overwrite and the question on
+        A->>A: NSAlert "Export in overwrite mode?" on the main window
+    end
+    A->>S: Command::Export { photos, settings }
+    Note over D: the sheet closes, unless Keep open is on
+    Note over A: the photos sent to export become the selection
+    S-->>A: Event::Job Added (UserExport): title, total, destination
+    A->>J: Show::Open
+    S-->>A: Event::Job Title, Detail, Progress, Destination
+    A->>J: the row: bar, "3 of 12 done · now …", ✕
+```
+
+### Its grid
+
+- **The photos Export was opened with:** the window's selection, or the active photo when nothing else is selected, all checked, in the grid panel's sort. **One photo** is shown alone, large and fitted, a last look before exporting, without changing the kept Zoom.
+- **Show all N in folder,** a toggle in the bar, off at each opening: on, the grid shows the photos the grid panel shows (the open folder; an album's from Phase 5), the set still checked; off again, the set: the photos opened with and any checked meanwhile, an unchecked one dimmed until the sheet closes, so an uncheck is undone with one click.
+- **With nothing selected and no active photo,** it opens on the folder with nothing checked. Export… is enabled while the grid panel shows a photo.
+- **The bar:** "Export" then the set, "2026-10 Wedding · 12 photos"; Select all, Select none and Select edited; Show all N in folder; Sort and Zoom. No Checked only: the set is the view.
+- **The caption** has the grid panel's rating line, read-only, over the check box and the file name, so a person can check by rating at a glance.
+- **A raw and its JPEG** grouped (the library's step 17) are one cell, its check exporting the raw's edit; a virtual copy is a cell of its own.
+- **Before Phase 3's selection,** the active photo alone starts checked, and the sheet already lets the person check more: several photos export from Export on the sheet, before the grid panel can select several.
+
+**The destination marks,** on checked cells only, from the preview's list of each photo's file ([Feedback](#feedback)):
+
+| When | Icon (Lucide's) | Tooltip |
+| --- | --- | --- |
+| On conflict is Create unique filename and the file is there | `copy-plus`, `text_on_thumb_scrim` | "IMG_2041.jpg is already there; this one is saved as IMG_2041_01.jpg" |
+| Overwrite, or Overwrite if changed where it will replace | `replace`, `warning_on_thumb_scrim` | "Replaces IMG_2041.jpg" |
+| Skip, or Overwrite if changed where it will not | `ban`, `text_on_thumb_scrim` | "Skipped: IMG_2041.jpg is already there" |
+
+### The export tools
+
+| Tool | darktable's | Rows | At first |
+| --- | --- | --- | --- |
+| **Storage** | storage options | Target storage; the storage's rows: File on disk's Path with its file-name note and any problem, On conflict and its note | Open |
+| **Format** | format options | File format; the format's rows ([Each format's rows](#each-formats-rows)), JPEG's Quality and Chroma subsampling by default; until metadata, the note "This version writes no EXIF, location or copyright into exported files." | Open |
+| **Global options** | global options | Set size; the size row or Scale, with their notes; Allow upscaling, High quality resampling and Store masks; Profile, Intent, Style, and Mode while a style is chosen | Open |
+| **Metadata** | the ☰'s preferences, "edit metadata exportation" (D4) | General settings, a group label, and its toggles; Per metadata settings, a group label, and the Redefined tag / Formula table | Closed; its header disabled until metadata, its tooltip "Exported files carry no metadata yet; it comes in a later version" |
+| **Multi-preset export** | multi-preset export | A toggle per preset of the person's own; Start batch export | Closed; its header disabled until presets |
+
+- **The titles** are darktable's labels in sentence case, "options" dropped where what is left is a noun naming what the tool sets: Storage and Format. "Global" alone names nothing, so Global options keeps darktable's label whole (D16). Metadata's title's tooltip is "Metadata written into each exported file", telling it from the side panel's and Import's.
+- **Each setting a tool draws has one owning tool** among the five. The sheet's own settings, `export.column_width`, `export.order`, `export.keep_open` and `export.thumbnails`, are the app's, and `export.ask_before_overwrite` is the overwrite alert's ([The alerts](#the-alerts)); no tool draws them.
+- **Allow upscaling, High quality resampling and Store masks are toggles,** where darktable's are comboboxes of No and Yes (D15). Store masks is drawn disabled until layers.
+- **The order** is darktable's, the default of `export.order`. The rows' dependencies hold in any order, being by value: the format list follows the storage, a storage's recommended size sets Global options' size, Copy disables Global options.
+- **Whole-export presets** are the sheet bar's ([Presets](#presets-whole-sheet-only)): Default settings (D2), then **For sharing** (JPEG, 2048 × 2048 px, sRGB) and **Full size JPEG** (JPEG, no size limit, sRGB), the rest of each at darktable's defaults (D17), then the person's own.
+
+### Exporting, and after
+
+- **The footer:** "12 photos · JPEG · 2048 px → ~/Pictures/2026-10 Wedding/apertrust_exported"; the second line "Exports run in the background; you can keep working.", "1 export running; this one starts after it.", in `warning` "Replaces 3 files already there", "Replaces at least 3 files already there; 2 photos' names are known only as they are exported" where some names are not exact, or the reason Export is disabled; Keep open; Close and **Export 12 photos**.
+- **Pressing Export,** in order: the overwrite alert, the main window's, when On conflict is Overwrite and the question is on ([The alerts](#the-alerts)); then W10 (Phase 6); then `Command::Export` with the checked photos in the grid's order, each photo's edit taken as it is then (D12). Cancel in an alert returns to the sheet as it was.
+- **The sheet closes,** unless Keep open is on, when it stays with its checks and a second press queues a second job.
+- **The photos sent to export become the window's selection** when Export is pressed, the active photo kept where it is among them, else the first of them; Close leaves the selection as it was. So Export Again repeats that set, whatever the job's result: after a failure or a cancel it exports all of them again, and the job's Try again exports only those not written. Before Phase 3's selection the window holds only the active photo, so Export Again exports that one, and several photos are exported again through the sheet.
+- **A notice when each export ends,** since the jobs window closes itself after a clean end: "Exported 12 photos to apertrust_exported" when every photo was exported, otherwise its row's own result, "Export failed: 11 of 12 photos exported" or "Export cancelled: 3 of 12 photos exported"; with Show in Finder, kept in the notices' history (the library's step 12; [The jobs window](#the-jobs-window)).
 
 ### darktable's controls and where they live
 
 #### Header, storage, global options and buttons
 
-| darktable | In the dialog | Options | Default | When |
+| darktable | On the sheet | Options | Default | When |
 | --- | --- | --- | --- | --- |
-| Header: reset button | Presets list: **Default settings**, built in, at the top (D2) | — | — | Built |
-| Header ☰: presets, store new preset.., update preset X, edit this preset.., delete this preset | Presets column: the list, ✓ on the matching preset ("The settings match no preset" when none does), + store, − delete, ⋯ Update / Rename | The person's own; darktable ships no built-in export presets (`init_presets` only migrates) | — | With presets |
-| Header: the preset's name after the title (`has_preset_label`) | The ✓ in the list | — | — | With presets |
-| Header ☰ › preferences... ("edit metadata exportation" dialog) | **Metadata** collapsible group (D4), rows below | — | Closed | With metadata |
-| storage options › target storage | Storage options › Target storage | LaTeX book template, File on disk, Send as email, Website gallery, in darktable's order; Piwigo left out (D5) | File on disk | File on disk only |
+| Header: reset button | The presets list: **Default settings**, built in, at the top (D2), resetting every tool; each tool's ↺ resets its own (decision 84) | — | — | Built, in the dialog's Presets column; the tools' ↺ with the sheet |
+| Header ☰: presets, store new preset.., update preset X, edit this preset.., delete this preset | The sheet bar's presets row: the list, ✓ on the matching preset, Custom when none does; ⋯ Save as Preset…, Update, Rename…, Delete… | For sharing and Full size JPEG built in (D17), then the person's own; darktable ships no built-in export presets (`init_presets` only migrates) | — | With presets |
+| Header: the preset's name after the title (`has_preset_label`) | The presets row's value | — | — | With presets |
+| Header ☰ › preferences... ("edit metadata exportation" dialog) | The **Metadata** tool (D4), rows below | — | Closed | With metadata |
+| storage options › target storage | Storage › Target storage | LaTeX book template, File on disk, Send as email, Website gallery, in darktable's order; Piwigo left out (D5) | File on disk | File on disk only |
 | file on disk › path and select directory | Path field with a folder button (the system's folder chooser); the file-name preview under it | darktable's variables (D7) | `$(FILE_FOLDER)/apertrust_exported/$(FILE_NAME)` (D6) | Built, but the folder chooser |
 | file on disk › on conflict | On conflict, with a line saying what happens to the files already there | Create unique filename, Overwrite, Overwrite if changed, Skip | Create unique filename | Built; Overwrite with its alert |
 | website gallery › path, title | The same two rows when chosen | — | `$(HOME)/apertrust_gallery/img_$(SEQUENCE)`, "Apertrust gallery" (darktable's renamed, D6) | Later |
 | LaTeX book template › path, title | The same two rows | — | Empty | Later |
 | send as email | No rows; darktable recommends 1536 × 1536; every format but Copy | — | — | Later |
 | Piwigo (accounts, server, user, password, login, status, visible to, album, new album title, parent album, filename pattern, on conflict) | Left out (D5) | — | — | — |
-| format options › file format | Format options › File format; each format's rows below | AVIF, HEIF, JPEG (8-bit), JPEG 2000 (12-bit), JPEG XL, OpenEXR, PDF, PFM, PNG, PPM (16-bit), TIFF, WebP, XCF, Copy (darktable's order, Copy last) | JPEG (8-bit) | JPEG and PNG |
+| format options › file format | Format › File format; each format's rows below | AVIF, HEIF, JPEG (8-bit), JPEG 2000 (12-bit), JPEG XL, OpenEXR, PDF, PFM, PNG, PPM (16-bit), TIFF, WebP, XCF, Copy (darktable's order, Copy last) | JPEG (8-bit) | JPEG and PNG |
 | global options › set size | Global options › Set size | In pixels (for file), In cm (for print), In inch (for print), By scale (for file) | In pixels | Built |
 | width × height px | Two fields, ×, px | 0 = no limit | 0 × 0 | Built |
 | print width × height cm/in @ dpi | Fields, unit, @, dpi | dpi 72–9600 | 0.00 × 0.00 @ 300 | Built |
@@ -1455,10 +1594,10 @@ The window and its forms (decisions 41 and 69), the title, the Presets column an
 | intent | Intent | Image settings, Perceptual, Relative colorimetric, Saturation, Absolute colorimetric | Image settings | Disabled (D10) |
 | style and its styles button | Style, a dropdown | None, then the person's styles | None | When styles exist (Phase 3) |
 | mode (shown only with a style) | Mode, shown only with a style | Replace history, Append history | Replace history | With styles |
-| start export (Ctrl+E) | Footer: **Export 1 photo** or **Export 12 photos** (Return), Close beside it | — | — | Built |
-| multi-preset export (collapsible) and start batch export | **Multi-preset export** group: a box per preset of the person's own, then Start batch export, disabled until a box is ticked | — | Closed, none ticked | With presets |
-| metadata › general settings | Metadata group: EXIF data, Metadata, Geo tags, Tags, then indented Private tags, Synonyms and Omit hierarchy (disabled while Tags is off), Hierarchical tags, Develop history | "Only embedded" only for storages other than disk, as in darktable | Ticked: EXIF data, Metadata, Geo tags, Tags, Develop history | With metadata |
-| metadata › per metadata settings | The same group: a "Redefined tag / Formula" table with + and − | An empty formula drops the tag; `=` forces the EXIF value | Empty | With metadata |
+| start export (Ctrl+E) | Footer: **Export 1 photo** or **Export 12 photos** (Return), Close beside it | — | — | Built, in the dialog |
+| multi-preset export (collapsible) and start batch export | The **Multi-preset export** tool: a box per preset of the person's own, then Start batch export, disabled until a box is ticked | — | Closed, none ticked | With presets |
+| metadata › general settings | Metadata, under General settings: EXIF data, Metadata, Geo tags, Tags, then indented Private tags, Synonyms and Omit hierarchy (disabled while Tags is off), Hierarchical tags, Develop history | "Only embedded" only for storages other than disk, as in darktable | Ticked: EXIF data, Metadata, Geo tags, Tags, Develop history | With metadata |
+| metadata › per metadata settings | Metadata, under Per metadata settings: a "Redefined tag / Formula" table with + and − | An empty formula drops the tag; `=` forces the EXIF value | Empty | With metadata |
 
 Develop history embeds Apertrust's own edit, the `.apxmp`'s contents, not darktable's history. Until metadata is built an exported file carries its ICC profile and, for JPEG, its density, but no EXIF or XMP, which darktable's export writes by default (decision 56).
 
@@ -1489,10 +1628,10 @@ Kept from darktable:
 
 ### As built
 
-`crates/app/src/export.rs` (its tests in `export/tests.rs`), `impl Dialog for Export` in the dialog host, a sheet where the Mac has one.
+The Export dialog: `crates/app/src/export.rs` (its tests in `export/tests.rs`), `impl Dialog for Export` in the dialog host, a sheet where the Mac has one. It keeps working as it is until Export is on its sheet, when its form, its host code and its snapshots go; it is not rebuilt as a dialog of tools before (decision 84).
 
 - **Opening it.** File › Export… (`export`, Cmd+E) opens it, enabled with a photo open and no modal dialog, on every platform: a sheet on the Mac and a modal window on Windows and Linux, the host's forms. Where the host shows no alert yet, on Windows ([Dialogs and alerts](#still-to-build)), On conflict's Overwrite, which asks first, is listed disabled with its reason in the tooltip, and Export rests while a kept Overwrite is chosen. Linux's drawn alert asks above the Export window.
-- **Its content** is `export::Export`'s `Dialog::show(&mut Ui)`: a 44-point header with the title in the Mac's sheet alone, which has no title bar (elsewhere the window's frame shows it), a Presets column of 200 points (Default settings alone), the settings column (scrolling, 440 points high) and the footer, 640 points wide, drawn in the theme's tokens on `panel` (the host clears its window to its `Look`'s background). Every choice is a `Choice` in its Boxed style, Allow upscaling and High quality resampling among them, with 16-point sides and 4 points between rows: the earlier form, which [Drawn as a tool](#drawn-as-a-tool) replaces (decision 84).
+- **Its content** is `export::Export`'s `Dialog::show(&mut Ui)`: a 44-point header with the title in the Mac's sheet alone, which has no title bar (elsewhere the window's frame shows it), a Presets column of 200 points (Default settings alone), the settings column (scrolling, 440 points high) and the footer, 640 points wide, drawn in the theme's tokens on `panel` (the host clears its window to its `Look`'s background). Every choice is a `Choice` in its Boxed style, Allow upscaling and High quality resampling among them, with 16-point sides and 4 points between rows: the earlier form, which [the export tools](#the-export-tools) on the sheet replace (decision 84).
 - **Its rows:** Target storage (File on disk the one that can be chosen), Path (`PathField`, below), On conflict, File format (JPEG and PNG; darktable's other twelve listed and disabled), JPEG's Quality and Chroma subsampling or PNG's Bit depth and Compression, Set size's four modes (width × height in pixels, in cm or in inch with the resolution kept as the physical size and "Which is equal to", or the scale text), Allow upscaling, High quality resampling, Profile (Image settings, sRGB, the other eleven of darktable's twelve disabled). Drawn disabled, each saying "Coming in a later version" (or why) in its tooltip: Store masks, Intent, Style, Metadata and Multi-preset export.
 - **The settings** are `export::Values`, the fifteen `export.*` settings, read from the app's store, whose registries hold the export settings beside the app's and the engine's, so `apertrust --conf export.…` is read too. They are kept in `Settings::export` and offered back as they change (`Output::Export(Asked)`, `Asked::values`), so Close keeps them as left; `Values::settings` turns them into the session's `ExportSettings`.
 - **The feedback** is the session's. The first frame and every change send `PreviewExport` (`export::commands`); the answer comes back through `Dialogs::preview` and `Export::receive`, which keeps the highest `through`. The app drops an answer older than the first preview of the dialog open (`App::export_floor`).
@@ -1506,14 +1645,16 @@ Kept from darktable:
 The lines under the rows come from the session (`PreviewExport`, [engine.md](engine.md), Export jobs), so a remote client sees the server's files.
 
 - **File names,** under the path:
-  - the active photo's name and where its file will go, for example `IMG_2041.ARW → ~/Pictures/2026-10 Wedding/apertrust_exported/IMG_2041.jpg` (`~` for home);
+  - the active photo's name and where its file will go (on the sheet, the sheet's active photo, named to the preview as its `focus`; planned), for example `IMG_2041.ARW → ~/Pictures/2026-10 Wedding/apertrust_exported/IMG_2041.jpg` (`~` for home);
   - with several photos, the next names and "and 9 more";
   - with several photos and no variable in the path, darktable's rule adds `_$(SEQUENCE)`, and the preview says so;
   - the variables with no value here (D7);
   - for PDF, "all in one PDF".
 - **The pattern's problem** (D8) in `error`, with the session's nearest name and **Use $(NAME)**, offered only while the place it names still holds that name; then the folder's preflight.
 - **On conflict:** a line saying what happens to the files already there, for example "3 of the 12 are already there; those are saved with _01 added". A replace's line is in the warning colour.
-- **Output size:** "IMG_2041.ARW, the active photo, will be 2048 × 1365 px. Each photo keeps its own shape.", with "not upscaled" or "full size" where that applies, or the size problem.
+- **Output size,** the active photo's, on the sheet the sheet's active photo's (planned: another than the open photo's planned from its saved edit over its raw's dimensions, read without decoding the image): "IMG_2041.ARW, the active photo, will be 2048 × 1365 px. Each photo keeps its own shape.", with "not upscaled" or "full size" where that applies, or the size problem.
+- **Each photo's file and what On conflict does with it,** which the sheet draws as the checked cells' marks ([Its grid](#its-grid)). A photo whose name is not exact (`PhotoName::exact`, its path using what only a decode tells) has no mark and is left out of the counts; its note says its name is known once it is exported.
+- **The footer's second line** says in `warning` how many files will be replaced, as the On conflict note does.
 - **Hover preview** (with presets): pointing at a preset shows its settings in the column, with a banner, until it is clicked or the pointer leaves the list.
 
 ### States
@@ -1532,29 +1673,22 @@ The lines under the rows come from the session (`PreviewExport`, [engine.md](eng
 | W10 alert | `NSAlert`: "Update the out-of-date AI erase before exporting?": **Update and Export** (default), Cancel, Export as Shown; "filling" and "not filled" alike |
 | Overwrite alert | "Export in overwrite mode?", "Don't ask again" (darktable's "ask before exporting in overwrite mode"), [Overwrite] (destructive) [Cancel] (default) |
 | Delete or update a preset | darktable's "delete preset?" and "update preset?" as alerts |
-| Running | The dialog closed; the jobs spinner at the top panel's end, and the jobs window, opened by the job's start ([The jobs window](#the-jobs-window)): the export's row with its bar and ✕, "3 of 12 done · now IMG_2044.ARW", "To" the folder, Show in Finder |
-| Finished | The export's row, "12 photos exported", "To" the folder and the time, Show in Finder; cleared by Clear Finished |
+| Running | The sheet closed, unless Keep open is on; the jobs spinner at the top panel's end, and the jobs window, opened by the job's start ([The jobs window](#the-jobs-window)): the export's row with its bar and ✕, "3 of 12 done · now IMG_2044.ARW", "To" the folder, Show in Finder |
+| Finished | The export's row, "12 photos exported", "To" the folder and the time, Show in Finder; cleared by Clear Finished. A notice, "Exported 12 photos to apertrust_exported" with Show in Finder (with the library's step 12) |
 | Failed | "Export failed: 11 of 12 photos exported", its icon the warning sign; the reason in `error` ("IMG_2051.ARW: the disk is full"); Try again, Show in Finder, Dismiss |
 | Cancelled | "Export cancelled: 3 of 12 photos exported", the files written kept; cleared by Clear Finished |
 
 - **A failure** (decision 56): a photo's own failure, such as a raw that cannot be read, is that photo's, and the export goes on, as darktable-cli's loop does. A failure of the destination, a folder that cannot be created or written or a disk that is full or gone, stops it, as darktable's export job stops, since every later photo would fail the same way. Try again exports the photos that failed and those it did not reach, with the same settings, each photo's edit as it is when Try again is pressed: the export offers it, and the session keeps what it runs (`RetryJob`, decision 72).
-- **On pressing Export,** in order: the overwrite alert, when On conflict is Overwrite and "ask before exporting in overwrite mode" is on ([The alerts](#the-alerts)); then W10; then the dialog closes and the export starts, each photo's edit taken as it is at that moment (D12).
 
 ### Keyboard
 
-- **Closing:** Esc closes the innermost thing first: a dropdown's list, the variable list, a field being typed in, an inline rename, then the dialog. On the Mac, Cmd+. and Cmd+W close it too.
-- **Exporting:** Return exports when nothing has the focus and no field is typed in, unless the focused control takes Return itself. Cmd+Return (Ctrl+Enter) exports from anywhere. Neither does anything while Export is disabled.
-- **Focus order:** presets list → + − ⋯ → storage → format → global → Metadata → Multi-preset export → Close → Export. Tab goes through the presets, then the rows in reading order.
-  - F6 and Shift+F6 move between three regions (presets, settings, footer, `actions::next_region`) and stay inside the dialog.
-  - Disabled rows stay readable to screen readers.
-  - No focus ring shows as the dialog opens.
-- **Presets list:** ↑ and ↓ show a preset's settings, Space or Return chooses it, and F2 renames it.
-- **Access keys,** on Windows and Linux only: &Export, &Close and &Presets.
-- **Ctrl+E** opens the dialog; **Export Again** has no key by default.
+The sheet's keys are [every sheet's](#keys): Return exports wherever no text field is typed in and no list is open, Cmd+Return (Ctrl+Return) from anywhere but an open list, Esc closes the innermost thing first, F6 moves between the bar and the grid, the presets row and the column, and the footer. **Ctrl+E** opens it; **Export Again** has no key by default.
+
+As built, the dialog's: Esc closes the innermost thing first, then the dialog (Cmd+. and Cmd+W too on the Mac); Return exports when nothing has the focus and no field is typed in; Cmd+Return (Ctrl+Enter) from anywhere; F6 and Shift+F6 move between its presets, settings and footer (`actions::next_region`); no focus ring shows as it opens; access keys on Windows and Linux, &Export, &Close and &Presets.
 
 ### Export Again
 
-File › Export Again (`export-again`, no key) is darktable's export with the last settings, with no dialog, for the active photo until selection comes: the one open when Export Again was pressed, whatever is open when a question is answered.
+File › Export Again (`export-again`, no key) is darktable's export with the last settings, with no dialog or sheet, for the window's selection from Phase 3 ("Export 12 Photos Again"), which after an export is the photos sent to it, and for the active photo until then: the one open when Export Again was pressed, whatever is open when a question is answered. It never uses the sheet's last checks, and the item names its count, so what it acts on is in view.
 
 - **darktable's own.** darktable's Ctrl+E is its export button's `_export_with_current_settings` (`src/libs/export.c`): it asks the storage for its confirmation (File on disk's "export in overwrite mode?") and then exports with the conf as it stands. There is no separate "export again" command; this does the same from the `export.*` settings the dialog left.
 - **Declared** in `actions.rs` with no key, after `export` in File (`menus.rs`), with the message `action-export-again` ("Export Again", "Експортувати ще раз", "Eksportuj ponownie"). Available exactly as Export… is: a photo open, the Mac, no modal dialog or alert up.
@@ -1562,7 +1696,7 @@ File › Export Again (`export-again`, no key) is darktable's export with the la
 - **Nothing waits for the session,** so there is no preview to number and no stale answer to drop. A path or size problem is not read from a preview: the export job fails with its cause, which the jobs window shows.
 - **Under the quit alert,** confirmed or held, it does nothing (logged under `-d gpu`), so no job starts uncounted by the quit alert's yes.
 - **Files:** `crates/app/src/export_again.rs`, `actions.rs`, `menus.rs`, `main.rs`, `export.rs` (`asks_before`), `crates/ui/locales`.
-- **Not built:** selection (several photos, "Export 12 Photos Again"), presets, Windows and Linux.
+- **Not built:** selection (several photos, "Export 12 Photos Again"), presets, Windows and Linux. With Export on the sheet, its overwrite alert stays the main window's, as the sheet's is.
 
 ### The jobs window
 
@@ -1659,28 +1793,28 @@ Decision 72: each part of a row comes from one of the job's own events ([events.
 
 ### What a script sees
 
-- **Commands:** `Export { photos, settings }`, with the settings the dialog edits, `CancelJob { job }` (decision 57) and `RetryJob { job }` (decision 72). Everything the jobs window shows comes as `Job` events, and each photo's result, its file and size, as `Export` events ([engine.md](engine.md), Export jobs).
+- **Commands:** `Export { photos, settings }`, with the settings the sheet edits, and `PreviewExport`, naming the photo whose name and size it gives in full (`focus`, planned), `CancelJob { job }` (decision 57) and `RetryJob { job }` (decision 72). Everything the jobs window shows comes as `Job` events, and each photo's result, its file and size, as `Export` events ([engine.md](engine.md), Export jobs).
 - **A preset** is named by the client, which reads it and sends its settings, since the engine reads no file (decision 43): `apertrust-cli export --preset NAME` will, and the server and MCP too.
-- **Presets** live in the user data folder, `presets/export.toml`, so the CLI reads the ones the dialog stores (decision 56).
-- **The dialog's last settings** are the `export.*` settings in `settings.toml`, kept as darktable keeps its conf. `apertrust-cli export` takes its format's options and On conflict from them, as darktable-cli takes them from darktablerc, `--conf export.…` over them for one run.
+- **Presets** live in the user data folder, `presets/export.toml`, so the CLI reads the ones the sheet stores (decision 56), with For sharing and Full size JPEG built in (decision 84).
+- **Export's last settings** are the `export.*` settings in `settings.toml`, kept as darktable keeps its conf. `apertrust-cli export` takes its format's options and On conflict from them, as darktable-cli takes them from darktablerc, `--conf export.…` over them for one run.
 
 ### The profile under the mirror rule
 
-- The dialog has darktable's own Profile and Intent rows.
+- Global options has darktable's own Profile and Intent rows.
 - **Image settings,** the default, is colorout's Export profile, Output colour profile's, so the export matches the view and its gamut warning.
 - **Another profile** overrides it for that export only: it reaches colorout's `type` in that export's instances and never the edit (decision 26).
 - **The difference line:** once more profiles can be chosen, a line says "Differs from Colour › Output colour profile, sRGB (web-safe): the view and its gamut warning show that one."
 
 ### Deviations from darktable
 
-Beyond the modal itself:
+Beyond the sheet itself, a grid of the photos checked beside the export tools where darktable's export module sits in the lighttable's side panel, acting on the selection:
 
 | # | Deviation | Why |
 | --- | --- | --- |
-| D1 | Presets as a list at the dialog's start, not in the header's ☰ menu | One place to see and choose them |
-| D2 | **Default settings**, built in, at the top of the list, in place of darktable's reset button | One place for presets; no header in a window |
+| D1 | Presets in the sheet bar's presets row, a list that previews, not the header's ☰ menu; whole-export presets only, as darktable's | One place to see and choose them, the same in Import's sheet |
+| D2 | **Default settings**, built in, at the top of the list, in place of darktable's reset button | One place for whole-export presets; each tool's ↺ resets only its own |
 | D3 | Pointing at a preset shows its settings before it is chosen | The quality bar: presets preview on hover |
-| D4 | Metadata preferences inline as a collapsible group, not a second dialog | A modal over a modal is clumsy |
+| D4 | Metadata preferences inline as a tool of the column, not a second dialog | A modal over a modal is clumsy |
 | D5 | Piwigo left out | It uploads photos, which principle 3 rules out |
 | D6 | Default folder `apertrust_exported` (the gallery's title and folder likewise) | darktable's name would be wrong |
 | D7 | Variables keep darktable's names. `$(DARKTABLE.NAME)` and `VERSION` read as Apertrust's, and `$(APERTRUST.NAME)` and `VERSION` are added. Those with no value here (OPENCL.ACTIVATED, WORKSPACE.LABEL, IMAGE.ID, the VERSION family) expand to nothing, with a line saying so | Patterns copied from darktable keep working |
@@ -1692,8 +1826,10 @@ Beyond the modal itself:
 | D13 | The overwrite confirmation a system alert, Cancel the default, "Don't ask again" darktable's preference | The platform's replace convention |
 | D14 | Progress, Cancel and result in the jobs window, opened by the top panel's spinner and by the job's start, not darktable's background jobs panel at the left panel's bottom (decision 57) | Jobs seen wherever the person is working |
 | D15 | Allow upscaling, High quality resampling and Store masks are toggles, where darktable's are comboboxes of No and Yes (decision 84) | A boolean drawn as a tool draws one, a click instead of two |
+| D16 | darktable's sections are tools: Storage, Format and Global options, then Metadata and Multi-preset export, each with a tool's header, ↺ and ⋯, collapsible and reordered, where darktable has section labels (decision 84) | The same column as the Import sheet's; each part reset on its own |
+| D17 | Two presets built in, For sharing (JPEG, 2048 × 2048 px, sRGB) and Full size JPEG (JPEG, no size limit, sRGB), where darktable ships none (decision 84) | A small file for sharing, and back to full size, in one choice each |
 
-Decision 56 adds three of the engine's, none of them seen in the dialog but as a result:
+Decision 56 adds three of the engine's, none of them seen on the sheet but as a result:
 
 - **0 is no limit,** as darktable-cli and darktable's own description of the setting have it ("or 0 if no scaling should be done"). darktable's export module takes the format's largest side as the limit for a size left at 0. As it turns upscaling off at 0 × 0, the one effect is on a photo larger than the format's largest side, a JPEG past 65535 pixels, which it fits and Apertrust refuses (D8), so it is not mirrored (`docs/ports/finalscale.md`). Its largest scale, which shrinks with the computer's memory, is not mirrored either, as it would make one edit export at different sizes on two computers (principle 2).
 - **Each file is written beside its name and renamed into place,** where darktable writes it in place, so a NAS or a cloud folder never holds a part file under a photo's name.
@@ -1703,11 +1839,11 @@ The JPEG writer is jpeg-encoder, the pure Rust encoder that sets every option da
 
 ### The phases
 
-The Export dialog is Phase 3's.
+Export is Phase 3's.
 
-1. **The first build** (built on the Mac): the sheet; File on disk with the path, on conflict and the name preview; JPEG and PNG; all four Set size modes, Allow upscaling and High quality resampling; Profile with Image settings and sRGB; the jobs window with progress, cancel and result; the overwrite and quit alerts; Export Again. The engine's part: an export at a size, with darktable's resample; the JPEG and PNG writers; darktable's variables and File on disk; the job API and the export job, sharing the GPU with the viewport ([engine.md](engine.md), Export jobs).
-2. **Drawn as a tool** (decision 84, [Drawn as a tool](#drawn-as-a-tool)): every row a tool setting's row, Blended choices, the three toggles, the taller column; before presets, so presets and metadata are built in its rows.
-3. **Presets:** with the hover preview, and Multi-preset export.
+1. **The first build** (built on the Mac), the dialog: AppKit's sheet; File on disk with the path, on conflict and the name preview; JPEG and PNG; all four Set size modes, Allow upscaling and High quality resampling; Profile with Image settings and sRGB; the jobs window with progress, cancel and result; the overwrite and quit alerts; Export Again. The engine's part: an export at a size, with darktable's resample; the JPEG and PNG writers; darktable's variables and File on disk; the job API and the export job, sharing the GPU with the viewport ([engine.md](engine.md), Export jobs).
+2. **Export on the sheet** (decisions 84 and 86, [Sheets](#sheets)), after the setting rows and the sheet frame: the five tools with their headers, every row a tool setting's row, Blended choices, the three toggles; the grid of the set; before presets, so presets and metadata are built in its tools.
+3. **Presets:** the presets row with the hover preview, For sharing and Full size JPEG, and Multi-preset export.
 4. **Metadata,** and Style once styles exist.
 5. **Later:**
    - other formats as encoders allow: lossy WebP, JPEG XL, HEIF and JPEG 2000 need C or C++ libraries, each an exception under decision 5 that is not made, while pure Rust encoders exist for the rest ([engine.md](engine.md), Export jobs);
@@ -1723,13 +1859,14 @@ Each card one deliverable, reviewed before the next. Cards 1 to 14 are built and
 
 - **7. Spike X1, an export beside the viewport** ([engine.md](engine.md), Export jobs), through `apertrust-cli preview --beside-export`: measured on the M4; the RTX 5060, the Radeon 780M, WARP and exports at 2048 pixels still to run. Out of scope: changing the scheduler beyond a switch for the measured slices.
 - **8c. A tile's passes split** into steps where one tile's render runs longer; quantising moves onto the GPU only if X1's readback on the discrete GPUs calls for it. Out of scope: stills.
-- **20. Drawn as a tool** (decision 84, [Drawn as a tool](#drawn-as-a-tool)), before presets, so presets and metadata are built in its rows; the wireframe's Export board is redrawn first.
-  - 20a. The design system: the slider row with no kept marker, the note row, the field row and its path form, the size row and the indented toggle, each in the gallery with snapshots. Out of scope: `export.rs`.
-  - 20b. The dialog: `export.rs` rebuilt from them; Blended choices, the three toggles, 12-point sides and no spacing between rows; the column 580 points and the height rule, the host telling the dialog its room. Snapshots dark, light, an error, Ukrainian, Polish and the pseudo-locale at the default height, and one at the least. Out of scope: presets, metadata.
+- **20. Export on the sheet** (decisions 84 and 86), before presets, so presets and metadata are built in its tools; the wireframe's Sheets and Export boards are drawn first. Its cards follow the sheets' build order ([roadmap.md](roadmap.md#export)):
+  - 20a. The setting rows, shared with Import: the slider row with no kept marker, the path row, the note rows, the field rows, the size row and its two-line form, the indented toggle, the header with ↺ and ⋯ for a settings tool, each in the gallery with snapshots (dark, light, Ukrainian, Polish, the pseudo-locale). Out of scope: `export.rs`, any sheet.
+  - 20b. The sheet frame, shared with Import: `Sheet` in `apertrust-ui` with its regions and their width rules, the check-box caption and mark slot on `GridCell`, `Checks` unit-tested, the column of tools from definitions in an order list with the place and its test, the footer, the keys and the app's modality; a gallery example with sample photos and tools. Out of scope: any real tool, presets, reordering.
+  - 20c. Export on the sheet: the five export tools from 20a's rows, ↺ working and ⋯ disabled, in darktable's order, Metadata and Multi-preset export drawn disabled; the grid of the set with Show all N in folder, Select edited and the marks; `PreviewExport`'s `focus`; the photos exported made the selection; the alerts on the main window; the notice at each export's end, once step 12's notices are built; the dialog's path, its host code and its snapshots removed. Snapshots dark, light, an error, Ukrainian, Polish and the pseudo-locale, at 1440 × 900, 1280 × 720 and the least window. Out of scope: presets, metadata, reordering.
 - **15. Windows and Linux:** the dialog in the host there, a modal window, is built; their alerts are not ([Dialogs and alerts](#still-to-build)), so Overwrite waits for them.
-- **16. Presets:** `presets/export.toml` through `apertrust-export`'s `presets`; the Presets column with ✓, + − ⋯, the hover preview (D3), F2's rename, darktable's "delete preset?" and "update preset?" as alerts; `apertrust-cli export --preset NAME`.
-- **17. Multi-preset export:** its group and Start batch export, one job per ticked preset, queued in their order.
-- **18. Metadata:** the group (D4); darktable's EXIF and XMP writing (`dt_exif_read_blob`, `dt_exif_xmp_attach_export`), EXIF through a pure-Rust writer chosen then, XMP through `apertrust-library`'s XMP layer (decision 50); Develop history the `.apxmp`.
+- **16. Presets:** `presets/export.toml` through `apertrust-export`'s `presets`, For sharing and Full size JPEG built in (D17); the sheet bar's presets row with ✓, ⋯, the hover preview (D3), F2's rename, darktable's "delete preset?" and "update preset?" as alerts; `apertrust-cli export --preset NAME`.
+- **17. Multi-preset export:** its tool and Start batch export, one job per ticked preset, queued in their order.
+- **18. Metadata:** the tool (D4), and the Format note about metadata gone; darktable's EXIF and XMP writing (`dt_exif_read_blob`, `dt_exif_xmp_attach_export`), EXIF through a pure-Rust writer chosen then, XMP through `apertrust-library`'s XMP layer (decision 50); Develop history the `.apxmp`.
 - **19. Style,** once styles exist.
 - **The old wireframe code:** `UtilityModule.dc.html`'s `export` section, the old simplified dialog, is unused and is to be removed from the wireframe.
 
@@ -1857,7 +1994,7 @@ The model's words:
 | Grid panel | The current folder's or album's thumbnails along the bottom, except under the side panel, or in a column at the window's left or right, with the grid bar at its left end at the bottom and along its top at a side ([below](#the-grid-bar)). Shown in every layout, Map too, and never hidden; one line of thumbnails or several ([below](#the-grid-panel)) |
 
 - **A layout** (Photo; Map later) implements one trait: what the central panel shows and the central bar's contents after the Map toggle. Everything else is the shell's and stays as it is when the layout changes: the photo's toggles and the Map toggle, the grid panel, the side panel and its tabs, the keys and what they act on, the caption, the top panel and the menus. A new layout adds what the central panel shows and the end of the central bar, and nothing more.
-- **Over the view** ([below](#dialogs-sheets-and-the-slideshow)): Settings, Export and Customise tabs are dialogs, each a native window of its own (decision 41, [Dialogs and alerts](#dialogs-and-alerts)). About is Apertrust's own modal over the window. Import (Phase 5) and Print are full-window sheets, and the slideshow plays full screen. Each is modal, and the view's keys rest under it ([Keyboard and actions](#keyboard-and-actions)).
+- **Over the view** ([below](#dialogs-sheets-and-the-slideshow)): Settings and Customise tabs are dialogs, each a native window of its own (decision 41, [Dialogs and alerts](#dialogs-and-alerts)). About is Apertrust's own modal over the window. Import, Export and Print are full-window sheets ([Sheets](#sheets)), and the slideshow plays full screen. Each is modal, and the view's keys rest under it ([Keyboard and actions](#keyboard-and-actions)).
 - **A section** is anything in the side panel: a tool, such as Exposure or the Photos tab's Browse, or a utility such as Scopes, Layers, History or Match.
   - Every section has an id, a title message, header actions and a body.
   - The side panel lays out two lists of section ids per tab, its pinned sections and the rest, and a workspace is a named set of those lists with the sections that float over the central panel (decision 83). Dragging a section's header, its ⋯ menu, keys, the settings file and Customise tabs all edit the current workspace's, so any section can sit in any tab, pinned or not, or float ([Moving, pinning and floating sections](#moving-pinning-and-floating-sections)). The order is display order only, never the processing order.
@@ -1933,7 +2070,7 @@ With several photos selected, the rating, reject and label keys, Apply Edit and 
 | Copy Edit, and the copying half of Copy or Apply Parts | The active photo's edit | — |
 | Apply Edit, Apply Parts | Every selected photo | "Apply Edit to 12 Photos" in the menu and the button's tooltip; then "Edit applied to 12 photos · Undo" |
 | Rating, reject and labels, from the keys, the caption or the Photo menu | Every selected photo | "3 stars on 12 photos · Undo" |
-| Export… | Every selected photo | "Export 12 Photos…"; the dialog's title and button say it too |
+| Export… | Every selected photo, checked on the Export sheet; the photos sent to export become the selection | "Export 12 Photos…"; the sheet's heading and button say it too |
 | The slideshow | The selected photos when several are; else the folder or album, from the active photo | — |
 | Print… | Every selected photo | The sheet's title |
 | Show in Folder | The active photo | — |
@@ -1969,7 +2106,7 @@ With several photos selected, the rating, reject and label keys, Apply Edit and 
 A workspace is a named, saved set of the side panel's tabs, built in or the user's own. It is switched only when the person asks, and never with the central panel's layout.
 
 - **What one holds:** its tabs in order, each with its id, name and icon, its sections in order and which of them are pinned; the sections that float, and the tab each left (decision 83); and the side the panel sits on. Not the panel's width nor a floating panel's place and width, which suit a screen rather than a task; not the central panel's layout, the theme or the keys; never a photo or an edit.
-- **Built in.** Each may leave tools out: Customise tabs lists what a workspace leaves out, and every tool stays in at least one workspace, Edit holding them all.
+- **Built in.** Each may leave tools out: Customise tabs lists what a workspace leaves out, and every side-panel tool stays in at least one workspace, Edit holding them all. Export and import tools belong to their sheets and are in no workspace (decision 86).
   - **Edit,** the default: Photos, Adjust, Detail, Geometry, Effects, Raw and History, the tools grouped by editing stage between Apertrust's own two (decision 38; [The tabs](#the-tabs-by-editing-stage)), with Scopes and Layers pinned in the editing tabs. It opens on Adjust.
   - **darktable,** from Phase 3, for people coming from darktable (decision 38): Photos, Base, Colour, Correct, Effect and History, darktable's scene-referred groups with darktable's lists and order, Scopes and Layers pinned in the four groups. It opens on Base.
   - **Photos,** from Phase 3, for culling and sorting (the wireframe's "Photo · culling · Photos workspace" frame): the Photos tab first, holding Browse and the photo's camera data with Scopes pinned, and opening there; Adjust next, for White balance and Exposure; then the rest.
@@ -1984,13 +2121,14 @@ A workspace is a named, saved set of the side panel's tabs, built in or the user
 
 ### Dialogs, sheets and the slideshow
 
-Export is a dialog, Print a full-window sheet, the slideshow an action, and Import a sheet in Phase 5 (decision 37). None is a layout: each opens over the view and gives it back as it was. Every dialog is a proper system modal window, and every confirmation the system's own dialog (decision 41). About, and a future splash screen while the app loads, are the only exceptions.
+Import, Export and Print are full-window sheets and the slideshow an action (decisions 37 and 86). None is a layout: each opens over the view and gives it back as it was. Every dialog is a proper system modal window, and every confirmation the system's own dialog (decision 41). About, and a future splash screen while the app loads, are the only exceptions.
 
-- **A dialog** (Settings, Export, Customise tabs, and the prompts that ask for a name: Save as Workspace…, Rename Workspace…) is a native window of its own, modal to the window it rises from and of ordinary size, its content drawn by Apertrust's components in the theme. How each platform makes it modal is in [Dialogs and alerts](#dialogs-and-alerts). Export needs no large preview; it runs in the background, shown in the top panel's jobs spinner.
-- **A confirmation** (Export's overwrite question, the quit alert, Delete Workspace… in Phase 3) is the system's alert: on the Mac an `NSAlert`, on Windows the task dialog. Linux has none for an app outside GTK and Qt, so there it is Apertrust's own alert in a dialog window ([Dialogs and alerts](#dialogs-and-alerts)).
+- **A dialog** (Settings, Customise tabs, and the prompts that ask for a name: Save as Workspace…, Rename Workspace…; Export as built, until it is on its sheet) is a native window of its own, modal to the window it rises from and of ordinary size, its content drawn by Apertrust's components in the theme. How each platform makes it modal is in [Dialogs and alerts](#dialogs-and-alerts).
+- **A confirmation** (Export's overwrite question, the quit alert, Delete Workspace… in Phase 3) is the system's alert: on the Mac an `NSAlert`, on Windows the task dialog. Linux has none for an app outside GTK and Qt, so there it is Apertrust's own alert in a dialog window ([Dialogs and alerts](#dialogs-and-alerts)). An alert a sheet asks is the main window's.
 - **About** stays Apertrust's own modal over the window ([Help](#help)), and so will a splash screen while the app loads, once one is designed.
-- **A sheet** covers the window below the top panel, whose actions rest while it is open. Esc or Cancel closes it and keeps its settings for next time; F6 moves between its regions. It is drawn inside the main window, not one of AppKit's sheets, which [Dialogs and alerts](#dialogs-and-alerts) calls the Mac's sheets. Print and Import are such sheets (decision 41), since each takes the window's whole size for its preview or its thumbnails and is a place to work rather than a dialog.
-  - **Import** (by copy in folder mode in Phase 3, into a library or project in Phase 5; decision 46): the card's or folder's thumbnails, selectable as in the grid panel, beside a column of its settings (the destination, copying or adding in place, renaming, a backup). It runs in the background, in the top panel's jobs.
+- **A sheet** covers the window below the top panel, whose actions rest while it is open ([Sheets](#sheets)). Esc or Close closes it and keeps its settings for next time; F6 moves between its regions. It is drawn inside the main window, the same on every platform, not one of AppKit's sheets, which [Dialogs and alerts](#dialogs-and-alerts) calls the Mac's sheets. Import, Export and Print are such sheets, since each takes the window's whole size for its thumbnails or its preview and is a place to work rather than a dialog.
+  - **Import** (by copy in folder mode in Phase 3; into a library or project in Phase 5, decision 46): the card's or folder's photos, each with a check box that chooses whether it is imported, beside a column of import tools. It runs in the background, in the top panel's jobs.
+  - **Export** ([The Export sheet](#the-export-sheet)): the photos it was opened with, checked, beside the five export tools. It needs no large preview of the edit; it runs in the background, in the top panel's jobs.
   - **Print** (File › Print…, Ctrl+P; after Phase 5, no phase yet): the page preview at its start, with page navigation; at its end a settings column as wide as the side panel (printer, paper, layout, margins, size, sharpening, colour, copies, presets); Cancel and Print… at the bottom. Below about 800 points wide, the settings move under the preview.
     - As decision 37 plans it, Print… first writes a print-ready file on every platform (a PDF or TIFF at size, through the printer's profile), and the system's print path follows platform by platform.
     - The preview is the engine's render through the printer profile, its out-of-gamut warning in patterns as well as colour.
@@ -2543,7 +2681,7 @@ Three icon buttons, **Sort** and **Labels** at its start and **Zoom** at its end
 
 `apertrust-tools` describes each tool as data, and the app renders it (decision 28).
 
-- **A definition** holds the tool's id, version, whether it works on layers, whether it has Auto, its controls and its tabs.
+- **A definition** holds the tool's id, version, its place, whether it works on layers, whether it has Auto, its controls and its tabs. The place is one of three (decision 86): the side panel, Export or Import; a tool is drawn only in its place, and a test checks every list of tools against it.
 - **A control** is what the edit stores: an id, a kind (a number with range, step and default; a choice with its options; a boolean; curve points) and a unit.
 - **A row** is how a tab shows one control. Each control appears in one row, or only in the rows of its lossless views, a second view of the same stored values (decision 2). A number control may also appear in one equalizer's row, the tone equalizer's graph of its bands (`Row::Custom` with `Widget::Equalizer`), the one widget allowed as a second row beside the controls' own until another needs it.
 
@@ -2652,9 +2790,9 @@ Compact rows, from the wireframe's ModulePanel board, with darktable's sliders t
   - **Rounding and steps.** A dragged or typed value is rounded to the decimals shown, as darktable's `_slider_set_normalized` rounds to its digits; the step is a key's alone. The step is darktable's at rest and, once the track widens, darktable's for the span shown, as its zoom step (on by default) makes it, never less than the step at rest. A key's move, Alt's tenth included, is never less than the last decimal shown, darktable's `min_visible`. In the units shown the step is darktable's exactly but for a slider with an offset, RGB primaries' purities, whose top darktable measures in its parameter's units.
   - **Screen readers** are told the control's range as the value's limits, since a value they set may reach it as a typed one may, and Increment and Decrement step inside the track's span as the keys do.
   - **Focused by the keyboard,** the row shows the focus ring round all of it, centred on its edge and 4 points beyond the content at its start and end, as far as a dropdown row's hover band, so it runs into neither the top line nor the next row.
-- **Every one-line row in a tool panel is 24 points** (`sizes.panel_line`): the Blended dropdown row and the preset row, the checkbox row, the action row, the button row, a tool's setting, and a collapsible group's row, with their text centred, so stacked choices read as separate rows, as darktable's do beside its sliders. `sizes.row` (26) stays for popups, text fields, segments and the dialogs but Export, whose rows are a tool's (decision 84, planned), and a Boxed dropdown row stays 20. The slider row is 37.
+- **Every one-line row in a tool panel is 24 points** (`sizes.panel_line`): the Blended dropdown row and the preset row, the checkbox row, the action row, the button row, a tool's setting, and a collapsible group's row, with their text centred, so stacked choices read as separate rows, as darktable's do beside its sliders. `sizes.row` (26) stays for popups, text fields, segments and the dialogs, and the sheets' rows are a tool's (decision 86, planned), and a Boxed dropdown row stays 20. The slider row is 37.
 - **A checkbox row** is one line, 24 points: the checkbox at the start and its label after it. Clicking the label toggles it too.
-- **A dropdown row** (`Choice`) is always one line, in one of two styles (decisions 42 and 84, [Choice rows: two styles](#choice-rows-two-styles)): **Blended**, darktable's combobox, in tool panels and the Export dialog, its option right-aligned in the small text with a small chevron ending where slider values end and no box; **Boxed** everywhere else. Both put the label at the start and the row's buttons, such as the picker, before the option or the box.
+- **A dropdown row** (`Choice`) is always one line, in one of two styles (decisions 42 and 86, [Choice rows: two styles](#choice-rows-two-styles)): **Blended**, darktable's combobox, in tool panels and the sheets' tools, its option right-aligned in the small text with a small chevron ending where slider values end and no box; **Boxed** everywhere else. Both put the label at the start and the row's buttons, such as the picker, before the option or the box.
   - Boxed, the box is styled as the value fields, 18 points high, its text 5 points from its start and followed by ⌄, 4 points from its end, as the browser draws the wireframe. It is as wide as its widest option, a preset row's Custom counted as one, and at least a value field's width, so a choice never changes its size and it lines up with the fields around it.
   - The whole row opens it, the label, the gap and the box but not the buttons, and under the pointer a neutral band in `hover`, never the accent, runs across it, so a short label and its value read as one at 600 points. It is one focus stop, the box, reported to AccessKit as a combo box named by the control's full name, the chosen option its value.
   - When the label, a 12-point gap, the buttons and the box at its widest option do not fit, the row stays one line, as darktable's do: the label and the box share what the gap and the buttons leave in proportion to their widths, darktable's `label / (label + value)`, and each is cut at its end with …, never in its middle, since an option's start tells it from the others ("Fluorescent F11 (narrow tri-band)" cut in the middle loses F11). The widest option decides the share, not the chosen one, so a choice never changes the layout. The tooltip shows whatever is cut whole, before the promise, and screen readers hear the whole label and option.
@@ -2945,7 +3083,7 @@ darktable's fine control, nothing removed (`_popup_show`, `_popup_draw`, `_windo
 
 `Choice::style(ChoiceStyle::Blended | ChoiceStyle::Boxed)`, Boxed by default. The design system's `apertrust_ui::components::ChoiceStyle` sits beside the definitions' `apertrust_tools::ChoiceStyle` (a list or segments), and the renderer names the design system's by its path (`parts::ChoiceStyle`).
 
-- **Blended,** darktable's combobox (`_widget_draw` for `DT_BAUHAUS_COMBOBOX`), in tool panels: tool choice rows, preset rows such as White balance's Settings, and the choices of darktable's settings for a tool; and in the Export dialog, whose rows are a tool's settings (decision 84, planned; [Drawn as a tool](#drawn-as-a-tool)). One row, 24 points high (`sizes.panel_line`, as every one-line row of a tool panel):
+- **Blended,** darktable's combobox (`_widget_draw` for `DT_BAUHAUS_COMBOBOX`), in tool panels: tool choice rows, preset rows such as White balance's Settings, and the choices of darktable's settings for a tool; and in the Import and Export sheets' tools, whose rows are all settings (decision 86, planned; [A sheet's rows](#a-sheets-rows)). One row, 24 points high (`sizes.panel_line`, as every one-line row of a tool panel):
   - the label at the start, in the body text;
   - the kept marker after the label, as a slider row's, drawn by the same function: ● while the session reports the control kept, ○ under the pointer or focus, a click on it releasing or keeping it (`Choice::mark`, `ChoiceAction::ToggleKeep`, sent as `Keep`). Its place is the row's, kept or not, so keeping moves nothing. A preset row and a tool's setting, which store nothing, have none;
   - the row's buttons, a picker, before the option;
@@ -2955,7 +3093,7 @@ darktable's fine control, nothing removed (`_popup_show`, `_popup_draw`, `_windo
   - an option the photo does not list last and disabled (decision 30), options not ported disabled (decision 29), a disabled row dimmed;
   - a click anywhere on the row but its buttons opens it, and Space, Enter or ↓ when it has the focus; the list hangs from the option's place at its widest option;
   - to AccessKit a ComboBox named by the control's full name, the option its value; the marker a button of its own, as a slider's. The combo box comes before its marker and quad in the focus order, since the row lies under them for the pointer.
-- **Boxed:** the sunken box as wide as its widest option, never narrower than a value field, its end on the values' edge; in the Settings dialog, the other panels and utility sections and Customise tabs, each until it is next changed (decision 84), and in the Export dialog as built, until it is drawn as a tool; no hover band, the box alone the control, with the focus ring round the box after a key.
+- **Boxed:** the sunken box as wide as its widest option, never narrower than a value field, its end on the values' edge; in the Settings dialog, the other panels and utility sections and Customise tabs, each until it is next changed, and in the Export dialog as built, until Export is on its sheet (decision 84); no hover band, the box alone the control, with the focus ring round the box after a key.
 - **The gallery** draws both styles, Blended in a 296-point column under a slider row.
 
 #### The list
@@ -2985,8 +3123,8 @@ The list is the popup service's dropdown (decision 40).
 
 | Place | Becomes |
 | --- | --- |
-| Export: the quality, compression, level, effort and tier sliders (bauhaus sliders in darktable) | Read-only at rest (no unit), click to edit, the popup; no kept marker, a double-click or Delete putting back darktable's default (decision 84) |
-| Export: width × height in px, print sizes, dpi, scale (GtkEntry in darktable) | Stay typed `ValueField`s, in the size and field rows (decision 84) |
+| Export: the quality, compression, level, effort and tier sliders (bauhaus sliders in darktable) | Read-only at rest (no unit), click to edit, the popup; no kept marker, a double-click or Delete putting back darktable's default (decision 86) |
+| Export: width × height in px, print sizes, dpi, scale (GtkEntry in darktable) | Stay typed `ValueField`s, in the size and field rows (decision 86) |
 | Layers' sliders, Match's strength, the Settings dialog's slider rows | As tool rows |
 | Settings' plain numbers (the memory budget) | Stay `ValueField`s |
 | The curve's readout | Stays read-only with no popup, as darktable's; its handles keep the slider's keys but Enter; no "Exact values" fields in the first pass ([The curve](#the-curve)) |
@@ -3326,7 +3464,7 @@ It is versioned (`version = 1`) and migrated as `.apxmp` is. It holds:
 - the sections the user opened or closed, the same in every workspace, and the collapsible groups, by tool and group (decision 29);
 - the Scopes section's view (the graph, the scale, the channels shown and the clipping toggles), in a top-level `[scopes]` table, one key per part, each once the user changes it, the same in every workspace;
 - the central panel's margins (`[central_panel]`, [The photo frame](#the-photo-frame)), with no page in Settings;
-- the export settings, `export.*` ([The Export dialog](#the-export-dialog)), and `export.ask_before_overwrite`;
+- the export settings, `export.*` ([The Export sheet](#the-export-sheet)), and `export.ask_before_overwrite`;
 - from Phase 3, whether Show all selected photos is on, and the central panel's layout once the Map exists, so Apertrust opens in the layout it closed in;
 - the window's size, position and whether it is maximised, and the places of Settings' window on the Mac and of the jobs window;
 - on Windows and Linux, whether the window uses the system's title bar, off unless the user turns it on ([The frame](#the-frame), decision 39);
@@ -3584,7 +3722,7 @@ Phase 3 adds, for the interface:
   - 2, moving by drag within a tab, pinning by drag included;
   - 3, the ⋯ menu's items, the keys and the screen readers' actions, but for floating's;
   - 4, another tab: drops on a tab, the spring-loaded tab, Move to Tab ›, any section in any tab;
-- the Export dialog, a native modal window (decision 41), in [its cards' order](#the-build-in-cards) on the session's export job (decision 56): built on the Mac, its presets, metadata and the other platforms left;
+- Export, built as a native modal dialog (decision 41) on the session's export job (decision 56), then on the Export sheet (decisions 84 and 86) in [its cards' order](#the-build-in-cards): built on the Mac and on Windows and Linux, the setting rows, the sheet frame, presets and metadata left;
 - the system's alerts: built on the Mac with Export's overwrite question and the quit alert; Delete Workspace… and the other platforms left.
 
 The UX pass after Phase 3 adds the layout's part 5, floating panels inside the window, with Float, Dock, Position, Dock All Floating Panels and their keys and actions (decision 83).
@@ -3618,10 +3756,10 @@ The UX pass after Phase 3 adds the layout's part 5, floating panels inside the w
 - **Compact tool rows,** darktable's sliders the example of density ([How the rows are laid out](#how-the-rows-are-laid-out)), built:
   - a slider row of two lines, 37 points, its label, marker, buttons and value over a full-width track, about 296 points at 320; its value 54 by 18 while edited, so "−180.00" fits whole; its buttons and kept marker 18 high; its track's strip 16 with the track 6 points into it; the handle never shrinks, its tip and base 5.5 points each way of the track's middle;
   - a checkbox row of one line, its label after the box;
-  - a dropdown row of one line, Blended in tool panels and the Export dialog and Boxed elsewhere; a label and options too long share the line in darktable's proportion, each cut at its end;
+  - a dropdown row of one line, Blended in tool panels and the sheets' tools and Boxed elsewhere; a label and options too long share the line in darktable's proportion, each cut at its end;
   - section headers of 30 points with the title centred.
 - **Slider values the darktable way** (decision 42, [Slider values and choices](#slider-values-and-choices)): read-only at rest with their unit, in 12 points; a click on the value or a digit makes it a field with the number alone; darktable's popup for fine control, Enter on a focused slider opening it as in darktable.
-- **Choice rows in two styles:** Blended, darktable's combobox, in tool panels and the Export dialog; Boxed everywhere else; darktable's type-to-filter in the drawn dropdowns on Windows and Linux, the Mac's native menus with AppKit's type-select.
+- **Choice rows in two styles:** Blended, darktable's combobox, in tool panels and the sheets' tools; Boxed everywhere else; darktable's type-to-filter in the drawn dropdowns on Windows and Linux, the Mac's native menus with AppKit's type-select.
 
 ## Choices
 
@@ -3637,13 +3775,14 @@ The decisions this design rests on, by area; each decision record has the option
 | Window frame | The top panel from the window's top edge on every platform: the Mac's traffic lights in it, caption buttons drawn by the app on Windows and Linux, Windows' snap layouts flyout through native hit testing; the system's title bar as a setting there, off by default; a minimum width of 500 points (decision 39) |
 | Popups | Native `NSMenu`s on the Mac for plain lists and context menus, from `apertrust-display`; drawn for what previews or holds controls, and on Windows and Linux; one popup service; the drawn ones on egui `Area`s, owning their plain keys while open through an egui plugin, drawn by `popup::show` once a frame (decision 40) |
 | Dialogs and alerts | Every dialog a native window of its own, modal to the window it rises from, hosted by the app beside eframe's window with its own egui context, AccessKit adapter and surface on the engine's device; made modal as each platform does it (on the Mac a sheet, and Settings alone modeless, a native window of its own; an owned window with its owner disabled on Windows; transient-for and the modal state on X11; a parent on Wayland, with modality kept by the app); confirmations the system's alerts through one alert service, `NSAlert` and the task dialog, Linux's Apertrust's own in a dialog window; About and a future splash screen Apertrust's own over the window (decision 41) |
-| The Export dialog | darktable's export module row for row in a native modal window, a sheet on the Mac, drawn as a tool whose every row is a setting, 640 points wide, its settings column 580 high by default and alone scrolling (decision 84, planned), presets as a list at its start, its feedback lines, the jobs window (decision 57), D1 to D15; built on the session's export job, a `UserExport` job of darktable's control jobs (decision 57), darktable's size and resample, JPEG and PNG in Rust, each file written beside its name and renamed into place, the dialog's settings `export.*` settings and its presets `presets/export.toml` (decision 56; [The Export dialog](#the-export-dialog)) |
+| Sheets | Import and Export as one full-window sheet inside the main window, drawn the same on every platform: the sheet bar with the presets row over the column, a grid of the grid panel's cells checked to go, a column of tools on the side panel's side, 440 points by default, each with the tool panel's header, ↺ and ⋯ for Move Up and Move Down, every row a setting row; whole-sheet presets; a footer with a two-line summary, Keep open, Close and the primary button, which Return presses; a tool in one place (decision 86, planned; [Sheets](#sheets)) |
+| Export | darktable's export module row for row on the Export sheet: the photos it was opened with checked, the five export tools, D1 to D17, For sharing and Full size JPEG built in, the photos exported then the selection (decision 84, planned), built until then as a native modal dialog, a sheet on the Mac, with a Presets column; its feedback lines, the jobs window (decision 57); built on the session's export job, a `UserExport` job of darktable's control jobs (decision 57), darktable's size and resample, JPEG and PNG in Rust, each file written beside its name and renamed into place, its settings `export.*` settings and its presets `presets/export.toml` (decision 56; [The Export sheet](#the-export-sheet)) |
 | The engine and the window | eframe on the app's own event loop, the engine's submit gate held round each of its callbacks (`Gated`), so the window's surface is never reconfigured while the engine submits; during a resize the last frame scaled, the photo's new size sent once the window has kept it for 150 ms (decision 18) |
 | Menus | One model from the registry: the Mac's native menu bar through muda; on Windows and Linux one menu button, ☰, at the top panel's very start, before the mark, opening the menus drawn by egui through the popup service; the registry owns every key (decision 39) |
 | Icons | SVG files rendered by resvg at their pixel size, their lines 1.25 points wide, and tinted with a theme colour (decision 36); derived from Lucide's, with its ISC and MIT notices, or drawn in its style where it has none (decision 64) |
 | Accessibility | AccessKit on, every component reporting its role, label and value (decision 36) |
 | UI tests | Interaction tests with `egui_kittest` through AccessKit; gallery snapshots per theme and in the pseudo-locale (decision 36) |
-| Slider values and choices | darktable's: the value read-only at rest with its unit and sign, a click or a digit making it a field that takes a number, for now (darktable's expressions waiting until there is a need), darktable's popup for fine control on Enter, a right-click, Shift+F10 or the Menu key, drawn on every platform, a cancel put back by the session with no history step; choice rows Blended, darktable's combobox, in tool panels and the Export dialog and Boxed elsewhere, the drawn dropdown filtering as darktable's (decisions 42 and 84; [Slider values and choices](#slider-values-and-choices)) |
+| Slider values and choices | darktable's: the value read-only at rest with its unit and sign, a click or a digit making it a field that takes a number, for now (darktable's expressions waiting until there is a need), darktable's popup for fine control on Enter, a right-click, Shift+F10 or the Menu key, drawn on every platform, a cancel put back by the session with no history step; choice rows Blended, darktable's combobox, in tool panels and the sheets' tools and Boxed elsewhere, the Export dialog as built among them, the drawn dropdown filtering as darktable's (decisions 42, 84 and 86; [Slider values and choices](#slider-values-and-choices)) |
 | The side panel's layout | Each tab's pinned and scrolling sections and which float, the workspace's, in settings; changed by dragging a header, its ⋯, keys and the file; display order only, never the processing order; floating panels inside the window, belonging to no tab (decision 83; [Moving, pinning and floating sections](#moving-pinning-and-floating-sections)) |
 | The view | One view: the Photos tab choosing the photos; the central panel's layouts, Photo and later Map, switched only when asked, with no Grid; one set of tabs, kept as workspaces; the rating keys, Apply Edit and Export on every selected photo, the sliders and Reset on the active one; Export a dialog, Import and Print sheets, the slideshow an action (decision 37; [The shell](#the-shell)) |
 
