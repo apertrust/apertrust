@@ -576,7 +576,7 @@ pub const RENDERED: &[u8] = b"rendered\0";
 /// tool's or an operation's defaults change, which every render of a photo with no edit
 /// ([`UNALTERED`]) holds. This is separate
 /// from the application's build version so unrelated changes keep the cache useful.
-pub const THUMBNAIL_RENDER_VERSION: u32 = 1;
+pub const THUMBNAIL_RENDER_VERSION: u32 = 2;
 
 /// A rendered thumbnail's version: [`RENDERED`], the BLAKE3 hash of the sidecar's
 /// exact saved bytes ([`crate::index::hash`]), then [`THUMBNAIL_RENDER_VERSION`] as

@@ -440,6 +440,8 @@ Raw decoding with rawler (decision 23).
 
 **Lens corrections** the raw carries, as darktable reads them, over rawler's public parsers (decision 25): Fujifilm's (the FujiIFD and the maker note's CropMode), held to Exiv2's dump in `tests/lens.rs`. Sony's, DNG opcodes and Olympus's are planned.
 
+**The exposure a highlight-preserving mode held back** (`RawImage::highlight_preservation`, in EV, 0 where none), as darktable estimates it from the maker notes through Exiv2 0.28 (`_check_highlight_preservation`; decision 24, [ports/exposure.md](ports/exposure.md)): Canon's Auto Lighting Optimizer from a CR2's maker note or a CR3's CMT3 box, Fujifilm's dynamic range from a RAF's, Nikon's ColorSpace (HLG) or else Active D-Lighting, Olympus's and OM System's gradation, over rawler's public TIFF, maker-note and BMFF parsers with no change to rawler (`src/highlight.rs`). Pentax's, which darktable reads as none through Exiv2 0.28, and Sony's, left to do in darktable, are not read. Its tests hold the corpus to Exiv2 0.28.9's reading of every tag, with `--ignored`.
+
 **Planned** (decision 27):
 
 - darktable's spellings where they differ from rawler's (`Z 6_2`, `OM System`, `GFX100S`), applied to `make`, `model` and `alias`;
@@ -1325,12 +1327,12 @@ darktable's white balance over the raw-stage `temperature` (decision 27).
 darktable's exposure page, on one untitled tab.
 
 - Mode, its automatic option not ported.
-- In manual mode: Compensate camera exposure; Highlight preservation mode, not ported; and Exposure, darktable's slider, `exposure.exposure` itself, its default the photo's, +0.7 EV on a colour raw (decision 30).
+- In manual mode: Compensate camera exposure; Highlight preservation mode, on by default, drawn disabled on a photo whose camera held no exposure back; and Exposure, darktable's slider, `exposure.exposure` itself, its default the photo's, +0.7 EV on a colour raw (decision 30).
 - In automatic mode: Percentile and Target level, not ported.
 - Black level correction, and the Area exposure mapping group's picker settings.
 - It owns every `exposure` parameter and drives only it; the unported controls are drawn disabled and take only their defaults. Its hidden Contrast and Pivot are left for Colour balance RGB (decision 2).
 - Ranges: Exposure holds darktable's −18 to +18 EV. Black level correction holds darktable's −1 to +1 over the photo's black; a black that reaches the white the photo renders goes 0.01 below it.
-- Version 2: an edit's version 1 Exposure, in exact stops, is left out with a warning.
+- Version 2: an edit's version 1 Exposure, in exact stops, is left out with a warning. Version 3: Highlight preservation mode ported, on by default, an older edit's stored Exposure entry reading it off, as it rendered; an edit with no Exposure entry has nothing to migrate and takes the default, on, as an unedited photo does.
 - Its invariant rows are tests on the synthetic ramp and sweep, and locally on the corpus.
 
 #### Colour calibration

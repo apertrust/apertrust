@@ -6218,8 +6218,10 @@ mod tests {
         assert!(!control(values, "exposure", "camera_bias").available);
         assert!(control(values, "exposure", "exposure").available);
         assert!(control(values, "exposure", "black_level").available);
-        // A control not ported can act on no photo.
+        // Nor does its camera hold exposure back in a highlight-preserving mode.
         assert!(!control(values, "exposure", "compensate_hilite_pres").available);
+        // A control not ported can act on no photo.
+        assert!(!control(values, "exposure", "deflicker_percentile").available);
         remove(&path);
     }
 

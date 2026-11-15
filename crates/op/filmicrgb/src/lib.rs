@@ -412,6 +412,7 @@ mod tests {
                 exposure_bias: bias,
                 linear_response_limit: 1.0,
                 lens_correction: None,
+                highlight_preservation: 0.0,
                 orientation: 0,
                 iso: 0.0,
             }),

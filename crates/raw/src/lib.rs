@@ -38,6 +38,7 @@ use rawler::rawsource::RawSource;
 use rawler::tags::{DngTag, ExifTag};
 
 mod exif;
+mod highlight;
 mod identity;
 mod lens;
 mod masked;
@@ -111,6 +112,12 @@ pub struct RawImage {
     /// The corrections the file records for its lens, as darktable reads them (decision
     /// 25); `None` where darktable finds none. Only Fujifilm's are read so far.
     pub lens_correction: Option<LensCorrection>,
+    /// The exposure the camera held back from the raw in a highlight-preserving mode, in
+    /// EV, as darktable estimates it from the maker notes (its
+    /// `exif_highlight_preservation`): Canon's Auto Lighting Optimizer, Fujifilm's
+    /// dynamic range, Nikon's HLG tone mode or Active D-Lighting, Olympus's gradation; 0
+    /// where they record none darktable reads.
+    pub highlight_preservation: f32,
 }
 
 /// The camera's names, meaning what darktable's do (decision 24).
@@ -379,13 +386,14 @@ fn log_decoded(name: &str, raw: &RawImage, start: Instant) {
     );
     tracing::debug!(
         target: "raw",
-        "as shot: white balance {}, bias {}, ISO {}",
+        "as shot: white balance {}, bias {}, highlight preservation {:+.2} EV, ISO {}",
         raw.white_balance.as_ref().map_or_else(
             || "none".to_owned(),
             |wb| wb.iter().map(|v| format!("{v:.3}")).collect::<Vec<_>>().join(" ")
         ),
         raw.exposure_bias
             .map_or_else(|| "unrecorded".to_owned(), |ev| format!("{ev:+.2} EV")),
+        raw.highlight_preservation,
         raw.iso
             .map_or_else(|| "unrecorded".to_owned(), |iso| iso.to_string()),
     );
@@ -460,6 +468,14 @@ fn decode_raw(source: &RawSource, dummy: bool) -> Result<(RawImage, Option<Exif>
     let lens_correction = catch_unwind(AssertUnwindSafe(|| lens::read(source))).unwrap_or_else(|_| {
         tracing::warn!(target: "raw", "lens corrections: rawler panicked reading them, ignored");
         None
+    });
+    // So is a highlight-preserving mode's held-back exposure.
+    let highlight_preservation = catch_unwind(AssertUnwindSafe(|| {
+        highlight::read(source, &raw.camera.make)
+    }))
+    .unwrap_or_else(|_| {
+        tracing::warn!(target: "raw", "highlight preservation: rawler panicked reading it, ignored");
+        0.0
     });
     // The make as the file spells it, which rawler matched it by.
     let iso = exif
@@ -540,6 +556,7 @@ fn decode_raw(source: &RawSource, dummy: bool) -> Result<(RawImage, Option<Exif>
         exposure_bias,
         iso,
         lens_correction,
+        highlight_preservation,
         // A dummy decode's buffer holds no values, only its room, which is let go.
         pixels: match raw.data {
             RawImageData::Integer(_) if dummy => Pixels::U16(Vec::new()),

@@ -418,6 +418,7 @@ mod tests {
             iso: 0.0,
             linear_response_limit: 1.0,
             lens_correction: None,
+            highlight_preservation: 0.0,
             orientation: 0,
         });
         image

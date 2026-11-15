@@ -280,6 +280,10 @@ pub struct Camera {
     /// `exif_correction_type` and `exif_correction_data` (decision 25); `None` where
     /// darktable finds none. Only Fujifilm's are read so far.
     pub lens_correction: Option<LensCorrection>,
+    /// The exposure the camera held back from the raw in a highlight-preserving mode, in
+    /// EV, as darktable's `exif_highlight_preservation` estimates it from the maker notes
+    /// (decision 24); 0 where they record none.
+    pub highlight_preservation: f32,
     /// How the photo is to be turned upright, as darktable's `dt_image_t::orientation`
     /// holds it, from the EXIF Orientation tag (`dt_image_orientation_to_flip_bits`): its
     /// flip bits, 1 flipping the rows (`ORIENTATION_FLIP_Y`), 2 the columns
