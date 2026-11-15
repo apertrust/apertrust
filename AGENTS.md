@@ -172,7 +172,7 @@ What each crate has built and planned is in [docs/crates.md](docs/crates.md).
 | Crate | Role |
 | --- | --- |
 | `apertrust-engine` | The GPU-resident pipeline and the editing session; no UI dependencies |
-| `apertrust-cli` | The headless binary: `gpu`, `info`, `edit`, `history`, `export`, `preview`, `library scan`, `cache info`, `cache clear`; `batch`, `serve` and `mcp` later |
+| `apertrust-cli` | The headless binary: `gpu`, `info`, `edit`, `history`, `export`, `preview`, `library scan`, `cache info`, `cache clear`; `import`, `batch`, `serve` and `mcp` later |
 | `apertrust-golden` | The golden-image harness against darktable-cli, and Phase 1's exit test |
 | `apertrust-raw` | Raw decoding via rawler, metadata as darktable reads it |
 | `apertrust` | The desktop app (egui), in `crates/app` |

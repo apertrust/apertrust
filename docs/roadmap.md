@@ -269,7 +269,7 @@ The library's steps 10 to 20 and 15b, [listed below](#the-librarys-steps) (decis
 - [ ] Two computers editing the same photo: both versions kept, never one lost.
 - [ ] Snapshots, and photo groups (raw and JPEG together).
 - [ ] Move, rename, copy and delete photos with their edits.
-- [ ] Import by copy, as darktable's copy and import.
+- [ ] Import by copy, as darktable's copy and import: a sheet of the card's photos beside a column of tools, those already imported told by the destination (decision 85; [gui.md](gui.md#the-import-sheet)).
 
 ### The migration complete
 
@@ -281,6 +281,7 @@ Goal: controls people find and predict, the first step on Apertrust's own way: u
 
 - [ ] Usability tests with photographers coming from darktable and from commercial raw editors.
 - [ ] Fixes to the interface from what the tests find (decision 1). From then on Apertrust evolves on its own (decision 2).
+- [ ] Import's later parts (decision 85): Verify the copies, Eject the card, Backup to, Adjustments with styles, and Filters' Date taken.
 - [ ] Floating panels inside the window, belonging to no tab, docked by a drop into any tab or back where they left by × or Dock; the ⋯ menu's Float, Dock and Position, Dock All Floating Panels, and their keys and screen readers' actions (decision 83; [gui.md](gui.md#moving-pinning-and-floating-sections)).
 
 ## Mobile, after Phase 3
@@ -407,7 +408,10 @@ Decisions 46, 47, 52 to 55, 71 and 76. Each step delivers one thing and is revie
 - [ ] **Step 17.** Photo groups: raw and JPEG by base name, groups made by hand by id in the sidecars, the G toggle.
 - [ ] **Step 18.** Renames outside Apertrust: orphan sidecars re-paired by fingerprint; Edits without a photo.
 - [ ] **Step 19.** Move, Rename, Copy and Delete with their sidecars, `.apdata` and attached files, each a `UserForeground` job as darktable's: move, copy and rename cancellable, delete with a bar and not cancellable (decision 57).
-- [ ] **Step 20.** Import… by copy in folder mode: darktable's copy & import with its patterns and variables, job code and date override; already imported photos ticked by fingerprint; import metadata; the destination opened; a cancellable `UserForeground` job, "importing N/M images", as darktable's `dt_control_import` (decision 57).
+- [ ] **Step 20.** Import… by copy in folder mode, darktable's copy & import on the Import sheet (decisions 85 and 86; [gui.md](gui.md#the-import-sheet), [library.md](library.md#import-in-folder-mode)), after steps 12 and 19 and the sheet frame, in three slices:
+  - [ ] 20a: Ctrl+I, File, the top panel's Import… and the start window's; the Import sheet on the frame; the grid with its bar, the embedded thumbnails, the already-imported mark, Select all, none and new, Checked only, Sort and Zoom; Import from (places, folders, Include subfolders, a card's `DCIM` whole, the note sending photos already on the computer to Open Folder…), Import to (Shoot name first, base folder, subfolder, the sample path, the space, the clashes, date override), Naming and After import (Open the destination); the first view for a card, Import from and After import closed; the counts of files not imported yet; already imported told by the base folder's tree less the source, by size and camera name then fingerprint, nothing written on the card; `PreviewImport`; a cancellable `UserForeground` job, "Importing 120 of 214 photos", as darktable's `dt_control_import` (decision 57), copying in path order, whole or not at all and never overwriting, the sidecars and darktable's `.xmp` carried, with its failures and Try again; the destination opened as the first photo lands and filled as they land; raws only; the column in its default order; `apertrust-cli import`;
+  - [ ] 20b: Metadata, with no initial rating by default; Filters; a heading over each capture day; a raw and its JPEG as one cell, a JPEG left behind imported beside its raw; non-raws listed and copied (after steps 14, 15 and 17);
+  - [ ] 20c: presets of the whole sheet, Original names and By capture date built in; reordering the column (decision 83's moving); the card's dot on the top panel's Import… and When a card is connected; a larger look at one photo.
 
 **Phase 5, the library:**
 

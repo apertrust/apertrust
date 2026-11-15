@@ -183,11 +183,12 @@ Details: [settings.md](settings.md); the cache, [cache.md](cache.md).
 
 ### The library and sidecars
 
-The library's design and API are in [library.md](library.md), decisions 46 to 55, 71 and 73. In short:
+The library's design and API are in [library.md](library.md), decisions 46 to 55, 71, 73 and 85. In short:
 
 - **Sidecars are the truth; no database ever is** (decision 46). One photo and folder mode come first, sidecars only: a photo opened by any route opens alone, never in the recents, and folder mode opens from a folder or the photo's Open This Folder (planned, step 9d: today Open With, Open… and a drop of raws still open the photo's folder); then the Library, of any size, and the Project, a small library for one job, each a folder with a short TOML file and a hidden `.apertrust/`, with nested albums and smart albums ([library.md](library.md#what-the-library-is)).
 - **Edits** live in `.apxmp` beside the photos by default, or in a library's own folder as each root's id file says, with the optional binary `.apdata`; version 2 holds the photo's identity, its virtual copies and its history as a log of steps (decisions 47 to 50; [library.md](library.md#sidecars)).
 - **Several computers** compare two copies of a sidecar by clock vectors, keeping a diverged edit as a second virtual copy and combining metadata, with no locks; roots are found by an id file and photos by root, path and fingerprint (decisions 52 and 53; [library.md](library.md#finding-photos-and-several-computers)).
+- **Import…** in folder mode, planned: darktable's copy & import on the Import sheet (decision 86), the source's photos in a grid checked to import beside a column of import tools; photos already imported told by the destination alone, by size and camera name then fingerprint, with nothing written on the card; a copy that never moves or overwrites, carrying the sidecars (decision 85; [library.md](library.md#import-in-folder-mode), [gui.md](gui.md#the-import-sheet)).
 - **A server,** planned: a self-hosted container on a NAS that the app optionally connects to, the originals and sidecars in its folders, the desktop editing local copies and sending back sidecars, merged as several computers' copies are (decision 71; [library.md](library.md#a-server)).
 - **The code** is `apertrust-library`, in four layers over a storage interface for local files and the server, clients seeing only `LibraryCommand` and `LibraryEvent`, served by the engine's session as jobs (decisions 54 and 57; [library.md](library.md#the-code), [The API](library.md#the-api)); a library's cache is one per machine, rebuilt from the files (decision 55; [library.md](library.md#a-librarys-cache)).
 

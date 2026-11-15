@@ -624,7 +624,7 @@ macOS only: the app menu, which macOS titles with the app's name.
 | New Library… | `new-library` | — | Phase 5, with the library (decision 46) |
 | New Project… | `new-project` | — | Phase 5, after the library (decision 46) |
 | — | | | |
-| Import… | `import` | Ctrl+I | Declared; a sheet (decision 37): by copy in folder mode in Phase 3, into a library or project in Phase 5 (decision 46) |
+| Import… | `import` | Ctrl+I | Declared; a sheet ([The Import sheet](#the-import-sheet)): by copy in folder mode in Phase 3, step 20a (decision 85), into a library or project in Phase 5 (decision 46) |
 | Import library… | `import-library` | — | Phase 5, in a library (decision 46) |
 | Export as Project… | `export-as-project` | — | Phase 5, after the library, on an album (decision 46) |
 | Add Folder… | `add-folder` | — | Phase 5, in a library or project (decision 46) |
@@ -661,7 +661,7 @@ macOS only: the app menu, which macOS titles with the app's name.
 - **Open…** opens photos alone and **Open Folder…** folder mode. A library or project opens by Open…, Open Recent, the start window or a double-click on its `Name.aplibrary` or `Name.approject` file; a window holds one photo, folder, library or project at a time (decision 46).
 - **New Library…** asks for a name, a place and where its edits live, beside the photos or in the library's folder (decision 47); with a folder open, it offers to make that folder a library, in place, by writing the library's file at its top.
 - **New Project…** makes a small library for one job, `Name.approject`, with its Capture, Selects, Output and Trash folders, from a project template or not.
-- **Import…** opens a sheet (decision 37). In folder mode, in Phase 3, it is darktable's copy & import: photos copied from a card or a folder into a destination named by darktable's patterns and variables, under `$(PICTURES_FOLDER)/Apertrust`, then opened. In a library or project, in Phase 5, it adds a folder in place as a root or copies into the library's `Photos/` or the project's Capture. Until Phase 3 photos open through Open…, Open Folder… and Browse's Folders.
+- **Import…** opens a sheet ([The Import sheet](#the-import-sheet), decisions 37 and 85). In folder mode, in Phase 3, it is darktable's copy & import: photos copied from a card or a folder into a destination named by darktable's patterns and variables, under `$(PICTURES_FOLDER)/Apertrust`, then opened. In a library or project, in Phase 5, it adds a folder in place as a root or copies into the library's `Photos/` or the project's Capture. Until Phase 3 photos open through Open…, Open Folder… and Browse's Folders.
 - **Import library…**, a library's command and never a project's, brings another library or a project in as one album named after it, by copy (the default) or reference. The sheet says first what a copy costs ("Copies 2,140 photos, 61 GB") and, for a project, what stays behind ("Leaves 212 photos in Trash and 40 in Output"), and asks once about photos already here, Keep both or Link.
 - **Export as Project…** makes an album, with the albums inside it, a standalone project, by copy (the default) or reference.
 - **Add Folder…** adds a folder to the library in place, as a root, writing its id file once (decision 53).
@@ -966,7 +966,7 @@ Keep each slice to what exists.
 | Built in step 9c | Open Recent with Clear Menu, and Close, on the Mac's bar and in the ☰ |
 | Built in the library's step 9.4 | Undo and Redo, naming the step, on the Mac's bar and in the ☰ |
 | Later in Phase 2 | Show in Folder, with folder mode; Search Photos, Sort By and Thumbnail Size, with the grid bar (step 9); Next and Previous Photo, with the grid panel; the zoom items, with the scale's zoom; Clipping Warnings, with the overlays (step 8); Auto as each tool's runs |
-| Phase 3 | Workspace; Sort By › Rating; Export on Windows and Linux; Copy Edit, Apply Edit, Copy or Apply Parts; Save Edit as Style; Select All for photos and Select None; Before and After; Show All Selected; Rotate and Flip; Panels › Side Panel and the side; Rotate and perspective's Auto; Rating and Colour Label, with the caption's controls; Import, a sheet, by copy in folder mode (decision 46) |
+| Phase 3 | Workspace; Sort By › Rating; Export on Windows and Linux; Copy Edit, Apply Edit, Copy or Apply Parts; Save Edit as Style; Select All for photos and Select None; Before and After; Show All Selected; Rotate and Flip; Panels › Side Panel and the side; Rotate and perspective's Auto; Rating and Colour Label, with the caption's controls; Import, a sheet, by copy in folder mode, with step 20a (decisions 46 and 85) |
 | Phase 4 | The Layer menu |
 | Phase 5 | New Library, Add Folder, Import library, then New Project and Export as Project, with the library and the project (decision 46); Open… opening a library's or a project's file |
 | Phase 6 | Match a Photo; an assistant's connection, placed with its design |
@@ -1884,6 +1884,107 @@ No test can make these:
   - A yes to the overwrite alert closes the Export sheet and starts the job; a no leaves the sheet as it was. A yes to the quit alert stops an export after the photo being written and the app leaves, and the files written stay. Cmd+Q asks, and so do Cmd+W and the red close button on the main window with nothing open; with a photo or folder open they do what Close does and ask nothing. Quit while the overwrite alert is up waits for it.
 - **Export Again.** Enabled with a photo open and dimmed with none, while the Export sheet or an alert is up, and in the Settings window. With On conflict Overwrite the alert rises as a sheet on the main window whether or not a file is there; a yes starts the job, the spinner and the jobs window showing it; Escape, Return or Cancel starts nothing and the files stay. With Overwrite if changed, Create unique filename or Skip it never asks and starts the job at once. It uses the settings Export… last showed, also after a restart. With an unknown variable in the path the job fails and the jobs window says why. Binding a key to it in settings works.
 
+## The Import sheet
+
+Planned, Phase 3's step 20 in slices 20a to 20c (decision 85; [roadmap.md](roadmap.md#the-librarys-steps)). darktable's copy & import (`src/libs/import.c` at the reference release), row for row under Apertrust's words, on the sheets' frame ([Sheets](#sheets), decision 86): the source's photos in a grid, checked to import, beside a column of import tools. Its library side, the listing, the check against the destination and the copy job, is [library.md](library.md#import-in-folder-mode)'s. The wireframe's Import board is to be drawn on the Sheets board's frame.
+
+- **Opened by** Ctrl+I (Cmd+I), File › Import…, the top panel's Import… and [the start window](#the-start-window)'s Import…, while no dialog or sheet is up. One photo and folder mode alike: Import never acts on what is open, and opens the destination as After import says, by default as the first photo lands.
+
+```text
+┌ sheet bar ───────────────────────────────────────────────────┬──────────────────────────────────┐
+│ Import  EOS_DIGITAL · 412 photos, 3 imported before          │ Presets            Custom ▾  ⋯   │
+│ [Select all] [Select none] [Select new]  Checked only  ⇅  ⊕  │                                  │
+├──────────────────────────────────────────────────────────────┼──────────────────────────────────┤
+│ the source's photos: the picture, ☑ and the name;            │ ▸ Import from             ↺  ⋯   │
+│ ✓ on a photo imported before, left unchecked                 │ ▾ Import to               ↺  ⋯   │
+│                                                              │   Shoot name    Wedding          │
+│                                                              │   → the sample path, the space   │
+│                                                              │ ▾ Naming                  ↺  ⋯   │
+│                                                              │ ▸ Metadata                ↺  ⋯   │
+│                                                              │ ▸ Filters                 ↺  ⋯   │
+│                                                              │ ▸ After import            ↺  ⋯   │
+├──────────────────────────────────────────────────────────────┴──────────────────────────────────┤
+│ 209 of 412 photos · 6.2 GB → ~/Pictures/Apertrust/20261115_Wedding                              │
+│ Copies only; nothing on EOS_DIGITAL is changed.       ☐ Keep open   [Close] [Import 209 photos] │
+└─────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Its grid
+
+- **The bar:** the heading "Import" then the source and its counts ("EOS_DIGITAL · 412 photos, 3 imported before"; while listing, "Listing EOS_DIGITAL… 1,240 so far", then "Checking against ~/Pictures/Apertrust… 2,400 of 5,000"); Select all, Select none and **Select new**, darktable's; Checked only; **Sort**, by capture time (the default, ascending, as darktable sorts) or file name; **Zoom**.
+- **The cells** are the sheets' ([A sheet's cell](#a-sheets-cell)): the camera's embedded picture, upright, asked for only for the cells in sight and kept in the cache by fingerprint, the file name in a box until it comes; the caption's check box and file name; a tooltip with the file name, the capture time, the file's modified time (darktable's column, with its warning that they may differ), the size and the camera.
+- **Imported before:** Lucide's `circle-check` at the picture's bottom right on the thumbnail scrim, in `text_on_thumb_scrim`, as the pencil sits in the grid panel; its tooltip names where the copy is, "Already in ~/Pictures/Apertrust/20261114_Wedding as 20261114_0001.RAF". Such a photo is left unchecked; checked by hand, it is copied again, unless the same file is at its destination, where it is skipped, as the clashes say; the footer counts only those copied again. Where its candidate is a cloud file not on the disk, the mark says "Probably in …", unchecked, until that file is there.
+- **Once the listing and the check end,** the photos not imported before are checked, or all of them with Select only new photos off.
+- **What is not done yet:** in 20a only raws are listed, and the heading counts what is left out, "40 raws · 860 other files not imported in this version".
+- **Date headings** (20b): a heading over each capture day, "Saturday 14 November · 182 photos, 120 checked", with a three-state check box for its photos. A raw and its JPEG (20b, with photo groups) are one cell marked "+JPEG", checked together; one whose raw was imported before and JPEG not is marked "JPEG not imported", checked as new, and only its JPEG is copied.
+
+### Its tools
+
+Every row is a sheet's setting row ([A sheet's rows](#a-sheets-rows)), each boolean a toggle; a change is an `import.*` setting written at once. Import from and After import start closed while a card is the source, so a card's first view opens on Shoot name and the sample path.
+
+| Tool | Row | Default | Setting | Slice |
+| --- | --- | --- | --- | --- |
+| **Import from** (open; closed while a card is the source) | Places: Cards and drives first, each mounted volume by its name, a card with the card icon; then Pictures, Home and the person's own places; darktable's ＋, − and ↺ under the list | The card, where one is in; else the place last used | `import.place`, `import.places`, `import.show_home`, `import.show_pictures`, `import.show_mounted` | 20a |
+| | Folders: Browse's tree of the chosen place, at most 8 rows tall; a card's shows `DCIM` chosen | The folder last used | `import.folder` | 20a |
+| | Include subfolders (darktable's "recursive directory"); on and disabled for a card: "A card's DCIM is always listed whole." | Off | `import.include_subfolders` | 20a |
+| | Select only new photos (darktable's "select only new images") | On | `import.select_new` | 20a |
+| | On a fixed disk, a note: "These photos are already on this computer. To edit them where they are, use Open Folder…", and **Open Folder…**, which opens that folder and closes the sheet | — | — | 20a |
+| **Import to** (open) | Shoot name (darktable's "import job"), its hint "Name of this shoot", its tooltip naming `$(JOBCODE)` and darktable's term | `no_name` | `import.job_code` | 20a |
+| | Base folder: the path row with its folder button | `$(PICTURES_FOLDER)/Apertrust` | `import.base_folder` | 20a |
+| | Subfolder (darktable's "filmroll name"): the path row without the button | `$(YEAR)$(MONTH)$(DAY)_$(JOBCODE)` | `import.subfolder` | 20a |
+| | Notes under the patterns: the sample path, "DSCF1033.RAF → ~/Pictures/Apertrust/20261115_Wedding/20261115_0001.RAF" and "and 213 more into 20261115_Wedding"; the space, "104.7 GB free on Macintosh HD; this import takes 6.2 GB"; the clashes | — | — | 20a |
+| | Override today's date, last: a field, its hint "YYYY:MM:DD hh:mm:ss", cleared after each import | Empty | `import.date_override` | 20a |
+| **Naming** (open) | Keep original file name | Off | `import.keep_original_name` | 20a |
+| | File name pattern; disabled while the original name is kept | `$(YEAR)$(MONTH)$(DAY)_$(SEQUENCE).$(FILE_EXTENSION)` | `import.file_name` | 20a |
+| | Note: the sample name, "DSCF1033.RAF → 20261115_0001.RAF" | — | — | 20a |
+| **Metadata** (closed) | Initial rating: No rating, 1 to 5 stars | No rating, where darktable's is 1 star | `import.initial_rating` | 20b |
+| | Ignore EXIF rating | Off | `import.ignore_exif_rating` | 20b |
+| | Apply metadata; the rows below disabled while off | Off | `import.apply_metadata` | 20b |
+| | darktable's metadata fields, each a field row with "from XMP" as a small check box at its end | Empty; from XMP as darktable's | `import.metadata.<field>`, `import.metadata.<field>_from_xmp` | 20b |
+| | Keywords, comma-separated, with the Keywords tool's completion and "from XMP" | Empty; from XMP on | `import.keywords`, `import.keywords_from_xmp` | 20b |
+| **Filters** (closed) | Ignore non-raw files, with the count it leaves out; in 20a on and disabled, "Non-raw files come in a later version" | Off, darktable's | `import.ignore_non_raws` | 20b |
+| | Show already imported | On | `import.show_imported` | 20b |
+| | Date taken, from and to | Empty | — | After Phase 3 |
+| **After import** (open; closed while a card is the source) | Open the destination: When the import starts (darktable's), When it ends, No | When the import starts | `import.open_destination` | 20a |
+| | Eject the card; Verify the copies | Off | `import.eject`, `import.verify` | After Phase 3 |
+
+- **Presets** (20c), the sheet bar's ([Presets](#presets-whole-sheet-only)): Default settings, then **Original names** and **By capture date** (darktable's own patterns are Default settings), which sets the subfolder to `$(EXIF.YEAR)$(EXIF.MONTH)$(EXIF.DAY)_$(JOBCODE)` and the file name to `$(EXIF.YEAR)$(EXIF.MONTH)$(EXIF.DAY)_$(SEQUENCE).$(FILE_EXTENSION)`; then the person's own. None holds the place, the folder or the checks.
+- **Clashes,** before anything is copied: "Continues after 20261115_0214, already there"; under original names "3 names are taken in 20261115_Wedding; those get _01 added"; "2 are already there, unchanged; they are skipped."; "2 are already there with an edit of their own; their edits on EOS_DIGITAL stay there."; from 20b "1 has a different JPEG there; it stays as it is."
+- **Problems,** in `error` with the warning sign, each disabling Import with its reason: an unknown variable, outlined, with "Did you mean $(MONTH)?" and Use $(MONTH); a folder that cannot be made or written; a destination that is the source or lies inside it; "Needs 6.2 GB; 4.1 GB is free on Macintosh HD."; a date darktable cannot read, "Type a date as 2026:11:14, or 2026:11:14 18:30:00."
+- **Never offered:** erasing the card, moving the photos or overwriting a file (principle 3).
+- **Later tools,** after Phase 3: Backup to, a second destination; Adjustments, a style applied to each photo as it lands.
+- **The sheet's own settings** (places, the folder, and the column's width and order, Keep open and Zoom) are the app's, never shown in Settings. Settings › Import shows darktable's four preferences, the base folder, the subfolder, the file name pattern and Keep original file name, and **When a card is connected** (`import.card_connected`: Do nothing, Mark Import, the default, or Open Import; 20c).
+
+### Starting it, and after
+
+- **Import 209 photos** (Return, Ctrl+Return) sends the checked photos; the copy takes them in the order of their paths, as darktable's does. The sheet closes, unless Keep open is on, when its checks clear, each photo of the listed source is marked imported as it lands, from the `Imported` events of the imports the sheet sent from that listing alone, by their numbers, another import's changing nothing, a card of the same name included, the source is checked again when the job ends, and the next card is listed as one comes in; a photo of an import queued or running shows "Being imported", its check box disabled and left out of Select new and Select all until its job ends, so a second press never copies it twice. The jobs window opens itself, as for every job the person starts ([The jobs window](#the-jobs-window)).
+- **The job's row:** "Importing 214 photos", "120 of 214", "now DSCF1120.RAF", the destination with Show in Finder; at its end "214 photos imported", or "Import stopped: EOS_DIGITAL was removed. 120 of 214 photos imported." with Try again, or "Import cancelled: 120 of 214 photos imported". A notice says "Imported 214 photos into 20261115_Wedding" (step 12).
+- **The destination opens** as the first photo lands, by default, as a way in with no photo opened, and its grid panel fills as the photos land. Where the patterns make several subfolders, their deepest common folder opens as the root with the first subfolder chosen in its tree.
+
+### States
+
+| State | Grid | Footer's second line |
+| --- | --- | --- |
+| No source | "Choose where to import from.", Import from open; "A phone connected by cable doesn't show here yet: copy its photos to a folder first." | "Choose where to import from."; Import disabled |
+| Listing, then checking | Cells arriving; the bar's progress words, then the marks appearing | "Still listing EOS_DIGITAL"; Import disabled |
+| Ready | The new photos checked, those imported before marked | "Copies only; nothing on EOS_DIGITAL is changed." |
+| Photos imported before checked | Their marks on checked cells | In `warning`: "380 of these were imported before; they will be copied again.", counting only those not skipped as already at their destination |
+| An empty card or folder | "No photos on EOS_DIGITAL."; with subfolders and Include subfolders off, "Turn on Include subfolders to list its 3 folders." | Import disabled |
+| All already imported | Every cell marked, none checked, "All 412 photos on EOS_DIGITAL are already imported." over the grid | "No photos checked"; Import disabled |
+| A share waiting | "Waiting for Photos NAS…" with the seconds, and Choose another place (decision 53) | Import disabled |
+| The source gone | "EOS_DIGITAL was removed."; the place leaves the list | Import disabled |
+| A problem | The row's note in `error` | The reason, naming the tool |
+| Keep open, just started | The checks cleared, the copies marked as they land | "Started: 209 photos → …/20261115_Wedding" |
+
+### Keys and screen readers
+
+- **Keys:** the sheets' ([Keys](#keys)); Ctrl+I opens it, and Ctrl+A and Ctrl+Shift+A are darktable's select all and none.
+- **Screen readers:** the sheets' ([Screen readers](#screen-readers)): the grid named "EOS_DIGITAL, 412 photos, 209 checked", each check box "Import DSCF1033.RAF", described by its capture time and, where it is, "imported before". Places and Folders are lists, Folders a tree as Browse's. The sample path is the description of Base folder, Subfolder and File name pattern. Polite live regions: the listing's end ("412 photos listed, 209 new, checked"), the card's arrival.
+
+### darktable's words
+
+darktable's labels in sentence case and British English; "image" becomes "photo", "film roll" and "directory" become "folder" (decision 46), and "import job" becomes Shoot name, `$(JOBCODE)` kept. Its copy & import (Ctrl+Shift+I) is Import… (Ctrl+I); its "add to library…" is Open Folder… in folder mode and Import's Add in place in a library (Phase 5); its camera import, tethering and mounting are later, with libgphoto2 (decision 5). Its first-time alert about the base folder is left out, since the sample path is always shown; its Lua widgets are left out with Lua. The deliberate differences are decision 85's.
+
 ## The start window
 
 Built in Phase 2, with folder mode, for folders; libraries and projects join it in Phase 5. Its design is the [UI wireframe](https://claude.ai/artifact/V4r2xReSqn344AQstUgeiK)'s Start window frame; its code `crates/app/src/start.rs`, with when it shows and its window in `crates/app/src/main.rs`.
@@ -1899,7 +2000,7 @@ Built in Phase 2, with folder mode, for folders; libraries and projects join it 
 **What it holds,** in two columns under a 40-point strip that runs across the top: the first third on `sunken`, parted from the rest by a `divider` rule `separator_width` wide, as the Settings dialog's pages column is, and the other two thirds on the window's ground.
 
 - **The first column,** left-aligned 24 points in from its sides, holds what a splash screen would, after darktable's: the app's full logo in its own colours, 220 points wide, as About draws it, ink letters on a light theme and paper ones on a dark; under it the version, cut at its `~` as darktable cuts it ("0.1.0+197"), in `text_secondary` at 15 points; "© 2026", small, in `text_secondary`; and what the app is, "A free, non-destructive" over "raw photo editor", in `text_secondary` at 16 points, the copyright and those words wrapping within the column where a translation is longer. The room under them is empty. At its foot are the ways in.
-- **The ways in:** New Library…, New Project…, Open Folder… and Browse…, a quiet list with no plate, each row 26 points high, a 16-point icon and its words: the library's, the project's and the folder's icons, and a magnifier for Browse…. A row takes `hover` under the pointer and the focus ring after a key; until then its icon is a step quieter, in `text_secondary`, its words in `text`. The last ends level with Open. Browse… finds a library or project file anywhere, as File › Open… does. New Library… and New Project… come with Phase 5, as their actions do.
+- **The ways in:** New Library…, New Project…, Open Folder…, Import… (planned, step 20a; [The Import sheet](#the-import-sheet)) and Browse…, a quiet list with no plate, each row 26 points high, a 16-point icon and its words: the library's, the project's and the folder's icons, Import's, and a magnifier for Browse…. Import… opens the sheet over the empty shell at the main window's size, and its import opens the destination as After import says. A row takes `hover` under the pointer and the focus ring after a key; until then its icon is a step quieter, in `text_secondary`, its words in `text`. The last ends level with Open. Browse… finds a library or project file anywhere, as File › Open… does. New Library… and New Project… come with Phase 5, as their actions do.
 - **The other two thirds:** "Recents" and the list, and under it at the right Open, the accent button, alone, which opens the recent chosen.
 - **Recents:** the folders, libraries and projects opened, newest first, the list Open Recent holds ([File](#file)), each with its kind's icon, its name and its path, the chosen one on `accent` with its icon and words in `text_on_accent`. One that is missing is marked so, with Locate… and Remove from the List. Whether an entry is there is asked once the window shows, off the interface's thread and on its root's queue with decision 53's deadlines, so a slow share never holds the window; an entry not yet answered is unmarked.
 - **Planned:** a start-up status line in the room in the first column, saying what slow work runs as the app starts, once the pipeline cache and a GPU warm-up job exist; empty at rest.
@@ -2158,6 +2259,7 @@ Import, Export and Print are full-window sheets and the slideshow an action (dec
   - No name beside it: the Mac's app menu, the window's title and About carry the name. The colour mark, the app icon and the full logo are for where the logo stands alone, away from the photo.
 - **Keys and screen readers.** F6 into the top panel lands on its first control: the mark on the Mac, the ☰ on Windows and Linux. The ☰ is in the Tab order like the other buttons, also opens on F10, and with a top-level menu expanded on Alt and that menu's access key (decision 39). The caption buttons are last. Map's key, Shift+M, goes with the central bar's Map toggle ([The central bar](#the-central-bar)); Photo has none.
 - **What a script sees:** nothing new: the actions send the commands their buttons send.
+- **A card coming in** (planned, step 20c; decision 85): while a card with photos not imported is in, Import… gains a dot, `accent`, 6 points, at its icon's top end, and keeps it when the words fold; its tooltip names the card and its new photos ("EOS_DIGITAL: 214 new photos"), and screen readers hear it once, politely. Import then opens with the card chosen. Settings › Import's When a card is connected can make Import open by itself instead ([The Import sheet](#the-import-sheet)).
 - **When.** Built: the mark as About's button, the order and the narrowing's steps; the traffic lights' inset on the Mac ([The frame](#the-frame)); the ☰ and its menu and the caption buttons on Windows and Linux.
 
 #### Narrowing
@@ -3547,7 +3649,7 @@ The schema is one file in TOML, `data/settings.schema.toml` (decisions 43 and 45
 - **A start that did not finish** (`crates/app/src/recovery.rs`): before anything loads a graphics driver the app opens `starting.toml` in the user data folder and holds it locked for the whole start (`File::try_lock`), naming in it the card and API it tries, the settings', then what the engine's settings resolve them to (`Tried::opened`, `WGPU_BACKEND` included), and empties and removes it, still locked, on a thread of its own once a frame has been drawn into the window, waiting for that as it quits: a paint callback of one physical pixel that draws nothing (`recovery::Drawn`) says so as egui's renderer runs it, which it does only into a surface texture it got, so a frame it skips, the surface lost or out of date, keeps the marker and asks for another. A marker another start holds locked is that start's, under way at once, as Open With on several raws starts one process each: neither read nor written, and this start keeps none. A start that finds one unlocked opens Automatic, the settings kept, and shows a notice over the window's top, under the top panel or the start window's strip, on `raised` with a `divider` border, on every platform, as Windows shows no alert yet and the app runs meanwhile: "Apertrust did not start last time with *card* on *API*, so it started with Automatic" (the card or the API left out where it was Automatic), with Keep Automatic, which resets both settings, and Try again, which restarts with them. The API that did not start is left out where Automatic loads another (`gpu::Backend::without`): on Windows a marker naming Vulkan opens Automatic on Direct3D 12 and one naming Direct3D 12 opens it on Vulkan, the words ending "…so it started with Automatic on *API*", with Keep Automatic on *API*, which resets the card and sets the API to that one; such a start's marker says so (`alternate = true`), and where it does not finish either, the next start asks for the CPU, never the API first left out; where the API was the only one Automatic loads, or `WGPU_BACKEND` chose it, Automatic opens on its own APIs, as above. Where `--conf` sets the card or the API for the run, Keep changes nothing, as the store refuses it, and the notice stays, saying under its words in `warning`, announced as it appears, "--conf sets the graphics card or API for this run, so nothing was kept. Start Apertrust without it to keep this." Where the marker names Automatic itself the start asks for the CPU, on Direct3D 12 alone on Windows, WARP's, Vulkan left out (`gpu::Backend::software`), which Keep CPU keeps with it; where it opened, "…with Automatic, so it started on the CPU, which is slower", with Keep CPU and Try again; where the API has none and wgpu's choice opened again, "…and this graphics API has no CPU adapter, so it started with Automatic again", with Close. Keep reaches Settings open beside it too. The words are a label in a polite live region, the buttons the design system's. A run that opens no window writes no marker, a normal quit leaves none, a start that ends for another reason before its window removes it, and a user data folder that cannot be written has none, logged under `settings`. A crash after the first frame is not caught.
 - **`--safe-mode`** opens Automatic for this run, the settings kept and the rows as they are, saying nothing but under `-d settings`, whatever a marker says. Restart now keeps it while the card and API are as the run started; Try again never does.
 
-Import, Shortcuts, Presets and AI are dimmed until they hold something. Planned rows: the system's title bar on Windows and Linux in General's Interface group (decision 39); the tone mapper for new photos on Processing (decision 33).
+Import, Shortcuts, Presets and AI are dimmed until they hold something. Planned rows: Import's, with step 20a, darktable's four import preferences, the base folder, subfolder, file name pattern and Keep original file name, and with step 20c When a card is connected (decision 85, [The Import sheet](#the-import-sheet)); the system's title bar on Windows and Linux in General's Interface group (decision 39); the tone mapper for new photos on Processing (decision 33).
 
 **Its window** is a native window of its own (decision 41, [Dialogs and alerts](#dialogs-and-alerts)): on the Mac a modeless window rather than a sheet, minimise and zoom dimmed, no Close button, its own close button and Cmd+W closing it and Escape not, as in the Mac's own Settings windows, opening where the user last left it, centred over the main window the first time. On Windows and Linux it is a modal window of the host, with its Close button, and Escape closes it. Its content is 960 by 640 points, the page list 200 of them.
 
@@ -3713,7 +3815,7 @@ Decision 42's slider values and choice rows are Phase 2's, built beside steps 7 
 Phase 3 adds, for the interface:
 
 - selecting several photos, Photo's cells and the batch actions;
-- virtual copies in the grid panel, History's Snapshots, photo groups and Import… by copy, in folder mode (decision 46);
+- virtual copies in the grid panel, History's Snapshots, photo groups and Import… by copy, in folder mode (decisions 46 and 85, [The Import sheet](#the-import-sheet));
 - ratings, the reject and labels from the caption, so culling is Photo with the grid panel and the caption's ratings, with no Grid;
 - named workspaces and the Photos workspace;
 - with them, the side panel's layout (decision 83; [Moving, pinning and floating sections](#moving-pinning-and-floating-sections)), each part one pull request, and Customise tabs reworked onto its model once part 1 is built:

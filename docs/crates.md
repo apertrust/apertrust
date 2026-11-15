@@ -278,7 +278,7 @@ The session's events (decision 59, [docs/events.md](events.md)):
 
 ## apertrust-cli
 
-The headless binary. Its commands are `gpu`, `info`, `edit`, `history`, `export`, `preview`, `library scan`, `cache info` and `cache clear`; `batch`, `serve` and `mcp` are planned. AGENTS.md's Commands list shows how to run each.
+The headless binary. Its commands are `gpu`, `info`, `edit`, `history`, `export`, `preview`, `library scan`, `cache info` and `cache clear`; `import` (with the library's step 20a, decision 85), `batch`, `serve` and `mcp` are planned. AGENTS.md's Commands list shows how to run each.
 
 ### Options for every command
 
@@ -1571,6 +1571,7 @@ One folder, not its subfolders, listed on a worker thread of its own with `std::
 - The comparison of two copies by their clock vectors.
 - Sidecar version 2's other parts: snapshots, tombstones and groups (decisions 47 and 52).
 - darktable's `.xmp`, read through the XMP layer.
+- Import in folder mode (decision 85, step 20): a source's listing, the check against the base folder's tree, the source left out, by size and camera name (its own or the `xmpMM:PreservedFileName` every renamed copy keeps) then the fingerprint, `PreviewImport` and the copy job in path order, skipping only a byte-for-byte duplicate at its destination, with `LibraryCommand::ListSource`, `CancelListing`, `SourceThumbnails`, `PreviewImport` and `Import` and their events; the `import` settings' statics ([library.md](library.md#import-in-folder-mode)).
 - The storage interface (decision 54), `storage`: every call into a root's files, the listing and the safe write among them, through one interface, local files first and the server's backend later (decision 71).
 
 ## Planned crates

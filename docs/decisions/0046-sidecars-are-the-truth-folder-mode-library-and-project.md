@@ -23,7 +23,7 @@ How are photos organised and found, and where is the truth about an edit kept? d
 
 - Opening, browsing and thumbnailing write nothing beside the photos; a photo gets its `.apxmp` only once something about it changes.
 - The listing and the sidecars, read 16 at a time, make an index in memory, gone when the folder closes.
-- Import… copies into a folder named by darktable's patterns; New Library… makes the open folder a library in place. The CLI works this way.
+- Import… copies into a folder named by darktable's patterns ([0085](0085-import-in-folder-mode.md)); New Library… makes the open folder a library in place. The CLI works this way.
 
 **A Library,** one of any size: a folder with `Name.aplibrary` at its top, a short TOML file to double-click (`format`, `id`, `name`, `written_by`, `edits`, `photos`), and a hidden `.apertrust/` holding one TOML file per root, album and smart album, named by id, `keywords.toml` and the machines' names. `Photos/` holds photos copied in; folders elsewhere are roots, found by id ([0053](0053-finding-folders-and-photos.md)). Libraries replace darktable's workspaces.
 
@@ -33,7 +33,7 @@ How are photos organised and found, and where is the truth about an edit kept? d
 
 **The Project:** `Name.approject`, a library in the same format and code for one job, inside its folder only, with the folder roles Capture, Selects, Output and Trash; made by New Project… (from a template or not) or Export as Project…; a watched Capture folder; the job's settings in its file (the next capture's folder, name pattern and job code, the start adjustments as `.apertrust/start.apxmp`, the Output folder and export preset); templates in the user data folder; Output kept out of smart albums unless a rule names it.
 
-**Photos are copied or referenced** in every mode, as darktable's "add to library" and "copy & import", with darktable's patterns and variables; importing writes no sidecar unless it sets something and recognises a photo by its fingerprint.
+**Photos are copied or referenced** in every mode, as darktable's "add to library" and "copy & import", with darktable's patterns and variables; importing writes no sidecar unless it sets something and recognises a photo by its size and camera name, confirmed by its fingerprint.
 
 **Import library…** brings a library or project in as one album named after it, by copy (the default, into `Photos/<its name>/`, the cost shown first) or by reference; keywords merge by path; a photo already here is asked about once: Keep both or Link.
 
