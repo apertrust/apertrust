@@ -750,6 +750,38 @@ fn a_tab_with_nothing_behind_it_cannot_be_chosen_and_says_it_is_to_come() {
     assert!(harness.state().2.is_empty());
 }
 
+/// Without names the tiles are 36 by 32 points, so the tab bar is as deep as the central
+/// bar beside it; with names they keep their 52.
+#[test]
+fn without_names_the_tab_bar_is_as_deep_as_the_central_bar() {
+    for (names, expected) in [(false, None), (true, Some(52.0 + 4.0))] {
+        let mut harness = Harness::builder()
+            .with_size(egui::vec2(320.0, 120.0))
+            .with_context_setup(|ctx| apertrust_ui::install(ctx, Theme::default()))
+            .build_ui_state(
+                move |ui, state: &mut (f32, f32)| {
+                    let tabs: Vec<PanelTab> = [Icon::Folder, Icon::Base, Icon::History]
+                        .into_iter()
+                        .map(|icon| PanelTab {
+                            icon,
+                            name: "Tab",
+                            shortcut: None,
+                            enabled: true,
+                        })
+                        .collect();
+                    let top = ui.cursor().top();
+                    let _ = TabBar::new(&tabs, 0, names).show(ui);
+                    state.0 = ui.min_rect().bottom() - top;
+                    state.1 = apertrust_ui::components::CentralBar::height(ui.ctx());
+                },
+                (0.0, 0.0),
+            );
+        harness.run();
+        let (bar, central) = *harness.state();
+        assert_eq!(bar, expected.unwrap_or(central), "names {names}");
+    }
+}
+
 #[test]
 fn the_options_menu_hides_tab_names_and_opens_customise() {
     let mut harness = tab_bar(440.0);
