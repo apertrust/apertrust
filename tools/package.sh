@@ -300,9 +300,10 @@ package() {
         ;;
     windows)
         # A portable zip: the two executables and the licences in one folder, named for the
-        # architecture as the installer is.
+        # architecture as the installer is: x64 or arm64.
         arch=${triple%%-*}
         [[ "$arch" = x86_64 ]] && arch=x64
+        [[ "$arch" = aarch64 ]] && arch=arm64
         name=${package}_${version}_$arch-portable
         tree=$stage/zip/$product
         rm -rf "$stage/zip"
