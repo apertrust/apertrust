@@ -321,6 +321,7 @@ The libraries Apertrust and its command line are built from, on every platform, 
 - objc2-quartz-core 0.3.2: Zlib OR Apache-2.0 OR MIT
 - objc2-ui-kit 0.2.2: MIT
 - objc2-ui-kit 0.3.2: Zlib OR Apache-2.0 OR MIT
+- objc2-uniform-type-identifiers 0.3.2: Zlib OR Apache-2.0 OR MIT
 - object 0.40.0: Apache-2.0 OR MIT
 - once_cell 1.21.4: MIT OR Apache-2.0
 - once_cell_polyfill 1.70.2: MIT OR Apache-2.0
@@ -345,7 +346,6 @@ The libraries Apertrust and its command line are built from, on every platform, 
 - plain 0.2.3: MIT/Apache-2.0
 - png 0.18.1: MIT OR Apache-2.0
 - polling 3.11.0: Apache-2.0 OR MIT
-- pollster 0.4.0: Apache-2.0/MIT
 - pollster 1.0.1: Apache-2.0/MIT
 - polycool 0.4.0: MIT OR Apache-2.0
 - portable-atomic 1.15.0: Apache-2.0 OR MIT
@@ -377,7 +377,7 @@ The libraries Apertrust and its command line are built from, on every platform, 
 - regex-syntax 0.8.11: MIT OR Apache-2.0
 - renderdoc-sys 1.1.0: MIT OR Apache-2.0
 - resvg 0.49.0: Apache-2.0 OR MIT
-- rfd 0.17.2: MIT
+- rfd 0.18.0: MIT
 - rgb 0.8.53: MIT
 - rle-decode-fast 1.0.3: MIT OR Apache-2.0
 - roxmltree 0.21.2: MIT OR Apache-2.0

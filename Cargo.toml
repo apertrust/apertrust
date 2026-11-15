@@ -126,7 +126,7 @@ rawler = "0.8.0"
 # The platform's file dialogs (crates/app/src/dialogs.rs): AppKit on macOS, COM on Windows,
 # the XDG desktop portal on Linux, which loads the system's libdbus at run time; never its
 # GTK backend (decision 5).
-rfd = { version = "0.17.2", default-features = false, features = ["xdg-portal", "wayland"] }
+rfd = { version = "0.18.0", default-features = false, features = ["xdg-portal", "wayland"] }
 # SVG icons only: no text, system fonts or bitmap images.
 resvg = { version = "0.49.0", default-features = false }
 serde = { version = "1.0.229", features = ["derive"] }
