@@ -1175,6 +1175,39 @@ fn every_version_1_list_is_checked_whatever_its_shape() {
 }
 
 #[test]
+fn a_repeated_field_or_an_unreadable_schema_is_a_problem() {
+    let file = |entry: &str| {
+        format!(
+            r#"<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="{RDF_NAMESPACE}">
+            <rdf:Description rdf:about="" xmlns:apertrust="{NAMESPACE}" xmlns:c="{CONTROL_NAMESPACE}" xmlns:p="{PARAM_NAMESPACE}" apertrust:version="1">
+            <apertrust:tools><rdf:Seq><rdf:li>{entry}</rdf:li></rdf:Seq></apertrust:tools>
+            </rdf:Description></rdf:RDF></x:xmpmeta>"#
+        )
+    };
+    let unknown = |field: &str| Problem::UnknownField {
+        place: "the file's tools".to_owned(),
+        field: field.to_owned(),
+    };
+    // A tool named twice, the reader keeping the second, empty one.
+    let repeated = file(
+        r#"<rdf:Description apertrust:tool="exposure"><apertrust:tool></apertrust:tool></rdf:Description>"#,
+    );
+    assert_eq!(
+        Edits::parse(&repeated, 0).unwrap().problems,
+        [unknown("apertrust:tool")]
+    );
+    // An operation's schema that is no whole number.
+    let schema =
+        file(r#"<rdf:Description apertrust:operation="exposure" apertrust:schema="future"/>"#);
+    assert_eq!(
+        Edits::parse(&schema, 0).unwrap().problems,
+        [unknown("apertrust:schema")]
+    );
+    let whole = file(r#"<rdf:Description apertrust:operation="exposure" apertrust:schema="2"/>"#);
+    assert_eq!(Edits::parse(&whole, 0).unwrap().problems, []);
+}
+
+#[test]
 fn an_edit_s_file_is_read_with_its_modified_time() {
     let directory = tempfile::tempdir().unwrap();
     let path = path_for(&directory.path().join("IMG.ARW"));
