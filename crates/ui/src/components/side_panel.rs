@@ -99,7 +99,8 @@ impl<'a> TabBar<'a> {
         let (tile_w, tile_h) = if self.names {
             (58.0, 52.0)
         } else {
-            (46.0, 40.0)
+            // 32 high, so the tab bar is as deep as the central bar beside it.
+            (36.0, 32.0)
         };
         let pad = t.spacing.xs;
         let (bar, list) =
