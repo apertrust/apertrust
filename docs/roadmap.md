@@ -189,7 +189,7 @@ Folders first, before any library: a folder of raws opens as it is, with nothing
 - [ ] Several photos shown at once, the active one live and the rest still images, once spike W1 has measured it (decision 37).
 - [x] One photo from a terminal, writing nothing but its edit and never in the recents, with Browse's Open This Folder; a folder from a terminal in folder mode (decision 46).
 - [x] Open With and a double-click from the system, on macOS through its open-documents event and on Windows and Linux through the registrations, today opening the photo's folder with it active (decision 46).
-- [ ] Every photo opened, by any route, opening alone (decision 46): Open With, a double-click on a raw or its edit, File › Open…, raws dropped and `apertrust FILE`, never in the recents and with no folder tree, Open This Folder the one way to its folder; several opened together held together, from any folders (step 9d).
+- [ ] Every photo opened, by any route, opening alone (decision 46): Open With, a double-click on a raw or its edit, File › Open…, raws dropped and `apertrust FILE`, never in the recents and with no folder tree, Open This Folder the one way to its folder; several opened together held together, from any folders, except Open With on Windows, where Explorer starts the app once per file until one instance hands its files to another (step 9d).
 - [x] The start window: what was open last reopened at the start, File › Close, and the recent folders with the ways to open one, libraries and projects joining it with the library (step 22; [gui.md](gui.md#the-start-window)).
 
 ### The jobs window and the job API
