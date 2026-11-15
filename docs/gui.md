@@ -263,7 +263,7 @@ An interface for photo editing must not be too contrasty, so:
 - **Rows and frames:**
   - the slider row, in two lines ([how the rows are laid out](#how-the-rows-are-laid-out)): the label and marker, the row's buttons and the value, read-only with its unit at rest and a field while edited (decision 42), over a track the content's full width. Its handle is the marker the user chooses, Triangle, Circle or Square, Square by default, and stays whole at the track's ends (decision 75); under the pointer it brightens, and while dragged it keeps its fill and size with an accent border just inside its edge (`slider_handle_hover`, `slider_handle_active`), the circle and the square adding a short centre line in the accent, while the value stays in the text colour; the cursor stays the arrow; the curve's handles look the same. It shows the kept and Auto markers, the fill from the default, colour tracks and the Match tick, and spans darktable's soft range where it has one, widening to show a value beyond it;
   - the checkbox row (`ToggleRow`), one line: the design system's checkbox, then its label, which toggles it too; the action row (`ActionRow`), one text button;
-  - the dropdown row, always one line, Blended in tool panels and Boxed elsewhere (decision 42, [Choice rows: two styles](#choice-rows-two-styles));
+  - the dropdown row, always one line, Blended in tool panels and the Export dialog and Boxed elsewhere (decisions 42 and 84, [Choice rows: two styles](#choice-rows-two-styles));
   - the section frame (`Section`): a header 30 points high with chevron, title and action icons, centred vertically, and no summary when closed; underlined `Tabs`, each as wide as its name, their padding and then their names shrinking when they do not fit; group labels; collapsible groups (`CollapsibleGroup`), darktable's collapsible sections (decision 29); the body; peeking while H is held (`Section::peek`);
   - the side panel's `TabBar` (icon tabs, a tab with nothing behind it yet drawn disabled, never chosen, saying it is to come, » and ⋮ menus), `PanelBody` (pinned sections, a band, scrolling sections, a quiet scroll bar, `quiet_scroll`, and a section's header kept over its scrolling body, `PanelBody::header`, with a hairline and a soft shadow under it while the body scrolls under it) and `PanelEdge`; a section's header drawn apart, `Section::show_header`, its body with `section_body`, laid out as `Section::show` lays them. Planned with the side panel's layout (decision 83, [Moving, pinning and floating sections](#moving-pinning-and-floating-sections)): the draggable header (`Section::draggable`), the drop targets of `PanelBody` and `TabBar` with the insertion line, and the floating panel's frame.
 - **Painted widgets:** colour wheels (ring, puck, saturation and luminance arcs), [the curve](#the-curve), [the equalizer](#the-equalizer)'s bands, hue curve, [the scopes](#the-scopes) (histogram, waveform, parade, vectorscope, with their controls on hover), the grid panel's thumbnails (`GridCell`), layer rows.
@@ -1341,12 +1341,87 @@ sequenceDiagram
 
 - **On the Mac, a sheet** (decision 41). It opens where AppKit puts it, centred over the main window, and cannot be moved; macOS 27 dims the whole main window behind it, the photo included (no sheet can hang under the top panel there). A sheet shows no title, so "Export 12 photos" is its own heading, 16-point Medium, in a 44-point header with a hairline under it. The main window takes no input while the sheet is open.
 - **On Windows an owned modal window, on Linux a transient modal one** (decision 41). The host's strip carries "Export 12 photos" ([0069](decisions/0069-dialogs-on-windows-and-linux-framed-by-the-host.md)), so the content drops the heading and the window is 44 points shorter. Windows puts Export before Close; Linux follows GNOME (Close, then Export) or KDE (Export, then Close). Dropdowns are drawn popups there (decision 40); on the Mac a plain list is the native pop-up menu.
-- **Size and content:** 640 points wide, drawn in Apertrust's tokens on `panel`, with the side panel's components: dropdown, slider, check and collapsible group rows. A Presets column of 200 points, then the settings column, which scrolls. The footer holds "Exports run in the background; you can keep working.", Close, and the accent button **Export N photos**.
+- **Size and content:** 640 points wide, drawn in Apertrust's tokens on `panel`. A Presets column of 200 points, then the settings column, drawn as a tool whose every row is a setting, 580 points high by default and the only part that scrolls ([Drawn as a tool](#drawn-as-a-tool), decision 84, planned). The footer holds "Exports run in the background; you can keep working.", Close, and the accent button **Export N photos**.
 - **Close keeps the settings as left,** as darktable keeps its conf: the dialog's settings are the `export.*` settings, written as they change (decision 56; [engine.md](engine.md), Export jobs).
 - **Alerts on the Mac** are `NSAlert` sheets on the Export sheet itself, attached at its top edge, centred and in front of it; the Export sheet takes no input while one asks.
   - An alert asked of the main window would wait until the Export sheet closes (`beginSheet`), and a critical alert is meant for time-critical content.
   - Another sheet asked for meanwhile, such as an AI model download question, queues until the Export sheet closes.
 - **Alerts on Windows and Linux** are owned by the dialog's window: a task dialog on Windows, and on Linux Apertrust's own alert ([The alerts](#the-alerts)).
+
+### Drawn as a tool
+
+The dialog's controls look and behave exactly as a tool's in the side panel: it is a tool shown in a dialog (decision 84, planned; the dialog [as built](#as-built) is the earlier form). Its settings are darktable's export settings, kept in `settings.toml` and never in an edit, which is what a tool's own settings are, so its settings column is drawn as a tool's page whose every row is a tool's setting (`Row::Setting`, [Tool panels from definitions](#tool-panels-from-definitions)), with the tool panel's components, sizes and rhythm ([How the rows are laid out](#how-the-rows-are-laid-out)).
+
+- **What follows from a setting's row:**
+  - choices Blended ([Choice rows: two styles](#choice-rows-two-styles)), unbuilt options and rows disabled, saying why;
+  - no kept marker on any row, nothing here being an edit: a slider's marker place stays empty, so its label, value, track and handle stay where a tool's are, with no ○ under the pointer, no marker focus stop and no `ToggleKeep`; the handle is untouched;
+  - no history and no Undo step: a change is a setting written at once; Cmd+Z in a field undoes typing only;
+  - a slider's reset as a tool's: a double-click on its label or track, or Delete on it, puts back darktable's default (Quality 95); choices have no reset, as a tool's have none yet. Delete in a size field sets 0, in Scale 1.
+- **Allow upscaling, High quality resampling and Store masks are toggles** (`ToggleRow`, 24 points, on the edges of the rows round them), where darktable's are comboboxes of No and Yes (D15). Store masks is drawn disabled until layers.
+- **Section labels:** Storage options, Format options and Global options stay darktable's section labels, drawn as a tool panel draws them (`group_label`, 8 points above, 2 below), never collapsible. Metadata and Multi-preset export are the only collapsible groups, as in darktable, their open state kept as a tool's groups' is.
+- **No tool header:** the dialog's title, Default settings (D2) and the Presets column (D1) are its title, reset and presets; it has no ⋯, since nothing in a dialog moves, pins or floats (decision 83).
+
+#### The rows the tool panel lacks
+
+Each is built from what the tool panel already draws and added to the design system with gallery snapshots; none is a new look.
+
+| Row | Drawn as |
+| --- | --- |
+| A slider with no kept marker | The tool's slider row, its marker's place left empty; a tool's settings' sliders use it too |
+| Path | One 24-point line: the label at the start; 12 points; `PathField` taking the rest, in the value field's look (`sunken`, 18 high, the small radius, the small text, 5 points inset); 4 points; the folder `IconButton`, 18 × 18 with no plate (decision 81), where a quad sits. The variable list hangs under the field, part of the row |
+| Note | A line the session says under a row: the small text, 12 points on 16-point lines, from the content's start edge, wrapping at its width and anywhere in a path; `text_secondary`, `warning` for a replace and `error` for what stops Export, those two with the 12-point warning sign at the start and the text hanging after it; 0 above, 4 below. A path problem's fix is an `ActionRow` under it, **Use $(FILE_NAME)** |
+| Field | One 24-point line: the label at the start, the field's end on the content's end edge: a number in a value field (54 points, wider only when its text needs it, right-aligned; Scale, PDF's dpi), a text in a 180-point field (PDF's Title and Border); the label cut first, never the field |
+| Size | One 24-point line: the label at the start (Size in pixels, Size in centimetres, Size in inches); at the end `ValueField` (54) · 4 · × · 4 · `ValueField` (54) · 4 · the unit, and in the print modes · 8 · @ · 8 · `ValueField` (54) · 4 · dpi; ×, @ and the units in the small text, `text_secondary`; the last unit's ink ending 5 points from the row's end, where slider values and choice chevrons end. Over the format's limit the field is outlined in `error`. Polish's print row, the widest, is 407 of 415 points |
+| Indented toggle | `ToggleRow` with its checkbox 20 points in, so its label lines up after its parent's checkbox: Metadata's Private tags, Synonyms and Omit hierarchy |
+
+PDF's Paper size is a Blended choice of its four sizes until PDF is built; the Redefined tag / Formula table waits for metadata. Copy's label is a note in `text`.
+
+#### Width and spacing
+
+- **640 points wide:** the Presets column 200, a separator 1 and the settings column 439.
+- **The column's sides are the tool panel's 12 points,** so its rows are 415 points wide and stretch to it, as a tool's rows do in a widened side panel (240 to 600 points): labels at the start, values, options and chevrons on one end column 5 points in. The scroll bar lies in the end margin, so rows never move when it appears.
+- **Rows stack with no spacing,** each carrying its own padding: 8 before a section label and 2 after; 4 before a collapsible group and 4 after its last row while open; 8 at the column's end. The hover band runs 4 points past the content at each end, and the focus ring goes round the whole row.
+
+#### Height and scrolling
+
+The settings column is 580 points high by default, the default rows' height in the three languages:
+
+| Part | Points |
+| --- | --- |
+| 3 section labels (8 + 14 + 2) | 72 |
+| 11 choice rows | 264 |
+| Path and Size in pixels | 48 |
+| Quality | 37 |
+| Metadata and Multi-preset export (4 + 24 each) | 56 |
+| The column's end | 8 |
+| **Fixed rows** | **485** |
+| The file-name note, 1 line or 2 with a deeper folder | 20 or 36 |
+| The size note, 1 line in English and Ukrainian, 2 in Polish | 20 or 36 |
+| The conflict note, on a second export only: 1 line in English, 2 in Ukrainian and Polish | 0, 20 or 36 |
+
+So every default row, Multi-preset export's included, fits in English and Ukrainian (525 to 577 points) and in Polish on a first export (557); a second export in Polish (593) scrolls by up to 13 points.
+
+| Form | Default | Least |
+| --- | --- | --- |
+| The Mac's sheet: header 44, the column, footer 52 | 676 | 526 |
+| Windows and Linux: the host's strip 32, the column, footer 52 | 664 | 514 |
+| The settings column | 580 | 430 |
+
+- **The Mac:** the sheet is 676 points high, or the main window's height less 74 where that is less, as a sheet hangs inside its window.
+- **Windows and Linux:** the window is 664 high, or the work area of the main window's monitor less 8 where that is less.
+- **Never under the least:** the column keeps 430 at least. The least main window, 600 high, leaves exactly 526 on the Mac, so wherever the app's window fits at the interface's default scale, the dialog does.
+- **The room wins over the least:** where a larger interface scale on a small screen leaves less than the least, the column takes what the room leaves, so the header and the footer, with Close and Export, always stay inside the main window or the work area.
+- **The smallest screens at their default scaling** fit the default: a 13-inch MacBook at 1440 × 900 leaves the sheet 731 points, a 13.6-inch MacBook Air 775; a 13-inch Windows laptop at 1920 × 1080 and 150 %, 1280 × 720 points with its 48-point taskbar, leaves a 672-point work area, which sets the default; GNOME at 1280 × 800 points leaves 768.
+- **Only the settings column gives way,** scrolling with the quiet scroll bar. The header, the footer and the Presets column's + − ⋯ bar stay in view; the presets list scrolls on its own when it holds more than fit.
+- **The height is fixed while the dialog is open.** A format with more rows (TIFF, PDF), an opened group, a wrapped note or the hover preview's banner scrolls the column; the window never jumps.
+- **Focus follows into view:** a row reached by Tab or F6 below the fold scrolls up to show it whole; opening a group at the bottom scrolls to show its row and as many of its rows as fit.
+- **The interface scale** multiplies all of it, so at a larger scale the column shrinks towards its least and scrolls sooner.
+- **Before the session's first preview,** the file-name and size notes keep one line's height, empty, so nothing below them moves when they arrive.
+- **The host tells the dialog its room,** the main window's height on the Mac and the work area elsewhere, before its first, hidden frame.
+
+#### What stays the dialog's own
+
+The window and its forms (decisions 41 and 69), the title, the Presets column and its hover preview, the footer, Return, Escape, F6 and the alerts are unchanged ([Keyboard](#keyboard)). A focused Blended choice takes Return to open its list, and a focused slider to open its fine-control popup (decision 42), as in a tool. Each row is to screen readers and the keyboard what it is in a tool panel: a choice a ComboBox, a slider a Slider with no marker stop, a toggle a CheckBox, a note row a label read after its row, a path or size problem announced once as it appears. A script sees the same `export.*` settings and commands: the restyle adds no command.
 
 ### darktable's controls and where they live
 
@@ -1372,9 +1447,9 @@ sequenceDiagram
 | "which is equal to W × H px" | The same note, in the cm and inch modes | — | — | Built |
 | scale | Scale field | Integer, decimal or fraction ("1/2"); 0 or empty = 1 | 1 | Built |
 | (none) | The active photo's output size, in every mode (D9) | — | — | Built |
-| allow upscaling | Allow upscaling | No, Yes | No | Built |
-| high quality resampling | High quality resampling | No, Yes | No | Built |
-| store masks | Store masks | No, Yes; only TIFF, OpenEXR and XCF can | No | Disabled until layers (Phase 4) |
+| allow upscaling | Allow upscaling | A toggle (D15); built as No, Yes | Off | Built |
+| high quality resampling | High quality resampling | A toggle (D15); built as No, Yes | Off | Built |
+| store masks | Store masks | A toggle (D15); only TIFF, OpenEXR and XCF can | Off | Disabled until layers (Phase 4) |
 | profile | Profile | Image settings, then darktable's 12 export profiles; ICC files later | Image settings | Image settings and sRGB only |
 | intent | Intent | Image settings, Perceptual, Relative colorimetric, Saturation, Absolute colorimetric | Image settings | Disabled (D10) |
 | style and its styles button | Style, a dropdown | None, then the person's styles | None | When styles exist (Phase 3) |
@@ -1416,7 +1491,7 @@ Kept from darktable:
 `crates/app/src/export.rs` (its tests in `export/tests.rs`), `impl Dialog for Export` in the dialog host, a sheet where the Mac has one.
 
 - **Opening it.** File › Export… (`export`, Cmd+E) opens it, enabled with a photo open and no modal dialog, on every platform: a sheet on the Mac and a modal window on Windows and Linux, the host's forms. Where the host shows no alert yet, on Windows ([Dialogs and alerts](#still-to-build)), On conflict's Overwrite, which asks first, is listed disabled with its reason in the tooltip, and Export rests while a kept Overwrite is chosen. Linux's drawn alert asks above the Export window.
-- **Its content** is `export::Export`'s `Dialog::show(&mut Ui)`: a 44-point header with the title in the Mac's sheet alone, which has no title bar (elsewhere the window's frame shows it), a Presets column of 200 points (Default settings alone), the settings column (scrolling, 440 points high) and the footer, 640 points wide, drawn in the theme's tokens on `panel` (the host clears its window to its `Look`'s background). Every choice is a `Choice` in its Boxed style ([Choice rows: two styles](#choice-rows-two-styles)).
+- **Its content** is `export::Export`'s `Dialog::show(&mut Ui)`: a 44-point header with the title in the Mac's sheet alone, which has no title bar (elsewhere the window's frame shows it), a Presets column of 200 points (Default settings alone), the settings column (scrolling, 440 points high) and the footer, 640 points wide, drawn in the theme's tokens on `panel` (the host clears its window to its `Look`'s background). Every choice is a `Choice` in its Boxed style, Allow upscaling and High quality resampling among them, with 16-point sides and 4 points between rows: the earlier form, which [Drawn as a tool](#drawn-as-a-tool) replaces (decision 84).
 - **Its rows:** Target storage (File on disk the one that can be chosen), Path (`PathField`, below), On conflict, File format (JPEG and PNG; darktable's other twelve listed and disabled), JPEG's Quality and Chroma subsampling or PNG's Bit depth and Compression, Set size's four modes (width × height in pixels, in cm or in inch with the resolution kept as the physical size and "Which is equal to", or the scale text), Allow upscaling, High quality resampling, Profile (Image settings, sRGB, the other eleven of darktable's twelve disabled). Drawn disabled, each saying "Coming in a later version" (or why) in its tooltip: Store masks, Intent, Style, Metadata and Multi-preset export.
 - **The settings** are `export::Values`, the fifteen `export.*` settings, read from the app's store, whose registries hold the export settings beside the app's and the engine's, so `apertrust --conf export.…` is read too. They are kept in `Settings::export` and offered back as they change (`Output::Export(Asked)`, `Asked::values`), so Close keeps them as left; `Values::settings` turns them into the session's `ExportSettings`.
 - **The feedback** is the session's. The first frame and every change send `PreviewExport` (`export::commands`); the answer comes back through `Dialogs::preview` and `Export::receive`, which keeps the highest `through`. The app drops an answer older than the first preview of the dialog open (`App::export_floor`).
@@ -1615,6 +1690,7 @@ Beyond the modal itself:
 | D12 | Each photo's edit taken as it is when Export is pressed; darktable reads each photo's history when its turn comes | Predictable over clever |
 | D13 | The overwrite confirmation a system alert, Cancel the default, "Don't ask again" darktable's preference | The platform's replace convention |
 | D14 | Progress, Cancel and result in the jobs window, opened by the top panel's spinner and by the job's start, not darktable's background jobs panel at the left panel's bottom (decision 57) | Jobs seen wherever the person is working |
+| D15 | Allow upscaling, High quality resampling and Store masks are toggles, where darktable's are comboboxes of No and Yes (decision 84) | A boolean drawn as a tool draws one, a click instead of two |
 
 Decision 56 adds three of the engine's, none of them seen in the dialog but as a result:
 
@@ -1629,9 +1705,10 @@ The JPEG writer is jpeg-encoder, the pure Rust encoder that sets every option da
 The Export dialog is Phase 3's.
 
 1. **The first build** (built on the Mac): the sheet; File on disk with the path, on conflict and the name preview; JPEG and PNG; all four Set size modes, Allow upscaling and High quality resampling; Profile with Image settings and sRGB; the jobs window with progress, cancel and result; the overwrite and quit alerts; Export Again. The engine's part: an export at a size, with darktable's resample; the JPEG and PNG writers; darktable's variables and File on disk; the job API and the export job, sharing the GPU with the viewport ([engine.md](engine.md), Export jobs).
-2. **Presets:** with the hover preview, and Multi-preset export.
-3. **Metadata,** and Style once styles exist.
-4. **Later:**
+2. **Drawn as a tool** (decision 84, [Drawn as a tool](#drawn-as-a-tool)): every row a tool setting's row, Blended choices, the three toggles, the taller column; before presets, so presets and metadata are built in its rows.
+3. **Presets:** with the hover preview, and Multi-preset export.
+4. **Metadata,** and Style once styles exist.
+5. **Later:**
    - other formats as encoders allow: lossy WebP, JPEG XL, HEIF and JPEG 2000 need C or C++ libraries, each an exception under decision 5 that is not made, while pure Rust encoders exist for the rest ([engine.md](engine.md), Export jobs);
    - more profiles, after decision 26's display conversion and file tagging;
    - Intent with ICC files;
@@ -1645,6 +1722,9 @@ Each card one deliverable, reviewed before the next. Cards 1 to 14 are built and
 
 - **7. Spike X1, an export beside the viewport** ([engine.md](engine.md), Export jobs), through `apertrust-cli preview --beside-export`: measured on the M4; the RTX 5060, the Radeon 780M, WARP and exports at 2048 pixels still to run. Out of scope: changing the scheduler beyond a switch for the measured slices.
 - **8c. A tile's passes split** into steps where one tile's render runs longer; quantising moves onto the GPU only if X1's readback on the discrete GPUs calls for it. Out of scope: stills.
+- **20. Drawn as a tool** (decision 84, [Drawn as a tool](#drawn-as-a-tool)), before presets, so presets and metadata are built in its rows; the wireframe's Export board is redrawn first.
+  - 20a. The design system: the slider row with no kept marker, the note row, the field row and its path form, the size row and the indented toggle, each in the gallery with snapshots. Out of scope: `export.rs`.
+  - 20b. The dialog: `export.rs` rebuilt from them; Blended choices, the three toggles, 12-point sides and no spacing between rows; the column 580 points and the height rule, the host telling the dialog its room. Snapshots dark, light, an error, Ukrainian, Polish and the pseudo-locale at the default height, and one at the least. Out of scope: presets, metadata.
 - **15. Windows and Linux:** the dialog in the host there, a modal window, is built; their alerts are not ([Dialogs and alerts](#still-to-build)), so Overwrite waits for them.
 - **16. Presets:** `presets/export.toml` through `apertrust-export`'s `presets`; the Presets column with ✓, + − ⋯, the hover preview (D3), F2's rename, darktable's "delete preset?" and "update preset?" as alerts; `apertrust-cli export --preset NAME`.
 - **17. Multi-preset export:** its group and Start batch export, one job per ticked preset, queued in their order.
@@ -2571,9 +2651,9 @@ Compact rows, from the wireframe's ModulePanel board, with darktable's sliders t
   - **Rounding and steps.** A dragged or typed value is rounded to the decimals shown, as darktable's `_slider_set_normalized` rounds to its digits; the step is a key's alone. The step is darktable's at rest and, once the track widens, darktable's for the span shown, as its zoom step (on by default) makes it, never less than the step at rest. A key's move, Alt's tenth included, is never less than the last decimal shown, darktable's `min_visible`. In the units shown the step is darktable's exactly but for a slider with an offset, RGB primaries' purities, whose top darktable measures in its parameter's units.
   - **Screen readers** are told the control's range as the value's limits, since a value they set may reach it as a typed one may, and Increment and Decrement step inside the track's span as the keys do.
   - **Focused by the keyboard,** the row shows the focus ring round all of it, centred on its edge and 4 points beyond the content at its start and end, as far as a dropdown row's hover band, so it runs into neither the top line nor the next row.
-- **Every one-line row in a tool panel is 24 points** (`sizes.panel_line`): the Blended dropdown row and the preset row, the checkbox row, the action row, the button row, a tool's setting, and a collapsible group's row, with their text centred, so stacked choices read as separate rows, as darktable's do beside its sliders. `sizes.row` (26) stays for popups, text fields, segments and the dialogs, and a Boxed dropdown row stays 20. The slider row is 37.
+- **Every one-line row in a tool panel is 24 points** (`sizes.panel_line`): the Blended dropdown row and the preset row, the checkbox row, the action row, the button row, a tool's setting, and a collapsible group's row, with their text centred, so stacked choices read as separate rows, as darktable's do beside its sliders. `sizes.row` (26) stays for popups, text fields, segments and the dialogs but Export, whose rows are a tool's (decision 84, planned), and a Boxed dropdown row stays 20. The slider row is 37.
 - **A checkbox row** is one line, 24 points: the checkbox at the start and its label after it. Clicking the label toggles it too.
-- **A dropdown row** (`Choice`) is always one line, in one of two styles (decision 42, [Choice rows: two styles](#choice-rows-two-styles)): **Blended**, darktable's combobox, in tool panels, its option right-aligned in the small text with a small chevron ending where slider values end and no box; **Boxed** everywhere else. Both put the label at the start and the row's buttons, such as the picker, before the option or the box.
+- **A dropdown row** (`Choice`) is always one line, in one of two styles (decisions 42 and 84, [Choice rows: two styles](#choice-rows-two-styles)): **Blended**, darktable's combobox, in tool panels and the Export dialog, its option right-aligned in the small text with a small chevron ending where slider values end and no box; **Boxed** everywhere else. Both put the label at the start and the row's buttons, such as the picker, before the option or the box.
   - Boxed, the box is styled as the value fields, 18 points high, its text 5 points from its start and followed by ⌄, 4 points from its end, as the browser draws the wireframe. It is as wide as its widest option, a preset row's Custom counted as one, and at least a value field's width, so a choice never changes its size and it lines up with the fields around it.
   - The whole row opens it, the label, the gap and the box but not the buttons, and under the pointer a neutral band in `hover`, never the accent, runs across it, so a short label and its value read as one at 600 points. It is one focus stop, the box, reported to AccessKit as a combo box named by the control's full name, the chosen option its value.
   - When the label, a 12-point gap, the buttons and the box at its widest option do not fit, the row stays one line, as darktable's do: the label and the box share what the gap and the buttons leave in proportion to their widths, darktable's `label / (label + value)`, and each is cut at its end with …, never in its middle, since an option's start tells it from the others ("Fluorescent F11 (narrow tri-band)" cut in the middle loses F11). The widest option decides the share, not the chosen one, so a choice never changes the layout. The tooltip shows whatever is cut whole, before the promise, and screen readers hear the whole label and option.
@@ -2828,7 +2908,7 @@ darktable's fine control, nothing removed (`_popup_show`, `_popup_draw`, `_windo
 
 `Choice::style(ChoiceStyle::Blended | ChoiceStyle::Boxed)`, Boxed by default. The design system's `apertrust_ui::components::ChoiceStyle` sits beside the definitions' `apertrust_tools::ChoiceStyle` (a list or segments), and the renderer names the design system's by its path (`parts::ChoiceStyle`).
 
-- **Blended,** darktable's combobox (`_widget_draw` for `DT_BAUHAUS_COMBOBOX`), in tool panels only: tool choice rows, preset rows such as White balance's Settings, and the choices of darktable's settings for a tool. One row, 24 points high (`sizes.panel_line`, as every one-line row of a tool panel):
+- **Blended,** darktable's combobox (`_widget_draw` for `DT_BAUHAUS_COMBOBOX`), in tool panels: tool choice rows, preset rows such as White balance's Settings, and the choices of darktable's settings for a tool; and in the Export dialog, whose rows are a tool's settings (decision 84, planned; [Drawn as a tool](#drawn-as-a-tool)). One row, 24 points high (`sizes.panel_line`, as every one-line row of a tool panel):
   - the label at the start, in the body text;
   - the kept marker after the label, as a slider row's, drawn by the same function: ● while the session reports the control kept, ○ under the pointer or focus, a click on it releasing or keeping it (`Choice::mark`, `ChoiceAction::ToggleKeep`, sent as `Keep`). Its place is the row's, kept or not, so keeping moves nothing. A preset row and a tool's setting, which store nothing, have none;
   - the row's buttons, a picker, before the option;
@@ -2838,7 +2918,7 @@ darktable's fine control, nothing removed (`_popup_show`, `_popup_draw`, `_windo
   - an option the photo does not list last and disabled (decision 30), options not ported disabled (decision 29), a disabled row dimmed;
   - a click anywhere on the row but its buttons opens it, and Space, Enter or ↓ when it has the focus; the list hangs from the option's place at its widest option;
   - to AccessKit a ComboBox named by the control's full name, the option its value; the marker a button of its own, as a slider's. The combo box comes before its marker and quad in the focus order, since the row lies under them for the pointer.
-- **Boxed:** the sunken box as wide as its widest option, never narrower than a value field, its end on the values' edge; in the Settings dialog, the other panels and utility sections, the Export dialog and Customise tabs; no hover band, the box alone the control, with the focus ring round the box after a key.
+- **Boxed:** the sunken box as wide as its widest option, never narrower than a value field, its end on the values' edge; in the Settings dialog, the other panels and utility sections and Customise tabs, each until it is next changed (decision 84), and in the Export dialog as built, until it is drawn as a tool; no hover band, the box alone the control, with the focus ring round the box after a key.
 - **The gallery** draws both styles, Blended in a 296-point column under a slider row.
 
 #### The list
@@ -2868,8 +2948,8 @@ The list is the popup service's dropdown (decision 40).
 
 | Place | Becomes |
 | --- | --- |
-| Export: the quality, compression, level, effort and tier sliders (bauhaus sliders in darktable) | Read-only at rest (no unit), click to edit, the popup |
-| Export: width × height in px, print sizes, dpi, scale (GtkEntry in darktable) | Stay typed `ValueField`s |
+| Export: the quality, compression, level, effort and tier sliders (bauhaus sliders in darktable) | Read-only at rest (no unit), click to edit, the popup; no kept marker, a double-click or Delete putting back darktable's default (decision 84) |
+| Export: width × height in px, print sizes, dpi, scale (GtkEntry in darktable) | Stay typed `ValueField`s, in the size and field rows (decision 84) |
 | Layers' sliders, Match's strength, the Settings dialog's slider rows | As tool rows |
 | Settings' plain numbers (the memory budget) | Stay `ValueField`s |
 | The curve's readout | Stays read-only with no popup, as darktable's; its handles keep the slider's keys but Enter; no "Exact values" fields in the first pass ([The curve](#the-curve)) |
@@ -2937,7 +3017,6 @@ Against darktable's combobox and the wireframe's `Controls` and `ModulePanel` bo
 | C11 | A click opens the list, and a quick second click does not reset; darktable resets a combobox when the second press comes within its long-click time (`_popup_button_press`) |
 | C12 | A neutral `hover` band across the whole row under the pointer; darktable only brightens the text |
 | C13 | The chevron is Apertrust's 10-point `ChevronDown` icon in `text_secondary`; darktable draws a flat one-pixel "v" in the text colour |
-| C14 | The Export dialog's choices stay Boxed, though darktable's export module uses this same combobox: Blended only in tool panels |
 
 ### Slider values: still open
 
@@ -3502,10 +3581,10 @@ The UX pass after Phase 3 adds the layout's part 5, floating panels inside the w
 - **Compact tool rows,** darktable's sliders the example of density ([How the rows are laid out](#how-the-rows-are-laid-out)), built:
   - a slider row of two lines, 37 points, its label, marker, buttons and value over a full-width track, about 296 points at 320; its value 54 by 18 while edited, so "−180.00" fits whole; its buttons and kept marker 18 high; its track's strip 16 with the track 6 points into it; the handle never shrinks, its tip and base 5.5 points each way of the track's middle;
   - a checkbox row of one line, its label after the box;
-  - a dropdown row of one line, Blended in tool panels and Boxed elsewhere; a label and options too long share the line in darktable's proportion, each cut at its end;
+  - a dropdown row of one line, Blended in tool panels and the Export dialog and Boxed elsewhere; a label and options too long share the line in darktable's proportion, each cut at its end;
   - section headers of 30 points with the title centred.
 - **Slider values the darktable way** (decision 42, [Slider values and choices](#slider-values-and-choices)): read-only at rest with their unit, in 12 points; a click on the value or a digit makes it a field with the number alone; darktable's popup for fine control, Enter on a focused slider opening it as in darktable.
-- **Choice rows in two styles:** Blended, darktable's combobox, in tool panels; Boxed everywhere else; darktable's type-to-filter in the drawn dropdowns on Windows and Linux, the Mac's native menus with AppKit's type-select.
+- **Choice rows in two styles:** Blended, darktable's combobox, in tool panels and the Export dialog; Boxed everywhere else; darktable's type-to-filter in the drawn dropdowns on Windows and Linux, the Mac's native menus with AppKit's type-select.
 
 ## Choices
 
@@ -3521,13 +3600,13 @@ The decisions this design rests on, by area; each decision record has the option
 | Window frame | The top panel from the window's top edge on every platform: the Mac's traffic lights in it, caption buttons drawn by the app on Windows and Linux, Windows' snap layouts flyout through native hit testing; the system's title bar as a setting there, off by default; a minimum width of 500 points (decision 39) |
 | Popups | Native `NSMenu`s on the Mac for plain lists and context menus, from `apertrust-display`; drawn for what previews or holds controls, and on Windows and Linux; one popup service; the drawn ones on egui `Area`s, owning their plain keys while open through an egui plugin, drawn by `popup::show` once a frame (decision 40) |
 | Dialogs and alerts | Every dialog a native window of its own, modal to the window it rises from, hosted by the app beside eframe's window with its own egui context, AccessKit adapter and surface on the engine's device; made modal as each platform does it (on the Mac a sheet, and Settings alone modeless, a native window of its own; an owned window with its owner disabled on Windows; transient-for and the modal state on X11; a parent on Wayland, with modality kept by the app); confirmations the system's alerts through one alert service, `NSAlert` and the task dialog, Linux's Apertrust's own in a dialog window; About and a future splash screen Apertrust's own over the window (decision 41) |
-| The Export dialog | darktable's export module row for row in a native modal window, a sheet on the Mac, presets as a list at its start, its feedback lines, the jobs window (decision 57), D1 to D14; built on the session's export job, a `UserExport` job of darktable's control jobs (decision 57), darktable's size and resample, JPEG and PNG in Rust, each file written beside its name and renamed into place, the dialog's settings `export.*` settings and its presets `presets/export.toml` (decision 56; [The Export dialog](#the-export-dialog)) |
+| The Export dialog | darktable's export module row for row in a native modal window, a sheet on the Mac, drawn as a tool whose every row is a setting, 640 points wide, its settings column 580 high by default and alone scrolling (decision 84, planned), presets as a list at its start, its feedback lines, the jobs window (decision 57), D1 to D15; built on the session's export job, a `UserExport` job of darktable's control jobs (decision 57), darktable's size and resample, JPEG and PNG in Rust, each file written beside its name and renamed into place, the dialog's settings `export.*` settings and its presets `presets/export.toml` (decision 56; [The Export dialog](#the-export-dialog)) |
 | The engine and the window | eframe on the app's own event loop, the engine's submit gate held round each of its callbacks (`Gated`), so the window's surface is never reconfigured while the engine submits; during a resize the last frame scaled, the photo's new size sent once the window has kept it for 150 ms (decision 18) |
 | Menus | One model from the registry: the Mac's native menu bar through muda; on Windows and Linux one menu button, ☰, at the top panel's very start, before the mark, opening the menus drawn by egui through the popup service; the registry owns every key (decision 39) |
 | Icons | SVG files rendered by resvg at their pixel size, their lines 1.25 points wide, and tinted with a theme colour (decision 36); derived from Lucide's, with its ISC and MIT notices, or drawn in its style where it has none (decision 64) |
 | Accessibility | AccessKit on, every component reporting its role, label and value (decision 36) |
 | UI tests | Interaction tests with `egui_kittest` through AccessKit; gallery snapshots per theme and in the pseudo-locale (decision 36) |
-| Slider values and choices | darktable's: the value read-only at rest with its unit and sign, a click or a digit making it a field that takes a number, for now (darktable's expressions waiting until there is a need), darktable's popup for fine control on Enter, a right-click, Shift+F10 or the Menu key, drawn on every platform, a cancel put back by the session with no history step; choice rows Blended, darktable's combobox, in tool panels and Boxed elsewhere, the drawn dropdown filtering as darktable's (decision 42; [Slider values and choices](#slider-values-and-choices)) |
+| Slider values and choices | darktable's: the value read-only at rest with its unit and sign, a click or a digit making it a field that takes a number, for now (darktable's expressions waiting until there is a need), darktable's popup for fine control on Enter, a right-click, Shift+F10 or the Menu key, drawn on every platform, a cancel put back by the session with no history step; choice rows Blended, darktable's combobox, in tool panels and the Export dialog and Boxed elsewhere, the drawn dropdown filtering as darktable's (decisions 42 and 84; [Slider values and choices](#slider-values-and-choices)) |
 | The side panel's layout | Each tab's pinned and scrolling sections and which float, the workspace's, in settings; changed by dragging a header, its ⋯, keys and the file; display order only, never the processing order; floating panels inside the window, belonging to no tab (decision 83; [Moving, pinning and floating sections](#moving-pinning-and-floating-sections)) |
 | The view | One view: the Photos tab choosing the photos; the central panel's layouts, Photo and later Map, switched only when asked, with no Grid; one set of tabs, kept as workspaces; the rating keys, Apply Edit and Export on every selected photo, the sliders and Reset on the active one; Export a dialog, Import and Print sheets, the slideshow an action (decision 37; [The shell](#the-shell)) |
 
