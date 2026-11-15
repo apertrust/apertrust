@@ -8,7 +8,7 @@ It is darktable's output color profile in the first pass (decision 2). darktable
 
 It drives one operation, `colorout` (display 70, [../ports/colorout.md](../ports/colorout.md)), which every photo runs, so it adds no operation. It has no first step, and at its default it sets nothing and leaves the plan as it was. It owns both parameters of the operation.
 
-**Status:** built, in `crates/tools/src/output_colour_profile.rs`. The app draws it from its definition (`docs/gui.md`, Tool panels from definitions) in Edit's Raw tab, last (decision 38); until Edit's tabs by editing stage are built, the app draws it in Colour, first, before Colour balance RGB.
+**Status:** built, in `crates/tools/src/output_colour_profile.rs`. The app draws it from its definition (`docs/gui.md`, Tool panels from definitions) in Edit's Raw tab, last (decision 38).
 
 - Its rows are tests in `crates/tools/tests/output_colour_profile.rs` and the tool's source, and the panel's in `crates/app/src/tools.rs`; [Results](#results) gives what they measured.
 - Every row is exact or darktable's own default, so none has a proposed tolerance; the [design choices](#design-choices) are settled.

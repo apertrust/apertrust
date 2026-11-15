@@ -1888,16 +1888,17 @@ fn mask_histogram(overflowing: bool) -> (Vec<f32>, [f32; 2]) {
     (bins, percentiles)
 }
 
-/// The side panel as the Base tab shows it: Scopes and Layers pinned, the tools below.
-/// Photos and History, with nothing behind them yet, are drawn disabled. Its edge, here
-/// at its end as for a panel at the window's start, resizes it.
+/// The side panel as Edit's Adjust tab shows it (decision 38): Scopes and Layers pinned,
+/// the tools below. Photos, Detail and History, with nothing behind them here, are drawn
+/// disabled. Its edge, here at its end as for a panel at the window's start, resizes it.
 fn side_panel(page: &mut Ui, t: &Theme, demo: &mut Demo) {
     let ids = [
         (Icon::Folder, "tab-photos", false),
-        (Icon::Base, "tab-base", true),
-        (Icon::Color, "tab-color", true),
-        (Icon::Correct, "tab-correct", true),
-        (Icon::Effect, "tab-effect", true),
+        (Icon::Adjust, "tab-adjust", true),
+        (Icon::Detail, "tab-detail", false),
+        (Icon::Correct, "tab-geometry", true),
+        (Icon::Effect, "tab-effects", true),
+        (Icon::Raw, "tab-raw", true),
         (Icon::History, "tab-history", false),
     ];
     let names: Vec<String> = ids

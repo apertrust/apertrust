@@ -555,17 +555,18 @@ In `src/folder.rs`, `src/library.rs`, `src/dialogs.rs`, `src/dropped.rs` and `sr
 ### The side panel
 
 - It is as wide as its edge is dragged or moved with the keys: 240 to 600 points, 320 at first, at most half the window but never under 240, kept in settings.
-- **Tabs,** as built, are darktable's scene-referred groups between Apertrust's own two: Photos, Base, Colour, Correct, Effect and History (`TABS`). Planned (decision 38; [docs/gui.md](gui.md), The tabs, by editing stage): Edit's tabs by editing stage, Photos, Adjust, Detail, Geometry, Effects, Raw and History, opening on Adjust, the built lists becoming the darktable workspace's, chosen once named workspaces come.
-  - Kept by darktable's ids (`base`, `color`, `correct`, `effect`), and `photos` and `history`; Edit's will be `adjust`, `detail`, `geometry`, `effects` and `raw`. Edit opens on Base as built. Each tab is chosen through its action, `panel-tab-1` to `panel-tab-6` (`ActionId::PANEL_TABS`, as many as `TABS`, checked as the app compiles; `panel-tab-7` with Edit's seven), which a click, a key and Side Panel Tab's item run; History, the sixth, has no default key. A tab with nothing behind it would be drawn disabled (`TABS_ENABLED`); none is.
-  - `photos` opens the first tab, and `library`, which earlier builds kept for it, is unknown (decision 38). An unknown id (such as `profile`) is read as unknown and the first editing tab is shown with a warning; both are kept until the user chooses a tab.
-- **Tools by tab** (`TAB_TOOLS`), as built: each tool in darktable's group, those in none in the one darktable's other layouts give them, in darktable's order, the last in the pipeline at the top. A test holds the order to `OPERATIONS` reversed. Planned: Edit's lists in editing order, held by a test to decision 38's, these lists kept as the darktable workspace's with their test. They are the workspaces' defaults; planned, the layout model in `layout.rs`, each tab's pinned and scrolling sections and the floating ones kept in settings and changed by dragging a header, its ⋯, keys and the file (decision 83).
+- **Tabs** are Edit's, by editing stage, between Apertrust's own two: Photos, Adjust, Detail, Geometry, Effects, Raw and History (`TABS`; decision 38, [docs/gui.md](gui.md), The tabs, by editing stage), opening on Adjust (`ADJUST`).
+  - Kept by their ids, `photos`, `adjust`, `detail`, `geometry`, `effects`, `raw` and `history`. Each tab is chosen through its action, `panel-tab-1` to `panel-tab-7` (`ActionId::PANEL_TABS`, as many as `TABS`, checked as the app compiles), which a click, a key and Side Panel Tab's item run; Raw and History, the sixth and seventh, have no default key. An editing tab with no tool built yet is drawn disabled, its key unavailable (`TABS_ENABLED`, worked out from `TAB_TOOLS`): Detail, for now.
+  - `photos` opens the first tab. darktable's ids, `base`, `color`, `correct` and `effect`, which earlier builds kept for Edit, `library`, which they kept for the Photos tab, and an id no build has (such as `profile`) are read as unknown, and a tab that cannot be chosen yet as `detail` is: Adjust is shown with a warning, and the id is kept until the user chooses a tab (decision 38).
+- **Tools by tab** (`TAB_TOOLS`): each built tool in its tab of Edit, top to bottom in editing order, Raw's in processing order. A test holds the lists to decision 38's and each tool to one tab. darktable's groups are kept as the darktable workspace's lists (`DARKTABLE_GROUPS`), not shown, with the test holding each to `OPERATIONS` reversed. They are the workspaces' defaults; planned, the layout model in `layout.rs`, each tab's pinned and scrolling sections and the floating ones kept in settings and changed by dragging a header, its ⋯, keys and the file (decision 83).
 
-| Tab, as built | Tools |
+| Tab | Tools |
 | --- | --- |
-| Base | AgX, Tone curve, Tone equalizer, Exposure, Orientation, Demosaic, Highlight reconstruction, White balance, Raw black/white point |
-| Colour | Output colour profile, Colour balance RGB, RGB primaries, Colour calibration |
-| Correct | Haze removal |
-| Effect | Vignetting, Soften, Grain |
+| Adjust | White balance, Colour calibration, Exposure, AgX, Tone equalizer, Haze removal, Tone curve, Colour balance RGB, RGB primaries |
+| Detail | None yet: drawn disabled |
+| Geometry | Orientation |
+| Effects | Vignetting, Grain, Soften |
+| Raw | Raw black/white point, Highlight reconstruction, Demosaic, Output colour profile |
 
 - The sections' open state is kept in settings.
 - **The Scopes section** (`src/scopes.rs`) is pinned over the editing tabs' tools, not the Photos tab's nor History's. Its `Histogram` is fed by the session's latest reading (the histogram, the waveform, the RGB parade and the vectorscope, and what clips). It asks the session with `Command::Scopes` for the totals while it shows and for the graph while it is open. Its view and open state are kept in settings.

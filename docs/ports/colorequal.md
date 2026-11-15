@@ -15,7 +15,7 @@ Golden results (mire1.cr2, 3908×2602, Apple M4, a one-instance plan of the engi
 
 The colour equalizer changes hue, saturation and brightness by hue, darktable's successor to color zones: eight nodes from red to magenta on each of three curves, so the photographer can turn greens towards yellow, deepen blues or brighten skin.
 
-Algorithmically, each pixel's hue in darktable UCS reads three periodic curves, interpolated through their nodes by radial basis functions, giving a hue offset and gains on saturation and brightness; a guided filter, on by default, first smooths the chromaticity the hue is read from, then spreads the saturation and brightness corrections over areas of one colour, weighted by saturation so greys and soft edges stay put; the result is gamut-mapped and converted back. It is the Colour tab's Colour equalizer (`docs/tools/README.md`) in the first pass, on layers too.
+Algorithmically, each pixel's hue in darktable UCS reads three periodic curves, interpolated through their nodes by radial basis functions, giving a hue offset and gains on saturation and brightness; a guided filter, on by default, first smooths the chromaticity the hue is read from, then spreads the saturation and brightness corrections over areas of one colour, weighted by saturation so greys and soft edges stay put; the result is gamut-mapped and converted back. It is the Adjust tab's Colour equalizer (`docs/tools/README.md`) in the first pass, on layers too once layers are built (planned, Phase 4).
 
 ## Pipeline
 

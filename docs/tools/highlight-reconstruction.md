@@ -8,7 +8,7 @@ It is darktable's highlight reconstruction in the first pass (decision 2). darkt
 
 It drives one operation, `highlights` (raw 4, [../ports/highlights.md](../ports/highlights.md)), which every raw runs, with inpaint opposed its one method ported. So it adds no operation: it has no first step, and at its defaults it sets nothing and leaves the plan as it was. It owns every parameter of the operation, the method and the clipping threshold. A change runs demosaic again, as every raw-stage control does (decision 12; [../engine.md](../engine.md), Where the viewport's scale applies).
 
-**Status:** built, in `crates/tools/src/highlight_reconstruction.rs`, in `TOOLS` after Raw black/white point. The app draws it from its definition (`docs/gui.md`, Tool panels from definitions) in Edit's Raw tab (decision 38); until Edit's tabs by editing stage are built, the app draws it in Base, after Demosaic and before White balance.
+**Status:** built, in `crates/tools/src/highlight_reconstruction.rs`, in `TOOLS` after Raw black/white point. The app draws it from its definition (`docs/gui.md`, Tool panels from definitions) in Edit's Raw tab (decision 38).
 
 - Its rows are tests in `crates/tools/tests/highlight_reconstruction.rs`; [Results](#results) gives what they measured.
 - Every row is exact or darktable's own match, so none has a proposed tolerance.

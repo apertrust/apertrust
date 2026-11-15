@@ -68,4 +68,4 @@ export-jpeg-subsample-tip = Chroma subsampling for the JPEG encoder. Auto: from 
 ## Global options
 
 export-size-cm = Size in centimeters
-export-profile-tip = Image settings: the photo's own, in Color › Output color profile, as the view shows it. Another profile applies to this export alone.
+export-profile-tip = Image settings: the photo's own, in Raw › Output color profile, as the view shows it. Another profile applies to this export alone.

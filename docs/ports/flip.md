@@ -22,7 +22,7 @@ The exit test (`apertrust-golden pipeline`, Apple M4), with orientation at auto 
 
 ## Purpose
 
-Turns or mirrors the photo in steps of 90°, so it shows the right way up: by default the photo's own orientation, which the camera records in the EXIF Orientation tag, and otherwise the one the user chooses. Algorithmically, a permutation of whole pixels, no interpolation: each output pixel is one input pixel. It is the Base tab's Orientation tool (`docs/tools/README.md`).
+Turns or mirrors the photo in steps of 90°, so it shows the right way up: by default the photo's own orientation, which the camera records in the EXIF Orientation tag, and otherwise the one the user chooses. Algorithmically, a permutation of whole pixels, no interpolation: each output pixel is one input pixel. It is the Geometry tab's Orientation tool (`docs/tools/README.md`).
 
 ## Pipeline
 

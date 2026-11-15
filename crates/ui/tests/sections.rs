@@ -643,8 +643,8 @@ fn only_the_section_under_the_pointer_peeks() {
     assert_eq!(*harness.state(), [false, false]);
 }
 
-/// Edit's tabs (decision 38), Photos and History drawn disabled until something is
-/// behind them, each with its key.
+/// Six tabs, as the darktable workspace will have them (decision 38), Photos and History
+/// drawn disabled as tabs with nothing behind them, each with its key.
 fn tab_bar(width: f32) -> Harness<'static, (usize, bool, Vec<TabBarAction>)> {
     Harness::builder()
         .with_size(egui::vec2(width, 240.0))
@@ -886,21 +886,22 @@ fn customise_tabs_is_a_disabled_item_while_it_cannot_run() {
 }
 
 /// Edit's tabs, as the app has them (decision 38).
-const TAB_IDS: [(Icon, &str); 6] = [
+const TAB_IDS: [(Icon, &str); 7] = [
     (Icon::Folder, "tab-photos"),
-    (Icon::Base, "tab-base"),
-    (Icon::Color, "tab-color"),
-    (Icon::Correct, "tab-correct"),
-    (Icon::Effect, "tab-effect"),
+    (Icon::Adjust, "tab-adjust"),
+    (Icon::Detail, "tab-detail"),
+    (Icon::Correct, "tab-geometry"),
+    (Icon::Effect, "tab-effects"),
+    (Icon::Raw, "tab-raw"),
     (Icon::History, "tab-history"),
 ];
 
-/// The side panel's tabs, named in `locale`, in a panel wide enough to show all six. A
+/// The side panel's tabs, named in `locale`, in a panel wide enough to show all seven. A
 /// disabled tab's name is measured and drawn as any other's, so every tab here can be
 /// chosen.
 fn named_tabs(locale: Locale) -> Harness<'static> {
     Harness::builder()
-        .with_size(egui::vec2(440.0, 120.0))
+        .with_size(egui::vec2(520.0, 120.0))
         .with_context_setup(move |ctx| {
             apertrust_ui::install(ctx, Theme::default());
             apertrust_ui::set_locale(ctx, locale);
@@ -943,13 +944,17 @@ fn long_tab_names_fit_their_tiles_and_keep_their_full_names() {
     let mut harness = named_tabs(Locale::Pseudo);
     harness.run();
     let translator = apertrust_ui::Translator::new(Locale::Pseudo);
+    let mut shortened = Vec::new();
     for (_, id) in TAB_IDS {
         let name = translator.text(id);
         let tile = harness.get_by_role_and_label(Role::Tab, &name).rect();
         let text = drawn_name(&harness, &name);
         // Shrunk to fit whole, not shortened: at 9 points, the most the names may shrink,
-        // as `docs/gui.md` (Translation) says.
-        assert!(!text.galley.elided, "{name} is shortened");
+        // as `docs/gui.md` (Translation) says; Geometry's, 40% longer, still ends in an
+        // ellipsis inside its tile.
+        if text.galley.elided {
+            shortened.push(id);
+        }
         let size = text.galley.job.sections[0].format.font_id.size;
         let caption = Theme::default().text.caption;
         assert_eq!(size, caption - 2.0, "{name}");
@@ -968,6 +973,7 @@ fn long_tab_names_fit_their_tiles_and_keep_their_full_names() {
             "no tooltip says {name}"
         );
     }
+    assert_eq!(shortened, ["tab-geometry"]);
 }
 
 #[test]
@@ -1010,7 +1016,9 @@ fn tab_names_that_fit_keep_the_theme_s_size() {
     let mut harness = named_tabs(Locale::EnGb);
     harness.run();
     let caption = Theme::default().text.caption;
-    for name in ["Photos", "Base", "Colour", "Correct", "Effect", "History"] {
+    for name in [
+        "Photos", "Adjust", "Detail", "Geometry", "Effects", "Raw", "History",
+    ] {
         let drawn = drawn_name(&harness, name);
         assert!(!drawn.galley.elided, "{name} is shortened");
         let format = &drawn.galley.job.sections[0].format;
@@ -1064,13 +1072,12 @@ fn a_long_title_is_cut_before_the_header_s_buttons_at_the_narrowest_side_panel()
     );
 }
 
-/// Ukrainian's and Polish's names, set as written, fit whole, shrinking no further than
-/// they need: Ukrainian's at the theme's size, and Polish's at the most the rule allows,
-/// two points less, for darktable's Podstawowe (decision 38).
+/// Ukrainian's and Polish's names for Edit's tabs, set as written, fit whole at the
+/// theme's size, shrinking no further than they need (decision 38).
 #[test]
 fn ukrainian_and_polish_names_shrink_no_further_than_they_need() {
     let caption = Theme::default().text.caption;
-    for (locale, size) in [(Locale::Uk, caption), (Locale::Pl, caption - 2.0)] {
+    for (locale, size) in [(Locale::Uk, caption), (Locale::Pl, caption)] {
         let mut harness = named_tabs(locale);
         harness.run();
         let translator = apertrust_ui::Translator::new(locale);

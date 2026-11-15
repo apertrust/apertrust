@@ -62,7 +62,7 @@
 //! proof_margin = 0.25
 //!
 //! [edit]
-//! tab = "correct"
+//! tab = "geometry"
 //!
 //! [edit.sections]
 //! exposure = false
@@ -1171,7 +1171,7 @@ mod tests {
                 background: Some(apertrust_ui::Background::Medium),
             },
             edit: ViewState {
-                tab: Some("correct".to_owned()),
+                tab: Some("geometry".to_owned()),
                 sections: BTreeMap::from([
                     ("exposure".to_owned(), false),
                     ("tone_curve".to_owned(), true),
@@ -1360,7 +1360,7 @@ mod tests {
             Theme::builtin(Builtin::Dark).sizes.side_panel
         );
         // The tab the shell shows when none is kept, or the one kept is no tab.
-        assert_eq!(Some(EDIT_TAB.default()), crate::tab_id(crate::BASE));
+        assert_eq!(Some(EDIT_TAB.default()), crate::tab_id(crate::ADJUST));
         assert!(EDIT_SECTIONS.default().is_empty());
         assert!(EDIT_GROUPS.default().is_empty());
         assert!(KEYS.default().is_empty());
@@ -1439,7 +1439,7 @@ margin = 16
 proof_margin = 0.25
 
 [edit]
-tab = \"correct\"
+tab = \"geometry\"
 
 [edit.groups.exposure]
 area_exposure_mapping = true

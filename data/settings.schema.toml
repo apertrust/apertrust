@@ -283,11 +283,11 @@ default = "computed"
 applies = "at-once"
 
 # Edit's side panel tab, by its id. Text, not a choice: Customise tabs will make tabs of
-# the user's own. An id that is no tab, or a tab that cannot be chosen yet, shows Base.
+# the user's own. An id that is no tab, or a tab that cannot be chosen yet, shows Adjust.
 [edit.tab]
 owner = "app"
 kind = "text"
-default = "base"
+default = "adjust"
 applies = "at-once"
 
 # The sections the user opened (true) or closed (false), by id; the others start as their

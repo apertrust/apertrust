@@ -10,7 +10,7 @@ Golden result (case `bloom`, darktable test 0050-bloom, mire1.cr2, 3908×2602, A
 
 The Orton effect for the photographer ("apply Orton effect for a dreamy ethereal look", darktable's description): the bright parts of the image glow into their surroundings, a soft, luminous haze around highlights.
 
-Algorithmically, the Lab lightness is scaled by the strength and every pixel below the threshold dropped, the remaining lights are blurred by eight passes of a box mean as wide as the size, and the blur is screen-blended onto the lightness. It is the Effect tab's Bloom tool (`docs/tools/README.md`), on layers too.
+Algorithmically, the Lab lightness is scaled by the strength and every pixel below the threshold dropped, the remaining lights are blurred by eight passes of a box mean as wide as the size, and the blur is screen-blended onto the lightness. It is the Effects tab's Bloom tool (`docs/tools/README.md`), on layers too once layers are built (planned, Phase 4).
 
 ## Pipeline
 

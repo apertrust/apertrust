@@ -1092,26 +1092,28 @@ fn system_locale() -> Locale {
     )
 }
 
-/// The side panel's tabs in Edit (decision 38): darktable's scene-referred module
-/// groups, base, color, correct and effect, between Apertrust's own Photos and History.
-/// Ctrl+1 to Ctrl+5 choose the first five by position ([`ActionId::PANEL_TABS`]); History,
-/// the sixth, has its action and no default key, since Ctrl+6 is Ctrl+− on French AZERTY
-/// keyboards.
-const TABS: [(Icon, &str); 6] = [
+/// The side panel's tabs in Edit (decision 38): the tools by editing stage, Adjust,
+/// Detail, Geometry, Effects and Raw, between Apertrust's own Photos and History. Ctrl+1
+/// to Ctrl+5 choose the first five by position ([`ActionId::PANEL_TABS`]); Raw and
+/// History, the sixth and seventh, have their actions and no default key, since Ctrl+6 is
+/// Ctrl+− on French AZERTY keyboards.
+const TABS: [(Icon, &str); 7] = [
     (Icon::Folder, "tab-photos"),
-    (Icon::Base, "tab-base"),
-    (Icon::Color, "tab-color"),
-    (Icon::Correct, "tab-correct"),
-    (Icon::Effect, "tab-effect"),
+    (Icon::Adjust, "tab-adjust"),
+    (Icon::Detail, "tab-detail"),
+    (Icon::Correct, "tab-geometry"),
+    (Icon::Effect, "tab-effects"),
+    (Icon::Raw, "tab-raw"),
     (Icon::History, "tab-history"),
 ];
-/// The tab Edit opens on, and the one shown where settings keep no tab, or one that is not
-/// there or cannot be chosen.
-const BASE: usize = 1;
+/// The tab Edit opens on, which holds the tools every edit starts with, and the one shown
+/// where settings keep no tab, or one that is not there or cannot be chosen.
+const ADJUST: usize = 1;
 
-/// The tabs' ids, as settings keep the last one, so a tab the user moves keeps its place:
-/// darktable's names for its groups, as a tool's id is its operation's.
-const TAB_IDS: [&str; TABS.len()] = ["photos", "base", "color", "correct", "effect", "history"];
+/// The tabs' ids, as settings keep the last one, so a tab the user moves keeps its place.
+const TAB_IDS: [&str; TABS.len()] = [
+    "photos", "adjust", "detail", "geometry", "effects", "raw", "history",
+];
 
 /// The Photos tab, first: Browse so far.
 const PHOTOS: usize = 0;
@@ -1122,11 +1124,20 @@ const BROWSE: usize = PHOTOS;
 
 /// The History tab, last: the History section, Snapshots to come over it, with no Scopes
 /// (`docs/history.md`).
-const HISTORY: usize = 5;
+const HISTORY: usize = 6;
 
-/// Whether each tab can be chosen: a tab with nothing behind it yet would be drawn
-/// disabled, its key unavailable. Every tab has something now.
-const TABS_ENABLED: [bool; TABS.len()] = [true; TABS.len()];
+/// Whether each tab can be chosen: an editing tab with no tool built yet is drawn
+/// disabled, saying it is to come, its key unavailable (decision 38), as Detail is until
+/// its first tool. Photos and History have their own sections.
+const TABS_ENABLED: [bool; TABS.len()] = {
+    let mut enabled = [true; TABS.len()];
+    let mut tab = 0;
+    while tab < TABS.len() {
+        enabled[tab] = tab == PHOTOS || tab == HISTORY || !TAB_TOOLS[tab].is_empty();
+        tab += 1;
+    }
+    enabled
+};
 
 // Each tab has its action, which its click, its key and Side Panel Tab's item run: a tab
 // with none could not be chosen.
@@ -1156,39 +1167,77 @@ fn offered(locale: Locale, debug: bool) -> bool {
     locale != Locale::Pseudo || debug
 }
 
-/// The tools each tab shows, by id: each in darktable's group, those darktable puts in
-/// none in the group its other layouts give them, and listed as darktable's right panel
-/// lists them, in pipeline order with the last tool at the top (decision 38,
-/// `docs/tools/README.md`). Customise tabs edits these lists once settings keep them
-/// (`docs/gui.md`, The shell).
+/// The tools each tab shows, by id, top to bottom in editing order, the order a person
+/// reaches for them, Raw's in processing order (decision 38, `docs/tools/README.md`): the
+/// Edit workspace's defaults, which Customise tabs edits once settings keep them
+/// (`docs/gui.md`, The shell). Display order only: the pipeline's stays fixed. AgX stands
+/// for the edit's tone mapper, and the Tone curve has RGB curve's place until RGB curve
+/// replaces it.
 const TAB_TOOLS: [&[&str]; TABS.len()] = [
     &[],
     &[
-        "agx",
-        "tone_curve",
-        "toneequal",
-        "exposure",
-        "flip",
-        "demosaic",
-        "highlights",
         "temperature",
-        "rawprepare",
-    ],
-    &[
-        "colorout",
+        "channelmixerrgb",
+        "exposure",
+        "agx",
+        "toneequal",
+        "hazeremoval",
+        "tone_curve",
         "colorbalancergb",
         "primaries",
-        "channelmixerrgb",
     ],
-    &["hazeremoval"],
-    &["vignette", "soften", "grain"],
+    &[],
+    &["flip"],
+    &["vignette", "grain", "soften"],
+    &["rawprepare", "highlights", "demosaic", "colorout"],
     &[],
 ];
 
-/// Whether each tab pins Scopes over its tools: darktable's four groups, as darktable's
-/// histogram sits over its groups (`docs/gui.md`, The tabs: darktable's groups); not the
+/// darktable's scene-referred module groups by darktable's ids, base, color, correct and
+/// effect: the tabs the darktable workspace will show between Photos and History, chosen
+/// once named workspaces come (decision 38, planned). Each tool in darktable's group,
+/// those darktable puts in none in the group its other layouts give them, and listed as
+/// darktable's right panel lists them, in pipeline order with the last tool at the top
+/// (`docs/tools/README.md`, The darktable workspace).
+#[cfg_attr(
+    not(test),
+    expect(
+        dead_code,
+        reason = "the darktable workspace's tabs, shown once named workspaces come"
+    )
+)]
+const DARKTABLE_GROUPS: [(&str, &[&str]); 4] = [
+    (
+        "base",
+        &[
+            "agx",
+            "tone_curve",
+            "toneequal",
+            "exposure",
+            "flip",
+            "demosaic",
+            "highlights",
+            "temperature",
+            "rawprepare",
+        ],
+    ),
+    (
+        "color",
+        &[
+            "colorout",
+            "colorbalancergb",
+            "primaries",
+            "channelmixerrgb",
+        ],
+    ),
+    ("correct", &["hazeremoval"]),
+    ("effect", &["vignette", "soften", "grain"]),
+];
+
+/// Whether each tab pins Scopes over its tools: the five editing tabs, as darktable's
+/// histogram sits over its groups (`docs/gui.md`, The tabs, by editing stage); not the
 /// Photos tab, nor History, which holds Snapshots, once built, then History.
-const SCOPES_PINNED: [bool; TABS.len()] = [false, true, true, true, true, false];
+const SCOPES_PINNED: [bool; TABS.len()] = [false, true, true, true, true, true, false];
 
 struct App {
     session: Session,
@@ -1773,9 +1822,9 @@ struct Shell {
 impl Shell {
     /// The shell as `settings` left it, in `system`'s language unless they keep another.
     /// A key override that would clash with another action's key is refused, with a
-    /// warning, and so is a tab that is not there, as an older build's (`adjust`), which
-    /// opens Base; so does a tab that cannot be chosen yet, without a warning. Either id
-    /// stays in settings until the user chooses a tab.
+    /// warning, and so is a tab that is not there, as an older build's (darktable's
+    /// `base`), which opens Adjust; so does a tab that cannot be chosen yet (decision 38).
+    /// Either id stays in settings until the user chooses a tab.
     fn new(settings: &Settings, system: Locale, os: OperatingSystem) -> Shell {
         let (keymap, warnings) = Keymap::load(os, &settings.keys);
         for warning in warnings {
@@ -1783,10 +1832,16 @@ impl Shell {
         }
         let tab = settings.edit.tab.as_deref();
         let panel_tab = tab.and_then(|id| (0..TABS.len()).find(|i| tab_id(*i) == Some(id)));
-        if let (Some(id), None) = (tab, panel_tab) {
-            tracing::warn!(target: "settings", "edit.tab: no tab {id}, Base shown");
+        match (tab, panel_tab) {
+            (Some(id), None) => {
+                tracing::warn!(target: "settings", "edit.tab: no tab {id}, Adjust shown");
+            }
+            (Some(id), Some(kept)) if !TABS_ENABLED[kept] => {
+                tracing::warn!(target: "settings", "edit.tab: {id} cannot be chosen yet, Adjust shown");
+            }
+            _ => {}
         }
-        let panel_tab = panel_tab.filter(|tab| TABS_ENABLED[*tab]).unwrap_or(BASE);
+        let panel_tab = panel_tab.filter(|tab| TABS_ENABLED[*tab]).unwrap_or(ADJUST);
         let locale = settings
             .locale
             .filter(|l| offered(*l, cfg!(debug_assertions)))
@@ -8834,13 +8889,13 @@ mod tests {
     fn with_no_photo_every_edit_tab_draws_its_tools_and_scopes_disabled_at_defaults() {
         let folder = settings::testing::Folder::new("panel-no-photo");
         let mut harness = editing(&folder);
-        for tab in [BASE, 2, 3, 4] {
+        for tab in (ADJUST..HISTORY).filter(|tab| TABS_ENABLED[*tab]) {
             harness.state_mut().shell.panel_tab = tab;
             harness.run();
             draws_no_photo(&harness, tab);
         }
         // Exposure at its definition's default.
-        harness.state_mut().shell.panel_tab = BASE;
+        harness.state_mut().shell.panel_tab = ADJUST;
         harness.run();
         assert_eq!(exposure_slider(&harness), (String::from("+0.000 EV"), true));
     }
@@ -8876,7 +8931,7 @@ mod tests {
         harness.run();
         harness.get_by_role_and_label(Role::TreeItem, "Step 1: Exposure");
         assert_eq!(harness.state().history, [history::Action::GoTo(None)]);
-        harness.state_mut().shell.panel_tab = BASE;
+        harness.state_mut().shell.panel_tab = ADJUST;
         harness.run();
         assert!(harness.query_by_role(Role::List).is_none());
     }
@@ -8984,7 +9039,7 @@ mod tests {
         harness.run();
         assert_eq!(harness.state().sent, [to_first.clone(), to_first]);
         assert_eq!(harness.state().shell.panel_tab, HISTORY);
-        // Shift-click: Grain's section, in Effect, open; no command.
+        // Shift-click: Grain's section, in Effects, open; no command.
         harness.state_mut().sent.clear();
         harness
             .get_by_role_and_label(Role::TreeItem, "Step 2: Grain")
@@ -9085,7 +9140,7 @@ mod tests {
         // The tab changed while it is held: the tool shown again.
         harness.state_mut().sent.clear();
         press(&mut harness, true);
-        harness.state_mut().shell.panel_tab = BASE;
+        harness.state_mut().shell.panel_tab = ADJUST;
         harness.run();
         assert_eq!(
             harness.state().sent,
@@ -9202,7 +9257,7 @@ mod tests {
 
     /// A photo opening as the app draws it, for the snapshots: the central bar, Rendering…
     /// on it from `rendering`, the picture fitted in the photo's slot, and the side panel's
-    /// Base tab with the photo's values read-only.
+    /// Adjust tab with the photo's values read-only.
     struct Opening {
         shell: Shell,
         mirror: Mirror,
@@ -9502,7 +9557,7 @@ mod tests {
                 harness.state_mut().mirror.apply(Event::Opened(photo(2)));
             }
             harness.run();
-            draws_no_photo(&harness, BASE);
+            draws_no_photo(&harness, ADJUST);
             assert_eq!(exposure_slider(&harness), (String::from("+0.000 EV"), true));
         }
         // Its values arrive: the next frame is the next photo's, Scopes with it.
@@ -9516,9 +9571,9 @@ mod tests {
             (String::from("+0.500 EV"), false)
         );
         assert_eq!(graph_says_in(&harness, "Histogram"), "Nothing measured yet");
-        // Every tab's sections, live, keep ids of their own: the Effect tab's three among
+        // Every tab's sections, live, keep ids of their own: the Effects tab's three among
         // them, whose sliders share names.
-        for tab in [2, 3, 4] {
+        for tab in (ADJUST + 1..HISTORY).filter(|tab| TABS_ENABLED[*tab]) {
             harness.state_mut().shell.panel_tab = tab;
             harness.run();
             for title in titles(tab) {
@@ -9535,11 +9590,11 @@ mod tests {
     }
 
     #[test]
-    fn scopes_are_pinned_over_the_base_tab_s_tools_and_count_the_histogram() {
+    fn scopes_are_pinned_over_the_adjust_tab_s_tools_and_count_the_histogram() {
         let folder = settings::testing::Folder::new("scopes-pinned");
         let mut harness = side(&folder);
         harness.run();
-        assert_eq!(harness.state().shell.panel_tab, BASE);
+        assert_eq!(harness.state().shell.panel_tab, ADJUST);
         let scopes = harness.get_by_role_and_label(Role::Button, "Scopes").rect();
         let exposure = harness
             .get_by_role_and_label(Role::Button, "Exposure")
@@ -9561,7 +9616,7 @@ mod tests {
         }
         assert_eq!(harness.state().sent, [counted(true, false, false)]);
         // Every editing tab pins it.
-        harness.get_by_role_and_label(Role::Tab, "Correct").click();
+        harness.get_by_role_and_label(Role::Tab, "Geometry").click();
         harness.run();
         assert_eq!(harness.state().shell.panel_tab, 3);
         harness.get_by_role_and_label(Role::Button, "Scopes");
@@ -10514,31 +10569,53 @@ mod tests {
             assert_eq!(shell.panel_tab, tab, "{id}");
             assert_eq!(shell.to_settings(&ctx).edit.tab.as_deref(), Some(*id));
         }
-        let mut shell = opened_on("base");
+        let mut shell = opened_on("adjust");
         shell.panel_tab = 3;
-        assert_eq!(shell.to_settings(&ctx).edit.tab.as_deref(), Some("correct"));
+        assert_eq!(
+            shell.to_settings(&ctx).edit.tab.as_deref(),
+            Some("geometry")
+        );
         assert_eq!(
             Shell::new(&Settings::default(), Locale::EnGb, OperatingSystem::Nix).panel_tab,
-            BASE
+            ADJUST
         );
         assert_eq!(TAB_IDS.len(), TABS.len());
     }
 
-    /// An older build's tab (decision 38 replaced Profile, Adjust, Optics and Detail, and
-    /// `library` was the Photos tab's id) is read as any unknown id is, under decision 43:
-    /// Base is shown, and the id stays in settings until the user chooses a tab.
+    /// An older build's tab is read as any unknown id is, under decision 43: darktable's
+    /// groups' ids, which earlier builds kept for Edit, `library`, which they kept for the
+    /// Photos tab, and the development builds' `profile`, `optics` and `presets` are no
+    /// tab of Edit's, never given to another (decision 38). Adjust is shown, and the id
+    /// stays in settings until the user chooses a tab.
     #[test]
     fn a_tab_this_build_lacks_stays_in_settings_until_the_user_chooses_one() {
         let ctx = egui::Context::default();
         for old in [
-            "profile", "adjust", "optics", "detail", "presets", "library",
+            "base", "color", "correct", "effect", "library", "profile", "optics", "presets",
         ] {
             let mut shell = opened_on(old);
-            assert_eq!(shell.panel_tab, BASE, "{old}");
+            assert_eq!(shell.panel_tab, ADJUST, "{old}");
             assert_eq!(shell.to_settings(&ctx).edit.tab.as_deref(), Some(old));
-            shell.panel_tab = 2;
-            assert_eq!(shell.to_settings(&ctx).edit.tab.as_deref(), Some("color"));
+            shell.panel_tab = 3;
+            assert_eq!(
+                shell.to_settings(&ctx).edit.tab.as_deref(),
+                Some("geometry")
+            );
         }
+    }
+
+    /// A tab that cannot be chosen yet, Detail until its first tool, is kept by its id
+    /// but opens Adjust, and stays in settings until the user chooses a tab (decision 38).
+    #[test]
+    fn a_tab_drawn_disabled_opens_adjust_and_is_kept() {
+        let ctx = egui::Context::default();
+        let detail = TAB_IDS.iter().position(|id| *id == "detail").unwrap();
+        assert!(!TABS_ENABLED[detail]);
+        let mut shell = opened_on("detail");
+        assert_eq!(shell.panel_tab, ADJUST);
+        assert_eq!(shell.to_settings(&ctx).edit.tab.as_deref(), Some("detail"));
+        shell.panel_tab = 5;
+        assert_eq!(shell.to_settings(&ctx).edit.tab.as_deref(), Some("raw"));
     }
 
     /// The History tab, drawn disabled before its section was built, is kept and opened
@@ -10786,59 +10863,121 @@ mod tests {
     }
 
     /// The id settings had is forgotten once the user chooses a tab: one this build lacks,
-    /// after Colour and then Base, leaves Base in the file, read as Base at the next
-    /// start, never the id that warned.
+    /// or one that cannot be chosen yet, after Geometry and then Adjust, leaves Adjust in
+    /// the file, read as Adjust at the next start, never the id that warned.
     #[test]
     fn a_tab_read_at_the_start_is_forgotten_once_the_user_chooses_one() {
         let ctx = egui::Context::default();
-        for old in ["optics", "detail"] {
+        for old in ["optics", "base", "detail"] {
             let folder = settings::testing::Folder::new(&format!("forgotten-tab-{old}"));
             let text = format!("version = 1\n\n[edit]\ntab = \"{old}\"\n");
             std::fs::write(folder.settings(), text).expect("written");
             let (mut keeper, settings) = Keeper::open(folder.storage());
             let mut shell = Shell::new(&settings, Locale::EnGb, OperatingSystem::Nix);
-            assert_eq!(shell.panel_tab, BASE, "{old}");
-            for tab in [2, BASE] {
+            assert_eq!(shell.panel_tab, ADJUST, "{old}");
+            for tab in [3, ADJUST] {
                 shell.apply(Intent::PanelTab(tab), &ctx, &[]);
                 keeper.frame(Instant::now(), &shell.to_settings(&ctx));
             }
-            assert_eq!(shell.to_settings(&ctx).edit.tab.as_deref(), Some("base"));
+            assert_eq!(shell.to_settings(&ctx).edit.tab.as_deref(), Some("adjust"));
             keeper.flush();
             assert!(!folder.text().contains(old), "{old}: {}", folder.text());
             let (_, settings) = Keeper::open(folder.storage());
             let default = settings::registry::EDIT_TAB.default();
             let kept = settings.edit.tab.as_deref().unwrap_or(default);
-            assert_eq!(kept, "base", "{old}");
+            assert_eq!(kept, "adjust", "{old}");
         }
     }
 
-    /// Each tab lists its tools as darktable's right panel does, in pipeline order with
-    /// the last tool at the top (decision 38): the order of their operations in
-    /// [`apertrust_operations::OPERATIONS`], reversed. A tool's id is its operation's but
-    /// for the Tone curve's, whose Luma curve is RGB curve's (decision 2).
+    /// Edit's tabs and their tools as decision 38 records them, top to bottom, by tool id,
+    /// those still to build included: Adjust in editing order, with the edit's tone mapper,
+    /// one of AgX, Sigmoid and Filmic RGB, at its place, and the Tone curve at RGB curve's
+    /// until RGB curve replaces it; Raw in processing order.
+    const DECISION_38: [(&str, &[&str]); 7] = [
+        ("photos", &[]),
+        (
+            "adjust",
+            &[
+                "temperature",
+                "channelmixerrgb",
+                "exposure",
+                "agx",
+                "sigmoid",
+                "filmicrgb",
+                "toneequal",
+                "bilat",
+                "hazeremoval",
+                "tone_curve",
+                "rgblevels",
+                "colorbalancergb",
+                "colorequal",
+                "primaries",
+            ],
+        ),
+        (
+            "detail",
+            &["denoiseprofile", "sharpen", "diffuse", "retouch"],
+        ),
+        (
+            "geometry",
+            &["crop", "ashift", "flip", "lens", "cacorrectrgb"],
+        ),
+        ("effects", &["vignette", "grain", "soften", "bloom"]),
+        (
+            "raw",
+            &[
+                "rawprepare",
+                "highlights",
+                "demosaic",
+                "colorin",
+                "colorout",
+            ],
+        ),
+        ("history", &[]),
+    ];
+
+    /// Whether `id` is a built-in tool's.
+    fn built(id: &str) -> bool {
+        apertrust_tools::TOOLS
+            .iter()
+            .any(|tool| tool.definition().id == id)
+    }
+
+    /// Each of Edit's tabs, by id, lists the built tools decision 38 gives it, in its
+    /// order, and no other; each tool decision 38 places is in one tab only. An editing
+    /// tab with nothing built is drawn disabled, and Scopes are pinned over the five
+    /// editing tabs.
     #[test]
-    fn each_tab_lists_its_tools_last_in_the_pipeline_first() {
-        let place = |tool: &str| {
-            let operation = match tool {
-                "tone_curve" => "rgbcurve",
-                other => other,
-            };
-            apertrust_operations::OPERATIONS
-                .iter()
-                .position(|op| op.manifest().id == operation)
-                .unwrap_or_else(|| panic!("{tool} has no operation {operation}"))
-        };
-        for (tools, id) in TAB_TOOLS.iter().zip(TAB_IDS) {
-            let places: Vec<usize> = tools.iter().map(|tool| place(tool)).collect();
-            assert!(
-                places.windows(2).all(|pair| pair[0] > pair[1]),
-                "{id}: {tools:?} at {places:?}"
+    fn edit_s_tabs_list_their_tools_as_decision_38_records_them() {
+        assert_eq!(TAB_IDS, DECISION_38.map(|(id, _)| id));
+        for ((id, recorded), tools) in DECISION_38.iter().zip(TAB_TOOLS) {
+            let expected: Vec<&str> = recorded.iter().copied().filter(|t| built(t)).collect();
+            assert_eq!(tools, expected.as_slice(), "{id}");
+        }
+        let mut placed: Vec<&str> = DECISION_38
+            .iter()
+            .flat_map(|(_, tools)| tools.iter().copied())
+            .collect();
+        let count = placed.len();
+        placed.sort_unstable();
+        placed.dedup();
+        assert_eq!(placed.len(), count, "a tool placed twice");
+        for (tab, tools) in TAB_TOOLS.iter().enumerate() {
+            let own = tab == PHOTOS || tab == HISTORY;
+            assert_eq!(
+                TABS_ENABLED[tab],
+                own || !tools.is_empty(),
+                "{}",
+                TAB_IDS[tab]
             );
         }
+        assert_eq!(TAB_IDS[ADJUST], "adjust");
+        assert_eq!(TAB_IDS[HISTORY], "history");
+        assert_eq!(SCOPES_PINNED, [false, true, true, true, true, true, false]);
     }
 
-    /// Every built-in tool is drawn in some tab, once, and every tool a tab names is
-    /// built in, so a tool that joins `TOOLS` joins a tab too.
+    /// Every built-in tool is drawn in one of Edit's tabs, once, and every tool a tab
+    /// names is built in, so a tool that joins `TOOLS` joins a tab too.
     #[test]
     fn every_built_in_tool_is_in_one_tab() {
         let listed: Vec<&str> = TAB_TOOLS
@@ -10851,12 +10990,45 @@ mod tests {
             assert_eq!(tabs, 1, "{id} is in {tabs} tabs");
         }
         for id in listed {
+            assert!(built(id), "{id} is in a tab but not built in");
+        }
+    }
+
+    /// The darktable workspace's groups (decision 38, planned) list their tools as
+    /// darktable's right panel does, in pipeline order with the last tool at the top: the
+    /// order of their operations in [`apertrust_operations::OPERATIONS`], reversed. A
+    /// tool's id is its operation's but for the Tone curve's, whose Luma curve is RGB
+    /// curve's (decision 2). Each built tool is in one group, as in one of Edit's tabs.
+    #[test]
+    fn darktable_s_groups_list_their_tools_last_in_the_pipeline_first() {
+        let place = |tool: &str| {
+            let operation = match tool {
+                "tone_curve" => "rgbcurve",
+                other => other,
+            };
+            apertrust_operations::OPERATIONS
+                .iter()
+                .position(|op| op.manifest().id == operation)
+                .unwrap_or_else(|| panic!("{tool} has no operation {operation}"))
+        };
+        for (id, tools) in DARKTABLE_GROUPS {
+            let places: Vec<usize> = tools.iter().map(|tool| place(tool)).collect();
             assert!(
-                apertrust_tools::TOOLS
-                    .iter()
-                    .any(|tool| tool.definition().id == id),
-                "{id} is in a tab but not built in"
+                places.windows(2).all(|pair| pair[0] > pair[1]),
+                "{id}: {tools:?} at {places:?}"
             );
+        }
+        let listed: Vec<&str> = DARKTABLE_GROUPS
+            .iter()
+            .flat_map(|(_, tools)| tools.iter().copied())
+            .collect();
+        for tool in apertrust_tools::TOOLS {
+            let id = tool.definition().id;
+            let groups = listed.iter().filter(|listed| **listed == id).count();
+            assert_eq!(groups, 1, "{id} is in {groups} groups");
+        }
+        for id in listed {
+            assert!(built(id), "{id} is in a group but not built in");
         }
     }
 
@@ -14302,10 +14474,10 @@ mod tests {
     fn ctrl_1_to_5_choose_the_side_panel_s_tabs() {
         let mut harness = bench(OperatingSystem::Windows);
         harness.run();
-        assert_eq!(harness.state().shell.panel_tab, BASE);
-        let keys = [Key::Num2, Key::Num3, Key::Num4, Key::Num5];
-        let names = ["Base", "Colour", "Correct", "Effect"];
-        for (tab, (key, name)) in (1..).zip(keys.into_iter().zip(names)) {
+        assert_eq!(harness.state().shell.panel_tab, ADJUST);
+        let keys = [Key::Num2, Key::Num4, Key::Num5];
+        let names = ["Adjust", "Geometry", "Effects"];
+        for (tab, (key, name)) in [1, 3, 4].into_iter().zip(keys.into_iter().zip(names)) {
             harness.key_press_modifiers(Modifiers::COMMAND, key);
             harness.run();
             assert_eq!(harness.state().shell.panel_tab, tab);
@@ -14313,6 +14485,12 @@ mod tests {
             let selected = node.accesskit_node().toggled();
             assert_eq!(selected, Some(egui::accesskit::Toggled::True), "{name}");
         }
+        // Detail, with no tool built yet, is drawn disabled and its key does nothing.
+        let detail = harness.get_by_role_and_label(Role::Tab, "Detail");
+        assert!(detail.accesskit_node().is_disabled());
+        harness.key_press_modifiers(Modifiers::COMMAND, Key::Num3);
+        harness.run();
+        assert_eq!(harness.state().shell.panel_tab, 4);
         // The Photos tab is the first: chosen by Ctrl+1, and not drawn disabled.
         let photos = harness.get_by_role_and_label(Role::Tab, "Photos");
         assert!(!photos.accesskit_node().is_disabled());
@@ -14320,25 +14498,25 @@ mod tests {
         harness.run();
         assert_eq!(harness.state().shell.panel_tab, PHOTOS);
         // A click on a tab runs the same action.
-        harness.get_by_role_and_label(Role::Tab, "Colour").click();
+        harness.get_by_role_and_label(Role::Tab, "Geometry").click();
         harness.run();
-        assert_eq!(harness.state().shell.panel_tab, 2);
+        assert_eq!(harness.state().shell.panel_tab, 3);
         harness.get_by_role_and_label(Role::Tab, "Photos").click();
         harness.run();
         assert_eq!(harness.state().shell.panel_tab, PHOTOS);
     }
 
-    /// History, the sixth tab, has its action, `panel-tab-6`, with no default key: Ctrl+6
-    /// is Ctrl+− on French AZERTY keyboards, so the keymap refuses it as scale-down's. A key
-    /// Settings gives it chooses the tab, and a click on the tab does, where it has room
-    /// and from », where it folds.
+    /// Raw and History, the sixth and seventh tabs, have their actions, `panel-tab-6` and
+    /// `panel-tab-7`, with no default key: Ctrl+6 is Ctrl+− on French AZERTY keyboards, so
+    /// the keymap refuses it as scale-down's. A key Settings gives one chooses its tab, and
+    /// a click on the tab does, where it has room and from », where it folds.
     #[test]
     fn the_history_tab_is_chosen_by_its_action_its_click_and_a_key_given_it() {
         let mut harness = bench(OperatingSystem::Mac);
         harness.run();
         harness.key_press_modifiers(Modifiers::COMMAND, Key::Num6);
         harness.run();
-        assert_eq!(harness.state().shell.panel_tab, BASE);
+        assert_eq!(harness.state().shell.panel_tab, ADJUST);
         assert!(harness.state().pressed.is_empty());
         // At the panel's usual width History folds into », whose item chooses it.
         harness.get_by_label("More tabs").click();
@@ -14349,8 +14527,14 @@ mod tests {
         harness.run();
         assert_eq!(harness.state().shell.panel_tab, HISTORY);
         assert!(harness.state().pressed.is_empty());
+        // So does Raw, which folds with it.
+        harness.get_by_label("More tabs").click();
+        harness.run();
+        harness.get_by_role_and_label(Role::MenuItem, "Raw").click();
+        harness.run();
+        assert_eq!(harness.state().shell.panel_tab, 5);
         // Wide enough for every tab, a click on it.
-        harness.state_mut().shell.panel_tab = BASE;
+        harness.state_mut().shell.panel_tab = ADJUST;
         harness.state_mut().shell.panel_width = Some(560.0);
         harness.run();
         harness.get_by_role_and_label(Role::Tab, "History").click();
@@ -14358,13 +14542,13 @@ mod tests {
         assert_eq!(harness.state().shell.panel_tab, HISTORY);
 
         let given = |key: &str| Settings {
-            keys: BTreeMap::from([("panel-tab-6".to_owned(), vec![key.to_owned()])]),
+            keys: BTreeMap::from([("panel-tab-7".to_owned(), vec![key.to_owned()])]),
             ..Settings::default()
         };
         let (_, warnings) = Keymap::load(OperatingSystem::Windows, &given("Ctrl+6").keys);
         assert_eq!(
             warnings,
-            ["keys.panel-tab-6: Ctrl+6 clashes with scale-down; default keys kept"]
+            ["keys.panel-tab-7: Ctrl+6 clashes with scale-down; default keys kept"]
         );
         let settings = given("Ctrl+Shift+Y");
         let (_, warnings) = Keymap::load(OperatingSystem::Windows, &settings.keys);
@@ -14373,7 +14557,7 @@ mod tests {
         harness.run();
         harness.key_press_modifiers(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::Y);
         harness.run();
-        assert_eq!(harness.state().pressed, [ActionId::PANEL_TABS[5]]);
+        assert_eq!(harness.state().pressed, [ActionId::PANEL_TABS[6]]);
         assert_eq!(harness.state().shell.panel_tab, HISTORY);
     }
 
@@ -14449,14 +14633,14 @@ mod tests {
         }
         let mut harness = bench(OperatingSystem::Mac);
         harness.run();
-        let colour = harness.get_by_role_and_label(Role::Tab, "Colour");
+        let geometry = harness.get_by_role_and_label(Role::Tab, "Geometry");
         assert_eq!(
-            colour.accesskit_node().data().keyboard_shortcut(),
-            Some("Cmd+3")
+            geometry.accesskit_node().data().keyboard_shortcut(),
+            Some("Cmd+4")
         );
-        colour.hover();
+        geometry.hover();
         harness.run();
-        assert!(harness.query_by_label("Colour (Cmd+3)").is_some());
+        assert!(harness.query_by_label("Geometry (Cmd+4)").is_some());
         // The Photos tab is the first.
         let photos = harness.get_by_role_and_label(Role::Tab, "Photos");
         assert_eq!(
@@ -14507,17 +14691,17 @@ mod tests {
     fn a_plain_letter_runs_unless_its_press_typed_another_key_s_character() {
         let mut harness = bench(OperatingSystem::Windows);
         // L chooses Browse's tab from another.
-        harness.state_mut().shell.panel_tab = BASE;
+        harness.state_mut().shell.panel_tab = ADJUST;
         harness.run();
         // AltGr+L types ł on a Polish keyboard, and arrives as L.
         type_l(&mut harness, "ł");
         assert!(harness.state().pressed.is_empty());
-        assert_eq!(harness.state().shell.panel_tab, BASE);
+        assert_eq!(harness.state().shell.panel_tab, ADJUST);
         // Д is the Ukrainian layout's own letter on the L key.
         type_l(&mut harness, "д");
         assert_eq!(harness.state().pressed, vec![ActionId::SHOW_BROWSE]);
         assert_eq!(harness.state().shell.panel_tab, BROWSE);
-        harness.state_mut().shell.panel_tab = BASE;
+        harness.state_mut().shell.panel_tab = ADJUST;
         type_l(&mut harness, "l");
         assert_eq!(harness.state().pressed, vec![ActionId::SHOW_BROWSE; 2]);
     }
@@ -15526,7 +15710,7 @@ mod tests {
         let tab = |harness: &Harness<'_, Bench>, n| {
             menu_line(harness, check, &format!("Side-panel tab {n}")).2
         };
-        assert_eq!(tab(&harness, BASE + 1), Some(Toggled::True));
+        assert_eq!(tab(&harness, ADJUST + 1), Some(Toggled::True));
         assert_eq!(tab(&harness, 1), Some(Toggled::False));
         // The Photos tab is the first, built.
         let photos = menu_line(&harness, check, "Side-panel tab 1");

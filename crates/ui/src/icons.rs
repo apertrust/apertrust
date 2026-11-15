@@ -111,8 +111,13 @@ pub enum Icon {
     RotateRight,
     FlipHorizontal,
     FlipVertical,
-    /// The side panel's tabs: darktable's four module groups, base, color, correct and
-    /// effect, in darktable's shapes and one colour (decision 38), and Apertrust's own.
+    /// The side panel's tabs (decision 38): Edit's Adjust, Detail and Raw; darktable's four
+    /// module groups, base, color, correct and effect, in darktable's shapes and one
+    /// colour, for the darktable workspace, Correct and Effect also Edit's Geometry and
+    /// Effects; and Apertrust's own.
+    Adjust,
+    Detail,
+    Raw,
     Base,
     Color,
     Correct,
@@ -162,6 +167,9 @@ pub enum Icon {
     Mark,
     /// Filled forms, drawn only to show a state: the chosen side panel tab, an icon
     /// button that is on, a rating's points (`Icon::filled`).
+    AdjustFilled,
+    DetailFilled,
+    RawFilled,
     BaseFilled,
     ColorFilled,
     CorrectFilled,
@@ -180,7 +188,7 @@ pub enum Icon {
 }
 
 impl Icon {
-    pub const ALL: [Icon; 87] = [
+    pub const ALL: [Icon; 93] = [
         Icon::Chevron,
         Icon::ChevronDown,
         Icon::ChevronEnd,
@@ -222,6 +230,9 @@ impl Icon {
         Icon::RotateRight,
         Icon::FlipHorizontal,
         Icon::FlipVertical,
+        Icon::Adjust,
+        Icon::Detail,
+        Icon::Raw,
         Icon::Base,
         Icon::Color,
         Icon::Correct,
@@ -253,6 +264,9 @@ impl Icon {
         Icon::Process,
         Icon::Output,
         Icon::Mark,
+        Icon::AdjustFilled,
+        Icon::DetailFilled,
+        Icon::RawFilled,
         Icon::BaseFilled,
         Icon::ColorFilled,
         Icon::CorrectFilled,
@@ -276,6 +290,9 @@ impl Icon {
     /// shape to fill.
     pub fn filled(self) -> Icon {
         match self {
+            Icon::Adjust => Icon::AdjustFilled,
+            Icon::Detail => Icon::DetailFilled,
+            Icon::Raw => Icon::RawFilled,
             Icon::Base => Icon::BaseFilled,
             Icon::Color => Icon::ColorFilled,
             Icon::Correct => Icon::CorrectFilled,
@@ -400,6 +417,9 @@ impl Icon {
                 "triangles-centerline-dashed-horizontal",
                 14.0
             ),
+            Icon::Adjust => derived!("adjust", "settings-2", 22.0),
+            Icon::Detail => own!("detail", 22.0),
+            Icon::Raw => derived!("raw", "camera", 22.0),
             Icon::Base => own!("base", 22.0),
             Icon::Color => own!("color", 22.0),
             Icon::Correct => own!("correct", 22.0),
@@ -431,6 +451,9 @@ impl Icon {
             Icon::Process => derived!("process", "circle-dot", 12.0),
             Icon::Output => derived!("output", "arrow-right-from-line", 12.0),
             Icon::Mark => own!("mark", 20.0),
+            Icon::AdjustFilled => derived!("adjust-filled", "settings-2", 22.0),
+            Icon::DetailFilled => own!("detail-filled", 22.0),
+            Icon::RawFilled => derived!("raw-filled", "camera", 22.0),
             Icon::BaseFilled => own!("base-filled", 22.0),
             Icon::ColorFilled => own!("color-filled", 22.0),
             Icon::CorrectFilled => own!("correct-filled", 22.0),

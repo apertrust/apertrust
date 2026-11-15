@@ -43,7 +43,7 @@ Algorithmically it is one 3×3 matrix:
 2. the white is moved towards a hue the same way;
 3. the pixel's RGB, read as amounts of the new primaries that add up to the new white, goes back to the working space.
 
-It is the RGB primaries tool, in Edit's Adjust tab, Colour until that tab is built (decision 38; `docs/tools/README.md`, RGB primaries), darktable's module in the first pass (decision 2).
+It is the RGB primaries tool, in Edit's Adjust tab (decision 38; `docs/tools/README.md`, RGB primaries), darktable's module in the first pass (decision 2).
 
 ## Pipeline
 

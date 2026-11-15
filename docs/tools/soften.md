@@ -8,7 +8,7 @@ It is darktable's soften in the first pass (decision 2). darktable's page has no
 
 It drives one operation, `soften` ([../ports/soften.md](../ports/soften.md)), which an unedited photo does not run: it is planned while the tool is on. The tool owns all four of the operation's parameters; none is fixed ([README.md](README.md), Effect).
 
-**Status:** built, in `crates/tools/src/soften.rs`. The app draws it from its definition (`docs/gui.md`, Tool panels from definitions). Its tab is Edit's Effects, after Grain and before Bloom (decision 38); until Edit's tabs by editing stage are built, the app draws it in Effect, after Vignetting and before Grain.
+**Status:** built, in `crates/tools/src/soften.rs`. The app draws it from its definition (`docs/gui.md`, Tool panels from definitions). Its tab is Edit's Effects, after Grain and before Bloom (decision 38).
 
 - darktable's preset puts soften in no group; the darktable workspace gives it Effect, its group in darktable's "modules: all" ([README.md](README.md), decision 38).
 - Its rows are tests in `crates/tools/tests/soften.rs`; [Results](#results) gives what they measured.
