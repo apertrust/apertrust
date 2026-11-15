@@ -207,6 +207,7 @@ mod tests {
             exposure_bias: None,
             iso: None,
             lens_correction: None,
+            highlight_preservation: 0.0,
         }
     }
 

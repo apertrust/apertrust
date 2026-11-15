@@ -22,9 +22,10 @@
 //! - **Mode:** manual, or automatic, darktable's deflicker, which needs the raw histogram
 //!   and is not ported, so it is listed, drawn disabled and refused.
 //! - **In manual mode:** Compensate camera exposure, whether the camera's exposure
-//!   compensation is undone; Highlight preservation mode, not ported; and Exposure,
-//!   darktable's slider, `exposure.exposure` itself, −18 to +18 EV, its default the
-//!   photo's: +0.7 EV on a colour raw, 0 otherwise (decision 30).
+//!   compensation is undone; Highlight preservation mode, whether the exposure a
+//!   camera's highlight-preserving mode held back is given back, on by default; and
+//!   Exposure, darktable's slider, `exposure.exposure` itself, −18 to +18 EV, its default
+//!   the photo's: +0.7 EV on a colour raw, 0 otherwise (decision 30).
 //! - **In automatic mode:** Percentile and Target level, not ported. darktable's computed
 //!   EC readout waits for a row that draws a readout.
 //! - **Black level correction,** darktable's offset over the photo's own black.
@@ -88,11 +89,11 @@ static CONTROLS: [Control; 7] = [
     },
     Control {
         id: "compensate_hilite_pres",
-        // Off, as the operation leaves it (decisions 21 and 62); darktable turns it on
-        // for a new instance.
-        kind: ControlKind::Bool { default: false },
+        // On, as darktable turns it on for a module's first instance and the operation's
+        // default is; it acts only on a photo whose camera held exposure back.
+        kind: ControlKind::Bool { default: true },
         unit: None,
-        unported: true,
+        unported: false,
     },
     Control {
         id: "exposure",
@@ -206,7 +207,7 @@ impl Choice for AreaMode {
 
 static DEFINITION: Definition = Definition {
     id: "exposure",
-    version: 2,
+    version: 3,
     layers: true,
     auto: true,
     switched: false,
@@ -323,36 +324,37 @@ impl Tool for Exposure {
         &OWNS
     }
 
-    /// Compensate camera exposure does nothing on a photo that records no bias, and Mode
-    /// nothing on an image that is not a raw, where darktable makes it insensitive
-    /// (`gui_update`); neither depends on the tool's values. The controls not ported
-    /// are unavailable everywhere, as the session reports every such control.
+    /// Compensate camera exposure does nothing on a photo that records no bias,
+    /// Highlight preservation mode nothing on one whose camera held no exposure back,
+    /// where darktable hides it (`gui_update`), and Mode nothing on an image that is not
+    /// a raw, where darktable makes it insensitive; none depends on the tool's values.
+    /// The controls not ported are unavailable everywhere, as the session reports every
+    /// such control.
     fn available(&self, control: &str, _: &Controls, image: &ImageContext) -> bool {
         match control {
             "camera_bias" => camera_bias(image) != 0.0,
+            "compensate_hilite_pres" => highlight_bias(image) != 0.0,
             "mode" => image.camera.is_some(),
             _ => true,
         }
     }
 
     /// Mode and the controls not ported take only their defaults, so this sets only
-    /// `exposure`, `black` and `compensate_exposure_bias`. Exposure is written as it is,
-    /// as darktable's slider writes it; the black, only while Black level is set, since
-    /// the photo's own black lies below any white.
+    /// `exposure`, `black`, `compensate_exposure_bias` and `compensate_hilite_pres`.
+    /// Exposure is written as it is, as darktable's slider writes it; the black, only
+    /// while Black level is set, since the photo's own black lies below any white.
     fn bind(&self, values: &ToolValues, image: &ImageContext, base: &Base) -> Vec<Setting> {
         let mut settings = Vec::new();
-        let compensated = match values.flag("camera_bias") {
+        let mut flag = |control: &str, param: &'static str| match values.flag(control) {
             Some(on) => {
-                settings.push(Setting::new(
-                    EXPOSURE,
-                    "compensate_exposure_bias",
-                    Value::Bool(on),
-                ));
+                settings.push(Setting::new(EXPOSURE, param, Value::Bool(on)));
                 on
             }
-            None => base.flag(EXPOSURE, "compensate_exposure_bias"),
+            None => base.flag(EXPOSURE, param),
         };
-        let bias = if compensated { camera_bias(image) } else { 0.0 };
+        let compensated = flag("camera_bias", "compensate_exposure_bias");
+        let given_back = flag("compensate_hilite_pres", "compensate_hilite_pres");
+        let bias = taken_off(image, compensated, given_back);
         let exposure = values
             .number("exposure")
             .unwrap_or_else(|| base.float(EXPOSURE, "exposure"));
@@ -372,12 +374,19 @@ impl Tool for Exposure {
     /// with a warning, its mark with it, Exposure back at the photo's default. No released
     /// build wrote it. Black level correction and Compensate camera exposure mean what
     /// they meant; Contrast and Pivot, an older version 1's, are left out as before.
+    ///
+    /// Before version 3 Highlight preservation mode was not ported and always off, the
+    /// one value an edit could hold; version 3 turns it on by default, as darktable does,
+    /// so an older edit gets it off, as it rendered.
     fn migrate(&self, from: u32, mut values: ToolValues) -> ToolValues {
         if from < 2
             && let Some(stops) = values.remove("exposure")
         {
             values.set(STOPS, stops);
             values.set_mark("exposure", None);
+        }
+        if from < 3 && values.get("compensate_hilite_pres").is_none() {
+            values.set("compensate_hilite_pres", ControlValue::Bool(false));
         }
         values
     }
@@ -388,18 +397,18 @@ impl Tool for Exposure {
     /// L, then by the area mode, `tools.exposure.area_mode`:
     ///
     /// - **Correction:** the exposure `−log2(Y / Y_target)`, `Y_target` the grey of the
-    ///   target lightness, plus the camera's bias where Compensate camera exposure is on,
-    ///   which the operation takes off again, so the area renders at the target. Nothing is
-    ///   written where it equals Exposure's value, as `_exposure_set_white` returns; a
-    ///   black at or above the new white goes 0.01 below it (`:763-779`), written as Black
-    ///   level correction over the photo's own black. darktable bounds neither: the session
-    ///   holds them to their ranges, and leaves out a target lightness of 0's, which is
-    ///   not finite, showing the patch still.
+    ///   target lightness, plus the camera's bias where Compensate camera exposure is on
+    ///   and less the held-back exposure where Highlight preservation mode is, which the
+    ///   operation takes off and gives back again, so the area renders at the target.
+    ///   Nothing is written where it equals Exposure's value, as `_exposure_set_white`
+    ///   returns; a black at or above the new white goes 0.01 below it (`:763-779`),
+    ///   written as Black level correction over the photo's own black. darktable bounds
+    ///   neither: the session holds them to their ranges, and leaves out a target
+    ///   lightness of 0's, which is not finite, showing the patch still.
     /// - **Measure:** no control; the target lightness the area renders at at the current
     ///   exposure, held to the setting's 0 to 100 as darktable's slider holds it, which the
     ///   client keeps (`Shown::settings`).
     ///
-    /// Highlight preservation mode, not ported, is never on, so its bias is never added.
     /// Nothing on a colour raw with no matrix, which colorin cannot render, as darktable
     /// returns with no input profile.
     fn pick(
@@ -434,11 +443,11 @@ impl Tool for Exposure {
             _ => AreaMode::Correction,
         };
         let exposure = values.number("exposure");
-        let bias = if values.flag("camera_bias") {
-            camera_bias(image)
-        } else {
-            0.0
-        };
+        let bias = taken_off(
+            image,
+            values.flag("camera_bias"),
+            values.flag("compensate_hilite_pres"),
+        );
         let mut writes = Controls::new();
         match mode {
             AreaMode::Measure => {
@@ -536,8 +545,34 @@ pub fn camera_bias(image: &ImageContext) -> f32 {
     })
 }
 
-/// w = 2^−(e − β): the input the exposure `e` renders at 1.0, with the camera's bias `β`
-/// compensated (0 when it is not), the white the exposure operation divides by.
+/// The exposure a highlight-preserving mode held back, as the exposure operation gives
+/// it back: above 0 and within −1 to +4 EV, as darktable's `_get_highlight_bias` trusts
+/// it, 0 otherwise. This crate cannot call the operation's own, so the rule is repeated
+/// here; the tool's tests check the two agree.
+pub fn highlight_bias(image: &ImageContext) -> f32 {
+    image.camera.as_ref().map_or(0.0, |camera| {
+        if camera.highlight_preservation > 0.0 {
+            camera.highlight_preservation.clamp(-1.0, 4.0)
+        } else {
+            0.0
+        }
+    })
+}
+
+/// β, what the exposure operation takes off the exposure: the camera's bias where
+/// Compensate camera exposure is on, less the held-back exposure where Highlight
+/// preservation mode is.
+pub fn taken_off(image: &ImageContext, camera: bool, highlights: bool) -> f32 {
+    let bias = if camera { camera_bias(image) } else { 0.0 };
+    if highlights {
+        bias - highlight_bias(image)
+    } else {
+        bias
+    }
+}
+
+/// w = 2^−(e − β): the input the exposure `e` renders at 1.0, with β what the operation
+/// takes off it ([`taken_off`]), the white the exposure operation divides by.
 pub fn rendered_white(exposure: f32, bias: f32) -> f32 {
     (-(f64::from(exposure) - f64::from(bias))).exp2() as f32
 }
@@ -546,8 +581,8 @@ pub fn rendered_white(exposure: f32, bias: f32) -> f32 {
 /// control's value, inside the operation's range, darktable's ±1; one that reaches the
 /// white the photo renders, `w`, is put 0.01 below it, darktable's margin, as darktable's
 /// `gui_changed` puts it, so the kernel never divides by zero (decision 30). darktable
-/// compares with the white of its slider's exposure; this one includes the camera's bias,
-/// the white the kernel divides by. Rising with a slope of 1 below `w`, flat at ±1, and
+/// compares with the white of its slider's exposure; this one includes the camera's bias
+/// and the held-back exposure, the white the kernel divides by. Rising with a slope of 1 below `w`, flat at ±1, and
 /// falling there by darktable's margin: on a colour raw the control's bottom 2⁻¹² holds
 /// the black at −1, darktable's lowest.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -652,6 +687,8 @@ mod tests {
             raw(-0.67),
             raw(-8.0),
             raw(5.0),
+            preserving(-0.67, 0.5),
+            preserving(0.0, 6.0),
             ImageContext::full(8, 8),
         ] {
             let problems = check::sweep(&Exposure, OPERATIONS, &image);
@@ -731,7 +768,7 @@ mod tests {
         let defaults = [
             ("mode", ControlValue::Choice(0)),
             ("camera_bias", ControlValue::Bool(true)),
-            ("compensate_hilite_pres", ControlValue::Bool(false)),
+            ("compensate_hilite_pres", ControlValue::Bool(true)),
             ("exposure", number(0.7)),
             ("deflicker_percentile", number(50.0)),
             ("deflicker_target_level", number(-4.0)),
@@ -741,7 +778,7 @@ mod tests {
         // And each is the operation's default for a colour raw.
         let base = Base::new(OPERATIONS, &image);
         assert_eq!(base.get(EXPOSURE, "mode"), Some(Value::Choice(0)));
-        assert!(!base.flag(EXPOSURE, "compensate_hilite_pres"));
+        assert!(base.flag(EXPOSURE, "compensate_hilite_pres"));
         assert_eq!(base.float(EXPOSURE, "deflicker_percentile"), 50.0);
         assert_eq!(base.float(EXPOSURE, "deflicker_target_level"), -4.0);
     }
@@ -757,6 +794,67 @@ mod tests {
         assert!(available("black_level", &raw(0.0)));
     }
 
+    /// A colour raw whose highlight-preserving mode held back `held` EV, with this bias.
+    fn preserving(exposure_bias: f32, held: f32) -> ImageContext {
+        let mut image = raw(exposure_bias);
+        image.camera.as_mut().unwrap().highlight_preservation = held;
+        image
+    }
+
+    #[test]
+    fn highlight_preservation_mode_gives_back_what_the_camera_held_back() {
+        // On on every photo, as darktable's first instance; it can act only where the
+        // camera held exposure back, as darktable shows it only there.
+        for image in [raw(0.0), preserving(0.0, 0.5), ImageContext::full(8, 8)] {
+            assert!(Exposure.defaults(&image).flag("compensate_hilite_pres"));
+        }
+        assert!(!available("compensate_hilite_pres", &raw(-0.67)));
+        assert!(!available("compensate_hilite_pres", &preserving(0.0, -0.5)));
+        assert!(!available(
+            "compensate_hilite_pres",
+            &ImageContext::full(8, 8)
+        ));
+        assert!(available("compensate_hilite_pres", &preserving(0.0, 0.33)));
+        // Written only where set, as the operation's parameter.
+        let image = preserving(-0.67, 0.5);
+        assert_eq!(
+            bind(
+                &[("compensate_hilite_pres", ControlValue::Bool(false))],
+                &image
+            ),
+            [Setting::new(
+                EXPOSURE,
+                "compensate_hilite_pres",
+                Value::Bool(false)
+            )]
+        );
+        // What it gives back is the operation's, within −1 to +4 EV.
+        let effective = |set: &[(&str, ControlValue)], image: &ImageContext| {
+            let base = Base::new(OPERATIONS, image);
+            let mut params = base.params(EXPOSURE).unwrap().clone();
+            for setting in bind(set, image) {
+                params.set(setting.param, setting.value);
+            }
+            apertrust_operations::exposure::effective_exposure(&params, image)
+        };
+        for held in [-0.5, 0.0, 0.33, 0.5, 2.0, 6.0] {
+            let image = preserving(-0.67, held);
+            assert_eq!(
+                highlight_bias(&image),
+                apertrust_operations::exposure::highlight_bias(&image)
+            );
+            for (camera, highlights) in [(true, true), (true, false), (false, true)] {
+                let set = [
+                    ("camera_bias", ControlValue::Bool(camera)),
+                    ("compensate_hilite_pres", ControlValue::Bool(highlights)),
+                ];
+                let expected = 0.7 - taken_off(&image, camera, highlights);
+                assert!((effective(&set, &image) - expected).abs() < 1e-6);
+            }
+        }
+        assert_eq!(highlight_bias(&preserving(0.0, 6.0)), 4.0);
+    }
+
     #[test]
     fn what_is_not_ported_takes_only_its_default() {
         // Automatic, darktable's deflicker, is listed and refused.
@@ -766,24 +864,15 @@ mod tests {
         // Mode is live on a raw, as darktable's is, and not on another image.
         assert!(available("mode", &raw(-0.67)));
         assert!(!available("mode", &ImageContext::full(8, 8)));
-        // Highlight preservation mode, Percentile and Target level take their defaults
-        // only, as automatic is refused.
+        // Percentile and Target level take their defaults only, as automatic is refused.
         let unported: Vec<&str> = DEFINITION
             .controls
             .iter()
             .filter(|control| control.unported)
             .map(|control| control.id)
             .collect();
-        assert_eq!(
-            unported,
-            [
-                "compensate_hilite_pres",
-                "deflicker_percentile",
-                "deflicker_target_level"
-            ]
-        );
+        assert_eq!(unported, ["deflicker_percentile", "deflicker_target_level"]);
         for (control, value) in [
-            ("compensate_hilite_pres", ControlValue::Bool(true)),
             ("deflicker_percentile", number(0.0)),
             ("deflicker_percentile", number(100.0)),
             ("deflicker_target_level", number(-18.0)),
@@ -967,8 +1056,26 @@ mod tests {
         assert!(DEFINITION.control(STOPS).is_none());
         assert_eq!(migrated.number("black_level"), Some(0.01));
         assert_eq!(migrated.flag("camera_bias"), Some(false));
-        // Version 2's values are its own.
-        assert_eq!(Exposure.migrate(2, saved.clone()), saved);
+        // Version 3's values are its own.
+        assert_eq!(Exposure.migrate(3, saved.clone()), saved);
+    }
+
+    #[test]
+    fn before_version_3_highlight_preservation_mode_was_off() {
+        // Not ported then, it took only off, which an older edit renders with.
+        let mut saved = ToolValues::new();
+        saved.set("exposure", number(1.0));
+        for from in [1, 2] {
+            let migrated = Exposure.migrate(from, saved.clone());
+            assert_eq!(migrated.flag("compensate_hilite_pres"), Some(false));
+            assert_eq!(migrated.flag("camera_bias"), None);
+        }
+        assert_eq!(
+            Exposure.migrate(2, saved.clone()).number("exposure"),
+            Some(1.0)
+        );
+        // Version 3 keeps the default, on.
+        assert_eq!(Exposure.migrate(3, saved.clone()), saved);
     }
 
     // The picker: darktable's `_auto_set_exposure` (`exposure.c:866-965`) on readings
@@ -1039,28 +1146,41 @@ mod tests {
     #[test]
     fn its_pick_maps_the_area_to_the_target_lightness() {
         // An image that is not a raw, read through linear Rec2020, and colour raws with
-        // and without a bias, compensated and not.
+        // and without a bias, compensated and not, and with exposure held back, given
+        // back and not.
         let cases = [
-            (ImageContext::full(8, 8), true),
-            (raw(0.0), true),
-            (raw(-0.67), true),
-            (raw(-0.67), false),
-            (raw(1.3), true),
+            (ImageContext::full(8, 8), true, true),
+            (raw(0.0), true, true),
+            (raw(-0.67), true, true),
+            (raw(-0.67), false, true),
+            (raw(1.3), true, true),
+            (preserving(-0.67, 0.5), true, true),
+            (preserving(-0.67, 0.5), true, false),
+            (preserving(0.0, 2.0), false, true),
         ];
-        for (image, compensated) in cases {
-            let bias = if compensated {
+        for (image, compensated, given_back) in cases {
+            let camera = if compensated {
                 f64::from(camera_bias(&image))
+            } else {
+                0.0
+            };
+            let held = if given_back {
+                f64::from(highlight_bias(&image))
             } else {
                 0.0
             };
             for rgb in [[0.18, 0.18, 0.18], [0.02, 0.05, 0.01], [0.7, 0.4, 0.9]] {
                 for target in [18.0, 50.0, 72.5, 100.0] {
-                    let values =
-                        values(&image, &[("camera_bias", ControlValue::Bool(compensated))]);
+                    let set = [
+                        ("camera_bias", ControlValue::Bool(compensated)),
+                        ("compensate_hilite_pres", ControlValue::Bool(given_back)),
+                    ];
+                    let values = values(&image, &set);
                     let picked = pick(&image, rgb, &values, &correction(target));
-                    // −log2(Y / Y_target), plus the bias the operation takes off again.
+                    // −log2(Y / Y_target), plus the bias the operation takes off again
+                    // and less the exposure it gives back.
                     let expected =
-                        -(luminance(&image, rgb) / y_of(f64::from(target))).log2() + bias;
+                        -(luminance(&image, rgb) / y_of(f64::from(target))).log2() + camera - held;
                     let written = picked.writes.number("exposure");
                     assert!(
                         (f64::from(written) - expected).abs() < 1e-4,
@@ -1194,16 +1314,18 @@ mod tests {
             (ImageContext::full(8, 8), false, 1.0),
             (raw(-0.67), true, 0.7),
             (raw(-0.67), false, -2.0),
+            (preserving(-0.67, 0.5), true, 0.7),
         ] {
             let set = [
                 ("exposure", number(exposure)),
                 ("camera_bias", ControlValue::Bool(compensated)),
             ];
+            // Highlight preservation mode is on, by default: what it gives back adds.
             let bias = if compensated {
                 f64::from(camera_bias(&image))
             } else {
                 0.0
-            };
+            } - f64::from(highlight_bias(&image));
             let rgb = [0.18, 0.12, 0.1];
             let picked = pick(&image, rgb, &values(&image, &set), &measure);
             assert!(picked.writes.is_empty());

@@ -62,11 +62,20 @@ fn landing(image: &ImageContext, scene: f64) -> f32 {
         base.float("exposure", "exposure"),
         base.float("exposure", "black"),
     );
-    let white = f64::from(exposure::rendered_white(
-        default,
-        exposure::camera_bias(image),
-    ));
+    let white = f64::from(exposure::rendered_white(default, taken_off(image)));
     (scene * (white - f64::from(black)) + f64::from(black)) as f32
+}
+
+/// What the exposure operation takes off the exposure on `image` at its defaults: the
+/// camera's bias less the exposure a highlight-preserving mode held back, both
+/// compensated where the operation's defaults compensate them.
+fn taken_off(image: &ImageContext) -> f32 {
+    let base = Base::new(OPERATIONS, image);
+    exposure::taken_off(
+        image,
+        base.flag("exposure", "compensate_exposure_bias"),
+        base.flag("exposure", "compensate_hilite_pres"),
+    )
 }
 
 /// The ramp (`docs/tools/README.md`, Test images): neutral greys one per 1/16 EV from
@@ -184,7 +193,7 @@ fn untouched() -> Vec<Edit> {
     let defaults = [
         ("mode", 0.0),
         ("camera_bias", 1.0),
-        ("compensate_hilite_pres", 0.0),
+        ("compensate_hilite_pres", 1.0),
         ("exposure", DEFAULT),
         ("deflicker_percentile", 50.0),
         ("deflicker_target_level", -4.0),
@@ -270,22 +279,34 @@ fn e3_holds(bench: &mut Bench, moves: &[&[(&str, f32)]]) {
     }
 }
 
-const MOVES: [&[(&str, f32)]; 4] = [
+/// E3's moves, on images whose camera held exposure back, so Highlight preservation mode
+/// off changes the frame.
+const MOVES: [&[(&str, f32)]; 5] = [
     &[("exposure", 1.0)],
     &[("black_level", 0.01)],
     &[("camera_bias", 0.0)],
+    &[("compensate_hilite_pres", 0.0)],
     &[
         ("exposure", -2.0),
         ("black_level", -0.05),
         ("camera_bias", 0.0),
+        ("compensate_hilite_pres", 0.0),
     ],
 ];
+
+/// `image` with 0.5 EV held back by a highlight-preserving mode, as on the 90D.
+fn holding_back(mut image: ImageContext) -> ImageContext {
+    image.camera.as_mut().unwrap().highlight_preservation = 0.5;
+    image
+}
 
 #[test]
 fn e3_a_control_moved_and_reset_renders_as_no_edit() {
     let (picture, image) = ramp(-0.67);
+    let image = holding_back(image);
     e3_holds(&mut Bench::picture(&picture, image, Pipe::Export), &MOVES);
     let (mosaic, image) = small_raw(-0.67);
+    let image = holding_back(image);
     let viewport = Pipe::Viewport {
         width: 40,
         height: 30,
@@ -325,7 +346,7 @@ fn exposures() -> Vec<f32> {
 /// photo's black (`src/iop/exposure.c`, `commit_params`).
 fn darktable_factor(image: &ImageContext, value: f32) -> f64 {
     let base = Base::new(OPERATIONS, image);
-    let bias = exposure::camera_bias(image);
+    let bias = taken_off(image);
     let black = f64::from(base.float("exposure", "black"));
     let white = |e: f32| f64::from(exposure::rendered_white(e, bias));
     (white(base.float("exposure", "exposure")) - black) / (white(value) - black)
@@ -449,10 +470,7 @@ fn e30_black_level_sets_black_and_keeps_white() {
         let mut bench = Bench::picture(&picture, image.clone(), SCENE);
         let base = Base::new(OPERATIONS, &image);
         let default = base.float("exposure", "black");
-        let white = exposure::rendered_white(
-            base.float("exposure", "exposure"),
-            exposure::camera_bias(&image),
-        );
+        let white = exposure::rendered_white(base.float("exposure", "exposure"), taken_off(&image));
         // The worst error, and the worst where a black that reaches the white goes 0.01
         // below it, whose margin amplifies the GPU's `exp2` error (decision 30).
         let (mut worst, mut at_stop) = (0.0_f64, 0.0_f64);
@@ -506,6 +524,40 @@ fn e31_use_camera_bias_off_darkens_by_the_bias() {
     assert_eq!(
         untouched.pixels, off.pixels,
         "E31: with no bias, nothing changes"
+    );
+}
+
+/// E33: Highlight preservation mode off, on a raw whose camera held 0.5 EV back and one
+/// that held 2 EV, with a bias of −0.67 EV compensated, darkens by what was held back,
+/// one factor for every pixel; on a raw that held none back, nothing changes.
+#[test]
+fn e33_highlight_preservation_mode_off_darkens_by_what_was_held_back() {
+    for held in [0.5, 2.0] {
+        let (picture, mut image) = ramp(-0.67);
+        image.camera.as_mut().unwrap().highlight_preservation = held;
+        let mut bench = Bench::picture(&picture, image, SCENE);
+        let untouched = bench.edit(&Edit::default(), Measure::Tool);
+        let off = bench.set(&[("compensate_hilite_pres", 0.0)], Measure::Tool);
+        let (spread, factor) = factor(&untouched.pixels, &off.pixels);
+        println!(
+            "E33: {held} EV held back, a spread of {spread:.1e}, {:+.4} EV",
+            factor.log2()
+        );
+        assert!(spread <= 1e-5, "E33: a spread of {spread:e}");
+        assert!(
+            (factor.log2() + f64::from(held)).abs() <= 0.02,
+            "E33: {} EV",
+            factor.log2()
+        );
+    }
+
+    let (picture, image) = ramp(-0.67);
+    let mut bench = Bench::picture(&picture, image, SCENE);
+    let untouched = bench.edit(&Edit::default(), Measure::Tool);
+    let off = bench.set(&[("compensate_hilite_pres", 0.0)], Measure::Tool);
+    assert_eq!(
+        untouched.pixels, off.pixels,
+        "E33: with none held back, nothing changes"
     );
 }
 
@@ -644,7 +696,8 @@ fn e9_the_golden_case_s_values_bind_to_darktable_s_parameters_bit_for_bit() {
 /// A version 1 edit, whose Exposure solved for exact stops: its value is left out with a
 /// warning, its mark with it, so Exposure renders at the photo's default; Black level
 /// correction and Compensate camera exposure keep theirs, and the older Contrast and
-/// Pivot are left out with a warning each, as before.
+/// Pivot are left out with a warning each, as before. Highlight preservation mode is off,
+/// as every edit before version 3 rendered.
 #[test]
 fn version_1_s_exposure_is_left_out_and_the_rest_reads() {
     let saved = edit_of(&[
@@ -652,22 +705,30 @@ fn version_1_s_exposure_is_left_out_and_the_rest_reads() {
         ("black_level", 0.01),
         ("camera_bias", 0.0),
     ]);
-    let version_2 = sidecar::to_xml(&saved, OPERATIONS, TOOLS, "0.0.0");
-    let version_1 = version_2
-        .replace(r#"toolVersion="2""#, r#"toolVersion="1""#)
+    let version_3 = sidecar::to_xml(&saved, OPERATIONS, TOOLS, "0.0.0");
+    let version_1 = version_3
+        .replace(r#"toolVersion="3""#, r#"toolVersion="1""#)
         .replace(
             r#"control:exposure="1.5""#,
             r#"control:exposure="1.5" control:contrast="12" control:pivot="25""#,
         )
         .replace(r#"apertrust:kept=""#, r#"apertrust:kept="contrast "#);
-    assert!(version_1.contains(r#"toolVersion="1""#), "{version_2}");
-    assert!(version_1.contains("control:pivot"), "{version_2}");
-    assert!(version_1.contains("kept=\"contrast "), "{version_2}");
+    assert!(version_1.contains(r#"toolVersion="1""#), "{version_3}");
+    assert!(version_1.contains("control:pivot"), "{version_3}");
+    assert!(version_1.contains("kept=\"contrast "), "{version_3}");
     let read =
         |xml: &str| sidecar::from_xml(xml, OPERATIONS, TOOLS, apertrust_tools::RETIRED).unwrap();
     let loaded = read(&version_1);
     assert_eq!(loaded.newer, None);
-    let expected = edit_of(&[("black_level", 0.01), ("camera_bias", 0.0)]);
+    // The migration sets Highlight preservation mode, unkept, as no one set it.
+    let mut expected = edit_of(&[
+        ("black_level", 0.01),
+        ("camera_bias", 0.0),
+        ("compensate_hilite_pres", 0.0),
+    ]);
+    expected
+        .keep(&Exposure, "compensate_hilite_pres", false)
+        .unwrap();
     assert_eq!(loaded.edit, expected);
     // Exposure's value, Contrast's and Pivot's, and Contrast's mark.
     assert_eq!(loaded.warnings.len(), 4, "{:?}", loaded.warnings);
@@ -691,18 +752,58 @@ fn version_1_s_exposure_is_left_out_and_the_rest_reads() {
             .params
     };
     assert_eq!(bound(&loaded.edit), bound(&expected));
-    // Version 2's Exposure reads as it was written.
-    let loaded = read(&version_2);
+    // Version 3's Exposure reads as it was written.
+    let loaded = read(&version_3);
     assert!(loaded.warnings.is_empty(), "{:?}", loaded.warnings);
     assert_eq!(loaded.edit, saved);
+}
+
+/// A version 2 edit, from before Highlight preservation mode was ported: it was off, the
+/// one value it could hold, so it reads off and renders as it did, with no warning, on a
+/// photo whose camera held exposure back; version 3's default is on.
+#[test]
+fn version_2_renders_with_highlight_preservation_mode_off() {
+    let saved = edit_of(&[("exposure", 1.5)]);
+    let version_3 = sidecar::to_xml(&saved, OPERATIONS, TOOLS, "0.0.0");
+    let version_2 = version_3.replace(r#"toolVersion="3""#, r#"toolVersion="2""#);
+    assert_ne!(version_2, version_3);
+    let loaded =
+        sidecar::from_xml(&version_2, OPERATIONS, TOOLS, apertrust_tools::RETIRED).unwrap();
+    assert!(loaded.warnings.is_empty(), "{:?}", loaded.warnings);
+    let mut expected = edit_of(&[("exposure", 1.5), ("compensate_hilite_pres", 0.0)]);
+    expected
+        .keep(&Exposure, "compensate_hilite_pres", false)
+        .unwrap();
+    assert_eq!(loaded.edit, expected);
+    let mut image = common::photo();
+    image.camera.as_mut().unwrap().highlight_preservation = 0.5;
+    let exposure = |edit: &Edit| {
+        let instances = edit::instances(edit, OPERATIONS, TOOLS, &image)
+            .all()
+            .unwrap();
+        let set = &instances
+            .iter()
+            .find(|i| id(i) == "exposure")
+            .unwrap()
+            .params;
+        let operation = apertrust_operations::operation("exposure").unwrap();
+        let params = operation
+            .schema()
+            .resolve_over(&operation.defaults(&image), set)
+            .unwrap();
+        apertrust_operations::exposure::effective_exposure(&params, &image)
+    };
+    // 1.5 EV less the camera's bias, as version 2 rendered; version 3 gives 0.5 back.
+    let bias = exposure::camera_bias(&image);
+    assert_eq!(exposure(&loaded.edit), 1.5 - bias);
+    assert_eq!(exposure(&saved), 1.5 - bias + 0.5);
 }
 
 // E32: the controls whose parameters are not ported.
 
 /// What a script or a pasted edit may give the controls not ported, each off its
 /// default, as the edit's file writes it, and automatic.
-const NOT_PORTED: [(&str, f32, &str); 6] = [
-    ("compensate_hilite_pres", 1.0, "true"),
+const NOT_PORTED: [(&str, f32, &str); 5] = [
     ("deflicker_percentile", 0.0, "0"),
     ("deflicker_percentile", 100.0, "100"),
     ("deflicker_target_level", -18.0, "-18"),
@@ -839,32 +940,41 @@ fn contrast_and_its_pivot_are_no_longer_exposure_s() {
 }
 
 /// The tool's defaults agree with the exposure operation's for every kind of image:
-/// Compensate camera exposure as the operation's `compensate_exposure_bias`, and the
-/// camera's bias as the operation itself clamps it.
+/// Compensate camera exposure as the operation's `compensate_exposure_bias`, Highlight
+/// preservation mode as its `compensate_hilite_pres`, and the camera's bias and the
+/// held-back exposure as the operation itself bounds them.
 #[test]
 fn its_defaults_and_bias_agree_with_the_exposure_operation() {
     let mut monochrome = raw_context(8, 8, -8.0);
     monochrome.camera.as_mut().unwrap().cfa = None;
+    let held = |bias: f32, held: f32| {
+        let mut image = raw_context(8, 8, bias);
+        image.camera.as_mut().unwrap().highlight_preservation = held;
+        image
+    };
     for image in [
         raw_context(8, 8, 0.0),
         raw_context(8, 8, -8.0),
         raw_context(8, 8, 6.5),
+        held(-0.67, 0.5),
+        held(0.0, 6.0),
+        held(0.0, -0.5),
         monochrome,
         ImageContext::full(8, 8),
     ] {
         let base = Base::new(OPERATIONS, &image);
         let compensated = base.flag("exposure", "compensate_exposure_bias");
-        assert_eq!(Exposure.defaults(&image).flag("camera_bias"), compensated);
+        let given_back = base.flag("exposure", "compensate_hilite_pres");
+        let defaults = Exposure.defaults(&image);
+        assert_eq!(defaults.flag("camera_bias"), compensated);
+        assert_eq!(defaults.flag("compensate_hilite_pres"), given_back);
         let params = base.params("exposure").unwrap();
-        let bias = if compensated {
-            exposure::camera_bias(&image)
-        } else {
-            0.0
-        };
-        assert_eq!(
-            apertrust_operations::exposure::effective_exposure(params, &image),
-            params.float("exposure") - bias,
-            "{:?}",
+        // To a rounding: the operation takes the bias off, then gives the rest back.
+        let operation = apertrust_operations::exposure::effective_exposure(params, &image);
+        let tool = params.float("exposure") - exposure::taken_off(&image, compensated, given_back);
+        assert!(
+            (operation - tool).abs() <= 1e-6,
+            "{operation} for {tool} on {:?}",
             image.camera.as_ref().map(|c| c.exposure_bias)
         );
     }

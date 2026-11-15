@@ -379,6 +379,7 @@ fn the_raw_stage_crops_scales_and_white_balances_each_photosite() {
             iso: 0.0,
             linear_response_limit: 1.0,
             lens_correction: None,
+            highlight_preservation: 0.0,
             orientation: 0,
         }),
         ..ImageContext::full(crop[2], crop[3])
@@ -492,6 +493,7 @@ fn demosaic_grey(cfa: Pattern<u32>) {
             iso: 0.0,
             linear_response_limit: 1.0,
             lens_correction: None,
+            highlight_preservation: 0.0,
             orientation: 0,
         }),
         ..ImageContext::full(declared[2], declared[3])

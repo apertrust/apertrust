@@ -15,11 +15,11 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 //! Exposure, ported from darktable (`src/iop/exposure.c`): manual mode, with
-//! the camera's exposure bias compensated. Deflicker needs the raw histogram, and
-//! highlight-preservation compensation makernote fields rawler does not read, so
-//! neither is ported yet: their parameters are in the schema, as darktable's are, and
-//! any value but the one rendered is refused. The kernel computes its scale from the
-//! black level and the exposure, so the operation's setup only packs them.
+//! the camera's exposure bias and the exposure a highlight-preserving mode held back
+//! compensated (`docs/ports/exposure.md`). Deflicker needs the raw histogram, so it is
+//! not ported yet: its parameters are in the schema, as darktable's are, and any value
+//! but the one rendered is refused. The kernel computes its scale from the black level
+//! and the exposure, so the operation's setup only packs them.
 
 use apertrust_plugin::{
     Domain, ImageContext, ImageDesc, Kernel, Kind, Manifest, NotPorted, Operation, Param,
@@ -65,11 +65,9 @@ const PERCENTILE: f32 = 50.0;
 const TARGET_LEVEL: f32 = -4.0;
 
 /// darktable `dt_iop_exposure_params_t`, in its order, with its ranges and its
-/// scene-referred defaults for a colour raw (`reload_defaults`), but for
-/// highlight-preservation compensation, which darktable turns on for a new instance and
-/// Apertrust leaves off, as the whole-pipeline test does on darktable's side (decisions
-/// 21 and 62). Version 2 adds the mode, the deflicker's settings and that compensation,
-/// each at the value version 1 rendered, so a version 1 edit renders as before.
+/// scene-referred defaults for a colour raw (`reload_defaults`), highlight-preservation
+/// compensation on, as darktable turns it on for a module's first instance. Version 2
+/// adds the mode, the deflicker's settings and that compensation.
 static SCHEMA: Schema = Schema {
     version: 2,
     params: &[
@@ -119,13 +117,13 @@ static SCHEMA: Schema = Schema {
         },
         Param {
             name: "compensate_hilite_pres",
-            kind: Kind::Bool { default: false },
+            kind: Kind::Bool { default: true },
         },
     ],
 };
 
-/// What of `params` is not ported, if anything: automatic mode, the deflicker's settings
-/// off darktable's defaults, and highlight-preservation compensation.
+/// What of `params` is not ported, if anything: automatic mode and the deflicker's
+/// settings off darktable's defaults.
 fn not_ported(params: &ParamValues) -> Option<&'static str> {
     if params.choice("mode") != MANUAL {
         Some("automatic mode, darktable's deflicker, which needs the raw histogram")
@@ -133,8 +131,6 @@ fn not_ported(params: &ParamValues) -> Option<&'static str> {
         || params.float("deflicker_target_level") != TARGET_LEVEL
     {
         Some("deflicker settings other than darktable's defaults")
-    } else if params.flag("compensate_hilite_pres") {
-        Some("highlight-preservation compensation, which needs maker notes rawler does not read")
     } else {
         None
     }
@@ -149,16 +145,31 @@ fn exposure_bias(image: &ImageContext) -> f32 {
         .map_or(0.0, |camera| camera.exposure_bias.clamp(-5.0, 5.0))
 }
 
+/// darktable `_get_highlight_bias`: the exposure a highlight-preserving mode held back,
+/// as the maker notes give it, where it is above 0, trusted only within −1 to +4 EV; 0
+/// otherwise.
+pub fn highlight_bias(image: &ImageContext) -> f32 {
+    image.camera.as_ref().map_or(0.0, |camera| {
+        if camera.highlight_preservation > 0.0 {
+            camera.highlight_preservation.clamp(-1.0, 4.0)
+        } else {
+            0.0
+        }
+    })
+}
+
 /// The exposure the kernel applies, as darktable's `commit_params` computes it: the
-/// parameter, less the camera's exposure bias when it is compensated. darktable's
-/// highlight-preservation compensation is not ported.
+/// parameter, less the camera's exposure bias when it is compensated, plus the exposure
+/// a highlight-preserving mode held back when that is compensated.
 pub fn effective_exposure(params: &ParamValues, image: &ImageContext) -> f32 {
-    let exposure = params.float("exposure");
+    let mut exposure = params.float("exposure");
     if params.flag("compensate_exposure_bias") {
-        exposure - exposure_bias(image)
-    } else {
-        exposure
+        exposure -= exposure_bias(image);
     }
+    if params.flag("compensate_hilite_pres") {
+        exposure += highlight_bias(image);
+    }
+    exposure
 }
 
 impl Operation for Exposure {
@@ -176,7 +187,9 @@ impl Operation for Exposure {
 
     /// darktable's `reload_defaults`: +0.7 EV, a slightly lowered black and the
     /// camera's exposure bias compensated for a colour raw; no exposure change for a
-    /// monochrome raw, and none at all for an image that is not a raw.
+    /// monochrome raw, and none at all for an image that is not a raw. Highlight
+    /// preservation is compensated on every image, as darktable does for a module's
+    /// first instance; the image context records no held-back exposure but a raw's.
     fn defaults(&self, image: &ImageContext) -> ParamValues {
         let mut values = SCHEMA.defaults();
         match &image.camera {
@@ -249,6 +262,7 @@ mod tests {
                 iso: 0.0,
                 linear_response_limit: 1.0,
                 lens_correction: None,
+                highlight_preservation: 0.0,
                 orientation: 0,
             }),
             ..ImageContext::full(8, 8)
@@ -284,8 +298,36 @@ mod tests {
         assert_eq!(kernel_params(&raw(true, 1.0), &off)[1], 0.7);
     }
 
+    /// A colour raw whose highlight-preserving mode held back `held` EV, with this bias.
+    fn preserving(exposure_bias: f32, held: f32) -> ImageContext {
+        let mut image = raw(true, exposure_bias);
+        image.camera.as_mut().unwrap().highlight_preservation = held;
+        image
+    }
+
     #[test]
-    fn only_manual_mode_without_highlight_preservation_is_ported() {
+    fn the_held_back_exposure_is_given_back_within_darktable_s_bounds() {
+        let none = ParamValues::new();
+        // On by default, as darktable's first instance has it.
+        assert!(SCHEMA.defaults().flag("compensate_hilite_pres"));
+        assert_eq!(kernel_params(&preserving(0.0, 0.5), &none)[1], 0.7 + 0.5);
+        // After the camera's bias, as darktable's `commit_params` adds it.
+        assert_eq!(
+            kernel_params(&preserving(-2.0 / 3.0, 0.5), &none)[1],
+            0.7 - (-2.0f32 / 3.0) + 0.5
+        );
+        // Above +4 EV it is +4; at 0 or below, none, as `_get_highlight_bias` trusts it.
+        assert_eq!(kernel_params(&preserving(0.0, 6.0), &none)[1], 0.7 + 4.0);
+        assert_eq!(kernel_params(&preserving(0.0, -0.5), &none)[1], 0.7);
+        let mut off = ParamValues::new();
+        off.set("compensate_hilite_pres", Value::Bool(false));
+        assert_eq!(kernel_params(&preserving(0.0, 2.0), &off)[1], 0.7);
+        // An image that is not a raw holds none.
+        assert_eq!(highlight_bias(&ImageContext::full(8, 8)), 0.0);
+    }
+
+    #[test]
+    fn only_manual_mode_is_ported() {
         let image = raw(true, -0.67);
         let input = ImageDesc::rgba(8, 8);
         // Every parameter written at its default renders as none is.
@@ -293,7 +335,7 @@ mod tests {
         defaults.set("mode", Value::Choice(MANUAL));
         defaults.set("deflicker_percentile", Value::Float(PERCENTILE));
         defaults.set("deflicker_target_level", Value::Float(TARGET_LEVEL));
-        defaults.set("compensate_hilite_pres", Value::Bool(false));
+        defaults.set("compensate_hilite_pres", Value::Bool(true));
         assert_eq!(
             kernel_params(&image, &defaults),
             kernel_params(&image, &ParamValues::new())
@@ -302,7 +344,6 @@ mod tests {
             ("mode", Value::Choice(1)),
             ("deflicker_percentile", Value::Float(60.0)),
             ("deflicker_target_level", Value::Float(-3.0)),
-            ("compensate_hilite_pres", Value::Bool(true)),
         ] {
             let mut values = ParamValues::new();
             values.set(name, value);
@@ -315,15 +356,20 @@ mod tests {
 
     #[test]
     fn the_effective_exposure_is_what_the_kernel_gets() {
-        for (image, set) in [
-            (raw(true, 1.0), None),
-            (raw(true, -8.0), None),
-            (raw(true, 1.0), Some(false)),
-            (ImageContext::full(8, 8), None),
+        for (image, set, held) in [
+            (raw(true, 1.0), None, None),
+            (raw(true, -8.0), None, None),
+            (raw(true, 1.0), Some(false), None),
+            (preserving(-1.0, 0.66), None, None),
+            (preserving(-1.0, 0.66), None, Some(false)),
+            (ImageContext::full(8, 8), None, None),
         ] {
             let mut values = ParamValues::new();
             if let Some(flag) = set {
                 values.set("compensate_exposure_bias", Value::Bool(flag));
+            }
+            if let Some(flag) = held {
+                values.set("compensate_hilite_pres", Value::Bool(flag));
             }
             let params = SCHEMA
                 .resolve_over(&Exposure.defaults(&image), &values)

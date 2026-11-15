@@ -331,12 +331,12 @@ pub fn finalscale_before_colorout(xmp: &str) -> Result<String> {
 ///
 /// Exposure is written as darktable's version 7, whole, so darktable does not
 /// migrate it: manual mode, Apertrust's `black` and effective `exposure`, and both of
-/// darktable's compensations off. The camera's exposure bias is already in `exposure`,
-/// so the two never read the EXIF differently. Highlight-preservation compensation,
-/// which darktable switches on for a new instance, is not ported, since rawler does not
-/// read the maker-note fields it needs (decision 21), so the test switches it off on
-/// darktable's side; a version 6 entry would do the same silently, as darktable's
-/// migration to version 7 sets it to false.
+/// darktable's compensations off. The camera's exposure bias and the exposure a
+/// highlight-preserving mode held back are already in `exposure`, so the two never read
+/// the EXIF or the maker notes differently (decision 62). darktable switches the
+/// highlight-preservation compensation on for a new instance, so the test writes it off;
+/// a version 6 entry would do the same silently, as darktable's migration to version 7
+/// sets it to false.
 ///
 /// `channel_mixer` is color calibration's version 3 params
 /// ([`crate::ports::channel_mixer_params_v3`]), which every colour raw runs (decision
@@ -862,6 +862,7 @@ mod tests {
             exposure_bias: None,
             iso: None,
             lens_correction: None,
+            highlight_preservation: 0.0,
         }
     }
 

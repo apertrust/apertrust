@@ -161,20 +161,28 @@ fn fujifilm_tags(source: &RawSource) -> Option<FujifilmCorrection> {
 
 /// The maker note's CropMode, as Exiv2's `toLong` reads its first value.
 fn crop_mode(source: &RawSource) -> Option<i64> {
+    raf_maker_note(source)?
+        .get_entry(RafMakernotes::CropMode)?
+        .value
+        .get_i64(0)
+        .ok()?
+}
+
+/// A RAF's Fujifilm maker note, from the EXIF of its embedded JPEG; `None` for a raw that
+/// is not a RAF or one whose maker note does not parse. Its tags that hold one value or
+/// two, which sit in their entries, read as Exiv2 reads them.
+pub(crate) fn raf_maker_note(source: &RawSource) -> Option<IFD> {
+    if !raf::is_raf(source) {
+        return None;
+    }
     let mut reader = source.reader();
     let exif = IFD::new_root(
         &mut reader,
         pointer(source, JPEG_POINTER)?.checked_add(EXIF_HEADER)?,
     )
     .ok()?;
-    let makernote = exif
-        .find_first_ifd_with_tag(ExifTag::MakerNotes)?
+    exif.find_first_ifd_with_tag(ExifTag::MakerNotes)?
         .parse_makernote(&mut reader, OffsetMode::Absolute, &[])
-        .ok()??;
-    makernote
-        .get_entry(RafMakernotes::CropMode)?
-        .value
-        .get_i64(0)
         .ok()?
 }
 

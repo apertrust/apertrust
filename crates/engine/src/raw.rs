@@ -83,6 +83,7 @@ pub fn image_context(raw: &RawImage) -> ImageContext {
             iso: raw.iso.unwrap_or(0.0),
             linear_response_limit: raw.linear_response_limit.unwrap_or(1.0),
             lens_correction: raw.lens_correction.as_ref().map(lens_correction),
+            highlight_preservation: raw.highlight_preservation,
             orientation: flip_bits(raw.orientation),
         }),
         // The planner's, from the plan's colorout (decision 26).
@@ -309,6 +310,7 @@ mod tests {
             exposure_bias: None,
             iso: None,
             lens_correction: None,
+            highlight_preservation: 0.0,
         }
     }
 

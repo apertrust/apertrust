@@ -2207,7 +2207,7 @@ Without an edit, operations take darktable's scene-referred defaults (decision 2
 
 - temperature "as shot to reference" where the camera has a colour matrix, so that colour calibration white balances;
 - colour calibration's illuminant snapped to a daylight or Planckian light, as darktable's `reload_defaults` snaps it;
-- exposure +0.7 EV with exposure-bias compensation, from the camera's metadata in the image context, except that it does not compensate for highlight preservation (decisions 21 and 62).
+- exposure +0.7 EV with exposure-bias compensation, and the exposure a highlight-preserving mode held back given back, both from the camera's metadata in the image context (decisions 21 and 24; `docs/ports/exposure.md`). The whole-pipeline test writes darktable's two compensations off and the exposure Apertrust applies (decision 62).
 
 Colour balance rgb is not among them: darktable's scene-referred defaults leave it off, and so does Apertrust, so the whole-pipeline test runs it on neither side (decision 32). The whole-pipeline test compares exactly those defaults, which it writes into darktable's history, with Apertrust's crop and levels from rawler's camera data written there too (decision 23).
 
