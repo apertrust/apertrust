@@ -20,8 +20,11 @@
 //! `button_hover` under the pointer and `button_pressed` pressed, its edge then
 //! `text_secondary`. Ticked, it fills with `check`, neutral, never the accent, with a
 //! 1.5-point `check_mark` tick. Disabled, the edge, the label and a ticked box's fill are
-//! `text_disabled`.
+//! `text_disabled`. A value after the label, as Exposure's "(−⅔ EV)", is `text_secondary`,
+//! `text_disabled` with the rest, and part of the target; it is never cut, the label
+//! before it cut at its end with … where the row is too narrow.
 
+use egui::text::{LayoutJob, TextFormat};
 use egui::{Color32, FontId, Rect, Response, Role, Shape, Stroke, StrokeKind, Ui};
 use egui::{WidgetInfo, pos2, vec2};
 
@@ -38,6 +41,7 @@ const TICK_WIDTH: f32 = 1.5;
 pub struct Checkbox<'a> {
     on: &'a mut bool,
     label: &'a str,
+    value: Option<&'a str>,
     enabled: bool,
     state: Option<ButtonState>,
 }
@@ -48,9 +52,17 @@ impl<'a> Checkbox<'a> {
         Checkbox {
             on,
             label,
+            value: None,
             enabled: true,
             state: None,
         }
+    }
+
+    /// A value after the label, a word apart, in `text_secondary`: translated, as
+    /// Exposure's "(−⅔ EV)".
+    pub fn value(mut self, value: &'a str) -> Self {
+        self.value = Some(value);
+        self
     }
 
     /// A disabled checkbox keeps its tick and ignores input.
@@ -68,15 +80,53 @@ impl<'a> Checkbox<'a> {
 
     /// Draws it; the response is marked changed when a click or a key toggled it.
     pub fn show(self, ui: &mut Ui) -> Response {
+        self.show_cut(ui).0
+    }
+
+    /// Draws it as [`Self::show`] does, saying too whether the label was cut short
+    /// before its value, so the row can show it whole in its tooltip.
+    pub fn show_cut(self, ui: &mut Ui) -> (Response, bool) {
         let t = theme(ui.ctx());
         let enabled = self.enabled && ui.is_enabled() && self.state != Some(ButtonState::Disabled);
         let gap = ui.spacing().icon_spacing;
-        let galley = (!self.label.is_empty()).then(|| {
-            let font = FontId::proportional(t.text.body);
-            ui.painter()
-                .layout_no_wrap(self.label.to_owned(), font, Color32::PLACEHOLDER)
+        let font = FontId::proportional(t.text.body);
+        // The value a word after the label, never cut.
+        let value = self.value.map(|value| {
+            let colour = if enabled {
+                t.colors.text_secondary
+            } else {
+                t.colors.text_disabled
+            };
+            let mut job = LayoutJob::default();
+            job.append(" ", 0.0, TextFormat::simple(font.clone(), colour));
+            job.append(value, 0.0, TextFormat::simple(font.clone(), colour));
+            ui.painter().layout_job(job)
         });
-        let words = galley.as_ref().map_or(0.0, |g| gap + g.size().x);
+        let galley = (!self.label.is_empty()).then(|| match &value {
+            // A label with a value is cut with … before it where the row is too narrow.
+            Some(value) => {
+                let room = ui.available_width() - BOX - gap - value.size().x;
+                let job = super::truncated(
+                    self.label,
+                    font.clone(),
+                    room.max(0.0),
+                    Color32::PLACEHOLDER,
+                );
+                ui.painter().layout_job(job)
+            }
+            None => ui.painter().layout_no_wrap(
+                self.label.to_owned(),
+                font.clone(),
+                Color32::PLACEHOLDER,
+            ),
+        });
+        let cut = galley.as_ref().is_some_and(|galley| galley.elided);
+        // The value follows the label, or the box where there is no label.
+        let words = match (&galley, &value) {
+            (Some(g), v) => gap + g.size().x + v.as_ref().map_or(0.0, |v| v.size().x),
+            (None, Some(v)) => gap + v.size().x,
+            (None, None) => 0.0,
+        };
         // As egui's own: at least a control square, the box at its start.
         let size = vec2(BOX + words, t.sizes.control).max(vec2(t.sizes.control, 0.0));
         let (rect, mut response) = allocate(ui, size, enabled);
@@ -94,22 +144,30 @@ impl<'a> Checkbox<'a> {
             );
             paint_box(painter, square, on, touch, &t);
             paint_focus(painter, square, t.shape.radius_small, touch, &t);
+            let colour = if touch.enabled {
+                t.colors.text
+            } else {
+                t.colors.text_disabled
+            };
+            let mut end = square.right() + gap;
             if let Some(galley) = galley {
-                let colour = if touch.enabled {
-                    t.colors.text
-                } else {
-                    t.colors.text_disabled
-                };
-                let at = pos2(
-                    square.right() + gap,
-                    rect.center().y - galley.size().y / 2.0,
-                );
+                let at = pos2(end, rect.center().y - galley.size().y / 2.0);
+                end = at.x + galley.size().x;
                 painter.galley(at, galley, colour);
             }
+            if let Some(value) = value {
+                let at = pos2(end, rect.center().y - value.size().y / 2.0);
+                painter.galley(at, value, colour);
+            }
         }
-        let label = self.label;
-        response.widget_info(|| WidgetInfo::selected(Role::CheckBox, enabled, on, label));
-        response
+        // Heard whole, with its value.
+        let label = match self.value {
+            Some(value) if self.label.is_empty() => value.to_owned(),
+            Some(value) => format!("{} {value}", self.label),
+            None => self.label.to_owned(),
+        };
+        response.widget_info(|| WidgetInfo::selected(Role::CheckBox, enabled, on, &label));
+        (response, cut)
     }
 }
 

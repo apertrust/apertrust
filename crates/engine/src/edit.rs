@@ -27,8 +27,8 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use apertrust_plugin::{ImageContext, Operation, Param, ParamError, ParamValues, Value};
 use apertrust_tools::check::{self, ToolError};
 use apertrust_tools::{
-    Base, Control, ControlError, ControlKind, ControlValue, Controls, Coordinate, Mark, Picker,
-    Range, Tool, ToolValues, Unit, View,
+    Base, Control, ControlError, ControlKind, ControlValue, Controls, Coordinate, LabelValue, Mark,
+    Picker, Range, Tool, ToolValues, Unit, View,
 };
 use thiserror::Error;
 
@@ -891,6 +891,52 @@ pub fn listed(
             problem => (options.to_vec(), problem),
         },
         Err(panic) => (options.to_vec(), Some(panic_message(panic.as_ref()))),
+    }
+}
+
+/// What the photo shows of one control's row (decision 88): whether it shows at all
+/// ([`Tool::visible`]) and a value of the photo's after its label ([`Tool::label_value`]).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PhotoRow {
+    pub visible: bool,
+    pub label_value: Option<LabelValue>,
+}
+
+impl Default for PhotoRow {
+    /// Shown, with no value: what a tool that overrides neither gives.
+    fn default() -> Self {
+        Self {
+            visible: true,
+            label_value: None,
+        }
+    }
+}
+
+/// What `image` shows of each of the tool's controls' rows, in the definition's order
+/// (decision 88): every row shown with no value where the tool's code panics, with why,
+/// and a value that is not finite left out. Both read the photo alone, so the session
+/// asks as the photo opens and again where its decode's context replaces the metadata's.
+pub fn photo_rows(tool: &dyn Tool, image: &ImageContext) -> (Vec<PhotoRow>, Option<String>) {
+    let controls = tool.definition().controls;
+    // A tool's code may panic, as its binding is guarded against: every row shows, as
+    // before the redesign.
+    let given = catch_unwind(AssertUnwindSafe(|| {
+        controls
+            .iter()
+            .map(|control| PhotoRow {
+                visible: tool.visible(control.id, image),
+                label_value: tool
+                    .label_value(control.id, image)
+                    .filter(|label| label.value.is_finite()),
+            })
+            .collect()
+    }));
+    match given {
+        Ok(rows) => (rows, None),
+        Err(panic) => (
+            vec![PhotoRow::default(); controls.len()],
+            Some(panic_message(panic.as_ref())),
+        ),
     }
 }
 

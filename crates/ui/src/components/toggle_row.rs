@@ -16,7 +16,8 @@
 
 //! The checkbox row, one line (`docs/gui.md`, How the rows are laid out): the design
 //! system's [`Checkbox`] at the start, its short label after it, which toggles it too.
-//! Screen readers hear its full name; its promise is the tooltip.
+//! Screen readers hear its full name; its promise is the tooltip. A value of the photo's
+//! may follow the label, in `text_secondary`: "Compensate camera exposure (−⅔ EV)".
 
 use egui::Ui;
 
@@ -26,6 +27,7 @@ use crate::theme;
 pub struct ToggleRow<'a> {
     label: &'a str,
     name: &'a str,
+    value: Option<&'a str>,
     promise: Option<&'a str>,
     on: bool,
     enabled: bool,
@@ -37,6 +39,7 @@ impl<'a> ToggleRow<'a> {
         ToggleRow {
             label,
             name: label,
+            value: None,
             promise: None,
             on,
             enabled: true,
@@ -46,6 +49,13 @@ impl<'a> ToggleRow<'a> {
     /// The control's full name, what screen readers say.
     pub fn name(mut self, full: &'a str) -> Self {
         self.name = full;
+        self
+    }
+
+    /// A value after the label, in `text_secondary`, translated with its brackets, as
+    /// Exposure's "(−⅔ EV)"; screen readers hear it after the full name.
+    pub fn value(mut self, value: &'a str) -> Self {
+        self.value = Some(value);
         self
     }
 
@@ -66,22 +76,34 @@ impl<'a> ToggleRow<'a> {
     pub fn show(self, ui: &mut Ui) -> Option<bool> {
         let t = theme(ui.ctx());
         let mut on = self.on;
-        let response = ui
+        let (response, cut) = ui
             .horizontal(|ui| {
                 ui.set_min_height(t.sizes.panel_line);
-                Checkbox::new(&mut on, self.label)
-                    .enabled(self.enabled)
-                    .show(ui)
+                let mut checkbox = Checkbox::new(&mut on, self.label).enabled(self.enabled);
+                if let Some(value) = self.value {
+                    checkbox = checkbox.value(value);
+                }
+                checkbox.show_cut(ui)
             })
             .inner;
-        let name = self.name;
+        let name = match self.value {
+            Some(value) => format!("{} {value}", self.name),
+            None => self.name.to_owned(),
+        };
         ui.ctx()
             .accesskit_node_builder(response.id, |node| node.set_label(name));
-        let response = match self.promise {
-            Some(promise) => response
-                .on_hover_text(promise)
-                .on_disabled_hover_text(promise),
-            None => response,
+        // A label cut short is whole in its tooltip, with its value, before the promise.
+        let whole =
+            (self.value).map_or_else(|| self.label.to_owned(), |v| format!("{} {v}", self.label));
+        let tip: Vec<&str> = [cut.then_some(whole.as_str()), self.promise]
+            .into_iter()
+            .flatten()
+            .collect();
+        let response = if tip.is_empty() {
+            response
+        } else {
+            let tip = tip.join("\n");
+            response.on_hover_text(&tip).on_disabled_hover_text(&tip)
         };
         (response.changed() && on != self.on).then_some(on)
     }

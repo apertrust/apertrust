@@ -27,7 +27,9 @@
 //!   compensation is undone; Highlight preservation mode, whether the exposure a
 //!   camera's highlight-preserving mode held back is given back, on by default; and
 //!   Exposure, darktable's slider, `exposure.exposure` itself, −18 to +18 EV, its default
-//!   the photo's: +0.7 EV on a colour raw, 0 otherwise (decision 30).
+//!   the photo's: +0.7 EV on a colour raw, 0 otherwise (decision 30). The two camera
+//!   rows are hidden where the photo gives them nothing to do, their labels showing what
+//!   they take off and give back (decision 88).
 //! - **In automatic mode:** Percentile and Target level, and darktable's computed EC, the
 //!   exposure the operation applies, a computed value (`Row::Computed`).
 //! - **Black level correction,** darktable's offset over the photo's own black.
@@ -57,7 +59,9 @@ use crate::definition::{
 };
 use crate::pick::{Patch, PickKeys, Picked, Reading, Shown};
 use crate::transfer::Transfer;
-use crate::{Base, ControlValue, Controls, Owned, Setting, Tool, ToolValues};
+use crate::{
+    Base, ControlValue, Controls, LabelValue, Owned, Setting, Tool, ToolValues, ValueFormat,
+};
 
 pub struct Exposure;
 
@@ -349,6 +353,36 @@ impl Tool for Exposure {
             "mode" => image.camera.is_some(),
             _ => true,
         }
+    }
+
+    /// Compensate camera exposure is hidden on a photo that records no bias, and
+    /// Highlight preservation mode on one whose camera held no exposure back, as
+    /// darktable hides the latter (`gui_update`); the two camera rows are the one
+    /// exception to drawing a control that cannot act disabled (decision 88).
+    fn visible(&self, control: &str, image: &ImageContext) -> bool {
+        match control {
+            "camera_bias" => camera_bias(image) != 0.0,
+            "compensate_hilite_pres" => highlight_bias(image) != 0.0,
+            _ => true,
+        }
+    }
+
+    /// What the two camera rows take off and give back, the operation's values: the
+    /// camera's bias in thirds, as the camera writes it, "(−⅔ EV)", and the exposure a
+    /// highlight-preserving mode held back with one decimal, "(+1.0 EV)", where
+    /// darktable writes both with one decimal, `%+.1f` and `%.1f` (decision 88). None
+    /// where the row is hidden, the value 0.
+    fn label_value(&self, control: &str, image: &ImageContext) -> Option<LabelValue> {
+        let (value, format) = match control {
+            "camera_bias" => (camera_bias(image), ValueFormat::Thirds),
+            "compensate_hilite_pres" => (highlight_bias(image), ValueFormat::Decimals(1)),
+            _ => return None,
+        };
+        (value != 0.0).then_some(LabelValue {
+            value,
+            unit: Unit::Ev,
+            format,
+        })
     }
 
     /// Mode, Percentile and Target level are the parameters themselves, written where set,
@@ -882,6 +916,100 @@ mod tests {
             }
         }
         assert_eq!(highlight_bias(&preserving(0.0, 6.0)), 4.0);
+    }
+
+    /// The label's value as English writes it.
+    fn label(control: &str, image: &ImageContext) -> Option<String> {
+        let number = |value: f64, decimals: usize, signed: bool| {
+            let digits = format!("{:.decimals$}", value.abs());
+            match (value < 0.0, signed) {
+                (true, _) => format!("−{digits}"),
+                (false, true) => format!("+{digits}"),
+                (false, false) => digits,
+            }
+        };
+        let value = Exposure.label_value(control, image)?;
+        assert_eq!(value.unit, Unit::Ev, "{control}");
+        Some(value.write(number))
+    }
+
+    #[test]
+    fn compensate_camera_exposure_shows_only_with_a_bias_and_says_it_in_thirds() {
+        let shown = |image: &ImageContext| Exposure.visible("camera_bias", image);
+        assert!(!shown(&raw(0.0)));
+        assert!(!shown(&ImageContext::full(8, 8)));
+        for (bias, written) in [(-2.0 / 3.0, "−⅔"), (-0.67, "−⅔"), (4.0 / 3.0, "+1⅓")] {
+            let image = raw(bias);
+            assert!(shown(&image), "{bias}");
+            assert_eq!(label("camera_bias", &image).as_deref(), Some(written));
+            // The value the operation takes off.
+            let value = Exposure.label_value("camera_bias", &image).unwrap();
+            assert_eq!(value.value, camera_bias(&image));
+        }
+        // Beyond what darktable trusts, the bias it takes off.
+        assert_eq!(label("camera_bias", &raw(-8.0)).as_deref(), Some("−5"));
+    }
+
+    #[test]
+    fn highlight_preservation_mode_shows_only_where_the_camera_held_back_and_says_how_much() {
+        let shown = |image: &ImageContext| Exposure.visible("compensate_hilite_pres", image);
+        for image in [
+            raw(-0.67),
+            preserving(0.0, 0.0),
+            preserving(0.0, -0.5),
+            ImageContext::full(8, 8),
+        ] {
+            assert!(!shown(&image));
+        }
+        for (held, written) in [(0.5, "+0.5"), (1.0, "+1.0"), (2.0, "+2.0"), (6.0, "+4.0")] {
+            let image = preserving(-0.67, held);
+            assert!(shown(&image), "{held}");
+            assert_eq!(
+                label("compensate_hilite_pres", &image).as_deref(),
+                Some(written)
+            );
+        }
+        // In manual mode only, as its row follows Mode's.
+        let manual = DEFINITION.rows().find_map(|row| match row {
+            Row::When { is, rows, .. }
+                if rows
+                    .iter()
+                    .any(|row| row.controls() == ["compensate_hilite_pres"]) =>
+            {
+                Some(*is)
+            }
+            _ => None,
+        });
+        assert_eq!(manual, Some(&["manual"][..]));
+    }
+
+    #[test]
+    fn only_the_two_camera_rows_hide_or_carry_a_value() {
+        let images = [raw(0.0), preserving(-0.67, 1.0), ImageContext::full(8, 8)];
+        for control in DEFINITION.controls {
+            let camera = ["camera_bias", "compensate_hilite_pres"].contains(&control.id);
+            for image in &images {
+                let shown = Exposure.visible(control.id, image);
+                assert!(shown || camera, "{}", control.id);
+                // A value only on a camera row, and only where it shows.
+                assert_eq!(
+                    Exposure.label_value(control.id, image).is_some(),
+                    camera && shown,
+                    "{}",
+                    control.id
+                );
+            }
+        }
+        // Hidden or not, the controls keep their values and bindings: a bias of 0 binds
+        // Compensate camera exposure off as it did.
+        assert_eq!(
+            bind(&[("camera_bias", ControlValue::Bool(false))], &raw(0.0)),
+            [Setting::new(
+                EXPOSURE,
+                "compensate_exposure_bias",
+                Value::Bool(false)
+            )]
+        );
     }
 
     #[test]

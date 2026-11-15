@@ -6538,6 +6538,8 @@ mod tests {
                         available: true,
                         options: Vec::new(),
                         range: None,
+                        visible: true,
+                        label_value: None,
                     }
                 })
                 .collect();
@@ -6715,6 +6717,8 @@ mod tests {
                             available: true,
                             options: Vec::new(),
                             range: None,
+                            visible: true,
+                            label_value: None,
                         }
                     })
                     .collect(),
@@ -8612,6 +8616,8 @@ mod tests {
                     available: true,
                     options: Vec::new(),
                     range: None,
+                    visible: true,
+                    label_value: None,
                 })
                 .collect(),
             presets: Vec::new(),
@@ -8718,6 +8724,8 @@ mod tests {
                     available: true,
                     options: Vec::new(),
                     range: None,
+                    visible: true,
+                    label_value: None,
                 })
                 .collect(),
             presets: Vec::new(),

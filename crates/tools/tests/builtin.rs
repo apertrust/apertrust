@@ -667,6 +667,32 @@ fn an_exempt_view_s_coordinates_keep_its_controls_in_their_ranges() {
     }
 }
 
+/// Decision 88 hides Exposure's two camera rows and no other: every other control a
+/// photo cannot use is drawn disabled, and hiding one needs a decision of its own.
+#[test]
+fn only_exposure_s_camera_rows_are_ever_hidden() {
+    let hiding = [
+        ("exposure", "camera_bias"),
+        ("exposure", "compensate_hilite_pres"),
+    ];
+    for tool in TOOLS {
+        let definition = tool.definition();
+        for control in definition.controls {
+            if hiding.contains(&(definition.id, control.id)) {
+                continue;
+            }
+            for image in images() {
+                assert!(
+                    tool.visible(control.id, &image),
+                    "{}.{} hidden",
+                    definition.id,
+                    control.id
+                );
+            }
+        }
+    }
+}
+
 #[test]
 fn every_message_a_definition_implies_is_translated() {
     let known: BTreeSet<String> = apertrust_ui::i18n::message_ids().into_iter().collect();
@@ -674,8 +700,25 @@ fn every_message_a_definition_implies_is_translated() {
     // the message that writes a value with each.
     let mut wanted: Vec<String> = Unit::ALL.map(messages::unit).into();
     wanted.extend(Unit::ALL.map(messages::unit_value));
+    // The photos the label values are asked on: the sweep's, and one whose camera held
+    // exposure back.
+    let mut images = images();
+    let mut held = images[1].clone();
+    held.camera.as_mut().unwrap().highlight_preservation = 1.0;
+    images.push(held);
     for tool in TOOLS {
-        wanted.extend(messages::of(tool.definition()));
+        let definition = tool.definition();
+        wanted.extend(messages::of(definition));
+        // A label's value is the tool's code's, so each control that has one on some
+        // photo needs its message.
+        for control in definition.controls {
+            if images
+                .iter()
+                .any(|image| tool.label_value(control.id, image).is_some())
+            {
+                wanted.push(messages::label_value(definition.id, control.id));
+            }
+        }
     }
     let missing: Vec<&String> = wanted.iter().filter(|id| !known.contains(*id)).collect();
     assert!(missing.is_empty(), "no message for {missing:?}");

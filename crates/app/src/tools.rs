@@ -39,10 +39,13 @@
 //! - The page is darktable's (decision 29): the rows before every tab's, the
 //!   open tab's, then those after; rows that follow another control's mode only while it
 //!   holds one of their values; a choice's options its operation does not port listed
-//!   disabled. A collapsible group's open state is the app's, kept in settings, and its
-//!   "N set" counts the controls it shows that are off their defaults. darktable's own
-//!   settings for a tool, which no edit stores, are drawn disabled until what uses them
-//!   is built.
+//!   disabled. A row the session reports hidden on the photo is not drawn, Exposure's
+//!   two camera rows where the photo gives them nothing to do, and a toggle the photo
+//!   gives a value shows it after its label, "Compensate camera exposure (−⅔ EV)"
+//!   (decision 88). A collapsible group's open state is the app's, kept in settings,
+//!   and its "N set" counts the controls it shows that are off their defaults.
+//!   darktable's own settings for a tool, which no edit stores, are drawn disabled until
+//!   what uses them is built.
 //! - A tab with no rows is drawn disabled: nothing is behind it yet.
 //! - A colour picker (decision 79; `docs/pickers.md`, The picker button) is the design
 //!   system's `PickerButton`: on a slider's quad in its quad mode, and in a row of pickers
@@ -63,7 +66,7 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use apertrust_base::settings::Kind;
 use apertrust_engine::session::{
-    ControlState, ControlValue, CoordinateState, Mark, PickKeys, PickerRef, ToolState,
+    ControlState, ControlValue, CoordinateState, LabelValue, Mark, PickKeys, PickerRef, ToolState,
 };
 use apertrust_plugin::ImageContext;
 use apertrust_tools::about::{self, Facts};
@@ -859,12 +862,25 @@ impl Page<'_> {
             .count()
     }
 
+    /// Whether the photo hides `row` (decision 88): it names controls, and the mirror
+    /// reports every one of them hidden on this photo (`ControlState::visible`).
+    fn hidden(&self, row: &Row) -> bool {
+        let controls = row.controls();
+        !controls.is_empty()
+            && controls
+                .iter()
+                .all(|id| control(self.state, id).is_some_and(|shown| !shown.visible))
+    }
+
     /// The controls `rows` show now, each once, into `into`.
     fn shown(&self, rows: &[Row], into: &mut Vec<&'static str>) {
         for row in rows {
             if let Row::When { control, is, .. } = row
                 && !self.follows(control, is)
             {
+                continue;
+            }
+            if self.hidden(row) {
                 continue;
             }
             for &id in row.controls() {
@@ -878,6 +894,11 @@ impl Page<'_> {
 }
 
 fn draw_row(ui: &mut egui::Ui, page: &Page, row: &Row, changes: &mut Vec<Change>) {
+    // A row the photo gives nothing to do is not drawn, and screen readers find no node
+    // for it (decision 88).
+    if page.hidden(row) {
+        return;
+    }
     // Where a row of controls on the edit is drawn, for a photo opening's tip.
     let on_edit = !matches!(
         row,
@@ -1759,11 +1780,17 @@ fn toggle_row(
         return;
     };
     let [label, full, promise] = words_of(words, tool, id, None);
-    let changed = ToggleRow::new(&label, value)
+    let after = shown
+        .label_value
+        .map(|value| label_value(words, tool, id, &value));
+    let mut row = ToggleRow::new(&label, value)
         .name(&full)
         .promise(&promise)
-        .enabled(shown.available)
-        .show(ui);
+        .enabled(shown.available);
+    if let Some(after) = &after {
+        row = row.value(after);
+    }
+    let changed = row.show(ui);
     if let Some(on) = changed {
         changes.push(Change::Set {
             tool,
@@ -1772,6 +1799,20 @@ fn toggle_row(
             done: true,
         });
     }
+}
+
+/// What a row shows after its label of the photo's value (decision 88):
+/// `tool-<tool>-control-<control>-label-value`, its `$value` the number in the
+/// language's format, as its `ValueFormat` writes it, with its unit, "(−⅔ EV)".
+fn label_value(words: &Translator, tool: &str, control: &str, value: &LabelValue) -> String {
+    let number =
+        value.write(|number, decimals, signed| words.format_number(number, decimals, signed));
+    let mut args = Args::new();
+    args.set("value", number);
+    let with_unit = words.text_with(&messages::unit_value(value.unit), Some(&args));
+    let mut args = Args::new();
+    args.set("value", with_unit);
+    words.text_with(&messages::label_value(tool, control), Some(&args))
 }
 
 /// A curve of points: the points from the mirror between the curve's ends, (0, 0) and
@@ -2091,6 +2132,8 @@ mod tests {
                     available: true,
                     options: tool.options(control.id, &testing::image()),
                     range: tool.range(control.id, &definition.defaults()),
+                    visible: tool.visible(control.id, &testing::image()),
+                    label_value: tool.label_value(control.id, &testing::image()),
                 })
                 .collect(),
             presets: Vec::new(),
@@ -2222,6 +2265,25 @@ mod tests {
                     .collect(),
             })
             .collect()
+    }
+
+    /// The sample photo with a camera bias of −⅔ EV and 1 EV held back by a
+    /// highlight-preserving mode, which Exposure's camera rows act on (decision 88).
+    fn camera_photo() -> ImageContext {
+        let mut image = testing::image();
+        let camera = image.camera.as_mut().expect("a raw's");
+        camera.exposure_bias = -2.0 / 3.0;
+        camera.highlight_preservation = 1.0;
+        image
+    }
+
+    /// `state` as the session reports it on `image`: each row shown or hidden, and the
+    /// values after their labels, as the tool says for that photo.
+    fn on_photo(tool: &dyn Tool, state: &mut ToolState, image: &ImageContext) {
+        for control in &mut state.controls {
+            control.visible = tool.visible(control.control, image);
+            control.label_value = tool.label_value(control.control, image);
+        }
     }
 
     fn set(state: &mut ToolState, id: &str, value: ControlValue, mark: Option<Mark>) {
@@ -2595,11 +2657,18 @@ mod tests {
 
     #[test]
     fn exposure_is_darktable_s_page_on_one_tab() {
-        let mut harness = panel(&Exposure, untouched(&Exposure));
+        let mut state = untouched(&Exposure);
+        on_photo(&Exposure, &mut state, &camera_photo());
+        let mut harness = panel(&Exposure, state);
         harness.run();
         assert!(harness.query_by_role(Role::Tab).is_none());
         harness.get_by_role_and_label(Role::ComboBox, "Mode");
-        for name in ["Compensate camera exposure", "Highlight preservation mode"] {
+        // The camera's rows, with their values on the photo, heard after their names
+        // (decision 88).
+        for name in [
+            "Compensate camera exposure (−⅔ EV)",
+            "Highlight preservation mode (+1.0 EV)",
+        ] {
             harness.get_by_role_and_label(Role::CheckBox, name);
         }
         for name in ["Exposure", "Black level correction"] {
@@ -2645,15 +2714,59 @@ mod tests {
         harness.get_by_role_and_label(Role::Label, "Computed EC");
     }
 
+    /// On a photo that gives them nothing to do, Exposure's camera rows are not drawn
+    /// and screen readers find no node for them; the other rows stay (decision 88).
+    #[test]
+    fn rows_the_photo_hides_are_not_drawn() {
+        let mut harness = panel(&Exposure, untouched(&Exposure));
+        harness.run();
+        for name in ["Compensate camera exposure", "Highlight preservation mode"] {
+            assert!(harness.query_by_label_contains(name).is_none(), "{name}");
+        }
+        harness.get_by_role_and_label(Role::Slider, "Exposure");
+        // One the photo gives something to do shows, with its value: here the bias alone.
+        let mut image = testing::image();
+        image.camera.as_mut().unwrap().exposure_bias = 4.0 / 3.0;
+        on_photo(&Exposure, &mut harness.state_mut().state, &image);
+        harness.run();
+        harness.get_by_role_and_label(Role::CheckBox, "Compensate camera exposure (+1⅓ EV)");
+        assert!(
+            harness
+                .query_by_label_contains("Highlight preservation mode")
+                .is_none()
+        );
+    }
+
+    /// The value after a label is written in the language's numbers: Ukrainian's comma.
+    #[test]
+    fn a_label_s_value_is_written_in_the_language_s_numbers() {
+        let words = Translator::new(apertrust_ui::i18n::Locale::Uk);
+        let given_back = Exposure
+            .label_value("compensate_hilite_pres", &camera_photo())
+            .unwrap();
+        assert_eq!(
+            label_value(&words, "exposure", "compensate_hilite_pres", &given_back),
+            "(+1,0 EV)"
+        );
+        let bias = Exposure
+            .label_value("camera_bias", &camera_photo())
+            .unwrap();
+        assert_eq!(
+            label_value(&words, "exposure", "camera_bias", &bias),
+            "(−⅔ EV)"
+        );
+    }
+
     #[test]
     fn a_control_that_cannot_change_the_photo_is_disabled() {
         let mut state = untouched(&Exposure);
+        on_photo(&Exposure, &mut state, &camera_photo());
         for control in &mut state.controls {
             control.available = control.control != "camera_bias";
         }
         let mut harness = panel(&Exposure, state);
         harness.run();
-        let name = "Compensate camera exposure";
+        let name = "Compensate camera exposure (−⅔ EV)";
         let toggle = harness.get_by_role_and_label(Role::CheckBox, name);
         assert!(toggle.accesskit_node().is_disabled());
         toggle.click();
@@ -5861,11 +5974,13 @@ mod tests {
     }
 
     /// Exposure's section as a photographer meets it, in every theme and the
-    /// pseudo-locale: open with Exposure kept, open with Black level correction set,
-    /// Compensate camera exposure disabled and the area exposure mapping open, and closed.
-    /// What is not ported is disabled, as the session reports it.
+    /// pseudo-locale: open with Exposure kept on a photo whose camera rows act, each with
+    /// its value after its label, open with Black level correction set on the sample
+    /// photo, which hides them, and the area exposure mapping open, and closed. What is
+    /// not ported is disabled, as the session reports it.
     fn photograph(which: Builtin, locale: Locale, name: &str) {
         let mut kept = untouched(&Exposure);
+        on_photo(&Exposure, &mut kept, &camera_photo());
         set(
             &mut kept,
             "exposure",
@@ -5885,9 +6000,7 @@ mod tests {
             ControlValue::Number(0.01),
             Some(Mark::Kept),
         );
-        for control in &mut black.controls {
-            control.available &= control.control != "camera_bias";
-        }
+        on_photo(&Exposure, &mut black, &testing::image());
         let panels = [Panels::default(), Panels::default(), Panels::default()];
         let mapping = [false, true, false];
 
