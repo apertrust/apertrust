@@ -2,6 +2,8 @@
 
 Tool `rawprepare`, version 1. It works on the background only, as the whole raw stage does, and has no Auto.
 
+Its header's tooltip says what it is for (`tool-rawprepare-description`, [gui.md](../gui.md#the-headers-tooltip)): "Sets where black and white lie in the camera’s raw data, as the sensor recorded them. Usually left as it is: change it only with great care."
+
 It is darktable's raw black/white point in the first pass (decision 2). darktable's page has no tabs, sections or presets of its own: its four black levels and its white point in `gui_init`'s order under darktable's labels, then Flat field correction (decision 29). darktable's scene-referred preset puts it in no group, so it takes Base, last, the group darktable's other layouts give it (decision 38; [README.md](README.md), In no group).
 
 It drives one operation, `rawprepare` (raw 1, [../ports/rawprepare.md](../ports/rawprepare.md)), which every raw runs. So it adds no operation: it has no first step, and at its defaults it sets nothing and leaves the plan as it was. It owns every parameter of the operation. A change runs demosaic again, as every raw-stage control does (decision 12; [../engine.md](../engine.md), Where the viewport's scale applies).

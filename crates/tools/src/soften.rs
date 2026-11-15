@@ -34,6 +34,7 @@
 
 use apertrust_plugin::{ImageContext, Value};
 
+use crate::about::{Fact, Facts, Purpose};
 use crate::definition::{Control, ControlKind, Definition, Row, Slider, Tab, Unit};
 use crate::{Base, Owned, Setting, Tool, ToolValues, switched_from};
 
@@ -104,6 +105,13 @@ static DEFINITION: Definition = Definition {
     presets: &[],
     views: &[],
     pickers: &[],
+    // darktable's `description()` in src/iop/soften.c at the reference release.
+    facts: Some(Facts {
+        purpose: Purpose::Creative,
+        input: Fact::LinearRgbDisplayReferred,
+        process: Fact::LinearRgb,
+        output: Fact::LinearRgbDisplayReferred,
+    }),
 };
 
 /// Every parameter of `soften`: the tool is darktable's and owns them all.

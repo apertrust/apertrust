@@ -2,6 +2,8 @@
 
 Tool `vignette`, version 2. It works on layers, has no Auto and is switched (decision 32).
 
+Its header's tooltip says what it is for (`tool-vignette-description`, [gui.md](../gui.md#the-headers-tooltip)): "Darkens or lightens the photo towards its edges, as a lens does. Reach for it to draw the eye to the centre."
+
 It is darktable's vignetting in the first pass (decision 2). darktable's page has no tabs, collapsible sections or presets of its own but darktable's lomo. Its controls are in `gui_init`'s order under darktable's labels in British spelling, with the position / form label before the centres (decision 29).
 
 It drives one operation, `vignette` ([../ports/vignette.md](../ports/vignette.md), ported without dithering), which an unedited photo does not run. It is planned while the tool is on. The tool owns all eleven of the operation's parameters; `unbound`, which darktable shows no widget for, stays at the operation's default, on, darktable's.

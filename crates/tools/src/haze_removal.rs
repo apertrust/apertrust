@@ -33,6 +33,7 @@
 
 use apertrust_plugin::{ImageContext, Value};
 
+use crate::about::{Fact, Facts, Purpose};
 use crate::definition::{Control, ControlKind, Definition, Row, Slider, Tab};
 use crate::{Base, Owned, Setting, Tool, ToolValues, switched_from};
 
@@ -100,6 +101,13 @@ static DEFINITION: Definition = Definition {
     presets: &[],
     views: &[],
     pickers: &[],
+    // darktable's `description()` in src/iop/hazeremoval.c at the reference release.
+    facts: Some(Facts {
+        purpose: Purpose::Corrective,
+        input: Fact::LinearRgbSceneReferred,
+        process: Fact::FrequentialRgb,
+        output: Fact::LinearRgbSceneReferred,
+    }),
 };
 
 /// Both parameters of `hazeremoval`: the tool is darktable's and owns them all.

@@ -28,13 +28,21 @@
 //! header in focus, shows the photo without it: the section reports that it is peeking, and
 //! the app asks the engine. The section never reads the key itself: the app's actions
 //! registry says whether it is held ([`Section::peek`]), so the key can be rebound.
+//!
+//! A section given what it is for ([`Section::about`]) shows it in its header's tooltip,
+//! over the chevron, the title and the empty space, after the tooltips' delay at rest or
+//! with the header focused by a key, beside the side panel (`docs/gui.md`, The header's
+//! tooltip); screen readers hear the same words as the header's description.
 
 use egui::{
     Align, FontFamily, FontId, Layout, Margin, Rect, Role, Sense, Stroke, Ui, UiBuilder,
     WidgetInfo, pos2, vec2,
 };
 
-use super::{IconButton, Tabs, focus_ring, icon_colour, icon_lit, pull_down, truncated};
+use super::about::{self, About, Asked};
+use super::{
+    IconButton, Tabs, focus_ring, focus_shows, icon_colour, icon_lit, pull_down, truncated,
+};
 use crate::i18n::Args;
 use crate::icons::STROKE;
 use crate::popup::Entry;
@@ -84,6 +92,8 @@ pub struct Section<'a> {
     menu: Option<Vec<Entry>>,
     peek: bool,
     not_applied: bool,
+    /// What its header's tooltip says, where the section has it.
+    about: Option<About>,
 }
 
 impl Section<'_> {
@@ -114,6 +124,7 @@ impl<'a> Section<'a> {
             menu: None,
             peek: false,
             not_applied: false,
+            about: None,
         }
     }
 
@@ -188,6 +199,14 @@ impl<'a> Section<'a> {
     /// "Not applied" (`section-not-applied`) first in the toggle's description.
     pub fn not_applied(mut self, off: bool) -> Self {
         self.not_applied = off;
+        self
+    }
+
+    /// What the tool is for, its words translated, which its header's tooltip shows in
+    /// place of the plain "Open or close" (`section-toggle`), and screen readers hear as the
+    /// header's description (`docs/gui.md`, The header's tooltip).
+    pub fn about(mut self, about: About) -> Self {
+        self.about = Some(about);
         self
     }
 
@@ -342,13 +361,33 @@ impl<'a> Section<'a> {
         }
 
         let focused = toggle.has_focus();
-        let tip = say("section-toggle");
-        let toggle = toggle.on_hover_text(if cut {
-            format!("{}\n{tip}", self.title)
+        if let Some(about) = &self.about {
+            // Its own tooltip, beside the panel, and its words for screen readers; the
+            // pointer's claim over the focus's, as only one shows at a time.
+            let asked = if toggle.hovered() {
+                Asked::Pointer
+            } else if focused && focus_shows(ui.ctx()) {
+                Asked::Focus {
+                    arrived: toggle.gained_focus(),
+                }
+            } else {
+                Asked::No
+            };
+            let dismiss = about::dismissed(ui, self.peek);
+            if about::shows(ui, id, asked, dismiss) {
+                about::paint(ui, id, about, cut.then_some(self.title), header);
+            }
+            // Worded only while a screen reader listens: the builder runs only then.
+            ui.ctx()
+                .accesskit_node_builder(id, |node| node.set_description(about.said(&tr)));
         } else {
-            tip
-        });
-        drop(toggle);
+            let tip = say("section-toggle");
+            drop(toggle.on_hover_text(if cut {
+                format!("{}\n{tip}", self.title)
+            } else {
+                tip
+            }));
+        }
         if self.not_applied {
             let not_applied = tr.text("section-not-applied");
             ui.ctx().accesskit_node_builder(id, |node| {

@@ -147,6 +147,16 @@ pub enum Icon {
     Close,
     /// The top panel's ☰ on Windows and Linux, which opens the menus.
     Menu,
+    /// A section header's tooltip's rows (`docs/gui.md`, The header's tooltip): a tag for
+    /// Kind, a sun for Works on, columns for a utility's Measures, and darktable's input,
+    /// process and output as an arrow into a line, a dot in a circle and an arrow out of a
+    /// line.
+    Kind,
+    WorksOn,
+    Measures,
+    Input,
+    Process,
+    Output,
     /// The app's mark, the Slider A with its cut, at the top panel's start: filled shapes,
     /// not lines, the one icon drawn so (`assets/icons/README.md`).
     Mark,
@@ -170,7 +180,7 @@ pub enum Icon {
 }
 
 impl Icon {
-    pub const ALL: [Icon; 81] = [
+    pub const ALL: [Icon; 87] = [
         Icon::Chevron,
         Icon::ChevronDown,
         Icon::ChevronEnd,
@@ -236,6 +246,12 @@ impl Icon {
         Icon::Restore,
         Icon::Close,
         Icon::Menu,
+        Icon::Kind,
+        Icon::WorksOn,
+        Icon::Measures,
+        Icon::Input,
+        Icon::Process,
+        Icon::Output,
         Icon::Mark,
         Icon::BaseFilled,
         Icon::ColorFilled,
@@ -408,6 +424,12 @@ impl Icon {
             Icon::Restore => own!("restore", 10.0),
             Icon::Close => own!("close", 10.0),
             Icon::Menu => derived!("menu", "menu", 16.0),
+            Icon::Kind => derived!("kind", "tag", 13.0),
+            Icon::WorksOn => derived!("works-on", "sun", 13.0),
+            Icon::Measures => derived!("measures", "chart-column", 13.0),
+            Icon::Input => derived!("input", "arrow-right-to-line", 12.0),
+            Icon::Process => derived!("process", "circle-dot", 12.0),
+            Icon::Output => derived!("output", "arrow-right-from-line", 12.0),
             Icon::Mark => own!("mark", 20.0),
             Icon::BaseFilled => own!("base-filled", 22.0),
             Icon::ColorFilled => own!("color-filled", 22.0),

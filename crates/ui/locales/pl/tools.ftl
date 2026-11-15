@@ -6,6 +6,7 @@
 ## tłumaczenia darktable.
 
 tool-rawprepare-title = Punkt czerni/bieli raw
+tool-rawprepare-description = Ustala, gdzie w surowych danych aparatu leżą czerń i biel zapisane przez matrycę. Zwykle bez zmian: zmieniaj tylko z wielką ostrożnością.
 tool-rawprepare-control-raw_black_level_separate_0-label = Poziom czerni 0
 tool-rawprepare-control-raw_black_level_separate_0-full = Poziom czerni 0
 tool-rawprepare-control-raw_black_level_separate_0-promise = Poziom czerni 0.
@@ -31,6 +32,7 @@ tool-rawprepare-control-flat_field-option-embedded = Osadzone mapowanie wzmocnie
 ## tłumaczenia darktable.
 
 tool-highlights-title = Ratowanie prześwietleń
+tool-highlights-description = Chroni prześwietlone obszary przed purpurą i próbuje odzyskać ich kolor. Sięgnij po nie, gdy najjaśniejsze miejsca są płaskie lub zabarwione.
 tool-highlights-control-mode-label = Metoda
 tool-highlights-control-mode-full = Metoda
 tool-highlights-control-mode-promise = Metoda ratowania prześwietleń.
@@ -90,6 +92,7 @@ tool-highlights-control-scales-option-px_4096 = 4096 pikseli (niesamowicie powol
 ## darktable, dwie podpowiedzi metody, dla sensorów Bayera i X-Trans, w jednej.
 
 tool-demosaic-title = Demozaikowanie
+tool-demosaic-description = Zamienia mozaikę czerwonych, zielonych i niebieskich punktów matrycy na pełnokolorowe piksele. Zwykle bez zmian: zmień, gdy drobne szczegóły pokazują labirynty lub fałszywe kolory.
 tool-demosaic-control-demosaicing_method-label = Metoda
 tool-demosaic-control-demosaicing_method-full = Metoda demozaikowania
 tool-demosaic-control-demosaicing_method-promise = Metoda demozaikowania. Dla sensora Bayera PPG i RCD są szybkie, AMaZE i LMMSE są wolne; LMMSE najlepiej nadaje się do obrazów z wysokim ISO; VNG4 jest dobry w rzadkich przypadkach unikania wzorów typu „maze”. Dla sensorów X-Trans Markesteijn trójprzebiegowy i barwa z dziedziny częstotliwości są powolne. Podwójne demozaikatory zwiększają czas przetwarzania, łącząc wariant VNG w drugim przebiegu.
@@ -165,6 +168,7 @@ tool-demosaic-control-cs_center-promise = Dostosuj do ostrego centrum obrazu.
 ## „wzmownienie”) i „Ochrona odcieni” bez „(hue)”.
 
 tool-agx-title = AgX
+tool-agx-description = Mieści światło uchwycone przez aparat w tym, co pokaże ekran lub wydruk, z naturalnymi światłami i kolorami. Domyślne mapowanie tonów, inspirowane AgX z Blendera.
 tool-agx-tab-settings = Ustawienia
 tool-agx-tab-primaries = Barwy podstawowe
 tool-agx-group-input_exposure_range = Rozpiętość tonalna wejścia
@@ -312,6 +316,7 @@ tool-agx-control-blue_unrotation-promise = Odwróć przesunięcie koloru w niebi
 ## tłumaczenia darktable.
 
 tool-colorout-title = Wyjściowy profil koloru
+tool-colorout-description = Przekształca gotowy obraz na kolory eksportowanego pliku. Zwykle zostaje sRGB, odpowiednie dla ekranów i sieci.
 tool-colorout-control-type-label = Profil eksportu
 tool-colorout-control-type-full = Profil eksportu
 tool-colorout-control-type-promise = Profil koloru, w którym eksportowany jest obraz.
@@ -331,6 +336,7 @@ tool-colorout-control-type-option-brg = BRG (do testów)
 ## Balans bieli (docs/tools/white-balance.md)
 
 tool-temperature-title = Balans bieli
+tool-temperature-description = Równoważy czerwony, zielony i niebieski kanał aparatu, by biel wychodziła biała, i pomaga w demozaikowaniu. Zwykle bez zmian: kolor światła ustaw w Kalibracji koloru.
 tool-temperature-preset-settings-label = Ustawienia
 tool-temperature-preset-settings-full = Ustawienia balansu bieli
 tool-temperature-preset-settings-promise = Wybierz ustawienia balansu bieli: współczynniki i ich pochodzenie.
@@ -371,6 +377,7 @@ tool-temperature-control-various-promise = Przez co mnożone są szmaragdowe fot
 ## Orientacja (docs/tools/orientation.md)
 
 tool-flip-title = Orientacja
+tool-flip-description = Obraca zdjęcie o ćwierć obrotu lub je odbija. Sięgnij po nią, gdy zdjęcie leży na boku.
 tool-flip-control-orientation-label = Przekształć
 tool-flip-control-orientation-full = Przekształć
 tool-flip-control-orientation-promise = Odwróć lub obróć obraz o 90 stopni.
@@ -399,6 +406,7 @@ tool-flip-action-flip_vertically-promise = Odbij obraz lustrzanie od góry do do
 ## Ekspozycja (docs/tools/exposure.md)
 
 tool-exposure-title = Ekspozycja
+tool-exposure-description = Rozjaśnia lub przyciemnia zdjęcie, jakby naświetlono je inaczej w aparacie, zachowując kolory. Zwykle pierwsze narzędzie, po które się sięga.
 tool-exposure-auto = Ustawia Ekspozycję tak, aby tony zdjęcia skupiały się wokół szarości średniej. Zablokowana Ekspozycja pozostaje bez zmian.
 tool-exposure-control-mode-label = Tryb
 tool-exposure-control-mode-full = Tryb
@@ -438,6 +446,7 @@ tool-exposure-picker-exposure-promise = Ustawia korektę ekspozycji na podstawie
 ## Kalibracja koloru (docs/tools/colour-calibration.md)
 
 tool-channelmixerrgb-title = Kalibracja koloru
+tool-channelmixerrgb-description = Ustala kolor światła, miesza kanały kolorów lub zamienia zdjęcie w czarno-białe jak film. Sięgnij po nią, by usunąć zafarb.
 tool-channelmixerrgb-tab-cat = CAT
 tool-channelmixerrgb-control-adaptation-label = Adaptacja
 tool-channelmixerrgb-control-adaptation-full = Adaptacja
@@ -638,6 +647,7 @@ tool-channelmixerrgb-setting-patch_scale-promise = Jaką część każdego pola 
 ## darktable.
 
 tool-toneequal-title = Korektor tonów
+tool-toneequal-description = Oświetla scenę na nowo: rozjaśnia lub przyciemnia obszary według ich jasności, jakby oświetlono ją inaczej. Sięgnij po niego, by otworzyć cienie lub przytrzymać jasne niebo.
 tool-toneequal-tab-simple = Podstawowe
 tool-toneequal-tab-advanced = Zaawansowane
 tool-toneequal-tab-masking = Maska
@@ -715,6 +725,7 @@ tool-toneequal-setting-display_exposure_mask-promise = Pokazuje w miejscu zdjęc
 ## tłumaczenia darktable.
 
 tool-colorbalancergb-title = Balans kolorów RGB
+tool-colorbalancergb-description = Gradacja kolorów: osobno przesuwa kolor cieni, tonów średnich i świateł, każde wydzielone miękką maską. Sięgnij po niego, by nadać zdjęciu nastrój kolorystyczny.
 tool-colorbalancergb-tab-master = Główny
 tool-colorbalancergb-tab-four_ways = 4 zakresy
 tool-colorbalancergb-tab-masks = Maski
@@ -844,6 +855,7 @@ tool-colorbalancergb-picker-grey_fulcrum-promise = Pobierz kolor ze zdjęcia
 ## Krzywa tonalna (docs/tools/tone-curve.md)
 
 tool-tone_curve-title = Krzywa tonalna
+tool-tone_curve-description = Zmienia tony zdjęcia krzywą, rozjaśniając lub przyciemniając dowolny ich zakres. Sięgnij po nią, by dopracować kontrast.
 tool-tone_curve-tab-luma = Jasność
 tool-tone_curve-tab-rgb = RGB
 tool-tone_curve-tab-red = Czerwony
@@ -867,6 +879,7 @@ tool-tone_curve-control-preserve_colour-option-basic_power = Potęga podstawowa
 ## darktable.
 
 tool-hazeremoval-title = Usuwanie zamglenia
+tool-hazeremoval-description = Usuwa zamglenie i mgłę, przywracając kontrast i kolor odległym częściom sceny. Sięgnij po nie przy wyblakłych krajobrazach.
 tool-hazeremoval-control-strength-label = Siła
 tool-hazeremoval-control-strength-full = Siła
 tool-hazeremoval-control-strength-promise = Ilość usuwania zamglenia.
@@ -878,6 +891,7 @@ tool-hazeremoval-control-distance-promise = Ogranicz usuwanie zamglenia do konkr
 ## tłumaczenia darktable.
 
 tool-primaries-title = Barwy podstawowe RGB
+tool-primaries-description = Przesuwa barwy podstawowe, czerwoną, zieloną i niebieską, zmieniając każdy kolor z nich złożony. Sięgnij po nie, by szeroko i płynnie korygować kolory.
 tool-primaries-control-red_hue-label = Barwa czerwieni
 tool-primaries-control-red_hue-full = Barwa czerwieni
 tool-primaries-control-red_hue-promise = Przesuwa czerwień w stronę żółci lub magenty.
@@ -906,6 +920,7 @@ tool-primaries-control-achromatic_tint_purity-promise = Czystość barwy zafarbu
 ## Ziarno (docs/tools/grain.md): terminy z polskiego tłumaczenia darktable.
 
 tool-grain-title = Ziarno
+tool-grain-description = Dodaje ziarno jak na filmie, drobne lub grube. Sięgnij po nie, by nadać zdjęciu fakturę filmu.
 tool-grain-control-scale-label = Szorstkość
 tool-grain-control-scale-full = Szorstkość
 tool-grain-control-scale-promise = Rozmiar ziarna (~ISO filmu).
@@ -919,6 +934,7 @@ tool-grain-control-midtones_bias-promise = Wartość przesunięcia tonów średn
 ## Zmiękczenie (docs/tools/soften.md): terminy z polskiego tłumaczenia darktable.
 
 tool-soften-title = Zmiękczenie
+tool-soften-description = Dodaje miękką poświatę, nakładając na zdjęcie rozmytą, jaśniejszą kopię. Sięgnij po nie, by uzyskać marzycielski wygląd.
 tool-soften-control-size-label = Rozmiar
 tool-soften-control-size-full = Rozmiar
 tool-soften-control-size-promise = Rozmiar rozmycia.
@@ -935,6 +951,7 @@ tool-soften-control-amount-promise = Miksowanie efektu.
 ## Winietowanie (docs/tools/vignetting.md): terminy z polskiego tłumaczenia darktable.
 
 tool-vignette-title = Winietowanie
+tool-vignette-description = Przyciemnia lub rozjaśnia zdjęcie ku krawędziom, jak robi to obiektyw. Sięgnij po nie, by skupić wzrok na środku.
 tool-vignette-control-scale-label = Start zanikania
 tool-vignette-control-scale-full = Start zanikania
 tool-vignette-control-scale-promise = Rozmiar promienia winietowania do początku zanikania.
@@ -969,3 +986,42 @@ tool-vignette-control-dithering-promise = Dodaj nieco szumu, aby pozbyć się ba
 tool-vignette-control-dithering-option-off = Wyłączony
 tool-vignette-control-dithering-option-output_8bit = Wyjście 8-bitowe
 tool-vignette-control-dithering-option-output_16bit = Wyjście 16-bitowe
+
+## Do czego służy każde narzędzie pomocnicze, i słowa podpowiedzi nagłówka (docs/gui.md,
+## The header's tooltip). Wiersze tool-fact-* to własne tłumaczenia darktable (po/pl.po,
+## release-5.6.2).
+
+tool-scopes-description = Pokazują rozkład tonów i kolorów zdjęcia: histogram, przebieg, paradę RGB lub wektoroskop. Sięgnij po nie, by oceniać ekspozycję i kolor podczas edycji.
+tool-history-description = Wypisuje wszystkie zmiany w edycji zdjęcia, od najnowszej. Sięgnij po nią, by wrócić do wcześniejszego kroku.
+
+tool-kind-corrective = Naprawia problem
+tool-kind-creative = Tworzy wygląd
+tool-kind-corrective-and-creative = Naprawia problem i kształtuje wygląd
+tool-kind-corrective-or-creative = Naprawia problem lub tworzy wygląd
+tool-kind-mandatory = Potrzebne każdemu zdjęciu
+tool-kind-utility = Sam niczego nie edytuje
+
+tool-works-raw = Surowe dane aparatu
+tool-works-scene = Światło takie, jak uchwycone
+tool-works-scene-to-display = Od uchwyconego światła do gotowego obrazu
+tool-works-display = Gotowy obraz
+
+tool-fact-linear-raw-scene-referred = liniowe, raw, scenocentryczny
+tool-fact-linear-raw = liniowe, raw
+tool-fact-reconstruction-raw = rekonstrukcja, raw
+tool-fact-linear-rgb-scene-referred = liniowe, RGB, scenocentryczny
+tool-fact-linear-rgb-display-referred = liniowe, RGB, ekranocentryczny
+tool-fact-linear-rgb = liniowe, RGB
+tool-fact-linear-rgb-or-xyz = liniowe, RGB lub XYZ
+tool-fact-quasi-linear-rgb = quasi-liniowe, RGB
+tool-fact-quasi-linear-rgb-scene-referred = quasi-liniowe, RGB, scenocentryczny
+tool-fact-non-linear-rgb = nieliniowe, RGB
+tool-fact-non-linear-rgb-scene-referred = nieliniowe, RGB, scenocentryczny
+tool-fact-non-linear-rgb-display-referred = nieliniowe, RGB, ekranocentryczny
+tool-fact-non-linear-lab = nieliniowe, Lab
+tool-fact-non-linear-lab-display-referred = nieliniowe, Lab, ekranocentryczny
+tool-fact-linear-or-non-linear-lab-display-referred = liniowe lub nieliniowe, Lab, ekranocentryczny
+tool-fact-non-linear-rgb-or-lab-display-referred = nieliniowe, RGB lub Lab, ekranocentryczny
+tool-fact-geometric-rgb = geometryczne, RGB
+tool-fact-frequential-rgb = częstotliwościowy, RGB
+tool-fact-defined-by-profile = zdefiniowany przez profil

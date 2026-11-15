@@ -27,7 +27,7 @@ Steps 1 to 5 of the [build order](#build-order) are built, step 6 has its render
 - Translation, with British and American English, Ukrainian, Polish and the pseudo-locale, and the check for literal strings ([Translation](#translation)).
 - The controls in `crates/ui/src/components`: the slider row, icon button, segmented control, choice list, colour swatches and value field, with AccessKit on in the app and interaction tests for each ([Components](#components)).
 - The painted widgets: [the curve](#the-curve), [the equalizer](#the-equalizer) and [the scopes](#the-scopes) (the histogram, the waveform, the RGB parade and the vectorscope). The app's Scopes section is pinned in the editing tabs and fed by the engine's counts for all four.
-- The section frame (header, buttons, tabs, group labels, collapsible groups, peeking with H) and the side panel's tab bar, body and edge ([Tool panels from definitions](#tool-panels-from-definitions), [The side panel](#the-side-panel)).
+- The section frame (header, buttons, [the header's tooltip](#the-headers-tooltip), tabs, group labels, collapsible groups, peeking with H) and the side panel's tab bar, body and edge ([Tool panels from definitions](#tool-panels-from-definitions), [The side panel](#the-side-panel)).
 - The shell's parts: `TopPanel`, `CentralBar` and `GridPanel`, with interaction tests and a snapshot at a full window's width ([The shell](#the-shell)).
 - The app as that shell, with one raw open: the engine renders it on its own thread through the viewport pipe, every ported operation from the saved edit, and a paint callback draws each frame pixel for pixel (decision 17), scaled only while the window resizes (decision 18).
 - The tool panel renderer (`crates/app/src/tools.rs`), which draws any tool's section from its definition, with every tool of the first pass built so far.
@@ -191,6 +191,7 @@ Every colour, size and duration a component uses is a token: a named value in th
 | Spacing | A scale: 2, 4, 6, 8, 12, 16, 24; between a section header's buttons 4 (`section_button_gap`) | Density picks the scale |
 | Sizes | Row 26, control 22, a tool row's field 18, icons 14 and 16, section header 30, its buttons 14 wide (`section_button`), panel line 24, top panel 44, slider row 37, its track strip 16, marker 16, value 54 | [How the rows are laid out](#how-the-rows-are-laid-out); `control` stays for the bars, the headers, segmented controls and egui's own widgets, `field` is the rows' |
 | Shape | Radii 3, 4 and 5; menus and the popup service's lists, a choice's included, 8 (`menu_radius`), tooltips and About 6 (`popup_radius`); hairlines 1, a popup's faint edge a half point (`popup_hairline`), a full point in the high-contrast theme; panel separators 2 (`separator_width`); slider track 4; the ground between a checkbox, a text button or an icon button and its focus ring, 1 (`focus_gap`), and the ring, 1.5 (`focus_width`, read by the components' shared ring and the on-photo overlay's) | |
+| Header tooltip | Its widths, the room it needs beside the panel, its padding, line heights and grid (`about`) | [The header's tooltip](#the-headers-tooltip) |
 | On-photo overlay | The line 1, the black under it 3, a dash and its gap 4, a square handle 10, the least half-pixel 4 (`overlay`) | [On-photo overlays](#on-photo-overlays) |
 | Elevation | A soft shadow and faint edge for menus, drawn popups, tooltips and About; `menu_shadow` and `menu_edge`, offset, blur and spread in `elevation` | A dialog's window on Wayland has the host's drawn border and shadow; elsewhere the system's shadow (decision 41); the high-contrast theme's popup edge is full-strength and a full point |
 | Motion | Durations for hover, opening and closing | Zero when the user or the system asks for reduced motion |
@@ -2677,7 +2678,8 @@ Compact rows, from the wireframe's ModulePanel board, with darktable's sliders t
   - Its title is 15-point Medium (`text.section_title`; `text.title` stays for About's version line), and its chevron `text_secondary` while closed and `text` while open or under the pointer.
   - A tool's buttons are reset, presets and options (⋯), options at the header's end. Options holds the section's layout items, a tool's and a utility's alike (decision 83, [Moving, pinning and floating sections](#moving-pinning-and-floating-sections)); until they are built it is drawn disabled on a tool, its tooltip "No options yet" (`section-options-none`). A utility, such as Scopes, has options only; History has a reset before its options, which resets the edit (`Section::utility_reset`, "Reset edit").
   - Each button is 14 points wide round its 14-point icon (`sizes.section_button`) and a control high, with 4 points between every two (`spacing.section_button_gap`). The last one's ink, not its box, ends where the rows do, 12 points from the section's edge: Lucide's ⋯ ends 1.7 points inside its box at 14 points, so the header's end inset is 10.3.
-  - A title that would run under the header's buttons is cut at its end with …, as labels are, its tooltip giving it whole on a line of its own and screen readers hearing it whole. At the side panel's narrowest, 240 points, a tool's title has about 139 points: three English titles are cut, Highlight reconstruction (166 points), Raw black/white point (154) and Output colour profile (143), and more Polish and Ukrainian ones, Usuwanie zamglenia (141) and Balans kolorów RGB (139) among them, Відновлення переекспонованого (238) the longest.
+  - Over its chevron, title and empty space, never its buttons, the header's tooltip says what the section is for ([The header's tooltip](#the-headers-tooltip)).
+  - A title that would run under the header's buttons is cut at its end with …, as labels are, the header's tooltip giving it whole, in bold, first, and screen readers hearing it whole. At the side panel's narrowest, 240 points, a tool's title has about 139 points: three English titles are cut, Highlight reconstruction (166 points), Raw black/white point (154) and Output colour profile (143), and more Polish and Ukrainian ones, Usuwanie zamglenia (141) and Balans kolorów RGB (139) among them, Відновлення переекспонованого (238) the longest.
 - **A section's tabs** (`Tabs`, drawn by `Section::tabs`) sit right under the header, the strip 26 points high, and the first tab's name is on the content's 12-point edge (the strip starts 8 points, the tabs' padding, before it and its line from the edge), as the wireframe's board has them.
   - Each tab is as wide as its name with 8 points (`spacing.m`) at each end, one after another from the row's start, the rest of the row empty after the last, never equal shares.
   - When they do not fit, the row stays one line and never scrolls: first the padding gives way, all tabs alike, down to 4 points (`spacing.xs`) at each end; only then do the names shrink, in proportion to their widths, darktable's `label / (label + value)` as the dropdown row's label and box share theirs, each cut at its end with …, whole in its tooltip and for screen readers. A single letter, as Colour calibration's R, G and B, cannot be cut and stays whole in its tab.
@@ -2726,6 +2728,41 @@ Compact rows, from the wireframe's ModulePanel board, with darktable's sliders t
   | presses the quad | `SliderAction::Quad` | the line on the photo (planned) |
   | presses a picker's quad or button (decision 79) | `SliderAction::Picker` or the button's `PickerAction` | `PickerCommand::On { picker, area, keys }`, or `Off` for the picker on ([pickers.md](pickers.md#the-picker-button)) |
   | chooses a preset row's option | `ChoiceAction::Set`, the option's index | `ApplyPreset { tool, preset, option }` |
+
+### The header's tooltip
+
+Over a section's header, its chevron, title and empty space, never its buttons, which keep their own tooltips, a tooltip says what the tool is for in plain words, then darktable's facts about it. It is drawn by `Section::about`, which takes an `About` (`crates/ui/src/components/about.rs`): plain words, no tool types.
+
+- **What it says.** First, only where the header cuts the title, the full name in 13-point Medium. Then the description, `tool-<tool>-description`: a sentence or two on what the tool does and when to reach for it, in the user's words, never darktable's. Then a hairline (`divider`) and a grid of labelled rows, each with a small icon, Lucide's stroke (`Icon::Kind`, `WorksOn`, `Measures`, `Input`, `Process`, `Output`):
+
+  | Row | Says | Words |
+  | --- | --- | --- |
+  | Kind | What the tool is for, from darktable's purpose | `tool-kind-<kind>` |
+  | Works on | What it acts on, from darktable's input and output | `tool-works-<place>` |
+  | Input, Process, Output | darktable's lines, word for word, quieter: 11 points, `text_secondary`, 5 points more above them | `tool-fact-<darktable's words>` |
+
+  A utility shows Kind "Edits nothing of its own" and, where it measures something, Measures in place of Works on (Scopes: the finished picture; History: none), and never darktable's lines. A tool that is not darktable's, with no facts, shows its description alone.
+- **One mapping.** Each built tool's definition holds darktable's facts as data (`Definition::facts`, `apertrust_tools::about::Facts`): its purpose, and its input, process and output, each a `Fact`. Kind and Works on follow from them through one mapping in `apertrust_tools::about`, so every tool says them alike:
+
+  | darktable's fact | The row it becomes |
+  | --- | --- |
+  | corrective | Kind · Fixes a problem |
+  | creative | Kind · Creates a look |
+  | corrective and creative | Kind · Fixes a problem and shapes the look |
+  | corrective or creative | Kind · Fixes a problem or creates a look |
+  | mandatory | Kind · Needed by every photo |
+  | input raw | Works on · The camera’s raw data |
+  | input and output scene-referred | Works on · The light as captured |
+  | input scene-referred, output display-referred | Works on · From the light as captured to the finished picture |
+  | input and output display-referred | Works on · The finished picture |
+
+  The utilities, which have no definition, are listed in `apertrust_tools::about::UTILITIES`. darktable translates each of its lines whole, so each is a message of its own, its English darktable's `msgid` and its Ukrainian and Polish darktable's own `msgstr` (`po/uk.po`, `po/pl.po` at the reference release). `crates/tools/tests/about.rs` holds every built tool's facts to darktable's `description()`, each line to darktable's words and translations, and every tool's and utility's sentence to every language.
+- **Where.** Beside the side panel, over the photo, its top level with the header's, 8 points from the panel's edge, on the side with more room, so it is mirrored when the panel is on the start side; moved up to stay inside the window. 340 points wide at most, 10 points of padding at its sides and 8 and 9 at its top and bottom. Where that side has under 336 points (a window near its 500-point minimum), it hangs 4 points under the header inside the panel, 8 points in from each side and 304 wide at most, and goes above the header near the window's foot. This is an exception to the tooltips' placement.
+- **When.** These timings are this tooltip's own; egui's tooltips, which the rest of the app draws, keep egui's 0.5 s. After 0.6 s at rest on the header; moving to the next header within 0.4 s of one going shows the next at once, so a sweep down the panel reads the tools one by one. Gone on a click, a key, a scroll, a drag (a header's, a slider's), the peek keys held, or a menu open, until the pointer leaves the header. A header focused by a key shows it after the same 0.6 s, placed the same way, the Tab or Shift+Tab that brought the focus hiding nothing; Esc, or any later key, hides it until the focus moves. It is a tooltip, not a popover: painted on the tooltip layer, it never takes the focus or a click. One shows at a time, the pointer's over the focus's.
+- **Its look.** `raised`, the menus' edge and shadow (`menu_edge`, `menu_shadow`, `popup_hairline`) and `popup_radius`; `text_strong` for the name, the description and the rows' values, `text_secondary` for the labels, the icons and darktable's lines. The labels' column is as wide as the widest of the six labels in the language, so every tooltip lines its values up alike, at least 64 points, between a 13-point icon column and the values, 8 points apart; rows 3 points apart. No accent.
+- **Its sizes** are the theme's `about` tokens (`Theme::about`, `[about]` in each theme file): `width` 340, `narrow_width` 304, `room` 336, `padding_x` 10, `padding_bottom` 9, `line` 17, `name_line` 18, `quiet_line` 15, `rule_below` 7, `row_gap` 3, `quiet_gap` 5, `icon_column` 13, `label_column` 64; the rest are the spacing scale's: 8 from the panel, at its top, above the hairline and between its columns (`spacing.m`), 4 under the header (`spacing.xs`), 2 under a cut name (`spacing.xxs`).
+- **Screen readers.** The header is a button named by the tool's full name, cut or not. Its description is the tooltip's words without the name, a line each: the description, then each row as "label: value" (`section-about-row`), "Not applied" first where the tool is off: "Brightens or darkens …", "Kind: Fixes a problem and shapes the look", "Works on: The light as captured", "Input: linear, RGB, scene-referred" and so on. The icons are decoration.
+- **Built** for every tool in `TOOLS`, Scopes and History, in the dark, light and high-contrast themes, with interaction tests and snapshots in `crates/ui/tests/about.rs`. A section with no `About` keeps the plain tooltip, `section-toggle`.
 
 ### The renderer
 

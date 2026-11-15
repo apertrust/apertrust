@@ -170,3 +170,18 @@ tool-colorbalancergb-picker-grey_fulcrum-full = Contrast gray fulcrum: pick from
 tool-colorbalancergb-picker-grey_fulcrum-promise = Pick color from the photo
 tool-agx-picker-pivot-promise = Sets the pivot relative to mid-gray from the average luminance of the selected area.
 tool-agx-picker-pivot_output-promise = Sets the pivot relative to mid-gray from the average luminance of the selected area, and adjusts the output by the default mid-gray to mid-gray mapping.
+
+## What each tool and utility is for (docs/gui.md, The header's tooltip)
+
+tool-highlights-description = Keeps clipped highlights from turning magenta and tries to recover their color. Reach for it when the brightest areas look flat or tinted.
+tool-demosaic-description = Turns the sensor’s mosaic of red, green and blue into full-color pixels. Usually left as it is: change it when fine detail shows mazes or false color.
+tool-agx-description = Fits the light the camera caught into what a screen or a print can show, with natural highlights and colors. The default tone mapper, inspired by Blender’s AgX.
+tool-colorout-description = Converts the finished picture into the colors of the file you export. Usually left at sRGB, which suits screens and the web.
+tool-temperature-description = Balances the camera’s red, green and blue so that white comes out white, and helps demosaic. Usually left as it is: set the color of the light in Color calibration.
+tool-exposure-description = Brightens or darkens the photo as if you had exposed it differently in the camera, keeping its colors. Usually the first tool to reach for.
+tool-channelmixerrgb-description = Sets the color of the light, mixes the color channels, or turns the photo black and white as film would. Reach for it to remove a color cast.
+tool-colorbalancergb-description = Color grading: shifts the color of the shadows, mid-tones and highlights separately, each picked out by a soft mask. Reach for it to give a photo its color mood.
+tool-hazeremoval-description = Removes haze and fog, bringing back contrast and color in distant parts of the scene. Reach for it on landscapes that look washed out.
+tool-primaries-description = Moves the red, green and blue primaries, shifting every color made of them. Reach for it for broad, smooth color grading.
+tool-vignette-description = Darkens or lightens the photo towards its edges, as a lens does. Reach for it to draw the eye to the center.
+tool-scopes-description = Shows how the photo’s tones and colors are spread: histogram, waveform, RGB parade or vectorscope. Reach for it to judge exposure and color as you edit.

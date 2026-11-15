@@ -2,6 +2,8 @@
 
 Tool `colorbalancergb`, version 2. It works on layers, has no Auto and is switched (decision 32).
 
+Its header's tooltip says what it is for (`tool-colorbalancergb-description`, [gui.md](../gui.md#the-headers-tooltip)): "Colour grading: shifts the colour of the shadows, mid-tones and highlights separately, each picked out by a soft mask. Reach for it to give a photo its colour mood."
+
 It is darktable's color balance rgb in the first pass (decision 2). It has darktable's page: the Master, 4 ways and Masks tabs as content tabs, and the controls in `gui_init`'s order under darktable's labels in British spelling (decision 29).
 
 It drives one operation, `colorbalancergb` ([../ports/colorbalancergb.md](../ports/colorbalancergb.md)). An unedited photo does not run it: it is planned while the tool is on, as in darktable, where color balance rgb is off until the user turns it on (decision 32). The tool owns every one of the operation's parameters; none is fixed.

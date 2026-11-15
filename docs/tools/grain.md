@@ -2,6 +2,8 @@
 
 Tool `grain`, version 2. It works on the background only, has no Auto and is switched (decision 32).
 
+Its header's tooltip says what it is for (`tool-grain-description`, [gui.md](../gui.md#the-headers-tooltip)): "Adds grain like that of film, fine or coarse. Reach for it to give a photo the texture of film."
+
 It is darktable's grain in the first pass (decision 2). darktable's page has no tabs, sections or presets: its three sliders are in `gui_init`'s order under darktable's labels in British spelling (decision 29), Coarseness, Strength and Mid-tones bias, as darktable's panel shows them: "1600 ISO", "25.00%" and "100.00%" at darktable's defaults.
 
 It drives one operation, `grain` ([../ports/grain.md](../ports/grain.md)), which an unedited photo does not run. It is planned while the tool is on. The tool owns all three of the operation's parameters. darktable's `channel`, which its GUI does not show and its `process()` ignores, is not ported ([README.md](README.md), Effect).

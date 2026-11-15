@@ -956,6 +956,7 @@ static SPOT: Definition = Definition {
         writes: &[],
         settings: &[],
     }],
+    facts: None,
 };
 
 static SPOT_OWNS: [Owned; 1] = [Owned::new("temperature", "red")];
@@ -1341,6 +1342,7 @@ static CONFIGURED: Definition = Definition {
         writes: &["level"],
         settings: &["gain"],
     }],
+    facts: None,
 };
 
 static CONFIGURED_OWNS: [Owned; 1] = [Owned::new("exposure", "exposure")];

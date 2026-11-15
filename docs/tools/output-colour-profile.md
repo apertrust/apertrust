@@ -2,6 +2,8 @@
 
 Tool `colorout`, version 1. It works on the background only and has no Auto.
 
+Its header's tooltip says what it is for (`tool-colorout-description`, [gui.md](../gui.md#the-headers-tooltip)): "Converts the finished picture into the colours of the file you export. Usually left at sRGB, which suits screens and the web."
+
 It is darktable's output color profile in the first pass (decision 2). darktable's page has no tabs, sections or presets, and shows one control, Export profile, here under its label in British English (decision 29). Its tab is Edit's Raw, last, after Input colour profile (decision 38; [README.md](README.md), Raw). darktable's scene-referred preset puts it in no group; the darktable workspace gives it Colour, first, the group darktable's other layouts give it ([README.md](README.md), The darktable workspace).
 
 It drives one operation, `colorout` (display 70, [../ports/colorout.md](../ports/colorout.md)), which every photo runs, so it adds no operation. It has no first step, and at its default it sets nothing and leaves the plan as it was. It owns both parameters of the operation.

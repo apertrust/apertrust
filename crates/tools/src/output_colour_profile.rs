@@ -40,6 +40,7 @@
 use apertrust_color::PROFILE_TYPES;
 use apertrust_plugin::{ImageContext, Value};
 
+use crate::about::{Fact, Facts, Purpose};
 use crate::definition::{ChoiceStyle, Control, ControlKind, Definition, Row, Tab};
 use crate::{Base, Controls, Owned, Setting, Tool, ToolValues};
 
@@ -124,6 +125,13 @@ static DEFINITION: Definition = Definition {
     presets: &[],
     views: &[],
     pickers: &[],
+    // darktable's `description()` in src/iop/colorout.c at the reference release.
+    facts: Some(Facts {
+        purpose: Purpose::Mandatory,
+        input: Fact::LinearOrNonLinearLabDisplayReferred,
+        process: Fact::DefinedByProfile,
+        output: Fact::NonLinearRgbOrLabDisplayReferred,
+    }),
 };
 
 /// Every parameter of `colorout`: the tool is darktable's and owns them both, the

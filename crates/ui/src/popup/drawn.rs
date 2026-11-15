@@ -177,6 +177,10 @@ impl Popups {
         Some(restore)
     }
 
+    pub(super) fn any_open(&self) -> bool {
+        !self.open.is_empty() || !self.native.is_empty()
+    }
+
     pub(super) fn anchor(&self, id: Id) -> Option<Rect> {
         let drawn = self.open.iter().find(|(open, _)| *open == id);
         let native = self.native.iter().find(|(open, _)| *open == id);

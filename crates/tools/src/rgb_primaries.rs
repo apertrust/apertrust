@@ -36,6 +36,7 @@
 
 use apertrust_plugin::{ImageContext, Value};
 
+use crate::about::{Fact, Facts, Purpose};
 use crate::definition::{Control, ControlKind, Definition, Row, Slider, Tab, Unit};
 use crate::{Base, Owned, Setting, Tool, ToolValues, switched_from};
 
@@ -191,6 +192,13 @@ static DEFINITION: Definition = Definition {
     presets: &[],
     views: &[],
     pickers: &[],
+    // darktable's `description()` in src/iop/primaries.c at the reference release.
+    facts: Some(Facts {
+        purpose: Purpose::CorrectiveOrCreative,
+        input: Fact::LinearRgbSceneReferred,
+        process: Fact::LinearRgb,
+        output: Fact::LinearRgbSceneReferred,
+    }),
 };
 
 /// Every parameter of `primaries`: the tool is darktable's and owns them all.

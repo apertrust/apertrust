@@ -58,6 +58,15 @@ section-tab-later = Coming in a later version
 # The description screen readers hear on the section of a tool darktable leaves off on a
 # new photo while it is off (decision 32): it renders nothing until a control changes.
 section-not-applied = Not applied
+# A section header's tooltip (docs/gui.md, The header's tooltip): its rows' labels, and a
+# row as screen readers hear it.
+section-about-kind = Kind
+section-about-works-on = Works on
+section-about-measures = Measures
+section-about-input = Input
+section-about-process = Process
+section-about-output = Output
+section-about-row = { $label }: { $value }
 # The tooltip of a choice's option drawn disabled, as one darktable lists that is not
 # ported yet.
 choice-option-later = Coming in a later version

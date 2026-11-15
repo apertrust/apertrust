@@ -2,6 +2,8 @@
 
 Tool `toneequal`, version 2. It works on layers, has no Auto and is switched (decision 32).
 
+Its header's tooltip says what it is for (`tool-toneequal-description`, [gui.md](../gui.md#the-headers-tooltip)): "Relights the scene: brightens or darkens areas by how bright they are, as if you had lit it differently. Reach for it to open shadows or hold back a bright sky."
+
 It is darktable's tone equalizer in the first pass (decision 2). It has darktable's page: the Simple, Advanced and Masking tabs as content tabs, the controls in `gui_init`'s order under darktable's labels in British spelling, and the display of the exposure mask under every tab (decision 29).
 
 It drives one operation, `toneequal` ([../ports/toneequal.md](../ports/toneequal.md)), at darktable's place, camera RGB 24.0 (decision 22). An unedited photo does not run it: it is planned while the tool is on, as in darktable, where the tone equalizer is off until the user turns it on (decision 32). The tool owns every one of the operation's eighteen parameters; none is fixed.

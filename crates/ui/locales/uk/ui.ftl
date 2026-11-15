@@ -46,6 +46,13 @@ section-toggle = Відкрити або закрити: { $section }. Утри�
 section-tabs = Вкладки: { $section }
 section-tab-later = З'явиться в одній із наступних версій
 section-not-applied = Не застосовано
+section-about-kind = Тип
+section-about-works-on = Працює з
+section-about-measures = Вимірює
+section-about-input = На вході
+section-about-process = Обробка
+section-about-output = На виході
+section-about-row = { $label }: { $value }
 choice-option-later = З'явиться в одній із наступних версій
 choice-option-unavailable = Недоступно для цього знімка
 

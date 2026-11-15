@@ -31,6 +31,7 @@
 
 use apertrust_plugin::{ImageContext, Value};
 
+use crate::about::{Fact, Facts, Purpose};
 use crate::definition::{Button, ButtonIcon, Control, ControlKind, Definition, Row, Tab};
 use crate::{Base, ControlValue, Controls, Owned, Setting, Tool, ToolValues};
 
@@ -118,6 +119,13 @@ static DEFINITION: Definition = Definition {
     presets: &[],
     views: &[],
     pickers: &[],
+    // darktable's `description()` in src/iop/flip.c at the reference release.
+    facts: Some(Facts {
+        purpose: Purpose::Corrective,
+        input: Fact::LinearRgbSceneReferred,
+        process: Fact::GeometricRgb,
+        output: Fact::LinearRgbSceneReferred,
+    }),
 };
 
 static OWNS: [Owned; 1] = [Owned::new(FLIP, ORIENTATION)];

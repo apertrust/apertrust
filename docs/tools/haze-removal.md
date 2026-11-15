@@ -2,6 +2,8 @@
 
 Tool `hazeremoval`, version 2. It works on layers, has no Auto and is switched (decision 32).
 
+Its header's tooltip says what it is for (`tool-hazeremoval-description`, [gui.md](../gui.md#the-headers-tooltip)): "Removes haze and fog, bringing back contrast and colour in distant parts of the scene. Reach for it on landscapes that look washed out."
+
 It is darktable's haze removal in the first pass (decision 2). darktable's page has no tabs, sections or presets, only two sliders, here in `gui_init`'s order under darktable's labels: Strength and Distance (decision 29).
 
 It drives one operation, `hazeremoval` ([../ports/hazeremoval.md](../ports/hazeremoval.md)), which an unedited photo does not run. The operation is planned while the tool is on. The tool owns both of the operation's parameters.

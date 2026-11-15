@@ -939,6 +939,7 @@ pub(crate) mod tests {
         presets: &[],
         views: &[],
         pickers: &[],
+        facts: None,
     };
 
     impl Tool for Look {

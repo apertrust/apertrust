@@ -36,6 +36,7 @@ use apertrust_color::WorkingProfile;
 use apertrust_color::curve::{self, Interpolation, Knot};
 use apertrust_plugin::{ImageContext, Value};
 
+use crate::about::{Fact, Facts, Purpose};
 use crate::definition::{
     ChoiceStyle, Control, ControlKind, Definition, MAX_POINTS, Row, Tab, Widget,
 };
@@ -140,6 +141,13 @@ static DEFINITION: Definition = Definition {
     presets: &[],
     views: &[],
     pickers: &[],
+    // darktable's `description()` in src/iop/rgbcurve.c at the reference release.
+    facts: Some(Facts {
+        purpose: Purpose::CorrectiveAndCreative,
+        input: Fact::LinearRgbDisplayReferred,
+        process: Fact::NonLinearRgb,
+        output: Fact::LinearRgbDisplayReferred,
+    }),
 };
 
 /// RGB curve's node parameters, `curve_nodes_<curve>_<node>_x` and `_y`, by curve and

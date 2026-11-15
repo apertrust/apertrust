@@ -49,6 +49,7 @@
 
 use apertrust_plugin::{ImageContext, Value};
 
+use crate::about::{Fact, Facts, Purpose};
 use crate::definition::{ChoiceStyle, Control, ControlKind, Definition, Row, Slider, Tab, Unit};
 use crate::{Base, ControlValue, Controls, Owned, Setting, Tool, ToolValues};
 
@@ -248,6 +249,13 @@ static DEFINITION: Definition = Definition {
     presets: &[],
     views: &[],
     pickers: &[],
+    // darktable's `description()` in src/iop/highlights.c at the reference release.
+    facts: Some(Facts {
+        purpose: Purpose::Corrective,
+        input: Fact::LinearRawSceneReferred,
+        process: Fact::ReconstructionRaw,
+        output: Fact::LinearRawSceneReferred,
+    }),
 };
 
 /// Every parameter of `highlights`, the method and the threshold: the tool is

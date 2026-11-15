@@ -45,6 +45,7 @@
 use apertrust_color::white_balance::{Matrices, TEMPERATURE_RANGE, TINT_RANGE};
 use apertrust_plugin::{Camera, ImageContext, Value};
 
+use crate::about::{Fact, Facts, Purpose};
 use crate::definition::{
     ChoiceStyle, Control, ControlKind, Coordinate, Definition, PresetRow, Row, Slider, Tab, Unit,
     View,
@@ -182,6 +183,13 @@ static DEFINITION: Definition = Definition {
     }],
     views: &VIEWS,
     pickers: &[],
+    // darktable's `description()` in src/iop/temperature.c at the reference release.
+    facts: Some(Facts {
+        purpose: Purpose::Corrective,
+        input: Fact::LinearRawSceneReferred,
+        process: Fact::LinearRaw,
+        output: Fact::LinearRawSceneReferred,
+    }),
 };
 
 /// Every parameter of `temperature`: the four coefficients and `preset`.

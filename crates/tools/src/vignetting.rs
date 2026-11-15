@@ -39,6 +39,7 @@
 
 use apertrust_plugin::{ImageContext, Value};
 
+use crate::about::{Fact, Facts, Purpose};
 use crate::definition::{ChoiceStyle, Control, ControlKind, Definition, Row, Slider, Tab, Unit};
 use crate::{Base, ControlValue, Controls, Owned, Setting, Tool, ToolValues, switched_from};
 
@@ -150,6 +151,13 @@ static DEFINITION: Definition = Definition {
     presets: &[],
     views: &[],
     pickers: &[],
+    // darktable's `description()` in src/iop/vignette.c at the reference release.
+    facts: Some(Facts {
+        purpose: Purpose::Creative,
+        input: Fact::NonLinearRgbDisplayReferred,
+        process: Fact::NonLinearRgb,
+        output: Fact::NonLinearRgbDisplayReferred,
+    }),
 };
 
 /// Every parameter of `vignette`: the tool is darktable's and owns them all, `unbound`

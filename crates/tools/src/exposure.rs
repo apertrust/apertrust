@@ -49,6 +49,7 @@ use apertrust_color::{
 };
 use apertrust_plugin::{ImageContext, Value};
 
+use crate::about::{Fact, Facts, Purpose};
 use crate::definition::{
     ChoiceStyle, Control, ControlKind, Definition, Picker, PickerKind, Quad, Row, SettingRow,
     Slider, Space, Tab, Unit,
@@ -252,6 +253,13 @@ static DEFINITION: Definition = Definition {
     presets: &[],
     views: &[],
     pickers: &[PICKER],
+    // darktable's `description()` in src/iop/exposure.c at the reference release.
+    facts: Some(Facts {
+        purpose: Purpose::CorrectiveAndCreative,
+        input: Fact::LinearRgbSceneReferred,
+        process: Fact::LinearRgb,
+        output: Fact::LinearRgbSceneReferred,
+    }),
 };
 
 /// darktable's picker on Exposure (`DT_COLOR_PICKER_AREA`): the exposure that maps the
