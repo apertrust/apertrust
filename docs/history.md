@@ -432,7 +432,7 @@ History needs two parts of the library's step 8, and they come first:
 
 **Why history does not land in a version 2 of its own first:** history belongs inside `apertrust:copies`, one log per virtual copy. Holding it elsewhere first and moving it into `apertrust:copies` with step 8 would change how existing version 2 files read, against decision 48's one fixed layout per version: a third version, and builds between the two layouts, nightly ones among them, opening each other's edits view-only.
 
-**What of step 8 remains for later:** machines' names in a library's `.apertrust/machines/` (Phase 5); the fingerprint's uses, re-pairing a renamed raw (step 18) and keying thumbnails (step 6); the commands for more than one virtual copy, and tombstones (step 11); comparing two copies by their clock vectors (steps 10 and 12).
+**What step 8 leaves to later steps:** machines' names in a library's `.apertrust/machines/` (Phase 5); the fingerprint's uses, re-pairing a renamed raw (step 18) and keying thumbnails (step 6); the commands for more than one virtual copy, and tombstones (step 11); comparing two copies by their clock vectors (steps 10 and 12).
 
 ## The CLI
 
