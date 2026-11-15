@@ -573,16 +573,20 @@ impl Mirror {
 /// applied, and a choice lists every option. A preset row reads the option the defaults
 /// match and a view's coordinates are the tool's view of them, both on the no-photo
 /// image ([`PhotoState::image`]); a row whose tool cannot say reads Custom, and a view
-/// whose tool cannot is left out, as the session leaves it out.
+/// whose tool cannot is left out, as the session leaves it out. Whether each control's
+/// row shows, and a value after its label, are the tool's on that image too (decision
+/// 88), so Exposure's camera rows, which no photo gives anything to do, are hidden.
 fn untouched(tools: &[&dyn Tool]) -> Values {
     let image = PhotoState::None.image();
     let states = tools.iter().map(|tool| {
         let definition = tool.definition();
         let defaults = definition.defaults();
+        let (rows, _) = edit::photo_rows(*tool, &image);
         let controls: Vec<ControlState> = definition
             .controls
             .iter()
-            .map(|control| ControlState {
+            .zip(rows)
+            .map(|(control, row)| ControlState {
                 control: control.id,
                 value: control.default(),
                 default: control.default(),
@@ -590,6 +594,8 @@ fn untouched(tools: &[&dyn Tool]) -> Values {
                 available: false,
                 options: Vec::new(),
                 range: edit::range(*tool, control.id, &defaults).map(|(range, _)| range),
+                visible: row.visible,
+                label_value: row.label_value,
             })
             .collect();
         let presets = definition
@@ -1194,6 +1200,8 @@ pub(crate) mod tests {
             available: true,
             options: Vec::new(),
             range: None,
+            visible: true,
+            label_value: None,
         };
         let exposure = |black, black_mark, exposure, exposure_mark| ToolState {
             tool: "exposure",
@@ -1298,6 +1306,8 @@ pub(crate) mod tests {
                     available: true,
                     options: Vec::new(),
                     range: None,
+                    visible: true,
+                    label_value: None,
                 }],
                 presets: Vec::new(),
                 views: Vec::new(),

@@ -133,7 +133,7 @@ Goal: open, edit, save and reopen a photo with the first pass's tools. Migration
   - [ ] Rotate and perspective, ported.
   - [ ] Denoise (profiled), ported, with darktable's noise profiles.
 - [ ] Exposure's page as redesigned, the one exception to darktable's page in the first pass, its edits and renders unchanged (decision 88; [tools/exposure.md](tools/exposure.md#the-page-as-redesigned-planned)), one pull request each:
-  - [ ] 1. The camera's rows: hidden where the photo gives them nothing to do, their labels with the camera's value.
+  - [x] 1. The camera's rows: hidden where the photo gives them nothing to do, their labels with the camera's value.
   - [ ] 2. Automatic mode's page: Manual | Automatic, Automatic disabled on an image that is not a raw; Measure at, Place it at and This photo; Auto dropped from Exposure.
   - [ ] 3. Picker target, Middle grey or Lightness, in place of Area exposure mapping; measure mode gone.
   - [ ] 4. The reference: Picker target's Reference, kept across photos, with its own picker.

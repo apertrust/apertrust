@@ -3,7 +3,9 @@
 #   tool-<tool>-title, tool-<tool>-description, tool-<tool>-auto, tool-<tool>-tab-<tab>,
 #   tool-<tool>-group-<group>, tool-<tool>-collapsible-<group>,
 #   tool-<tool>-control-<control>-label, -full and -promise,
-#   tool-<tool>-control-<control>-option-<option>, a tool's setting's
+#   tool-<tool>-control-<control>-label-value where the tool gives a value of the
+#   photo's after the label, tool-<tool>-control-<control>-option-<option>, a tool's
+#   setting's
 #   tool-<tool>-setting-<setting>-label, -full, -promise and -option-<option>, and a
 #   preset row's tool-<tool>-preset-<preset>-label, -full, -promise and
 #   -option-<option>.
@@ -431,9 +433,14 @@ tool-exposure-control-mode-option-automatic = Automatic
 tool-exposure-control-camera_bias-label = Compensate camera exposure
 tool-exposure-control-camera_bias-full = Compensate camera exposure
 tool-exposure-control-camera_bias-promise = Undoes the exposure compensation set on the camera.
+# The camera's bias after the label, in brackets; $value is it with its unit, "−⅔ EV".
+tool-exposure-control-camera_bias-label-value = ({ $value })
 tool-exposure-control-compensate_hilite_pres-label = Highlight preservation mode
 tool-exposure-control-compensate_hilite_pres-full = Highlight preservation mode
 tool-exposure-control-compensate_hilite_pres-promise = Removes the camera's hidden exposure bias in HDR, highlight preservation, dynamic range or HLG tone mode. On an image with a bias, it needs tone mapping, such as sigmoid, to avoid blown-out highlights.
+# The exposure the camera held back after the label, in brackets; $value is it with its
+# unit, "+1.0 EV".
+tool-exposure-control-compensate_hilite_pres-label-value = ({ $value })
 tool-exposure-control-exposure-label = Exposure
 tool-exposure-control-exposure-full = Exposure
 tool-exposure-control-exposure-promise = Adjusts the exposure correction.

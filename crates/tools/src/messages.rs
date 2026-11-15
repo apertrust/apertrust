@@ -93,6 +93,14 @@ pub fn promise(tool: &str, control: &str) -> String {
     format!("tool-{tool}-control-{control}-promise")
 }
 
+/// A control's label's value of the photo's ([`crate::Tool::label_value`], decision 88),
+/// drawn after the label, `$value` the value with its unit:
+/// `tool-<tool>-control-<control>-label-value`. The definition does not imply it: the
+/// tool's code gives it, so the tests ask each tool which controls have one.
+pub fn label_value(tool: &str, control: &str) -> String {
+    format!("tool-{tool}-control-{control}-label-value")
+}
+
 /// A choice's option: `tool-<tool>-control-<control>-option-<option>`.
 pub fn option(tool: &str, control: &str, option: &str) -> String {
     format!("tool-{tool}-control-{control}-option-{option}")

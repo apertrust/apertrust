@@ -172,6 +172,27 @@ pub trait Tool: Send + Sync {
         true
     }
 
+    /// Whether the row of `control` shows on this photo at all (decision 88): true, as
+    /// provided. Pure, and reading only the photo's metadata, never the tool's values,
+    /// so a row never comes or goes as the person edits: the session asks once as the
+    /// photo opens and reports it. A hidden control keeps its value and its binding.
+    /// Exposure alone overrides it, hiding its two camera rows where the photo gives them
+    /// nothing to do; every other control a photo cannot use is drawn disabled
+    /// ([`Self::available`]), and hiding another is a decision of its own.
+    fn visible(&self, _control: &str, _image: &ImageContext) -> bool {
+        true
+    }
+
+    /// A value of the photo's that the row of `control` shows after its label, as
+    /// Exposure's "Compensate camera exposure (−⅔ EV)" (decision 88): `None`, as provided.
+    /// Pure, and reading only the photo, as [`Self::visible`] is: the session asks once
+    /// as the photo opens and reports it, and a client writes it through
+    /// `tool-<tool>-control-<control>-label-value` ([`messages::label_value`]) where
+    /// the row shows.
+    fn label_value(&self, _control: &str, _image: &ImageContext) -> Option<LabelValue> {
+        None
+    }
+
     /// The options the choice `control` lists on this photo, by id, in the definition's
     /// order (decision 30): darktable's list for the photo, as demosaic lists its
     /// sensor's methods and colour calibration lists as shot in camera only on a colour
@@ -364,6 +385,78 @@ pub fn switched_from(mut values: ToolValues, rendered: bool) -> ToolValues {
     values
 }
 
+/// A value of the photo's for a row's label ([`Tool::label_value`], decision 88): plain
+/// data, which a client writes with its unit, `unit-<unit>-value`, in the language's
+/// number format.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct LabelValue {
+    pub value: f32,
+    pub unit: Unit,
+    pub format: ValueFormat,
+}
+
+/// How a [`LabelValue`]'s number is written.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ValueFormat {
+    /// As a camera writes its exposure bias, in thirds: "−⅔", "+1⅓", "+½", "0"; with
+    /// one decimal, signed, where it is no third and no half: "+0.7", and whole where it
+    /// rounds to a whole number at one decimal: "0", "+1".
+    Thirds,
+    /// With this many decimals, signed: "+1.0".
+    Decimals(u8),
+}
+
+/// How close to a third or a half a value written in thirds must be to be written as
+/// one: a camera's bias read from its metadata may be −0.67 as well as −⅔.
+const THIRDS_TOLERANCE: f32 = 0.01;
+
+impl LabelValue {
+    /// The number as `format` writes it, its digits through `number`, the language's
+    /// number format (`value`, decimals, signed), as `Translator::format_number` writes
+    /// it; the unit is the client's to add.
+    pub fn write(&self, number: impl Fn(f64, usize, bool) -> String) -> String {
+        match self.format {
+            ValueFormat::Decimals(decimals) => {
+                number(f64::from(self.value), usize::from(decimals), true)
+            }
+            ValueFormat::Thirds => {
+                let whole = self.value.abs().trunc();
+                let part = self.value.abs() - whole;
+                let near = |to: f32| (part - to).abs() <= THIRDS_TOLERANCE;
+                // Rounded to the one decimal it would be written with, so a value that
+                // rounds to a whole number is written as one, never "+1.0" or "+0.0".
+                let tenths = (self.value.abs() * 10.0).round();
+                let (whole, glyph) = if near(0.0) {
+                    (whole, "")
+                } else if near(1.0) {
+                    (whole + 1.0, "")
+                } else if near(1.0 / 3.0) {
+                    (whole, "⅓")
+                } else if near(0.5) {
+                    (whole, "½")
+                } else if near(2.0 / 3.0) {
+                    (whole, "⅔")
+                } else if tenths % 10.0 == 0.0 {
+                    (tenths / 10.0, "")
+                } else {
+                    let rounded = (tenths / 10.0).copysign(self.value);
+                    return number(f64::from(rounded), 1, true);
+                };
+                if whole == 0.0 && glyph.is_empty() {
+                    return number(0.0, 0, false);
+                }
+                let sign = if self.value < 0.0 { "−" } else { "+" };
+                let digits = if whole == 0.0 {
+                    String::new()
+                } else {
+                    number(f64::from(whole), 0, false)
+                };
+                format!("{sign}{digits}{glyph}")
+            }
+        }
+    }
+}
+
 /// One operation parameter's value: what a binding sets, and what the session reports
 /// for the parameters no tool owns.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -446,6 +539,57 @@ impl Base {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `value` as `format` writes it, its digits as English writes them, `−` for minus.
+    fn written(value: f32, format: ValueFormat) -> String {
+        let number = |value: f64, decimals: usize, signed: bool| {
+            let digits = format!("{:.decimals$}", value.abs());
+            match (value < 0.0, signed) {
+                (true, _) => format!("−{digits}"),
+                (false, true) => format!("+{digits}"),
+                (false, false) => digits,
+            }
+        };
+        let unit = Unit::Ev;
+        LabelValue {
+            value,
+            unit,
+            format,
+        }
+        .write(number)
+    }
+
+    #[test]
+    fn thirds_are_written_as_a_camera_writes_its_bias() {
+        let thirds = |value| written(value, ValueFormat::Thirds);
+        assert_eq!(thirds(-2.0 / 3.0), "−⅔");
+        assert_eq!(thirds(-0.67), "−⅔");
+        assert_eq!(thirds(4.0 / 3.0), "+1⅓");
+        assert_eq!(thirds(1.33), "+1⅓");
+        assert_eq!(thirds(0.0), "0");
+        assert_eq!(thirds(-0.5), "−½");
+        assert_eq!(thirds(2.0), "+2");
+        assert_eq!(thirds(-0.995), "−1");
+        // No third and no half: one decimal, signed.
+        assert_eq!(thirds(0.7), "+0.7");
+        assert_eq!(thirds(-1.2), "−1.2");
+        // Off a whole number by more than the tolerance but rounding to it at one
+        // decimal: written whole, never "+0.0" for a negative value nor "+1.0" for 1.
+        assert_eq!(thirds(-0.02), "0");
+        assert_eq!(thirds(0.04), "0");
+        assert_eq!(thirds(0.98), "+1");
+        assert_eq!(thirds(1.03), "+1");
+        assert_eq!(thirds(-1.96), "−2");
+        assert_eq!(thirds(0.06), "+0.1");
+        assert_eq!(thirds(-0.06), "−0.1");
+    }
+
+    #[test]
+    fn decimals_are_written_signed() {
+        assert_eq!(written(1.0, ValueFormat::Decimals(1)), "+1.0");
+        assert_eq!(written(0.5, ValueFormat::Decimals(1)), "+0.5");
+        assert_eq!(written(-0.25, ValueFormat::Decimals(2)), "−0.25");
+    }
 
     /// A retired id taken again belongs to the tool that took it, which reads its
     /// values, so it leaves the list.

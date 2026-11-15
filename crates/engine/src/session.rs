@@ -129,7 +129,7 @@ pub use apertrust_plugin::Value;
 use apertrust_plugin::{ImageContext, ImageDesc, Operation, ParamValues};
 use apertrust_tools::check::{self, ToolError};
 use apertrust_tools::{Base, ControlKind, Controls, Tool};
-pub use apertrust_tools::{ControlValue, Mark, Range, Setting};
+pub use apertrust_tools::{ControlValue, LabelValue, Mark, Range, Setting, ValueFormat};
 use thiserror::Error;
 
 use crate::compute::{ComputeError, GpuImage, POLL_INTERVAL, Timings};
@@ -865,6 +865,16 @@ pub struct ControlState {
     /// outside it, and clamps one a change leaves outside. `None` for a control that is no
     /// number.
     pub range: Option<Range>,
+    /// Whether its row shows on this photo at all (`Tool::visible`, decision 88),
+    /// computed once as the photo opened, from its metadata alone: false only for
+    /// Exposure's two camera rows where the photo gives them nothing to do. A hidden
+    /// control keeps its value and its binding. True where the tool's code panics, warned
+    /// of once for the photo.
+    pub visible: bool,
+    /// A value of the photo's that its row shows after its label (`Tool::label_value`,
+    /// decision 88), as Exposure's camera bias, computed once as the photo opened; `None`
+    /// for a row with none, and where the tool's code panics.
+    pub label_value: Option<LabelValue>,
 }
 
 /// A rendered frame: RGBA `f32` in the output profile's encoding, rows top to bottom,
@@ -1113,6 +1123,28 @@ fn listed_options(
         }
     }
     lists
+}
+
+/// What `image` shows of each control's row of `tools`, by tool and control
+/// (decision 88): [`edit::photo_rows`], every row shown with no value where a tool's code
+/// panics, warned of once for the photo.
+fn photo_rows(
+    tools: &[&'static dyn Tool],
+    image: &ImageContext,
+) -> BTreeMap<(&'static str, &'static str), edit::PhotoRow> {
+    let mut shown = BTreeMap::new();
+    for &tool in tools {
+        let definition = tool.definition();
+        let (rows, failed) = edit::photo_rows(tool, image);
+        if let Some(message) = failed {
+            let id = definition.id;
+            tracing::warn!(target: "pipe", "tool {id}'s rows all shown, no values: {message}");
+        }
+        for (control, row) in definition.controls.iter().zip(rows) {
+            shown.insert((definition.id, control.id), row);
+        }
+    }
+    shown
 }
 
 /// A client's handle on the session; dropping it ends the thread, once the edit is saved.
@@ -2245,6 +2277,9 @@ struct Open {
     /// The options each choice lists on the photo, by tool and control, computed once as
     /// it opened (decision 30).
     options: BTreeMap<(&'static str, &'static str), Vec<&'static str>>,
+    /// What the photo shows of each control's row, by tool and control, computed once as
+    /// it opened (decision 88): whether it shows and a value after its label.
+    rows: BTreeMap<(&'static str, &'static str), edit::PhotoRow>,
     /// The coordinates of lossless views held through gestures (decision 2).
     held: Held,
     /// The gesture under way, which [`Command::CancelGesture`] puts back (decision 42).
@@ -3615,6 +3650,7 @@ impl Engine {
             image: Box::new(image.clone()),
         };
         let options = listed_options(&self.tools, &image);
+        let rows = photo_rows(&self.tools, &image);
         // Its saves are the ones its thumbnail waits for, and the file as read is what the
         // first compares.
         self.writer
@@ -3642,6 +3678,7 @@ impl Engine {
             available_failed: BTreeSet::new(),
             ranges_failed: BTreeSet::new(),
             options,
+            rows,
             held: Held::default(),
             gesture: None,
             views_failed: BTreeSet::new(),
@@ -3712,6 +3749,7 @@ impl Engine {
         if metadata.image != photo.image {
             tracing::debug!(target: "raw", "{name}: the decode's image context differs from the metadata's, taken");
             photo.options = listed_options(&self.tools, &metadata.image);
+            photo.rows = photo_rows(&self.tools, &metadata.image);
             photo.image = metadata.image;
             // Clamped again to the ranges the decode's context gives, as an opened edit is.
             if photo.view_only.is_none() {
@@ -4658,6 +4696,11 @@ impl Open {
                                 range
                             },
                         );
+                        let row = self
+                            .rows
+                            .get(&(definition.id, control.id))
+                            .copied()
+                            .unwrap_or_default();
                         ControlState {
                             control: control.id,
                             value,
@@ -4666,6 +4709,8 @@ impl Open {
                             available: available && editable && !alone,
                             options,
                             range,
+                            visible: row.visible,
+                            label_value: row.label_value,
                         }
                     })
                     .collect();
@@ -4927,7 +4972,8 @@ mod tests {
     const BUILD: &str = "0.4.0+12~g1a2b3c4";
 
     /// `testing::image`'s photo, whatever the path; one called `bias.ARW` records an
-    /// exposure bias of −0.7 EV, one called `xtrans.ARW` has an X-Trans filter, and one
+    /// exposure bias of −0.7 EV, one called `held.ARW` a bias of −⅔ EV and 1 EV held back
+    /// by a highlight-preserving mode, one called `xtrans.ARW` has an X-Trans filter, and one
     /// called `wide.ARW` is 1100 photosites wide, its image 1088 × 62.
     fn synthetic(path: &Path) -> Result<(Metadata, Mosaic), SessionError> {
         let mut image = testing::image();
@@ -4967,6 +5013,10 @@ mod tests {
         }
         if let (true, Some(camera)) = (path.ends_with("bias.ARW"), &mut image.camera) {
             camera.exposure_bias = -0.7;
+        }
+        if let (true, Some(camera)) = (path.ends_with("held.ARW"), &mut image.camera) {
+            camera.exposure_bias = -2.0 / 3.0;
+            camera.highlight_preservation = 1.0;
         }
         // A photo taken upright, its EXIF orientation rotate 270° clockwise, darktable's
         // rotate 90° anticlockwise.
@@ -6495,6 +6545,131 @@ mod tests {
         // Automatic mode's controls act on a raw.
         assert!(control(values, "exposure", "mode").available);
         assert!(control(values, "exposure", "deflicker_percentile").available);
+        remove(&path);
+    }
+
+    /// Exposure's two camera rows are hidden on a photo that gives them nothing to do,
+    /// and shown with the photo's value after their labels on one that does (decision 88);
+    /// every other row shows, with no value.
+    #[test]
+    fn the_photo_says_which_rows_show_and_the_values_after_their_labels() {
+        use apertrust_tools::exposure::Exposure;
+        let path = scratch("camera-rows");
+        let mut driven = Driven::new(&[&Exposure]);
+        let events = driven.open(&path);
+        let camera = ["camera_bias", "compensate_hilite_pres"];
+        for state in &values(&events).tools[0].controls {
+            assert_eq!(state.visible, !camera.contains(&state.control), "{state:?}");
+            assert_eq!(state.label_value, None, "{state:?}");
+        }
+        let held = path.with_file_name("held.ARW");
+        let events = driven.open(&held);
+        let report = values(&events);
+        for state in &report.tools[0].controls {
+            assert!(state.visible, "{state:?}");
+        }
+        let bias = control(report, "exposure", "camera_bias").label_value;
+        let given_back = control(report, "exposure", "compensate_hilite_pres").label_value;
+        assert_eq!(
+            bias,
+            Some(LabelValue {
+                value: -2.0 / 3.0,
+                unit: apertrust_tools::Unit::Ev,
+                format: ValueFormat::Thirds,
+            })
+        );
+        assert_eq!(
+            given_back,
+            Some(LabelValue {
+                value: 1.0,
+                unit: apertrust_tools::Unit::Ev,
+                format: ValueFormat::Decimals(1),
+            })
+        );
+        // Read once as the photo opened, they stay through a change.
+        let events = driven.run([Command::SetControl {
+            tool: "exposure".to_owned(),
+            control: "camera_bias".to_owned(),
+            value: ControlValue::Bool(false),
+            done: true,
+        }]);
+        let state = control(values(&events), "exposure", "camera_bias");
+        assert!(state.visible);
+        assert_eq!(state.label_value, bias);
+        // And through an undo and a move to the history's start.
+        for command in [Command::Undo, Command::GoTo { step: None }] {
+            let events = driven.run([command]);
+            assert!(failures(&events).is_empty(), "{events:?}");
+            let state = control(values(&events), "exposure", "camera_bias");
+            assert_eq!(state.value, ControlValue::Bool(true));
+            assert!(state.visible);
+            assert_eq!(state.label_value, bias);
+        }
+        driven.writes();
+        remove(&path);
+    }
+
+    /// Where the decode reads a bias the metadata missed, the photo's rows are read again
+    /// from the decode's context as it goes live, as its options are.
+    #[test]
+    fn the_decode_s_context_says_which_rows_show() {
+        use apertrust_tools::exposure::Exposure;
+        let path = scratch("rebias").with_file_name("rebias.ARW");
+        let mut driven = Driven::new(&[&Exposure]);
+        let events = driven.open(&path);
+        let reports: Vec<&Values> = events
+            .iter()
+            .filter_map(|event| match event {
+                Event::Values(values) => Some(values),
+                _ => None,
+            })
+            .collect();
+        // The metadata's values first, with no bias: hidden.
+        let first = control(reports[0], "exposure", "camera_bias");
+        assert!(!first.visible && first.label_value.is_none(), "{first:?}");
+        let live = control(reports[reports.len() - 1], "exposure", "camera_bias");
+        assert!(live.visible, "{live:?}");
+        assert_eq!(live.label_value.map(|label| label.value), Some(-2.0 / 3.0));
+        remove(&path);
+    }
+
+    /// A tool whose `visible` and `label_value` panic, as a tool's bug may make them.
+    struct Hiding;
+
+    impl Tool for Hiding {
+        fn definition(&self) -> &'static Definition {
+            Sample.definition()
+        }
+
+        fn owns(&self) -> &'static [Owned] {
+            Sample.owns()
+        }
+
+        fn bind(&self, values: &ToolValues, image: &ImageContext, base: &Base) -> Vec<Setting> {
+            Sample.bind(values, image, base)
+        }
+
+        fn visible(&self, _: &str, _: &ImageContext) -> bool {
+            panic!("a bug in visibility")
+        }
+
+        fn label_value(&self, _: &str, _: &ImageContext) -> Option<LabelValue> {
+            panic!("a bug in a label's value")
+        }
+    }
+
+    #[test]
+    fn rows_whose_tool_panics_all_show_with_no_value() {
+        let path = scratch("hiding");
+        let mut driven = Driven::new(&[&Hiding]);
+        let events = driven.open(&path);
+        assert!(failures(&events).is_empty(), "{events:?}");
+        let controls = &values(&events).tools[0].controls;
+        assert!(!controls.is_empty());
+        for state in controls {
+            assert!(state.visible, "{state:?}");
+            assert_eq!(state.label_value, None, "{state:?}");
+        }
         remove(&path);
     }
 

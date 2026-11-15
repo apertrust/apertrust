@@ -127,6 +127,7 @@ The groundwork for orientation:
 - Each choice comes with the options its photo lists (`ControlState::options`, from `edit::listed`), computed once as the photo opens. Where a tool panics or gives a list that does not hold together, every option is listed.
 - Another option is refused as `EditError::NotListed`, the edit given the image context. A choice that lists only the option it holds is unavailable (decision 30).
 - Each number's range is reported as `ControlState::range`.
+- Whether each control's row shows on the photo and a value of the photo's after its label (`ControlState::visible` and `label_value`, from `edit::photo_rows`), computed as the photo opens and again where its decode's context replaces the metadata's (decision 88). Where a tool panics, every row shows with no value.
 - Each preset row's matching option and the options the photo can have are reported (`PresetState`).
 - Each view's coordinates are reported with whether each can change the photo (`CoordinateState`).
 - Each tool is reported on or off (`ToolState::enabled`, decision 32), and edited while its reset would change the render: a control off its default, or a switched tool on (`ToolState::edited`, `Values::edited`).
@@ -864,7 +865,7 @@ In `crates/ui/src/components`. Each reports its role, full name and value to Acc
 
 **Checkboxes, text buttons and icon buttons** ([docs/gui.md](gui.md#checkboxes-text-buttons-and-icon-buttons)): `Checkbox`, `Button` (default, or primary with `Button::primary`; at least a width, with the keys that do the same at its end, `Button::width` and `Button::keys`) and `ToolButton`, the bars' quiet one, drawn from one plate, and `IconButton`, drawn with none, its icon `text_secondary` at rest, `text_strong` under the pointer, `accent_text` held down and its filled form while on (decision 81), all with one focus ring with a point of ground inside it (`components/plate.rs`); `ButtonState` draws any of them in one state, as the gallery's strip of states does.
 
-**Others:** `Segmented`, `Swatches`, `ToggleRow` for a tool's checkboxes, `ActionRow` for its buttons, drawn disabled until what they run is built, `ReadoutRow` for a number the photo gives, its label at the start and its value at the end where a slider's ends (decision 87), and `ButtonsRow`, a control's label with darktable's icon buttons inline (`ButtonsAction`), as Orientation's transform row.
+**Others:** `Segmented`, `Swatches`, `ToggleRow` for a tool's checkboxes, with a value of the photo's after the label (`ToggleRow::value`, decision 88), `ActionRow` for its buttons, drawn disabled until what they run is built, `ReadoutRow` for a number the photo gives, its label at the start and its value at the end where a slider's ends (decision 87), and `ButtonsRow`, a control's label with darktable's icon buttons inline (`ButtonsAction`), as Orientation's transform row.
 
 **`TextField` and `PathField`** (`components/text_field.rs`): a one-line text well, every edit reported whole, with a hint and an error outline. The path field has a list of variables with their descriptions, part of the row while the caret stands after `$(` and the letters of a name. A click, or ↓ ↑ and Enter, inserts one, closed; Escape closes the list alone (`PathOutput::list_open`).
 
@@ -1217,6 +1218,8 @@ Tools (decision 28): what the user edits with, bound to operation parameters. No
 
 - `available`: whether a control can change the photo. It is unavailable when it can change nothing on a photo, or while the tool's own values disable it (decision 30).
 - `options`: the options a choice lists on the photo, the definition's by default, held by `check::listed` (decision 30).
+- `visible(control, image)` (decision 88): whether a control's row shows on the photo, true by default, read from its metadata alone; only Exposure's two camera rows are ever hidden, which a test holds.
+- `label_value(control, image)` (decision 88): a value of the photo's for a row's label, none by default: `LabelValue { value, unit, format }`, its `ValueFormat` `Thirds` ("−⅔", "+1⅓", "0", one decimal where it is no third or half) or `Decimals(n)`, written by `LabelValue::write` through the client's number format.
 - `range(control, values)` (decision 30): a number's `Range`, track and step for the tool's values, the definition's by default (`Definition::range`).
 - `curve`: the curve a curve row or a band graph draws, as its operation renders it (decision 31); `curve_width`, how far a band graph's drag reaches.
 - `fixed`: the parameters it owns that no control sets; `--param` and `Command::Set` on them are refused as fixed (`EditError::Fixed`).
@@ -1338,14 +1341,14 @@ darktable's white balance over the raw-stage `temperature` (decision 27).
 darktable's exposure page, on one untitled tab.
 
 - Mode, manual or automatic, darktable's deflicker (decision 87).
-- In manual mode: Compensate camera exposure; Highlight preservation mode, on by default, drawn disabled on a photo whose camera held no exposure back; and Exposure, darktable's slider, `exposure.exposure` itself, its default the photo's, +0.7 EV on a colour raw (decision 30).
+- In manual mode: Compensate camera exposure; Highlight preservation mode, on by default; both hidden where the photo gives them nothing to do and labelled with the camera's value (`Tool::visible`, `Tool::label_value`, decision 88); and Exposure, darktable's slider, `exposure.exposure` itself, its default the photo's, +0.7 EV on a colour raw (decision 30).
 - In automatic mode: Percentile, Target level and the computed EC (`Row::Computed`).
 - Black level correction, and the Area exposure mapping group's picker settings.
 - It owns every `exposure` parameter and drives only it; every control is ported. Its hidden Contrast and Pivot are left for Colour balance RGB (decision 2).
 - Ranges: Exposure holds darktable's −18 to +18 EV. Black level correction holds darktable's −1 to +1 over the photo's black; a black that reaches the white the photo renders goes 0.01 below it.
 - Version 2: an edit's version 1 Exposure, in exact stops, is left out with a warning. Version 3: Highlight preservation mode ported, on by default, an older edit's stored Exposure entry reading it off, as it rendered; an edit with no Exposure entry has nothing to migrate and takes the default, on, as an unedited photo does.
 - Its invariant rows are tests on the synthetic ramp and sweep, and locally on the corpus.
-- Planned (decision 88): the page as redesigned, in six steps ([tools/exposure.md](tools/exposure.md#the-page-as-redesigned-planned)): `Tool::visible`, `label_value` and `picker_ready`; `Row::WhenSetting`, `Row::Reference` and `Row::LastPick`; `Picker::words_by`; `Shown::last` and `warnings`; `Reading::input_maximum`; `PickerTarget` and the `reference` picker; `auto: false`; `AreaMode` and the area exposure mapping removed.
+- The page as redesigned (decision 88), in six steps ([tools/exposure.md](tools/exposure.md#the-page-as-redesigned-planned)): the first, the camera's rows, is built; the other five are planned: `Tool::picker_ready`; `Row::WhenSetting`, `Row::Reference` and `Row::LastPick`; `Picker::words_by`; `Shown::last` and `warnings`; `Reading::input_maximum`; `PickerTarget` and the `reference` picker; `auto: false`; `AreaMode` and the area exposure mapping removed.
 
 #### Colour calibration
 

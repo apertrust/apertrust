@@ -681,6 +681,139 @@ fn a_toggle_row_reports_its_full_name_and_ignores_input_while_disabled() {
     assert_eq!(harness.state().2, [false]);
 }
 
+/// A value after the label, in `text_secondary`: screen readers hear it after the full
+/// name, and a click on it toggles the row, as one on the label does.
+#[test]
+fn a_toggle_row_s_value_follows_its_label_and_is_heard_with_its_name() {
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(320.0, 40.0))
+        .with_context_setup(|ctx| apertrust_ui::install(ctx, Theme::default()))
+        .build_ui_state(
+            |ui, state: &mut (bool, bool)| {
+                if let Some(on) = ToggleRow::new("Compensate camera exposure", state.0)
+                    .value("(−⅔ EV)")
+                    .enabled(state.1)
+                    .show(ui)
+                {
+                    state.0 = on;
+                }
+            },
+            (true, true),
+        );
+    harness.run();
+    let heard = "Compensate camera exposure (−⅔ EV)";
+    let row = harness.get_by_role_and_label(Role::CheckBox, heard).rect();
+    harness.snapshot("toggle-row-value");
+    // The value is part of the target, at the row's end.
+    click_at(&mut harness, pos2(row.right() - 4.0, row.center().y));
+    assert!(!harness.state().0);
+    harness.state_mut().1 = false;
+    harness.run();
+    harness.snapshot("toggle-row-value-disabled");
+}
+
+/// A label too long for the row is cut with … before its value, which is never cut;
+/// screen readers hear the whole label and the value, and the tooltip has the label
+/// whole, then the promise, enabled or not.
+#[test]
+fn a_toggle_row_cuts_a_long_label_before_its_value() {
+    let label = "Skompensuj ekspozycję aparatu zapisaną przez aparat w metadanych";
+    let promise = "Cofa korektę ekspozycji ustawioną w aparacie.";
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(240.0, 40.0))
+        .with_context_setup(|ctx| {
+            apertrust_ui::install(ctx, Theme::default());
+            ctx.global_style_mut(|style| style.interaction.tooltip_delay = 0.0);
+        })
+        .build_ui_state(
+            move |ui, enabled: &mut bool| {
+                ToggleRow::new(label, true)
+                    .value("(−⅔ EV)")
+                    .promise(promise)
+                    .enabled(*enabled)
+                    .show(ui);
+            },
+            true,
+        );
+    harness.run();
+    let heard = format!("{label} (−⅔ EV)");
+    let row = harness.get_by_role_and_label(Role::CheckBox, &heard).rect();
+    assert!(row.right() <= 240.0, "{row:?}");
+    harness.snapshot("toggle-row-value-long-label");
+    let tip = format!("{label} (−⅔ EV)\n{promise}");
+    for enabled in [true, false] {
+        *harness.state_mut() = enabled;
+        harness.hover_at(row.center());
+        harness.run();
+        assert!(harness.query_by_label(&tip).is_some(), "{enabled}: {tip}");
+    }
+}
+
+/// A row with room for its label has the promise alone as its tooltip.
+#[test]
+fn a_toggle_row_with_room_has_its_promise_alone_as_its_tooltip() {
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(400.0, 80.0))
+        .with_context_setup(|ctx| {
+            apertrust_ui::install(ctx, Theme::default());
+            ctx.global_style_mut(|style| style.interaction.tooltip_delay = 0.0);
+        })
+        .build_ui(|ui| {
+            ToggleRow::new("Compensate camera exposure", true)
+                .value("(−⅔ EV)")
+                .promise("Undoes the exposure compensation set on the camera.")
+                .show(ui);
+        });
+    harness.run();
+    let row = harness
+        .get_by_role_and_label(Role::CheckBox, "Compensate camera exposure (−⅔ EV)")
+        .rect();
+    harness.hover_at(row.center());
+    harness.run();
+    let promise = "Undoes the exposure compensation set on the camera.";
+    assert!(harness.query_by_label(promise).is_some());
+}
+
+/// A checkbox with a value is heard with it, used alone as in a row.
+#[test]
+fn a_checkbox_s_value_is_heard_after_its_label() {
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(400.0, 40.0))
+        .with_context_setup(|ctx| apertrust_ui::install(ctx, Theme::default()))
+        .build_ui_state(
+            |ui, on: &mut bool| {
+                Checkbox::new(on, "Compensate camera exposure")
+                    .value("(−⅔ EV)")
+                    .show(ui);
+            },
+            true,
+        );
+    harness.run();
+    harness.get_by_role_and_label(Role::CheckBox, "Compensate camera exposure (−⅔ EV)");
+}
+
+/// With no label, the value follows the box: drawn, given room and heard alone.
+#[test]
+fn a_checkbox_with_no_label_shows_its_value_after_the_box() {
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(400.0, 40.0))
+        .with_context_setup(|ctx| apertrust_ui::install(ctx, Theme::default()))
+        .build_ui_state(
+            |ui, width: &mut f32| {
+                let mut on = true;
+                *width = Checkbox::new(&mut on, "")
+                    .value("(−⅔ EV)")
+                    .show(ui)
+                    .rect
+                    .width();
+            },
+            0.0,
+        );
+    harness.run();
+    harness.get_by_role_and_label(Role::CheckBox, "(−⅔ EV)");
+    assert!(*harness.state() > 40.0, "room for the value after the box");
+}
+
 #[test]
 fn a_readout_row_says_its_label_and_value_in_the_language_s_format() {
     let mut harness = Harness::builder()

@@ -1385,9 +1385,11 @@ fn controls(ui: &mut Ui, t: &Theme, demo: &mut Demo) {
     {
         demo.tool = i;
     }
-    // A checkbox row, live and disabled, as on a photo that records no camera bias.
+    // A checkbox row, live with the photo's value after its label, and disabled, as on
+    // a photo that records no camera bias.
     if let Some(on) = ToggleRow::new("Use camera bias", demo.camera_bias)
         .name("Use the camera's exposure bias")
+        .value("(−⅔ EV)")
         .promise("Undoes the exposure compensation set on the camera.")
         .show(ui)
     {

@@ -1395,6 +1395,8 @@ mod tests {
                 available: true,
                 options: Vec::new(),
                 range: None,
+                visible: true,
+                label_value: None,
             })
             .collect();
         Values {

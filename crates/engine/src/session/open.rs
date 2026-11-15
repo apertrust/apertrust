@@ -701,8 +701,9 @@ pub(crate) mod testing {
 
     /// The raws `develop` gives, whatever the path: the metadata read the decode's, an
     /// embedded picture only for a raw called `embedded.ARW`, 64 × 48 pixels made no larger
-    /// than the longer side asked, and a decode that fails for one called
-    /// `undecodable.ARW`, whose metadata reads.
+    /// than the longer side asked, a decode that fails for one called
+    /// `undecodable.ARW`, whose metadata reads, and one whose decode reads a bias of
+    /// −⅔ EV the metadata missed for one called `rebias.ARW`.
     pub(crate) fn loading(develop: Develop) -> Load {
         Arc::new(move |path: &Path| {
             Ok(Box::new(Synthetic {
@@ -762,7 +763,14 @@ pub(crate) mod testing {
                 let error = apertrust_raw::Error::Decode("a test's undecodable raw".to_owned());
                 return Err(error.into());
             }
-            (self.develop)(&self.path)
+            let (mut metadata, mosaic) = (self.develop)(&self.path)?;
+            if let (true, Some(camera)) = (
+                self.path.ends_with("rebias.ARW"),
+                &mut metadata.image.camera,
+            ) {
+                camera.exposure_bias = -2.0 / 3.0;
+            }
+            Ok((metadata, mosaic))
         }
     }
 }
