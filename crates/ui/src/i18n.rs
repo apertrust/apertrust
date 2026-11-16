@@ -343,7 +343,8 @@ fn number_in<const L: usize, M>(value: &FluentValue, _: &M) -> Option<String> {
     let decimals = number
         .options
         .minimum_fraction_digits
-        .unwrap_or_else(|| natural_decimals(number.value));
+        .unwrap_or(0)
+        .max(natural_decimals(number.value));
     Some(signed_number(
         locale,
         number.value,
@@ -645,6 +646,7 @@ mod tests {
         };
         assert_eq!(size(Locale::EnGb, 1.0), "1.0 MB");
         assert_eq!(size(Locale::EnGb, 5.0), "5.0 MB");
+        assert_eq!(size(Locale::EnGb, 1.25), "1.25 MB");
         assert_eq!(size(Locale::Uk, 1.5), "1,5 МБ");
         assert_eq!(size(Locale::Pl, 1.5), "1,5 MB");
     }

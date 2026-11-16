@@ -1677,7 +1677,9 @@ fn export(
     add_cases(&mut instances, adds, &grain_at)?;
     if let Some(path) = darktable_xmp {
         let xmp = darktable_history(image, &metadata, &context, &instances, size, adds, None)?;
-        std::fs::write(path, xmp).with_context(|| format!("writing {}", path.display()))?;
+        let mut file = create_export_output(path)?;
+        std::io::Write::write_all(&mut file, xmp.as_bytes())
+            .with_context(|| format!("writing {}", path.display()))?;
     }
 
     let gpu = pollster::block_on(GpuContext::new(&GpuOptions::default()))?;
@@ -1690,8 +1692,7 @@ fn export(
     let (width, height) = (exported.desc.width, exported.desc.height);
     let picture = apertrust_export::Image::new(&exported.pixels, width, height)?;
     let start = Instant::now();
-    let file = std::fs::File::create(output)
-        .with_context(|| format!("cannot create {}", output.display()))?;
+    let file = create_export_output(output)?;
     let mut out = std::io::BufWriter::new(file);
     apertrust_export::Format::Png(apertrust_export::png::Options::default())
         .write(picture, &mut out)?;
@@ -2243,11 +2244,38 @@ fn summary(stats: &Stats, tolerance: Tolerance) -> String {
     )
 }
 
+/// Export destinations must be new, including sidecars, so aliases of the raw are safe.
+fn create_export_output(path: &Path) -> Result<std::fs::File> {
+    std::fs::File::create_new(path)
+        .with_context(|| format!("cannot create new file {}", path.display()))
+}
+
 #[cfg(test)]
 mod tests {
     use anyhow::anyhow;
 
     use super::*;
+
+    #[test]
+    fn exports_cannot_replace_existing_originals_or_aliases() {
+        let directory = std::env::temp_dir().join(format!(
+            "apertrust-golden-output-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir(&directory).unwrap();
+        let raw = directory.join("original.ARW");
+        let alias = directory.join("alias.png");
+        std::fs::write(&raw, b"original raw").unwrap();
+        std::fs::hard_link(&raw, &alias).unwrap();
+        assert!(create_export_output(&raw).is_err());
+        assert!(create_export_output(&alias).is_err());
+        assert_eq!(std::fs::read(&raw).unwrap(), b"original raw");
+        std::fs::remove_dir_all(directory).unwrap();
+    }
 
     fn raw(path: &str, expected: Expected) -> Raw {
         Raw {

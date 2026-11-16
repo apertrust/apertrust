@@ -25,7 +25,7 @@ use apertrust_ui::{Builtin, Theme};
 use egui::accesskit::Role;
 use egui::{Color32, Rect, Sense, pos2, vec2};
 use egui_kittest::Harness;
-use egui_kittest::kittest::Queryable as _;
+use egui_kittest::kittest::{NodeT as _, Queryable as _};
 
 fn values() -> Vec<String> {
     ["1/250 s", "f/8", "35 mm", "ISO 200"]
@@ -147,9 +147,13 @@ fn screen_readers_hear_everything_whatever_the_width_dropped() {
     for width in [640.0, 300.0, 160.0] {
         let mut harness = framed(width, Margin::Points(10.0));
         harness.run();
-        harness.get_by_role_and_label(
+        let caption = harness.get_by_role_and_label(
             Role::Label,
             "R0001176.DNG [2], View only, 1/250 s, f/8, 35 mm, ISO 200",
+        );
+        assert_eq!(
+            caption.accesskit_node().description().as_deref(),
+            Some("Leica Q3 · 9 520 × 6 336")
         );
     }
 }

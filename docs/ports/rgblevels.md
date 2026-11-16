@@ -280,6 +280,6 @@ All eight run the operation where tests 0054 and 0055 do, at darktable's 43 befo
 - **No effect on output:** 257e632e67 (int to size_t in the pixel loops), and GUI work: 70721dd83b, 4b07774dcb, cef1230a39, e3458e7070, 1cf3e707ec.
 - **No effect on rgb levels:** 4b0878d14a and 6f95aa9f30 change HDR transfer code in `iop_profile.h` and `color_conversion.h`, which `dt_ioppr_get_rgb_matrix_luminance` and `lookup` do not use; a57cda46b0 only declares a new OpenCL image conversion in `iop_profile.h`. `rgb_norms.h` (both) and `rgblevels.cl` have no changes.
 
-### Input validation
+## Input validation
 
 Operation setup also refuses black–white spacing whose reciprocal is non-finite in fp32 or whose half-distance underflows to zero. A positive spacing alone does not guarantee a usable normalisation scale.

@@ -42,7 +42,7 @@ struct VignetteParams
     // darktable's autoratio (the ratio follows the image's) and unbound (no clipping).
     uint autoratio;
     uint unbound;
-    uint pad0;
+    uint bypass;
     uint pad1;
     // The parameters the derivative entry points differentiate against, one per slot:
     // 0 scale, 1 falloff_scale, 2 brightness, 3 saturation, 4 center_x, 5 center_y,
@@ -227,7 +227,7 @@ void main(uint3 id: SV_DispatchThreadID)
     Frame f = frame_of(params);
     Geometry g = geometry(v, f);
     float2 position = position_of(id);
-    bool vignetted = weight(position, g) > 0.0;
+    bool vignetted = params.vignette.bypass == 0 && weight(position, g) > 0.0;
     float4 pixel = input[i];
     float3 rgb = pixel.rgb;
     for (uint k = 0; k < params.pass.repeat; k++)
@@ -271,7 +271,7 @@ void vignette_backward(uint3 id: SV_DispatchThreadID)
     Vignette v = vignette_of(p);
     Frame f = frame_of(params);
     float2 position = position_of(id);
-    bool vignetted = weight(position, geometry(v, f)) > 0.0;
+    bool vignetted = p.bypass == 0 && weight(position, geometry(v, f)) > 0.0;
     var d = diffPair(v);
     bwd_diff(vignette_from_settings)(input[i].rgb, position, vignetted, d, f, derivative_in[i].rgb);
     derivative_out[i] = float4(
@@ -308,7 +308,7 @@ void vignette_forward_diff(uint3 id: SV_DispatchThreadID)
     Vignette v = vignette_of(p);
     Frame f = frame_of(params);
     float2 position = position_of(id);
-    bool vignetted = weight(position, geometry(v, f)) > 0.0;
+    bool vignetted = p.bypass == 0 && weight(position, geometry(v, f)) > 0.0;
     float4 direction_in = derivative_in[i];
     Vignette.Differential direction;
     direction.scale = 0.0;

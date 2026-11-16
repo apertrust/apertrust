@@ -40,7 +40,7 @@ use apertrust_raw::{CfaColor, Pixels, RawImage};
 
 use crate::darktable::{DarktableCli, LoaderRejected, REFERENCE_VERSION, Size};
 use crate::pfm::Image;
-use crate::render::cache_root;
+use crate::render::{WorkDir, cache_root, publish};
 use crate::xmp::{
     all_params, disable_operation, operations, remove_operation, set_params, set_params_and_version,
 };
@@ -578,8 +578,18 @@ pub fn recover_defaults(raw: &RawImage, actual: &Image) -> Result<Recovered> {
         }
     }
     let (left, top, _) = best;
+    ensure!(
+        best.2.is_finite(),
+        "no crop has a valid raw-level regression"
+    );
     let sums = fit(left, top, 1);
     let lines = sums.map(|s| s.line());
+    ensure!(
+        lines
+            .iter()
+            .all(|(slope, intercept)| slope.is_finite() && *slope > 0.0 && intercept.is_finite()),
+        "invalid raw-level regression"
+    );
     Ok(Recovered {
         crop: [left, top, width, height],
         black: lines.map(|(slope, intercept)| -intercept / slope),
@@ -661,11 +671,18 @@ impl Sums {
     /// The sum of squared distances from the line.
     fn squared_error(&self) -> f64 {
         let (slope, intercept) = self.line();
+        if !slope.is_finite() || slope <= 0.0 || !intercept.is_finite() {
+            return f64::INFINITY;
+        }
         let error = self.yy - 2.0 * slope * self.xy - 2.0 * intercept * self.y
             + slope * slope * self.xx
             + 2.0 * slope * intercept * self.x
             + intercept * intercept * self.n;
-        error.max(0.0)
+        if error.is_finite() {
+            error.max(0.0)
+        } else {
+            f64::INFINITY
+        }
     }
 }
 
@@ -738,11 +755,8 @@ pub fn render_as(
         return Ok(output);
     }
     darktable.ensure_reference_version()?;
-    let work = dir.join("work");
-    if work.exists() {
-        std::fs::remove_dir_all(&work)?;
-    }
-    std::fs::create_dir_all(&work)?;
+    let working = WorkDir::new(&dir)?;
+    let work = working.path();
     let sidecar = work.join("raw-stage.xmp");
     std::fs::write(&sidecar, xmp)?;
     let rendered = work.join(format!("output.{extension}"));
@@ -760,8 +774,7 @@ pub fn render_as(
             Ok(rejected) => skip(SkipKind::DarktableCannotLoad, rejected.to_string()),
             Err(error) => error,
         })?;
-    std::fs::rename(&rendered, &output)?;
-    std::fs::remove_dir_all(&work)?;
+    publish(&rendered, &output)?;
     Ok(output)
 }
 
@@ -936,6 +949,13 @@ mod tests {
             "{:?}",
             found.white
         );
+    }
+
+    #[test]
+    fn constant_sensors_have_no_valid_level_fit() {
+        let sensor = test_raw(4, 4, vec![100; 16]);
+        let actual = Image::new(4, 4, vec![[0.5, 0.0, 0.0]; 16]).unwrap();
+        assert!(recover_defaults(&sensor, &actual).is_err());
     }
 
     #[test]

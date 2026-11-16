@@ -23,7 +23,7 @@ jobs:
   report:
     name: Report the night's result
     needs: test
-    if: always() && (needs.test.result == 'success' || needs.test.result == 'failure')
+    if: github.ref == 'refs/heads/main' && always() && (needs.test.result == 'success' || needs.test.result == 'failure')
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:

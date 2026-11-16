@@ -116,6 +116,23 @@ const NO_OP: Settings = Settings {
     ..Settings::DEFAULT
 };
 
+#[test]
+fn neutral_controls_preserve_near_black_magnitudes() {
+    let pixels = [[NORM_MIN / 10.0, 0.0, 0.0], [NORM_MIN / 100.0; 3]];
+    let out = render_prepared(&prepare(&NO_OP), &pixels);
+    for (input, output) in pixels.iter().zip(out) {
+        // The chromaticity guards can tilt these tiny colours slightly; the magnitude
+        // must remain close rather than being raised to the normalisation floor.
+        let tolerance = input.iter().copied().fold(0.0, f32::max) * 0.01;
+        for c in 0..3 {
+            assert!(
+                (output[c] - input[c]).abs() < tolerance,
+                "{input:?} became {output:?}"
+            );
+        }
+    }
+}
+
 /// The synthetic sweep, every hue from neutral to beyond the working gamut at levels
 /// from deep shadow to well above white, and black.
 fn sweep() -> Vec<[f32; 3]> {
@@ -337,11 +354,12 @@ fn restated(p: &Prepared, rgb: [f32; 3], guards: bool) -> Restated {
 
     let c = t.check(clipneg(apply(&p.to_space, xyz)));
     // _luma_chroma, version 3.
-    let mut norm = t.value(norm_of(c, guards)).max(NORM_MIN);
+    let mut norm = t.value(norm_of(c, guards));
+    let divisor = norm.max(NORM_MIN) * INVERSE_SQRT_3;
     let average = ((c[0] + c[1] + c[2]) / 3.0).max(NORM_MIN);
     let mix = t.value(c[0] * p.lightness[0] + c[1] * p.lightness[1] + c[2] * p.lightness[2]);
     norm *= INVERSE_SQRT_3;
-    let mut ratios = t.check(c.map(|v| v / norm));
+    let mut ratios = t.check(c.map(|v| v / divisor));
     let coefficient =
         (ratios[0] * p.saturation[0] + ratios[1] * p.saturation[1] + ratios[2] * p.saturation[2])
             / 3.0;

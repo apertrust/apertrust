@@ -232,12 +232,22 @@ impl<'a> CentralBar<'a> {
         );
         let inner = bar.shrink2(vec2(t.spacing.m, 0.0));
         let mut action = None;
+        let zoom_text = zoom_words(&ctx, CentralBarAction::Zoom(self.zoom));
+        let zoom_galley = ui.painter().layout_no_wrap(
+            zoom_text,
+            FontId::proportional(t.text.body),
+            t.colors.text,
+        );
+        let zoom_width =
+            (ZOOM_START + zoom_galley.size().x + ZOOM_GAP + CHEVRON + ZOOM_END).max(ZOOM_LEAST);
+        let mut left = inner;
+        left.max.x = (inner.right() - zoom_width - t.spacing.m).max(inner.left());
 
         // The toggles, the layer and +.
         let left_end = ui
             .scope_builder(
                 UiBuilder::new()
-                    .max_rect(inner)
+                    .max_rect(left)
                     .layout(Layout::left_to_right(Align::Center)),
                 |ui| {
                     ui.spacing_mut().item_spacing.x = t.spacing.xxs;
@@ -492,9 +502,17 @@ fn layer_button(ui: &mut Ui, layer: &str, name: &str, enabled: bool) -> bool {
     } else {
         t.colors.text_disabled
     };
-    let galley =
-        ui.painter()
-            .layout_no_wrap(layer.to_owned(), FontId::proportional(t.text.body), colour);
+    // Leave room for the following + button as well as this button's chevron.
+    let text_width =
+        (ui.available_width() - BUTTON - 10.0 - 3.0 * t.spacing.s - t.spacing.xxs).max(0.0);
+    let mut job = egui::text::LayoutJob::simple(
+        layer.to_owned(),
+        FontId::proportional(t.text.body),
+        colour,
+        text_width,
+    );
+    job.wrap.max_rows = 1;
+    let galley = ui.painter().layout_job(job);
     let size = vec2(galley.size().x + 10.0 + 3.0 * t.spacing.s, BUTTON);
     let sense = if enabled {
         Sense::click()

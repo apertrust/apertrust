@@ -323,6 +323,16 @@ fn darktable(image: &Image, settings: Settings, [w1, w2]: [usize; 2]) -> Vec<[f3
 /// The largest difference between `actual` and `expected`, relative to the expected
 /// value where it exceeds 1.
 fn largest_difference(actual: &[[f32; 3]], expected: &[[f32; 3]]) -> f32 {
+    assert_eq!(actual.len(), expected.len());
+    assert!(
+        actual
+            .iter()
+            .flatten()
+            .chain(expected.iter().flatten())
+            .all(|v| v.is_finite()),
+        "non-finite channels in image comparison"
+    );
+
     actual
         .iter()
         .zip(expected)
@@ -652,6 +662,7 @@ fn the_viewport_follows_the_export_downscaled_on_the_corpus() {
         worst[3],
         over.len()
     );
+    assert!(measured > 0, "the corpus check measured no images");
     assert!(over.is_empty(), "{over:#?}");
 }
 

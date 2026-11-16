@@ -44,6 +44,7 @@ struct Cell {
     labels: bool,
     side: f32,
     rating: Option<CellRating>,
+    reject_activation: bool,
 }
 
 impl Default for Cell {
@@ -57,6 +58,7 @@ impl Default for Cell {
             labels: true,
             side: GridCell::MEDIUM,
             rating: None,
+            reject_activation: false,
         }
     }
 }
@@ -95,6 +97,12 @@ fn cell(state: Cell) -> Harness<'static, Vec<CellAction>> {
                     .active(state.active)
                     .show(ui);
                 actions.extend(output.action);
+                if state.reject_activation {
+                    assert!(
+                        !output.response.clicked() && !output.response.double_clicked(),
+                        "caption button activated its parent cell"
+                    );
+                }
             },
             Vec::new(),
         )
@@ -454,6 +462,7 @@ fn a_long_name_is_cut_in_its_middle_keeping_its_extension() {
 fn the_first_line_s_clicks_rate_reject_and_open_the_labels_list() {
     let mut harness = cell(Cell {
         rating: rated(),
+        reject_activation: true,
         ..Cell::default()
     });
     harness.run();
@@ -538,14 +547,7 @@ fn the_first_line_s_clicks_rate_reject_and_open_the_labels_list() {
         .click();
     harness.run();
     assert_eq!(harness.state().last(), Some(&CellAction::ClearLabels));
-    // A click on the caption's buttons never opens the photo: it is the cell's own click.
-    assert!(
-        !harness
-            .get_by_role_and_label(Role::ListItem, "IMG_2041.ARW")
-            .accesskit_node()
-            .is_selected()
-            .unwrap_or(false)
-    );
+    // The harness checks the parent's activation response on every caption click.
 }
 
 #[test]

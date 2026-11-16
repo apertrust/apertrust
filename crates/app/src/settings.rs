@@ -1170,7 +1170,16 @@ impl Keeper {
             (Some(setting), None) => self.store.reset_value(setting),
             (None, _) => tracing::warn!(target: "settings", "no setting {id}; not kept"),
         }
-        Settings::read(&self.store)
+        let mut updated = Settings::read(&self.store);
+        // Zoom keys and the panel edge remain usable when --conf chose their initial
+        // geometry. An unrelated dialog row must not restore that initial value.
+        if self.store.overridden(&SCALE) {
+            updated.scale = settings.scale;
+        }
+        if self.store.overridden(&SIDE_PANEL_WIDTH) {
+            updated.panel_width = settings.panel_width;
+        }
+        updated
     }
 
     /// The engine's settings as `--conf` and the file give them, as the plain options the
@@ -2109,6 +2118,27 @@ size = [1280, 800]
         let written = folder.text();
         assert!(written.contains("lightness = 42.0"), "{written}");
         assert!(!written.contains("target"), "{written}");
+    }
+
+    #[test]
+    fn unrelated_dialog_changes_preserve_runtime_geometry_over_conf() {
+        let folder = Folder::new("runtime-geometry-conf");
+        let overrides = conf(&["scale=1.5", "side_panel.width=300"]).unwrap();
+        let (mut keeper, mut settings) = Keeper::open_with(folder.storage(), &overrides);
+        settings.scale = 1.7;
+        settings.panel_width = Some(350.0);
+        let updated = keeper.apply(
+            &settings,
+            SIDE_PANEL_TAB_NAMES.id(),
+            Some(&toml::Value::Boolean(false)),
+        );
+        assert_eq!(updated.scale, 1.7);
+        assert_eq!(updated.panel_width, Some(350.0));
+        assert_eq!(keeper.store.get(&SCALE), 1.5);
+        assert_eq!(keeper.store.get(&SIDE_PANEL_WIDTH), 300.0);
+        keeper.flush();
+        assert!(!folder.text().contains("1.7"));
+        assert!(!folder.text().contains("350"));
     }
 
     /// Picker target and Lightness survive a restart; an old `area_mode` key, which went

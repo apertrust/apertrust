@@ -47,6 +47,7 @@ const VARIABLES: [Variable; 4] = [
 /// last Escape came, which the caller keeps from closing its dialog.
 struct State {
     text: String,
+    enabled: bool,
     list_open_at_escape: Option<bool>,
 }
 
@@ -57,8 +58,9 @@ fn path(text: &str) -> Harness<'static, State> {
         .build_ui_state(
             |ui, state: &mut State| {
                 let escape = ui.input(|i| i.key_pressed(Key::Escape));
-                let out =
-                    PathField::new(Id::unique("path"), "Path", &state.text, &VARIABLES).show(ui);
+                let out = PathField::new(Id::unique("path"), "Path", &state.text, &VARIABLES)
+                    .enabled(state.enabled)
+                    .show(ui);
                 if escape {
                     state.list_open_at_escape = Some(out.list_open);
                 }
@@ -68,6 +70,7 @@ fn path(text: &str) -> Harness<'static, State> {
             },
             State {
                 text: text.to_owned(),
+                enabled: true,
                 list_open_at_escape: None,
             },
         );
@@ -122,6 +125,20 @@ fn typing_after_a_dollar_and_parenthesis_lists_the_variables_the_name_begins() {
     assert!(harness.query_by_label("YEAR").is_none());
     // A name with its brackets, found by the name alone.
     typed(&mut harness, "x");
+    assert!(harness.query_by_role(Role::ListBox).is_none());
+}
+
+#[test]
+fn disabling_a_field_cancels_its_pending_completion() {
+    let mut harness = path("");
+    typed(&mut harness, "$(FILE");
+    harness.key_press(Key::ArrowDown);
+    harness.run();
+    let before = harness.state().text.clone();
+    harness.state_mut().enabled = false;
+    harness.key_press(Key::Enter);
+    harness.run();
+    assert_eq!(harness.state().text, before);
     assert!(harness.query_by_role(Role::ListBox).is_none());
 }
 

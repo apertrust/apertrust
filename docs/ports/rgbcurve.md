@@ -268,3 +268,7 @@ All nine run the operation where test 0060 does, at darktable's 42 on scene-refe
   - 19558f22b6 and 17c17a0832 change JzAzBz in `colorspaces_inline_conversions.h`, which rgbcurve does not use.
   - `imageop_math.h` and `rgb_norms.h` have no changes.
 - **No effect on output:** 257e632e67 (int to size_t in the pixel loop), and GUI work: 5524f19175, c033f0e8c5, 8a26f35f92, f8ca5e7679, 6e8673271a, 967628c03b, b8ff325ae0, 9f418626ed, cef1230a39, 36b71d89f9, c2dd84a409, 1cf3e707ec.
+
+## Boundary behaviour
+
+Power-law extrapolation is evaluated from the difference of the input and endpoint logarithms. The exponent is bounded to ±64 before exponentiation, with its coefficient bounded before multiplication. This keeps steep valid curves finite above white and uses the same guard in rendering and both derivative modes. Ordinary image-range comparisons remain against the reference release.

@@ -258,7 +258,10 @@ fn e3_holds(bench: &mut Bench, moves: &[&[(&str, f32)]]) {
     for set in moves {
         let mut edit = edit_of(set);
         let moved = bench.edit(&edit, Measure::Frame);
-        assert!(!exact(&none, &moved), "{set:?} changes the frame");
+        assert!(
+            !common::same_pixels(&none, &moved),
+            "{set:?} changes the frame"
+        );
         for (control, _) in *set {
             edit.reset_control(&Exposure, control).unwrap();
         }

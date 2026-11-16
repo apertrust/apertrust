@@ -217,7 +217,10 @@ fn a1_holds(bench: &mut Bench) {
     for set in MOVES {
         let mut edit = edit_of(set);
         let moved = bench.edit(&edit, Frame);
-        assert!(!exact(&none, &moved), "{set:?} changes the frame");
+        assert!(
+            !common::same_pixels(&none, &moved),
+            "{set:?} changes the frame"
+        );
         for (control, _) in set {
             edit.reset_control(&Agx, control).unwrap();
         }

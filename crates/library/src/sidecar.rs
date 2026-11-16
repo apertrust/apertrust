@@ -122,6 +122,8 @@ pub enum SidecarError {
 pub enum Newer {
     /// A file version above [`COPIES_VERSION`], read as [`COPIES_VERSION`] lays it out.
     Version(u32),
+    /// A layout this build supports through Edits, but the legacy Document would lose.
+    DocumentLayout(u32),
     /// A tool version above its definition's, or one that is no whole number, as
     /// written; its controls read by name.
     ToolVersion {
@@ -160,6 +162,10 @@ impl fmt::Display for Newer {
                     "is version {version}, newer than this build's {COPIES_VERSION}"
                 )
             }
+            Newer::DocumentLayout(version) => write!(
+                f,
+                "uses version {version}, which the legacy document reader cannot preserve"
+            ),
             Newer::ToolVersion { tool, version, has } => write!(
                 f,
                 "holds {tool} version {version}, newer than this build's {has}"
@@ -393,9 +399,13 @@ impl Document {
     }
 
     /// The first thing in the file itself that tells a newer Apertrust wrote it: a version
-    /// above [`COPIES_VERSION`], as [`Edits::newer`] tells it.
+    /// above 1. Version 2 histories must be read through [`Edits`].
     pub fn newer(&self) -> Option<Newer> {
-        (self.version > COPIES_VERSION).then_some(Newer::Version(self.version))
+        if self.version > COPIES_VERSION {
+            Some(Newer::Version(self.version))
+        } else {
+            (self.version > DOCUMENT_VERSION).then_some(Newer::DocumentLayout(self.version))
+        }
     }
 
     /// Reads an `.apxmp` file's XMP through the XMP layer ([`Xmp::parse`]): the version, the

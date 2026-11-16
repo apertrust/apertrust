@@ -45,7 +45,7 @@ struct VignetteParams_std140_0
     @align(4) shape_0 : f32,
     @align(16) autoratio_0 : u32,
     @align(4) unbound_0 : u32,
-    @align(8) pad0_0 : u32,
+    @align(8) bypass_0 : u32,
     @align(4) pad1_0 : u32,
     @align(16) gradient_0 : vec4<u32>,
 };
@@ -1507,7 +1507,14 @@ fn main(@builtin(global_invocation_id) id_1 : vec3<u32>)
     var _S342 : Frame_0 = frame_of_0(&(_S341));
     var g_3 : Geometry_0 = geometry_0(_S340, _S342);
     var position_5 : vec2<f32> = position_of_0(id_1);
-    var _S343 : bool = ((weight_0(position_5, g_3)) > 0.0f);
+    if((params_0.vignette_0.bypass_0) == u32(0))
+    {
+        _S338 = ((weight_0(position_5, g_3)) > 0.0f);
+    }
+    else
+    {
+        _S338 = false;
+    }
     var pixel_0 : vec4<f32> = input_0[i_0];
     var rgb_4 : vec3<f32> = pixel_0.xyz;
     var k_0 : u32 = u32(0);
@@ -1520,10 +1527,10 @@ fn main(@builtin(global_invocation_id) id_1 : vec3<u32>)
         {
             break;
         }
-        var _S344 : vec3<f32> = vignette_1(rgb_4, position_5, _S343, g_3, _S340.brightness_1, _S340.saturation_1, _S342.unbound_1);
-        var _S345 : u32 = k_0 + u32(1);
-        rgb_4 = _S344;
-        k_0 = _S345;
+        var _S343 : vec3<f32> = vignette_1(rgb_4, position_5, _S338, g_3, _S340.brightness_1, _S340.saturation_1, _S342.unbound_1);
+        var _S344 : u32 = k_0 + u32(1);
+        rgb_4 = _S343;
+        k_0 = _S344;
     }
     output_0[i_0] = vec4<f32>(rgb_4, pixel_0.w);
     return;
@@ -1531,14 +1538,14 @@ fn main(@builtin(global_invocation_id) id_1 : vec3<u32>)
 
 fn s_fwd_vignette_from_settings_0( rgb_5 : vec3<f32>,  position_6 : vec2<f32>,  vignetted_2 : bool,  dpv_1 : DiffPair_Vignette_0,  f_4 : Frame_0) -> DiffPair_vectorx3Cfloatx2C3x3E_0
 {
-    var _S346 : DiffPair_Vignette_0 = DiffPair_Vignette_0( dpv_1.primal_0, dpv_1.differential_0 );
-    var _S347 : DiffPair_Geometry_0 = s_fwd_geometry_0(_S346, f_4);
-    var _S348 : DiffPair_Geometry_0 = DiffPair_Geometry_0( _S347.primal_0, _S347.differential_0 );
-    var _S349 : DiffPair_float_0 = DiffPair_float_0( dpv_1.primal_0.brightness_1, dpv_1.differential_0.brightness_1 );
-    var _S350 : DiffPair_float_0 = DiffPair_float_0( dpv_1.primal_0.saturation_1, dpv_1.differential_0.saturation_1 );
-    var _S351 : DiffPair_vectorx3Cfloatx2C3x3E_0 = s_fwd_vignette_0(rgb_5, position_6, vignetted_2, _S348, _S349, _S350, f_4.unbound_1);
-    var _S352 : DiffPair_vectorx3Cfloatx2C3x3E_0 = DiffPair_vectorx3Cfloatx2C3x3E_0( _S351.primal_0, _S351.differential_0 );
-    return _S352;
+    var _S345 : DiffPair_Vignette_0 = DiffPair_Vignette_0( dpv_1.primal_0, dpv_1.differential_0 );
+    var _S346 : DiffPair_Geometry_0 = s_fwd_geometry_0(_S345, f_4);
+    var _S347 : DiffPair_Geometry_0 = DiffPair_Geometry_0( _S346.primal_0, _S346.differential_0 );
+    var _S348 : DiffPair_float_0 = DiffPair_float_0( dpv_1.primal_0.brightness_1, dpv_1.differential_0.brightness_1 );
+    var _S349 : DiffPair_float_0 = DiffPair_float_0( dpv_1.primal_0.saturation_1, dpv_1.differential_0.saturation_1 );
+    var _S350 : DiffPair_vectorx3Cfloatx2C3x3E_0 = s_fwd_vignette_0(rgb_5, position_6, vignetted_2, _S347, _S348, _S349, f_4.unbound_1);
+    var _S351 : DiffPair_vectorx3Cfloatx2C3x3E_0 = DiffPair_vectorx3Cfloatx2C3x3E_0( _S350.primal_0, _S350.differential_0 );
+    return _S351;
 }
 
 fn pick_0( d_0 : Vignette_0,  which_0 : u32) -> f32
@@ -1588,111 +1595,118 @@ fn pick_0( d_0 : Vignette_0,  which_0 : u32) -> f32
 @workgroup_size(16, 16, 1)
 fn vignette_backward(@builtin(global_invocation_id) id_2 : vec3<u32>)
 {
-    var _S353 : u32 = id_2.x;
-    var _S354 : bool;
-    if((_S353 >= (params_0.pass_0.width_0)))
+    var _S352 : u32 = id_2.x;
+    var vignetted_3 : bool;
+    if((_S352 >= (params_0.pass_0.width_0)))
     {
-        _S354 = true;
+        vignetted_3 = true;
     }
     else
     {
-        _S354 = ((id_2.y) >= (params_0.pass_0.height_0));
+        vignetted_3 = ((id_2.y) >= (params_0.pass_0.height_0));
     }
-    if(_S354)
+    if(vignetted_3)
     {
         return;
     }
-    var i_1 : u32 = id_2.y * params_0.pass_0.width_0 + _S353;
-    var _S355 : VignetteParams_std140_0 = params_0.vignette_0;
-    var _S356 : Vignette_0 = vignette_of_0(&(_S355));
-    var _S357 : Params_std140_0 = params_0;
-    var _S358 : Frame_0 = frame_of_0(&(_S357));
+    var i_1 : u32 = id_2.y * params_0.pass_0.width_0 + _S352;
+    var _S353 : VignetteParams_std140_0 = params_0.vignette_0;
+    var _S354 : Vignette_0 = vignette_of_0(&(_S353));
+    var _S355 : Params_std140_0 = params_0;
+    var _S356 : Frame_0 = frame_of_0(&(_S355));
     var position_7 : vec2<f32> = position_of_0(id_2);
-    var vignetted_3 : bool = ((weight_0(position_7, geometry_0(_S356, _S358))) > 0.0f);
-    var _S359 : Vignette_0 = Vignette_x24_syn_dzero_0();
+    if((_S353.bypass_0) == u32(0))
+    {
+        vignetted_3 = ((weight_0(position_7, geometry_0(_S354, _S356))) > 0.0f);
+    }
+    else
+    {
+        vignetted_3 = false;
+    }
+    var _S357 : Vignette_0 = Vignette_x24_syn_dzero_0();
     var d_1 : DiffPair_Vignette_0;
-    d_1.primal_0 = _S356;
-    d_1.differential_0 = _S359;
-    _S230(input_0[i_1].xyz, position_7, vignetted_3, &(d_1), _S358, derivative_in_0[i_1].xyz);
-    derivative_out_0[i_1] = vec4<f32>(pick_0(d_1.differential_0, _S355.gradient_0.x), pick_0(d_1.differential_0, _S355.gradient_0.y), pick_0(d_1.differential_0, _S355.gradient_0.z), pick_0(d_1.differential_0, _S355.gradient_0.w));
+    d_1.primal_0 = _S354;
+    d_1.differential_0 = _S357;
+    _S230(input_0[i_1].xyz, position_7, vignetted_3, &(d_1), _S356, derivative_in_0[i_1].xyz);
+    derivative_out_0[i_1] = vec4<f32>(pick_0(d_1.differential_0, _S353.gradient_0.x), pick_0(d_1.differential_0, _S353.gradient_0.y), pick_0(d_1.differential_0, _S353.gradient_0.z), pick_0(d_1.differential_0, _S353.gradient_0.w));
     return;
 }
 
 fn add_slot_0( d_2 : ptr<function, Vignette_0>,  which_1 : u32,  x_9 : f32)
 {
-    var _S360 : f32;
+    var _S358 : f32;
     if(which_1 == u32(0))
     {
-        _S360 = x_9;
+        _S358 = x_9;
     }
     else
     {
-        _S360 = 0.0f;
+        _S358 = 0.0f;
     }
-    (*d_2).scale_2 = (*d_2).scale_2 + _S360;
+    (*d_2).scale_2 = (*d_2).scale_2 + _S358;
     if(which_1 == u32(1))
     {
-        _S360 = x_9;
+        _S358 = x_9;
     }
     else
     {
-        _S360 = 0.0f;
+        _S358 = 0.0f;
     }
-    (*d_2).falloff_scale_1 = (*d_2).falloff_scale_1 + _S360;
+    (*d_2).falloff_scale_1 = (*d_2).falloff_scale_1 + _S358;
     if(which_1 == u32(2))
     {
-        _S360 = x_9;
+        _S358 = x_9;
     }
     else
     {
-        _S360 = 0.0f;
+        _S358 = 0.0f;
     }
-    (*d_2).brightness_1 = (*d_2).brightness_1 + _S360;
+    (*d_2).brightness_1 = (*d_2).brightness_1 + _S358;
     if(which_1 == u32(3))
     {
-        _S360 = x_9;
+        _S358 = x_9;
     }
     else
     {
-        _S360 = 0.0f;
+        _S358 = 0.0f;
     }
-    (*d_2).saturation_1 = (*d_2).saturation_1 + _S360;
+    (*d_2).saturation_1 = (*d_2).saturation_1 + _S358;
     if(which_1 == u32(4))
     {
-        _S360 = x_9;
+        _S358 = x_9;
     }
     else
     {
-        _S360 = 0.0f;
+        _S358 = 0.0f;
     }
-    (*d_2).center_0[i32(0)] = (*d_2).center_0[i32(0)] + _S360;
+    (*d_2).center_0[i32(0)] = (*d_2).center_0[i32(0)] + _S358;
     if(which_1 == u32(5))
     {
-        _S360 = x_9;
+        _S358 = x_9;
     }
     else
     {
-        _S360 = 0.0f;
+        _S358 = 0.0f;
     }
-    (*d_2).center_0[i32(1)] = (*d_2).center_0[i32(1)] + _S360;
+    (*d_2).center_0[i32(1)] = (*d_2).center_0[i32(1)] + _S358;
     if(which_1 == u32(6))
     {
-        _S360 = x_9;
+        _S358 = x_9;
     }
     else
     {
-        _S360 = 0.0f;
+        _S358 = 0.0f;
     }
-    (*d_2).whratio_1 = (*d_2).whratio_1 + _S360;
+    (*d_2).whratio_1 = (*d_2).whratio_1 + _S358;
     if(which_1 == u32(7))
     {
-        _S360 = x_9;
+        _S358 = x_9;
     }
     else
     {
-        _S360 = 0.0f;
+        _S358 = 0.0f;
     }
-    (*d_2).shape_1 = (*d_2).shape_1 + _S360;
+    (*d_2).shape_1 = (*d_2).shape_1 + _S358;
     return;
 }
 
@@ -1700,27 +1714,34 @@ fn add_slot_0( d_2 : ptr<function, Vignette_0>,  which_1 : u32,  x_9 : f32)
 @workgroup_size(16, 16, 1)
 fn vignette_forward_diff(@builtin(global_invocation_id) id_3 : vec3<u32>)
 {
-    var _S361 : u32 = id_3.x;
-    var _S362 : bool;
-    if((_S361 >= (params_0.pass_0.width_0)))
+    var _S359 : u32 = id_3.x;
+    var vignetted_4 : bool;
+    if((_S359 >= (params_0.pass_0.width_0)))
     {
-        _S362 = true;
+        vignetted_4 = true;
     }
     else
     {
-        _S362 = ((id_3.y) >= (params_0.pass_0.height_0));
+        vignetted_4 = ((id_3.y) >= (params_0.pass_0.height_0));
     }
-    if(_S362)
+    if(vignetted_4)
     {
         return;
     }
-    var i_2 : u32 = id_3.y * params_0.pass_0.width_0 + _S361;
-    var _S363 : VignetteParams_std140_0 = params_0.vignette_0;
-    var _S364 : Vignette_0 = vignette_of_0(&(_S363));
-    var _S365 : Params_std140_0 = params_0;
-    var _S366 : Frame_0 = frame_of_0(&(_S365));
+    var i_2 : u32 = id_3.y * params_0.pass_0.width_0 + _S359;
+    var _S360 : VignetteParams_std140_0 = params_0.vignette_0;
+    var _S361 : Vignette_0 = vignette_of_0(&(_S360));
+    var _S362 : Params_std140_0 = params_0;
+    var _S363 : Frame_0 = frame_of_0(&(_S362));
     var position_8 : vec2<f32> = position_of_0(id_3);
-    var vignetted_4 : bool = ((weight_0(position_8, geometry_0(_S364, _S366))) > 0.0f);
+    if((_S360.bypass_0) == u32(0))
+    {
+        vignetted_4 = ((weight_0(position_8, geometry_0(_S361, _S363))) > 0.0f);
+    }
+    else
+    {
+        vignetted_4 = false;
+    }
     var direction_in_0 : vec4<f32> = derivative_in_0[i_2];
     var direction_0 : Vignette_0;
     direction_0.scale_2 = 0.0f;
@@ -1730,12 +1751,12 @@ fn vignette_forward_diff(@builtin(global_invocation_id) id_3 : vec3<u32>)
     direction_0.center_0 = vec2<f32>(0.0f);
     direction_0.whratio_1 = 0.0f;
     direction_0.shape_1 = 0.0f;
-    add_slot_0(&(direction_0), _S363.gradient_0.x, direction_in_0.x);
-    add_slot_0(&(direction_0), _S363.gradient_0.y, direction_in_0.y);
-    add_slot_0(&(direction_0), _S363.gradient_0.z, direction_in_0.z);
-    add_slot_0(&(direction_0), _S363.gradient_0.w, direction_in_0.w);
-    var _S367 : DiffPair_Vignette_0 = DiffPair_Vignette_0( _S364, direction_0 );
-    derivative_out_0[i_2] = vec4<f32>(s_fwd_vignette_from_settings_0(input_0[i_2].xyz, position_8, vignetted_4, _S367, _S366).differential_0, 0.0f);
+    add_slot_0(&(direction_0), _S360.gradient_0.x, direction_in_0.x);
+    add_slot_0(&(direction_0), _S360.gradient_0.y, direction_in_0.y);
+    add_slot_0(&(direction_0), _S360.gradient_0.z, direction_in_0.z);
+    add_slot_0(&(direction_0), _S360.gradient_0.w, direction_in_0.w);
+    var _S364 : DiffPair_Vignette_0 = DiffPair_Vignette_0( _S361, direction_0 );
+    derivative_out_0[i_2] = vec4<f32>(s_fwd_vignette_from_settings_0(input_0[i_2].xyz, position_8, vignetted_4, _S364, _S363).differential_0, 0.0f);
     return;
 }
 

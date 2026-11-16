@@ -184,11 +184,20 @@ fn a_newer_file_version_is_newer() {
         view_only.to_string(),
         "the edit a newer Apertrust wrote holds the tool lens, which this build does not have: open for viewing only"
     );
-    // Version 2, this build's, is not newer, whatever layout a document reads.
+    // The legacy Document cannot round-trip version 2's virtual-copy histories.
     let xml = Document::new("0.9.0")
         .to_xml()
         .replace(r#"apertrust:version="1""#, r#"apertrust:version="2""#);
-    assert_eq!(Document::parse(&xml).unwrap().newer(), None);
+    assert_eq!(
+        Document::parse(&xml).unwrap().newer(),
+        Some(Newer::DocumentLayout(2))
+    );
+    let history = include_str!("../../tests/fixtures/xmp/version-2-history.apxmp");
+    assert_eq!(
+        Document::parse(history).unwrap().newer(),
+        Some(Newer::DocumentLayout(2))
+    );
+    assert_eq!(Edits::parse(history, 0).unwrap().newer(), None);
     let view_only = ViewOnly {
         build: Some("0.9.0".to_owned()),
         reason: Reason::Unreadable(Problem::End {

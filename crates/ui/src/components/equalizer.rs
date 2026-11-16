@@ -306,7 +306,7 @@ impl<'a> Equalizer<'a> {
                 // drag, as darktable's `area_enter_leave_notify` commits and ends it.
                 let at = ui.input(|i| i.pointer.interact_pos());
                 if let Some(at) = at
-                    && !outer.contains(at)
+                    && !response.rect.contains(at)
                 {
                     drag.ended = true;
                 } else if let Some(at) = at
@@ -409,6 +409,7 @@ impl<'a> Equalizer<'a> {
             }
             let chosen = state.selected.unwrap_or(current);
             if reset {
+                state.drag = None;
                 actions.push(if shift {
                     EqualizerAction::Reset
                 } else {

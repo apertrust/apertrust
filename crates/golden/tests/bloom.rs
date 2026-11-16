@@ -168,6 +168,15 @@ fn restated(settings: &Settings, width: u32, height: u32, pixels: &[[f32; 4]]) -
 /// Largest difference of any channel relative to the pixel's largest channel, past a
 /// floor for black.
 fn largest_relative_difference(a: &[[f32; 4]], b: &[[f32; 4]]) -> f32 {
+    assert_eq!(a.len(), b.len());
+    assert!(
+        a.iter()
+            .flatten()
+            .chain(b.iter().flatten())
+            .all(|v| v.is_finite()),
+        "non-finite channels in image comparison"
+    );
+
     a.iter()
         .zip(b)
         .flat_map(|(p, q)| {

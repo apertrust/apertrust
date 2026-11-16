@@ -282,6 +282,8 @@ struct Read {
     /// Whether it may be written: not one a newer Apertrust wrote, nor one that could not
     /// be read.
     writable: bool,
+    /// An initial I/O failure may recover; the worker retains changes and retries.
+    retryable: bool,
     warnings: Vec<String>,
 }
 
@@ -299,6 +301,7 @@ fn read(file: &Path) -> Read {
             read.warnings
                 .push(format!("not read: {e}; nothing written to it"));
             read.writable = false;
+            read.retryable = true;
             read.items = Some(Vec::new());
             return read;
         }
@@ -530,12 +533,13 @@ impl Recents {
             items,
             last,
             writable,
+            retryable,
             warnings,
             ..
         } = read(&file);
         let mut recents = Recents::nowhere();
         recents.last = last;
-        if writable {
+        if writable || retryable {
             recents.writer = Writer::start(file, items.clone().unwrap_or_default());
         }
         match items {

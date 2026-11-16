@@ -112,6 +112,28 @@ fn render(prepared: &Prepared, image: &Image) -> Vec<[f32; 4]> {
     output.download(gpu).unwrap()
 }
 
+#[test]
+fn singular_manual_ratios_copy_the_image_but_nearby_ratios_shade_it() {
+    let image = Image::gradient(32, 24);
+    for ratio in [0.0, 2.0] {
+        let settings = Settings {
+            autoratio: false,
+            whratio: ratio,
+            ..Settings::default()
+        };
+        let out = render(&prepared(&settings), &image);
+        assert_eq!(out, image.pixels);
+    }
+    for ratio in [0.001, 1.999] {
+        let settings = Settings {
+            autoratio: false,
+            whratio: ratio,
+            ..Settings::default()
+        };
+        assert_ne!(render(&prepared(&settings), &image), image.pixels);
+    }
+}
+
 /// darktable `process()` for the pixel at column `x` and row `y` of an image of `width`
 /// × `height` pixels at full resolution (`piece->buf_in`), rendered at `scale` from its
 /// top-left corner, without dithering: its expressions in f32, with f64 where darktable
@@ -129,6 +151,9 @@ fn darktable(
     [x, y]: [u32; 2],
     rgb: [f32; 3],
 ) -> ([f32; 3], f32) {
+    if p.bypass {
+        return (rgb, 0.0);
+    }
     let [width, height] = size;
     let (w, h) = (width as f32, height as f32);
     let center = [
@@ -312,6 +337,10 @@ fn the_kernel_follows_darktables_process() {
             }
             for c in 0..3 {
                 let error = (output[c] - want[c]).abs() / want[c].abs().max(1.0);
+                assert!(
+                    error.is_finite(),
+                    "non-finite comparison at {at:?}: {output:?}"
+                );
                 if error > worst.0 {
                     worst = (
                         error,
@@ -600,6 +629,7 @@ fn a_tiled_export_equals_the_whole_one() {
         for size in [[37, 33], [64, 1000], [1000, 40]] {
             let tiled = run(Tiling::Tiles(size));
             assert!(tiled.tiles > 1, "{size:?}");
+            assert_eq!(tiled.pixels.len(), whole.pixels.len(), "{size:?}");
             if let Some(i) = tiled
                 .pixels
                 .iter()

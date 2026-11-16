@@ -84,12 +84,23 @@ mod windows {
 
     pub(super) fn attach() {
         let streams = STREAMS.map(stream);
+        // Attachment can replace handles even when one already points to a file or pipe.
+        // SAFETY: plain calls made before any application threads write.
+        let original = STREAMS.map(|id| unsafe { GetStdHandle(id) });
         if !attach_wanted(streams) {
             return;
         }
         // SAFETY: a plain call; it fails where the parent has no console, or where this
         // process has one already.
         let attached = unsafe { AttachConsole(ATTACH_PARENT_PROCESS) } != 0;
+        if attached {
+            for ((id, handle), before) in STREAMS.into_iter().zip(original).zip(streams) {
+                if matches!(before, Stream::Redirected) {
+                    // SAFETY: restore the valid redirected handle obtained before attaching.
+                    unsafe { SetStdHandle(id, handle) };
+                }
+            }
+        }
         let reopen = reopened(STREAMS.map(stream), attached);
         if !reopen.contains(&true) {
             return;

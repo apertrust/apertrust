@@ -272,18 +272,28 @@ mod macos {
         // encoding gives, which is `moves_on_request`'s. The method goes on winit's own
         // class, which does not define it (`class_addMethod` adds nothing to a class that
         // does), so NSView and every other view keep theirs.
-        let added = unsafe {
-            let imp: Imp = std::mem::transmute(moves_on_request);
-            let class = std::ptr::from_ref::<AnyClass>(class).cast_mut();
-            objc2::ffi::class_addMethod(class, sel!(mouseDownCanMoveWindow), imp, types.as_ptr())
-        };
+        let imp: Imp = unsafe { std::mem::transmute(moves_on_request) };
+        let installed = class
+            .instance_method(sel!(mouseDownCanMoveWindow))
+            .is_some_and(|method| std::ptr::fn_addr_eq(method.implementation(), imp));
+        let added = installed
+            || unsafe {
+                let class = std::ptr::from_ref::<AnyClass>(class).cast_mut();
+                objc2::ffi::class_addMethod(
+                    class,
+                    sel!(mouseDownCanMoveWindow),
+                    imp,
+                    types.as_ptr(),
+                )
+            }
+            .as_bool();
         let pressed: extern "C-unwind" fn(&AnyObject, Sel, &NSEvent) = mouse_down;
         // SAFETY: `mouse_down` has `mouseDown:`'s signature and calls `MOUSE_DOWN`.
         unsafe {
             let imp: Imp = std::mem::transmute(pressed);
             replace(class, sel!(mouseDown:), imp, &MOUSE_DOWN);
         }
-        if !added.as_bool() {
+        if !added {
             return Err(Error::OwnMethod("mouseDownCanMoveWindow"));
         }
         if view.mouseDownCanMoveWindow() {
@@ -497,7 +507,7 @@ mod macos {
     impl Raised {
         /// Raises `flag`, or `None` where it is raised already.
         fn new(flag: &'static LocalKey<Cell<bool>>) -> Option<Raised> {
-            (flag.try_with(|raised| raised.replace(true)) == Ok(false)).then_some(Raised(flag))
+            (flag.try_with(|raised| raised.replace(true)) == Ok(false)).then(|| Raised(flag))
         }
     }
 
@@ -596,6 +606,19 @@ mod macos {
     fn set_frame(view: &NSView, frame: NSRect) {
         if view.frame() != frame {
             view.setFrame(frame);
+        }
+    }
+    #[cfg(test)]
+    mod guard_tests {
+        use super::*;
+
+        #[test]
+        fn rejected_nested_guards_leave_the_outer_guard_raised() {
+            let outer = Raised::new(&PLACING).unwrap();
+            assert!(Raised::new(&PLACING).is_none());
+            assert!(Raised::new(&PLACING).is_none());
+            drop(outer);
+            assert!(Raised::new(&PLACING).is_some());
         }
     }
 }

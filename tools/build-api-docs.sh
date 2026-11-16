@@ -28,14 +28,26 @@ cd "$root"
 
 args=()
 open=0
+target_dir="${CARGO_TARGET_DIR:-target}"
+take_target=0
 for arg in "$@"; do
-  if [[ "$arg" == --open ]]; then open=1; else args+=("$arg"); fi
+  if ((take_target)); then target_dir="$arg"; take_target=0; fi
+  case "$arg" in
+    --open) open=1 ;;
+    --target-dir) take_target=1; args+=("$arg") ;;
+    --target-dir=*) target_dir="${arg#*=}"; args+=("$arg") ;;
+    *) args+=("$arg") ;;
+  esac
 done
 
 RUSTDOCFLAGS="-D warnings ${RUSTDOCFLAGS:-}" \
   cargo doc --workspace --no-deps --document-private-items ${args[@]+"${args[@]}"}
 
-index="$root/target/doc/apertrust_engine/index.html"
+case "$target_dir" in
+  /* | [A-Za-z]:*) ;;
+  *) target_dir="$root/$target_dir" ;;
+esac
+index="$target_dir/doc/apertrust_engine/index.html"
 echo "API docs: $index"
 if ((open)); then
   case "$(uname -s)" in

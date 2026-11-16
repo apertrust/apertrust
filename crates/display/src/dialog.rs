@@ -17,7 +17,7 @@
 //! A dialog's window where winit cannot make it what it is (`docs/gui.md`, Dialogs and
 //! alerts; decision 41): on macOS, presented as a sheet on the window it rises from, where
 //! macOS 27 centres it, the window dimmed behind it, and kept out of other windows' tabs.
-//! On Linux, [`set_parent`] sets a Wayland dialog's parent while the app keeps its modality.
+//! On Linux, `set_parent` sets a Wayland dialog's parent while the app keeps its modality.
 //! Windows' owner disabling and X11's native modality are planned (`docs/gui.md`, Still to
 //! build).
 //!

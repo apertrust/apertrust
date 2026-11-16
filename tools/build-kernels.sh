@@ -39,8 +39,9 @@ tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
 stale=0
-for src in "$root"/crates/op/*/slang "$root/crates/engine/slang"; do
-  crate="$(dirname "$src")"
+for crate in "$root"/crates/op/* "$root/crates/engine"; do
+  src="$crate/slang"
+  [[ -d "$src" || -d "$crate/generated" ]] || continue
   rel="${crate#"$root"/}"
   out="$crate/generated"
   dest="$out"

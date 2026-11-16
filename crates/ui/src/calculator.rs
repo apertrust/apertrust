@@ -66,9 +66,10 @@ pub fn solve(x: f64, text: &str) -> Option<f64> {
                 at: 0,
                 depth: 0,
                 too_deep: false,
+                unclosed: false,
             };
             let result = parser.expression();
-            if parser.at < tokens.len() || parser.too_deep {
+            if parser.at < tokens.len() || parser.too_deep || parser.unclosed {
                 return None;
             }
             result
@@ -188,6 +189,7 @@ struct Parser<'a> {
     /// Brackets and unary signs open around the token at `at`.
     depth: usize,
     too_deep: bool,
+    unclosed: bool,
 }
 
 impl Parser<'_> {
@@ -273,6 +275,7 @@ impl Parser<'_> {
                 self.at += 1;
                 let result = self.nested(Self::expression);
                 if self.token() != Some(Token::Close) {
+                    self.unclosed = true;
                     return f64::NAN;
                 }
                 self.at += 1;
@@ -479,6 +482,7 @@ mod tests {
 
     #[test]
     fn a_result_that_is_not_finite_is_no_value() {
+        assert_eq!(at_3("1^(2"), None);
         assert_eq!(at_3("5/0"), None);
         assert_eq!(at_3("-5/0"), None);
         assert_eq!(at_3("0/0"), None);

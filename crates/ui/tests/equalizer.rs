@@ -261,7 +261,7 @@ fn leaving_the_graph_ends_the_drag() {
     // move outside, or back in with the button still down, moves nothing more.
     let mut harness = graph([0.0; 9]);
     let plot = plot(&harness);
-    let outside = pos2(plot.center().x, plot.bottom() + 40.0);
+    let outside = pos2(plot.center().x, plot.bottom() + 8.0);
     drag(
         &mut harness,
         &[
@@ -289,6 +289,39 @@ fn leaving_the_graph_ends_the_drag() {
             ]
         ),
         "{actions:?}"
+    );
+}
+
+#[test]
+fn keyboard_reset_cancels_a_held_drag() {
+    let mut harness = graph([0.0; 9]);
+    let plot = plot(&harness);
+    harness.hover_at(at(plot, -4.0, 0.0));
+    harness.step();
+    harness.drag_at(at(plot, -4.0, 0.0));
+    harness.step();
+    harness.hover_at(at(plot, -4.0, 1.0));
+    harness.step();
+    press(&mut harness, Modifiers::SHIFT, Key::Delete);
+    assert_eq!(harness.state().bands, vec![0.0; 9]);
+    harness.hover_at(at(plot, -4.0, -1.0));
+    harness.step();
+    harness.drop_at(at(plot, -4.0, -1.0));
+    harness.step();
+    assert_eq!(harness.state().bands, vec![0.0; 9]);
+}
+
+#[test]
+fn visible_edge_nodes_can_be_dragged_from_their_outer_half() {
+    let mut harness = graph([0.0; 9]);
+    let plot = plot(&harness);
+    let start = pos2(plot.left() - 3.0, plot.center().y);
+    let end = pos2(start.x, start.y - plot.height() / 8.0);
+    drag(&mut harness, &[start, end]);
+    assert!(
+        harness.state().bands[0] > 0.1,
+        "{:?}",
+        harness.state().bands
     );
 }
 

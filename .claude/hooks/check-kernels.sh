@@ -23,6 +23,7 @@ set -uo pipefail
 
 command -v jq > /dev/null || { echo "Apertrust's Claude Code hooks need jq" >&2; exit 1; }
 file="$(jq -r '.tool_input.file_path // empty')"
+file="${file//\\//}"
 case "$file" in
   */crates/*/slang/*.slang) ;;
   */crates/*/generated/*.wgsl)

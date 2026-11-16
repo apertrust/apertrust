@@ -4098,9 +4098,7 @@ impl Engine {
             CacheCommand::Limit(limit) => upkeep.set_limit(limit, &self.jobs.control),
             CacheCommand::Sizes => {
                 // Sent before the walk is added, so its answer never comes first.
-                if let Some(counted) = upkeep.counted() {
-                    tell(Event::Cache(counted));
-                }
+                upkeep.tell_counted(&tell);
                 upkeep.walk_for_sizes(self.applied, &self.jobs.control, tell);
             }
             CacheCommand::Clear { kind } => {

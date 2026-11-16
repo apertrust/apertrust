@@ -31,19 +31,24 @@ list=.github/docs-only-paths.txt
 
 # Each line a glob pathspec, a `!` one excluding; comments and blank lines left out.
 pathspecs=()
+patterns=$(sed -e 's/#.*//' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' -e '/^$/d' "$list")
 while IFS= read -r glob; do
+  [[ -n "$glob" ]] || continue
   case "$glob" in
     '!'*) pathspecs+=(":(exclude,glob)${glob#!}") ;;
     *) pathspecs+=(":(glob)$glob") ;;
   esac
-done < <(sed -e 's/#.*//' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' -e '/^$/d' "$list")
+done < <(printf '%s\n' "$patterns")
 
 if [[ "${1:-}" == --code ]]; then
   shift
   # Both sides of a rename, so a file moved out of the code counts.
-  comm -23 \
-    <(git diff --name-only --no-renames "$@" | sort) \
-    <(git diff --name-only --no-renames "$@" -- "${pathspecs[@]}" | sort)
+  changed=$(git diff --name-only --no-renames "$@" | sort)
+  documented=""
+  if ((${#pathspecs[@]})); then
+    documented=$(git diff --name-only --no-renames "$@" -- "${pathspecs[@]}" | sort)
+  fi
+  comm -23 <(printf '%s\n' "$changed") <(printf '%s\n' "$documented")
   exit 0
 fi
 

@@ -314,8 +314,11 @@ impl Bench {
 
 /// Whether two renders are byte for byte the same, with the same operations and keys.
 pub fn exact(a: &Rendered, b: &Rendered) -> bool {
-    a.plan == b.plan
-        && a.pixels.len() == b.pixels.len()
+    a.plan == b.plan && same_pixels(a, b)
+}
+
+pub fn same_pixels(a: &Rendered, b: &Rendered) -> bool {
+    a.pixels.len() == b.pixels.len()
         && a.pixels
             .iter()
             .zip(&b.pixels)

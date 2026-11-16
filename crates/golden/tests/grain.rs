@@ -1000,8 +1000,7 @@ fn the_lattices_cost() {
     let table = grain::permutation_table();
     let params = prepared(&cases()[0]).params();
     let rounds = 20;
-    let timer = GpuTimer::new(gpu, rounds).expect("GPU timestamps");
-    for (label, header) in [
+    let variants = [
         (
             "one position, scale 1",
             header_at(width, height, [width, height], 1.0),
@@ -1010,22 +1009,46 @@ fn the_lattices_cost() {
             "21 positions, scale 0.5",
             header_at(width, height, [2 * width, 2 * height], 0.5),
         ),
-    ] {
-        for _ in 0..rounds {
-            main.dispatch_with(gpu, &header, &input, &output, &params, &[&table], None);
-        }
-        for slot in 0..rounds {
+    ];
+    let slots = u32::try_from(rounds * variants.len()).unwrap();
+    let timer = GpuTimer::new(gpu, slots).expect("GPU timestamps");
+    let warm_timer = GpuTimer::new(gpu, 1).expect("GPU timestamps");
+    for (_, header) in &variants {
+        let started = std::time::Instant::now();
+        while started.elapsed() < std::time::Duration::from_secs(1) {
             main.dispatch_with(
                 gpu,
-                &header,
+                header,
                 &input,
                 &output,
                 &params,
                 &[&table],
-                Some((&timer, slot)),
+                Some((&warm_timer, 0)),
+            );
+            warm_timer.read(gpu, 1).unwrap();
+        }
+    }
+    for round in 0..rounds {
+        for (variant, (_, header)) in variants.iter().enumerate() {
+            main.dispatch_with(
+                gpu,
+                header,
+                &input,
+                &output,
+                &params,
+                &[&table],
+                Some((
+                    &timer,
+                    u32::try_from(round * variants.len() + variant).unwrap(),
+                )),
             );
         }
-        let mut times = timer.read(gpu, rounds).unwrap();
+    }
+    let measured = timer.read(gpu, slots).unwrap();
+    for (variant, (label, _)) in variants.iter().enumerate() {
+        let mut times: Vec<_> = (0..rounds)
+            .map(|round| measured[round * variants.len() + variant])
+            .collect();
         times.sort_by(f64::total_cmp);
         println!(
             "{label}: median {:.2} ms, min {:.2} ms per pass over {width} × {height}",
