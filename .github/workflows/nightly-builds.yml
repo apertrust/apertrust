@@ -204,7 +204,7 @@ jobs:
           rm -- "${built[0]}"
           "$tools/appimagetool" --appimage-extract-and-run --no-appstream \
             --runtime-file "$tools/runtime" \
-            -u "gh-releases-zsync|apertrust|apertrust|nightly|apertrust-nightly_*_$ARCH.AppImage.zsync" \
+            -u "gh-releases-zsync|apertrust|apertrust|nightly|apertrust-nightly-*-linux-$ARCH.AppImage.zsync" \
             squashfs-root "$name"
           rm -rf squashfs-root
           ls -l "$name" "$name.zsync"

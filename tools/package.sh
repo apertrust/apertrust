@@ -37,6 +37,10 @@
 # --finder-layout also has create-dmg arrange the window in Finder first, which needs a
 # logged-in session and may ask to control Finder; the layout added after it replaces its own.
 #
+# Each package is named <package>-<version>-<os>-<arch>[-<kind>].<ext>, lower case but .AppImage,
+# with each platform's own words for its architecture (docs/packaging.md):
+# apertrust-0.2.0+615-macos-arm64.dmg, apertrust-nightly-0.2.0+615-windows-x64-setup.exe.
+#
 # The version is the build's, as `--version` prints it: from git, or APERTRUST_VERSION
 # when a packager sets it (decision 44).
 set -euo pipefail
@@ -128,6 +132,35 @@ build() {
     cargo build --release --locked -p apertrust -p apertrust-cli "$@"
 }
 
+# The target $1's platform and architecture as its packages name them, in the platform's
+# own words: macos-arm64 or macos-x86_64, windows-x64 or windows-arm64, linux-x86_64 or
+# linux-aarch64.
+os_arch() {
+    case "$1" in
+    aarch64-apple-darwin) echo macos-arm64 ;;
+    x86_64-apple-darwin) echo macos-x86_64 ;;
+    x86_64-pc-windows-*) echo windows-x64 ;;
+    aarch64-pc-windows-*) echo windows-arm64 ;;
+    x86_64-*-linux-*) echo linux-x86_64 ;;
+    aarch64-*-linux-*) echo linux-aarch64 ;;
+    *)
+        echo "error: no package name for the target $1" >&2
+        return 1
+        ;;
+    esac
+}
+
+# Gives the one package cargo-packager wrote into $out ending in $1 the name $2:
+# cargo-packager names its packages its own way, with no template to change it.
+rename_package() {
+    local found=("$out"/*"$1")
+    if [[ ${#found[@]} -ne 1 ]] || [[ ! -f "${found[0]}" ]]; then
+        echo "error: one *$1 expected in $out, found: ${found[*]##*/}" >&2
+        exit 1
+    fi
+    mv "${found[0]}" "$out/$2"
+}
+
 exe=
 if [[ "$platform" = windows ]]; then
     exe=.exe
@@ -187,6 +220,7 @@ dress_dmg() {
 
 package() {
     triple=$1
+    target_name=$(os_arch "$triple")
     if [[ "$platform" = macos ]] || [[ -n "$only" ]]; then
         build --target "$triple"
         bin_dir=$target_dir/$triple/release
@@ -220,6 +254,8 @@ package() {
         version=$short+$build_number
     fi
     echo "version $full, packaged as $version"
+    # Every package's name but its kind and extension.
+    base=$package-$version-$target_name
 
     stage=$target_dir/package/$triple
     out=$stage/out
@@ -273,18 +309,14 @@ package() {
         for dmg in "$out"/*.dmg; do
             dress_dmg "$dmg" "$stage"
             codesign --verify --strict "$dmg"
-            # cargo-packager names the image after the product, "Apertrust Nightly_…": the
-            # file's name has no space, and -nightly as the other packages' have.
-            if [[ "$nightly" = true ]]; then
-                mv "$dmg" "$out/Apertrust-nightly_${dmg##*/Apertrust Nightly_}"
-            fi
         done
+        rename_package .dmg "$base.dmg"
         ;;
     linux)
+        rename_package .AppImage "$base.AppImage"
         # A tarball laid out as a prefix, for ~/.local or /usr/local: bin, and share with the
         # desktop file, metadata, MIME types, icons and the licences.
-        arch=${triple%%-*}
-        name=${package}_${version}_$arch
+        name=$base
         tree=$stage/tarball/$name
         rm -rf "$stage/tarball"
         mkdir -p "$tree/bin" "$tree/share/applications" "$tree/share/metainfo" \
@@ -299,12 +331,9 @@ package() {
         tar -C "$stage/tarball" -czf "$out/$name.tar.gz" "$name"
         ;;
     windows)
-        # A portable zip: the two executables and the licences in one folder, named for the
-        # architecture as the installer is: x64 or arm64.
-        arch=${triple%%-*}
-        [[ "$arch" = x86_64 ]] && arch=x64
-        [[ "$arch" = aarch64 ]] && arch=arm64
-        name=${package}_${version}_$arch-portable
+        rename_package -setup.exe "$base-setup.exe"
+        # A portable zip: the two executables and the licences in one folder.
+        name=$base-portable
         tree=$stage/zip/$product
         rm -rf "$stage/zip"
         mkdir -p "$tree"

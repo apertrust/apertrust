@@ -582,7 +582,7 @@ pub(crate) mod tests {
         let near = Path::new("/x/Apertrust.app/Contents/Resources/apertrust");
         assert_eq!(Launcher::of(near, mac, &finder).program, near);
         let appimage = Found {
-            appimage: Some("/home/me/apertrust_0.2.0_x86_64.AppImage".into()),
+            appimage: Some("/home/me/apertrust-0.2.0-linux-x86_64.AppImage".into()),
             appdir: Some("/tmp/.mount_aperXYZ".into()),
             resolved: None,
             terminal: false,
