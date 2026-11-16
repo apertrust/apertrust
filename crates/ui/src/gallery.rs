@@ -1440,9 +1440,9 @@ fn controls(ui: &mut Ui, t: &Theme, demo: &mut Demo) {
         });
     });
     ui.add_space(t.spacing.s);
-    // A segmented row: its label on a line of its own, the options across the width.
+    // A segmented row in a tool: the options across the width, with no label.
     if let Some(i) = Segmented::new("Retouch tool", &["Heal", "Clone", "AI erase"], demo.tool)
-        .label("Tool")
+        .full_width()
         .show(ui)
     {
         demo.tool = i;
@@ -1452,7 +1452,7 @@ fn controls(ui: &mut Ui, t: &Theme, demo: &mut Demo) {
     // Manual chosen there, nothing left to choose, so the whole switch is disabled.
     let automatic = [(1, "Automatic needs a raw photo's histogram")];
     if let Some(i) = Segmented::new("Mode, pasted", &["Manual", "Automatic"], demo.exposure_mode)
-        .label("Mode")
+        .full_width()
         .promise("Manual sets the exposure by hand.")
         .disabled_options(&automatic)
         .show(ui)
@@ -1460,7 +1460,7 @@ fn controls(ui: &mut Ui, t: &Theme, demo: &mut Demo) {
         demo.exposure_mode = i;
     }
     Segmented::new("Mode, not a raw", &["Manual", "Automatic"], 0)
-        .label("Mode")
+        .full_width()
         .disabled_options(&automatic)
         .show(ui);
     // A checkbox row, live with the photo's value after its label, and disabled, as on

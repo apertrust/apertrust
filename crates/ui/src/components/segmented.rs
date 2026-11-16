@@ -15,9 +15,10 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 //! A few options side by side, one of them chosen: Linear | Log, a scope's colour space.
-//! In a bar each option is as wide as the widest; in a tool the row is two lines
-//! (`docs/gui.md`, How the rows are laid out), the label on a line of its own and the
-//! options sharing the full width under it.
+//! In a bar each option is as wide as the widest; in a tool the options share the full
+//! width of one row, with no label (`docs/gui.md`, How the rows are laid out): a segmented
+//! choice only ever switches a mode, which its options say, and screen readers hear its
+//! name.
 //!
 //! An option can be drawn disabled with its reason as its tooltip, as Exposure's Automatic
 //! on an image that is not a raw (decision 88): dimmed, it takes no click and no focus,
@@ -27,14 +28,14 @@
 
 use egui::{Color32, FontId, Rect, Role, Sense, Stroke, StrokeKind, Ui, WidgetInfo, pos2, vec2};
 
-use super::{focus_ring, truncated};
+use super::focus_ring;
 use crate::theme;
 
 pub struct Segmented<'a> {
     name: &'a str,
     options: &'a [&'a str],
     selected: usize,
-    label: Option<&'a str>,
+    full_width: bool,
     promise: Option<&'a str>,
     enabled: bool,
     /// Options that cannot be chosen, by index, each with its reason.
@@ -49,22 +50,21 @@ impl<'a> Segmented<'a> {
             name,
             options,
             selected,
-            label: None,
+            full_width: false,
             promise: None,
             enabled: true,
             disabled: &[],
         }
     }
 
-    /// In a tool: the control's short, translated label on a line of its own, and the
-    /// options across the full width under it.
-    pub fn label(mut self, short: &'a str) -> Self {
-        self.label = Some(short);
+    /// In a tool: the options across the full width of one row, with no label.
+    pub fn full_width(mut self) -> Self {
+        self.full_width = true;
         self
     }
 
-    /// The control's promise, translated: the tooltip of its label and of each option
-    /// with no reason of its own.
+    /// The control's promise, translated: the tooltip of each option with no reason of
+    /// its own.
     pub fn promise(mut self, text: &'a str) -> Self {
         self.promise = Some(text);
         self
@@ -112,49 +112,20 @@ impl<'a> Segmented<'a> {
             .collect();
         let count = self.options.len() as f32;
         let height = t.sizes.control - 2.0;
-        let (outer, group, line) = match self.label {
-            Some(label) => {
-                let (row, group) = ui.allocate_exact_size(
-                    vec2(ui.available_width(), 2.0 * t.sizes.row),
-                    Sense::hover(),
-                );
-                let line = Rect::from_min_size(row.min, vec2(row.width(), t.sizes.row));
-                let colour = if live {
-                    t.colors.text
-                } else {
-                    t.colors.text_disabled
-                };
-                let galley = ui.painter().layout_job(truncated(
-                    label,
-                    FontId::proportional(t.text.body),
-                    line.width(),
-                    colour,
-                ));
-                let at = pos2(line.left(), line.center().y - galley.size().y / 2.0);
-                ui.painter().galley(at, galley, colour);
-                let outer = Rect::from_center_size(
-                    pos2(row.center().x, line.bottom() + t.sizes.row / 2.0),
-                    vec2(row.width(), height + 2.0 * pad),
-                );
-                (outer, group, Some(line))
-            }
-            None => {
-                let segment =
-                    galleys.iter().map(|g| g.size().x).fold(0.0, f32::max) + 2.0 * t.spacing.m;
-                let size = vec2(segment * count + pad * (count + 1.0), height + 2.0 * pad);
-                let (outer, group) = ui.allocate_exact_size(size, Sense::hover());
-                (outer, group, None)
-            }
+        let (outer, group) = if self.full_width {
+            let (row, group) =
+                ui.allocate_exact_size(vec2(ui.available_width(), t.sizes.row), Sense::hover());
+            let outer = Rect::from_center_size(row.center(), vec2(row.width(), height + 2.0 * pad));
+            (outer, group)
+        } else {
+            let segment =
+                galleys.iter().map(|g| g.size().x).fold(0.0, f32::max) + 2.0 * t.spacing.m;
+            let size = vec2(segment * count + pad * (count + 1.0), height + 2.0 * pad);
+            ui.allocate_exact_size(size, Sense::hover())
         };
         let segment = (outer.width() - pad * (count + 1.0)) / count;
         group.widget_info(|| WidgetInfo::labeled(Role::RadioGroup, live, self.name));
         let group_id = group.id;
-        // The promise over the label, and over each option that can be chosen.
-        if let (Some(promise), Some(line)) = (self.promise, line) {
-            ui.interact(line, group_id.with("label"), Sense::hover())
-                .on_hover_text(promise)
-                .on_disabled_hover_text(promise);
-        }
         ui.painter()
             .rect_filled(outer, t.shape.radius_large, t.colors.sunken);
         let mut chosen = None;

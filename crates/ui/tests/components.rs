@@ -2266,7 +2266,7 @@ fn mode_switch(held: usize) -> Harness<'static, (usize, Option<usize>)> {
             |ui, state: &mut (usize, Option<usize>)| {
                 let reasons = [(1, "Automatic needs a raw photo's histogram")];
                 let chosen = Segmented::new("Mode", &["Manual", "Automatic"], state.0)
-                    .label("Mode")
+                    .full_width()
                     .promise("Manual sets the exposure by hand.")
                     .disabled_options(&reasons)
                     .show(ui);
