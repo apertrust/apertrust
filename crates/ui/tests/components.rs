@@ -2348,7 +2348,8 @@ const ILLUMINANTS: [&str; 4] = [
 
 /// A dropdown row and what it last reported, applied as the app would, with the options
 /// it lists disabled, what its box shows while none is chosen, an option the photo does
-/// not list, its style and its kept marker, on a row that has one.
+/// not list, its style, its kept marker, on a row that has one, and whether its options have
+/// tooltips of their own.
 struct Dropdown {
     selected: Option<usize>,
     picking: bool,
@@ -2358,7 +2359,16 @@ struct Dropdown {
     unlisted: Option<usize>,
     style: ChoiceStyle,
     mark: Option<Mark>,
+    tips: bool,
 }
+
+/// What each illuminant does, as its tooltip in the list.
+const ILLUMINANT_TIPS: [&str; 4] = [
+    "Daylight at the temperature you set",
+    "A glowing body at the temperature you set",
+    "A fluorescent tube with three narrow bands",
+    "The white you set by its hue and chroma",
+];
 
 /// A dropdown row of the illuminants in a window `width` points wide, Boxed, with a picker
 /// before its box when `quad`.
@@ -2372,6 +2382,9 @@ fn dropdown(width: f32, quad: bool) -> Harness<'static, Dropdown> {
                     .name("Adaptation illuminant")
                     .disabled_options(&state.disabled, "Coming in a later version")
                     .style(state.style);
+                if state.tips {
+                    row = row.option_tips(&ILLUMINANT_TIPS);
+                }
                 if let Some(text) = state.none_chosen {
                     row = row.none_chosen(text);
                 }
@@ -2413,6 +2426,7 @@ fn dropdown(width: f32, quad: bool) -> Harness<'static, Dropdown> {
                 unlisted: None,
                 style: ChoiceStyle::Boxed,
                 mark: None,
+                tips: false,
             },
         )
 }
@@ -2699,6 +2713,37 @@ fn a_disabled_option_is_listed_but_never_chosen() {
     harness.get_by_label(ILLUMINANTS[3]).click();
     harness.run();
     assert_eq!(harness.state().last, Some(ChoiceAction::Set(3)));
+}
+
+/// Each option says what it does in its own tooltip in the list, as Exposure's Picker
+/// target does (decision 88); a disabled option says why instead.
+#[test]
+fn an_option_s_own_tooltip_shows_over_it_in_the_list() {
+    let mut harness = blended(400.0, false);
+    harness
+        .ctx
+        .global_style_mut(|style| style.interaction.tooltip_delay = 0.0);
+    harness.state_mut().tips = true;
+    harness.state_mut().disabled = vec![2];
+    harness.run();
+    harness
+        .get_by_role_and_label(Role::ComboBox, ILLUMINANT)
+        .click();
+    harness.run();
+    assert!(harness.query_by_label(ILLUMINANT_TIPS[1]).is_none());
+    harness.get_by_label(ILLUMINANTS[1]).hover();
+    harness.run();
+    harness.get_by_label(ILLUMINANT_TIPS[1]);
+    harness.snapshot("dropdown-option-tip");
+    // The disabled option's reason, not its own words.
+    harness.get_by_label(ILLUMINANTS[2]).hover();
+    harness.run();
+    harness.get_by_label("Coming in a later version");
+    assert!(harness.query_by_label(ILLUMINANT_TIPS[2]).is_none());
+    // Choosing is as ever.
+    harness.get_by_label(ILLUMINANTS[1]).click();
+    harness.run();
+    assert_eq!(harness.state().last, Some(ChoiceAction::Set(1)));
 }
 
 #[test]

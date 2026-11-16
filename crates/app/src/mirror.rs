@@ -81,7 +81,7 @@ pub enum Reaction {
     FolderOpened(PathBuf),
     /// The folder at this path could not be opened: its entry in the recent folders says so.
     FolderFailed { path: PathBuf, reason: String },
-    /// A tool's pick measured these settings, measure mode's target: the app keeps them
+    /// A tool's pick measured these settings, as a measure mode's target: the app keeps them
     /// in its settings, as darktable writes its target sliders and darktablerc.
     Measured {
         tool: &'static str,

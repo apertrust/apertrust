@@ -891,8 +891,8 @@ impl Engine {
                     return Ok(None);
                 };
                 // The client has just sent its settings: a pick applied again never
-                // hands them back, so measure mode, which writes only them, does nothing
-                // here, as darktable's settings callback re-runs only correction
+                // hands them back, so a pick that writes only them does nothing here, as
+                // darktable's settings callback re-runs only correction
                 // (`exposure.c:1170-1175`).
                 let mut shown = picked.shown.clone();
                 shown.settings.clear();

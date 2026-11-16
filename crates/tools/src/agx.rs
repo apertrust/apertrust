@@ -393,6 +393,7 @@ const fn picker(id: &'static str, writes: &'static [&'static str]) -> Picker {
         keep: false,
         writes,
         settings: &[],
+        words_by: None,
     }
 }
 

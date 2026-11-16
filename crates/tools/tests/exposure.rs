@@ -561,28 +561,74 @@ fn e33_highlight_preservation_mode_off_darkens_by_what_was_held_back() {
     );
 }
 
-// E50: the picker.
+// E50 and E52: the picker.
+
+/// E50's patches: four greys from 0.05 to 1 and one of colour.
+const PATCHES: [[f32; 4]; 5] = [
+    [0.05, 0.05, 0.05, 1.0],
+    [0.18, 0.18, 0.18, 1.0],
+    [0.5, 0.5, 0.5, 1.0],
+    [1.0, 1.0, 1.0, 1.0],
+    [0.3, 0.2, 0.1, 1.0],
+];
+
+/// Picker target holding `target`, and Lightness at `lightness` (decision 88).
+fn picker_target(
+    target: exposure::PickerTarget,
+    lightness: f32,
+) -> [(&'static str, ControlValue); 2] {
+    use apertrust_base::settings::Choice;
+    let at = exposure::PickerTarget::OPTIONS
+        .iter()
+        .position(|(option, _)| *option == target)
+        .unwrap();
+    [
+        ("target", ControlValue::Choice(at as u32)),
+        ("lightness", ControlValue::Number(lightness)),
+    ]
+}
+
+/// Exposure's pick of a flat `patch` at its defaults on `image`, with these settings.
+fn flat_pick(
+    image: &ImageContext,
+    patch: [f32; 4],
+    settings: &[(&str, ControlValue)],
+) -> apertrust_tools::pick::Picked {
+    use apertrust_tools::pick::{PickKeys, Reading, Stats};
+    let stats = Stats {
+        mean: patch,
+        min: patch,
+        max: patch,
+    };
+    let reading = Reading {
+        input: stats,
+        output: None,
+    };
+    Exposure
+        .pick(
+            "exposure",
+            &reading,
+            &Exposure.defaults(image),
+            image,
+            settings,
+            None,
+            None,
+            PickKeys::default(),
+        )
+        .unwrap()
+}
 
 /// E50: a pick on a flat patch, by Exposure's pick with the patch's reading, sets the
 /// exposure that renders the patch's luminance at the target lightness's grey at
 /// Exposure's output, Y read through the input profile darktable's pick reads it through;
-/// only Exposure changes. On colour raws with biases 0 and −0.67 EV, compensated, at
-/// darktable's default target, 50 %, and at 30 % and 75 %. The photo's own black, −2⁻¹²,
-/// which darktable's rule leaves aside, keeps a patch from landing exactly: the darker
-/// the patch, the further.
+/// only Exposure changes. On colour raws with biases 0 and −0.67 EV, compensated, Picker
+/// target holding Lightness, at darktable's default target, 50 %, and at 30 % and 75 %.
+/// The photo's own black, −2⁻¹², which darktable's rule leaves aside, keeps a patch from
+/// landing exactly: the darker the patch, the further.
 #[test]
 fn e50_a_pick_maps_a_flat_patch_to_the_target_lightness() {
-    use apertrust_tools::pick::{PickKeys, Reading, Stats};
-
-    let patches = [
-        [0.05, 0.05, 0.05],
-        [0.18, 0.18, 0.18],
-        [0.5, 0.5, 0.5],
-        [1.0, 1.0, 1.0],
-        [0.3, 0.2, 0.1],
-    ];
-    let pixels: Vec<[f32; 4]> = patches.iter().map(|&[r, g, b]| [r, g, b, 1.0]).collect();
     let mut worst = 0.0_f64;
+    let pixels = PATCHES.to_vec();
     for bias in [0.0, -0.67] {
         let (picture, image) = Picture::row(pixels.clone(), bias);
         let mut bench = Bench::picture(&picture, image.clone(), SCENE);
@@ -594,33 +640,9 @@ fn e50_a_pick_maps_a_flat_patch_to_the_target_lightness() {
         };
         for target in [30.0, 50.0, 75.0] {
             let target_y = ((f64::from(target) + 16.0) / 116.0).powi(3);
-            let settings = [
-                ("area_mode", ControlValue::Choice(0)),
-                ("lightness", ControlValue::Number(target)),
-            ];
+            let settings = picker_target(exposure::PickerTarget::Lightness, target);
             for (at, patch) in picture.pixels.iter().enumerate() {
-                let stats = Stats {
-                    mean: *patch,
-                    min: *patch,
-                    max: *patch,
-                };
-                let reading = Reading {
-                    input: stats,
-                    output: None,
-                };
-                let values = Exposure.defaults(&image);
-                let picked = Exposure
-                    .pick(
-                        "exposure",
-                        &reading,
-                        &values,
-                        &image,
-                        &settings,
-                        None,
-                        None,
-                        PickKeys::default(),
-                    )
-                    .unwrap();
+                let picked = flat_pick(&image, *patch, &settings);
                 let written: Vec<&str> = picked.writes.iter().map(|(c, _)| c).collect();
                 assert_eq!(written, ["exposure"], "E50: only Exposure changes");
                 let exposure = picked.writes.number("exposure");
@@ -635,6 +657,27 @@ fn e50_a_pick_maps_a_flat_patch_to_the_target_lightness() {
         }
     }
     println!("E50: at most {worst:.4} EV from the target");
+}
+
+/// E52: a pick toward Middle grey writes exactly what one toward Lightness at 50 % writes,
+/// on the same area, whatever Lightness holds, on E50's patches and photos (decision 88).
+#[test]
+fn e52_middle_grey_picks_exactly_what_lightness_at_50_picks() {
+    use exposure::PickerTarget::{Lightness, MiddleGrey};
+    for bias in [0.0, -0.67] {
+        let image = raw_context(1, 1, bias);
+        for patch in PATCHES {
+            let lightness = flat_pick(&image, patch, &picker_target(Lightness, 50.0));
+            assert!(!lightness.writes.is_empty(), "E52: {patch:?} writes");
+            for held in [0.0, 50.0, 92.0] {
+                let grey = flat_pick(&image, patch, &picker_target(MiddleGrey, held));
+                assert_eq!(
+                    grey.writes, lightness.writes,
+                    "E52: {patch:?}, bias {bias}, Lightness at {held}"
+                );
+            }
+        }
+    }
 }
 
 // E9: darktable's golden case.

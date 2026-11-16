@@ -16,31 +16,30 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 //! Exposure (`docs/tools/exposure.md`): darktable's exposure module as the user
-//! edits with it, in the first pass (decision 2): darktable's page, its controls in
-//! `gui_init`'s order under its labels, with no tabs.
+//! edits with it, in the first pass (decision 2), on one untitled tab, its page the
+//! board's, an exception to darktable's (decision 88).
 //!
 //! - **Mode:** a Manual | Automatic switch (decision 88), automatic darktable's
 //!   deflicker: the exposure that puts a percentile of the raw's histogram at a level
 //!   below the white point, worked out from each photo, so a series comes out matched.
 //!   An image that is not a raw lists manual alone, and an edit holding automatic renders
 //!   there as manual. Exposure has no Auto: automatic mode is its one automatic way.
-//! - **In manual mode:** Compensate camera exposure, whether the camera's exposure
-//!   compensation is undone; Highlight preservation mode, whether the exposure a
-//!   camera's highlight-preserving mode held back is given back, on by default; and
-//!   Exposure, darktable's slider, `exposure.exposure` itself, −18 to +18 EV, its default
-//!   the photo's: +0.7 EV on a colour raw, 0 otherwise (decision 30). The two camera
+//! - **In manual mode:** Exposure, darktable's slider, `exposure.exposure` itself, −18 to
+//!   +18 EV, its default the photo's: +0.7 EV on a colour raw, 0 otherwise (decision 30),
+//!   with its picker; Picker target, what the picker makes of the area, and Lightness
+//!   under it while Lightness is chosen, settings no edit stores ([`crate::settings`]);
+//!   Compensate camera exposure, whether the camera's exposure compensation is undone;
+//!   and Highlight preservation mode, whether the exposure a camera's
+//!   highlight-preserving mode held back is given back, on by default. The two camera
 //!   rows are hidden where the photo gives them nothing to do, their labels showing what
 //!   they take off and give back (decision 88).
 //! - **In automatic mode:** Percentile and Target level, labelled Measure at and Place it
 //!   at, and darktable's computed EC, the exposure the operation applies, a computed
 //!   value (`Row::Computed`) labelled This photo (decision 88).
 //! - **Black level correction,** darktable's offset over the photo's own black.
-//! - **Area exposure mapping,** a collapsible group of darktable's settings for its
-//!   picker, which no edit stores, kept in settings ([`crate::settings`]), and the area's
-//!   input and target patches with the input's L readout.
 //! - **Its picker,** on Exposure's quad: darktable's `_auto_set_exposure`, which sets the
-//!   exposure that maps the area to the target lightness, or measures the target the area
-//!   gives.
+//!   exposure that maps the area to Picker target's lightness, its tooltip and its hint
+//!   over the photo following Picker target (decision 88).
 //!
 //! It drives `exposure`, which every photo runs, and owns every parameter of it. Contrast
 //! and its pivot, which it once bound through colour balance rgb, are the Colour balance
@@ -57,7 +56,7 @@ use apertrust_plugin::{ImageContext, Value};
 use crate::about::{Fact, Facts, Purpose};
 use crate::definition::{
     ChoiceStyle, Computed, Control, ControlKind, Definition, Picker, PickerKind, Quad, Row,
-    SettingRow, Slider, Space, Tab, Unit,
+    SettingRow, Slider, Space, Tab, Track, Unit,
 };
 use crate::pick::{Patch, PickKeys, Picked, Reading, Shown};
 use crate::transfer::Transfer;
@@ -78,8 +77,9 @@ const AUTOMATIC: u32 = 1;
 /// the exposure operation's `computed` gives by this id (decision 87).
 const COMPUTED_EXPOSURE: &str = "computed_exposure";
 
-/// The controls, in the page's order. Exposure, Black level correction and Compensate
-/// camera exposure keep their first ids; the others are darktable's parameter names.
+/// The controls, in darktable's `gui_init` order; the page puts Exposure before the
+/// camera's rows (decision 88). Exposure, Black level correction and Compensate camera
+/// exposure keep their first ids; the others are darktable's parameter names.
 static CONTROLS: [Control; 7] = [
     Control {
         id: "mode",
@@ -160,59 +160,77 @@ static CONTROLS: [Control; 7] = [
     },
 ];
 
-/// darktable's area exposure mapping, under the page: what its picker does with the area
-/// picked and the lightness it maps it to, darktable's settings (an area mode it puts
-/// back to correction at every `gui_update`, `exposure.c:742`, and
-/// `darkroom/modules/exposure/lightness` in its darktablerc), at their defaults there,
-/// both kept in settings (`tools.exposure.*`), the area mode's keeping Apertrust's; between
-/// them the input's and the target's patches, with the input's L readout.
-const MAPPING: Row = Row::Group {
-    id: "area_exposure_mapping",
-    rows: &[
-        Row::Setting(SettingRow {
-            id: "area_mode",
-            kind: ControlKind::Choice {
-                options: &AREA_MODES,
-                default: 0,
-                unported: &[],
-            },
-            decimals: 0,
-        }),
-        Row::Patches {
-            picker: "exposure",
-            target: &["lightness"],
+/// Picker target, under Exposure in manual mode, in place of darktable's area exposure
+/// mapping (decision 88): what Exposure's picker makes of the area picked, a setting no
+/// edit stores, kept in settings as `tools.exposure.target`. Reference is listed but
+/// cannot be chosen yet (`unported`): its row and its picker are still to come.
+const TARGET: Row = Row::Setting(SettingRow {
+    id: "target",
+    kind: ControlKind::Choice {
+        options: &TARGETS,
+        default: 0,
+        unported: &["reference"],
+    },
+    decimals: 0,
+    track: Track::Plain,
+});
+
+/// Lightness, under Picker target while it holds Lightness: the L the picked area is
+/// given, darktable's `darkroom/modules/exposure/lightness` with its range, decimal and
+/// default, its track the ramp of greys darktable paints, kept in settings as
+/// `tools.exposure.lightness`.
+const LIGHTNESS: Row = Row::WhenSetting {
+    setting: "target",
+    is: &["lightness"],
+    rows: &[Row::Setting(SettingRow {
+        id: "lightness",
+        kind: ControlKind::Number {
+            min: 0.0,
+            max: 100.0,
+            step: 1.0,
+            default: MIDDLE_GREY,
         },
-        Row::Setting(SettingRow {
-            id: "lightness",
-            kind: ControlKind::Number {
-                min: 0.0,
-                max: 100.0,
-                step: 1.0,
-                default: 50.0,
-            },
-            decimals: 1,
-        }),
-    ],
+        decimals: 1,
+        track: Track::Lightness,
+    })],
 };
 
-/// darktable's area modes, `dt_spot_mode_t`'s two that Exposure lists, in its order.
-const AREA_MODES: [&str; 2] = ["correction", "measure"];
+/// Picker target's options, in the board's order.
+const TARGETS: [&str; 3] = ["middle_grey", "lightness", "reference"];
 
-/// The area exposure mapping's mode, the setting `tools.exposure.area_mode`:
-/// darktable's `dt_spot_mode_t`.
+/// Middle grey's L, darktable's default target lightness.
+const MIDDLE_GREY: f32 = 50.0;
+
+/// What Exposure's picker makes of the area picked, the setting `tools.exposure.target`
+/// (decision 88).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum AreaMode {
-    /// The exposure that maps the area to the target lightness.
+pub enum PickerTarget {
+    /// L 50 %, darktable's default target.
     #[default]
-    Correction,
-    /// The target lightness the area gives at the current exposure.
-    Measure,
+    MiddleGrey,
+    /// The L the setting `tools.exposure.lightness` holds.
+    Lightness,
+    /// The L of an area measured on another photo, still to come.
+    Reference,
 }
 
-impl Choice for AreaMode {
+impl PickerTarget {
+    /// The option a setting's value names, Middle grey where it names none.
+    fn of(value: Option<&ControlValue>) -> Self {
+        match value {
+            Some(&ControlValue::Choice(at)) => Self::OPTIONS
+                .get(at as usize)
+                .map_or(Self::MiddleGrey, |(target, _)| *target),
+            _ => Self::MiddleGrey,
+        }
+    }
+}
+
+impl Choice for PickerTarget {
     const OPTIONS: &'static [(Self, &'static str)] = &[
-        (Self::Correction, AREA_MODES[0]),
-        (Self::Measure, AREA_MODES[1]),
+        (Self::MiddleGrey, TARGETS[0]),
+        (Self::Lightness, TARGETS[1]),
+        (Self::Reference, TARGETS[2]),
     ];
 }
 
@@ -232,22 +250,26 @@ static DEFINITION: Definition = Definition {
                 control: "mode",
                 style: ChoiceStyle::Segmented,
             },
+            // The board's manual page (decision 88): Exposure with its picker, Picker
+            // target right under it, then the camera's rows.
             Row::When {
                 control: "mode",
                 is: &["manual"],
                 rows: &[
-                    Row::Toggle {
-                        control: "camera_bias",
-                    },
-                    Row::Toggle {
-                        control: "compensate_hilite_pres",
-                    },
                     Row::Slider(
                         Slider::new("exposure")
                             .decimals(3)
                             .soft(-3.0, 4.0)
                             .quad(Quad::Picker("exposure")),
                     ),
+                    TARGET,
+                    LIGHTNESS,
+                    Row::Toggle {
+                        control: "camera_bias",
+                    },
+                    Row::Toggle {
+                        control: "compensate_hilite_pres",
+                    },
                 ],
             },
             Row::When {
@@ -266,7 +288,6 @@ static DEFINITION: Definition = Definition {
                 ],
             },
             Row::Slider(Slider::new("black_level").decimals(4).soft(-0.1, 0.1)),
-            MAPPING,
         ],
     }],
     before: &[],
@@ -284,8 +305,9 @@ static DEFINITION: Definition = Definition {
 };
 
 /// darktable's picker on Exposure (`DT_COLOR_PICKER_AREA`): the exposure that maps the
-/// area to the target lightness, the black kept below the new white, or in measure mode
-/// the target the area gives; its pick comes with the area exposure mapping's settings.
+/// area to Picker target's lightness, the black kept below the new white; its pick comes
+/// with Picker target and Lightness, and its tooltip and hint over the photo follow
+/// Picker target (decision 88).
 const PICKER: Picker = Picker {
     id: "exposure",
     operation: EXPOSURE,
@@ -295,7 +317,8 @@ const PICKER: Picker = Picker {
     space: Space::Operation,
     keep: false,
     writes: &["exposure", "black_level"],
-    settings: &["area_mode", "lightness"],
+    settings: &["target", "lightness"],
+    words_by: Some("target"),
 };
 
 /// Every parameter of `exposure`: the tool is darktable's and owns them all.
@@ -475,23 +498,24 @@ impl Tool for Exposure {
     /// darktable's `color_picker_apply`, its `_auto_set_exposure` (`exposure.c:866-965`),
     /// on the area's mean at Exposure's input, read through the input profile's matrix to
     /// XYZ D50 ([`input_profile`]) and made grey of its lightness: the input patch and its
-    /// L, then by the area mode, `tools.exposure.area_mode`:
+    /// L, then darktable's correction toward Picker target's lightness,
+    /// `tools.exposure.target` (decision 88): L 50 for Middle grey, darktable's default,
+    /// or `tools.exposure.lightness` for Lightness.
     ///
-    /// - **Correction:** the exposure `−log2(Y / Y_target)`, `Y_target` the grey of the
-    ///   target lightness, plus the camera's bias where Compensate camera exposure is on
-    ///   and less the held-back exposure where Highlight preservation mode is, which the
-    ///   operation takes off and gives back again, so the area renders at the target.
-    ///   Nothing is written where it equals Exposure's value, as `_exposure_set_white`
+    /// - The exposure `−log2(Y / Y_target)`, `Y_target` the grey of the target lightness,
+    ///   plus the camera's bias where Compensate camera exposure is on and less the
+    ///   held-back exposure where Highlight preservation mode is, which the operation takes
+    ///   off and gives back again, so the area renders at the target.
+    /// - Nothing is written where it equals Exposure's value, as `_exposure_set_white`
     ///   returns; a black at or above the new white goes 0.01 below it (`:763-779`),
-    ///   written as Black level correction over the photo's own black. darktable bounds
-    ///   neither: the session holds them to their ranges, and leaves out a target
-    ///   lightness of 0's, which is not finite, showing the patch still.
-    /// - **Measure:** no control; the target lightness the area renders at at the current
-    ///   exposure, held to the setting's 0 to 100 as darktable's slider holds it, which the
-    ///   client keeps (`Shown::settings`).
+    ///   written as Black level correction over the photo's own black.
+    /// - darktable bounds neither: the session holds them to their ranges, and leaves out
+    ///   a target lightness of 0's, which is not finite, showing the patch still.
+    /// - **Reference,** still to come, has no lightness yet: the patch alone, nothing
+    ///   written.
     ///
-    /// Nothing on a colour raw with no matrix, which colorin cannot render, as darktable
-    /// returns with no input profile.
+    /// darktable's measure mode is gone (decision 88). Nothing on a colour raw with no
+    /// matrix, which colorin cannot render, as darktable returns with no input profile.
     fn pick(
         &self,
         picker: &str,
@@ -511,7 +535,7 @@ impl Tool for Exposure {
         // darktable makes it grey to keep only its lightness.
         let lightness = xyz_to_lab_d50(xyz)[0];
         let grey = lab_to_xyz_d50([lightness, 0.0, 0.0]);
-        let mut shown = Shown {
+        let shown = Shown {
             patch: Some(Patch {
                 srgb: apertrust_color::xyz_d50_to_srgb(grey).map(|c| c.clamp(0.0, 1.0)),
                 lch: [lightness, 0.0, 0.0],
@@ -519,9 +543,18 @@ impl Tool for Exposure {
             settings: Vec::new(),
         };
         let setting = |id: &str| settings.iter().find(|(s, _)| *s == id).map(|(_, v)| v);
-        let mode = match setting("area_mode") {
-            Some(&ControlValue::Choice(1)) => AreaMode::Measure,
-            _ => AreaMode::Correction,
+        let target = match PickerTarget::of(setting("target")) {
+            PickerTarget::MiddleGrey => MIDDLE_GREY,
+            PickerTarget::Lightness => match setting("lightness") {
+                Some(&ControlValue::Number(target)) => target,
+                _ => MIDDLE_GREY,
+            },
+            PickerTarget::Reference => {
+                return Some(Picked {
+                    writes: Controls::new(),
+                    shown,
+                });
+            }
         };
         let exposure = values.number("exposure");
         let bias = taken_off(
@@ -530,35 +563,20 @@ impl Tool for Exposure {
             values.flag("compensate_hilite_pres"),
         );
         let mut writes = Controls::new();
-        match mode {
-            AreaMode::Measure => {
-                // The exposure the operation applies; `exposure2white(-expo)` its factor.
-                let white = exposure_to_white(-(exposure - bias));
-                let out = xyz_to_lab_d50(grey.map(|c| c * white))[0];
-                let out = ControlValue::Number(out.clamp(0.0, 100.0));
-                shown.settings.push(("lightness", out));
-            }
-            AreaMode::Correction => {
-                let target = match setting("lightness") {
-                    Some(&ControlValue::Number(target)) => target,
-                    _ => 50.0,
-                };
-                let target = lab_to_xyz_d50([target, 0.0, 0.0]);
-                let expo = -white_to_exposure(grey[1] / target[1]) - bias;
-                // `_exposure_set_white`.
-                let white = exposure_to_white(-expo);
-                let picked = white_to_exposure(white);
-                if picked != exposure {
-                    writes.set("exposure", ControlValue::Number(picked));
-                    // The black the operation holds now, darktable's `p->black`.
-                    let default = default_black(image);
-                    let level = values.number("black_level");
-                    let held = BlackLevel::new(default, rendered_white(exposure, bias));
-                    if held.value(level) >= white {
-                        let level = white - WHITE_MARGIN - default;
-                        writes.set("black_level", ControlValue::Number(level));
-                    }
-                }
+        let target = lab_to_xyz_d50([target, 0.0, 0.0]);
+        let expo = -white_to_exposure(grey[1] / target[1]) - bias;
+        // `_exposure_set_white`.
+        let white = exposure_to_white(-expo);
+        let picked = white_to_exposure(white);
+        if picked != exposure {
+            writes.set("exposure", ControlValue::Number(picked));
+            // The black the operation holds now, darktable's `p->black`.
+            let default = default_black(image);
+            let level = values.number("black_level");
+            let held = BlackLevel::new(default, rendered_white(exposure, bias));
+            if held.value(level) >= white {
+                let level = white - WHITE_MARGIN - default;
+                writes.set("black_level", ControlValue::Number(level));
             }
         }
         Some(Picked { writes, shown })
@@ -807,26 +825,62 @@ mod tests {
             .collect()
     }
 
+    /// The board's page (decision 88), on one untitled tab: Mode; in manual mode Exposure,
+    /// Picker target with Lightness under it while Lightness is chosen, and the camera's
+    /// rows; in automatic mode its rows; then Black level correction.
     #[test]
-    fn its_page_is_darktable_s_in_gui_init_s_order_on_one_untitled_tab() {
+    fn its_page_is_the_board_s_on_one_untitled_tab() {
         assert_eq!(DEFINITION.tabs.len(), 1);
         assert_eq!(DEFINITION.tabs[0].id, None);
         assert_eq!(
             page(),
             [
                 "mode",
+                "exposure",
                 "camera_bias",
                 "compensate_hilite_pres",
-                "exposure",
                 "deflicker_percentile",
                 "deflicker_target_level",
                 "black_level",
             ]
         );
-        // The controls are listed in the same order.
-        let controls: Vec<&str> = DEFINITION.controls.iter().map(|c| c.id).collect();
-        assert_eq!(controls, page());
-        // The area exposure mapping's settings are the picker's, which no edit stores.
+        // Every control has a row; the controls keep darktable's order.
+        let mut controls: Vec<&str> = DEFINITION.controls.iter().map(|c| c.id).collect();
+        let mut shown = page();
+        controls.sort_unstable();
+        shown.sort_unstable();
+        assert_eq!(controls, shown);
+        // Picker target and Lightness are the picker's settings, which no edit stores,
+        // right under Exposure; no area exposure mapping, area mode or patches.
+        let manual: Vec<String> = DEFINITION
+            .rows()
+            .filter_map(|row| match row {
+                Row::When {
+                    is: ["manual"],
+                    rows,
+                    ..
+                } => Some(*rows),
+                _ => None,
+            })
+            .flatten()
+            .map(|row| match row {
+                Row::Setting(setting) => format!("setting {}", setting.id),
+                Row::WhenSetting {
+                    setting, is, rows, ..
+                } => format!("{setting} is {is:?}: {} rows", rows.len()),
+                row => row.controls().join(" "),
+            })
+            .collect();
+        assert_eq!(
+            manual,
+            [
+                "exposure",
+                "setting target",
+                "target is [\"lightness\"]: 1 rows",
+                "camera_bias",
+                "compensate_hilite_pres",
+            ]
+        );
         let settings: Vec<&str> = DEFINITION
             .rows()
             .filter_map(|row| match row {
@@ -834,7 +888,46 @@ mod tests {
                 _ => None,
             })
             .collect();
-        assert_eq!(settings, ["area_mode", "lightness"]);
+        assert_eq!(settings, ["target", "lightness"]);
+        assert!(
+            !DEFINITION
+                .rows()
+                .any(|row| matches!(row, Row::Group { .. } | Row::Patches { .. }))
+        );
+        // Lightness on darktable's ramp of greys.
+        let lightness = DEFINITION.rows().find_map(|row| match row {
+            Row::Setting(setting) if setting.id == "lightness" => Some(setting.track),
+            _ => None,
+        });
+        assert_eq!(lightness, Some(Track::Lightness));
+    }
+
+    /// Picker target's options, the board's, `PickerTarget`'s, Middle grey the default;
+    /// Reference listed but not yet to be chosen, its row and picker to come.
+    #[test]
+    fn picker_target_lists_middle_grey_lightness_and_reference() {
+        let Some(ControlKind::Choice {
+            options,
+            default,
+            unported,
+        }) = DEFINITION.rows().find_map(|row| match row {
+            Row::Setting(setting) if setting.id == "target" => Some(setting.kind),
+            _ => None,
+        })
+        else {
+            panic!("no Picker target")
+        };
+        assert_eq!(options, ["middle_grey", "lightness", "reference"]);
+        let ids: Vec<&str> = PickerTarget::OPTIONS.iter().map(|(_, id)| *id).collect();
+        assert_eq!(ids, options);
+        assert_eq!(
+            PickerTarget::OPTIONS[default as usize].0,
+            PickerTarget::default()
+        );
+        assert_eq!(PickerTarget::default(), PickerTarget::MiddleGrey);
+        assert_eq!(unported, ["reference"]);
+        assert_eq!(DEFINITION.choice_setting("target"), Some(&TARGETS[..]));
+        assert_eq!(PICKER.words_by, Some("target"));
     }
 
     /// Automatic mode's page as redesigned (decision 88): Mode a Manual | Automatic switch,
@@ -1180,7 +1273,8 @@ mod tests {
         DarktableSlider::new("deflicker_percentile", (0.0, 100.0), 2),
         DarktableSlider::new("deflicker_target_level", (-18.0, 18.0), 2),
         DarktableSlider::new("black_level", (-1.0, 1.0), 4).soft(-0.1, 0.1),
-        // Area exposure mapping's lightness, `dt_bauhaus_slider_new_with_range`.
+        // Lightness, darktable's area exposure mapping's, `dt_bauhaus_slider_new_with_range`,
+        // under Picker target here (decision 88).
         DarktableSlider::new("lightness", (0.0, 100.0), 1),
     ];
 
@@ -1202,7 +1296,8 @@ mod tests {
 
     /// darktable's picker on Exposure (`exposure.c:1211`): an area, writing the exposure
     /// and the black `_exposure_set_white` keeps below the new white (`:763-779`), and
-    /// reading the area exposure mapping's settings (`:866-973`).
+    /// reading Picker target and Lightness, which replace the area exposure mapping's
+    /// settings (`:866-973`; decision 88).
     #[test]
     fn its_picker_is_darktable_s() {
         let darktable = [DarktablePicker {
@@ -1212,7 +1307,7 @@ mod tests {
             denoise: false,
             output: false,
             writes: &["exposure", "black_level"],
-            settings: &["area_mode", "lightness"],
+            settings: &["target", "lightness"],
         }];
         assert_eq!(crate::testing::pickers_on_sliders(&DEFINITION), darktable);
     }
@@ -1387,11 +1482,18 @@ mod tests {
         values
     }
 
-    fn correction(lightness: f32) -> [(&'static str, ControlValue); 2] {
+    /// Picker target holding `target`, by its option's id, and Lightness at `lightness`.
+    fn target(target: &str, lightness: f32) -> [(&'static str, ControlValue); 2] {
+        let at = TARGETS.iter().position(|id| *id == target).unwrap();
         [
-            ("area_mode", ControlValue::Choice(0)),
+            ("target", ControlValue::Choice(at as u32)),
             ("lightness", number(lightness)),
         ]
+    }
+
+    /// Picker target holding Lightness, at `lightness`.
+    fn toward(lightness: f32) -> [(&'static str, ControlValue); 2] {
+        target("lightness", lightness)
     }
 
     fn pick(
@@ -1459,7 +1561,7 @@ mod tests {
                         ("compensate_hilite_pres", ControlValue::Bool(given_back)),
                     ];
                     let values = values(&image, &set);
-                    let picked = pick(&image, rgb, &values, &correction(target));
+                    let picked = pick(&image, rgb, &values, &toward(target));
                     // −log2(Y / Y_target), plus the bias the operation takes off again
                     // and less the exposure it gives back.
                     let expected =
@@ -1480,7 +1582,7 @@ mod tests {
     fn its_pick_follows_darktable_s_lightness_through_lab() {
         // The grey of 0.18: L 49.5, sRGB 0.461, shown with L, its C and h 0.
         let image = ImageContext::full(8, 8);
-        let picked = pick(&image, [0.18; 3], &values(&image, &[]), &correction(50.0));
+        let picked = pick(&image, [0.18; 3], &values(&image, &[]), &toward(50.0));
         let patch = picked.shown.patch.unwrap();
         let lightness = 116.0 * 0.18_f64.cbrt() - 16.0;
         assert!(
@@ -1498,7 +1600,7 @@ mod tests {
         // An area whose colour differs is made grey of its own lightness first: L's Y,
         // through Lab and back, is the area's.
         let rgb = [0.6, 0.1, 0.05];
-        let picked = pick(&image, rgb, &values(&image, &[]), &correction(50.0));
+        let picked = pick(&image, rgb, &values(&image, &[]), &toward(50.0));
         let expected = -(luminance(&image, rgb) / y_of(50.0)).log2();
         assert!((f64::from(picked.writes.number("exposure")) - expected).abs() < 1e-4);
         // A target patch is the grey of its lightness, as `_target_color_draw` paints it.
@@ -1513,18 +1615,13 @@ mod tests {
     fn its_pick_writes_nothing_where_exposure_already_is_the_one_picked() {
         // `_exposure_set_white` returns where the exposure is the same.
         let image = raw(-0.67);
-        let first = pick(
-            &image,
-            [0.3, 0.2, 0.1],
-            &values(&image, &[]),
-            &correction(60.0),
-        );
+        let first = pick(&image, [0.3, 0.2, 0.1], &values(&image, &[]), &toward(60.0));
         let picked = first.writes.number("exposure");
         let again = pick(
             &image,
             [0.3, 0.2, 0.1],
             &values(&image, &[("exposure", number(picked))]),
-            &correction(60.0),
+            &toward(60.0),
         );
         assert!(again.writes.is_empty());
         assert_eq!(again.shown, first.shown);
@@ -1536,7 +1633,7 @@ mod tests {
         let image = ImageContext::full(8, 8);
         let rgb = [0.001; 3];
         let set = [("black_level", number(0.5))];
-        let picked = pick(&image, rgb, &values(&image, &set), &correction(50.0));
+        let picked = pick(&image, rgb, &values(&image, &set), &toward(50.0));
         let white = luminance(&image, rgb) / y_of(50.0);
         let level = picked.writes.number("black_level");
         assert!(
@@ -1545,14 +1642,14 @@ mod tests {
         );
         // Over a colour raw's own black, −2⁻¹², as Black level correction is.
         let image = raw(0.0);
-        let picked = pick(&image, rgb, &values(&image, &set), &correction(50.0));
+        let picked = pick(&image, rgb, &values(&image, &set), &toward(50.0));
         let white = 2f32.powf(-picked.writes.number("exposure"));
         assert_eq!(
             picked.writes.number("black_level"),
             white - 0.01 + 1.0 / 4096.0
         );
         // A black below the new white is left as it is.
-        let picked = pick(&image, [0.5; 3], &values(&image, &set), &correction(50.0));
+        let picked = pick(&image, [0.5; 3], &values(&image, &set), &toward(50.0));
         assert_eq!(picked.writes.get("black_level"), None);
     }
 
@@ -1561,11 +1658,11 @@ mod tests {
         let image = ImageContext::full(8, 8);
         // A target lightness of 0 maps to no exposure: not finite, which the session
         // leaves out, keeping the patch.
-        let picked = pick(&image, [0.18; 3], &values(&image, &[]), &correction(0.0));
+        let picked = pick(&image, [0.18; 3], &values(&image, &[]), &toward(0.0));
         assert!(!picked.writes.number("exposure").is_finite());
         // An area of black or below: the white floored at 1e-20, so log2 has a value,
         // past Exposure's +18 EV, which the session holds there.
-        let picked = pick(&image, [0.0; 3], &values(&image, &[]), &correction(50.0));
+        let picked = pick(&image, [0.0; 3], &values(&image, &[]), &toward(50.0));
         let exposure = picked.writes.number("exposure");
         assert!(exposure.is_finite() && exposure > 18.0, "{exposure}");
         // Another picker's reading, or a colour raw with no matrix, picks nothing.
@@ -1587,56 +1684,53 @@ mod tests {
         assert_eq!(none("exposure", &matrixless), None);
     }
 
+    /// Middle grey picks exactly what Lightness at 50 % picks, whatever Lightness holds, on
+    /// every photo and area E50's and the correction's tests use (decision 88).
     #[test]
-    fn in_measure_mode_its_pick_gives_the_target_the_area_renders_at_and_writes_nothing() {
-        let measure = [
-            ("area_mode", ControlValue::Choice(1)),
-            ("lightness", number(50.0)),
+    fn middle_grey_picks_exactly_what_lightness_at_50_picks() {
+        let images = [
+            ImageContext::full(8, 8),
+            raw(0.0),
+            raw(-0.67),
+            preserving(-0.67, 0.5),
         ];
-        for (image, compensated, exposure) in [
-            (ImageContext::full(8, 8), false, 1.0),
-            (raw(-0.67), true, 0.7),
-            (raw(-0.67), false, -2.0),
-            (preserving(-0.67, 0.5), true, 0.7),
-        ] {
-            let set = [
-                ("exposure", number(exposure)),
-                ("camera_bias", ControlValue::Bool(compensated)),
-            ];
-            // Highlight preservation mode is on, by default: what it gives back adds.
-            let bias = if compensated {
-                f64::from(camera_bias(&image))
-            } else {
-                0.0
-            } - f64::from(highlight_bias(&image));
-            let rgb = [0.18, 0.12, 0.1];
-            let picked = pick(&image, rgb, &values(&image, &set), &measure);
-            assert!(picked.writes.is_empty());
-            let y = luminance(&image, rgb) * (f64::from(exposure) - bias).exp2();
-            let expected = 116.0 * y.cbrt() - 16.0;
-            let [("lightness", ControlValue::Number(lightness))] = picked.shown.settings[..] else {
-                panic!("{:?}", picked.shown.settings)
-            };
-            assert!(
-                (f64::from(lightness) - expected).abs() < 1e-3,
-                "{lightness} for {expected}"
-            );
-            // The patch is the input's, as in correction.
-            let input = pick(&image, rgb, &values(&image, &set), &correction(50.0));
-            assert_eq!(picked.shown.patch, input.shown.patch);
+        for image in &images {
+            for rgb in [[0.05; 3], [0.18; 3], [0.7, 0.4, 0.9], [0.001; 3]] {
+                for set in [&[][..], &[("black_level", number(0.5))][..]] {
+                    let values = values(image, set);
+                    let lightness = pick(image, rgb, &values, &toward(50.0));
+                    for held in [0.0, 50.0, 92.0] {
+                        let grey = pick(image, rgb, &values, &target("middle_grey", held));
+                        assert_eq!(grey, lightness, "{rgb:?} with Lightness at {held}");
+                    }
+                }
+            }
         }
-        // Held to the setting's 0 to 100, as darktable's slider holds it.
-        let image = ImageContext::full(8, 8);
-        let bright = pick(
-            &image,
-            [4.0; 3],
-            &values(&image, &[("exposure", number(4.0))]),
-            &measure,
-        );
+        // Middle grey is the default, as no setting at all picks.
+        let image = raw(-0.67);
+        let values = values(&image, &[]);
         assert_eq!(
-            bright.shown.settings,
-            [("lightness", ControlValue::Number(100.0))]
+            pick(&image, [0.3, 0.2, 0.1], &values, &[]),
+            pick(&image, [0.3, 0.2, 0.1], &values, &toward(50.0))
         );
+    }
+
+    /// Reference, still to come, has no lightness to pick toward: the patch alone, nothing
+    /// written. darktable's measure mode is gone (decision 88): no pick gives a setting back.
+    #[test]
+    fn toward_reference_its_pick_writes_nothing_yet_and_none_gives_a_setting_back() {
+        let image = raw(-0.67);
+        let values = values(&image, &[]);
+        let rgb = [0.18, 0.12, 0.1];
+        let reference = pick(&image, rgb, &values, &target("reference", 50.0));
+        assert!(reference.writes.is_empty());
+        let lightness = pick(&image, rgb, &values, &toward(50.0));
+        assert_eq!(reference.shown, lightness.shown);
+        assert!(lightness.shown.settings.is_empty());
+        // An option it does not list, as a settings file from a later version might hold,
+        // picks as Middle grey.
+        let unknown = [("target", ControlValue::Choice(7))];
+        assert_eq!(pick(&image, rgb, &values, &unknown), lightness);
     }
 
     #[test]

@@ -51,7 +51,8 @@ use apertrust_plugin::{ImageContext, Value};
 
 use crate::about::{Fact, Facts, Purpose};
 use crate::definition::{
-    ChoiceStyle, Control, ControlKind, Definition, Row, SettingRow, Slider, Tab, Unit, Widget,
+    ChoiceStyle, Control, ControlKind, Definition, Row, SettingRow, Slider, Tab, Track, Unit,
+    Widget,
 };
 use crate::transfer::Transfer;
 use crate::values::{ControlValue, Controls};
@@ -283,6 +284,7 @@ static DEFINITION: Definition = Definition {
         id: "display_exposure_mask",
         kind: ControlKind::Bool { default: false },
         decimals: 0,
+        track: Track::Plain,
     })],
     presets: &[],
     views: &[],

@@ -756,25 +756,24 @@ page = "general"
 group = "diagnostics"
 applies = "at-once"
 
-# Exposure's area exposure mapping (docs/tools/exposure.md; decision 29), the settings
-# its picker reads, kept here as darktable keeps them in its darktablerc, never in an
-# edit. The app sends them with the picker's On and Settings commands (docs/pickers.md,
-# A tool's settings).
+# Exposure's Picker target and Lightness (docs/tools/exposure.md; decisions 29 and 88),
+# the settings its picker reads, kept here as darktable keeps its own in its darktablerc,
+# never in an edit. The app sends them with the picker's On and Settings commands
+# (docs/pickers.md, A tool's settings). An old area_mode key, darktable's area mode, which
+# went with measure mode, stays in a settings file as an unknown key.
 
-# Area mode: correction sets Exposure so the area maps to the target lightness, measure
-# sets the target lightness the area gives at the current exposure. darktable's
-# combobox, which it keeps nowhere and puts back to correction at every gui_update
-# (exposure.c:742): another photo, undo and redo, a history move, the module's reset.
-# Apertrust keeps it.
-[tools.exposure.area_mode]
+# Picker target: what Exposure's picker makes of the area picked. Middle grey gives it
+# L 50 %, Lightness the lightness below, Reference that of an area measured on another
+# photo, still to come.
+[tools.exposure.target]
 owner = "tool:exposure"
 kind = "choice"
-type = "apertrust_tools::exposure::AreaMode"
-default = "correction"
+type = "apertrust_tools::exposure::PickerTarget"
+default = "middle_grey"
 applies = "at-once"
 
-# The target lightness, CIE L in per cent, darktable's
-# darkroom/modules/exposure/lightness, its slider's range and one decimal.
+# Lightness, the target while Picker target holds Lightness, CIE L in per cent,
+# darktable's darkroom/modules/exposure/lightness, its slider's range and one decimal.
 [tools.exposure.lightness]
 owner = "tool:exposure"
 kind = "number"

@@ -60,6 +60,8 @@ use eframe::egui::{
 };
 use egui::accesskit::{Action, ActionData, CustomAction, Live};
 
+use crate::settings::ToolSettings;
+
 /// What the app knows of the active picker: the session's latest reading, and what the
 /// app asked since that no reading shows yet.
 #[derive(Debug, Default)]
@@ -200,7 +202,7 @@ impl Mirror {
 /// tool's last input patch, for its panel's patches (`Row::Patches`), kept after its
 /// picker turns off until the tool's values change from outside a pick ([`Picked::sent`])
 /// or the photo closes, as darktable's `gui_update` zeroes `spot_RGB`; and the tool's
-/// settings a pick measured, measure mode's target, handed to the app's settings once.
+/// settings a pick measured, as a measure mode's target, handed to the app's settings once.
 #[derive(Debug, Default)]
 pub struct Picked {
     patches: BTreeMap<&'static str, Patch>,
@@ -530,13 +532,65 @@ pub fn name(words: &Translator, definition: &Definition, picker: &str) -> String
     words.text(&id)
 }
 
+/// A picker's words that say what a pick will do, by the option the setting its words
+/// follow holds (`Picker::words_by`, decision 88), as the app keeps it in `settings`, else
+/// that setting's default: `part` `promise`, its tooltip, or `hint`, the central bar's
+/// name of it, "Make an area middle grey". Each of the tool's number settings is the
+/// message's variable of its id, in the language's numbers to the setting's decimals,
+/// none shown after the point where it is whole, "Make an area L 92 %". `None` for a
+/// picker whose words follow no setting.
+pub fn by_setting(
+    words: &Translator,
+    definition: &Definition,
+    picker: &apertrust_tools::Picker,
+    settings: &ToolSettings,
+    part: &str,
+) -> Option<String> {
+    let tool = definition.id;
+    let setting = picker.words_by?;
+    let options = definition.choice_setting(setting)?;
+    let rows: Vec<&apertrust_tools::SettingRow> = (definition.rows())
+        .filter_map(|row| match row {
+            Row::Setting(row) => Some(row),
+            _ => None,
+        })
+        .collect();
+    let value = |row: &apertrust_tools::SettingRow| {
+        settings
+            .get(tool, row.id)
+            .cloned()
+            .unwrap_or_else(|| row.default())
+    };
+    let chosen = rows
+        .iter()
+        .find(|row| row.id == setting)
+        .map(|row| value(row));
+    let option = match chosen {
+        Some(ControlValue::Choice(at)) => options.get(at as usize),
+        _ => None,
+    }
+    .or(options.first())?;
+    let mut args = Args::new();
+    for row in &rows {
+        if let ControlValue::Number(number) = value(row) {
+            let scale = 10f64.powi(i32::from(row.decimals));
+            let rounded = (f64::from(number) * scale).round() / scale;
+            args.set(row.id, rounded);
+        }
+    }
+    let id = messages::picker_option(tool, picker.id, part, option);
+    Some(words.text_with(&id, Some(&args)))
+}
+
 /// The central bar's words while `picker` is on, measuring an area where `area` says
 /// (`docs/pickers.md`, On the photo): which picker it is, the tool's title and the
-/// picker's name, and how to use it, its modifier as `mac` spells it. `None` for the Colour
-/// picker's, whose words come with its tool.
+/// picker's name, or what a pick will do where its words follow a setting ([`by_setting`],
+/// "Exposure · Make an area middle grey"), and how to use it, its modifier as `mac` spells
+/// it. `None` for the Colour picker's, whose words come with its tool.
 pub fn bar_words(
     words: &Translator,
     tools: &[&dyn Tool],
+    settings: &ToolSettings,
     picker: PickerRef,
     area: bool,
     mac: bool,
@@ -544,7 +598,11 @@ pub fn bar_words(
     let (definition, declared) = declared(tools, picker)?;
     let mut args = Args::new();
     args.set("tool", words.text(&messages::title(definition.id)));
-    args.set("picker", name(words, definition, declared.id));
+    let hint = by_setting(words, definition, declared, settings, "hint");
+    args.set(
+        "picker",
+        hint.unwrap_or_else(|| name(words, definition, declared.id)),
+    );
     let name = words.text_with("picker-bar-name", Some(&args));
     let mut args = Args::new();
     args.set("command", if mac { "Cmd" } else { "Ctrl" });
@@ -2172,7 +2230,9 @@ mod tests {
     #[test]
     fn the_central_bar_names_the_picker_and_says_how_to_use_it() {
         let words = Translator::new(Locale::EnGb);
-        let bar = |picker, area, mac| bar_words(&words, TOOLS, picker, area, mac).unwrap();
+        let settings = ToolSettings::default();
+        let bar =
+            |picker, area, mac| bar_words(&words, TOOLS, &settings, picker, area, mac).unwrap();
         assert_eq!(
             bar(BRIGHTNESS, true, false),
             (
@@ -2193,8 +2253,58 @@ mod tests {
             )
         );
         assert_eq!(
-            bar_words(&words, TOOLS, PickerRef::ColourPicker, true, false),
+            bar_words(
+                &words,
+                TOOLS,
+                &settings,
+                PickerRef::ColourPicker,
+                true,
+                false
+            ),
             None
+        );
+    }
+
+    /// Exposure's picker says over the photo what a pick will do, by Picker target as the
+    /// app keeps it (decision 88): middle grey by default; with Lightness chosen, the
+    /// lightness in the language's numbers, its decimal only where it has one.
+    #[test]
+    fn the_central_bar_says_what_exposure_s_pick_will_do_by_its_target() {
+        use apertrust_tools::exposure::Exposure;
+        let tools: &[&dyn Tool] = &[&Exposure];
+        let exposure = PickerRef::Tool {
+            tool: "exposure",
+            picker: "exposure",
+        };
+        let mut settings = ToolSettings::default();
+        let bar = |settings: &ToolSettings, locale| {
+            let words = Translator::new(locale);
+            bar_words(&words, tools, settings, exposure, true, false)
+                .unwrap()
+                .0
+        };
+        assert_eq!(
+            bar(&settings, Locale::EnGb),
+            "Exposure · Make an area middle grey"
+        );
+        assert_eq!(
+            bar(&settings, Locale::EnUs),
+            "Exposure · Make an area middle gray"
+        );
+        settings.set("exposure", "target", ControlValue::Choice(1));
+        settings.set("exposure", "lightness", ControlValue::Number(92.0));
+        assert_eq!(
+            bar(&settings, Locale::EnGb),
+            "Exposure · Make an area L 92 %"
+        );
+        settings.set("exposure", "lightness", ControlValue::Number(62.5));
+        assert_eq!(
+            bar(&settings, Locale::EnGb),
+            "Exposure · Make an area L 62.5 %"
+        );
+        assert_eq!(
+            bar(&settings, Locale::Uk),
+            "Експозиція · Зробити ділянку L 62,5 %"
         );
     }
 }

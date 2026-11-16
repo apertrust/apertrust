@@ -863,6 +863,26 @@ impl Page<'_> {
             .count()
     }
 
+    /// Whether rows following the tool's setting `setting` show: whether the option it
+    /// holds, as the app keeps it, else its default, is one of `is` (`Row::WhenSetting`).
+    fn follows_setting(&self, setting: &str, is: &[&str]) -> bool {
+        let definition = self.tool.definition();
+        let Some(options) = definition.choice_setting(setting) else {
+            return false;
+        };
+        let row = definition.rows().find_map(|row| match row {
+            Row::Setting(row) if row.id == setting => Some(row),
+            _ => None,
+        });
+        let kept = self.pickers.settings.get(definition.id, setting).cloned();
+        match kept.or_else(|| row.map(SettingRow::default)) {
+            Some(ControlValue::Choice(at)) => options
+                .get(at as usize)
+                .is_some_and(|option| is.contains(option)),
+            _ => false,
+        }
+    }
+
     /// Whether the photo hides `row` (decision 88): it names controls, and the mirror
     /// reports every one of them hidden on this photo (`ControlState::visible`).
     fn hidden(&self, row: &Row) -> bool {
@@ -878,6 +898,11 @@ impl Page<'_> {
         for row in rows {
             if let Row::When { control, is, .. } = row
                 && !self.follows(control, is)
+            {
+                continue;
+            }
+            if let Row::WhenSetting { setting, is, .. } = row
+                && !self.follows_setting(setting, is)
             {
                 continue;
             }
@@ -906,6 +931,7 @@ fn draw_row(ui: &mut egui::Ui, page: &Page, row: &Row, changes: &mut Vec<Change>
         Row::Label { .. }
             | Row::Group { .. }
             | Row::When { .. }
+            | Row::WhenSetting { .. }
             | Row::Setting(_)
             | Row::Action { .. }
             | Row::Pickers { .. }
@@ -935,6 +961,13 @@ fn draw_kind(ui: &mut egui::Ui, page: &Page, row: &Row, changes: &mut Vec<Change
         Row::Group { id, rows } => group_row(ui, page, id, rows, changes),
         Row::When { control, is, rows } => {
             if page.follows(control, is) {
+                for row in *rows {
+                    draw_row(ui, page, row, changes);
+                }
+            }
+        }
+        Row::WhenSetting { setting, is, rows } => {
+            if page.follows_setting(setting, is) {
                 for row in *rows {
                     draw_row(ui, page, row, changes);
                 }
@@ -1217,9 +1250,7 @@ fn setting_row(ui: &mut egui::Ui, page: &Page, setting: &SettingRow, changes: &m
             if let Some(unit) = &unit {
                 row = row.unit(unit);
             }
-            if lightness_target(page.tool.definition(), setting.id) {
-                row = row.track(lightness_ramp(min, max));
-            }
+            row = row.track(track(setting.track, (min, max)));
             match row.show(ui) {
                 Some(SliderAction::Set { value, done }) => {
                     let value = shown_as(value, setting.decimals, min, max);
@@ -1229,15 +1260,41 @@ fn setting_row(ui: &mut egui::Ui, page: &Page, setting: &SettingRow, changes: &m
                 _ => {}
             }
         }
-        (ControlKind::Choice { options, .. }, ControlValue::Choice(chosen)) => {
+        (
+            ControlKind::Choice {
+                options, unported, ..
+            },
+            ControlValue::Choice(chosen),
+        ) => {
             let names: Vec<String> = options
                 .iter()
                 .map(|option| words.text(&messages::setting_option(tool, setting.id, option)))
                 .collect();
             let names: Vec<&str> = names.iter().map(String::as_str).collect();
+            // What each option makes a picker do, where a picker's words follow the setting
+            // (decision 88).
+            let words_by = (page.tool.definition().pickers.iter())
+                .any(|picker| picker.words_by == Some(setting.id));
+            let tips: Vec<String> = if words_by {
+                options
+                    .iter()
+                    .map(|o| words.text(&messages::setting_option_promise(tool, setting.id, o)))
+                    .collect()
+            } else {
+                Vec::new()
+            };
+            let tips: Vec<&str> = tips.iter().map(String::as_str).collect();
+            // An option still to come is listed, as one darktable lists that is not ported.
+            let later: Vec<usize> = (options.iter().enumerate())
+                .filter(|(_, option)| unported.contains(option))
+                .map(|(at, _)| at)
+                .collect();
+            let later_tip = words.text("choice-option-later");
             let action = Choice::new(&label, &names, chosen as usize)
                 .name(&full)
                 .promise(&promise)
+                .option_tips(&tips)
+                .disabled_options(&later, &later_tip)
                 .style(parts::ChoiceStyle::Blended)
                 .enabled(live)
                 .show(ui);
@@ -1258,14 +1315,6 @@ fn setting_row(ui: &mut egui::Ui, page: &Page, setting: &SettingRow, changes: &m
         // No setting is curve points (`Definition::check`), and a kept value is its kind's.
         _ => {}
     }
-}
-
-/// Whether `setting` is the L of a picker's target (`Row::Patches`), whose track
-/// darktable paints with the greys of its lightness (`_paint_hue`, `exposure.c:1123-1151`).
-fn lightness_target(definition: &Definition, setting: &str) -> bool {
-    definition
-        .rows()
-        .any(|row| matches!(row, Row::Patches { target: [l, ..], .. } if *l == setting))
 }
 
 /// darktable's lightness track: the grey of each lightness from `min` to `max`, at its
@@ -1503,7 +1552,10 @@ fn slider_row(ui: &mut egui::Ui, page: &Page, slider: &Slider, changes: &mut Vec
         .step(widen(shown.step))
         .decimals(usize::from(slider.decimals))
         .mark(mark(shown.mark))
-        .track(track(slider.track))
+        .track(track(
+            slider.track,
+            shown.soft.or(slider.soft).unwrap_or((min, max)),
+        ))
         .enabled(shown.available);
     if !slider.fill {
         row = row.no_fill();
@@ -1591,7 +1643,13 @@ impl<'a> Page<'a> {
             return None;
         }
         let picker = definition.picker(id)?;
-        let [_, full, promise, _] = messages::picker(tool, id).map(|id| self.words.text(&id));
+        let [_, full, promise, _] = messages::picker(tool, id);
+        // What a pick will do, where the picker's words follow a setting (decision 88).
+        let settings = self.pickers.settings;
+        let promise =
+            crate::pickers::by_setting(self.words, definition, picker, settings, "promise")
+                .unwrap_or_else(|| self.words.text(&promise));
+        let full = self.words.text(&full);
         let this = PickerRef::Tool { tool, picker: id };
         Some((
             id,
@@ -2090,13 +2148,15 @@ fn mark(mark: Option<Mark>) -> parts::Mark {
     }
 }
 
-/// The design system's track for a definition's; saturation and luminance bands are not
-/// drawn yet, so those tracks are plain (`docs/gui.md`, the renderer's gaps).
-fn track(track: Track) -> parts::Track {
+/// The design system's track for a definition's, over `span`, what the track spans in the
+/// row's units: the lightness ramp's greys follow it. Saturation and luminance bands are
+/// not drawn yet, so those tracks are plain (`docs/gui.md`, the renderer's gaps).
+fn track(track: Track, (min, max): (f32, f32)) -> parts::Track {
     match track {
         Track::Temperature => parts::Track::temperature(),
         Track::Tint => parts::Track::tint(),
         Track::Hue => parts::Track::hue(),
+        Track::Lightness => lightness_ramp(min, max),
         Track::Plain | Track::Saturation | Track::Luminance => parts::Track::Plain,
     }
 }
@@ -2676,7 +2736,7 @@ mod tests {
     }
 
     #[test]
-    fn exposure_is_darktable_s_page_on_one_tab() {
+    fn exposure_is_the_board_s_page_on_one_tab() {
         let mut state = untouched(&Exposure);
         on_photo(&Exposure, &mut state, &camera_photo());
         let mut harness = panel(&Exposure, state);
@@ -2699,7 +2759,23 @@ mod tests {
         for name in ["Exposure", "Black level correction"] {
             harness.get_by_role_and_label(Role::Slider, name);
         }
-        harness.get_by_role_and_label(Role::Button, "Area exposure mapping");
+        // Picker target, a combo box, in place of the area exposure mapping, and
+        // Lightness hidden while Middle grey, the default, is chosen (decision 88).
+        let target = harness.get_by_role_and_label(Role::ComboBox, "Picker target");
+        assert_eq!(
+            target.accesskit_node().value().as_deref(),
+            Some("Middle grey")
+        );
+        for gone in ["Area exposure mapping", "Area mode", "Target lightness"] {
+            assert!(harness.query_by_label(gone).is_none(), "{gone}");
+        }
+        // The board's order: Exposure, Picker target, then the camera's rows.
+        let top = |role, name| harness.get_by_role_and_label(role, name).rect().top();
+        assert!(top(Role::Slider, "Exposure") < top(Role::ComboBox, "Picker target"));
+        assert!(
+            top(Role::ComboBox, "Picker target")
+                < top(Role::CheckBox, "Compensate camera exposure (−⅔ EV)")
+        );
         // Automatic's rows, which manual hides, and Contrast and its pivot, which left
         // Exposure for Colour balance RGB (decision 2).
         for hidden in ["Measure at", "Place it at", "Contrast", "Contrast pivot"] {
@@ -6064,8 +6140,9 @@ mod tests {
     /// Exposure's section as a photographer meets it, in every theme and the
     /// pseudo-locale: open with Exposure kept on a photo whose camera rows act, each with
     /// its value after its label, open with Black level correction set on the sample
-    /// photo, which hides them, and the area exposure mapping open, and closed. What is
-    /// not ported is disabled, as the session reports it.
+    /// photo, which hides them, and closed. Picker target is drawn disabled at Middle
+    /// grey, its pick not drawn here. What is not ported is disabled, as the session
+    /// reports it.
     fn photograph(which: Builtin, locale: Locale, name: &str) {
         let mut kept = untouched(&Exposure);
         on_photo(&Exposure, &mut kept, &camera_photo());
@@ -6090,7 +6167,6 @@ mod tests {
         );
         on_photo(&Exposure, &mut black, &testing::image());
         let panels = [Panels::default(), Panels::default(), Panels::default()];
-        let mapping = [false, true, false];
 
         let states = [kept.clone(), black, kept];
         let mut harness = Harness::builder()
@@ -6106,7 +6182,7 @@ mod tests {
                 ui.spacing_mut().item_spacing.y = 0.0;
                 for (i, (state, panels)) in states.iter().zip(&panels).enumerate() {
                     let open = i < 2;
-                    let groups = |_: &str| mapping[i];
+                    let groups = |_: &str| false;
                     ui.push_id(i, |ui| {
                         section(
                             ui,
@@ -6207,33 +6283,30 @@ mod tests {
         photograph_automatic(Builtin::Light, "exposure-automatic-light");
     }
 
-    /// Exposure's area exposure mapping as the app draws it once its pick is built.
-    struct Mapping {
+    /// Exposure as the app draws it once its pick is built, its Picker target and
+    /// Lightness live as the app keeps them (decision 88).
+    struct Targeted {
         settings: ToolSettings,
         picked: Picked,
         changes: Vec<Change>,
     }
 
-    fn mapping(picked: Picked) -> Harness<'static, Mapping> {
-        mapping_in(picked, Builtin::Dark)
+    /// The section in the dark theme with the tool settings at their defaults.
+    fn targeted(picked: Picked) -> Harness<'static, Targeted> {
+        targeted_with(picked, Builtin::Dark, ToolSettings::default())
     }
 
-    /// The section in the theme `which`, on its panel's colour.
-    fn mapping_in(picked: Picked, which: Builtin) -> Harness<'static, Mapping> {
-        mapping_with(picked, which, ToolSettings::default())
-    }
-
-    /// The section in `which` with these tool settings.
-    fn mapping_with(
+    /// The section in `which` with these tool settings, on its panel's colour.
+    fn targeted_with(
         picked: Picked,
         which: Builtin,
         settings: ToolSettings,
-    ) -> Harness<'static, Mapping> {
+    ) -> Harness<'static, Targeted> {
         let mut harness = Harness::builder()
             .with_size(egui::vec2(400.0, 600.0))
             .with_context_setup(move |ctx| apertrust_ui::install(ctx, Theme::builtin(which)))
             .build_ui_state(
-                |ui, mapping: &mut Mapping| {
+                |ui, targeted: &mut Targeted| {
                     let panel = theme(ui.ctx()).colors.panel;
                     ui.painter()
                         .rect_filled(ui.ctx().content_rect(), 0.0, panel);
@@ -6242,8 +6315,8 @@ mod tests {
                         on: None,
                         enabled: true,
                         why: None,
-                        settings: &mapping.settings,
-                        picked: &mapping.picked,
+                        settings: &targeted.settings,
+                        picked: &targeted.picked,
                     };
                     let groups = |_: &str| true;
                     let state = untouched(&Exposure);
@@ -6268,12 +6341,12 @@ mod tests {
                             ..
                         } = change
                         {
-                            mapping.settings.set(tool, setting, value.clone());
+                            targeted.settings.set(tool, setting, value.clone());
                         }
-                        mapping.changes.push(change);
+                        targeted.changes.push(change);
                     }
                 },
-                Mapping {
+                Targeted {
                     settings,
                     picked,
                     changes: Vec::new(),
@@ -6283,8 +6356,9 @@ mod tests {
         harness
     }
 
-    /// The reading of Exposure's picker whose pick showed an input of L 45.2 and measured a
-    /// lightness of 61.
+    /// The reading of Exposure's picker whose pick showed an input of L 45.2 and gave a
+    /// lightness of 61 back, as a picker that measures a setting does: the reference
+    /// picker's, to come (decision 88).
     fn exposure_reading() -> apertrust_engine::session::PickerReading {
         use apertrust_tools::pick::{Patch, Shown, Stats};
         let stats = Stats {
@@ -6314,17 +6388,69 @@ mod tests {
         }
     }
 
+    /// Whether Exposure's quad shows `tip` as its tooltip with the pointer resting on it.
+    fn quad_tip(harness: &mut Harness<'static, Targeted>, tip: &str) -> bool {
+        harness
+            .ctx
+            .global_style_mut(|style| style.interaction.tooltip_delay = 0.0);
+        harness
+            .get_by_role_and_label(Role::Button, "Exposure: pick from the photo")
+            .hover();
+        harness.run();
+        harness.query_by_label(tip).is_some()
+    }
+
+    /// Picker target is live, Middle grey by default with Lightness hidden; Lightness chosen
+    /// shows its slider, live too, a drag a change of the setting, not the edit's, done on
+    /// its release; Reference is listed but cannot be chosen yet. The quad's tooltip says
+    /// what a pick will do by the target (decision 88).
     #[test]
-    fn exposure_s_area_exposure_mapping_is_live_with_its_settings_and_its_last_pick() {
-        // Before a pick: no input, its readout darktable's N/A, the target at 50 %.
-        let mut harness = mapping(Picked::default());
-        harness.get_by_role_and_label(Role::Image, "Input, L: N/A");
-        let target = harness.get_by_role_and_label(Role::Image, "Target");
+    fn exposure_s_picker_target_and_lightness_are_live_and_say_what_a_pick_will_do() {
+        let mut harness = targeted(Picked::default());
+        let target = harness.get_by_role_and_label(Role::ComboBox, "Picker target");
         assert!(!target.accesskit_node().is_disabled());
-        // The quad on Exposure is drawn, its picker's words its own.
-        harness.get_by_role_and_label(Role::Button, "Exposure: pick from the photo");
-        // The kept lightness is live: a drag is a change of the setting, not the
-        // edit's, done on its release.
+        assert_eq!(
+            target.accesskit_node().value().as_deref(),
+            Some("Middle grey")
+        );
+        assert!(harness.query_by_label("Target lightness").is_none());
+        assert!(quad_tip(&mut harness, "Make an area middle grey"));
+        // Its list: each option's own tooltip, Reference disabled with its reason.
+        harness
+            .get_by_role_and_label(Role::ComboBox, "Picker target")
+            .click();
+        harness.run();
+        let reference = harness.get_by_role_and_label(Role::MenuItemCheckBox, "Reference");
+        assert!(reference.accesskit_node().is_disabled());
+        harness.get_by_label("Reference").hover();
+        harness.run();
+        harness.get_by_label("Coming in a later version");
+        harness.get_by_label("Lightness").hover();
+        harness.run();
+        harness.get_by_label("The picked area becomes the brightness you set");
+        harness.get_by_label("Lightness").click();
+        harness.run();
+        assert_eq!(
+            harness.state().changes.last(),
+            Some(&Change::Setting {
+                tool: "exposure",
+                setting: "target",
+                value: ControlValue::Choice(1),
+                done: true,
+            })
+        );
+        harness.run();
+        // Lightness under it, at darktable's 50 % in the percent the schema gives it.
+        let lightness = harness.get_by_role_and_label(Role::Slider, "Target lightness");
+        assert_eq!(lightness.accesskit_node().value().as_deref(), Some("50.0%"));
+        let top = |harness: &Harness<'_, Targeted>, role, name| {
+            harness.get_by_role_and_label(role, name).rect().top()
+        };
+        assert!(
+            top(&harness, Role::ComboBox, "Picker target")
+                < top(&harness, Role::Slider, "Target lightness")
+        );
+        harness.state_mut().changes.clear();
         let at = along(
             harness
                 .get_by_role_and_label(Role::Slider, "Target lightness")
@@ -6354,35 +6480,52 @@ mod tests {
             harness.state().settings.get("exposure", "lightness"),
             Some(&ControlValue::Number(25.0))
         );
+        assert!(quad_tip(&mut harness, "Make an area L 25 %"));
+        // Its track is darktable's ramp of greys, black at its start.
+        let track = harness
+            .get_by_role_and_label(Role::Slider, "Target lightness")
+            .rect();
+        let shapes = harness.output().shapes.clone();
+        let black = shapes.iter().any(|clipped| match &clipped.shape {
+            egui::Shape::Mesh(mesh) => mesh
+                .vertices
+                .iter()
+                .any(|v| track.contains(v.pos) && v.color.r() < 8 && v.color.r() == v.color.b()),
+            _ => false,
+        });
+        assert!(black, "no ramp of greys on Lightness's track");
+    }
 
-        // After a pick: its input patch and its L, which stays as the picker turns off.
+    /// A pick that gives a setting back hands it to the app once: the readings after it
+    /// carry the same pick. Its input patch stays as the picker turns off.
+    #[test]
+    fn a_setting_a_pick_gives_back_is_handed_to_the_app_once() {
         let mut picked = Picked::default();
         let reading = exposure_reading();
         assert_eq!(
             picked.apply(Some(&reading)),
             Some(("exposure", vec![("lightness", ControlValue::Number(61.0))]))
         );
-        // Measured once: the readings after it carry the same pick.
         assert_eq!(picked.apply(Some(&reading)), None);
         picked.apply(None);
-        let harness = mapping(picked);
-        harness.get_by_role_and_label(Role::Image, "Input, L: 45.2%");
-        // Lightness in the percent the settings schema gives it.
-        let lightness = harness.get_by_role_and_label(Role::Slider, "Target lightness");
-        assert_eq!(lightness.accesskit_node().value().as_deref(), Some("50.0%"));
+        assert_eq!(picked.patch("exposure").map(|p| p.lch[0]), Some(45.2));
     }
 
     /// A tool setting `--conf` gives is drawn disabled, keeping its value for the run; the
-    /// others stay live.
+    /// others stay live, and its rows follow the value it gives.
     #[test]
     fn a_tool_setting_conf_gives_is_drawn_disabled() {
-        let given = vec!["tools.exposure.area_mode=measure".to_owned()];
+        let given = vec!["tools.exposure.target=lightness".to_owned()];
         let overrides = crate::settings::overrides(&given).expect("read");
-        let folder = crate::settings::testing::Folder::new("mapping-conf");
+        let folder = crate::settings::testing::Folder::new("target-conf");
         let (_, settings) = crate::settings::Keeper::open_with(folder.storage(), &overrides);
-        let harness = mapping_with(Picked::default(), Builtin::Dark, settings.tool_settings);
-        let mode = harness.get_by_label("Area mode");
-        assert!(mode.accesskit_node().is_disabled());
+        let harness = targeted_with(Picked::default(), Builtin::Dark, settings.tool_settings);
+        let target = harness.get_by_role_and_label(Role::ComboBox, "Picker target");
+        assert!(target.accesskit_node().is_disabled());
+        assert_eq!(
+            target.accesskit_node().value().as_deref(),
+            Some("Lightness")
+        );
         let lightness = harness.get_by_role_and_label(Role::Slider, "Target lightness");
         assert!(!lightness.accesskit_node().is_disabled());
     }
@@ -6499,23 +6642,25 @@ mod tests {
         assert!(!completes_edit(&PickerCommand::Off, Some(exposure)));
     }
 
-    /// The area exposure mapping after a pick, in `which`: Area mode, the input's grey
-    /// beside the target's with the input's L, and Lightness on darktable's grey ramp.
-    fn photograph_mapping(which: Builtin, name: &str) {
-        let mut picked = Picked::default();
-        picked.apply(Some(&exposure_reading()));
-        let mut harness = mapping_in(picked, which);
+    /// Exposure's manual page with its picker drawn and Picker target holding `target`, in
+    /// the dark theme (the board's B1 to B4): Middle grey alone, or Lightness with its
+    /// slider under it at `lightness`, on darktable's grey ramp.
+    fn photograph_target(target: u32, lightness: f32, name: &str) {
+        let mut settings = ToolSettings::default();
+        settings.set("exposure", "target", ControlValue::Choice(target));
+        settings.set("exposure", "lightness", ControlValue::Number(lightness));
+        let mut harness = targeted_with(Picked::default(), Builtin::Dark, settings);
         harness.run();
         harness.snapshot(name);
     }
 
     #[test]
-    fn exposure_s_mapping_after_a_pick_in_the_dark_theme() {
-        photograph_mapping(Builtin::Dark, "exposure-mapping-dark");
+    fn exposure_s_picker_target_at_middle_grey_in_the_dark_theme() {
+        photograph_target(0, 50.0, "exposure-middle-grey-dark");
     }
 
     #[test]
-    fn exposure_s_mapping_after_a_pick_in_the_light_theme() {
-        photograph_mapping(Builtin::Light, "exposure-mapping-light");
+    fn exposure_s_picker_target_at_lightness_in_the_dark_theme() {
+        photograph_target(1, 92.0, "exposure-lightness-dark");
     }
 }

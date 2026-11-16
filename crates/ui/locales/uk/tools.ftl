@@ -434,17 +434,25 @@ tool-exposure-computed-computed_exposure-promise = Обчислена корек
 tool-exposure-control-black_level-label = Корекція рівня чорного
 tool-exposure-control-black_level-full = Корекція рівня чорного
 tool-exposure-control-black_level-promise = Для підняття обрізаних чорних, а не для глибших чорних: використовуйте відносну експозицію чорного в AgX
-tool-exposure-collapsible-area_exposure_mapping = Відображення експозиції області зображення
-tool-exposure-setting-area_mode-label = Режим області зображення
-tool-exposure-setting-area_mode-full = Режим області зображення
-tool-exposure-setting-area_mode-promise = «Корекція» регулює експозицію так, що вхідна освітленість відображається на цільову. «Вимірювання» лише показує, як вхідний колір відображається експозицією, і може використовуватися для визначення цілі.
-tool-exposure-setting-area_mode-option-correction = Корекція
-tool-exposure-setting-area_mode-option-measure = Вимірювання
+tool-exposure-setting-target-label = Ціль піпетки
+tool-exposure-setting-target-full = Ціль піпетки
+tool-exposure-setting-target-promise = Що піпетка експозиції робить із вибраною ділянкою.
+tool-exposure-setting-target-option-middle_grey = Середньо-сірий
+tool-exposure-setting-target-option-lightness = Світлість
+tool-exposure-setting-target-option-reference = Еталон
+tool-exposure-setting-target-option-middle_grey-promise = Вибрана ділянка стає звичайним середнім тоном (L 50 %)
+tool-exposure-setting-target-option-lightness-promise = Вибрана ділянка набуває заданої вами яскравості
+tool-exposure-setting-target-option-reference-promise = Вибрана ділянка збігається з виміряною на іншому знімку
 tool-exposure-setting-lightness-label = Світлість
 tool-exposure-setting-lightness-full = Цільова світлість
-tool-exposure-setting-lightness-promise = Бажана цільова експозиція після відображення.
+tool-exposure-setting-lightness-promise = Світлість, якої набуває вибрана ділянка, CIE L*
 tool-exposure-picker-exposure-full = Експозиція: узяти зі знімка
-tool-exposure-picker-exposure-promise = Задає корекцію експозиції за виділеною ділянкою.
+tool-exposure-picker-exposure-promise-middle_grey = Зробити ділянку середньо-сірою
+tool-exposure-picker-exposure-hint-middle_grey = Зробити ділянку середньо-сірою
+tool-exposure-picker-exposure-promise-lightness = Зробити ділянку L { $lightness } %
+tool-exposure-picker-exposure-hint-lightness = Зробити ділянку L { $lightness } %
+tool-exposure-picker-exposure-promise-reference = Еталон з'явиться в одній із наступних версій
+tool-exposure-picker-exposure-hint-reference = Еталон з'явиться в одній із наступних версій
 
 ## Калібрування кольору (docs/tools/colour-calibration.md)
 

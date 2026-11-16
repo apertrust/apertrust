@@ -1048,6 +1048,9 @@ mod tests {
                 args.set("card", "AMD Radeon 780M Graphics");
                 // The start notice's: the graphics API it started on in place of another.
                 args.set("other", "Direct3D 12");
+                // A picker's words by a setting: the tool's number settings, as Exposure's
+                // Lightness (decision 88).
+                args.set("lightness", 92.0);
                 for channel in ["red", "green", "blue", "grey"] {
                     args.set(channel, 128);
                 }

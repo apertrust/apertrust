@@ -851,7 +851,7 @@ mod tests {
     fn the_schema_is_read_and_its_ids_are_unique() {
         let schema = parse(SCHEMA, SCHEMA_PATH).unwrap_or_else(|errors| panic!("{errors:?}"));
         let owned = |owner: &str| schema.settings.iter().filter(|s| s.owner == owner).count();
-        // Exposure is the one tool with settings, its area exposure mapping's.
+        // Exposure is the one tool with settings, Picker target and Lightness.
         let tool = "tool:exposure";
         assert_eq!(
             owned("app") + owned("engine") + owned("export") + owned(tool),
@@ -861,7 +861,7 @@ mod tests {
         let (export, tool) = (schema.generate("export"), schema.generate(tool));
         assert_eq!(
             ids(&tool),
-            ["tools.exposure.area_mode", "tools.exposure.lightness"]
+            ["tools.exposure.target", "tools.exposure.lightness"]
         );
         let mut every = [ids(&app), ids(&engine), ids(&export), ids(&tool)].concat();
         assert_eq!(

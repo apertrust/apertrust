@@ -135,6 +135,14 @@ pub fn setting_option(tool: &str, setting: &str, option: &str) -> String {
     format!("tool-{tool}-setting-{setting}-option-{option}")
 }
 
+/// What an option of a setting a picker's words follow ([`crate::Picker::words_by`]) does,
+/// its tooltip in the list: `tool-<tool>-setting-<setting>-option-<option>-promise`, as
+/// Exposure's Picker target's Middle grey says "The picked area becomes a normal mid-tone
+/// (L 50 %)" (decision 88).
+pub fn setting_option_promise(tool: &str, setting: &str, option: &str) -> String {
+    format!("tool-{tool}-setting-{setting}-option-{option}-promise")
+}
+
 /// darktable's guides widget's words ([`crate::Row::Guides`]), every tool's: show
 /// guides' label, full name and promise, then the global settings button's name and
 /// promise.
@@ -178,12 +186,22 @@ pub fn picker(tool: &str, picker: &str) -> [String; 4] {
     ["label", "full", "promise", "what"].map(|part| format!("tool-{tool}-picker-{picker}-{part}"))
 }
 
+/// A picker's tooltip or its hint over the photo, `part` `promise` or `hint`, while the
+/// setting its words follow holds `option` ([`crate::Picker::words_by`]):
+/// `tool-<tool>-picker-<picker>-<part>-<option>`, as Exposure's "Make an area middle grey".
+/// Each of the tool's number settings is a variable named by its id, as `$lightness`.
+pub fn picker_option(tool: &str, picker: &str, part: &str, option: &str) -> String {
+    format!("tool-{tool}-picker-{picker}-{part}-{option}")
+}
+
 /// The words of `picker` of `definition` that its button and the central bar use, of
-/// [`picker`]'s: its full name and promise always; its name where it is no slider's quad,
-/// which takes its control's label; and its sentence where it takes a point, an area
-/// picker's being every picker's.
+/// [`picker`]'s: its full name always; its promise, or where its words follow a setting
+/// a promise and a hint for each of the setting's options ([`picker_option`]); its name
+/// where it is no slider's quad, which takes its control's label; and its sentence where
+/// it takes a point, an area picker's being every picker's.
 pub fn picker_words(definition: &Definition, picker: &crate::Picker) -> Vec<String> {
-    let [label, full, promise, what] = self::picker(definition.id, picker.id);
+    let tool = definition.id;
+    let [label, full, promise, what] = self::picker(tool, picker.id);
     let on_quad = definition
         .rows()
         .any(|row| matches!(row, Row::Slider(_)) && row.pickers() == [picker.id]);
@@ -191,7 +209,20 @@ pub fn picker_words(definition: &Definition, picker: &crate::Picker) -> Vec<Stri
     if !on_quad {
         words.push(label);
     }
-    words.extend([full, promise]);
+    words.push(full);
+    let options = picker
+        .words_by
+        .and_then(|setting| definition.choice_setting(setting));
+    match options {
+        Some(options) => {
+            for option in options {
+                for part in ["promise", "hint"] {
+                    words.push(picker_option(tool, picker.id, part, option));
+                }
+            }
+        }
+        None => words.push(promise),
+    }
     if picker.kind != crate::PickerKind::Area {
         words.push(what);
     }
@@ -226,10 +257,11 @@ pub fn unit_value(unit: Unit) -> String {
 }
 
 /// Every message the definition implies, each once: its title, its description, Auto's
-/// tooltip if it has Auto, each titled tab, each group label, a row of pickers' label among them, each
-/// collapsible group's title, the words of each row that has its own, each
-/// setting's words and options, each action's words, each control's label, full name and
-/// promise, each option, each view's coordinate's label, full name and promise, as a
+/// tooltip if it has Auto, each titled tab, each group label, a row of pickers' label among
+/// them, each collapsible group's title, the words of each row that has its own, each
+/// setting's words and options, with each option's promise where a picker's words follow
+/// the setting, each action's words, each control's label, full name and promise, each
+/// option, each view's coordinate's label, full name and promise, as a
 /// control's, each preset row's label, full name, promise and options, each unit it uses,
 /// Custom if it has a preset row, the patches' words if it has patches, and each picker's
 /// words its button and the central bar use ([`picker_words`]), then, where it has
@@ -263,6 +295,11 @@ pub fn of(definition: &Definition) -> Vec<String> {
                 ids.extend(setting(tool, id));
                 if let ControlKind::Choice { options, .. } = kind {
                     ids.extend(options.iter().map(|o| setting_option(tool, id, o)));
+                    // What each option makes a picker do, where a picker's words follow it.
+                    let words_by = definition.pickers.iter().any(|p| p.words_by == Some(id));
+                    if words_by {
+                        ids.extend(options.iter().map(|o| setting_option_promise(tool, id, o)));
+                    }
                 }
             }
             Row::Action { id } => ids.extend(action(tool, id)),
@@ -324,7 +361,7 @@ pub fn of(definition: &Definition) -> Vec<String> {
 mod tests {
     use super::*;
     use crate::Tool;
-    use crate::definition::{ChoiceStyle, Control, Tab};
+    use crate::definition::{ChoiceStyle, Control, Tab, Track};
     use crate::testing::Sample;
 
     #[test]
@@ -509,6 +546,7 @@ mod tests {
                     unported: &[],
                 },
                 decimals: 0,
+                track: Track::Plain,
             })],
             presets: &[],
             views: &[],
@@ -526,6 +564,55 @@ mod tests {
                 "tool-mixer-setting-chart-promise",
                 "tool-mixer-setting-chart-option-classic",
                 "tool-mixer-setting-chart-option-passport",
+                "tool-mixer-control-amount-label",
+                "tool-mixer-control-amount-full",
+                "tool-mixer-control-amount-promise",
+            ]
+        );
+
+        // A picker whose words follow the chart: a promise and a hint per option in place
+        // of its promise, and a tooltip for each of the chart's options (decision 88).
+        static PICKER: crate::Picker = crate::Picker {
+            id: "amount",
+            operation: "mixer",
+            kind: crate::PickerKind::Area,
+            denoise: false,
+            output: false,
+            space: crate::Space::Operation,
+            keep: false,
+            writes: &["amount"],
+            settings: &["chart"],
+            words_by: Some("chart"),
+        };
+        static QUAD: &[Tab] = &[Tab {
+            id: None,
+            rows: &[Row::Slider(
+                Slider::new("amount").quad(crate::Quad::Picker("amount")),
+            )],
+        }];
+        let following = Definition {
+            tabs: QUAD,
+            pickers: std::slice::from_ref(&PICKER),
+            ..CHECKER
+        };
+        following.check().unwrap();
+        assert_eq!(
+            of(&following),
+            [
+                "tool-mixer-title",
+                "tool-mixer-description",
+                "tool-mixer-setting-chart-label",
+                "tool-mixer-setting-chart-full",
+                "tool-mixer-setting-chart-promise",
+                "tool-mixer-setting-chart-option-classic",
+                "tool-mixer-setting-chart-option-passport",
+                "tool-mixer-setting-chart-option-classic-promise",
+                "tool-mixer-setting-chart-option-passport-promise",
+                "tool-mixer-picker-amount-full",
+                "tool-mixer-picker-amount-promise-classic",
+                "tool-mixer-picker-amount-hint-classic",
+                "tool-mixer-picker-amount-promise-passport",
+                "tool-mixer-picker-amount-hint-passport",
                 "tool-mixer-control-amount-label",
                 "tool-mixer-control-amount-full",
                 "tool-mixer-control-amount-promise",

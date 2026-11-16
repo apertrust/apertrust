@@ -3450,7 +3450,7 @@ impl App {
                         self.dialogs.preview(through, *preview);
                     }
                     Reaction::FolderOpened(path) => self.shell.remember_folder(path),
-                    // Measure mode's target, kept as the user's own.
+                    // Settings a pick measured, kept as the user's own.
                     Reaction::Measured { tool, settings } => {
                         for (setting, value) in settings {
                             self.shell.tool_settings.set(tool, setting, value);
@@ -4184,7 +4184,14 @@ impl App {
             .zip(self.mirror.pickers.area())
             .filter(|_| open)
             .and_then(|(picker, area)| {
-                pickers::bar_words(&words, self.mirror.tools(), picker, area, mac)
+                pickers::bar_words(
+                    &words,
+                    self.mirror.tools(),
+                    &self.shell.tool_settings,
+                    picker,
+                    area,
+                    mac,
+                )
             });
         // The viewport only fits the photo for now: the zoom shows Fit, and its menu
         // offers Fit alone, which it already is.
@@ -8870,6 +8877,21 @@ mod tests {
             let reset = harness.get_by_role_and_label(Role::Button, &reset);
             assert!(reset.accesskit_node().is_disabled(), "{title}'s reset");
         }
+        // A tool's setting, such as Exposure's Picker target, is the app's, not the
+        // photo's, and stays usable, as it does while a photo opens (decision 77).
+        let words = Translator::new(Locale::EnGb);
+        let settings: Vec<String> =
+            (apertrust_tools::TOOLS.iter())
+                .flat_map(|tool| {
+                    let definition = tool.definition();
+                    definition.rows().filter_map(|row| match row {
+                        apertrust_tools::Row::Setting(setting) => Some(words.text(
+                            &apertrust_tools::messages::setting(definition.id, setting.id)[1],
+                        )),
+                        _ => None,
+                    })
+                })
+                .collect();
         let mut drawn = 0;
         for role in [
             Role::Slider,
@@ -8880,6 +8902,9 @@ mod tests {
             for node in harness.query_all_by_role(role) {
                 let node = node.accesskit_node();
                 let name = node.label().unwrap_or_default();
+                if settings.contains(&name) {
+                    continue;
+                }
                 assert!(node.is_disabled(), "tab {tab}: {role:?} {name}");
                 drawn += 1;
             }
