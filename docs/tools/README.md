@@ -181,7 +181,7 @@ Port specs, tool pages and code cite these by number.
     - darktable's session memory, values its GUI keeps but no edit stores, is not mirrored.
 14. **Menus** (decision 91; [gui.md](../gui.md#context-menus)). A tool takes no right-click: its header, body and controls open no context menu, a control keeping its own gesture (a slider's fine control, a picker button's area).
     - Its own menu is its header's ⋯, its presets the header's presets button.
-    - It may add items to the photo's and a thumbnail's right-click menus, at most two each, and to its own ⋯, at most four, declared in `Definition::menus`, each naming one of its own actions (`Row::Action`, a button of `Row::Buttons`) and placed by its `section` and `order`, as the app's own items are, which the registry holds as `tool-<tool>-<action>`. A tool with nothing to add declares nothing, and a utility declares its items in `about::UTILITIES`.
+    - It may add items to the photo's and a thumbnail's right-click menus, at most two each, and to its own ⋯, at most four, declared in `Definition::menus`, each naming one of its own actions (`Row::Action`, a button of `Row::Buttons`) and placed by its `section` and `order`, as the app's own items are, which the registry holds as `tool-<tool>-<action>`. A tool with nothing to add declares nothing, and a utility declares its items in `utility::UTILITIES`.
     - Every item it adds is reachable without a right-click, and each one in the photo's or a thumbnail's menu is listed on the tool's page.
 
 ### Switched tools

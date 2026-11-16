@@ -50,7 +50,7 @@ A tool's section already has its own buttons: reset, presets and options (⋯). 
 **Tools declare their items as data.**
 
 - A tool: `Definition::menus: &'static [MenuItem]`, where `MenuItem { place: Place, section: Section, order: u32, action: &'static str }` names one of the tool's own actions.
-- A utility, which has no definition: `Utility::menus` in `about::UTILITIES`, each item naming the registry action that runs it.
+- A utility, which has no definition: `Utility::menus` in `utility::UTILITIES`, each item naming the registry action that runs it.
 - The app declares its own items for each place the same way, as `MenuItem`s, so its items and the tools' are placed by one rule.
 - **`section`** says which section of the menu an item is in. `Section` is a set of named constants, in `apertrust-tools` and shared by the app and the tools, whose value sets the section's place in a menu, 1000 apart: `Section::EDIT` 1000, `EXPORT` 2000, `VIEW` 3000, `HISTORY` 4000, and `LAYOUT` 9000 for ⋯'s layout items, last. A tool may use a section value of its own.
 - **`order`** places an item within its section, 100 apart (100, 200, 300 and on), lower first.
