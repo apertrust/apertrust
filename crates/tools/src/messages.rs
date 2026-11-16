@@ -192,6 +192,14 @@ pub fn picker_option_no_photo(tool: &str, picker: &str, part: &str, option: &str
     format!("tool-{tool}-picker-{picker}-{part}-{option}-no-photo")
 }
 
+/// [`picker_option`]'s words for an option that shows a reference row where the reference
+/// was measured on the photo that is open (decision 88):
+/// `tool-<tool>-picker-<picker>-<part>-<option>-this-photo`, as Exposure's "Match an area
+/// to this photo (L 62 %)".
+pub fn picker_option_this_photo(tool: &str, picker: &str, part: &str, option: &str) -> String {
+    format!("tool-{tool}-picker-{picker}-{part}-{option}-this-photo")
+}
+
 /// The options of the setting `picker`'s words follow under which a reference row shows
 /// (a [`crate::Row::WhenSetting`] of that setting holding a [`crate::Row::Reference`]).
 pub fn reference_options(definition: &Definition, picker: &crate::Picker) -> Vec<&'static str> {
@@ -279,8 +287,9 @@ pub fn picker_option(tool: &str, picker: &str, part: &str, option: &str) -> Stri
 }
 
 /// The words of `picker` of `definition` that its button and the central bar use, of
-/// [`picker`]'s: its full name always; its promise, or where its words follow a setting
-/// a promise and a hint for each of the setting's options ([`picker_option`]); its name
+/// [`picker`]'s: its promise and full name, or where its words follow a setting a promise
+/// and a hint for each of the setting's options ([`picker_option`]), the promise being its
+/// button's name too, the action; its name
 /// where it is no slider's quad, which takes its control's label; and its sentence where
 /// it takes a point, an area picker's being every picker's.
 pub fn picker_words(definition: &Definition, picker: &crate::Picker) -> Vec<String> {
@@ -293,7 +302,6 @@ pub fn picker_words(definition: &Definition, picker: &crate::Picker) -> Vec<Stri
     if !on_quad {
         words.push(label);
     }
-    words.push(full);
     let options = picker
         .words_by
         .and_then(|setting| definition.choice_setting(setting));
@@ -304,14 +312,19 @@ pub fn picker_words(definition: &Definition, picker: &crate::Picker) -> Vec<Stri
                     words.push(picker_option(tool, picker.id, part, option));
                 }
             }
-            // An option that shows a reference says so with no photo known too.
+            // An option that shows a reference says so with no photo known, and with the
+            // open photo, too.
             for option in reference_options(definition, picker) {
                 for part in ["promise", "hint"] {
                     words.push(picker_option_no_photo(tool, picker.id, part, option));
+                    words.push(picker_option_this_photo(tool, picker.id, part, option));
                 }
             }
         }
-        None => words.push(promise),
+        None => {
+            words.push(full);
+            words.push(promise);
+        }
     }
     // A reference row's picker says over the photo what it will keep.
     let on_reference = (definition.rows())
@@ -710,7 +723,6 @@ mod tests {
                 "tool-mixer-setting-chart-option-passport",
                 "tool-mixer-setting-chart-option-classic-promise",
                 "tool-mixer-setting-chart-option-passport-promise",
-                "tool-mixer-picker-amount-full",
                 "tool-mixer-picker-amount-promise-classic",
                 "tool-mixer-picker-amount-hint-classic",
                 "tool-mixer-picker-amount-promise-passport",

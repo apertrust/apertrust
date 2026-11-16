@@ -1231,8 +1231,8 @@ fn e36_a_pasted_automatic_mode_can_be_set_back_to_manual_and_not_again() {
     assert_eq!(mode(&pasted), Some(ControlValue::Choice(0)));
 }
 
-/// Automatic mode's page in the board's words (decision 88), each tooltip starting with
-/// darktable's name for its row; Mode's Automatic saying why an image that is not a raw
+/// Automatic mode's page in the board's words (decision 88), the tooltips of Measure at and
+/// Place it at starting with darktable's name for their rows; Mode's Automatic saying why an image that is not a raw
 /// cannot have it; Black level correction warning what it is not for.
 #[test]
 fn automatic_mode_s_page_has_the_board_s_words() {
@@ -1248,10 +1248,20 @@ fn automatic_mode_s_page_has_the_board_s_words() {
         let promise = text(messages::promise("exposure", control));
         assert!(promise.starts_with(darktable), "{promise}");
     }
-    assert!(text(messages::promise("exposure", "deflicker_percentile")).contains("median"));
+    assert_eq!(
+        text(messages::promise("exposure", "deflicker_percentile")),
+        "Percentile: the point of the raw histogram measured; 50 % is the median"
+    );
+    assert_eq!(
+        text(messages::promise("exposure", "deflicker_target_level")),
+        "Target level: where that point lands, in EV below white"
+    );
     let [label, promise] = messages::computed("exposure", "computed_exposure").map(text);
     assert_eq!(label, "This photo");
-    assert!(promise.starts_with("Computed EC"), "{promise}");
+    assert_eq!(
+        promise,
+        "The exposure automatic mode computed for this photo from its histogram"
+    );
     assert_eq!(
         text(messages::option_unavailable(
             "exposure",

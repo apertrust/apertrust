@@ -584,13 +584,14 @@ pub fn name(words: &Translator, definition: &Definition, picker: &str) -> String
 /// message's variable of its id, in the language's numbers to the setting's decimals,
 /// none shown after the point where it is whole, "Make an area L 92 %"; a reference's L
 /// the same, to one decimal, and its photo the name of its file
-/// (`$reference_photo`, "Match an area to IMG_2041 (L 62 %)"). `None` for a picker whose
-/// words follow no setting.
+/// (`$reference_photo`, "Match an area to IMG_2041 (L 62 %)"), or "this photo" where it
+/// is the `open` one. `None` for a picker whose words follow no setting.
 pub fn by_setting(
     words: &Translator,
     definition: &Definition,
     picker: &apertrust_tools::Picker,
     settings: &ToolSettings,
+    open: Option<&std::path::Path>,
     part: &str,
 ) -> Option<String> {
     let tool = definition.id;
@@ -626,6 +627,7 @@ pub fn by_setting(
         }
     }
     let mut named = true;
+    let mut this_photo = false;
     for row in definition.rows() {
         if let Row::Reference {
             lightness, photo, ..
@@ -635,15 +637,21 @@ pub fn by_setting(
                 args.set(*lightness, (f64::from(*l) * 10.0).round() / 10.0);
             }
             match settings.text(tool, photo) {
-                Some(path) => args.set(*photo, photo_name(path)),
+                Some(path) => {
+                    this_photo = open.is_some_and(|open| open == std::path::Path::new(path));
+                    args.set(*photo, photo_name(path));
+                }
                 None => named = false,
             }
         }
     }
-    // A reference whose photo is not known, as one `--conf` gives, says only its L.
-    let unnamed = messages::reference_options(definition, picker).contains(option);
-    let id = if unnamed && !named {
+    // A reference whose photo is not known, as one `--conf` gives, says only its L; one
+    // measured on the open photo says so.
+    let shows_reference = messages::reference_options(definition, picker).contains(option);
+    let id = if shows_reference && !named {
         messages::picker_option_no_photo(tool, picker.id, part, option)
+    } else if shows_reference && this_photo {
+        messages::picker_option_this_photo(tool, picker.id, part, option)
     } else {
         messages::picker_option(tool, picker.id, part, option)
     };
@@ -830,11 +838,13 @@ impl ReferencePhotos {
 /// (`docs/pickers.md`, On the photo): which picker it is, the tool's title and the
 /// picker's name, or what a pick will do where its words follow a setting ([`by_setting`],
 /// "Exposure · Make an area middle grey"), and how to use it, its modifier as `mac` spells
-/// it. `None` for the Colour picker's, whose words come with its tool.
+/// it. `open` is the photo that is open, which a reference measured on it names as this
+/// photo. `None` for the Colour picker's, whose words come with its tool.
 pub fn bar_words(
     words: &Translator,
     tools: &[&dyn Tool],
     settings: &ToolSettings,
+    open: Option<&std::path::Path>,
     picker: PickerRef,
     area: bool,
     mac: bool,
@@ -846,7 +856,7 @@ pub fn bar_words(
     // picker's own words over the photo.
     let reference = (definition.rows())
         .any(|row| matches!(row, Row::Reference { picker, .. } if *picker == declared.id));
-    let hint = by_setting(words, definition, declared, settings, "hint").or_else(|| {
+    let hint = by_setting(words, definition, declared, settings, open, "hint").or_else(|| {
         reference.then(|| words.text(&messages::picker_hint(definition.id, declared.id)))
     });
     args.set(
@@ -2496,8 +2506,9 @@ mod tests {
     fn the_central_bar_names_the_picker_and_says_how_to_use_it() {
         let words = Translator::new(Locale::EnGb);
         let settings = ToolSettings::default();
-        let bar =
-            |picker, area, mac| bar_words(&words, TOOLS, &settings, picker, area, mac).unwrap();
+        let bar = |picker, area, mac| {
+            bar_words(&words, TOOLS, &settings, None, picker, area, mac).unwrap()
+        };
         assert_eq!(
             bar(BRIGHTNESS, true, false),
             (
@@ -2522,6 +2533,7 @@ mod tests {
                 &words,
                 TOOLS,
                 &settings,
+                None,
                 PickerRef::ColourPicker,
                 true,
                 false
@@ -2544,7 +2556,7 @@ mod tests {
         let mut settings = ToolSettings::default();
         let bar = |settings: &ToolSettings, locale| {
             let words = Translator::new(locale);
-            bar_words(&words, tools, settings, exposure, true, false)
+            bar_words(&words, tools, settings, None, exposure, true, false)
                 .unwrap()
                 .0
         };
@@ -2585,12 +2597,44 @@ mod tests {
             bar(&settings, Locale::EnGb),
             "Exposure · Match an area to IMG_2041 (L 62 %)"
         );
+        // The photo it was measured on, once open: this photo, in each language.
+        let open = std::path::Path::new("/photos/2026/IMG_2041.CR3");
         let words = Translator::new(Locale::EnGb);
+        let here = |locale| {
+            let words = Translator::new(locale);
+            bar_words(&words, tools, &settings, Some(open), exposure, true, false)
+                .unwrap()
+                .0
+        };
+        assert_eq!(
+            here(Locale::EnGb),
+            "Exposure · Match an area to this photo (L 62 %)"
+        );
+        assert_eq!(
+            here(Locale::Uk),
+            "Експозиція · Зіставити ділянку з цим знімком (L 62 %)"
+        );
+        assert_eq!(
+            here(Locale::Pl),
+            "Ekspozycja · Dopasuj obszar do tego zdjęcia (L 62 %)"
+        );
+        let elsewhere = std::path::Path::new("/photos/2026/IMG_9999.CR3");
+        let (name, _) = bar_words(
+            &words,
+            tools,
+            &settings,
+            Some(elsewhere),
+            exposure,
+            true,
+            false,
+        )
+        .unwrap();
+        assert_eq!(name, "Exposure · Match an area to IMG_2041 (L 62 %)");
         let reference = PickerRef::Tool {
             tool: "exposure",
             picker: "reference",
         };
-        let (name, _) = bar_words(&words, tools, &settings, reference, true, false).unwrap();
+        let (name, _) = bar_words(&words, tools, &settings, None, reference, true, false).unwrap();
         assert_eq!(
             name,
             "Exposure · Drag over the area to keep as the reference"
