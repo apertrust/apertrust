@@ -286,6 +286,7 @@ pub struct Removed {
 pub struct Cache {
     folder: PathBuf,
     count: Mutex<Count>,
+    mutations: Mutex<()>,
 }
 
 /// A handle's count of its cache, and how its own removals stand, which a walk compares.
@@ -294,16 +295,14 @@ struct Count {
     /// The last walk's sizes with this handle's writes and removals since; `None` before
     /// the first walk.
     sizes: Option<Sizes>,
-    /// The generation of this handle's removals: raised as each eviction or clear begins
-    /// removing and again once it has counted what it removed.
+    /// Raised before and after each write or removal, including its count update.
     generation: u64,
-    /// The evictions and clears removing now.
+    /// Writes, evictions and clears changing entries now.
     removing: u32,
 }
 
-/// An eviction's or a clear's removals under way, from just before its first removal to
-/// just after its count: a walk that overlaps them keeps nothing, since it may have seen
-/// some of them and the count takes away all.
+/// A write or removal under way, including its count update: an overlapping walk
+/// keeps nothing because it may have observed only part of the change.
 struct Removing<'a>(&'a Cache);
 
 impl Drop for Removing<'_> {
@@ -329,6 +328,7 @@ impl Cache {
         Self {
             folder: folder.into(),
             count: Mutex::default(),
+            mutations: Mutex::default(),
         }
     }
 
@@ -342,12 +342,13 @@ impl Cache {
         let cache = Self::open(folder);
         fs::create_dir_all(&cache.folder)?;
         let (start, end) = PROBE;
-        let probe = cache
-            .folder
-            .join(format!("{start}{}{end}", std::process::id()));
-        let written = fs::write(&probe, b"");
-        let _ = fs::remove_file(&probe);
-        written.map(|()| cache)
+        let probe = tempfile::Builder::new()
+            .prefix(start)
+            .suffix(end)
+            .rand_bytes(12)
+            .tempfile_in(&cache.folder)?;
+        drop(probe);
+        Ok(cache)
     }
 
     /// The cache folder.
@@ -364,6 +365,11 @@ impl Cache {
     /// whatever the slot held, any version, whole. Its last use is now.
     pub fn write(&self, kind: Kind, slot: &[u8], version: &[u8], bytes: &[u8]) -> io::Result<()> {
         limited(kind)?;
+        let _mutation = self
+            .mutations
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        let _changing = self.removing();
         let length = u32::try_from(version.len())
             .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "the version is too long"))?;
         let mut file = Vec::with_capacity(MAGIC.len() + 4 + version.len() + bytes.len());
@@ -482,8 +488,8 @@ impl Cache {
     /// them. An item that cannot be read is passed over; a kind's folder that cannot be
     /// listed is the error. The handle keeps the result, which [`Cache::sizes`] then keeps
     /// up to date with its own writes and removals, and returns it; `None`, keeping
-    /// nothing, where an eviction or a clear of this handle's removed meanwhile, since the
-    /// walk may have seen part of what its count takes away. `cancel` is asked before each
+    /// nothing, where this handle wrote or removed meanwhile, since the walk may have
+    /// seen only part of the changes already applied to the count. `cancel` is asked before each
     /// subfolder and each kept entry; once it answers true, the walk stops,
     /// [`io::ErrorKind::Interrupted`], and keeps nothing.
     pub fn walk(&self, cancel: &(dyn Fn() -> bool + Sync)) -> io::Result<Option<Sizes>> {
@@ -580,7 +586,6 @@ impl Cache {
 
         let target = (u128::from(limit) * u128::from(EVICT_TO_TENTHS) / 10) as u64;
         let mut removed = Removed::default();
-        let mut taken = Sizes::default();
         let _removing = self.removing();
         for entry in &entries {
             if held <= target {
@@ -590,23 +595,16 @@ impl Cache {
                 removed.cancelled = true;
                 break;
             }
-            match remove(&entry.path) {
-                Ok(true) => {
-                    held -= entry.bytes;
+            match self.remove_counted(entry.kind, &entry.path) {
+                Ok(Some(bytes)) => {
+                    held = held.saturating_sub(entry.bytes);
                     removed.entries += 1;
-                    removed.bytes += entry.bytes;
-                    let usage = taken.of_mut(entry.kind);
-                    usage.entries += 1;
-                    usage.bytes += entry.bytes;
+                    removed.bytes += bytes;
                 }
                 // Another process removed it.
-                Ok(false) => held -= entry.bytes,
+                Ok(None) => held = held.saturating_sub(entry.bytes),
                 Err(_) => removed.failed += 1,
             }
-        }
-        for kind in limited_kinds() {
-            let usage = taken.of(kind);
-            self.count(kind, |sizes| sizes.subtract(usage));
         }
         Ok(removed)
     }
@@ -617,16 +615,26 @@ impl Cache {
         limited(kind)?;
         let _removing = self.removing();
         let path = self.entry_path(kind, slot);
-        let bytes = match fs::metadata(&path) {
+        self.remove_counted(kind, &path)
+            .map(|bytes| bytes.is_some())
+    }
+
+    /// Removes an entry and counts its actual size under the same mutation lock as writes.
+    fn remove_counted(&self, kind: Kind, path: &Path) -> io::Result<Option<u64>> {
+        let _mutation = self
+            .mutations
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        let bytes = match fs::symlink_metadata(path) {
             Ok(meta) => meta.len(),
-            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(false),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
             Err(error) => return Err(error),
         };
-        let removed = remove(&path)?;
-        if removed {
-            self.count(kind, |usage| usage.subtract(Usage { entries: 1, bytes }));
+        if !remove(path)? {
+            return Ok(None);
         }
-        Ok(removed)
+        self.count(kind, |usage| usage.subtract(Usage { entries: 1, bytes }));
+        Ok(Some(bytes))
     }
 
     /// Removes the limited `kind`'s entries listed as it starts. An entry that cannot be
@@ -665,22 +673,16 @@ impl Cache {
                 removed.cancelled = true;
                 break;
             }
-            match remove(&entry.path) {
-                Ok(true) => {
+            match self.remove_counted(kind, &entry.path) {
+                Ok(Some(bytes)) => {
                     removed.entries += 1;
-                    removed.bytes += entry.bytes;
+                    removed.bytes += bytes;
                 }
-                Ok(false) => {}
+                Ok(None) => {}
                 Err(_) => removed.failed += 1,
             }
             progress(done, total);
         }
-        self.count(kind, |usage| {
-            usage.subtract(Usage {
-                entries: removed.entries,
-                bytes: removed.bytes,
-            })
-        });
         Ok(removed)
     }
 
@@ -750,7 +752,10 @@ impl Cache {
             let probe = name.to_str().is_some_and(|name| {
                 name.strip_prefix(start)
                     .and_then(|rest| rest.strip_suffix(end))
-                    .is_some_and(|pid| !pid.is_empty() && pid.bytes().all(|b| b.is_ascii_digit()))
+                    .is_some_and(|name| {
+                        (!name.is_empty() && name.bytes().all(|b| b.is_ascii_digit()))
+                            || (name.len() == 12 && name.bytes().all(|b| b.is_ascii_alphanumeric()))
+                    })
             });
             let plain = file.file_type().is_ok_and(|kind| kind.is_file());
             if probe && plain && fs::remove_file(file.path()).is_ok() {
@@ -875,27 +880,33 @@ fn kept_usage(folder: &Path, cancel: &(dyn Fn() -> bool + Sync)) -> io::Result<U
             return Err(interrupted());
         }
         usage.entries += 1;
-        usage.bytes += bytes_under(&item.path());
+        usage.bytes += bytes_under(&item.path(), cancel)?;
     }
     Ok(usage)
 }
 
 /// The bytes of the file at `path`, or of every file under the folder there; what cannot
 /// be read counts nothing.
-fn bytes_under(path: &Path) -> u64 {
+fn bytes_under(path: &Path, cancel: &(dyn Fn() -> bool + Sync)) -> io::Result<u64> {
+    if cancel() {
+        return Err(interrupted());
+    }
     let Ok(meta) = fs::symlink_metadata(path) else {
-        return 0;
+        return Ok(0);
     };
     if meta.is_file() {
-        return meta.len();
+        return Ok(meta.len());
     }
     if !meta.is_dir() {
-        return 0;
+        return Ok(0);
     }
     let Ok(items) = fs::read_dir(path) else {
-        return 0;
+        return Ok(0);
     };
-    items.flatten().map(|item| bytes_under(&item.path())).sum()
+    items
+        .flatten()
+        .map(|item| bytes_under(&item.path(), cancel))
+        .sum()
 }
 
 #[cfg(test)]

@@ -229,28 +229,38 @@ impl Reader<'_> {
 
     /// Reads the settings under `table`, whose id is `prefix`.
     fn walk(&self, table: &Table, prefix: &str, out: &mut Vec<Static>, errors: &mut Vec<Error>) {
-        for (name, item) in table.iter() {
-            let id = if prefix.is_empty() {
-                name.to_owned()
-            } else {
-                format!("{prefix}.{name}")
-            };
-            let line = self.line(table.key(name).and_then(Key::span), 1);
-            let fail = |message: String| Error { line, message };
-            match item.as_table().filter(|inner| !inner.is_dotted()) {
-                _ if !is_snake(name) => errors.push(fail(format!(
-                    "[{id}]: each part of an id is snake_case: a to z, 0 to 9 and _, a letter first"
-                ))),
-                Some(inner) if inner.contains_key("owner") || inner.contains_key("kind") => {
-                    match self.setting(&id, inner, line, out.len()) {
-                        Ok(setting) => out.push(setting),
-                        Err(error) => errors.push(error),
-                    }
+        fn collect<'a>(
+            reader: &Reader<'_>,
+            table: &'a Table,
+            prefix: &str,
+            found: &mut Vec<(String, &'a Table, usize)>,
+            errors: &mut Vec<Error>,
+        ) {
+            for (name, item) in table.iter() {
+                let id = if prefix.is_empty() {
+                    name.to_owned()
+                } else {
+                    format!("{prefix}.{name}")
+                };
+                let line = reader.line(table.key(name).and_then(Key::span), 1);
+                let fail = |message: String| Error { line, message };
+                match item.as_table().filter(|inner| !inner.is_dotted()) {
+                    _ if !is_snake(name) => errors.push(fail(format!(
+                        "[{id}]: each part of an id is snake_case: a to z, 0 to 9 and _, a letter first"
+                    ))),
+                    Some(inner) if inner.contains_key("owner") || inner.contains_key("kind") => found.push((id, inner, line)),
+                    Some(inner) if !inner.is_empty() => collect(reader, inner, &id, found, errors),
+                    _ => errors.push(fail(format!("{id}: not a setting; each setting is a table under its own header, [{id}]"))),
                 }
-                Some(inner) if !inner.is_empty() => self.walk(inner, &id, out, errors),
-                _ => errors.push(fail(format!(
-                    "{id}: not a setting; each setting is a table under its own header, [{id}]"
-                ))),
+            }
+        }
+        let mut found = Vec::new();
+        collect(self, table, prefix, &mut found, errors);
+        found.sort_by_key(|(_, table, _)| table.position());
+        for (id, table, line) in found {
+            match self.setting(&id, table, line, out.len()) {
+                Ok(setting) => out.push(setting),
+                Err(error) => errors.push(error),
             }
         }
     }
@@ -500,7 +510,7 @@ impl Reader<'_> {
                 );
                 let decimals = number("decimals", Some(9))?.map(|n| n as i64);
                 let factor = number("factor", None)?;
-                if factor.is_some_and(|factor| factor <= 0.0) {
+                if factor.is_some_and(|factor| factor as f32 <= 0.0) {
                     return Err(fail("factor", "factor is more than 0"));
                 }
                 let unit = match table.get("unit") {
@@ -522,7 +532,7 @@ impl Reader<'_> {
                         let why = format!("above, {above}, is not under max, {max}");
                         return Err(fail("above", &why));
                     }
-                    (_, _, _, Some(step)) if step <= 0.0 => {
+                    (_, _, _, Some(step)) if step as f32 <= 0.0 => {
                         return Err(fail("step", "step is more than 0"));
                     }
                     _ => {}
@@ -634,9 +644,15 @@ impl Reader<'_> {
             Check::Number { min, max, above } => {
                 let n = number(value).ok_or_else(|| not("a number"))?;
                 match (*min, *max, *above) {
-                    (Some(min), _, _) if n < min => Err(format!("{n} is under its minimum, {min}")),
-                    (_, Some(max), _) if n > max => Err(format!("{n} is over its maximum, {max}")),
-                    (_, _, Some(above)) if n <= above => Err(format!("{n} is not above {above}")),
+                    (Some(min), _, _) if (n as f32) < min as f32 => {
+                        Err(format!("{n} is under its minimum, {min}"))
+                    }
+                    (_, Some(max), _) if (n as f32) > max as f32 => {
+                        Err(format!("{n} is over its maximum, {max}"))
+                    }
+                    (_, _, Some(above)) if (n as f32) <= above as f32 => {
+                        Err(format!("{n} is not above {above}"))
+                    }
                     _ => Ok(float(n)),
                 }
             }
@@ -812,6 +828,43 @@ impl Schema {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn interleaved_namespaces_keep_the_source_order() {
+        let schema = accepted(
+            "[a.first]\nowner = 'app'\nkind = 'boolean'\ndefault = false\napplies = 'at-once'\n[b]\nowner = 'app'\nkind = 'boolean'\ndefault = false\napplies = 'at-once'\n[a.second]\nowner = 'app'\nkind = 'boolean'\ndefault = false\napplies = 'at-once'\n",
+        );
+        assert_eq!(
+            schema
+                .settings
+                .iter()
+                .map(|s| s.id.as_str())
+                .collect::<Vec<_>>(),
+            ["a.first", "b", "a.second"]
+        );
+        for (place, setting) in schema.settings.iter().enumerate() {
+            assert!(setting.code.contains(&format!("place: {place},")));
+        }
+    }
+
+    #[test]
+    fn numeric_checks_use_the_generated_precision() {
+        for declaration in [
+            "above = 1\ndefault = 1.00000001",
+            "step = 1e-50\ndefault = 2",
+            "factor = 1e-50\ndefault = 2",
+        ] {
+            assert!(
+                parse(
+                    &format!(
+                        "[x]\nowner = 'app'\nkind = 'number'\napplies = 'at-once'\n{declaration}\n"
+                    ),
+                    "test"
+                )
+                .is_err()
+            );
+        }
+    }
 
     /// The errors a schema gives.
     fn refused(schema: &str) -> Vec<String> {

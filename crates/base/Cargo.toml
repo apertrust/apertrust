@@ -20,7 +20,7 @@ log = ["dep:thiserror", "dep:tracing-log", "dep:tracing-subscriber"]
 # Apertrust's folders: the user data folder and the cache folder, each with how it was
 # chosen (decisions 43 and 76), for the binaries. The design system and the golden
 # harness never turn it on.
-folders = ["dep:directories", "dep:thiserror"]
+folders = ["dep:directories", "dep:thiserror", "dep:tempfile"]
 # Background jobs: darktable's control jobs, its queues, workers, progress and cancel
 # (decision 57), with std threads and tracing alone, for the engine and the library.
 # The design system and the golden harness never turn it on.
