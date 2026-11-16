@@ -20,8 +20,9 @@
 //! With alone; Apertrust's own type, the edit (`.apxmp`), is Apertrust's on macOS and
 //! Windows, and never Apertrust Nightly's; the app's id is the same everywhere,
 //! Apertrust's and, as `packaging/nightly-identity.txt` makes the files for
-//! `tools/package.sh --nightly`, Apertrust Nightly's; and the plist the binary embeds
-//! agrees with the bundle's (docs/packaging.md).
+//! `tools/package.sh --nightly`, Apertrust Nightly's; the `.deb` and the `.rpm` need the
+//! same libraries; and the plist the binary embeds agrees with the bundle's
+//! (docs/packaging.md).
 
 use std::collections::BTreeSet;
 use std::fs;
@@ -531,15 +532,17 @@ fn every_package_names_the_app_by_one_id() {
     assert!(metainfo.contains(&format!(
         "<launchable type=\"desktop-id\">{APP_ID}.desktop</launchable>"
     )));
+    assert!(metainfo.contains(&format!("<icon type=\"stock\">{APP_ID}</icon>")));
     assert_eq!(program(false).app_id(), APP_ID, "the window's");
     let main = read("crates/app/src/main.rs");
     assert!(main.contains("const APP_ID: &str = apertrust_base::program!().app_id();"));
 }
 
 /// The files `tools/package.sh --nightly` gives Apertrust Nightly's identity.
-const NIGHTLY_FILES: [&str; 4] = [
+const NIGHTLY_FILES: [&str; 5] = [
     "packaging/Packager.toml",
     "packaging/macos/Info.plist",
+    "packaging/linux/rpm.toml",
     "packaging/linux/org.apertrust.Apertrust.desktop",
     "packaging/linux/org.apertrust.Apertrust.metainfo.xml",
 ];
@@ -583,8 +586,8 @@ fn every_nightly_identity_line_still_matches() {
     assert_eq!(count, 1, "{owner} is the edit's rank alone");
 }
 
-/// Apertrust Nightly's packages name it by its own id, name, binaries and Open With
-/// entry, so that it installs beside Apertrust; its icon is Apertrust's.
+/// Apertrust Nightly's packages name it by its own id, name, binaries, Open With entry
+/// and icon, so that it installs beside Apertrust with no file in common.
 #[test]
 fn apertrust_nightly_is_named_by_its_own_id_in_every_package() {
     let id = program(true).app_id();
@@ -618,16 +621,28 @@ fn apertrust_nightly_is_named_by_its_own_id_in_every_package() {
         .collect();
     // Its edit's ProgID is not Apertrust's, which alone the installer makes the default.
     assert_eq!(names, ["Apertrust.Nightly.RawImage", NIGHTLY_EDIT_PROGID]);
+    // The AppImage's desktop file, named after the binary as cargo-packager links it; the
+    // .deb's files and the AppImage's others are the prefix's, which the script names.
     assert_eq!(
-        config["deb"]["desktopTemplate"].as_str(),
-        Some(format!("@STAGE@/{id}.desktop").as_str())
+        config["linux"]["generateDesktopEntry"].as_bool(),
+        Some(false)
     );
     let files = config["appimage"]["files"].as_table().expect("files");
-    let metainfo = format!("@STAGE@/{id}.metainfo.xml");
     assert_eq!(
-        files.get(&metainfo).and_then(toml::Value::as_str),
-        Some(format!("usr/share/metainfo/{id}.metainfo.xml").as_str())
+        files
+            .get(&format!("@STAGE@/{id}.desktop"))
+            .and_then(toml::Value::as_str),
+        Some("usr/share/applications/apertrust-nightly.desktop")
     );
+    let deb = config["deb"]["files"].as_table().expect("files");
+    assert_eq!(
+        deb.get("@PREFIX@/share").and_then(toml::Value::as_str),
+        Some("usr/share")
+    );
+    let rpm: toml::Table = as_nightly("packaging/linux/rpm.toml")
+        .parse()
+        .expect("TOML");
+    assert_eq!(rpm["package"]["name"].as_str(), Some("apertrust-nightly"));
 
     let plist = as_nightly("packaging/macos/Info.plist");
     for key in ["CFBundleName", "CFBundleDisplayName"] {
@@ -647,18 +662,81 @@ fn apertrust_nightly_is_named_by_its_own_id_in_every_package() {
         );
     }
     assert!(
-        desktop.contains(&format!("\nIcon={APP_ID}\n")),
-        "Apertrust's icon"
+        desktop.contains(&format!("\nIcon={id}\n")),
+        "its own icon in {desktop}"
     );
     let metainfo = as_nightly("packaging/linux/org.apertrust.Apertrust.metainfo.xml");
     for element in [
         format!("<id>{id}</id>"),
         "<name>Apertrust Nightly</name>".to_owned(),
         format!("<launchable type=\"desktop-id\">{id}.desktop</launchable>"),
+        format!("<icon type=\"stock\">{id}</icon>"),
         "<binary>apertrust-nightly</binary>".to_owned(),
         "<binary>apertrust-nightly-cli</binary>".to_owned(),
     ] {
         assert!(metainfo.contains(&element), "{element} in {metainfo}");
+    }
+}
+
+/// The libraries the app loads at run time on Linux, never linked (decision 5): each
+/// library's file, which the AppImage leaves out and the `.rpm` requires by its capability,
+/// and Debian's package of it, which the `.deb` depends on.
+const LOADED: [(&str, &str); 10] = [
+    ("libvulkan.so.1", "libvulkan1"),
+    ("libwayland-client.so.0", "libwayland-client0"),
+    ("libxkbcommon.so.0", "libxkbcommon0"),
+    ("libxkbcommon-x11.so.0", "libxkbcommon-x11-0"),
+    ("libX11.so.6", "libx11-6"),
+    ("libX11-xcb.so.1", "libx11-xcb1"),
+    ("libxcb.so.1", "libxcb1"),
+    ("libXcursor.so.1", "libxcursor1"),
+    ("libXi.so.6", "libxi6"),
+    ("libdbus-1.so.3", "libdbus-1-3"),
+];
+
+/// The `.deb` depends on and the `.rpm` requires the same libraries, those the app loads
+/// and, for the `.deb`, those it links, which cargo-generate-rpm finds for the `.rpm`.
+#[test]
+fn the_linux_packages_need_the_libraries_the_app_loads() {
+    let config: toml::Table = read("packaging/Packager.toml").parse().expect("TOML");
+    let depends: BTreeSet<&str> = config["deb"]["depends"]
+        .as_array()
+        .expect("depends")
+        .iter()
+        .map(|name| name.as_str().expect("a package"))
+        .collect();
+    let mut expected: BTreeSet<&str> = LOADED.iter().map(|(_, package)| *package).collect();
+    expected.extend(["libc6 (>= @GLIBC@)", "libgcc-s1"]);
+    assert_eq!(depends, expected);
+
+    let rpm: toml::Table = read("packaging/linux/rpm.toml").parse().expect("TOML");
+    let requires: BTreeSet<&str> = rpm["package"]["metadata"]["generate-rpm"]["requires"]
+        .as_table()
+        .expect("requires")
+        .keys()
+        .map(String::as_str)
+        .collect();
+    let capabilities: Vec<String> = LOADED
+        .iter()
+        .map(|(library, _)| format!("{library}()(64bit)"))
+        .collect();
+    let expected: BTreeSet<&str> = capabilities.iter().map(String::as_str).collect();
+    assert_eq!(requires, expected);
+
+    // The AppImage leaves every one of them to the system: each pattern's text before its
+    // first `*` starts one of them.
+    let excluded: Vec<&str> = config["appimage"]["excludedLibs"]
+        .as_array()
+        .expect("excludedLibs")
+        .iter()
+        .map(|pattern| pattern.as_str().expect("a pattern"))
+        .map(|pattern| pattern.split('*').next().unwrap_or_default())
+        .collect();
+    for (library, _) in LOADED {
+        assert!(
+            excluded.iter().any(|stem| library.starts_with(stem)),
+            "{library} in the AppImage"
+        );
     }
 }
 

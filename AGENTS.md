@@ -82,7 +82,8 @@ tools/check-windows-paths.sh [--changed REVS]   # a platform cfg missing from .g
 tools/credits.sh [--check]                 # CREDITS.md from Cargo.lock; --check fails when stale (CI)
 tools/package.sh [--finder-layout] [--nightly] # this platform's packages into target/package/<target>/out;
                                            # --nightly: Apertrust Nightly's, as the nightly builds are
-                                           # (install: cargo install --locked cargo-packager --version 0.11.8)
+                                           # (install: cargo install --locked cargo-packager --version 0.11.8;
+                                           # on Linux, cargo-generate-rpm --version 0.21.1 too)
 tools/build-icons.sh                       # the app icon's PNGs, .icns and .ico from its SVGs; commit them
 tools/build-dmg-background.sh              # the disk image's background.tiff from its SVG, on a Mac; commit it (docs/packaging.md)
 

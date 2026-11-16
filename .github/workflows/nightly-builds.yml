@@ -26,9 +26,10 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   CARGO_PACKAGER: 0.11.8
+  CARGO_GENERATE_RPM: 0.21.1
   # Downloaded, each checked against the SHA-256 its job gives: rustup where the Windows
-  # Arm runner has none, and appimagetool with its runtime, which give the AppImages their
-  # update information.
+  # Arm runner has none and in the Linux jobs' container, and appimagetool with its
+  # runtime, which give the AppImages their update information.
   RUSTUP: 1.29.3
   APPIMAGETOOL: 1.9.1
   APPIMAGE_RUNTIME: "20251108"
@@ -155,19 +156,56 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  # The x86_64 AppImage, .deb, .rpm and tarball, built in Ubuntu 22.04's container, not on
+  # the runner's 24.04: the binaries then need glibc 2.35 at most, so one package of each
+  # installs on most distributions (docs/packaging.md, Nightly builds).
   linux:
     needs: check
     if: needs.check.outputs.build == 'true'
     runs-on: ubuntu-24.04
+    container: ubuntu:22.04@sha256:9abcaffc92a5279fff3a6a41635c0800ea33e528425fb389658806476e7defde
     timeout-minutes: 120
+    # Named: the steps use bash's arrays, and an explicit bash also sets pipefail.
+    defaults:
+      run:
+        shell: bash
+    env:
+      # linuxdeploy, its AppImage plugin and appimagetool are AppImages, and the container
+      # has no FUSE: each extracts itself and runs.
+      APPIMAGE_EXTRACT_AND_RUN: 1
     steps:
+      # The tools before the checkout, which needs git for a full clone: the compiler and
+      # linker (build-essential, with objdump, which reads the glibc the .deb needs), file
+      # and zsync for the AppImage, and rustup, pinned and checked, which installs the
+      # toolchain rust-toolchain.toml pins on first use. The same step in linux-arm, with
+      # Arm's rustup.
+      - name: Install the build's tools
+        env:
+          RUSTUP_TARGET: x86_64-unknown-linux-gnu
+          RUSTUP_INIT_SHA256: b1c8cb14e30889e7e2999e6b69e62d9e9b9ffc0f4df8180564d306d9680e6c55
+        run: &container |
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update -q
+          apt-get install -y -q --no-install-recommends \
+            ca-certificates curl git build-essential file zsync
+          init=$RUNNER_TEMP/rustup-init
+          curl -fsSL -o "$init" \
+            "https://static.rust-lang.org/rustup/archive/$RUSTUP/$RUSTUP_TARGET/rustup-init"
+          echo "$RUSTUP_INIT_SHA256  $init" | sha256sum -c -
+          chmod +x "$init"
+          "$init" -y --no-modify-path --profile minimal --default-toolchain none
+          echo "${CARGO_HOME:-$HOME/.cargo}/bin" >>"$GITHUB_PATH"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.check.outputs.sha }}
           fetch-depth: 0
           persist-credentials: false
+      # The checkout belongs to the runner's user, not the container's root, so git would
+      # refuse to read it, and the version with it.
+      - run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
       - run: cargo --version
       - run: cargo install --locked cargo-packager --version "$CARGO_PACKAGER"
+      - run: cargo install --locked cargo-generate-rpm --version "$CARGO_GENERATE_RPM"
       - run: tools/package.sh --nightly
       # The AppImage under its published name, its `+` a `.` as publish names the other
       # files, extracted and packed again by appimagetool with the update information,
@@ -180,8 +218,6 @@ jobs:
           APPIMAGETOOL_SHA256: ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0
           RUNTIME_SHA256: 2fca8b443c92510f1483a883f60061ad09b46b978b2631c807cd873a47ec260d
         run: &zsync |
-          sudo apt-get update -q
-          sudo apt-get install -y -q zsync
           tools=$RUNNER_TEMP/appimage
           mkdir -p "$tools"
           curl -fsSL -o "$tools/appimagetool" \
@@ -214,24 +250,39 @@ jobs:
           path: |
             target/package/*/out/*.AppImage
             target/package/*/out/*.AppImage.zsync
+            target/package/*/out/*.deb
+            target/package/*/out/*.rpm
             target/package/*/out/*.tar.gz
           if-no-files-found: error
           retention-days: 7
 
-  # Linux on Arm's AppImage and tarball, built on Arm.
+  # Linux on Arm's AppImage, .deb, .rpm and tarball, built on Arm in the same container.
   linux-arm:
     needs: check
     if: needs.check.outputs.build == 'true'
     runs-on: ubuntu-24.04-arm
+    container: ubuntu:22.04@sha256:9abcaffc92a5279fff3a6a41635c0800ea33e528425fb389658806476e7defde
     timeout-minutes: 120
+    defaults:
+      run:
+        shell: bash
+    env:
+      APPIMAGE_EXTRACT_AND_RUN: 1
     steps:
+      - name: Install the build's tools
+        env:
+          RUSTUP_TARGET: aarch64-unknown-linux-gnu
+          RUSTUP_INIT_SHA256: 9f608c142e0e38a78957d0661ba1dfaf0b6fb37184cfaa4b9a0aa57af6184282
+        run: *container
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.check.outputs.sha }}
           fetch-depth: 0
           persist-credentials: false
+      - run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
       - run: cargo --version
       - run: cargo install --locked cargo-packager --version "$CARGO_PACKAGER"
+      - run: cargo install --locked cargo-generate-rpm --version "$CARGO_GENERATE_RPM"
       - run: tools/package.sh --nightly
       - name: Give the AppImage its update information
         env:
@@ -245,6 +296,8 @@ jobs:
           path: |
             target/package/*/out/*.AppImage
             target/package/*/out/*.AppImage.zsync
+            target/package/*/out/*.deb
+            target/package/*/out/*.rpm
             target/package/*/out/*.tar.gz
           if-no-files-found: error
           retention-days: 7

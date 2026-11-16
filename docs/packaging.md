@@ -2,7 +2,7 @@
 
 How Apertrust becomes a package a person installs on macOS, Windows and Linux: what each package holds, how to build one, and what is still missing (decision 68).
 
-One tool builds every package, [cargo-packager](https://github.com/crabnebula-dev/cargo-packager), from one file, `packaging/Packager.toml`. `tools/package.sh` builds the release binaries for the computer it runs on, fills in the version and runs it. cargo-packager is a build tool, installed on the machine that packages; nothing of it is compiled into Apertrust or shipped with it.
+One tool builds every package, [cargo-packager](https://github.com/crabnebula-dev/cargo-packager), from one file, `packaging/Packager.toml`, but the `.rpm`, which cargo-packager does not make: [cargo-generate-rpm](https://github.com/cat-in-136/cargo-generate-rpm) builds it from `packaging/linux/rpm.toml`. `tools/package.sh` builds the release binaries for the computer it runs on, fills in the version and runs them. Both are build tools, installed on the machine that packages; nothing of them is compiled into Apertrust or shipped with it.
 
 ## The packages
 
@@ -13,15 +13,17 @@ One tool builds every package, [cargo-packager](https://github.com/crabnebula-de
 | Windows | `apertrust-<version>-windows-x64-setup.exe`, or `-windows-arm64-setup.exe` for Windows on Arm | An NSIS installer for the person installing, with no administrator's rights, into `%LOCALAPPDATA%\Programs\Apertrust`: both executables and the licences, a Start menu shortcut, the raw file types in Open With, the edit's as Apertrust's own, and an uninstaller (below, Windows) |
 | Windows | `apertrust-<version>-windows-x64-portable.zip`, or `-windows-arm64-portable.zip` | An `Apertrust` folder with both executables and the licences, to run from anywhere |
 | Linux | `apertrust-<version>-linux-x86_64.AppImage`, or `-linux-aarch64.AppImage` for Arm | The app and the CLI in `usr/bin`, the desktop file, the AppStream metadata, the MIME types, the icons and the licences (in `usr/lib/apertrust`) |
+| Linux | `apertrust-<version>-linux-amd64.deb`, or `-linux-arm64.deb` for Arm | A Debian package for Debian, Ubuntu and their derivatives: the app and the CLI in `/usr/bin`, the rest in `/usr/share` (below, Linux) |
+| Linux | `apertrust-<version>-linux-x86_64.rpm`, or `-linux-aarch64.rpm` | An RPM package for Fedora, RHEL 10 and openSUSE, with the same files |
 | Linux | `apertrust-<version>-linux-x86_64.tar.gz`, or `-linux-aarch64.tar.gz` | The same laid out as a prefix (`bin/`, `share/applications`, `share/metainfo`, `share/mime/packages`, `share/icons/hicolor`, `share/doc/apertrust`), to copy into `~/.local` or `/usr/local` |
 
-**The file names** are `<name>-<version>-<os>-<arch>[-<kind>].<ext>`, all lower case but the AppImage's extension, `.AppImage`, with `-` between every part: the name `apertrust`, or `apertrust-nightly` (below); the system `macos`, `windows` or `linux`; the architecture in the system's own words, `arm64` or `x86_64` on macOS, `x64` or `arm64` on Windows, `x86_64` or `aarch64` on Linux; and the kind on Windows, `setup` for the installer and `portable` for the zip. So `apertrust-0.2.0+615-macos-arm64.dmg`, `apertrust-nightly-0.2.0+615-linux-aarch64.AppImage`. cargo-packager has no template for its files' names, so `tools/package.sh` renames the disk image, the installer and the AppImage it writes, mapping the target to `<os>-<arch>` in one function, and names the zip and the tarball it makes itself.
+**The file names** are `<name>-<version>-<os>-<arch>[-<kind>].<ext>`, all lower case but the AppImage's extension, `.AppImage`, with `-` between every part: the name `apertrust`, or `apertrust-nightly` (below); the system `macos`, `windows` or `linux`; the architecture in the system's own words, `arm64` or `x86_64` on macOS, `x64` or `arm64` on Windows, `x86_64` or `aarch64` on Linux, but Debian's own, `amd64` or `arm64`, in the `.deb`, as its control file names it; and the kind on Windows, `setup` for the installer and `portable` for the zip. So `apertrust-0.2.0+615-macos-arm64.dmg`, `apertrust-nightly-0.2.0+615-linux-aarch64.AppImage`, `apertrust-0.2.0+615-linux-amd64.deb`, `apertrust-0.2.0+615-linux-x86_64.rpm`. cargo-packager has no template for its files' names, so `tools/package.sh` renames the disk image, the installer, the AppImage and the `.deb` it writes, mapping the target to `<os>-<arch>` in one function, and names the `.rpm`, the zip and the tarball itself.
 
 **The licences** in every package: `LICENSE` (the GPL), `CREDITS.md` (every component with its licence, and the fonts' and icons' notices, which About also shows), `licences/OFL.txt` (the fonts' licence: the binary compiles IBM Plex Sans in, decision 64) and `licences/LICENSE-Lucide` (the interface's icons).
 
-**Nothing else is bundled.** The app's data, the settings schema among it, is compiled into the binaries (decision 45), so no package has a data folder. On Linux the platform's libraries stay the system's (decision 5): the Vulkan loader and drivers, libwayland, libxkbcommon, the X11 libraries and libdbus are loaded at run time and left out of the AppImage.
+**Nothing else is bundled.** The app's data, the settings schema among it, is compiled into the binaries (decision 45), so no package has a data folder. On Linux the platform's libraries stay the system's (decision 5): the Vulkan loader and drivers, libwayland, libxkbcommon, the X11 libraries and libdbus are loaded at run time, left out of the AppImage and named as dependencies of the `.deb` and the `.rpm`.
 
-**The version** is the build's (decision 44), as `--version` prints it, `0.2.0+12~gabc1234`. A package's own version is the release's three numbers and the count of commits, `0.2.0+615`, since installers take numbers only: the bundle's `CFBundleShortVersionString` is `0.2.0` and its `CFBundleVersion` `615`, the Windows executable's version resource `0.2.0.615` with the full version as its text, and the files are named with `0.2.0+615`. With `APERTRUST_VERSION` set, the version is the packager's and the package's is its leading `X.Y.Z`, which it must have.
+**The version** is the build's (decision 44), as `--version` prints it, `0.2.0+12~gabc1234`. A package's own version is the release's three numbers and the count of commits, `0.2.0+615`, since installers take numbers only: the bundle's `CFBundleShortVersionString` is `0.2.0` and its `CFBundleVersion` `615`, the Windows executable's version resource `0.2.0.615` with the full version as its text, the `.deb`'s `Version` and the `.rpm`'s `Version` `0.2.0+615` (with the `Release` `1`), and the files are named with `0.2.0+615`. Both formats take it as it is: it has only digits, dots and `+`, never Debian's revision separator `-`, which RPM's version forbids, nor `~`, which both sort before the version it follows; the script drops the build's `~gHASH` with the rest after the three numbers. A `+` sorts after, so `0.2.0+615` is newer than `0.2.0` to apt and to rpm alike, and newer than `0.2.0+614`. With `APERTRUST_VERSION` set, the version is the packager's and the package's is its leading `X.Y.Z`, which it must have.
 
 ## The metadata
 
@@ -54,19 +56,61 @@ In `packaging/`, beside the configuration:
 - **The edit, Apertrust's own.** `.apxmp` gets the ProgID `Apertrust.Edit`, named "Apertrust edit", its `DefaultIcon` the executable's document icon, `"<install folder>\apertrust.exe",-2`, and the same `shell\open\command`, which opens the edit's photo; the ProgID's name under `.apxmp\OpenWithProgids`, `.apxmp` in the `Applications` entry's `SupportedTypes`, and, as Apertrust owns the extension, `.apxmp`'s default value, `Apertrust.Edit`.
 - **The uninstaller** removes exactly those: `.apxmp`'s default where it is still `Apertrust.Edit`, the ProgIDs' names from each `OpenWithProgids` (the key, and the extension's, only where nothing else is left in it), the ProgIDs, the `Applications` entry, the Start menu entry (in the folder chosen at install, which the installer's key keeps), the desktop shortcut, the files it installed with the install folder once empty, the uninstall entry and the installer's own key. The person's settings and edits, elsewhere, stay. A default the person chose for a type is the system's to forget.
 
+## Linux
+
+The `.deb` and the `.rpm` install into `/usr`, from the tree `tools/package.sh` lays out for the tarball:
+
+- `/usr/bin/apertrust` and `/usr/bin/apertrust-cli`;
+- `/usr/share/applications/org.apertrust.Apertrust.desktop`, `/usr/share/metainfo/org.apertrust.Apertrust.metainfo.xml` and `/usr/share/mime/packages/org.apertrust.Apertrust.xml`;
+- the icons in `/usr/share/icons/hicolor/<size>/apps/org.apertrust.Apertrust.png`, and the scalable `.svg`;
+- the licences in `/usr/share/doc/apertrust/`: `LICENSE`, `CREDITS.md` and `licences/`.
+
+cargo-packager's `.deb` also holds what it puts in every Linux package, the AppImage's too: the licences again in `/usr/lib/apertrust` and the icons again under the binary's name, `apertrust.png`. Its own desktop file, named after the binary, is turned off (`generateDesktopEntry = false`), since the desktop file must be named after the app id, which the window's Wayland app id and the metadata's `launchable` name; the AppImage takes ours under the binary's name, as cargo-packager links it at the AppImage's top.
+
+**No maintainer scripts.** The system's triggers refresh the desktop, MIME and icon caches when either package installs or removes its files: dpkg's on Debian and Ubuntu (desktop-file-utils, shared-mime-info, hicolor-icon-theme), rpm's file triggers on Fedora, RHEL and openSUSE. The `.rpm` needs no shell (`require-sh = false`).
+
+**Dependencies**, those the binaries link and those they load at run time ([0005](decisions/0005-rust-and-no-c-or-c-unless-no-rust-option-exists.md)); `crates/app/tests/packaging.rs` holds the two lists to the same libraries, which the AppImage leaves out:
+
+| Library | `.deb`: `Depends` (Ubuntu 22.04 and later, Debian 12 and later) | `.rpm`: `Requires` (Fedora, RHEL, openSUSE) |
+| --- | --- | --- |
+| glibc | `libc6 (>= 2.35)`, the newest version the binaries' symbols need, read with `objdump` | `libc.so.6(GLIBC_…)(64bit)` and `libm.so.6(GLIBC_…)(64bit)`, found by cargo-generate-rpm |
+| libgcc | `libgcc-s1` | `libgcc_s.so.1()(64bit)`, found by cargo-generate-rpm |
+| The Vulkan loader | `libvulkan1` | `libvulkan.so.1()(64bit)` |
+| libwayland | `libwayland-client0` | `libwayland-client.so.0()(64bit)` |
+| libxkbcommon | `libxkbcommon0`, `libxkbcommon-x11-0` | `libxkbcommon.so.0()(64bit)`, `libxkbcommon-x11.so.0()(64bit)` |
+| The X11 libraries winit loads | `libx11-6`, `libx11-xcb1`, `libxcb1`, `libxcursor1`, `libxi6` | `libX11.so.6()(64bit)`, `libX11-xcb.so.1()(64bit)`, `libxcb.so.1()(64bit)`, `libXcursor.so.1()(64bit)`, `libXi.so.6()(64bit)` |
+| libdbus, for the file dialogs' portal | `libdbus-1-3` | `libdbus-1.so.3()(64bit)` |
+| A Vulkan driver, recommended | through `libvulkan1`, which recommends `mesa-vulkan-drivers \| vulkan-icd` | `Recommends: (mesa-vulkan-drivers or libvulkan_lvp or libvulkan_radeon or libvulkan_intel or libvulkan_nouveau)` |
+
+- **Debian's names** are each library's package, the same from Ubuntu 22.04 and Debian 12 on. cargo-packager 0.11.8 writes `Depends` alone, no `Recommends`; libvulkan1's own recommendation brings a driver, which apt installs by default.
+- **RPM's capabilities** name each library by its file, as rpm itself does, so one `.rpm` installs on Fedora, RHEL and openSUSE, whose packages of them are named differently. rpm marks every 64-bit library `(64bit)`, on aarch64 as on x86_64, so the list is the same for both.
+- **The build base.** The nightly builds make the Linux packages in an Ubuntu 22.04 container: a binary needs the glibc it was linked against or newer, and Ubuntu 22.04's, 2.35, is the oldest of the systems the packages are for, so one package of each runs on Ubuntu 22.04 and later, Debian 12 and later, Fedora, openSUSE Leap 15.6 and Tumbleweed, and RHEL 10. RHEL 9's glibc is 2.34: the binaries need 2.35 for `hypot`, whose symbol glibc 2.35 versioned anew, so neither package installs there.
+
+**Installing:**
+
+```sh
+sudo apt install ./apertrust-*-linux-amd64.deb       # Debian, Ubuntu
+sudo dnf install ./apertrust-*-linux-x86_64.rpm      # Fedora, RHEL 10
+sudo zypper install --allow-unsigned-rpm ./apertrust-*-linux-x86_64.rpm   # openSUSE
+```
+
+`sudo apt remove apertrust`, `sudo dnf remove apertrust` or `sudo zypper remove apertrust` removes it.
+
+**Checked** on x86_64 in containers of Ubuntu 22.04 and 24.04, Debian 12, Fedora 43, AlmaLinux 10 (RHEL 10's), and openSUSE Leap 15.6 and Tumbleweed: installed with its dependencies, both programs run, `apertrust-cli gpu` finds lavapipe, the Vulkan driver the dependencies brought (but on openSUSE, whose container images install no recommended package), the caches name its desktop file, MIME types and icons, and removing it removes its files and its desktop file's entries, Apertrust and Apertrust Nightly installed side by side.
+
 ## Apertrust Nightly
 
 The nightly builds are Apertrust Nightly, a development build that installs and runs beside Apertrust: its own name, id, executables, package files and user data folder ([settings.md](settings.md), Development builds), so neither replaces the other.
 
 **Which builds are Nightly:** the nightly packages are always Nightly; the nightly job says so explicitly. Every other build, from source or `cargo run`, stays Apertrust while no release tag exists, and becomes Nightly once one does: a build not on a release tag, when the history has one.
 
-`tools/package.sh --nightly` packages it. The binaries are built with `APERTRUST_NIGHTLY=1`, which makes them name themselves Apertrust Nightly and keep their settings in its folder, and are copied as `apertrust-nightly` and `apertrust-nightly-cli`: the Windows installer registers Open With and finds a running app by the executable's name, and the tarball's `bin/` shares a prefix with Apertrust's. The packaging files are given the identity `packaging/nightly-identity.txt` lists, each line a text and what replaces it; without `--nightly` they are used as they are.
+`tools/package.sh --nightly` packages it. The binaries are built with `APERTRUST_NIGHTLY=1`, which makes them name themselves Apertrust Nightly and keep their settings in its folder, and are copied as `apertrust-nightly` and `apertrust-nightly-cli`: the Windows installer registers Open With and finds a running app by the executable's name, and the tarball's `bin/` shares a prefix with Apertrust's. The packaging files are given the identity `packaging/nightly-identity.txt` lists, each line a text and what replaces it; without `--nightly` they are used as they are. The Linux tree the script lays out names the MIME types, the icons and the licences' folder after Apertrust Nightly's id and name itself.
 
 | Platform | Apertrust Nightly's packages |
 | --- | --- |
 | macOS | `apertrust-nightly-<version>-macos-arm64.dmg` and `apertrust-nightly-<version>-macos-x86_64.dmg`, the volume `Apertrust Nightly`, laid out by `layout-nightly.DS_Store`, holding `Apertrust Nightly.app`: the bundle id `org.apertrust.Apertrust.Nightly`, its name `Apertrust Nightly`, the executables `apertrust-nightly` and `apertrust-nightly-cli`, the edit's type at the rank Alternate, so it opens edits but never takes them from Apertrust |
 | Windows | `apertrust-nightly-<version>-windows-x64-setup.exe` and `-windows-arm64-setup.exe`, installing into `%LOCALAPPDATA%\Programs\Apertrust Nightly` with its own uninstall entry, Start menu shortcut `Apertrust Nightly`, ProgIDs `Apertrust.Nightly.RawImage` and `Apertrust.Nightly.Edit`, the edit's in Open With alone, never `.apxmp`'s default, and Open With entry `Applications\apertrust-nightly.exe`; `apertrust-nightly-<version>-windows-x64-portable.zip` and `-windows-arm64-portable.zip`, an `Apertrust Nightly` folder |
-| Linux | `apertrust-nightly-<version>-linux-x86_64.AppImage` and `apertrust-nightly-<version>-linux-x86_64.tar.gz`, and `-linux-aarch64` for Arm, each AppImage with its `.zsync` (below, Nightly builds), with `apertrust-nightly` and `apertrust-nightly-cli`, the desktop entry `org.apertrust.Apertrust.Nightly.desktop` (named Apertrust Nightly) and the metadata `org.apertrust.Apertrust.Nightly.metainfo.xml`; the icons and the MIME types are Apertrust's, the same files in both |
+| Linux | `apertrust-nightly-<version>-linux-x86_64.AppImage`, `-linux-amd64.deb`, `-linux-x86_64.rpm` and `-linux-x86_64.tar.gz`, and `-linux-aarch64` (`-linux-arm64.deb`) for Arm, each AppImage with its `.zsync` (below, Nightly builds), with `apertrust-nightly` and `apertrust-nightly-cli`, the desktop entry `org.apertrust.Apertrust.Nightly.desktop` (named Apertrust Nightly), the metadata `org.apertrust.Apertrust.Nightly.metainfo.xml`, the MIME types `org.apertrust.Apertrust.Nightly.xml`, the icons under its id, `org.apertrust.Apertrust.Nightly.png`, the same picture, and the licences in `share/doc/apertrust-nightly`, so the `.deb` and the `.rpm` install beside Apertrust's with no file in common |
 
 `crates/app/tests/packaging.rs` applies `nightly-identity.txt` to the files as the script does, and checks that each line still matches and that every package names Apertrust Nightly by its own id.
 
@@ -106,6 +150,7 @@ Until the hand-off is built, each file opened with the app on Windows starts an 
 
 ```sh
 cargo install --locked cargo-packager --version 0.11.8   # once; the script checks the version
+cargo install --locked cargo-generate-rpm --version 0.21.1   # once, on Linux; checked too
 tools/package.sh                 # this platform's packages into target/package/<target>/out
 tools/package.sh --nightly       # Apertrust Nightly's, as the nightly builds are
 APERTRUST_VERSION=0.2.0 tools/package.sh                  # a packager's version
@@ -113,7 +158,7 @@ APERTRUST_VERSION=0.2.0 tools/package.sh                  # a packager's version
 
 - **macOS**: Xcode's command-line tools (`lipo`, `codesign`, `hdiutil`). The script packages each Apple target installed, a disk image for Apple silicon and one for Intel (`rustup target add aarch64-apple-darwin x86_64-apple-darwin` installs both); `--target aarch64-apple-darwin` or `--target x86_64-apple-darwin` packages one. The disk image is made without driving Finder, its window laid out by the committed `.DS_Store` (above); `--finder-layout` also has create-dmg arrange it in Finder first, which needs a logged-in session and may ask to let the terminal control Finder, and the committed layout then replaces its own.
 - **Windows**: the MSVC toolchain with the Windows SDK, whose `rc.exe` compiles the resources, from Git Bash; the portable zip is written by PowerShell's `Compress-Archive`. An x64 or Arm system packages its own; `--target aarch64-pc-windows-msvc` names Arm's.
-- **Linux**: an x86_64 or aarch64 system; the AppImage runs linuxdeploy without FUSE.
+- **Linux**: an x86_64 or aarch64 system with `objdump` (binutils), which the `.deb`'s glibc is read with, and `ldd`, which cargo-generate-rpm finds the `.rpm`'s libraries with. The packages need the glibc they are built on or newer, so a build for others is made on the oldest system they are for, as the nightly builds are (above, Linux). The AppImage runs linuxdeploy without FUSE; in a container with no FUSE at all, `APPIMAGE_EXTRACT_AND_RUN=1` has linuxdeploy's AppImage plugin extract itself too.
 - **What cargo-packager downloads** into its tools folder the first time: the create-dmg script, pinned by its commit, on macOS; NSIS and its plugins, checked by SHA-1, on Windows; linuxdeploy, its AppImage plugin and AppRun on Linux.
 
 ## The CLI
@@ -122,7 +167,7 @@ Every package holds `apertrust-cli` beside the app:
 
 - **macOS**: `Apertrust.app/Contents/MacOS/apertrust-cli`. To put it on the `PATH`: `ln -s /Applications/Apertrust.app/Contents/MacOS/apertrust-cli /usr/local/bin/apertrust-cli` (or a folder of one's own on the `PATH`).
 - **Windows**: `apertrust-cli.exe` in the install folder, `%LOCALAPPDATA%\Programs\Apertrust`, or in the zip's folder; add the folder to the user's `Path` to run it anywhere.
-- **Linux**: the tarball's `bin/apertrust-cli`. The AppImage starts the app; its CLI is in `usr/bin` once extracted with `--appimage-extract`.
+- **Linux**: `/usr/bin/apertrust-cli` from the `.deb` or the `.rpm`, on the `PATH`; the tarball's `bin/apertrust-cli`. The AppImage starts the app; its CLI is in `usr/bin` once extracted with `--appimage-extract`.
 
 ## Unsigned packages
 
@@ -130,7 +175,7 @@ The packages are not signed with a developer's certificate yet, so each system w
 
 - **macOS**: the app and the disk image are signed ad hoc (`codesign --sign -`), with the hardened runtime, and not notarised, so Gatekeeper refuses a downloaded copy as from an unidentified developer, or calls it damaged. The disk image itself is refused before it opens. Removing the download's quarantine from the image, before it is opened, always works, and the app copied out of it opens too: `xattr -d com.apple.quarantine ~/Downloads/Apertrust*.dmg`; for an app already copied from a quarantined image, `xattr -dr com.apple.quarantine /Applications/Apertrust*.app`. For the unidentified developer alone, opening it once and then choosing Open Anyway in System Settings › Privacy & Security also works (macOS 15 and later), as does Control-clicking the app and choosing Open (macOS 14 and earlier).
 - **Windows**: SmartScreen says "Windows protected your PC" for the installer and the executables: More info › Run anyway.
-- **Linux**: neither the AppImage nor the tarball is signed; make the AppImage executable (`chmod +x`) and run it.
+- **Linux**: no package is signed; make the AppImage executable (`chmod +x`) and run it. apt and dnf install a local `.deb` or `.rpm` without a signature; zypper asks for `--allow-unsigned-rpm`.
 
 Apertrust Nightly's are the same, under its names: `/Applications/Apertrust Nightly.app`, `apertrust-nightly-*-linux-x86_64.AppImage`.
 
@@ -139,20 +184,22 @@ Apertrust Nightly's are the same, under its names: `/Applications/Apertrust Nigh
 `.github/workflows/nightly-builds.yml` builds Apertrust Nightly's packages each night at 00:00 UTC, each on its own platform, and publishes them as the `nightly` pre-release on GitHub, [releases/tag/nightly](https://github.com/apertrust/apertrust/releases/tag/nightly).
 
 - **When**: only when main has changed since the commit the `nightly` tag points at. A run by hand from the Actions tab builds the same way, and its `force` input builds and publishes an unchanged main too. One run at a time; a second waits.
-- **The jobs**: `check` compares main with the tag; then five builds, each `tools/package.sh --nightly` with cargo-packager 0.11.8, from a full clone so the version is computed. Each uploads its packages as an artifact, kept seven days.
+- **The jobs**: `check` compares main with the tag; then five builds, each `tools/package.sh --nightly` with cargo-packager 0.11.8 (and cargo-generate-rpm 0.21.1 on Linux), from a full clone so the version is computed. Each uploads its packages as an artifact, kept seven days.
 
 | Job | Runner | Files |
 | --- | --- | --- |
 | `macos` | `macos-15` | Both chips' disk images, Intel's cross-built with `--target x86_64-apple-darwin` |
 | `windows` | `windows-2025` | The x64 installer and zip |
 | `windows-arm` | `windows-11-arm` | The arm64 installer and zip, with `--target aarch64-pc-windows-msvc`; rustup, pinned and checked by its SHA-256, is installed first should the image lack it |
-| `linux` | `ubuntu-24.04` | The x86_64 AppImage, its `.zsync` and the tarball |
-| `linux-arm` | `ubuntu-24.04-arm` | The aarch64 AppImage, its `.zsync` and the tarball |
+| `linux` | `ubuntu-24.04`, in an `ubuntu:22.04` container | The x86_64 AppImage, its `.zsync`, the `.deb`, the `.rpm` and the tarball |
+| `linux-arm` | `ubuntu-24.04-arm`, in an `ubuntu:22.04` container | The aarch64 AppImage, its `.zsync`, the `.deb`, the `.rpm` and the tarball |
+
+- **The Linux container** is Ubuntu 22.04's image, pinned by its digest, for its glibc (above, Linux). Its first step installs what the runner's image has and the container lacks, before the checkout, which needs git for a full clone: `ca-certificates`, `curl`, `git`, `build-essential`, `file` and `zsync` from apt, and rustup, pinned and checked by its SHA-256 as on Windows on Arm. git is told the checkout, owned by the runner's user and not the container's root, is safe, so the version is computed. `APPIMAGE_EXTRACT_AND_RUN=1` runs linuxdeploy, its plugin and appimagetool without FUSE.
 
 - **Updates of the AppImage**: each Linux job embeds the AppImage's update information, `gh-releases-zsync|apertrust|apertrust|nightly|apertrust-nightly-*-linux-<arch>.AppImage.zsync` (`x86_64` or `aarch64`), and publishes `<AppImage>.zsync` beside it, so AppImageUpdate fetches only the blocks that changed. After packaging, the job gives the AppImage its published name, its `+` a `.`, so the `.zsync`'s URL names the published file; extracts it with `--appimage-extract`; and packs it again with appimagetool, `-u` and the update information, which writes the `.zsync` with zsyncmake (apt's `zsync`). appimagetool and its runtime are pinned to a release, appimagetool 1.9.1 and the type2 runtime 20251108, each checked against the SHA-256 the workflow holds. An AppImage downloaded while the files were named `apertrust-nightly_<version>_<arch>.AppImage` looks for a `.zsync` of that name, which the release no longer holds, so it finds no update: download the new AppImage once, and it updates from then on.
 - **Publishing**: once every build has succeeded, `publish`, the one job that may write, makes the `nightly` release again: it deletes the release with its tag, then creates it through GitHub's Releases API on the commit built, with the night's files, titled `Nightly build <date>`. GitHub shows each file's SHA-256 itself, so there is no checksums file. The API makes the tag, since GitHub refuses the job's own token a `git push` of a tag whose commit changes workflow files. The release is missing for the minute between. The release's notes give the commit and the date, say that nightlies are untested development builds, and point to the README's [Installation](../README.md#installation) for installing and opening them unsigned. It is a pre-release, never the latest release. A file's version `+` is published as `.` (`apertrust-nightly-0.0.0.615-windows-x64-setup.exe`), as GitHub would otherwise rename it.
 - **On failure**: when any build fails, nothing is published and the last nightly stays. A run from another branch builds but never publishes.
-- **What is not there**: tests, which CI runs on every push to main, and signing (above).
+- **What is not there**: tests, which CI runs on every push to main, signing (above), and an APT or RPM repository: the `.deb` and the `.rpm` update when a newer one is installed by hand.
 
 ## Signing and notarisation, planned
 
@@ -165,4 +212,6 @@ Apertrust Nightly's are the same, under its names: `/Applications/Apertrust Nigh
 
 - **Windows is untested**: the installer, the Open With entries, the edit's type and icon, the uninstaller and the terminal attach wait for the first build on Windows.
 - **The dark icon**: an `.icns` holds one appearance; macOS's dark and tinted icons need an asset catalog.
+- **RHEL 9**, and any system with a glibc older than 2.35, installs neither the `.deb` nor the `.rpm` (above, Linux); the tarball's and the AppImage's binaries fail to start there too.
+- **The `.rpm`'s folders**: cargo-generate-rpm 0.21.1 cannot make a package own a folder (its `dir` assets fail), so removing the package leaves `/usr/share/doc/apertrust` and its `licences` empty on Fedora, RHEL and openSUSE Leap.
 - **Older Linux systems**: the desktop file relies on shared-mime-info for 24 of the formats, and an older release may lack some of the newer ones (CR3, NRW, IIQ among them); such files then do not offer Apertrust until it is updated.

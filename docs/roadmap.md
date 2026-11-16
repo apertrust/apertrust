@@ -219,7 +219,7 @@ Each job reports everything its row in the jobs window shows, in its own events,
 
 ### Installable builds
 
-- [x] Packages built by one tool, cargo-packager, from one config (decision 68; [packaging.md](packaging.md)): an app bundle and a disk image for each architecture on macOS, Apple silicon and Intel, an NSIS installer and a portable zip on Windows, an AppImage and a tarball on Linux, each with the CLI and the licences, and the raw file types on every platform. Built and checked on the Mac; signed ad hoc, not notarised.
+- [x] Packages built by one tool, cargo-packager, from one config (decision 68; [packaging.md](packaging.md)): an app bundle and a disk image for each architecture on macOS, Apple silicon and Intel, an NSIS installer and a portable zip on Windows, an AppImage, a `.deb`, an `.rpm` (cargo-generate-rpm's) and a tarball on Linux, built on Ubuntu 22.04's glibc, each with the CLI and the licences, and the raw file types on every platform. Built and checked on the Mac; the Linux packages built in an Ubuntu 22.04 container and installed in containers of Ubuntu, Debian, Fedora and openSUSE; signed ad hoc, not notarised.
 - [ ] Nightly builds, Apertrust Nightly, which installs beside Apertrust, each package on its own platform (`nightly-builds.yml`; [packaging.md](packaging.md#nightly-builds)): written, done once a run on main has built and published every package, verifying Windows' and Linux's.
 - [ ] A release workflow for version tags, building every package on its own platform.
 

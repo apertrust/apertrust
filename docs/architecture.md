@@ -282,7 +282,7 @@ Every package is built by cargo-packager from one config, `packaging/Packager.to
 | --- | --- | --- |
 | Windows | An NSIS installer for the person installing, and a portable zip; code signing planned, MSIX later | Windows on ARM nearly free: wgpu's DX12 works, and the QNN execution provider covers the NPU |
 | macOS | An app bundle and a disk image for each architecture, Apple silicon and Intel, signed ad hoc; a Developer ID and notarisation planned | Core ML bundled at no cost |
-| Linux | An AppImage and a tarball; Flatpak planned | Execution providers load at run time instead of being bundled; the platform's libraries (the Vulkan loader, libwayland, libxkbcommon, the X11 libraries, libdbus) never bundled, the Flatpak taking them from its runtime and the AppImage from the system (decision 5) |
+| Linux | An AppImage, a `.deb`, an `.rpm` and a tarball, built on Ubuntu 22.04's glibc; Flatpak planned | Execution providers load at run time instead of being bundled; the platform's libraries (the Vulkan loader, libwayland, libxkbcommon, the X11 libraries, libdbus) never bundled, the Flatpak taking them from its runtime, the AppImage from the system, and the `.deb` and the `.rpm` depending on the system's (decision 5) |
 
 The main libraries, rawler for raws, lensfun's data and models, moxcms for colour and Apertrust's own XMP layer, and why each, are in [dependencies.md](dependencies.md#the-main-libraries).
 

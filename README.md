@@ -56,7 +56,7 @@ Early development, in Phase 2: the desktop app. [docs/roadmap.md](docs/roadmap.m
 | --- | --- | --- |
 | macOS | 11 or later, on Apple silicon or Intel | Metal |
 | Windows | 64-bit, on x64 or Arm | Direct3D 12, or Vulkan |
-| Linux | x86_64 or aarch64, with glibc 2.39 or later (Ubuntu 24.04, Fedora 40 and later) for the packages | Vulkan |
+| Linux | x86_64 or aarch64, with glibc 2.35 or later for the packages: Ubuntu 22.04, Debian 12, Fedora, openSUSE and RHEL 10, and later | Vulkan |
 
 - **A GPU** does the processing, with 2 GB of its memory for photos by default (Settings › Processing). Without a hardware GPU, Apertrust runs on a software one, lavapipe on Linux or WARP on Windows, which works but is much slower.
 - **Building from source** needs Rust, which rustup installs at the version `rust-toolchain.toml` names ([Building](#building)).
@@ -84,6 +84,8 @@ Releases and the nightly builds, Apertrust Nightly, are on the [Releases page](h
   - **The portable zip:** unblock it before extracting, or each program in it warns again: right-click › Properties › Unblock.
   - **Smart App Control,** where Windows 11 has it on, blocks unsigned apps with no Run anyway.
 - **Linux** has no warning to pass.
+  - **The .deb,** on Debian, Ubuntu and their derivatives: `sudo apt install ./apertrust*-linux-amd64.deb` (`-linux-arm64.deb` on Arm).
+  - **The .rpm,** on Fedora, RHEL 10 and openSUSE: `sudo dnf install ./apertrust*-linux-x86_64.rpm`, or `sudo zypper install --allow-unsigned-rpm ./apertrust*-linux-x86_64.rpm` (`-linux-aarch64.rpm` on Arm).
   - **The AppImage:** make it executable and run it. If it names FUSE as it fails, install `libfuse2` (`libfuse2t64` on Ubuntu 24.04). Apertrust Nightly's AppImage updates with [AppImageUpdate](https://github.com/AppImageCommunity/AppImageUpdate).
 
     ```sh
