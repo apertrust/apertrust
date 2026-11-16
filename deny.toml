@@ -9,7 +9,7 @@ ignore = [
     # zbus's name and value types, merged into zbus 6 and no longer published apart; not
     # vulnerabilities. They come with egui's Linux screen-reader bridge (accesskit_unix,
     # atspi, zbus 5), which has no zbus 6 release yet. Remove
-    # these when AccessKit moves to zbus 6.
+    # these when AccessKit moves to zbus 6, here and in osv-scanner.toml.
     { id = "RUSTSEC-2026-0370", reason = "zvariant merged into zbus 6; AccessKit's Linux bridge is still on zbus 5" },
     { id = "RUSTSEC-2026-0371", reason = "zbus_names merged into zbus 6; AccessKit's Linux bridge is still on zbus 5" },
     { id = "RUSTSEC-2026-0372", reason = "zvariant_derive merged into zbus 6; AccessKit's Linux bridge is still on zbus 5" },
