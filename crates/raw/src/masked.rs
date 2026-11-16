@@ -38,6 +38,10 @@ impl RawImage {
         if self.components != 1 || self.masked_areas.is_empty() {
             return None;
         }
+        let samples = (self.width as usize).checked_mul(self.height as usize)?;
+        if pixels.len() < samples {
+            return None;
+        }
         let crop = self.active_area;
         let width = self.width as usize;
         let at = |x: u32, y: u32| pixels[y as usize * width + x as usize];
@@ -143,6 +147,13 @@ fn parity_counts(start: u32, count: u32) -> (u32, u32) {
 mod tests {
     use super::*;
     use crate::{Camera, Cfa, CfaColor, Orientation};
+
+    #[test]
+    fn metadata_without_pixels_has_no_measured_black() {
+        let mut raw = sensor(12, 10, |_, _| 100);
+        raw.pixels = Pixels::U16(Vec::new());
+        assert_eq!(raw.masked_black(), None);
+    }
 
     /// A 12×10 sensor: two masked rows at the top, two masked columns at the left, the
     /// crop from (2, 2), every photosite 100 plus its parity position.
