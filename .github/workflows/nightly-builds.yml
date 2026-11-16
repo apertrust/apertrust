@@ -294,7 +294,7 @@ jobs:
 
           Nightly builds are untested development builds, made each night main changes. Apertrust Nightly installs beside Apertrust, with its own name and settings, but it reads and writes the same edits beside your photos.
 
-          How to install each package, and open it unsigned: [Downloads](https://github.com/$GH_REPO#downloads).
+          How to install each package, and open it unsigned: [Installation](https://github.com/$GH_REPO#installation).
           EOF
           gh release delete nightly --yes --cleanup-tag || true
           gh release create nightly dist/* --target "$SHA" --title "Nightly build $date" \
