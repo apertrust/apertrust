@@ -446,16 +446,16 @@ tool-exposure-control-compensate_hilite_pres-label-value = ({ $value })
 tool-exposure-control-exposure-label = Exposure
 tool-exposure-control-exposure-full = Exposure
 tool-exposure-control-exposure-promise = Adjusts the exposure correction.
-# Automatic mode's rows as redesigned (decision 88), each tooltip starting with
-# darktable's name for it: Percentile, Target level and Computed EC.
+# Automatic mode's rows as redesigned (decision 88), the tooltips of the first two starting
+# with darktable's name for them: Percentile and Target level.
 tool-exposure-control-deflicker_percentile-label = Measure at
 tool-exposure-control-deflicker_percentile-full = Measure at
-tool-exposure-control-deflicker_percentile-promise = Percentile: where in the raw histogram automatic mode measures. 50% is the median.
+tool-exposure-control-deflicker_percentile-promise = Percentile: the point of the raw histogram measured; 50 % is the median
 tool-exposure-control-deflicker_target_level-label = Place it at
 tool-exposure-control-deflicker_target_level-full = Place it at
-tool-exposure-control-deflicker_target_level-promise = Target level: where automatic mode places what it measures, in EV below overexposure.
+tool-exposure-control-deflicker_target_level-promise = Target level: where that point lands, in EV below white
 tool-exposure-computed-computed_exposure-label = This photo
-tool-exposure-computed-computed_exposure-promise = Computed EC: the exposure correction automatic mode has actually used on this photo.
+tool-exposure-computed-computed_exposure-promise = The exposure automatic mode computed for this photo from its histogram
 tool-exposure-control-black_level-label = Black level correction
 tool-exposure-control-black_level-full = Black level correction
 tool-exposure-control-black_level-promise = For lifting clipped blacks, not for deeper blacks: use AgX's black relative exposure
@@ -477,8 +477,8 @@ tool-exposure-setting-lightness-promise = The lightness the picked area is given
 # Exposure's picker on its quad. Its tooltip and its hint over the photo say what a pick
 # will do, by Picker target's option; $lightness is Lightness, $reference_lightness the
 # reference's L, in the language's numbers, and $reference_photo the name of the photo it was
-# measured on. With Reference chosen and none set, it is disabled, saying why.
-tool-exposure-picker-exposure-full = Exposure: pick from the photo
+# measured on. The button's name is the same words, its action. With Reference chosen and
+# none set, it is disabled, saying why.
 tool-exposure-picker-exposure-promise-middle_grey = Make an area middle grey
 tool-exposure-picker-exposure-hint-middle_grey = Make an area middle grey
 tool-exposure-picker-exposure-promise-lightness = Make an area L { $lightness } %
@@ -488,6 +488,9 @@ tool-exposure-picker-exposure-hint-reference = Match an area to { $reference_pho
 # A reference whose photo is not known, as one --conf gives.
 tool-exposure-picker-exposure-promise-reference-no-photo = Match an area to L { $reference_lightness } %
 tool-exposure-picker-exposure-hint-reference-no-photo = Match an area to L { $reference_lightness } %
+# A reference measured on the photo that is open.
+tool-exposure-picker-exposure-promise-reference-this-photo = Match an area to this photo (L { $reference_lightness } %)
+tool-exposure-picker-exposure-hint-reference-this-photo = Match an area to this photo (L { $reference_lightness } %)
 tool-exposure-picker-exposure-unavailable = Set a reference first, with the picker on the Reference row
 # Added to a short pick's tooltip where the pick moved Black level correction too.
 tool-exposure-picker-exposure-short-black = Black level was moved to keep black below white

@@ -218,6 +218,12 @@ impl Pickers<'static> {
         photo: None,
         gone: &none_gone,
     };
+
+    /// The pickers of [`PICKING`]'s tools drawn, none on.
+    pub const DRAWN: Self = Pickers {
+        drawn: PICKING,
+        ..Self::NONE
+    };
 }
 
 /// Whether a tool's section is open when settings have not kept it otherwise.
@@ -1824,13 +1830,25 @@ impl<'a> Page<'a> {
         let [_, full, promise, _] = messages::picker(tool, id);
         // What a pick will do, where the picker's words follow a setting (decision 88).
         let settings = self.pickers.settings;
-        let promise =
-            crate::pickers::by_setting(self.words, definition, picker, settings, "promise")
-                .unwrap_or_else(|| self.words.text(&promise));
-        let full = self.words.text(&full);
+        let action = crate::pickers::by_setting(
+            self.words,
+            definition,
+            picker,
+            settings,
+            self.pickers.photo,
+            "promise",
+        );
         let this = PickerRef::Tool { tool, picker: id };
         let ready = self.tool.picker_ready(id, &settings.of(tool));
         let unready = (!ready).then(|| self.words.text(&messages::picker_unavailable(tool, id)));
+        // The button is named by its action: where its words follow a setting, what a pick
+        // will do; one that cannot start, why not.
+        let full = match (&unready, &action) {
+            (Some(why), _) => why.clone(),
+            (None, Some(action)) => action.clone(),
+            (None, None) => self.words.text(&full),
+        };
+        let promise = action.unwrap_or_else(|| self.words.text(&promise));
         Some((
             id,
             PickerWords {
@@ -6445,7 +6463,7 @@ mod tests {
                             false,
                             true,
                             None,
-                            &Pickers::NONE,
+                            &Pickers::DRAWN,
                         )
                     });
                 }
@@ -6476,6 +6494,10 @@ mod tests {
         gone: bool,
         /// Exposure as the session reports it, where it is not its default.
         exposure: Option<f32>,
+        /// A colour raw with a camera bias and a highlight-preserving mode, whose camera
+        /// rows show, and Mode set to Manual as chosen.
+        camera: bool,
+        mode_set: bool,
     }
 
     /// The section in the dark theme with the tool settings at their defaults.
@@ -6510,6 +6532,12 @@ mod tests {
                     };
                     let groups = |_: &str| true;
                     let mut state = untouched(&Exposure);
+                    if targeted.camera {
+                        on_photo(&Exposure, &mut state, &camera_photo());
+                    }
+                    if targeted.mode_set {
+                        set(&mut state, "mode", ControlValue::Choice(0), None);
+                    }
                     if let Some(exposure) = targeted.exposure {
                         set(&mut state, "exposure", ControlValue::Number(exposure), None);
                     }
@@ -6554,6 +6582,8 @@ mod tests {
                     photo: None,
                     gone: false,
                     exposure: None,
+                    camera: false,
+                    mode_set: false,
                 },
             );
         harness.run();
@@ -6593,16 +6623,15 @@ mod tests {
         }
     }
 
-    /// Whether Exposure's quad shows `tip` as its tooltip with the pointer resting on it.
+    /// Whether Exposure's quad, named by its action `tip`, shows it as its tooltip too with
+    /// the pointer resting on it: the button's name and the tooltip both say it.
     fn quad_tip(harness: &mut Harness<'static, Targeted>, tip: &str) -> bool {
         harness
             .ctx
             .global_style_mut(|style| style.interaction.tooltip_delay = 0.0);
-        harness
-            .get_by_role_and_label(Role::Button, "Exposure: pick from the photo")
-            .hover();
+        harness.get_by_role_and_label(Role::Button, tip).hover();
         harness.run();
-        harness.query_by_label(tip).is_some()
+        harness.query_all_by_label(tip).count() > 1
     }
 
     /// Picker target is live, Middle grey by default with Lightness hidden; Lightness chosen
@@ -6620,6 +6649,22 @@ mod tests {
         );
         assert!(harness.query_by_label("Target lightness").is_none());
         assert!(quad_tip(&mut harness, "Make an area middle grey"));
+        // A toggle button named by its action, pressed while the picker is on.
+        let toggled = |harness: &Harness<'_, Targeted>| {
+            harness
+                .get_by_role_and_label(Role::Button, "Make an area middle grey")
+                .accesskit_node()
+                .toggled()
+        };
+        assert_eq!(toggled(&harness), Some(egui::accesskit::Toggled::False));
+        harness.state_mut().on = Some(PickerRef::Tool {
+            tool: "exposure",
+            picker: "exposure",
+        });
+        harness.run();
+        assert_eq!(toggled(&harness), Some(egui::accesskit::Toggled::True));
+        harness.state_mut().on = None;
+        harness.run();
         // Its list: each option with its own tooltip, each to be chosen.
         harness
             .get_by_role_and_label(Role::ComboBox, "Picker target")
@@ -6884,26 +6929,91 @@ mod tests {
         assert!(!completes_edit(&PickerCommand::Off, Some(exposure)));
     }
 
-    /// Exposure's manual page with its picker drawn and Picker target holding `target`, in
-    /// the dark theme (the board's B1 to B4): Middle grey alone, or Lightness with its
-    /// slider under it at `lightness`, on darktable's grey ramp.
-    fn photograph_target(target: u32, lightness: f32, name: &str) {
+    /// The themes the board's B states are snapshotted in, with their names' endings.
+    const THEMES: [(Builtin, &str); 2] = [(Builtin::Dark, "dark"), (Builtin::Light, "light")];
+
+    /// Exposure's picker, which the board's B states turn on.
+    const EXPOSURE_PICKER: PickerRef = PickerRef::Tool {
+        tool: "exposure",
+        picker: "exposure",
+    };
+
+    /// Exposure's manual page on a colour raw with a camera bias and a held-back exposure,
+    /// its picker drawn and Picker target holding `target`, in each theme (the board's B1
+    /// to B4): Middle grey alone, or Lightness with its slider under it at `lightness`,
+    /// on darktable's grey ramp. `on` turns the picker on; `last` shows a Last pick.
+    fn photograph_target(target: u32, lightness: f32, on: bool, last: bool, name: &str) {
         let mut settings = ToolSettings::default();
         settings.set("exposure", "target", ControlValue::Choice(target));
         settings.set("exposure", "lightness", ControlValue::Number(lightness));
-        let mut harness = targeted_with(Picked::default(), Builtin::Dark, settings);
-        harness.run();
-        harness.snapshot(name);
+        let mut results = egui_kittest::SnapshotResults::new();
+        for (which, theme) in THEMES {
+            let picked = if last {
+                last_picked(false, false, false)
+            } else {
+                Picked::default()
+            };
+            let mut harness = targeted_with(picked, which, settings.clone());
+            let state = harness.state_mut();
+            state.camera = true;
+            state.exposure = last.then_some(0.55);
+            state.on = on.then_some(EXPOSURE_PICKER);
+            harness.run();
+            harness.snapshot(format!("{name}-{theme}"));
+            results.extend_harness(&mut harness);
+        }
     }
 
     #[test]
-    fn exposure_s_picker_target_at_middle_grey_in_the_dark_theme() {
-        photograph_target(0, 50.0, "exposure-middle-grey-dark");
+    fn exposure_s_picker_target_at_middle_grey() {
+        photograph_target(0, 50.0, false, false, "exposure-middle-grey");
     }
 
     #[test]
-    fn exposure_s_picker_target_at_lightness_in_the_dark_theme() {
-        photograph_target(1, 92.0, "exposure-lightness-dark");
+    fn exposure_s_picker_target_at_lightness() {
+        photograph_target(1, 92.0, false, false, "exposure-lightness");
+    }
+
+    /// The board's B4: Lightness chosen, a Last pick shown, the picker on.
+    #[test]
+    fn exposure_s_picker_on_at_lightness_after_a_pick() {
+        photograph_target(1, 92.0, true, true, "exposure-lightness-last-pick");
+    }
+
+    /// The board's B1: Picker target's list open, its three options each with its tooltip.
+    #[test]
+    fn exposure_s_picker_target_list_open() {
+        let mut results = egui_kittest::SnapshotResults::new();
+        for (which, theme) in THEMES {
+            let mut harness = targeted_with(Picked::default(), which, ToolSettings::default());
+            harness.state_mut().camera = true;
+            harness.run();
+            harness
+                .get_by_role_and_label(Role::ComboBox, "Picker target")
+                .click();
+            harness.run();
+            harness.snapshot(format!("exposure-picker-target-open-{theme}"));
+            results.extend_harness(&mut harness);
+        }
+    }
+
+    /// The tool as the board's A1 and C2 draw it, on a colour raw with a camera bias and a
+    /// held-back exposure and its picker drawn: at its defaults, and with Mode set to
+    /// Manual.
+    #[test]
+    fn exposure_s_manual_page_with_its_picker_drawn() {
+        let mut results = egui_kittest::SnapshotResults::new();
+        for (which, theme) in THEMES {
+            let mut harness = targeted_with(Picked::default(), which, ToolSettings::default());
+            harness.state_mut().camera = true;
+            harness.run();
+            harness.snapshot(format!("exposure-pickers-{theme}"));
+            results.extend_harness(&mut harness);
+            harness.state_mut().mode_set = true;
+            harness.run();
+            harness.snapshot(format!("exposure-manual-{theme}"));
+            results.extend_harness(&mut harness);
+        }
     }
 
     /// Exposure's pick that read L 41 % and lands at 50 %, +0.55 EV, with these warnings.
@@ -7005,39 +7115,47 @@ mod tests {
         assert!(picked.last("exposure").is_none());
     }
 
-    /// Exposure's manual page after a pick, in the dark theme (the board's Last pick and
-    /// warning variants): Last pick alone, with the clipped warning, short with the black
+    /// Exposure's manual page after a pick, in each theme (the board's Last pick and
+    /// warning variants), on a colour raw with a camera bias and a held-back exposure and
+    /// the picker on: Last pick alone, with the clipped warning, short with the black
     /// moved, and both.
     fn photograph_last_pick(clipped: bool, short: bool, name: &str) {
-        let mut harness = targeted_with(
-            last_picked(clipped, short, short),
-            Builtin::Dark,
-            ToolSettings::default(),
-        );
-        // Exposure where the pick put it: +18 EV held short, else 0.55 EV over 0.
-        harness.state_mut().exposure = Some(if short { 18.0 } else { 0.55 });
-        harness.run();
-        harness.snapshot(name);
+        let mut results = egui_kittest::SnapshotResults::new();
+        for (which, theme) in THEMES {
+            let mut harness = targeted_with(
+                last_picked(clipped, short, short),
+                which,
+                ToolSettings::default(),
+            );
+            let state = harness.state_mut();
+            state.camera = true;
+            state.on = Some(EXPOSURE_PICKER);
+            // Exposure where the pick put it: +18 EV held short, else 0.55 EV over 0.
+            state.exposure = Some(if short { 18.0 } else { 0.55 });
+            harness.run();
+            harness.snapshot(format!("{name}-{theme}"));
+            results.extend_harness(&mut harness);
+        }
     }
 
     #[test]
-    fn exposure_s_last_pick_in_the_dark_theme() {
-        photograph_last_pick(false, false, "exposure-last-pick-dark");
+    fn exposure_s_last_pick() {
+        photograph_last_pick(false, false, "exposure-last-pick");
     }
 
     #[test]
-    fn exposure_s_last_pick_of_clipped_pixels_in_the_dark_theme() {
-        photograph_last_pick(true, false, "exposure-last-pick-clipped-dark");
+    fn exposure_s_last_pick_of_clipped_pixels() {
+        photograph_last_pick(true, false, "exposure-last-pick-clipped");
     }
 
     #[test]
-    fn exposure_s_last_pick_short_in_the_dark_theme() {
-        photograph_last_pick(false, true, "exposure-last-pick-short-dark");
+    fn exposure_s_last_pick_short() {
+        photograph_last_pick(false, true, "exposure-last-pick-short");
     }
 
     #[test]
-    fn exposure_s_last_pick_clipped_and_short_in_the_dark_theme() {
-        photograph_last_pick(true, true, "exposure-last-pick-both-dark");
+    fn exposure_s_last_pick_clipped_and_short() {
+        photograph_last_pick(true, true, "exposure-last-pick-both");
     }
 
     /// The settings with Picker target at Reference, and the reference at `lightness`
@@ -7062,7 +7180,8 @@ mod tests {
     fn with_no_reference_exposure_s_picker_waits_and_the_row_offers_its_own() {
         let mut harness = targeted_with(Picked::default(), Builtin::Dark, referenced(None));
         harness.get_by_role_and_label(Role::Label, "Reference none");
-        let exposure = harness.get_by_role_and_label(Role::Button, "Exposure: pick from the photo");
+        let why = "Set a reference first, with the picker on the Reference row";
+        let exposure = harness.get_by_role_and_label(Role::Button, why);
         assert!(exposure.accesskit_node().is_disabled());
         assert!(quad_tip(
             &mut harness,
@@ -7159,11 +7278,17 @@ mod tests {
         let settings = referenced(Some((62.0, REFERENCE_PHOTO)));
         let mut harness = targeted_with(Picked::default(), Builtin::Dark, settings);
         harness.get_by_role_and_label(Role::Label, "Reference L 62 % · IMG_2041");
-        let exposure = harness.get_by_role_and_label(Role::Button, "Exposure: pick from the photo");
+        let action = "Match an area to IMG_2041 (L 62 %)";
+        let exposure = harness.get_by_role_and_label(Role::Button, action);
         assert!(!exposure.accesskit_node().is_disabled());
-        assert!(quad_tip(&mut harness, "Match an area to IMG_2041 (L 62 %)"));
+        assert!(quad_tip(&mut harness, action));
         harness.state_mut().photo = Some(REFERENCE_PHOTO.into());
         harness.run();
+        // The reference measured on the open photo says so, the button's name and its tip.
+        assert!(quad_tip(
+            &mut harness,
+            "Match an area to this photo (L 62 %)"
+        ));
         harness.get_by_role_and_label(Role::Label, "Reference L 62 % · this photo");
         harness.state_mut().photo = None;
         harness.state_mut().gone = true;
@@ -7191,9 +7316,10 @@ mod tests {
         harness.get_by_role_and_label(Role::Label, "Reference none");
     }
 
-    /// Exposure's manual page with Picker target at Reference, in the dark theme, as the
-    /// board's reference variants: `reference` set or none, measuring while its picker is
-    /// on, on the photo open, or on a photo gone.
+    /// Exposure's manual page with Picker target at Reference, in each theme, as the
+    /// board's reference variants, on a colour raw with a camera bias and a held-back
+    /// exposure: `reference` set or none, measuring while its picker is on, on the photo
+    /// open, or on a photo gone.
     fn photograph_reference(
         reference: Option<(f32, &str)>,
         measuring: bool,
@@ -7201,62 +7327,82 @@ mod tests {
         gone: bool,
         name: &str,
     ) {
-        let mut harness = targeted_with(Picked::default(), Builtin::Dark, referenced(reference));
-        let state = harness.state_mut();
-        state.on = measuring.then_some(PickerRef::Tool {
-            tool: "exposure",
-            picker: "reference",
-        });
-        state.photo = this_photo.then(|| REFERENCE_PHOTO.into());
-        state.gone = gone;
-        harness.run();
-        harness.snapshot(name);
+        let mut results = egui_kittest::SnapshotResults::new();
+        for (which, theme) in THEMES {
+            let mut harness = targeted_with(Picked::default(), which, referenced(reference));
+            let state = harness.state_mut();
+            state.camera = true;
+            state.on = measuring.then_some(PickerRef::Tool {
+                tool: "exposure",
+                picker: "reference",
+            });
+            state.photo = this_photo.then(|| REFERENCE_PHOTO.into());
+            state.gone = gone;
+            harness.run();
+            harness.snapshot(format!("{name}-{theme}"));
+            results.extend_harness(&mut harness);
+        }
     }
 
     #[test]
-    fn exposure_s_reference_none_in_the_dark_theme() {
-        photograph_reference(None, false, false, false, "exposure-reference-none-dark");
+    fn exposure_s_reference_none() {
+        photograph_reference(None, false, false, false, "exposure-reference-none");
     }
 
+    /// The reference picker measuring, with a reference already set: the row says
+    /// measuring in place of its value.
     #[test]
-    fn exposure_s_reference_measuring_in_the_dark_theme() {
+    fn exposure_s_reference_measuring() {
+        let reference = Some((62.0, REFERENCE_PHOTO));
         photograph_reference(
-            None,
+            reference,
             true,
             false,
             false,
-            "exposure-reference-measuring-dark",
+            "exposure-reference-measuring",
         );
     }
 
+    /// The board's B8: Exposure's picker on, matching the reference, a Last pick shown.
     #[test]
-    fn exposure_s_reference_on_this_photo_in_the_dark_theme() {
+    fn exposure_s_picker_matching_a_reference() {
+        let settings = referenced(Some((62.0, REFERENCE_PHOTO)));
+        let mut results = egui_kittest::SnapshotResults::new();
+        for (which, theme) in THEMES {
+            let mut harness =
+                targeted_with(last_picked(false, false, false), which, settings.clone());
+            let state = harness.state_mut();
+            state.camera = true;
+            state.on = Some(EXPOSURE_PICKER);
+            state.exposure = Some(0.55);
+            harness.run();
+            harness.snapshot(format!("exposure-reference-matching-{theme}"));
+            results.extend_harness(&mut harness);
+        }
+    }
+
+    #[test]
+    fn exposure_s_reference_on_this_photo() {
         let reference = Some((62.0, REFERENCE_PHOTO));
         photograph_reference(
             reference,
             false,
             true,
             false,
-            "exposure-reference-this-photo-dark",
+            "exposure-reference-this-photo",
         );
     }
 
     #[test]
-    fn exposure_s_reference_on_another_photo_in_the_dark_theme() {
+    fn exposure_s_reference_on_another_photo() {
         let reference = Some((62.0, REFERENCE_PHOTO));
-        photograph_reference(reference, false, false, false, "exposure-reference-dark");
+        photograph_reference(reference, false, false, false, "exposure-reference");
     }
 
     #[test]
-    fn exposure_s_reference_on_a_photo_gone_in_the_dark_theme() {
+    fn exposure_s_reference_on_a_photo_gone() {
         let reference = Some((62.0, REFERENCE_PHOTO));
-        photograph_reference(
-            reference,
-            false,
-            false,
-            true,
-            "exposure-reference-gone-dark",
-        );
+        photograph_reference(reference, false, false, true, "exposure-reference-gone");
     }
 
     /// The reference row's ⋯ open, its two items, Clear Reference live with one set.

@@ -4226,6 +4226,7 @@ impl App {
                     &words,
                     self.mirror.tools(),
                     &self.shell.tool_settings,
+                    self.mirror.photo.asked(),
                     picker,
                     area,
                     mac,
