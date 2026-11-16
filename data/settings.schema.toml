@@ -763,8 +763,7 @@ applies = "at-once"
 # went with measure mode, stays in a settings file as an unknown key.
 
 # Picker target: what Exposure's picker makes of the area picked. Middle grey gives it
-# L 50 %, Lightness the lightness below, Reference that of an area measured on another
-# photo, still to come.
+# L 50 %, Lightness the lightness below, Reference that of the reference below.
 [tools.exposure.target]
 owner = "tool:exposure"
 kind = "choice"
@@ -783,4 +782,26 @@ step = 1.0
 decimals = 1
 unit = "percent"
 default = 50.0
+applies = "at-once"
+
+# The reference, the target while Picker target holds Reference: the L of an area its
+# picker measured, CIE L in per cent, and the path of the photo it was measured on. None
+# until one is set; the two are set and cleared together, and kept across photos,
+# folders and restarts.
+[tools.exposure.reference_lightness]
+owner = "tool:exposure"
+kind = "number"
+min = 0.0
+max = 100.0
+step = 1.0
+decimals = 1
+unit = "percent"
+optional = true
+applies = "at-once"
+
+# The path of the photo the reference was measured on, set and cleared with its L.
+[tools.exposure.reference_photo]
+owner = "tool:exposure"
+kind = "text"
+optional = true
 applies = "at-once"

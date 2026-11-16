@@ -475,15 +475,25 @@ tool-exposure-setting-lightness-label = Lightness
 tool-exposure-setting-lightness-full = Target lightness
 tool-exposure-setting-lightness-promise = The lightness the picked area is given, CIE L*
 # Exposure's picker on its quad. Its tooltip and its hint over the photo say what a pick
-# will do, by Picker target's option; $lightness is Lightness, in the language's numbers.
-# Reference, which cannot be chosen yet, comes in a later version.
+# will do, by Picker target's option; $lightness is Lightness, $reference_lightness the
+# reference's L, in the language's numbers, and $reference_photo the name of the photo it was
+# measured on. With Reference chosen and none set, it is disabled, saying why.
 tool-exposure-picker-exposure-full = Exposure: pick from the photo
 tool-exposure-picker-exposure-promise-middle_grey = Make an area middle grey
 tool-exposure-picker-exposure-hint-middle_grey = Make an area middle grey
 tool-exposure-picker-exposure-promise-lightness = Make an area L { $lightness } %
 tool-exposure-picker-exposure-hint-lightness = Make an area L { $lightness } %
-tool-exposure-picker-exposure-promise-reference = Reference comes in a later version
-tool-exposure-picker-exposure-hint-reference = Reference comes in a later version
+tool-exposure-picker-exposure-promise-reference = Match an area to { $reference_photo } (L { $reference_lightness } %)
+tool-exposure-picker-exposure-hint-reference = Match an area to { $reference_photo } (L { $reference_lightness } %)
+# A reference whose photo is not known, as one --conf gives.
+tool-exposure-picker-exposure-promise-reference-no-photo = Match an area to L { $reference_lightness } %
+tool-exposure-picker-exposure-hint-reference-no-photo = Match an area to L { $reference_lightness } %
+tool-exposure-picker-exposure-unavailable = Set a reference first, with the picker on the Reference row
+# The reference row's picker (decision 88): its label the row's, its name its action.
+tool-exposure-picker-reference-label = Reference
+tool-exposure-picker-reference-full = Set the reference from an area
+tool-exposure-picker-reference-promise = Set the reference from an area
+tool-exposure-picker-reference-hint = Drag over the area to keep as the reference
 
 ## Colour calibration (docs/tools/colour-calibration.md): darktable's color calibration,
 ## every tab, the CAT tab first. Its words are darktable's, the adaptation's and the area

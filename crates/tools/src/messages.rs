@@ -167,6 +167,68 @@ pub const PATCHES: [&str; 6] = [
     "picker-patch-none",
 ];
 
+/// A reference row's words ([`crate::Row::Reference`], decision 88), every tool's: its
+/// value, `$lightness` its L in the language's numbers; the photo it was measured on,
+/// `$photo` its name, or the open photo; none set; while its picker measures;
+/// the tooltip of a photo no longer there; the ⋯ button's name; and its menu's Clear
+/// Reference and Set Reference from an Area.
+pub const REFERENCE: [&str; 9] = [
+    "reference-value",
+    "reference-photo",
+    "reference-this-photo",
+    "reference-none",
+    "reference-measuring",
+    "reference-gone",
+    "reference-more",
+    "reference-clear",
+    "reference-set",
+];
+
+/// [`picker_option`]'s words for an option that shows a reference row
+/// ([`crate::Row::Reference`]) where the reference's photo is not known, as one set
+/// through `--conf` (decision 88): `tool-<tool>-picker-<picker>-<part>-<option>-no-photo`,
+/// as Exposure's "Match an area to L 62 %".
+pub fn picker_option_no_photo(tool: &str, picker: &str, part: &str, option: &str) -> String {
+    format!("tool-{tool}-picker-{picker}-{part}-{option}-no-photo")
+}
+
+/// The options of the setting `picker`'s words follow under which a reference row shows
+/// (a [`crate::Row::WhenSetting`] of that setting holding a [`crate::Row::Reference`]).
+pub fn reference_options(definition: &Definition, picker: &crate::Picker) -> Vec<&'static str> {
+    let Some(setting) = picker.words_by else {
+        return Vec::new();
+    };
+    let holds = |rows: &[Row]| rows.iter().any(|row| matches!(row, Row::Reference { .. }));
+    definition
+        .rows()
+        .filter_map(|row| match row {
+            Row::WhenSetting {
+                setting: id,
+                is,
+                rows,
+            } if *id == setting && holds(rows) => Some(*is),
+            _ => None,
+        })
+        .flatten()
+        .copied()
+        .collect()
+}
+
+/// A picker's words over the photo where they are its own and follow no setting: the
+/// central bar's name of it, `tool-<tool>-picker-<picker>-hint`, as the reference row's
+/// picker's "Drag over the area to keep as the reference" (decision 88).
+pub fn picker_hint(tool: &str, picker: &str) -> String {
+    format!("tool-{tool}-picker-{picker}-hint")
+}
+
+/// Why a picker cannot start ([`crate::Tool::picker_ready`]), its tooltip while drawn
+/// disabled: `tool-<tool>-picker-<picker>-unavailable`, as Exposure's "Set a reference
+/// first, with the picker on the Reference row". The definition does not imply it:
+/// readiness is the tool's code, so the tests ask each tool when its pickers are ready.
+pub fn picker_unavailable(tool: &str, picker: &str) -> String {
+    format!("tool-{tool}-picker-{picker}-unavailable")
+}
+
 /// An action's short label, full name and promise ([`crate::Row::Action`]):
 /// `tool-<tool>-action-<action>-label`, `-full` and `-promise`.
 pub fn action(tool: &str, action: &str) -> [String; 3] {
@@ -220,8 +282,20 @@ pub fn picker_words(definition: &Definition, picker: &crate::Picker) -> Vec<Stri
                     words.push(picker_option(tool, picker.id, part, option));
                 }
             }
+            // An option that shows a reference says so with no photo known too.
+            for option in reference_options(definition, picker) {
+                for part in ["promise", "hint"] {
+                    words.push(picker_option_no_photo(tool, picker.id, part, option));
+                }
+            }
         }
         None => words.push(promise),
+    }
+    // A reference row's picker says over the photo what it will keep.
+    let on_reference = (definition.rows())
+        .any(|row| matches!(row, Row::Reference { picker: id, .. } if *id == picker.id));
+    if on_reference {
+        words.push(picker_hint(tool, picker.id));
     }
     if picker.kind != crate::PickerKind::Area {
         words.push(what);
@@ -261,11 +335,12 @@ pub fn unit_value(unit: Unit) -> String {
 /// them, each collapsible group's title, the words of each row that has its own, each
 /// setting's words and options, with each option's promise where a picker's words follow
 /// the setting, each action's words, each control's label, full name and promise, each
-/// option, each view's coordinate's label, full name and promise, as a
-/// control's, each preset row's label, full name, promise and options, each unit it uses,
-/// Custom if it has a preset row, the patches' words if it has patches, and each picker's
-/// words its button and the central bar use ([`picker_words`]), then, where it has
-/// darktable's facts, its kind's and what it works on, and each of darktable's lines.
+/// option, each view's coordinate's label, full name and promise, as a control's, each
+/// preset row's label, full name, promise and options, each unit it uses, Custom if it
+/// has a preset row, the patches' words if it has patches, a reference row's if it has
+/// one, and each picker's words its button and the central bar use ([`picker_words`]),
+/// then, where it has darktable's facts, its kind's and what it works on, and each of
+/// darktable's lines.
 pub fn of(definition: &Definition) -> Vec<String> {
     let tool = definition.id;
     let mut ids = vec![title(tool), description(tool)];
@@ -311,6 +386,7 @@ pub fn of(definition: &Definition) -> Vec<String> {
             }
             Row::Guides => ids.extend(GUIDES.map(str::to_owned)),
             Row::Patches { .. } => ids.extend(PATCHES.map(str::to_owned)),
+            Row::Reference { .. } => ids.extend(REFERENCE.map(str::to_owned)),
             _ => {}
         }
     }

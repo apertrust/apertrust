@@ -503,55 +503,88 @@ impl Settings {
 
 /// The tools' settings (decision 29; `docs/pickers.md`, A tool's settings): each kept
 /// setting of [`apertrust_tools::settings::registry`], by its tool and its id there,
-/// as the value its row (`Row::Setting`) shows and the picker's commands carry. Kept by
-/// the app as darktable keeps its darktablerc, never in an edit, and sent with
-/// `PickerCommand::On` and `Settings`. One `--conf` gives keeps its value for the run, as
-/// the store keeps it (decision 43): a set of it is refused, a measured value's too, and
-/// its row is drawn disabled.
+/// as the value its row (`Row::Setting`) shows and the picker's commands carry, and a
+/// reference row's two (`Row::Reference`, decision 88), its L and its photo's path, each
+/// optional, none until a pick measures one and none again once cleared. Kept by the app
+/// as darktable keeps its darktablerc, never in an edit, and sent with
+/// `PickerCommand::On` and `Settings`, a photo's path never. One `--conf` gives keeps its
+/// value for the run, as the store keeps it (decision 43): a set of it is refused, a
+/// measured value's too, and its row is drawn disabled.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ToolSettings {
     values: BTreeMap<(&'static str, &'static str), ControlValue>,
+    /// A reference's photo's path, by its tool and its setting.
+    texts: BTreeMap<(&'static str, &'static str), String>,
     /// Those `--conf` gives for this run.
     overridden: BTreeSet<(&'static str, &'static str)>,
 }
 
-/// Each kept setting at its default, darktable's.
+/// Each kept setting at its default, darktable's; a reference none.
 impl Default for ToolSettings {
     fn default() -> ToolSettings {
         ToolSettings {
             values: kept()
-                .map(|(tool, row, _)| ((tool, row.id), row.default()))
+                .filter_map(|(tool, id, kind, _)| match kind {
+                    Kept::Row(row) => Some(((tool, id), row.default())),
+                    Kept::Optional | Kept::Text => None,
+                })
                 .collect(),
+            texts: BTreeMap::new(),
             overridden: BTreeSet::new(),
         }
     }
 }
 
 impl ToolSettings {
-    /// None kept.
-    #[cfg(test)]
+    /// None kept, nothing overridden.
     pub const fn new() -> ToolSettings {
         ToolSettings {
             values: BTreeMap::new(),
+            texts: BTreeMap::new(),
             overridden: BTreeSet::new(),
         }
     }
 
     /// Every kept setting's value in `store`, read by its row's kind: a number, the
-    /// option a choice's id names, or a boolean; one that cannot be read is its default.
-    /// Those `--conf` gives are marked so.
+    /// option a choice's id names, or a boolean; one that cannot be read is its default,
+    /// a reference's none. Those `--conf` gives are marked so.
     pub fn read(store: &Store) -> ToolSettings {
-        let mut settings = ToolSettings {
-            values: BTreeMap::new(),
-            overridden: BTreeSet::new(),
-        };
-        for (tool, row, declared) in kept() {
+        let mut settings = ToolSettings::new();
+        for (tool, id, kind, declared) in kept() {
             let value = store.value(declared);
-            let value = value.as_ref().and_then(|value| control_value(row, value));
-            let value = value.unwrap_or_else(|| row.default());
-            settings.values.insert((tool, row.id), value);
+            match kind {
+                Kept::Row(row) => {
+                    let value = value.as_ref().and_then(|value| control_value(row, value));
+                    let value = value.unwrap_or_else(|| row.default());
+                    settings.values.insert((tool, id), value);
+                }
+                Kept::Optional => {
+                    let number = value.as_ref().and_then(toml::Value::as_float).or_else(|| {
+                        value
+                            .as_ref()
+                            .and_then(toml::Value::as_integer)
+                            .map(|n| n as f64)
+                    });
+                    if let Some(number) = number {
+                        let number = ControlValue::Number(number as f32);
+                        settings.values.insert((tool, id), number);
+                    }
+                }
+                Kept::Text => {
+                    if let Some(text) = value.as_ref().and_then(toml::Value::as_str) {
+                        settings.texts.insert((tool, id), text.to_owned());
+                    }
+                }
+            }
             if store.overridden(declared) {
-                settings.overridden.insert((tool, row.id));
+                settings.overridden.insert((tool, id));
+            }
+        }
+        // A reference's L `--conf` gives was measured on no photo the file names: the
+        // photo left out for the run, the file keeping it (decision 88).
+        for (tool, lightness, photo) in references() {
+            if settings.overridden(tool, lightness) {
+                settings.texts.remove(&(tool, photo));
             }
         }
         settings
@@ -562,19 +595,47 @@ impl ToolSettings {
         (self.overridden.iter()).any(|&(m, s)| m == tool && s == setting)
     }
 
-    /// Sets in `store` each value that differs from `was`.
+    /// Sets in `store` each value that differs from `was`, and removes a reference's that
+    /// was cleared.
     fn write(&self, store: &mut Store, was: &ToolSettings) {
-        for (tool, row, declared) in kept() {
-            let value = self.get(tool, row.id);
-            if value != was.get(tool, row.id)
-                && let Some(value) = value.and_then(|value| toml_value(row, value))
-            {
-                store.set_value(declared, &value);
+        for (tool, id, kind, declared) in kept() {
+            let value = match kind {
+                Kept::Row(row) => {
+                    let value = self.get(tool, id);
+                    if value == was.get(tool, id) {
+                        continue;
+                    }
+                    value.and_then(|value| toml_value(row, value))
+                }
+                Kept::Optional => {
+                    let value = self.get(tool, id);
+                    if value == was.get(tool, id) {
+                        continue;
+                    }
+                    match value {
+                        Some(ControlValue::Number(n)) => Some(toml::Value::Float(f64::from(*n))),
+                        _ => None,
+                    }
+                }
+                Kept::Text => {
+                    let text = self.text(tool, id);
+                    if text == was.text(tool, id) {
+                        continue;
+                    }
+                    text.map(|text| toml::Value::String(text.to_owned()))
+                }
+            };
+            match value {
+                Some(value) => {
+                    store.set_value(declared, &value);
+                }
+                None if !matches!(kind, Kept::Row(_)) => store.reset_value(declared),
+                None => {}
             }
         }
     }
 
-    /// `tool`'s setting `setting`, if it is kept.
+    /// `tool`'s setting `setting`, if it is kept and has a value.
     pub fn get(&self, tool: &str, setting: &str) -> Option<&ControlValue> {
         self.values
             .iter()
@@ -582,21 +643,93 @@ impl ToolSettings {
             .map(|(_, value)| value)
     }
 
-    /// Sets `tool`'s setting `setting`, if it is kept and `--conf` does not give it.
+    /// `tool`'s text setting `setting`, a reference's photo's path, if it has one.
+    pub fn text(&self, tool: &str, setting: &str) -> Option<&str> {
+        self.texts
+            .iter()
+            .find(|((m, s), _)| *m == tool && *s == setting)
+            .map(|(_, text)| text.as_str())
+    }
+
+    /// Sets `tool`'s setting `setting`, if it is kept, a number or a choice, and `--conf`
+    /// does not give it.
     pub fn set(&mut self, tool: &str, setting: &str, value: ControlValue) {
         if self.overridden(tool, setting) {
             return;
         }
-        if let Some((_, kept)) = self
-            .values
-            .iter_mut()
-            .find(|((m, s), _)| *m == tool && *s == setting)
-        {
-            *kept = value;
+        let found = kept()
+            .find(|(m, s, kind, _)| *m == tool && *s == setting && !matches!(kind, Kept::Text));
+        if let Some((tool, setting, _, _)) = found {
+            self.values.insert((tool, setting), value);
         }
     }
 
-    /// `tool`'s kept settings, as its picker's commands carry them.
+    /// Sets `tool`'s text setting `setting`, if it is kept and `--conf` does not give it.
+    pub fn set_text(&mut self, tool: &str, setting: &str, text: String) {
+        if self.overridden(tool, setting) {
+            return;
+        }
+        let found = kept()
+            .find(|(m, s, kind, _)| *m == tool && *s == setting && matches!(kind, Kept::Text));
+        if let Some((tool, setting, _, _)) = found {
+            self.texts.insert((tool, setting), text);
+        }
+    }
+
+    /// Sets `tool`'s reference whole (decision 88): its L in `lightness` and the path of
+    /// the photo it was measured on in `photo`, or no path where none is known, so an L
+    /// never stays beside another photo's path. Both or neither: nothing where `--conf`
+    /// gives either.
+    pub fn set_reference(
+        &mut self,
+        tool: &str,
+        (lightness, photo): (&str, &str),
+        value: ControlValue,
+        path: Option<String>,
+    ) {
+        if self.overridden(tool, lightness) || self.overridden(tool, photo) {
+            return;
+        }
+        self.set(tool, lightness, value);
+        match path {
+            Some(path) => self.set_text(tool, photo, path),
+            None => self.clear(tool, photo),
+        }
+    }
+
+    /// Clears `tool`'s reference whole, its L and its photo's path: both or neither,
+    /// nothing where `--conf` gives either.
+    pub fn clear_reference(&mut self, tool: &str, (lightness, photo): (&str, &str)) {
+        if self.overridden(tool, lightness) || self.overridden(tool, photo) {
+            return;
+        }
+        self.clear(tool, lightness);
+        self.clear(tool, photo);
+    }
+
+    /// Clears `tool`'s optional setting `setting`, a reference's L or its photo, unless
+    /// `--conf` gives it.
+    pub fn clear(&mut self, tool: &str, setting: &str) {
+        if self.overridden(tool, setting) {
+            return;
+        }
+        let optional = kept()
+            .any(|(m, s, kind, _)| m == tool && s == setting && !matches!(kind, Kept::Row(_)));
+        if optional {
+            self.values
+                .retain(|(m, s), _| !(*m == tool && *s == setting));
+            self.texts
+                .retain(|(m, s), _| !(*m == tool && *s == setting));
+        }
+    }
+
+    /// Every text setting's value, the references' photos' paths.
+    pub fn texts(&self) -> impl Iterator<Item = &str> {
+        self.texts.values().map(String::as_str)
+    }
+
+    /// `tool`'s kept settings that have a value, as its picker's commands carry them: no
+    /// text, which no pick reads.
     pub fn of(&self, tool: &str) -> Vec<(&'static str, ControlValue)> {
         (self.values.iter())
             .filter(|((m, _), _)| *m == tool)
@@ -605,15 +738,48 @@ impl ToolSettings {
     }
 }
 
-/// Each kept tool setting: its tool's id, its row and its declaration.
-fn kept() -> impl Iterator<Item = (&'static str, &'static SettingRow, &'static dyn Declared)> {
+/// How a kept tool setting is kept: as its row's kind, as an optional number, a
+/// reference's L, or as an optional text, a reference's photo's path.
+#[derive(Clone, Copy)]
+enum Kept {
+    Row(&'static SettingRow),
+    Optional,
+    Text,
+}
+
+/// Each tool's reference (`Row::Reference`): its tool's id, its L's setting and its photo's.
+fn references() -> impl Iterator<Item = (&'static str, &'static str, &'static str)> {
     TOOLS.iter().flat_map(|tool| {
         let id = tool.definition().id;
         tool.definition().rows().filter_map(move |row| match row {
-            Row::Setting(setting) => apertrust_tools::settings::setting(id, setting.id)
-                .map(|declared| (id, setting, declared)),
+            Row::Reference {
+                lightness, photo, ..
+            } => Some((id, *lightness, *photo)),
             _ => None,
         })
+    })
+}
+
+/// Each kept tool setting: its tool's id, its id, how it is kept and its declaration.
+fn kept() -> impl Iterator<Item = (&'static str, &'static str, Kept, &'static dyn Declared)> {
+    TOOLS.iter().flat_map(|tool| {
+        let id = tool.definition().id;
+        let declared = move |setting: &'static str, kind: Kept| {
+            apertrust_tools::settings::setting(id, setting).map(|d| (id, setting, kind, d))
+        };
+        tool.definition()
+            .rows()
+            .flat_map(move |row| match row {
+                Row::Setting(setting) => vec![declared(setting.id, Kept::Row(setting))],
+                Row::Reference {
+                    lightness, photo, ..
+                } => vec![
+                    declared(lightness, Kept::Optional),
+                    declared(photo, Kept::Text),
+                ],
+                _ => Vec::new(),
+            })
+            .flatten()
     })
 }
 
@@ -1228,6 +1394,10 @@ mod tests {
                 let mut settings = ToolSettings::default();
                 settings.set("exposure", "target", ControlValue::Choice(1));
                 settings.set("exposure", "lightness", ControlValue::Number(42.5));
+                let number = ControlValue::Number(62.5);
+                settings.set("exposure", "reference_lightness", number);
+                let photo = "/photos/IMG_2041.CR3".to_owned();
+                settings.set_text("exposure", "reference_photo", photo);
                 settings
             },
             ask_before_overwrite: false,
@@ -1340,12 +1510,14 @@ mod tests {
                 },
                 keys: BTreeMap::new(),
                 export: Values::default(),
-                // Exposure's Picker target at Middle grey, and Lightness at darktable's 50 %.
+                // Exposure's Picker target at Middle grey, Lightness at darktable's 50 %, and no
+                // reference.
                 tool_settings: ToolSettings {
                     values: BTreeMap::from([
                         (("exposure", "target"), ControlValue::Choice(0)),
                         (("exposure", "lightness"), ControlValue::Number(50.0)),
                     ]),
+                    texts: BTreeMap::new(),
                     overridden: BTreeSet::new(),
                 },
                 ask_before_overwrite: true,
@@ -1526,6 +1698,8 @@ marker = \"triangle\"
 
 [tools.exposure]
 lightness = 42.5
+reference_lightness = 62.5
+reference_photo = \"/photos/IMG_2041.CR3\"
 target = \"lightness\"
 
 [window]
@@ -1965,6 +2139,102 @@ size = [1280, 800]
         drop(keeper);
         let (_, again) = Keeper::open(folder.storage());
         assert_eq!(again.tool_settings, settings.tool_settings);
+    }
+
+    /// A reference's L `--conf` gives comes with no photo, though the file names one: the
+    /// file keeps it, untouched (decision 88).
+    #[test]
+    fn a_reference_conf_gives_carries_no_photo_from_the_file() {
+        let folder = Folder::new("reference-conf-photo");
+        let text = "version = 1\n[tools.exposure]\nreference_lightness = 62.0\n\
+                    reference_photo = \"/photos/IMG_2041.CR3\"\n";
+        std::fs::write(folder.settings(), text).expect("written");
+        let overrides = conf(&["tools.exposure.reference_lightness=60"]).expect("read");
+        let (mut keeper, settings) = Keeper::open_with(folder.storage(), &overrides);
+        let kept = &settings.tool_settings;
+        let given = Some(ControlValue::Number(60.0));
+        assert_eq!(kept.get("exposure", "reference_lightness").cloned(), given);
+        assert_eq!(kept.text("exposure", "reference_photo"), None);
+        keeper.frame(Instant::now(), &settings);
+        keeper.flush();
+        assert_eq!(folder.text(), text);
+        // With no `--conf`, the file's reference whole.
+        let (_, settings) = Keeper::open(folder.storage());
+        let photo = settings.tool_settings.text("exposure", "reference_photo");
+        assert_eq!(photo, Some("/photos/IMG_2041.CR3"));
+    }
+
+    /// A reference is set and cleared whole (decision 88): measured with no photo known,
+    /// its L comes with no path, never beside the last photo's; and where `--conf` gives
+    /// either of its two settings, neither changes.
+    #[test]
+    fn a_reference_is_set_and_cleared_whole() {
+        let keys = ("reference_lightness", "reference_photo");
+        let mut kept = ToolSettings::default();
+        let photo = "/photos/IMG_2041.CR3".to_owned();
+        kept.set_reference("exposure", keys, ControlValue::Number(62.0), Some(photo));
+        kept.set_reference("exposure", keys, ControlValue::Number(40.0), None);
+        let lightness = kept.get("exposure", keys.0).cloned();
+        assert_eq!(lightness, Some(ControlValue::Number(40.0)));
+        assert_eq!(kept.text("exposure", keys.1), None);
+        kept.clear_reference("exposure", keys);
+        assert_eq!(kept, ToolSettings::default());
+
+        let folder = Folder::new("reference-conf");
+        let overrides = conf(&["tools.exposure.reference_lightness=60"]).expect("read");
+        let (_, settings) = Keeper::open_with(folder.storage(), &overrides);
+        let mut kept = settings.tool_settings;
+        let given = Some(ControlValue::Number(60.0));
+        assert_eq!(kept.get("exposure", keys.0).cloned(), given);
+        let photo = "/photos/IMG_2041.CR3".to_owned();
+        kept.set_reference("exposure", keys, ControlValue::Number(62.0), Some(photo));
+        kept.clear_reference("exposure", keys);
+        assert_eq!(kept.get("exposure", keys.0).cloned(), given);
+        assert_eq!(kept.text("exposure", keys.1), None);
+    }
+
+    /// A reference (decision 88): none until one is set, its L sent with the picker's
+    /// commands and its photo's path never; both survive a restart, and clearing removes
+    /// both keys from the file.
+    #[test]
+    fn a_reference_is_kept_across_a_restart_and_cleared_whole() {
+        let folder = Folder::new("reference");
+        let (mut keeper, mut settings) = Keeper::open(folder.storage());
+        let kept = &mut settings.tool_settings;
+        assert_eq!(kept.get("exposure", "reference_lightness"), None);
+        assert_eq!(kept.text("exposure", "reference_photo"), None);
+        kept.set(
+            "exposure",
+            "reference_lightness",
+            ControlValue::Number(62.5),
+        );
+        let photo = "/photos/IMG_2041.CR3";
+        kept.set_text("exposure", "reference_photo", photo.to_owned());
+        // A text is no setting a pick reads.
+        assert!(
+            kept.of("exposure")
+                .iter()
+                .all(|(s, _)| *s != "reference_photo")
+        );
+        assert!(
+            kept.of("exposure")
+                .contains(&("reference_lightness", ControlValue::Number(62.5)))
+        );
+        keeper.frame(Instant::now(), &settings);
+        keeper.flush();
+        drop(keeper);
+        let (mut keeper, mut again) = Keeper::open(folder.storage());
+        assert_eq!(again.tool_settings, settings.tool_settings);
+        assert_eq!(again.tool_settings.texts().collect::<Vec<_>>(), [photo]);
+        again.tool_settings.clear("exposure", "reference_lightness");
+        again.tool_settings.clear("exposure", "reference_photo");
+        keeper.frame(Instant::now(), &again);
+        keeper.flush();
+        let written = folder.text();
+        assert!(!written.contains("reference"), "{written}");
+        drop(keeper);
+        let (_, cleared) = Keeper::open(folder.storage());
+        assert_eq!(cleared.tool_settings, ToolSettings::default());
     }
 
     #[test]

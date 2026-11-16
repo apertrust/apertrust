@@ -451,8 +451,15 @@ tool-exposure-picker-exposure-promise-middle_grey = Зробити ділянк�
 tool-exposure-picker-exposure-hint-middle_grey = Зробити ділянку середньо-сірою
 tool-exposure-picker-exposure-promise-lightness = Зробити ділянку L { $lightness } %
 tool-exposure-picker-exposure-hint-lightness = Зробити ділянку L { $lightness } %
-tool-exposure-picker-exposure-promise-reference = Еталон з'явиться в одній із наступних версій
-tool-exposure-picker-exposure-hint-reference = Еталон з'явиться в одній із наступних версій
+tool-exposure-picker-exposure-promise-reference = Зіставити ділянку з { $reference_photo } (L { $reference_lightness } %)
+tool-exposure-picker-exposure-hint-reference = Зіставити ділянку з { $reference_photo } (L { $reference_lightness } %)
+tool-exposure-picker-exposure-promise-reference-no-photo = Зіставити ділянку з L { $reference_lightness } %
+tool-exposure-picker-exposure-hint-reference-no-photo = Зіставити ділянку з L { $reference_lightness } %
+tool-exposure-picker-exposure-unavailable = Спершу задайте еталон піпеткою в рядку «Еталон»
+tool-exposure-picker-reference-label = Еталон
+tool-exposure-picker-reference-full = Задати еталон за ділянкою
+tool-exposure-picker-reference-promise = Задати еталон за ділянкою
+tool-exposure-picker-reference-hint = Виділіть ділянку, яку зберегти як еталон
 
 ## Калібрування кольору (docs/tools/colour-calibration.md)
 

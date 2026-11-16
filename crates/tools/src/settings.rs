@@ -70,6 +70,26 @@ mod tests {
                 .iter()
                 .find(|m| m.definition().id == tool)
                 .unwrap_or_else(|| panic!("no tool {tool}"));
+            // A reference row's two (decision 88): its L, an optional percentage, and its
+            // photo's path, an optional text.
+            let reference = found.definition().rows().find_map(|row| match row {
+                Row::Reference {
+                    lightness, photo, ..
+                } if *lightness == name || *photo == name => Some(*lightness == name),
+                _ => None,
+            });
+            if let Some(is_lightness) = reference {
+                assert_eq!(declared.default_value(), None, "{name}");
+                match declared.kind() {
+                    Kind::Number(number) if is_lightness => {
+                        assert_eq!((number.min, number.max), (Some(0.0), Some(100.0)));
+                        assert_eq!(number.decimals, Some(1), "{name}");
+                    }
+                    Kind::Text if !is_lightness => {}
+                    kind => panic!("{name} is declared {kind:?}"),
+                }
+                continue;
+            }
             let row = found
                 .definition()
                 .rows()
@@ -136,12 +156,20 @@ mod tests {
         ));
     }
 
-    /// Every setting a tool's built pick reads is kept: Exposure's, Picker target and
-    /// Lightness.
+    /// Every setting a tool's built pick reads is kept: Exposure's, Picker target,
+    /// Lightness and the reference.
     #[test]
     fn exposure_s_settings_are_kept() {
         let ids: Vec<&str> = registry::ALL.iter().map(|s| s.id()).collect();
-        assert_eq!(ids, ["tools.exposure.target", "tools.exposure.lightness"]);
+        assert_eq!(
+            ids,
+            [
+                "tools.exposure.target",
+                "tools.exposure.lightness",
+                "tools.exposure.reference_lightness",
+                "tools.exposure.reference_photo",
+            ]
+        );
         assert!(setting("exposure", "lightness").is_some());
         // Colour calibration's still drawn disabled, its picker to come.
         assert!(setting("channelmixerrgb", "area_mode").is_none());

@@ -23,7 +23,8 @@
 //! image.
 
 use apertrust_ui::components::{
-    Patch, Patches, PickerAction, PickerButton, SliderAction, SliderRow,
+    Patch, Patches, PickerAction, PickerButton, Reference, ReferenceAction, ReferenceRow,
+    SliderAction, SliderRow,
 };
 use apertrust_ui::gallery::Gallery;
 use apertrust_ui::{Builtin, Locale, Theme, Translator};
@@ -462,7 +463,7 @@ fn a_slider_s_picker_quad_reports_its_presses() {
 
 fn photograph(which: Builtin, name: &str) {
     let mut harness = Harness::builder()
-        .with_size(egui::vec2(600.0, 820.0))
+        .with_size(egui::vec2(600.0, 1010.0))
         .with_pixels_per_point(2.0)
         .with_context_setup(move |ctx| apertrust_ui::install(ctx, Theme::builtin(which)))
         .build_ui_state(
@@ -527,4 +528,118 @@ fn a_screen_reader_hears_each_patch_by_its_heading_and_the_input_s_readout() {
     let harness = patches(false);
     let input = harness.get_by_role_and_label(Role::Image, "Input, L: 45.2%");
     assert!(input.accesskit_node().is_disabled());
+}
+
+/// A reference row's state: what it reported, and whether it is enabled.
+struct ReferenceState {
+    actions: Vec<ReferenceAction>,
+    enabled: bool,
+}
+
+/// A reference row with a reference set or none, and what it reported.
+fn reference_row(set: bool) -> Harness<'static, ReferenceState> {
+    Harness::builder()
+        .with_size(egui::vec2(360.0, 160.0))
+        .with_context_setup(|ctx| apertrust_ui::install(ctx, Theme::default()))
+        .build_ui_state(
+            move |ui, state: &mut ReferenceState| {
+                let reference = if set {
+                    Reference::Set {
+                        patch: egui::Color32::from_gray(150),
+                        value: "L 62 %",
+                        photo: Some("· IMG_2041"),
+                        gone: Some("The photo it was measured on is no longer there"),
+                    }
+                } else {
+                    Reference::None("none")
+                };
+                let picker = PickerButton::new("Set the reference from an area", false);
+                let more = (
+                    "Reference options",
+                    "Clear Reference",
+                    "Set Reference from an Area",
+                );
+                if let Some(action) = ReferenceRow::new("Reference", reference, picker, more)
+                    .promise("Set the reference from an area")
+                    .enabled(state.enabled)
+                    .show(ui)
+                {
+                    state.actions.push(action);
+                }
+            },
+            ReferenceState {
+                actions: Vec::new(),
+                enabled: true,
+            },
+        )
+}
+
+/// A row disabled while its ⋯ menu is open never answers from it: the menu closes, and a
+/// click where its item was reports nothing.
+#[test]
+fn a_reference_row_disabled_with_its_menu_open_reports_nothing_from_it() {
+    let mut harness = reference_row(true);
+    harness.run();
+    harness
+        .get_by_role_and_label(Role::Button, "Reference options")
+        .click();
+    harness.run();
+    let clear = harness.get_by_label("Clear Reference").rect().center();
+    harness.state_mut().enabled = false;
+    harness.run();
+    assert!(harness.query_by_label("Clear Reference").is_none());
+    harness.hover_at(clear);
+    harness.drag_at(clear);
+    harness.drop_at(clear);
+    harness.run();
+    assert!(
+        harness.state().actions.is_empty(),
+        "{:?}",
+        harness.state().actions
+    );
+}
+
+/// A reference row (decision 88): one label to screen readers with its value and its
+/// photo, a dimmed photo said to be gone; its picker a toggle button; ⋯ a menu whose
+/// Clear Reference waits for a reference and whose Set Reference from an Area asks for
+/// the picker.
+#[test]
+fn a_reference_row_reads_its_reference_and_offers_its_picker_and_its_menu() {
+    let mut harness = reference_row(true);
+    harness.run();
+    let row = harness.get_by_role_and_label(Role::Label, "Reference L 62 % · IMG_2041");
+    assert_eq!(
+        row.accesskit_node().description().as_deref(),
+        Some("The photo it was measured on is no longer there")
+    );
+    harness
+        .get_by_role_and_label(Role::Button, "Set the reference from an area")
+        .click();
+    harness.run();
+    assert_eq!(
+        harness.state().actions.last(),
+        Some(&ReferenceAction::Picker(PickerAction::On { area: false }))
+    );
+    for (item, action) in [
+        ("Clear Reference", ReferenceAction::Clear),
+        ("Set Reference from an Area", ReferenceAction::Set),
+    ] {
+        harness
+            .get_by_role_and_label(Role::Button, "Reference options")
+            .click();
+        harness.run();
+        harness.get_by_label(item).click();
+        harness.run();
+        assert_eq!(harness.state().actions.last(), Some(&action), "{item}");
+    }
+    // With none, its words say so and Clear Reference cannot be chosen.
+    let mut harness = reference_row(false);
+    harness.run();
+    harness.get_by_role_and_label(Role::Label, "Reference none");
+    harness
+        .get_by_role_and_label(Role::Button, "Reference options")
+        .click();
+    harness.run();
+    let clear = harness.get_by_label("Clear Reference");
+    assert!(clear.accesskit_node().is_disabled());
 }

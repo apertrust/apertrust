@@ -360,6 +360,17 @@ pub trait Tool: Send + Sync {
         None
     }
 
+    /// Whether `picker` can start with the tool's settings as the client keeps them
+    /// (decision 88): true, as provided. Pure, from the settings alone. A client draws a
+    /// picker that is not ready disabled, its tooltip
+    /// `tool-<tool>-picker-<picker>-unavailable` ([`messages::picker_unavailable`]), and
+    /// the session refuses its `On` and turns it off where `Settings` leaves it not ready,
+    /// so a script cannot pick toward nothing. Exposure's picker is not ready while Picker
+    /// target holds Reference and no reference is set.
+    fn picker_ready(&self, _picker: &str, _settings: &[(&str, ControlValue)]) -> bool {
+        true
+    }
+
     /// Values saved by version `from`, brought up to this version. A tool raises its
     /// version, and migrates, whenever a control's meaning or its binding changes, so an
     /// old edit keeps its look.

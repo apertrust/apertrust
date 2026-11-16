@@ -1051,6 +1051,10 @@ mod tests {
                 // A picker's words by a setting: the tool's number settings, as Exposure's
                 // Lightness (decision 88).
                 args.set("lightness", 92.0);
+                args.set("reference_lightness", 62.0);
+                args.set("reference_photo", "IMG_2041");
+                // A reference row's photo.
+                args.set("photo", "IMG_2041");
                 for channel in ["red", "green", "blue", "grey"] {
                     args.set(channel, 128);
                 }

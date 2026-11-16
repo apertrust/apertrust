@@ -213,6 +213,9 @@ pub struct Picked {
     cleared: u64,
     /// The last command that took one tool's patch away, by its number, by tool.
     cleared_tool: BTreeMap<String, u64>,
+    /// The last command that cleared a tool's measured settings, its reference, by its
+    /// number, by tool (decision 88).
+    cleared_settings: BTreeMap<String, u64>,
 }
 
 impl Picked {
@@ -222,6 +225,7 @@ impl Picked {
             seen: None,
             cleared: 0,
             cleared_tool: BTreeMap::new(),
+            cleared_settings: BTreeMap::new(),
         }
     }
 
@@ -229,7 +233,8 @@ impl Picked {
     /// settings its pick measured, where the pick comes for the first time. A pick measured
     /// before a command that took the tool's patch away, still on its way as that command
     /// was sent, shows no patch, as darktable's `gui_update` leaves it zeroed until the next
-    /// pick.
+    /// pick; one measured before a command that cleared the settings it measures hands
+    /// none of them back ([`Picked::settings_cleared`]).
     pub fn apply(
         &mut self,
         reading: Option<&PickerReading>,
@@ -247,7 +252,13 @@ impl Picked {
         if self.seen.as_ref() == Some(&seen) {
             return None;
         }
-        self.seen = Some(seen);
+        let settings_cleared = self.cleared_settings.get(tool).copied().unwrap_or(0);
+        let refused = !shown.settings.is_empty() && reading.through < settings_cleared;
+        // A pick whose settings a clear refused is not taken as seen, so a later one with
+        // the same values, measured after the clear, hands them back.
+        if !refused {
+            self.seen = Some(seen);
+        }
         let cleared =
             (self.cleared_tool.get(tool).copied()).map_or(self.cleared, |n| n.max(self.cleared));
         if let Some(patch) = shown.patch
@@ -255,7 +266,14 @@ impl Picked {
         {
             self.patches.insert(tool, patch);
         }
-        (!shown.settings.is_empty()).then(|| (tool, shown.settings.clone()))
+        (!shown.settings.is_empty() && !refused).then(|| (tool, shown.settings.clone()))
+    }
+
+    /// The command numbered `number`, `tool`'s `Settings`, cleared settings its picks
+    /// measure, as Clear Reference clears Exposure's reference (decision 88): a pick
+    /// measured before it, still on its way, hands none of them back ([`Picked::apply`]).
+    pub fn settings_cleared(&mut self, tool: &str, number: u64) {
+        self.cleared_settings.insert(tool.to_owned(), number);
     }
 
     /// The input patch `tool`'s last pick showed on the photo.
@@ -537,8 +555,10 @@ pub fn name(words: &Translator, definition: &Definition, picker: &str) -> String
 /// that setting's default: `part` `promise`, its tooltip, or `hint`, the central bar's
 /// name of it, "Make an area middle grey". Each of the tool's number settings is the
 /// message's variable of its id, in the language's numbers to the setting's decimals,
-/// none shown after the point where it is whole, "Make an area L 92 %". `None` for a
-/// picker whose words follow no setting.
+/// none shown after the point where it is whole, "Make an area L 92 %"; a reference's L
+/// the same, to one decimal, and its photo the name of its file
+/// (`$reference_photo`, "Match an area to IMG_2041 (L 62 %)"). `None` for a picker whose
+/// words follow no setting.
 pub fn by_setting(
     words: &Translator,
     definition: &Definition,
@@ -578,8 +598,116 @@ pub fn by_setting(
             args.set(row.id, rounded);
         }
     }
-    let id = messages::picker_option(tool, picker.id, part, option);
+    let mut named = true;
+    for row in definition.rows() {
+        if let Row::Reference {
+            lightness, photo, ..
+        } = row
+        {
+            if let Some(ControlValue::Number(l)) = settings.get(tool, lightness) {
+                args.set(*lightness, (f64::from(*l) * 10.0).round() / 10.0);
+            }
+            match settings.text(tool, photo) {
+                Some(path) => args.set(*photo, photo_name(path)),
+                None => named = false,
+            }
+        }
+    }
+    // A reference whose photo is not known, as one `--conf` gives, says only its L.
+    let unnamed = messages::reference_options(definition, picker).contains(option);
+    let id = if unnamed && !named {
+        messages::picker_option_no_photo(tool, picker.id, part, option)
+    } else {
+        messages::picker_option(tool, picker.id, part, option)
+    };
     Some(words.text_with(&id, Some(&args)))
+}
+
+/// The name a reference's photo shows by, "IMG_2041": its file's name without its
+/// extension, as Browse shows a photo, whatever folder it is in.
+pub fn photo_name(path: &str) -> String {
+    let path = std::path::Path::new(path);
+    path.file_stem().or(path.file_name()).map_or_else(
+        || path.display().to_string(),
+        |n| n.to_string_lossy().into_owned(),
+    )
+}
+
+/// Whether the photos references were measured on are still there (decision 88): each
+/// path asked on a thread of its own, never the interface's, so a slow share never holds
+/// a frame, and a path still being asked is not asked again. The app asks for every
+/// reference as each photo opens and for one as it is set.
+#[derive(Debug)]
+pub struct ReferencePhotos {
+    gone: std::collections::BTreeSet<String>,
+    asking: std::collections::BTreeSet<String>,
+    answer: std::sync::mpsc::Sender<(String, bool)>,
+    answers: std::sync::mpsc::Receiver<(String, bool)>,
+    /// The open whose photo the references were last asked after for.
+    asked_for: Option<u64>,
+}
+
+impl ReferencePhotos {
+    pub fn new() -> ReferencePhotos {
+        let (answer, answers) = std::sync::mpsc::channel();
+        ReferencePhotos {
+            gone: Default::default(),
+            asking: Default::default(),
+            answer,
+            answers,
+            asked_for: None,
+        }
+    }
+
+    /// Whether `open`, the number of the open of the photo shown, is new since the last
+    /// time this said so: the references are to be asked after again.
+    pub fn photo_opened(&mut self, open: Option<u64>) -> bool {
+        let new = open.is_some() && open != self.asked_for;
+        if new {
+            self.asked_for = open;
+        }
+        new
+    }
+
+    /// Asks whether `path` is there, on a thread of its own, unless it is being asked.
+    pub fn check(&mut self, path: String, ctx: &egui::Context) {
+        if !self.asking.insert(path.clone()) {
+            return;
+        }
+        let answer = self.answer.clone();
+        // The answer drawn as it comes, not at the next input.
+        let ctx = ctx.clone();
+        let asked = std::thread::Builder::new()
+            .name("reference check".into())
+            .spawn(move || {
+                let there = std::path::Path::new(&path).try_exists().unwrap_or(true);
+                let _ = answer.send((path, there));
+                ctx.request_repaint();
+            });
+        if let Err(e) = asked {
+            tracing::warn!(target: "settings", "reference not checked: no thread: {e}");
+        }
+    }
+
+    /// Marks the answers that have come, without waiting for the others. Returns whether
+    /// any changed what is marked.
+    pub fn take(&mut self) -> bool {
+        let mut changed = false;
+        while let Ok((path, there)) = self.answers.try_recv() {
+            self.asking.remove(&path);
+            changed |= if there {
+                self.gone.remove(&path)
+            } else {
+                self.gone.insert(path)
+            };
+        }
+        changed
+    }
+
+    /// Whether the photo at `path` was found gone.
+    pub fn gone(&self, path: &str) -> bool {
+        self.gone.contains(path)
+    }
 }
 
 /// The central bar's words while `picker` is on, measuring an area where `area` says
@@ -598,7 +726,13 @@ pub fn bar_words(
     let (definition, declared) = declared(tools, picker)?;
     let mut args = Args::new();
     args.set("tool", words.text(&messages::title(definition.id)));
-    let hint = by_setting(words, definition, declared, settings, "hint");
+    // What a pick will do, where the picker's words follow a setting; a reference row's
+    // picker's own words over the photo.
+    let reference = (definition.rows())
+        .any(|row| matches!(row, Row::Reference { picker, .. } if *picker == declared.id));
+    let hint = by_setting(words, definition, declared, settings, "hint").or_else(|| {
+        reference.then(|| words.text(&messages::picker_hint(definition.id, declared.id)))
+    });
     args.set(
         "picker",
         hint.unwrap_or_else(|| name(words, definition, declared.id)),
@@ -2306,5 +2440,75 @@ mod tests {
             bar(&settings, Locale::Uk),
             "Експозиція · Зробити ділянку L 62,5 %"
         );
+        // Toward a reference, the photo it was measured on by its name; the reference's
+        // own picker says what it keeps.
+        settings.set("exposure", "target", ControlValue::Choice(2));
+        settings.set(
+            "exposure",
+            "reference_lightness",
+            ControlValue::Number(62.0),
+        );
+        let photo = "/photos/2026/IMG_2041.CR3".to_owned();
+        settings.set_text("exposure", "reference_photo", photo);
+        assert_eq!(
+            bar(&settings, Locale::EnGb),
+            "Exposure · Match an area to IMG_2041 (L 62 %)"
+        );
+        let words = Translator::new(Locale::EnGb);
+        let reference = PickerRef::Tool {
+            tool: "exposure",
+            picker: "reference",
+        };
+        let (name, _) = bar_words(&words, tools, &settings, reference, true, false).unwrap();
+        assert_eq!(
+            name,
+            "Exposure · Drag over the area to keep as the reference"
+        );
+        // A reference whose photo is not known, as `--conf` gives one: its L alone.
+        settings.clear("exposure", "reference_photo");
+        assert_eq!(
+            bar(&settings, Locale::EnGb),
+            "Exposure · Match an area to L 62 %"
+        );
+    }
+
+    /// A reference's photo is asked after off the caller's thread: one there is not gone,
+    /// one missing is; the references are asked after once a photo opens. Each answer asks
+    /// for a frame.
+    #[test]
+    fn a_reference_s_photo_is_found_gone_off_the_interface_s_thread() {
+        let here = std::env::current_exe()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        let missing = format!("{here}.not-there");
+        let mut photos = ReferencePhotos::new();
+        assert!(!photos.photo_opened(None));
+        assert!(photos.photo_opened(Some(3)));
+        assert!(!photos.photo_opened(Some(3)));
+        // Each answer asks for a frame, so it is drawn without waiting for input.
+        let ctx = egui::Context::default();
+        let repaints = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counted = repaints.clone();
+        ctx.set_request_repaint_callback(move |_| {
+            counted.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        });
+        photos.check(here.clone(), &ctx);
+        photos.check(missing.clone(), &ctx);
+        let started = Instant::now();
+        while !photos.gone(&missing) && started.elapsed() < Duration::from_secs(5) {
+            photos.take();
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        assert!(photos.gone(&missing));
+        assert!(!photos.gone(&here));
+        let started = Instant::now();
+        // egui asks once for requests made before the frame they ask for.
+        while repaints.load(std::sync::atomic::Ordering::SeqCst) == 0
+            && started.elapsed() < Duration::from_secs(5)
+        {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        assert!(repaints.load(std::sync::atomic::Ordering::SeqCst) >= 1);
     }
 }

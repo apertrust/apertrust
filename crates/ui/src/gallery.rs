@@ -31,10 +31,11 @@ use crate::components::{
     FileManager, GridCell, GridPanel, GridPanelAction, Histogram, HistogramBins, IconButton, Job,
     JobFailure, JobMessage, JobPhase, Jobs, Margin, Mark, Marker, MaskHistogram, PanelBody,
     PanelEdge, PanelEdgeAction, PanelTab, Patch, Patches, PhotoCaption, PhotoFrame, PickerButton,
-    PickerMarks, PickerPlace, Place, Quad, Rail, RailLine, RailNode, ReadoutRow, SaveState, Scale,
-    Scope, ScopeView, Section, SectionAction, Segmented, SliderAction, SliderRow, Swatch,
-    SwatchFill, Swatches, TabBar, TabBarAction, Thumb, Toggle, ToggleRow, ToolButton, TopPanel,
-    TopPanelAction, Track, VectorscopeBins, WaveformBins, Zoom, group_label,
+    PickerMarks, PickerPlace, Place, Quad, Rail, RailLine, RailNode, ReadoutRow, Reference,
+    ReferenceRow, SaveState, Scale, Scope, ScopeView, Section, SectionAction, Segmented,
+    SliderAction, SliderRow, Swatch, SwatchFill, Swatches, TabBar, TabBarAction, Thumb, Toggle,
+    ToggleRow, ToolButton, TopPanel, TopPanelAction, Track, VectorscopeBins, WaveformBins, Zoom,
+    group_label,
 };
 use crate::fonts::{MEDIUM, SEMIBOLD};
 use crate::i18n::{Args, Locale, Translator};
@@ -582,7 +583,7 @@ fn pickers(ui: &mut Ui, t: &Theme) {
         )
         .color(t.colors.text_secondary),
     );
-    // Exposure's area exposure mapping before a pick, and after one at L 45.2 %.
+    // A picker's patches before a pick, and after one at L 45.2 %.
     ui.push_id("patches", |ui| {
         let target = Patch {
             heading: "Target",
@@ -610,6 +611,48 @@ fn pickers(ui: &mut Ui, t: &Theme) {
     ui.label(
         RichText::new(
             "Patches: the input before a pick, outlined, and after one, beside the target.",
+        )
+        .color(t.colors.text_secondary),
+    );
+    // Exposure's reference row (decision 88) in each state: none, measuring, measured on
+    // this photo, on another, and on one no longer there.
+    ui.push_id("references", |ui| {
+        let grey = Color32::from_gray(150);
+        let set = |photo, gone| Reference::Set {
+            patch: grey,
+            value: "L 62 %",
+            photo: Some(photo),
+            gone,
+        };
+        let gone = "The photo it was measured on is no longer there";
+        let rows = [
+            ("none", Reference::None("none"), false),
+            ("measuring", Reference::Measuring("measuring…"), true),
+            ("this photo", set("· this photo", None), false),
+            ("another", set("· IMG_2041", None), false),
+            ("gone", set("· IMG_2041", Some(gone)), false),
+        ];
+        for (id, reference, on) in rows {
+            ui.push_id(id, |ui| {
+                let picker = PickerButton::new("Set the reference from an area", on)
+                    .tip("Set the reference from an area");
+                ReferenceRow::new(
+                    "Reference",
+                    reference,
+                    picker,
+                    (
+                        "Reference options",
+                        "Clear Reference",
+                        "Set Reference from an Area",
+                    ),
+                )
+                .show(ui);
+            });
+        }
+    });
+    ui.label(
+        RichText::new(
+            "Reference rows: none, measuring, this photo, another photo, a photo gone, dimmed.",
         )
         .color(t.colors.text_secondary),
     );

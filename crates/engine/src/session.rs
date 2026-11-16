@@ -1011,6 +1011,11 @@ pub enum SessionError {
     /// what it wrote would reach the edit and its exports (decision 78).
     #[error("a tool is hidden in the view")]
     Hidden,
+    /// [`PickerCommand::On`] named a tool's picker that cannot start with the settings it
+    /// carries ([`apertrust_tools::Tool::picker_ready`], decision 88), as Exposure's toward
+    /// a reference with none set, so a script cannot pick toward nothing.
+    #[error("the colour picker cannot start with these settings")]
+    NotReady,
     /// The colour pickers could not be measured or read back; they are off for the rest
     /// of the session, and the frames go on without them.
     #[error("the colour pickers are off: {0}")]

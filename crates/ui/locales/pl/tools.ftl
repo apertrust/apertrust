@@ -452,8 +452,15 @@ tool-exposure-picker-exposure-promise-middle_grey = Ustaw obszar na średnią sz
 tool-exposure-picker-exposure-hint-middle_grey = Ustaw obszar na średnią szarość
 tool-exposure-picker-exposure-promise-lightness = Ustaw obszar na L { $lightness } %
 tool-exposure-picker-exposure-hint-lightness = Ustaw obszar na L { $lightness } %
-tool-exposure-picker-exposure-promise-reference = Wzorzec pojawi się w jednej z kolejnych wersji
-tool-exposure-picker-exposure-hint-reference = Wzorzec pojawi się w jednej z kolejnych wersji
+tool-exposure-picker-exposure-promise-reference = Dopasuj obszar do { $reference_photo } (L { $reference_lightness } %)
+tool-exposure-picker-exposure-hint-reference = Dopasuj obszar do { $reference_photo } (L { $reference_lightness } %)
+tool-exposure-picker-exposure-promise-reference-no-photo = Dopasuj obszar do L { $reference_lightness } %
+tool-exposure-picker-exposure-hint-reference-no-photo = Dopasuj obszar do L { $reference_lightness } %
+tool-exposure-picker-exposure-unavailable = Najpierw ustaw wzorzec próbnikiem w wierszu „Wzorzec”
+tool-exposure-picker-reference-label = Wzorzec
+tool-exposure-picker-reference-full = Ustaw wzorzec z obszaru
+tool-exposure-picker-reference-promise = Ustaw wzorzec z obszaru
+tool-exposure-picker-reference-hint = Przeciągnij po obszarze, który ma zostać wzorcem
 
 ## Kalibracja koloru (docs/tools/colour-calibration.md)
 

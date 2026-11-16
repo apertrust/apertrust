@@ -934,6 +934,16 @@ picker-patch-lch-tip = Te współrzędne LCh obliczono ze współrzędnych CIE L
 picker-patch-lightness = L: { $value }%
 picker-patch-none = L: b.d.
 
+reference-value = L { $lightness } %
+reference-photo = · { $photo }
+reference-this-photo = · to zdjęcie
+reference-none = brak
+reference-measuring = pomiar…
+reference-gone = Zdjęcia, na którym go zmierzono, już nie ma
+reference-more = Opcje wzorca
+reference-clear = Wyczyść wzorzec
+reference-set = Ustaw wzorzec z obszaru
+
 ## Okno eksportu (docs/gui.md, The Export dialog): moduł eksportu darktable, nazwy
 ## wielką literą tylko pierwszego słowa. $count to liczba zdjęć, jedno zdjęcie to dokładnie
 ## liczba 1. $file to nazwa zdjęcia lub pliku, $source plik raw, $folder folder, $width

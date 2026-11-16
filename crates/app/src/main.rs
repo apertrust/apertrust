@@ -1745,6 +1745,8 @@ struct Shell {
     locate: Option<PathBuf>,
     /// The recent folders that could not be opened when tried this run, and why.
     missing: BTreeMap<PathBuf, String>,
+    /// Whether the photos references were measured on are still there (decision 88).
+    references: pickers::ReferencePhotos,
     /// Whether Export… ran, for the app to open the Export dialog's sheet.
     export_asked: bool,
     /// Whether Export Again ran, for the app to send the preview that decides its question.
@@ -1869,6 +1871,7 @@ impl Shell {
             tree: BTreeMap::new(),
             locate: None,
             missing: BTreeMap::new(),
+            references: pickers::ReferencePhotos::new(),
             export_asked: false,
             export_again: false,
             export: settings.export.clone(),
@@ -3451,9 +3454,31 @@ impl App {
                     }
                     Reaction::FolderOpened(path) => self.shell.remember_folder(path),
                     // Settings a pick measured, kept as the user's own.
+                    // A reference's L comes with the photo it was measured on (decision 88).
+                    // The photo is the open one's: a reading of an earlier photo is stale
+                    // while the next opens, and never comes after its `Opened`.
                     Reaction::Measured { tool, settings } => {
+                        let photo = match &self.mirror.photo {
+                            PhotoState::Open(photo) => {
+                                Some(photo.path.to_string_lossy().into_owned())
+                            }
+                            _ => None,
+                        };
                         for (setting, value) in settings {
-                            self.shell.tool_settings.set(tool, setting, value);
+                            let Some(of) =
+                                tools::reference_photo(self.mirror.tools(), tool, setting)
+                            else {
+                                self.shell.tool_settings.set(tool, setting, value);
+                                continue;
+                            };
+                            let kept = &mut self.shell.tool_settings;
+                            let was = kept.text(tool, of).map(str::to_owned);
+                            kept.set_reference(tool, (setting, of), value, photo.clone());
+                            // Asked after again only where it changed.
+                            let now = kept.text(tool, of).map(str::to_owned);
+                            if let Some(path) = now.filter(|now| was.as_ref() != Some(now)) {
+                                self.shell.references.check(path, ctx);
+                            }
                         }
                     }
                     Reaction::FolderFailed { path, reason } => {
@@ -3617,6 +3642,18 @@ impl App {
                     self.send_picker(PickerCommand::Settings { tool, settings }, ctx);
                 }
             }
+            // Both go together (decision 88); a picker toward it turns off in the session.
+            Change::ClearReference {
+                tool,
+                lightness,
+                photo,
+            } => {
+                (self.shell.tool_settings).clear_reference(tool, (lightness, photo));
+                let settings = self.shell.tool_settings.of(tool);
+                let number = self.send_picker(PickerCommand::Settings { tool, settings }, ctx);
+                // A pick measured before it hands no reference back over the clear.
+                self.mirror.picked.settings_cleared(tool, number);
+            }
         }
     }
 
@@ -3624,7 +3661,7 @@ impl App {
     /// picker turned on, with the focus moved to the photo, or off, and a region moved; the
     /// live region waits for the reading of a command that applies one, and the save
     /// state, for a command that completes a change, for the values its pick reports.
-    fn send_picker(&mut self, command: PickerCommand, ctx: &egui::Context) {
+    fn send_picker(&mut self, command: PickerCommand, ctx: &egui::Context) -> u64 {
         let showing = pickers::Showing::of(&command, self.mirror.tools());
         // A tool's pick is a change on the edit, which the session answers with a
         // write, or the edit reported held where it wrote nothing; the Colour picker's
@@ -3642,6 +3679,7 @@ impl App {
             &mirror.values,
             ctx,
         );
+        number
     }
 
     /// Sends a command that changes the edit: the top panel's save state waits for the
@@ -4980,6 +5018,16 @@ impl eframe::App for App {
         if self.shell.recents.take() {
             ctx.request_repaint();
         }
+        // A reference's photo asked after again as each photo opens; the answers drawn as they
+        // come (decision 88).
+        if self.shell.references.photo_opened(self.mirror.photo.open()) {
+            for path in self.shell.tool_settings.texts() {
+                self.shell.references.check(path.to_owned(), ctx);
+            }
+        }
+        if self.shell.references.take() {
+            ctx.request_repaint();
+        }
         let chosen = self.menus.as_ref().map(menus::NativeMenus::chosen);
         let chosen = chosen.unwrap_or_default();
         // A choice in the menus with the start window closed shows it again for what it
@@ -5972,6 +6020,7 @@ fn edit_tab(
         _ => None,
     };
     let view_only = view_only.map(|view_only| view_only_notice(&words, view_only));
+    let gone = |path: &str| shell.references.gone(path);
     let pickers = tools::Pickers {
         drawn: tools::PICKING,
         on: mirror.pickers.active(),
@@ -5979,6 +6028,8 @@ fn edit_tab(
         why: opening.as_deref().or(view_only.as_deref()),
         settings: &shell.tool_settings,
         picked: &mirror.picked,
+        photo: mirror.photo.asked(),
+        gone: &gone,
     };
     let (scopes, changes) = panel_body(
         ui,
