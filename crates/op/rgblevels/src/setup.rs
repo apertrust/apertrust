@@ -278,6 +278,10 @@ fn check(levels: &Levels) -> Result<(), NotPorted> {
     if white <= black {
         return refuse("a white point at or below the black point");
     }
+    let distance = white - black;
+    if !(1.0 / distance).is_finite() || distance * 0.5 == 0.0 {
+        return refuse("black and white points too close for a finite scale");
+    }
     if !(black..=white).contains(&grey) {
         return refuse("a grey point outside the black and white points");
     }
@@ -287,6 +291,18 @@ fn check(levels: &Levels) -> Result<(), NotPorted> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn subnormal_spacing_is_refused() {
+        assert!(
+            check(&Levels {
+                black: 0.0,
+                grey: 0.0,
+                white: 1e-39
+            })
+            .is_err()
+        );
+    }
 
     fn rec2020() -> WorkingProfile {
         WorkingProfile::linear_rec2020()

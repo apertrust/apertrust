@@ -683,7 +683,9 @@ mod mac {
     use apertrust_ui::{Locale, Translator, translator};
     use eframe::egui::{self, Key, os::OperatingSystem};
     use muda::accelerator::{Key as Logical, KeyAccelerator, Modifiers as Held, NamedKey};
-    use muda::{MenuEvent, MenuId, MenuItem, PredefinedMenuItem, Submenu};
+    use muda::{
+        CheckMenuItem, IsMenuItem, MenuEvent, MenuId, MenuItem, PredefinedMenuItem, Submenu,
+    };
 
     use super::{
         Entry, Listed, Recent, Role, Shown, Steps, System, groups, listed, lists_recents, menus,
@@ -715,7 +717,7 @@ mod mac {
     /// An action's item, where it sits and what it shows.
     struct Placed {
         id: ActionId,
-        item: MenuItem,
+        item: ActionItem,
         menu: Submenu,
         position: usize,
         shown: Shown,
@@ -725,6 +727,41 @@ mod mac {
     enum Titled {
         Menu(Submenu),
         System(PredefinedMenuItem),
+    }
+
+    enum ActionItem {
+        Plain(MenuItem),
+        Checked(CheckMenuItem),
+    }
+
+    impl ActionItem {
+        fn as_item(&self) -> &dyn IsMenuItem {
+            match self {
+                Self::Plain(item) => item,
+                Self::Checked(item) => item,
+            }
+        }
+
+        fn set_text(&self, text: &str) {
+            match self {
+                Self::Plain(item) => item.set_text(text),
+                Self::Checked(item) => item.set_text(text),
+            }
+        }
+
+        fn set_enabled(&self, enabled: bool) {
+            match self {
+                Self::Plain(item) => item.set_enabled(enabled),
+                Self::Checked(item) => item.set_enabled(enabled),
+            }
+        }
+
+        fn set_key_accelerator(&self, key: Option<KeyAccelerator>) -> muda::Result<()> {
+            match self {
+                Self::Plain(item) => item.set_key_accelerator(key),
+                Self::Checked(item) => item.set_key_accelerator(key),
+            }
+        }
     }
 
     /// A menu whose items follow the recents, with what it shows now, none until it is
@@ -843,7 +880,7 @@ mod mac {
                             submenu.append(&item)?;
                             self.items.push(Placed {
                                 id: *id,
-                                item,
+                                item: ActionItem::Plain(item),
                                 menu: submenu.clone(),
                                 position,
                                 shown: Shown {
@@ -925,6 +962,12 @@ mod mac {
             let focus = Focus::of(ctx);
             for placed in &mut self.items {
                 let now = shown(placed.id, keymap, state, focus);
+                if let Some(checked) =
+                    actions::action(placed.id).and_then(|action| action.checked(state))
+                    && let Err(error) = placed.set_checked(checked)
+                {
+                    tracing::warn!(target: "gpu", "menu check for {} not set: {error}", placed.id.0);
+                }
                 if now.enabled != placed.shown.enabled {
                     placed.item.set_enabled(now.enabled);
                 }
@@ -955,6 +998,23 @@ mod mac {
     }
 
     impl Placed {
+        fn set_checked(&mut self, checked: bool) -> muda::Result<()> {
+            if let ActionItem::Checked(item) = &self.item {
+                item.set_checked(checked);
+                return Ok(());
+            }
+            let item =
+                CheckMenuItem::with_id(self.id.0, &self.words, self.shown.enabled, checked, None);
+            item.set_key_accelerator(self.shown.key.and_then(key_equivalent))?;
+            self.menu.remove(self.item.as_item())?;
+            if let Err(error) = self.menu.insert(&item, self.position) {
+                let _ = self.menu.insert(self.item.as_item(), self.position);
+                return Err(error);
+            }
+            self.item = ActionItem::Checked(item);
+            Ok(())
+        }
+
         /// Gives the item `key` as its key equivalent, or none. Given none, muda 0.21 keeps
         /// the key equivalent it had (muda 0.21 leaves it in place), so the item is then put
         /// back in its place, which builds it afresh without one. That relies on AppKit
@@ -964,8 +1024,8 @@ mod mac {
             let none = key.is_none();
             self.item.set_key_accelerator(key)?;
             if none {
-                self.menu.remove(&self.item)?;
-                self.menu.insert(&self.item, self.position)?;
+                self.menu.remove(self.item.as_item())?;
+                self.menu.insert(self.item.as_item(), self.position)?;
             }
             Ok(())
         }

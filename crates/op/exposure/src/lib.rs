@@ -249,7 +249,7 @@ impl Operation for Exposure {
     /// without a histogram manual mode's; there the black still applies, put 0.01 below the
     /// white that exposure renders where it reaches it, the tool's rule, so the kernel's
     /// `2^−e − b` stays positive whatever the photo gives, the tool leaving it within ±1
-    /// alone. In manual mode the tool holds it so itself.
+    /// alone. The operation also enforces this for callers without a tool.
     fn prepare(
         &self,
         params: &ParamValues,
@@ -262,7 +262,7 @@ impl Operation for Exposure {
         // The tool's rule, darktable's margin (decision 30): a black that reaches the white
         // goes 0.01 below it, any other is kept.
         let white = (-exposure).exp2();
-        let black = if params.choice("mode") == AUTOMATIC && black >= white {
+        let black = if black >= white {
             white - WHITE_MARGIN
         } else {
             black
@@ -281,6 +281,18 @@ mod tests {
     use apertrust_plugin::{Camera, Pattern};
 
     use super::*;
+
+    #[test]
+    fn manual_black_cannot_reach_the_effective_white() {
+        let image = raw(true, 0.0);
+        let input = ImageDesc::rgba(1, 1);
+        let mut values = ParamValues::new();
+        values.set("exposure", Value::Float(1.0));
+        values.set("black", Value::Float(0.5));
+        values.set("compensate_exposure_bias", Value::Bool(false));
+        values.set("compensate_hilite_pres", Value::Bool(false));
+        assert_eq!(prepared(&image, &input, &values), [0.5 - WHITE_MARGIN, 1.0]);
+    }
 
     fn raw(cfa: bool, exposure_bias: f32) -> ImageContext {
         let pattern = |values: Vec<u32>| Pattern {

@@ -394,3 +394,7 @@ All pass on the Apple M4; the GPU tests run on CI's software GPUs too.
 7. **Guards darktable lacks,** so that every value the kernel computes stays finite for any input and any setting the schema allows, not only its output (Deliberate differences): guards at the points that can overflow or divide by 0, each set beyond any photo's values, with the cone responses held from 0 with their sign, so real blue and violet light keep darktable's negative gain under Bradford. They are checked on the kernel's maths restated, value by value. Lighter schemes would not do: the input clamp and the floors alone leave `max()` to drop a NaN, as darktable's `fmaxf` does, which WGSL does not promise, and a lower input limit alone cannot bound a normalised mixer row whose sum is near 0 or a chromaticity whose X + Y + Z nearly cancels.
 8. **Golden cases beyond the tests' settings:** the camera case's stored x and y set to E's, so that a fallback would show (Test plan); the bypass case names no gradient parameter, since its derivatives are 0 by construction.
 9. **The pixel's derivative:** both entry points pass the pixel as a differentiable pair and discard its derivative, rather than declaring it `no_diff` in the entry points only, so the generated code already carries what dLoss/dInput needs; `main`, the render's pass, is unaffected.
+
+### Input validation
+
+Operation setup refuses a positive gamut value whose reciprocal cannot be represented as a finite fp32 compression. Zero retains its explicit compression-bypass behaviour.

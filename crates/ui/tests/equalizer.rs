@@ -137,7 +137,7 @@ fn falloff(d: f32, sigma: f32) -> f32 {
 }
 
 fn close(a: &[f32], b: &[f32]) -> bool {
-    a.iter().zip(b).all(|(a, b)| (a - b).abs() < 1e-4)
+    a.len() == b.len() && a.iter().zip(b).all(|(a, b)| (a - b).abs() < 1e-4)
 }
 
 #[test]

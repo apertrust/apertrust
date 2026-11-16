@@ -571,6 +571,11 @@ fn screen_readers_hear_a_failed_write_and_saving_working_again_and_nothing_else(
         assert_eq!(step(SaveState::Failed("disk full")), failed, "{locale:?}");
         // A write that succeeds says Saved, kept as later saves come.
         let saved = words.text("status-saved");
+        assert_ne!(
+            step(SaveState::Saving),
+            saved,
+            "a retry has not succeeded: {locale:?}"
+        );
         assert_eq!(step(SaveState::Saved), saved, "{locale:?}");
         assert_eq!(step(SaveState::Saving), saved, "{locale:?}");
         // A photo left with its write failed is the central panel's to tell: no Saved.

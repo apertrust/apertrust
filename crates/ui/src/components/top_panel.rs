@@ -712,11 +712,12 @@ fn announce(ui: &Ui, state: SaveState<'_>, because: &dyn Fn(&str) -> String) -> 
                 heard.failed = Some(why.to_owned());
             }
         }
-        SaveState::Saved | SaveState::Saving => {
+        SaveState::Saved => {
             if heard.failed.take().is_some() {
                 heard.said = tr(ui.ctx(), "status-saved");
             }
         }
+        SaveState::Saving => {}
         SaveState::None => heard.failed = None,
     }
     let said = heard.said.clone();

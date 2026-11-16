@@ -78,12 +78,17 @@ fn gamut_map(hsb: &mut [f32; 3], gamut: &[f32], white: f32) {
 
 /// darktable `scharr_gradient`, at (row, col) of `p`, `w` across.
 fn scharr(p: &[f32], k: usize, w: usize) -> f32 {
-    let at = |offset: isize| p[(k as isize + offset) as usize];
-    let w = w as isize;
-    let gx = 47.0 / 255.0 * (at(-w - 1) - at(-w + 1) + at(w - 1) - at(w + 1))
-        + 162.0 / 255.0 * (at(-1) - at(1));
-    let gy = 47.0 / 255.0 * (at(-w - 1) - at(w - 1) + at(-w + 1) - at(w + 1))
-        + 162.0 / 255.0 * (at(-w) - at(w));
+    let h = p.len() / w;
+    let (row, col) = (k / w, k % w);
+    let at = |dx: isize, dy: isize| {
+        let x = col.saturating_add_signed(dx).min(w - 1);
+        let y = row.saturating_add_signed(dy).min(h - 1);
+        p[y * w + x]
+    };
+    let gx = 47.0 / 255.0 * (at(-1, -1) - at(1, -1) + at(-1, 1) - at(1, 1))
+        + 162.0 / 255.0 * (at(-1, 0) - at(1, 0));
+    let gy = 47.0 / 255.0 * (at(-1, -1) - at(-1, 1) + at(1, -1) - at(1, 1))
+        + 162.0 / 255.0 * (at(0, -1) - at(0, 1));
     (gx * gx + gy * gy).sqrt()
 }
 
@@ -376,8 +381,8 @@ pub fn guided(
             let jch = ucs::luv_to_jch(l_scharr[k], p.white, [uv[2 * k], uv[2 * k + 1]]);
             let hsb = ucs::jch_to_hsb(jch);
             if settings.use_filter {
-                let vrow = (height - 2).min(row.max(1));
-                let vcol = (width - 2).min(col.max(1));
+                let vrow = height.saturating_sub(2).min(row.max(1));
+                let vcol = width.saturating_sub(2).min(col.max(1));
                 let kk = vrow * width + vcol;
                 let gradient = (scharr(&saturation, kk, width) - 0.02).max(0.0);
                 l_scharr[k] = p.gradient_amp * (gradient * gradient);
@@ -456,4 +461,15 @@ pub fn process(
             [r, g, b, pixel[3]]
         })
         .collect()
+}
+
+#[cfg(test)]
+mod boundary_tests {
+    #[test]
+    fn scharr_clamps_neighbours_on_small_images() {
+        assert_eq!(super::scharr(&[0.5], 0, 1), 0.0);
+        for k in 0..4 {
+            assert!(super::scharr(&[0.0, 0.2, 0.4, 0.6], k, 2).is_finite());
+        }
+    }
 }

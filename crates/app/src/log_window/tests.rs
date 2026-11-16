@@ -28,6 +28,24 @@ use super::*;
 use crate::dialog_host;
 use crate::testing::kept;
 
+#[test]
+fn arrivals_are_counted_when_the_retained_buffer_is_full() {
+    let (kept, dispatch, _serial) = kept(Some(&[Domain::PERF]));
+    let mut window = Window::new(kept, None);
+    tracing::dispatcher::with_default(&dispatch, || {
+        for _ in 0..CAPACITY {
+            tracing::debug!(target: "perf", "retained");
+        }
+    });
+    window.update();
+    assert_eq!(window.shown.len(), CAPACITY);
+    tracing::dispatcher::with_default(&dispatch, || {
+        tracing::debug!(target: "perf", "new arrival");
+    });
+    assert_eq!(window.update(), 1);
+    assert_eq!(window.shown.len(), CAPACITY);
+}
+
 /// The window as the host draws it, and what it asked.
 struct Bench {
     window: Window,

@@ -149,7 +149,6 @@ impl Window {
     fn update(&mut self) -> usize {
         let read = self.kept.read(&mut self.cursor);
         let keeps = self.kept.switches();
-        let before = self.shown.len();
         let restarted = read.restarted || keeps.is_none();
         if restarted {
             self.lines.clear();
@@ -159,6 +158,11 @@ impl Window {
             || read.pending != self.pending
             || keeps != self.keeps;
         self.keeps = keeps;
+        let arriving = read
+            .lines
+            .iter()
+            .filter(|line| shows(&self.active_filters(), line))
+            .count();
         self.lines.extend(read.lines);
         let over = self.lines.len().saturating_sub(CAPACITY);
         self.lines.drain(..over);
@@ -171,21 +175,26 @@ impl Window {
         if restarted {
             self.shown.len()
         } else {
-            self.shown.len().saturating_sub(before)
+            arriving
         }
     }
 
     /// The lines shown, again, as the lines or the filters changed: a filter whose lines
     /// are not kept shows none, as its box is drawn.
     fn filter(&mut self) {
-        let mut filters = self.filters;
-        for (i, (domain, _)) in <Domain as Choice>::OPTIONS.iter().enumerate() {
-            filters.domains[i] &= kept(self.keeps.as_ref(), domain);
-        }
+        let filters = self.active_filters();
         self.shown = (0..self.lines.len())
             .filter(|i| shows(&filters, &self.lines[*i]))
             .collect();
         self.pending_shown = self.pending.as_ref().is_some_and(|l| shows(&filters, l));
+    }
+
+    fn active_filters(&self) -> Filters {
+        let mut filters = self.filters;
+        for (i, (domain, _)) in <Domain as Choice>::OPTIONS.iter().enumerate() {
+            filters.domains[i] &= kept(self.keeps.as_ref(), domain);
+        }
+        filters
     }
 
     /// The lines shown, oldest first.
