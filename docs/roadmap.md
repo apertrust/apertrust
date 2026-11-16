@@ -116,6 +116,14 @@ Goal: open, edit, save and reopen a photo with the first pass's tools. Migration
 - [ ] Native dialogs and alerts on Windows: their frame is built; the owner disabled while one is open and the task dialog are left.
 - [x] An edit written by a newer Apertrust opens for viewing only and is never overwritten.
 
+**Next: one instance per user data folder, a window per place** (decision 89; [gui.md](gui.md#instances-and-windows)), five steps, each a pull request reviewed before the next:
+
+- [ ] 1. The single-instance hand-off, still one window: the instance lock in the user data folder, the Unix socket or named pipe, a second start or Open With handing its paths and activation token to the running app and exiting, Windows' files opened together joined into one open, a start with flags for one run refused; an open from outside replaces the window's place, as now.
+- [ ] 2. A spike: the main window in the app's own winit, egui-winit and egui-wgpu host instead of eframe, with AccessKit, measured on the Mac, Windows and Linux before it is committed to.
+- [ ] 3. Several sessions on one device: every window's session on one engine thread, the key window's photo live, one memory budget, one kernel cache and one edit per photo in the process.
+- [ ] 4. Several windows: New Window, the Mac's Window menu, settings sent to every window, closing a place giving the start window, the last window's close button and Quit, dialogs parented to their window.
+- [ ] 5. Files opened from outside in a new window, with the setting for the current window instead, and another user data folder's name in the windows' titles.
+
 ### Editing
 
 - [x] The viewport with app-managed colour.
@@ -195,7 +203,7 @@ Folders first, before any library: a folder of raws opens as it is, with nothing
 - [ ] Several photos shown at once, the active one live and the rest still images, once spike W1 has measured it (decision 37).
 - [x] One photo from a terminal, writing nothing but its edit and never in the recents, with Browse's Open This Folder; a folder from a terminal in folder mode (decision 46).
 - [x] Open With and a double-click from the system, on macOS through its open-documents event and on Windows and Linux through the registrations, which pass the files alone (decision 46).
-- [x] Every photo opened, by any route, opening alone (decision 46): Open With, a double-click on a raw or its edit, File › Open…, raws dropped and `apertrust FILE`, never in the recents and with no folder tree, Open This Folder the one way to its folder; several opened together held together, from any folders, except Open With on Windows, where Explorer starts the app once per file until one instance hands its files to another (step 9d).
+- [x] Every photo opened, by any route, opening alone (decision 46): Open With, a double-click on a raw or its edit, File › Open…, raws dropped and `apertrust FILE`, never in the recents and with no folder tree, Open This Folder the one way to its folder; several opened together held together, from any folders, except Open With on Windows, where Explorer starts the app once per file until the single-instance hand-off below joins them (step 9d).
 - [x] The start window: what was open last reopened at the start, File › Close, and the recent folders with the ways to open one, libraries and projects joining it with the library (step 22; [gui.md](gui.md#the-start-window)).
 
 ### The jobs window and the job API

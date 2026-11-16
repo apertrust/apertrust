@@ -12,7 +12,7 @@ What the interface looks like and how it behaves is designed on the [UI wirefram
 | --- | --- |
 | How it fits together | [What is built](#what-is-built), [Goals](#goals), [Why egui](#why-egui), [Display colour](#display-colour), [Layers](#layers), [A frame](#a-frame) |
 | Foundations | [Design system](#design-system) (tokens, themes, components, [on-photo overlays](#on-photo-overlays)), [Translation](#translation) |
-| The window and the platform | [The window frame and menus](#the-window-frame-and-menus), [The menu bar](#the-menu-bar), [Popups](#popups), [Dialogs and alerts](#dialogs-and-alerts), [Sheets](#sheets), [The Export sheet](#the-export-sheet), [The start window](#the-start-window) |
+| The window and the platform | [The window frame and menus](#the-window-frame-and-menus), [The menu bar](#the-menu-bar), [Popups](#popups), [Dialogs and alerts](#dialogs-and-alerts), [Sheets](#sheets), [The Export sheet](#the-export-sheet), [Instances and windows](#instances-and-windows), [The start window](#the-start-window) |
 | The panels | [The shell](#the-shell) (the layouts, selection, workspaces, the top panel, the side panel, the photo frame, the central bar, the caption, the grid panel), [Tool panels from definitions](#tool-panels-from-definitions) |
 | Controls | [Slider values and choices](#slider-values-and-choices), [Painted widgets](#painted-widgets): [the curve](#the-curve), [the equalizer](#the-equalizer), [the scopes](#the-scopes) |
 | Keys and settings | [Keyboard and actions](#keyboard-and-actions), [Settings and workspace](#settings-and-workspace) |
@@ -404,7 +404,7 @@ What the menus hold is [the menu bar](#the-menu-bar)'s. Built: the frames of the
 - **The window never moves by its background** (`with_movable_by_background(false)`), so dragging a slider never moves it.
 - **A move starts when a drag does,** not on the press, so a double-click on the top panel stays a double-click. The drag must go egui's click distance, 6 points, or the press be held 0.8 s; the window then trails the pointer by that much (a 40-point drag moved it 31 to 32 points on the M4).
 - **What counts as empty** is read from the pointer, not from a widget under the bar, which would take from each control egui's 5-point margin, within which a near press goes to the closest control. The top panel's controls with that margin, disabled ones included, are not empty areas: a drag or a double-click on a greyed-out Undo does nothing. Its title and the status slots at its end, while they show nothing or Saving…, are empty areas; the save warning and the jobs spinner are not, and nothing under a popup over the bar is. Each new press may move the window again, since the system's window drag can swallow the last release.
-- **The window keeps its title,** hidden in the Mac's frame, for Mission Control, the Window menu, the taskbar and screen readers.
+- **The window keeps its title,** hidden in the Mac's frame, for Mission Control, the Window menu, the taskbar and screen readers. With a user data folder other than the default, it ends with the folder's name, "Apertrust — work" (decision 89, planned; [Instances and windows](#instances-and-windows)).
 - **Scale.** Everything the frame draws is in points, so it follows a monitor's scale; on Windows winit applies the system's suggested rectangle on `WM_DPICHANGED`.
 - **The minimum window size** is 500 by 600 points on every platform, so Windows 11's half and third snap zones take the window (Microsoft asks for 500 effective pixels or less), and macOS's and the Linux desktops' tiling gain too. The quarter zones need a height of about 520 on a 1080-pixel screen, which 600 keeps out.
   - Below 960 points the shell gives way: the top panel drops its words, the ☰ of Windows and Linux never folding (decision 39), in the order [the top panel](#the-top-panel) gives, down to Undo, Redo and ⋯.
@@ -457,7 +457,7 @@ The engine's photo is not rendered for each step of a resize: the app holds the 
   - The subclass also hands the maximise button's non-client hover, press and release to egui, so it is drawn like the other two.
   - winit answers no `WM_NCHITTEST`, and without `HTMAXBUTTON` there Windows shows no flyout (Microsoft's guidance); Win+Z and dragging to the edges snap all the same. Windows is first-class once the second step is in.
 - **Linux's frame** is built in the app (`CAPTION_BUTTONS`), on X11 and Wayland alike: decorations off, the top panel the title bar with the caption buttons at its end, Restore while egui's viewport info says the window is maximised, and no top panel in full screen.
-  - Minimise and Maximise or Restore send `Minimized` and `Maximized`. Close runs the Quit action, so the app leaves as on any close, its settings written.
+  - Minimise and Maximise or Restore send `Minimized` and `Maximized`. Close runs the Quit action, so the app leaves as on any close, its settings written. With several windows (decision 89, planned) it closes its own window, and quits only on the last ([Closing and quitting](#closing-and-quitting)).
   - A drag from the empty areas sends `StartDrag`, so the compositor or window manager moves the window, its edge tiling included, and the next frame gets the release it may keep (`release_after_drag`). A double-click maximises or restores.
   - A right-click calls winit's `show_window_menu` at the pointer, in physical pixels, which opens the compositor's menu on Wayland and does nothing on X11. winit hands the compositor the latest button serial, the release's, where GNOME's own title bars open the menu on the press; whether Mutter accepts it is for the hand check.
   - The resize bands, `RESIZE_BAND` (6 points) inside each edge and a corner where two meet, are off while the window is maximised or in full screen. A press in one is taken from egui's input before the frame (`resize_press`), so no control under the band sees it, and sends `BeginResize`. Over them, with no button down, the resize cursor replaces any a widget asked for.
@@ -617,6 +617,7 @@ macOS only: the app menu, which macOS titles with the app's name.
 
 | Item | Action | Keys | Now |
 | --- | --- | --- | --- |
+| New Window | `new-window` | Ctrl+N | New, with several windows (decision 89): a start window, cascaded from the key window ([Instances and windows](#instances-and-windows)) |
 | Open… | `open` | Ctrl+O | Built for raws in folder mode; a library's or a project's file in Phase 5 |
 | Open Folder… | `open-folder` | Ctrl+Shift+O | Built, after Open…: the platform's folder dialog, asynchronous as the open dialog is, starting in the open folder, else the open photo's, else Pictures; the folder chosen goes to the session as `Command::Library(Open(Folder))` |
 | Open Recent → the last ten folders, and from Phase 5 libraries and projects, opened, newest first, the start window's list; —; Clear Menu | `open-recent-1` to `open-recent-10`, by place; `clear-recent` | — | Built, on the Mac's bar and in the ☰ (`crates/app/src/recents.rs`, `menus.rs`'s `Entry::Recents`) |
@@ -652,8 +653,8 @@ macOS only: the app menu, which macOS titles with the app's name.
   - Where nothing opens, a system alert says why and names what it talks about: libraries and projects come in a later version, naming the first library's or project's file dropped, or that an edit's photo is not in its folder, naming the edit and, in the message, the photo, whichever comes first, or else only folders and raw photos open, naming the first thing dropped; with OK, which Return and Escape press. A file that opens nothing beside one that opens says nothing.
   - Under a modal dialog, a sheet, a modal window, an alert, About or the open dialog, nothing dropped is taken, nor once it has been looked at if one opened meanwhile.
   - While something is dragged over the window, the photo and the grid panel are outlined inside their edge, 2 points (`separator_width`) in `focus_ring`, over what is drawn there; nothing shows under a modal dialog. Whether what is dragged would open is not known until it is dropped, since the disk is never asked while it hovers.
-- **Close Window** closes the key window: a dialog's own window when it has the focus; the start window, as its close button does; and otherwise the main window, where it does what Close does, and so does the main window's close button on the Mac (`close_window_runs` in `crates/app/src/main.rs`). With nothing open on the main window, the moment Open With's files are looked at, it ends Apertrust as Quit does, through the same exit, closing any dialog first. Neither loses a change: they wait for the edit's last write (principle 3). It rests under a modal dialog over the main window, as AppKit's does under a sheet, unless a dialog's own window has the focus, which it then closes. eframe ends with its root window, so the Mac's app hides its window rather than closing the last.
-- **Close** closes what is open, the photo, folder, library or project, and the main window with it, after the edit's last write, and shows [the start window](#the-start-window). On Windows and Linux the main window's close button still quits, as Quit does. What was open last is forgotten with it, where it is the folder closed, so the next start reopens nothing; closing a photo opened alone leaves it.
+- **Close Window** closes the key window: a dialog's own window when it has the focus; the start window, as its close button does; and otherwise the main window, where it does what Close does, and so does the main window's close button on the Mac (`close_window_runs` in `crates/app/src/main.rs`). With nothing open on the main window, the moment Open With's files are looked at, it ends Apertrust as Quit does, through the same exit, closing any dialog first. Neither loses a change: they wait for the edit's last write (principle 3). It rests under a modal dialog over the main window, as AppKit's does under a sheet, unless a dialog's own window has the focus, which it then closes. eframe ends with its root window, so the Mac's app hides its window rather than closing the last. With several windows (decision 89, planned), Close Window on a window holding a place makes it the start window, on a start window closes it, and hides only the last, the app running on ([Closing and quitting](#closing-and-quitting)).
+- **Close** closes what is open, the photo, folder, library or project, and the main window with it, after the edit's last write, and shows [the start window](#the-start-window). On Windows and Linux the main window's close button still quits, as Quit does. With several windows (decision 89, planned), Close acts on its own window alone, which becomes the start window on every platform, and a close button closes its window, quitting on Windows and Linux only when it is the last ([Closing and quitting](#closing-and-quitting)). What was open last is forgotten with it, where it is the folder closed, so the next start reopens nothing; closing a photo opened alone leaves it.
   - Built: the photo closes through the session (`Command::Close`, which saves what its edit still needs, as any photo left is saved), the folder through the library (`LibraryCommand::Close`), and the main window becomes the start window in the same frame, never drawn with nothing open. It is disabled with nothing open, on a dialog's own window and under a modal dialog.
 - **Only a root enters the recents:** a folder opened as a way in, the folder the person opened, Open This Folder's among them. A folder chosen in Browse's tree is a view inside the root and never does, and a photo opened alone never does (decision 46).
 - **Open Recent** lists the last ten folders opened, and from Phase 5 libraries and projects, newest first, never holding an edit: the start window's list, never one photo opened alone. They are the recents, kept in `state.toml` beside `settings.toml`, since the settings hold no photo ([settings.md](settings.md#the-settings-schema)), the one list Browse's recent folders and the start window read too. Whether each is there is checked off the interface's thread as the main window shows and again as it gains the focus. Each is named by its label, its open kind and its name, "Folder: 2026-10 Lisbon", as Browse names it, where the start window shows its name with its kind at the row's end. Folders, libraries and projects are the open kinds, what a window holds, which one photo opened alone is not. Clear Menu empties it, leaving what was open last. Entries are not checked as the menu opens, since a NAS can be slow: one a check has found gone is drawn disabled; one whose opening failed this run stays enabled, its tooltip saying why, so choosing it tries again. With none, it holds only Clear Menu, disabled. A choice opens the folder its item showed, even where the list has changed since the menu was drawn.
@@ -792,7 +793,7 @@ macOS only: the menu AppKit fills once it is the app's Windows menu.
 | — | | | |
 | Bring All to Front | macOS's | — | macOS |
 | — | | | |
-| The window, by its title: the active photo's file name, or Apertrust with none, so the list says which photo | macOS's | — | macOS; the title is new |
+| Each window, by its title: the active photo's file name, or Apertrust with none, so the list says which photo, and with several windows (decision 89) one line each, Cmd+` cycling them | macOS's | Cmd+` | macOS; the title is new |
 
 #### Help
 
@@ -840,7 +841,7 @@ The menus open from one menu button, ☰, at the very start of the top panel, be
 | Quit | The app menu: Quit Apertrust | File, last: Exit | File, last: Quit |
 | Close Window | File, Cmd+W | — (the caption's close button) | — |
 | Services, Hide, Hide Others, Show All | The app menu | — | — |
-| A Window menu | Yes | — | — |
+| A Window menu | Yes, listing every main window (decision 89) | — (each window has its own ☰; the taskbar lists them) | — (the same) |
 | Full screen | Enter Full Screen and Exit Full Screen | Full Screen, checked | Full Screen, checked |
 | Showing the photo's file | Show in Finder | Show in Folder | Show in Folder |
 | Redo's key shown | Shift+Cmd+Z | Ctrl+Y, listed first on Windows | Ctrl+Shift+Z |
@@ -852,7 +853,7 @@ The menus open from one menu button, ☰, at the very start of the top panel, be
 - **A narrow top panel:** the ☰ never folds, and the menus need no room of their own, so the top panel gives way only by its actions and words ([the top panel](#the-top-panel)); every action hidden under ⋯ is also in the menus. This matters since the window's minimum width is 500 points, for Windows' snap zones (decision 39; how the side panel gives way in a narrow window is an open design item, [Open questions](#open-questions)).
 - **Inside an open menu,** typing a letter moves to the next item whose name starts with it, and Enter runs it, as menus without item access keys do on Windows; screen readers announce the item.
 
-**What the platforms provide.** macOS performs Services, Hide, Hide Others, Show All, Minimise, Zoom, its tiling items, Bring All to Front, the window list and the Help search, and adds AutoFill, Start Dictation… and Emoji & Symbols to Edit; these stay, Dictation included. It can also add full-screen and tab-bar items of its own to View: the menu has its own full-screen item, and Apertrust's one window has no tabs, so neither may appear (decision 39's checks). Windows keeps the window menu, Alt+Space, outside the menus. On Linux Apertrust draws everything.
+**What the platforms provide.** macOS performs Services, Hide, Hide Others, Show All, Minimise, Zoom, its tiling items, Bring All to Front, the window list and the Help search, and adds AutoFill, Start Dictation… and Emoji & Symbols to Edit; these stay, Dictation included. It can also add full-screen and tab-bar items of its own to View: the menu has its own full-screen item, and Apertrust's windows have no tabs, so neither may appear (decision 39's checks). Windows keeps the window menu, Alt+Space, outside the menus. On Linux Apertrust draws everything.
 
 ### Rules
 
@@ -1098,6 +1099,8 @@ Every dialog is a proper system modal window, and every confirmation the system'
 - The alerts on the Mac, `NSAlert` as a sheet, and on Linux, Apertrust's drawn alert in a dialog window, with Export's overwrite question and the quit alert as their first confirmations ([The alerts](#the-alerts)).
 - Wayland's parent relationship, with modality kept by the app. Windows' owner disabling and X11's native modality are [still to build](#still-to-build).
 
+**With several main windows** (decision 89, planned; [Instances and windows](#instances-and-windows)): each dialog and alert is parented to the window it rises from, and modal to that window alone, the others taking input; one dialog at a time per window; Settings and the jobs window stay one each in the app, coming forward where they are when another window asks for them. The main windows themselves join the host, once the spike has measured it.
+
 ### The dialog windows
 
 | | macOS | Windows | Linux, X11 | Linux, Wayland |
@@ -1165,7 +1168,7 @@ Where winit cannot:
 
 #### The menus while a dialog is open
 
-- **One dialog at a time.** The view's items rest. So does every action that opens a dialog, a file dialog or About, so one dialog is open at a time, as Apple asks of sheets, while a modal one is up: a sheet, a modal window of the host's (Settings' on Windows and Linux), About over the window, or the open dialog asking (`State::modal`).
+- **One dialog at a time,** in each window once there are several (decision 89). The view's items rest. So does every action that opens a dialog, a file dialog or About, so one dialog is open at a time, as Apple asks of sheets, while a modal one is up: a sheet, a modal window of the host's (Settings' on Windows and Linux), About over the window, or the open dialog asking (`State::modal`).
 - **View › Jobs stays:** the jobs window is modeless beside any dialog, so the jobs stay in reach under a sheet or the quit alert that waits for them.
 - **Help › Show Log stays:** the log window is modeless beside any dialog, so the log is in reach under a sheet or an alert.
 - **Close Window** rests then too, as AppKit's does under a sheet, unless a dialog's own window has the focus: it acts on the key window.
@@ -1985,6 +1988,91 @@ Every row is a sheet's setting row ([A sheet's rows](#a-sheets-rows)), each bool
 
 darktable's labels in sentence case and British English; "image" becomes "photo", "film roll" and "directory" become "folder" (decision 46), and "import job" becomes Shoot name, `$(JOBCODE)` kept. Its copy & import (Ctrl+Shift+I) is Import… (Ctrl+I); its "add to library…" is Open Folder… in folder mode and Import's Add in place in a library (Phase 5); its camera import, tethering and mounting are later, with libgphoto2 (decision 5). Its first-time alert about the base folder is left out, since the sample path is always shown; its Lua widgets are left out with Lua. The deliberate differences are decision 85's.
 
+## Instances and windows
+
+Decision 89, planned. The app runs **one process per user data folder**, holding **several main windows, one per open place**: a folder, a library, a project, or photos opened alone (decision 46). Each window is one view (decision 37); a window with no place is [the start window](#the-start-window). There is never a window per photo. Built today: one process per start and one main window; [the steps](#the-steps) are at the end.
+
+### A second start
+
+A start that finds an instance on its user data folder hands it what it was asked to open and exits.
+
+```mermaid
+sequenceDiagram
+    participant S as Second start
+    participant L as instance.lock
+    participant I as Running instance
+    S->>L: try_lock
+    L-->>S: held
+    S->>I: connect (socket or named pipe)
+    I-->>S: hello: format, process id
+    Note over S: Windows: AllowSetForegroundWindow(id)
+    S->>I: arguments, working folder, activation token, flags for one run
+    alt no flags for one run
+        I-->>S: Taken
+        Note over I: opens the paths as an open from outside, window forward
+    else flags for one run
+        I-->>S: Refused, reason
+        Note over I: alert in the key window, brought forward
+        Note over S: the reason on stderr, exit status 1
+    end
+```
+
+- **The lock** is `instance.lock` in the user data folder, held for the run with `File::try_lock`, the folder compared by its canonical path. **The channel** is a Unix socket, `apertrust-<hash>.sock` in `$XDG_RUNTIME_DIR` on Linux or `$TMPDIR` on macOS, or on Windows a named pipe, `\\.\pipe\apertrust-<hash>`, open to the user's own account; `<hash>` is the first 16 hex digits of BLAKE3 over the canonical path. The instance binds it before its first window opens, and a hand-off arriving meanwhile is taken once that window shows. The start that takes the lock removes a socket file a crash left.
+- **No answer:** a second start that cannot connect while the lock is held retries for 2 s, then says on stderr that the instance on that folder is not answering, and exits with status 1. **Another format,** another build on the folder, is refused, saying another version is running.
+- **No paths,** as a launcher's click on Windows or Linux: the instance's key window comes forward.
+- **Flags for one run,** `--safe-mode`, `--conf`, `-d`, a `--cache-dir` naming another folder than the instance's, and any such flag the app gains, refuse the start: the instance's alert, "Apertrust is already running with this folder", says to quit it first and start again; the same words go to stderr. They are never dropped, and never run a second instance on the folder.
+- **Not handed off:** `--help`, `--version` and `--list-adapters`, which take no lock. Restart now releases the lock and the channel before it starts the next process (decision 82).
+- **By platform:** macOS's LaunchServices sends opens to the running app as its open-documents event, and the channel serves a start of the binary from a terminal; Windows' Explorer starts a process per file, each handing off, and the instance joins those arriving within 500 ms of the last, its own command line included, into one open; Linux's desktop entry passes every file in one start. The window comes forward by the instance activating itself on the Mac, by `AllowSetForegroundWindow` on Windows, and by `XDG_ACTIVATION_TOKEN` on Wayland or `DESKTOP_STARTUP_ID` on X11 ([packaging.md](packaging.md#opening-a-raw-from-the-system)).
+
+### Where an open goes
+
+| Open | Goes to |
+| --- | --- |
+| From outside: Open With, a double-click, a drop on the Mac's Dock icon, a second start's paths | A new window; with `library.open_in` at `current_window` (Settings › General › Start: Open files from other apps in, The current window), the key window, its place replaced |
+| From inside a window: Open…, Open Folder…, Open Recent, the start window, Browse, Open This Folder, a drop on the window | That window, its place replaced, as now |
+| A place already open in a window | That window, brought forward: a folder by its canonical path, a library or project by its id, photos alone by the same set |
+| File › New Window (`new-window`, Ctrl+N) | A new start window, cascaded from the key window |
+
+Until several windows are built (step 4), an open from outside replaces the window's place, as it does now. A photo shown in two windows, as a folder's and as a photo opened alone, has one edit in the process, so two windows never write one sidecar apart.
+
+### Closing and quitting
+
+| | macOS | Windows and Linux |
+| --- | --- | --- |
+| Closing a place: File › Close, Ctrl+W on Windows and Linux, Cmd+W (Close Window) on a Mac window holding a place | That window becomes the start window, after its edit's last write | The same |
+| A window's close button, other windows open | That window closes, after its edit's last write | The same |
+| The close button on the last window | The start window shows, the app running on | The app quits, as Quit does |
+| Close Window on a start window | It closes; the last is hidden, the app running on, as now | — |
+| Quit | Every window closes, each after its edit's last write, the quit alert asked once in the key window for every job | The same |
+
+### Another user data folder
+
+A different `--user-data-dir` is another instance, side by side with the first, but **the same application**: one app id, icon, Dock and taskbar grouping and file associations.
+
+- **Opens from outside go to the default folder's instance.** On Windows and Linux they start with no folder given, so they reach it; on macOS an instance on another folder passes an open-documents event arriving after its start to the default folder's instance, starting it where none runs. Another folder's instance takes files only from its own command line.
+- **Its windows' titles end with the folder's name,** "Apertrust — work", "IMG_2041.ARW — work"; the default folder's show none.
+- **On the Mac** it starts from a terminal: `open -n -a Apertrust --args --user-data-dir DIR`, or the binary.
+- A separate application, with its own identity, is Apertrust Nightly alone ([settings.md](settings.md#user-data-folders)).
+
+### Inside the app
+
+- **The app** owns the settings store, the recents, the jobs' mirror and a registry of windows. **Each window** has its place, its session, its layout state, its egui context, its AccessKit adapter and its surface.
+- **The engine:** one engine thread per device serves every window's session, the key window's live frame first, then one bounded submission of background work across sessions. A window that is not the key window shows stills only, its photo live again once it is the key window. The memory budget and the kernels are the process's ([engine.md](engine.md#several-photos)).
+- **Settings** are written once and sent to every window and session. What a window remembers of its layout, the side panel's width and tab, the grid panel, its placement, is its own as it changes, the last change written as the next window's default and never pushed to the other windows.
+- **Menus** (decision 39): the Mac's one menu bar acts on the key window, with New Window in File and the Window menu listing every window by title, Cmd+` cycling them; on Windows and Linux each window has its ☰, acting on it.
+- **Dialogs and alerts** (decision 41) are parented to the window they rise from, one dialog at a time per window. Settings and the jobs window stay one each, the jobs' rows labelled with their place, and come forward where they are when another window asks for them.
+- **The host:** the main windows move from eframe's one root to the app's own winit, egui-winit and egui-wgpu host, as the dialog windows already are, each with its AccessKit adapter and the submit gate held round its callbacks (decision 18). A spike measures it first, step 2: a frame's time and a resize's against eframe's, the Mac's traffic lights and menu bar, drops, the input method, the paint callback, and VoiceOver, Narrator and Orca on two windows.
+
+### The steps
+
+Each step a pull request, reviewed before the next ([roadmap.md](roadmap.md#the-window-and-the-shell)):
+
+1. The single-instance hand-off, still one window, an open from outside replacing its place.
+2. The spike: the main window in the app's own host, AccessKit included.
+3. Several sessions on one device, sharing the engine thread, the budget, the kernels and one edit per photo.
+4. The shell: New Window, the Window menu, settings to every window, the closing and quitting rules, dialogs parented to their window, the start window on closing a place.
+5. Opens from outside in a new window, with `library.open_in`, and the user data folder's name in the title.
+
 ## The start window
 
 Built in Phase 2, with folder mode, for folders; libraries and projects join it in Phase 5. Its design is the [UI wireframe](https://claude.ai/artifact/V4r2xReSqn344AQstUgeiK)'s Start window frame; its code `crates/app/src/start.rs`, with when it shows and its window in `crates/app/src/main.rs`.
@@ -2011,11 +2099,11 @@ Built in Phase 2, with folder mode, for folders; libraries and projects join it 
 
 - **Built:** the chosen row alone takes the focus, which keeps ↑ and ↓ for the list, so Tab goes from it to a missing row's buttons, then to Open, and Shift+Tab back to the ways in; Enter on a button presses it. Screen readers meet the logo, the version, the copyright, the words and the ways in before the recents. The list is a list box named Recents, each row an option named by its name, selected while chosen, and described by its kind and its path, and for a missing one why it cannot be opened ("This folder is no longer there."). The app's keys work as on the main window, its menus' Open…, Open Folder…, Settings… and Quit among them; what acts on the main window or its photo rests, as on a modeless dialog's window with the focus (`in_start`). Under a modal dialog or alert, About among them, its keys are that dialog's.
 
-**Closing it:** on the Mac the app keeps running with no window shown, its menu bar still there, and a click on its Dock icon shows the start window again; on Windows and Linux closing it quits, as Quit does. File › Close closes the main window and shows the start window ([File](#file)).
+**Closing it:** on the Mac the app keeps running with no window shown, its menu bar still there, and a click on its Dock icon shows the start window again; on Windows and Linux closing it quits, as Quit does. File › Close closes the main window and shows the start window ([File](#file)). With several windows (decision 89, planned), each window holding no place is a start window: File › Close makes its own window one on every platform, File › New Window opens one, and closing one that is not the last closes it alone ([Closing and quitting](#closing-and-quitting)).
 
 - **Built:** on the Mac its close button, Escape and Close Window hide the window, the app running on with its menu bar; a click on the Dock icon, a menu's choice that opens something there and Finder's files show it again. The Dock's click reaches the app through `apertrust-display`, which gives winit's application delegate `applicationShouldHandleReopen:hasVisibleWindows:`, since winit 0.30 has none, as it gives it the open-documents event. Quit leaves, and Close Window and the close button rest under a modal dialog or alert. On Windows and Linux the app draws a close button at the end of its strip, and closing it runs Quit.
 
-**Its window** is the main window in its start state, at the start window's size, 820 by 520 points at the interface's scale, drawn with the design system's tokens and components. On the Mac its menu bar is the app's, every item that needs something open drawn disabled. It changes nothing of the one view (decision 37): the main window draws only the start window while nothing is open, and the shell again once something does, its side panel, tabs and settings as they were.
+**Its window** is a main window in its start state, at the start window's size, 820 by 520 points at the interface's scale, drawn with the design system's tokens and components. On the Mac its menu bar is the app's, every item that needs something open drawn disabled. It changes nothing of the one view (decision 37): the main window draws only the start window while nothing is open, and the shell again once something does, its side panel, tabs and settings as they were.
 
 - **Why the main window:** Wayland gives an app no way to hide a window and show it again, so a window of its own would leave the empty main window beside it there; and the main window already has what the start window needs, the file dialogs as a sheet on it, drops, the menus and keys, the window frame and screen readers. The dialog host's windows are for dialogs over the main window, and egui's viewports have no AccessKit (decision 41).
 - **Not built:** typing in the list to find a recent by its name, as the wireframe's frame has it.
@@ -2034,7 +2122,7 @@ Built in Phase 2, with folder mode, for folders; libraries and projects join it 
 
 ## The shell
 
-Apertrust is **one view** (decision 37): one window whose regions stay what they are whatever the person is doing.
+Apertrust is **one view** (decision 37): each main window, one per place (decision 89), is one view whose regions stay what they are whatever the person is doing.
 
 - The side panel's Photos tab chooses the photos; its other tabs edit one photo's pixels.
 - The central panel shows one of its layouts and changes only when the person asks.
@@ -3893,7 +3981,7 @@ The decisions this design rests on, by area; each decision record has the option
 | Dialogs and alerts | Every dialog a native window of its own, modal to the window it rises from, hosted by the app beside eframe's window with its own egui context, AccessKit adapter and surface on the engine's device; made modal as each platform does it (on the Mac a sheet, and Settings alone modeless, a native window of its own; an owned window with its owner disabled on Windows; transient-for and the modal state on X11; a parent on Wayland, with modality kept by the app); confirmations the system's alerts through one alert service, `NSAlert` and the task dialog, Linux's Apertrust's own in a dialog window; About and a future splash screen Apertrust's own over the window (decision 41) |
 | Sheets | Import and Export as one full-window sheet inside the main window, drawn the same on every platform: the sheet bar with the presets row over the column, a grid of the grid panel's cells checked to go, a column of tools on the side panel's side, 440 points by default, each with the tool panel's header, ↺ and ⋯ for Move Up and Move Down, every row a setting row; whole-sheet presets; a footer with a two-line summary, Keep open, Close and the primary button, which Return presses; a tool in one place (decision 86, planned; [Sheets](#sheets)) |
 | Export | darktable's export module row for row on the Export sheet: the photos it was opened with checked, the five export tools, D1 to D17, For sharing and Full size JPEG built in, the photos exported then the selection (decision 84, planned), built until then as a native modal dialog, a sheet on the Mac, with a Presets column; its feedback lines, the jobs window (decision 57); built on the session's export job, a `UserExport` job of darktable's control jobs (decision 57), darktable's size and resample, JPEG and PNG in Rust, each file written beside its name and renamed into place, its settings `export.*` settings and its presets `presets/export.toml` (decision 56; [The Export sheet](#the-export-sheet)) |
-| The engine and the window | eframe on the app's own event loop, the engine's submit gate held round each of its callbacks (`Gated`), so the window's surface is never reconfigured while the engine submits; during a resize the last frame scaled, the photo's new size sent once the window has kept it for 150 ms (decision 18) |
+| The engine and the window | eframe on the app's own event loop, the engine's submit gate held round each of its callbacks (`Gated`), so the window's surface is never reconfigured while the engine submits; during a resize the last frame scaled, the photo's new size sent once the window has kept it for 150 ms (decision 18); planned, every main window in the app's own host, the gate round each (decision 89) |
 | Menus | One model from the registry: the Mac's native menu bar through muda; on Windows and Linux one menu button, ☰, at the top panel's very start, before the mark, opening the menus drawn by egui through the popup service; the registry owns every key (decision 39) |
 | Icons | SVG files rendered by resvg at their pixel size, their lines 1.25 points wide, and tinted with a theme colour (decision 36); derived from Lucide's, with its ISC and MIT notices, or drawn in its style where it has none (decision 64) |
 | Accessibility | AccessKit on, every component reporting its role, label and value (decision 36) |
@@ -3901,6 +3989,7 @@ The decisions this design rests on, by area; each decision record has the option
 | Slider values and choices | darktable's: the value read-only at rest with its unit and sign, a click or a digit making it a field that takes a number, for now (darktable's expressions waiting until there is a need), darktable's popup for fine control on Enter, a right-click, Shift+F10 or the Menu key, drawn on every platform, a cancel put back by the session with no history step; choice rows Blended, darktable's combobox, in tool panels, the sheets' tools and the Export dialog as built, and Boxed elsewhere, the drawn dropdown filtering as darktable's (decisions 42, 84 and 86; [Slider values and choices](#slider-values-and-choices)) |
 | The side panel's layout | Each tab's pinned and scrolling sections and which float, the workspace's, in settings; changed by dragging a header, its ⋯, keys and the file; display order only, never the processing order; floating panels inside the window, belonging to no tab (decision 83; [Moving, pinning and floating sections](#moving-pinning-and-floating-sections)) |
 | The view | One view: the Photos tab choosing the photos; the central panel's layouts, Photo and later Map, switched only when asked, with no Grid; one set of tabs, kept as workspaces; the rating keys, Apply Edit and Export on every selected photo, the sliders and Reset on the active one; Export a dialog, Import and Print sheets, the slideshow an action (decision 37; [The shell](#the-shell)) |
+| Instances and windows | One process per user data folder, a second start handing its paths to it and exiting, one with flags for one run refused; several main windows, one per place, a place never open twice; opens from outside in a new window, or the key window by a setting; closing a place giving the start window, the last window's close button keeping the Mac's app running and quitting on Windows and Linux; another user data folder another instance of the same application; one engine thread per device for every window's session; the main windows in the app's own host after a spike (decision 89, planned; [Instances and windows](#instances-and-windows)) |
 
 ## Open questions
 
@@ -3909,6 +3998,7 @@ What is still undecided in the interface. Each says what the app does meanwhile.
 - **Spike D1 on Windows and Linux** (decision 41): one native test dialog through the app's dialog host on Windows 11, GNOME and KDE on Wayland and an X11 desktop. It measures the dialog's first frame, idle and behind a 61 MP first render; the main window's engine frames while it is open; focus, Escape and Enter; clicks on the main window; Narrator and Orca; a monitor of another scale; and Wayland's parent and modal hint on Mutter and KWin. On macOS neither the sheet nor the modeless window stops the main window's engine frames, and no app-modal window is needed.
 - **The shell between 960 and 500 points wide** (decision 39). The minimum width is 500 so that Windows 11's half and third snap zones take the window, and the shell must stay usable down to it, with the photo in sight and every action reached by the menus and keys. The top bar folds the actions' words first, then every action but Undo and Redo into ⋯, then the status words, and last Undo and Redo ([The top panel](#the-top-panel)). How the side panel narrows, hides or lies over the photo is still to design; until then it keeps at least 320 points, and at most half a wider window ([The side panel](#the-side-panel)). The minimum is lowered in code once the shell gives way. The quarter zones stay out, kept out by the minimum height of 600 points on a 1080-pixel screen.
 - **The panels' edges in the Tab order.** The side panel's and the grid panel's edges are drawn after the central panel, so their grab zones lie over it, and so Tab reaches each edge after the central panel's controls, not right after its own panel's last control as [Its size](#its-size) has it. Meanwhile the order is egui's, the order they are drawn in; F6 still lands on the grid panel's thumbnails first.
-- **A second start on Windows and Linux.** Explorer starts the app once for each file opened with it, and a file opened while the app runs starts it again: whether a second start hands its files to the running app, one window, as macOS's open-documents event does, is open. Meanwhile each start is an app of its own.
+- [x] **A second start on Windows and Linux:** settled by decision 89, a second start handing its files to the instance running on its user data folder and exiting, Windows' starts per file joined within 500 ms ([Instances and windows](#instances-and-windows)). Until step 1 is built each start is an app of its own.
+- **What the next start reopens with several windows** (decision 89). `library.reopen_last` reopens one place today, and Restart now passes what one window holds (decision 82). With several windows the next start could reopen every window open at Quit, each with its place, or only the key window's. Recommended: every window's place, in its own window, Restart now the same, since a restart that drops windows loses the person's set-up. Meanwhile, until step 4, there is one window, and it reopens as now.
 - **Retouch in the Detail tab** (decision 38): darktable's retouch comes as retouch layers, listed in the Layers section (decision 74; [layers.md](layers.md#retouch-layers)), and Detail lists Retouch too; what its entry there is, a section that adds a heal or clone layer or a view of those layers, is designed with layers. Meanwhile Detail has no Retouch, since nothing of it is built.
 - **Native popups' repaint** (decision 40): whether the window repaints while a native popup is open waits for a spike on the M4.
