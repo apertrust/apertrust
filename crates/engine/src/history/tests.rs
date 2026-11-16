@@ -536,6 +536,26 @@ fn a_step_is_described_control_by_control_before_and_after() {
 }
 
 #[test]
+fn a_merge_with_the_same_clock_refreshes_its_description() {
+    let image = testing::image();
+    let mut log = Log::default();
+    log.add(step(1, changed(&Edit::default(), &brightened(0.75))));
+    let mut described = Described::default();
+    let first = described.steps(&log, TOOLS, OPERATIONS, &image);
+    let clock = log.steps()[0].clock;
+    let replacement = Entry::between(&Edit::default(), &brightened(0.25)).remove(0);
+    assert!(log.merge(&replacement, clock));
+    let next = described.steps(&log, TOOLS, OPERATIONS, &image);
+    assert!(!Arc::ptr_eq(&first[0], &next[0]));
+    let brightness = next[0].changes[0]
+        .controls
+        .iter()
+        .find(|control| control.control == "brightness")
+        .unwrap();
+    assert_eq!(brightness.after, ControlValue::Number(0.25));
+}
+
+#[test]
 fn a_tool_or_operation_this_build_does_not_know_is_listed_by_its_stored_name() {
     let image = testing::image();
     let mut values = ToolValues::new();

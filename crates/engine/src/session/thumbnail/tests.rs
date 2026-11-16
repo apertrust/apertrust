@@ -553,6 +553,42 @@ fn an_unreadable_rendered_entry_falls_back_to_the_embedded_picture() {
 }
 
 #[test]
+fn a_render_arriving_after_a_failed_lookup_wins_over_the_fallback() {
+    let bench = Bench::new("rendered-after-miss", &["A.ARW"], Limit::Bytes(1 << 30));
+    let embedded = library::thumbnail_key(&bench.folder, "A.ARW", 256).unwrap();
+    let old = library::rendered_version(&apertrust_library::index::hash(b"old"));
+    bench
+        .cache
+        .write(THUMBNAILS, &embedded.slot, &old, b"broken jpeg")
+        .unwrap();
+    let newer = ThumbnailKey {
+        slot: embedded.slot.clone(),
+        version: library::rendered_version(&apertrust_library::index::hash(b"new")),
+    };
+    let sent = Mutex::new(None);
+    let mut first = true;
+    assert!(send_current_with(
+        &bench.upkeep,
+        &embedded.slot,
+        None,
+        Some(gradient()),
+        &|| false,
+        &|image| *sent.lock().unwrap() = image,
+        || {
+            if first {
+                first = false;
+                assert!(write(&bench.upkeep, &newer, &gradient_of(32, 24), "A.ARW"));
+                None
+            } else {
+                rendered_hit(&bench.upkeep, &embedded.slot)
+            }
+        }
+    ));
+    let image = sent.into_inner().unwrap().unwrap();
+    assert_eq!((image.width, image.height), (32, 24));
+}
+
+#[test]
 fn reset_replaces_a_render_but_a_superseded_write_changes_nothing() {
     let bench = Bench::new("rendered-reset", &["A.ARW"], Limit::Bytes(1 << 30));
     let embedded = library::thumbnail_key(&bench.folder, "A.ARW", 256).unwrap();

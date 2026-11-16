@@ -740,6 +740,22 @@ fn a_refused_release_leaves_its_gesture_a_step_of_its_own() {
     remove(&path);
 }
 
+#[test]
+fn a_refused_unknown_control_release_saves_the_completed_gesture() {
+    let path = scratch("history-refused-unknown-release");
+    let mut driven = Driven::new(&[&Sample]);
+    driven.open(&path);
+    driven.writes();
+    driven.run([set("brightness", ControlValue::Number(0.5), false)]);
+    let events = driven.run([set("missing", ControlValue::Number(0.5), true)]);
+    assert_eq!(failures(&events).len(), 1);
+    let sidecar = sidecar::path_for(&path);
+    assert_eq!(written(&driven.writes()), [(sidecar.as_path(), true)]);
+    let read = sidecar::read(&sidecar, OPERATIONS, &[&Sample], &[]).unwrap();
+    assert_eq!(read.edit.tools["sample"].number("brightness"), Some(0.5));
+    remove(&path);
+}
+
 /// A change not yet a step, a `Set` or a drag under way, is made one before Undo, which
 /// then takes it back; Redo puts it back.
 #[test]

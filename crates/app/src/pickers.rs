@@ -1069,13 +1069,6 @@ pub fn on_photo(ui: &mut egui::Ui, on: &OnPhoto) -> Vec<PickerCommand> {
     if matches!(drag, Some(Drag::Area { .. })) {
         ctx.set_cursor_icon(CursorIcon::Move);
     }
-    ctx.data_mut(|d| match drag {
-        Some(drag) => {
-            d.insert_temp(drag_id, drag);
-        }
-        None => d.remove::<Drag>(drag_id),
-    });
-
     // The keys and screen readers' actions, while the node has the focus.
     let (mut region, mut switched) = (on.region, on.switched);
     for command in &commands {
@@ -1105,6 +1098,8 @@ pub fn on_photo(ui: &mut egui::Ui, on: &OnPhoto) -> Vec<PickerCommand> {
             if command == PickerCommand::Off {
                 give_back(&ctx, on.picker);
             }
+            // Keyboard changes end a pointer gesture at its old region.
+            drag = None;
             (region, switched) = followed(&command, region, switched);
             commands.push(command);
         }
@@ -1127,11 +1122,19 @@ pub fn on_photo(ui: &mut egui::Ui, on: &OnPhoto) -> Vec<PickerCommand> {
         for _ in 0..count {
             let command = key_command(PickerKey::Move(step, 1.0), region, pixel);
             if let Some(command) = command {
+                drag = None;
                 (region, switched) = followed(&command, region, switched);
                 commands.push(command);
             }
         }
     }
+
+    ctx.data_mut(|d| match drag {
+        Some(drag) => {
+            d.insert_temp(drag_id, drag);
+        }
+        None => d.remove::<Drag>(drag_id),
+    });
 
     // The marks, at what was sent this frame.
     let place = match region {
@@ -2409,6 +2412,32 @@ mod tests {
         harness.run();
         sent(&mut harness);
         assert_eq!(harness.state().mirror.region(), Some(DEFAULT_AREA));
+    }
+
+    #[test]
+    fn keyboard_changes_cancel_the_pointer_gesture() {
+        for key in [Key::Space, Key::Delete] {
+            let mut harness = scene();
+            harness
+                .get_by_role_and_label(Role::Button, SPREAD_BUTTON)
+                .click();
+            harness.run();
+            answer(&mut harness, Region::Point([0.5, 0.5]));
+            sent(&mut harness);
+            harness.hover_at(at(0.3, 0.3));
+            harness.run();
+            harness.drag_at(at(0.3, 0.3));
+            harness.run();
+            sent(&mut harness);
+            harness.key_press(key);
+            harness.run();
+            assert!(!sent(&mut harness).is_empty());
+            let region = harness.state().mirror.region();
+            harness.hover_at(at(0.6, 0.6));
+            harness.run();
+            assert!(sent(&mut harness).is_empty());
+            assert_eq!(harness.state().mirror.region(), region);
+        }
     }
 
     /// A press on an area's corner and a move in the same frame take the corner, from

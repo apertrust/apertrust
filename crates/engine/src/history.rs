@@ -897,6 +897,8 @@ pub fn default_tools(
 #[derive(Default)]
 pub struct Described {
     steps: Vec<Arc<HistoryStep>>,
+    /// Content as described, since an external caller may reuse a clock while merging.
+    source: Vec<Step>,
     /// Each tool's defaults for the photo, asked once.
     defaults: BTreeMap<&'static str, Controls>,
     /// The operations' defaults for the photo, for unowned parameters, made once asked.
@@ -905,8 +907,8 @@ pub struct Described {
 
 impl Described {
     /// Every step of `log`, described on the photo `image`: those described already kept
-    /// up to the first that differs, the rest described anew. A step that took in a merged
-    /// change keeps its id, but its clock moves on, so it differs.
+    /// up to the first whose identity, clock or content differs, the rest described anew.
+    /// A merged change may reuse a clock, so the content is compared too.
     pub fn steps(
         &mut self,
         log: &Log,
@@ -914,12 +916,14 @@ impl Described {
         operations: &[&'static dyn Operation],
         image: &ImageContext,
     ) -> Vec<Arc<HistoryStep>> {
-        let kept = (self.steps.iter().zip(log.steps()))
-            .take_while(|(described, step)| {
-                (described.id, described.clock) == (step.id, step.clock)
-            })
+        let kept = self
+            .source
+            .iter()
+            .zip(log.steps())
+            .take_while(|(described, step)| described == step)
             .count();
         self.steps.truncate(kept);
+        self.source.truncate(kept);
         if kept < log.steps().len() {
             // Each key's last entry before the first step described anew: its before.
             let mut last: BTreeMap<Key<'_>, &Entry> = BTreeMap::new();
@@ -941,6 +945,7 @@ impl Described {
                     batch: step.batch,
                     changes,
                 }));
+                self.source.push(step.clone());
                 for entry in step.change.entries() {
                     last.insert(entry.key(), entry);
                 }

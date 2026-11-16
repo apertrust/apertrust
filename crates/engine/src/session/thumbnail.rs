@@ -261,13 +261,27 @@ pub(crate) fn serve(
 fn send_current(
     upkeep: &Upkeep,
     slot: &[u8],
+    version: Option<Vec<u8>>,
+    picture: Option<Thumbnail>,
+    cancel: &(dyn Fn() -> bool + Sync),
+    send: &dyn Fn(Option<Thumbnail>),
+) -> bool {
+    send_current_with(upkeep, slot, version, picture, cancel, send, || {
+        rendered_hit(upkeep, slot)
+    })
+}
+
+fn send_current_with(
+    upkeep: &Upkeep,
+    slot: &[u8],
     mut version: Option<Vec<u8>>,
     mut picture: Option<Thumbnail>,
     cancel: &(dyn Fn() -> bool + Sync),
     send: &dyn Fn(Option<Thumbnail>),
+    mut lookup: impl FnMut() -> Option<(Vec<u8>, Thumbnail)>,
 ) -> bool {
     loop {
-        {
+        let observed = {
             let _sending = WRITES.lock().unwrap_or_else(PoisonError::into_inner);
             if cancel() {
                 return false;
@@ -278,12 +292,22 @@ fn send_current(
                 send(picture);
                 return true;
             }
-        }
+            rendered
+        };
         // One that cannot be read leaves the picture in hand to be sent.
-        let Some((newer, image)) = rendered_hit(upkeep, slot) else {
+        let Some((newer, image)) = lookup() else {
             let _sending = WRITES.lock().unwrap_or_else(PoisonError::into_inner);
             if cancel() {
                 return false;
+            }
+            let now = upkeep
+                .cache()
+                .version(THUMBNAILS, slot)
+                .ok()
+                .flatten()
+                .filter(|version| version.starts_with(library::RENDERED));
+            if now != observed {
+                continue;
             }
             send(picture);
             return true;
