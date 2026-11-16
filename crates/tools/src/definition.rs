@@ -206,7 +206,9 @@ pub struct MenuItem {
 /// place, and no place holding more than it takes ([`Place::most`]).
 pub fn check_menus(items: &[MenuItem]) -> Result<(), DefinitionError> {
     for (i, item) in items.iter().enumerate() {
-        if items[..i].contains(item) {
+        // Its action at its place, whatever its section and order.
+        let twice = |other: &MenuItem| other.place == item.place && other.action == item.action;
+        if items[..i].iter().any(twice) {
             return Err(DefinitionError::DuplicateMenuItem(item.action));
         }
     }
@@ -2802,6 +2804,20 @@ mod tests {
             twice.check(),
             Err(DefinitionError::DuplicateMenuItem("rotate"))
         );
+        // The same action at the same place is listed twice whatever its order or section.
+        let moved = |section, order| MenuItem {
+            section,
+            order,
+            ..item(Place::Photo, "rotate")
+        };
+        for other in [moved(Section::EDIT, 200), moved(Section::VIEW, 100)] {
+            let twice = [moved(Section::EDIT, 100), other];
+            assert_eq!(
+                check_menus(&twice),
+                Err(DefinitionError::DuplicateMenuItem("rotate")),
+                "{other:?}"
+            );
+        }
         // Up to each place's limit, and one more.
         let actions = ["auto_tune", "rotate", "set_from_above", "pick", "clear"];
         for (place, most) in [

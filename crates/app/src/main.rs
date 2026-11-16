@@ -4160,24 +4160,19 @@ impl App {
         id: egui::Id,
         asked: Option<(CellMenu, Option<PathBuf>)>,
     ) -> Option<ActionId> {
-        if let Some((menu, opens)) = asked {
+        let opened = asked.map(|(menu, opens)| {
             if let Some(path) = opens {
                 self.open(path);
             }
-            let state = self.state(ctx);
-            let anchor = egui::Rect::from_min_size(menu.at, egui::Vec2::ZERO);
-            let place = menus::Place::Open(apertrust_tools::Place::Thumbnail);
-            let target = menus::Target::Selection;
-            let request = menus::context(ctx, place, &target, &self.shell.keymap, &state, anchor);
-            popup::open(ctx, id, request.opened_by(menu.cell));
-        }
-        if popup::is_open(ctx, id) {
-            popup::show(ctx);
-        }
-        match popup::answer(ctx, id)? {
-            popup::Answer::Chosen(chosen) => menus::chosen(&chosen),
-            popup::Answer::Dismissed => None,
-        }
+            Opened {
+                place: menus::Place::Open(apertrust_tools::Place::Thumbnail),
+                target: menus::Target::Selection,
+                anchor: egui::Rect::from_min_size(menu.at, egui::Vec2::ZERO),
+                opener: Some(menu.cell),
+            }
+        });
+        let state = self.state(ctx);
+        context_popup(ctx, id, opened, &self.shell.keymap, &state)
     }
 
     /// The central bar, the photo and its caption. Returns the central bar's rectangle, a
@@ -4466,11 +4461,8 @@ impl App {
         photo: Option<egui::Rect>,
     ) -> Option<ActionId> {
         let picking = self.mirror.pickers.active().is_some();
-        central_menu(ctx, slot, photo, picking, |place, target, at| {
-            let state = self.state(ctx);
-            let anchor = egui::Rect::from_min_size(at, egui::Vec2::ZERO);
-            menus::context(ctx, place, &target, &self.shell.keymap, &state, anchor)
-        })
+        let state = self.state(ctx);
+        central_menu(ctx, slot, photo, picking, &self.shell.keymap, &state)
     }
 
     /// Whether the main window is the start window this frame ([`shows_start`]): it becomes
@@ -4885,38 +4877,106 @@ fn photo_point(photo: egui::Rect, at: egui::Pos2) -> [f32; 2] {
     [point.x, point.y]
 }
 
-/// Opens the menu `request` gives at the pointer when `slot` is right-clicked, and returns
-/// the action of the item chosen in it: the photo's on `photo`, the photo's rectangle
-/// while one is shown, the point in the photo's coordinates as pickers take them, unless
-/// `picking`, a picker on, takes the right-click there (decision 91); the surround's
-/// outside it. The menu is drawn here while it is open, before its answer is read: a drawn
-/// menu (Windows, Linux) answers as it is drawn, and its answer lasts only that frame, so a
-/// read before the frame's later `popup::show` would miss it. The Mac's native menu
-/// answers between frames.
+/// Opens the context menu at the pointer when `slot` is right-clicked, built from `keymap`
+/// and `state` ([`context_popup`]), and returns the action of the item chosen in it: the
+/// photo's on `photo`, the photo's rectangle while one is shown, the point in the photo's
+/// coordinates as pickers take them, unless `picking`, a picker on, takes the right-click
+/// there (decision 91); the surround's outside it.
 fn central_menu(
     ctx: &egui::Context,
     slot: &egui::Response,
     photo: Option<egui::Rect>,
     picking: bool,
-    request: impl FnOnce(menus::Place, menus::Target, egui::Pos2) -> popup::Request,
+    keymap: &Keymap,
+    state: &State,
 ) -> Option<ActionId> {
     let id = slot.id.with("menu");
-    if slot.secondary_clicked()
-        && let Some(at) = slot.interact_pointer_pos()
-    {
-        let opened = match photo.filter(|photo| photo.contains(at)) {
-            Some(_) if picking => None,
+    let at = slot
+        .interact_pointer_pos()
+        .filter(|_| slot.secondary_clicked());
+    let opened = at.and_then(|at| {
+        let (place, target) = match photo.filter(|photo| photo.contains(at)) {
+            Some(_) if picking => return None,
             Some(photo) => {
                 let target = menus::Target::Photo {
                     point: Some(photo_point(photo, at)),
                 };
-                let place = menus::Place::Open(apertrust_tools::Place::Photo);
-                Some((place, target))
+                (menus::Place::Open(apertrust_tools::Place::Photo), target)
             }
-            None => Some((menus::Place::Surround, menus::Target::App)),
+            None => (menus::Place::Surround, menus::Target::App),
         };
-        if let Some((place, target)) = opened {
-            popup::open(ctx, id, request(place, target, at));
+        let anchor = egui::Rect::from_min_size(at, egui::Vec2::ZERO);
+        Some(Opened {
+            place,
+            target,
+            anchor,
+            opener: None,
+        })
+    });
+    context_popup(ctx, id, opened, keymap, state)
+}
+
+/// What a context menu opened with: its place and target, where it hangs from, and the
+/// control the focus goes back to as it closes, if not what had it.
+#[derive(Clone, Copy, Debug)]
+struct Opened {
+    place: menus::Place,
+    target: menus::Target,
+    anchor: egui::Rect,
+    opener: Option<egui::Id>,
+}
+
+/// The context menu `opened` this frame, if any, as the popup `id`, built from `keymap` and
+/// `state` (`menus::context`), and the action of the item chosen in it.
+///
+/// One opened while its photo waits to go live (decision 91), as a thumbnail's does on a
+/// photo it has just made active, shows the items that wait disabled; once the photo is
+/// live it is built again in place of itself, at the same anchor with the same opener, so
+/// they are enabled without the menu reopening. The Mac's native menu cannot be: it is
+/// modal, and shows what it was opened with until it closes.
+///
+/// The menu is drawn here while it is open, before its answer is read: a drawn menu
+/// (Windows, Linux) answers as it is drawn, and its answer lasts only that frame, so a read
+/// before the frame's later `popup::show` would miss it. The Mac's native menu answers
+/// between frames.
+fn context_popup(
+    ctx: &egui::Context,
+    id: egui::Id,
+    opened: Option<Opened>,
+    keymap: &Keymap,
+    state: &State,
+) -> Option<ActionId> {
+    let waiting = id.with("waiting");
+    let open = |opened: &Opened| {
+        let request = menus::context(
+            ctx,
+            opened.place,
+            &opened.target,
+            keymap,
+            state,
+            opened.anchor,
+        );
+        let request = match opened.opener {
+            Some(opener) => request.opened_by(opener),
+            None => request,
+        };
+        popup::open(ctx, id, request);
+    };
+    if let Some(opened) = opened {
+        open(&opened);
+        ctx.data_mut(|d| {
+            if state.waiting {
+                d.insert_temp(waiting, opened);
+            } else {
+                d.remove::<Opened>(waiting);
+            }
+        });
+    } else if let Some(opened) = ctx.data(|d| d.get_temp::<Opened>(waiting)) {
+        if !popup::is_drawn(ctx, id) {
+            ctx.data_mut(|d| d.remove::<Opened>(waiting));
+        } else if !state.waiting {
+            open(&opened);
+            ctx.data_mut(|d| d.remove::<Opened>(waiting));
         }
     }
     if popup::is_open(ctx, id) {
@@ -10011,11 +10071,8 @@ mod tests {
                     let slot = ui.allocate_rect(ui.max_rect(), egui::Sense::click());
                     let shell = &surround.shell;
                     let (photo, picking) = (surround.photo, surround.picking);
-                    let chosen = central_menu(&ctx, &slot, photo, picking, |place, target, at| {
-                        let state = shell.state(&ctx, photo.is_some(), photo.is_some());
-                        let anchor = egui::Rect::from_min_size(at, egui::Vec2::ZERO);
-                        menus::context(&ctx, place, &target, &shell.keymap, &state, anchor)
-                    });
+                    let state = shell.state(&ctx, photo.is_some(), photo.is_some());
+                    let chosen = central_menu(&ctx, &slot, photo, picking, &shell.keymap, &state);
                     surround.chosen.extend(chosen);
                     popup::show(&ctx);
                 },
@@ -10113,6 +10170,61 @@ mod tests {
         assert_eq!(made_active(3, Some(1)), Some(3));
         assert_eq!(made_active(3, None), Some(3));
         assert_eq!(made_active(3, Some(3)), None);
+    }
+
+    /// A frame with a thumbnail's menu opened on a right-click anywhere, its photo `live` or
+    /// still opening, as one a right-click has just made active is.
+    struct Thumbnail {
+        shell: Shell,
+        live: bool,
+    }
+
+    /// Decision 91: a thumbnail's menu opened on a photo still opening shows Reset and
+    /// Export… disabled, waiting; once the photo is live they are enabled in the menu still
+    /// open, built again in place of itself, with no reopening.
+    #[test]
+    fn a_thumbnail_s_menu_enables_what_waited_once_its_photo_is_live() {
+        let mut harness = Harness::builder()
+            .with_size(egui::vec2(600.0, 400.0))
+            .with_os(OperatingSystem::Nix)
+            .with_context_setup(|ctx| {
+                apertrust_ui::install(ctx, Theme::default());
+                registry_keys_only(ctx);
+            })
+            .build_ui_state(
+                |ui, thumbnail: &mut Thumbnail| {
+                    let ctx = ui.ctx().clone();
+                    let slot = ui.allocate_rect(ui.max_rect(), egui::Sense::click());
+                    let live = thumbnail.live;
+                    let state = State {
+                        waiting: !live,
+                        ..thumbnail.shell.state(&ctx, live, live)
+                    };
+                    let opened = (slot.interact_pointer_pos())
+                        .filter(|_| slot.secondary_clicked())
+                        .map(|at| Opened {
+                            place: menus::Place::Open(apertrust_tools::Place::Thumbnail),
+                            target: menus::Target::Selection,
+                            anchor: egui::Rect::from_min_size(at, egui::Vec2::ZERO),
+                            opener: Some(slot.id),
+                        });
+                    let id = slot.id.with("menu");
+                    context_popup(&ctx, id, opened, &thumbnail.shell.keymap, &state);
+                },
+                Thumbnail {
+                    shell: Shell::new(&Settings::default(), Locale::EnGb, OperatingSystem::Nix),
+                    live: false,
+                },
+            );
+        right_click_at(&mut harness, egui::pos2(300.0, 200.0));
+        let enabled = |harness: &Harness<'_, Thumbnail>, name: &str| {
+            let menu = harness.get_by_role_and_label(Role::Menu, "Thumbnail");
+            !menu.get_by_label(name).accesskit_node().is_disabled()
+        };
+        assert!(!enabled(&harness, "Reset") && !enabled(&harness, "Export…"));
+        harness.state_mut().live = true;
+        harness.run();
+        assert!(enabled(&harness, "Reset") && enabled(&harness, "Export…"));
     }
 
     /// The photo's menu takes the point under the pointer in the photo's coordinates, 0 to 1
