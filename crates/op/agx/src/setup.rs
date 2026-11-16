@@ -499,11 +499,25 @@ pub struct Prepared {
 pub const PARAMS_SIZE: usize = 288;
 
 pub fn prepare(settings: &Settings, working: &RgbSpace) -> Result<Prepared, NotPorted> {
-    Ok(Prepared {
+    let prepared = Prepared {
         matrices: Matrices::new(settings, working)?,
         curve: Curve::new(settings),
         look: Look::new(settings),
-    })
+    };
+    if settings.look_lift <= -1.0
+        || prepared
+            .params()
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .any(|bytes| !f32::from_le_bytes(*bytes).is_finite())
+    {
+        return Err(NotPorted {
+            operation: "agx",
+            what: "settings that produce a singular curve or look",
+        });
+    }
+    Ok(prepared)
 }
 
 impl Prepared {
@@ -525,14 +539,23 @@ impl Prepared {
         out.vec4([c.black_ev, c.range_ev, c.gamma, c.slope]);
         out.vec4([c.intercept, c.target_black, c.target_white, 0.0]);
         for segment in [&c.toe, &c.shoulder] {
+            // The shader reads only the selected branch. Inactive coefficients can
+            // overflow during setup without changing the curve; never upload them.
+            let packed = |value: f32, active: bool, placeholder: f32| {
+                if !active && !value.is_finite() {
+                    placeholder
+                } else {
+                    value
+                }
+            };
             out.vec4([
                 segment.transition_x,
                 segment.transition_y,
-                segment.scale,
-                segment.power,
+                packed(segment.scale, !segment.fallback, 1.0),
+                packed(segment.power, !segment.fallback, 1.0),
             ]);
-            out.f32(segment.fallback_coefficient);
-            out.f32(segment.fallback_power);
+            out.f32(packed(segment.fallback_coefficient, segment.fallback, 0.0));
+            out.f32(packed(segment.fallback_power, segment.fallback, 1.0));
             out.u32(u32::from(segment.fallback));
             out.f32(0.0);
         }
@@ -568,6 +591,22 @@ impl Uniform {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn singular_curve_and_look_are_refused_before_packing() {
+        let zero_pivot = Settings {
+            curve_pivot_y_linear_output: 0.0,
+            curve_gamma: 10.0,
+            auto_gamma: false,
+            ..Settings::scene_referred_default()
+        };
+        assert!(prepare(&zero_pivot, &RgbSpace::LINEAR_REC2020).is_err());
+        let singular_look = Settings {
+            look_lift: -1.0,
+            ..Settings::scene_referred_default()
+        };
+        assert!(prepare(&singular_look, &RgbSpace::LINEAR_REC2020).is_err());
+    }
 
     fn defaults() -> Settings {
         Settings::scene_referred_default()

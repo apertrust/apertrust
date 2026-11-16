@@ -77,10 +77,7 @@ pub fn each_corpus_raw(mut check: impl FnMut(&str, ImageContext, GpuImage)) {
                 println!("{name}: skipped, not a colour mosaic the pipeline takes");
                 continue;
             }
-            Err(error) => {
-                println!("{name}: skipped, failed {error}");
-                continue;
-            }
+            Err(error) => panic!("{name}: corpus decode or upload failed: {error}"),
         };
         let bias = image.camera.as_ref().map_or(0.0, |c| c.exposure_bias);
         let label = format!(

@@ -1592,7 +1592,12 @@ fn backend_named(value: &str) -> Result<gpu::Backend, String> {
 /// `--interval`: milliseconds above 0, a finite number.
 fn interval_ms(value: &str) -> Result<f64, String> {
     match value.parse::<f64>() {
-        Ok(ms) if ms.is_finite() && ms > 0.0 => Ok(ms),
+        Ok(ms)
+            if std::time::Duration::try_from_secs_f64(ms / 1000.0)
+                .is_ok_and(|duration| !duration.is_zero()) =>
+        {
+            Ok(ms)
+        }
         _ => Err(format!("milliseconds above 0, not '{value}'")),
     }
 }
@@ -1726,8 +1731,8 @@ fn write_file(
     height: u32,
 ) -> Result<()> {
     let image = apertrust_export::Image::new(rgba, width, height)?;
-    let file =
-        std::fs::File::create(path).with_context(|| format!("cannot create {}", path.display()))?;
+    let file = std::fs::File::create_new(path)
+        .with_context(|| format!("cannot create new file {}", path.display()))?;
     let mut out = std::io::BufWriter::new(file);
     let context = || format!("cannot write {}", path.display());
     format.write(image, &mut out).with_context(context)?;
@@ -2434,6 +2439,45 @@ mod tests {
     use super::*;
 
     const WITH_SAMPLE: &[&dyn Tool] = &[&Sample];
+
+    #[test]
+    fn preview_output_never_truncates_an_existing_photo() {
+        let directory = std::env::temp_dir().join(format!(
+            "apertrust-cli-preview-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir(&directory).unwrap();
+        let photo = directory.join("photo.ARW");
+        std::fs::write(&photo, b"original raw bytes").unwrap();
+        let alias = directory.join("alias.png");
+        std::fs::hard_link(&photo, &alias).unwrap();
+        for path in [&photo, &alias] {
+            assert!(
+                write_file(
+                    path,
+                    &Format::Png(png::Options::default()),
+                    &[[0.5; 4]],
+                    1,
+                    1
+                )
+                .is_err()
+            );
+            assert_eq!(std::fs::read(&photo).unwrap(), b"original raw bytes");
+        }
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn intervals_must_convert_to_nonzero_durations() {
+        for value in ["1e-17", "1e300", "0", "-1", "NaN"] {
+            assert!(interval_ms(value).is_err(), "{value}");
+        }
+        assert_eq!(interval_ms("0.001"), Ok(0.001));
+    }
 
     /// `gpu` says which backends were asked for and why, then lists the adapters,
     /// Automatic's marked, and the software one as CPU, under its own name (decision 82).

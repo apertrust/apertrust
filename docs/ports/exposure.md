@@ -260,3 +260,7 @@ Automatic mode:
 - **Metering rawspeed's crop** would give darktable's computed exposure on every raw, from rawspeed's camera data as a data file (decision 87, Options considered); kept for later, should the up to 0.012 EV matter.
 - [x] **Hiding the toggle and its label with the value:** settled by decision 88, the tool's redesign: this toggle and Compensate camera exposure hidden where the photo gives them nothing to do, by `Tool::visible`, and labels with the photo's value by `Tool::label_value`; built ([tools/exposure.md](../tools/exposure.md#the-page-as-redesigned)).
 - **Denoise (profiled)** reads the same value (`_get_iso_highlight_preservation_shift`, whole EV only); its port still takes the shift as 0 (`docs/ports/denoiseprofile.md`, difference 6), and can now read it from the image context.
+
+### Input validation
+
+Operation setup keeps black strictly below the effective white after selecting manual or automatic exposure and applying compensation. A black at or above white is put 0.01 below it, including for callers that set operation parameters directly.

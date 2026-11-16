@@ -81,7 +81,10 @@ pub fn check(transfer: &dyn Transfer, range: RangeInclusive<f32>) -> Result<(), 
         let estimate = (at(x + h) - at(x - h)) / (2.0 * h);
         let derivative = f64::from(transfer.derivative(x as f32));
         let tolerance = 1e-2 * estimate.abs().max(derivative.abs()).max(1e-2);
-        if (estimate - derivative).abs() > tolerance {
+        if !estimate.is_finite()
+            || !derivative.is_finite()
+            || (estimate - derivative).abs() > tolerance
+        {
             return Err(format!(
                 "at {x}: the derivative is {derivative}, finite differences give {estimate}"
             ));
@@ -99,6 +102,22 @@ pub fn increasing(transfer: &dyn Transfer, range: RangeInclusive<f32>) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn non_finite_derivatives_cannot_pass_the_check() {
+        struct Invalid(f32);
+        impl Transfer for Invalid {
+            fn value(&self, x: f32) -> f32 {
+                x
+            }
+            fn derivative(&self, _: f32) -> f32 {
+                self.0
+            }
+        }
+        for invalid in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+            assert!(check(&Invalid(invalid), 0.0..=1.0).is_err());
+        }
+    }
 
     /// 2^x: a curved one, so the check sees a derivative that changes.
     struct Exp2;

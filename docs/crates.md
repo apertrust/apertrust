@@ -364,7 +364,7 @@ The headless binary. Its commands are `gpu`, `info`, `edit`, `history`, `export`
 
 `preview FILE [--width W --height H] [--exposure EV] [--png OUT]` times changes of the Exposure tool's Exposure through the viewport pipe.
 
-- `--png OUT` writes the frame through `apertrust-export`, with PNG's defaults.
+- `--png OUT` writes the frame through `apertrust-export`, with PNG's defaults. The output must not already exist, so a preview cannot overwrite an original photo or an alias of it.
 - `--join OPERATION` then times an optional operation joining and leaving the plan, each rebuild keeping kernels and cache points, against a pipeline built from nothing.
 - `--scopes[=totals|histogram|waveform|vectorscope]` times what counting each frame for the scopes adds, and reports what the last frame clips.
 - `-d perf preview FILE --beside-export ROUNDS [--changes N] [--interval MS]` is spike X1's measurement: changes through an in-process session, alone and while its export job exports the photo, tiled as `engine.memory_budget` says. `-d perf -d verbose` adds each job step's GPU time and readback, as trace lines of the perf domain.

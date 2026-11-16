@@ -195,6 +195,8 @@ pub struct FolderState {
     /// The folders listed since the walk began, their subfolders or their photos, which
     /// are fresher than what the walk says of them: it leaves them.
     listed: HashSet<PathBuf>,
+    /// Photo listings completed since the walk began, fresher than its counts.
+    counted: HashSet<PathBuf>,
     /// Whether the latest open is a way in, which set the root, rather than a folder chosen
     /// in the tree.
     way_in: bool,
@@ -240,6 +242,7 @@ impl FolderState {
         if !kept || self.tree.as_deref() == Some(path.as_path()) {
             self.walk = number;
             self.listed.clear();
+            self.counted.clear();
         }
         self.latest = number;
         self.job = None;
@@ -311,6 +314,7 @@ impl FolderState {
         self.tree = None;
         self.counts.clear();
         self.listed.clear();
+        self.counted.clear();
         self.generation += 1;
         self.reorder();
     }
@@ -618,6 +622,7 @@ impl FolderState {
                         self.counts
                             .insert(listing.path.clone(), listing.photos.len());
                         self.listed.insert(listing.path.clone());
+                        self.counted.insert(listing.path.clone());
                     }
                     self.reorder();
                 }
@@ -698,15 +703,15 @@ impl FolderState {
     /// tree row offers to try again.
     fn walked(&mut self, folders: &[library::WalkedFolder]) {
         for walked in folders {
+            if walked.unreadable.is_none() && !self.counted.contains(&walked.folder) {
+                self.counts.insert(walked.folder.clone(), walked.raws);
+            }
             if self.listed.contains(&walked.folder) {
                 continue;
             }
             let listed = match &walked.unreadable {
                 Some(why) => Err(why.clone()),
-                None => {
-                    self.counts.insert(walked.folder.clone(), walked.raws);
-                    Ok(walked.subfolders.clone())
-                }
+                None => Ok(walked.subfolders.clone()),
             };
             self.inside.insert(walked.folder.clone(), listed);
         }
@@ -919,6 +924,21 @@ mod tests {
             names: names.iter().map(|name| (*name).to_owned()).collect(),
             unreadable: unreadable.map(str::to_owned),
         })
+    }
+
+    #[test]
+    fn fresh_subfolder_names_do_not_hide_the_walked_photo_count() {
+        let mut state = FolderState::default();
+        state.opening(PathBuf::from("/photos"), 1);
+        state.apply(&opened(1, "/photos"));
+        let folder = PathBuf::from("/photos/Trip");
+        state.apply(&subfolders_of(1, &folder, &["New"], None));
+        state.apply(&walked(1, &[("/photos/Trip", Some(3), &["Old"])]));
+        assert_eq!(state.counts().get(&folder), Some(&3));
+        assert_eq!(
+            state.inside().get(&folder),
+            Some(&Ok(vec!["New".to_owned()]))
+        );
     }
 
     /// A subfolder's subfolders are asked for once an open and kept by its path; the root

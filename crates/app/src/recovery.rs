@@ -640,6 +640,9 @@ impl Pending {
     /// As the app ends: the removal under way finished, so a quit soon after the start
     /// never leaves the marker behind.
     pub fn finish(&mut self) {
+        if self.drawn.load(Ordering::Acquire) {
+            self.abandon();
+        }
         if let Some(handle) = self.removing.take() {
             let _ = handle.join();
         }
@@ -1114,7 +1117,7 @@ mod tests {
         assert!(matches!(Marker::open(path.clone()), Opened::Busy));
         harness.render().expect("drawn");
         assert!(harness.state().waiting(), "not until the next frame");
-        harness.step();
+        // A quit may arrive before another frame observes the successful drawing.
         harness.state_mut().finish();
         assert!(!harness.state().waiting());
         assert!(!path.exists());

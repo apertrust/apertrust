@@ -380,6 +380,9 @@ pub fn prepare(
     };
 
     let compression = if s.gamut == 0.0 { 0.0 } else { 1.0 / s.gamut };
+    if !compression.is_finite() {
+        return Err(not_ported("gamut too small for a finite compression"));
+    }
     let negative_distance = if compression.fract() != 0.0 {
         NegativeDistance::Neutral
     } else if (compression / 2.0).fract() == 0.0 {
@@ -475,6 +478,15 @@ mod tests {
 
     fn profile() -> WorkingProfile {
         WorkingProfile::linear_rec2020()
+    }
+
+    #[test]
+    fn an_overflowing_gamut_reciprocal_is_refused() {
+        let settings = Settings {
+            gamut: 1e-40,
+            ..Settings::DEFAULT
+        };
+        assert!(prepare(&settings, &profile(), None).is_err());
     }
 
     fn prepared(settings: &Settings) -> Prepared {

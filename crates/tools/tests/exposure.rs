@@ -420,6 +420,11 @@ fn e6_a_pasted_exposure_means_the_same_whatever_the_bias() {
 /// Whether the extended ramp's frame is finite and never darker for a brighter grey,
 /// channel by channel; the first grey where it is not.
 fn in_order(frame: &Rendered) -> Result<(), String> {
+    for (i, pixel) in frame.pixels.iter().enumerate() {
+        if pixel[..3].iter().any(|value| !value.is_finite()) {
+            return Err(format!("grey {i}: non-finite {pixel:?}"));
+        }
+    }
     for (i, pair) in frame.pixels.windows(2).enumerate() {
         for c in 0..3 {
             if !pair[1][c].is_finite() || pair[1][c] < pair[0][c] {
