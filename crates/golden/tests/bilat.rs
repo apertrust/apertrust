@@ -112,6 +112,15 @@ fn bilateral_grid(detail: f32, sigma_s: f32, sigma_r: f32) -> Settings {
 /// Largest difference of any channel relative to the pixel's largest channel, past a
 /// floor for black.
 fn largest_relative_difference(a: &[[f32; 4]], b: &[[f32; 4]]) -> f32 {
+    assert_eq!(a.len(), b.len());
+    assert!(
+        a.iter()
+            .flatten()
+            .chain(b.iter().flatten())
+            .all(|v| v.is_finite()),
+        "non-finite channels in image comparison"
+    );
+
     a.iter()
         .zip(b)
         .flat_map(|(p, q)| {

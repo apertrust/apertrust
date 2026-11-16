@@ -902,7 +902,15 @@ impl Theme {
         }
         issues.extend(pairs.into_iter().chain(menu_band).filter_map(
             |(token, fg, against, bg, minimum)| {
-                let ratio = contrast(fg, bg);
+                let minimum = if high_contrast
+                    && minimum == TEXT
+                    && matches!(token, "text" | "text_strong" | "text_secondary")
+                {
+                    TEXT_AAA
+                } else {
+                    minimum
+                };
+                let ratio = contrast(bg.blend(fg), bg);
                 (ratio < minimum).then_some(Issue::Contrast {
                     token,
                     against,
@@ -1232,6 +1240,30 @@ mod hex {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn high_contrast_overrides_keep_the_body_text_promise() {
+        let theme = Theme::from_toml(
+            "extends = 'high-contrast'\n[colors]\ntext = '#888888'\npanel = '#000000'",
+        )
+        .unwrap();
+        assert!(theme.check().iter().any(|issue| matches!(issue, Issue::Contrast { token: "text", against: "panel", minimum, .. } if *minimum == TEXT_AAA)));
+    }
+
+    #[test]
+    fn transparent_text_is_checked_as_displayed() {
+        let mut theme = Theme::builtin(Builtin::Light);
+        theme.colors.text = Color32::from_rgba_unmultiplied(0, 0, 0, 1);
+        theme.colors.panel = Color32::WHITE;
+        assert!(theme.check().iter().any(|issue| matches!(
+            issue,
+            Issue::Contrast {
+                token: "text",
+                against: "panel",
+                ..
+            }
+        )));
+    }
 
     #[test]
     fn every_built_in_theme_is_an_option() {

@@ -135,7 +135,7 @@ That difference is ΔE2000 mean 0.133, p95 0.77, max 2.98, with 621 pixels over 
   - where `vc · s − roi.x` is positive, as for the whole image or a tile before the centre, `roi_center_scaled` is +inf and every `pv` NaN (`i · inf − inf`), every comparison false, and the pixels are left unchanged;
   - where it is negative, a darktable tile past the centre, it is −inf, `pv` is +inf but in the tile's first column (`0 · inf`, NaN), and the weight 1, a full vignette.
 
-  Just inside either end the vignette is an extremely narrow ellipse that covers nearly the whole image. `prepare` keeps `whratio` within [0.001, 1.999], that limit from inside, the same in every tile (Deliberate differences).
+  Just inside either end the vignette is an extremely narrow ellipse that covers nearly the whole image. `prepare` keeps geometry within [0.001, 1.999]. At exactly 0 or 2 it instead bypasses shading in every pipe and tile, matching the reference export's unchanged image.
 - **Branches:** the weight's clip, the gate on weight above 0, the brightness's sign and `whratio ≤ 1` are darktable's; the kernel keeps them (Gradients).
 - **NaN, infinity and negative values:** the weight is finite and within [0, 1] for any finite position, so finite input gives finite output; negative channels pass through every step, unclipped while `unbound`. darktable's NaN at a ratio of 0 or 2 cannot occur in the kernel.
 
@@ -316,3 +316,7 @@ Test 0045 as it stands, with 8-bit dithering, is not a case: against a CPU emula
 
 - **No effect on darktable's CPU output:** c2dd84a409 (the automatic ratio's checkbox becomes a bauhaus toggle, GUI) and 39df8424e6 (an unused `<assert.h>` removed).
 - **OpenCL only:** d3e1441978 replaces `pow`, `cos` and `read_imagef` with darktable's `dtcl_pow`, `dtcl_cos` and `readpixel` in the vignette kernel, among OpenCL tiling fixes; the fall-off curve and the seeds are unchanged.
+
+## Boundary behaviour
+
+At the exact manual aspect-ratio endpoints 0 and 2, the operation copies the image, as the reference does. Geometry still receives a finite ratio, while a uniform flag bypasses shading and gives zero parameter derivatives. Ratios immediately inside those endpoints retain their narrow vignette.

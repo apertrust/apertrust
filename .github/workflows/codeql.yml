@@ -43,11 +43,15 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           code=true
-          if [ "$EVENT" = pull_request ] &&
-            ! gh pr view "$PR" --json labels --jq '.labels[].name' | grep -qx full-ci &&
-            [ -z "$(tools/check-docs-paths.sh --code "$BASE...$HEAD")" ]; then
-            echo "Documentation only: CodeQL is skipped."
-            code=false
+          if [ "$EVENT" = pull_request ]; then
+            labels=$(gh pr view "$PR" --json labels --jq '.labels[].name')
+            if ! grep -qx full-ci <<< "$labels"; then
+              paths=$(tools/check-docs-paths.sh --code "$BASE...$HEAD")
+              if [ -z "$paths" ]; then
+                echo "Documentation only: CodeQL is skipped."
+                code=false
+              fi
+            fi
           fi
           echo "code=$code" >> "$GITHUB_OUTPUT"
 

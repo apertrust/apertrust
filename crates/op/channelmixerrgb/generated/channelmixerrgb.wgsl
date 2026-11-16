@@ -2557,12 +2557,12 @@ struct Tuple_25
 
 fn s_apply_luma_chroma_0( _S606 : vec3<f32>,  p_1 : ChannelMixerParams_0) -> Tuple_25
 {
-    var norm_0 : f32 = s_apply_max_2(s_apply_scaled_length_0(_S606).value0_44, 1.52587890625e-05f).value0_11 * 0.57735025882720947f;
-    var ratios_0 : vec3<f32> = _S606 / vec3<f32>(norm_0);
-    var _S607 : Tuple_8 = s_apply_max_1((vec3<f32>(1.0f) - ratios_0) * vec3<f32>((s_apply_dot_1(ratios_0, p_1.saturation_0.xyz).value0_12 / 3.0f)) + ratios_0, s_apply_min_0(ratios_0, vec3<f32>(0.0f)).value0_6);
-    var _S608 : Tuple_25;
-    _S608.value0_47 = _S607.value0_10 * vec3<f32>((norm_0 / (s_apply_max_2(s_apply_scaled_length_0(_S607.value0_10).value0_44, 1.52587890625e-05f).value0_11 * 0.57735025882720947f) * s_apply_clamp_0(1.0f + s_apply_dot_1(_S606, p_1.lightness_0.xyz).value0_12 / s_apply_max_2((_S606.x + _S606.y + _S606.z) / 3.0f, 1.52587890625e-05f).value0_11, 0.0f, 1.0e+06f).value0_5));
-    return _S608;
+    var _S607 : Tuple_24 = s_apply_scaled_length_0(_S606);
+    var ratios_0 : vec3<f32> = _S606 / vec3<f32>((s_apply_max_2(_S607.value0_44, 1.52587890625e-05f).value0_11 * 0.57735025882720947f));
+    var _S608 : Tuple_8 = s_apply_max_1((vec3<f32>(1.0f) - ratios_0) * vec3<f32>((s_apply_dot_1(ratios_0, p_1.saturation_0.xyz).value0_12 / 3.0f)) + ratios_0, s_apply_min_0(ratios_0, vec3<f32>(0.0f)).value0_6);
+    var _S609 : Tuple_25;
+    _S609.value0_47 = _S608.value0_10 * vec3<f32>((_S607.value0_44 * 0.57735025882720947f / (s_apply_max_2(s_apply_scaled_length_0(_S608.value0_10).value0_44, 1.52587890625e-05f).value0_11 * 0.57735025882720947f) * s_apply_clamp_0(1.0f + s_apply_dot_1(_S606, p_1.lightness_0.xyz).value0_12 / s_apply_max_2((_S606.x + _S606.y + _S606.z) / 3.0f, 1.52587890625e-05f).value0_11, 0.0f, 1.0e+06f).value0_5));
+    return _S609;
 }
 
 struct s_paramCtx_s_bwdCallableCtx_luma_chroma_0
@@ -2576,116 +2576,120 @@ struct s_bwdCallableCtx_luma_chroma_0
      value0_49 : s_paramCtx_s_bwdCallableCtx_luma_chroma_0,
 };
 
-fn s_bwdProp_luma_chroma_0( _S609 : s_bwdCallableCtx_luma_chroma_0,  _S610 : ptr<function, vec3<f32>>,  _S611 : vec3<f32>)
+fn s_bwdProp_luma_chroma_0( _S610 : s_bwdCallableCtx_luma_chroma_0,  _S611 : ptr<function, vec3<f32>>,  _S612 : vec3<f32>)
 {
-    var _S612 : Tuple_24 = s_apply_scaled_length_0(_S609.value0_49.value0_48);
-    var _S613 : s_paramCtx_s_bwdCallableCtx_scaled_length_0;
-    _S613.value0_45 = _S609.value0_49.value0_48;
-    var _S614 : s_bwdCallableCtx_scaled_length_0 = s_bwdCallableCtx_scaled_length_0( _S613 );
-    var _S615 : Tuple_9 = s_apply_max_2(_S612.value0_44, 1.52587890625e-05f);
-    var _S616 : s_bwdCallableCtx_max_2;
-    _S616._S79 = _S612.value0_44;
-    _S616._S80 = 1.52587890625e-05f;
-    var _S617 : f32 = (_S609.value0_49.value0_48.x + _S609.value0_49.value0_48.y + _S609.value0_49.value0_48.z) / 3.0f;
-    var _S618 : Tuple_9 = s_apply_max_2(_S617, 1.52587890625e-05f);
-    var _S619 : s_bwdCallableCtx_max_2;
-    _S619._S79 = _S617;
-    _S619._S80 = 1.52587890625e-05f;
-    var _S620 : vec3<f32> = _S609.value0_49.value1_6.lightness_0.xyz;
-    var _S621 : Tuple_10 = s_apply_dot_1(_S609.value0_49.value0_48, _S620);
-    var _S622 : s_bwdCallableCtx_dot_1;
-    _S622._S84 = _S609.value0_49.value0_48;
-    _S622._S85 = _S620;
-    var norm_1 : f32 = _S615.value0_11 * 0.57735025882720947f;
-    var _S623 : vec3<f32> = vec3<f32>(norm_1);
-    var ratios_1 : vec3<f32> = _S609.value0_49.value0_48 / _S623;
-    var _S624 : f32 = norm_1 * norm_1;
-    var _S625 : vec3<f32> = _S609.value0_49.value1_6.saturation_0.xyz;
-    var _S626 : Tuple_10 = s_apply_dot_1(ratios_1, _S625);
-    var _S627 : s_bwdCallableCtx_dot_1;
-    _S627._S84 = ratios_1;
-    _S627._S85 = _S625;
-    var _S628 : vec3<f32> = vec3<f32>(1.0f) - ratios_1;
-    var _S629 : vec3<f32> = vec3<f32>((_S626.value0_12 / 3.0f));
-    var _S630 : vec3<f32> = _S628 * _S629 + ratios_1;
-    var _S631 : vec3<f32> = vec3<f32>(0.0f);
-    var _S632 : Tuple_4 = s_apply_min_0(ratios_1, _S631);
-    var _S633 : s_bwdCallableCtx_min_0;
-    _S633._S49 = ratios_1;
-    _S633._S50 = _S631;
-    var _S634 : Tuple_8 = s_apply_max_1(_S630, _S632.value0_6);
-    var _S635 : s_bwdCallableCtx_max_1;
-    _S635._S74 = _S630;
-    _S635._S75 = _S632.value0_6;
-    var _S636 : Tuple_24 = s_apply_scaled_length_0(_S634.value0_10);
-    var _S637 : s_paramCtx_s_bwdCallableCtx_scaled_length_0;
-    _S637.value0_45 = _S634.value0_10;
-    var _S638 : s_bwdCallableCtx_scaled_length_0 = s_bwdCallableCtx_scaled_length_0( _S637 );
-    var _S639 : Tuple_9 = s_apply_max_2(_S636.value0_44, 1.52587890625e-05f);
-    var _S640 : s_bwdCallableCtx_max_2;
-    _S640._S79 = _S636.value0_44;
-    _S640._S80 = 1.52587890625e-05f;
-    var _S641 : f32 = _S639.value0_11 * 0.57735025882720947f;
-    var norm_2 : f32 = norm_1 / _S641;
-    var _S642 : f32 = _S641 * _S641;
-    var _S643 : f32 = _S618.value0_11 * _S618.value0_11;
-    var _S644 : f32 = 1.0f + _S621.value0_12 / _S618.value0_11;
-    var _S645 : Tuple_3 = s_apply_clamp_0(_S644, 0.0f, 1.0e+06f);
-    var _S646 : s_bwdCallableCtx_clamp_0;
-    _S646._S37 = _S644;
-    _S646._S38 = 0.0f;
-    _S646._S39 = 1.0e+06f;
-    var _S647 : vec3<f32> = _S634.value0_10 * _S611;
-    var _S648 : f32 = _S647[i32(0)] + _S647[i32(1)] + _S647[i32(2)];
-    var _S649 : vec3<f32> = vec3<f32>((norm_2 * _S645.value0_5)) * _S611;
-    var _S650 : f32 = norm_2 * _S648;
-    var s_diff_norm_T_0 : f32 = _S645.value0_5 * _S648;
-    var _S651 : f32 = 0.0f;
+    var _S613 : Tuple_24 = s_apply_scaled_length_0(_S610.value0_49.value0_48);
+    var _S614 : s_paramCtx_s_bwdCallableCtx_scaled_length_0;
+    _S614.value0_45 = _S610.value0_49.value0_48;
+    var _S615 : s_bwdCallableCtx_scaled_length_0 = s_bwdCallableCtx_scaled_length_0( _S614 );
+    var _S616 : Tuple_9 = s_apply_max_2(_S613.value0_44, 1.52587890625e-05f);
+    var _S617 : s_bwdCallableCtx_max_2;
+    _S617._S79 = _S613.value0_44;
+    _S617._S80 = 1.52587890625e-05f;
+    var divisor_0 : f32 = _S616.value0_11 * 0.57735025882720947f;
+    var _S618 : f32 = (_S610.value0_49.value0_48.x + _S610.value0_49.value0_48.y + _S610.value0_49.value0_48.z) / 3.0f;
+    var _S619 : Tuple_9 = s_apply_max_2(_S618, 1.52587890625e-05f);
+    var _S620 : s_bwdCallableCtx_max_2;
+    _S620._S79 = _S618;
+    _S620._S80 = 1.52587890625e-05f;
+    var _S621 : vec3<f32> = _S610.value0_49.value1_6.lightness_0.xyz;
+    var _S622 : Tuple_10 = s_apply_dot_1(_S610.value0_49.value0_48, _S621);
+    var _S623 : s_bwdCallableCtx_dot_1;
+    _S623._S84 = _S610.value0_49.value0_48;
+    _S623._S85 = _S621;
+    var norm_0 : f32 = _S613.value0_44 * 0.57735025882720947f;
+    var _S624 : vec3<f32> = vec3<f32>(divisor_0);
+    var ratios_1 : vec3<f32> = _S610.value0_49.value0_48 / _S624;
+    var _S625 : f32 = divisor_0 * divisor_0;
+    var _S626 : vec3<f32> = _S610.value0_49.value1_6.saturation_0.xyz;
+    var _S627 : Tuple_10 = s_apply_dot_1(ratios_1, _S626);
+    var _S628 : s_bwdCallableCtx_dot_1;
+    _S628._S84 = ratios_1;
+    _S628._S85 = _S626;
+    var _S629 : vec3<f32> = vec3<f32>(1.0f) - ratios_1;
+    var _S630 : vec3<f32> = vec3<f32>((_S627.value0_12 / 3.0f));
+    var _S631 : vec3<f32> = _S629 * _S630 + ratios_1;
+    var _S632 : vec3<f32> = vec3<f32>(0.0f);
+    var _S633 : Tuple_4 = s_apply_min_0(ratios_1, _S632);
+    var _S634 : s_bwdCallableCtx_min_0;
+    _S634._S49 = ratios_1;
+    _S634._S50 = _S632;
+    var _S635 : Tuple_8 = s_apply_max_1(_S631, _S633.value0_6);
+    var _S636 : s_bwdCallableCtx_max_1;
+    _S636._S74 = _S631;
+    _S636._S75 = _S633.value0_6;
+    var _S637 : Tuple_24 = s_apply_scaled_length_0(_S635.value0_10);
+    var _S638 : s_paramCtx_s_bwdCallableCtx_scaled_length_0;
+    _S638.value0_45 = _S635.value0_10;
+    var _S639 : s_bwdCallableCtx_scaled_length_0 = s_bwdCallableCtx_scaled_length_0( _S638 );
+    var _S640 : Tuple_9 = s_apply_max_2(_S637.value0_44, 1.52587890625e-05f);
+    var _S641 : s_bwdCallableCtx_max_2;
+    _S641._S79 = _S637.value0_44;
+    _S641._S80 = 1.52587890625e-05f;
+    var _S642 : f32 = _S640.value0_11 * 0.57735025882720947f;
+    var norm_1 : f32 = norm_0 / _S642;
+    var _S643 : f32 = _S642 * _S642;
+    var _S644 : f32 = _S619.value0_11 * _S619.value0_11;
+    var _S645 : f32 = 1.0f + _S622.value0_12 / _S619.value0_11;
+    var _S646 : Tuple_3 = s_apply_clamp_0(_S645, 0.0f, 1.0e+06f);
+    var _S647 : s_bwdCallableCtx_clamp_0;
+    _S647._S37 = _S645;
+    _S647._S38 = 0.0f;
+    _S647._S39 = 1.0e+06f;
+    var _S648 : vec3<f32> = _S635.value0_10 * _S612;
+    var _S649 : f32 = _S648[i32(0)] + _S648[i32(1)] + _S648[i32(2)];
+    var _S650 : vec3<f32> = vec3<f32>((norm_1 * _S646.value0_5)) * _S612;
+    var _S651 : f32 = norm_1 * _S649;
+    var s_diff_norm_T_0 : f32 = _S646.value0_5 * _S649;
     var _S652 : f32 = 0.0f;
     var _S653 : f32 = 0.0f;
-    s_bwdProp_clamp_0(_S646, &(_S651), &(_S652), &(_S653), _S650);
-    var _S654 : f32 = _S651 / _S643;
-    var _S655 : f32 = _S621.value0_12 * - _S654;
-    var _S656 : f32 = _S618.value0_11 * _S654;
-    var _S657 : f32 = s_diff_norm_T_0 / _S642;
-    var _S658 : f32 = _S641 * _S657;
-    var _S659 : f32 = 0.57735025882720947f * (norm_1 * - _S657);
+    var _S654 : f32 = 0.0f;
+    s_bwdProp_clamp_0(_S647, &(_S652), &(_S653), &(_S654), _S651);
+    var _S655 : f32 = _S652 / _S644;
+    var _S656 : f32 = _S622.value0_12 * - _S655;
+    var _S657 : f32 = _S619.value0_11 * _S655;
+    var _S658 : f32 = s_diff_norm_T_0 / _S643;
+    var s_diff_norm_T_1 : f32 = _S642 * _S658;
+    var _S659 : f32 = 0.57735025882720947f * (norm_0 * - _S658);
     var _S660 : f32 = 0.0f;
     var _S661 : f32 = 0.0f;
-    s_bwdProp_max_2(_S640, &(_S660), &(_S661), _S659);
+    s_bwdProp_max_2(_S641, &(_S660), &(_S661), _S659);
     var _S662 : vec3<f32> = vec3<f32>(0.0f);
     var _S663 : vec3<f32> = _S662;
-    s_bwdProp_scaled_length_0(_S638, &(_S663), _S660);
-    var _S664 : vec3<f32> = _S649 + _S663;
+    s_bwdProp_scaled_length_0(_S639, &(_S663), _S660);
+    var _S664 : vec3<f32> = _S650 + _S663;
     var _S665 : vec3<f32> = _S662;
     var _S666 : vec3<f32> = _S662;
-    s_bwdProp_max_1(_S635, &(_S665), &(_S666), _S664);
+    s_bwdProp_max_1(_S636, &(_S665), &(_S666), _S664);
     var _S667 : vec3<f32> = _S662;
     var _S668 : vec3<f32> = _S662;
-    s_bwdProp_min_0(_S633, &(_S667), &(_S668), _S666);
-    var _S669 : vec3<f32> = _S628 * _S665;
-    var _S670 : vec3<f32> = (vec3<f32>(0) - _S629 * _S665);
+    s_bwdProp_min_0(_S634, &(_S667), &(_S668), _S666);
+    var _S669 : vec3<f32> = _S629 * _S665;
+    var _S670 : vec3<f32> = (vec3<f32>(0) - _S630 * _S665);
     var _S671 : f32 = 0.3333333432674408f * (_S669[i32(0)] + _S669[i32(1)] + _S669[i32(2)]);
     var _S672 : vec3<f32> = _S662;
     var _S673 : vec3<f32> = _S662;
-    s_bwdProp_dot_1(_S627, &(_S672), &(_S673), _S671);
-    var _S674 : vec3<f32> = (_S667 + _S665 + _S670 + _S672) / vec3<f32>(_S624);
-    var _S675 : vec3<f32> = _S609.value0_49.value0_48 * (vec3<f32>(0) - _S674);
-    var _S676 : vec3<f32> = _S623 * _S674;
-    var _S677 : f32 = 0.57735025882720947f * (_S658 + (_S675[i32(0)] + _S675[i32(1)] + _S675[i32(2)]));
-    var _S678 : vec3<f32> = _S662;
+    s_bwdProp_dot_1(_S628, &(_S672), &(_S673), _S671);
+    var _S674 : vec3<f32> = (_S667 + _S665 + _S670 + _S672) / vec3<f32>(_S625);
+    var _S675 : vec3<f32> = _S610.value0_49.value0_48 * (vec3<f32>(0) - _S674);
+    var _S676 : f32 = _S675[i32(0)] + _S675[i32(1)] + _S675[i32(2)];
+    var _S677 : vec3<f32> = _S624 * _S674;
+    var _S678 : f32 = 0.57735025882720947f * s_diff_norm_T_1;
     var _S679 : vec3<f32> = _S662;
-    s_bwdProp_dot_1(_S622, &(_S678), &(_S679), _S656);
-    var _S680 : f32 = 0.0f;
+    var _S680 : vec3<f32> = _S662;
+    s_bwdProp_dot_1(_S623, &(_S679), &(_S680), _S657);
     var _S681 : f32 = 0.0f;
-    s_bwdProp_max_2(_S619, &(_S680), &(_S681), _S655);
-    var _S682 : f32 = 0.3333333432674408f * _S680;
-    var _S683 : f32 = 0.0f;
-    var _S684 : f32 = 0.0f;
-    s_bwdProp_max_2(_S616, &(_S683), &(_S684), _S677);
-    var _S685 : vec3<f32> = _S662;
-    s_bwdProp_scaled_length_0(_S614, &(_S685), _S683);
-    (*_S610) = _S676 + _S678 + _S685 + vec3<f32>(_S682, _S682, _S682);
+    var _S682 : f32 = 0.0f;
+    s_bwdProp_max_2(_S620, &(_S681), &(_S682), _S656);
+    var _S683 : f32 = 0.3333333432674408f * _S681;
+    var _S684 : f32 = 0.57735025882720947f * _S676;
+    var _S685 : f32 = 0.0f;
+    var _S686 : f32 = 0.0f;
+    s_bwdProp_max_2(_S617, &(_S685), &(_S686), _S684);
+    var _S687 : f32 = _S678 + _S685;
+    var _S688 : vec3<f32> = _S662;
+    s_bwdProp_scaled_length_0(_S615, &(_S688), _S687);
+    (*_S611) = _S677 + _S679 + _S688 + vec3<f32>(_S683, _S683, _S683);
     return;
 }
 
@@ -2701,469 +2705,469 @@ struct s_bwdCallableCtx_channel_mixer_0
      value0_51 : s_paramCtx_s_bwdCallableCtx_channel_mixer_0,
 };
 
-fn s_bwdProp_channel_mixer_0( _S686 : s_bwdCallableCtx_channel_mixer_0,  _S687 : ptr<function, vec3<f32>>,  _S688 : ptr<function, Illuminant_0>,  _S689 : vec3<f32>)
+fn s_bwdProp_channel_mixer_0( _S689 : s_bwdCallableCtx_channel_mixer_0,  _S690 : ptr<function, vec3<f32>>,  _S691 : ptr<function, Illuminant_0>,  _S692 : vec3<f32>)
 {
-    var _S690 : vec3<f32> = vec3<f32>(0.0f);
-    var _S691 : mat3x3<f32> = mat3x3<f32>(0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
-    var _S692 : s_paramCtx_s_bwdCallableCtx_clip_0 = s_paramCtx_s_bwdCallableCtx_clip_0( _S690, 0.0f );
-    var to_lms_0 : mat3x3<f32> = rows_0(_S686.value0_51.value1_7.to_lms_0_0, _S686.value0_51.value1_7.to_lms_1_0, _S686.value0_51.value1_7.to_lms_2_0);
-    var mix_0 : mat3x3<f32> = rows_0(_S686.value0_51.value1_7.mix_0_0, _S686.value0_51.value1_7.mix_1_0, _S686.value0_51.value1_7.mix_2_0);
-    var cone_0 : mat3x3<f32> = rows_0(_S686.value0_51.value1_7.cone_0_0, _S686.value0_51.value1_7.cone_1_0, _S686.value0_51.value1_7.cone_2_0);
-    var to_space_0 : mat3x3<f32> = rows_0(_S686.value0_51.value1_7.to_space_0_0, _S686.value0_51.value1_7.to_space_1_0, _S686.value0_51.value1_7.to_space_2_0);
-    var from_space_0 : mat3x3<f32> = rows_0(_S686.value0_51.value1_7.from_space_0_0, _S686.value0_51.value1_7.from_space_1_0, _S686.value0_51.value1_7.from_space_2_0);
-    var to_rgb_0 : mat3x3<f32> = rows_0(_S686.value0_51.value1_7.to_rgb_0_0, _S686.value0_51.value1_7.to_rgb_1_0, _S686.value0_51.value1_7.to_rgb_2_0);
-    var _S693 : vec2<f32> = vec2<f32>(_S686.value0_51.value2_1.x_17, _S686.value0_51.value2_1.y_11);
-    var _S694 : Tuple_15 = s_apply_illuminant_xy_to_xyz_0(_S693);
-    var _S695 : s_paramCtx_s_bwdCallableCtx_illuminant_xy_to_xyz_0;
-    _S695.value0_18 = _S693;
-    var _S696 : s_bwdCallableCtx_illuminant_xy_to_xyz_0 = s_bwdCallableCtx_illuminant_xy_to_xyz_0( _S695 );
-    var _S697 : Tuple_14 = s_apply_mul_0(cone_0, _S694.value0_17);
-    var _S698 : s_bwdCallableCtx_mul_0;
-    _S698._S106 = cone_0;
-    _S698._S107 = _S694.value0_17;
-    var _S699 : s_bwdCallableCtx_mul_0 = _S698;
-    var _S700 : Tuple_17 = s_apply_away_from_zero_1(_S697.value0_16, 1.52587890625e-05f);
-    var _S701 : s_paramCtx_s_bwdCallableCtx_away_from_zero_1;
-    _S701.value0_24 = _S697.value0_16;
-    _S701.value1_1 = 1.52587890625e-05f;
-    var _S702 : s_bwdCallableCtx_away_from_zero_1 = s_bwdCallableCtx_away_from_zero_1( _S701 );
-    var _S703 : vec3<f32> = vec3<f32>(-1.0e+08f);
-    var _S704 : vec3<f32> = vec3<f32>(1.0e+08f);
-    var _S705 : Tuple_13 = s_apply_clamp_1(_S686.value0_51.value0_50, _S703, _S704);
-    var _S706 : s_bwdCallableCtx_clamp_1;
-    _S706._S99 = _S686.value0_51.value0_50;
-    _S706._S100 = _S703;
-    _S706._S101 = _S704;
-    var _S707 : s_bwdCallableCtx_clamp_1 = _S706;
-    var _S708 : Tuple_18 = s_apply_clip_0(_S705.value0_15, _S686.value0_51.value1_7.clip_min_0);
-    var _S709 : s_paramCtx_s_bwdCallableCtx_clip_0;
-    _S709.value0_27 = _S705.value0_15;
-    _S709.value1_2 = _S686.value0_51.value1_7.clip_min_0;
-    var _S710 : s_bwdCallableCtx_clip_0 = s_bwdCallableCtx_clip_0( _S709 );
-    var _S711 : Tuple_14 = s_apply_mul_0(to_lms_0, _S708.value0_26);
-    var _S712 : s_bwdCallableCtx_mul_0;
-    _S712._S106 = to_lms_0;
-    _S712._S107 = _S708.value0_26;
-    var _S713 : s_bwdCallableCtx_mul_0 = _S712;
-    var _S714 : bool = (_S686.value0_51.value1_7.adaptation_0) == u32(2);
+    var _S693 : vec3<f32> = vec3<f32>(0.0f);
+    var _S694 : mat3x3<f32> = mat3x3<f32>(0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
+    var _S695 : s_paramCtx_s_bwdCallableCtx_clip_0 = s_paramCtx_s_bwdCallableCtx_clip_0( _S693, 0.0f );
+    var to_lms_0 : mat3x3<f32> = rows_0(_S689.value0_51.value1_7.to_lms_0_0, _S689.value0_51.value1_7.to_lms_1_0, _S689.value0_51.value1_7.to_lms_2_0);
+    var mix_0 : mat3x3<f32> = rows_0(_S689.value0_51.value1_7.mix_0_0, _S689.value0_51.value1_7.mix_1_0, _S689.value0_51.value1_7.mix_2_0);
+    var cone_0 : mat3x3<f32> = rows_0(_S689.value0_51.value1_7.cone_0_0, _S689.value0_51.value1_7.cone_1_0, _S689.value0_51.value1_7.cone_2_0);
+    var to_space_0 : mat3x3<f32> = rows_0(_S689.value0_51.value1_7.to_space_0_0, _S689.value0_51.value1_7.to_space_1_0, _S689.value0_51.value1_7.to_space_2_0);
+    var from_space_0 : mat3x3<f32> = rows_0(_S689.value0_51.value1_7.from_space_0_0, _S689.value0_51.value1_7.from_space_1_0, _S689.value0_51.value1_7.from_space_2_0);
+    var to_rgb_0 : mat3x3<f32> = rows_0(_S689.value0_51.value1_7.to_rgb_0_0, _S689.value0_51.value1_7.to_rgb_1_0, _S689.value0_51.value1_7.to_rgb_2_0);
+    var _S696 : vec2<f32> = vec2<f32>(_S689.value0_51.value2_1.x_17, _S689.value0_51.value2_1.y_11);
+    var _S697 : Tuple_15 = s_apply_illuminant_xy_to_xyz_0(_S696);
+    var _S698 : s_paramCtx_s_bwdCallableCtx_illuminant_xy_to_xyz_0;
+    _S698.value0_18 = _S696;
+    var _S699 : s_bwdCallableCtx_illuminant_xy_to_xyz_0 = s_bwdCallableCtx_illuminant_xy_to_xyz_0( _S698 );
+    var _S700 : Tuple_14 = s_apply_mul_0(cone_0, _S697.value0_17);
+    var _S701 : s_bwdCallableCtx_mul_0;
+    _S701._S106 = cone_0;
+    _S701._S107 = _S697.value0_17;
+    var _S702 : s_bwdCallableCtx_mul_0 = _S701;
+    var _S703 : Tuple_17 = s_apply_away_from_zero_1(_S700.value0_16, 1.52587890625e-05f);
+    var _S704 : s_paramCtx_s_bwdCallableCtx_away_from_zero_1;
+    _S704.value0_24 = _S700.value0_16;
+    _S704.value1_1 = 1.52587890625e-05f;
+    var _S705 : s_bwdCallableCtx_away_from_zero_1 = s_bwdCallableCtx_away_from_zero_1( _S704 );
+    var _S706 : vec3<f32> = vec3<f32>(-1.0e+08f);
+    var _S707 : vec3<f32> = vec3<f32>(1.0e+08f);
+    var _S708 : Tuple_13 = s_apply_clamp_1(_S689.value0_51.value0_50, _S706, _S707);
+    var _S709 : s_bwdCallableCtx_clamp_1;
+    _S709._S99 = _S689.value0_51.value0_50;
+    _S709._S100 = _S706;
+    _S709._S101 = _S707;
+    var _S710 : s_bwdCallableCtx_clamp_1 = _S709;
+    var _S711 : Tuple_18 = s_apply_clip_0(_S708.value0_15, _S689.value0_51.value1_7.clip_min_0);
+    var _S712 : s_paramCtx_s_bwdCallableCtx_clip_0;
+    _S712.value0_27 = _S708.value0_15;
+    _S712.value1_2 = _S689.value0_51.value1_7.clip_min_0;
+    var _S713 : s_bwdCallableCtx_clip_0 = s_bwdCallableCtx_clip_0( _S712 );
+    var _S714 : Tuple_14 = s_apply_mul_0(to_lms_0, _S711.value0_26);
+    var _S715 : s_bwdCallableCtx_mul_0;
+    _S715._S106 = to_lms_0;
+    _S715._S107 = _S711.value0_26;
+    var _S716 : s_bwdCallableCtx_mul_0 = _S715;
+    var _S717 : bool = (_S689.value0_51.value1_7.adaptation_0) == u32(2);
     var lms_0 : vec3<f32>;
-    var _S715 : vec3<f32>;
-    var _S716 : vec3<f32>;
-    var _S717 : vec3<f32>;
     var _S718 : vec3<f32>;
     var _S719 : vec3<f32>;
     var _S720 : vec3<f32>;
     var _S721 : vec3<f32>;
     var _S722 : vec3<f32>;
+    var _S723 : vec3<f32>;
+    var _S724 : vec3<f32>;
+    var _S725 : vec3<f32>;
     var scale_3 : f32;
     var power_0 : f32;
-    var _S723 : f32;
+    var _S726 : f32;
     var blue_0 : f32;
-    var _S724 : s_bwdCallableCtx_pow0_0;
-    var _S725 : s_bwdCallableCtx_pow0_0;
-    var _S726 : s_bwdCallableCtx_min_1;
-    var _S727 : bool;
-    var _S728 : bool;
-    var _S729 : bool;
+    var _S727 : s_bwdCallableCtx_pow0_0;
+    var _S728 : s_bwdCallableCtx_pow0_0;
+    var _S729 : s_bwdCallableCtx_min_1;
     var _S730 : bool;
-    var _S731 : s_bwdCallableCtx_mul_0;
-    if(_S714)
+    var _S731 : bool;
+    var _S732 : bool;
+    var _S733 : bool;
+    var _S734 : s_bwdCallableCtx_mul_0;
+    if(_S717)
     {
-        var _S732 : f32 = _S711.value0_16.y;
-        var _S733 : bool = (_S732 > 1.52587890625e-05f);
-        if(_S733)
+        var _S735 : f32 = _S714.value0_16.y;
+        var _S736 : bool = (_S735 > 1.52587890625e-05f);
+        if(_S736)
         {
-            scale_3 = _S732 + 1.52587890625e-05f;
+            scale_3 = _S735 + 1.52587890625e-05f;
         }
         else
         {
             scale_3 = 1.52587890625e-05f;
         }
-        var _S734 : f32 = _S700.value0_23.z;
-        var _S735 : bool = (_S734 > 0.0f);
-        if(_S735)
+        var _S737 : f32 = _S703.value0_23.z;
+        var _S738 : bool = (_S737 > 0.0f);
+        if(_S738)
         {
-            var _S736 : f32 = 0.81815499067306519f / _S734;
-            var _S737 : f32 = _S734 * _S734;
-            var _S738 : Tuple_12 = s_apply_pow0_0(_S736, 0.083400003612041473f);
-            var _S739 : s_bwdCallableCtx_pow0_0;
-            _S739._S94 = _S736;
-            _S739._S95 = 0.083400003612041473f;
-            power_0 = _S738.value0_14;
-            _S724 = _S739;
-            _S723 = _S737;
+            var _S739 : f32 = 0.81815499067306519f / _S737;
+            var _S740 : f32 = _S737 * _S737;
+            var _S741 : Tuple_12 = s_apply_pow0_0(_S739, 0.083400003612041473f);
+            var _S742 : s_bwdCallableCtx_pow0_0;
+            _S742._S94 = _S739;
+            _S742._S95 = 0.083400003612041473f;
+            power_0 = _S741.value0_14;
+            _S727 = _S742;
+            _S726 = _S740;
         }
         else
         {
             power_0 = 1.0f;
-            _S724._S94 = 0.0f;
-            _S724._S95 = 0.0f;
-            _S723 = 0.0f;
+            _S727._S94 = 0.0f;
+            _S727._S95 = 0.0f;
+            _S726 = 0.0f;
         }
-        var _S740 : Tuple_14 = s_apply_mul_0(cone_0, _S711.value0_16);
-        var _S741 : s_bwdCallableCtx_mul_0;
-        _S741._S106 = cone_0;
-        _S741._S107 = _S711.value0_16;
-        var _S742 : s_bwdCallableCtx_mul_0 = _S741;
-        var _S743 : vec3<f32> = _S740.value0_16 / vec3<f32>(scale_3);
-        var _S744 : f32 = scale_3 * scale_3;
-        var ratio_0 : vec3<f32> = _S743 / _S700.value0_23;
-        var _S745 : vec3<f32> = _S700.value0_23 * _S700.value0_23;
-        var _S746 : f32 = ratio_0.z;
-        var _S747 : bool = (_S746 > 0.0f);
-        if(_S747)
+        var _S743 : Tuple_14 = s_apply_mul_0(cone_0, _S714.value0_16);
+        var _S744 : s_bwdCallableCtx_mul_0;
+        _S744._S106 = cone_0;
+        _S744._S107 = _S714.value0_16;
+        var _S745 : s_bwdCallableCtx_mul_0 = _S744;
+        var _S746 : vec3<f32> = _S743.value0_16 / vec3<f32>(scale_3);
+        var _S747 : f32 = scale_3 * scale_3;
+        var ratio_0 : vec3<f32> = _S746 / _S703.value0_23;
+        var _S748 : vec3<f32> = _S703.value0_23 * _S703.value0_23;
+        var _S749 : f32 = ratio_0.z;
+        var _S750 : bool = (_S749 > 0.0f);
+        if(_S750)
         {
-            var _S748 : Tuple_11 = s_apply_min_1(_S746, 1.0e+08f);
-            var _S749 : s_bwdCallableCtx_min_1;
-            _S749._S89 = _S746;
-            _S749._S90 = 1.0e+08f;
-            var _S750 : Tuple_12 = s_apply_pow0_0(_S748.value0_13, power_0);
-            var _S751 : s_bwdCallableCtx_pow0_0;
-            _S751._S94 = _S748.value0_13;
-            _S751._S95 = power_0;
-            blue_0 = _S750.value0_14;
-            _S725 = _S751;
-            _S726 = _S749;
+            var _S751 : Tuple_11 = s_apply_min_1(_S749, 1.0e+08f);
+            var _S752 : s_bwdCallableCtx_min_1;
+            _S752._S89 = _S749;
+            _S752._S90 = 1.0e+08f;
+            var _S753 : Tuple_12 = s_apply_pow0_0(_S751.value0_13, power_0);
+            var _S754 : s_bwdCallableCtx_pow0_0;
+            _S754._S94 = _S751.value0_13;
+            _S754._S95 = power_0;
+            blue_0 = _S753.value0_14;
+            _S728 = _S754;
+            _S729 = _S752;
         }
         else
         {
-            blue_0 = _S746;
-            _S725._S94 = 0.0f;
-            _S725._S95 = 0.0f;
-            _S726._S89 = 0.0f;
-            _S726._S90 = 0.0f;
+            blue_0 = _S749;
+            _S728._S94 = 0.0f;
+            _S728._S95 = 0.0f;
+            _S729._S89 = 0.0f;
+            _S729._S90 = 0.0f;
         }
-        var _S752 : vec3<f32> = _S686.value0_51.value1_7.d50_0.xyz;
-        var _S753 : vec3<f32> = _S752 * vec3<f32>(ratio_0.x, ratio_0.y, blue_0);
-        var _S754 : s_bwdCallableCtx_pow0_0 = _S724;
-        lms_0 = _S753 * vec3<f32>(scale_3);
-        _S715 = _S753;
-        _S716 = _S752;
-        _S727 = _S747;
-        _S724 = _S725;
-        _S717 = _S745;
-        _S718 = _S743;
-        power_0 = _S744;
-        _S719 = _S740.value0_16;
-        _S731 = _S742;
-        _S728 = _S735;
-        _S725 = _S754;
-        _S729 = _S733;
-        _S730 = false;
-        _S720 = _S690;
-        _S721 = _S690;
-        _S722 = _S690;
+        var _S755 : vec3<f32> = _S689.value0_51.value1_7.d50_0.xyz;
+        var _S756 : vec3<f32> = _S755 * vec3<f32>(ratio_0.x, ratio_0.y, blue_0);
+        var _S757 : s_bwdCallableCtx_pow0_0 = _S727;
+        lms_0 = _S756 * vec3<f32>(scale_3);
+        _S718 = _S756;
+        _S719 = _S755;
+        _S730 = _S750;
+        _S727 = _S728;
+        _S720 = _S748;
+        _S721 = _S746;
+        power_0 = _S747;
+        _S722 = _S743.value0_16;
+        _S734 = _S745;
+        _S731 = _S738;
+        _S728 = _S757;
+        _S732 = _S736;
+        _S733 = false;
+        _S723 = _S693;
+        _S724 = _S693;
+        _S725 = _S693;
     }
     else
     {
-        var _S755 : bool = (_S686.value0_51.value1_7.adaptation_0) != u32(4);
-        if(_S755)
+        var _S758 : bool = (_S689.value0_51.value1_7.adaptation_0) != u32(4);
+        if(_S758)
         {
-            var _S756 : vec3<f32> = _S686.value0_51.value1_7.d50_0.xyz;
-            var _S757 : vec3<f32> = _S756 / _S700.value0_23;
-            var _S758 : vec3<f32> = _S700.value0_23 * _S700.value0_23;
-            lms_0 = _S711.value0_16 * _S757;
-            _S715 = _S757;
-            _S716 = _S758;
-            _S717 = _S756;
+            var _S759 : vec3<f32> = _S689.value0_51.value1_7.d50_0.xyz;
+            var _S760 : vec3<f32> = _S759 / _S703.value0_23;
+            var _S761 : vec3<f32> = _S703.value0_23 * _S703.value0_23;
+            lms_0 = _S714.value0_16 * _S760;
+            _S718 = _S760;
+            _S719 = _S761;
+            _S720 = _S759;
         }
         else
         {
-            lms_0 = _S711.value0_16;
-            _S715 = _S690;
-            _S716 = _S690;
-            _S717 = _S690;
+            lms_0 = _S714.value0_16;
+            _S718 = _S693;
+            _S719 = _S693;
+            _S720 = _S693;
         }
-        var _S759 : vec3<f32> = _S715;
-        var _S760 : vec3<f32> = _S716;
-        var _S761 : vec3<f32> = _S717;
-        _S715 = _S690;
+        var _S762 : vec3<f32> = _S718;
+        var _S763 : vec3<f32> = _S719;
+        var _S764 : vec3<f32> = _S720;
+        _S718 = _S693;
         scale_3 = 0.0f;
-        _S716 = _S690;
-        _S727 = false;
-        _S724._S94 = 0.0f;
-        _S724._S95 = 0.0f;
-        _S726._S89 = 0.0f;
-        _S726._S90 = 0.0f;
-        _S717 = _S690;
-        _S718 = _S690;
+        _S719 = _S693;
+        _S730 = false;
+        _S727._S94 = 0.0f;
+        _S727._S95 = 0.0f;
+        _S729._S89 = 0.0f;
+        _S729._S90 = 0.0f;
+        _S720 = _S693;
+        _S721 = _S693;
         power_0 = 0.0f;
-        _S719 = _S690;
-        _S731._S106 = _S691;
-        _S731._S107 = _S690;
-        _S728 = false;
-        _S725._S94 = 0.0f;
-        _S725._S95 = 0.0f;
-        _S723 = 0.0f;
-        _S729 = false;
-        _S730 = _S755;
-        _S720 = _S759;
-        _S721 = _S760;
-        _S722 = _S761;
+        _S722 = _S693;
+        _S734._S106 = _S694;
+        _S734._S107 = _S693;
+        _S731 = false;
+        _S728._S94 = 0.0f;
+        _S728._S95 = 0.0f;
+        _S726 = 0.0f;
+        _S732 = false;
+        _S733 = _S758;
+        _S723 = _S762;
+        _S724 = _S763;
+        _S725 = _S764;
     }
-    var _S762 : Tuple_14 = s_apply_mul_0(mix_0, lms_0);
-    var _S763 : s_bwdCallableCtx_mul_0;
-    _S763._S106 = mix_0;
-    _S763._S107 = lms_0;
-    var _S764 : s_bwdCallableCtx_mul_0 = _S763;
-    var _S765 : Tuple_18 = s_apply_clip_0(_S762.value0_16, _S686.value0_51.value1_7.clip_min_0);
-    var _S766 : s_paramCtx_s_bwdCallableCtx_clip_0;
-    _S766.value0_27 = _S762.value0_16;
-    _S766.value1_2 = _S686.value0_51.value1_7.clip_min_0;
-    var _S767 : s_bwdCallableCtx_clip_0 = s_bwdCallableCtx_clip_0( _S766 );
-    var _S768 : vec3<f32> = vec3<f32>(-9.99999995904e+11f);
-    var _S769 : vec3<f32> = vec3<f32>(9.99999995904e+11f);
-    var _S770 : Tuple_13 = s_apply_clamp_1(_S765.value0_26, _S768, _S769);
-    var _S771 : s_bwdCallableCtx_clamp_1;
-    _S771._S99 = _S765.value0_26;
-    _S771._S100 = _S768;
-    _S771._S101 = _S769;
-    var _S772 : s_bwdCallableCtx_clamp_1 = _S771;
-    var _S773 : Tuple_23 = s_apply_gamut_mapping_0(_S770.value0_15, _S686.value0_51.value1_7);
-    var _S774 : s_paramCtx_s_bwdCallableCtx_gamut_mapping_0;
-    _S774.value0_42 = _S770.value0_15;
-    _S774.value1_5 = _S686.value0_51.value1_7;
-    var _S775 : s_bwdCallableCtx_gamut_mapping_0 = s_bwdCallableCtx_gamut_mapping_0( _S774 );
-    var _S776 : Tuple_13 = s_apply_clamp_1(_S773.value0_41, _S768, _S769);
-    var _S777 : s_bwdCallableCtx_clamp_1;
-    _S777._S99 = _S773.value0_41;
-    _S777._S100 = _S768;
-    _S777._S101 = _S769;
-    var _S778 : s_bwdCallableCtx_clamp_1 = _S777;
-    var _S779 : Tuple_14 = s_apply_mul_0(to_space_0, _S776.value0_15);
-    var _S780 : s_bwdCallableCtx_mul_0;
-    _S780._S106 = to_space_0;
-    _S780._S107 = _S776.value0_15;
-    var _S781 : s_bwdCallableCtx_mul_0 = _S780;
-    var _S782 : Tuple_18 = s_apply_clip_0(_S779.value0_16, _S686.value0_51.value1_7.clip_min_0);
-    var _S783 : s_paramCtx_s_bwdCallableCtx_clip_0;
-    _S783.value0_27 = _S779.value0_16;
-    _S783.value1_2 = _S686.value0_51.value1_7.clip_min_0;
-    var _S784 : s_bwdCallableCtx_clip_0 = s_bwdCallableCtx_clip_0( _S783 );
-    var _S785 : Tuple_25 = s_apply_luma_chroma_0(_S782.value0_26, _S686.value0_51.value1_7);
-    var _S786 : s_paramCtx_s_bwdCallableCtx_luma_chroma_0;
-    _S786.value0_48 = _S782.value0_26;
-    _S786.value1_6 = _S686.value0_51.value1_7;
-    var _S787 : s_bwdCallableCtx_luma_chroma_0 = s_bwdCallableCtx_luma_chroma_0( _S786 );
-    var _S788 : Tuple_18 = s_apply_clip_0(_S785.value0_47, _S686.value0_51.value1_7.clip_min_0);
-    var _S789 : s_paramCtx_s_bwdCallableCtx_clip_0;
-    _S789.value0_27 = _S785.value0_47;
-    _S789.value1_2 = _S686.value0_51.value1_7.clip_min_0;
-    var _S790 : s_bwdCallableCtx_clip_0 = s_bwdCallableCtx_clip_0( _S789 );
-    var _S791 : bool = (_S686.value0_51.value1_7.apply_grey_0) != u32(0);
-    var _S792 : s_bwdCallableCtx_max_2;
-    var _S793 : s_bwdCallableCtx_dot_1;
-    if(_S791)
+    var _S765 : Tuple_14 = s_apply_mul_0(mix_0, lms_0);
+    var _S766 : s_bwdCallableCtx_mul_0;
+    _S766._S106 = mix_0;
+    _S766._S107 = lms_0;
+    var _S767 : s_bwdCallableCtx_mul_0 = _S766;
+    var _S768 : Tuple_18 = s_apply_clip_0(_S765.value0_16, _S689.value0_51.value1_7.clip_min_0);
+    var _S769 : s_paramCtx_s_bwdCallableCtx_clip_0;
+    _S769.value0_27 = _S765.value0_16;
+    _S769.value1_2 = _S689.value0_51.value1_7.clip_min_0;
+    var _S770 : s_bwdCallableCtx_clip_0 = s_bwdCallableCtx_clip_0( _S769 );
+    var _S771 : vec3<f32> = vec3<f32>(-9.99999995904e+11f);
+    var _S772 : vec3<f32> = vec3<f32>(9.99999995904e+11f);
+    var _S773 : Tuple_13 = s_apply_clamp_1(_S768.value0_26, _S771, _S772);
+    var _S774 : s_bwdCallableCtx_clamp_1;
+    _S774._S99 = _S768.value0_26;
+    _S774._S100 = _S771;
+    _S774._S101 = _S772;
+    var _S775 : s_bwdCallableCtx_clamp_1 = _S774;
+    var _S776 : Tuple_23 = s_apply_gamut_mapping_0(_S773.value0_15, _S689.value0_51.value1_7);
+    var _S777 : s_paramCtx_s_bwdCallableCtx_gamut_mapping_0;
+    _S777.value0_42 = _S773.value0_15;
+    _S777.value1_5 = _S689.value0_51.value1_7;
+    var _S778 : s_bwdCallableCtx_gamut_mapping_0 = s_bwdCallableCtx_gamut_mapping_0( _S777 );
+    var _S779 : Tuple_13 = s_apply_clamp_1(_S776.value0_41, _S771, _S772);
+    var _S780 : s_bwdCallableCtx_clamp_1;
+    _S780._S99 = _S776.value0_41;
+    _S780._S100 = _S771;
+    _S780._S101 = _S772;
+    var _S781 : s_bwdCallableCtx_clamp_1 = _S780;
+    var _S782 : Tuple_14 = s_apply_mul_0(to_space_0, _S779.value0_15);
+    var _S783 : s_bwdCallableCtx_mul_0;
+    _S783._S106 = to_space_0;
+    _S783._S107 = _S779.value0_15;
+    var _S784 : s_bwdCallableCtx_mul_0 = _S783;
+    var _S785 : Tuple_18 = s_apply_clip_0(_S782.value0_16, _S689.value0_51.value1_7.clip_min_0);
+    var _S786 : s_paramCtx_s_bwdCallableCtx_clip_0;
+    _S786.value0_27 = _S782.value0_16;
+    _S786.value1_2 = _S689.value0_51.value1_7.clip_min_0;
+    var _S787 : s_bwdCallableCtx_clip_0 = s_bwdCallableCtx_clip_0( _S786 );
+    var _S788 : Tuple_25 = s_apply_luma_chroma_0(_S785.value0_26, _S689.value0_51.value1_7);
+    var _S789 : s_paramCtx_s_bwdCallableCtx_luma_chroma_0;
+    _S789.value0_48 = _S785.value0_26;
+    _S789.value1_6 = _S689.value0_51.value1_7;
+    var _S790 : s_bwdCallableCtx_luma_chroma_0 = s_bwdCallableCtx_luma_chroma_0( _S789 );
+    var _S791 : Tuple_18 = s_apply_clip_0(_S788.value0_47, _S689.value0_51.value1_7.clip_min_0);
+    var _S792 : s_paramCtx_s_bwdCallableCtx_clip_0;
+    _S792.value0_27 = _S788.value0_47;
+    _S792.value1_2 = _S689.value0_51.value1_7.clip_min_0;
+    var _S793 : s_bwdCallableCtx_clip_0 = s_bwdCallableCtx_clip_0( _S792 );
+    var _S794 : bool = (_S689.value0_51.value1_7.apply_grey_0) != u32(0);
+    var _S795 : s_bwdCallableCtx_max_2;
+    var _S796 : s_bwdCallableCtx_dot_1;
+    if(_S794)
     {
-        var _S794 : vec3<f32> = _S686.value0_51.value1_7.grey_0.xyz;
-        var _S795 : Tuple_10 = s_apply_dot_1(_S788.value0_26, _S794);
-        var _S796 : s_bwdCallableCtx_dot_1;
-        _S796._S84 = _S788.value0_26;
-        _S796._S85 = _S794;
-        var _S797 : s_bwdCallableCtx_max_2;
-        _S797._S79 = _S795.value0_12;
-        _S797._S80 = 0.0f;
-        _S792 = _S797;
-        _S793 = _S796;
+        var _S797 : vec3<f32> = _S689.value0_51.value1_7.grey_0.xyz;
+        var _S798 : Tuple_10 = s_apply_dot_1(_S791.value0_26, _S797);
+        var _S799 : s_bwdCallableCtx_dot_1;
+        _S799._S84 = _S791.value0_26;
+        _S799._S85 = _S797;
+        var _S800 : s_bwdCallableCtx_max_2;
+        _S800._S79 = _S798.value0_12;
+        _S800._S80 = 0.0f;
+        _S795 = _S800;
+        _S796 = _S799;
     }
     else
     {
-        _S792._S79 = 0.0f;
-        _S792._S80 = 0.0f;
-        _S793._S84 = _S690;
-        _S793._S85 = _S690;
+        _S795._S79 = 0.0f;
+        _S795._S80 = 0.0f;
+        _S796._S84 = _S693;
+        _S796._S85 = _S693;
     }
-    var _S798 : bool = !_S791;
-    var _S799 : s_bwdCallableCtx_mul_0;
-    var _S800 : s_bwdCallableCtx_mul_0;
-    var _S801 : s_bwdCallableCtx_clip_0;
-    var _S802 : s_bwdCallableCtx_clip_0;
-    if(_S798)
+    var _S801 : bool = !_S794;
+    var _S802 : s_bwdCallableCtx_mul_0;
+    var _S803 : s_bwdCallableCtx_mul_0;
+    var _S804 : s_bwdCallableCtx_clip_0;
+    var _S805 : s_bwdCallableCtx_clip_0;
+    if(_S801)
     {
-        var _S803 : Tuple_14 = s_apply_mul_0(from_space_0, _S788.value0_26);
-        var _S804 : s_bwdCallableCtx_mul_0;
-        _S804._S106 = from_space_0;
-        _S804._S107 = _S788.value0_26;
-        var _S805 : Tuple_18 = s_apply_clip_0(_S803.value0_16, _S686.value0_51.value1_7.clip_min_0);
-        var _S806 : s_paramCtx_s_bwdCallableCtx_clip_0;
-        _S806.value0_27 = _S803.value0_16;
-        _S806.value1_2 = _S686.value0_51.value1_7.clip_min_0;
-        var _S807 : Tuple_14 = s_apply_mul_0(to_rgb_0, _S805.value0_26);
-        var _S808 : s_bwdCallableCtx_mul_0;
-        _S808._S106 = to_rgb_0;
-        _S808._S107 = _S805.value0_26;
+        var _S806 : Tuple_14 = s_apply_mul_0(from_space_0, _S791.value0_26);
+        var _S807 : s_bwdCallableCtx_mul_0;
+        _S807._S106 = from_space_0;
+        _S807._S107 = _S791.value0_26;
+        var _S808 : Tuple_18 = s_apply_clip_0(_S806.value0_16, _S689.value0_51.value1_7.clip_min_0);
         var _S809 : s_paramCtx_s_bwdCallableCtx_clip_0;
-        _S809.value0_27 = _S807.value0_16;
-        _S809.value1_2 = _S686.value0_51.value1_7.clip_min_0;
-        _S801.value0_28 = _S809;
-        _S799 = _S808;
-        _S802.value0_28 = _S806;
-        _S800 = _S804;
+        _S809.value0_27 = _S806.value0_16;
+        _S809.value1_2 = _S689.value0_51.value1_7.clip_min_0;
+        var _S810 : Tuple_14 = s_apply_mul_0(to_rgb_0, _S808.value0_26);
+        var _S811 : s_bwdCallableCtx_mul_0;
+        _S811._S106 = to_rgb_0;
+        _S811._S107 = _S808.value0_26;
+        var _S812 : s_paramCtx_s_bwdCallableCtx_clip_0;
+        _S812.value0_27 = _S810.value0_16;
+        _S812.value1_2 = _S689.value0_51.value1_7.clip_min_0;
+        _S804.value0_28 = _S812;
+        _S802 = _S811;
+        _S805.value0_28 = _S809;
+        _S803 = _S807;
     }
     else
     {
-        _S801.value0_28 = _S692;
-        _S799._S106 = _S691;
-        _S799._S107 = _S690;
-        _S802.value0_28 = _S692;
-        _S800._S106 = _S691;
-        _S800._S107 = _S690;
+        _S804.value0_28 = _S695;
+        _S802._S106 = _S694;
+        _S802._S107 = _S693;
+        _S805.value0_28 = _S695;
+        _S803._S106 = _S694;
+        _S803._S107 = _S693;
     }
-    var _S810 : Illuminant_0 = Illuminant_x24_syn_dzero_0();
-    var _S811 : vec3<f32>;
-    if(_S798)
+    var _S813 : Illuminant_0 = Illuminant_x24_syn_dzero_0();
+    var _S814 : vec3<f32>;
+    if(_S801)
     {
-        var _S812 : vec3<f32> = _S690;
-        s_bwdProp_clip_0(_S801, &(_S812), _S689);
-        var _S813 : mat3x3<f32> = _S691;
-        var _S814 : vec3<f32> = _S690;
-        s_bwdProp_mul_0(_S799, &(_S813), &(_S814), _S812);
-        var _S815 : vec3<f32> = _S690;
-        s_bwdProp_clip_0(_S802, &(_S815), _S814);
-        var _S816 : mat3x3<f32> = _S691;
-        var _S817 : vec3<f32> = _S690;
-        s_bwdProp_mul_0(_S800, &(_S816), &(_S817), _S815);
-        lms_0 = _S690;
-        _S811 = _S817;
-    }
-    else
-    {
-        lms_0 = _S689;
-        _S811 = _S690;
-    }
-    if(_S791)
-    {
-        var _S818 : f32 = lms_0[i32(0)] + lms_0[i32(1)] + lms_0[i32(2)];
-        var _S819 : f32 = 0.0f;
-        var _S820 : f32 = 0.0f;
-        s_bwdProp_max_2(_S792, &(_S819), &(_S820), _S818);
-        var _S821 : vec3<f32> = _S690;
-        var _S822 : vec3<f32> = _S690;
-        s_bwdProp_dot_1(_S793, &(_S821), &(_S822), _S819);
-        lms_0 = _S821 + _S811;
+        var _S815 : vec3<f32> = _S693;
+        s_bwdProp_clip_0(_S804, &(_S815), _S692);
+        var _S816 : mat3x3<f32> = _S694;
+        var _S817 : vec3<f32> = _S693;
+        s_bwdProp_mul_0(_S802, &(_S816), &(_S817), _S815);
+        var _S818 : vec3<f32> = _S693;
+        s_bwdProp_clip_0(_S805, &(_S818), _S817);
+        var _S819 : mat3x3<f32> = _S694;
+        var _S820 : vec3<f32> = _S693;
+        s_bwdProp_mul_0(_S803, &(_S819), &(_S820), _S818);
+        lms_0 = _S693;
+        _S814 = _S820;
     }
     else
     {
-        lms_0 = _S811;
+        lms_0 = _S692;
+        _S814 = _S693;
     }
-    var _S823 : vec3<f32> = _S690;
-    s_bwdProp_clip_0(_S790, &(_S823), lms_0);
-    var _S824 : vec3<f32> = _S690;
-    s_bwdProp_luma_chroma_0(_S787, &(_S824), _S823);
-    var _S825 : vec3<f32> = _S690;
-    s_bwdProp_clip_0(_S784, &(_S825), _S824);
-    var _S826 : mat3x3<f32> = _S691;
-    var _S827 : vec3<f32> = _S690;
-    s_bwdProp_mul_0(_S781, &(_S826), &(_S827), _S825);
-    var _S828 : vec3<f32> = _S690;
-    var _S829 : vec3<f32> = _S690;
-    var _S830 : vec3<f32> = _S690;
-    s_bwdProp_clamp_1(_S778, &(_S828), &(_S829), &(_S830), _S827);
-    var _S831 : vec3<f32> = _S690;
-    s_bwdProp_gamut_mapping_0(_S775, &(_S831), _S828);
-    var _S832 : vec3<f32> = _S690;
-    var _S833 : vec3<f32> = _S690;
-    var _S834 : vec3<f32> = _S690;
-    s_bwdProp_clamp_1(_S772, &(_S832), &(_S833), &(_S834), _S831);
-    var _S835 : vec3<f32> = _S690;
-    s_bwdProp_clip_0(_S767, &(_S835), _S832);
-    var _S836 : mat3x3<f32> = _S691;
-    var _S837 : vec3<f32> = _S690;
-    s_bwdProp_mul_0(_S764, &(_S836), &(_S837), _S835);
-    var _S838 : vec3<f32> = _S837;
-    if(_S714)
+    if(_S794)
     {
-        var _S839 : vec3<f32> = _S715 * _S838;
-        var _S840 : f32 = _S839[i32(0)] + _S839[i32(1)] + _S839[i32(2)];
-        var _S841 : vec3<f32> = vec3<f32>(scale_3);
-        var _S842 : vec3<f32> = _S716 * (_S841 * _S838);
-        var _S843 : vec3<f32> = vec3<f32>(_S842[i32(0)], _S842[i32(1)], 0.0f);
-        if(_S727)
-        {
-            var _S844 : f32 = 0.0f;
-            var _S845 : f32 = 0.0f;
-            s_bwdProp_pow0_0(_S724, &(_S844), &(_S845), _S842[i32(2)]);
-            var _S846 : f32 = 0.0f;
-            var _S847 : f32 = 0.0f;
-            s_bwdProp_min_1(_S726, &(_S846), &(_S847), _S844);
-            scale_3 = _S846;
-            blue_0 = _S845;
-        }
-        else
-        {
-            scale_3 = _S842[i32(2)];
-            blue_0 = 0.0f;
-        }
-        var _S848 : vec3<f32> = (_S843 + vec3<f32>(0.0f, 0.0f, scale_3)) / _S717;
-        var _S849 : vec3<f32> = _S718 * (vec3<f32>(0) - _S848);
-        var _S850 : vec3<f32> = _S700.value0_23 * _S848 / vec3<f32>(power_0);
-        var _S851 : vec3<f32> = _S719 * (vec3<f32>(0) - _S850);
-        var _S852 : f32 = _S851[i32(0)] + _S851[i32(1)] + _S851[i32(2)];
-        var _S853 : vec3<f32> = _S841 * _S850;
-        var _S854 : mat3x3<f32> = _S691;
-        var _S855 : vec3<f32> = _S690;
-        s_bwdProp_mul_0(_S731, &(_S854), &(_S855), _S853);
-        var _S856 : vec3<f32> = _S855;
-        var _S857 : f32 = _S852 + _S840;
-        if(_S728)
-        {
-            var _S858 : f32 = 0.0f;
-            var _S859 : f32 = 0.0f;
-            s_bwdProp_pow0_0(_S725, &(_S858), &(_S859), blue_0);
-            scale_3 = 0.81815499067306519f * - (_S858 / _S723);
-        }
-        else
-        {
-            scale_3 = 0.0f;
-        }
-        var _S860 : vec3<f32> = _S849 + vec3<f32>(0.0f, 0.0f, scale_3);
-        if(_S729)
-        {
-            scale_3 = _S857;
-        }
-        else
-        {
-            scale_3 = 0.0f;
-        }
-        lms_0 = _S856 + vec3<f32>(0.0f, scale_3, 0.0f);
-        _S715 = _S860;
+        var _S821 : f32 = lms_0[i32(0)] + lms_0[i32(1)] + lms_0[i32(2)];
+        var _S822 : f32 = 0.0f;
+        var _S823 : f32 = 0.0f;
+        s_bwdProp_max_2(_S795, &(_S822), &(_S823), _S821);
+        var _S824 : vec3<f32> = _S693;
+        var _S825 : vec3<f32> = _S693;
+        s_bwdProp_dot_1(_S796, &(_S824), &(_S825), _S822);
+        lms_0 = _S824 + _S814;
     }
     else
     {
+        lms_0 = _S814;
+    }
+    var _S826 : vec3<f32> = _S693;
+    s_bwdProp_clip_0(_S793, &(_S826), lms_0);
+    var _S827 : vec3<f32> = _S693;
+    s_bwdProp_luma_chroma_0(_S790, &(_S827), _S826);
+    var _S828 : vec3<f32> = _S693;
+    s_bwdProp_clip_0(_S787, &(_S828), _S827);
+    var _S829 : mat3x3<f32> = _S694;
+    var _S830 : vec3<f32> = _S693;
+    s_bwdProp_mul_0(_S784, &(_S829), &(_S830), _S828);
+    var _S831 : vec3<f32> = _S693;
+    var _S832 : vec3<f32> = _S693;
+    var _S833 : vec3<f32> = _S693;
+    s_bwdProp_clamp_1(_S781, &(_S831), &(_S832), &(_S833), _S830);
+    var _S834 : vec3<f32> = _S693;
+    s_bwdProp_gamut_mapping_0(_S778, &(_S834), _S831);
+    var _S835 : vec3<f32> = _S693;
+    var _S836 : vec3<f32> = _S693;
+    var _S837 : vec3<f32> = _S693;
+    s_bwdProp_clamp_1(_S775, &(_S835), &(_S836), &(_S837), _S834);
+    var _S838 : vec3<f32> = _S693;
+    s_bwdProp_clip_0(_S770, &(_S838), _S835);
+    var _S839 : mat3x3<f32> = _S694;
+    var _S840 : vec3<f32> = _S693;
+    s_bwdProp_mul_0(_S767, &(_S839), &(_S840), _S838);
+    var _S841 : vec3<f32> = _S840;
+    if(_S717)
+    {
+        var _S842 : vec3<f32> = _S718 * _S841;
+        var _S843 : f32 = _S842[i32(0)] + _S842[i32(1)] + _S842[i32(2)];
+        var _S844 : vec3<f32> = vec3<f32>(scale_3);
+        var _S845 : vec3<f32> = _S719 * (_S844 * _S841);
+        var _S846 : vec3<f32> = vec3<f32>(_S845[i32(0)], _S845[i32(1)], 0.0f);
         if(_S730)
         {
-            var _S861 : vec3<f32> = _S722 * (vec3<f32>(0) - _S711.value0_16 * _S838 / _S721);
-            lms_0 = _S720 * _S838;
-            _S715 = _S861;
+            var _S847 : f32 = 0.0f;
+            var _S848 : f32 = 0.0f;
+            s_bwdProp_pow0_0(_S727, &(_S847), &(_S848), _S845[i32(2)]);
+            var _S849 : f32 = 0.0f;
+            var _S850 : f32 = 0.0f;
+            s_bwdProp_min_1(_S729, &(_S849), &(_S850), _S847);
+            scale_3 = _S849;
+            blue_0 = _S848;
         }
         else
         {
-            lms_0 = _S838;
-            _S715 = _S690;
+            scale_3 = _S845[i32(2)];
+            blue_0 = 0.0f;
+        }
+        var _S851 : vec3<f32> = (_S846 + vec3<f32>(0.0f, 0.0f, scale_3)) / _S720;
+        var _S852 : vec3<f32> = _S721 * (vec3<f32>(0) - _S851);
+        var _S853 : vec3<f32> = _S703.value0_23 * _S851 / vec3<f32>(power_0);
+        var _S854 : vec3<f32> = _S722 * (vec3<f32>(0) - _S853);
+        var _S855 : f32 = _S854[i32(0)] + _S854[i32(1)] + _S854[i32(2)];
+        var _S856 : vec3<f32> = _S844 * _S853;
+        var _S857 : mat3x3<f32> = _S694;
+        var _S858 : vec3<f32> = _S693;
+        s_bwdProp_mul_0(_S734, &(_S857), &(_S858), _S856);
+        var _S859 : vec3<f32> = _S858;
+        var _S860 : f32 = _S855 + _S843;
+        if(_S731)
+        {
+            var _S861 : f32 = 0.0f;
+            var _S862 : f32 = 0.0f;
+            s_bwdProp_pow0_0(_S728, &(_S861), &(_S862), blue_0);
+            scale_3 = 0.81815499067306519f * - (_S861 / _S726);
+        }
+        else
+        {
+            scale_3 = 0.0f;
+        }
+        var _S863 : vec3<f32> = _S852 + vec3<f32>(0.0f, 0.0f, scale_3);
+        if(_S732)
+        {
+            scale_3 = _S860;
+        }
+        else
+        {
+            scale_3 = 0.0f;
+        }
+        lms_0 = _S859 + vec3<f32>(0.0f, scale_3, 0.0f);
+        _S718 = _S863;
+    }
+    else
+    {
+        if(_S733)
+        {
+            var _S864 : vec3<f32> = _S725 * (vec3<f32>(0) - _S714.value0_16 * _S841 / _S724);
+            lms_0 = _S723 * _S841;
+            _S718 = _S864;
+        }
+        else
+        {
+            lms_0 = _S841;
+            _S718 = _S693;
         }
     }
-    var _S862 : mat3x3<f32> = _S691;
-    var _S863 : vec3<f32> = _S690;
-    s_bwdProp_mul_0(_S713, &(_S862), &(_S863), lms_0);
-    var _S864 : vec3<f32> = _S690;
-    s_bwdProp_clip_0(_S710, &(_S864), _S863);
-    var _S865 : vec3<f32> = _S690;
-    var _S866 : vec3<f32> = _S690;
-    var _S867 : vec3<f32> = _S690;
-    s_bwdProp_clamp_1(_S707, &(_S865), &(_S866), &(_S867), _S864);
-    var _S868 : vec3<f32> = _S690;
-    s_bwdProp_away_from_zero_1(_S702, &(_S868), _S715);
-    var _S869 : mat3x3<f32> = _S691;
-    var _S870 : vec3<f32> = _S690;
-    s_bwdProp_mul_0(_S699, &(_S869), &(_S870), _S868);
-    var _S871 : vec2<f32> = vec2<f32>(0.0f);
-    s_bwdProp_illuminant_xy_to_xyz_0(_S696, &(_S871), _S870);
-    var _S872 : Illuminant_0 = _S810;
-    _S872.y_11 = _S871[i32(1)];
-    _S872.x_17 = _S871[i32(0)];
-    var _S873 : Illuminant_0 = Illuminant_x24_syn_dadd_0(_S810, _S872);
-    (*_S687) = _S865;
-    (*_S688) = _S873;
+    var _S865 : mat3x3<f32> = _S694;
+    var _S866 : vec3<f32> = _S693;
+    s_bwdProp_mul_0(_S716, &(_S865), &(_S866), lms_0);
+    var _S867 : vec3<f32> = _S693;
+    s_bwdProp_clip_0(_S713, &(_S867), _S866);
+    var _S868 : vec3<f32> = _S693;
+    var _S869 : vec3<f32> = _S693;
+    var _S870 : vec3<f32> = _S693;
+    s_bwdProp_clamp_1(_S710, &(_S868), &(_S869), &(_S870), _S867);
+    var _S871 : vec3<f32> = _S693;
+    s_bwdProp_away_from_zero_1(_S705, &(_S871), _S718);
+    var _S872 : mat3x3<f32> = _S694;
+    var _S873 : vec3<f32> = _S693;
+    s_bwdProp_mul_0(_S702, &(_S872), &(_S873), _S871);
+    var _S874 : vec2<f32> = vec2<f32>(0.0f);
+    s_bwdProp_illuminant_xy_to_xyz_0(_S699, &(_S874), _S873);
+    var _S875 : Illuminant_0 = _S813;
+    _S875.y_11 = _S874[i32(1)];
+    _S875.x_17 = _S874[i32(0)];
+    var _S876 : Illuminant_0 = Illuminant_x24_syn_dadd_0(_S813, _S875);
+    (*_S690) = _S868;
+    (*_S691) = _S876;
     return;
 }
 
@@ -3175,17 +3179,17 @@ fn illuminant_0() -> Illuminant_0
     return i_0;
 }
 
-fn gamut_mapping_0( _S874 : vec3<f32>) -> vec3<f32>
+fn gamut_mapping_0( _S877 : vec3<f32>) -> vec3<f32>
 {
-    var _S875 : f32 = _S874.x;
-    var _S876 : f32 = _S874.y;
-    var _S877 : f32 = _S874.z;
-    var sum_8 : f32 = _S875 + _S876 + _S877;
-    var _S878 : f32 = max(sum_8, 9.99999997475242708e-07f * (abs(_S875) + abs(_S876) + abs(_S877)));
+    var _S878 : f32 = _S877.x;
+    var _S879 : f32 = _S877.y;
+    var _S880 : f32 = _S877.z;
+    var sum_8 : f32 = _S878 + _S879 + _S880;
+    var _S881 : f32 = max(sum_8, 9.99999997475242708e-07f * (abs(_S878) + abs(_S879) + abs(_S880)));
     var xy_6 : vec2<f32>;
     if((sum_8 > 0.0f))
     {
-        xy_6 = vec2<f32>(_S875, _S876) / vec2<f32>(_S878);
+        xy_6 = vec2<f32>(_S878, _S879) / vec2<f32>(_S881);
     }
     else
     {
@@ -3193,21 +3197,21 @@ fn gamut_mapping_0( _S874 : vec3<f32>) -> vec3<f32>
     }
     var uv_6 : vec2<f32> = xy_to_uv_0(xy_6);
     var delta_2 : vec2<f32> = vec2<f32>(0.20915915071964264f, 0.48807531595230103f) - uv_6;
-    var distance_2 : f32 = _S876 * dot(delta_2, delta_2);
-    var _S879 : f32 = params_0.mixer_0.compression_0;
+    var distance_2 : f32 = _S879 * dot(delta_2, delta_2);
+    var _S882 : f32 = params_0.mixer_0.compression_0;
     var correction_2 : f32;
     var neutral_2 : bool;
     if((params_0.mixer_0.compression_0) != 0.0f)
     {
         if((distance_2 >= 0.0f))
         {
-            correction_2 = bounded_power_0(distance_2, _S879);
+            correction_2 = bounded_power_0(distance_2, _S882);
             neutral_2 = false;
         }
         else
         {
-            var magnitude_0 : f32 = bounded_power_0(- distance_2, _S879);
-            var _S880 : u32 = params_0.mixer_0.negative_delta_0;
+            var magnitude_0 : f32 = bounded_power_0(- distance_2, _S882);
+            var _S883 : u32 = params_0.mixer_0.negative_delta_0;
             if((params_0.mixer_0.negative_delta_0) == u32(1))
             {
                 correction_2 = - magnitude_0;
@@ -3216,7 +3220,7 @@ fn gamut_mapping_0( _S874 : vec3<f32>) -> vec3<f32>
             {
                 correction_2 = magnitude_0;
             }
-            neutral_2 = _S880 == u32(0);
+            neutral_2 = _S883 == u32(0);
         }
     }
     else
@@ -3235,11 +3239,11 @@ fn gamut_mapping_0( _S874 : vec3<f32>) -> vec3<f32>
     {
         uv_8 = uv_7;
     }
-    var _S881 : vec2<f32> = max(uv_to_xy_0(uv_8), vec2<f32>(params_0.mixer_0.clip_min_0));
-    var _S882 : f32 = _S881.x;
-    var _S883 : f32 = max(_S881.y, 1.52587890625e-05f);
-    var xy_7 : vec2<f32> = vec2<f32>(_S882, _S883);
-    var scale_4 : f32 = _S882 + _S883;
+    var _S884 : vec2<f32> = max(uv_to_xy_0(uv_8), vec2<f32>(params_0.mixer_0.clip_min_0));
+    var _S885 : f32 = _S884.x;
+    var _S886 : f32 = max(_S884.y, 1.52587890625e-05f);
+    var xy_7 : vec2<f32> = vec2<f32>(_S885, _S886);
+    var scale_4 : f32 = _S885 + _S886;
     if((scale_4 >= 1.0f))
     {
         xy_6 = xy_7 / vec2<f32>(scale_4);
@@ -3248,69 +3252,69 @@ fn gamut_mapping_0( _S874 : vec3<f32>) -> vec3<f32>
     {
         xy_6 = xy_7;
     }
-    var _S884 : f32 = xy_6.x;
-    var _S885 : f32 = xy_6.y;
-    return vec3<f32>(_S876 * _S884 / _S885, _S876, _S876 * (1.0f - _S884 - _S885) / _S885);
+    var _S887 : f32 = xy_6.x;
+    var _S888 : f32 = xy_6.y;
+    return vec3<f32>(_S879 * _S887 / _S888, _S879, _S879 * (1.0f - _S887 - _S888) / _S888);
 }
 
-fn luma_chroma_0( _S886 : vec3<f32>) -> vec3<f32>
+fn luma_chroma_0( _S889 : vec3<f32>) -> vec3<f32>
 {
-    var norm_3 : f32 = max(scaled_length_0(_S886), 1.52587890625e-05f) * 0.57735025882720947f;
-    var ratios_2 : vec3<f32> = _S886 / vec3<f32>(norm_3);
-    var _S887 : vec3<f32> = max((vec3<f32>(1.0f) - ratios_2) * vec3<f32>((dot(ratios_2, params_0.mixer_0.saturation_0.xyz) / 3.0f)) + ratios_2, min(ratios_2, vec3<f32>(0.0f)));
-    return _S887 * vec3<f32>((norm_3 / (max(scaled_length_0(_S887), 1.52587890625e-05f) * 0.57735025882720947f) * clamp(1.0f + dot(_S886, params_0.mixer_0.lightness_0.xyz) / max((_S886.x + _S886.y + _S886.z) / 3.0f, 1.52587890625e-05f), 0.0f, 1.0e+06f)));
+    var norm_2 : f32 = scaled_length_0(_S889);
+    var ratios_2 : vec3<f32> = _S889 / vec3<f32>((max(norm_2, 1.52587890625e-05f) * 0.57735025882720947f));
+    var _S890 : vec3<f32> = max((vec3<f32>(1.0f) - ratios_2) * vec3<f32>((dot(ratios_2, params_0.mixer_0.saturation_0.xyz) / 3.0f)) + ratios_2, min(ratios_2, vec3<f32>(0.0f)));
+    return _S890 * vec3<f32>((norm_2 * 0.57735025882720947f / (max(scaled_length_0(_S890), 1.52587890625e-05f) * 0.57735025882720947f) * clamp(1.0f + dot(_S889, params_0.mixer_0.lightness_0.xyz) / max((_S889.x + _S889.y + _S889.z) / 3.0f, 1.52587890625e-05f), 0.0f, 1.0e+06f)));
 }
 
-fn channel_mixer_0( _S888 : vec3<f32>,  _S889 : Illuminant_0) -> vec3<f32>
+fn channel_mixer_0( _S891 : vec3<f32>,  _S892 : Illuminant_0) -> vec3<f32>
 {
     var mix_1 : mat3x3<f32> = rows_0(params_0.mixer_0.mix_0_0, params_0.mixer_0.mix_1_0, params_0.mixer_0.mix_2_0);
     var cone_1 : mat3x3<f32> = rows_0(params_0.mixer_0.cone_0_0, params_0.mixer_0.cone_1_0, params_0.mixer_0.cone_2_0);
     var to_space_1 : mat3x3<f32> = rows_0(params_0.mixer_0.to_space_0_0, params_0.mixer_0.to_space_1_0, params_0.mixer_0.to_space_2_0);
     var from_space_1 : mat3x3<f32> = rows_0(params_0.mixer_0.from_space_0_0, params_0.mixer_0.from_space_1_0, params_0.mixer_0.from_space_2_0);
     var to_rgb_1 : mat3x3<f32> = rows_0(params_0.mixer_0.to_rgb_0_0, params_0.mixer_0.to_rgb_1_0, params_0.mixer_0.to_rgb_2_0);
-    var lms_white_0 : vec3<f32> = away_from_zero_1((((illuminant_xy_to_xyz_0(vec2<f32>(_S889.x_17, _S889.y_11))) * (cone_1))), 1.52587890625e-05f);
-    var _S890 : f32 = params_0.mixer_0.clip_min_0;
-    var lms_1 : vec3<f32> = (((clip_0(clamp(_S888, vec3<f32>(-1.0e+08f), vec3<f32>(1.0e+08f)), params_0.mixer_0.clip_min_0)) * (rows_0(params_0.mixer_0.to_lms_0_0, params_0.mixer_0.to_lms_1_0, params_0.mixer_0.to_lms_2_0))));
-    var _S891 : u32 = params_0.mixer_0.adaptation_0;
+    var lms_white_0 : vec3<f32> = away_from_zero_1((((illuminant_xy_to_xyz_0(vec2<f32>(_S892.x_17, _S892.y_11))) * (cone_1))), 1.52587890625e-05f);
+    var _S893 : f32 = params_0.mixer_0.clip_min_0;
+    var lms_1 : vec3<f32> = (((clip_0(clamp(_S891, vec3<f32>(-1.0e+08f), vec3<f32>(1.0e+08f)), params_0.mixer_0.clip_min_0)) * (rows_0(params_0.mixer_0.to_lms_0_0, params_0.mixer_0.to_lms_1_0, params_0.mixer_0.to_lms_2_0))));
+    var _S894 : u32 = params_0.mixer_0.adaptation_0;
     var lms_2 : vec3<f32>;
     if((params_0.mixer_0.adaptation_0) == u32(2))
     {
-        var _S892 : f32 = lms_1.y;
+        var _S895 : f32 = lms_1.y;
         var scale_5 : f32;
-        if((_S892 > 1.52587890625e-05f))
+        if((_S895 > 1.52587890625e-05f))
         {
-            scale_5 = _S892 + 1.52587890625e-05f;
+            scale_5 = _S895 + 1.52587890625e-05f;
         }
         else
         {
             scale_5 = 1.52587890625e-05f;
         }
-        var _S893 : f32 = lms_white_0.z;
+        var _S896 : f32 = lms_white_0.z;
         var power_1 : f32;
-        if((_S893 > 0.0f))
+        if((_S896 > 0.0f))
         {
-            power_1 = pow0_0(0.81815499067306519f / _S893, 0.083400003612041473f);
+            power_1 = pow0_0(0.81815499067306519f / _S896, 0.083400003612041473f);
         }
         else
         {
             power_1 = 1.0f;
         }
         var ratio_1 : vec3<f32> = (((lms_1) * (cone_1))) / vec3<f32>(scale_5) / lms_white_0;
-        var _S894 : f32 = ratio_1.z;
+        var _S897 : f32 = ratio_1.z;
         var blue_1 : f32;
-        if((_S894 > 0.0f))
+        if((_S897 > 0.0f))
         {
-            blue_1 = pow0_0(min(_S894, 1.0e+08f), power_1);
+            blue_1 = pow0_0(min(_S897, 1.0e+08f), power_1);
         }
         else
         {
-            blue_1 = _S894;
+            blue_1 = _S897;
         }
         lms_2 = params_0.mixer_0.d50_0.xyz * vec3<f32>(ratio_1.x, ratio_1.y, blue_1) * vec3<f32>(scale_5);
     }
     else
     {
-        if(_S891 != u32(4))
+        if(_S894 != u32(4))
         {
             lms_2 = lms_1 * (params_0.mixer_0.d50_0.xyz / lms_white_0);
         }
@@ -3319,35 +3323,35 @@ fn channel_mixer_0( _S888 : vec3<f32>,  _S889 : Illuminant_0) -> vec3<f32>
             lms_2 = lms_1;
         }
     }
-    var _S895 : vec3<f32> = vec3<f32>(-9.99999995904e+11f);
-    var _S896 : vec3<f32> = vec3<f32>(9.99999995904e+11f);
-    var c_3 : vec3<f32> = clip_0(luma_chroma_0(clip_0((((clamp(gamut_mapping_0(clamp(clip_0((((lms_2) * (mix_1))), _S890), _S895, _S896)), _S895, _S896)) * (to_space_1))), _S890)), _S890);
+    var _S898 : vec3<f32> = vec3<f32>(-9.99999995904e+11f);
+    var _S899 : vec3<f32> = vec3<f32>(9.99999995904e+11f);
+    var c_3 : vec3<f32> = clip_0(luma_chroma_0(clip_0((((clamp(gamut_mapping_0(clamp(clip_0((((lms_2) * (mix_1))), _S893), _S898, _S899)), _S898, _S899)) * (to_space_1))), _S893)), _S893);
     if((params_0.mixer_0.apply_grey_0) != u32(0))
     {
         return vec3<f32>(max(dot(c_3, params_0.mixer_0.grey_0.xyz), 0.0f));
     }
-    return clip_0((((clip_0((((c_3) * (from_space_1))), _S890)) * (to_rgb_1))), _S890);
+    return clip_0((((clip_0((((c_3) * (from_space_1))), _S893)) * (to_rgb_1))), _S893);
 }
 
 @compute
 @workgroup_size(16, 16, 1)
 fn main(@builtin(global_invocation_id) id_0 : vec3<u32>)
 {
-    var _S897 : u32 = id_0.x;
-    var _S898 : bool;
-    if((_S897 >= (params_0.pass_0.width_0)))
+    var _S900 : u32 = id_0.x;
+    var _S901 : bool;
+    if((_S900 >= (params_0.pass_0.width_0)))
     {
-        _S898 = true;
+        _S901 = true;
     }
     else
     {
-        _S898 = ((id_0.y) >= (params_0.pass_0.height_0));
+        _S901 = ((id_0.y) >= (params_0.pass_0.height_0));
     }
-    if(_S898)
+    if(_S901)
     {
         return;
     }
-    var i_1 : u32 = id_0.y * params_0.pass_0.width_0 + _S897;
+    var i_1 : u32 = id_0.y * params_0.pass_0.width_0 + _S900;
     var pixel_0 : vec4<f32> = input_0[i_1];
     var rgb_0 : vec3<f32> = pixel_0.xyz;
     var k_0 : u32 = u32(0);
@@ -3360,10 +3364,10 @@ fn main(@builtin(global_invocation_id) id_0 : vec3<u32>)
         {
             break;
         }
-        var _S899 : vec3<f32> = channel_mixer_0(rgb_0, illuminant_0());
-        var _S900 : u32 = k_0 + u32(1);
-        rgb_0 = _S899;
-        k_0 = _S900;
+        var _S902 : vec3<f32> = channel_mixer_0(rgb_0, illuminant_0());
+        var _S903 : u32 = k_0 + u32(1);
+        rgb_0 = _S902;
+        k_0 = _S903;
     }
     output_0[i_1] = vec4<f32>(rgb_0, pixel_0.w);
     return;
@@ -3375,47 +3379,47 @@ struct DiffPair_Illuminant_0
      differential_0 : Illuminant_0,
 };
 
-fn _S901( _S902 : ptr<function, DiffPair_vectorx3Cfloatx2C3x3E_0>,  _S903 : ptr<function, DiffPair_Illuminant_0>,  _S904 : vec3<f32>)
+fn _S904( _S905 : ptr<function, DiffPair_vectorx3Cfloatx2C3x3E_0>,  _S906 : ptr<function, DiffPair_Illuminant_0>,  _S907 : vec3<f32>)
 {
-    var _S905 : s_paramCtx_s_bwdCallableCtx_channel_mixer_0;
-    _S905.value0_50 = (*_S902).primal_0;
-    _S905.value1_7.to_lms_0_0 = params_0.mixer_0.to_lms_0_0;
-    _S905.value1_7.to_lms_1_0 = params_0.mixer_0.to_lms_1_0;
-    _S905.value1_7.to_lms_2_0 = params_0.mixer_0.to_lms_2_0;
-    _S905.value1_7.mix_0_0 = params_0.mixer_0.mix_0_0;
-    _S905.value1_7.mix_1_0 = params_0.mixer_0.mix_1_0;
-    _S905.value1_7.mix_2_0 = params_0.mixer_0.mix_2_0;
-    _S905.value1_7.cone_0_0 = params_0.mixer_0.cone_0_0;
-    _S905.value1_7.cone_1_0 = params_0.mixer_0.cone_1_0;
-    _S905.value1_7.cone_2_0 = params_0.mixer_0.cone_2_0;
-    _S905.value1_7.to_space_0_0 = params_0.mixer_0.to_space_0_0;
-    _S905.value1_7.to_space_1_0 = params_0.mixer_0.to_space_1_0;
-    _S905.value1_7.to_space_2_0 = params_0.mixer_0.to_space_2_0;
-    _S905.value1_7.from_space_0_0 = params_0.mixer_0.from_space_0_0;
-    _S905.value1_7.from_space_1_0 = params_0.mixer_0.from_space_1_0;
-    _S905.value1_7.from_space_2_0 = params_0.mixer_0.from_space_2_0;
-    _S905.value1_7.to_rgb_0_0 = params_0.mixer_0.to_rgb_0_0;
-    _S905.value1_7.to_rgb_1_0 = params_0.mixer_0.to_rgb_1_0;
-    _S905.value1_7.to_rgb_2_0 = params_0.mixer_0.to_rgb_2_0;
-    _S905.value1_7.d50_0 = params_0.mixer_0.d50_0;
-    _S905.value1_7.saturation_0 = params_0.mixer_0.saturation_0;
-    _S905.value1_7.lightness_0 = params_0.mixer_0.lightness_0;
-    _S905.value1_7.grey_0 = params_0.mixer_0.grey_0;
-    _S905.value1_7.x_0 = params_0.mixer_0.x_0;
-    _S905.value1_7.y_0 = params_0.mixer_0.y_0;
-    _S905.value1_7.compression_0 = params_0.mixer_0.compression_0;
-    _S905.value1_7.clip_min_0 = params_0.mixer_0.clip_min_0;
-    _S905.value1_7.adaptation_0 = params_0.mixer_0.adaptation_0;
-    _S905.value1_7.apply_grey_0 = params_0.mixer_0.apply_grey_0;
-    _S905.value1_7.negative_delta_0 = params_0.mixer_0.negative_delta_0;
-    _S905.value1_7.unused_0 = params_0.mixer_0.unused_0;
-    _S905.value2_1 = (*_S903).primal_0;
-    var _S906 : s_bwdCallableCtx_channel_mixer_0 = s_bwdCallableCtx_channel_mixer_0( _S905 );
-    var _S907 : vec3<f32> = (*_S902).differential_0;
-    var _S908 : Illuminant_0 = (*_S903).differential_0;
-    s_bwdProp_channel_mixer_0(_S906, &(_S907), &(_S908), _S904);
-    (*_S902).differential_0 = _S907;
-    (*_S903).differential_0 = _S908;
+    var _S908 : s_paramCtx_s_bwdCallableCtx_channel_mixer_0;
+    _S908.value0_50 = (*_S905).primal_0;
+    _S908.value1_7.to_lms_0_0 = params_0.mixer_0.to_lms_0_0;
+    _S908.value1_7.to_lms_1_0 = params_0.mixer_0.to_lms_1_0;
+    _S908.value1_7.to_lms_2_0 = params_0.mixer_0.to_lms_2_0;
+    _S908.value1_7.mix_0_0 = params_0.mixer_0.mix_0_0;
+    _S908.value1_7.mix_1_0 = params_0.mixer_0.mix_1_0;
+    _S908.value1_7.mix_2_0 = params_0.mixer_0.mix_2_0;
+    _S908.value1_7.cone_0_0 = params_0.mixer_0.cone_0_0;
+    _S908.value1_7.cone_1_0 = params_0.mixer_0.cone_1_0;
+    _S908.value1_7.cone_2_0 = params_0.mixer_0.cone_2_0;
+    _S908.value1_7.to_space_0_0 = params_0.mixer_0.to_space_0_0;
+    _S908.value1_7.to_space_1_0 = params_0.mixer_0.to_space_1_0;
+    _S908.value1_7.to_space_2_0 = params_0.mixer_0.to_space_2_0;
+    _S908.value1_7.from_space_0_0 = params_0.mixer_0.from_space_0_0;
+    _S908.value1_7.from_space_1_0 = params_0.mixer_0.from_space_1_0;
+    _S908.value1_7.from_space_2_0 = params_0.mixer_0.from_space_2_0;
+    _S908.value1_7.to_rgb_0_0 = params_0.mixer_0.to_rgb_0_0;
+    _S908.value1_7.to_rgb_1_0 = params_0.mixer_0.to_rgb_1_0;
+    _S908.value1_7.to_rgb_2_0 = params_0.mixer_0.to_rgb_2_0;
+    _S908.value1_7.d50_0 = params_0.mixer_0.d50_0;
+    _S908.value1_7.saturation_0 = params_0.mixer_0.saturation_0;
+    _S908.value1_7.lightness_0 = params_0.mixer_0.lightness_0;
+    _S908.value1_7.grey_0 = params_0.mixer_0.grey_0;
+    _S908.value1_7.x_0 = params_0.mixer_0.x_0;
+    _S908.value1_7.y_0 = params_0.mixer_0.y_0;
+    _S908.value1_7.compression_0 = params_0.mixer_0.compression_0;
+    _S908.value1_7.clip_min_0 = params_0.mixer_0.clip_min_0;
+    _S908.value1_7.adaptation_0 = params_0.mixer_0.adaptation_0;
+    _S908.value1_7.apply_grey_0 = params_0.mixer_0.apply_grey_0;
+    _S908.value1_7.negative_delta_0 = params_0.mixer_0.negative_delta_0;
+    _S908.value1_7.unused_0 = params_0.mixer_0.unused_0;
+    _S908.value2_1 = (*_S906).primal_0;
+    var _S909 : s_bwdCallableCtx_channel_mixer_0 = s_bwdCallableCtx_channel_mixer_0( _S908 );
+    var _S910 : vec3<f32> = (*_S905).differential_0;
+    var _S911 : Illuminant_0 = (*_S906).differential_0;
+    s_bwdProp_channel_mixer_0(_S909, &(_S910), &(_S911), _S907);
+    (*_S905).differential_0 = _S910;
+    (*_S906).differential_0 = _S911;
     return;
 }
 
@@ -3423,78 +3427,78 @@ fn _S901( _S902 : ptr<function, DiffPair_vectorx3Cfloatx2C3x3E_0>,  _S903 : ptr<
 @workgroup_size(16, 16, 1)
 fn channelmixerrgb_backward(@builtin(global_invocation_id) id_1 : vec3<u32>)
 {
-    var _S909 : u32 = id_1.x;
-    var _S910 : bool;
-    if((_S909 >= (params_0.pass_0.width_0)))
+    var _S912 : u32 = id_1.x;
+    var _S913 : bool;
+    if((_S912 >= (params_0.pass_0.width_0)))
     {
-        _S910 = true;
+        _S913 = true;
     }
     else
     {
-        _S910 = ((id_1.y) >= (params_0.pass_0.height_0));
+        _S913 = ((id_1.y) >= (params_0.pass_0.height_0));
     }
-    if(_S910)
+    if(_S913)
     {
         return;
     }
-    var i_2 : u32 = id_1.y * params_0.pass_0.width_0 + _S909;
-    var _S911 : vec3<f32> = vec3<f32>(0.0f);
+    var i_2 : u32 = id_1.y * params_0.pass_0.width_0 + _S912;
+    var _S914 : vec3<f32> = vec3<f32>(0.0f);
     var pixel_1 : DiffPair_vectorx3Cfloatx2C3x3E_0;
     pixel_1.primal_0 = input_0[i_2].xyz;
-    pixel_1.differential_0 = _S911;
-    var _S912 : Illuminant_0 = Illuminant_x24_syn_dzero_0();
+    pixel_1.differential_0 = _S914;
+    var _S915 : Illuminant_0 = Illuminant_x24_syn_dzero_0();
     var white_3 : DiffPair_Illuminant_0;
     white_3.primal_0 = illuminant_0();
-    white_3.differential_0 = _S912;
-    _S901(&(pixel_1), &(white_3), derivative_in_0[i_2].xyz);
+    white_3.differential_0 = _S915;
+    _S904(&(pixel_1), &(white_3), derivative_in_0[i_2].xyz);
     derivative_out_0[i_2] = vec4<f32>(white_3.differential_0.x_17, white_3.differential_0.y_11, 0.0f, 0.0f);
     return;
 }
 
-fn s_fwd_gamut_mapping_0( _S913 : DiffPair_vectorx3Cfloatx2C3x3E_0) -> DiffPair_vectorx3Cfloatx2C3x3E_0
+fn s_fwd_gamut_mapping_0( _S916 : DiffPair_vectorx3Cfloatx2C3x3E_0) -> DiffPair_vectorx3Cfloatx2C3x3E_0
 {
-    var _S914 : f32 = _S913.primal_0.x;
-    var _S915 : f32 = _S913.differential_0.x;
-    var _S916 : f32 = _S913.primal_0.y;
-    var _S917 : f32 = _S913.differential_0.y;
-    var _S918 : f32 = _S913.primal_0.z;
-    var _S919 : f32 = _S913.differential_0.z;
-    var sum_9 : f32 = _S914 + _S916 + _S918;
-    var _S920 : DiffPair_float_0 = DiffPair_float_0( _S914, _S915 );
-    var _S921 : DiffPair_float_0 = _d_abs_1(_S920);
-    var _S922 : DiffPair_float_0 = DiffPair_float_0( _S916, _S917 );
-    var _S923 : DiffPair_float_0 = _d_abs_1(_S922);
-    var _S924 : DiffPair_float_0 = DiffPair_float_0( _S918, _S919 );
-    var _S925 : DiffPair_float_0 = _d_abs_1(_S924);
-    var _S926 : DiffPair_float_0 = DiffPair_float_0( sum_9, _S915 + _S917 + _S919 );
-    var _S927 : DiffPair_float_0 = DiffPair_float_0( 9.99999997475242708e-07f * (_S921.primal_0 + _S923.primal_0 + _S925.primal_0), (_S921.differential_0 + _S923.differential_0 + _S925.differential_0) * 9.99999997475242708e-07f );
-    var _S928 : DiffPair_float_0 = _d_max_1(_S926, _S927);
+    var _S917 : f32 = _S916.primal_0.x;
+    var _S918 : f32 = _S916.differential_0.x;
+    var _S919 : f32 = _S916.primal_0.y;
+    var _S920 : f32 = _S916.differential_0.y;
+    var _S921 : f32 = _S916.primal_0.z;
+    var _S922 : f32 = _S916.differential_0.z;
+    var sum_9 : f32 = _S917 + _S919 + _S921;
+    var _S923 : DiffPair_float_0 = DiffPair_float_0( _S917, _S918 );
+    var _S924 : DiffPair_float_0 = _d_abs_1(_S923);
+    var _S925 : DiffPair_float_0 = DiffPair_float_0( _S919, _S920 );
+    var _S926 : DiffPair_float_0 = _d_abs_1(_S925);
+    var _S927 : DiffPair_float_0 = DiffPair_float_0( _S921, _S922 );
+    var _S928 : DiffPair_float_0 = _d_abs_1(_S927);
+    var _S929 : DiffPair_float_0 = DiffPair_float_0( sum_9, _S918 + _S920 + _S922 );
+    var _S930 : DiffPair_float_0 = DiffPair_float_0( 9.99999997475242708e-07f * (_S924.primal_0 + _S926.primal_0 + _S928.primal_0), (_S924.differential_0 + _S926.differential_0 + _S928.differential_0) * 9.99999997475242708e-07f );
+    var _S931 : DiffPair_float_0 = _d_max_1(_S929, _S930);
     var xy_8 : vec2<f32>;
     var s_diff_xy_0 : vec2<f32>;
     if((sum_9 > 0.0f))
     {
-        var _S929 : vec2<f32> = vec2<f32>(_S914, _S916);
-        var _S930 : vec2<f32> = vec2<f32>(_S928.primal_0);
-        var _S931 : vec2<f32> = (vec2<f32>(_S915, _S917) * _S930 - _S929 * vec2<f32>(_S928.differential_0)) / vec2<f32>((_S928.primal_0 * _S928.primal_0));
-        xy_8 = _S929 / _S930;
-        s_diff_xy_0 = _S931;
+        var _S932 : vec2<f32> = vec2<f32>(_S917, _S919);
+        var _S933 : vec2<f32> = vec2<f32>(_S931.primal_0);
+        var _S934 : vec2<f32> = (vec2<f32>(_S918, _S920) * _S933 - _S932 * vec2<f32>(_S931.differential_0)) / vec2<f32>((_S931.primal_0 * _S931.primal_0));
+        xy_8 = _S932 / _S933;
+        s_diff_xy_0 = _S934;
     }
     else
     {
-        var _S932 : vec2<f32> = vec2<f32>(0.0f);
+        var _S935 : vec2<f32> = vec2<f32>(0.0f);
         xy_8 = vec2<f32>(0.34567001461982727f, 0.35850000381469727f);
-        s_diff_xy_0 = _S932;
+        s_diff_xy_0 = _S935;
     }
-    var _S933 : DiffPair_vectorx3Cfloatx2C2x3E_0 = DiffPair_vectorx3Cfloatx2C2x3E_0( xy_8, s_diff_xy_0 );
-    var _S934 : DiffPair_vectorx3Cfloatx2C2x3E_0 = s_fwd_xy_to_uv_0(_S933);
-    var delta_3 : vec2<f32> = vec2<f32>(0.20915915071964264f, 0.48807531595230103f) - _S934.primal_0;
-    var _S935 : vec2<f32> = vec2<f32>(0.0f);
-    var s_diff_delta_0 : vec2<f32> = _S935 - _S934.differential_0;
-    var _S936 : DiffPair_vectorx3Cfloatx2C2x3E_0 = DiffPair_vectorx3Cfloatx2C2x3E_0( delta_3, s_diff_delta_0 );
-    var _S937 : DiffPair_float_0 = _d_dot_3(_S936, _S936);
-    var distance_3 : f32 = _S916 * _S937.primal_0;
-    var s_diff_distance_0 : f32 = _S917 * _S937.primal_0 + _S937.differential_0 * _S916;
-    var _S938 : f32 = params_0.mixer_0.compression_0;
+    var _S936 : DiffPair_vectorx3Cfloatx2C2x3E_0 = DiffPair_vectorx3Cfloatx2C2x3E_0( xy_8, s_diff_xy_0 );
+    var _S937 : DiffPair_vectorx3Cfloatx2C2x3E_0 = s_fwd_xy_to_uv_0(_S936);
+    var delta_3 : vec2<f32> = vec2<f32>(0.20915915071964264f, 0.48807531595230103f) - _S937.primal_0;
+    var _S938 : vec2<f32> = vec2<f32>(0.0f);
+    var s_diff_delta_0 : vec2<f32> = _S938 - _S937.differential_0;
+    var _S939 : DiffPair_vectorx3Cfloatx2C2x3E_0 = DiffPair_vectorx3Cfloatx2C2x3E_0( delta_3, s_diff_delta_0 );
+    var _S940 : DiffPair_float_0 = _d_dot_3(_S939, _S939);
+    var distance_3 : f32 = _S919 * _S940.primal_0;
+    var s_diff_distance_0 : f32 = _S920 * _S940.primal_0 + _S940.differential_0 * _S919;
+    var _S941 : f32 = params_0.mixer_0.compression_0;
     var correction_3 : f32;
     var s_diff_correction_0 : f32;
     var neutral_3 : bool;
@@ -3502,29 +3506,29 @@ fn s_fwd_gamut_mapping_0( _S913 : DiffPair_vectorx3Cfloatx2C3x3E_0) -> DiffPair_
     {
         if((distance_3 >= 0.0f))
         {
-            var _S939 : DiffPair_float_0 = DiffPair_float_0( distance_3, s_diff_distance_0 );
-            var _S940 : DiffPair_float_0 = s_fwd_bounded_power_0(_S939, _S938);
-            correction_3 = _S940.primal_0;
-            s_diff_correction_0 = _S940.differential_0;
+            var _S942 : DiffPair_float_0 = DiffPair_float_0( distance_3, s_diff_distance_0 );
+            var _S943 : DiffPair_float_0 = s_fwd_bounded_power_0(_S942, _S941);
+            correction_3 = _S943.primal_0;
+            s_diff_correction_0 = _S943.differential_0;
             neutral_3 = false;
         }
         else
         {
-            var _S941 : DiffPair_float_0 = DiffPair_float_0( - distance_3, - s_diff_distance_0 );
-            var _S942 : DiffPair_float_0 = s_fwd_bounded_power_0(_S941, _S938);
-            var _S943 : u32 = params_0.mixer_0.negative_delta_0;
+            var _S944 : DiffPair_float_0 = DiffPair_float_0( - distance_3, - s_diff_distance_0 );
+            var _S945 : DiffPair_float_0 = s_fwd_bounded_power_0(_S944, _S941);
+            var _S946 : u32 = params_0.mixer_0.negative_delta_0;
             if((params_0.mixer_0.negative_delta_0) == u32(1))
             {
-                var _S944 : f32 = - _S942.differential_0;
-                correction_3 = - _S942.primal_0;
-                s_diff_correction_0 = _S944;
+                var _S947 : f32 = - _S945.differential_0;
+                correction_3 = - _S945.primal_0;
+                s_diff_correction_0 = _S947;
             }
             else
             {
-                correction_3 = _S942.primal_0;
-                s_diff_correction_0 = _S942.differential_0;
+                correction_3 = _S945.primal_0;
+                s_diff_correction_0 = _S945.differential_0;
             }
-            neutral_3 = _S943 == u32(0);
+            neutral_3 = _S946 == u32(0);
         }
     }
     else
@@ -3533,113 +3537,113 @@ fn s_fwd_gamut_mapping_0( _S913 : DiffPair_vectorx3Cfloatx2C3x3E_0) -> DiffPair_
         s_diff_correction_0 = 0.0f;
         neutral_3 = false;
     }
-    var _S945 : DiffPair_float_0 = DiffPair_float_0( correction_3, s_diff_correction_0 );
-    var _S946 : DiffPair_float_0 = DiffPair_float_0( 1.0f, 0.0f );
-    var _S947 : DiffPair_float_0 = _d_min_1(_S945, _S946);
-    var _S948 : vec2<f32> = vec2<f32>(_S947.primal_0);
-    var moved_4 : vec2<f32> = _S948 * delta_3 + _S934.primal_0;
-    var s_diff_moved_0 : vec2<f32> = vec2<f32>(_S947.differential_0) * delta_3 + s_diff_delta_0 * _S948 + _S934.differential_0;
-    var _S949 : DiffPair_float_0 = DiffPair_float_0( _S934.primal_0.x, _S934.differential_0.x );
-    var _S950 : DiffPair_float_0 = DiffPair_float_0( moved_4.x, s_diff_moved_0.x );
-    var _S951 : DiffPair_float_0 = s_fwd_towards_white_0(_S949, _S950, 0.20915915071964264f);
-    var _S952 : DiffPair_float_0 = DiffPair_float_0( _S934.primal_0.y, _S934.differential_0.y );
-    var _S953 : DiffPair_float_0 = DiffPair_float_0( moved_4.y, s_diff_moved_0.y );
-    var _S954 : DiffPair_float_0 = s_fwd_towards_white_0(_S952, _S953, 0.48807531595230103f);
-    var uv_9 : vec2<f32> = vec2<f32>(_S951.primal_0, _S954.primal_0);
-    var s_diff_uv_0 : vec2<f32> = vec2<f32>(_S951.differential_0, _S954.differential_0);
+    var _S948 : DiffPair_float_0 = DiffPair_float_0( correction_3, s_diff_correction_0 );
+    var _S949 : DiffPair_float_0 = DiffPair_float_0( 1.0f, 0.0f );
+    var _S950 : DiffPair_float_0 = _d_min_1(_S948, _S949);
+    var _S951 : vec2<f32> = vec2<f32>(_S950.primal_0);
+    var moved_4 : vec2<f32> = _S951 * delta_3 + _S937.primal_0;
+    var s_diff_moved_0 : vec2<f32> = vec2<f32>(_S950.differential_0) * delta_3 + s_diff_delta_0 * _S951 + _S937.differential_0;
+    var _S952 : DiffPair_float_0 = DiffPair_float_0( _S937.primal_0.x, _S937.differential_0.x );
+    var _S953 : DiffPair_float_0 = DiffPair_float_0( moved_4.x, s_diff_moved_0.x );
+    var _S954 : DiffPair_float_0 = s_fwd_towards_white_0(_S952, _S953, 0.20915915071964264f);
+    var _S955 : DiffPair_float_0 = DiffPair_float_0( _S937.primal_0.y, _S937.differential_0.y );
+    var _S956 : DiffPair_float_0 = DiffPair_float_0( moved_4.y, s_diff_moved_0.y );
+    var _S957 : DiffPair_float_0 = s_fwd_towards_white_0(_S955, _S956, 0.48807531595230103f);
+    var uv_9 : vec2<f32> = vec2<f32>(_S954.primal_0, _S957.primal_0);
+    var s_diff_uv_0 : vec2<f32> = vec2<f32>(_S954.differential_0, _S957.differential_0);
     var uv_10 : vec2<f32>;
     var s_diff_uv_1 : vec2<f32>;
     if(neutral_3)
     {
         uv_10 = vec2<f32>(0.20915915071964264f, 0.48807531595230103f);
-        s_diff_uv_1 = _S935;
+        s_diff_uv_1 = _S938;
     }
     else
     {
         uv_10 = uv_9;
         s_diff_uv_1 = s_diff_uv_0;
     }
-    var _S955 : DiffPair_vectorx3Cfloatx2C2x3E_0 = DiffPair_vectorx3Cfloatx2C2x3E_0( uv_10, s_diff_uv_1 );
-    var _S956 : DiffPair_vectorx3Cfloatx2C2x3E_0 = s_fwd_uv_to_xy_0(_S955);
-    var _S957 : DiffPair_vectorx3Cfloatx2C2x3E_0 = DiffPair_vectorx3Cfloatx2C2x3E_0( _S956.primal_0, _S956.differential_0 );
-    var _S958 : DiffPair_vectorx3Cfloatx2C2x3E_0 = DiffPair_vectorx3Cfloatx2C2x3E_0( vec2<f32>(params_0.mixer_0.clip_min_0), _S935 );
-    var _S959 : DiffPair_vectorx3Cfloatx2C2x3E_0 = _d_max_vector_2(_S957, _S958);
-    var _S960 : f32 = _S959.primal_0.x;
-    var _S961 : f32 = _S959.differential_0.x;
-    var _S962 : DiffPair_float_0 = DiffPair_float_0( _S959.primal_0.y, _S959.differential_0.y );
-    var _S963 : DiffPair_float_0 = DiffPair_float_0( 1.52587890625e-05f, 0.0f );
-    var _S964 : DiffPair_float_0 = _d_max_1(_S962, _S963);
-    var xy_9 : vec2<f32> = vec2<f32>(_S960, _S964.primal_0);
-    var s_diff_xy_1 : vec2<f32> = vec2<f32>(_S961, _S964.differential_0);
-    var scale_6 : f32 = _S960 + _S964.primal_0;
-    var s_diff_scale_0 : f32 = _S961 + _S964.differential_0;
+    var _S958 : DiffPair_vectorx3Cfloatx2C2x3E_0 = DiffPair_vectorx3Cfloatx2C2x3E_0( uv_10, s_diff_uv_1 );
+    var _S959 : DiffPair_vectorx3Cfloatx2C2x3E_0 = s_fwd_uv_to_xy_0(_S958);
+    var _S960 : DiffPair_vectorx3Cfloatx2C2x3E_0 = DiffPair_vectorx3Cfloatx2C2x3E_0( _S959.primal_0, _S959.differential_0 );
+    var _S961 : DiffPair_vectorx3Cfloatx2C2x3E_0 = DiffPair_vectorx3Cfloatx2C2x3E_0( vec2<f32>(params_0.mixer_0.clip_min_0), _S938 );
+    var _S962 : DiffPair_vectorx3Cfloatx2C2x3E_0 = _d_max_vector_2(_S960, _S961);
+    var _S963 : f32 = _S962.primal_0.x;
+    var _S964 : f32 = _S962.differential_0.x;
+    var _S965 : DiffPair_float_0 = DiffPair_float_0( _S962.primal_0.y, _S962.differential_0.y );
+    var _S966 : DiffPair_float_0 = DiffPair_float_0( 1.52587890625e-05f, 0.0f );
+    var _S967 : DiffPair_float_0 = _d_max_1(_S965, _S966);
+    var xy_9 : vec2<f32> = vec2<f32>(_S963, _S967.primal_0);
+    var s_diff_xy_1 : vec2<f32> = vec2<f32>(_S964, _S967.differential_0);
+    var scale_6 : f32 = _S963 + _S967.primal_0;
+    var s_diff_scale_0 : f32 = _S964 + _S967.differential_0;
     if((scale_6 >= 1.0f))
     {
-        var _S965 : vec2<f32> = vec2<f32>(scale_6);
-        var _S966 : vec2<f32> = (s_diff_xy_1 * _S965 - xy_9 * vec2<f32>(s_diff_scale_0)) / vec2<f32>((scale_6 * scale_6));
-        xy_8 = xy_9 / _S965;
-        s_diff_xy_0 = _S966;
+        var _S968 : vec2<f32> = vec2<f32>(scale_6);
+        var _S969 : vec2<f32> = (s_diff_xy_1 * _S968 - xy_9 * vec2<f32>(s_diff_scale_0)) / vec2<f32>((scale_6 * scale_6));
+        xy_8 = xy_9 / _S968;
+        s_diff_xy_0 = _S969;
     }
     else
     {
         xy_8 = xy_9;
         s_diff_xy_0 = s_diff_xy_1;
     }
-    var _S967 : f32 = xy_8.x;
-    var _S968 : f32 = s_diff_xy_0.x;
-    var _S969 : f32 = _S916 * _S967;
-    var _S970 : f32 = xy_8.y;
-    var _S971 : f32 = s_diff_xy_0.y;
-    var _S972 : f32 = _S970 * _S970;
-    var _S973 : f32 = 1.0f - _S967 - _S970;
-    var _S974 : f32 = _S916 * _S973;
-    var _S975 : DiffPair_vectorx3Cfloatx2C3x3E_0 = DiffPair_vectorx3Cfloatx2C3x3E_0( vec3<f32>(_S969 / _S970, _S916, _S974 / _S970), vec3<f32>(((_S917 * _S967 + _S968 * _S916) * _S970 - _S969 * _S971) / _S972, _S917, ((_S917 * _S973 + (0.0f - _S968 - _S971) * _S916) * _S970 - _S974 * _S971) / _S972) );
-    return _S975;
+    var _S970 : f32 = xy_8.x;
+    var _S971 : f32 = s_diff_xy_0.x;
+    var _S972 : f32 = _S919 * _S970;
+    var _S973 : f32 = xy_8.y;
+    var _S974 : f32 = s_diff_xy_0.y;
+    var _S975 : f32 = _S973 * _S973;
+    var _S976 : f32 = 1.0f - _S970 - _S973;
+    var _S977 : f32 = _S919 * _S976;
+    var _S978 : DiffPair_vectorx3Cfloatx2C3x3E_0 = DiffPair_vectorx3Cfloatx2C3x3E_0( vec3<f32>(_S972 / _S973, _S919, _S977 / _S973), vec3<f32>(((_S920 * _S970 + _S971 * _S919) * _S973 - _S972 * _S974) / _S975, _S920, ((_S920 * _S976 + (0.0f - _S971 - _S974) * _S919) * _S973 - _S977 * _S974) / _S975) );
+    return _S978;
 }
 
-fn s_fwd_luma_chroma_0( _S976 : DiffPair_vectorx3Cfloatx2C3x3E_0) -> DiffPair_vectorx3Cfloatx2C3x3E_0
+fn s_fwd_luma_chroma_0( _S979 : DiffPair_vectorx3Cfloatx2C3x3E_0) -> DiffPair_vectorx3Cfloatx2C3x3E_0
 {
-    var _S977 : DiffPair_vectorx3Cfloatx2C3x3E_0 = DiffPair_vectorx3Cfloatx2C3x3E_0( _S976.primal_0, _S976.differential_0 );
-    var _S978 : DiffPair_float_0 = s_fwd_scaled_length_0(_S977);
-    var _S979 : DiffPair_float_0 = DiffPair_float_0( _S978.primal_0, _S978.differential_0 );
-    var _S980 : DiffPair_float_0 = DiffPair_float_0( 1.52587890625e-05f, 0.0f );
-    var _S981 : DiffPair_float_0 = _d_max_1(_S979, _S980);
-    var _S982 : DiffPair_float_0 = DiffPair_float_0( (_S976.primal_0.x + _S976.primal_0.y + _S976.primal_0.z) / 3.0f, (_S976.differential_0.x + _S976.differential_0.y + _S976.differential_0.z) * 0.3333333432674408f );
-    var _S983 : DiffPair_float_0 = _d_max_1(_S982, _S980);
-    var _S984 : vec3<f32> = vec3<f32>(0.0f);
-    var _S985 : DiffPair_vectorx3Cfloatx2C3x3E_0 = DiffPair_vectorx3Cfloatx2C3x3E_0( params_0.mixer_0.lightness_0.xyz, _S984 );
-    var _S986 : DiffPair_float_0 = _d_dot_2(_S977, _S985);
-    var norm_4 : f32 = _S981.primal_0 * 0.57735025882720947f;
-    var _S987 : f32 = _S981.differential_0 * 0.57735025882720947f;
-    var _S988 : vec3<f32> = vec3<f32>(norm_4);
-    var ratios_3 : vec3<f32> = _S976.primal_0 / _S988;
-    var s_diff_ratios_0 : vec3<f32> = (_S976.differential_0 * _S988 - _S976.primal_0 * vec3<f32>(_S987)) / vec3<f32>((norm_4 * norm_4));
-    var _S989 : DiffPair_vectorx3Cfloatx2C3x3E_0 = DiffPair_vectorx3Cfloatx2C3x3E_0( ratios_3, s_diff_ratios_0 );
-    var _S990 : DiffPair_vectorx3Cfloatx2C3x3E_0 = DiffPair_vectorx3Cfloatx2C3x3E_0( params_0.mixer_0.saturation_0.xyz, _S984 );
-    var _S991 : DiffPair_float_0 = _d_dot_2(_S989, _S990);
-    var _S992 : vec3<f32> = vec3<f32>(1.0f) - ratios_3;
-    var _S993 : vec3<f32> = vec3<f32>((_S991.primal_0 / 3.0f));
-    var _S994 : DiffPair_vectorx3Cfloatx2C3x3E_0 = DiffPair_vectorx3Cfloatx2C3x3E_0( vec3<f32>(0.0f), _S984 );
-    var _S995 : DiffPair_vectorx3Cfloatx2C3x3E_0 = _d_min_vector_1(_S989, _S994);
-    var _S996 : DiffPair_vectorx3Cfloatx2C3x3E_0 = DiffPair_vectorx3Cfloatx2C3x3E_0( _S992 * _S993 + ratios_3, (_S984 - s_diff_ratios_0) * _S993 + vec3<f32>((_S991.differential_0 * 0.3333333432674408f)) * _S992 + s_diff_ratios_0 );
-    var _S997 : DiffPair_vectorx3Cfloatx2C3x3E_0 = DiffPair_vectorx3Cfloatx2C3x3E_0( _S995.primal_0, _S995.differential_0 );
-    var _S998 : DiffPair_vectorx3Cfloatx2C3x3E_0 = _d_max_vector_3(_S996, _S997);
-    var _S999 : DiffPair_vectorx3Cfloatx2C3x3E_0 = DiffPair_vectorx3Cfloatx2C3x3E_0( _S998.primal_0, _S998.differential_0 );
-    var _S1000 : DiffPair_float_0 = s_fwd_scaled_length_0(_S999);
-    var _S1001 : DiffPair_float_0 = DiffPair_float_0( _S1000.primal_0, _S1000.differential_0 );
-    var _S1002 : DiffPair_float_0 = _d_max_1(_S1001, _S980);
-    var _S1003 : f32 = _S1002.primal_0 * 0.57735025882720947f;
-    var norm_5 : f32 = norm_4 / _S1003;
-    var _S1004 : DiffPair_float_0 = DiffPair_float_0( 1.0f + _S986.primal_0 / _S983.primal_0, (_S986.differential_0 * _S983.primal_0 - _S986.primal_0 * _S983.differential_0) / (_S983.primal_0 * _S983.primal_0) );
-    var _S1005 : DiffPair_float_0 = DiffPair_float_0( 0.0f, 0.0f );
-    var _S1006 : DiffPair_float_0 = DiffPair_float_0( 1.0e+06f, 0.0f );
-    var _S1007 : DiffPair_float_0 = _d_clamp_1(_S1004, _S1005, _S1006);
-    var _S1008 : vec3<f32> = vec3<f32>((norm_5 * _S1007.primal_0));
-    var _S1009 : DiffPair_vectorx3Cfloatx2C3x3E_0 = DiffPair_vectorx3Cfloatx2C3x3E_0( _S998.primal_0 * _S1008, _S998.differential_0 * _S1008 + vec3<f32>(((_S987 * _S1003 - norm_4 * (_S1002.differential_0 * 0.57735025882720947f)) / (_S1003 * _S1003) * _S1007.primal_0 + _S1007.differential_0 * norm_5)) * _S998.primal_0 );
-    return _S1009;
+    var _S980 : DiffPair_vectorx3Cfloatx2C3x3E_0 = DiffPair_vectorx3Cfloatx2C3x3E_0( _S979.primal_0, _S979.differential_0 );
+    var _S981 : DiffPair_float_0 = s_fwd_scaled_length_0(_S980);
+    var _S982 : DiffPair_float_0 = DiffPair_float_0( _S981.primal_0, _S981.differential_0 );
+    var _S983 : DiffPair_float_0 = DiffPair_float_0( 1.52587890625e-05f, 0.0f );
+    var _S984 : DiffPair_float_0 = _d_max_1(_S982, _S983);
+    var divisor_1 : f32 = _S984.primal_0 * 0.57735025882720947f;
+    var _S985 : DiffPair_float_0 = DiffPair_float_0( (_S979.primal_0.x + _S979.primal_0.y + _S979.primal_0.z) / 3.0f, (_S979.differential_0.x + _S979.differential_0.y + _S979.differential_0.z) * 0.3333333432674408f );
+    var _S986 : DiffPair_float_0 = _d_max_1(_S985, _S983);
+    var _S987 : vec3<f32> = vec3<f32>(0.0f);
+    var _S988 : DiffPair_vectorx3Cfloatx2C3x3E_0 = DiffPair_vectorx3Cfloatx2C3x3E_0( params_0.mixer_0.lightness_0.xyz, _S987 );
+    var _S989 : DiffPair_float_0 = _d_dot_2(_S980, _S988);
+    var norm_3 : f32 = _S981.primal_0 * 0.57735025882720947f;
+    var _S990 : vec3<f32> = vec3<f32>(divisor_1);
+    var ratios_3 : vec3<f32> = _S979.primal_0 / _S990;
+    var s_diff_ratios_0 : vec3<f32> = (_S979.differential_0 * _S990 - _S979.primal_0 * vec3<f32>((_S984.differential_0 * 0.57735025882720947f))) / vec3<f32>((divisor_1 * divisor_1));
+    var _S991 : DiffPair_vectorx3Cfloatx2C3x3E_0 = DiffPair_vectorx3Cfloatx2C3x3E_0( ratios_3, s_diff_ratios_0 );
+    var _S992 : DiffPair_vectorx3Cfloatx2C3x3E_0 = DiffPair_vectorx3Cfloatx2C3x3E_0( params_0.mixer_0.saturation_0.xyz, _S987 );
+    var _S993 : DiffPair_float_0 = _d_dot_2(_S991, _S992);
+    var _S994 : vec3<f32> = vec3<f32>(1.0f) - ratios_3;
+    var _S995 : vec3<f32> = vec3<f32>((_S993.primal_0 / 3.0f));
+    var _S996 : DiffPair_vectorx3Cfloatx2C3x3E_0 = DiffPair_vectorx3Cfloatx2C3x3E_0( vec3<f32>(0.0f), _S987 );
+    var _S997 : DiffPair_vectorx3Cfloatx2C3x3E_0 = _d_min_vector_1(_S991, _S996);
+    var _S998 : DiffPair_vectorx3Cfloatx2C3x3E_0 = DiffPair_vectorx3Cfloatx2C3x3E_0( _S994 * _S995 + ratios_3, (_S987 - s_diff_ratios_0) * _S995 + vec3<f32>((_S993.differential_0 * 0.3333333432674408f)) * _S994 + s_diff_ratios_0 );
+    var _S999 : DiffPair_vectorx3Cfloatx2C3x3E_0 = DiffPair_vectorx3Cfloatx2C3x3E_0( _S997.primal_0, _S997.differential_0 );
+    var _S1000 : DiffPair_vectorx3Cfloatx2C3x3E_0 = _d_max_vector_3(_S998, _S999);
+    var _S1001 : DiffPair_vectorx3Cfloatx2C3x3E_0 = DiffPair_vectorx3Cfloatx2C3x3E_0( _S1000.primal_0, _S1000.differential_0 );
+    var _S1002 : DiffPair_float_0 = s_fwd_scaled_length_0(_S1001);
+    var _S1003 : DiffPair_float_0 = DiffPair_float_0( _S1002.primal_0, _S1002.differential_0 );
+    var _S1004 : DiffPair_float_0 = _d_max_1(_S1003, _S983);
+    var _S1005 : f32 = _S1004.primal_0 * 0.57735025882720947f;
+    var norm_4 : f32 = norm_3 / _S1005;
+    var _S1006 : DiffPair_float_0 = DiffPair_float_0( 1.0f + _S989.primal_0 / _S986.primal_0, (_S989.differential_0 * _S986.primal_0 - _S989.primal_0 * _S986.differential_0) / (_S986.primal_0 * _S986.primal_0) );
+    var _S1007 : DiffPair_float_0 = DiffPair_float_0( 0.0f, 0.0f );
+    var _S1008 : DiffPair_float_0 = DiffPair_float_0( 1.0e+06f, 0.0f );
+    var _S1009 : DiffPair_float_0 = _d_clamp_1(_S1006, _S1007, _S1008);
+    var _S1010 : vec3<f32> = vec3<f32>((norm_4 * _S1009.primal_0));
+    var _S1011 : DiffPair_vectorx3Cfloatx2C3x3E_0 = DiffPair_vectorx3Cfloatx2C3x3E_0( _S1000.primal_0 * _S1010, _S1000.differential_0 * _S1010 + vec3<f32>(((_S981.differential_0 * 0.57735025882720947f * _S1005 - norm_3 * (_S1004.differential_0 * 0.57735025882720947f)) / (_S1005 * _S1005) * _S1009.primal_0 + _S1009.differential_0 * norm_4)) * _S1000.primal_0 );
+    return _S1011;
 }
 
-fn s_fwd_channel_mixer_0( _S1010 : DiffPair_vectorx3Cfloatx2C3x3E_0,  _S1011 : DiffPair_Illuminant_0) -> DiffPair_vectorx3Cfloatx2C3x3E_0
+fn s_fwd_channel_mixer_0( _S1012 : DiffPair_vectorx3Cfloatx2C3x3E_0,  _S1013 : DiffPair_Illuminant_0) -> DiffPair_vectorx3Cfloatx2C3x3E_0
 {
     var to_lms_1 : mat3x3<f32> = rows_0(params_0.mixer_0.to_lms_0_0, params_0.mixer_0.to_lms_1_0, params_0.mixer_0.to_lms_2_0);
     var mix_2 : mat3x3<f32> = rows_0(params_0.mixer_0.mix_0_0, params_0.mixer_0.mix_1_0, params_0.mixer_0.mix_2_0);
@@ -3647,164 +3651,164 @@ fn s_fwd_channel_mixer_0( _S1010 : DiffPair_vectorx3Cfloatx2C3x3E_0,  _S1011 : D
     var to_space_2 : mat3x3<f32> = rows_0(params_0.mixer_0.to_space_0_0, params_0.mixer_0.to_space_1_0, params_0.mixer_0.to_space_2_0);
     var from_space_2 : mat3x3<f32> = rows_0(params_0.mixer_0.from_space_0_0, params_0.mixer_0.from_space_1_0, params_0.mixer_0.from_space_2_0);
     var to_rgb_2 : mat3x3<f32> = rows_0(params_0.mixer_0.to_rgb_0_0, params_0.mixer_0.to_rgb_1_0, params_0.mixer_0.to_rgb_2_0);
-    var _S1012 : DiffPair_vectorx3Cfloatx2C2x3E_0 = DiffPair_vectorx3Cfloatx2C2x3E_0( vec2<f32>(_S1011.primal_0.x_17, _S1011.primal_0.y_11), vec2<f32>(_S1011.differential_0.x_17, _S1011.differential_0.y_11) );
-    var _S1013 : DiffPair_vectorx3Cfloatx2C3x3E_0 = s_fwd_illuminant_xy_to_xyz_0(_S1012);
-    var _S1014 : mat3x3<f32> = mat3x3<f32>(0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
-    var _S1015 : DiffPair_vectorx3Cfloatx2C3x3E_0 = DiffPair_vectorx3Cfloatx2C3x3E_0( (((_S1013.primal_0) * (cone_2))), (((_S1013.primal_0) * (_S1014))) + (((_S1013.differential_0) * (cone_2))) );
-    var _S1016 : DiffPair_vectorx3Cfloatx2C3x3E_0 = s_fwd_away_from_zero_1(_S1015, 1.52587890625e-05f);
-    var _S1017 : vec3<f32> = vec3<f32>(0.0f);
-    var _S1018 : DiffPair_vectorx3Cfloatx2C3x3E_0 = DiffPair_vectorx3Cfloatx2C3x3E_0( _S1010.primal_0, _S1010.differential_0 );
-    var _S1019 : DiffPair_vectorx3Cfloatx2C3x3E_0 = DiffPair_vectorx3Cfloatx2C3x3E_0( vec3<f32>(-1.0e+08f), _S1017 );
-    var _S1020 : DiffPair_vectorx3Cfloatx2C3x3E_0 = DiffPair_vectorx3Cfloatx2C3x3E_0( vec3<f32>(1.0e+08f), _S1017 );
-    var _S1021 : DiffPair_vectorx3Cfloatx2C3x3E_0 = _d_clamp_vector_1(_S1018, _S1019, _S1020);
-    var _S1022 : f32 = params_0.mixer_0.clip_min_0;
-    var _S1023 : DiffPair_vectorx3Cfloatx2C3x3E_0 = DiffPair_vectorx3Cfloatx2C3x3E_0( _S1021.primal_0, _S1021.differential_0 );
-    var _S1024 : DiffPair_vectorx3Cfloatx2C3x3E_0 = s_fwd_clip_0(_S1023, params_0.mixer_0.clip_min_0);
-    var _S1025 : vec3<f32> = (((_S1024.primal_0) * (to_lms_1)));
-    var _S1026 : vec3<f32> = (((_S1024.primal_0) * (_S1014))) + (((_S1024.differential_0) * (to_lms_1)));
-    var _S1027 : u32 = params_0.mixer_0.adaptation_0;
+    var _S1014 : DiffPair_vectorx3Cfloatx2C2x3E_0 = DiffPair_vectorx3Cfloatx2C2x3E_0( vec2<f32>(_S1013.primal_0.x_17, _S1013.primal_0.y_11), vec2<f32>(_S1013.differential_0.x_17, _S1013.differential_0.y_11) );
+    var _S1015 : DiffPair_vectorx3Cfloatx2C3x3E_0 = s_fwd_illuminant_xy_to_xyz_0(_S1014);
+    var _S1016 : mat3x3<f32> = mat3x3<f32>(0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
+    var _S1017 : DiffPair_vectorx3Cfloatx2C3x3E_0 = DiffPair_vectorx3Cfloatx2C3x3E_0( (((_S1015.primal_0) * (cone_2))), (((_S1015.primal_0) * (_S1016))) + (((_S1015.differential_0) * (cone_2))) );
+    var _S1018 : DiffPair_vectorx3Cfloatx2C3x3E_0 = s_fwd_away_from_zero_1(_S1017, 1.52587890625e-05f);
+    var _S1019 : vec3<f32> = vec3<f32>(0.0f);
+    var _S1020 : DiffPair_vectorx3Cfloatx2C3x3E_0 = DiffPair_vectorx3Cfloatx2C3x3E_0( _S1012.primal_0, _S1012.differential_0 );
+    var _S1021 : DiffPair_vectorx3Cfloatx2C3x3E_0 = DiffPair_vectorx3Cfloatx2C3x3E_0( vec3<f32>(-1.0e+08f), _S1019 );
+    var _S1022 : DiffPair_vectorx3Cfloatx2C3x3E_0 = DiffPair_vectorx3Cfloatx2C3x3E_0( vec3<f32>(1.0e+08f), _S1019 );
+    var _S1023 : DiffPair_vectorx3Cfloatx2C3x3E_0 = _d_clamp_vector_1(_S1020, _S1021, _S1022);
+    var _S1024 : f32 = params_0.mixer_0.clip_min_0;
+    var _S1025 : DiffPair_vectorx3Cfloatx2C3x3E_0 = DiffPair_vectorx3Cfloatx2C3x3E_0( _S1023.primal_0, _S1023.differential_0 );
+    var _S1026 : DiffPair_vectorx3Cfloatx2C3x3E_0 = s_fwd_clip_0(_S1025, params_0.mixer_0.clip_min_0);
+    var _S1027 : vec3<f32> = (((_S1026.primal_0) * (to_lms_1)));
+    var _S1028 : vec3<f32> = (((_S1026.primal_0) * (_S1016))) + (((_S1026.differential_0) * (to_lms_1)));
+    var _S1029 : u32 = params_0.mixer_0.adaptation_0;
     var lms_3 : vec3<f32>;
     var s_diff_lms_0 : vec3<f32>;
     if((params_0.mixer_0.adaptation_0) == u32(2))
     {
-        var _S1028 : f32 = _S1025.y;
-        var _S1029 : f32 = _S1026.y;
+        var _S1030 : f32 = _S1027.y;
+        var _S1031 : f32 = _S1028.y;
         var scale_7 : f32;
         var s_diff_scale_1 : f32;
-        if((_S1028 > 1.52587890625e-05f))
+        if((_S1030 > 1.52587890625e-05f))
         {
-            scale_7 = _S1028 + 1.52587890625e-05f;
-            s_diff_scale_1 = _S1029;
+            scale_7 = _S1030 + 1.52587890625e-05f;
+            s_diff_scale_1 = _S1031;
         }
         else
         {
             scale_7 = 1.52587890625e-05f;
             s_diff_scale_1 = 0.0f;
         }
-        var _S1030 : f32 = _S1016.primal_0.z;
-        var _S1031 : f32 = _S1016.differential_0.z;
+        var _S1032 : f32 = _S1018.primal_0.z;
+        var _S1033 : f32 = _S1018.differential_0.z;
         var power_2 : f32;
         var s_diff_power_0 : f32;
-        if((_S1030 > 0.0f))
+        if((_S1032 > 0.0f))
         {
-            var _S1032 : DiffPair_float_0 = DiffPair_float_0( 0.81815499067306519f / _S1030, (0.0f - 0.81815499067306519f * _S1031) / (_S1030 * _S1030) );
-            var _S1033 : DiffPair_float_0 = DiffPair_float_0( 0.083400003612041473f, 0.0f );
-            var _S1034 : DiffPair_float_0 = pow0_forward_0(_S1032, _S1033);
-            power_2 = _S1034.primal_0;
-            s_diff_power_0 = _S1034.differential_0;
+            var _S1034 : DiffPair_float_0 = DiffPair_float_0( 0.81815499067306519f / _S1032, (0.0f - 0.81815499067306519f * _S1033) / (_S1032 * _S1032) );
+            var _S1035 : DiffPair_float_0 = DiffPair_float_0( 0.083400003612041473f, 0.0f );
+            var _S1036 : DiffPair_float_0 = pow0_forward_0(_S1034, _S1035);
+            power_2 = _S1036.primal_0;
+            s_diff_power_0 = _S1036.differential_0;
         }
         else
         {
             power_2 = 1.0f;
             s_diff_power_0 = 0.0f;
         }
-        var _S1035 : vec3<f32> = (((_S1025) * (cone_2)));
-        var _S1036 : vec3<f32> = _S1035 / vec3<f32>(scale_7);
-        var ratio_2 : vec3<f32> = _S1036 / _S1016.primal_0;
-        var s_diff_ratio_0 : vec3<f32> = ((((((_S1025) * (_S1014))) + (((_S1026) * (cone_2)))) * vec3<f32>(scale_7) - _S1035 * vec3<f32>(s_diff_scale_1)) / vec3<f32>((scale_7 * scale_7)) * _S1016.primal_0 - _S1036 * _S1016.differential_0) / (_S1016.primal_0 * _S1016.primal_0);
-        var _S1037 : f32 = ratio_2.z;
-        var _S1038 : f32 = s_diff_ratio_0.z;
+        var _S1037 : vec3<f32> = (((_S1027) * (cone_2)));
+        var _S1038 : vec3<f32> = _S1037 / vec3<f32>(scale_7);
+        var ratio_2 : vec3<f32> = _S1038 / _S1018.primal_0;
+        var s_diff_ratio_0 : vec3<f32> = ((((((_S1027) * (_S1016))) + (((_S1028) * (cone_2)))) * vec3<f32>(scale_7) - _S1037 * vec3<f32>(s_diff_scale_1)) / vec3<f32>((scale_7 * scale_7)) * _S1018.primal_0 - _S1038 * _S1018.differential_0) / (_S1018.primal_0 * _S1018.primal_0);
+        var _S1039 : f32 = ratio_2.z;
+        var _S1040 : f32 = s_diff_ratio_0.z;
         var blue_2 : f32;
         var s_diff_blue_0 : f32;
-        if((_S1037 > 0.0f))
+        if((_S1039 > 0.0f))
         {
-            var _S1039 : DiffPair_float_0 = DiffPair_float_0( _S1037, _S1038 );
-            var _S1040 : DiffPair_float_0 = DiffPair_float_0( 1.0e+08f, 0.0f );
-            var _S1041 : DiffPair_float_0 = _d_min_1(_S1039, _S1040);
-            var _S1042 : DiffPair_float_0 = DiffPair_float_0( _S1041.primal_0, _S1041.differential_0 );
-            var _S1043 : DiffPair_float_0 = DiffPair_float_0( power_2, s_diff_power_0 );
-            var _S1044 : DiffPair_float_0 = pow0_forward_0(_S1042, _S1043);
-            blue_2 = _S1044.primal_0;
-            s_diff_blue_0 = _S1044.differential_0;
+            var _S1041 : DiffPair_float_0 = DiffPair_float_0( _S1039, _S1040 );
+            var _S1042 : DiffPair_float_0 = DiffPair_float_0( 1.0e+08f, 0.0f );
+            var _S1043 : DiffPair_float_0 = _d_min_1(_S1041, _S1042);
+            var _S1044 : DiffPair_float_0 = DiffPair_float_0( _S1043.primal_0, _S1043.differential_0 );
+            var _S1045 : DiffPair_float_0 = DiffPair_float_0( power_2, s_diff_power_0 );
+            var _S1046 : DiffPair_float_0 = pow0_forward_0(_S1044, _S1045);
+            blue_2 = _S1046.primal_0;
+            s_diff_blue_0 = _S1046.differential_0;
         }
         else
         {
-            blue_2 = _S1037;
-            s_diff_blue_0 = _S1038;
+            blue_2 = _S1039;
+            s_diff_blue_0 = _S1040;
         }
-        var _S1045 : vec3<f32> = params_0.mixer_0.d50_0.xyz;
-        var _S1046 : vec3<f32> = _S1045 * vec3<f32>(ratio_2.x, ratio_2.y, blue_2);
-        var _S1047 : vec3<f32> = vec3<f32>(s_diff_ratio_0.x, s_diff_ratio_0.y, s_diff_blue_0) * _S1045 * vec3<f32>(scale_7) + vec3<f32>(s_diff_scale_1) * _S1046;
-        lms_3 = _S1046 * vec3<f32>(scale_7);
-        s_diff_lms_0 = _S1047;
+        var _S1047 : vec3<f32> = params_0.mixer_0.d50_0.xyz;
+        var _S1048 : vec3<f32> = _S1047 * vec3<f32>(ratio_2.x, ratio_2.y, blue_2);
+        var _S1049 : vec3<f32> = vec3<f32>(s_diff_ratio_0.x, s_diff_ratio_0.y, s_diff_blue_0) * _S1047 * vec3<f32>(scale_7) + vec3<f32>(s_diff_scale_1) * _S1048;
+        lms_3 = _S1048 * vec3<f32>(scale_7);
+        s_diff_lms_0 = _S1049;
     }
     else
     {
-        if(_S1027 != u32(4))
+        if(_S1029 != u32(4))
         {
-            var _S1048 : vec3<f32> = params_0.mixer_0.d50_0.xyz;
-            var _S1049 : vec3<f32> = _S1048 / _S1016.primal_0;
-            var _S1050 : vec3<f32> = _S1026 * _S1049 + (_S1017 - _S1048 * _S1016.differential_0) / (_S1016.primal_0 * _S1016.primal_0) * _S1025;
-            lms_3 = _S1025 * _S1049;
-            s_diff_lms_0 = _S1050;
+            var _S1050 : vec3<f32> = params_0.mixer_0.d50_0.xyz;
+            var _S1051 : vec3<f32> = _S1050 / _S1018.primal_0;
+            var _S1052 : vec3<f32> = _S1028 * _S1051 + (_S1019 - _S1050 * _S1018.differential_0) / (_S1018.primal_0 * _S1018.primal_0) * _S1027;
+            lms_3 = _S1027 * _S1051;
+            s_diff_lms_0 = _S1052;
         }
         else
         {
-            lms_3 = _S1025;
-            s_diff_lms_0 = _S1026;
+            lms_3 = _S1027;
+            s_diff_lms_0 = _S1028;
         }
     }
-    var _S1051 : DiffPair_vectorx3Cfloatx2C3x3E_0 = DiffPair_vectorx3Cfloatx2C3x3E_0( (((lms_3) * (mix_2))), (((lms_3) * (_S1014))) + (((s_diff_lms_0) * (mix_2))) );
-    var _S1052 : DiffPair_vectorx3Cfloatx2C3x3E_0 = s_fwd_clip_0(_S1051, _S1022);
-    var _S1053 : DiffPair_vectorx3Cfloatx2C3x3E_0 = DiffPair_vectorx3Cfloatx2C3x3E_0( _S1052.primal_0, _S1052.differential_0 );
-    var _S1054 : DiffPair_vectorx3Cfloatx2C3x3E_0 = DiffPair_vectorx3Cfloatx2C3x3E_0( vec3<f32>(-9.99999995904e+11f), _S1017 );
-    var _S1055 : DiffPair_vectorx3Cfloatx2C3x3E_0 = DiffPair_vectorx3Cfloatx2C3x3E_0( vec3<f32>(9.99999995904e+11f), _S1017 );
-    var _S1056 : DiffPair_vectorx3Cfloatx2C3x3E_0 = _d_clamp_vector_1(_S1053, _S1054, _S1055);
-    var _S1057 : DiffPair_vectorx3Cfloatx2C3x3E_0 = DiffPair_vectorx3Cfloatx2C3x3E_0( _S1056.primal_0, _S1056.differential_0 );
-    var _S1058 : DiffPair_vectorx3Cfloatx2C3x3E_0 = s_fwd_gamut_mapping_0(_S1057);
+    var _S1053 : DiffPair_vectorx3Cfloatx2C3x3E_0 = DiffPair_vectorx3Cfloatx2C3x3E_0( (((lms_3) * (mix_2))), (((lms_3) * (_S1016))) + (((s_diff_lms_0) * (mix_2))) );
+    var _S1054 : DiffPair_vectorx3Cfloatx2C3x3E_0 = s_fwd_clip_0(_S1053, _S1024);
+    var _S1055 : DiffPair_vectorx3Cfloatx2C3x3E_0 = DiffPair_vectorx3Cfloatx2C3x3E_0( _S1054.primal_0, _S1054.differential_0 );
+    var _S1056 : DiffPair_vectorx3Cfloatx2C3x3E_0 = DiffPair_vectorx3Cfloatx2C3x3E_0( vec3<f32>(-9.99999995904e+11f), _S1019 );
+    var _S1057 : DiffPair_vectorx3Cfloatx2C3x3E_0 = DiffPair_vectorx3Cfloatx2C3x3E_0( vec3<f32>(9.99999995904e+11f), _S1019 );
+    var _S1058 : DiffPair_vectorx3Cfloatx2C3x3E_0 = _d_clamp_vector_1(_S1055, _S1056, _S1057);
     var _S1059 : DiffPair_vectorx3Cfloatx2C3x3E_0 = DiffPair_vectorx3Cfloatx2C3x3E_0( _S1058.primal_0, _S1058.differential_0 );
-    var _S1060 : DiffPair_vectorx3Cfloatx2C3x3E_0 = _d_clamp_vector_1(_S1059, _S1054, _S1055);
-    var _S1061 : DiffPair_vectorx3Cfloatx2C3x3E_0 = DiffPair_vectorx3Cfloatx2C3x3E_0( (((_S1060.primal_0) * (to_space_2))), (((_S1060.primal_0) * (_S1014))) + (((_S1060.differential_0) * (to_space_2))) );
-    var _S1062 : DiffPair_vectorx3Cfloatx2C3x3E_0 = s_fwd_clip_0(_S1061, _S1022);
-    var _S1063 : DiffPair_vectorx3Cfloatx2C3x3E_0 = DiffPair_vectorx3Cfloatx2C3x3E_0( _S1062.primal_0, _S1062.differential_0 );
-    var _S1064 : DiffPair_vectorx3Cfloatx2C3x3E_0 = s_fwd_luma_chroma_0(_S1063);
+    var _S1060 : DiffPair_vectorx3Cfloatx2C3x3E_0 = s_fwd_gamut_mapping_0(_S1059);
+    var _S1061 : DiffPair_vectorx3Cfloatx2C3x3E_0 = DiffPair_vectorx3Cfloatx2C3x3E_0( _S1060.primal_0, _S1060.differential_0 );
+    var _S1062 : DiffPair_vectorx3Cfloatx2C3x3E_0 = _d_clamp_vector_1(_S1061, _S1056, _S1057);
+    var _S1063 : DiffPair_vectorx3Cfloatx2C3x3E_0 = DiffPair_vectorx3Cfloatx2C3x3E_0( (((_S1062.primal_0) * (to_space_2))), (((_S1062.primal_0) * (_S1016))) + (((_S1062.differential_0) * (to_space_2))) );
+    var _S1064 : DiffPair_vectorx3Cfloatx2C3x3E_0 = s_fwd_clip_0(_S1063, _S1024);
     var _S1065 : DiffPair_vectorx3Cfloatx2C3x3E_0 = DiffPair_vectorx3Cfloatx2C3x3E_0( _S1064.primal_0, _S1064.differential_0 );
-    var _S1066 : DiffPair_vectorx3Cfloatx2C3x3E_0 = s_fwd_clip_0(_S1065, _S1022);
+    var _S1066 : DiffPair_vectorx3Cfloatx2C3x3E_0 = s_fwd_luma_chroma_0(_S1065);
+    var _S1067 : DiffPair_vectorx3Cfloatx2C3x3E_0 = DiffPair_vectorx3Cfloatx2C3x3E_0( _S1066.primal_0, _S1066.differential_0 );
+    var _S1068 : DiffPair_vectorx3Cfloatx2C3x3E_0 = s_fwd_clip_0(_S1067, _S1024);
     if((params_0.mixer_0.apply_grey_0) != u32(0))
     {
-        var _S1067 : DiffPair_vectorx3Cfloatx2C3x3E_0 = DiffPair_vectorx3Cfloatx2C3x3E_0( _S1066.primal_0, _S1066.differential_0 );
-        var _S1068 : DiffPair_vectorx3Cfloatx2C3x3E_0 = DiffPair_vectorx3Cfloatx2C3x3E_0( params_0.mixer_0.grey_0.xyz, _S1017 );
-        var _S1069 : DiffPair_float_0 = _d_dot_2(_S1067, _S1068);
-        var _S1070 : DiffPair_float_0 = DiffPair_float_0( _S1069.primal_0, _S1069.differential_0 );
-        var _S1071 : DiffPair_float_0 = DiffPair_float_0( 0.0f, 0.0f );
-        var _S1072 : DiffPair_float_0 = _d_max_1(_S1070, _S1071);
-        var _S1073 : DiffPair_vectorx3Cfloatx2C3x3E_0 = DiffPair_vectorx3Cfloatx2C3x3E_0( vec3<f32>(_S1072.primal_0), vec3<f32>(_S1072.differential_0) );
-        return _S1073;
+        var _S1069 : DiffPair_vectorx3Cfloatx2C3x3E_0 = DiffPair_vectorx3Cfloatx2C3x3E_0( _S1068.primal_0, _S1068.differential_0 );
+        var _S1070 : DiffPair_vectorx3Cfloatx2C3x3E_0 = DiffPair_vectorx3Cfloatx2C3x3E_0( params_0.mixer_0.grey_0.xyz, _S1019 );
+        var _S1071 : DiffPair_float_0 = _d_dot_2(_S1069, _S1070);
+        var _S1072 : DiffPair_float_0 = DiffPair_float_0( _S1071.primal_0, _S1071.differential_0 );
+        var _S1073 : DiffPair_float_0 = DiffPair_float_0( 0.0f, 0.0f );
+        var _S1074 : DiffPair_float_0 = _d_max_1(_S1072, _S1073);
+        var _S1075 : DiffPair_vectorx3Cfloatx2C3x3E_0 = DiffPair_vectorx3Cfloatx2C3x3E_0( vec3<f32>(_S1074.primal_0), vec3<f32>(_S1074.differential_0) );
+        return _S1075;
     }
-    var _S1074 : DiffPair_vectorx3Cfloatx2C3x3E_0 = DiffPair_vectorx3Cfloatx2C3x3E_0( (((_S1066.primal_0) * (from_space_2))), (((_S1066.primal_0) * (_S1014))) + (((_S1066.differential_0) * (from_space_2))) );
-    var _S1075 : DiffPair_vectorx3Cfloatx2C3x3E_0 = s_fwd_clip_0(_S1074, _S1022);
-    var _S1076 : DiffPair_vectorx3Cfloatx2C3x3E_0 = DiffPair_vectorx3Cfloatx2C3x3E_0( (((_S1075.primal_0) * (to_rgb_2))), (((_S1075.primal_0) * (_S1014))) + (((_S1075.differential_0) * (to_rgb_2))) );
-    var _S1077 : DiffPair_vectorx3Cfloatx2C3x3E_0 = s_fwd_clip_0(_S1076, _S1022);
-    var _S1078 : DiffPair_vectorx3Cfloatx2C3x3E_0 = DiffPair_vectorx3Cfloatx2C3x3E_0( _S1077.primal_0, _S1077.differential_0 );
-    return _S1078;
+    var _S1076 : DiffPair_vectorx3Cfloatx2C3x3E_0 = DiffPair_vectorx3Cfloatx2C3x3E_0( (((_S1068.primal_0) * (from_space_2))), (((_S1068.primal_0) * (_S1016))) + (((_S1068.differential_0) * (from_space_2))) );
+    var _S1077 : DiffPair_vectorx3Cfloatx2C3x3E_0 = s_fwd_clip_0(_S1076, _S1024);
+    var _S1078 : DiffPair_vectorx3Cfloatx2C3x3E_0 = DiffPair_vectorx3Cfloatx2C3x3E_0( (((_S1077.primal_0) * (to_rgb_2))), (((_S1077.primal_0) * (_S1016))) + (((_S1077.differential_0) * (to_rgb_2))) );
+    var _S1079 : DiffPair_vectorx3Cfloatx2C3x3E_0 = s_fwd_clip_0(_S1078, _S1024);
+    var _S1080 : DiffPair_vectorx3Cfloatx2C3x3E_0 = DiffPair_vectorx3Cfloatx2C3x3E_0( _S1079.primal_0, _S1079.differential_0 );
+    return _S1080;
 }
 
 @compute
 @workgroup_size(16, 16, 1)
 fn channelmixerrgb_forward_diff(@builtin(global_invocation_id) id_2 : vec3<u32>)
 {
-    var _S1079 : u32 = id_2.x;
-    var _S1080 : bool;
-    if((_S1079 >= (params_0.pass_0.width_0)))
+    var _S1081 : u32 = id_2.x;
+    var _S1082 : bool;
+    if((_S1081 >= (params_0.pass_0.width_0)))
     {
-        _S1080 = true;
+        _S1082 = true;
     }
     else
     {
-        _S1080 = ((id_2.y) >= (params_0.pass_0.height_0));
+        _S1082 = ((id_2.y) >= (params_0.pass_0.height_0));
     }
-    if(_S1080)
+    if(_S1082)
     {
         return;
     }
-    var i_3 : u32 = id_2.y * params_0.pass_0.width_0 + _S1079;
+    var i_3 : u32 = id_2.y * params_0.pass_0.width_0 + _S1081;
     var v_5 : vec4<f32> = derivative_in_0[i_3];
     var direction_0 : Illuminant_0;
     direction_0.x_17 = v_5.x;
     direction_0.y_11 = v_5.y;
-    var _S1081 : DiffPair_vectorx3Cfloatx2C3x3E_0 = DiffPair_vectorx3Cfloatx2C3x3E_0( input_0[i_3].xyz, vec3<f32>(0.0f) );
-    var _S1082 : DiffPair_Illuminant_0 = DiffPair_Illuminant_0( illuminant_0(), direction_0 );
-    derivative_out_0[i_3] = vec4<f32>(s_fwd_channel_mixer_0(_S1081, _S1082).differential_0, 0.0f);
+    var _S1083 : DiffPair_vectorx3Cfloatx2C3x3E_0 = DiffPair_vectorx3Cfloatx2C3x3E_0( input_0[i_3].xyz, vec3<f32>(0.0f) );
+    var _S1084 : DiffPair_Illuminant_0 = DiffPair_Illuminant_0( illuminant_0(), direction_0 );
+    derivative_out_0[i_3] = vec4<f32>(s_fwd_channel_mixer_0(_S1083, _S1084).differential_0, 0.0f);
     return;
 }
 

@@ -219,7 +219,11 @@ float curve_at(no_diff Point point, no_diff RgbCurveParams p, no_diff bool slots
         float x_last = knot(c, p.count[c] - 1, p, slots, g).x;
         float value = slotted(p.end_value[c], c, 0, KIND_END_VALUE, p, slots, g);
         float power = slotted(p.end_power[c], c, 0, KIND_END_POWER, p, slots, g);
-        return value * pow0(point.v / x_last, power);
+        // Form the ratio in log space so neither division nor exponentiation can
+        // overflow. Limit the power before multiplication, for both derivative modes.
+        float log_base = max(log2(max(point.v, x_last)) - log2(x_last), 0.0);
+        float limit = 64.0 / max(log_base, 1e-20);
+        return value * exp2(clamp(power, -limit, limit) * log_base);
     }
     float3 a = knot(c, point.segment, p, slots, g);
     float3 b = knot(c, point.segment + 1, p, slots, g);

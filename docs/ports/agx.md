@@ -259,6 +259,6 @@ Fifteen commits change `src/iop/agx.c` or `data/kernels/agx.cl` after the refere
 - **Bug fixes the port already follows:** a7053e1369 (`_scale` in double) and 3526ecc350 (auto gamma clamped to [0.01, 100], and recomputed by "read exposure").
 - **No effect on output:** 5cfca8aecf (tiling allowed), b299a9df0f, 57c0592ff0, eac6d9130d, fd9b0d61d3, 5f3806ec6e, 06e85df41b, c2dd84a409 (GUI), a42879ae4f and 7cb4369080 (style).
 
-### Input validation
+## Input validation
 
 Operation setup refuses a look lift at or below −1 and any combination whose packed fp32 coefficients are non-finite. This includes a zero pivot output with gamma 10, whose slope denominator underflows. No non-finite coefficients reach the kernel.

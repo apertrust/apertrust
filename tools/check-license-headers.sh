@@ -19,10 +19,24 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
+# Keep the canonical text in this script's own GPL header. Extra attribution lines
+# are allowed, but cannot replace the project's copyright or the licence paragraphs.
+header() {
+  awk '
+    NR == 1 && /^#!/ { next }
+    /^\/\// { sub(/^\/\/ ?/, ""); print; if ($0 ~ /www.gnu.org\/licenses/) exit; next }
+    /^#/ { sub(/^# ?/, ""); print; if ($0 ~ /www.gnu.org\/licenses/) exit; next }
+    { exit }
+  ' "$1"
+}
+expected=$(header "$0" | sed '2,/^$/ { /^$/!d; }')
 missing=0
 while IFS= read -r file; do
-  if ! head -n 20 "$file" | grep -q "GNU General Public License"; then
-    echo "missing licence header: $file"
+  actual=$(header "$file")
+  body=$(printf '%s\n' "$actual" | sed '2,/^$/ { /^$/!d; }')
+  if [[ "$body" != "$expected" ]] ||
+    ! grep -Eq '^Copyright \(C\) .*Apertrust developers$' <<< "$actual"; then
+    echo "missing or incomplete licence header: $file"
     missing=1
   fi
 done < <(git ls-files --cached --others --exclude-standard '*.rs' '*.wgsl' '*.slang' '*.sh')

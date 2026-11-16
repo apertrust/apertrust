@@ -118,11 +118,8 @@ pub fn render_case(darktable: &DarktableCli, case: &Case, images: &Path) -> Resu
     }
 
     darktable.ensure_reference_version()?;
-    let work = dir.join("work");
-    if work.exists() {
-        std::fs::remove_dir_all(&work)?;
-    }
-    std::fs::create_dir_all(&work)?;
+    let working = WorkDir::new(&dir)?;
+    let work = working.path();
     for (xmp, name, target) in [
         (&xmp_off, "off", &references.input),
         (&xmp_on, "on", &references.expected),
@@ -141,8 +138,84 @@ pub fn render_case(darktable: &DarktableCli, case: &Case, images: &Path) -> Resu
                 None,
             )
             .with_context(|| format!("darktable-cli failed to render {}", sidecar.display()))?;
-        std::fs::rename(&output, target)?;
+        publish(&output, target)?;
     }
-    std::fs::remove_dir_all(&work)?;
     Ok(references)
+}
+
+/// A renderer owns only its unique directory, including while another cache miss runs.
+pub(crate) struct WorkDir(PathBuf);
+
+impl WorkDir {
+    pub(crate) fn new(parent: &Path) -> std::io::Result<Self> {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static NEXT: AtomicU64 = AtomicU64::new(0);
+        std::fs::create_dir_all(parent)?;
+        loop {
+            let serial = NEXT.fetch_add(1, Ordering::Relaxed);
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos();
+            let path = parent.join(format!("work-{}-{now}-{serial}", std::process::id()));
+            match std::fs::create_dir(&path) {
+                Ok(()) => return Ok(Self(path)),
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                Err(error) => return Err(error),
+            }
+        }
+    }
+
+    pub(crate) fn path(&self) -> &Path {
+        &self.0
+    }
+}
+
+impl Drop for WorkDir {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+/// Publish a complete file. On Windows another renderer may have published first;
+/// that complete file has the same cache key and is already a usable result.
+pub(crate) fn publish(source: &Path, target: &Path) -> std::io::Result<()> {
+    match std::fs::rename(source, target) {
+        Ok(()) => Ok(()),
+        Err(_) if target.is_file() => std::fs::remove_file(source),
+        Err(error) => Err(error),
+    }
+}
+
+#[cfg(test)]
+mod work_tests {
+    use super::*;
+
+    #[test]
+    fn overlapping_renderers_own_separate_work_and_publish_complete_files() {
+        let parent = std::env::temp_dir().join(format!(
+            "apertrust-render-work-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir(&parent).unwrap();
+        let first = WorkDir::new(&parent).unwrap();
+        let second = WorkDir::new(&parent).unwrap();
+        assert_ne!(first.path(), second.path());
+        let source = second.path().join("complete.pfm");
+        std::fs::write(&source, b"complete render").unwrap();
+        drop(first);
+        assert!(
+            source.is_file(),
+            "one renderer cannot remove another's input/output"
+        );
+        let target = parent.join("published.pfm");
+        publish(&source, &target).unwrap();
+        drop(second);
+        assert_eq!(std::fs::read(&target).unwrap(), b"complete render");
+        std::fs::remove_dir_all(parent).unwrap();
+    }
 }

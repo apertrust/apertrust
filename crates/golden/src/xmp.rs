@@ -50,9 +50,14 @@ pub fn remove_operation(xmp: &str, operation: &str) -> Result<String> {
     let mut copied = 0;
     for range in &ranges {
         // The entry's line, its indentation and line break included.
-        let start = xmp[..range.start]
+        let line_start = xmp[..range.start]
             .rfind('\n')
             .map_or(range.start, |at| at + 1);
+        let start = if line_start >= copied && xmp[line_start..range.start].trim().is_empty() {
+            line_start
+        } else {
+            range.start
+        };
         out.push_str(&xmp[copied..start]);
         copied = range.end + usize::from(xmp[range.end..].starts_with('\n'));
     }
@@ -72,12 +77,14 @@ pub fn remove_operation(xmp: &str, operation: &str) -> Result<String> {
 /// history as its last entry, numbered after the others and within its history's end, so
 /// darktable renders the module as `from` sets it. `xmp` must hold no entry for it.
 pub fn append_entry(xmp: &str, from: &str, operation: &str) -> Result<String> {
+    let end: u32 = attribute(xmp, "darktable:history_end")?.parse()?;
+    let active = truncate_redo(xmp, end)?;
+    let xmp = active.as_str();
     ensure!(
         entries(xmp, operation).is_empty(),
         "the sidecar already has a history entry for {operation}"
     );
     let entry = active_entry(from, operation)?;
-    let end: u32 = attribute(xmp, "darktable:history_end")?.parse()?;
     let num = attribute(entry, "darktable:num")?;
     let entry = entry.replacen(
         &format!("darktable:num=\"{num}\""),
@@ -90,7 +97,12 @@ pub fn append_entry(xmp: &str, from: &str, operation: &str) -> Result<String> {
     let close = xmp[..history]
         .rfind("</rdf:Seq>")
         .context("the sidecar's history has no sequence")?;
-    let line = xmp[..close].rfind('\n').map_or(close, |at| at + 1);
+    let line_start = xmp[..close].rfind('\n').map_or(close, |at| at + 1);
+    let line = if xmp[line_start..close].trim().is_empty() {
+        line_start
+    } else {
+        close
+    };
     let mut out = String::with_capacity(xmp.len() + entry.len() + 8);
     out.push_str(&xmp[..line]);
     out.push_str("     ");
@@ -102,6 +114,30 @@ pub fn append_entry(xmp: &str, from: &str, operation: &str) -> Result<String> {
         &format!("darktable:history_end=\"{}\"", end + 1),
         1,
     ))
+}
+
+/// Drop redo entries before a new operation makes the history end advance.
+fn truncate_redo(xmp: &str, end: u32) -> Result<String> {
+    let start = xmp
+        .find("<darktable:history>")
+        .context("the sidecar has no history")?;
+    let stop = xmp[start..]
+        .find("</darktable:history>")
+        .context("the history has no end")?
+        + start;
+    let mut out = String::with_capacity(xmp.len());
+    let mut copied = 0;
+    for (offset, _) in xmp[start..stop].match_indices("<rdf:li") {
+        let from = start + offset;
+        let to = from + xmp[from..stop].find("/>").context("an entry has no end")? + 2;
+        let number: u32 = attribute(&xmp[from..to], "darktable:num")?.parse()?;
+        if number >= end {
+            out.push_str(&xmp[copied..from]);
+            copied = to;
+        }
+    }
+    out.push_str(&xmp[copied..]);
+    Ok(out)
 }
 
 /// Lowers every `name="N"` attribute by `shift(N)`.
@@ -318,6 +354,28 @@ fn attribute<'a>(entry: &'a str, name: &str) -> Result<&'a str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn compact_history_keeps_its_markup_when_entries_are_removed() {
+        let xml = "<root darktable:history_end=\"3\"><darktable:history><rdf:Seq><rdf:li darktable:num=\"0\" darktable:operation=\"exposure\"/><rdf:li darktable:num=\"1\" darktable:operation=\"undo\"/><rdf:li darktable:num=\"2\" darktable:operation=\"undo\"/></rdf:Seq></darktable:history></root>";
+        let removed = remove_operation(xml, "undo").unwrap();
+        assert!(
+            removed.starts_with("<root darktable:history_end=\"1\"><darktable:history><rdf:Seq>")
+        );
+        assert_eq!(entries(&removed, "exposure").len(), 1);
+        assert!(entries(&removed, "undo").is_empty());
+        assert!(removed.ends_with("</rdf:Seq></darktable:history></root>"));
+    }
+
+    #[test]
+    fn appending_after_undo_removes_the_redo_tail() {
+        let xml = "<root darktable:history_end=\"1\"><darktable:history><rdf:Seq><rdf:li darktable:num=\"0\" darktable:operation=\"exposure\"/><rdf:li darktable:num=\"1\" darktable:operation=\"undo\"/></rdf:Seq></darktable:history></root>";
+        let appended = append_entry(xml, include_str!("../cases/grain.xmp"), "grain").unwrap();
+        assert!(entries(&appended, "undo").is_empty());
+        let grain = &appended[entries(&appended, "grain")[0].clone()];
+        assert_eq!(attribute(grain, "darktable:num").unwrap(), "1");
+        assert_eq!(attribute(&appended, "darktable:history_end").unwrap(), "2");
+    }
 
     #[test]
     fn an_entry_appended_from_another_sidecar_is_its_active_one() {

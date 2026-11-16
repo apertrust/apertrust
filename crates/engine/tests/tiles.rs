@@ -183,6 +183,7 @@ fn tiled_through_equals_untiled(raw: &Raw, instances: &[Instance], rounds: usize
         let expected = (width.div_ceil(size[0]) * height.div_ceil(size[1])) as usize;
         assert_eq!(tiles, expected, "{size:?}");
         assert_eq!(exported.rounds, rounds, "{size:?}");
+        assert_eq!(tiled.len(), whole.len());
         if let Some(i) = tiled.iter().zip(&whole).position(|(a, b)| a != b) {
             panic!(
                 "tiles of {size:?}: pixel ({}, {}) is {:?} tiled, {:?} whole",
@@ -692,6 +693,7 @@ fn tiled_at_sizes_equals_untiled(raw: &Raw) {
                 let expected = (width.div_ceil(size[0]) * height.div_ceil(size[1])) as usize;
                 let at = format!("scale {scale}, finalscale {finalscale}, tiles of {size:?}");
                 assert_eq!(exported.tiles, expected, "{at}");
+                assert_eq!(exported.pixels.len(), whole.pixels.len());
                 if let Some(i) = exported
                     .pixels
                     .iter()
@@ -995,6 +997,7 @@ fn tiled_after_the_resample_equals_untiled(
                     "{at}: {} tiles",
                     tiled.tiles
                 );
+                assert_eq!(tiled.pixels.len(), whole.pixels.len());
                 if let Some(i) = tiled
                     .pixels
                     .iter()
@@ -1210,6 +1213,7 @@ fn first_rounds_on_both_sides_equal_untiled(raw: &Raw, tilings: &[Tiling]) {
                 tiled.tiles,
                 tiled.rounds
             );
+            assert_eq!(tiled.pixels.len(), whole.pixels.len());
             if let Some(i) = tiled
                 .pixels
                 .iter()

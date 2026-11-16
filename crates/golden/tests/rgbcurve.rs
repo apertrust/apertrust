@@ -74,6 +74,24 @@ fn render(settings: &Settings, pixels: &[[f32; 3]]) -> Vec<[f32; 3]> {
         .collect()
 }
 
+#[test]
+fn steep_extrapolation_stays_finite() {
+    let mut settings = Settings::default();
+    settings.curves[0] = Curve {
+        nodes: vec![
+            Node { x: 0.0, y: 0.0 },
+            Node { x: 0.9, y: 0.01 },
+            Node { x: 1.0, y: 1.0 },
+        ],
+        interpolation: Interpolation::MonotoneHermite,
+    };
+    settings.preserve_colors = Norm::Max;
+    for pixel in render(&settings, &[[32.0, 0.0, 0.0], [1e6, 0.0, 0.0]]) {
+        assert!(pixel.iter().all(|v| v.is_finite()), "{pixel:?}");
+        assert!(pixel[0] > 1.0);
+    }
+}
+
 /// Every mode: independent channels, then linked with each way of preserving colours,
 /// with middle grey compensated and not.
 fn every_mode(curves: [Curve; 3]) -> Vec<Settings> {

@@ -225,12 +225,13 @@ float scaled_length(float3 v)
 [Differentiable]
 float3 luma_chroma(float3 c, no_diff ChannelMixerParams p)
 {
-    float norm = max(scaled_length(c), NORM_MIN);
+    float norm = scaled_length(c);
+    float divisor = max(norm, NORM_MIN) * INVERSE_SQRT_3;
     float average = max((c.x + c.y + c.z) / 3.0, NORM_MIN);
     float mix = dot(c, p.lightness.xyz);
 
     norm *= INVERSE_SQRT_3;
-    float3 ratios = c / norm;
+    float3 ratios = c / divisor;
     float coefficient = dot(ratios, p.saturation.xyz) / 3.0;
     // A ratio that was negative may stay so; one that was not cannot become so.
     ratios = max((1.0 - ratios) * coefficient + ratios, min(ratios, float3(0.0)));

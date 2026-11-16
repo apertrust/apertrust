@@ -480,6 +480,10 @@ impl<'a> PhotoCaption<'a> {
         let said = said.join(", ");
         let response = ui.interact(rect, ui.make_persistent_id("photo caption"), Sense::hover());
         response.widget_info(|| WidgetInfo::labeled(Role::Label, true, &said));
+        if !self.details.is_empty() {
+            ui.ctx()
+                .accesskit_node_builder(response.id, |node| node.set_description(self.details));
+        }
         if self.details.is_empty() {
             response.on_hover_text(said)
         } else {

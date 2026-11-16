@@ -42,6 +42,23 @@ fn text(file: &Path) -> String {
     std::fs::read_to_string(file).expect("written")
 }
 
+#[test]
+fn persistence_recovers_after_an_initial_read_error() {
+    let (_dir, file) = state("initial-read-error");
+    // Reading a directory as the state file fails on every supported platform.
+    std::fs::create_dir(&file).unwrap();
+    let (mut recents, warnings) = Recents::open(file.clone(), none);
+    assert!(!warnings.is_empty());
+    recents.opened_at(OpenKind::Folder, folder("a"), 100);
+    recents.flush();
+    assert!(file.is_dir());
+    std::fs::remove_dir(&file).unwrap();
+    recents.flush();
+    let (read, warnings) = Recents::open(file, none);
+    assert!(warnings.is_empty(), "{warnings:?}");
+    assert_eq!(paths(&read), vec![folder("a")]);
+}
+
 /// Takes the checks' answers until none is still to come, for at most ten seconds.
 fn answered(recents: &mut Recents) {
     let deadline = Instant::now() + Duration::from_secs(10);

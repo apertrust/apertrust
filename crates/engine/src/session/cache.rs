@@ -590,7 +590,7 @@ impl Upkeep {
     }
 
     /// Selects and publishes one snapshot in the same order as Clear's final snapshot.
-    fn tell_counted(&self, tell: &Tell) {
+    pub(crate) fn tell_counted(&self, tell: &Tell) {
         let _publishing = self
             .publication
             .lock()

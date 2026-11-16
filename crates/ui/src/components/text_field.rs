@@ -261,9 +261,14 @@ impl<'a> PathField<'a> {
         let id = self.field.id;
         let text = self.field.text.to_owned();
         let list_key = id.with("list");
-        let last: Last = ui.data(|d| d.get_temp(list_key)).unwrap_or_default();
+        let enabled = self.field.enabled && ui.is_enabled();
+        let last: Last = if enabled {
+            ui.data(|d| d.get_temp(list_key)).unwrap_or_default()
+        } else {
+            Last::default()
+        };
         let had_focus = ui.memory(|m| m.has_focus(id) || m.had_focus_last_frame(id));
-        let list_open = last.open && had_focus;
+        let list_open = enabled && last.open && had_focus;
         let mut highlight = last.highlight;
         let mut chosen = None;
         // The list's keys are the list's, before the field sees them.
@@ -329,7 +334,7 @@ impl<'a> PathField<'a> {
         });
         let matches: Vec<usize> = partial
             .as_deref()
-            .filter(|_| focused || pointer_in_list || had_focus)
+            .filter(|_| enabled && (focused || pointer_in_list || had_focus))
             .filter(|_| hidden.as_ref() != Some(&(current.clone(), caret)))
             .map(|p| {
                 let wanted = p.to_uppercase();

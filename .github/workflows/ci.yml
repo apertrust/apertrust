@@ -111,16 +111,16 @@ jobs:
         run: |
           # The labels as they are now, not as the event saw them, so a re-run after adding
           # `full-ci` picks it up.
-          FULL_CI=false
-          if [ "$EVENT" = pull_request ] &&
-            gh pr view "$PR" --json labels --jq '.labels[].name' | grep -qx full-ci; then
-            FULL_CI=true
-          fi
           code=true
-          if [ "$EVENT" = pull_request ] && [ "$FULL_CI" != true ] &&
-            [ -z "$(tools/check-docs-paths.sh --code "$BASE...$HEAD")" ]; then
-            echo "Documentation only: lint, clippy and the tests are skipped."
-            code=false
+          if [ "$EVENT" = pull_request ]; then
+            labels=$(gh pr view "$PR" --json labels --jq '.labels[].name')
+            if ! grep -qx full-ci <<< "$labels"; then
+              paths=$(tools/check-docs-paths.sh --code "$BASE...$HEAD")
+              if [ -z "$paths" ]; then
+                echo "Documentation only: lint, clippy and the tests are skipped."
+                code=false
+              fi
+            fi
           fi
           echo "code=$code" >> "$GITHUB_OUTPUT"
           echo 'os=["ubuntu-24.04", "macos-15"]' >> "$GITHUB_OUTPUT"

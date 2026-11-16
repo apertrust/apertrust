@@ -491,10 +491,14 @@ impl<'a> Curve<'a> {
                 state.added = Some((x, ADDED_FRAMES));
             }
             if keys.reset {
+                state.drag = None;
+                state.added = None;
                 actions.push(CurveAction::Reset);
             } else if keys.remove
                 && let Some(index) = state.selected.filter(|&i| self.removable(i))
             {
+                state.drag = None;
+                state.added = None;
                 actions.push(CurveAction::Remove(index));
             }
         }

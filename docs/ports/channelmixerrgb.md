@@ -395,6 +395,10 @@ All pass on the Apple M4; the GPU tests run on CI's software GPUs too.
 8. **Golden cases beyond the tests' settings:** the camera case's stored x and y set to E's, so that a fallback would show (Test plan); the bypass case names no gradient parameter, since its derivatives are 0 by construction.
 9. **The pixel's derivative:** both entry points pass the pixel as a differentiable pair and discard its derivative, rather than declaring it `no_diff` in the entry points only, so the generated code already carries what dLoss/dInput needs; `main`, the render's pass, is unaffected.
 
-### Input validation
+## Input validation
 
 Operation setup refuses a positive gamut value whose reciprocal cannot be represented as a finite fp32 compression. Zero retains its explicit compression-bypass behaviour.
+
+## Boundary behaviour
+
+The colourfulness reconstruction retains the input magnitude, even below `NORM_MIN`; only its normalisation divisor is floored. Neutral saturation and lightness therefore do not raise near-black pixels to the divisor floor.

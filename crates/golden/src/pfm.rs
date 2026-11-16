@@ -33,8 +33,12 @@ pub struct Image {
 
 impl Image {
     pub fn new(width: usize, height: usize, pixels: Vec<[f32; 3]>) -> Result<Self> {
+        ensure!(width > 0 && height > 0, "PFM dimensions must be positive");
+        let count = width
+            .checked_mul(height)
+            .context("PFM dimensions overflow")?;
         ensure!(
-            pixels.len() == width * height,
+            pixels.len() == count,
             "{} pixels for a {width}×{height} image",
             pixels.len()
         );
@@ -93,15 +97,19 @@ impl Image {
         }
         let width: usize = header.token()?.parse().context("width")?;
         let height: usize = header.token()?.parse().context("height")?;
+        ensure!(width > 0 && height > 0, "PFM dimensions must be positive");
         let scale: f32 = header.token()?.parse().context("scale")?;
         // Exactly one whitespace byte separates the header from the samples.
         let data = &bytes[header.pos + 1..];
 
-        let row_bytes = width * 3 * 4;
+        let row_bytes = width.checked_mul(12).context("PFM row size overflow")?;
+        let bytes_needed = row_bytes
+            .checked_mul(height)
+            .context("PFM image size overflow")?;
         ensure!(
-            data.len() == row_bytes * height,
+            data.len() == bytes_needed,
             "expected {} sample bytes for {width}×{height}, found {}",
-            row_bytes * height,
+            bytes_needed,
             data.len()
         );
         let sample = |b: &[u8; 4]| {
@@ -167,6 +175,15 @@ impl<'a> Header<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn zero_and_overflowing_dimensions_are_errors() {
+        assert!(Image::new(0, 1, vec![]).is_err());
+        assert!(Image::new(1, 0, vec![]).is_err());
+        assert!(Image::new(usize::MAX, 2, vec![]).is_err());
+        assert!(Image::decode(b"PF\n0 1\n-1\n").is_err());
+        assert!(Image::decode(format!("PF\n{} 2\n-1\n", usize::MAX).as_bytes()).is_err());
+    }
 
     #[test]
     fn round_trip_keeps_values_and_row_order() {

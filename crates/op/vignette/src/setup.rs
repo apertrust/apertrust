@@ -170,6 +170,8 @@ impl Parameter {
 /// size at full resolution and the pipe's scale.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Prepared {
+    /// Singular manual aspect ratios copy the image, as the reference does.
+    pub bypass: bool,
     pub scale: f32,
     pub falloff_scale: f32,
     pub brightness: f32,
@@ -216,7 +218,12 @@ impl Prepared {
         ] {
             put(v.to_le_bytes());
         }
-        for v in [u32::from(self.autoratio), u32::from(self.unbound), 0, 0] {
+        for v in [
+            u32::from(self.autoratio),
+            u32::from(self.unbound),
+            u32::from(self.bypass),
+            0,
+        ] {
             put(v.to_le_bytes());
         }
         for parameter in &self.gradient {
@@ -273,14 +280,14 @@ pub fn prepare(settings: &Settings) -> Result<Prepared, NotPorted> {
         return refuse("a parameter that is not a finite number");
     }
     Ok(Prepared {
+        bypass: !settings.autoratio && matches!(settings.whratio, 0.0 | 2.0),
         scale: settings.scale,
         falloff_scale: settings.falloff_scale,
         brightness: settings.brightness,
         saturation: settings.saturation,
         center: settings.center,
         autoratio: settings.autoratio,
-        // At exactly 0 or 2 darktable divides by zero and leaves the image unchanged;
-        // this is the limit from inside, an extremely narrow vignette.
+        // Geometry remains finite even when the singular endpoint bypasses shading.
         whratio: settings.whratio.clamp(WHRATIO_LIMIT, 2.0 - WHRATIO_LIMIT),
         shape: settings.shape,
         unbound: settings.unbound,

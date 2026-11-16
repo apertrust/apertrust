@@ -227,6 +227,9 @@ case "$(uname -s)" in
   MINGW* | MSYS* | CYGWIN*) os=windows ;;
   *) os=other ;;
 esac
+if ((quiet > 0)) && [[ "$os" != macos && "$os" != linux ]]; then
+  die "--wait-quiet requires macOS or Linux CPU load measurements"
+fi
 
 # Microseconds since the epoch: bash 5's clock, else perl's, else GNU date's.
 if [[ -n "${EPOCHREALTIME:-}" ]]; then
@@ -530,19 +533,40 @@ record_each() {
   done
 }
 
-# The share of the CPU that is idle, in whole percent, over a second (macOS: top's second
-# sample); 100 where it cannot be told.
+# Linux's guest counters are already included in user/nice, so only sum fields 2–9.
+cpu_times() {
+  awk '/^cpu / { total=0; for (i=2; i<=9; i++) total+=$i; printf "%.0f %.0f\n", total, $5+$6; seen=1; exit } END { if (!seen) exit 1 }' "${1:-/proc/stat}"
+}
+
+# The share of the CPU that is idle over a second. Missing measurements are errors.
 idle_percent() {
-  local idle
-  idle=$(top -l 2 -n 0 -s 1 2>/dev/null | sed -n 's/.*CPU usage:.* \([0-9]*\)\.[0-9]*% idle.*/\1/p' | tail -n 1)
-  echo "${idle:-100}"
+  local idle first second total_before idle_before total_after idle_after
+  case "$os" in
+    macos)
+      idle=$(top -l 2 -n 0 -s 1 2>/dev/null | sed -n 's/.*CPU usage:.* \([0-9]*\)\.[0-9]*% idle.*/\1/p' | tail -n 1) || return 1
+      [[ "$idle" =~ ^[0-9]+$ ]] || return 1
+      ;;
+    linux)
+      first=$(cpu_times) || return 1
+      sleep 1
+      second=$(cpu_times) || return 1
+      read -r total_before idle_before <<< "$first"
+      read -r total_after idle_after <<< "$second"
+      ((total_after > total_before && idle_after >= idle_before)) || return 1
+      idle=$((100 * (idle_after - idle_before) / (total_after - total_before)))
+      ;;
+    *) return 1 ;;
+  esac
+  echo "$idle"
 }
 
 # With --wait-quiet, waits until the CPU is at least that idle, for a minute at most.
 settle() {
-  local waited=0
+  local waited=0 idle
   [[ $quiet -gt 0 ]] || return 0
-  while [[ $(idle_percent) -lt $quiet && $waited -lt 60 ]]; do
+  while ((waited < 60)); do
+    idle=$(idle_percent) || die "cannot measure CPU idleness"
+    [[ $idle -lt $quiet ]] || break
     sleep 3
     waited=$((waited + 4))
   done
@@ -562,7 +586,7 @@ timed() {
     end=$(now_us)
     tries=$((tries + 1))
     [[ $quiet -gt 0 ]] || break
-    idle=$(idle_percent)
+    idle=$(idle_percent) || die "cannot measure CPU idleness"
     if [[ $idle -ge $quiet || $tries -ge 3 ]]; then
       printf '%s\t%s\n' "$idle" "$log" >>"$out/idle.tsv"
       break
