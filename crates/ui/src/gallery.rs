@@ -1520,6 +1520,12 @@ fn choices(ui: &mut Ui, t: &Theme, demo: &mut Demo, style: ChoiceStyle) {
     )
     .name("Chromatic adaptation")
     .promise("How the photo's white is carried to the display's.")
+    // Each option's own tooltip in the list (decision 88).
+    .option_tips(&[
+        "The most robust and accurate",
+        "Consistent with ICC v4",
+        "A simple scaling in XYZ",
+    ])
     .disabled_options(&[3], "Coming in a later version")
     .style(style);
     match marked(adaptation, demo.adaptation_mark).show(ui) {

@@ -54,8 +54,8 @@ use apertrust_plugin::{ImageContext, Value};
 
 use crate::about::{Fact, Facts, Purpose};
 use crate::definition::{
-    ChoiceStyle, Control, ControlKind, Coordinate, Definition, Row, SettingRow, Slider, Tab, Unit,
-    View,
+    ChoiceStyle, Control, ControlKind, Coordinate, Definition, Row, SettingRow, Slider, Tab, Track,
+    Unit, View,
 };
 use crate::{Base, ControlValue, Controls, Owned, Setting, Tool, ToolValues};
 
@@ -303,11 +303,13 @@ const MAPPING: Row = Row::Group {
                 unported: &[],
             },
             decimals: 0,
+            track: Track::Plain,
         }),
         Row::Setting(SettingRow {
             id: "channel_mixing",
             kind: ControlKind::Bool { default: true },
             decimals: 0,
+            track: Track::Plain,
         }),
         Row::Label { id: "target" },
         Row::Setting(SettingRow {
@@ -319,6 +321,7 @@ const MAPPING: Row = Row::Group {
                 default: 50.0,
             },
             decimals: 1,
+            track: Track::Plain,
         }),
         Row::Setting(SettingRow {
             id: "target_hue",
@@ -329,6 +332,7 @@ const MAPPING: Row = Row::Group {
                 default: 0.0,
             },
             decimals: 1,
+            track: Track::Plain,
         }),
         Row::Setting(SettingRow {
             id: "target_chroma",
@@ -339,6 +343,7 @@ const MAPPING: Row = Row::Group {
                 default: 0.0,
             },
             decimals: 1,
+            track: Track::Plain,
         }),
     ],
 };
@@ -476,6 +481,7 @@ static CHECKER: [Row; 1] = [Row::Group {
                 unported: &[],
             },
             decimals: 0,
+            track: Track::Plain,
         }),
         Row::Setting(SettingRow {
             id: "optimise_for",
@@ -485,6 +491,7 @@ static CHECKER: [Row; 1] = [Row::Group {
                 unported: &[],
             },
             decimals: 0,
+            track: Track::Plain,
         }),
         Row::Setting(SettingRow {
             id: "patch_scale",
@@ -495,6 +502,7 @@ static CHECKER: [Row; 1] = [Row::Group {
                 default: 0.5,
             },
             decimals: 3,
+            track: Track::Plain,
         }),
     ],
 }];

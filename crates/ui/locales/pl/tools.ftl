@@ -435,17 +435,25 @@ tool-exposure-computed-computed_exposure-promise = Wyliczone EC: korekcja ekspoz
 tool-exposure-control-black_level-label = Korekta poziomu czerni
 tool-exposure-control-black_level-full = Korekta poziomu czerni
 tool-exposure-control-black_level-promise = Do podnoszenia obciętych czerni, nie do głębszych czerni: użyj względnej ekspozycji czerni w AgX
-tool-exposure-collapsible-area_exposure_mapping = Miejscowe mapowanie ekspozycji
-tool-exposure-setting-area_mode-label = Tryb miejscowy
-tool-exposure-setting-area_mode-full = Tryb miejscowy
-tool-exposure-setting-area_mode-promise = „Korekcja” ustawia ekspozycję tak, aby zmapować wejściową jasność na cel. „Pomiar” wskazuje tylko, jak wejściowy kolor jest mapowany przez ekspozycję, i może być użyty do zdefiniowania celu.
-tool-exposure-setting-area_mode-option-correction = Korekcja
-tool-exposure-setting-area_mode-option-measure = Pomiar
+tool-exposure-setting-target-label = Cel próbnika
+tool-exposure-setting-target-full = Cel próbnika
+tool-exposure-setting-target-promise = Co próbnik ekspozycji robi z wybranym obszarem.
+tool-exposure-setting-target-option-middle_grey = Średnia szarość
+tool-exposure-setting-target-option-lightness = Jasność
+tool-exposure-setting-target-option-reference = Wzorzec
+tool-exposure-setting-target-option-middle_grey-promise = Wybrany obszar staje się zwykłym półtonem (L 50 %)
+tool-exposure-setting-target-option-lightness-promise = Wybrany obszar otrzymuje ustawioną przez ciebie jasność
+tool-exposure-setting-target-option-reference-promise = Wybrany obszar dopasowuje się do zmierzonego na innym zdjęciu
 tool-exposure-setting-lightness-label = Jasność
 tool-exposure-setting-lightness-full = Docelowa jasność
-tool-exposure-setting-lightness-promise = Pożądana docelowa ekspozycja po mapowaniu.
+tool-exposure-setting-lightness-promise = Jasność, jaką otrzymuje wybrany obszar, CIE L*
 tool-exposure-picker-exposure-full = Ekspozycja: pobierz ze zdjęcia
-tool-exposure-picker-exposure-promise = Ustawia korektę ekspozycji na podstawie zaznaczonego obszaru.
+tool-exposure-picker-exposure-promise-middle_grey = Ustaw obszar na średnią szarość
+tool-exposure-picker-exposure-hint-middle_grey = Ustaw obszar na średnią szarość
+tool-exposure-picker-exposure-promise-lightness = Ustaw obszar na L { $lightness } %
+tool-exposure-picker-exposure-hint-lightness = Ustaw obszar na L { $lightness } %
+tool-exposure-picker-exposure-promise-reference = Wzorzec pojawi się w jednej z kolejnych wersji
+tool-exposure-picker-exposure-hint-reference = Wzorzec pojawi się w jednej z kolejnych wersji
 
 ## Kalibracja koloru (docs/tools/colour-calibration.md)
 

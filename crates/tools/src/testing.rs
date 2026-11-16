@@ -238,6 +238,7 @@ static DEFINITION: Definition = Definition {
             keep: false,
             writes: &["brightness"],
             settings: &[],
+            words_by: None,
         },
         Picker {
             id: "spread",
@@ -249,6 +250,7 @@ static DEFINITION: Definition = Definition {
             keep: false,
             writes: &["grain", "size"],
             settings: &[],
+            words_by: None,
         },
         Picker {
             id: "show",
@@ -260,6 +262,7 @@ static DEFINITION: Definition = Definition {
             keep: true,
             writes: &[],
             settings: &[],
+            words_by: None,
         },
     ],
     facts: None,
@@ -1060,6 +1063,7 @@ pub fn slider_differences(
                 id,
                 kind: ControlKind::Number { min, max, step, .. },
                 decimals,
+                ..
             }) => (id, (min, max), step, decimals, None),
             _ => continue,
         };

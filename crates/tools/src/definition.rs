@@ -94,8 +94,9 @@ pub struct Definition {
 /// button, On the photo), in the controls' and actions' scheme:
 /// `tool-<tool>-picker-<id>-label`, its name; `-full`, what screen readers say;
 /// `-promise`, its tooltip; and, for a point picker, `-what`, the central bar's sentence
-/// ([`crate::messages::picker`]). [`crate::messages::of`] implies none of them: the app
-/// draws a tool's pickers only once its pick is built.
+/// ([`crate::messages::picker`]). A picker whose words follow a setting
+/// ([`Picker::words_by`]) has, in place of `-promise`, `-promise-<option>` and
+/// `-hint-<option>` for each of its options. [`crate::messages::of`] implies them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Picker {
     /// snake_case ASCII and permanent, unique among the tool's pickers: clients name it
@@ -121,6 +122,14 @@ pub struct Picker {
     pub writes: &'static [&'static str],
     /// The tool's settings its pick reads ([`Row::Setting`]), each once.
     pub settings: &'static [&'static str],
+    /// The choice setting of the tool ([`Row::Setting`]) whose option says what a pick will do, and
+    /// so chooses the picker's tooltip and its hint over the photo (decision 88):
+    /// `tool-<tool>-picker-<picker>-promise-<option>` and `-hint-<option>`
+    /// ([`crate::messages::picker_option`]), as Exposure's Picker target does. Each
+    /// option of that setting has a tooltip of its own in the list
+    /// ([`crate::messages::setting_option_promise`]). `None` for a picker with one
+    /// promise.
+    pub words_by: Option<&'static str>,
 }
 
 /// Whether a picker takes a point, an area or either: darktable's
@@ -364,6 +373,17 @@ pub enum Row {
         is: &'static [&'static str],
         rows: &'static [Row],
     },
+    /// Rows shown while one of the tool's choice settings ([`Row::Setting`]) holds one of
+    /// the options `is` names, as [`Row::When`] shows rows for a control's values, as
+    /// Exposure's Lightness shows under Picker target while Lightness is chosen
+    /// (decision 88). A setting is no control: what it holds is the app's, never the
+    /// edit's, so these rows hold no control either, only settings and rows of no
+    /// control. The setting shows wherever they do.
+    WhenSetting {
+        setting: &'static str,
+        is: &'static [&'static str],
+        rows: &'static [Row],
+    },
     /// A widget from the design system's closed registry, with the controls it edits. The
     /// equalizer, over controls that have rows of their own, is a second view of them, the
     /// tone equalizer's graph of its bands (decision 2), and stores nothing of its own;
@@ -405,7 +425,7 @@ pub enum Row {
         pickers: &'static [&'static str],
     },
     /// darktable's input and target patches of a picker's area mapping, side by side
-    /// under their headings, as Exposure's area exposure mapping shows them: the input,
+    /// under their headings, as darktable's area mappings show them: the input,
     /// the area as the picker's last pick showed it ([`crate::pick::Shown::patch`]), with
     /// its L readout, and the target, the colour of the settings `target` names, its
     /// L, then its C and h where given, as darktable's `_target_color_draw` paints it
@@ -488,6 +508,7 @@ impl Row {
             Row::Label { .. }
             | Row::Group { .. }
             | Row::When { .. }
+            | Row::WhenSetting { .. }
             | Row::Setting(_)
             | Row::Preset { .. }
             | Row::Action { .. }
@@ -511,10 +532,13 @@ impl Row {
         }
     }
 
-    /// The rows inside a group or a mode's rows; none for any other row.
+    /// The rows inside a group or a mode's rows, a control's or a setting's; none for any
+    /// other row.
     pub fn rows(&self) -> &'static [Row] {
         match self {
-            Row::Group { rows, .. } | Row::When { rows, .. } => rows,
+            Row::Group { rows, .. } | Row::When { rows, .. } | Row::WhenSetting { rows, .. } => {
+                rows
+            }
             _ => &[],
         }
     }
@@ -671,6 +695,8 @@ pub struct SettingRow {
     pub kind: ControlKind,
     /// Decimals a number shows.
     pub decimals: u8,
+    /// A number's track, as a slider's ([`Slider::track`]).
+    pub track: Track,
 }
 
 impl SettingRow {
@@ -711,6 +737,9 @@ pub enum Track {
     Hue,
     Saturation,
     Luminance,
+    /// darktable's ramp of the greys of each CIE L along the track, as it paints a target
+    /// lightness's slider (`_paint_hue`, `exposure.c:1123-1151`), for a number in L.
+    Lightness,
 }
 
 /// What a slider row's quad does.
@@ -844,6 +873,10 @@ pub enum DefinitionError {
     Hidden(&'static str),
     #[error("{0}: rows following it, with no row")]
     Empty(&'static str),
+    #[error(
+        "rows follow the setting {0}: not a choice setting of the tool, no option or one it lacks, among those rows, or rows holding a control"
+    )]
+    SettingCondition(&'static str),
     #[error("a preset row is called {0}, as a control or another preset row is")]
     DuplicatePreset(&'static str),
     #[error("the preset row {0}: its options are missing, repeated or not snake_case")]
@@ -877,6 +910,8 @@ pub enum DefinitionError {
     PickerWrites(&'static str),
     #[error("the picker {0} reads a setting the tool lacks, or one twice")]
     PickerSettings(&'static str),
+    #[error("the picker {0}'s words follow no choice setting of the tool")]
+    WordsBy(&'static str),
     #[error("a row shows the picker {0}, which the tool lacks")]
     UnknownPicker(&'static str),
     #[error("a row of pickers holds none")]
@@ -1011,8 +1046,10 @@ impl Definition {
     /// in order inside its control's or coordinate's range, each setting once, its
     /// kind as a control's, and each action once. Control, preset row and coordinate ids
     /// are unique together. Each picker has an id of its own, writes controls of the
-    /// tool and reads its settings, each once, and is in exactly one row, a
-    /// slider's quad or a row of pickers, which holds at least one.
+    /// tool and reads its settings, each once, its words following a choice setting of the
+    /// tool if any, and is in exactly one row, a slider's quad or a row of pickers, which
+    /// holds at least one. Rows following a setting follow a choice setting of the tool,
+    /// shown wherever they are, for options it has, and hold no control and not it.
     pub fn check(&self) -> Result<(), DefinitionError> {
         if !is_id(self.id) {
             return Err(DefinitionError::Id(self.id));
@@ -1087,10 +1124,15 @@ impl Definition {
         for &Placed { row, ref at } in &placed {
             // A group with no rows has nothing behind it yet; rows following a control
             // must be rows.
-            if let Row::When { control, rows, .. } = row
+            if let Row::When {
+                control: id, rows, ..
+            }
+            | Row::WhenSetting {
+                setting: id, rows, ..
+            } = row
                 && rows.is_empty()
             {
-                return Err(DefinitionError::Empty(control));
+                return Err(DefinitionError::Empty(id));
             }
             match row {
                 // A row of pickers' label shares a group label's words, so its id is one.
@@ -1124,6 +1166,25 @@ impl Definition {
                     });
                     if !shown {
                         return Err(DefinitionError::Hidden(control));
+                    }
+                }
+                Row::WhenSetting { setting, is, rows } => {
+                    let found = placed.iter().find_map(|its| match its.row {
+                        Row::Setting(row) if row.id == *setting => Some((row, &its.at)),
+                        _ => None,
+                    });
+                    let Some((found, its)) = found else {
+                        return Err(DefinitionError::SettingCondition(setting));
+                    };
+                    let ControlKind::Choice { options, .. } = found.kind else {
+                        return Err(DefinitionError::SettingCondition(setting));
+                    };
+                    let holds = !is.is_empty() && is.iter().all(|value| options.contains(value));
+                    if !holds || holds_control(rows) || shows_setting(rows, setting) {
+                        return Err(DefinitionError::SettingCondition(setting));
+                    }
+                    if !its.shows_wherever(at) {
+                        return Err(DefinitionError::Hidden(setting));
                     }
                 }
                 Row::Slider(Slider {
@@ -1372,7 +1433,24 @@ impl Definition {
         if !reads_hold {
             return Err(DefinitionError::PickerSettings(picker.id));
         }
+        if let Some(words_by) = picker.words_by
+            && (self.choice_setting(words_by).is_none() || !reads.contains(&words_by))
+        {
+            return Err(DefinitionError::WordsBy(picker.id));
+        }
         Ok(())
+    }
+
+    /// The options of the tool's choice setting `id` ([`Row::Setting`]), if it has one.
+    pub fn choice_setting(&self, id: &str) -> Option<&'static [&'static str]> {
+        self.rows().find_map(|row| match row {
+            Row::Setting(SettingRow {
+                id: found,
+                kind: ControlKind::Choice { options, .. },
+                ..
+            }) if *found == id => Some(*options),
+            _ => None,
+        })
     }
 
     /// The range of a number control or a coordinate called `id`.
@@ -1455,25 +1533,31 @@ struct Placed<'d> {
 
 /// Where a row shows: its tab, `None` for the rows before and after every tab's; its
 /// collapsible group; each mode it shows in, as the control it follows and the values it
-/// shows for, outermost first.
+/// shows for, outermost first; and each setting's options it shows for
+/// ([`Row::WhenSetting`]), kept apart, as settings and controls are.
 #[derive(Clone, Default)]
 struct Where {
     tab: Option<usize>,
     group: Option<&'static str>,
-    modes: Vec<(&'static str, &'static [&'static str])>,
+    modes: Vec<Condition>,
+    settings: Vec<Condition>,
 }
+
+/// A control or a setting rows follow, and the values they show for.
+type Condition = (&'static str, &'static [&'static str]);
 
 impl Placed<'_> {
     /// Whether the two rows are never shown at once: one follows a control for values
     /// the other follows it for none of.
     fn apart(&self, other: &Placed) -> bool {
-        self.at.modes.iter().any(|(control, is)| {
-            other
-                .at
-                .modes
-                .iter()
-                .any(|(other, its)| control == other && is.iter().all(|v| !its.contains(v)))
-        })
+        let apart = |ours: &[Condition], theirs: &[Condition]| {
+            ours.iter().any(|(control, is)| {
+                theirs
+                    .iter()
+                    .any(|(other, its)| control == other && is.iter().all(|v| !its.contains(v)))
+            })
+        };
+        apart(&self.at.modes, &other.at.modes) || apart(&self.at.settings, &other.at.settings)
     }
 }
 
@@ -1484,13 +1568,14 @@ impl Where {
     fn shows_wherever(&self, other: &Where) -> bool {
         let tab = self.tab.is_none() || self.tab == other.tab;
         let group = self.group.is_none() || self.group == other.group;
-        let modes = self.modes.iter().all(|(control, is)| {
-            other
-                .modes
-                .iter()
-                .any(|(other, its)| control == other && its.iter().all(|v| is.contains(v)))
-        });
-        tab && group && modes
+        let within = |ours: &[Condition], theirs: &[Condition]| {
+            ours.iter().all(|(control, is)| {
+                theirs
+                    .iter()
+                    .any(|(other, its)| control == other && its.iter().all(|v| is.contains(v)))
+            })
+        };
+        tab && group && within(&self.modes, &other.modes) && within(&self.settings, &other.settings)
     }
 
     /// Whether a row here is on a tab other than `other`'s and shows whenever its own tab
@@ -1498,7 +1583,11 @@ impl Where {
     /// as darktable's tone equalizer shows its contrast compensation, on the Advanced tab,
     /// only for some of the filters chosen on the Masking tab.
     fn shows_on_another_tab(&self, other: &Where) -> bool {
-        self.tab.is_some() && self.tab != other.tab && self.group.is_none() && self.modes.is_empty()
+        self.tab.is_some()
+            && self.tab != other.tab
+            && self.group.is_none()
+            && self.modes.is_empty()
+            && self.settings.is_empty()
     }
 }
 
@@ -1514,6 +1603,7 @@ fn place<'d>(rows: &'d [Row], at: &Where, placed: &mut Vec<Placed<'d>>) {
         match row {
             Row::Group { id, .. } => inside.group = Some(id),
             Row::When { control, is, .. } => inside.modes.push((control, is)),
+            Row::WhenSetting { setting, is, .. } => inside.settings.push((setting, is)),
             _ => {}
         }
         place(row.rows(), &inside, placed);
@@ -1532,6 +1622,20 @@ fn group_in(rows: &[Row]) -> Option<&'static str> {
 fn shows(rows: &[Row], control: &str) -> bool {
     rows.iter()
         .any(|row| row.controls().contains(&control) || shows(row.rows(), control))
+}
+
+/// Whether `rows`, or the rows inside them, show any control.
+fn holds_control(rows: &[Row]) -> bool {
+    rows.iter()
+        .any(|row| !row.controls().is_empty() || holds_control(row.rows()))
+}
+
+/// Whether `rows`, or the rows inside them, show the setting `setting`.
+fn shows_setting(rows: &[Row], setting: &str) -> bool {
+    rows.iter().any(|row| {
+        matches!(row, Row::Setting(found) if found.id == setting)
+            || shows_setting(row.rows(), setting)
+    })
 }
 
 /// Whether a number's range holds together: finite ends in order, and a step that fits.
@@ -2359,6 +2463,7 @@ mod tests {
             unported: &[],
         },
         decimals: 0,
+        track: Track::Plain,
     };
 
     #[test]
@@ -2378,6 +2483,7 @@ mod tests {
                         default: 0.5,
                     },
                     decimals: 3,
+                    track: Track::Plain,
                 }),
             ])),
         };
@@ -2480,6 +2586,7 @@ mod tests {
         keep: false,
         writes: &["contrast", "detail"],
         settings: &["chart"],
+        words_by: None,
     };
 
     /// [`PAGE`] with `pickers`, the chart's setting and `rows` on its first tab.
@@ -2580,6 +2687,136 @@ mod tests {
         // A setting is a row's, never a control.
         assert_eq!(settings(&["mode"]), wrong);
         assert_eq!(settings(&["chart", "chart"]), wrong);
+    }
+
+    /// A number setting, as Exposure's Lightness.
+    const SCALE: SettingRow = SettingRow {
+        id: "scale",
+        kind: ControlKind::Number {
+            min: 0.0,
+            max: 100.0,
+            step: 1.0,
+            default: 50.0,
+        },
+        decimals: 1,
+        track: Track::Lightness,
+    };
+
+    /// `rows` after Contrast's row and the chart's setting, on [`PAGE`]'s first tab.
+    fn following(rows: &[Row]) -> Result<(), DefinitionError> {
+        let mut all = vec![Row::Slider(Slider::new("contrast")), Row::Setting(CHART)];
+        all.extend(rows.iter().cloned());
+        page(with_mode(&all)).check()
+    }
+
+    /// Rows following the chart's setting for `is`.
+    fn when_chart(is: &'static [&'static str], rows: &[Row]) -> Row {
+        Row::WhenSetting {
+            setting: "chart",
+            is,
+            rows: Box::leak(rows.into()),
+        }
+    }
+
+    #[test]
+    fn rows_follow_a_choice_setting_for_options_it_has_and_hold_no_control() {
+        // As Exposure's Lightness follows Picker target (decision 88).
+        let scale = [Row::Setting(SCALE)];
+        let row = when_chart(&["passport"], &scale);
+        assert_eq!(following(std::slice::from_ref(&row)), Ok(()));
+        assert!(row.controls().is_empty());
+        assert_eq!(row.rows().len(), 1);
+        // For several options, and in a mode or a group with its setting.
+        let both = when_chart(&["classic", "passport"], &scale);
+        assert_eq!(following(&[both]), Ok(()));
+        let grouped = Row::Group {
+            id: "checker",
+            rows: Box::leak(Box::new([Row::Setting(CHART), row.clone()])),
+        };
+        let rows = [Row::Slider(Slider::new("contrast")), grouped];
+        assert_eq!(page(with_mode(&rows)).check(), Ok(()));
+
+        let wrong = Err(DefinitionError::SettingCondition("chart"));
+        // An option the setting lacks, or none.
+        assert_eq!(following(&[when_chart(&["pocket"], &scale)]), wrong);
+        assert_eq!(following(&[when_chart(&[], &scale)]), wrong);
+        // A control among the rows: what shows on the edit never follows the app's.
+        let contrast = [Row::Slider(Slider::new("contrast"))];
+        let rows = [Row::Setting(CHART), when_chart(&["passport"], &contrast)];
+        assert_eq!(page(with_mode(&rows)).check(), wrong);
+        // The setting among its own rows.
+        let itself = [Row::Setting(CHART)];
+        assert_eq!(following(&[when_chart(&["passport"], &itself)]), wrong);
+        // Not a choice setting of the tool: a number, a control, or none.
+        let scaled = Row::WhenSetting {
+            setting: "scale",
+            is: &["passport"],
+            rows: Box::leak(Box::new([Row::Action { id: "reset" }])),
+        };
+        assert_eq!(
+            following(&[Row::Setting(SCALE), scaled]),
+            Err(DefinitionError::SettingCondition("scale"))
+        );
+        let mode = Row::WhenSetting {
+            setting: "mode",
+            is: &["bilateral"],
+            rows: Box::leak(Box::new([Row::Setting(SCALE)])),
+        };
+        assert_eq!(
+            following(&[mode]),
+            Err(DefinitionError::SettingCondition("mode"))
+        );
+        // No rows.
+        assert_eq!(
+            following(&[when_chart(&["passport"], &[])]),
+            Err(DefinitionError::Empty("chart"))
+        );
+        // Where its setting is not sure to show: in a group it is outside, or in a mode.
+        let grouped = Row::Group {
+            id: "checker",
+            rows: Box::leak(Box::new([Row::Setting(CHART)])),
+        };
+        let rows = [
+            Row::Slider(Slider::new("contrast")),
+            grouped,
+            when_chart(&["passport"], &scale),
+        ];
+        assert_eq!(
+            page(with_mode(&rows)).check(),
+            Err(DefinitionError::Hidden("chart"))
+        );
+        let moded = Row::When {
+            control: "mode",
+            is: &["bilateral"],
+            rows: Box::leak(Box::new([Row::Setting(CHART)])),
+        };
+        let rows = [
+            Row::Slider(Slider::new("contrast")),
+            moded,
+            when_chart(&["passport"], &scale),
+        ];
+        assert_eq!(
+            page(with_mode(&rows)).check(),
+            Err(DefinitionError::Hidden("chart"))
+        );
+    }
+
+    #[test]
+    fn a_picker_s_words_follow_a_choice_setting_of_the_tool() {
+        let quad = Row::Slider(Slider::new("contrast").quad(Quad::Picker("level")));
+        let by = |words_by, more: &[Row]| {
+            let mut rows = vec![quad.clone()];
+            rows.extend(more.iter().cloned());
+            picking(&[Picker { words_by, ..LEVEL }], &rows)
+        };
+        assert_eq!(by(None, &[]), Ok(()));
+        assert_eq!(by(Some("chart"), &[]), Ok(()));
+        assert_eq!(DEFINITION.choice_setting("chart"), None);
+        let wrong = Err(DefinitionError::WordsBy("level"));
+        // A setting the tool lacks, a control, or a number.
+        assert_eq!(by(Some("gamma"), &[]), wrong);
+        assert_eq!(by(Some("mode"), &[]), wrong);
+        assert_eq!(by(Some("scale"), &[Row::Setting(SCALE)]), wrong);
     }
 
     #[test]

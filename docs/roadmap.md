@@ -135,7 +135,7 @@ Goal: open, edit, save and reopen a photo with the first pass's tools. Migration
 - [ ] Exposure's page as redesigned, the one exception to darktable's page in the first pass, its edits and renders unchanged (decision 88; [tools/exposure.md](tools/exposure.md#the-page-as-redesigned-planned)), one pull request each:
   - [x] 1. The camera's rows: hidden where the photo gives them nothing to do, their labels with the camera's value.
   - [x] 2. Automatic mode's page: Manual | Automatic, Automatic disabled on an image that is not a raw; Measure at, Place it at and This photo; Auto dropped from Exposure.
-  - [ ] 3. Picker target, Middle grey or Lightness, in place of Area exposure mapping; measure mode gone.
+  - [x] 3. Picker target, Middle grey or Lightness, in place of Area exposure mapping; measure mode gone.
   - [ ] 4. The reference: Picker target's Reference, kept across photos, with its own picker.
   - [ ] 5. Last pick and the two warnings.
   - [ ] 6. Checked against the wireframe's board in every variant.
@@ -164,7 +164,7 @@ darktable's colour pickers and its Colour picker, one API (decision 79; [pickers
 - [x] 79.4 The design system's on-photo overlay primitives, one language for every mark on the photo, before any mark is drawn.
 - [x] 79.5 The picker button and the picker's marks in the design system.
 - [x] 79.6 The app: quads and picker rows, the marks over the photo, the central bar's words, the pointer, the keys and focus, the live region.
-- [x] 79.7 Exposure's picker: its pick in correction and measure modes, the area exposure mapping's settings in settings, the patches and the L readout.
+- [x] 79.7 Exposure's picker: its pick and its settings in settings; the design system's patches with their L readout.
 - [ ] 79.8 to 79.11 Each other tool's pickers: White balance, Colour calibration, Colour balance RGB and AgX.
 - [ ] 79.14 Stored samples through the session.
 - [ ] 79.15 The scopes restricted to the Colour picker's selection.

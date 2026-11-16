@@ -760,6 +760,7 @@ mod tests {
             keep: false,
             writes: &["amount"],
             settings: &[],
+            words_by: None,
         };
         assert_eq!(picking(&exposure, pick), []);
         let elsewhere = Picker {

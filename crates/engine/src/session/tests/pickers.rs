@@ -955,6 +955,7 @@ static SPOT: Definition = Definition {
         keep: false,
         writes: &[],
         settings: &[],
+        words_by: None,
     }],
     facts: None,
 };
@@ -1324,6 +1325,7 @@ static CONFIGURED: Definition = Definition {
                     default: 1.0,
                 },
                 decimals: 1,
+                track: apertrust_tools::Track::Plain,
             }),
         ],
     }],
@@ -1341,6 +1343,7 @@ static CONFIGURED: Definition = Definition {
         keep: false,
         writes: &["level"],
         settings: &["gain"],
+        words_by: None,
     }],
     facts: None,
 };
@@ -1778,10 +1781,10 @@ fn replacing_a_picker_never_answers_the_new_one_early() {
     remove(&path);
 }
 
-/// Exposure's area exposure mapping in correction mode at this target lightness.
+/// Exposure's Picker target at Lightness, at this target lightness (decision 88).
 fn mapping(lightness: f32) -> Vec<(&'static str, ControlValue)> {
     vec![
-        ("area_mode", ControlValue::Choice(0)),
+        ("target", ControlValue::Choice(1)),
         ("lightness", ControlValue::Number(lightness)),
     ]
 }

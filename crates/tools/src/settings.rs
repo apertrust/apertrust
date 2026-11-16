@@ -136,14 +136,12 @@ mod tests {
         ));
     }
 
-    /// Every setting a tool's built pick reads is kept: Exposure's.
+    /// Every setting a tool's built pick reads is kept: Exposure's, Picker target and
+    /// Lightness.
     #[test]
     fn exposure_s_settings_are_kept() {
         let ids: Vec<&str> = registry::ALL.iter().map(|s| s.id()).collect();
-        assert_eq!(
-            ids,
-            ["tools.exposure.area_mode", "tools.exposure.lightness"]
-        );
+        assert_eq!(ids, ["tools.exposure.target", "tools.exposure.lightness"]);
         assert!(setting("exposure", "lightness").is_some());
         // Colour calibration's still drawn disabled, its picker to come.
         assert!(setting("channelmixerrgb", "area_mode").is_none());

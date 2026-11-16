@@ -67,8 +67,8 @@
 //! [edit.sections]
 //! exposure = false
 //!
-//! [edit.groups.exposure]
-//! area_exposure_mapping = true
+//! [edit.groups.agx]
+//! advanced_curve_parameters = true
 //!
 //! [scopes]
 //! graph = "waveform"
@@ -1226,7 +1226,7 @@ mod tests {
             },
             tool_settings: {
                 let mut settings = ToolSettings::default();
-                settings.set("exposure", "area_mode", ControlValue::Choice(1));
+                settings.set("exposure", "target", ControlValue::Choice(1));
                 settings.set("exposure", "lightness", ControlValue::Number(42.5));
                 settings
             },
@@ -1340,10 +1340,10 @@ mod tests {
                 },
                 keys: BTreeMap::new(),
                 export: Values::default(),
-                // Exposure's area exposure mapping at darktable's: correction, 50 %.
+                // Exposure's Picker target at Middle grey, and Lightness at darktable's 50 %.
                 tool_settings: ToolSettings {
                     values: BTreeMap::from([
-                        (("exposure", "area_mode"), ControlValue::Choice(0)),
+                        (("exposure", "target"), ControlValue::Choice(0)),
                         (("exposure", "lightness"), ControlValue::Number(50.0)),
                     ]),
                     overridden: BTreeSet::new(),
@@ -1525,8 +1525,8 @@ width = 480
 marker = \"triangle\"
 
 [tools.exposure]
-area_mode = \"measure\"
 lightness = 42.5
+target = \"lightness\"
 
 [window]
 maximized = true
@@ -1915,26 +1915,56 @@ size = [1280, 800]
         let folder = Folder::new("tool-settings-conf");
         let text = "version = 1\n[tools.exposure]\nlightness = 30.0\n";
         std::fs::write(folder.settings(), text).expect("written");
-        let overrides = conf(&["tools.exposure.area_mode=measure"]).expect("read");
+        let overrides = conf(&["tools.exposure.target=lightness"]).expect("read");
         let (mut keeper, mut settings) = Keeper::open_with(folder.storage(), &overrides);
         let kept = &mut settings.tool_settings;
-        assert!(kept.overridden("exposure", "area_mode"));
+        assert!(kept.overridden("exposure", "target"));
         assert!(!kept.overridden("exposure", "lightness"));
-        // Correction asked for from the row, and a measured lightness.
-        kept.set("exposure", "area_mode", ControlValue::Choice(0));
+        // Middle grey asked for from the row, and a lightness set.
+        kept.set("exposure", "target", ControlValue::Choice(0));
         kept.set("exposure", "lightness", ControlValue::Number(42.0));
         assert_eq!(
             kept.of("exposure"),
             [
-                ("area_mode", ControlValue::Choice(1)),
                 ("lightness", ControlValue::Number(42.0)),
+                ("target", ControlValue::Choice(1)),
             ]
         );
         keeper.frame(Instant::now(), &settings);
         keeper.flush();
         let written = folder.text();
         assert!(written.contains("lightness = 42.0"), "{written}");
-        assert!(!written.contains("area_mode"), "{written}");
+        assert!(!written.contains("target"), "{written}");
+    }
+
+    /// Picker target and Lightness survive a restart; an old `area_mode` key, which went
+    /// with darktable's measure mode (decision 88), is an unknown key: read as nothing,
+    /// Picker target at its default, and left in the file as it was.
+    #[test]
+    fn picker_target_is_kept_and_an_old_area_mode_key_left_alone() {
+        let folder = Folder::new("picker-target");
+        let text = "version = 1\n[tools.exposure]\narea_mode = \"measure\"\nlightness = 30.0\n";
+        std::fs::write(folder.settings(), text).expect("written");
+        let (mut keeper, mut settings) = Keeper::open(folder.storage());
+        let kept = &settings.tool_settings;
+        assert_eq!(
+            kept.of("exposure"),
+            [
+                ("lightness", ControlValue::Number(30.0)),
+                ("target", ControlValue::Choice(0)),
+            ]
+        );
+        settings
+            .tool_settings
+            .set("exposure", "target", ControlValue::Choice(1));
+        keeper.frame(Instant::now(), &settings);
+        keeper.flush();
+        let written = folder.text();
+        assert!(written.contains("area_mode = \"measure\""), "{written}");
+        assert!(written.contains("target = \"lightness\""), "{written}");
+        drop(keeper);
+        let (_, again) = Keeper::open(folder.storage());
+        assert_eq!(again.tool_settings, settings.tool_settings);
     }
 
     #[test]

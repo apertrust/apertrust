@@ -111,6 +111,8 @@ pub struct Choice<'a> {
     enabled: bool,
     /// Options that cannot be chosen, by index, and their tooltip.
     disabled_options: (&'a [usize], &'a str),
+    /// Each option's own tooltip in the list, by index; none for those past its end.
+    option_tips: &'a [&'a str],
     /// An option the photo does not list, by index, and what it says of it.
     unlisted: Option<(usize, &'a str)>,
     /// The option the list draws a separator before, by index.
@@ -138,6 +140,7 @@ impl<'a> Choice<'a> {
             quad: None,
             enabled: true,
             disabled_options: (&[], ""),
+            option_tips: &[],
             unlisted: None,
             separator: None,
             description: None,
@@ -193,6 +196,15 @@ impl<'a> Choice<'a> {
         self
     }
 
+    /// What each option does, translated, by index: its tooltip in the list, as Exposure's
+    /// Picker target says what a pick makes of the area for each (decision 88). An option
+    /// disabled or unlisted has its reason as its tooltip instead, and one past the end of
+    /// `tips` has none.
+    pub fn option_tips(mut self, tips: &'a [&'a str]) -> Self {
+        self.option_tips = tips;
+        self
+    }
+
     /// An option the photo does not list, by index, that an edit from another photo holds
     /// (decision 30): listed disabled with `tip`, translated, as its tooltip, and while it
     /// is chosen, `tip` is a line of the row's tooltip and its description to screen
@@ -234,7 +246,8 @@ impl<'a> Choice<'a> {
 
     /// The list under `anchor`, each option an item whose id is its index: the chosen one
     /// checked, the others the photo cannot use or the tool does not port disabled, with
-    /// their tooltips, and a separator where the row has one.
+    /// their tooltips, the rest with their own where given, and a separator where the row
+    /// has one.
     fn list(&self, anchor: Rect) -> Request {
         let (disabled, disabled_tip) = self.disabled_options;
         let items = self
@@ -247,6 +260,8 @@ impl<'a> Choice<'a> {
                     item.enabled(false).tip(tip)
                 } else if disabled.contains(&i) {
                     item.enabled(false).tip(disabled_tip)
+                } else if let Some(tip) = self.option_tips.get(i) {
+                    item.tip(*tip)
                 } else {
                     item
                 }

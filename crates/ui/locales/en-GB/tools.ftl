@@ -459,18 +459,31 @@ tool-exposure-computed-computed_exposure-promise = Computed EC: the exposure cor
 tool-exposure-control-black_level-label = Black level correction
 tool-exposure-control-black_level-full = Black level correction
 tool-exposure-control-black_level-promise = For lifting clipped blacks, not for deeper blacks: use AgX's black relative exposure
-tool-exposure-collapsible-area_exposure_mapping = Area exposure mapping
-tool-exposure-setting-area_mode-label = Area mode
-tool-exposure-setting-area_mode-full = Area mode
-tool-exposure-setting-area_mode-promise = Correction adjusts the exposure so that the input's lightness is mapped to the target. Measure only shows how an input colour is mapped by the exposure, and can be used to define a target.
-tool-exposure-setting-area_mode-option-correction = Correction
-tool-exposure-setting-area_mode-option-measure = Measure
+# Picker target, under Exposure, in place of darktable's area exposure mapping (decision
+# 88): what the picker makes of the area picked, each option's tooltip saying what it does.
+tool-exposure-setting-target-label = Picker target
+tool-exposure-setting-target-full = Picker target
+tool-exposure-setting-target-promise = What Exposure's picker makes of the area you pick.
+tool-exposure-setting-target-option-middle_grey = Middle grey
+tool-exposure-setting-target-option-lightness = Lightness
+tool-exposure-setting-target-option-reference = Reference
+tool-exposure-setting-target-option-middle_grey-promise = The picked area becomes a normal mid-tone (L 50 %)
+tool-exposure-setting-target-option-lightness-promise = The picked area becomes the brightness you set
+tool-exposure-setting-target-option-reference-promise = The picked area matches the one measured on another photo
+# Lightness, under Picker target while Lightness is chosen.
 tool-exposure-setting-lightness-label = Lightness
 tool-exposure-setting-lightness-full = Target lightness
-tool-exposure-setting-lightness-promise = The desired target exposure after mapping.
-# Exposure's picker on its quad: darktable's quad tooltip.
+tool-exposure-setting-lightness-promise = The lightness the picked area is given, CIE L*
+# Exposure's picker on its quad. Its tooltip and its hint over the photo say what a pick
+# will do, by Picker target's option; $lightness is Lightness, in the language's numbers.
+# Reference, which cannot be chosen yet, comes in a later version.
 tool-exposure-picker-exposure-full = Exposure: pick from the photo
-tool-exposure-picker-exposure-promise = Sets the exposure adjustment using the selected area.
+tool-exposure-picker-exposure-promise-middle_grey = Make an area middle grey
+tool-exposure-picker-exposure-hint-middle_grey = Make an area middle grey
+tool-exposure-picker-exposure-promise-lightness = Make an area L { $lightness } %
+tool-exposure-picker-exposure-hint-lightness = Make an area L { $lightness } %
+tool-exposure-picker-exposure-promise-reference = Reference comes in a later version
+tool-exposure-picker-exposure-hint-reference = Reference comes in a later version
 
 ## Colour calibration (docs/tools/colour-calibration.md): darktable's color calibration,
 ## every tab, the CAT tab first. Its words are darktable's, the adaptation's and the area
