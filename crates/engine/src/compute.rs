@@ -125,6 +125,7 @@ impl GpuImage {
         values: &[u16],
     ) -> Result<Self, ComputeError> {
         let desc = ImageDesc::new(width, height, Format::Mosaic16);
+        check_upload(gpu, &desc, values.len())?;
         let mut bytes: Vec<u8> = bytemuck::cast_slice(values).to_vec();
         bytes.resize(desc.buffer_size() as usize, 0);
         Self::upload_bytes(gpu, desc, values.len(), &bytes)
@@ -136,16 +137,7 @@ impl GpuImage {
         count: usize,
         bytes: &[u8],
     ) -> Result<Self, ComputeError> {
-        let expected = desc.width as usize * desc.height as usize;
-        if count != expected {
-            return Err(ComputeError::PixelCount {
-                width: desc.width,
-                height: desc.height,
-                expected,
-                actual: count,
-            });
-        }
-        check_size(gpu, &desc)?;
+        check_upload(gpu, &desc, count)?;
         let buffer = gpu
             .device
             .create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -245,6 +237,20 @@ impl GpuImage {
 /// Mebibytes to one decimal, for errors.
 fn mebibytes(bytes: u64) -> String {
     format!("{:.1}", bytes as f64 / (1 << 20) as f64)
+}
+
+/// Checks host input before copying or padding it for an upload.
+fn check_upload(gpu: &GpuContext, desc: &ImageDesc, count: usize) -> Result<(), ComputeError> {
+    let expected = desc.width as usize * desc.height as usize;
+    if count != expected {
+        return Err(ComputeError::PixelCount {
+            width: desc.width,
+            height: desc.height,
+            expected,
+            actual: count,
+        });
+    }
+    check_size(gpu, desc)
 }
 
 /// Fails if the GPU cannot bind a buffer for this image whole, as an [`ImageKernel`]

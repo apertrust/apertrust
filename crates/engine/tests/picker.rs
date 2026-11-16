@@ -235,7 +235,12 @@ fn groups(gpu: &GpuContext, groups: &[Group]) -> Vec<Stats> {
         .measure_groups(gpu, groups, ())
         .expect("its windows bind");
     let mut readings: Vec<Reduced<()>> = reducer.wait(gpu).expect("it reads back");
-    readings.pop().expect("a reading").stats
+    let stats = readings.pop().expect("a reading").stats;
+    assert_eq!(
+        stats.len(),
+        groups.iter().map(|group| group.boxes.len()).sum::<usize>()
+    );
+    stats
 }
 
 /// Every statistic's bits.
@@ -496,4 +501,31 @@ fn the_frame_samples_cost_at_2400_by_1600() {
             timed.len()
         );
     }
+}
+
+#[test]
+fn partials_larger_than_one_binding_are_refused_before_recording() {
+    let gpu = pollster::block_on(GpuContext::new(&GpuOptions {
+        max_storage_binding: Some(2 << 20),
+        ..GpuOptions::default()
+    }))
+    .unwrap();
+    let buffer = gpu.device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("picker limit test"),
+        size: 4096 * 4096 * 4,
+        usage: wgpu::BufferUsages::STORAGE,
+        mapped_at_creation: false,
+    });
+    let [bayer, _] = patterns();
+    let boxes = [[0, 0, 4096, 4096]; MAX_BOXES];
+    let group = Group {
+        buffer: &buffer,
+        size: [4096, 4096],
+        layout: Layout::Mosaic(&bayer),
+        boxes: &boxes,
+    };
+    let mut reducer = pollster::block_on(Reducer::new(&gpu)).unwrap();
+    assert!(
+        matches!(reducer.measure_groups(&gpu, &[group], ()), Err(apertrust_engine::compute::ComputeError::Binding { bytes, limit, .. }) if bytes > limit)
+    );
 }

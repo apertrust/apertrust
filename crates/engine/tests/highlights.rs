@@ -349,6 +349,7 @@ fn check_on(gpu: &GpuContext, scene: &Scene, late_correction: bool) -> Checked {
         )
     };
     let (expected, chroma, counts) = reference(100);
+    assert_eq!(reconstructed.len(), expected.len());
     // Cube roots and the order of the sums differ by rounding.
     for (i, (&actual, &expected)) in reconstructed.iter().zip(&expected).enumerate() {
         assert!(
@@ -524,6 +525,7 @@ fn strips_equal_the_whole(scene: &Scene, late_correction: bool) {
     let banded = check_on(&gpu, scene, late_correction);
     assert_eq!(banded.chroma, whole.chroma);
     assert_eq!(banded.counts, whole.counts);
+    assert_eq!(banded.reconstructed.len(), whole.reconstructed.len());
     if let Some(i) = banded
         .reconstructed
         .iter()
