@@ -17,8 +17,10 @@
 
 # Builds Apertrust's packages for this computer's platform from packaging/Packager.toml
 # with cargo-packager (docs/packaging.md): on macOS the app bundle and its disk image, on
-# Windows the NSIS installer and a portable zip, on Linux the AppImage and a tarball, each
-# with the app, the CLI and the licences, into target/package/<target>/out.
+# Windows the NSIS installer and a portable zip, on Linux the AppImage, the .deb, the .rpm
+# (from packaging/linux/rpm.toml with cargo-generate-rpm, as cargo-packager makes none)
+# and a tarball, each with the app, the CLI and the licences, into
+# target/package/<target>/out.
 #
 #   tools/package.sh [--target TRIPLE] [--finder-layout] [--nightly]
 #
@@ -38,8 +40,10 @@
 # logged-in session and may ask to control Finder; the layout added after it replaces its own.
 #
 # Each package is named <package>-<version>-<os>-<arch>[-<kind>].<ext>, lower case but .AppImage,
-# with each platform's own words for its architecture (docs/packaging.md):
-# apertrust-0.2.0+615-macos-arm64.dmg, apertrust-nightly-0.2.0+615-windows-x64-setup.exe.
+# with each platform's own words for its architecture, and on Linux each format's, Debian's
+# in the .deb (docs/packaging.md): apertrust-0.2.0+615-macos-arm64.dmg,
+# apertrust-nightly-0.2.0+615-windows-x64-setup.exe, apertrust-0.2.0+615-linux-amd64.deb,
+# apertrust-0.2.0+615-linux-x86_64.rpm.
 #
 # The version is the build's, as `--version` prints it: from git, or APERTRUST_VERSION
 # when a packager sets it (decision 44).
@@ -47,8 +51,10 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-# The cargo-packager this script and the config are written for.
+# The cargo-packager this script and the config are written for, and on Linux the
+# cargo-generate-rpm.
 PACKAGER=0.11.8
+GENERATE_RPM=0.21.1
 # The oldest macOS the bundle runs on, as packaging/macos/Info.plist says, for both
 # architectures' builds.
 export MACOSX_DEPLOYMENT_TARGET=11.0
@@ -128,23 +134,35 @@ MINGW* | MSYS* | CYGWIN*) platform=windows ;;
     ;;
 esac
 
+if [[ "$platform" = linux ]]; then
+    installed=$(cargo generate-rpm --version 2>/dev/null | awk '{ print $2 }') || true
+    if [[ "$installed" != "$GENERATE_RPM" ]]; then
+        echo "error: cargo-generate-rpm $GENERATE_RPM is needed (found: ${installed:-none}):" >&2
+        echo "  cargo install --locked cargo-generate-rpm --version $GENERATE_RPM" >&2
+        exit 1
+    fi
+fi
+
 build() {
     cargo build --release --locked -p apertrust -p apertrust-cli "$@"
 }
 
 # The target $1's platform and architecture as its packages name them, in the platform's
 # own words: macos-arm64 or macos-x86_64, windows-x64 or windows-arm64, linux-x86_64 or
-# linux-aarch64.
+# linux-aarch64 (the AppImage's, the tarball's and RPM's words); with deb as $2, Debian's,
+# linux-amd64 or linux-arm64, which the .deb's control file names too.
 os_arch() {
-    case "$1" in
-    aarch64-apple-darwin) echo macos-arm64 ;;
-    x86_64-apple-darwin) echo macos-x86_64 ;;
-    x86_64-pc-windows-*) echo windows-x64 ;;
-    aarch64-pc-windows-*) echo windows-arm64 ;;
-    x86_64-*-linux-*) echo linux-x86_64 ;;
-    aarch64-*-linux-*) echo linux-aarch64 ;;
+    case "$1:${2:-}" in
+    aarch64-apple-darwin:) echo macos-arm64 ;;
+    x86_64-apple-darwin:) echo macos-x86_64 ;;
+    x86_64-pc-windows-*:) echo windows-x64 ;;
+    aarch64-pc-windows-*:) echo windows-arm64 ;;
+    x86_64-*-linux-*:) echo linux-x86_64 ;;
+    aarch64-*-linux-*:) echo linux-aarch64 ;;
+    x86_64-*-linux-*:deb) echo linux-amd64 ;;
+    aarch64-*-linux-*:deb) echo linux-arm64 ;;
     *)
-        echo "error: no package name for the target $1" >&2
+        echo "error: no package name for the target $1${2:+ in a .$2}" >&2
         return 1
         ;;
     esac
@@ -270,24 +288,65 @@ package() {
         cp "$bin_dir/apertrust-cli$exe" "$stage/bin/$package-cli$exe"
         bin_dir=$stage/bin
     fi
-    fill() {
-        with_identity "$1" | sed -e "s|@ROOT@|$root|g" -e "s|@VERSION@|$version|g" \
-            -e "s|@SHORT_VERSION@|$short|g" -e "s|@BUILD@|$build_number|g" \
-            -e "s|@BINARIES@|$bin_dir|g" -e "s|@INFO_PLIST@|$stage/Info.plist|g" \
-            -e "s|@STAGE@|$stage|g" >"$2"
+    # The licences, laid out as Packager.toml's resources are.
+    licences() {
+        mkdir -p "$1/licences"
+        cp LICENSE CREDITS.md "$1/"
+        cp crates/ui/assets/fonts/OFL.txt crates/ui/assets/icons/LICENSE-Lucide "$1/licences/"
     }
-    fill packaging/Packager.toml "$stage/Packager.toml"
-    fill packaging/macos/Info.plist "$stage/Info.plist"
+
     # The Linux desktop entry and metadata, named after the id, which the AppImage of
-    # Apertrust Nightly takes from here and the tarball of either.
+    # Apertrust Nightly takes from here.
     with_identity packaging/linux/org.apertrust.Apertrust.desktop >"$stage/$id.desktop"
     with_identity packaging/linux/org.apertrust.Apertrust.metainfo.xml \
         >"$stage/$id.metainfo.xml"
 
+    # On Linux, the tarball's tree, laid out as a prefix before cargo-packager runs, since
+    # the .deb's and the .rpm's /usr are its bin and share: the desktop file, the metadata,
+    # the MIME types, the icons and the licences, each named after the package's id or
+    # name, so that Apertrust Nightly's packages have no file in common with Apertrust's.
+    prefix=
+    glibc=
+    if [[ "$platform" = linux ]]; then
+        prefix=$stage/tarball/$base
+        rm -rf "$stage/tarball"
+        mkdir -p "$prefix/bin" "$prefix/share/applications" "$prefix/share/metainfo" \
+            "$prefix/share/mime/packages" "$prefix/share/icons"
+        cp "$bin_dir/$package" "$bin_dir/$package-cli" "$prefix/bin/"
+        cp "$stage/$id.desktop" "$prefix/share/applications/"
+        cp "$stage/$id.metainfo.xml" "$prefix/share/metainfo/"
+        cp packaging/linux/org.apertrust.Apertrust.mime.xml "$prefix/share/mime/packages/$id.xml"
+        cp -R crates/app/assets/icons/png/linux/hicolor "$prefix/share/icons/"
+        if [[ "$nightly" = true ]]; then
+            for icon in "$prefix"/share/icons/hicolor/*/apps/org.apertrust.Apertrust.*; do
+                mv "$icon" "${icon%/*}/$id.${icon##*.}"
+            done
+        fi
+        licences "$prefix/share/doc/$package"
+        # The newest glibc the binaries need, which the .deb depends on; the .rpm's
+        # requirements cargo-generate-rpm reads from the binaries itself.
+        glibc=$(objdump -T "$bin_dir/$package" "$bin_dir/$package-cli" |
+            grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -1) || true
+        glibc=${glibc#GLIBC_}
+        if [[ -z "$glibc" ]]; then
+            echo "error: no glibc version in the binaries' symbols" >&2
+            exit 1
+        fi
+    fi
+
+    fill() {
+        with_identity "$1" | sed -e "s|@ROOT@|$root|g" -e "s|@VERSION@|$version|g" \
+            -e "s|@SHORT_VERSION@|$short|g" -e "s|@BUILD@|$build_number|g" \
+            -e "s|@BINARIES@|$bin_dir|g" -e "s|@INFO_PLIST@|$stage/Info.plist|g" \
+            -e "s|@STAGE@|$stage|g" -e "s|@PREFIX@|$prefix|g" -e "s|@GLIBC@|$glibc|g" >"$2"
+    }
+    fill packaging/Packager.toml "$stage/Packager.toml"
+    fill packaging/macos/Info.plist "$stage/Info.plist"
+
     case "$platform" in
     macos) formats=app,dmg ;;
     windows) formats=nsis ;;
-    linux) formats=appimage ;;
+    linux) formats=appimage,deb ;;
     esac
     # create-dmg drives Finder to lay out the image's window unless CI is set.
     if [[ "$platform" = macos ]] && [[ "$finder_layout" = false ]]; then
@@ -295,13 +354,6 @@ package() {
     fi
     cargo packager --config "$stage/Packager.toml" --formats "$formats" --target "$triple" \
         --out-dir "$out"
-
-    # The licences, laid out as Packager.toml's resources are.
-    licences() {
-        mkdir -p "$1/licences"
-        cp LICENSE CREDITS.md "$1/"
-        cp crates/ui/assets/fonts/OFL.txt crates/ui/assets/icons/LICENSE-Lucide "$1/licences/"
-    }
 
     case "$platform" in
     macos)
@@ -314,21 +366,19 @@ package() {
         ;;
     linux)
         rename_package .AppImage "$base.AppImage"
-        # A tarball laid out as a prefix, for ~/.local or /usr/local: bin, and share with the
-        # desktop file, metadata, MIME types, icons and the licences.
-        name=$base
-        tree=$stage/tarball/$name
-        rm -rf "$stage/tarball"
-        mkdir -p "$tree/bin" "$tree/share/applications" "$tree/share/metainfo" \
-            "$tree/share/mime/packages" "$tree/share/icons"
-        cp "$bin_dir/$package" "$bin_dir/$package-cli" "$tree/bin/"
-        cp "$stage/$id.desktop" "$tree/share/applications/"
-        cp "$stage/$id.metainfo.xml" "$tree/share/metainfo/"
-        cp packaging/linux/org.apertrust.Apertrust.mime.xml \
-            "$tree/share/mime/packages/org.apertrust.Apertrust.xml"
-        cp -R crates/app/assets/icons/png/linux/hicolor "$tree/share/icons/"
-        licences "$tree/share/doc/$package"
-        tar -C "$stage/tarball" -czf "$out/$name.tar.gz" "$name"
+        deb_name=$(os_arch "$triple" deb)
+        rename_package .deb "$package-$version-$deb_name.deb"
+        # The .rpm, from packaging/linux/rpm.toml filled in as the Cargo.toml of a folder of
+        # its own, as cargo-generate-rpm reads a Cargo manifest, named here directly. It
+        # finds the libraries the binaries link and their glibc itself (builtin: with ldd,
+        # whether or not rpm is installed), the config naming those loaded at run time.
+        rm -rf "$stage/rpm"
+        mkdir -p "$stage/rpm"
+        fill packaging/linux/rpm.toml "$stage/rpm/Cargo.toml"
+        cargo generate-rpm -p "$stage/rpm" --target "$triple" --auto-req builtin \
+            -o "$out/$base.rpm"
+        # The tarball, for ~/.local or /usr/local.
+        tar -C "$stage/tarball" -czf "$out/$base.tar.gz" "$base"
         ;;
     windows)
         rename_package -setup.exe "$base-setup.exe"

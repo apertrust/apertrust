@@ -1,10 +1,12 @@
 # Apertrust's packages, built by cargo-packager from this one file (docs/packaging.md):
 # on macOS the app bundle and its disk image, on Windows an NSIS installer, on Linux an
-# AppImage. tools/package.sh builds the binaries, fills in the placeholders and runs it:
-# @ROOT@ is the repository's top folder, @VERSION@ the package's version (the release's
-# X.Y.Z, with +N, the count of commits, unless a packager sets APERTRUST_VERSION),
-# @BINARIES@ the folder of the release binaries, and @INFO_PLIST@ macos/Info.plist with
-# its version filled in. Never run cargo-packager on this file itself.
+# AppImage and a .deb (the .rpm is cargo-generate-rpm's, from linux/rpm.toml).
+# tools/package.sh builds the binaries, fills in the placeholders and runs it: @ROOT@ is
+# the repository's top folder, @VERSION@ the package's version (the release's X.Y.Z, with
+# +N, the count of commits, unless a packager sets APERTRUST_VERSION), @BINARIES@ the
+# folder of the release binaries, @INFO_PLIST@ macos/Info.plist with its version filled
+# in, and on Linux @PREFIX@ the tarball's tree, laid out as a prefix, and @GLIBC@ the
+# newest glibc the binaries need. Never run cargo-packager on this file itself.
 
 # Named, so cargo-packager does not look for a Cargo.toml beside the filled-in copy.
 name = "apertrust"
@@ -12,6 +14,12 @@ productName = "Apertrust"
 version = "@VERSION@"
 identifier = "org.apertrust.Apertrust"
 description = "A free, non-destructive, cross-platform raw photo editor"
+# The .deb's description, under the summary above.
+longDescription = """
+Apertrust is a raw photo editor that processes photos on the GPU and builds on
+darktable's colour science. Edits are saved in a readable file beside the photo,
+and the original is never touched.
+"""
 homepage = "https://apertrust.org"
 authors = ["Apertrust developers"]
 publisher = "Apertrust developers"
@@ -37,7 +45,8 @@ icons = [
 # The licences every package ships: the GPL, the components and their notices (also in
 # About), the fonts' OFL, which the binary compiles in, and Lucide's, whose icons it
 # draws. In the bundle's Contents/Resources, beside the executable on Windows, in
-# usr/lib/apertrust in the AppImage.
+# usr/lib/apertrust in the AppImage and the .deb, which also has them in
+# usr/share/doc/apertrust, the prefix's.
 resources = [
     { src = '@ROOT@/LICENSE', target = "LICENSE" },
     { src = '@ROOT@/CREDITS.md', target = "CREDITS.md" },
@@ -86,11 +95,37 @@ installerIcon = '@ROOT@/crates/app/assets/icons/apertrust.ico'
 compression = "lzma"
 
 [linux]
-generateDesktopEntry = true
+# Off: cargo-packager's would be named after the binary, apertrust.desktop, and the .deb
+# needs the app id's; each package's desktop file is in its files below.
+generateDesktopEntry = false
 
 [deb]
-# The AppImage's desktop file: ours, written as cargo-packager names it after the binary.
-desktopTemplate = '@ROOT@/packaging/linux/org.apertrust.Apertrust.desktop'
+section = "graphics"
+# The libraries the binaries link, glibc and libgcc, and those loaded at run time, never
+# linked, as the AppImage leaves them out below (decision 5): Debian's names, the same
+# from Ubuntu 22.04 and Debian 12 on. libvulkan1 recommends a Vulkan driver itself
+# (mesa-vulkan-drivers | vulkan-icd), which apt installs with it. linux/rpm.toml requires
+# the same libraries.
+depends = [
+    "libc6 (>= @GLIBC@)",
+    "libgcc-s1",
+    "libvulkan1",
+    "libwayland-client0",
+    "libxkbcommon0",
+    "libxkbcommon-x11-0",
+    "libx11-6",
+    "libx11-xcb1",
+    "libxcb1",
+    "libxcursor1",
+    "libxi6",
+    "libdbus-1-3",
+]
+
+# Besides the binaries in usr/bin: the prefix's share, the desktop file, the metadata,
+# the MIME types, the icons and the licences. No maintainer scripts: dpkg's triggers
+# refresh the desktop, MIME and icon caches.
+[deb.files]
+'@PREFIX@/share' = "usr/share"
 
 [appimage]
 # The platform's libraries are the system's, never bundled (decision 5): linuxdeploy
@@ -107,7 +142,10 @@ excludedLibs = [
     "libEGL*.so*",
 ]
 
+# The desktop file under the binary's name, which cargo-packager links at the AppImage's
+# top, and the prefix's metadata, MIME types and icons.
 [appimage.files]
-'@ROOT@/packaging/linux/org.apertrust.Apertrust.metainfo.xml' = "usr/share/metainfo/org.apertrust.Apertrust.metainfo.xml"
-'@ROOT@/packaging/linux/org.apertrust.Apertrust.mime.xml' = "usr/share/mime/packages/org.apertrust.Apertrust.xml"
-'@ROOT@/crates/app/assets/icons/png/linux/hicolor' = "usr/share/icons/hicolor"
+'@ROOT@/packaging/linux/org.apertrust.Apertrust.desktop' = "usr/share/applications/apertrust.desktop"
+'@PREFIX@/share/metainfo' = "usr/share/metainfo"
+'@PREFIX@/share/mime' = "usr/share/mime"
+'@PREFIX@/share/icons' = "usr/share/icons"

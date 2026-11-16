@@ -1,14 +1,17 @@
 # Apertrust Nightly's identity, a development build's, which installs beside Apertrust
 # (docs/packaging.md, Apertrust Nightly): `tools/package.sh --nightly` replaces each
 # text left of " => " with the text right of it, wherever it occurs, in Packager.toml,
-# macos/Info.plist and the Linux desktop entry and metadata, before filling them in.
+# macos/Info.plist, linux/rpm.toml and the Linux desktop entry and metadata, before
+# filling them in.
 # crates/app/tests/packaging.rs applies these lines to the same files and checks that
 # each one still matches and the result names Apertrust Nightly throughout.
 
 # Packager.toml: the name of the files and the binaries, the name shown, the id, the
 # Windows ProgIDs (the edit's in Open With alone, never .apxmp's default, which the
-# installer gives Apertrust.Edit alone), and the Linux files the package takes, written
-# by the script.
+# installer gives Apertrust.Edit alone), and the AppImage's desktop file, written by the
+# script and named after the binary; and in linux/rpm.toml too, the package's name. The
+# .deb's and the .rpm's other files are the prefix's, which the script names after
+# Apertrust Nightly's id and name.
 name = "apertrust" => name = "apertrust-nightly"
 productName = "Apertrust" => productName = "Apertrust Nightly"
 identifier = "org.apertrust.Apertrust" => identifier = "org.apertrust.Apertrust.Nightly"
@@ -16,16 +19,17 @@ identifier = "org.apertrust.Apertrust" => identifier = "org.apertrust.Apertrust.
 { path = "apertrust-cli" } => { path = "apertrust-nightly-cli" }
 name = "Apertrust.RawImage" => name = "Apertrust.Nightly.RawImage"
 name = "Apertrust.Edit" => name = "Apertrust.Nightly.Edit"
-'@ROOT@/packaging/linux/org.apertrust.Apertrust.desktop' => '@STAGE@/org.apertrust.Apertrust.Nightly.desktop'
-'@ROOT@/packaging/linux/org.apertrust.Apertrust.metainfo.xml' = "usr/share/metainfo/org.apertrust.Apertrust.metainfo.xml" => '@STAGE@/org.apertrust.Apertrust.Nightly.metainfo.xml' = "usr/share/metainfo/org.apertrust.Apertrust.Nightly.metainfo.xml"
+'@ROOT@/packaging/linux/org.apertrust.Apertrust.desktop' = "usr/share/applications/apertrust.desktop" => '@STAGE@/org.apertrust.Apertrust.Nightly.desktop' = "usr/share/applications/apertrust-nightly.desktop"
 
 # macos/Info.plist: CFBundleName and CFBundleDisplayName; and the edit's rank, Owner,
 # the one in the file, so that Apertrust Nightly never takes .apxmp from Apertrust.
 <string>Apertrust</string> => <string>Apertrust Nightly</string>
 <string>Owner</string> => <string>Alternate</string>
 
-# linux/org.apertrust.Apertrust.desktop; its icon stays Apertrust's.
+# linux/org.apertrust.Apertrust.desktop, with its own icon, the same picture under
+# Apertrust Nightly's id, so that no file is in both packages.
 Name=Apertrust => Name=Apertrust Nightly
+Icon=org.apertrust.Apertrust => Icon=org.apertrust.Apertrust.Nightly
 Exec=apertrust %F => Exec=apertrust-nightly %F
 StartupWMClass=apertrust => StartupWMClass=apertrust-nightly
 
@@ -33,5 +37,6 @@ StartupWMClass=apertrust => StartupWMClass=apertrust-nightly
 <id>org.apertrust.Apertrust</id> => <id>org.apertrust.Apertrust.Nightly</id>
 <name>Apertrust</name> => <name>Apertrust Nightly</name>
 <launchable type="desktop-id">org.apertrust.Apertrust.desktop</launchable> => <launchable type="desktop-id">org.apertrust.Apertrust.Nightly.desktop</launchable>
+<icon type="stock">org.apertrust.Apertrust</icon> => <icon type="stock">org.apertrust.Apertrust.Nightly</icon>
 <binary>apertrust</binary> => <binary>apertrust-nightly</binary>
 <binary>apertrust-cli</binary> => <binary>apertrust-nightly-cli</binary>

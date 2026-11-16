@@ -1,0 +1,46 @@
+# Apertrust's .rpm, built by cargo-generate-rpm from this file (docs/packaging.md), as
+# cargo-packager makes none. cargo-generate-rpm reads a Cargo manifest, so
+# tools/package.sh fills in the placeholders as it does Packager.toml's and writes the
+# result as the Cargo.toml of a folder of its own: @VERSION@ is the package's version and
+# @PREFIX@ the tarball's tree, laid out as a prefix, whose bin and share are the
+# package's /usr/bin and /usr/share. Never run cargo-generate-rpm on this file itself.
+
+[package]
+name = "apertrust"
+version = "@VERSION@"
+license = "GPL-3.0-or-later"
+description = "A free, non-destructive, cross-platform raw photo editor"
+homepage = "https://apertrust.org"
+
+[package.metadata.generate-rpm]
+release = "1"
+# No scripts, so no shell: the system's file triggers refresh the desktop, MIME and icon
+# caches.
+require-sh = false
+assets = [
+    { source = "@PREFIX@/bin/*", dest = "/usr/bin/", mode = "755" },
+    { source = "@PREFIX@/share/**/*", dest = "/usr/share/", mode = "644" },
+]
+
+# The libraries loaded at run time, never linked, as the AppImage leaves them out
+# (decision 5), each by the capability its library provides, so that one package installs
+# on Fedora, RHEL and openSUSE, whose packages name them differently. rpm marks every
+# 64-bit library (64bit), on aarch64 as on x86_64. Those the binaries link, glibc's and
+# libgcc's with their versions, cargo-generate-rpm adds itself. Packager.toml's .deb
+# depends on the same libraries.
+[package.metadata.generate-rpm.requires]
+"libvulkan.so.1()(64bit)" = ""
+"libwayland-client.so.0()(64bit)" = ""
+"libxkbcommon.so.0()(64bit)" = ""
+"libxkbcommon-x11.so.0()(64bit)" = ""
+"libX11.so.6()(64bit)" = ""
+"libX11-xcb.so.1()(64bit)" = ""
+"libxcb.so.1()(64bit)" = ""
+"libXcursor.so.1()(64bit)" = ""
+"libXi.so.6()(64bit)" = ""
+"libdbus-1.so.3()(64bit)" = ""
+
+# A Vulkan driver: any of Mesa's, Fedora's and RHEL's one package or openSUSE's one per
+# driver, already installed or, where none is, the one the system's solver picks.
+[package.metadata.generate-rpm.recommends]
+"(mesa-vulkan-drivers or libvulkan_lvp or libvulkan_radeon or libvulkan_intel or libvulkan_nouveau)" = ""
