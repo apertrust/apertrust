@@ -8,11 +8,11 @@ Apertrust ports darktable's processing, and darktable calls both what a person w
 
 **Two terms.**
 
-- A **tool** is what a person sees and works with: one section of the side panel, or of the Import or the Export sheet's column, with its controls, tabs and collapsible groups, under one name ([0028](0028-tools-bound-to-operations.md)).
-  - **Everything in the side panel is a tool:** the tools that edit the photo, such as Exposure or Colour calibration, and Browse, Filters, Keywords, Metadata, Scopes, History, Snapshots and the Colour picker.
-  - **A tool has one place:** the side panel, Export (export tools) or Import (import tools), and appears nowhere else ([0086](0086-import-and-export-as-one-sheet-pattern.md)).
+- A **tool** is what a person sees and works with: one section of the side panel, or of the Import sheet's column, with its controls, tabs and collapsible groups, under one name ([0028](0028-tools-bound-to-operations.md)).
+  - **Everything in the side panel is a tool:** the tools that edit the photo, such as Exposure or Colour calibration, and Browse, Filters, Keywords, Metadata, Export, Scopes, History, Snapshots and the Colour picker.
+  - **A tool has one place:** the side panel, Export among its utilities (planned, [0090](0090-export-as-a-photos-tab-tool.md)), or the Import sheet (import tools), and appears nowhere else ([0086](0086-import-as-a-full-window-sheet.md)).
   - **A processing tool** binds operations, as darktable's processing modules do.
-  - **A utility** is a tool that edits nothing, such as Scopes or the Colour picker, as darktable's utility modules. "Utility" names only that kind of tool, never a second level beside tools.
+  - **A utility** is a tool that edits nothing, such as Scopes, Export or the Colour picker, as darktable's utility modules. "Utility" names only that kind of tool, never a second level beside tools.
   - **A processing tool has controls,** and the edit stores them. **Any tool may have settings,** the options darktable keeps in darktablerc, which Apertrust keeps in `settings.toml`, never in an edit. What another tool holds is what it is: view state, such as the folder Browse shows or the Scopes' mode, or the photo's metadata, such as Keywords' and Metadata's fields ([0073](0073-the-photos-tabs-tools-browse-first-filters-in-folder-mode.md)), never controls in the edit.
 - An **operation** is one algorithm in the engine, usually a darktable port, with its manifest, schema and kernels ([0020](0020-operations-as-native-plugins-one-crate-each.md)). darktable's own XMP history calls these operations (`darktable:operation`).
 - **An MCP tool is always written "MCP tool",** never a bare "tool". The MCP tools are generated from the tools' definitions and the library's commands ([0058](0058-a-native-engine-every-client-through-the-session-protocol.md)).

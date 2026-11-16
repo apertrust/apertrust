@@ -588,7 +588,7 @@ Decision 47. Version 2 holds the parts below, in decision 48's style, written th
 
 **Its virtual copies** (`apertrust:copies`), one at first. Each has a random id of 8 hex digits, a number for its place (darktable's version number, 0 for the first), a name (darktable's version name), its history and the log's end, its snapshots and its clock vector. The copy a version 1 file reads as has the id `00000000` (`sidecar::FIRST_COPY`), the same on every machine; a new copy's random id is never `00000000` (decision 47).
 
-- New Virtual Copy is darktable's duplicate; New Virtual Copy from Original is its "virgin" duplicate.
+- New Virtual Copy is darktable's duplicate; New Virtual Copy from Original is its "virgin" duplicate, whose key is to be chosen when virtual copies are designed, since darktable's Ctrl+Shift+D is Previous Selection's (decision 90).
 - A deleted one leaves a tombstone, so a sync cannot bring it back.
 - Albums, the protocol and the thumbnail cache name one as `photo#id`.
 

@@ -19,15 +19,18 @@ Each record has a line in `docs/decisions/README.md`, its number linked to its f
 
 **Records describe what is decided now.** A decision that changes another edits that record to the current state; history is not kept in the records, since git keeps it. A new question gets a new record; a change to an existing decision is an edit of its record, with every other place that describes it brought into agreement.
 
+**A record wholly replaced by a later one is a stub,** never deleted, so its number and every link to it stay: its title kept, then one line under it, "Superseded by NNNN" linking its successor, and its four sections cut to a sentence each, its question and where the answer now is, nothing of the design it held. Its line in the index says "superseded by NNNN". A record only partly changed is edited, not superseded.
+
 **What else agrees with the records:** the current state by area in [the index](README.md#the-current-state-by-area), the sections of the design docs that describe the area, the open questions, AGENTS.md's rules and crate table, [crates.md](../crates.md), and the project's skills. The `decision-log` skill in the agent kit walks through them; the `architect` agent records decisions with it.
 
 ## Options considered
 
 - One table of long rows in one file: hard to read and to link.
 - Records that are never edited, each later one amending or superseding the earlier: the current state must then be pieced together from a chain.
+- A wholly replaced record deleted, or rewritten to repeat its successor: a deleted one breaks links and leaves a gap in the numbers, a rewritten one says the same thing twice.
 - Decisions recorded somewhere outside the repository: a contributor could not find them beside the code.
 
 ## Consequences
 
 - A change that settles or changes a decision lands with its record in the same pull request.
-- Code comments and docs cite a decision by its number, which never changes.
+- Code comments and docs cite a decision by its number, which never changes; one citing a superseded record is changed to cite its successor, but the successor itself, which names the record it replaces.
