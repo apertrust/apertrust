@@ -276,7 +276,7 @@ Windows, macOS and Linux are equal first-class desktop platforms; the browser is
 
 **Languages rejected:** C++, the credible alternative (Dear ImGui, Dawn, ONNX Runtime's C++ API, darktable's code compiling almost unchanged), for vcpkg or Conan on three platforms, undefined behaviour in agents' code and slower iteration, its one real advantage smaller than it looks since the GPU kernels and darktable's glue code are rewritten either way; C, for manual memory in a concurrent GPU pipeline written mostly by agents, no package manager and no good native UI toolkit; Zig, pre-1.0 with a thin ecosystem and agents less fluent in it, despite excellent C interop; Swift, too weak for GPU and UI work on Windows and Linux; Go and C#, garbage-collected, with weak GPU ecosystems for this work.
 
-Every package is built by cargo-packager from one config, `packaging/Packager.toml`, through `tools/package.sh` (decision 68; [packaging.md](packaging.md)):
+`tools/package.sh` builds every package (decision 68; [packaging.md](packaging.md)): cargo-packager the app bundle, the disk images, the installer, the AppImage and the `.deb` from `packaging/Packager.toml`, cargo-generate-rpm the `.rpm` from `packaging/linux/rpm.toml`, and the script itself the portable zip and the tarball:
 
 | Platform | Packaging | Notes |
 | --- | --- | --- |
