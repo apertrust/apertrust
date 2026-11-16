@@ -136,7 +136,7 @@ The walk of 100,000 entries, warm, three processes of five walks each: 161.4 to 
 
 ## Two processes at once
 
-The app, a second instance and the CLI share the cache with no lock for limited kinds:
+The app runs one instance per user data folder ([decision 89](decisions/0089-one-instance-per-user-data-folder-a-window-per-place.md)), however many windows it has, and an instance on another folder has its own cache folder, `<user data>/cache`, unless both are given the same `--cache-dir`. So the processes that may share one cache are the app and the CLI, and instances on different user data folders given the same cache folder. They share it with no lock for limited kinds:
 
 - two processes writing one slot each rename a whole file, the last rename winning;
 - a removal that finds the file gone is ignored, and a reader whose file vanished renders again;

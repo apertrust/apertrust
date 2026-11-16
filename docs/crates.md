@@ -809,6 +809,7 @@ The session's events enter the app in one place (decision 59, `src/mirror.rs`): 
 - Windows' Alt pressed and released alone, opening the ☰'s menu.
 - **Colour pickers** (decision 79; [pickers.md](pickers.md)): each other tool's pickers drawn as its pick lands; and the Colour picker section, hidden by default, its place to be decided.
 - **Sheets** (decisions 84 and 86; [docs/gui.md](gui.md#sheets)): the sheets' modality, the view's keys and the top panel resting under one; Export on its sheet in `export.rs`'s place, its photos written as the selection after an export; each tool's place declared and tested.
+- **Instances and windows** (decision 89; [docs/gui.md](gui.md#instances-and-windows)), in five steps: `src/instance.rs`, the instance lock (`instance.lock` in the user data folder, `File::try_lock`), the channel (a Unix socket through the standard library, Windows' named pipe through `apertrust-display`), the hand-off's message and answer, the 500 ms join on Windows and the refusal of flags for one run, `--help`, `--version` and `--list-adapters` taking no lock and Restart now releasing it first; a spike moving the main window from eframe's root into the app's own host beside the dialog host's windows, with its AccessKit adapter; the engine's sessions of every window on one engine thread; a registry of windows, each with its place, session, layout state and egui context, `new-window` (Ctrl+N), the Mac's Window menu and the closing rules; `library.open_in` and the user data folder's name in the titles.
 
 ## apertrust-ui
 
@@ -1009,7 +1010,7 @@ The window's platform code, an FFI crate that may use `unsafe`. On macOS:
 
 On every platform, `reduce_motion` reads the system's preference for less motion: on macOS `NSWorkspace.accessibilityDisplayShouldReduceMotion`, on Windows `SPI_GETCLIENTAREAANIMATION`; on Linux it is not read, GNOME's `enable-animations` needing GIO or D-Bus, so it says no.
 
-**Planned** (decision 41): Windows' task dialog and owner disabling; X11's `WM_TRANSIENT_FOR` and `_NET_WM_STATE_MODAL`.
+**Planned** (decision 41): Windows' task dialog and owner disabling; X11's `WM_TRANSIENT_FOR` and `_NET_WM_STATE_MODAL`. With the single-instance hand-off (decision 89): Windows' named pipe for the instance's channel, created for the first instance only and open to the user's account, and `AllowSetForegroundWindow`; activating an existing window with another process's token (xdg-activation on Wayland) where winit offers no way.
 
 ## Operation crates
 
