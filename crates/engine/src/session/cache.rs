@@ -146,6 +146,7 @@ pub(crate) type Tell = Arc<dyn Fn(Event) + Send + Sync>;
 pub(crate) struct Upkeep {
     cache: Arc<Cache>,
     state: Arc<Mutex<State>>,
+    publication: Arc<Mutex<()>>,
     ask: Ask,
     /// Set as the session ends: the tidy, the walk and an eviction stop.
     stop: Arc<AtomicBool>,
@@ -201,6 +202,7 @@ impl Upkeep {
     fn new(options: CacheOptions, ask: Ask, stop: Arc<AtomicBool>) -> Upkeep {
         Upkeep {
             cache: options.cache,
+            publication: Arc::default(),
             state: Arc::new(Mutex::new(State {
                 limit: options.limit,
                 eviction: Eviction::Running { again: false },
@@ -466,14 +468,12 @@ impl Upkeep {
             match self.walk(&cancel) {
                 Ok(Some(sizes)) => {
                     log_sizes(&sizes, self.limit(), started.elapsed());
-                    tell(Event::Cache(CacheEvent::sizes(sizes, self.limit())));
+                    self.tell_counted(tell);
                 }
                 // The handle's own removals overtook both walks: its count holds them.
                 Ok(None) => {
                     log_overtaken();
-                    if let Some(counted) = self.counted() {
-                        tell(Event::Cache(counted));
-                    }
+                    self.tell_counted(tell);
                 }
                 Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
                 Err(error) => {
@@ -583,15 +583,20 @@ impl Upkeep {
     /// Tells the sizes as the handle counts them, walking first where no walk has run;
     /// nothing should that walk fail, or the session end meanwhile.
     fn tell_sizes(&self, tell: &Tell) {
-        let sizes = match self.cache.sizes() {
-            Some(sizes) => Some(sizes),
-            None => self
-                .walk(&|| self.stop.load(Ordering::Relaxed))
-                .ok()
-                .flatten(),
-        };
-        if let Some(sizes) = sizes {
-            tell(Event::Cache(CacheEvent::sizes(sizes, self.limit())));
+        if self.cache.sizes().is_none() {
+            let _ = self.walk(&|| self.stop.load(Ordering::Relaxed));
+        }
+        self.tell_counted(tell);
+    }
+
+    /// Selects and publishes one snapshot in the same order as Clear's final snapshot.
+    fn tell_counted(&self, tell: &Tell) {
+        let _publishing = self
+            .publication
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        if let Some(counted) = self.counted() {
+            tell(Event::Cache(counted));
         }
     }
 

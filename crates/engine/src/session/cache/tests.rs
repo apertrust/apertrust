@@ -495,6 +495,39 @@ fn a_sizes_walk_a_clear_overlaps_tells_what_the_clear_left() {
     assert_eq!(counted.of(THUMBNAILS), Usage::default());
 }
 
+#[test]
+fn a_clear_cannot_publish_before_an_older_snapshot_still_being_sent() {
+    let session = Session::new("sizes-publication", 10, Limit::Unlimited);
+    session.cache.walk(&never).unwrap().unwrap();
+    let (begun, started) = mpsc::channel();
+    let (release, gate) = mpsc::channel();
+    let gate = Mutex::new(gate);
+    let (sent, received) = mpsc::channel();
+    let sent = Mutex::new(sent);
+    let tell: Tell = Arc::new(move |event| {
+        if let Event::Cache(CacheEvent::Sizes { sizes, .. }) = &event
+            && sizes.of(THUMBNAILS).entries > 0
+        {
+            begun.send(()).unwrap();
+            gate.lock().unwrap().recv().unwrap();
+        }
+        sent.lock().unwrap().send(event).unwrap();
+    });
+    let upkeep = &session.upkeep;
+    let early = std::thread::scope(|scope| {
+        scope.spawn(|| upkeep.tell_sizes(&tell));
+        started.recv_timeout(WAIT).unwrap();
+        session.cache.clear(THUMBNAILS, &|_, _| {}, &never).unwrap();
+        scope.spawn(|| upkeep.tell_sizes(&tell));
+        let early = received.recv_timeout(Duration::from_millis(100));
+        release.send(()).unwrap();
+        early
+    });
+    assert!(matches!(early, Err(mpsc::RecvTimeoutError::Timeout)));
+    let answers: Vec<_> = received.try_iter().collect();
+    assert_eq!(thumbnails(&answers), [10, 0]);
+}
+
 /// A walk that fails names each `Sizes` its pass answers.
 #[cfg(unix)]
 #[test]

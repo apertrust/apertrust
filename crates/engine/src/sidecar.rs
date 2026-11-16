@@ -376,7 +376,7 @@ fn read_entry(
             let kept = operations
                 .iter()
                 .any(|op| op.manifest().id == operation && op.manifest().default_enabled);
-            read_operation(
+            let newer = read_operation(
                 &mut read,
                 warnings,
                 operations,
@@ -384,11 +384,11 @@ fn read_entry(
                 (&operation, schema),
                 params,
             );
-            let entry = kept.then(|| history::Entry::Operation {
+            let entry = (kept || newer.is_some()).then(|| history::Entry::Operation {
                 params: read.params.remove(&operation).unwrap_or_default(),
                 operation,
             });
-            (entry, None)
+            (entry, newer)
         }
     }
 }
@@ -522,17 +522,34 @@ fn read_tool(
         Some("true") => (true, None),
         Some(other) => (false, Some(other.to_owned())),
     };
+    let mut incompatible = None;
     let mut values = ToolValues::new();
     values.set_enabled(enabled);
     for (name, text) in controls {
         match definition.control(&name) {
             Some(control) => match control.parse(&text) {
                 Ok(value) => values.set(control.id, value),
-                Err(error) => warnings.push(format!("{id}: {error}; left out")),
+                Err(error) => {
+                    if !older {
+                        incompatible.get_or_insert_with(|| Newer::Control {
+                            tool: id.to_owned(),
+                            control: name.clone(),
+                        });
+                    }
+                    warnings.push(format!("{id}: {error}; left out"));
+                }
             },
             None => match older.then(|| loose(&text)).flatten() {
                 Some(value) => values.set(&name, value),
-                None => warnings.push(format!("{id} has no control {name}; left out")),
+                None => {
+                    if !older {
+                        incompatible.get_or_insert_with(|| Newer::Control {
+                            tool: id.to_owned(),
+                            control: name.clone(),
+                        });
+                    }
+                    warnings.push(format!("{id} has no control {name}; left out"));
+                }
             },
         }
     }
@@ -541,6 +558,10 @@ fn read_tool(
             if older || definition.control(&name).is_some() {
                 values.set_mark(&name, Some(mark));
             } else {
+                incompatible.get_or_insert_with(|| Newer::Control {
+                    tool: id.to_owned(),
+                    control: name.clone(),
+                });
                 warnings.push(format!("{id} has no control {name} to mark; left out"));
             }
         }
@@ -578,6 +599,12 @@ fn read_tool(
         match control.clamp(value.clone()) {
             Ok(clamped) => {
                 if &clamped != value {
+                    if !older {
+                        incompatible.get_or_insert_with(|| Newer::Control {
+                            tool: id.to_owned(),
+                            control: name.to_owned(),
+                        });
+                    }
                     warnings.push(format!(
                         "{id}.{name} is {}, out of range; set to {}",
                         control.text(value),
@@ -586,7 +613,15 @@ fn read_tool(
                 }
                 checked.set(control.id, clamped);
             }
-            Err(error) => warnings.push(format!("{id}: {error}; left out")),
+            Err(error) => {
+                if !older {
+                    incompatible.get_or_insert_with(|| Newer::Control {
+                        tool: id.to_owned(),
+                        control: name.to_owned(),
+                    });
+                }
+                warnings.push(format!("{id}: {error}; left out"));
+            }
         }
     }
     for (name, mark) in values.marks() {
@@ -600,7 +635,7 @@ fn read_tool(
         warnings.push(format!("{id}: enabled is {unknown:?}, a newer Apertrust's"));
         enabled = enabled.or(Some(Newer::Enabled(id.to_owned())));
     }
-    let newer = newer.or(enabled);
+    let newer = newer.or(incompatible).or(enabled);
     if !checked.is_empty() {
         edit.tools.insert(definition.id.to_owned(), checked);
     }
@@ -676,17 +711,25 @@ fn read_operation(
     tools: &[&dyn Tool],
     (id, saved): (&str, Option<u32>),
     params: Vec<(String, String)>,
-) {
+) -> Option<Newer> {
     let Some(operation) = operations.iter().find(|op| op.manifest().id == id) else {
         warnings.push(format!("no operation {id}; left out"));
-        return;
+        return Some(Newer::Operation(id.to_owned()));
     };
     let manifest = operation.manifest();
+    let schema = operation.schema();
+    let older = saved.is_some_and(|saved| saved < schema.version);
+    let mut incompatible = saved
+        .filter(|saved| *saved > schema.version)
+        .map(|version| Newer::OperationSchema {
+            operation: id.to_owned(),
+            version,
+            has: schema.version,
+        });
     if !manifest.default_enabled {
         warnings.push(format!("{id}: runs only while a tool sets it; left out"));
-        return;
+        return incompatible;
     }
-    let schema = operation.schema();
     if saved != Some(schema.version) {
         warnings.push(format!(
             "{id}: schema version {}, this build has {}; read by name",
@@ -696,6 +739,12 @@ fn read_operation(
     }
     for (name, text) in params {
         let Some(param) = schema.param(&name) else {
+            if !older {
+                incompatible.get_or_insert_with(|| Newer::Parameter {
+                    operation: id.to_owned(),
+                    parameter: name.clone(),
+                });
+            }
             warnings.push(format!("{id} has no parameter {name}; left out"));
             continue;
         };
@@ -712,6 +761,12 @@ fn read_operation(
         }) {
             Ok((value, clamped)) => {
                 if clamped != value {
+                    if !older {
+                        incompatible.get_or_insert_with(|| Newer::Parameter {
+                            operation: id.to_owned(),
+                            parameter: name.clone(),
+                        });
+                    }
                     warnings.push(format!(
                         "{id}.{name} is {text}, out of range; set to {}",
                         param.text(clamped)
@@ -722,9 +777,18 @@ fn read_operation(
                     .or_default()
                     .set(param.name, clamped);
             }
-            Err(error) => warnings.push(format!("{id}: {error}; left out")),
+            Err(error) => {
+                if !older {
+                    incompatible.get_or_insert_with(|| Newer::Parameter {
+                        operation: id.to_owned(),
+                        parameter: name.clone(),
+                    });
+                }
+                warnings.push(format!("{id}: {error}; left out"));
+            }
         }
     }
+    incompatible
 }
 
 #[cfg(test)]
@@ -1307,6 +1371,59 @@ pub(crate) mod tests {
         assert_eq!(loaded.warnings.len(), 1, "{:?}", loaded.warnings);
     }
 
+    #[test]
+    fn unsupported_current_tool_values_and_marks_are_view_only() {
+        for controls in [
+            r#"c:future="1""#,
+            r#"c:strength="never""#,
+            r#"c:strength="1.5""#,
+            r#"apertrust:kept="future""#,
+        ] {
+            let xml = version_1(&format!(
+                r#"apertrust:tool="look" apertrust:toolVersion="2" {controls}"#
+            ));
+            let read = from_xml(&xml, OPERATIONS, TOOLS, &[]).unwrap();
+            assert!(
+                matches!(read.newer, Some(Newer::Control { .. })),
+                "{controls}: {:?}",
+                read.newer
+            );
+            assert!(read.view_only().is_some());
+        }
+    }
+
+    #[test]
+    fn unsupported_operation_schemas_and_parameters_are_view_only() {
+        let newer = version_0(r#"p:amount="1""#)
+            .replace(r#"apertrust:schema="2""#, r#"apertrust:schema="3""#);
+        let read = from_xml(&newer, OPERATIONS, TOOLS, &[]).unwrap();
+        assert!(matches!(read.newer, Some(Newer::OperationSchema { .. })));
+        assert!(read.view_only().is_some());
+        let optional = newer.replace(
+            r#"apertrust:operation="fake""#,
+            r#"apertrust:operation="optional""#,
+        );
+        let read = from_xml(&optional, OPERATIONS, TOOLS, &[]).unwrap();
+        assert!(matches!(read.newer, Some(Newer::OperationSchema { .. })));
+        assert!(read.view_only().is_some());
+        let unreadable = version_0(r#"p:amount="1""#)
+            .replace(r#"apertrust:schema="2""#, r#"apertrust:schema="2.0""#);
+        let read = from_xml(&unreadable, OPERATIONS, TOOLS, &[]).unwrap();
+        assert!(
+            read.view_only().is_some(),
+            "text-layer problems already protect unreadable schemas"
+        );
+        for params in [r#"p:future="1""#, r#"p:amount="never""#, r#"p:amount="9""#] {
+            let read = from_xml(&version_0(params), OPERATIONS, TOOLS, &[]).unwrap();
+            assert!(
+                matches!(read.newer, Some(Newer::Parameter { .. })),
+                "{params}: {:?}",
+                read.newer
+            );
+            assert!(read.view_only().is_some());
+        }
+    }
+
     /// The file round trip through the text layer, which `apertrust_library::sidecar` tests alone.
     #[test]
     fn an_edit_is_written_to_a_file_and_read_back() {
@@ -1839,19 +1956,20 @@ pub(crate) mod tests {
         assert!(loaded.warnings.is_empty(), "{:?}", loaded.warnings);
         assert_eq!(loaded.view_only(), None);
         assert_eq!(loaded.log, logged().0);
-        // The second step's only entry, an operation this build does not run: the step is
-        // left out with a warning, and the end, on the fourth, is now on the third.
+        // An unknown operation remains named in the history for viewing only; its
+        // parameters are not applied and no normal save may drop the stored data.
         let unknown = xml.replacen(
             r#"apertrust:operation="fake""#,
             r#"apertrust:operation="lens""#,
             1,
         );
         let loaded = from_xml(&unknown, OPERATIONS, TOOLS, &[]).unwrap();
-        assert_eq!(loaded.view_only(), None);
+        assert!(loaded.view_only().is_some());
+        assert_eq!(loaded.newer, Some(Newer::Operation("lens".to_owned())));
         assert_eq!(loaded.warnings, ["no operation lens; left out"]);
         let ids: Vec<u64> = loaded.log.steps().iter().map(|step| step.id.0).collect();
-        assert_eq!(ids, [0xa1, 0xa3, 0xa4, 0xa5]);
-        assert_eq!(loaded.log.end(), 3);
+        assert_eq!(ids, [0xa1, 0xa2, 0xa3, 0xa4, 0xa5]);
+        assert_eq!(loaded.log.end(), 4);
     }
 
     /// A version 1 file reads as a step of each entry and is written as version 2, which

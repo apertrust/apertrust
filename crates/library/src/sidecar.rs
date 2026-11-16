@@ -134,6 +134,21 @@ pub enum Newer {
     /// A tool whose `apertrust:enabled` this build cannot keep (decision 32): one it
     /// does not switch, or a value other than `true`, whose state a save would lose.
     Enabled(String),
+    /// A current-version control or mark this build cannot retain unchanged.
+    Control { tool: String, control: String },
+    /// An operation this build does not have.
+    Operation(String),
+    /// An operation schema above the one this build implements.
+    OperationSchema {
+        operation: String,
+        version: u32,
+        has: u32,
+    },
+    /// An unowned operation parameter this build cannot retain unchanged.
+    Parameter {
+        operation: String,
+        parameter: String,
+    },
 }
 
 impl fmt::Display for Newer {
@@ -158,6 +173,28 @@ impl fmt::Display for Newer {
                     "turns the tool {tool} on, which this build does not switch"
                 )
             }
+            Newer::Control { tool, control } => {
+                write!(f, "holds {tool}.{control}, which this build cannot keep")
+            }
+            Newer::Operation(operation) => write!(
+                f,
+                "holds the operation {operation}, which this build does not have"
+            ),
+            Newer::OperationSchema {
+                operation,
+                version,
+                has,
+            } => write!(
+                f,
+                "holds {operation} schema {version}, newer than this build's {has}"
+            ),
+            Newer::Parameter {
+                operation,
+                parameter,
+            } => write!(
+                f,
+                "holds {operation}.{parameter}, which this build cannot keep"
+            ),
         }
     }
 }

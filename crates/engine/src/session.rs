@@ -3756,6 +3756,9 @@ impl Engine {
             photo.options = listed_options(&self.tools, &metadata.image);
             photo.rows = photo_rows(&self.tools, &metadata.image);
             photo.image = metadata.image;
+            photo.photo.width = photo.image.width;
+            photo.photo.height = photo.image.height;
+            *photo.photo.image = photo.image.clone();
             // Clamped again to the ranges the decode's context gives, as an opened edit is.
             if photo.view_only.is_none() {
                 for warning in photo.edit.clamp_read(&self.tools, &photo.image) {
@@ -3765,6 +3768,7 @@ impl Engine {
             // Its steps described on the new context; a value clamped is a change not yet a
             // step.
             photo.history.describe_anew();
+            events.push(Event::Opened(photo.photo.clone()));
         }
         photo.sensor = input.desc();
         photo.shot = metadata.shot;
@@ -6635,6 +6639,24 @@ mod tests {
         let live = control(reports[reports.len() - 1], "exposure", "camera_bias");
         assert!(live.visible, "{live:?}");
         assert_eq!(live.label_value.map(|label| label.value), Some(-2.0 / 3.0));
+        let revised = events
+            .iter()
+            .rposition(|event| matches!(event, Event::Opened(_)))
+            .unwrap();
+        let Event::Opened(photo) = &events[revised] else {
+            unreachable!()
+        };
+        assert_eq!(
+            photo.image.as_ref(),
+            &driven.engine.open.as_ref().unwrap().image
+        );
+        assert!(
+            revised
+                < events
+                    .iter()
+                    .rposition(|event| matches!(event, Event::Values(_)))
+                    .unwrap()
+        );
         remove(&path);
     }
 

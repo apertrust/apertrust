@@ -1137,6 +1137,7 @@ impl Engine {
                 _ => {}
             }
         }
+        let refused_release = applied.is_err() && releases && ended.is_some();
         match (&applied, completes, ended) {
             (Ok(_), Some((source, note)), _) => self.step(source, note),
             (Err(_), _, Some((source, note))) if releases => self.step(source, note),
@@ -1161,6 +1162,9 @@ impl Engine {
                     effect.render = true;
                 }
             }
+        }
+        if refused_release && self.needs_save() {
+            self.save();
         }
         applied
     }

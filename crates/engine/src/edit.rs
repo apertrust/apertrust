@@ -566,12 +566,20 @@ impl Edit {
     ) -> Result<(), EditError> {
         let definition = tool.definition();
         let id = definition.id;
-        let (now, then) = (self.every(tool, image), before.every(tool, image));
         let failed = |control: &'static str, message: String| EditError::FollowFailed {
             tool: id,
             control,
             message,
         };
+        let by = definition
+            .controls
+            .iter()
+            .find(|control| set.contains(&control.id))
+            .map_or("defaults", |control| control.id);
+        let (now, then) = catch_unwind(AssertUnwindSafe(|| {
+            (self.every(tool, image), before.every(tool, image))
+        }))
+        .map_err(|panic| failed(by, panic_message(panic.as_ref())))?;
         // Each write with the control whose follow wrote it.
         let mut writes: Vec<(&'static str, &'static Control, ControlValue)> = Vec::new();
         let moved = definition.controls.iter().filter(|control| {
@@ -1275,6 +1283,23 @@ mod tests {
     use super::*;
 
     const TOOLS: &[&dyn Tool] = &[&Sample];
+
+    #[test]
+    fn defaults_that_panic_during_follow_restore_the_previous_edit() {
+        let image = testing::image();
+        let before = Edit::default();
+        let mut edit = before.clone();
+        edit.set_control(&Defaultless, "amount", ControlValue::Number(5.0), &image)
+            .unwrap();
+        assert!(matches!(
+            edit.follow(&before, &Defaultless, &["amount"], &image),
+            Err(EditError::FollowFailed {
+                tool: "defaultless",
+                ..
+            })
+        ));
+        assert_eq!(edit, before);
+    }
 
     /// Each instance's operation and the parameters it sets.
     fn planned(edit: &Edit) -> Vec<(&'static str, Vec<(String, Value)>)> {
