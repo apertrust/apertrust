@@ -720,6 +720,9 @@ impl Engine {
                 .picker(name)
                 .ok_or(SessionError::UnknownPicker)?;
             check_settings(found.definition().pickers, &settings)?;
+            if !ready(found, name, &settings) {
+                return Err(SessionError::NotReady);
+            }
             // Its tool on, as darktable turns its module on with its picker: its operation must
             // then be in the plan. With the history's end among the default steps it is the
             // first change, which applies the tools not applied (decision 78).
@@ -848,12 +851,21 @@ impl Engine {
         check_settings(tool.definition().pickers, &settings)?;
         let id = tool.definition().id;
         let changed: BTreeSet<&str> = settings.iter().map(|(setting, _)| *setting).collect();
+        // The tool's picker on that these settings leave not ready turns off, applying
+        // nothing, as Exposure's when its reference is cleared (decision 88).
+        let unready = (self.pickers.active.and_then(|active| active.tool))
+            .filter(|on| on.tool == id)
+            .is_some_and(|on| !ready(tool, on.picker.id, &settings));
         self.pickers.settings.insert(id, settings);
         // A completed change, answered whether it applies a pick or not.
         let unapplied = PickerEffect {
             answer: true,
             ..PickerEffect::default()
         };
+        if unready {
+            self.picker_off(events);
+            return Ok(unapplied);
+        }
         // No reading applies while the History tab's eye hides a tool (decision 78).
         if self.hiding() {
             return Ok(unapplied);
@@ -1553,6 +1565,23 @@ fn keep_due(old: &Probed, new: &mut Probed) {
     if new.due.is_none() {
         new.due = old.due;
     }
+}
+
+/// Whether `tool`'s picker `picker` can start with `settings`
+/// ([`apertrust_tools::Tool::picker_ready`]); a tool that panics there is taken as not
+/// ready, so its picker picks nothing.
+fn ready(
+    tool: &dyn apertrust_tools::Tool,
+    picker: &str,
+    settings: &[(&'static str, ControlValue)],
+) -> bool {
+    let asked = catch_unwind(AssertUnwindSafe(|| tool.picker_ready(picker, settings)));
+    asked.unwrap_or_else(|panic| {
+        let message = panic_message(&*panic);
+        let id = tool.definition().id;
+        tracing::warn!(target: "pipe", "tool {id}'s picker {picker} not ready: {message}");
+        false
+    })
 }
 
 /// Refuses settings that none of `pickers` reads.

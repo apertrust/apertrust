@@ -1838,6 +1838,103 @@ fn a_value_a_pick_gives_that_is_not_finite_is_left_out_and_what_it_shows_kept() 
     remove(&path);
 }
 
+/// Exposure's Picker target at Reference, with the reference at `lightness`, or none.
+fn toward_reference(lightness: Option<f32>) -> Vec<(&'static str, ControlValue)> {
+    let mut settings = vec![("target", ControlValue::Choice(2))];
+    if let Some(lightness) = lightness {
+        settings.push(("reference_lightness", ControlValue::Number(lightness)));
+    }
+    settings
+}
+
+/// Exposure's `picker` turned on as an area with these settings.
+fn on_exposure(id: &'static str, settings: Vec<(&'static str, ControlValue)>) -> Command {
+    picker(PickerCommand::On {
+        picker: PickerRef::Tool {
+            tool: "exposure",
+            picker: id,
+        },
+        area: true,
+        keys: PickKeys::default(),
+        settings,
+        channel: None,
+    })
+}
+
+/// Exposure's picker toward a reference with none set cannot start: its `On` is refused,
+/// `NotReady`, and no picker is on (decision 88). With one set it starts; clearing the
+/// reference by `Settings` turns it off, applying nothing.
+#[test]
+fn exposure_s_picker_waits_for_a_reference_and_turns_off_when_it_goes() {
+    use apertrust_tools::exposure::Exposure;
+    let path = scratch("picker-not-ready");
+    let mut driven = Driven::new(&[&Exposure]);
+    let opened = driven.open(&path);
+    let before = number(values(&opened), "exposure", "exposure");
+    let events = driven.run([on_exposure("exposure", toward_reference(None))]);
+    match &failures(&events)[..] {
+        [error] => assert_eq!(format!("{error:?}"), "NotReady"),
+        _ => panic!("{events:?}"),
+    }
+    assert!(!driven.engine.pickers.on());
+    // With a reference it starts and picks toward it.
+    let mut events = driven.run([on_exposure("exposure", toward_reference(Some(62.0)))]);
+    events.extend(driven.picked());
+    assert!(failures(&events).is_empty(), "{events:?}");
+    assert!(driven.engine.pickers.on());
+    let picked = number(values(&events), "exposure", "exposure");
+    assert_ne!(picked, before);
+    // The reference cleared: off, nothing applied.
+    let events = driven.run([picker(PickerCommand::Settings {
+        tool: "exposure",
+        settings: toward_reference(None),
+    })]);
+    assert!(failures(&events).is_empty(), "{events:?}");
+    assert!(!driven.engine.pickers.on());
+    for event in &events {
+        if let Event::Values(values) = event {
+            assert_eq!(number(values, "exposure", "exposure"), picked);
+        }
+    }
+    remove(&path);
+}
+
+/// The reference row's picker measures the area and hands its L back as
+/// `reference_lightness`; it writes nothing and makes no history step (E54).
+#[test]
+fn the_reference_picker_hands_its_lightness_back_and_makes_no_step() {
+    use apertrust_tools::exposure::Exposure;
+    let path = scratch("picker-reference");
+    let mut driven = Driven::new(&[&Exposure]);
+    let opened = driven.open(&path);
+    let before = number(values(&opened), "exposure", "exposure");
+    let steps = |driven: &Driven| {
+        let open = driven.engine.open.as_ref().unwrap();
+        open.history.log().steps().len()
+    };
+    let start = steps(&driven);
+    let mut events = driven.run([on_exposure("reference", toward_reference(None))]);
+    events.extend(driven.picked());
+    assert!(failures(&events).is_empty(), "{events:?}");
+    let shown = readings(&events)
+        .into_iter()
+        .rev()
+        .find_map(|reading| reading.as_ref()?.tool.as_ref()?.picked.clone())
+        .unwrap_or_else(|| panic!("a pick shown in {events:?}"));
+    let [("reference_lightness", ControlValue::Number(l))] = shown.settings[..] else {
+        panic!("{:?}", shown.settings)
+    };
+    assert!((0.0..=100.0).contains(&l), "{l}");
+    for event in &events {
+        if let Event::Values(values) = event {
+            assert_eq!(number(values, "exposure", "exposure"), before);
+        }
+    }
+    driven.run([picker(PickerCommand::Off)]);
+    assert_eq!(steps(&driven), start);
+    remove(&path);
+}
+
 /// A pick that ends a person's slider gesture under way, on another tool, makes the
 /// gesture a step of its own source first, You, never the pick's Auto.
 #[test]

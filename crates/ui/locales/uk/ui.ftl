@@ -933,6 +933,16 @@ picker-patch-lch-tip = Ці координати LCh обчислено з ко�
 picker-patch-lightness = L: { $value }%
 picker-patch-none = L: н/д
 
+reference-value = L { $lightness } %
+reference-photo = · { $photo }
+reference-this-photo = · цей знімок
+reference-none = немає
+reference-measuring = вимірювання…
+reference-gone = Знімка, на якому його виміряно, більше немає
+reference-more = Параметри еталона
+reference-clear = Очистити еталон
+reference-set = Задати еталон за ділянкою
+
 ## Вікно експорту (docs/gui.md, The Export dialog): модуль експорту darktable, назви
 ## з великої літери лише першого слова. $count — кількість знімків, один знімок — точне
 ## число 1. $file — назва знімка чи файлу, $source — вихідний raw, $folder — тека, $width

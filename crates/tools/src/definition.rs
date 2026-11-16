@@ -122,8 +122,8 @@ pub struct Picker {
     pub writes: &'static [&'static str],
     /// The tool's settings its pick reads ([`Row::Setting`]), each once.
     pub settings: &'static [&'static str],
-    /// The choice setting of the tool ([`Row::Setting`]) whose option says what a pick will do, and
-    /// so chooses the picker's tooltip and its hint over the photo (decision 88):
+    /// The choice setting of the tool ([`Row::Setting`]) whose option says what a pick will
+    /// do, and so chooses the picker's tooltip and its hint over the photo (decision 88):
     /// `tool-<tool>-picker-<picker>-promise-<option>` and `-hint-<option>`
     /// ([`crate::messages::picker_option`]), as Exposure's Picker target does. Each
     /// option of that setting has a tooltip of its own in the list
@@ -451,6 +451,19 @@ pub enum Row {
     /// value at the end, read-only. It is no control; its value comes from the session with
     /// the tool's state (`ToolState::computed`), none while the operation computes none.
     Computed(Computed),
+    /// A reference kept across photos (decision 88), as Exposure's under Picker target's
+    /// Reference: one line, its label the picker's, the reference's patch, its L and the
+    /// name of the photo it was measured on, the picker that measures it, and ⋯ with Clear
+    /// Reference and Set Reference from an Area; its words are shared
+    /// ([`crate::messages::REFERENCE`]). The picker writes no control: its pick hands
+    /// `lightness` back ([`crate::pick::Shown::settings`]), and the client keeps it with
+    /// the open photo's path as `photo`. Both are settings of the tool, set and cleared
+    /// together, optional, a number and a text, which no other row shows. It is no control.
+    Reference {
+        picker: &'static str,
+        lightness: &'static str,
+        photo: &'static str,
+    },
     /// darktable's guides widget, which it adds to a module with
     /// `IOP_FLAGS_GUIDES_WIDGET` (`dt_guides_init_module_widget`): its show guides
     /// toggle, the overlay while the module has focus, kept in darktablerc and never in
@@ -515,18 +528,21 @@ impl Row {
             | Row::Pickers { .. }
             | Row::Patches { .. }
             | Row::Computed(_)
+            | Row::Reference { .. }
             | Row::Guides => &[],
             Row::Custom { controls, .. } => controls,
         }
     }
 
-    /// The pickers the row shows: a slider's quad's, or a row of picker buttons'.
+    /// The pickers the row shows: a slider's quad's, a row of picker buttons', or a
+    /// reference's.
     pub fn pickers(&self) -> &[&'static str] {
         match self {
             Row::Slider(Slider {
                 quad: Some(Quad::Picker(picker)),
                 ..
-            }) => std::slice::from_ref(picker),
+            })
+            | Row::Reference { picker, .. } => std::slice::from_ref(picker),
             Row::Pickers { pickers, .. } => pickers,
             _ => &[],
         }
@@ -910,6 +926,8 @@ pub enum DefinitionError {
     PickerWrites(&'static str),
     #[error("the picker {0} reads a setting the tool lacks, or one twice")]
     PickerSettings(&'static str),
+    #[error("the reference row's picker {0} writes controls; a reference's picker only measures")]
+    ReferenceWrites(&'static str),
     #[error("the picker {0}'s words follow no choice setting of the tool")]
     WordsBy(&'static str),
     #[error("a row shows the picker {0}, which the tool lacks")]
@@ -1049,7 +1067,9 @@ impl Definition {
     /// tool and reads its settings, each once, its words following a choice setting of the
     /// tool if any, and is in exactly one row, a slider's quad or a row of pickers, which
     /// holds at least one. Rows following a setting follow a choice setting of the tool,
-    /// shown wherever they are, for options it has, and hold no control and not it.
+    /// shown wherever they are, for options it has, and hold no control and not it. A
+    /// reference row's picker writes no control, and its two settings are the tool's,
+    /// each once.
     pub fn check(&self) -> Result<(), DefinitionError> {
         if !is_id(self.id) {
             return Err(DefinitionError::Id(self.id));
@@ -1214,6 +1234,25 @@ impl Definition {
                         return Err(DefinitionError::DuplicateSetting(setting.id));
                     }
                     setting.check()?;
+                }
+                // Its two settings are the tool's, each once, and its picker writes no
+                // control.
+                Row::Reference {
+                    picker,
+                    lightness,
+                    photo,
+                } => {
+                    for id in [lightness, photo] {
+                        if !is_id(id) {
+                            return Err(DefinitionError::Id(id));
+                        }
+                        if !settings.insert(*id) {
+                            return Err(DefinitionError::DuplicateSetting(id));
+                        }
+                    }
+                    if self.picker(picker).is_some_and(|p| !p.writes.is_empty()) {
+                        return Err(DefinitionError::ReferenceWrites(picker));
+                    }
                 }
                 Row::Action { id } => {
                     if !is_id(id) {
@@ -1624,10 +1663,12 @@ fn shows(rows: &[Row], control: &str) -> bool {
         .any(|row| row.controls().contains(&control) || shows(row.rows(), control))
 }
 
-/// Whether `rows`, or the rows inside them, show any control.
+/// Whether `rows`, or the rows inside them, show any control or a preset row, which writes
+/// controls.
 fn holds_control(rows: &[Row]) -> bool {
-    rows.iter()
-        .any(|row| !row.controls().is_empty() || holds_control(row.rows()))
+    rows.iter().any(|row| {
+        matches!(row, Row::Preset { .. }) || !row.controls().is_empty() || holds_control(row.rows())
+    })
 }
 
 /// Whether `rows`, or the rows inside them, show the setting `setting`.
@@ -2817,6 +2858,96 @@ mod tests {
         assert_eq!(by(Some("gamma"), &[]), wrong);
         assert_eq!(by(Some("mode"), &[]), wrong);
         assert_eq!(by(Some("scale"), &[Row::Setting(SCALE)]), wrong);
+    }
+
+    /// A reference row (decision 88): its picker one that writes no control, shown there
+    /// alone, and its two settings the tool's, which a picker may then read.
+    #[test]
+    fn a_reference_row_names_a_picker_that_writes_nothing_and_two_settings() {
+        const MEASURE: Picker = Picker {
+            id: "measure",
+            writes: &[],
+            settings: &["reference_l"],
+            ..LEVEL
+        };
+        let reference = |picker, lightness, photo| Row::Reference {
+            picker,
+            lightness,
+            photo,
+        };
+        let row = reference("measure", "reference_l", "reference_photo");
+        assert!(row.controls().is_empty());
+        assert_eq!(row.pickers(), ["measure"]);
+        let contrast = Row::Slider(Slider::new("contrast"));
+        assert_eq!(
+            picking(&[MEASURE], &[contrast.clone(), row.clone()]),
+            Ok(())
+        );
+        // Another picker may read its L, as Exposure's does.
+        let quad = Row::Slider(Slider::new("contrast").quad(Quad::Picker("level")));
+        let reads = Picker {
+            settings: &["chart", "reference_l"],
+            ..LEVEL
+        };
+        assert_eq!(picking(&[reads, MEASURE], &[quad, row.clone()]), Ok(()));
+        // Its picker writes no control, is the tool's, and shows nowhere else.
+        let writes = Picker {
+            writes: &["detail"],
+            ..MEASURE
+        };
+        assert_eq!(
+            picking(&[writes], &[contrast.clone(), row.clone()]),
+            Err(DefinitionError::ReferenceWrites("measure"))
+        );
+        assert_eq!(
+            picking(&[], &[contrast.clone(), row.clone()]),
+            Err(DefinitionError::UnknownPicker("measure"))
+        );
+        let twice = Row::Slider(Slider::new("contrast").quad(Quad::Picker("measure")));
+        assert_eq!(
+            picking(&[MEASURE], &[twice, row]),
+            Err(DefinitionError::PickerRows {
+                picker: "measure",
+                rows: 2
+            })
+        );
+        // Its settings are ids of their own among the tool's.
+        let clash = reference("measure", "chart", "reference_photo");
+        assert_eq!(
+            picking(&[MEASURE], &[contrast.clone(), clash]),
+            Err(DefinitionError::DuplicateSetting("chart"))
+        );
+        let named = reference("measure", "reference_l", "Photo");
+        assert_eq!(
+            picking(&[MEASURE], &[contrast, named]),
+            Err(DefinitionError::Id("Photo"))
+        );
+    }
+
+    #[test]
+    fn rows_that_follow_a_setting_hold_no_preset_row() {
+        // A preset row writes controls, so it never follows the app's settings either:
+        // a control it alone shows would vanish with the setting's other option.
+        let look = Row::Preset {
+            preset: "look",
+            style: ChoiceStyle::List,
+        };
+        let definition = Definition {
+            before: Box::leak(Box::new([
+                Row::Setting(CHART),
+                when_chart(&["passport"], &[look]),
+            ])),
+            presets: &[PresetRow {
+                id: "look",
+                options: &["soft"],
+                controls: &["amount"],
+            }],
+            ..PAGE
+        };
+        assert_eq!(
+            definition.check(),
+            Err(DefinitionError::SettingCondition("chart"))
+        );
     }
 
     #[test]

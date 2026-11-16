@@ -1213,6 +1213,19 @@ picker-patch-lch-tip = These LCh coordinates are computed from CIE Lab 1976 coor
 picker-patch-lightness = L: { $value }%
 picker-patch-none = L: N/A
 
+## A reference row (docs/pickers.md, Declaring pickers; decision 88): an area's L kept across
+## photos: its L, $lightness in the language's numbers, then the photo it was measured on,
+## $photo its name, drawn after the L as a part of its own, dimmed once the photo is gone.
+reference-value = L { $lightness } %
+reference-photo = · { $photo }
+reference-this-photo = · this photo
+reference-none = none
+reference-measuring = measuring…
+reference-gone = The photo it was measured on is no longer there
+reference-more = Reference options
+reference-clear = Clear Reference
+reference-set = Set Reference from an Area
+
 ## The Export dialog (docs/gui.md, The Export dialog): darktable's export module, its
 ## labels in sentence case. $count is the photos, a single one the exact number 1. $file
 ## is a photo's name or a file's, $source the raw, $folder a folder, $width and $height

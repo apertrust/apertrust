@@ -162,14 +162,13 @@ static CONTROLS: [Control; 7] = [
 
 /// Picker target, under Exposure in manual mode, in place of darktable's area exposure
 /// mapping (decision 88): what Exposure's picker makes of the area picked, a setting no
-/// edit stores, kept in settings as `tools.exposure.target`. Reference is listed but
-/// cannot be chosen yet (`unported`): its row and its picker are still to come.
+/// edit stores, kept in settings as `tools.exposure.target`.
 const TARGET: Row = Row::Setting(SettingRow {
     id: "target",
     kind: ControlKind::Choice {
         options: &TARGETS,
         default: 0,
-        unported: &["reference"],
+        unported: &[],
     },
     decimals: 0,
     track: Track::Plain,
@@ -195,6 +194,22 @@ const LIGHTNESS: Row = Row::WhenSetting {
     })],
 };
 
+/// The reference, under Picker target while it holds Reference: an area's L measured by
+/// its own picker on any photo, kept in settings with the photo's path, across photos,
+/// folders and restarts, until set again or cleared (decision 88).
+const REFERENCE: Row = Row::WhenSetting {
+    setting: "target",
+    is: &["reference"],
+    rows: &[Row::Reference {
+        picker: "reference",
+        lightness: REFERENCE_LIGHTNESS,
+        photo: "reference_photo",
+    }],
+};
+
+/// The setting holding the reference's L, `tools.exposure.reference_lightness`.
+const REFERENCE_LIGHTNESS: &str = "reference_lightness";
+
 /// Picker target's options, in the board's order.
 const TARGETS: [&str; 3] = ["middle_grey", "lightness", "reference"];
 
@@ -210,7 +225,8 @@ pub enum PickerTarget {
     MiddleGrey,
     /// The L the setting `tools.exposure.lightness` holds.
     Lightness,
-    /// The L of an area measured on another photo, still to come.
+    /// The L of an area measured by the reference's picker, on this photo or another,
+    /// `tools.exposure.reference_lightness`.
     Reference,
 }
 
@@ -264,6 +280,7 @@ static DEFINITION: Definition = Definition {
                     ),
                     TARGET,
                     LIGHTNESS,
+                    REFERENCE,
                     Row::Toggle {
                         control: "camera_bias",
                     },
@@ -294,7 +311,7 @@ static DEFINITION: Definition = Definition {
     after: &[],
     presets: &[],
     views: &[],
-    pickers: &[PICKER],
+    pickers: &[PICKER, REFERENCE_PICKER],
     // darktable's `description()` in src/iop/exposure.c at the reference release.
     facts: Some(Facts {
         purpose: Purpose::CorrectiveAndCreative,
@@ -306,8 +323,8 @@ static DEFINITION: Definition = Definition {
 
 /// darktable's picker on Exposure (`DT_COLOR_PICKER_AREA`): the exposure that maps the
 /// area to Picker target's lightness, the black kept below the new white; its pick comes
-/// with Picker target and Lightness, and its tooltip and hint over the photo follow
-/// Picker target (decision 88).
+/// with Picker target, Lightness and the reference, and its tooltip and hint over the
+/// photo follow Picker target (decision 88).
 const PICKER: Picker = Picker {
     id: "exposure",
     operation: EXPOSURE,
@@ -317,8 +334,25 @@ const PICKER: Picker = Picker {
     space: Space::Operation,
     keep: false,
     writes: &["exposure", "black_level"],
-    settings: &["target", "lightness"],
+    settings: &["target", "lightness", REFERENCE_LIGHTNESS],
     words_by: Some("target"),
+};
+
+/// The reference row's picker (decision 88): an area of the exposure operation's input,
+/// as Exposure's, that writes no control. Its pick measures the area by darktable's
+/// measure mode's arithmetic and hands its L back as the reference. It reads no setting: the
+/// reference it hands back is never its input, so a change of it never picks again.
+const REFERENCE_PICKER: Picker = Picker {
+    id: "reference",
+    operation: EXPOSURE,
+    kind: PickerKind::Area,
+    denoise: false,
+    output: false,
+    space: Space::Operation,
+    keep: false,
+    writes: &[],
+    settings: &[],
+    words_by: None,
 };
 
 /// Every parameter of `exposure`: the tool is darktable's and owns them all.
@@ -511,11 +545,15 @@ impl Tool for Exposure {
     ///   written as Black level correction over the photo's own black.
     /// - darktable bounds neither: the session holds them to their ranges, and leaves out
     ///   a target lightness of 0's, which is not finite, showing the patch still.
-    /// - **Reference,** still to come, has no lightness yet: the patch alone, nothing
-    ///   written.
+    /// - **Reference:** toward `tools.exposure.reference_lightness`; with none set, the
+    ///   patch alone and nothing written, the picker not being ready
+    ///   ([`Tool::picker_ready`]).
     ///
-    /// darktable's measure mode is gone (decision 88). Nothing on a colour raw with no
-    /// matrix, which colorin cannot render, as darktable returns with no input profile.
+    /// The reference row's picker, `reference`, takes darktable's measure mode's
+    /// arithmetic (`exposure.c:900-934`): no control, and the L the area renders at at the
+    /// current exposure, held to 0 to 100, handed back as `reference_lightness`
+    /// (`Shown::settings`). Nothing on a colour raw with no matrix, which colorin cannot
+    /// render, as darktable returns with no input profile.
     fn pick(
         &self,
         picker: &str,
@@ -527,7 +565,7 @@ impl Tool for Exposure {
         _last: Option<&Reading>,
         _keys: PickKeys,
     ) -> Option<Picked> {
-        if picker != PICKER.id {
+        if picker != PICKER.id && picker != REFERENCE_PICKER.id {
             return None;
         }
         let [r, g, b, _] = reading.input.mean;
@@ -535,26 +573,12 @@ impl Tool for Exposure {
         // darktable makes it grey to keep only its lightness.
         let lightness = xyz_to_lab_d50(xyz)[0];
         let grey = lab_to_xyz_d50([lightness, 0.0, 0.0]);
-        let shown = Shown {
+        let mut shown = Shown {
             patch: Some(Patch {
                 srgb: apertrust_color::xyz_d50_to_srgb(grey).map(|c| c.clamp(0.0, 1.0)),
                 lch: [lightness, 0.0, 0.0],
             }),
             settings: Vec::new(),
-        };
-        let setting = |id: &str| settings.iter().find(|(s, _)| *s == id).map(|(_, v)| v);
-        let target = match PickerTarget::of(setting("target")) {
-            PickerTarget::MiddleGrey => MIDDLE_GREY,
-            PickerTarget::Lightness => match setting("lightness") {
-                Some(&ControlValue::Number(target)) => target,
-                _ => MIDDLE_GREY,
-            },
-            PickerTarget::Reference => {
-                return Some(Picked {
-                    writes: Controls::new(),
-                    shown,
-                });
-            }
         };
         let exposure = values.number("exposure");
         let bias = taken_off(
@@ -563,6 +587,27 @@ impl Tool for Exposure {
             values.flag("compensate_hilite_pres"),
         );
         let mut writes = Controls::new();
+        if picker == REFERENCE_PICKER.id {
+            // Measure mode's: the exposure the operation applies, `exposure2white(-expo)`
+            // its factor.
+            let white = exposure_to_white(-(exposure - bias));
+            let out = xyz_to_lab_d50(grey.map(|c| c * white))[0];
+            let out = ControlValue::Number(out.clamp(0.0, 100.0));
+            shown.settings.push((REFERENCE_LIGHTNESS, out));
+            return Some(Picked { writes, shown });
+        }
+        let setting = |id: &str| settings.iter().find(|(s, _)| *s == id).map(|(_, v)| v);
+        let target = match PickerTarget::of(setting("target")) {
+            PickerTarget::MiddleGrey => MIDDLE_GREY,
+            PickerTarget::Lightness => match setting("lightness") {
+                Some(&ControlValue::Number(target)) => target,
+                _ => MIDDLE_GREY,
+            },
+            PickerTarget::Reference => match setting(REFERENCE_LIGHTNESS) {
+                Some(&ControlValue::Number(target)) => target,
+                _ => return Some(Picked { writes, shown }),
+            },
+        };
         let target = lab_to_xyz_d50([target, 0.0, 0.0]);
         let expo = -white_to_exposure(grey[1] / target[1]) - bias;
         // `_exposure_set_white`.
@@ -580,6 +625,15 @@ impl Tool for Exposure {
             }
         }
         Some(Picked { writes, shown })
+    }
+
+    /// Exposure's picker is not ready while Picker target holds Reference and no reference
+    /// is set (decision 88); the reference's own picker always is.
+    fn picker_ready(&self, picker: &str, settings: &[(&str, ControlValue)]) -> bool {
+        let setting = |id: &str| settings.iter().find(|(s, _)| *s == id).map(|(_, v)| v);
+        picker != PICKER.id
+            || PickerTarget::of(setting("target")) != PickerTarget::Reference
+            || matches!(setting(REFERENCE_LIGHTNESS), Some(ControlValue::Number(_)))
     }
 }
 
@@ -877,6 +931,7 @@ mod tests {
                 "exposure",
                 "setting target",
                 "target is [\"lightness\"]: 1 rows",
+                "target is [\"reference\"]: 1 rows",
                 "camera_bias",
                 "compensate_hilite_pres",
             ]
@@ -900,10 +955,23 @@ mod tests {
             _ => None,
         });
         assert_eq!(lightness, Some(Track::Lightness));
+        // The reference row under Reference, its picker the reference's.
+        let reference = DEFINITION.rows().find_map(|row| match row {
+            Row::Reference {
+                picker,
+                lightness,
+                photo,
+            } => Some((*picker, *lightness, *photo)),
+            _ => None,
+        });
+        assert_eq!(
+            reference,
+            Some(("reference", "reference_lightness", "reference_photo"))
+        );
     }
 
-    /// Picker target's options, the board's, `PickerTarget`'s, Middle grey the default;
-    /// Reference listed but not yet to be chosen, its row and picker to come.
+    /// Picker target's options, the board's, `PickerTarget`'s, Middle grey the default,
+    /// each one to be chosen.
     #[test]
     fn picker_target_lists_middle_grey_lightness_and_reference() {
         let Some(ControlKind::Choice {
@@ -925,7 +993,7 @@ mod tests {
             PickerTarget::default()
         );
         assert_eq!(PickerTarget::default(), PickerTarget::MiddleGrey);
-        assert_eq!(unported, ["reference"]);
+        assert!(unported.is_empty());
         assert_eq!(DEFINITION.choice_setting("target"), Some(&TARGETS[..]));
         assert_eq!(PICKER.words_by, Some("target"));
     }
@@ -1296,20 +1364,34 @@ mod tests {
 
     /// darktable's picker on Exposure (`exposure.c:1211`): an area, writing the exposure
     /// and the black `_exposure_set_white` keeps below the new white (`:763-779`), and
-    /// reading Picker target and Lightness, which replace the area exposure mapping's
-    /// settings (`:866-973`; decision 88).
+    /// reading Picker target, Lightness and the reference, which replace the area exposure
+    /// mapping's settings (`:866-973`; decision 88). The reference row's picker is
+    /// darktable's measure mode's, an area of the same input that writes nothing.
     #[test]
     fn its_picker_is_darktable_s() {
-        let darktable = [DarktablePicker {
-            id: "exposure",
-            slider: "exposure",
-            kind: PickerKind::Area,
-            denoise: false,
-            output: false,
-            writes: &["exposure", "black_level"],
-            settings: &["target", "lightness"],
-        }];
+        let darktable = [
+            DarktablePicker {
+                id: "exposure",
+                slider: "exposure",
+                kind: PickerKind::Area,
+                denoise: false,
+                output: false,
+                writes: &["exposure", "black_level"],
+                settings: &["target", "lightness", "reference_lightness"],
+            },
+            // On the reference row, no slider's.
+            DarktablePicker {
+                id: "reference",
+                slider: "",
+                kind: PickerKind::Area,
+                denoise: false,
+                output: false,
+                writes: &[],
+                settings: &[],
+            },
+        ];
         assert_eq!(crate::testing::pickers_on_sliders(&DEFINITION), darktable);
+        assert_eq!(DEFINITION.picker("reference").unwrap().operation, EXPOSURE);
     }
 
     #[test]
@@ -1715,22 +1797,130 @@ mod tests {
         );
     }
 
-    /// Reference, still to come, has no lightness to pick toward: the patch alone, nothing
-    /// written. darktable's measure mode is gone (decision 88): no pick gives a setting back.
+    /// The reference row's picker's reading of `rgb` at `values`.
+    fn measure(image: &ImageContext, rgb: [f32; 3], values: &Controls) -> Picked {
+        Exposure
+            .pick(
+                "reference",
+                &reading(rgb),
+                values,
+                image,
+                &[],
+                None,
+                None,
+                PickKeys::default(),
+            )
+            .unwrap()
+    }
+
+    /// Picker target at Reference, with the reference at `lightness`, or none.
+    fn toward_reference(lightness: Option<f32>) -> Vec<(&'static str, ControlValue)> {
+        let mut settings = target("reference", 50.0).to_vec();
+        if let Some(lightness) = lightness {
+            settings.push(("reference_lightness", number(lightness)));
+        }
+        settings
+    }
+
+    /// Toward Reference, Exposure's pick is the correction toward the reference's L,
+    /// exactly Lightness's at that L; with no reference, the patch alone and nothing
+    /// written. An option it does not list picks as Middle grey.
     #[test]
-    fn toward_reference_its_pick_writes_nothing_yet_and_none_gives_a_setting_back() {
+    fn toward_reference_its_pick_takes_the_reference_s_lightness() {
         let image = raw(-0.67);
         let values = values(&image, &[]);
-        let rgb = [0.18, 0.12, 0.1];
-        let reference = pick(&image, rgb, &values, &target("reference", 50.0));
-        assert!(reference.writes.is_empty());
-        let lightness = pick(&image, rgb, &values, &toward(50.0));
-        assert_eq!(reference.shown, lightness.shown);
-        assert!(lightness.shown.settings.is_empty());
-        // An option it does not list, as a settings file from a later version might hold,
-        // picks as Middle grey.
+        for rgb in [[0.18, 0.12, 0.1], [0.05; 3], [0.7, 0.4, 0.9]] {
+            for l in [12.5, 50.0, 62.0, 92.0] {
+                let reference = pick(&image, rgb, &values, &toward_reference(Some(l)));
+                assert_eq!(reference, pick(&image, rgb, &values, &toward(l)), "{l}");
+            }
+            let none = pick(&image, rgb, &values, &toward_reference(None));
+            assert!(none.writes.is_empty());
+            let lightness = pick(&image, rgb, &values, &toward(50.0));
+            assert_eq!(none.shown, lightness.shown);
+            assert!(lightness.shown.settings.is_empty());
+        }
         let unknown = [("target", ControlValue::Choice(7))];
-        assert_eq!(pick(&image, rgb, &values, &unknown), lightness);
+        let rgb = [0.18, 0.12, 0.1];
+        assert_eq!(
+            pick(&image, rgb, &values, &unknown),
+            pick(&image, rgb, &values, &toward(50.0))
+        );
+    }
+
+    /// The reference row's picker takes darktable's measure mode's arithmetic: the L the
+    /// area renders at at the current exposure, the bias the operation takes off and the
+    /// exposure it gives back included, held to 0 to 100, handed back as the reference,
+    /// and writes nothing (E54). Picked toward on the same photo, it asks for no change.
+    #[test]
+    fn the_reference_picker_measures_the_area_s_lightness_and_writes_nothing() {
+        for (image, compensated, exposure) in [
+            (ImageContext::full(8, 8), false, 1.0),
+            (raw(-0.67), true, 0.7),
+            (raw(-0.67), false, -2.0),
+            (preserving(-0.67, 0.5), true, 0.7),
+        ] {
+            let set = [
+                ("exposure", number(exposure)),
+                ("camera_bias", ControlValue::Bool(compensated)),
+            ];
+            // Highlight preservation mode is on, by default: what it gives back adds.
+            let bias = if compensated {
+                f64::from(camera_bias(&image))
+            } else {
+                0.0
+            } - f64::from(highlight_bias(&image));
+            let rgb = [0.18, 0.12, 0.1];
+            let values = values(&image, &set);
+            let measured = measure(&image, rgb, &values);
+            assert!(measured.writes.is_empty());
+            let y = luminance(&image, rgb) * (f64::from(exposure) - bias).exp2();
+            let expected = 116.0 * y.cbrt() - 16.0;
+            let [("reference_lightness", ControlValue::Number(l))] = measured.shown.settings[..]
+            else {
+                panic!("{:?}", measured.shown.settings)
+            };
+            assert!((f64::from(l) - expected).abs() < 1e-3, "{l} for {expected}");
+            // Its patch is the input's, as Exposure's picker shows it.
+            let input = pick(&image, rgb, &values, &toward(50.0));
+            assert_eq!(measured.shown.patch, input.shown.patch);
+            // Toward it on the same photo, Exposure stays where it is.
+            let back = pick(&image, rgb, &values, &toward_reference(Some(l)));
+            let written = back.writes.get("exposure").map_or(exposure, |v| match v {
+                ControlValue::Number(n) => *n,
+                _ => unreachable!(),
+            });
+            assert!(
+                (written - exposure).abs() < 1e-4,
+                "{written} for {exposure}"
+            );
+        }
+        // Held to 0 to 100, as darktable's slider holds it.
+        let image = ImageContext::full(8, 8);
+        let bright = measure(
+            &image,
+            [4.0; 3],
+            &values(&image, &[("exposure", number(4.0))]),
+        );
+        assert_eq!(
+            bright.shown.settings,
+            [("reference_lightness", ControlValue::Number(100.0))]
+        );
+    }
+
+    /// Exposure's picker is not ready toward Reference with no reference set; ready
+    /// otherwise, as the reference's own picker always is.
+    #[test]
+    fn exposure_s_picker_waits_for_a_reference() {
+        let ready =
+            |picker, settings: &[(&str, ControlValue)]| Exposure.picker_ready(picker, settings);
+        assert!(!ready("exposure", &toward_reference(None)));
+        assert!(ready("exposure", &toward_reference(Some(62.0))));
+        for option in ["middle_grey", "lightness"] {
+            assert!(ready("exposure", &target(option, 50.0)));
+        }
+        assert!(ready("exposure", &[]));
+        assert!(ready("reference", &toward_reference(None)));
     }
 
     #[test]

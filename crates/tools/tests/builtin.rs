@@ -105,7 +105,8 @@ fn every_built_in_tool_is_accepted() {
 
 /// darktable's pickers on the built tools' sliders, each named by its quad (decision
 /// 79; `docs/pickers.md`, The first pass's pickers). White balance's, Colour calibration's
-/// and AgX's Auto tune levels come with their buttons' rows; no built tool picks yet.
+/// and AgX's Auto tune levels come with their buttons' rows; Exposure's reference picker is
+/// on its reference row (decision 88).
 #[test]
 fn the_built_in_tools_declare_darktable_s_pickers_on_their_sliders() {
     let pickers: Vec<(&str, Vec<&str>)> = TOOLS
@@ -123,7 +124,7 @@ fn the_built_in_tools_declare_darktable_s_pickers_on_their_sliders() {
         pickers,
         [
             ("agx", vec!["white", "black", "pivot", "pivot_output"]),
-            ("exposure", vec!["exposure"]),
+            ("exposure", vec!["exposure", "reference"]),
             (
                 "colorbalancergb",
                 vec![
@@ -749,6 +750,26 @@ fn every_message_a_definition_implies_is_translated() {
                 {
                     wanted.push(messages::option_unavailable(definition.id, control, option));
                 }
+            }
+        }
+        // A picker that is not ready is drawn disabled with its reason (decision 88), so
+        // each picker some option of its words' setting leaves unready, with only the
+        // settings that have a default, needs one.
+        for picker in definition.pickers {
+            let options = picker
+                .words_by
+                .and_then(|setting| Some((setting, definition.choice_setting(setting)?)));
+            let tried: Vec<Vec<(&str, ControlValue)>> = match options {
+                Some((setting, options)) => (0..options.len())
+                    .map(|at| vec![(setting, ControlValue::Choice(at as u32))])
+                    .collect(),
+                None => vec![Vec::new()],
+            };
+            if tried
+                .iter()
+                .any(|settings| !tool.picker_ready(picker.id, settings))
+            {
+                wanted.push(messages::picker_unavailable(definition.id, picker.id));
             }
         }
     }

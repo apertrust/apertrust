@@ -594,6 +594,16 @@ fn flat_pick(
     patch: [f32; 4],
     settings: &[(&str, ControlValue)],
 ) -> apertrust_tools::pick::Picked {
+    flat_pick_by("exposure", image, patch, settings)
+}
+
+/// `picker`'s pick of a flat `patch` at Exposure's defaults on `image`.
+fn flat_pick_by(
+    picker: &str,
+    image: &ImageContext,
+    patch: [f32; 4],
+    settings: &[(&str, ControlValue)],
+) -> apertrust_tools::pick::Picked {
     use apertrust_tools::pick::{PickKeys, Reading, Stats};
     let stats = Stats {
         mean: patch,
@@ -606,7 +616,7 @@ fn flat_pick(
     };
     Exposure
         .pick(
-            "exposure",
+            picker,
             &reading,
             &Exposure.defaults(image),
             image,
@@ -676,6 +686,66 @@ fn e52_middle_grey_picks_exactly_what_lightness_at_50_picks() {
                     "E52: {patch:?}, bias {bias}, Lightness at {held}"
                 );
             }
+        }
+    }
+}
+
+/// The reference's L the reference row's picker hands back for `patch` on `image`.
+fn measured(image: &ImageContext, patch: [f32; 4]) -> f32 {
+    let picked = flat_pick_by("reference", image, patch, &[]);
+    match picked.shown.settings[..] {
+        [("reference_lightness", ControlValue::Number(l))] => l,
+        _ => panic!("{:?}", picked.shown.settings),
+    }
+}
+
+/// E53: a reference measured on one photo, then picked toward on another, renders the
+/// area at the reference's L at Exposure's output, Black level correction at 0 on both,
+/// as E50 holds: E50's patches measured on a colour raw with no bias, picked toward on
+/// one with a bias of −0.67 EV, and the other way round (decision 88).
+#[test]
+fn e53_a_reference_matches_an_area_across_two_photos() {
+    use exposure::PickerTarget::Reference;
+    let mut worst = 0.0_f64;
+    for (from, to) in [(0.0, -0.67), (-0.67, 0.0)] {
+        let source = raw_context(1, 1, from);
+        let (picture, image) = Picture::row(PATCHES.to_vec(), to);
+        let mut bench = Bench::picture(&picture, image.clone(), SCENE);
+        let to_xyz = exposure::input_profile(&image).unwrap();
+        let luminance = |rgb: &[f32; 4]| {
+            (0..3)
+                .map(|c| f64::from(to_xyz[1][c] * rgb[c]))
+                .sum::<f64>()
+        };
+        for (at, patch) in picture.pixels.iter().enumerate() {
+            let l = measured(&source, PATCHES[at]);
+            let mut settings = picker_target(Reference, 50.0).to_vec();
+            settings.push(("reference_lightness", ControlValue::Number(l)));
+            let picked = flat_pick(&image, *patch, &settings);
+            let exposure = picked.writes.number("exposure");
+            let output = bench.set(&[("exposure", exposure)], Measure::Tool);
+            let target_y = ((f64::from(l) + 16.0) / 116.0).powi(3);
+            let off = (luminance(&output.pixels[at]) / target_y).log2().abs();
+            worst = worst.max(off);
+            assert!(
+                off <= 0.01,
+                "E53: {patch:?} at L {l}, biases {from} to {to}: {off:.4} EV off"
+            );
+        }
+    }
+    println!("E53: at most {worst:.4} EV from the reference");
+}
+
+/// E54: the reference row's picker writes nothing, exactly, on every patch and photo; it
+/// only hands the reference's L back (decision 88).
+#[test]
+fn e54_the_reference_picker_writes_nothing() {
+    for bias in [0.0, -0.67] {
+        let image = raw_context(1, 1, bias);
+        for patch in PATCHES {
+            let picked = flat_pick_by("reference", &image, patch, &[]);
+            assert!(picked.writes.is_empty(), "E54: {patch:?}");
+            assert_eq!(picked.shown.settings.len(), 1);
         }
     }
 }

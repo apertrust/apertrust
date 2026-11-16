@@ -78,8 +78,8 @@ use apertrust_tools::{
 use apertrust_ui::components::{
     self as parts, ActionRow, ButtonState, ButtonsAction, ButtonsRow, Choice, ChoiceAction,
     CollapsibleGroup, Curve, CurveAction, Equalizer, EqualizerAction, IconButton, PickerAction,
-    PickerButton, ReadoutRow, Section, SectionAction, Segmented, SliderAction, SliderRow,
-    ToggleRow, group_label,
+    PickerButton, ReadoutRow, Reference, ReferenceAction, ReferenceRow, Section, SectionAction,
+    Segmented, SliderAction, SliderRow, ToggleRow, group_label,
 };
 use apertrust_ui::i18n::Args;
 use apertrust_ui::{Translator, translator};
@@ -156,6 +156,13 @@ pub enum Change {
         value: ControlValue,
         done: bool,
     },
+    /// A reference cleared, ⋯ › Clear Reference (decision 88): both its settings gone from
+    /// the app's, which sends the tool's settings as `PickerCommand::Settings`.
+    ClearReference {
+        tool: &'static str,
+        lightness: &'static str,
+        photo: &'static str,
+    },
 }
 
 /// The tools whose pickers the panel draws: those whose pick is built, each joining with
@@ -164,7 +171,7 @@ pub enum Change {
 pub const PICKING: &[&str] = &["exposure"];
 
 /// The colour pickers as a section draws them.
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy)]
 pub struct Pickers<'a> {
     /// The tools whose pickers are drawn ([`PICKING`]).
     pub drawn: &'a [&'a str],
@@ -180,6 +187,16 @@ pub struct Pickers<'a> {
     pub settings: &'a ToolSettings,
     /// What the tools' picks showed on the photo, for their patches.
     pub picked: &'a Picked,
+    /// The photo open or opening, which a reference measured on it names as this photo.
+    pub photo: Option<&'a std::path::Path>,
+    /// Whether the photo at a path a reference keeps was found gone (decision 88).
+    pub gone: &'a dyn Fn(&str) -> bool,
+}
+
+/// No photo found gone, as before any is asked after.
+#[cfg(test)]
+pub fn none_gone(_: &str) -> bool {
+    false
 }
 
 /// No tool setting kept and nothing picked.
@@ -198,6 +215,8 @@ impl Pickers<'static> {
         why: None,
         settings: &NO_SETTINGS,
         picked: &NOTHING_PICKED,
+        photo: None,
+        gone: &none_gone,
     };
 }
 
@@ -937,6 +956,7 @@ fn draw_row(ui: &mut egui::Ui, page: &Page, row: &Row, changes: &mut Vec<Change>
             | Row::Pickers { .. }
             | Row::Patches { .. }
             | Row::Computed(_)
+            | Row::Reference { .. }
             | Row::Guides
     );
     let top = ui.cursor().top();
@@ -991,6 +1011,11 @@ fn draw_kind(ui: &mut egui::Ui, page: &Page, row: &Row, changes: &mut Vec<Change
         Row::Patches { picker, target } => patches_row(ui, page, picker, target),
         Row::Action { id } => action_row(ui, words, definition.id, id),
         Row::Computed(computed) => computed_row(ui, words, definition.id, computed, state),
+        Row::Reference {
+            picker,
+            lightness,
+            photo,
+        } => reference_row(ui, page, picker, lightness, photo, changes),
         Row::Pickers { label, pickers } => pickers_row(ui, page, *label, pickers, changes),
         Row::Buttons { control, buttons } => {
             buttons_row(ui, words, definition, control, buttons, state, changes);
@@ -1333,6 +1358,121 @@ fn lightness_ramp(min: f32, max: f32) -> parts::Track {
     )
 }
 
+/// A reference row (`Row::Reference`, decision 88), the design system's `ReferenceRow`:
+/// its label the picker's, the reference as the app keeps it, its patch the grey of its L
+/// and the name of the photo it was measured on, "this photo" where that is the photo
+/// open, dimmed once found gone; "measuring…" while its picker is on, "none" with none
+/// set. Its picker's button as the tool's other pickers' are, and ⋯ with Clear Reference,
+/// both settings gone, and Set Reference from an Area, a press of its picker. Drawn only
+/// where its tool draws its pickers.
+fn reference_row(
+    ui: &mut egui::Ui,
+    page: &Page,
+    picker: &'static str,
+    lightness: &'static str,
+    photo: &'static str,
+    changes: &mut Vec<Change>,
+) {
+    let Some((_, button)) = page.button(ui.ctx(), picker) else {
+        return;
+    };
+    let words = page.words;
+    let tool = page.tool.definition().id;
+    let [label, _, promise, _] = messages::picker(tool, picker).map(|id| words.text(&id));
+    let [
+        value_id,
+        photo_id,
+        this_id,
+        none,
+        measuring,
+        gone,
+        more,
+        clear,
+        set,
+    ] = messages::REFERENCE;
+    let (none, measuring, gone) = (words.text(none), words.text(measuring), words.text(gone));
+    let settings = page.pickers.settings;
+    let path = settings.text(tool, photo);
+    let reference = match settings.get(tool, lightness) {
+        Some(ControlValue::Number(l)) => Some(*l),
+        _ => None,
+    };
+    let value = reference.map(|l| {
+        let mut args = Args::new();
+        args.set("lightness", (f64::from(l) * 10.0).round() / 10.0);
+        words.text_with(value_id, Some(&args))
+    });
+    // The photo it was measured on, where one is known: none for one `--conf` gives.
+    let named = path.map(|path| {
+        let open = page.pickers.photo;
+        if open.is_some_and(|open| open == std::path::Path::new(path)) {
+            words.text(this_id)
+        } else {
+            let mut args = Args::new();
+            args.set("photo", crate::pickers::photo_name(path));
+            words.text_with(photo_id, Some(&args))
+        }
+    });
+    let measuring_now = page.pickers.on == Some(PickerRef::Tool { tool, picker });
+    let shown = match reference {
+        _ if measuring_now => Reference::Measuring(&measuring),
+        Some(l) => Reference::Set {
+            patch: colour(apertrust_tools::pick::Patch::of_lch([l, 0.0, 0.0]).srgb),
+            value: value.as_deref().unwrap_or_default(),
+            photo: named.as_deref(),
+            gone: path
+                .filter(|path| (page.pickers.gone)(path))
+                .map(|_| gone.as_str()),
+        },
+        None => Reference::None(&none),
+    };
+    let (more, clear, set) = (words.text(more), words.text(clear), words.text(set));
+    // A reference `--conf` gives, either half, keeps it for the run: the row disabled,
+    // its picker and ⋯ with it, saying why, as the Settings dialog says of such a row
+    // (decision 43).
+    let given = (page.pickers.settings).overridden(tool, lightness)
+        || (page.pickers.settings).overridden(tool, photo);
+    let why = given.then(|| {
+        let mut args = Args::new();
+        args.set("flag", apertrust_base::settings::CONF_FLAG);
+        words.text_with("settings-overridden", Some(&args))
+    });
+    let mut picker_button = button.button();
+    if let Some(why) = &why {
+        picker_button = picker_button.disabled(why);
+    }
+    let action = ReferenceRow::new(&label, shown, picker_button, (&more, &clear, &set))
+        .promise(why.as_deref().unwrap_or(&promise))
+        .enabled(page.pickers.enabled && !given)
+        .show(ui);
+    match action {
+        Some(ReferenceAction::Picker(action)) => changes.push(page.pressed(ui, picker, action)),
+        Some(ReferenceAction::Set) => {
+            let on = PickerAction::On { area: true };
+            changes.push(page.pressed(ui, picker, on));
+        }
+        Some(ReferenceAction::Clear) => changes.push(Change::ClearReference {
+            tool,
+            lightness,
+            photo,
+        }),
+        None => {}
+    }
+}
+
+/// The setting holding the photo of the reference whose L is `tool`'s setting `setting`,
+/// if a reference row names it (decision 88): where the app keeps the open photo's path as
+/// a pick hands the L back.
+pub fn reference_photo(tools: &[&dyn Tool], tool: &str, setting: &str) -> Option<&'static str> {
+    let found = tools.iter().find(|t| t.definition().id == tool)?;
+    found.definition().rows().find_map(|row| match row {
+        Row::Reference {
+            lightness, photo, ..
+        } if *lightness == setting => Some(*photo),
+        _ => None,
+    })
+}
+
 /// A picker's input and target patches (`Row::Patches`), darktable's: the input the area
 /// its tool's last pick showed on the photo, with its L readout, "L: N/A" before one;
 /// the target the colour of its settings, L then C and h, as the app keeps them or at
@@ -1611,6 +1751,8 @@ struct PickerWords<'a> {
     focus: bool,
     enabled: bool,
     why: Option<&'a str>,
+    /// Why it cannot start with the tool's settings (`Tool::picker_ready`, decision 88).
+    unready: Option<String>,
 }
 
 impl PickerWords<'_> {
@@ -1624,6 +1766,8 @@ impl PickerWords<'_> {
                 Some(why) => button.disabled(why),
                 None => button.state(ButtonState::Disabled),
             };
+        } else if let Some(why) = &self.unready {
+            button = button.disabled(why);
         }
         button
     }
@@ -1651,6 +1795,8 @@ impl<'a> Page<'a> {
                 .unwrap_or_else(|| self.words.text(&promise));
         let full = self.words.text(&full);
         let this = PickerRef::Tool { tool, picker: id };
+        let ready = self.tool.picker_ready(id, &settings.of(tool));
+        let unready = (!ready).then(|| self.words.text(&messages::picker_unavailable(tool, id)));
         Some((
             id,
             PickerWords {
@@ -1661,6 +1807,7 @@ impl<'a> Page<'a> {
                 focus: crate::pickers::takes_back(ctx, this),
                 enabled: self.pickers.enabled,
                 why: self.pickers.why,
+                unready,
             },
         ))
     }
@@ -6289,6 +6436,10 @@ mod tests {
         settings: ToolSettings,
         picked: Picked,
         changes: Vec<Change>,
+        /// The picker on, the photo open, and whether a reference's photo is gone.
+        on: Option<PickerRef>,
+        photo: Option<std::path::PathBuf>,
+        gone: bool,
     }
 
     /// The section in the dark theme with the tool settings at their defaults.
@@ -6310,13 +6461,16 @@ mod tests {
                     let panel = theme(ui.ctx()).colors.panel;
                     ui.painter()
                         .rect_filled(ui.ctx().content_rect(), 0.0, panel);
+                    let gone = |_: &str| targeted.gone;
                     let pickers = Pickers {
                         drawn: PICKING,
-                        on: None,
+                        on: targeted.on,
                         enabled: true,
                         why: None,
                         settings: &targeted.settings,
                         picked: &targeted.picked,
+                        photo: targeted.photo.as_deref(),
+                        gone: &gone,
                     };
                     let groups = |_: &str| true;
                     let state = untouched(&Exposure);
@@ -6334,14 +6488,21 @@ mod tests {
                     );
                     // Kept as the app keeps them.
                     for change in changes {
-                        if let Change::Setting {
-                            tool,
-                            setting,
-                            ref value,
-                            ..
-                        } = change
-                        {
-                            targeted.settings.set(tool, setting, value.clone());
+                        match change {
+                            Change::Setting {
+                                tool,
+                                setting,
+                                ref value,
+                                ..
+                            } => targeted.settings.set(tool, setting, value.clone()),
+                            Change::ClearReference {
+                                tool,
+                                lightness,
+                                photo,
+                            } => {
+                                (targeted.settings).clear_reference(tool, (lightness, photo));
+                            }
+                            _ => {}
                         }
                         targeted.changes.push(change);
                     }
@@ -6350,6 +6511,9 @@ mod tests {
                     settings,
                     picked,
                     changes: Vec::new(),
+                    on: None,
+                    photo: None,
+                    gone: false,
                 },
             );
         harness.run();
@@ -6415,16 +6579,16 @@ mod tests {
         );
         assert!(harness.query_by_label("Target lightness").is_none());
         assert!(quad_tip(&mut harness, "Make an area middle grey"));
-        // Its list: each option's own tooltip, Reference disabled with its reason.
+        // Its list: each option with its own tooltip, each to be chosen.
         harness
             .get_by_role_and_label(Role::ComboBox, "Picker target")
             .click();
         harness.run();
         let reference = harness.get_by_role_and_label(Role::MenuItemCheckBox, "Reference");
-        assert!(reference.accesskit_node().is_disabled());
+        assert!(!reference.accesskit_node().is_disabled());
         harness.get_by_label("Reference").hover();
         harness.run();
-        harness.get_by_label("Coming in a later version");
+        harness.get_by_label("The picked area matches the one measured on another photo");
         harness.get_by_label("Lightness").hover();
         harness.run();
         harness.get_by_label("The picked area becomes the brightness you set");
@@ -6509,6 +6673,43 @@ mod tests {
         assert_eq!(picked.apply(Some(&reading)), None);
         picked.apply(None);
         assert_eq!(picked.patch("exposure").map(|p| p.lch[0]), Some(45.2));
+    }
+
+    /// A pick measured before a Clear Reference, still on its way, hands no reference back
+    /// over the clear, so the cleared reference is not restored; one measured after it
+    /// does (decision 88).
+    #[test]
+    fn a_pick_measured_before_a_clear_hands_no_setting_back() {
+        let mut picked = Picked::default();
+        picked.settings_cleared("exposure", 5);
+        let before = apertrust_engine::session::PickerReading {
+            through: 4,
+            ..exposure_reading()
+        };
+        assert_eq!(picked.apply(Some(&before)), None);
+        // Its patch still shows, as the clear takes no patch away.
+        assert_eq!(picked.patch("exposure").map(|p| p.lch[0]), Some(45.2));
+        let mut after = exposure_reading();
+        after.through = 5;
+        let shown = after.tool.as_mut().unwrap().picked.as_mut().unwrap();
+        shown.settings = vec![("lightness", ControlValue::Number(70.0))];
+        assert_eq!(
+            picked.apply(Some(&after)),
+            Some(("exposure", vec![("lightness", ControlValue::Number(70.0))]))
+        );
+        // The same values measured after the clear, as another area may give: the refused
+        // pick was not taken as seen, so they are handed back.
+        let mut picked = Picked::default();
+        picked.settings_cleared("exposure", 5);
+        assert_eq!(picked.apply(Some(&before)), None);
+        let same = apertrust_engine::session::PickerReading {
+            through: 5,
+            ..exposure_reading()
+        };
+        assert_eq!(
+            picked.apply(Some(&same)),
+            Some(("exposure", vec![("lightness", ControlValue::Number(61.0))]))
+        );
     }
 
     /// A tool setting `--conf` gives is drawn disabled, keeping its value for the run; the
@@ -6662,5 +6863,236 @@ mod tests {
     #[test]
     fn exposure_s_picker_target_at_lightness_in_the_dark_theme() {
         photograph_target(1, 92.0, "exposure-lightness-dark");
+    }
+
+    /// The settings with Picker target at Reference, and the reference at `lightness`
+    /// measured on `photo`, or none.
+    fn referenced(reference: Option<(f32, &str)>) -> ToolSettings {
+        let mut settings = ToolSettings::default();
+        settings.set("exposure", "target", ControlValue::Choice(2));
+        if let Some((lightness, photo)) = reference {
+            let lightness = ControlValue::Number(lightness);
+            settings.set("exposure", "reference_lightness", lightness);
+            settings.set_text("exposure", "reference_photo", photo.to_owned());
+        }
+        settings
+    }
+
+    const REFERENCE_PHOTO: &str = "/photos/IMG_2041.CR3";
+
+    /// With Reference chosen and none set (decision 88): the row says none, Exposure's
+    /// picker is disabled saying why, and ⋯'s Clear Reference waits for one; its own picker
+    /// and Set Reference from an Area ask for the reference picker.
+    #[test]
+    fn with_no_reference_exposure_s_picker_waits_and_the_row_offers_its_own() {
+        let mut harness = targeted_with(Picked::default(), Builtin::Dark, referenced(None));
+        harness.get_by_role_and_label(Role::Label, "Reference none");
+        let exposure = harness.get_by_role_and_label(Role::Button, "Exposure: pick from the photo");
+        assert!(exposure.accesskit_node().is_disabled());
+        assert!(quad_tip(
+            &mut harness,
+            "Set a reference first, with the picker on the Reference row"
+        ));
+        harness
+            .get_by_role_and_label(Role::Button, "Set the reference from an area")
+            .click();
+        harness.run();
+        let asked = |change: Option<&Change>| {
+            matches!(
+                change,
+                Some(Change::Picker {
+                    tool: "exposure",
+                    picker: "reference",
+                    action: PickerAction::On { .. },
+                    ..
+                })
+            )
+        };
+        assert!(asked(harness.state().changes.last()));
+        harness
+            .get_by_role_and_label(Role::Button, "Reference options")
+            .click();
+        harness.run();
+        assert!(
+            harness
+                .get_by_label("Clear Reference")
+                .accesskit_node()
+                .is_disabled()
+        );
+        harness.get_by_label("Set Reference from an Area").click();
+        harness.run();
+        assert!(asked(harness.state().changes.last()));
+    }
+
+    /// A reference `--conf` gives keeps it for the run: the row's picker and ⋯ are drawn
+    /// disabled, saying why, as the Settings dialog says of an overridden row.
+    #[test]
+    fn a_reference_conf_gives_is_drawn_disabled() {
+        let given = vec!["tools.exposure.reference_lightness=60".to_owned()];
+        let overrides = crate::settings::overrides(&given).expect("read");
+        let folder = crate::settings::testing::Folder::new("reference-conf-row");
+        let (_, settings) = crate::settings::Keeper::open_with(folder.storage(), &overrides);
+        let mut settings = settings.tool_settings;
+        settings.set("exposure", "target", ControlValue::Choice(2));
+        let mut harness = targeted_with(Picked::default(), Builtin::Dark, settings);
+        harness.get_by_role_and_label(Role::Label, "Reference L 60 %");
+        for name in ["Set the reference from an area", "Reference options"] {
+            let button = harness.get_by_role_and_label(Role::Button, name);
+            assert!(button.accesskit_node().is_disabled(), "{name}");
+        }
+        harness
+            .ctx
+            .global_style_mut(|style| style.interaction.tooltip_delay = 0.0);
+        harness
+            .get_by_role_and_label(Role::Button, "Set the reference from an area")
+            .hover();
+        harness.run();
+        harness.get_by_label("Set by --conf for this run");
+        harness
+            .get_by_role_and_label(Role::Button, "Reference options")
+            .click();
+        harness.run();
+        assert!(harness.query_by_label("Clear Reference").is_none());
+        assert!(
+            harness.state().changes.is_empty(),
+            "{:?}",
+            harness.state().changes
+        );
+    }
+
+    /// A reference whose photo is not known shows its L alone, with no photo part, and
+    /// Exposure's picker says it will match that L.
+    #[test]
+    fn a_reference_with_no_photo_known_shows_its_l_alone() {
+        // As `--conf tools.exposure.reference_lightness=60` gives one.
+        let mut settings = referenced(None);
+        settings.set(
+            "exposure",
+            "reference_lightness",
+            ControlValue::Number(60.0),
+        );
+        let mut harness = targeted_with(Picked::default(), Builtin::Dark, settings);
+        harness.get_by_role_and_label(Role::Label, "Reference L 60 %");
+        assert!(quad_tip(&mut harness, "Match an area to L 60 %"));
+    }
+
+    /// A reference set shows its L and its photo, "this photo" on the photo it was
+    /// measured on, its name dimmed and said gone once the file is; Exposure's picker says
+    /// what it will match; Clear Reference takes both settings away.
+    #[test]
+    fn a_reference_shows_its_photo_and_is_cleared_whole() {
+        let settings = referenced(Some((62.0, REFERENCE_PHOTO)));
+        let mut harness = targeted_with(Picked::default(), Builtin::Dark, settings);
+        harness.get_by_role_and_label(Role::Label, "Reference L 62 % · IMG_2041");
+        let exposure = harness.get_by_role_and_label(Role::Button, "Exposure: pick from the photo");
+        assert!(!exposure.accesskit_node().is_disabled());
+        assert!(quad_tip(&mut harness, "Match an area to IMG_2041 (L 62 %)"));
+        harness.state_mut().photo = Some(REFERENCE_PHOTO.into());
+        harness.run();
+        harness.get_by_role_and_label(Role::Label, "Reference L 62 % · this photo");
+        harness.state_mut().photo = None;
+        harness.state_mut().gone = true;
+        harness.run();
+        let row = harness.get_by_role_and_label(Role::Label, "Reference L 62 % · IMG_2041");
+        assert_eq!(
+            row.accesskit_node().description().as_deref(),
+            Some("The photo it was measured on is no longer there")
+        );
+        harness
+            .get_by_role_and_label(Role::Button, "Reference options")
+            .click();
+        harness.run();
+        harness.get_by_label("Clear Reference").click();
+        harness.run();
+        assert_eq!(
+            harness.state().changes.last(),
+            Some(&Change::ClearReference {
+                tool: "exposure",
+                lightness: "reference_lightness",
+                photo: "reference_photo",
+            })
+        );
+        harness.run();
+        harness.get_by_role_and_label(Role::Label, "Reference none");
+    }
+
+    /// Exposure's manual page with Picker target at Reference, in the dark theme, as the
+    /// board's reference variants: `reference` set or none, measuring while its picker is
+    /// on, on the photo open, or on a photo gone.
+    fn photograph_reference(
+        reference: Option<(f32, &str)>,
+        measuring: bool,
+        this_photo: bool,
+        gone: bool,
+        name: &str,
+    ) {
+        let mut harness = targeted_with(Picked::default(), Builtin::Dark, referenced(reference));
+        let state = harness.state_mut();
+        state.on = measuring.then_some(PickerRef::Tool {
+            tool: "exposure",
+            picker: "reference",
+        });
+        state.photo = this_photo.then(|| REFERENCE_PHOTO.into());
+        state.gone = gone;
+        harness.run();
+        harness.snapshot(name);
+    }
+
+    #[test]
+    fn exposure_s_reference_none_in_the_dark_theme() {
+        photograph_reference(None, false, false, false, "exposure-reference-none-dark");
+    }
+
+    #[test]
+    fn exposure_s_reference_measuring_in_the_dark_theme() {
+        photograph_reference(
+            None,
+            true,
+            false,
+            false,
+            "exposure-reference-measuring-dark",
+        );
+    }
+
+    #[test]
+    fn exposure_s_reference_on_this_photo_in_the_dark_theme() {
+        let reference = Some((62.0, REFERENCE_PHOTO));
+        photograph_reference(
+            reference,
+            false,
+            true,
+            false,
+            "exposure-reference-this-photo-dark",
+        );
+    }
+
+    #[test]
+    fn exposure_s_reference_on_another_photo_in_the_dark_theme() {
+        let reference = Some((62.0, REFERENCE_PHOTO));
+        photograph_reference(reference, false, false, false, "exposure-reference-dark");
+    }
+
+    #[test]
+    fn exposure_s_reference_on_a_photo_gone_in_the_dark_theme() {
+        let reference = Some((62.0, REFERENCE_PHOTO));
+        photograph_reference(
+            reference,
+            false,
+            false,
+            true,
+            "exposure-reference-gone-dark",
+        );
+    }
+
+    /// The reference row's ⋯ open, its two items, Clear Reference live with one set.
+    #[test]
+    fn exposure_s_reference_menu_in_the_dark_theme() {
+        let settings = referenced(Some((62.0, REFERENCE_PHOTO)));
+        let mut harness = targeted_with(Picked::default(), Builtin::Dark, settings);
+        harness
+            .get_by_role_and_label(Role::Button, "Reference options")
+            .click();
+        harness.run();
+        harness.snapshot("exposure-reference-menu-dark");
     }
 }
