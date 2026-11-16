@@ -90,7 +90,7 @@ fn compute_shader_round_trip() {
         pass.dispatch_workgroups((input.len() as u32).div_ceil(64), 1, 1);
     }
     encoder.copy_buffer_to_buffer(&storage, 0, &readback, 0, size);
-    gpu.queue.submit([encoder.finish()]);
+    gpu.submit([encoder.finish()]);
 
     let (sender, receiver) = std::sync::mpsc::channel();
     readback.map_async(wgpu::MapMode::Read, .., move |result| {
@@ -137,4 +137,13 @@ fn an_image_bound_whole_must_fit_one_binding() {
     ));
     // 256 × 256 16-bit photosites take 128 KiB.
     assert!(GpuImage::upload_mosaic(&gpu, 256, 256, &vec![0; 256 * 256]).is_ok());
+}
+
+#[test]
+fn an_invalid_mosaic_is_rejected_before_padding() {
+    let gpu = pollster::block_on(GpuContext::new(&GpuOptions::default())).unwrap();
+    assert!(matches!(
+        GpuImage::upload_mosaic(&gpu, 65536, 65536, &[]),
+        Err(ComputeError::PixelCount { actual: 0, .. })
+    ));
 }

@@ -101,7 +101,11 @@ fn assert_close(gpu: &[[f32; 4]], cpu: &[[f32; 4]], what: &str) {
         .iter()
         .flatten()
         .zip(cpu.iter().flatten())
-        .map(|(a, b)| (a - b).abs())
+        .map(|(a, b)| {
+            let difference = (a - b).abs();
+            assert!(difference.is_finite(), "{what}: non-finite difference");
+            difference
+        })
         .fold(0.0f32, f32::max);
     assert!(worst < 2e-6, "{what}: {worst}");
 }

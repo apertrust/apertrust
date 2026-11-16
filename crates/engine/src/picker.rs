@@ -683,6 +683,14 @@ impl<T> Reducer<T> {
             planned.push((group, dispatches, results));
             results += group.boxes.len() as u32;
         }
+        if needed > binding {
+            return Err(ComputeError::Binding {
+                operation: "picker",
+                pass: "picker_combine",
+                bytes: needed,
+                limit: binding,
+            });
+        }
         if self.partials.size() < needed {
             self.partials = partials(gpu, needed);
         }
