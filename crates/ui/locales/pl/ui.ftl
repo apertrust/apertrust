@@ -416,6 +416,7 @@ action-open-folder = Otwórz folder…
 open-folder-title = Otwórz folder
 section-browse = Przeglądaj
 browse-folders = Foldery
+section-export = Eksport
 browse-open-name = Co jest otwarte
 browse-no-folder = Nie otwarto folderu
 browse-recents-none = Brak ostatnich folderów
@@ -957,26 +958,16 @@ pick-warning-clipped-tip = Jego jasność jest zaniżona: wybierz obszar bez prz
 pick-warning-short = { $control } { $value }: obszar ma L { $reached } %, a nie { $target } %
 pick-warning-short-tip = { $control } osiągnęła granicę { $value }
 
-## Okno eksportu (docs/gui.md, The Export dialog): moduł eksportu darktable, nazwy
+## Narzędzie eksportu (docs/gui.md, The Export tool): moduł eksportu darktable, nazwy
 ## wielką literą tylko pierwszego słowa. $count to liczba zdjęć, jedno zdjęcie to dokładnie
 ## liczba 1. $file to nazwa zdjęcia lub pliku, $source plik raw, $folder folder, $width
 ## i $height piksele, $problem to, co zatrzymuje eksport.
 
-export-title = Eksport: { photo-count }
 export-button = Eksportuj { photo-count }
-export-close = Zamknij
 export-hint = Eksport działa w tle; możesz dalej pracować.
+export-reset = Przywróć ustawienia eksportu
 # Podpowiedź wiersza lub grupy pokazanych jako wyłączone, bo jeszcze ich nie ma.
 export-later = Pojawi się w jednej z kolejnych wersji
-
-## Kolumna „Presety”
-
-export-presets = Presety
-export-preset-default = Ustawienia domyślne
-export-preset-built-in = Wbudowany
-export-preset-default-tip = Ustawienia takie, jak w darktable po instalacji: wybranie go je przywraca. Nie można go zmienić ani usunąć.
-export-preset-matches-none = Ustawienia nie pasują do żadnego presetu.
-export-presets-later = Własne presety pojawią się w jednej z kolejnych wersji.
 
 ## Opcje miejsca zapisu
 
@@ -1034,6 +1025,7 @@ export-problem-failed = Nie można wyeksportować zdjęcia w tym rozmiarze: { $w
 # Podpowiedź przycisku „Eksportuj”, gdy jest wyłączony; $problem to jeden z komunikatów wyżej.
 export-why-path = Najpierw popraw ścieżkę: { $problem }
 export-why-size = Najpierw popraw rozmiar: { $problem }
+export-why-no-photo = Otwórz zdjęcie, aby je wyeksportować.
 
 ## Opcje formatu
 

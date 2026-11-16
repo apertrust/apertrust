@@ -414,6 +414,7 @@ action-open-folder = Відкрити теку…
 open-folder-title = Відкрити теку
 section-browse = Огляд
 browse-folders = Теки
+section-export = Експорт
 browse-open-name = Що відкрито
 browse-no-folder = Жодної теки не відкрито
 browse-recents-none = Немає нещодавніх тек
@@ -956,26 +957,16 @@ pick-warning-clipped-tip = Її світлість занижена: вибер�
 pick-warning-short = { $control } { $value }: ділянка має L { $reached } %, а не { $target } %
 pick-warning-short-tip = { $control } досягла межі { $value }
 
-## Вікно експорту (docs/gui.md, The Export dialog): модуль експорту darktable, назви
+## Інструмент експорту (docs/gui.md, The Export tool): модуль експорту darktable, назви
 ## з великої літери лише першого слова. $count — кількість знімків, один знімок — точне
 ## число 1. $file — назва знімка чи файлу, $source — вихідний raw, $folder — тека, $width
 ## і $height — пікселі, $problem — що зупиняє експорт.
 
-export-title = Експорт: { photo-count }
 export-button = Експортувати { photo-count }
-export-close = Закрити
 export-hint = Експорт іде у фоні; можна далі працювати.
+export-reset = Скинути налаштування експорту
 # Підказка рядка чи групи, показаних вимкненими, бо їх ще не зроблено.
 export-later = З'явиться в одній із наступних версій
-
-## Колонка «Шаблони»
-
-export-presets = Шаблони
-export-preset-default = Типові налаштування
-export-preset-built-in = Вбудований
-export-preset-default-tip = Налаштування такі, як у darktable з коробки: вибір скидає їх. Його не можна змінити чи видалити.
-export-preset-matches-none = Налаштування не збігаються з жодним шаблоном.
-export-presets-later = Власні шаблони з'являться в одній із наступних версій.
 
 ## Параметри сховища
 
@@ -1033,6 +1024,7 @@ export-problem-failed = Знімок не можна експортувати в
 # Підказка кнопки «Експорт», поки вона вимкнена; $problem — одне з повідомлень вище.
 export-why-path = Спершу виправте шлях: { $problem }
 export-why-size = Спершу виправте розмір: { $problem }
+export-why-no-photo = Відкрийте знімок, щоб його експортувати.
 
 ## Параметри формату
 

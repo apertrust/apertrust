@@ -43,8 +43,8 @@
 //! settings, or centred on the main window, and a modal one centred on it.
 //!
 //! The jobs window (`docs/gui.md`, The jobs window) is a second, modeless window beside the
-//! dialog's: it has a slot of its own ([`Slot`]), so it stays open while Settings or Export
-//! open, closes alone and keeps its own place. The log window (`docs/gui.md`, The log
+//! dialog's: it has a slot of its own ([`Slot`]), so it stays open while Settings
+//! opens, closes alone and keeps its own place. The log window (`docs/gui.md`, The log
 //! window) is a third, in a slot of its own the same way. On Linux the drawn alert is a
 //! fourth, modal over the window it rises from. At most one dialog, one jobs window, one
 //! log window and one alert are open at a time.
@@ -53,15 +53,16 @@
 //! both windows taking input, and a second request brings it to the front. A modal one
 //! ([`Form::Modal`]: Settings on Windows and Linux, and a sheet there) keeps the main
 //! window's input from it until it goes, as the app's `raw_input_hook` does, a click on the
-//! main window bringing it forward ([`Dialogs::raise`]). A sheet ([`Form::Sheet`],
-//! Export's) is the Mac's, through `apertrust-display`, where AppKit puts it, centred, the
-//! window dimmed behind it, the main window taking no input until it goes. AppKit animates
-//! a sheet in and out for about 200 ms in a run loop of its own, so `apertrust-display`
-//! starts both from the run loop, outside the gated callbacks, and the host keeps the
-//! sheet's window until AppKit's `endSheet:` has returned, reporting the dialog gone only
-//! then: winit's callbacks run while AppKit animates, and Quit, which waits for the dialog
-//! to go, must not close the main window with the sheet still on it. The app reaches the
-//! host through [`Dialogs`], with [`AppDialogs`] over it.
+//! main window bringing it forward ([`Dialogs::raise`]). A sheet ([`Form::Sheet`]; no
+//! dialog uses it yet, the host keeps it) is the Mac's, through `apertrust-display`, where
+//! AppKit puts it, centred, the window dimmed behind it, the main window taking no input
+//! until it goes. AppKit animates a sheet in and out for about 200 ms in a run loop of
+//! its own, so `apertrust-display` starts both from the run loop, outside the gated
+//! callbacks, and the host keeps the sheet's window until AppKit's `endSheet:` has
+//! returned, reporting the dialog gone only then: winit's callbacks run while AppKit
+//! animates, and Quit, which waits for the dialog to go, must not close the main window
+//! with the sheet still on it. The app reaches the host through [`Dialogs`], with
+//! [`AppDialogs`] over it.
 
 use std::any::Any;
 use std::cell::{Cell, RefCell};
@@ -72,7 +73,6 @@ use std::task::{Wake, Waker};
 use std::time::Instant;
 
 use apertrust_display::ColorSpace;
-use apertrust_engine::session::ExportPreview;
 use apertrust_ui::alert;
 use apertrust_ui::components::{ActivityAction, Button, Job, caption_button};
 use apertrust_ui::icons::Icon;
@@ -86,7 +86,6 @@ use egui_winit::winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoopProxy
 use egui_winit::winit::window::{Window, WindowButtons, WindowId};
 
 use crate::actions::Focus;
-use crate::export;
 use crate::jobs;
 use crate::log_window;
 use crate::settings::Position;
@@ -158,8 +157,7 @@ impl Slot {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Form {
     /// Attached to the main window, which takes no input until it goes: AppKit's sheet on
-    /// the Mac (Export's, and every dialog's to come but Settings'), a modal window
-    /// elsewhere.
+    /// the Mac, a modal window elsewhere. No dialog uses it yet; the host keeps it.
     Sheet,
     /// A window of its own, centred on the main window, which takes no input until it
     /// goes: Settings' on Windows and Linux.
@@ -284,8 +282,6 @@ pub enum Output {
     /// Where Settings' own window was left as it closed, for it to open there next time;
     /// the one dialog whose place is kept.
     Placed(Position),
-    /// The Export dialog's settings, changed, and whether Export was pressed.
-    Export(export::Asked),
     /// What the user pressed in the jobs window, for the app to do.
     Jobs(ActivityAction),
     /// Where the jobs window was left as it closed, for it to open there next time.
@@ -718,9 +714,6 @@ pub trait Dialogs {
     /// sheet once AppKit has animated it away. While an alert the host draws is open or
     /// asked, that alert closes instead, answering dismissed, and the dialog under it stays.
     fn close(&mut self);
-    /// Hands the Export dialog open the session's answer to the preview numbered `through`;
-    /// any other dialog, or none, takes nothing.
-    fn preview(&mut self, through: u64, preview: ExportPreview);
     /// Hands Settings open what its Storage page shows; any other dialog, or none, takes
     /// nothing.
     fn storage(&mut self, view: crate::storage::View);
@@ -859,12 +852,6 @@ impl AppDialogs {
         } else {
             self.host.close_log();
         }
-    }
-
-    /// Hands the Export dialog open the session's answer to the preview numbered
-    /// `through`.
-    pub fn preview(&mut self, through: u64, preview: ExportPreview) {
-        self.host.preview(through, preview);
     }
 
     /// Hands Settings open what its Storage page shows ([`Dialogs::storage`]).
@@ -1303,16 +1290,6 @@ impl Dialogs for Host {
             inner.close[alert] = true;
         } else {
             inner.close[Slot::Dialog.index()] = true;
-        }
-    }
-
-    fn preview(&mut self, through: u64, preview: ExportPreview) {
-        let mut inner = self.0.borrow_mut();
-        if let Some(open) = inner.open[Slot::Dialog.index()].as_mut()
-            && let Some(export) = dialog_mut::<export::Export>(&mut open.dialog)
-        {
-            export.receive(through, preview);
-            open.window.request_redraw();
         }
     }
 
@@ -2306,8 +2283,8 @@ mod tests {
             assert_eq!(shown.storage(), &view);
             assert!(!hand_storage(dialog, &view), "the same view again");
         }
-        let mut export: Box<dyn Dialog> = Box::new(export::Export::new(export::Values::default()));
-        assert!(!hand_storage(&mut export, &view));
+        let mut other: Box<dyn Dialog> = Box::new(jobs::Window::new(Vec::new()));
+        assert!(!hand_storage(&mut other, &view));
     }
 
     #[test]

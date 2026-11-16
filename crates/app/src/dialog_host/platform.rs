@@ -210,7 +210,7 @@ fn owned(attributes: WindowAttributes, main: &Window) -> WindowAttributes {
 mod tests {
     use super::*;
     use crate::dialog_host::Dialog;
-    use crate::{export, jobs, settings_dialog};
+    use crate::{jobs, settings_dialog};
 
     const PLATFORMS: [OperatingSystem; 3] = [
         OperatingSystem::Mac,
@@ -261,8 +261,6 @@ mod tests {
 
     #[test]
     fn each_dialog_s_form_on_macos_windows_and_linux() {
-        let export = export::Export::new(export::Values::default());
-        assert_eq!(forms(&export), [Form::Sheet, Form::Modal, Form::Modal]);
         let (keeper, _) = crate::settings::Keeper::nowhere();
         let settings = settings_dialog::Settings::new(&keeper, false);
         // Apple's Settings windows are modeless; elsewhere a dialog is modal.
@@ -274,13 +272,6 @@ mod tests {
     #[test]
     fn each_dialog_s_keys_on_macos_windows_and_linux() {
         use crate::dialog_host::Keys;
-        let all = Keys {
-            escape: true,
-            close_window: true,
-            cancel: true,
-        };
-        let export = export::Export::new(export::Values::default());
-        assert_eq!(PLATFORMS.map(|os| export.keys(os)), [all; 3]);
         let (keeper, _) = crate::settings::Keeper::nowhere();
         let settings = settings_dialog::Settings::new(&keeper, true);
         // On the Mac, Apple's Settings window: Escape does nothing, and Cmd+W is Close

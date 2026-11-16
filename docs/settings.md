@@ -34,7 +34,7 @@ A setting holds:
 - **`owner`:**
   - `app`: read by the desktop app alone;
   - `engine`: read by every process that runs the engine, the app, the CLI and later the server;
-  - `export`: the Export tool's settings (the Export dialog's as built; decisions 56 and 90), kept by the app and read by the CLI's `export`;
+  - `export`: the Export tool's settings (decisions 56 and 90), kept by the app and read by the CLI's `export`;
   - `import`, planned with step 20a: Import's settings for the copy itself, the base folder, subfolder and file name patterns, the job code (Shoot name in the sheet) and the rest of what `PreviewImport` and `Import` carry (decision 85), kept by the app and read by the CLI's `import`; the Import sheet's own places, folder, column width and order, Keep open and Zoom are `app`'s, under `import.` too (decision 86);
   - `tool:<id>`: a tool's setting (decision 29), kept by the client and sent with the commands that use it;
 - **`kind`** and its fields:
@@ -166,7 +166,7 @@ path = "/Users/me/Pictures/Wedding"
 - the app's, in its `build.rs`;
 - the engine's, in `apertrust-engine`'s, as `apertrust_engine::settings`, whose `Options::read` builds `GpuOptions` and the budget from a store;
 - the tools', in `apertrust-tools`', as `apertrust_tools::settings::registry`, Exposure's first;
-- the export settings, the Export tool's (the Export dialog's as built), in `apertrust-export`'s, a third owner, `export` (decision 56): `apertrust_export::settings::registry`, written by the app, which keeps the tool's settings there as darktable keeps its conf, and read by the CLI's store with the engine's, its `export` taking the format's options from it, as darktable-cli reads darktablerc.
+- the export settings, the Export tool's, in `apertrust-export`'s, a third owner, `export` (decision 56): `apertrust_export::settings::registry`, written by the app, which keeps the tool's settings there as darktable keeps its conf, and read by the CLI's store with the engine's, its `export` taking the format's options from it, as darktable-cli reads darktablerc.
 
 **The engine never opens a folder or reads a file of settings.** The binaries read the store and hand it plain options.
 

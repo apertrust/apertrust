@@ -117,6 +117,9 @@ pub struct Mirror {
     opened: Vec<u64>,
     /// The person's home, which folders are shown relative to as `~`.
     home: Option<PathBuf>,
+    /// How many exports have ended, whether finished, failed or cancelled: the files they
+    /// wrote change what the Export tool's preview says of what is already there.
+    exports_ended: u64,
 }
 
 /// What a button of the jobs window asks the app to do.
@@ -151,7 +154,13 @@ impl Mirror {
             starting: Vec::new(),
             opened: Vec::new(),
             home,
+            exports_ended: 0,
         }
+    }
+
+    /// How many exports have ended, which makes the Export tool's preview stale.
+    pub fn exports_ended(&self) -> u64 {
+        self.exports_ended
     }
 
     /// Notes a command the app sent, numbered `number`, that starts a job of the user's,
@@ -280,6 +289,11 @@ impl Mirror {
                         Show::Update
                     };
                 }
+                let export = self
+                    .rows
+                    .iter()
+                    .any(|row| row.id == *job && row.kind == "export" && row.phase.active());
+                self.exports_ended += u64::from(export);
                 self.update(*job, |row| {
                     // A job ends failed exactly when it carries a failure, cancelled or not
                     // (decision 72).

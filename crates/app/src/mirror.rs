@@ -27,7 +27,7 @@
 //!   the edit is on disk ([`Saving`]), the photo's history, which names what Undo and Redo
 //!   would do ([`History`]), the active colour picker ([`pickers::Mirror`]), the jobs
 //!   ([`jobs::Mirror`]), the failure the central panel shows, the open folder
-//!   ([`folder::FolderState`]) and the Export dialog's floor for previews. Panels read it
+//!   ([`folder::FolderState`]) and the Export tool's floor for previews. Panels read it
 //!   each frame; nothing subscribes.
 //! - **What it does not hold:** the app's own state (the theme, a tab, a dialog open). That
 //!   changes by intents after the frame, with no event.
@@ -70,9 +70,10 @@ pub enum Reaction {
     /// The jobs window is to show the jobs as the mirror holds them: open, if the event was
     /// a job the user started (decision 57). Never [`jobs::Show::Nothing`].
     Jobs(jobs::Show),
-    /// The Export dialog open shows this preview, answering the command numbered `through`,
-    /// when it is the newest the dialog holds. An answer to an earlier dialog's command
-    /// ([`Mirror::previews_from`]) is dropped before it gets here.
+    /// The Export tool shows this preview, answering the command numbered `through`, when
+    /// it is the newest the tool holds. An answer to a command before the tool was last
+    /// shown, or for another photo ([`Mirror::previews_from`]), is dropped before it gets
+    /// here.
     Preview {
         through: u64,
         preview: Box<ExportPreview>,
@@ -173,10 +174,14 @@ pub struct Mirror {
     pub folder: FolderState,
     /// The disk cache's latest sizes and the Clears under way, Settings › Storage's.
     pub cache: crate::storage::Mirror,
-    /// The number of the first preview the Export dialog open asked for, then of the newest
-    /// answer shown: an answer to an earlier command is from an earlier dialog or is
-    /// outdated, and shows nothing.
+    /// The number of the first preview the Export tool asked for as it was shown, then of
+    /// the newest answer shown: an answer to an earlier command is from an earlier showing
+    /// or another photo, or is outdated, and shows nothing.
     export_floor: u64,
+    /// How many times what the Export tool's preview of the open photo's size depends on
+    /// changed: its history, in its steps or where it ends, and its becoming live, when its
+    /// output size is first known.
+    edit_changes: u64,
 }
 
 impl Mirror {
@@ -212,6 +217,7 @@ impl Mirror {
             folder: FolderState::default(),
             cache: crate::storage::Mirror::default(),
             export_floor: 0,
+            edit_changes: 0,
         }
     }
 
@@ -352,10 +358,17 @@ impl Mirror {
         self.scopes.forget();
     }
 
-    /// The Export dialog opened and asked for the preview numbered `number`: an answer to
-    /// an earlier command is from an earlier dialog.
+    /// The Export tool was shown, or the photo changed, and it asked for the preview
+    /// numbered `number`: an answer to an earlier command is from an earlier showing.
     pub fn previews_from(&mut self, number: u64) {
         self.export_floor = number;
+    }
+
+    /// What makes the Export tool's preview stale while its photo and settings stay: a
+    /// change of the photo's history, the photo becoming live, which gives its output size,
+    /// or the end of an export, whose files are then there. It only grows.
+    pub fn preview_generation(&self) -> u64 {
+        self.edit_changes + self.jobs.exports_ended()
     }
 
     /// Shows `pending`, sent as command `number`, until a report includes it. Only this
@@ -411,6 +424,7 @@ impl Mirror {
                     self.saving.reported(&values);
                     let image = self.photo.image();
                     self.values = reported(values, &mut self.pending, self.tools, &image);
+                    self.edit_changes += u64::from(live && !self.live);
                     self.live = live;
                     self.shown = if live {
                         Shown::Photo { editable }
@@ -440,7 +454,7 @@ impl Mirror {
                 }
                 self.pickers.apply(through, reading);
             }
-            // The Export dialog shows the preview, the newest it holds.
+            // The Export tool shows the preview, the newest it holds.
             Event::ExportPreview { through, preview } => {
                 if through >= self.export_floor {
                     // A preview cancelled in time sends nothing, but one that had finished
@@ -469,6 +483,13 @@ impl Mirror {
                         .as_ref()
                         .is_none_or(|h| history.through >= h.through)
                 {
+                    // The same photo's steps or end moved; the first history of a photo is
+                    // no change, the photo being a new one for the preview.
+                    let moved = self
+                        .history
+                        .as_ref()
+                        .is_some_and(|h| h.steps != history.steps || h.end != history.end);
+                    self.edit_changes += u64::from(moved);
                     self.history = Some(history);
                 }
             }
@@ -1927,6 +1948,80 @@ pub(crate) mod tests {
         exposure.enabled = false;
         assert!(mirror.resettable());
         assert!(!mirror.values.edited);
+    }
+
+    /// What makes the Export tool's preview stale besides its photo and settings: the photo's
+    /// history moving, in its steps or where it ends, the photo becoming live, and an export
+    /// ending, whatever its outcome. A history's first, another's `through` alone, a live
+    /// photo's later values and jobs that are no exports change nothing.
+    #[test]
+    fn the_export_preview_goes_stale_when_the_history_moves_the_photo_goes_live_or_an_export_ends()
+    {
+        use crate::history::tests::{history, step};
+        use apertrust_engine::jobs::{Queue, State};
+
+        let steps = |ids: &[u64]| {
+            ids.iter()
+                .map(|id| step(*id, &["exposure"], None))
+                .collect()
+        };
+        let event = |through, ids: &[u64]| Event::History(history(through, steps(ids), None, None));
+        let mut m = mirror();
+        m.opening(PathBuf::from("/photos/a.ARW"), 1, Instant::now());
+        m.apply(Event::Opened(photo(1)));
+        // Still opening: its values are read-only and its output size not yet known. A
+        // preview asked now lacks the size; becoming live asks for another, once.
+        let opening = m.preview_generation();
+        let not_live = Values {
+            live: false,
+            ..report(0.0, 1)
+        };
+        m.apply(Event::Values(not_live.clone()));
+        assert_eq!(m.preview_generation(), opening);
+        m.apply(Event::Values(report(0.0, 1)));
+        assert_eq!(m.preview_generation(), opening + 1);
+        // Live already: its later values, as every change reports them, ask for nothing.
+        m.apply(Event::Values(report(0.5, 2)));
+        assert_eq!(m.preview_generation(), opening + 1);
+        let before = m.preview_generation();
+        // The photo's first history is no change: its photo is new to the preview already.
+        m.apply(event(1, &[1]));
+        assert_eq!(m.preview_generation(), before);
+        // The same steps again, as a command that changed nothing of them sends.
+        m.apply(event(2, &[1]));
+        assert_eq!(m.preview_generation(), before);
+        // A step more (a Reset, a change), then the end moved back (Undo).
+        m.apply(event(3, &[1, 2]));
+        assert_eq!(m.preview_generation(), before + 1);
+        let mut undone = history(4, steps(&[1, 2]), None, None);
+        undone.end = 1;
+        m.apply(Event::History(undone));
+        assert_eq!(m.preview_generation(), before + 2);
+        // Another photo's history starts over, with no change.
+        m.opening(PathBuf::from("/photos/b.ARW"), 5, Instant::now());
+        m.apply(Event::Opened(photo(5)));
+        m.apply(Event::Values(report(0.0, 5)));
+        let other = m.preview_generation();
+        m.apply(event(5, &[1, 2, 3]));
+        assert_eq!(m.preview_generation(), other);
+
+        // An export ending, finished or cancelled, once each.
+        let ids = jobs::tests::ids(2);
+        m.apply(jobs::tests::added(ids[0], Queue::UserExport, Some(1)));
+        assert_eq!(m.preview_generation(), other);
+        m.apply(jobs::tests::ended(ids[0], State::Finished, None));
+        assert_eq!(m.preview_generation(), other + 1);
+        m.apply(jobs::tests::added(ids[1], Queue::UserExport, Some(2)));
+        m.apply(jobs::tests::ended(ids[1], State::Cancelled, None));
+        assert_eq!(m.preview_generation(), other + 2);
+        // An end reported again, or of a job never added, counts nothing.
+        m.apply(jobs::tests::ended(ids[1], State::Cancelled, None));
+        m.apply(jobs::tests::ended(
+            jobs::tests::ids(3)[2],
+            State::Finished,
+            None,
+        ));
+        assert_eq!(m.preview_generation(), other + 2);
     }
 
     /// The photo's history (decision 78): the latest by its `through`, an earlier one

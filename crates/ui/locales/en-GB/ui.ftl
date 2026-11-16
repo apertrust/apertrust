@@ -531,6 +531,7 @@ open-folder-title = Open Folder
 # of folders. Albums and Smart albums join it with the library.
 section-browse = Browse
 browse-folders = Folders
+section-export = Export
 # The top line's box: what screen readers call it, and its words for none, which the
 # central panel says too with nothing open; a folder's are its open kind's.
 browse-open-name = What is open
@@ -1245,26 +1246,16 @@ pick-warning-clipped-tip = Its lightness reads low: pick an area with no clipped
 pick-warning-short = { $control } at { $value }: the area is L { $reached } %, not { $target } %
 pick-warning-short-tip = { $control } reached its end of { $value }
 
-## The Export dialog (docs/gui.md, The Export dialog): darktable's export module, its
+## The Export tool (docs/gui.md, The Export tool): darktable's export module, its
 ## labels in sentence case. $count is the photos, a single one the exact number 1. $file
 ## is a photo's name or a file's, $source the raw, $folder a folder, $width and $height
 ## pixels, $problem what stops the export.
 
-export-title = Export { photo-count }
 export-button = Export { photo-count }
-export-close = Close
 export-hint = Exports run in the background; you can keep working.
+export-reset = Reset export settings
 # The tooltip of every row and group drawn disabled because it is not built yet.
 export-later = Coming in a later version
-
-## The Presets column
-
-export-presets = Presets
-export-preset-default = Default settings
-export-preset-built-in = Built in
-export-preset-default-tip = The settings as they ship, darktable's defaults: choosing it resets them. It cannot be changed or deleted.
-export-preset-matches-none = The settings match no preset.
-export-presets-later = Presets of your own come in a later version.
 
 ## Storage options
 
@@ -1322,6 +1313,7 @@ export-problem-failed = The photo can’t be exported at this size: { $why }
 # The tooltip of Export while it cannot run; $problem is one of the messages above.
 export-why-path = Fix the path first: { $problem }
 export-why-size = Fix the size first: { $problem }
+export-why-no-photo = Open a photo to export it.
 
 ## Format options
 

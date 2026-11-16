@@ -117,11 +117,17 @@ impl<'a> Checkbox<'a> {
                 );
                 ui.painter().layout_job(job)
             }
-            None => ui.painter().layout_no_wrap(
-                self.label.to_owned(),
-                font.clone(),
-                Color32::PLACEHOLDER,
-            ),
+            // A label alone is cut with … where the row is too narrow for it.
+            None => {
+                let room = ui.available_width() - BOX - gap;
+                let job = super::truncated(
+                    self.label,
+                    font.clone(),
+                    room.max(0.0),
+                    Color32::PLACEHOLDER,
+                );
+                ui.painter().layout_job(job)
+            }
         });
         let cut = galley.as_ref().is_some_and(|galley| galley.elided);
         // The value follows the label, or the box where there is no label.
