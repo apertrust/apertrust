@@ -967,6 +967,149 @@ fn other_tools_properties_are_kept_and_unknown_fields_are_problems() {
     }
 }
 
+#[test]
+fn unsupported_copy_shapes_and_repeated_fields_are_view_only() {
+    use crate::xmp::{ArrayKind, Name, Node, Property, Value, Xmp};
+    let xml = edits().to_xml();
+    let base = Xmp::parse(&xml).unwrap();
+    let unknown = || {
+        Property::new(
+            Name::new("apertrust", NAMESPACE, "origin"),
+            Node::simple("sync"),
+        )
+    };
+    let copies_at = base
+        .properties
+        .iter()
+        .position(|p| p.name.local == "copies")
+        .unwrap();
+    for case in 0..11 {
+        let mut changed = base.clone();
+        if case == 0 {
+            changed
+                .properties
+                .push(changed.properties[copies_at].clone());
+        } else if case == 1 {
+            changed.properties[copies_at].node.value = Value::Simple("future".to_owned());
+        } else if case == 2 {
+            if let Value::Array(kind, _) = &mut changed.properties[copies_at].node.value {
+                *kind = ArrayKind::Bag;
+            }
+        } else if case == 3 {
+            changed.properties.push(Property::new(
+                Name::new("apertrust", NAMESPACE, "photo"),
+                Node {
+                    value: Value::Resource("photo".to_owned()),
+                    qualifiers: Vec::new(),
+                },
+            ));
+        } else {
+            let Value::Array(_, copies) = &mut changed.properties[copies_at].node.value else {
+                panic!("copies")
+            };
+            if case == 4 {
+                copies[0].value = Value::Simple("future".to_owned());
+            } else {
+                let Value::Struct(fields) = &mut copies[0].value else {
+                    panic!("copy")
+                };
+                let name = if case <= 7 { "history" } else { "clocks" };
+                let at = fields.iter().position(|p| p.name.local == name).unwrap();
+                match case {
+                    5 => fields.push(fields[at].clone()),
+                    6 => fields[at].node.value = Value::Simple("future".to_owned()),
+                    7 => {
+                        if let Value::Array(kind, _) = &mut fields[at].node.value {
+                            *kind = ArrayKind::Bag;
+                        }
+                    }
+                    8 => fields[at].node.value = Value::Simple("future".to_owned()),
+                    9 => {
+                        if let Value::Array(kind, _) = &mut fields[at].node.value {
+                            *kind = ArrayKind::Seq;
+                        }
+                    }
+                    10 => {
+                        let Value::Array(_, clocks) = &mut fields[at].node.value else {
+                            panic!("clocks")
+                        };
+                        let Value::Struct(fields) = &mut clocks[0].value else {
+                            panic!("clock")
+                        };
+                        fields.push(unknown());
+                    }
+                    _ => unreachable!(),
+                }
+            }
+        }
+        let changed = changed.to_xml();
+        let read = Edits::parse(&changed, 0).unwrap();
+        assert!(
+            read.problems
+                .iter()
+                .any(|p| matches!(p, Problem::UnknownField { .. })),
+            "case {case}: {:?}",
+            read.problems
+        );
+    }
+}
+
+#[test]
+fn qualifiers_on_copy_containers_and_items_are_reported() {
+    use crate::xmp::{Node, Value, Xmp};
+    let base = Xmp::parse(&edits().to_xml()).unwrap();
+    for case in 0..6 {
+        let mut changed = base.clone();
+        let copies = &mut changed
+            .properties
+            .iter_mut()
+            .find(|p| p.name.local == "copies")
+            .unwrap()
+            .node;
+        let qualifier = Node::with_lang("", "en").qualifiers;
+        if case == 0 {
+            copies.qualifiers = qualifier;
+        } else {
+            let Value::Array(_, items) = &mut copies.value else {
+                panic!("copies")
+            };
+            if case == 1 {
+                items[0].qualifiers = qualifier;
+            } else {
+                let Value::Struct(fields) = &mut items[0].value else {
+                    panic!("copy")
+                };
+                let name = if case == 2 || case == 4 {
+                    "history"
+                } else {
+                    "clocks"
+                };
+                let node = &mut fields
+                    .iter_mut()
+                    .find(|p| p.name.local == name)
+                    .unwrap()
+                    .node;
+                if case < 4 {
+                    node.qualifiers = qualifier;
+                } else {
+                    let Value::Array(_, items) = &mut node.value else {
+                        panic!("items")
+                    };
+                    items[0].qualifiers = qualifier;
+                }
+            }
+        }
+        let read = Edits::parse(&changed.to_xml(), 0).unwrap();
+        assert!(
+            read.problems
+                .iter()
+                .any(|p| matches!(p, Problem::UnknownField { .. })),
+            "case {case}: {:?}",
+            read.problems
+        );
+    }
+}
+
 /// In a step's entries, a field a newer build may write that this one would drop is a
 /// problem, by the kind of entry: one of Apertrust's own it does not write, another
 /// namespace's, an operation's control or a tool's parameter, an item that is no entry,

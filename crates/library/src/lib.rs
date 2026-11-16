@@ -24,6 +24,8 @@
 //! folders' raw counts, and [`ops`], the commands and events clients see (layer 4),
 //! opening a folder first.
 
+mod reads;
+
 pub mod clock;
 pub mod index;
 pub mod listing;

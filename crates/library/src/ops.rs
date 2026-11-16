@@ -38,8 +38,6 @@ use std::fmt;
 use std::panic::{self, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::thread;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 pub use apertrust_raw::DateTime;
@@ -428,43 +426,23 @@ fn capture_times(
     names: &[String],
     cancel: &(dyn Fn() -> bool + Sync),
 ) -> Option<Vec<Option<DateTime>>> {
-    let next = AtomicUsize::new(0);
-    let stopped = AtomicBool::new(false);
-    let read: Vec<Vec<(usize, Option<DateTime>)>> = thread::scope(|scope| {
-        let workers: Vec<_> = (0..READERS.min(names.len()))
-            .map(|_| {
-                scope.spawn(|| {
-                    let mut done = Vec::new();
-                    loop {
-                        let at = next.fetch_add(1, Ordering::Relaxed);
-                        let Some(name) = names.get(at) else {
-                            break;
-                        };
-                        if cancel() {
-                            stopped.store(true, Ordering::Relaxed);
-                            break;
-                        }
-                        let path = folder.join(name);
-                        let taken = panic::catch_unwind(AssertUnwindSafe(|| {
-                            apertrust_raw::read_exif_file(&path).ok()?.taken
-                        }))
-                        .unwrap_or(None);
-                        done.push((at, taken));
-                    }
-                    done
-                })
-            })
-            .collect();
-        workers
-            .into_iter()
-            .map(|worker| worker.join().unwrap_or_else(|p| panic::resume_unwind(p)))
-            .collect()
-    });
-    if stopped.load(Ordering::Relaxed) || cancel() {
+    let paths = names.iter().map(|name| folder.join(name)).collect();
+    let (read, stopped) = crate::reads::read(
+        paths,
+        READERS,
+        |path| {
+            panic::catch_unwind(AssertUnwindSafe(|| {
+                apertrust_raw::read_exif_file(path).ok()?.taken
+            }))
+            .unwrap_or(None)
+        },
+        cancel,
+    );
+    if stopped {
         return None;
     }
     let mut times = vec![None; names.len()];
-    for (at, taken) in read.into_iter().flatten() {
+    for (at, taken) in read {
         times[at] = taken;
     }
     Some(times)

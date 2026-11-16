@@ -344,21 +344,37 @@ impl Edits {
             return Ok(edits);
         }
         let mut copies = Vec::new();
-        if let Some(listed) = xmp.get(NAMESPACE, "copies") {
-            for item in listed.items().unwrap_or_default() {
-                copies.push(read_copy(item.fields().unwrap_or_default(), &mut problems));
-            }
+        for item in array_items(
+            xmp.get(NAMESPACE, "copies"),
+            ArrayKind::Seq,
+            "the file",
+            "copies",
+            &mut problems,
+        ) {
+            let fields = struct_fields(item, "the file's copies", "copy", &mut problems);
+            copies.push(read_copy(fields, &mut problems));
         }
-        let text = |local: &str| {
-            xmp.get(NAMESPACE, local)
-                .and_then(Node::as_str)
-                .map(str::to_owned)
+        let mut text = |local: &str| {
+            let node = xmp.get(NAMESPACE, local)?;
+            if let Value::Simple(text) = &node.value
+                && node.qualifiers.is_empty()
+            {
+                Some(text.clone())
+            } else {
+                problems.push(Problem::UnknownField {
+                    place: "the file".to_owned(),
+                    field: format!("apertrust:{local}"),
+                });
+                None
+            }
         };
+        let photo = text("photo");
+        let fingerprint = text("fingerprint");
         Ok(Edits {
             version,
             build: build(&xmp),
-            photo: text("photo"),
-            fingerprint: text("fingerprint"),
+            photo,
+            fingerprint,
             copies,
             other,
             problems,
@@ -454,10 +470,13 @@ fn top_level(xmp: &Xmp, version: u32) -> (Vec<Property>, Vec<Problem>) {
     };
     let mut other = Vec::new();
     let mut problems = Vec::new();
+    let mut seen = std::collections::HashSet::new();
     for property in &xmp.properties {
         if property.name.namespace != NAMESPACE {
             other.push(property.clone());
-        } else if !own.contains(&property.name.local.as_str()) {
+        } else if !own.contains(&property.name.local.as_str())
+            || (version >= COPIES_VERSION && !seen.insert(property.name.local.as_str()))
+        {
             problems.push(Problem::UnknownField {
                 place: "the file".to_owned(),
                 field: field_name(property),
@@ -480,11 +499,30 @@ fn unknown_fields(
     place: impl Fn() -> String,
     problems: &mut Vec<Problem>,
 ) {
+    let mut seen = std::collections::HashSet::new();
     for field in fields {
         let own = field.name.namespace == NAMESPACE;
-        if !own || !known.contains(&field.name.local.as_str()) {
+        if !own
+            || !known.contains(&field.name.local.as_str())
+            || !seen.insert(field.name.local.as_str())
+        {
             problems.push(Problem::UnknownField {
                 place: place(),
+                field: field_name(field),
+            });
+        }
+    }
+}
+
+/// Scalar fields must keep the exact plain-text shape this writer emits.
+fn plain_fields(fields: &[Property], names: &[&str], place: &str, problems: &mut Vec<Problem>) {
+    for field in fields {
+        if field.name.namespace == NAMESPACE
+            && names.contains(&field.name.local.as_str())
+            && (!matches!(field.node.value, Value::Simple(_)) || !field.node.qualifiers.is_empty())
+        {
+            problems.push(Problem::UnknownField {
+                place: place.to_owned(),
                 field: field_name(field),
             });
         }
@@ -513,22 +551,73 @@ fn own_node<'a>(fields: &'a [Property], local: &str) -> Option<&'a Node> {
         .map(|field| &field.node)
 }
 
+/// Checks the exact array shape this writer emits; unsupported data makes it view-only.
+fn array_items<'a>(
+    node: Option<&'a Node>,
+    kind: ArrayKind,
+    place: &str,
+    field: &str,
+    problems: &mut Vec<Problem>,
+) -> &'a [Node] {
+    let Some(node) = node else { return &[] };
+    if !matches!(&node.value, Value::Array(found, _) if *found == kind)
+        || !node.qualifiers.is_empty()
+    {
+        problems.push(Problem::UnknownField {
+            place: place.to_owned(),
+            field: format!("apertrust:{field}"),
+        });
+    }
+    node.items().unwrap_or_default()
+}
+
+fn struct_fields<'a>(
+    node: &'a Node,
+    place: &str,
+    field: &str,
+    problems: &mut Vec<Problem>,
+) -> &'a [Property] {
+    if node.fields().is_none() || !node.qualifiers.is_empty() {
+        problems.push(Problem::UnknownField {
+            place: place.to_owned(),
+            field: field.to_owned(),
+        });
+    }
+    node.fields().unwrap_or_default()
+}
+
 /// A virtual copy from its struct's fields, what cannot be read added to `problems`.
 fn read_copy(fields: &[Property], problems: &mut Vec<Problem>) -> VirtualCopy {
     let text = |local: &str| own_field(fields, local).unwrap_or_default().to_owned();
-    let items = |local: &str| {
-        own_node(fields, local)
-            .and_then(Node::items)
-            .unwrap_or_default()
-    };
     let id = text("id");
     let known = ["id", "number", "name", "end", "clocks", "history"];
     unknown_fields(fields, &known, || format!("copy {id}"), problems);
     let mut clocks = Vec::new();
     // Whether every clock of the vector reads, so the steps' clocks can be held to it.
     let mut whole = true;
-    for item in items("clocks") {
-        match read_clock(item.fields().unwrap_or_default()) {
+    let place = format!("copy {id}");
+    plain_fields(fields, &["id", "number", "name", "end"], &place, problems);
+    for item in array_items(
+        own_node(fields, "clocks"),
+        ArrayKind::Bag,
+        &place,
+        "clocks",
+        problems,
+    ) {
+        let fields = struct_fields(item, &place, "clock", problems);
+        unknown_fields(
+            fields,
+            &[clock::WHEN, clock::COUNTER, clock::MACHINE],
+            || place.clone(),
+            problems,
+        );
+        plain_fields(
+            fields,
+            &[clock::WHEN, clock::COUNTER, clock::MACHINE],
+            &place,
+            problems,
+        );
+        match read_clock(fields) {
             Ok(clock) => clocks.push(clock),
             Err(error) => {
                 whole = false;
@@ -539,10 +628,19 @@ fn read_copy(fields: &[Property], problems: &mut Vec<Problem>) -> VirtualCopy {
             }
         }
     }
-    let history = items("history")
-        .iter()
-        .map(|item| read_step(item.fields().unwrap_or_default(), &id, problems))
-        .collect();
+    let history = array_items(
+        own_node(fields, "history"),
+        ArrayKind::Seq,
+        &place,
+        "history",
+        problems,
+    )
+    .iter()
+    .map(|item| {
+        let fields = struct_fields(item, &place, "step", problems);
+        read_step(fields, &id, problems)
+    })
+    .collect();
     let copy = VirtualCopy {
         number: text("number"),
         name: text("name"),
