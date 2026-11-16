@@ -63,7 +63,7 @@ Early development, in Phase 2: the desktop app. [docs/roadmap.md](docs/roadmap.m
 
 ## Installation
 
-Releases and the nightly builds, Apertrust Nightly, are on the [Releases page](https://github.com/apertrust/apertrust/releases). Nightlies are untested development builds. Neither is signed with a developer's certificate yet, so each system warns the first time you open it:
+Releases and the nightly builds, Apertrust Nightly, are on the [Releases page](https://github.com/apertrust/apertrust/releases). Nightlies are untested development builds. Neither is signed with a developer's certificate yet, so each system warns the first time you open it. The commands below assume the download is in `~/Downloads`; use its own folder where it went elsewhere:
 
 - **macOS** refuses the disk image as from an unidentified developer, or says it "is damaged and can't be opened".
   - Before opening the disk image, remove its quarantine, then drag Apertrust into Applications:
@@ -84,8 +84,8 @@ Releases and the nightly builds, Apertrust Nightly, are on the [Releases page](h
   - **The portable zip:** unblock it before extracting, or each program in it warns again: right-click › Properties › Unblock.
   - **Smart App Control,** where Windows 11 has it on, blocks unsigned apps with no Run anyway.
 - **Linux** has no warning to pass.
-  - **The .deb,** on Debian, Ubuntu and their derivatives: `sudo apt install ./apertrust*-linux-amd64.deb` (`-linux-arm64.deb` on Arm).
-  - **The .rpm,** on Fedora, RHEL 10 and openSUSE: `sudo dnf install ./apertrust*-linux-x86_64.rpm`, or `sudo zypper install --allow-unsigned-rpm ./apertrust*-linux-x86_64.rpm` (`-linux-aarch64.rpm` on Arm).
+  - **The .deb,** on Debian, Ubuntu and their derivatives: `sudo apt install ~/Downloads/apertrust*-linux-amd64.deb` (`-linux-arm64.deb` on Arm).
+  - **The .rpm,** on Fedora, RHEL 10 and openSUSE: `sudo dnf install ~/Downloads/apertrust*-linux-x86_64.rpm`, or `sudo zypper install --allow-unsigned-rpm ~/Downloads/apertrust*-linux-x86_64.rpm` (`-linux-aarch64.rpm` on Arm).
   - **The AppImage:** make it executable and run it. If it names FUSE as it fails, install `libfuse2` (`libfuse2t64` on Ubuntu 24.04). Apertrust Nightly's AppImage updates with [AppImageUpdate](https://github.com/AppImageCommunity/AppImageUpdate).
 
     ```sh
