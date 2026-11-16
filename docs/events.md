@@ -89,7 +89,7 @@ Every variant of `Event` today, with its kind. "Through" is the number of comman
 
 Then come `settings`, the parameters no tool owns of the operations an unedited photo runs, over the photo's defaults; `edited`, whether anything differs from its default (today marks alone do not count; planned, kept and Auto marks count too, so Reset clears them); and `through`. Whether each tool is on, `ToolState::enabled`, a switched tool counting as edited while on (decision 32). Whether the History tab's eye hides each tool from the view, `ToolState::hidden` (decision 78), its controls, `enabled` and `edited` staying the edit's; a `Hide` that changes it is answered by `Values`.
 
-Last, `live` (decision 77): whether the photo is live and commands on the edit are taken, false from `Opened` until its raw is decoded and uploaded, true from the batch of its first live frame ([A photo opening](#a-photo-opening)).
+Last, `live` (decision 77): whether the photo is live and commands on the edit are taken, false from `Opened` until its raw is decoded and uploaded, true from the batch of its first live frame ([A photo opening](#a-photo-opening)). With several windows (decision 89, planned), only the key window's active photo is live: a photo opened in a window that is not key stays `live: false`, showing its still, until that window becomes key and its first live frame comes; a window that stops being key keeps its values, read-only, and its photo's `live` turns false.
 
 Jobs with no progress, the export preview among them, send no `Job` events.
 

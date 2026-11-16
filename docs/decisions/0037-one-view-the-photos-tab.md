@@ -6,7 +6,7 @@ Raw editors usually split their window into views (a library, a darkroom, a map,
 
 ## Decision
 
-**The app is one view.** There is no Library, Edit, Map, Print or Slideshow view. Each main window is that one view of its place; the app opens several windows, one per place, photos opened alone one place however many they are, never a window for each photo ([0089](0089-one-instance-per-user-data-folder-a-window-per-place.md)).
+**The app is one view.** There is no Library, Edit, Map, Print or Slideshow view. Each main window is that one view of its place; with decision 89, planned, the app opens several windows, one per place, photos opened alone one place however many they are, never a window for each photo ([0089](0089-one-instance-per-user-data-folder-a-window-per-place.md)).
 
 - **Photos is the side panel's first tab.** It holds everything about photos as items: which photos the grid panel shows, through its first tool, Browse, with Folders and later Albums and Smart albums ([0046](0046-sidecars-are-the-truth-folder-mode-library-and-project.md), [0073](0073-the-photos-tabs-tools-browse-first-filters-in-folder-mode.md)), and what they are. The other tabs (in Edit Adjust, Detail, Geometry, Effects, Raw and History) are about one photo's pixels ([0038](0038-the-side-panels-tabs-by-editing-stage.md)). The grid panel under the photo shows the current folder or album and is always shown.
 - **The centre shows a layout,** switched only when the person asks:
