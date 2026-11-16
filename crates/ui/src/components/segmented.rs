@@ -18,8 +18,14 @@
 //! In a bar each option is as wide as the widest; in a tool the row is two lines
 //! (`docs/gui.md`, How the rows are laid out), the label on a line of its own and the
 //! options sharing the full width under it.
+//!
+//! An option can be drawn disabled with its reason as its tooltip, as Exposure's Automatic
+//! on an image that is not a raw (decision 88): dimmed, it takes no click and no focus,
+//! and screen readers hear the reason as its description. A disabled option may still be
+//! the chosen one, as an edit from another photo holds it. With nothing left to choose,
+//! every option but the chosen one disabled, the whole switch is disabled.
 
-use egui::{FontId, Rect, Role, Sense, Stroke, StrokeKind, Ui, WidgetInfo, pos2, vec2};
+use egui::{Color32, FontId, Rect, Role, Sense, Stroke, StrokeKind, Ui, WidgetInfo, pos2, vec2};
 
 use super::{focus_ring, truncated};
 use crate::theme;
@@ -29,6 +35,10 @@ pub struct Segmented<'a> {
     options: &'a [&'a str],
     selected: usize,
     label: Option<&'a str>,
+    promise: Option<&'a str>,
+    enabled: bool,
+    /// Options that cannot be chosen, by index, each with its reason.
+    disabled: &'a [(usize, &'a str)],
 }
 
 impl<'a> Segmented<'a> {
@@ -40,6 +50,9 @@ impl<'a> Segmented<'a> {
             options,
             selected,
             label: None,
+            promise: None,
+            enabled: true,
+            disabled: &[],
         }
     }
 
@@ -50,51 +63,98 @@ impl<'a> Segmented<'a> {
         self
     }
 
+    /// The control's promise, translated: the tooltip of its label and of each option
+    /// with no reason of its own.
+    pub fn promise(mut self, text: &'a str) -> Self {
+        self.promise = Some(text);
+        self
+    }
+
+    /// A disabled switch is dimmed and ignores input: a control that can change nothing on
+    /// the photo.
+    pub fn enabled(mut self, enabled: bool) -> Self {
+        self.enabled = enabled;
+        self
+    }
+
+    /// Options that cannot be chosen, by index, each with its reason, translated, as its
+    /// tooltip and its description to screen readers.
+    pub fn disabled_options(mut self, options: &'a [(usize, &'a str)]) -> Self {
+        self.disabled = options;
+        self
+    }
+
+    /// Why `option` cannot be chosen, if it cannot.
+    fn reason(&self, option: usize) -> Option<&'a str> {
+        self.disabled
+            .iter()
+            .find(|(at, _)| *at == option)
+            .map(|(_, why)| *why)
+    }
+
     /// Returns the option the user chose this frame.
     pub fn show(self, ui: &mut Ui) -> Option<usize> {
         let t = theme(ui.ctx());
         let font = FontId::proportional(t.text.small);
         let pad = t.spacing.xxs;
+        // With nothing else to choose, the switch is disabled whole.
+        let live = self.enabled
+            && ui.is_enabled()
+            && (0..self.options.len()).any(|i| i != self.selected && self.reason(i).is_none());
+        // Laid out in the placeholder colour, so each is painted in its state's.
         let galleys: Vec<_> = self
             .options
             .iter()
             .map(|o| {
                 ui.painter()
-                    .layout_no_wrap((*o).to_owned(), font.clone(), t.colors.text)
+                    .layout_no_wrap((*o).to_owned(), font.clone(), Color32::PLACEHOLDER)
             })
             .collect();
         let count = self.options.len() as f32;
         let height = t.sizes.control - 2.0;
-        let (outer, group) = match self.label {
+        let (outer, group, line) = match self.label {
             Some(label) => {
                 let (row, group) = ui.allocate_exact_size(
                     vec2(ui.available_width(), 2.0 * t.sizes.row),
                     Sense::hover(),
                 );
                 let line = Rect::from_min_size(row.min, vec2(row.width(), t.sizes.row));
+                let colour = if live {
+                    t.colors.text
+                } else {
+                    t.colors.text_disabled
+                };
                 let galley = ui.painter().layout_job(truncated(
                     label,
                     FontId::proportional(t.text.body),
                     line.width(),
-                    t.colors.text,
+                    colour,
                 ));
                 let at = pos2(line.left(), line.center().y - galley.size().y / 2.0);
-                ui.painter().galley(at, galley, t.colors.text);
+                ui.painter().galley(at, galley, colour);
                 let outer = Rect::from_center_size(
                     pos2(row.center().x, line.bottom() + t.sizes.row / 2.0),
                     vec2(row.width(), height + 2.0 * pad),
                 );
-                (outer, group)
+                (outer, group, Some(line))
             }
             None => {
                 let segment =
                     galleys.iter().map(|g| g.size().x).fold(0.0, f32::max) + 2.0 * t.spacing.m;
                 let size = vec2(segment * count + pad * (count + 1.0), height + 2.0 * pad);
-                ui.allocate_exact_size(size, Sense::hover())
+                let (outer, group) = ui.allocate_exact_size(size, Sense::hover());
+                (outer, group, None)
             }
         };
         let segment = (outer.width() - pad * (count + 1.0)) / count;
-        group.widget_info(|| WidgetInfo::labeled(Role::RadioGroup, true, self.name));
+        group.widget_info(|| WidgetInfo::labeled(Role::RadioGroup, live, self.name));
+        let group_id = group.id;
+        // The promise over the label, and over each option that can be chosen.
+        if let (Some(promise), Some(line)) = (self.promise, line) {
+            ui.interact(line, group_id.with("label"), Sense::hover())
+                .on_hover_text(promise)
+                .on_disabled_hover_text(promise);
+        }
         ui.painter()
             .rect_filled(outer, t.shape.radius_large, t.colors.sunken);
         let mut chosen = None;
@@ -106,7 +166,14 @@ impl<'a> Segmented<'a> {
                 ),
                 vec2(segment, height),
             );
-            let response = ui.interact(rect, group.id.with(i), Sense::click());
+            let reason = self.reason(i);
+            let enabled = live && reason.is_none();
+            let sense = if enabled {
+                Sense::click()
+            } else {
+                Sense::hover()
+            };
+            let response = ui.interact(rect, group_id.with(i), sense);
             let on = i == self.selected;
             if on {
                 ui.painter().rect(
@@ -116,11 +183,13 @@ impl<'a> Segmented<'a> {
                     Stroke::new(t.shape.hairline, t.colors.border),
                     StrokeKind::Inside,
                 );
-            } else if response.hovered() {
+            } else if enabled && response.hovered() {
                 ui.painter()
                     .rect_filled(rect, t.shape.radius, t.colors.hover);
             }
-            let colour = if on {
+            let colour = if !enabled {
+                t.colors.text_disabled
+            } else if on {
                 t.colors.text
             } else {
                 t.colors.text_secondary
@@ -131,8 +200,16 @@ impl<'a> Segmented<'a> {
                 focus_ring(ui.painter(), rect, &t);
             }
             let option = self.options[i];
-            response.widget_info(|| WidgetInfo::selected(Role::RadioButton, true, on, option));
-            if response.clicked() && !on {
+            response.widget_info(|| WidgetInfo::selected(Role::RadioButton, enabled, on, option));
+            if let Some(reason) = reason {
+                ui.ctx()
+                    .accesskit_node_builder(response.id, |node| node.set_description(reason));
+            }
+            let clicked = response.clicked();
+            if let Some(tip) = reason.or(self.promise) {
+                response.on_hover_text(tip).on_disabled_hover_text(tip);
+            }
+            if clicked && enabled && !on {
                 chosen = Some(i);
             }
         }

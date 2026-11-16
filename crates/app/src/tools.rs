@@ -24,11 +24,12 @@
 //! - Each row is a design-system component: a slider is a `SliderRow`, its track over
 //!   darktable's soft range where the definition gives one, a choice a `Choice` in its
 //!   Blended style, darktable's combobox, with its kept marker (decision 42), or
-//!   `Segmented`, a toggle a `ToggleRow`, a label a `group_label`, a collapsible group a
-//!   `CollapsibleGroup`, a curve of points a `Curve`, drawn through the curve the tool
-//!   says it renders, and the tone equalizer's graph of its bands an `Equalizer`, drawn
-//!   through the curve the tool says it renders through them. The closed registry's
-//!   other painted widgets join with the tools that use them.
+//!   `Segmented`, every option drawn and those the photo does not list disabled with
+//!   their reasons (decision 88), a toggle a `ToggleRow`, a label a `group_label`, a
+//!   collapsible group a `CollapsibleGroup`, a curve of points a `Curve`, drawn through
+//!   the curve the tool says it renders, and the tone equalizer's graph of its bands an
+//!   `Equalizer`, drawn through the curve the tool says it renders through them. The
+//!   closed registry's other painted widgets join with the tools that use them.
 //! - A preset row (decision 2) is a Blended `Choice`, with no marker, showing the option
 //!   the session reports the controls hold, or Custom, which is no option; the options this
 //!   photo cannot have are listed disabled, and choosing one applies it as one change.
@@ -1695,34 +1696,33 @@ fn choice_row(
         return;
     };
     let [label, full, promise] = words_of(words, tool, id, None);
-    // The options the session reports the photo lists, in the definition's order, then,
-    // while the edit holds one the photo does not list, from another photo's edit, that
-    // one, chosen and disabled (decision 30). A report that lists none lists them all.
     let index = *index as usize;
-    let mut listed: Vec<usize> = (0..options.len())
-        .filter(|&i| shown.options.is_empty() || shown.options.contains(&options[i]))
-        .collect();
-    let stored = (!listed.contains(&index)).then(|| {
-        listed.push(index);
-        listed.len() - 1
-    });
-    let names: Vec<String> = listed
-        .iter()
-        .map(|&i| words.text(&messages::option(tool, id, options[i])))
-        .collect();
-    let names: Vec<&str> = names.iter().map(String::as_str).collect();
-    // darktable's options its operation does not port: listed, never chosen. A segmented
-    // row has none (`Definition::check`).
-    let later: Vec<usize> = (0..listed.len())
-        .filter(|&at| Some(at) != stored && unported.contains(&options[listed[at]]))
-        .collect();
-    let later_tip = words.text("choice-option-later");
-    let unlisted_tip = words.text("choice-option-unavailable");
-    let at = listed.iter().position(|&i| i == index).unwrap_or_default();
+    // Whether the photo lists the option `i`: a report that lists none lists them all.
+    let lists = |i: usize| shown.options.is_empty() || shown.options.contains(&options[i]);
     let chosen = match style {
         // darktable's combobox, its kept marker the mirror's, as a slider row's. What a
         // quad runs comes with the first tool whose quad runs, as on a slider row.
         ChoiceStyle::List => {
+            // The options the session reports the photo lists, in the definition's order,
+            // then, while the edit holds one the photo does not list, from another photo's
+            // edit, that one, chosen and disabled (decision 30).
+            let mut listed: Vec<usize> = (0..options.len()).filter(|&i| lists(i)).collect();
+            let stored = (!listed.contains(&index)).then(|| {
+                listed.push(index);
+                listed.len() - 1
+            });
+            let names: Vec<String> = listed
+                .iter()
+                .map(|&i| words.text(&messages::option(tool, id, options[i])))
+                .collect();
+            let names: Vec<&str> = names.iter().map(String::as_str).collect();
+            // darktable's options its operation does not port: listed, never chosen.
+            let later: Vec<usize> = (0..listed.len())
+                .filter(|&at| Some(at) != stored && unported.contains(&options[listed[at]]))
+                .collect();
+            let later_tip = words.text("choice-option-later");
+            let unlisted_tip = words.text("choice-option-unavailable");
+            let at = listed.iter().position(|&i| i == index).unwrap_or_default();
             let mut row = Choice::new(&label, &names, at)
                 .name(&full)
                 .promise(&promise)
@@ -1734,7 +1734,7 @@ fn choice_row(
                 row = row.unlisted(stored, &unlisted_tip);
             }
             match row.show(ui) {
-                Some(ChoiceAction::Set(chosen)) => Some(chosen),
+                Some(ChoiceAction::Set(chosen)) => listed.get(chosen).copied(),
                 Some(ChoiceAction::ToggleKeep) => {
                     changes.push(Change::Keep {
                         tool,
@@ -1746,19 +1746,38 @@ fn choice_row(
                 Some(ChoiceAction::Quad) | None => None,
             }
         }
+        // Every option, in the definition's order: those the photo does not list drawn
+        // disabled with their reasons, so the one an edit from another photo holds is
+        // shown chosen and disabled, and with nothing else to choose the switch is
+        // disabled whole (decision 88). A segmented row has no unported option.
         ChoiceStyle::Segmented => {
-            let row = ui.add_enabled_ui(shown.available, |ui| {
-                Segmented::new(&full, &names, at).label(&label).show(ui)
-            });
-            row.response.on_hover_text(&promise);
-            row.inner
+            let all: Vec<String> = options
+                .iter()
+                .map(|option| words.text(&messages::option(tool, id, option)))
+                .collect();
+            let all: Vec<&str> = all.iter().map(String::as_str).collect();
+            let reasons: Vec<(usize, String)> = (0..options.len())
+                .filter(|&i| !lists(i))
+                .map(|i| {
+                    let why = messages::option_unavailable(tool, id, options[i]);
+                    (i, words.text(&why))
+                })
+                .collect();
+            let reasons: Vec<(usize, &str)> =
+                reasons.iter().map(|(i, why)| (*i, why.as_str())).collect();
+            Segmented::new(&full, &all, index)
+                .label(&label)
+                .promise(&promise)
+                .enabled(shown.available)
+                .disabled_options(&reasons)
+                .show(ui)
         }
     };
-    if let Some(chosen) = chosen.and_then(|at| listed.get(at)) {
+    if let Some(chosen) = chosen {
         changes.push(Change::Set {
             tool,
             control: id,
-            value: ControlValue::Choice(*chosen as u32),
+            value: ControlValue::Choice(chosen as u32),
             done: true,
         });
     }
@@ -2090,6 +2109,7 @@ mod tests {
     use apertrust_tools::colour_calibration::ColourCalibration;
     use apertrust_tools::demosaic::Demosaic;
     use apertrust_tools::exposure::Exposure;
+    use apertrust_tools::highlight_reconstruction::HighlightReconstruction;
     use apertrust_tools::output_colour_profile::OutputColourProfile;
     use apertrust_tools::rgb_primaries::RgbPrimaries;
     use apertrust_tools::testing::{self, Sample, Twin};
@@ -2581,34 +2601,34 @@ mod tests {
         );
     }
 
-    /// A choice row has the kept marker a slider row has (decision 42): Exposure's Mode,
-    /// kept once set, released by a click on its marker and kept again by another, the
-    /// marker following at once as the session will.
+    /// A choice row has the kept marker a slider row has (decision 42): Highlight
+    /// reconstruction's Method, kept once set, released by a click on its marker and kept
+    /// again by another, the marker following at once as the session will.
     #[test]
     fn a_choice_row_s_marker_releases_and_keeps_its_control() {
-        let mut kept = untouched(&Exposure);
+        let mut kept = untouched(&HighlightReconstruction);
         set(&mut kept, "mode", ControlValue::Choice(0), Some(Mark::Kept));
-        let mut harness = panel(&Exposure, kept);
+        let mut harness = panel(&HighlightReconstruction, kept);
         harness.run();
         let marked = |harness: &Harness<'_, Panel>| {
-            let marker = harness.get_by_role_and_label(Role::Button, "Keep Mode");
+            let marker = harness.get_by_role_and_label(Role::Button, "Keep Method");
             marker.accesskit_node().toggled()
         };
         assert_eq!(marked(&harness), Some(Toggled::True));
-        harness.get_by_label("Keep Mode").click();
+        harness.get_by_label("Keep Method").click();
         harness.run();
         assert_eq!(marked(&harness), Some(Toggled::False));
-        harness.get_by_label("Keep Mode").click();
+        harness.get_by_label("Keep Method").click();
         harness.run();
         let keep = |kept| Change::Keep {
-            tool: "exposure",
+            tool: "highlights",
             control: "mode",
             kept,
         };
         assert_eq!(harness.state().changes, [keep(false), keep(true)]);
         // Still the combo box it was, which a click on its marker never opens.
-        harness.get_by_role_and_label(Role::ComboBox, "Mode");
-        assert!(harness.query_by_label("Automatic").is_none());
+        harness.get_by_role_and_label(Role::ComboBox, "Method");
+        assert!(harness.query_by_label("Clip highlights").is_none());
     }
 
     #[test]
@@ -2662,7 +2682,12 @@ mod tests {
         let mut harness = panel(&Exposure, state);
         harness.run();
         assert!(harness.query_by_role(Role::Tab).is_none());
-        harness.get_by_role_and_label(Role::ComboBox, "Mode");
+        // Mode is a Manual | Automatic switch (decision 88), both live on a raw.
+        harness.get_by_role_and_label(Role::RadioGroup, "Mode");
+        for option in ["Manual", "Automatic"] {
+            let node = harness.get_by_role_and_label(Role::RadioButton, option);
+            assert!(!node.accesskit_node().is_disabled(), "{option}");
+        }
         // The camera's rows, with their values on the photo, heard after their names
         // (decision 88).
         for name in [
@@ -2677,10 +2702,10 @@ mod tests {
         harness.get_by_role_and_label(Role::Button, "Area exposure mapping");
         // Automatic's rows, which manual hides, and Contrast and its pivot, which left
         // Exposure for Colour balance RGB (decision 2).
-        for hidden in ["Percentile", "Target level", "Contrast", "Contrast pivot"] {
+        for hidden in ["Measure at", "Place it at", "Contrast", "Contrast pivot"] {
             assert!(harness.query_by_label(hidden).is_none(), "{hidden}");
         }
-        assert!(harness.query_by_label_contains("Computed EC").is_none());
+        assert!(harness.query_by_label_contains("This photo").is_none());
     }
 
     #[test]
@@ -2697,21 +2722,84 @@ mod tests {
         }];
         let mut harness = panel(&Exposure, state);
         harness.run();
-        for name in ["Percentile", "Target level", "Black level correction"] {
+        // Percentile and Target level under the redesign's labels (decision 88).
+        for name in ["Measure at", "Place it at", "Black level correction"] {
             harness.get_by_role_and_label(Role::Slider, name);
         }
-        // Manual's rows hidden, the computed value after Target level, as darktable's
-        // "computed EC: −1.23 EV".
+        // Manual's rows hidden, the computed value after Place it at, darktable's
+        // "computed EC: −1.23 EV" as This photo.
         assert!(
             harness
                 .query_by_role_and_label(Role::Slider, "Exposure")
                 .is_none()
         );
-        harness.get_by_role_and_label(Role::Label, "Computed EC −1.23 EV");
+        harness.get_by_role_and_label(Role::Label, "This photo −1.23 EV");
         // None yet: the label alone.
         harness.state_mut().state.computed[0].value = None;
         harness.run();
-        harness.get_by_role_and_label(Role::Label, "Computed EC");
+        harness.get_by_role_and_label(Role::Label, "This photo");
+    }
+
+    /// Exposure as the session reports it on an image that is not a raw, its Mode
+    /// holding `mode`: the photo lists manual alone (decision 88).
+    fn not_a_raw(mode: u32) -> ToolState {
+        let mut state = untouched(&Exposure);
+        let image = ImageContext::full(8, 8);
+        on_photo(&Exposure, &mut state, &image);
+        for control in &mut state.controls {
+            control.options = Exposure.options(control.control, &image);
+            if control.control == "mode" {
+                control.value = ControlValue::Choice(mode);
+            }
+        }
+        state
+    }
+
+    /// On an image that is not a raw, the switch draws Automatic disabled, saying why
+    /// (decision 88). Holding Manual there it has nothing else to offer, so it is
+    /// disabled whole; an edit pasted there holding Automatic shows it chosen and
+    /// disabled, and Manual can be chosen.
+    #[test]
+    fn mode_s_automatic_is_disabled_on_an_image_that_is_not_a_raw() {
+        let why = "Automatic needs a raw photo's histogram";
+        let mut harness = panel(&Exposure, not_a_raw(0));
+        harness.run();
+        let group = harness.get_by_role_and_label(Role::RadioGroup, "Mode");
+        assert!(group.accesskit_node().is_disabled());
+        let automatic = harness.get_by_role_and_label(Role::RadioButton, "Automatic");
+        assert!(automatic.accesskit_node().is_disabled());
+        assert_eq!(
+            automatic.accesskit_node().description().as_deref(),
+            Some(why)
+        );
+        automatic.click();
+        harness
+            .get_by_role_and_label(Role::RadioButton, "Manual")
+            .click();
+        harness.run();
+        assert!(harness.state().changes.is_empty());
+
+        // Pasted as Automatic: chosen, disabled, rendering as manual mode; Manual live.
+        harness.state_mut().state = not_a_raw(1);
+        harness.run();
+        let group = harness.get_by_role_and_label(Role::RadioGroup, "Mode");
+        assert!(!group.accesskit_node().is_disabled());
+        let automatic = harness.get_by_role_and_label(Role::RadioButton, "Automatic");
+        assert!(automatic.accesskit_node().is_disabled());
+        assert_eq!(automatic.accesskit_node().toggled(), Some(Toggled::True));
+        harness
+            .get_by_role_and_label(Role::RadioButton, "Manual")
+            .click();
+        harness.run();
+        assert_eq!(
+            harness.state().changes,
+            [Change::Set {
+                tool: "exposure",
+                control: "mode",
+                value: ControlValue::Choice(0),
+                done: true
+            }]
+        );
     }
 
     /// On a photo that gives them nothing to do, Exposure's camera rows are not drawn
@@ -6066,6 +6154,57 @@ mod tests {
     #[test]
     fn exposure_in_the_pseudo_locale() {
         photograph(Builtin::Dark, Locale::Pseudo, "exposure-pseudo");
+    }
+
+    /// Exposure's automatic mode as the board draws it (decision 88), open, one under
+    /// another: on a raw with the exposure it computed; on an image that is not a raw
+    /// holding Manual, the switch disabled whole; and there holding Automatic, pasted,
+    /// chosen and disabled with Manual live.
+    fn photograph_automatic(which: Builtin, name: &str) {
+        let mut raw = untouched(&Exposure);
+        set(&mut raw, "mode", ControlValue::Choice(1), Some(Mark::Kept));
+        raw.computed = vec![apertrust_engine::session::ComputedState {
+            id: "computed_exposure",
+            value: Some(0.514),
+        }];
+        let states = [raw, not_a_raw(0), not_a_raw(1)];
+        let mut harness = Harness::builder()
+            .with_size(egui::vec2(400.0, 740.0))
+            .with_context_setup(move |ctx| apertrust_ui::install(ctx, Theme::builtin(which)))
+            .build_ui(move |ui| {
+                let panel = theme(ui.ctx()).colors.panel;
+                ui.painter()
+                    .rect_filled(ui.ctx().content_rect(), 0.0, panel);
+                ui.spacing_mut().item_spacing.y = 0.0;
+                for (i, state) in states.iter().enumerate() {
+                    ui.push_id(i, |ui| {
+                        section(
+                            ui,
+                            &Exposure,
+                            state,
+                            true,
+                            &Panels::default(),
+                            &|_: &str| false,
+                            false,
+                            true,
+                            None,
+                            &Pickers::NONE,
+                        )
+                    });
+                }
+            });
+        harness.run();
+        harness.snapshot(name);
+    }
+
+    #[test]
+    fn exposure_s_automatic_mode_in_the_dark_theme() {
+        photograph_automatic(Builtin::Dark, "exposure-automatic-dark");
+    }
+
+    #[test]
+    fn exposure_s_automatic_mode_in_the_light_theme() {
+        photograph_automatic(Builtin::Light, "exposure-automatic-light");
     }
 
     /// Exposure's area exposure mapping as the app draws it once its pick is built.

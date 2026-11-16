@@ -19,10 +19,11 @@
 //! edits with it, in the first pass (decision 2): darktable's page, its controls in
 //! `gui_init`'s order under its labels, with no tabs.
 //!
-//! - **Mode:** manual, or automatic, darktable's deflicker: the exposure that puts a
-//!   percentile of the raw's histogram at a level below the white point, worked out from
-//!   each photo, so a series comes out matched. Unavailable on an image that is not a raw,
-//!   where an edit holding automatic renders as manual.
+//! - **Mode:** a Manual | Automatic switch (decision 88), automatic darktable's
+//!   deflicker: the exposure that puts a percentile of the raw's histogram at a level
+//!   below the white point, worked out from each photo, so a series comes out matched.
+//!   An image that is not a raw lists manual alone, and an edit holding automatic renders
+//!   there as manual. Exposure has no Auto: automatic mode is its one automatic way.
 //! - **In manual mode:** Compensate camera exposure, whether the camera's exposure
 //!   compensation is undone; Highlight preservation mode, whether the exposure a
 //!   camera's highlight-preserving mode held back is given back, on by default; and
@@ -30,8 +31,9 @@
 //!   the photo's: +0.7 EV on a colour raw, 0 otherwise (decision 30). The two camera
 //!   rows are hidden where the photo gives them nothing to do, their labels showing what
 //!   they take off and give back (decision 88).
-//! - **In automatic mode:** Percentile and Target level, and darktable's computed EC, the
-//!   exposure the operation applies, a computed value (`Row::Computed`).
+//! - **In automatic mode:** Percentile and Target level, labelled Measure at and Place it
+//!   at, and darktable's computed EC, the exposure the operation applies, a computed
+//!   value (`Row::Computed`) labelled This photo (decision 88).
 //! - **Black level correction,** darktable's offset over the photo's own black.
 //! - **Area exposure mapping,** a collapsible group of darktable's settings for its
 //!   picker, which no edit stores, kept in settings ([`crate::settings`]), and the area's
@@ -218,15 +220,17 @@ static DEFINITION: Definition = Definition {
     id: "exposure",
     version: 3,
     layers: true,
-    auto: true,
+    // Automatic mode is its one automatic way (decision 88).
+    auto: false,
     switched: false,
     controls: &CONTROLS,
     tabs: &[Tab {
         id: None,
         rows: &[
+            // Manual | Automatic, the one segmented choice listed per photo (decision 88).
             Row::Choice {
                 control: "mode",
-                style: ChoiceStyle::List,
+                style: ChoiceStyle::Segmented,
             },
             Row::When {
                 control: "mode",
@@ -340,18 +344,32 @@ impl Tool for Exposure {
         &OWNS
     }
 
-    /// Compensate camera exposure does nothing on a photo that records no bias,
+    /// Compensate camera exposure does nothing on a photo that records no bias, and
     /// Highlight preservation mode nothing on one whose camera held no exposure back,
-    /// where darktable hides it (`gui_update`), and Mode nothing on an image that is not
-    /// a raw of one 16-bit channel, where darktable makes it insensitive: one with no
-    /// camera, since the engine develops only 16-bit mosaics. None depends on the tool's
-    /// values.
+    /// where darktable hides it (`gui_update`). Neither depends on the tool's values. Mode
+    /// stays available everywhere, its options listed per photo ([`Self::options`]), so
+    /// an edit pasted onto an image that is not a raw holding automatic can be set back
+    /// to manual (decision 88).
     fn available(&self, control: &str, _: &Controls, image: &ImageContext) -> bool {
         match control {
             "camera_bias" => camera_bias(image) != 0.0,
             "compensate_hilite_pres" => highlight_bias(image) != 0.0,
-            "mode" => image.camera.is_some(),
             _ => true,
+        }
+    }
+
+    /// Mode lists manual alone on an image that is not a raw of one 16-bit channel, where
+    /// darktable makes it insensitive: one with no camera, since the engine develops only
+    /// 16-bit mosaics, and which has no raw histogram for automatic mode to measure. The
+    /// switch draws automatic disabled there, with its reason (decision 88).
+    fn options(&self, control: &str, image: &ImageContext) -> Vec<&'static str> {
+        match control {
+            "mode" if image.camera.is_none() => vec![MODES[0]],
+            "mode" => MODES.to_vec(),
+            _ => match DEFINITION.control(control).map(|control| control.kind) {
+                Some(ControlKind::Choice { options, .. }) => options.to_vec(),
+                _ => Vec::new(),
+            },
         }
     }
 
@@ -819,6 +837,57 @@ mod tests {
         assert_eq!(settings, ["area_mode", "lightness"]);
     }
 
+    /// Automatic mode's page as redesigned (decision 88): Mode a Manual | Automatic switch,
+    /// no Auto beside it, and automatic's rows Percentile, Target level and the computed
+    /// exposure, then Black level correction with darktable's four decimals.
+    #[test]
+    fn its_mode_is_a_switch_and_it_has_no_auto() {
+        assert!(!DEFINITION.auto);
+        let mode = DEFINITION
+            .rows()
+            .find(|row| row.controls() == ["mode"])
+            .unwrap();
+        assert!(matches!(
+            mode,
+            Row::Choice {
+                style: ChoiceStyle::Segmented,
+                ..
+            }
+        ));
+        let automatic: Vec<&str> = DEFINITION
+            .rows()
+            .filter_map(|row| match row {
+                Row::When {
+                    is: ["automatic"],
+                    rows,
+                    ..
+                } => Some(*rows),
+                _ => None,
+            })
+            .flatten()
+            .flat_map(|row| match row {
+                Row::Computed(computed) => vec![computed.id],
+                row => row.controls().to_vec(),
+            })
+            .collect();
+        assert_eq!(
+            automatic,
+            [
+                "deflicker_percentile",
+                "deflicker_target_level",
+                COMPUTED_EXPOSURE
+            ]
+        );
+        let black = DEFINITION
+            .rows()
+            .find_map(|row| match row {
+                Row::Slider(slider) if slider.control == "black_level" => Some(slider.decimals),
+                _ => None,
+            })
+            .unwrap();
+        assert_eq!(black, 4);
+    }
+
     #[test]
     fn at_its_defaults_it_sets_nothing() {
         let image = raw(-0.67);
@@ -1028,9 +1097,16 @@ mod tests {
             let control = DEFINITION.control(control).unwrap();
             assert_eq!(control.check(&value), Ok(()));
         }
-        // Mode is live on a raw, as darktable's is, and not on another image.
+        // Mode lists automatic on a raw, as darktable's is live there, and manual alone
+        // on another image, where it stays available so a pasted automatic can be set
+        // back to manual (decision 88).
+        assert_eq!(Exposure.options("mode", &raw(-0.67)), MODES);
+        assert_eq!(
+            Exposure.options("mode", &ImageContext::full(8, 8)),
+            ["manual"]
+        );
         assert!(available("mode", &raw(-0.67)));
-        assert!(!available("mode", &ImageContext::full(8, 8)));
+        assert!(available("mode", &ImageContext::full(8, 8)));
         // Each is its parameter, written where set.
         let settings = bind(
             &[

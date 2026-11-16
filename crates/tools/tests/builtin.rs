@@ -328,6 +328,11 @@ fn every_built_in_preset_row_has_options_a_photo_can_have_that_read_back() {
     }
 }
 
+/// The one segmented choice listed per photo, Exposure's Mode, an exception to decision
+/// 30's "a list, never segments" (decision 88): its switch draws every option, those the
+/// photo does not list disabled with their reasons.
+const SEGMENTS_PER_PHOTO: [(&str, &str); 1] = [("exposure", "mode")];
+
 /// What is wrong with the options the tool's choices list on `images` (decision 30):
 /// on any of them a list that is empty, not the definition's options each once in its
 /// order, or without the photo's default ([`check::listed`]); an option no image lists; a
@@ -367,7 +372,10 @@ fn list_problems(tool: &dyn Tool, images: &[ImageContext]) -> Vec<String> {
                 problems.push(format!("{id}.{}: no photo lists {option}", control.id));
             }
         }
-        if segmented.contains(control.id) && lists.iter().any(|listed| *listed != lists[0]) {
+        if segmented.contains(control.id)
+            && !SEGMENTS_PER_PHOTO.contains(&(id, control.id))
+            && lists.iter().any(|listed| *listed != lists[0])
+        {
             problems.push(format!("{id}.{}: segments, listed per photo", control.id));
         }
     }
@@ -717,6 +725,30 @@ fn every_message_a_definition_implies_is_translated() {
                 .any(|image| tool.label_value(control.id, image).is_some())
             {
                 wanted.push(messages::label_value(definition.id, control.id));
+            }
+        }
+        // A segmented choice draws an option a photo does not list disabled, with its
+        // reason (decision 88), so each option some photo leaves out needs one.
+        for row in definition.rows() {
+            let Row::Choice {
+                control,
+                style: apertrust_tools::ChoiceStyle::Segmented,
+            } = row
+            else {
+                continue;
+            };
+            let Some(ControlKind::Choice { options, .. }) =
+                definition.control(control).map(|found| found.kind)
+            else {
+                continue;
+            };
+            for option in options {
+                if images
+                    .iter()
+                    .any(|image| !tool.options(control, image).contains(option))
+                {
+                    wanted.push(messages::option_unavailable(definition.id, control, option));
+                }
             }
         }
     }

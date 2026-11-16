@@ -1086,6 +1086,72 @@ fn contrast_and_its_pivot_are_no_longer_exposure_s() {
     assert_eq!(edit, Edit::default());
 }
 
+/// E36's image, one that is not a raw, lists manual alone (decision 88): an edit made on
+/// a raw and pasted there keeps automatic, which renders as manual mode (E36), Manual can
+/// be chosen, and automatic cannot be set there again.
+#[test]
+fn e36_a_pasted_automatic_mode_can_be_set_back_to_manual_and_not_again() {
+    let mut plain = common::photo();
+    plain.camera = None;
+    assert_eq!(Exposure.options("mode", &plain), ["manual"]);
+    assert_eq!(
+        Exposure.options("mode", &common::photo()),
+        ["manual", "automatic"]
+    );
+    let mode = |edit: &Edit| edit.tool("exposure").and_then(|v| v.get("mode")).cloned();
+    let mut pasted = edit_of(&[("mode", 1.0)]);
+    assert_eq!(mode(&pasted), Some(ControlValue::Choice(1)));
+    let before = pasted.clone();
+    assert_eq!(
+        pasted.set_control(&Exposure, "mode", ControlValue::Choice(1), &plain),
+        Err(edit::EditError::NotListed {
+            tool: "exposure",
+            control: "mode",
+            option: "automatic",
+        })
+    );
+    assert_eq!(pasted, before);
+    pasted
+        .set_control(&Exposure, "mode", ControlValue::Choice(0), &plain)
+        .unwrap();
+    assert_eq!(mode(&pasted), Some(ControlValue::Choice(0)));
+}
+
+/// Automatic mode's page in the board's words (decision 88), each tooltip starting with
+/// darktable's name for its row; Mode's Automatic saying why an image that is not a raw
+/// cannot have it; Black level correction warning what it is not for.
+#[test]
+fn automatic_mode_s_page_has_the_board_s_words() {
+    use apertrust_tools::messages;
+    let words = apertrust_ui::Translator::new(apertrust_ui::Locale::EnGb);
+    let text = |id: String| words.text(&id);
+    for (control, label, darktable) in [
+        ("deflicker_percentile", "Measure at", "Percentile"),
+        ("deflicker_target_level", "Place it at", "Target level"),
+    ] {
+        assert_eq!(text(messages::label("exposure", control)), label);
+        assert_eq!(text(messages::full("exposure", control)), label);
+        let promise = text(messages::promise("exposure", control));
+        assert!(promise.starts_with(darktable), "{promise}");
+    }
+    assert!(text(messages::promise("exposure", "deflicker_percentile")).contains("median"));
+    let [label, promise] = messages::computed("exposure", "computed_exposure").map(text);
+    assert_eq!(label, "This photo");
+    assert!(promise.starts_with("Computed EC"), "{promise}");
+    assert_eq!(
+        text(messages::option_unavailable(
+            "exposure",
+            "mode",
+            "automatic"
+        )),
+        "Automatic needs a raw photo's histogram"
+    );
+    assert_eq!(
+        text(messages::promise("exposure", "black_level")),
+        "For lifting clipped blacks, not for deeper blacks: use AgX's black relative exposure"
+    );
+}
+
 /// The tool's defaults agree with the exposure operation's for every kind of image:
 /// Compensate camera exposure as the operation's `compensate_exposure_bias`, Highlight
 /// preservation mode as its `compensate_hilite_pres`, and the camera's bias and the

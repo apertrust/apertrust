@@ -52,7 +52,6 @@ tool-flip-action-rotate_ccw-promise = Rotate the image 90° counterclockwise.
 
 ## Exposure
 
-tool-exposure-auto = Sets Exposure so the photo's tones sit around middle gray. A kept Exposure stays as it is.
 tool-exposure-setting-area_mode-promise = Correction adjusts the exposure so that the input's lightness is mapped to the target. Measure only shows how an input color is mapped by the exposure, and can be used to define a target.
 
 ## Color calibration
