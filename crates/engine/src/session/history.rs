@@ -1095,10 +1095,10 @@ impl Engine {
         };
         // The gesture's own step: of the source and note of the change that began it.
         let ended = gesture.map(|(_, source, note)| (source, note));
+        let ends_gesture = ended.is_some() && on_edit(&command) && !goes_on;
         if let Some((source, note)) = &ended
-            && on_edit(&command)
+            && ends_gesture
             && !releases
-            && !goes_on
         {
             self.step(*source, note.clone());
         }
@@ -1137,7 +1137,7 @@ impl Engine {
                 _ => {}
             }
         }
-        let refused_release = applied.is_err() && releases && ended.is_some();
+        let refused_ended = applied.is_err() && ends_gesture;
         match (&applied, completes, ended) {
             (Ok(_), Some((source, note)), _) => self.step(source, note),
             (Err(_), _, Some((source, note))) if releases => self.step(source, note),
@@ -1163,7 +1163,7 @@ impl Engine {
                 }
             }
         }
-        if refused_release && self.needs_save() {
+        if refused_ended && self.needs_save() {
             self.save();
         }
         applied

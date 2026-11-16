@@ -1119,6 +1119,63 @@ fn qualifiers_on_copy_containers_and_items_are_reported() {
     }
 }
 
+#[test]
+fn qualified_or_resource_step_scalars_are_reported() {
+    use crate::clock as clock_fields;
+    use crate::xmp::{Node, Value, Xmp};
+    let base = Xmp::parse(&edits().to_xml()).unwrap();
+    for local in [
+        "id",
+        "source",
+        "batch",
+        clock_fields::WHEN,
+        clock_fields::COUNTER,
+        clock_fields::MACHINE,
+    ] {
+        for resource in [false, true] {
+            let mut changed = base.clone();
+            let copies = &mut changed
+                .properties
+                .iter_mut()
+                .find(|p| p.name.local == "copies")
+                .unwrap()
+                .node;
+            let Value::Array(_, copies) = &mut copies.value else {
+                panic!("copies")
+            };
+            let Value::Struct(fields) = &mut copies[0].value else {
+                panic!("copy")
+            };
+            let history = &mut fields
+                .iter_mut()
+                .find(|p| p.name.local == "history")
+                .unwrap()
+                .node;
+            let Value::Array(_, steps) = &mut history.value else {
+                panic!("history")
+            };
+            let Value::Struct(fields) = &mut steps[1].value else {
+                panic!("step")
+            };
+            let node = &mut fields
+                .iter_mut()
+                .find(|p| p.name.local == local)
+                .unwrap()
+                .node;
+            if resource {
+                let Value::Simple(text) = &node.value else {
+                    panic!("scalar")
+                };
+                node.value = Value::Resource(text.clone());
+            } else {
+                node.qualifiers = Node::with_lang("", "en").qualifiers;
+            }
+            let read = Edits::parse(&changed.to_xml(), 0).unwrap();
+            assert!(read.problems.iter().any(|p| matches!(p, Problem::UnknownField { field, .. } if field == &format!("apertrust:{local}"))), "{local}, resource={resource}: {:?}", read.problems);
+        }
+    }
+}
+
 /// In a step's entries, a field a newer build may write that this one would drop is a
 /// problem, by the kind of entry: one of Apertrust's own it does not write, another
 /// namespace's, an operation's control or a tool's parameter, an item that is no entry,

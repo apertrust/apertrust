@@ -756,6 +756,34 @@ fn a_refused_unknown_control_release_saves_the_completed_gesture() {
     remove(&path);
 }
 
+#[test]
+fn a_refused_command_saves_the_gesture_it_ends() {
+    let commands = [
+        reset("missing"),
+        Command::SetControl {
+            tool: "missing".to_owned(),
+            control: "brightness".to_owned(),
+            value: ControlValue::Number(0.5),
+            done: true,
+        },
+    ];
+    for (index, command) in commands.into_iter().enumerate() {
+        let path = scratch(&format!("history-refused-command-{index}"));
+        let mut driven = Driven::new(&[&Sample]);
+        driven.open(&path);
+        driven.writes();
+        driven.run([set("brightness", ControlValue::Number(0.5), false)]);
+        let events = driven.run([command]);
+        assert_eq!(failures(&events).len(), 1);
+        assert!(driven.engine.open.as_ref().unwrap().gesture.is_none());
+        let sidecar = sidecar::path_for(&path);
+        assert_eq!(written(&driven.writes()), [(sidecar.as_path(), true)]);
+        let read = sidecar::read(&sidecar, OPERATIONS, &[&Sample], &[]).unwrap();
+        assert_eq!(read.edit.tools["sample"].number("brightness"), Some(0.5));
+        remove(&path);
+    }
+}
+
 /// A change not yet a step, a `Set` or a drag under way, is made one before Undo, which
 /// then takes it back; Redo puts it back.
 #[test]
