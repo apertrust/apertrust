@@ -695,7 +695,7 @@ macOS only: the app menu, which macOS titles with the app's name.
 - **The editing items follow focus** (decision 39): while a value field has focus, Undo, Redo, Cut, Copy, Paste and Select All act on it, and Undo and Redo read Undo and Redo alone. Otherwise Undo and Redo name the step as History names it ("Undo Exposure · Sky") and read Undo, disabled, when there is none; Select All selects the photos once photos can be selected; and Cut, Copy and Paste are disabled, since copying an edit is Copy Edit's, with its own keys, so Ctrl+C never has two meanings.
 - **Previous Selection** (decision 90) goes back one level, to the selection as it was before its last change, with its active photo: the way back from a stray click that drops a large selection, beyond darktable. One level only. It is disabled while there is no earlier selection, and it is no history step; the earlier selection is the session's, as the selection is (decision 37).
 - **What the edit's items act on** (decision 37): Copy Edit copies the active photo's edit; Apply Edit and Copy or Apply Parts… apply to every selected photo, one batch that one Undo takes back; Reset Edit resets the active photo alone.
-- **Reset Edit and Discard History…** (decision 78; [history.md](history.md#what-makes-a-step)): Reset Edit, like the top panel's Reset and the History header's ↺, is one step that resets the edit, holding every tool it reset, the log kept. Discard History…, built with the library's step 9.8, is darktable's discard: it clears the history and resets the edit, asking first with Don't ask again (darktable's `ask_before_discard`, kept as `history.ask_before_discard`), and is undone within the session. Where the host shows no alert yet, on Windows ([Dialogs and alerts](#still-to-build)), it is drawn disabled in Edit and the History section's ⋯ wherever it would ask, its tooltip saying why and that turning the setting off discards without asking, as Export's On conflict › Overwrite is, and hidden in the right-click menus ([Context menus](#context-menus)); with the setting off on an edit that reads whole it runs. It is in Edit, the History section's ⋯ options menu and, as History's item, the photo's and a thumbnail's right-click menus ([Context menus](#context-menus), decision 91, planned), never a button in the History header, and it is the one history command an edit view-only because part of its history cannot be read allows.
+- **Reset Edit and Discard History…** (decision 78; [history.md](history.md#what-makes-a-step)): Reset Edit, like the top panel's Reset and the History header's ↺, is one step that resets the edit, holding every tool it reset, the log kept. Discard History…, built with the library's step 9.8, is darktable's discard: it clears the history and resets the edit, asking first with Don't ask again (darktable's `ask_before_discard`, kept as `history.ask_before_discard`), and is undone within the session. Where the host shows no alert yet, on Windows ([Dialogs and alerts](#still-to-build)), it is drawn disabled wherever it would ask, its tooltip saying why and that turning the setting off discards without asking, as Export's On conflict › Overwrite is; with the setting off on an edit that reads whole it runs. It is in Edit and the History section's ⋯ options menu, never a button in the History header nor in the photo's right-click menu, and it is the one history command an edit view-only because part of its history cannot be read allows.
 - **What counts as edited,** for Reset Edit, the top panel's Reset and the grid cell's pencil: values off their defaults, and kept or Auto marks. Reset clears the marks too, and a photo with only marks shows the pencil. Planned: today only values count, so a kept mark alone leaves Reset unavailable.
 - macOS adds AutoFill, Start Dictation… and Emoji & Symbols at the end; they stay, since Dictation is an input method some people need.
 
@@ -1089,9 +1089,9 @@ Planned (decision 91). A right-click menu opens only in a named place, and tools
 
 | Place | Tools' items | The app's items | When |
 | --- | --- | --- | --- |
-| The photo | Yes, at most two a tool | Copy Edit, Apply Edit, Reset Edit; Export…; Background ▸ ([The background](#the-background)) | The first slice |
-| A thumbnail, in the grid panel or a cell in Photo | Yes, at most two a tool | Copy Edit, Apply Edit, Reset Edit; Export…; Show in Folder once built | The first slice |
-| A tool's ⋯ (`Options`), its own section only | Yes, at most four | Reset, Copy Settings and Paste Settings (with Copy and Apply Parts, Phase 3) first; the layout's items ([Moving, pinning and floating sections](#moving-pinning-and-floating-sections)) last | With the layout's ⋯ |
+| The photo | Yes, at most two a tool; History's Reset first | Export…; Background ▸ ([The background](#the-background)) | The first slice |
+| A thumbnail, in the grid panel or a cell in Photo | Yes, at most two a tool; History's Reset first | Export…; Show in Folder once built | The first slice |
+| A tool's ⋯ (`Options`), its own section only | Yes, at most four | Reset, Copy Settings and Paste Settings (with Copy and Apply Parts, Phase 3) in `EDIT`; the layout's items ([Moving, pinning and floating sections](#moving-pinning-and-floating-sections)) in `LAYOUT`, last | With the layout's ⋯ |
 | The surround | No | Background ▸ | Built |
 | The grid bar | No | Position ▸ | Built |
 | Browse's folder rows | No | Show in Folder, Open | Built |
@@ -1115,27 +1115,30 @@ A place opens to tools' items only by a decision of its own.
 - A tool's own actions, each `Row::Action` and each button of `Row::Buttons`, become registry actions as the app starts:
   - each has the id `tool-<tool>-<action>` and the action's full name as its words (`tool-<tool>-action-<action>-full`);
   - none has a default key, and each runs as its button does.
-- A utility's items are registry actions it has already: History's Discard History… is `discard-history`.
+- A utility's items are registry actions it has already: History's Reset is `reset`.
 
 **Declared as data.**
 
-- A tool declares its items in `Definition::menus` (`MenuItem { place, action }`), each naming one of its own actions. A utility declares them in `about::UTILITIES` (`Utility::menus`), each naming a registry action.
+- A tool declares its items in `Definition::menus` (`MenuItem { place, section, order, action }`), each naming one of its own actions. A utility declares them in `about::UTILITIES` (`Utility::menus`), each naming a registry action. The app declares its own items for each place as `MenuItem`s too.
+- **`section`** is one of the `Section` constants in `apertrust-tools`, shared by the app and the tools, whose value sets the section's place in a menu, 1000 apart: `EDIT` 1000, `EXPORT` 2000, `VIEW` 3000, `HISTORY` 4000, and `LAYOUT` 9000 for ⋯'s layout items. A tool may use a value of its own.
+- **`order`** places an item within its section, 100 apart (100, 200, 300…), lower first. The gaps leave room to insert an item without renumbering. "Order", not "weight" or "priority", whose direction is ambiguous.
 - A tool with nothing to add declares nothing.
 - `Definition::check` refuses an unknown action, a repeat, and more items than the place's limit. An app test holds the utilities to the same limits and to the registry's actions.
 
 **Building a menu,** `menus::context(place, target)`:
 
-1. The place's own groups come first.
-2. Then a group for each tool that adds items, a separator between groups: the processing tools in pipeline order, then the utilities in `UTILITIES`' order.
-3. In the photo's and a thumbnail's menus an item whose action cannot run on the target is hidden, whatever stops it, Discard History… with no alert to ask with included; one that waits only for the photo to become live, as on a thumbnail just made active, is shown disabled. ⋯, a pull-down from a button, keeps the pull-down's rule: an item that cannot run is drawn disabled with its tip.
-4. A submenu goes one level deep, and the photo's and a thumbnail's menus show no keys.
-5. A test holds the photo's and a thumbnail's menus, every item of every tool shown, to at most 16 items; an item past that needs a decision.
-6. An item a tool adds to either menu is listed on its tool's page.
+1. Every item for the place, the app's and the tools', is sorted by `(section, order)`.
+2. A separator falls wherever `section` changes; a section with no item shown, empty or all hidden, leaves no line.
+3. A test fails on two items with the same `(section, order)` in one place.
+4. In the photo's and a thumbnail's menus an item whose action cannot run on the target is hidden, whatever stops it; one that waits only for the photo to become live, as on a thumbnail just made active, is shown disabled. ⋯, a pull-down from a button, keeps the pull-down's rule: an item that cannot run is drawn disabled with its tip.
+5. A submenu goes one level deep, and the photo's and a thumbnail's menus show no keys.
+6. A test holds the photo's and a thumbnail's menus, every item of every tool shown, to at most 16 items; an item past that needs a decision.
+7. An item a tool adds to either menu is listed on its tool's page.
 
 **The target:**
 
 - **On the photo:** the active photo, with the point under the pointer in the photo's coordinates as pickers take them, none from the keys; an action that needs a point is hidden without one.
-- **On a thumbnail:** its photo. Opening its menu, by a right-click or from the keys on its focused cell, selects it alone and makes it active first unless it is in the selection ([Selection and the active photo](#selection-and-the-active-photo)), so the menu never acts on another photo than the one it was opened on, and in Phase 2, where the selection is the active photo alone, each item acts on the active photo as from the menu bar. From Phase 3 the selection when the photo is in it; while several are selected, an item that acts on one photo alone is hidden. Discard History… is hidden while several are selected, until discarding several is decided.
+- **On a thumbnail:** its photo. Opening its menu, by a right-click or from the keys on its focused cell, selects it alone and makes it active first unless it is in the selection ([Selection and the active photo](#selection-and-the-active-photo)), so the menu never acts on another photo than the one it was opened on, and in Phase 2, where the selection is the active photo alone, each item acts on the active photo as from the menu bar. From Phase 3 the selection when the photo is in it; while several are selected, an item that acts on one photo alone is hidden, History's Reset among them.
 - **In ⋯:** its tool.
 
 **Opening.**
@@ -1146,7 +1149,7 @@ A place opens to tools' items only by a decision of its own.
 
 **Every item is reachable without a right-click:** in the menu bar, in its tool's section or ⋯, or by its keys. A right-click menu is a shortcut. A tool's action has its button by construction, and a test holds each utility's item to a menu bar item.
 
-**The first slice:** `Place`, `MenuItem`, `Definition::menus`, `Utility::menus` and their checks; the generated tool actions; `Target` and `menus::context(place, target)`; the photo's menu and a thumbnail's; History's Discard History… in both. Pickers as items wait for the open question ([Open questions](#open-questions)).
+**The first slice:** `Place`, `MenuItem`, `Definition::menus`, `Utility::menus` and their checks; the generated tool actions; `Target` and `menus::context(place, target)`; the photo's menu and a thumbnail's; History's Reset in both, reading on the photo Reset, —, Export…, —, Background ▸. Discard History… is in no context menu. Pickers as items wait for the open question ([Open questions](#open-questions)).
 
 ### Checks
 
@@ -2791,7 +2794,7 @@ The central panel's photo is for looking: nothing is drawn on it, and its marks 
 
 Built. The surround behind the photo is one of six neutral greys (`Background`), chosen from a right-click on the surround, anywhere in the central panel's slot but the photo, or from View › Background. The photo keeps its own right-click for a menu of its own.
 
-**The photo's right-click menu** (planned; [Context menus](#context-menus), decision 91) follows macOS's rules for context menus: a few of the most-used commands for what is under the pointer, every one also in the menu bar or its tool, an item that cannot run hidden rather than dimmed, a separator between groups, at most one level of submenu, and no shortcuts shown. The app's groups: Copy Edit, Apply Edit, Reset Edit; Export…; Background ▸, built in the surround's menu. Show in Finder joins once folder mode can reveal a photo. Then a group for each tool that adds items, in pipeline order, the utilities after: History's Discard History…, the first. Create a Style… is not in it: it is in Edit and the History section's ⋯. The choice is kept in `central_panel.background`, for the app, never for one photo; its default is computed, so until one is chosen it follows the theme.
+**The photo's right-click menu** (planned; [Context menus](#context-menus), decision 91) follows macOS's rules for context menus: a few of the most-used commands for what is under the pointer, every one also in the menu bar or its tool, an item that cannot run hidden rather than dimmed, a separator where the section changes, at most one level of submenu, and no shortcuts shown. Its items are sorted by section and order, the app's and the tools' alike: History's Reset (`EDIT`); Export… (`EXPORT`); Background ▸ (`VIEW`), built in the surround's menu; so it reads Reset, —, Export…, —, Background ▸. Show in Finder joins once folder mode can reveal a photo. Discard History… and Create a Style… are not in it: they are in Edit and the History section's ⋯. The choice is kept in `central_panel.background`, for the app, never for one photo; its default is computed, so until one is chosen it follows the theme.
 
 | Choice | sRGB | Luminance, of white's | ISO 12646 | Its caption |
 | --- | --- | --- | --- | --- |
@@ -4082,7 +4085,7 @@ Phase 2's interface, each step usable on its own. Steps 1 to 5 are built; steps 
 6. The tool renderer, from `apertrust-tools` definitions (decision 28), and the first pass's tools for the ported operations, darktable's (decision 2; `docs/roadmap.md`, Phase 2), the side panel's tabs by editing stage (decision 38). Built: the renderer, every tool listed in [the renderer](#the-renderer), and the tabs by editing stage. Left: RGB levels and RGB curve, then the rest.
 7. The actions registry, the keyboard map, settings, Customise tabs on the Edit workspace, the window frame, the popup service and the menu bar ([the window frame and menus](#the-window-frame-and-menus); [what arrives when](#what-arrives-when)).
    - Built: the registry and the keyboard map; the Mac's frame and native menu bar; Linux's frame and its ☰ with the drawn menu, on the popup service's first piece (decisions 39 and 40); the popup service's native lists on the Mac; the settings file on the settings schema (decision 43), in its build plan's order: `apertrust-base` with the schema and its generator, the store, the user data folder, the engine's first settings with the CLI reading them, `--conf`, and an edit a newer Apertrust wrote opened for viewing only; the dialog host with Settings in it, on every platform (decision 41), its pages of rows drawn from the registry.
-   - Next: context menus' first slice ([Context menus](#context-menus), decision 91): `Place`, `MenuItem`, `Definition::menus` and `Utility::menus`, the generated tool actions, `Target` and `menus::context(place, target)`, the photo's menu and a thumbnail's, with History's Discard History… in both.
+   - Next: context menus' first slice ([Context menus](#context-menus), decision 91): `Place`, `MenuItem`, `Definition::menus` and `Utility::menus`, the generated tool actions, `Target` and `menus::context(place, target)`, the photo's menu and a thumbnail's, with History's Reset in both.
    - Left: Windows' Alt pressed and released alone, then its native hit testing; Settings' hand-built pages, Shortcuts first, with rebinding keys; Linux's and Windows' native modality ([Dialogs and alerts](#still-to-build)); Customise tabs in the host, editing the Edit workspace's fixed tab lists; Phase 3 reworks it onto the side panel's layout model (decision 83).
 8. Scopes, from the engine's reductions. Built: the widget ([the scopes](#the-scopes)), the engine's counts for the histogram, the waveform, the vectorscope and the totals, sent as session events (engine.md, Scopes; decision 19), and the app's Scopes section, pinned in the editing tabs and drawing all four. Left: the photo's clipping overlays.
 9. Folder mode in one view (decision 37): the Photos tab first, with Browse's Folders; the grid panel showing the folder, with the engine's thumbnails and its grid bar, never hidden, in one line or several, resized from its edge, at the bottom, left or right ([The grid panel](#the-grid-panel)); File › Open…, Open Folder… and Open Recent; the central panel's empty states ([The central panel's layouts](#the-central-panels-layouts)). The library's side is its own build plan (decision 46; architecture, Implementation plan, The library's cards).

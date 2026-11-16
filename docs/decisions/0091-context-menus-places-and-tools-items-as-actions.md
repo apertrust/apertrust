@@ -2,7 +2,7 @@
 
 ## Context
 
-A right-click menu helps in a few common places: the photo, a thumbnail, and later a History step, a layer or a job's row. Tools want to add items there, History's Discard History… first, and whatever belongs to a tool should stay in that tool's code. Three things constrain how:
+A right-click menu helps in a few common places: the photo, a thumbnail, and later a History step, a layer or a job's row. Tools want to add items there, History's Reset first, and whatever belongs to a tool should stay in that tool's code. Three things constrain how:
 
 - `apertrust-tools` has no egui and no app types ([0028](0028-tools-bound-to-operations.md)).
 - The Mac's native menus run nothing and answer with the id chosen ([0040](0040-popup-menus-native-on-the-mac-drawn-elsewhere.md)).
@@ -45,24 +45,29 @@ A tool's section already has its own buttons: reset, presets and options (⋯). 
   - it has no default keys and works in the view's scope;
   - it runs as its button does;
   - one whose button is drawn disabled, not built yet, is listed and never runs.
-- A utility's items are the registry actions it already has, as History's Discard History… is `discard-history`.
+- A utility's items are the registry actions it already has, as History's Reset is `reset`.
 
 **Tools declare their items as data.**
 
-- A tool: `Definition::menus: &'static [MenuItem]`, where `MenuItem { place: Place, action: &'static str }` names one of the tool's own actions.
+- A tool: `Definition::menus: &'static [MenuItem]`, where `MenuItem { place: Place, section: Section, order: u32, action: &'static str }` names one of the tool's own actions.
 - A utility, which has no definition: `Utility::menus` in `about::UTILITIES`, each item naming the registry action that runs it.
+- The app declares its own items for each place the same way, as `MenuItem`s, so its items and the tools' are placed by one rule.
+- **`section`** says which section of the menu an item is in. `Section` is a set of named constants, in `apertrust-tools` and shared by the app and the tools, whose value sets the section's place in a menu, 1000 apart: `Section::EDIT` 1000, `EXPORT` 2000, `VIEW` 3000, `HISTORY` 4000, and `LAYOUT` 9000 for ⋯'s layout items, last. A tool may use a section value of its own.
+- **`order`** places an item within its section, 100 apart (100, 200, 300 and on), lower first.
+- The gaps leave room to put an item between two others without renumbering them.
 - A tool with nothing to add declares nothing.
 - `Definition::check` refuses an item that names none of the tool's actions, an item listed twice, and more than two items in one place among `Photo` and `Thumbnail`, or more than four in `Options`. An app test holds the utilities' items to the same limits and to actions the registry declares.
 - A picker is no item yet: an item that picks at the pointer waits for the open question below.
 
-**How a menu is built.** The app builds every menu, `menus::context(place, target)`, from the place's own groups and the items tools add.
+**How a menu is built.** The app builds every menu, `menus::context(place, target)`, from the app's items for the place and the items tools add.
 
-1. The place's own groups come first, as [gui.md](../gui.md#context-menus) lists them.
-2. Then one group for each tool that adds items, a separator between groups: the processing tools in pipeline order, then the utilities in `UTILITIES`' order. Nothing about a tool's group is chosen by the tool but its items.
-3. In the photo's and a thumbnail's menus, an item whose action cannot run on the target is hidden, as macOS's context menus hide what does not apply, whatever stops it: Discard History… where the platform has no alert to ask with is hidden there, though drawn disabled with its tip in Edit and History's ⋯. One that waits only for the photo to become live, as a photo just made active does, is shown disabled, since it runs in a moment. ⋯ is a pull-down from a button, not a context menu, and keeps the pull-down's rule: an item that cannot run is drawn disabled with its tip, as Move to Tab › draws the tab a section is in (83).
-4. A submenu goes one level deep. The photo's and a thumbnail's menus show no keys, as macOS's context menus show none.
-5. A test holds the photo's menu and a thumbnail's, with every item of every tool shown, to at most 16 items. An item that would pass that needs a decision.
-6. An item added to the photo's or a thumbnail's menu is something people see, so its tool's page lists it.
+1. Every item for the place, the app's and those tools add, is sorted by `(section, order)`.
+2. A separator falls wherever `section` changes. A section with no item shown, empty or all hidden, leaves no line.
+3. A test fails on two items with the same `(section, order)` in one place, whoever declares them.
+4. In the photo's and a thumbnail's menus, an item whose action cannot run on the target is hidden, as macOS's context menus hide what does not apply, whatever stops it. One that waits only for the photo to become live, as a photo just made active does, is shown disabled, since it runs in a moment. ⋯ is a pull-down from a button, not a context menu, and keeps the pull-down's rule: an item that cannot run is drawn disabled with its tip, as Move to Tab › draws the tab a section is in (83).
+5. A submenu goes one level deep. The photo's and a thumbnail's menus show no keys, as macOS's context menus show none.
+6. A test holds the photo's menu and a thumbnail's, with every item of every tool shown, to at most 16 items. An item that would pass that needs a decision.
+7. An item added to the photo's or a thumbnail's menu is something people see, so its tool's page lists it.
 
 **What an item acts on**, `Target`:
 
@@ -81,19 +86,21 @@ A tool's section already has its own buttons: reset, presets and options (⋯). 
 
 **The places' items now:**
 
-| Place | The app's groups | Tools' groups |
-| --- | --- | --- |
-| The photo | Copy Edit, Apply Edit, Reset Edit; Export…; Background ▸; Show in Finder joining once folder mode can reveal a photo | History: Discard History… |
-| A thumbnail | Copy Edit, Apply Edit, Reset Edit; Export…; Show in Folder once built | History: Discard History…, hidden while several photos are selected, until discarding several is decided |
-| ⋯ | Reset, then Copy Settings and Paste Settings with Copy and Apply Parts (Phase 3), first; the layout's items ([0083](0083-the-side-panels-layout-dragged-and-floating.md)) last | The tool's own, between them; History's are Compress History (Truncate History its alternate), Create a Style… and Discard History… |
+| Place | The app's items | Tools' items | The menu reads |
+| --- | --- | --- | --- |
+| The photo | Export… (`EXPORT`, 100); Background ▸ (`VIEW`, 100); Show in Finder joining once folder mode can reveal a photo | History's Reset (`EDIT`, 100) | Reset, —, Export…, —, Background ▸ |
+| A thumbnail | Export… (`EXPORT`, 100); Show in Folder once built | History's Reset (`EDIT`, 100), hidden while several photos are selected, since it acts on one photo | Reset, —, Export… |
+| ⋯ | Reset, then Copy Settings and Paste Settings with Copy and Apply Parts (Phase 3), in `EDIT`; the layout's items ([0083](0083-the-side-panels-layout-dragged-and-floating.md)) in `LAYOUT` | The tool's own, in a section of its choosing between them; History's are Compress History (Truncate History its alternate), Create a Style… and Discard History… | — |
+
+Discard History… is in no context menu: it stays in Edit and History's ⋯ ([0078](0078-undo-redo-and-the-edits-history.md)).
 
 **The first slice** (planned) builds:
 
-- `Place`, `MenuItem`, `Definition::menus`, `Utility::menus` and their checks;
+- `Place`, `Section`, `MenuItem`, `Definition::menus`, `Utility::menus` and their checks;
 - the generated `tool-<tool>-<action>` actions;
 - `Target` and `menus::context(place, target)`;
 - the photo's menu and a thumbnail's;
-- History's Discard History… in both, the first item a tool adds.
+- History's Reset in both, the first item a tool adds.
 
 Pickers as items, the other places and ⋯'s Reset, Copy Settings and Paste Settings come later.
 
@@ -103,18 +110,21 @@ Pickers as items, the other places and ⋯'s Reset, Copy Settings and Paste Sett
 - **The app hard-codes every place's items, and tools add none.** The simplest, but a tool's items would live in `menus.rs`, away from the tool.
 - **Only the focused tool adds items to the photo's menu, or tools' items go under a Tools ▸ submenu.** Shorter menus, but an item moves with the focus or hides a level down. The limit per tool and the test of the whole menu keep it short instead.
 - **A context menu on a tool's header or its controls.** The header already has its presets button and ⋯, and a slider's right-click is its fine control (42), so a menu there would give one gesture two meanings on a tool.
-- **Each tool choosing its group's place or an order number.** Tools would compete for the top. Pipeline order is stable and the same for everyone.
+- **The app's groups first, then one group per tool in pipeline order, then the utilities.** A tool's item could never sit beside the app's items it belongs with, as History's Reset beside Export… and the edit's other commands.
+- **A single weight number for each item, with bands of it for the separators.** One number would do, but the rule for where a separator falls would be hidden in its value. Two fields say it plainly: `section` for the line, `order` within it.
+- **The words.** "Order", lower first, rather than "weight" or "priority", whose direction is ambiguous: a heavier item could sink or rise, and a higher priority could come first or last.
 
 ## Consequences
 
-- `apertrust-tools`: `Place`, `MenuItem`, `Definition::menus`, `Utility::menus`, and the `DefinitionError`s for an item that names no action, one repeated and one past the limit.
+- `apertrust-tools`: `Place`, `Section`, `MenuItem`, `Definition::menus`, `Utility::menus`, and the `DefinitionError`s for an item that names no action, one repeated and one past the limit.
 - The app:
   - the generated tool actions in `actions.rs`;
   - `Target`;
   - `menus::context(place, target)` in place of the surround's form;
   - the photo's right-click in `main.rs`, and a thumbnail's from the grid panel;
-  - tests of the limits, of the menu's size and of every item being reachable elsewhere.
+  - the app's own items as `MenuItem`s;
+  - tests of the limits, of the menu's size, of a repeated `(section, order)` in a place, and of every item being reachable elsewhere.
 - `apertrust-ui`: the grid panel reports a cell's right-click and its menu keys, with the cell. It still holds no tool types.
 - The engine and the session protocol are unchanged: an item runs an action that already sends its command.
-- Decision 78's Discard History… is in the photo's and a thumbnail's menus too. Decisions 83 and 86 no longer open anything on a right-click on a section's header.
+- Decisions 83 and 86 no longer open anything on a right-click on a section's header.
 - Open: an item that picks at the pointer, such as "Set Exposure from Here", needs a pick at one point that starts, reads and ends as one completed change, which the picker commands (79) may not express. It is settled when a tool first adds one.
