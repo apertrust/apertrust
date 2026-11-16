@@ -89,9 +89,10 @@ cargo-packager's `.deb` also holds what it puts in every Linux package, the AppI
 **Installing:**
 
 ```sh
-sudo apt install ./apertrust-*-linux-amd64.deb       # Debian, Ubuntu
-sudo dnf install ./apertrust-*-linux-x86_64.rpm      # Fedora, RHEL 10
-sudo zypper install --allow-unsigned-rpm ./apertrust-*-linux-x86_64.rpm   # openSUSE
+# From where the package was downloaded, ~/Downloads here.
+sudo apt install ~/Downloads/apertrust-*-linux-amd64.deb       # Debian, Ubuntu
+sudo dnf install ~/Downloads/apertrust-*-linux-x86_64.rpm      # Fedora, RHEL 10
+sudo zypper install --allow-unsigned-rpm ~/Downloads/apertrust-*-linux-x86_64.rpm   # openSUSE
 ```
 
 `sudo apt remove apertrust`, `sudo dnf remove apertrust` or `sudo zypper remove apertrust` removes it.
@@ -173,7 +174,7 @@ Every package holds `apertrust-cli` beside the app:
 
 The packages are not signed with a developer's certificate yet, so each system warns the first time:
 
-- **macOS**: the app and the disk image are signed ad hoc (`codesign --sign -`), with the hardened runtime, and not notarised, so Gatekeeper refuses a downloaded copy as from an unidentified developer, or calls it damaged. The disk image itself is refused before it opens. Removing the download's quarantine from the image, before it is opened, always works, and the app copied out of it opens too: `xattr -d com.apple.quarantine ~/Downloads/Apertrust*.dmg`; for an app already copied from a quarantined image, `xattr -dr com.apple.quarantine /Applications/Apertrust*.app`. For the unidentified developer alone, opening it once and then choosing Open Anyway in System Settings › Privacy & Security also works (macOS 15 and later), as does Control-clicking the app and choosing Open (macOS 14 and earlier).
+- **macOS**: the app and the disk image are signed ad hoc (`codesign --sign -`), with the hardened runtime, and not notarised, so Gatekeeper refuses a downloaded copy as from an unidentified developer, or calls it damaged. The disk image itself is refused before it opens. Removing the download's quarantine from the image, before it is opened, always works, and the app copied out of it opens too: `xattr -d com.apple.quarantine ~/Downloads/apertrust*.dmg`; for an app already copied from a quarantined image, `xattr -dr com.apple.quarantine /Applications/Apertrust*.app`. For the unidentified developer alone, opening it once and then choosing Open Anyway in System Settings › Privacy & Security also works (macOS 15 and later), as does Control-clicking the app and choosing Open (macOS 14 and earlier).
 - **Windows**: SmartScreen says "Windows protected your PC" for the installer and the executables: More info › Run anyway.
 - **Linux**: no package is signed; make the AppImage executable (`chmod +x`) and run it. apt and dnf install a local `.deb` or `.rpm` without a signature; zypper asks for `--allow-unsigned-rpm`.
 
