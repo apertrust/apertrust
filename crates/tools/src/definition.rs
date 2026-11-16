@@ -464,6 +464,15 @@ pub enum Row {
         lightness: &'static str,
         photo: &'static str,
     },
+    /// What the last pick of a picker that writes controls did (decision 88), one line,
+    /// "L 41 % → L 50 % · +0.55 EV", the area before and after as two patches, from the
+    /// pick's [`crate::pick::Shown::last`], and above it a warning line for each warning
+    /// the pick gave ([`crate::pick::Shown::warnings`]), the clipped one first; nothing
+    /// before a pick. Its words are shared ([`crate::messages::LAST_PICK`]) but for the
+    /// picker's own on a black moved ([`crate::messages::short_black`]). It is no control.
+    LastPick {
+        picker: &'static str,
+    },
     /// darktable's guides widget, which it adds to a module with
     /// `IOP_FLAGS_GUIDES_WIDGET` (`dt_guides_init_module_widget`): its show guides
     /// toggle, the overlay while the module has focus, kept in darktablerc and never in
@@ -529,6 +538,7 @@ impl Row {
             | Row::Patches { .. }
             | Row::Computed(_)
             | Row::Reference { .. }
+            | Row::LastPick { .. }
             | Row::Guides => &[],
             Row::Custom { controls, .. } => controls,
         }
@@ -928,6 +938,8 @@ pub enum DefinitionError {
     PickerSettings(&'static str),
     #[error("the reference row's picker {0} writes controls; a reference's picker only measures")]
     ReferenceWrites(&'static str),
+    #[error("a last pick row names {0}: no picker of the tool that writes controls, or one twice")]
+    LastPick(&'static str),
     #[error("the picker {0}'s words follow no choice setting of the tool")]
     WordsBy(&'static str),
     #[error("a row shows the picker {0}, which the tool lacks")]
@@ -1069,7 +1081,8 @@ impl Definition {
     /// holds at least one. Rows following a setting follow a choice setting of the tool,
     /// shown wherever they are, for options it has, and hold no control and not it. A
     /// reference row's picker writes no control, and its two settings are the tool's,
-    /// each once.
+    /// each once. A last
+    /// pick row names a picker of the tool that writes controls, once.
     pub fn check(&self) -> Result<(), DefinitionError> {
         if !is_id(self.id) {
             return Err(DefinitionError::Id(self.id));
@@ -1141,6 +1154,7 @@ impl Definition {
             BTreeSet::new(),
             BTreeSet::new(),
         );
+        let mut last_picks = BTreeSet::new();
         for &Placed { row, ref at } in &placed {
             // A group with no rows has nothing behind it yet; rows following a control
             // must be rows.
@@ -1252,6 +1266,15 @@ impl Definition {
                     }
                     if self.picker(picker).is_some_and(|p| !p.writes.is_empty()) {
                         return Err(DefinitionError::ReferenceWrites(picker));
+                    }
+                }
+                // What it shows is what its picker wrote: one of the tool's that writes.
+                Row::LastPick { picker } => {
+                    if !self.picker(picker).is_some_and(|p| !p.writes.is_empty()) {
+                        return Err(DefinitionError::LastPick(picker));
+                    }
+                    if !last_picks.insert(*picker) {
+                        return Err(DefinitionError::LastPick(picker));
                     }
                 }
                 Row::Action { id } => {
@@ -2921,6 +2944,31 @@ mod tests {
         assert_eq!(
             picking(&[MEASURE], &[contrast, named]),
             Err(DefinitionError::Id("Photo"))
+        );
+    }
+
+    /// A last pick row (decision 88) names a picker of the tool that writes controls, once;
+    /// it shows no control and no picker of its own.
+    #[test]
+    fn a_last_pick_row_names_a_picker_that_writes_once() {
+        let quad = Row::Slider(Slider::new("contrast").quad(Quad::Picker("level")));
+        let last = Row::LastPick { picker: "level" };
+        assert!(last.controls().is_empty() && last.pickers().is_empty());
+        assert_eq!(picking(&[LEVEL], &[quad.clone(), last.clone()]), Ok(()));
+        let wrong = Err(DefinitionError::LastPick("level"));
+        assert_eq!(
+            picking(&[LEVEL], &[quad.clone(), last.clone(), last.clone()]),
+            wrong
+        );
+        let shows = Picker {
+            writes: &[],
+            ..LEVEL
+        };
+        assert_eq!(picking(&[shows], &[quad.clone(), last.clone()]), wrong);
+        let other = Row::LastPick { picker: "spot" };
+        assert_eq!(
+            picking(&[LEVEL], &[quad, other]),
+            Err(DefinitionError::LastPick("spot"))
         );
     }
 

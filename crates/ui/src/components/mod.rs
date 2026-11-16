@@ -63,6 +63,7 @@ mod text_field;
 mod toggle_row;
 mod top_panel;
 mod value_field;
+mod warning_row;
 
 pub use about::{About, Place};
 pub use action_row::ActionRow;
@@ -117,6 +118,7 @@ pub use text_field::{PathField, PathOutput, TextField, Variable};
 pub use toggle_row::ToggleRow;
 pub use top_panel::{Available, SaveState, TopPanel, TopPanelAction, caption_button};
 pub use value_field::ValueField;
+pub use warning_row::WarningRow;
 
 use egui::accesskit::HasPopup;
 use egui::text::LayoutJob;

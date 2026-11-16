@@ -613,6 +613,7 @@ fn flat_pick_by(
     let reading = Reading {
         input: stats,
         output: None,
+        input_maximum: [1.0; 3],
     };
     Exposure
         .pick(

@@ -463,7 +463,7 @@ fn a_slider_s_picker_quad_reports_its_presses() {
 
 fn photograph(which: Builtin, name: &str) {
     let mut harness = Harness::builder()
-        .with_size(egui::vec2(600.0, 1010.0))
+        .with_size(egui::vec2(600.0, 1100.0))
         .with_pixels_per_point(2.0)
         .with_context_setup(move |ctx| apertrust_ui::install(ctx, Theme::builtin(which)))
         .build_ui_state(

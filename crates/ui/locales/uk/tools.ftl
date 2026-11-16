@@ -456,6 +456,7 @@ tool-exposure-picker-exposure-hint-reference = Зіставити ділянку
 tool-exposure-picker-exposure-promise-reference-no-photo = Зіставити ділянку з L { $reference_lightness } %
 tool-exposure-picker-exposure-hint-reference-no-photo = Зіставити ділянку з L { $reference_lightness } %
 tool-exposure-picker-exposure-unavailable = Спершу задайте еталон піпеткою в рядку «Еталон»
+tool-exposure-picker-exposure-short-black = Рівень чорного зсунуто, щоб чорний лишився нижче білого
 tool-exposure-picker-reference-label = Еталон
 tool-exposure-picker-reference-full = Задати еталон за ділянкою
 tool-exposure-picker-reference-promise = Задати еталон за ділянкою

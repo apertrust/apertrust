@@ -137,7 +137,7 @@ Goal: open, edit, save and reopen a photo with the first pass's tools. Migration
   - [x] 2. Automatic mode's page: Manual | Automatic, Automatic disabled on an image that is not a raw; Measure at, Place it at and This photo; Auto dropped from Exposure.
   - [x] 3. Picker target, Middle grey or Lightness, in place of Area exposure mapping; measure mode gone.
   - [x] 4. The reference: Picker target's Reference, kept across photos, with its own picker.
-  - [ ] 5. Last pick and the two warnings.
+  - [x] 5. Last pick and the two warnings.
   - [ ] 6. Checked against the wireframe's board in every variant.
 - [x] Switched tools (decision 32): tools darktable leaves off on a new photo start off, turn on with darktable's defaults when a control changes, and turn off again on reset; the Tone equalizer, Colour balance RGB, RGB primaries, Haze removal, Vignetting, Soften and Grain, each version 2 with its migration.
 - [ ] Undo, redo and the History tab, with the history saved in the sidecar as its log of steps (decisions 47 and 78; [history.md](history.md), [the library's step 9](#the-librarys-steps)).

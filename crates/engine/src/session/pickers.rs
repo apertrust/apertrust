@@ -177,6 +177,10 @@ pub(super) struct Probed {
     region: Region,
     /// The reading's application, where it is due.
     due: Option<Due>,
+    /// What each channel of the operation's input reaches where the sensor saturated
+    /// (`ImageDesc::maximum`), which the reading carries to the tool's pick
+    /// (`Reading::input_maximum`); 1 each where nothing is read.
+    maximum: [f32; 3],
 }
 
 /// A reading arrived: the frame's statistics under its region, or the operation's input's
@@ -296,6 +300,12 @@ impl Pickers {
     /// Whether a picker is on.
     pub(super) fn on(&self) -> bool {
         self.active.is_some()
+    }
+
+    /// The latest reading `tool`'s picker measured, for the tests.
+    #[cfg(test)]
+    pub(super) fn latest_reading(&self, tool: &str) -> Option<&Reading> {
+        self.latest.get(tool).map(|last| &last.reading)
     }
 
     /// Whether a tool's picker is on, measured at its operation in each render.
@@ -497,11 +507,12 @@ pub(super) fn probing(
         .or_default()
         .of_kind(active.area, &all);
     let at = place.region(&upstream);
-    let tag = Probed {
+    let mut tag = Probed {
         through,
         picker: active.picker,
         region: place.region(&all),
         due: on.due,
+        maximum: [1.0; 3],
     };
     // In a tiled viewport the raw stage's operations from its split on run once a tile,
     // each over its tile's part of the image: none holds the whole of what the picker
@@ -534,6 +545,7 @@ pub(super) fn probing(
         ),
         None => (plan.input, 0),
     };
+    tag.maximum = input.0.maximum;
     let mut sides = vec![input];
     if on.picker.output {
         sides.push((planned.output_desc, planned.key));
@@ -1282,6 +1294,7 @@ impl Engine {
     /// A tool picker's reading at its operation, `stats` its input's and output's:
     /// sent, then, where due, applied through the tool's pick.
     fn arrived(&mut self, probed: Probed, stats: Option<Vec<Stats>>, events: &mut Vec<Event>) {
+        let input_maximum = probed.maximum;
         let Some(on) = self.pickers.active.and_then(|active| active.tool) else {
             return;
         };
@@ -1295,6 +1308,7 @@ impl Engine {
             Some(Reading {
                 input: *stats.first()?,
                 output: stats.get(1).copied(),
+                input_maximum,
             })
         });
         let previous = self

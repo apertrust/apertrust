@@ -61,6 +61,11 @@ pub struct Reading {
     pub input: Stats,
     /// With the picker's `output` only.
     pub output: Option<Stats>,
+    /// What each of red, green and blue of the operation's input reaches where the
+    /// sensor saturated (`ImageDesc::maximum`): 1 after rawprepare, times the white
+    /// balance coefficients after temperature, so each channel's own. The session fills it
+    /// in, so a pick can tell an area of clipped pixels, a channel at a time (decision 88).
+    pub input_maximum: [f32; 3],
 }
 
 /// What a tool's pick makes of a reading ([`crate::Tool::pick`]): darktable's
@@ -82,6 +87,50 @@ pub struct Shown {
     /// The tool's settings measure mode set, as darktable's measure mode writes its target
     /// sliders; the client keeps them in its settings.
     pub settings: Vec<(&'static str, ControlValue)>,
+    /// What the pick did, for a picker that writes controls and a tool that says so: its
+    /// Last pick (decision 88).
+    pub last: Option<LastPick>,
+    /// What went wrong with the pick, each on its own (decision 88).
+    pub warnings: PickWarnings,
+}
+
+/// What a pick did (decision 88), as Exposure's Last pick shows it, "L 41 % → L 50 % ·
+/// +0.55 EV": the area's L as it rendered before the pick and as it renders after, and
+/// the change of the control it set, in its unit.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct LastPick {
+    pub before: f32,
+    pub after: f32,
+    /// The change of the control the pick set: Exposure's, in EV.
+    pub exposure: f32,
+    /// The area as a grey of its L before and after.
+    pub patches: [Patch; 2],
+}
+
+/// The warnings a pick gave, independent (decision 88): an area of clipped pixels can also
+/// fall short, often because it is clipped.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct PickWarnings {
+    /// Some channel's maximum over the area reaches 0.99 × that channel's maximum at the
+    /// input ([`Reading::input_maximum`]): its lightness reads low.
+    pub clipped: bool,
+    /// The control the pick set is held at the end of its range and the area falls short
+    /// of its target.
+    pub short: Option<Short>,
+}
+
+/// A pick held short of its target (decision 88): "Exposure at +18 EV: the area is L 12 %,
+/// not 50 %".
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Short {
+    /// The value the control is held at, the end of its range.
+    pub exposure: f32,
+    /// The L the area reaches there.
+    pub reached: f32,
+    /// The L it was to reach.
+    pub target: f32,
+    /// Whether the pick moved the black too, to keep it below the new white.
+    pub black: bool,
 }
 
 /// A patch of picked colour, as Exposure and Colour calibration show the area they read.

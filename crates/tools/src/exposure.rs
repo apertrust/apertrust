@@ -58,7 +58,7 @@ use crate::definition::{
     ChoiceStyle, Computed, Control, ControlKind, Definition, Picker, PickerKind, Quad, Row,
     SettingRow, Slider, Space, Tab, Track, Unit,
 };
-use crate::pick::{Patch, PickKeys, Picked, Reading, Shown};
+use crate::pick::{LastPick, Patch, PickKeys, PickWarnings, Picked, Reading, Short, Shown};
 use crate::transfer::Transfer;
 use crate::{
     Base, ControlValue, Controls, LabelValue, Owned, Setting, Tool, ToolValues, ValueFormat,
@@ -281,6 +281,8 @@ static DEFINITION: Definition = Definition {
                     TARGET,
                     LIGHTNESS,
                     REFERENCE,
+                    // What the last pick did, its warnings above it.
+                    Row::LastPick { picker: "exposure" },
                     Row::Toggle {
                         control: "camera_bias",
                     },
@@ -579,6 +581,8 @@ impl Tool for Exposure {
                 lch: [lightness, 0.0, 0.0],
             }),
             settings: Vec::new(),
+            last: None,
+            warnings: PickWarnings::default(),
         };
         let exposure = values.number("exposure");
         let bias = taken_off(
@@ -608,20 +612,54 @@ impl Tool for Exposure {
                 _ => return Some(Picked { writes, shown }),
             },
         };
+        let target_l = target;
         let target = lab_to_xyz_d50([target, 0.0, 0.0]);
         let expo = -white_to_exposure(grey[1] / target[1]) - bias;
         // `_exposure_set_white`.
         let white = exposure_to_white(-expo);
         let picked = white_to_exposure(white);
+        let default = default_black(image);
+        let level = values.number("black_level");
         if picked != exposure {
             writes.set("exposure", ControlValue::Number(picked));
             // The black the operation holds now, darktable's `p->black`.
-            let default = default_black(image);
-            let level = values.number("black_level");
             let held = BlackLevel::new(default, rendered_white(exposure, bias));
             if held.value(level) >= white {
                 let level = white - WHITE_MARGIN - default;
                 writes.set("black_level", ControlValue::Number(level));
+            }
+        }
+        // What the pick did and what went wrong (decision 88): the area's L before and as
+        // the session writes it, Exposure held to its range, the black the operation then
+        // holds included.
+        let [r, g, b, _] = reading.input.max;
+        shown.warnings.clipped = ([r, g, b].iter())
+            .zip(reading.input_maximum)
+            .any(|(channel, maximum)| *channel >= CLIPPED * maximum);
+        if picked.is_finite() {
+            let (min, max) = EXPOSURE_RANGE;
+            let after_exposure = picked.clamp(min, max);
+            let after_level = match writes.get("black_level") {
+                Some(&ControlValue::Number(level)) => level,
+                _ => level,
+            };
+            let before = rendered_lightness(grey[1], exposure, level, bias, default);
+            let after = rendered_lightness(grey[1], after_exposure, after_level, bias, default);
+            shown.last = Some(LastPick {
+                before,
+                after,
+                exposure: after_exposure - exposure,
+                patches: [before, after].map(|l| Patch::of_lch([l, 0.0, 0.0])),
+            });
+            // Held at an end of the range, as the session holds it, and missing the target.
+            let held = after_exposure == min || after_exposure == max;
+            if held && (after - target_l).abs() > SHORT {
+                shown.warnings.short = Some(Short {
+                    exposure: after_exposure,
+                    reached: after,
+                    target: target_l,
+                    black: writes.get("black_level").is_some(),
+                });
             }
         }
         Some(Picked { writes, shown })
@@ -635,6 +673,27 @@ impl Tool for Exposure {
             || PickerTarget::of(setting("target")) != PickerTarget::Reference
             || matches!(setting(REFERENCE_LIGHTNESS), Some(ControlValue::Number(_)))
     }
+}
+
+/// How near its maximum at the input a channel of the area reads as clipped
+/// (decision 88).
+const CLIPPED: f32 = 0.99;
+
+/// How far from its target, in L, an area held by Exposure's range falls short.
+const SHORT: f32 = 0.05;
+
+/// Exposure's range, darktable's ±18 EV, which the session holds a pick to.
+const EXPOSURE_RANGE: (f32, f32) = (-18.0, 18.0);
+
+/// The L an area of luminance `y` at Exposure's input renders at with Exposure at
+/// `exposure` and Black level correction at `level`: the operation's `(in − b) / (w − b)`,
+/// `w` the white it renders at 1.0 ([`rendered_white`]) and `b` the black it holds
+/// ([`BlackLevel`]), on the area's grey, from 0, held to 0 to 100 as measure mode holds it.
+fn rendered_lightness(y: f32, exposure: f32, level: f32, bias: f32, default: f32) -> f32 {
+    let white = rendered_white(exposure, bias);
+    let black = BlackLevel::new(default, white).value(level);
+    let out = ((y - black) / (white - black)).max(0.0);
+    xyz_to_lab_d50([out; 3])[0].clamp(0.0, 100.0)
 }
 
 /// darktable's `exposure2white`: the input an exposure renders at 1.0, the camera's bias
@@ -922,6 +981,7 @@ mod tests {
                 Row::WhenSetting {
                     setting, is, rows, ..
                 } => format!("{setting} is {is:?}: {} rows", rows.len()),
+                Row::LastPick { picker } => format!("last pick of {picker}"),
                 row => row.controls().join(" "),
             })
             .collect();
@@ -932,6 +992,7 @@ mod tests {
                 "setting target",
                 "target is [\"lightness\"]: 1 rows",
                 "target is [\"reference\"]: 1 rows",
+                "last pick of exposure",
                 "camera_bias",
                 "compensate_hilite_pres",
             ]
@@ -1552,6 +1613,7 @@ mod tests {
         Reading {
             input: stats,
             output: None,
+            input_maximum: [1.0; 3],
         }
     }
 
@@ -1706,7 +1768,7 @@ mod tests {
             &toward(60.0),
         );
         assert!(again.writes.is_empty());
-        assert_eq!(again.shown, first.shown);
+        assert_eq!(again.shown.patch, first.shown.patch);
     }
 
     #[test]
@@ -1837,7 +1899,8 @@ mod tests {
             let none = pick(&image, rgb, &values, &toward_reference(None));
             assert!(none.writes.is_empty());
             let lightness = pick(&image, rgb, &values, &toward(50.0));
-            assert_eq!(none.shown, lightness.shown);
+            assert_eq!(none.shown.patch, lightness.shown.patch);
+            assert_eq!(none.shown.last, None);
             assert!(lightness.shown.settings.is_empty());
         }
         let unknown = [("target", ControlValue::Choice(7))];
@@ -1906,6 +1969,167 @@ mod tests {
             bright.shown.settings,
             [("reference_lightness", ControlValue::Number(100.0))]
         );
+    }
+
+    /// Last pick (decision 88): before is measure mode's L of the area at the current
+    /// exposure, after the target within 0.1 L where no bound holds the exposure, the
+    /// exposure the change written; with nothing written, before and after alike, no
+    /// change. The patches are greys of the two Ls.
+    #[test]
+    fn its_last_pick_says_where_the_area_was_and_lands() {
+        let images = [ImageContext::full(8, 8), raw(0.0), raw(-0.67)];
+        for image in &images {
+            for rgb in [[0.18; 3], [0.05; 3], [0.7, 0.4, 0.9], [0.3, 0.2, 0.1]] {
+                for target in [30.0, 50.0, 75.0] {
+                    let values = values(image, &[]);
+                    let picked = pick(image, rgb, &values, &toward(target));
+                    let last = picked.shown.last.expect("a last pick");
+                    let measured = measure(image, rgb, &values);
+                    let [(_, ControlValue::Number(l))] = measured.shown.settings[..] else {
+                        unreachable!()
+                    };
+                    // The photo's own black, −2⁻¹² on a colour raw, moves it a little.
+                    assert!((last.before - l).abs() < 0.1, "{rgb:?}: {last:?} for {l}");
+                    assert!(
+                        (last.after - target).abs() < 0.1,
+                        "{rgb:?}: {last:?} to {target}"
+                    );
+                    let written = picked.writes.number("exposure");
+                    let change = written - values.number("exposure");
+                    assert!((last.exposure - change).abs() < 1e-6, "{last:?}");
+                    assert_eq!(last.patches[0], Patch::of_lch([last.before, 0.0, 0.0]));
+                    assert_eq!(last.patches[1], Patch::of_lch([last.after, 0.0, 0.0]));
+                    assert_eq!(picked.shown.warnings, PickWarnings::default());
+                }
+            }
+        }
+        // On an image with no black of its own, before is measure mode's exactly.
+        let image = ImageContext::full(8, 8);
+        let set = values(&image, &[("exposure", number(1.0))]);
+        let last = pick(&image, [0.3, 0.2, 0.1], &set, &toward(50.0))
+            .shown
+            .last
+            .unwrap();
+        let measured = measure(&image, [0.3, 0.2, 0.1], &set);
+        assert_eq!(
+            measured.shown.settings,
+            [("reference_lightness", ControlValue::Number(last.before))]
+        );
+        // Picked again where it landed: nothing written, nothing changed.
+        let image = raw(-0.67);
+        let first = pick(&image, [0.3, 0.2, 0.1], &values(&image, &[]), &toward(60.0));
+        let there = values(
+            &image,
+            &[("exposure", first.writes.get("exposure").unwrap().clone())],
+        );
+        let again = pick(&image, [0.3, 0.2, 0.1], &there, &toward(60.0));
+        let last = again.shown.last.unwrap();
+        assert!(again.writes.is_empty());
+        assert_eq!((last.exposure, last.before), (0.0, last.after));
+    }
+
+    /// Short (decision 88): where Exposure is held at an end of its ±18 EV and the area
+    /// falls short of its target, with the L it reaches and whether the black moved; not
+    /// where the area reaches its target.
+    #[test]
+    fn a_pick_held_at_exposure_s_end_is_short() {
+        let image = ImageContext::full(8, 8);
+        let values = values(&image, &[]);
+        // Too dark for +18 EV: held there, the area short of 50.
+        let dark = pick(&image, [1e-7; 3], &values, &toward(50.0));
+        let short = dark.shown.warnings.short.expect("short");
+        assert_eq!(
+            (short.exposure, short.target, short.black),
+            (18.0, 50.0, false)
+        );
+        let last = dark.shown.last.unwrap();
+        assert_eq!(short.reached, last.after);
+        assert!(short.reached < 50.0 - 1.0, "{short:?}");
+        assert!((last.exposure - 18.0).abs() < 1e-6);
+        // Too bright for −18 EV.
+        let bright = pick(&image, [1e6; 3], &values, &toward(50.0));
+        let short = bright.shown.warnings.short.expect("short");
+        assert_eq!(short.exposure, -18.0);
+        assert!(short.reached > 50.0 + 1.0, "{short:?}");
+        // With a black held at or above the new white, the pick moves it too.
+        let blacked = values_with_black(&image, 0.5);
+        let moved = pick(&image, [1e-7; 3], &blacked, &toward(50.0));
+        assert!(moved.writes.get("black_level").is_some());
+        assert!(moved.shown.warnings.short.unwrap().black);
+        // Within the range, none.
+        let within = pick(&image, [0.18; 3], &values, &toward(50.0));
+        assert_eq!(within.shown.warnings.short, None);
+    }
+
+    /// Exposure's controls at `image`'s defaults with Black level correction at `level`.
+    fn values_with_black(image: &ImageContext, level: f32) -> Controls {
+        values(image, &[("black_level", number(level))])
+    }
+
+    /// Clipped (decision 88): where any channel's maximum over the area reaches 0.99 × that
+    /// channel's maximum at the input, and not below it: after white balance each has its
+    /// own, so a green clipping alone at 1.0 is clipped beside a red that reaches 2.1.
+    #[test]
+    fn a_pick_of_clipped_pixels_says_so() {
+        let image = raw(-0.67);
+        let values = values(&image, &[]);
+        let clipped = |maximum: [f32; 3], max: [f32; 3]| {
+            let [r, g, b] = max;
+            let mut reading = reading([0.2, 0.2, 0.2]);
+            reading.input.max = [r, g, b, 1.0];
+            reading.input_maximum = maximum;
+            Exposure
+                .pick(
+                    "exposure",
+                    &reading,
+                    &values,
+                    &image,
+                    &toward(50.0),
+                    None,
+                    None,
+                    PickKeys::default(),
+                )
+                .unwrap()
+                .shown
+                .warnings
+                .clipped
+        };
+        let balanced = [2.1, 1.0, 1.6];
+        // Each channel alone at 0.99 of its own maximum, and beyond it.
+        assert!(clipped(balanced, [0.5, 0.99, 0.5]));
+        assert!(clipped(balanced, [2.079, 0.5, 0.5]));
+        assert!(clipped(balanced, [0.5, 0.5, 1.584]));
+        assert!(clipped(balanced, [2.5, 0.5, 0.5]));
+        // None at 0.98 of its own, though green's is above red's 0.98 × 2.1's share.
+        assert!(!clipped(balanced, [2.058, 0.98, 1.568]));
+        assert!(!clipped([1.0; 3], [0.98, 0.98, 0.98]));
+        assert!(clipped([1.0; 3], [0.99, 0.2, 0.2]));
+        // Clipped and short at once, each on its own.
+        let mut reading = reading([1e-7; 3]);
+        reading.input.max = [1.0, 0.0, 0.0, 1.0];
+        let both = Exposure
+            .pick(
+                "exposure",
+                &reading,
+                &values,
+                &image,
+                &toward(50.0),
+                None,
+                None,
+                PickKeys::default(),
+            )
+            .unwrap();
+        assert!(both.shown.warnings.clipped && both.shown.warnings.short.is_some());
+    }
+
+    /// Exposure's range as the pick holds it is the control's.
+    #[test]
+    fn the_pick_holds_exposure_to_its_range() {
+        let ControlKind::Number { min, max, .. } = DEFINITION.control("exposure").unwrap().kind
+        else {
+            unreachable!()
+        };
+        assert_eq!(EXPOSURE_RANGE, (min, max));
     }
 
     /// Exposure's picker is not ready toward Reference with no reference set; ready

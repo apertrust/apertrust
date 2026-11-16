@@ -79,7 +79,7 @@ use apertrust_ui::components::{
     self as parts, ActionRow, ButtonState, ButtonsAction, ButtonsRow, Choice, ChoiceAction,
     CollapsibleGroup, Curve, CurveAction, Equalizer, EqualizerAction, IconButton, PickerAction,
     PickerButton, ReadoutRow, Reference, ReferenceAction, ReferenceRow, Section, SectionAction,
-    Segmented, SliderAction, SliderRow, ToggleRow, group_label,
+    Segmented, SliderAction, SliderRow, ToggleRow, WarningRow, group_label,
 };
 use apertrust_ui::i18n::Args;
 use apertrust_ui::{Translator, translator};
@@ -957,6 +957,7 @@ fn draw_row(ui: &mut egui::Ui, page: &Page, row: &Row, changes: &mut Vec<Change>
             | Row::Patches { .. }
             | Row::Computed(_)
             | Row::Reference { .. }
+            | Row::LastPick { .. }
             | Row::Guides
     );
     let top = ui.cursor().top();
@@ -1016,6 +1017,7 @@ fn draw_kind(ui: &mut egui::Ui, page: &Page, row: &Row, changes: &mut Vec<Change
             lightness,
             photo,
         } => reference_row(ui, page, picker, lightness, photo, changes),
+        Row::LastPick { picker } => last_pick_row(ui, page, picker),
         Row::Pickers { label, pickers } => pickers_row(ui, page, *label, pickers, changes),
         Row::Buttons { control, buttons } => {
             buttons_row(ui, words, definition, control, buttons, state, changes);
@@ -1458,6 +1460,38 @@ fn reference_row(
         }),
         None => {}
     }
+}
+
+/// What the last pick of `picker` did (`Row::LastPick`, decision 88): its warnings, one
+/// line each in the warning colour, the clipped one first, then the readout with the area
+/// before and after as two patches, "L 41 % → L 50 % · +0.55 EV". Nothing before a pick,
+/// nor where the tool's pickers are not drawn.
+fn last_pick_row(ui: &mut egui::Ui, page: &Page, picker: &str) {
+    let definition = page.tool.definition();
+    let tool = definition.id;
+    if !page.pickers.drawn.contains(&tool) {
+        return;
+    }
+    let Some(declared) = definition.picker(picker) else {
+        return;
+    };
+    let Some((last, warnings)) = page.pickers.picked.last(tool) else {
+        return;
+    };
+    let words = page.words;
+    let Some(said) = crate::pickers::last_pick_words(words, definition, declared, last, warnings)
+    else {
+        return;
+    };
+    for (text, tip) in &said.warnings {
+        WarningRow::new(text).tip(tip).show(ui);
+    }
+    let [before, after] = last.patches.map(|patch| colour(patch.srgb));
+    ReadoutRow::new(&said.label, None)
+        .text(&said.value)
+        .patches(before, after)
+        .promise(&said.promise)
+        .show(ui);
 }
 
 /// The setting holding the photo of the reference whose L is `tool`'s setting `setting`,
@@ -6440,6 +6474,8 @@ mod tests {
         on: Option<PickerRef>,
         photo: Option<std::path::PathBuf>,
         gone: bool,
+        /// Exposure as the session reports it, where it is not its default.
+        exposure: Option<f32>,
     }
 
     /// The section in the dark theme with the tool settings at their defaults.
@@ -6473,7 +6509,10 @@ mod tests {
                         gone: &gone,
                     };
                     let groups = |_: &str| true;
-                    let state = untouched(&Exposure);
+                    let mut state = untouched(&Exposure);
+                    if let Some(exposure) = targeted.exposure {
+                        set(&mut state, "exposure", ControlValue::Number(exposure), None);
+                    }
                     let changes = section(
                         ui,
                         &Exposure,
@@ -6514,6 +6553,7 @@ mod tests {
                     on: None,
                     photo: None,
                     gone: false,
+                    exposure: None,
                 },
             );
         harness.run();
@@ -6546,6 +6586,7 @@ mod tests {
                         lch: [45.2, 0.0, 0.0],
                     }),
                     settings: vec![("lightness", ControlValue::Number(61.0))],
+                    ..Shown::default()
                 }),
             }),
             frame: None,
@@ -6863,6 +6904,140 @@ mod tests {
     #[test]
     fn exposure_s_picker_target_at_lightness_in_the_dark_theme() {
         photograph_target(1, 92.0, "exposure-lightness-dark");
+    }
+
+    /// Exposure's pick that read L 41 % and lands at 50 %, +0.55 EV, with these warnings.
+    fn last_picked(clipped: bool, short: bool, black: bool) -> Picked {
+        use apertrust_tools::pick::{LastPick, Patch, PickWarnings, Short};
+        let mut reading = exposure_reading();
+        let shown = reading.tool.as_mut().unwrap().picked.as_mut().unwrap();
+        shown.settings.clear();
+        let (before, after) = if short { (2.0, 12.0) } else { (41.0, 50.0) };
+        shown.last = Some(LastPick {
+            before,
+            after,
+            exposure: if short { 17.2 } else { 0.55 },
+            patches: [before, after].map(|l| Patch::of_lch([l, 0.0, 0.0])),
+        });
+        shown.warnings = PickWarnings {
+            clipped,
+            short: short.then_some(Short {
+                exposure: 18.0,
+                reached: 12.0,
+                target: 50.0,
+                black,
+            }),
+        };
+        let mut picked = Picked::default();
+        picked.apply(Some(&reading));
+        picked
+    }
+
+    /// Last pick (decision 88): nothing before a pick; after one, the readout with its
+    /// two patches, "L 41 % → L 50 % · +0.55 EV", its tooltip its promise; each warning a
+    /// line of its own above it, the clipped one first, its tooltip saying why, the short
+    /// one's adding the black moved where the pick moved it.
+    #[test]
+    fn exposure_s_last_pick_shows_what_the_pick_did_and_its_warnings() {
+        let harness = targeted(Picked::default());
+        assert!(harness.query_by_label_contains("Last pick").is_none());
+        let harness = targeted(last_picked(false, false, false));
+        let row =
+            harness.get_by_role_and_label(Role::Label, "Last pick L 41 % → L 50 % · +0.55 EV");
+        assert!(
+            harness
+                .query_by_label("The area has clipped pixels")
+                .is_none()
+        );
+        // Under Picker target, above the camera's rows and Black level correction.
+        let target = harness.get_by_role_and_label(Role::ComboBox, "Picker target");
+        let black = harness.get_by_role_and_label(Role::Slider, "Black level correction");
+        assert!(target.rect().bottom() <= row.rect().top());
+        assert!(row.rect().bottom() <= black.rect().top());
+        let both = targeted(last_picked(true, true, true));
+        let clipped = both.get_by_role_and_label(Role::Label, "The area has clipped pixels");
+        let short = both.get_by_role_and_label(
+            Role::Label,
+            "Exposure at +18 EV: the area is L 12 %, not 50 %",
+        );
+        let last = both.get_by_role_and_label(Role::Label, "Last pick L 2 % → L 12 % · +17.20 EV");
+        assert!(clipped.rect().top() < short.rect().top());
+        assert!(short.rect().top() < last.rect().top());
+        assert_eq!(
+            short.accesskit_node().description().as_deref(),
+            Some(
+                "Exposure reached its end of +18 EV\nBlack level was moved to keep black below white"
+            )
+        );
+        assert_eq!(
+            clipped.accesskit_node().description().as_deref(),
+            Some("Its lightness reads low: pick an area with no clipped highlights")
+        );
+        // Taken away as its patch is, by an undo.
+        let mut picked = last_picked(false, false, false);
+        picked.sent(9, Picked::clears(&apertrust_engine::session::Command::Undo));
+        assert!(picked.last("exposure").is_none());
+    }
+
+    /// A new pick of the same picker with no Last pick of its own, as one toward L 0 that
+    /// writes nothing, takes the shown one and its warnings away; another picker's pick,
+    /// the reference's, leaves them (decision 88).
+    #[test]
+    fn a_pick_with_no_last_pick_takes_the_shown_one_away() {
+        let mut picked = last_picked(true, true, false);
+        assert!(picked.last("exposure").is_some());
+        let mut reference = exposure_reading();
+        reference.picker = PickerRef::Tool {
+            tool: "exposure",
+            picker: "reference",
+        };
+        reference.through = 4;
+        let shown = reference.tool.as_mut().unwrap().picked.as_mut().unwrap();
+        shown.settings = vec![("reference_lightness", ControlValue::Number(40.0))];
+        picked.apply(Some(&reference));
+        assert!(picked.last("exposure").is_some());
+        let mut none = exposure_reading();
+        none.through = 5;
+        let shown = none.tool.as_mut().unwrap().picked.as_mut().unwrap();
+        shown.settings.clear();
+        shown.patch = Some(apertrust_tools::pick::Patch::of_lch([30.0, 0.0, 0.0]));
+        picked.apply(Some(&none));
+        assert!(picked.last("exposure").is_none());
+    }
+
+    /// Exposure's manual page after a pick, in the dark theme (the board's Last pick and
+    /// warning variants): Last pick alone, with the clipped warning, short with the black
+    /// moved, and both.
+    fn photograph_last_pick(clipped: bool, short: bool, name: &str) {
+        let mut harness = targeted_with(
+            last_picked(clipped, short, short),
+            Builtin::Dark,
+            ToolSettings::default(),
+        );
+        // Exposure where the pick put it: +18 EV held short, else 0.55 EV over 0.
+        harness.state_mut().exposure = Some(if short { 18.0 } else { 0.55 });
+        harness.run();
+        harness.snapshot(name);
+    }
+
+    #[test]
+    fn exposure_s_last_pick_in_the_dark_theme() {
+        photograph_last_pick(false, false, "exposure-last-pick-dark");
+    }
+
+    #[test]
+    fn exposure_s_last_pick_of_clipped_pixels_in_the_dark_theme() {
+        photograph_last_pick(true, false, "exposure-last-pick-clipped-dark");
+    }
+
+    #[test]
+    fn exposure_s_last_pick_short_in_the_dark_theme() {
+        photograph_last_pick(false, true, "exposure-last-pick-short-dark");
+    }
+
+    #[test]
+    fn exposure_s_last_pick_clipped_and_short_in_the_dark_theme() {
+        photograph_last_pick(true, true, "exposure-last-pick-both-dark");
     }
 
     /// The settings with Picker target at Reference, and the reference at `lightness`
