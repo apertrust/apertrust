@@ -69,7 +69,7 @@ Releases and the nightly builds, Apertrust Nightly, are on the [Releases page](h
   - Before opening the disk image, remove its quarantine, then drag Apertrust into Applications:
 
     ```sh
-    xattr -d com.apple.quarantine ~/Downloads/Apertrust*.dmg
+    xattr -d com.apple.quarantine ~/Downloads/apertrust*.dmg
     ```
 
   - If the app still won't open, remove the app's quarantine too:
@@ -87,14 +87,14 @@ Releases and the nightly builds, Apertrust Nightly, are on the [Releases page](h
   - **The AppImage:** make it executable and run it. If it names FUSE as it fails, install `libfuse2` (`libfuse2t64` on Ubuntu 24.04). Apertrust Nightly's AppImage updates with [AppImageUpdate](https://github.com/AppImageCommunity/AppImageUpdate).
 
     ```sh
-    chmod +x ~/Downloads/apertrust*.AppImage
+    chmod +x ~/Downloads/apertrust*-linux-*.AppImage
     ```
 
   - **The tarball** installs into `~/.local`, with a menu entry and Open With for raw files:
 
     ```sh
     mkdir -p ~/.local
-    tar -xzf ~/Downloads/apertrust*.tar.gz -C ~/.local --strip-components=1
+    tar -xzf ~/Downloads/apertrust*-linux-*.tar.gz -C ~/.local --strip-components=1
     update-desktop-database ~/.local/share/applications
     update-mime-database ~/.local/share/mime
     ```

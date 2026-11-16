@@ -36,14 +36,14 @@ The packages land in `target/package/<target>/out`. The version comes from the n
 - **Linux, the AppImage:**
 
   ```sh
-  chmod +x apertrust_*_x86_64.AppImage
-  ./apertrust_*_x86_64.AppImage PHOTO.RAW
+  chmod +x apertrust-*-linux-x86_64.AppImage
+  ./apertrust-*-linux-x86_64.AppImage PHOTO.RAW
   ```
 
 - **Linux, the tarball** into `~/.local`, for the menu entry, the icons and Open With:
 
   ```sh
-  tar -xzf apertrust_*_x86_64.tar.gz -C ~/.local --strip-components=1
+  tar -xzf apertrust-*-linux-x86_64.tar.gz -C ~/.local --strip-components=1
   update-desktop-database ~/.local/share/applications
   update-mime-database ~/.local/share/mime
   gtk-update-icon-cache -f -t ~/.local/share/icons/hicolor

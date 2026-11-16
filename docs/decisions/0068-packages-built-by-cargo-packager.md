@@ -14,6 +14,8 @@ Apertrust has to be installable on macOS, Windows and Linux, as two programs, th
 - **Windows**: an NSIS installer for the person installing, needing no administrator, and a portable zip.
 - **Linux**: an AppImage and a tarball laid out as a prefix. Flatpak follows, through Flathub.
 
+**The file names:** `<name>-<version>-<os>-<arch>[-<kind>].<ext>`, all lower case but `.AppImage`, `-` between every part, each platform's own words for its architecture: `apertrust-<version>-macos-arm64.dmg` and `-macos-x86_64.dmg`, `-windows-x64-setup.exe` and `-windows-arm64-setup.exe`, `-windows-x64-portable.zip` and `-windows-arm64-portable.zip`, `-linux-x86_64.AppImage` and `-linux-aarch64.AppImage` (with its `.zsync` for Apertrust Nightly), `-linux-x86_64.tar.gz` and `-linux-aarch64.tar.gz`; Apertrust Nightly's the same with the name `apertrust-nightly`. cargo-packager has no template for its files' names, so the script renames what it writes.
+
 Every package ships the GPL, `CREDITS.md`, the fonts' OFL and Lucide's licence, and nothing else: data is compiled in ([0045](0045-a-top-level-data-folder.md)), and the platform's libraries stay the system's ([0005](0005-rust-and-no-c-or-c-unless-no-rust-option-exists.md)).
 
 **NSIS, not WiX, on Windows:** a per-user install without administrator's rights, file associations in cargo-packager's script, and an installer that builds from Linux and macOS too. An MSI is for managed deployments, which can come later; MSIX, for the Microsoft Store, is planned beside the installer.
@@ -45,7 +47,7 @@ Every package ships the GPL, `CREDITS.md`, the fonts' OFL and Lucide's licence, 
 
 - `cargo install --locked cargo-packager --version 0.11.8` on a machine that packages; the script checks the version, and a new one is adopted deliberately, with the config checked against it.
 - cargo-packager downloads its helpers the first time on each platform (the create-dmg script, NSIS, linuxdeploy), from pinned addresses; those builds need the network once.
-- cargo-packager 0.11.8's quirks are worked around in the config and the script: `--binaries-dir` is ignored, so the folder is in the config; a config file with no `name` makes it look for a `Cargo.toml` beside it.
+- cargo-packager 0.11.8's quirks are worked around in the config and the script: `--binaries-dir` is ignored, so the folder is in the config; a config file with no `name` makes it look for a `Cargo.toml` beside it; its packages' file names are its own, so the script gives each its name after packaging.
 - The installer's script is Apertrust's own, `packaging/windows/installer.nsi`: cargo-packager 0.11.8's template with the per-user folder `%LOCALAPPDATA%\Programs\Apertrust`, the raw types registered under Open With alone (cargo-packager's makes Apertrust their default handler), `.apxmp`'s default `Apertrust.Edit`, the open verb's `MultiSelectModel` (planned, [0089](0089-one-instance-per-user-data-folder-a-window-per-place.md)), and an uninstaller that removes them (cargo-packager's leaves them behind); a new cargo-packager's template is compared with it.
 - The Windows app is a windowed program, so no console opens beside it; started from a terminal it attaches to that terminal's console, so `--version`, `-d` logs and errors print there ([packaging.md](../packaging.md), Windows). The CLI stays a console program.
 - The nightly builds package Apertrust Nightly, which installs beside Apertrust, each package on its own platform (`tools/package.sh --nightly`, `nightly-builds.yml`).
