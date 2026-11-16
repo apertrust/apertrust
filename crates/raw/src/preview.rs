@@ -59,6 +59,10 @@ impl std::fmt::Debug for Preview {
 /// to `Cargo.lock`, so updating rawler fails until it is raised.
 pub const PREVIEW_VERSION: &str = "rawler 0.8.0, preview 1";
 
+/// The decoder's 16-bit RGB and the resulting RGBA together. Cached thumbnails need
+/// far less; a corrupt JPEG header must not request tens of gigabytes before decoding.
+const MAX_JPEG_BYTES: u64 = 512 * 1024 * 1024;
+
 /// Reads the raw file's embedded picture, at most `longest` pixels on its longer side and
 /// upright. `None` where the file holds none rawler reads; an error where the file cannot
 /// be read or parsed.
@@ -226,13 +230,19 @@ fn shrink(picture: &Preview, longest: u32) -> Preview {
 /// Reads a baseline JPEG of three components, as the cache writes thumbnails, into 8-bit
 /// RGBA, alpha opaque, through rawler's JPEG decoder; an error where it is none, another
 /// kind, or does not end with its end marker, as one cut short does, which the decoder
-/// would read without a word.
+/// would read without a word. The decoded RGB and RGBA together may use at most 512 MiB.
 pub fn read_jpeg(jpeg: &[u8]) -> Result<Preview, Error> {
     if !jpeg.ends_with(&[0xFF, 0xD9]) {
         return Err(Error::Decode("a JPEG cut short".to_owned()));
     }
     let (width, height) =
         jpeg_size(jpeg).ok_or_else(|| Error::Decode("not a JPEG with a frame".to_owned()))?;
+    let decoded_bytes = u64::from(width) * u64::from(height) * 10;
+    if decoded_bytes > MAX_JPEG_BYTES {
+        return Err(Error::Decode(format!(
+            "JPEG preview is too large: {decoded_bytes} decoded bytes"
+        )));
+    }
     let (w, h) = (width as usize, height as usize);
     // One strip of every row, so the picture is decoded once.
     let decode = || decompress_strips::<u16, _>(jpeg, w * 3, h, false, h, JpegDecompressor::new());
@@ -460,5 +470,17 @@ mod tests {
         assert_eq!(jpeg_size(&header), Some((2, 1)));
         assert!(read_jpeg(&header).is_err());
         assert_eq!(jpeg_size(&header[..9]), None);
+    }
+
+    #[test]
+    fn oversized_jpeg_headers_are_rejected_before_decoder_allocation() {
+        let header = [
+            0xff, 0xd8, 0xff, 0xc0, 0, 17, 8, 0xff, 0xff, 0xff, 0xff, 3, 1, 0x11, 0, 2, 0x11, 0, 3,
+            0x11, 0, 0xff, 0xd9,
+        ];
+        assert_eq!(jpeg_size(&header), Some((65535, 65535)));
+        assert!(
+            matches!(read_jpeg(&header), Err(Error::Decode(message)) if message.contains("too large"))
+        );
     }
 }
