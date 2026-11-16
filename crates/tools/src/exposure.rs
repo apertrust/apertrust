@@ -266,12 +266,18 @@ static DEFINITION: Definition = Definition {
                 control: "mode",
                 style: ChoiceStyle::Segmented,
             },
-            // The board's manual page (decision 88): Exposure with its picker, Picker
-            // target right under it, then the camera's rows.
+            // The manual page (decision 88): the camera's rows first, as darktable's stack
+            // has them, then Exposure with its picker and Picker target right under it.
             Row::When {
                 control: "mode",
                 is: &["manual"],
                 rows: &[
+                    Row::Toggle {
+                        control: "camera_bias",
+                    },
+                    Row::Toggle {
+                        control: "compensate_hilite_pres",
+                    },
                     Row::Slider(
                         Slider::new("exposure")
                             .decimals(3)
@@ -283,12 +289,6 @@ static DEFINITION: Definition = Definition {
                     REFERENCE,
                     // What the last pick did, its warnings above it.
                     Row::LastPick { picker: "exposure" },
-                    Row::Toggle {
-                        control: "camera_bias",
-                    },
-                    Row::Toggle {
-                        control: "compensate_hilite_pres",
-                    },
                 ],
             },
             Row::When {
@@ -942,16 +942,16 @@ mod tests {
     /// Picker target with Lightness under it while Lightness is chosen, and the camera's
     /// rows; in automatic mode its rows; then Black level correction.
     #[test]
-    fn its_page_is_the_board_s_on_one_untitled_tab() {
+    fn its_page_is_the_board_s_with_darktable_s_camera_rows_first() {
         assert_eq!(DEFINITION.tabs.len(), 1);
         assert_eq!(DEFINITION.tabs[0].id, None);
         assert_eq!(
             page(),
             [
                 "mode",
-                "exposure",
                 "camera_bias",
                 "compensate_hilite_pres",
+                "exposure",
                 "deflicker_percentile",
                 "deflicker_target_level",
                 "black_level",
@@ -963,8 +963,9 @@ mod tests {
         controls.sort_unstable();
         shown.sort_unstable();
         assert_eq!(controls, shown);
-        // Picker target and Lightness are the picker's settings, which no edit stores,
-        // right under Exposure; no area exposure mapping, area mode or patches.
+        // The camera's rows first, as darktable's stack has them; Picker target and
+        // Lightness, the picker's settings, which no edit stores, right under Exposure; no
+        // area exposure mapping, area mode or patches.
         let manual: Vec<String> = DEFINITION
             .rows()
             .filter_map(|row| match row {
@@ -988,13 +989,13 @@ mod tests {
         assert_eq!(
             manual,
             [
+                "camera_bias",
+                "compensate_hilite_pres",
                 "exposure",
                 "setting target",
                 "target is [\"lightness\"]: 1 rows",
                 "target is [\"reference\"]: 1 rows",
                 "last pick of exposure",
-                "camera_bias",
-                "compensate_hilite_pres",
             ]
         );
         let settings: Vec<&str> = DEFINITION

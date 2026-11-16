@@ -20,7 +20,7 @@ A major part of Apertrust is built on darktable's trusted colour science. How cl
 
 **The agreed differences**, kept because they make the later evolution easier: one view and Apertrust's design system; layers in place of darktable's instances and per-module masks ([0034](0034-layers-masked-tool-instances-in-a-fixed-order.md)); darktable's order kept fixed; tone mappers as tools of their own, one per edit ([0033](0033-one-tone-mapper-per-edit.md)); darktable's legacy and overlapping modules left out.
 
-**One tool's page departs from darktable's within the first pass:** Exposure's, as the wireframe's board designs it, its processing, controls and stored values still darktable's ([0088](0088-exposures-page-as-redesigned.md), planned). Every other tool keeps darktable's page.
+**One tool's page departs from darktable's within the first pass:** Exposure's, as the wireframe's board designs it, its processing, controls and stored values still darktable's ([0088](0088-exposures-page-as-redesigned.md)). Every other tool keeps darktable's page.
 
 **The migration ends once, for the whole project,** at the end of Phase 3, when:
 

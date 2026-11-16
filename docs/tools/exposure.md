@@ -1,6 +1,6 @@
 # Exposure
 
-Tool `exposure`, version 3. It works on layers and has no Auto: automatic mode is its one automatic way (decision 88; [The page as redesigned](#the-page-as-redesigned-planned)). It drives one operation, `exposure`, which an unedited photo runs, and owns every parameter of it.
+Tool `exposure`, version 3. It works on layers and has no Auto: automatic mode is its one automatic way (decision 88; [The page as redesigned](#the-page-as-redesigned)). It drives one operation, `exposure`, which an unedited photo runs, and owns every parameter of it.
 
 Its header's tooltip says what it is for (`tool-exposure-description`, [gui.md](../gui.md#the-headers-tooltip)): "Brightens or darkens the photo as if you had exposed it differently in the camera, keeping its colours. Usually the first tool to reach for."
 
@@ -19,20 +19,20 @@ Exposure is darktable's slider, `exposure.exposure` itself, its default the phot
 - Its picker is built ([The picker](#the-picker); [pickers.md](../pickers.md), decision 79): its quad on Exposure, its pick toward Picker target's lightness, and Picker target and Lightness kept in settings.
 - A tolerance or a choice marked "proposed" is open; the [design choices](#design-choices) are settled.
 - Measures and test images are in [README.md](README.md).
-- Its page as redesigned is planned (decision 88): [The page as redesigned](#the-page-as-redesigned-planned). Its first five steps, the camera's rows, automatic mode's page, Picker target with Middle grey and Lightness, the reference, and Last pick with its warnings, are built; the sections below describe the page as built, its check against the board still to come.
+- Its page as redesigned is built (decision 88): [The page as redesigned](#the-page-as-redesigned), in six steps, the last its check against the board; the sections below describe the page as built.
 
-## The page as redesigned (planned)
+## The page as redesigned
 
 Exposure's page is the wireframe's board for the Exposure tool, the one exception to darktable's page in the first pass (decisions 2 and 29; decision 88). Its controls, their ids, ranges, defaults and bindings, its operation and its processing stay as [Controls](#controls) has them, so no edit, render, tool version or golden case changes. Where this page and the board differ, the board wins.
 
-**Manual mode,** top to bottom:
+**Manual mode,** top to bottom, the camera's two rows first as darktable's stack has them:
 
 1. **Mode**, a segmented switch, Manual | Automatic, in place of darktable's list (`ChoiceStyle::Segmented`). On an image that is not a raw the photo lists Manual alone (`Tool::options`): Automatic is drawn disabled, its tooltip "Automatic needs a raw photo's histogram", and Manual stays selectable, so an edit pasted there holding Automatic shows it chosen and disabled until Manual is chosen, rendering as manual mode meanwhile; holding Manual, the chosen option is drawn as anywhere and only Automatic is disabled, nothing else being there to choose (decision 30). Built: the one segmented choice listed per photo, its unlisted option's reason `tool-exposure-control-mode-option-automatic-unavailable` (`messages::option_unavailable`).
-2. **Exposure**, its picker on its quad. The picker's tooltip and its hint over the photo say what a pick will do, by Picker target (`Picker::words_by`): "Make an area middle grey", "Make an area L 92 %", and the central bar "Exposure · Make an area middle grey". Built.
-3. **Picker target**, a choice setting under Exposure, in place of Area exposure mapping: **Middle grey**, the default; **Lightness**, its slider under it (`Row::WhenSetting`); **Reference**, the reference row under it (`Row::Reference`). Each option has a tooltip (`Choice::option_tips`), and the closed row's tooltip is the chosen option's. Built.
-4. **The warning lines**, only after a pick that reads clipped pixels or falls short of its target, one line each, both where both hold, the clipped one first; then **Last pick**, a one-line readout of the last pick (`Row::LastPick`): its label, the area before and after as two patches (`ReadoutRow::patches`), then "L 41 % → L 50 % · +0.55 EV". Built: the warnings as the design system's `WarningRow`, nothing shown before a pick, both kept with the tool's patch and taken away with it.
-5. **Compensate camera exposure**, its label with the camera's bias, "−⅔ EV" (`Tool::label_value`, `ValueFormat::Thirds`); hidden on a photo with no bias (`Tool::visible`), where darktable shows it with "+0.0 EV". Built.
-6. **Highlight preservation mode**, its label with the exposure it gives back, "+1.0 EV" (`ValueFormat::Decimals(1)`); hidden where the camera held nothing back, as darktable hides it. Built.
+2. **Compensate camera exposure**, its label with the camera's bias, "−⅔ EV" (`Tool::label_value`, `ValueFormat::Thirds`); hidden on a photo with no bias (`Tool::visible`), where darktable shows it with "+0.0 EV". Built.
+3. **Highlight preservation mode**, its label with the exposure it gives back, "+1.0 EV" (`ValueFormat::Decimals(1)`); hidden where the camera held nothing back, as darktable hides it. Built.
+4. **Exposure**, its picker on its quad. The picker's tooltip and its hint over the photo say what a pick will do, by Picker target (`Picker::words_by`): "Make an area middle grey", "Make an area L 92 %", and the central bar "Exposure · Make an area middle grey". Built.
+5. **Picker target**, a choice setting under Exposure, in place of Area exposure mapping: **Middle grey**, the default; **Lightness**, its slider under it (`Row::WhenSetting`); **Reference**, the reference row under it (`Row::Reference`). Each option has a tooltip (`Choice::option_tips`), and the closed row's tooltip is the chosen option's. Built.
+6. **The warning lines**, only after a pick that reads clipped pixels or falls short of its target, one line each, both where both hold, the clipped one first; then **Last pick**, a one-line readout of the last pick (`Row::LastPick`): its label, the area before and after as two patches (`ReadoutRow::patches`), then "L 41 % → L 50 % · +0.55 EV". Built: the warnings as the design system's `WarningRow`, nothing shown before a pick, both kept with the tool's patch and taken away with it.
 7. **Black level correction**, a plain slider with darktable's four decimals. Its tooltip built.
 
 **Automatic mode:** Mode, then Percentile as **Measure at**, Target level as **Place it at**, the computed exposure (decision 87's `Row::Computed`) as **This photo**, then Black level correction. Measure at shows its value as a slider's does, darktable's two decimals, "50.00%", and its tooltip names the median. Built.
@@ -74,7 +74,7 @@ Exposure's page is the wireframe's board for the Exposure tool, the one exceptio
 3. **Built:** Picker target with Middle grey and Lightness: `PickerTarget`, `tools.exposure.target`, `Row::WhenSetting`, a tooltip per option in `Choice`, `Picker::words_by`; Area exposure mapping, area mode and measure mode removed; the pick by target; E52. Reference listed but disabled until step 4.
 4. **Built:** the reference: Reference choosable in Picker target, the `reference` picker, `Row::Reference` and `ReferenceRow`, its two settings, `picker_ready` in the tools, the session and the app, the picker turned off when it stops being ready, the check that its photo is still there, and ⋯; E53 and E54.
 5. **Built:** Last pick and the warnings: `Shown::last` and `warnings`, `Reading::input_maximum`, `Row::LastPick`, `ReadoutRow::patches`, the warning row (`WarningRow`) and the live region.
-6. Checked against the board in every variant, dark and light, and the snapshots reviewed.
+6. **Built:** checked against the board in every variant, dark and light, and the snapshots reviewed; the camera's rows put first, as darktable's stack has them.
 
 **Rows it adds,** tolerances proposed, built: E52, E53 and E54 in [Invariants](#invariants); E51 went with Auto. E0, E3 and E14 stay as they are, proving the render unchanged.
 
@@ -166,7 +166,7 @@ These are the tooltips (`tool-exposure-control-<control>-promise`), each turned 
 | E54 | The reference picker (decision 88) | A pick of the reference | The edit and its history | Unchanged, no step | Exact | E50's patches, and the session's picker tests |
 | E60 | Each control on a layer, Phase 4 | E4's and E30's values on a full-mask layer at 100 % | Scene, inside the mask | Changes the image as the same values do on the background | As the row it repeats | Ramp |
 
-E52 came with step 3, E53 and E54 with step 4 ([The page as redesigned](#the-page-as-redesigned-planned)).
+E52 came with step 3, E53 and E54 with step 4 ([The page as redesigned](#the-page-as-redesigned)).
 
 ## Results
 
@@ -266,5 +266,5 @@ darktable's picker on Exposure (`exposure.c:1211-1218`), an area picker of the e
 - **Built (Phase 2, decision 88, step 3):** Picker target with Middle grey and Lightness in place of Area exposure mapping, the picker's words by its target, area mode and measure mode gone, with E52.
 - **Built (Phase 2, decision 88, step 4):** the reference: its row, its picker, its two settings, Exposure's picker waiting for one, with E53 and E54.
 - **Built (Phase 2, decision 88, step 5):** Last pick and its two warnings, `Reading::input_maximum` filled by the session, and the live region saying Last pick's words.
-- **Planned (Phase 2, decision 88):** the page as redesigned's last step, its check against the board ([The page as redesigned](#the-page-as-redesigned-planned)).
+- **Built (Phase 2, decision 88, step 6):** the page checked against the board, its differences fixed, and the camera's rows first, as darktable's stack has them.
 - **Phase 4:** layers, with E60.
