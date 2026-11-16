@@ -1227,11 +1227,12 @@ reference-clear = Clear Reference
 reference-set = Set Reference from an Area
 
 ## A last pick row (docs/pickers.md, Declaring pickers; decision 88): what the last pick did,
-## $before and $after the area's L and $change the change with its unit, then its two
+## $before and $after the area's L and $change the change with its unit, each ■ where the
+## row draws a patch of the area's colour, then its two
 ## warnings, $control the control's label, $value the end it is held at with its unit,
 ## $reached and $target the L it reached and the L it was to reach.
 last-pick-label = Last pick
-last-pick-value = L { $before } % → L { $after } % · { $change }
+last-pick-value = ■ L { $before } % → ■ L { $after } % · { $change }
 last-pick-promise = The area picked, before and after, and the exposure it took
 pick-warning-clipped = The area has clipped pixels
 pick-warning-clipped-tip = Its lightness reads low: pick an area with no clipped highlights

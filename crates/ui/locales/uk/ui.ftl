@@ -944,7 +944,7 @@ reference-clear = Очистити еталон
 reference-set = Задати еталон за ділянкою
 
 last-pick-label = Останнє взяття
-last-pick-value = L { $before } % → L { $after } % · { $change }
+last-pick-value = ■ L { $before } % → ■ L { $after } % · { $change }
 last-pick-promise = Взята ділянка до і після та експозиція, якої це потребувало
 pick-warning-clipped = Ділянка має обрізані пікселі
 pick-warning-clipped-tip = Її світлість занижена: виберіть ділянку без обрізаних світлих тонів

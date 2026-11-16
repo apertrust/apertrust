@@ -16,21 +16,30 @@
 
 //! The readout row, one line (`docs/gui.md`, How the rows are laid out): a number the
 //! photo gives and nobody edits, as darktable's "computed EC" under Exposure's Target
-//! level. Its label at the start in `text_secondary`, its value at the end in `text`,
+//! level. Its label at the start in `text_secondary`, at the body size of every row's label,
+//! its value at the end in `text`,
 //! where a slider's value ends, written as a slider writes its value at rest, in the
 //! language's format with its unit; with no value, nothing at the end. It takes no focus;
 //! screen readers hear the label and the value as one label, and its promise is the
 //! tooltip.
 //!
-//! A readout of words of its own ([`ReadoutRow::text`]) shows them in place of a number,
-//! and one with patches ([`ReadoutRow::patches`]) draws two colours before them, as
-//! Exposure's Last pick, "L 41 % → L 50 % · +0.55 EV", shows the area before and after
-//! the pick (decision 88).
+//! A readout of words of its own ([`ReadoutRow::text`]) shows them in place of a number.
+//! Where those words hold [`ReadoutRow::PATCH`], each is drawn as a patch, a colour of
+//! [`ReadoutRow::patches`] in turn, 16 points by 12, as Exposure's Last pick,
+//! "■ L 41 % → ■ L 50 % · +0.55 EV", shows the area before and after the pick, a patch
+//! before each value (decision 88). Screen readers hear the words without the patches.
 
 use egui::accesskit::Role;
 use egui::{Color32, FontId, Rect, Response, Sense, Ui, WidgetInfo, pos2, vec2};
 
 use crate::{theme, translator};
+
+/// Where in a readout's words ([`ReadoutRow::text`]) a patch is drawn, as a message writes
+/// it: "■ L 41 % → ■ L 50 %".
+const PATCH: char = '■';
+
+/// A patch's width and height, in points.
+const PATCH_SIZE: [f32; 2] = [16.0, 12.0];
 
 pub struct ReadoutRow<'a> {
     label: &'a str,
@@ -41,11 +50,21 @@ pub struct ReadoutRow<'a> {
     unit: Option<&'a str>,
     /// Words of its own in place of the number.
     text: Option<&'a str>,
-    /// Two colours before the value: before and after.
-    patches: Option<[Color32; 2]>,
+    /// The colours of the patches in the words, in turn.
+    patches: Vec<Color32>,
 }
 
 impl<'a> ReadoutRow<'a> {
+    /// The mark of a patch in a readout's words ([`ReadoutRow::text`]), as a message writes
+    /// it: "■ L 41 % → ■ L 50 %".
+    pub const PATCH: char = PATCH;
+
+    /// `words` as screen readers hear them, without the patches [`ReadoutRow::text`] draws
+    /// at each [`Self::PATCH`] and the space after it.
+    pub fn spoken(words: &str) -> String {
+        words.replace(&format!("{PATCH} "), "").replace(PATCH, "")
+    }
+
     /// `label` is the short, translated label; `value` the number, `None` while there is
     /// none to show.
     pub fn new(label: &'a str, value: Option<f64>) -> Self {
@@ -57,21 +76,21 @@ impl<'a> ReadoutRow<'a> {
             signed: false,
             unit: None,
             text: None,
-            patches: None,
+            patches: Vec::new(),
         }
     }
 
     /// Words of its own, translated, shown at the end in place of a number: Last pick's
-    /// "L 41 % → L 50 % · +0.55 EV".
+    /// "■ L 41 % → ■ L 50 % · +0.55 EV", each [`ReadoutRow::PATCH`] drawn as a patch.
     pub fn text(mut self, text: &'a str) -> Self {
         self.text = Some(text);
         self
     }
 
-    /// Two colours drawn before the value, a patch each, `before` then `after`: the area
+    /// The colours of the patches the words draw at their [`ReadoutRow::PATCH`]s, in turn: the area
     /// Last pick read, as it rendered before the pick and as it renders after.
-    pub fn patches(mut self, before: Color32, after: Color32) -> Self {
-        self.patches = Some([before, after]);
+    pub fn patches(mut self, colours: &[Color32]) -> Self {
+        self.patches = colours.to_vec();
         self
     }
 
@@ -121,25 +140,48 @@ impl<'a> ReadoutRow<'a> {
         });
         let value = self.text.map(str::to_owned).or(number);
         let font = FontId::proportional(t.text.small);
+        // The label is every row's, at the body size.
+        let body = FontId::proportional(t.text.body);
         if ui.is_rect_visible(rect) {
             let painter = ui.painter();
-            // The value first, never cut; the label cut with … to what it leaves, a
-            // choice row's 12-point gap between them. Screen readers hear both whole.
+            // The value first, never cut, in pieces between its patches; the label cut
+            // with … to what it leaves, a choice row's 12-point gap between them. Screen
+            // readers hear both whole.
             let end = rect.right() - super::field_inset(&t);
-            let value = value
-                .as_ref()
-                .map(|value| painter.layout_no_wrap(value.clone(), font.clone(), t.colors.text));
-            let side = t.text.small + t.spacing.xxs;
-            let patches = self
-                .patches
-                .map_or(0.0, |_| 2.0 * side + t.spacing.xxs + t.spacing.xs);
-            let room = match &value {
-                Some(value) => end - value.size().x - patches - t.spacing.l - rect.left(),
-                None => rect.width(),
+            // Between its patches the words are laid out trimmed, a space against a patch a
+            // gap of `spacing.xs`, which a galley's own trailing space would not give.
+            let split: Vec<&str> = value
+                .as_deref()
+                .map_or_else(Vec::new, |value| value.split(PATCH).collect());
+            let patched = split.len() > 1;
+            let gap = |space: bool| if patched && space { t.spacing.xs } else { 0.0 };
+            let pieces: Vec<_> = split
+                .iter()
+                .enumerate()
+                .map(|(at, piece)| {
+                    let text = if patched { piece.trim() } else { piece };
+                    let before = gap(at > 0 && piece.starts_with(' '));
+                    let after = gap(at + 1 < split.len() && piece.ends_with(' '));
+                    let galley =
+                        painter.layout_no_wrap(text.to_owned(), font.clone(), t.colors.text);
+                    (galley, before, after)
+                })
+                .collect();
+            let [patch_width, patch_height] = PATCH_SIZE;
+            let patches = pieces.len().saturating_sub(1) as f32;
+            let width: f32 = pieces
+                .iter()
+                .map(|(galley, before, after)| galley.size().x + before + after)
+                .sum::<f32>()
+                + patches * patch_width;
+            let room = if pieces.is_empty() {
+                rect.width()
+            } else {
+                end - width - t.spacing.l - rect.left()
             };
             let label = painter.layout_job(super::truncated(
                 self.label,
-                font,
+                body,
                 room.max(0.0),
                 t.colors.text_secondary,
             ));
@@ -149,33 +191,32 @@ impl<'a> ReadoutRow<'a> {
                 label,
                 t.colors.text_secondary,
             );
-            if let Some(value) = value {
-                // Where a slider's value ends at rest, inside its field's inset.
-                let at = pos2(end - value.size().x, centred(value.size().y));
-                // The patches before it, a gap apart, each a small text high.
-                if let Some(patches) = self.patches {
-                    let mut x = at.x - t.spacing.xs;
-                    for colour in patches.iter().rev() {
-                        x -= side;
-                        let rect = Rect::from_min_size(
-                            pos2(x, rect.center().y - side / 2.0),
-                            vec2(side, side),
-                        );
-                        painter.rect_filled(rect, t.shape.radius_small, *colour);
-                        painter.rect_stroke(
-                            rect,
-                            t.shape.radius_small,
-                            egui::Stroke::new(1.0, t.colors.border),
-                            egui::StrokeKind::Inside,
-                        );
-                        x -= t.spacing.xxs;
-                    }
+            // Where a slider's value ends at rest, inside its field's inset.
+            let mut x = end - width;
+            for (at, (galley, before, after)) in pieces.into_iter().enumerate() {
+                if at > 0 {
+                    let colour = self.patches.get(at - 1).copied().unwrap_or_default();
+                    let patch = Rect::from_min_size(
+                        pos2(x, rect.center().y - patch_height / 2.0),
+                        vec2(patch_width, patch_height),
+                    );
+                    painter.rect_filled(patch, t.shape.radius_small, colour);
+                    painter.rect_stroke(
+                        patch,
+                        t.shape.radius_small,
+                        egui::Stroke::new(1.0, t.colors.border),
+                        egui::StrokeKind::Inside,
+                    );
+                    x += patch_width;
                 }
-                painter.galley(at, value, t.colors.text);
+                x += before;
+                let size = galley.size();
+                painter.galley(pos2(x, centred(size.y)), galley, t.colors.text);
+                x += size.x + after;
             }
         }
         let heard = match &value {
-            Some(value) => format!("{} {value}", self.label),
+            Some(value) => format!("{} {}", self.label, Self::spoken(value)),
             None => self.label.to_owned(),
         };
         response.widget_info(|| WidgetInfo::labeled(Role::Label, true, &heard));

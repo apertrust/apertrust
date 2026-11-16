@@ -19,11 +19,11 @@
 //!
 //! - **Its parts,** start to end: the label; then at the row's end the reference's patch,
 //!   its value ("L 62 %") and the photo it was measured on ("· IMG_2041", "· this photo"),
-//!   in the small text, the photo's name in `text_secondary`, or in `text_disabled` once
-//!   the photo is gone, its tooltip saying so; then the picker that measures it
-//!   ([`PickerButton`]) and ⋯ ([`IconButton`]), whose menu holds Clear Reference and Set
-//!   Reference from an Area. With none set it shows its text for none, and while its
-//!   picker measures, its text for that, with no patch.
+//!   in the small text, the whole value in `text_secondary`, or in `text_disabled`, the L
+//!   and the name, once the photo is gone, its tooltip saying so; then the picker that
+//!   measures it ([`PickerButton`]) and ⋯ ([`IconButton`]), whose menu holds Clear
+//!   Reference and Set Reference from an Area. With none set it shows its text for none,
+//!   and while its picker measures, its text for that, in `text_secondary`, with no patch.
 //! - **The name is cut first,** with …, where the row is too narrow; the label next.
 //!   Screen readers hear both whole.
 //! - **To AccessKit,** a label, its words and its value; the picker a toggle button and ⋯
@@ -181,7 +181,14 @@ impl<'a> ReferenceRow<'a> {
                 gone,
             } => (value, photo, gone, Some(patch)),
         };
-        let first_galley = painter.layout_no_wrap(first.to_owned(), font.clone(), text);
+        // The whole value in `text_secondary`, L and name; both `text_disabled` once the
+        // photo is gone.
+        let value_colour = if gone.is_some() {
+            t.colors.text_disabled
+        } else {
+            secondary
+        };
+        let first_galley = painter.layout_no_wrap(first.to_owned(), font.clone(), value_colour);
         let label_width = painter
             .layout_no_wrap(self.label.to_owned(), body.clone(), text)
             .size()
@@ -192,13 +199,8 @@ impl<'a> ReferenceRow<'a> {
         let fixed = first_galley.size().x + patch_room + t.spacing.l;
         let room = (end - row.left() - fixed).max(0.0);
         let photo_room = (room - label_width).max(0.0);
-        let photo_colour = if gone.is_some() {
-            t.colors.text_disabled
-        } else {
-            secondary
-        };
         let photo_galley = photo.map(|photo| {
-            painter.layout_job(truncated(photo, font.clone(), photo_room, photo_colour))
+            painter.layout_job(truncated(photo, font.clone(), photo_room, value_colour))
         });
         let centred = |height: f32| row.center().y - height / 2.0;
         let mut x = end;
@@ -207,11 +209,15 @@ impl<'a> ReferenceRow<'a> {
             x -= galley.size().x;
             let at = pos2(x, centred(galley.size().y));
             photo_rect = Some(Rect::from_min_size(at, galley.size()));
-            painter.galley(at, galley, photo_colour);
+            painter.galley(at, galley, value_colour);
             x -= gap;
         }
         x -= first_galley.size().x;
-        painter.galley(pos2(x, centred(first_galley.size().y)), first_galley, text);
+        painter.galley(
+            pos2(x, centred(first_galley.size().y)),
+            first_galley,
+            value_colour,
+        );
         if let Some(colour) = patch {
             x -= gap + side;
             let rect = Rect::from_min_size(pos2(x, row.center().y - side / 2.0), vec2(side, side));

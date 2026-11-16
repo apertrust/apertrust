@@ -945,7 +945,7 @@ reference-clear = Wyczyść wzorzec
 reference-set = Ustaw wzorzec z obszaru
 
 last-pick-label = Ostatni pomiar
-last-pick-value = L { $before } % → L { $after } % · { $change }
+last-pick-value = ■ L { $before } % → ■ L { $after } % · { $change }
 last-pick-promise = Wybrany obszar przed i po oraz ekspozycja, jakiej to wymagało
 pick-warning-clipped = Obszar ma przycięte piksele
 pick-warning-clipped-tip = Jego jasność jest zaniżona: wybierz obszar bez przyciętych świateł

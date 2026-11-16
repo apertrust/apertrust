@@ -17,7 +17,7 @@
 //! The checkbox row, one line (`docs/gui.md`, How the rows are laid out): the design
 //! system's [`Checkbox`] at the start, its short label after it, which toggles it too.
 //! Screen readers hear its full name; its promise is the tooltip. A value of the photo's
-//! may follow the label, in `text_secondary`: "Compensate camera exposure (−⅔ EV)".
+//! may follow the label, in `text_secondary`, no brackets: "Compensate camera exposure −⅔ EV".
 
 use egui::Ui;
 
@@ -52,8 +52,8 @@ impl<'a> ToggleRow<'a> {
         self
     }
 
-    /// A value after the label, in `text_secondary`, translated with its brackets, as
-    /// Exposure's "(−⅔ EV)"; screen readers hear it after the full name.
+    /// A value after the label, in `text_secondary`, translated, with no brackets, as
+    /// Exposure's "−⅔ EV"; screen readers hear it after the full name.
     pub fn value(mut self, value: &'a str) -> Self {
         self.value = Some(value);
         self

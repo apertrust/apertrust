@@ -42,7 +42,7 @@
 //!   holds one of their values; a choice's options its operation does not port listed
 //!   disabled. A row the session reports hidden on the photo is not drawn, Exposure's
 //!   two camera rows where the photo gives them nothing to do, and a toggle the photo
-//!   gives a value shows it after its label, "Compensate camera exposure (−⅔ EV)"
+//!   gives a value shows it after its label, "Compensate camera exposure −⅔ EV"
 //!   (decision 88). A collapsible group's open state is the app's, kept in settings,
 //!   and its "N set" counts the controls it shows that are off their defaults.
 //!   darktable's own settings for a tool, which no edit stores, are drawn disabled until
@@ -1317,6 +1317,9 @@ fn setting_row(ui: &mut egui::Ui, page: &Page, setting: &SettingRow, changes: &m
                 Vec::new()
             };
             let tips: Vec<&str> = tips.iter().map(String::as_str).collect();
+            // The closed row's tooltip is the chosen option's own where the options have
+            // tips, else the setting's.
+            let closed = tips.get(chosen as usize).copied().unwrap_or(&promise);
             // An option still to come is listed, as one darktable lists that is not ported.
             let later: Vec<usize> = (options.iter().enumerate())
                 .filter(|(_, option)| unported.contains(option))
@@ -1325,7 +1328,7 @@ fn setting_row(ui: &mut egui::Ui, page: &Page, setting: &SettingRow, changes: &m
             let later_tip = words.text("choice-option-later");
             let action = Choice::new(&label, &names, chosen as usize)
                 .name(&full)
-                .promise(&promise)
+                .promise(closed)
                 .option_tips(&tips)
                 .disabled_options(&later, &later_tip)
                 .style(parts::ChoiceStyle::Blended)
@@ -1470,7 +1473,8 @@ fn reference_row(
 
 /// What the last pick of `picker` did (`Row::LastPick`, decision 88): its warnings, one
 /// line each in the warning colour, the clipped one first, then the readout with the area
-/// before and after as two patches, "L 41 % → L 50 % · +0.55 EV". Nothing before a pick,
+/// before and after as a patch before each value, "■ L 41 % → ■ L 50 % · +0.55 EV".
+/// Nothing before a pick,
 /// nor where the tool's pickers are not drawn.
 fn last_pick_row(ui: &mut egui::Ui, page: &Page, picker: &str) {
     let definition = page.tool.definition();
@@ -1495,7 +1499,7 @@ fn last_pick_row(ui: &mut egui::Ui, page: &Page, picker: &str) {
     let [before, after] = last.patches.map(|patch| colour(patch.srgb));
     ReadoutRow::new(&said.label, None)
         .text(&said.value)
-        .patches(before, after)
+        .patches(&[before, after])
         .promise(&said.promise)
         .show(ui);
 }
@@ -2005,8 +2009,9 @@ fn choice_row(
         }
         // Every option, in the definition's order: those the photo does not list drawn
         // disabled with their reasons, so the one an edit from another photo holds is
-        // shown chosen and disabled, and with nothing else to choose the switch is
-        // disabled whole (decision 88). A segmented row has no unported option.
+        // shown chosen and disabled, and with nothing else to choose the chosen one is drawn
+        // as anywhere, the others disabled (decision 88). A segmented row has no unported
+        // option.
         ChoiceStyle::Segmented => {
             let all: Vec<String> = options
                 .iter()
@@ -2022,10 +2027,14 @@ fn choice_row(
                 .collect();
             let reasons: Vec<(usize, &str)> =
                 reasons.iter().map(|(i, why)| (*i, why.as_str())).collect();
+            // Unavailable only because the photo lists just the option it holds (decision
+            // 30's rule for a list), the switch says so option by option instead: the held
+            // one drawn as anywhere, the others disabled with their reasons (decision 88).
+            let only = check::lists_only(control, &shown.options, &shown.value);
             Segmented::new(&full, &all, index)
                 .full_width()
                 .promise(&promise)
-                .enabled(shown.available)
+                .enabled(shown.available || only)
                 .disabled_options(&reasons)
                 .show(ui)
         }
@@ -2079,7 +2088,7 @@ fn toggle_row(
 
 /// What a row shows after its label of the photo's value (decision 88):
 /// `tool-<tool>-control-<control>-label-value`, its `$value` the number in the
-/// language's format, as its `ValueFormat` writes it, with its unit, "(−⅔ EV)".
+/// language's format, as its `ValueFormat` writes it, with its unit, "−⅔ EV".
 fn label_value(words: &Translator, tool: &str, control: &str, value: &LabelValue) -> String {
     let number =
         value.write(|number, decimals, signed| words.format_number(number, decimals, signed));
@@ -2556,12 +2565,19 @@ mod tests {
         image
     }
 
-    /// `state` as the session reports it on `image`: each row shown or hidden, and the
-    /// values after their labels, as the tool says for that photo.
+    /// `state` as the session reports it on `image`: each row shown or hidden, the values
+    /// after their labels, and what each can change, as the tool says for that photo.
     fn on_photo(tool: &dyn Tool, state: &mut ToolState, image: &ImageContext) {
-        for control in &mut state.controls {
+        let values = values(state);
+        for (definition, control) in tool.definition().controls.iter().zip(&mut state.controls) {
             control.visible = tool.visible(control.control, image);
             control.label_value = tool.label_value(control.control, image);
+            control.options = tool.options(control.control, image);
+            // As the session reports it: a choice the photo lists only the held option of
+            // is unavailable too (decision 30).
+            control.available = !definition.unported
+                && tool.available(control.control, &values, image)
+                && !check::lists_only(definition, &control.options, &control.value);
         }
     }
 
@@ -2950,8 +2966,8 @@ mod tests {
         // The camera's rows, with their values on the photo, heard after their names
         // (decision 88).
         for name in [
-            "Compensate camera exposure (−⅔ EV)",
-            "Highlight preservation mode (+1.0 EV)",
+            "Compensate camera exposure −⅔ EV",
+            "Highlight preservation mode +1.0 EV",
         ] {
             harness.get_by_role_and_label(Role::CheckBox, name);
         }
@@ -2973,7 +2989,7 @@ mod tests {
         assert!(top(Role::Slider, "Exposure") < top(Role::ComboBox, "Picker target"));
         assert!(
             top(Role::ComboBox, "Picker target")
-                < top(Role::CheckBox, "Compensate camera exposure (−⅔ EV)")
+                < top(Role::CheckBox, "Compensate camera exposure −⅔ EV")
         );
         // Automatic's rows, which manual hides, and Contrast and its pivot, which left
         // Exposure for Colour balance RGB (decision 2).
@@ -3019,28 +3035,25 @@ mod tests {
     /// holding `mode`: the photo lists manual alone (decision 88).
     fn not_a_raw(mode: u32) -> ToolState {
         let mut state = untouched(&Exposure);
-        let image = ImageContext::full(8, 8);
-        on_photo(&Exposure, &mut state, &image);
-        for control in &mut state.controls {
-            control.options = Exposure.options(control.control, &image);
-            if control.control == "mode" {
-                control.value = ControlValue::Choice(mode);
-            }
-        }
+        set(&mut state, "mode", ControlValue::Choice(mode), None);
+        on_photo(&Exposure, &mut state, &ImageContext::full(8, 8));
         state
     }
 
     /// On an image that is not a raw, the switch draws Automatic disabled, saying why
-    /// (decision 88). Holding Manual there it has nothing else to offer, so it is
-    /// disabled whole; an edit pasted there holding Automatic shows it chosen and
-    /// disabled, and Manual can be chosen.
+    /// (decision 88). Holding Manual there it has nothing else to offer: Manual is drawn
+    /// as chosen, not disabled, and nothing else can be chosen; an edit pasted there
+    /// holding Automatic shows it chosen and disabled, and Manual can be chosen.
     #[test]
     fn mode_s_automatic_is_disabled_on_an_image_that_is_not_a_raw() {
         let why = "Automatic needs a raw photo's histogram";
         let mut harness = panel(&Exposure, not_a_raw(0));
         harness.run();
         let group = harness.get_by_role_and_label(Role::RadioGroup, "Mode");
-        assert!(group.accesskit_node().is_disabled());
+        assert!(!group.accesskit_node().is_disabled());
+        let manual = harness.get_by_role_and_label(Role::RadioButton, "Manual");
+        assert!(!manual.accesskit_node().is_disabled());
+        assert_eq!(manual.accesskit_node().toggled(), Some(Toggled::True));
         let automatic = harness.get_by_role_and_label(Role::RadioButton, "Automatic");
         assert!(automatic.accesskit_node().is_disabled());
         assert_eq!(
@@ -3092,7 +3105,7 @@ mod tests {
         image.camera.as_mut().unwrap().exposure_bias = 4.0 / 3.0;
         on_photo(&Exposure, &mut harness.state_mut().state, &image);
         harness.run();
-        harness.get_by_role_and_label(Role::CheckBox, "Compensate camera exposure (+1⅓ EV)");
+        harness.get_by_role_and_label(Role::CheckBox, "Compensate camera exposure +1⅓ EV");
         assert!(
             harness
                 .query_by_label_contains("Highlight preservation mode")
@@ -3109,14 +3122,14 @@ mod tests {
             .unwrap();
         assert_eq!(
             label_value(&words, "exposure", "compensate_hilite_pres", &given_back),
-            "(+1,0 EV)"
+            "+1,0 EV"
         );
         let bias = Exposure
             .label_value("camera_bias", &camera_photo())
             .unwrap();
         assert_eq!(
             label_value(&words, "exposure", "camera_bias", &bias),
-            "(−⅔ EV)"
+            "−⅔ EV"
         );
     }
 
@@ -3129,7 +3142,7 @@ mod tests {
         }
         let mut harness = panel(&Exposure, state);
         harness.run();
-        let name = "Compensate camera exposure (−⅔ EV)";
+        let name = "Compensate camera exposure −⅔ EV";
         let toggle = harness.get_by_role_and_label(Role::CheckBox, name);
         assert!(toggle.accesskit_node().is_disabled());
         toggle.click();
@@ -6433,8 +6446,8 @@ mod tests {
 
     /// Exposure's automatic mode as the board draws it (decision 88), open, one under
     /// another: on a raw with the exposure it computed; on an image that is not a raw
-    /// holding Manual, the switch disabled whole; and there holding Automatic, pasted,
-    /// chosen and disabled with Manual live.
+    /// holding Manual, Manual drawn as chosen and Automatic disabled; and there holding
+    /// Automatic, pasted, chosen and disabled with Manual live.
     fn photograph_automatic(which: Builtin, name: &str) {
         let mut raw = untouched(&Exposure);
         set(&mut raw, "mode", ControlValue::Choice(1), Some(Mark::Kept));
@@ -7044,7 +7057,7 @@ mod tests {
     }
 
     /// Last pick (decision 88): nothing before a pick; after one, the readout with its
-    /// two patches, "L 41 % → L 50 % · +0.55 EV", its tooltip its promise; each warning a
+    /// a patch before each value, "L 41 % → L 50 % · +0.55 EV", its tooltip its promise; each warning a
     /// line of its own above it, the clipped one first, its tooltip saying why, the short
     /// one's adding the black moved where the pick moved it.
     #[test]

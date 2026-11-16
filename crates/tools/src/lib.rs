@@ -184,7 +184,7 @@ pub trait Tool: Send + Sync {
     }
 
     /// A value of the photo's that the row of `control` shows after its label, as
-    /// Exposure's "Compensate camera exposure (−⅔ EV)" (decision 88): `None`, as provided.
+    /// Exposure's "Compensate camera exposure −⅔ EV" (decision 88): `None`, as provided.
     /// Pure, and reading only the photo, as [`Self::visible`] is: the session asks once
     /// as the photo opens and reports it, and a client writes it through
     /// `tool-<tool>-control-<control>-label-value` ([`messages::label_value`]) where

@@ -445,8 +445,8 @@ impl Tool for Exposure {
     }
 
     /// What the two camera rows take off and give back, the operation's values: the
-    /// camera's bias in thirds, as the camera writes it, "(−⅔ EV)", and the exposure a
-    /// highlight-preserving mode held back with one decimal, "(+1.0 EV)", where
+    /// camera's bias in thirds, as the camera writes it, "−⅔ EV", and the exposure a
+    /// highlight-preserving mode held back with one decimal, "+1.0 EV", where
     /// darktable writes both with one decimal, `%+.1f` and `%.1f` (decision 88). None
     /// where the row is hidden, the value 0.
     fn label_value(&self, control: &str, image: &ImageContext) -> Option<LabelValue> {
