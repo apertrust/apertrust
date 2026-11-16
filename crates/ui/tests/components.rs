@@ -3234,6 +3234,92 @@ fn a_disabled_icon_button_does_not_click() {
     assert_eq!((undo, redo), (1, 0));
 }
 
+/// A button held off is drawn disabled and said disabled to screen readers, with its tip as
+/// its description, yet takes the keyboard's focus; a plain disabled one takes none. Given a
+/// width it fills it, and a centred one keeps its words in the middle.
+#[test]
+fn a_held_off_button_is_disabled_yet_a_stop_for_the_keyboard() {
+    let mut pressed = [0; 3];
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(300.0, 160.0))
+        .with_context_setup(|ctx| apertrust_ui::install(ctx, Theme::default()))
+        .build_ui(|ui| {
+            let row = apertrust_ui::theme(ui.ctx()).sizes.row;
+            pressed[0] += usize::from(
+                Button::new("Export")
+                    .primary(true)
+                    .centred(true)
+                    .held_off(true)
+                    .tip("Fix the path first.")
+                    .height(row)
+                    .width(ui.available_width())
+                    .show_pressed(ui),
+            );
+            pressed[1] += usize::from(Button::new("Off").enabled(false).show_pressed(ui));
+            // Held off and disabled in itself: no stop for the keyboard either.
+            pressed[2] += usize::from(
+                Button::new("Both")
+                    .enabled(false)
+                    .held_off(true)
+                    .show_pressed(ui),
+            );
+        });
+    harness.run();
+    let held = harness.get_by_label("Export");
+    assert!(held.accesskit_node().is_disabled());
+    assert_eq!(
+        held.accesskit_node().description().as_deref(),
+        Some("Fix the path first.")
+    );
+    assert!(held.rect().width() > 250.0, "it fills its width");
+    assert_eq!(
+        held.rect().height(),
+        Theme::default().sizes.row,
+        "a row high, not a control"
+    );
+    held.focus();
+    harness.run();
+    assert!(harness.get_by_label("Export").is_focused());
+    // Pressed, it reports nothing.
+    harness.get_by_label("Export").click();
+    harness.run();
+    harness.get_by_label("Off").click();
+    harness.run();
+    harness.get_by_label("Both").click();
+    harness.run();
+    drop(harness);
+    assert_eq!(pressed, [0, 0, 0]);
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(300.0, 60.0))
+        .with_context_setup(|ctx| apertrust_ui::install(ctx, Theme::default()))
+        .build_ui(|ui| {
+            Button::new("Both")
+                .enabled(false)
+                .held_off(true)
+                .show_pressed(ui);
+            Button::new("Off").enabled(false).show_pressed(ui);
+        });
+    harness.run();
+    harness.get_by_label("Both").focus();
+    harness.run();
+    assert!(!harness.get_by_label("Both").is_focused());
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(300.0, 60.0))
+        .with_context_setup(|ctx| apertrust_ui::install(ctx, Theme::default()))
+        .build_ui(|ui| {
+            Button::new("Off").enabled(false).show(ui);
+        });
+    harness.run();
+    // A plain disabled button has no description and cannot be focused.
+    assert_eq!(
+        harness.get_by_label("Off").accesskit_node().description(),
+        None
+    );
+    harness.get_by_label("Off").focus();
+    harness.run();
+    assert!(!harness.get_by_label("Off").is_focused());
+}
+
 /// Two collapsible groups as a tool shows them, each holding a slider, and a checkbox
 /// row after them; what is open, how often each was toggled, and how many controls in
 /// each are set, applied as the app would.

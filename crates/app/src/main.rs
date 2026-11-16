@@ -2374,6 +2374,8 @@ impl Shell {
             redo: false,
             discard: false,
             discard_why: None,
+            // The app's, from the photo ([`App::shell_state`]).
+            exportable: photo,
             text: Focus::of(ctx) == Focus::Text,
             // One photo until the catalogue.
             photos: usize::from(photo),
@@ -3150,7 +3152,7 @@ impl App {
         if asked.start {
             self.send_export();
         } else {
-            self.export_again(ctx);
+            self.ask_export(ctx, true);
         }
     }
 
@@ -3166,7 +3168,7 @@ impl App {
     /// skipped; if not, no export starts.
     fn ask_overwrite(&mut self, ctx: &egui::Context) -> bool {
         if !self.shell.overwrite.asks() {
-            self.overwrite_confirmed();
+            self.overwrite_confirmed(ctx);
             return true;
         }
         let request = alerts::overwrite_request(ctx, self.shell.overwrite.held());
@@ -3188,9 +3190,21 @@ impl App {
     /// [`App::ask_overwrite`]); any other On conflict exports at once. Not while the app
     /// is quitting: a job started now would be uncounted by the quit alert's yes.
     fn export_again(&mut self, ctx: &egui::Context) {
+        self.ask_export(ctx, false);
+    }
+
+    /// Exports the photo open with the settings as they stand, asking the overwrite
+    /// question first where On conflict calls for it and holding the export through it:
+    /// File › Export Again's, or the Export tool's (`tool`), which then says it started
+    /// once the export is sent.
+    fn ask_export(&mut self, ctx: &egui::Context, tool: bool) {
         let PhotoState::Open(photo) = &self.mirror.photo else {
             return;
         };
+        // The tool leaves a photo open for viewing only out of an export; so does this.
+        if photo.view_only.is_some() {
+            return;
+        }
         if self.quitting() {
             tracing::warn!(target: "gpu", "export again dropped: the app is quitting");
             return;
@@ -3200,7 +3214,11 @@ impl App {
             self.send_job(command);
             return;
         }
-        self.again.hold(command);
+        if tool {
+            self.again.hold_for_tool(command);
+        } else {
+            self.again.hold(command);
+        }
         if !self.ask_overwrite(ctx) {
             self.again.declined();
         }
@@ -3276,7 +3294,7 @@ impl App {
                     self.restart.cancel();
                 }
             }
-            alerts::Then::Export => self.overwrite_confirmed(),
+            alerts::Then::Export => self.overwrite_confirmed(ctx),
             alerts::Then::Stop(jobs) => {
                 for job in jobs {
                     self.session.send(Command::CancelJob { job });
@@ -3298,9 +3316,33 @@ impl App {
     /// The overwrite question is settled in favour of exporting, by a yes or by the setting:
     /// the export held when it was asked, Export Again's or the Export tool's, of the photo
     /// that was open then, goes to the session; the tool stays as it is.
-    fn overwrite_confirmed(&mut self) {
-        if let Some(command) = self.again.confirmed() {
+    fn overwrite_confirmed(&mut self, ctx: &egui::Context) {
+        if let Some((command, tool)) = self.again.confirmed_by() {
+            // The photo may have turned view-only while the question was open: nothing is
+            // sent for it, nothing noted, and the hold is gone.
+            if self.exports_view_only(&command) {
+                return;
+            }
             self.send_job(command);
+            // The tool says it started now, not when the question was asked: a no says
+            // nothing, and a second press waits half a second from the yes.
+            if tool {
+                self.export.note_started(ctx.input(|i| i.time));
+            }
+        }
+    }
+
+    /// Whether `command` exports the photo open while it is open for viewing only, which no
+    /// export takes.
+    fn exports_view_only(&self, command: &Command) -> bool {
+        export_again::exports(command, self.view_only_photo())
+    }
+
+    /// The path of the photo open, if it is open for viewing only.
+    fn view_only_photo(&self) -> Option<&Path> {
+        match &self.mirror.photo {
+            PhotoState::Open(photo) if photo.view_only.is_some() => Some(photo.path.as_path()),
+            _ => None,
         }
     }
 
@@ -3851,6 +3893,7 @@ impl App {
             redo: history.is_some_and(|h| h.redo.is_some()),
             discard: options.discard,
             discard_why: history::discard_why(options),
+            exportable: open && !self.view_only(),
             ..state
         }
     }
@@ -4026,8 +4069,24 @@ impl App {
                 let open = self.shell.section_open(export::ID, export::OPEN);
                 self.shell.set_section_open(export::ID, !open);
             }
+            if export.toggle_global {
+                let open =
+                    self.shell
+                        .group_open_or(export::ID, export::GLOBAL, export::GLOBAL_OPEN);
+                self.shell.set_group_open(export::ID, export::GLOBAL, !open);
+            }
+            if export.toggle_summary {
+                let open =
+                    self.shell
+                        .group_open_or(export::ID, export::SUMMARY, export::SUMMARY_OPEN);
+                self.shell
+                    .set_group_open(export::ID, export::SUMMARY, !open);
+            }
             self.carry_out(actions, ui.ctx());
             self.export(export.asked, ui.ctx());
+            if export.show_jobs {
+                self.run_actions([ActionId::SHOW_JOBS], ui.ctx(), &[]);
+            }
             // The preview is the tool's feedback: asked while it is open and shown.
             let open = self.shell.section_open(export::ID, export::OPEN);
             self.preview_export(open);
@@ -4091,11 +4150,46 @@ impl App {
             home: self.places.home.as_deref(),
         };
         let shown = ExportShown {
-            open: self.shell.section_open(export::ID, export::OPEN),
-            photo: matches!(self.mirror.photo, PhotoState::Open(_)),
+            shown: self.export_shown(),
             reveal: self.shell.revealing() && self.shell.reveal == Some(export::ID),
         };
         photos_body(ui, &browse, &mut self.export, shown)
+    }
+
+    /// What the Export tool is told each frame: its groups as the shell keeps them, the
+    /// photo it acts on, and how the user's exports stand.
+    fn export_shown(&self) -> export::Shown {
+        let photo = match &self.mirror.photo {
+            PhotoState::Open(photo) => {
+                let name = file_name(&photo.path);
+                match &photo.view_only {
+                    None => export::Photo::Ready { name },
+                    Some(view_only) => {
+                        let why = match view_only.reason {
+                            Reason::Newer(_) => export::Why::Newer,
+                            Reason::Unreadable(_) => export::Why::Unreadable {
+                                file: format!("{name}.apxmp"),
+                            },
+                        };
+                        export::Photo::ViewOnly { name, why }
+                    }
+                }
+            }
+            _ => export::Photo::None,
+        };
+        export::Shown {
+            open: self.shell.section_open(export::ID, export::OPEN),
+            global: self
+                .shell
+                .group_open_or(export::ID, export::GLOBAL, export::GLOBAL_OPEN),
+            summary: self
+                .shell
+                .group_open_or(export::ID, export::SUMMARY, export::SUMMARY_OPEN),
+            photo,
+            jobs: export::Jobs {
+                failed: self.mirror.jobs.failed_export(),
+            },
+        }
     }
 
     /// What Browse and the empty states asked for: the dialogs are asked after the frame, a
@@ -6296,12 +6390,11 @@ fn edit_tab(
     (scopes, changes, Vec::new())
 }
 
-/// How the Photos tab shows the Export tool: whether its section is open, whether a photo
-/// is open to export, and whether Export… asked for it to be scrolled into view.
-#[derive(Clone, Copy, Debug)]
+/// How the Photos tab shows the Export tool: what the tool is told each frame, and whether
+/// Export… asked for it to be scrolled into view.
+#[derive(Clone, Debug)]
 struct ExportShown {
-    open: bool,
-    photo: bool,
+    shown: export::Shown,
     reveal: bool,
 }
 
@@ -6317,7 +6410,7 @@ fn photos_body(
     let mut drawn = export::Drawn::default();
     PanelBody::new().show(ui, |ui| {
         actions = library::browse(ui, browse);
-        let tool = ui.push_id(export::ID, |ui| export.show(ui, shown.open, shown.photo));
+        let tool = ui.push_id(export::ID, |ui| export.show(ui, &shown.shown));
         // The section Export… asked for, its header at the top.
         if shown.reveal {
             ui.scroll_to_rect(tool.response.rect, Some(egui::Align::TOP));
@@ -11653,6 +11746,37 @@ mod tests {
         }
     }
 
+    /// Every workspace holds Export (decisions 83 and 90): Edit's tabs list it once, in the
+    /// Photos tab, last after Browse; the darktable workspace's tabs, Photos then its four
+    /// groups, hold it once, in Photos, and in none of the groups. There is no kept layout
+    /// or `hidden` list to apply yet; when settings keep them, the same rule, that none takes
+    /// Export out of a workspace and a workspace without it gets it back, is checked here.
+    #[test]
+    fn every_workspace_holds_export_once_in_its_photos_tab() {
+        let count = |tabs: &[&[&str]]| {
+            tabs.iter()
+                .map(|tab| tab.iter().filter(|id| **id == export::ID).count())
+                .sum::<usize>()
+        };
+        // The Edit workspace.
+        assert_eq!(count(&TAB_TOOLS), 1);
+        assert_eq!(TAB_TOOLS[PHOTOS].last(), Some(&export::ID));
+        // The darktable workspace: the Photos tab, then base, colour, correct and effect.
+        let mut darktable: Vec<&[&str]> = vec![TAB_TOOLS[PHOTOS]];
+        darktable.extend(DARKTABLE_GROUPS.iter().map(|(_, tools)| *tools));
+        assert_eq!(count(&darktable), 1);
+        assert!(darktable[0].contains(&export::ID));
+        // Every tab, in either, other than Photos, is free of it.
+        for (tab, tools) in TAB_TOOLS.iter().enumerate() {
+            assert_eq!(
+                tools.contains(&export::ID),
+                tab == PHOTOS,
+                "{}",
+                TAB_IDS[tab]
+            );
+        }
+    }
+
     /// The darktable workspace's groups (decision 38, planned) list their tools as
     /// darktable's right panel does, in pipeline order with the last tool at the top: the
     /// order of their operations in [`apertrust_operations::OPERATIONS`], reversed. A
@@ -12146,8 +12270,19 @@ mod tests {
                             // As `App::side_panel` draws it: Browse, then the Export tool.
                             let revealed = bench.shell.revealing();
                             let shown = ExportShown {
-                                open: bench.shell.section_open(export::ID, export::OPEN),
-                                photo: bench.photo,
+                                shown: export::Shown {
+                                    open: bench.shell.section_open(export::ID, export::OPEN),
+                                    global: export::GLOBAL_OPEN,
+                                    summary: export::SUMMARY_OPEN,
+                                    photo: if bench.photo {
+                                        export::Photo::Ready {
+                                            name: "IMG_2041.ARW".to_owned(),
+                                        }
+                                    } else {
+                                        export::Photo::None
+                                    },
+                                    jobs: export::Jobs::default(),
+                                },
                                 reveal: revealed && bench.shell.reveal == Some(export::ID),
                             };
                             let browse_keys = library::Keys::default();
@@ -12937,6 +13072,10 @@ mod tests {
         quit_held: bool,
         /// The photo open, as the exports find it.
         open: PathBuf,
+        /// The photo open is open for viewing only, which no export takes.
+        view_only: bool,
+        /// The Export tool, which notes when an export starts.
+        export: export::Export,
         /// The open photo's edit as Quit finds it.
         edit: TestEdit,
         /// Restart now, as `App::restart` notes it; its slot is the relaunch `main` would
@@ -12985,11 +13124,22 @@ mod tests {
         d.again.hold(command);
     }
 
+    /// When the bench's frames say the export started, for the tool's guard.
+    const NOW: f64 = 100.0;
+
     /// As `App::overwrite_confirmed`: the export held when the question was asked is sent,
-    /// the tool staying as it is. With none held, nothing is sent.
+    /// the tool staying as it is and noting the start where it asked. With none held,
+    /// nothing is sent.
     fn overwrite_confirmed(d: &mut Dialogged) {
-        if let Some(command) = d.again.confirmed() {
+        if let Some((command, tool)) = d.again.confirmed_by() {
+            let view_only = d.view_only.then_some(d.open.as_path());
+            if export_again::exports(&command, view_only) {
+                return;
+            }
             send_job(d, command);
+            if tool {
+                d.export.note_started(NOW);
+            }
         }
     }
 
@@ -13010,7 +13160,12 @@ mod tests {
     /// As `App::export_again`: the export of the settings as last kept for the photo open,
     /// sent at once unless On conflict is Overwrite, which asks first.
     fn export_again(d: &mut Dialogged, ctx: &egui::Context) {
-        if d.quit.quitting() || d.quit_held {
+        ask_export(d, ctx, false);
+    }
+
+    /// As `App::ask_export`.
+    fn ask_export(d: &mut Dialogged, ctx: &egui::Context, tool: bool) {
+        if d.view_only || d.quit.quitting() || d.quit_held {
             return;
         }
         let command = export_command(d);
@@ -13018,7 +13173,11 @@ mod tests {
             send_job(d, command);
             return;
         }
-        d.again.hold(command);
+        if tool {
+            d.again.hold_for_tool(command);
+        } else {
+            d.again.hold(command);
+        }
         if !ask_overwrite(d, ctx) {
             d.again.declined();
         }
@@ -13034,7 +13193,7 @@ mod tests {
             let command = export_command(d);
             send_job(d, command);
         } else {
-            export_again(d, ctx);
+            ask_export(d, ctx, true);
         }
     }
 
@@ -13182,6 +13341,8 @@ mod tests {
                     sent: Vec::new(),
                     quit_held: false,
                     open: PathBuf::from(export_again::tests::PHOTO),
+                    view_only: false,
+                    export: export::Export::new(export::Values::default()),
                     edit: TestEdit::Saved,
                     restart: restart::Restart::new(
                         vec!["-d".into(), "gpu".into()],
@@ -14532,6 +14693,60 @@ mod tests {
     }
 
     #[test]
+    fn a_held_export_of_a_photo_that_turned_view_only_during_the_question_is_dropped_on_a_yes() {
+        // The last two turn view-only; the first is the control, a photo still live.
+        for (tool, turns) in [(false, false), (false, true), (true, true)] {
+            let host = with_alerts();
+            let mut harness = dialogged(host.clone());
+            harness.run();
+            let ctx = harness.ctx.clone();
+            let command = export_command(harness.state());
+            if tool {
+                harness.state_mut().again.hold_for_tool(command);
+            } else {
+                harness.state_mut().again.hold(command);
+            }
+            ask_overwrite(harness.state_mut(), &ctx);
+            harness.step();
+            assert_eq!(asked_alerts(&host), 1, "tool {tool}");
+            // The photo turns view-only while the question is open; a yes sends nothing,
+            // notes nothing and leaves nothing held.
+            harness.state_mut().view_only = turns;
+            answer_alert(&host, dialog_host::Answer::Pressed(0));
+            harness.step();
+            let state = harness.state_mut();
+            let sent = usize::from(!turns);
+            assert_eq!(state.sent.len(), sent, "tool {tool} {turns}");
+            assert_eq!(state.exported, sent, "tool {tool} {turns}");
+            assert!(
+                state.again.confirmed_by().is_none(),
+                "tool {tool}: still held"
+            );
+        }
+    }
+
+    #[test]
+    fn export_again_sends_nothing_for_a_photo_open_for_viewing_only_and_its_item_rests() {
+        let host = FakeHost::sheets();
+        let mut harness = dialogged(host);
+        harness.run();
+        let ctx = harness.ctx.clone();
+        let again = actions::action(ActionId::EXPORT_AGAIN).expect("declared");
+        // The menu's item rests where the app says the photo cannot be exported.
+        let state = harness.state().shell.state(&ctx, true, false);
+        assert!(again.enabled(&state));
+        assert!(!again.enabled(&State {
+            exportable: false,
+            ..state
+        }));
+        // And a press that gets through anyway sends nothing.
+        harness.state_mut().view_only = true;
+        export_again(harness.state_mut(), &ctx);
+        assert!(harness.state().sent.is_empty());
+        assert!(harness.state_mut().again.confirmed_by().is_none());
+    }
+
+    #[test]
     fn an_alert_is_not_asked_where_the_platform_shows_none() {
         let host = FakeHost::default();
         let mut harness = dialogged(host.clone());
@@ -14642,6 +14857,63 @@ mod tests {
                 assert_eq!(settings, &values.settings());
             }
         }
+    }
+
+    /// The Export tool says it started when its held export is sent on a yes, so a second
+    /// press is ignored from then; a no, or Export Again, notes no start.
+    #[test]
+    fn the_export_tool_notes_its_start_when_a_yes_sends_its_export() {
+        let confirm = export::Asked {
+            confirm: true,
+            ..export::Asked::default()
+        };
+        let host = with_alerts();
+        let mut harness = dialogged(host.clone());
+        harness.run();
+        let ctx = harness.ctx.clone();
+        kept(
+            &mut harness,
+            apertrust_export::settings::OnConflict::Overwrite,
+        );
+        export_tool(harness.state_mut(), &ctx, confirm.clone());
+        assert_eq!(asked_alerts(&host), 1);
+        // Asked, not yet answered: nothing started, so nothing is guarded.
+        assert!(!harness.state().export.too_soon(NOW + 0.1));
+        answer_alert(&host, dialog_host::Answer::Pressed(0));
+        harness.step();
+        assert_eq!(harness.state().sent.len(), 1);
+        assert!(harness.state().export.too_soon(NOW + 0.1));
+        assert!(!harness.state().export.too_soon(NOW + 0.6));
+
+        // A no sends nothing and notes nothing.
+        let host = with_alerts();
+        let mut harness = dialogged(host.clone());
+        harness.run();
+        let ctx = harness.ctx.clone();
+        kept(
+            &mut harness,
+            apertrust_export::settings::OnConflict::Overwrite,
+        );
+        export_tool(harness.state_mut(), &ctx, confirm);
+        answer_alert(&host, dialog_host::Answer::Pressed(1));
+        harness.step();
+        assert!(harness.state().sent.is_empty());
+        assert!(!harness.state().export.too_soon(NOW + 0.1));
+
+        // Export Again's yes is no press of the tool's button.
+        let host = with_alerts();
+        let mut harness = dialogged(host.clone());
+        harness.run();
+        let ctx = harness.ctx.clone();
+        kept(
+            &mut harness,
+            apertrust_export::settings::OnConflict::Overwrite,
+        );
+        export_again(harness.state_mut(), &ctx);
+        answer_alert(&host, dialog_host::Answer::Pressed(0));
+        harness.step();
+        assert_eq!(harness.state().sent.len(), 1);
+        assert!(!harness.state().export.too_soon(NOW + 0.1));
     }
 
     /// The Export tool's Export, like Export Again, sends nothing and asks nothing while the

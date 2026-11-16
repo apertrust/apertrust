@@ -18,6 +18,11 @@
 //! a plate, `button`, a control high with a spacing step at each end. A dialog's one
 //! primary button is amber. A quiet one, a plate only while touched, is the bars'
 //! `ToolButton`. Its words are its name for screen readers.
+//!
+//! A button given a width draws its words at the start, or centred ([`Button::centred`]),
+//! as the Export tool's fills its section. One that cannot act yet but stays a stop for the
+//! keyboard, with the reason as its tooltip and its description, is [`Button::held_off`]:
+//! drawn disabled, said disabled to screen readers, its presses the caller's to ignore.
 
 use egui::{Color32, FontId, Response, Role, Ui, WidgetInfo, pos2, vec2};
 
@@ -35,6 +40,9 @@ pub struct Button<'a> {
     keys: Option<&'a str>,
     width: f32,
     state: Option<ButtonState>,
+    centred: bool,
+    held_off: bool,
+    height: Option<f32>,
 }
 
 impl<'a> Button<'a> {
@@ -48,6 +56,9 @@ impl<'a> Button<'a> {
             keys: None,
             width: 0.0,
             state: None,
+            centred: false,
+            held_off: false,
+            height: None,
         }
     }
 
@@ -85,6 +96,29 @@ impl<'a> Button<'a> {
         self
     }
 
+    /// Its words centred in the width it is given, in place of at its start. A button with
+    /// keys shown at its end keeps its words at the start, as the keys take the end.
+    pub fn centred(mut self, centred: bool) -> Self {
+        self.centred = centred;
+        self
+    }
+
+    /// Drawn disabled and said disabled to screen readers, but still a stop for the
+    /// keyboard and the pointer's tooltip, its [`Button::tip`] the reason, which screen
+    /// readers hear as its description. It never acts: [`Button::show_pressed`] answers
+    /// false while it is held off, so a person who tabs to it hears why it is off and a
+    /// press does nothing.
+    pub fn held_off(mut self, held_off: bool) -> Self {
+        self.held_off = held_off;
+        self
+    }
+
+    /// This tall, in place of a control's height: the Export tool's button is a row high.
+    pub fn height(mut self, height: f32) -> Self {
+        self.height = Some(height);
+        self
+    }
+
     /// Draws it in `state` whatever the pointer and the keys do, as the gallery shows each
     /// state.
     pub fn state(mut self, state: ButtonState) -> Self {
@@ -92,9 +126,20 @@ impl<'a> Button<'a> {
         self
     }
 
+    /// Draws it as [`Button::show`] does and says whether it was pressed to some effect:
+    /// false while it is held off, whatever the pointer or the keys did to it.
+    pub fn show_pressed(self, ui: &mut Ui) -> bool {
+        let held_off = self.held_off;
+        let response = self.show(ui);
+        response.clicked() && !held_off
+    }
+
     pub fn show(self, ui: &mut Ui) -> Response {
         let t = theme(ui.ctx());
-        let enabled = self.enabled && ui.is_enabled() && self.state != Some(ButtonState::Disabled);
+        let enabled = self.enabled
+            && !self.held_off
+            && ui.is_enabled()
+            && self.state != Some(ButtonState::Disabled);
         let font = FontId::proportional(t.text.body);
         let galley =
             ui.painter()
@@ -105,8 +150,17 @@ impl<'a> Button<'a> {
         });
         let keys_width = keys.as_ref().map_or(0.0, |k| t.spacing.l + k.size().x);
         let width = galley.size().x + keys_width + 2.0 * t.spacing.m;
-        let size = vec2(width.max(self.width), t.sizes.control);
-        let (rect, response) = allocate(ui, size, enabled);
+        let size = vec2(
+            width.max(self.width),
+            self.height.unwrap_or(t.sizes.control),
+        );
+        // A held-off button is allocated enabled, so it takes the focus, and drawn disabled;
+        // only one that would be enabled but for that is, never one disabled in itself.
+        let focusable = self.held_off
+            && self.enabled
+            && ui.is_enabled()
+            && self.state != Some(ButtonState::Disabled);
+        let (rect, response) = allocate(ui, size, enabled || focusable);
         if ui.is_rect_visible(rect) {
             let painter = &undimmed_painter(ui);
             let touch = Touch::of(ui.ctx(), &response, enabled, self.state);
@@ -116,10 +170,12 @@ impl<'a> Button<'a> {
                 Plate::Default
             };
             paint_plate(painter, rect, plate, touch, &t);
-            let at = pos2(
-                rect.left() + t.spacing.m,
-                rect.center().y - galley.size().y / 2.0,
-            );
+            let left = if self.centred && keys_width == 0.0 {
+                rect.center().x - galley.size().x / 2.0
+            } else {
+                rect.left() + t.spacing.m
+            };
+            let at = pos2(left, rect.center().y - galley.size().y / 2.0);
             painter.galley(at, galley, words_colour(&t, plate, touch));
             if let Some(keys) = keys {
                 let colour = if touch.enabled {
@@ -139,6 +195,10 @@ impl<'a> Button<'a> {
         response.widget_info(|| WidgetInfo::labeled(Role::Button, enabled, text));
         if let Some(keys) = self.keys {
             report_shortcut(ui, response.id, keys);
+        }
+        if let (true, Some(tip)) = (self.held_off, self.tip) {
+            ui.ctx()
+                .accesskit_node_builder(response.id, |node| node.set_description(tip));
         }
         match self.tip {
             Some(tip) => response.on_hover_text(tip).on_disabled_hover_text(tip),

@@ -301,7 +301,8 @@ default = {}
 applies = "at-once"
 
 # The collapsible groups the user opened or closed, by tool and group, the same for
-# every photo; the others start closed (decision 29), but Browse's Folders, open.
+# every photo; the others start closed (decision 29), but Browse's Folders and Export's
+# Global options, open (decision 90).
 [edit.groups]
 owner = "app"
 kind = "table"

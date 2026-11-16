@@ -21,7 +21,9 @@
 //! an editing tool's reset, presets and options, a utility's options alone, or with a reset
 //! before them where it has one, as History's resets the edit, each as narrow as its
 //! icon and evenly spaced, the last one's ink ending where the rows do. An editing tool's
-//! options are drawn disabled until what their menu holds is decided. A title that would
+//! options are drawn disabled until what their menu holds is decided; a utility with
+//! presets of its own, the Export tool, has the presets button between its reset and its
+//! options ([`Section::utility_presets`]). A title that would
 //! run under the buttons is cut at its end with …, whole in the tooltip and for screen
 //! readers. A closed section is its header alone, with no summary of what is set. An open
 //! section shows its tabs, if it has any, and its body. Holding H over a section, or with its
@@ -85,6 +87,9 @@ pub struct Section<'a> {
     reset: bool,
     /// A utility's reset button, by its name, where it has one.
     utility_reset: Option<&'a str>,
+    /// A utility's presets button, by its name, whether it can run and what its tooltip
+    /// says, where it has one.
+    utility_presets: Option<(&'a str, bool, &'a str)>,
     presets: bool,
     options: bool,
     /// What the options button opens, a pull-down of the popup service's, where the
@@ -119,6 +124,7 @@ impl<'a> Section<'a> {
             edits: false,
             reset: true,
             utility_reset: None,
+            utility_presets: None,
             presets: true,
             options: true,
             menu: None,
@@ -161,6 +167,14 @@ impl<'a> Section<'a> {
     /// editing tool's reset is its own, so this changes nothing on one.
     pub fn utility_reset(mut self, name: &'a str) -> Self {
         self.utility_reset = Some(name);
+        self
+    }
+
+    /// A utility with a presets button, named `name`, translated, between its reset and its
+    /// options, as the Export tool's header has one (decision 90). `enabled` says whether it
+    /// can run; drawn disabled, its tooltip `tip` says why.
+    pub fn utility_presets(mut self, name: &'a str, enabled: bool, tip: &'a str) -> Self {
+        self.utility_presets = Some((name, enabled, tip));
         self
     }
 
@@ -297,6 +311,16 @@ impl<'a> Section<'a> {
                             Some(entries) => chosen = pull_down(ui, &options, &name, || entries),
                             None if options.clicked() => pressed.push(SectionAction::Options),
                             None => {}
+                        }
+                        if let Some((presets, enabled, tip)) = self.utility_presets
+                            && IconButton::new(Icon::Presets, presets)
+                                .width(narrow)
+                                .enabled(enabled)
+                                .tip(tip)
+                                .show(ui)
+                                .clicked()
+                        {
+                            pressed.push(SectionAction::Presets);
                         }
                         if let Some(reset) = self.utility_reset
                             && IconButton::new(Icon::Reset, reset)

@@ -226,14 +226,27 @@ pub struct PathOutput {
 pub struct PathField<'a> {
     field: TextField<'a>,
     variables: &'a [Variable<'a>],
+    beside: Option<Beside<'a>>,
 }
+
+/// What draws after the path field on its line.
+type Beside<'a> = Box<dyn FnOnce(&mut Ui) + 'a>;
 
 impl<'a> PathField<'a> {
     pub fn new(id: Id, name: &'a str, text: &'a str, variables: &'a [Variable<'a>]) -> Self {
         PathField {
             field: TextField::new(id, name, text),
             variables,
+            beside: None,
         }
+    }
+
+    /// What goes on the field's line after it, such as a button: drawn in one row with the
+    /// field, so the list of variables, which comes under the row, never lands between
+    /// them. The caller leaves its width out of [`width`](Self::width).
+    pub fn beside(mut self, beside: impl FnOnce(&mut Ui) + 'a) -> Self {
+        self.beside = Some(Box::new(beside));
+        self
     }
 
     pub fn width(mut self, width: f32) -> Self {
@@ -313,7 +326,18 @@ impl<'a> PathField<'a> {
             text: &shown,
             ..self.field
         };
-        let drawn = field.draw(ui, put);
+        let drawn = match self.beside {
+            Some(beside) => {
+                ui.horizontal(|ui| {
+                    ui.set_min_height(t.sizes.panel_line);
+                    let drawn = field.draw(ui, put);
+                    beside(ui);
+                    drawn
+                })
+                .inner
+            }
+            None => field.draw(ui, put),
+        };
         let mut typed = drawn.text;
         if typed.is_some() {
             highlight = None;

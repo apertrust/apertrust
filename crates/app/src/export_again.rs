@@ -44,18 +44,41 @@ pub fn export(photo: &Path, values: &Values, places: &Places) -> Command {
 /// The export waiting for the person's answer to the overwrite question.
 #[derive(Debug, Default)]
 pub struct Again {
-    /// The export to send on a yes.
-    asked: Option<Command>,
+    /// The export to send on a yes, and whether the Export tool's button asked for it, which
+    /// then says it started.
+    asked: Option<(Command, bool)>,
+}
+
+/// Whether `command` is an export of `photo`, the photo open for viewing only if there is
+/// one: a held export of it is dropped rather than sent, the engine not refusing it.
+pub fn exports(command: &Command, photo: Option<&Path>) -> bool {
+    match (command, photo) {
+        (Command::Export { photos, .. }, Some(photo)) => photos.iter().any(|p| p == photo),
+        _ => false,
+    }
 }
 
 impl Again {
-    /// Holds `export` while the question is asked. An earlier one still held is dropped.
+    /// Holds `export`, File › Export Again's, while the question is asked. An earlier one
+    /// still held is dropped.
     pub fn hold(&mut self, export: Command) {
-        self.asked = Some(export);
+        self.asked = Some((export, false));
+    }
+
+    /// Holds `export`, the Export tool's, while the question is asked.
+    pub fn hold_for_tool(&mut self, export: Command) {
+        self.asked = Some((export, true));
     }
 
     /// The person said yes to the question: the export to send.
+    #[cfg(test)]
     pub fn confirmed(&mut self) -> Option<Command> {
+        self.confirmed_by().map(|(command, _)| command)
+    }
+
+    /// The person said yes to the question: the export to send, and whether the Export
+    /// tool asked for it.
+    pub fn confirmed_by(&mut self) -> Option<(Command, bool)> {
         self.asked.take()
     }
 
@@ -123,6 +146,21 @@ pub(crate) mod tests {
         again.hold(export(Path::new(PHOTO), &kept, &places()));
         again.declined();
         assert_eq!(again.confirmed(), None, "a no sends nothing");
+    }
+
+    #[test]
+    fn a_yes_says_whether_the_export_tool_asked() {
+        let kept = values(OnConflict::Overwrite);
+        let command = || export(Path::new(PHOTO), &kept, &places());
+        let mut again = Again::default();
+        again.hold_for_tool(command());
+        assert_eq!(again.confirmed_by(), Some((command(), true)));
+        again.hold(command());
+        assert_eq!(again.confirmed_by(), Some((command(), false)));
+        // A no says nothing at all: the tool notes no start.
+        again.hold_for_tool(command());
+        again.declined();
+        assert_eq!(again.confirmed_by(), None);
     }
 
     #[test]

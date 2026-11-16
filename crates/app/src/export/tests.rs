@@ -20,6 +20,7 @@
 //! in the languages.
 
 use apertrust_engine::export_preview::{ActiveSize, FolderCheck, OutputSize, PhotoName};
+use apertrust_export::disk::Action;
 use apertrust_ui::components::PanelBody;
 use apertrust_ui::{Builtin, Locale, Theme};
 use eframe::egui::accesskit::Role;
@@ -37,10 +38,12 @@ const NARROWEST: f32 = 240.0;
 /// The tool as the Photos tab draws it, and what each frame asked of the app.
 struct Bench {
     content: Export,
-    open: bool,
-    photo: bool,
+    /// What the app tells the tool each frame; the bench follows the toggles it reports.
+    shown: Shown,
     asked: Vec<Asked>,
     toggled: usize,
+    /// How many times Show jobs was pressed.
+    jobs_shown: usize,
     /// What the session was last asked to preview, as the app keeps it, and the photo open.
     previews: Previews,
     opened: Option<PathBuf>,
@@ -82,19 +85,20 @@ fn tool_of(export: Export, which: Builtin, locale: Locale, width: f32) -> Harnes
                 let panel = theme(ui.ctx()).colors.panel;
                 ui.painter()
                     .rect_filled(ui.ctx().content_rect(), 0.0, panel);
-                let (open, photo) = (bench.open, bench.photo);
                 // As the side panel does before it draws the Photos tab.
                 bench
                     .content
                     .retire(&bench.previews, bench.opened.as_deref());
+                let shown = bench.shown.clone();
                 PanelBody::new().show(ui, |ui| {
-                    let section = ui.scope(|ui| bench.content.show(ui, open, photo));
+                    let section = ui.scope(|ui| bench.content.show(ui, &shown));
                     bench.bottom = section.response.rect.bottom();
                     let drawn = section.inner;
                     bench.toggled += usize::from(drawn.toggle);
-                    if drawn.toggle {
-                        bench.open = !bench.open;
-                    }
+                    bench.jobs_shown += usize::from(drawn.show_jobs);
+                    bench.shown.open ^= drawn.toggle;
+                    bench.shown.global ^= drawn.toggle_global;
+                    bench.shown.summary ^= drawn.toggle_summary;
                     let asked = drawn.asked;
                     if asked.values.is_some() || asked.start || asked.confirm {
                         bench.asked.push(asked);
@@ -103,10 +107,18 @@ fn tool_of(export: Export, which: Builtin, locale: Locale, width: f32) -> Harnes
             },
             Bench {
                 content: export,
-                open: true,
-                photo: true,
+                shown: Shown {
+                    open: true,
+                    global: GLOBAL_OPEN,
+                    summary: SUMMARY_OPEN,
+                    photo: Photo::Ready {
+                        name: "IMG_2041.ARW".to_owned(),
+                    },
+                    jobs: Jobs::default(),
+                },
                 asked: Vec::new(),
                 toggled: 0,
+                jobs_shown: 0,
                 previews,
                 opened: Some(photo),
                 bottom: 0.0,
@@ -195,6 +207,28 @@ fn type_into(harness: &mut Harness<'_, Bench>, role: Role, name: &str, text: &st
 /// The text of the session's feedback, if the tool shows it.
 fn says(harness: &Harness<'_, Bench>, text: &str) -> bool {
     harness.query_by_label(text).is_some()
+}
+
+/// What the path field says to screen readers beyond its name: the resolved file name, the
+/// sequence rule and the variables with no value here, which its tooltip shows too.
+fn path_tip(harness: &Harness<'_, Bench>) -> String {
+    let path = harness.get_by_role_and_label(Role::TextInput, "Path");
+    path.accesskit_node()
+        .description()
+        .unwrap_or_default()
+        .to_owned()
+}
+
+/// What the Set size row's tooltip and description say: what the photo will be, and in the
+/// print modes and by scale what the fields come to.
+fn size_tip(harness: &Harness<'_, Bench>) -> String {
+    let row = harness.get_by_role_and_label(Role::ComboBox, "Set size");
+    row.accesskit_node().description().unwrap_or_default()
+}
+
+/// Whether the path field's tooltip and description say `text`.
+fn tip_says(harness: &Harness<'_, Bench>, text: &str) -> bool {
+    path_tip(harness).contains(text)
 }
 
 // What the first frame and each change ask for.
@@ -359,7 +393,7 @@ fn the_newest_answer_is_kept_and_an_older_one_never_replaces_it() {
         5,
         named("/Users/anna/Pictures/five/IMG_2041.jpg"),
     );
-    assert!(says(
+    assert!(tip_says(
         &harness,
         "IMG_2041.ARW → ~/Pictures/five/IMG_2041.jpg"
     ));
@@ -369,7 +403,7 @@ fn the_newest_answer_is_kept_and_an_older_one_never_replaces_it() {
         4,
         named("/Users/anna/Pictures/four/IMG_2041.jpg"),
     );
-    assert!(says(
+    assert!(tip_says(
         &harness,
         "IMG_2041.ARW → ~/Pictures/five/IMG_2041.jpg"
     ));
@@ -378,7 +412,10 @@ fn the_newest_answer_is_kept_and_an_older_one_never_replaces_it() {
         6,
         named("/Users/anna/Pictures/six/IMG_2041.jpg"),
     );
-    assert!(says(&harness, "IMG_2041.ARW → ~/Pictures/six/IMG_2041.jpg"));
+    assert!(tip_says(
+        &harness,
+        "IMG_2041.ARW → ~/Pictures/six/IMG_2041.jpg"
+    ));
 }
 
 // Every row.
@@ -399,12 +436,14 @@ fn every_row_of_the_first_card_is_there_by_its_name() {
         "Profile",
         "Intent",
         "Style",
+        "Allow upscaling",
+        "High quality resampling",
+        "Store masks",
     ] {
         harness.get_by_role_and_label(Role::ComboBox, combo);
     }
-    for toggle in ["Allow upscaling", "High quality resampling", "Store masks"] {
-        harness.get_by_role_and_label(Role::CheckBox, toggle);
-    }
+    // No row is a check box: darktable's No and Yes are choices.
+    assert!(harness.query_by_role(Role::CheckBox).is_none());
     harness.get_by_role_and_label(Role::TextInput, "Path");
     harness.get_by_role_and_label(Role::Slider, "Quality");
     // The defaults are darktable's.
@@ -495,13 +534,15 @@ fn set_size_has_four_modes_with_the_fields_each_needs() {
     assert_eq!(held(&mut harness).size_mode, SizeMode::Cm);
     harness.get_by_label("Width, in cm");
     harness.get_by_label("Resolution, in dpi");
-    assert!(says(&harness, "Which is equal to 2048 × 0 px"));
+    assert!(size_tip(&harness).contains("Which is equal to 2048 × 0 px"));
+    // No line under the row says it.
+    assert!(harness.query_by_label_contains("Which is equal").is_none());
     type_into(&mut harness, Role::TextInput, "Height, in cm", "10");
     harness.key_press(egui::Key::Enter);
     harness.run();
     // darktable's cm2pixels: 10 cm at 300 dpi, rounded up.
     assert_eq!(held(&mut harness).height, 1182);
-    assert!(says(&harness, "Which is equal to 2048 × 1182 px"));
+    assert!(size_tip(&harness).contains("Which is equal to 2048 × 1182 px"));
     // In inch.
     choose(&mut harness, "Set size", "In inch (for print)");
     harness.get_by_label("Width, in in");
@@ -570,23 +611,36 @@ fn changing_the_resolution_and_back_returns_the_pixels_as_darktable_keeps_the_en
 }
 
 #[test]
-fn allow_upscaling_and_high_quality_resampling_are_toggles() {
+fn allow_upscaling_and_high_quality_resampling_are_choices_of_no_and_yes() {
     let mut harness = open();
-    for toggle in ["Allow upscaling", "High quality resampling"] {
-        let node = harness.get_by_role_and_label(Role::CheckBox, toggle);
-        node.scroll_to_me();
+    // Each row reads No, darktable's default, its options No and Yes.
+    for row in ["Allow upscaling", "High quality resampling"] {
+        let value = harness.get_by_role_and_label(Role::ComboBox, row);
+        assert_eq!(
+            value.accesskit_node().value().as_deref(),
+            Some("No"),
+            "{row}"
+        );
+        value.click();
         settle(&mut harness);
-        harness
-            .get_by_role_and_label(Role::CheckBox, toggle)
-            .click();
+        harness.get_by_role_and_label(Role::MenuItemCheckBox, "No");
+        harness.get_by_role_and_label(Role::MenuItemCheckBox, "Yes");
+        harness.key_press(egui::Key::Escape);
         settle(&mut harness);
     }
+    choose(&mut harness, "Allow upscaling", "Yes");
+    choose(&mut harness, "High quality resampling", "Yes");
     let now = held(&mut harness);
     assert!(now.upscale && now.high_quality);
-    harness
-        .get_by_role_and_label(Role::CheckBox, "High quality resampling")
-        .click();
-    settle(&mut harness);
+    assert_eq!(
+        harness
+            .get_by_role_and_label(Role::ComboBox, "Allow upscaling")
+            .accesskit_node()
+            .value()
+            .as_deref(),
+        Some("Yes")
+    );
+    choose(&mut harness, "High quality resampling", "No");
     let now = held(&mut harness);
     assert!(now.upscale && !now.high_quality);
 }
@@ -788,14 +842,14 @@ fn the_header_opens_and_closes_the_tool_and_a_closed_one_draws_no_rows() {
         .click();
     settle(&mut harness);
     assert_eq!(harness.state().toggled, 1);
-    assert!(!harness.state().open);
+    assert!(!harness.state().shown.open);
     assert!(harness.query_by_label("Target storage").is_none());
     assert!(harness.query_by_label("Export 1 photo").is_none());
     harness
         .get_by_role_and_label(Role::Button, "Export")
         .click();
     settle(&mut harness);
-    assert!(harness.state().open);
+    assert!(harness.state().shown.open);
     harness.get_by_label("Target storage");
 }
 
@@ -807,7 +861,15 @@ fn every_row_not_built_is_drawn_disabled() {
     for combo in ["Intent", "Style"] {
         assert!(disabled(&harness, Role::ComboBox, combo), "{combo}");
     }
-    assert!(disabled(&harness, Role::CheckBox, "Store masks"));
+    assert!(disabled(&harness, Role::ComboBox, "Store masks"));
+    assert_eq!(
+        harness
+            .get_by_role_and_label(Role::ComboBox, "Store masks")
+            .accesskit_node()
+            .value()
+            .as_deref(),
+        Some("No")
+    );
     harness.get_by_label("Choose…");
     assert!(
         harness
@@ -965,7 +1027,10 @@ fn press_export(harness: &mut Harness<'_, Bench>) -> (bool, bool) {
         .click();
     harness.run();
     let state = harness.state();
-    assert!(state.open && state.toggled == 0, "Export closes nothing");
+    assert!(
+        state.shown.open && state.toggled == 0,
+        "Export closes nothing"
+    );
     let asked = &state.asked[before..];
     (
         asked.iter().any(|a| a.start),
@@ -1050,18 +1115,22 @@ fn a_row_not_built_says_why_in_its_tooltip() {
 // What the session says.
 
 #[test]
-fn the_active_photo_s_file_and_size_are_said_under_their_rows() {
+fn the_active_photo_s_file_and_size_are_said_in_their_rows_tooltips() {
     let mut harness = open();
     answer(&mut harness, 1, preview());
-    assert!(says(
+    assert!(tip_says(
         &harness,
         "IMG_2041.ARW → ~/Pictures/apertrust_exported/IMG_2041.jpg"
     ));
     // No limit: the full size.
-    assert!(says(
-        &harness,
-        "IMG_2041.ARW will be 6000 × 4000 px (full size: no limit set)."
-    ));
+    assert!(
+        size_tip(&harness)
+            .contains("IMG_2041.ARW will be 6000 × 4000 px (full size: no limit set).")
+    );
+    assert!(
+        harness.query_by_label_contains("will be").is_none(),
+        "no line under the row"
+    );
     // A limit, and the size it gives.
     type_into(&mut harness, Role::TextInput, "Width, in px", "2048");
     harness.key_press(egui::Key::Enter);
@@ -1077,20 +1146,21 @@ fn the_active_photo_s_file_and_size_are_said_under_their_rows() {
         }),
     });
     answer(&mut harness, 2, shrunk);
-    assert!(says(&harness, "IMG_2041.ARW will be 2048 × 1365 px."));
+    assert!(size_tip(&harness).contains("IMG_2041.ARW will be 2048 × 1365 px."));
     // A limit larger than the photo, with upscaling off: kept at its full size, and said so.
     type_into(&mut harness, Role::TextInput, "Width, in px", "9000");
     harness.key_press(egui::Key::Enter);
     harness.run();
     answer(&mut harness, 3, preview());
-    assert!(says(
-        &harness,
-        "IMG_2041.ARW will be 6000 × 4000 px (not upscaled: Allow upscaling is off)."
-    ));
+    assert!(
+        size_tip(&harness).contains(
+            "IMG_2041.ARW will be 6000 × 4000 px (not upscaled: Allow upscaling is off)."
+        )
+    );
 }
 
 #[test]
-fn a_file_already_there_is_said_with_what_on_conflict_does() {
+fn a_file_already_there_is_a_warning_when_it_is_replaced_and_never_a_note_under_on_conflict() {
     let mut harness = open();
     let mut there = preview();
     let name = PathBuf::from("/Users/anna/Pictures/apertrust_exported/IMG_2041_01.jpg");
@@ -1100,22 +1170,27 @@ fn a_file_already_there_is_said_with_what_on_conflict_does() {
         action: Action::Number,
     };
     answer(&mut harness, 1, there.clone());
-    assert!(says(
-        &harness,
-        "IMG_2041_01.jpg is already there, so this one is saved with a number added."
-    ));
+    // Saved under a number or skipped: no line anywhere says so.
+    assert!(harness.query_by_label_contains("already there").is_none());
     there.names[0].fate = Fate::File {
         file: name.clone(),
         exists: true,
         action: Action::Skip(apertrust_export::disk::Why::NotChanged),
     };
     answer(&mut harness, 2, there.clone());
-    assert!(says(
-        &harness,
-        "Skips IMG_2041_01.jpg, which is already there and newer than the photo's edit."
-    ));
+    assert!(harness.query_by_label_contains("already there").is_none());
+    // The Summary's file name is the name the session resolved.
+    harness.get_by_label("File name IMG_2041_01.jpg");
+    // Replaced: the one warning, at the end.
+    there.names[0].fate = Fate::File {
+        file: name,
+        exists: true,
+        action: Action::Overwrite,
+    };
+    answer(&mut harness, 3, there);
+    assert!(says(&harness, "Replaces 1 file already there"));
     // Nothing there, nothing said.
-    answer(&mut harness, 3, preview());
+    answer(&mut harness, 4, preview());
     assert!(harness.query_by_label_contains("already there").is_none());
 }
 
@@ -1135,16 +1210,10 @@ fn several_photos_are_summed_up_and_the_sequence_rule_is_said() {
         action: Action::Number,
     };
     answer(&mut harness, 1, many);
-    assert!(says(&harness, "and 2 more, the same way"));
-    assert!(
-        harness
-            .query_by_label_contains("_$(SEQUENCE) is added")
-            .is_some()
-    );
-    assert!(says(
-        &harness,
-        "1 of the 3 are already there; those are saved with _01 added."
-    ));
+    assert!(tip_says(&harness, "and 2 more, the same way"));
+    assert!(tip_says(&harness, "_$(SEQUENCE) is added"));
+    // What On conflict does is the summary's to say, no line under the row.
+    assert!(harness.query_by_label_contains("already there").is_none());
 }
 
 #[test]
@@ -1156,11 +1225,10 @@ fn variables_with_no_value_here_are_said_to_expand_to_nothing() {
         why: apertrust_export::variables::NotHere::OpenCl,
     }];
     answer(&mut harness, 1, p);
-    assert!(
-        harness
-            .query_by_label_contains("$(OPENCL.ACTIVATED): darktable's, with no value here")
-            .is_some()
-    );
+    assert!(tip_says(
+        &harness,
+        "$(OPENCL.ACTIVATED): darktable's, with no value here"
+    ));
     // Export stays allowed.
     assert!(!disabled(&harness, Role::Button, "Export 1 photo"));
 }
@@ -1279,7 +1347,7 @@ fn export_asks_for_the_export_and_closes_nothing() {
     harness.run();
     let state = harness.state();
     assert!(state.asked.last().is_some_and(|a| a.start));
-    assert!(state.open && state.toggled == 0);
+    assert!(state.shown.open && state.toggled == 0);
     // And it can be pressed again, as the settings stand.
     harness
         .get_by_role_and_label(Role::Button, "Export 1 photo")
@@ -1289,9 +1357,9 @@ fn export_asks_for_the_export_and_closes_nothing() {
 }
 
 #[test]
-fn with_no_photo_open_export_rests_and_says_why() {
+fn with_no_photo_open_export_rests() {
     let mut harness = open();
-    harness.state_mut().photo = false;
+    harness.state_mut().shown.photo = Photo::None;
     harness.run();
     assert!(disabled(&harness, Role::Button, "Export 1 photo"));
     harness
@@ -1299,14 +1367,11 @@ fn with_no_photo_open_export_rests_and_says_why() {
         .click();
     harness.run();
     assert!(harness.state().asked.is_empty());
+    // No tooltip either: the button is disabled and that is all.
     let button = harness.get_by_role_and_label(Role::Button, "Export 1 photo");
     harness.hover_at(button.rect().center());
     harness.run_steps(40);
-    assert!(
-        harness
-            .query_by_label("Open a photo to export it.")
-            .is_some()
-    );
+    assert!(harness.query_by_role(Role::Tooltip).is_none());
 }
 
 #[test]
@@ -1353,7 +1418,7 @@ fn escape_closes_a_list_and_a_row_being_typed_in_and_nothing_else() {
     harness.run();
     assert!(harness.query_by_role(Role::ListBox).is_none());
     // The tool stays open throughout.
-    assert!(harness.state().open && harness.state().toggled == 0);
+    assert!(harness.state().shown.open && harness.state().toggled == 0);
 }
 
 #[test]
@@ -1381,29 +1446,682 @@ fn no_focus_ring_shows_as_the_tool_is_drawn() {
     assert!(harness.ctx.memory(|m| m.focused()).is_none());
 }
 
-// The rows reflowed to the panel's width.
+// The groups, the path and the header.
 
-/// The vertical middle of the first node labelled `label`.
-fn middle(harness: &Harness<'_, Bench>, label: &str) -> f32 {
-    harness.get_by_label(label).rect().center().y
+/// Sets the photo and jobs the app tells the tool.
+fn tell(harness: &mut Harness<'_, Bench>, photo: Photo, jobs: Jobs) {
+    harness.state_mut().shown.photo = photo;
+    harness.state_mut().shown.jobs = jobs;
+    harness.run();
+}
+
+fn ready() -> Photo {
+    Photo::Ready {
+        name: "IMG_2041.ARW".to_owned(),
+    }
+}
+
+/// Whether the group or section row named `title` shows as expanded to screen readers.
+fn expanded(harness: &Harness<'_, Bench>, title: &str) -> bool {
+    let node = harness.get_by_role_and_label(Role::Button, title);
+    node.accesskit_node().data().is_expanded() == Some(true)
 }
 
 #[test]
-fn a_row_whose_label_and_fields_do_not_fit_puts_its_label_above_its_fields() {
-    let values = Values {
-        size_mode: SizeMode::Cm,
+fn storage_and_format_options_are_plain_groups_and_global_options_folds() {
+    let mut harness = open();
+    // The two plain groups are titles, never buttons, and their rows are always there.
+    for title in ["Storage options", "Format options"] {
+        harness.get_by_role_and_label(Role::Label, title);
+        assert!(
+            harness
+                .query_by_role_and_label(Role::Button, title)
+                .is_none(),
+            "{title} has no fold"
+        );
+    }
+    harness.get_by_role_and_label(Role::ComboBox, "On conflict");
+    harness.get_by_role_and_label(Role::ComboBox, "File format");
+    // Global options folds and starts open.
+    assert!(expanded(&harness, "Global options"));
+    harness.get_by_role_and_label(Role::ComboBox, "Set size");
+    harness
+        .get_by_role_and_label(Role::Button, "Global options")
+        .click();
+    settle(&mut harness);
+    assert!(!harness.state().shown.global);
+    assert!(!expanded(&harness, "Global options"));
+    assert!(harness.query_by_label("Set size").is_none());
+    assert!(harness.query_by_label("Allow upscaling").is_none());
+    // The plain groups' rows stay.
+    harness.get_by_role_and_label(Role::ComboBox, "On conflict");
+    harness
+        .get_by_role_and_label(Role::Button, "Global options")
+        .click();
+    settle(&mut harness);
+    harness.get_by_role_and_label(Role::ComboBox, "Set size");
+}
+
+#[test]
+fn a_closed_global_options_says_how_many_of_its_settings_are_off_their_defaults() {
+    let mut harness = open();
+    let group = |harness: &Harness<'_, Bench>| {
+        harness
+            .get_by_role_and_label(Role::Button, "Global options")
+            .accesskit_node()
+            .description()
+    };
+    assert_eq!(group(&harness), None, "nothing set");
+    choose(&mut harness, "Set size", "In cm (for print)");
+    harness.get_by_label("Allow upscaling");
+    choose(&mut harness, "Allow upscaling", "Yes");
+    harness
+        .get_by_role_and_label(Role::Button, "Global options")
+        .click();
+    settle(&mut harness);
+    assert_eq!(group(&harness).as_deref(), Some("2 set"));
+    let values = held(&mut harness);
+    assert_eq!(values.set_in_global(), 2);
+    assert_eq!(Values::default().set_in_global(), 0);
+}
+
+#[test]
+fn metadata_and_multi_preset_export_are_closed_and_disabled_groups() {
+    let harness = open();
+    for group in ["Metadata", "Multi-preset export"] {
+        assert!(disabled(&harness, Role::Button, group), "{group}");
+        assert!(!expanded(&harness, group), "{group}");
+    }
+}
+
+#[test]
+fn the_path_is_one_line_with_no_visible_label_and_the_folder_button_at_its_end() {
+    let mut harness = open();
+    answer(&mut harness, 1, preview());
+    // Named "Path" to screen readers, with no label drawn: the only node of that name is
+    // the field.
+    assert_eq!(harness.query_all_by_label("Path").count(), 1);
+    let field = harness
+        .get_by_role_and_label(Role::TextInput, "Path")
+        .rect();
+    let folder = harness.get_by_label("Choose…").rect();
+    assert!(disabled(&harness, Role::Button, "Choose…"));
+    assert!(folder.left() >= field.right(), "{folder:?} {field:?}");
+    assert!((folder.center().y - field.center().y).abs() < 4.0);
+    // The resolved file name is its description, not a note.
+    assert!(tip_says(
+        &harness,
+        "IMG_2041.ARW → ~/Pictures/apertrust_exported/IMG_2041.jpg"
+    ));
+    assert!(
+        harness
+            .query_by_label("IMG_2041.ARW → ~/Pictures/apertrust_exported/IMG_2041.jpg")
+            .is_none()
+    );
+    // At every width it stays on one line.
+    for width in [NARROWEST, PANEL, WIDEST] {
+        let mut harness = tool(Values::default(), Builtin::Dark, Locale::EnGb, width);
+        answer(&mut harness, 1, preview());
+        let field = harness
+            .get_by_role_and_label(Role::TextInput, "Path")
+            .rect();
+        assert!(field.height() < 26.0, "{width}: {field:?}");
+    }
+}
+
+#[test]
+fn a_name_only_a_decode_gives_is_never_shown_as_exact() {
+    let mut harness = open();
+    let mut p = preview();
+    p.names[0].exact = false;
+    answer(&mut harness, 1, p);
+    assert!(tip_says(
+        &harness,
+        "IMG_2041.ARW → $(FILE_FOLDER)/apertrust_exported/$(FILE_NAME), filled in as it is exported"
+    ));
+    assert!(!tip_says(&harness, "IMG_2041.jpg"));
+}
+
+#[test]
+fn no_explanation_is_a_line_inside_the_tool_it_is_a_tooltip() {
+    let mut harness = open();
+    answer(&mut harness, 1, preview());
+    // The note about metadata is the File format row's tooltip, after its words.
+    let format = harness.get_by_role_and_label(Role::ComboBox, "File format");
+    assert_eq!(
+        format.accesskit_node().description().as_deref(),
+        Some("This version writes no EXIF, location or copyright into exported files.")
+    );
+    assert!(harness.query_by_label_contains("writes no EXIF").is_none());
+    // The size's readout is the Set size row's.
+    assert!(size_tip(&harness).contains("will be 6000 × 4000 px"));
+    assert!(harness.query_by_label_contains("will be").is_none());
+    // The scale's rule is the row's, in the same tooltip.
+    choose(&mut harness, "Set size", "By scale (for file)");
+    assert!(size_tip(&harness).contains("a simple fraction, such as 1/2"));
+    assert!(harness.query_by_label_contains("simple fraction").is_none());
+    // What On conflict does with files already there is no note: the warnings and the
+    // summary say it. A problem that stops Export keeps its line, in `error`.
+    let mut there = preview_with_file_there(Action::Overwrite);
+    there.problem = Some(PathProblem::Empty);
+    answer(&mut harness, 2, there);
+    assert!(says(&harness, "Enter where to put the exported photos."));
+}
+
+#[test]
+fn the_header_has_its_reset_a_presets_button_drawn_disabled_and_its_options() {
+    let mut harness = open();
+    harness.get_by_role_and_label(Role::Button, "Reset export settings");
+    assert!(disabled(&harness, Role::Button, "Export presets"));
+    assert!(disabled(&harness, Role::Button, "Export options"));
+    // In that order, from the start: reset, presets, options.
+    let at = |label: &str| {
+        harness
+            .get_by_role_and_label(Role::Button, label)
+            .rect()
+            .center()
+            .x
+    };
+    assert!(at("Reset export settings") < at("Export presets"));
+    assert!(at("Export presets") < at("Export options"));
+    // Pointing at the presets button says why it is off.
+    let presets = harness.get_by_role_and_label(Role::Button, "Export presets");
+    harness.hover_at(presets.rect().center());
+    harness.run_steps(40);
+    assert!(
+        harness
+            .query_by_label("Presets come in a later version")
+            .is_some()
+    );
+}
+
+// The Summary, the warnings, the button and the line under it.
+
+/// What the Summary's rows say, as screen readers read them: each label with its full value.
+fn summary_says(harness: &Harness<'_, Bench>, row: &str) -> bool {
+    harness.query_by_label(row).is_some()
+}
+
+#[test]
+fn the_summary_is_a_group_open_at_first_with_a_labelled_list_after_the_groups_to_come() {
+    let mut harness = open();
+    answer(&mut harness, 1, preview());
+    // A disclosure like Global options, open at first, its list after Multi-preset export.
+    assert!(expanded(&harness, "Summary"));
+    let at = |harness: &Harness<'_, Bench>, label: &str| {
+        harness
+            .get_by_role_and_label(Role::Button, label)
+            .rect()
+            .top()
+    };
+    assert!(at(&harness, "Multi-preset export") < at(&harness, "Summary"));
+    for row in [
+        "Preset Default settings",
+        "File name IMG_2041.jpg",
+        "Size 6000 × 4000 px",
+        "Profile Image settings",
+        "Format JPEG, quality 95",
+        "Destination ~/Pictures/apertrust_exported",
+    ] {
+        assert!(summary_says(&harness, row), "{row}");
+    }
+    // Only Set size's Scale has a Scale row; and no line is a one-line form or an arrow.
+    assert!(harness.query_by_label_contains("Scale").is_none());
+    assert!(harness.query_by_label_contains("→").is_none());
+    // The warnings and the button are outside it, shown with it closed too; its state is kept.
+    harness
+        .get_by_role_and_label(Role::Button, "Summary")
+        .click();
+    settle(&mut harness);
+    assert!(!harness.state().shown.summary);
+    assert!(!expanded(&harness, "Summary"));
+    assert!(harness.query_by_label_contains("Preset ").is_none());
+    harness.get_by_role_and_label(Role::Button, "Export 1 photo");
+    harness
+        .get_by_role_and_label(Role::Button, "Summary")
+        .click();
+    settle(&mut harness);
+    assert!(harness.state().shown.summary);
+    assert!(summary_says(&harness, "Preset Default settings"));
+}
+
+/// A preview of a photo whose output is `width` × `height`.
+fn sized(width: u32, height: u32) -> ExportPreview {
+    let mut p = preview();
+    p.size = Some(ActiveSize {
+        source: PathBuf::from("/Users/anna/Pictures/IMG_2041.ARW"),
+        size: Ok(OutputSize {
+            extent: [6000, 4000],
+            width,
+            height,
+            scale: 1.0,
+        }),
+    });
+    p
+}
+
+#[test]
+fn the_summary_says_the_preset_or_custom_the_size_in_pixels_or_print_and_the_scale() {
+    let mut harness = open();
+    answer(&mut harness, 1, sized(2048, 1365));
+    assert!(summary_says(&harness, "Size 2048 × 1365 px"));
+    choose(&mut harness, "File format", "PNG");
+    assert!(summary_says(&harness, "Preset Custom"));
+    assert!(summary_says(&harness, "Format PNG, 8 bit"));
+    // The name the session gave for JPEG has PNG's extension at once, before its new answer.
+    assert!(summary_says(&harness, "File name IMG_2041.png"));
+    assert!(!summary_says(&harness, "File name IMG_2041.jpg"));
+    // In cm, the physical size and the pixels it is: the language's numbers, two decimals.
+    let print = |mode| Values {
+        size_mode: mode,
+        width: 2362,
+        height: 1574,
         ..Values::default()
     };
-    // The narrowest panel: "Size in centimetres" has no room beside its two fields.
-    let narrow = tool(values.clone(), Builtin::Dark, Locale::EnGb, NARROWEST);
-    let label = middle(&narrow, "Size in centimetres");
-    let field = middle(&narrow, "Width, in cm");
-    assert!(field > label + 10.0, "label {label}, field {field}");
-    // The widest: the label and its fields share a line.
-    let wide = tool(values, Builtin::Dark, Locale::EnGb, WIDEST);
-    let label = middle(&wide, "Size in centimetres");
-    let field = middle(&wide, "Width, in cm");
-    assert!((field - label).abs() < 4.0, "label {label}, field {field}");
+    let mut harness = tool(print(SizeMode::Cm), Builtin::Dark, Locale::EnGb, PANEL);
+    answer(&mut harness, 1, sized(2362, 1574));
+    assert!(summary_says(
+        &harness,
+        "Size 20.00 × 13.33 cm (2362 × 1574 px)"
+    ));
+    assert!(harness.query_by_label_contains("Scale").is_none());
+    let mut harness = tool(print(SizeMode::Inch), Builtin::Dark, Locale::EnGb, PANEL);
+    answer(&mut harness, 1, sized(2400, 1500));
+    assert!(summary_says(
+        &harness,
+        "Size 8.00 × 5.00 in (2400 × 1500 px)"
+    ));
+    // Ukrainian writes the comma.
+    let mut harness = tool(print(SizeMode::Cm), Builtin::Dark, Locale::Uk, PANEL);
+    answer(&mut harness, 1, sized(2362, 1574));
+    assert!(summary_says(
+        &harness,
+        "Розмір 20,00 × 13,33 см (2362 × 1574 px)"
+    ));
+    // By scale, a Scale row follows Size.
+    let scaled = Values {
+        size_mode: SizeMode::Scale,
+        scale: "1/2".to_owned(),
+        ..Values::default()
+    };
+    let mut harness = tool(scaled, Builtin::Dark, Locale::EnGb, PANEL);
+    answer(&mut harness, 1, sized(3000, 2000));
+    assert!(summary_says(&harness, "Size 3000 × 2000 px"));
+    assert!(summary_says(&harness, "Scale 50%"));
+    let at = |label: &str| harness.get_by_label_contains(label).rect().top();
+    assert!(at("Size ") < at("Scale ") && at("Scale ") < at("Profile "));
+    // The profile is the Profile row's value.
+    choose(&mut harness, "Profile", "sRGB (web-safe)");
+    assert!(summary_says(&harness, "Profile sRGB (web-safe)"));
+}
+
+#[test]
+fn the_summary_has_no_value_until_the_session_answers_and_guesses_a_name_as_the_path_says() {
+    let mut harness = open();
+    assert!(summary_says(&harness, "Size —"));
+    assert!(summary_says(&harness, "File name $(FILE_NAME).jpg"));
+    let mut guessed = preview();
+    guessed.names[0].exact = false;
+    answer(&mut harness, 1, guessed);
+    assert!(summary_says(&harness, "File name $(FILE_NAME).jpg"));
+    answer(&mut harness, 2, preview());
+    assert!(summary_says(&harness, "File name IMG_2041.jpg"));
+    // A problem with the size leaves none.
+    let mut over = preview();
+    over.size = Some(ActiveSize {
+        source: PathBuf::from("/Users/anna/Pictures/IMG_2041.ARW"),
+        size: Err(SizeProblem::TooLarge {
+            format: "JPEG",
+            largest: 65535,
+            width: 70000,
+            height: 50000,
+        }),
+    });
+    answer(&mut harness, 3, over);
+    assert!(summary_says(&harness, "Size —"));
+}
+
+/// The Summary's title in `locale`.
+fn summary_title(locale: Locale) -> String {
+    apertrust_ui::Translator::new(locale).text("export-summary-title")
+}
+
+/// The texts a frame painted, with where.
+fn painted(harness: &Harness<'_, Bench>) -> Vec<(String, egui::Rect)> {
+    crate::dialog_host::painted(harness.output())
+}
+
+#[test]
+fn a_value_too_long_for_its_row_is_cut_at_its_end_and_whole_in_its_tooltip() {
+    let long = "A_very_long_file_name_that_goes_on_and_on_IMG_2041.jpg";
+    let named = || {
+        let mut p = preview();
+        p.names[0].fate = Fate::File {
+            file: PathBuf::from(format!("/Users/anna/Pictures/apertrust_exported/{long}")),
+            exists: false,
+            action: Action::Write,
+        };
+        p
+    };
+    for width in [NARROWEST, PANEL] {
+        let mut harness = tool(Values::default(), Builtin::Dark, Locale::EnGb, width);
+        answer(&mut harness, 1, named());
+        // Read whole, painted cut at its end with …, inside the panel.
+        assert!(
+            summary_says(&harness, &format!("File name {long}")),
+            "{width}"
+        );
+        let cut = painted(&harness)
+            .into_iter()
+            .find(|(text, _)| text.starts_with("A_very_long") && text.ends_with('…'))
+            .unwrap_or_else(|| panic!("{width}: the name is cut at its end"));
+        assert!(cut.1.right() <= width, "{width}: {cut:?}");
+        // Pointing at the row shows the whole value.
+        let row = harness.get_by_label(&format!("File name {long}")).rect();
+        harness.hover_at(row.center());
+        harness.run_steps(40);
+        assert!(
+            harness.query_by_label(long).is_some(),
+            "{width}: the tooltip"
+        );
+    }
+    // A destination is cut in its middle: its end, the folder's name, stays.
+    let deep = PathBuf::from(
+        "/Users/anna/Pictures/2026-10 Wedding in the countryside/Selects/apertrust_exported/IMG_2041.jpg",
+    );
+    let mut p = preview();
+    p.names[0].fate = Fate::File {
+        file: deep,
+        exists: false,
+        action: Action::Write,
+    };
+    let mut harness = tool(Values::default(), Builtin::Dark, Locale::EnGb, NARROWEST);
+    answer(&mut harness, 1, p);
+    let cut = painted(&harness)
+        .into_iter()
+        .find(|(text, _)| text.starts_with("~/") && text.contains('…'))
+        .expect("the destination is cut");
+    assert!(cut.0.ends_with("exported"), "{}", cut.0);
+}
+
+#[test]
+fn nothing_the_summary_paints_runs_past_the_panel_in_any_language() {
+    for locale in [Locale::EnGb, Locale::Uk, Locale::Pl, Locale::Pseudo] {
+        for width in [NARROWEST, PANEL, WIDEST] {
+            let print = Values {
+                size_mode: SizeMode::Cm,
+                width: 2362,
+                height: 1574,
+                ..Values::default()
+            };
+            let mut harness = tool(print, Builtin::Dark, locale, width);
+            answer(&mut harness, 1, sized(2362, 1574));
+            // What the Summary paints, from its header down.
+            let top = harness
+                .get_by_role_and_label(Role::Button, &summary_title(locale))
+                .rect()
+                .top();
+            for (text, at) in painted(&harness) {
+                if at.top() < top {
+                    continue;
+                }
+                assert!(
+                    at.right() <= width + 0.5,
+                    "{locale:?} {width}: {text:?} ends at {}",
+                    at.right()
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn a_path_that_gives_no_file_name_for_any_photo_holds_the_button_off_saying_so() {
+    let mut harness = open();
+    let mut nameless = preview();
+    nameless.names[0].fate = Fate::NoName;
+    answer(&mut harness, 1, nameless);
+    assert!(disabled(&harness, Role::Button, "Export 1 photo"));
+    let button = harness.get_by_role_and_label(Role::Button, "Export 1 photo");
+    assert_eq!(
+        button.accesskit_node().description().as_deref(),
+        Some("The path gives no file name for this photo.")
+    );
+    // A name again, and the button is live.
+    answer(&mut harness, 2, preview());
+    assert!(!disabled(&harness, Role::Button, "Export 1 photo"));
+}
+
+#[test]
+fn with_nothing_to_export_the_button_is_simply_disabled() {
+    let mut harness = open();
+    answer(&mut harness, 1, preview());
+    tell(&mut harness, Photo::None, Jobs::default());
+    assert!(disabled(&harness, Role::Button, "Export 1 photo"));
+    let button = harness.get_by_role_and_label(Role::Button, "Export 1 photo");
+    // No reason is given: no description, and no stop for the keyboard.
+    assert_eq!(button.accesskit_node().description(), None);
+    button.focus();
+    harness.run();
+    assert!(
+        !harness
+            .get_by_role_and_label(Role::Button, "Export 1 photo")
+            .is_focused()
+    );
+    // Nothing to sum up or warn of: the end is the button alone.
+    assert!(harness.query_by_label_contains(" · ").is_none());
+    assert!(
+        harness
+            .query_by_label_contains("Nothing to export")
+            .is_none()
+    );
+    assert!(harness.query_by_label_contains("view-only").is_none());
+    // A press neither exports nor asks.
+    harness
+        .get_by_role_and_label(Role::Button, "Export 1 photo")
+        .click();
+    harness.run();
+    assert!(harness.state().asked.is_empty());
+}
+
+#[test]
+fn a_view_only_photo_is_left_out_with_a_warning_and_a_button_that_says_why() {
+    let mut harness = open();
+    let newer = Photo::ViewOnly {
+        name: "IMG_2041.ARW".to_owned(),
+        why: Why::Newer,
+    };
+    tell(&mut harness, newer, Jobs::default());
+    assert!(says(&harness, "1 view-only photo left out"));
+    // Nothing to sum up: no Summary, the button disabled and saying why.
+    assert!(
+        harness
+            .query_by_role_and_label(Role::Button, "Summary")
+            .is_none()
+    );
+    assert!(disabled(&harness, Role::Button, "Export 1 photo"));
+    let button = harness.get_by_role_and_label(Role::Button, "Export 1 photo");
+    assert_eq!(
+        button.accesskit_node().description().as_deref(),
+        Some("A newer Apertrust wrote these edits.")
+    );
+    // Or its history cannot be read, naming the edit's file.
+    let unreadable = Photo::ViewOnly {
+        name: "IMG_2041.ARW".to_owned(),
+        why: Why::Unreadable {
+            file: "IMG_2041.ARW.apxmp".to_owned(),
+        },
+    };
+    tell(&mut harness, unreadable, Jobs::default());
+    let button = harness.get_by_role_and_label(Role::Button, "Export 1 photo");
+    assert_eq!(
+        button.accesskit_node().description().as_deref(),
+        Some("The history in IMG_2041.ARW.apxmp can’t be read.")
+    );
+    // Back to a photo that exports: no warning, an enabled button.
+    tell(&mut harness, ready(), Jobs::default());
+    assert!(!says(&harness, "1 view-only photo left out"));
+    assert!(!disabled(&harness, Role::Button, "Export 1 photo"));
+}
+
+#[test]
+fn a_problem_that_stops_export_is_the_button_s_reason_and_description() {
+    let mut harness = open();
+    let mut p = preview();
+    p.problem = Some(PathProblem::Empty);
+    answer(&mut harness, 1, p);
+    let button = harness.get_by_role_and_label(Role::Button, "Export 1 photo");
+    assert!(button.accesskit_node().is_disabled());
+    assert_eq!(
+        button.accesskit_node().description().as_deref(),
+        Some("Fix the path first: Enter where to put the exported photos.")
+    );
+}
+
+#[test]
+fn the_files_an_export_would_replace_are_a_warning_and_a_lower_bound_where_names_are_guessed() {
+    let values = Values {
+        on_conflict: OnConflict::Overwrite,
+        ..Values::default()
+    };
+    let mut harness = tool(values.clone(), Builtin::Dark, Locale::EnGb, PANEL);
+    answer(&mut harness, 1, preview_with_file_there(Action::Overwrite));
+    assert!(says(&harness, "Replaces 1 file already there"));
+    // A second photo whose name is a guess is left out of the count, so it is a lower bound.
+    let mut guessed = preview_with_file_there(Action::Overwrite);
+    let mut second = guessed.names[0].clone();
+    second.exact = false;
+    guessed.names.push(second);
+    let mut harness = tool(values, Builtin::Dark, Locale::EnGb, PANEL);
+    answer(&mut harness, 1, guessed);
+    assert!(says(&harness, "Replaces at least 1 file already there"));
+    // With nothing to replace there is no warning.
+    let mut harness = open();
+    answer(&mut harness, 1, preview());
+    assert!(harness.query_by_label_contains("Replaces").is_none());
+}
+
+#[test]
+fn only_a_failed_export_has_a_line_under_the_button() {
+    let mut harness = open();
+    answer(&mut harness, 1, preview());
+    // Idle: nothing under the button.
+    assert!(harness.query_by_label("Show jobs").is_none());
+    assert!(harness.query_by_label_contains("Export failed").is_none());
+    // Pressing Export says nothing under it either: the jobs window shows the progress.
+    harness
+        .get_by_role_and_label(Role::Button, "Export 1 photo")
+        .click();
+    harness.run();
+    assert!(harness.state().asked.iter().any(|a| a.start));
+    assert!(harness.query_by_label_contains("Started").is_none());
+    assert!(harness.query_by_label_contains("running").is_none());
+    assert!(harness.query_by_label("Show jobs").is_none());
+    // The last export failed: its line in `error`, and Show jobs, which opens the jobs window.
+    let failed = Jobs {
+        failed: Some((11, 12)),
+    };
+    tell(&mut harness, ready(), failed);
+    assert!(says(&harness, "Export failed: 11 of 12"));
+    assert!(!disabled(&harness, Role::Button, "Export 1 photo"));
+    harness.get_by_label("Show jobs").click();
+    harness.run();
+    assert_eq!(harness.state().jobs_shown, 1);
+    // Until the next export, or the row's dismissal, which the app tells it.
+    tell(&mut harness, ready(), Jobs::default());
+    assert!(harness.query_by_label("Show jobs").is_none());
+    assert!(harness.query_by_label_contains("Export failed").is_none());
+}
+
+#[test]
+fn a_second_press_just_after_the_first_is_ignored() {
+    let mut export = home(Values::default());
+    assert!(!export.too_soon(10.0), "nothing pressed yet");
+    export.note_started(10.0);
+    assert!(export.too_soon(10.2));
+    assert!(!export.too_soon(10.6));
+}
+
+// The rows laid out to the panel's width.
+
+/// Where the size row's fields and its group are: the fields named `names` and the group.
+fn size_line_of(harness: &Harness<'_, Bench>, group: &str, names: &[&str]) -> Vec<egui::Rect> {
+    let group = harness.get_by_role_and_label(Role::Group, group).rect();
+    let mut rects = vec![group];
+    rects.extend(
+        names
+            .iter()
+            .map(|name| harness.get_by_role_and_label(Role::TextInput, name).rect()),
+    );
+    rects
+}
+
+#[test]
+fn the_size_row_is_one_line_with_no_label_its_fields_sharing_the_width() {
+    for width in [NARROWEST, PANEL, WIDEST] {
+        // Pixels: [w] × [h] px, a group named "Size in pixels" and no label drawn.
+        let mut harness = tool(Values::default(), Builtin::Dark, Locale::EnGb, width);
+        answer(&mut harness, 1, preview());
+        let rects = size_line_of(
+            &harness,
+            "Size in pixels",
+            &["Width, in px", "Height, in px"],
+        );
+        let (group, w, h) = (rects[0], rects[1], rects[2]);
+        assert!(
+            painted(&harness)
+                .iter()
+                .all(|(text, _)| text != "Size in pixels"),
+            "{width}: no label"
+        );
+        assert!(group.height() <= 26.0, "{width}: one line {group:?}");
+        assert!((w.center().y - h.center().y).abs() < 0.5, "{width}");
+        assert!(w.right() < h.left(), "{width}");
+        assert!(
+            (w.width() - h.width()).abs() <= 1.0,
+            "{width}: they share the width"
+        );
+        // The unit follows them, in the row, and the fields are no wider than it.
+        assert!(
+            h.right() < group.right() && group.right() <= width,
+            "{width}"
+        );
+        // Centimetres: [w] × [h] cm @ [dpi] dpi, on one line, with no row of the resolution's.
+        let print = Values {
+            size_mode: SizeMode::Cm,
+            ..Values::default()
+        };
+        let mut harness = tool(print, Builtin::Dark, Locale::EnGb, width);
+        answer(&mut harness, 1, preview());
+        let rects = size_line_of(
+            &harness,
+            "Size in centimetres",
+            &["Width, in cm", "Height, in cm", "Resolution, in dpi"],
+        );
+        let (group, w, h, dpi) = (rects[0], rects[1], rects[2], rects[3]);
+        assert!(group.height() <= 26.0, "{width}: one line {group:?}");
+        for field in [h, dpi] {
+            assert!((w.center().y - field.center().y).abs() < 0.5, "{width}");
+        }
+        assert!(w.right() < h.left() && h.right() < dpi.left(), "{width}");
+        assert!(
+            dpi.right() < group.right() && group.right() <= width,
+            "{width}"
+        );
+        assert!(harness.query_by_label("Resolution").is_none());
+        // Inches the same, by its own name.
+        let inches = Values {
+            size_mode: SizeMode::Inch,
+            ..Values::default()
+        };
+        let mut harness = tool(inches, Builtin::Dark, Locale::EnGb, width);
+        answer(&mut harness, 1, preview());
+        size_line_of(
+            &harness,
+            "Size in inches",
+            &["Width, in in", "Height, in in", "Resolution, in dpi"],
+        );
+    }
 }
 
 #[test]
@@ -1461,84 +2179,72 @@ fn photographed(
     photograph(&mut harness, name);
 }
 
-#[test]
-fn the_tool_at_the_panel_s_width_in_the_dark_theme() {
-    photographed(
-        Builtin::Dark,
-        Locale::EnGb,
-        PANEL,
-        "export-tool-320-dark",
-        |_| {},
-    );
+/// A preview with a problem under the path.
+fn with_error(harness: &mut Harness<'static, Bench>) {
+    let mut p = preview();
+    p.problem = Some(PathProblem::Empty);
+    answer(harness, 2, p);
 }
 
-#[test]
-fn the_tool_at_the_panel_s_width_in_the_light_theme() {
-    photographed(
-        Builtin::Light,
-        Locale::EnGb,
-        PANEL,
-        "export-tool-320-light",
-        |_| {},
-    );
+/// One snapshot test for each look: dark, light, an error under the path, Ukrainian, Polish
+/// and the pseudo-locale, each at the panel's width and its widest.
+macro_rules! looks {
+    ($($test:ident: $which:expr, $locale:expr, $width:expr, $file:literal, $changes:expr;)*) => {
+        $(
+            #[test]
+            fn $test() {
+                photographed($which, $locale, $width, $file, $changes);
+            }
+        )*
+    };
 }
 
-#[test]
-fn the_tool_at_the_widest_panel_in_the_dark_theme() {
-    photographed(
-        Builtin::Dark,
-        Locale::EnGb,
-        WIDEST,
-        "export-tool-600-dark",
-        |_| {},
-    );
+looks! {
+    the_tool_at_320_in_the_dark_theme: Builtin::Dark, Locale::EnGb, PANEL, "export-tool-320-dark", |_| {};
+    the_tool_at_600_in_the_dark_theme: Builtin::Dark, Locale::EnGb, WIDEST, "export-tool-600-dark", |_| {};
+    the_tool_at_320_in_the_light_theme: Builtin::Light, Locale::EnGb, PANEL, "export-tool-320-light", |_| {};
+    the_tool_at_600_in_the_light_theme: Builtin::Light, Locale::EnGb, WIDEST, "export-tool-600-light", |_| {};
+    the_tool_at_320_with_an_error_under_its_path: Builtin::Dark, Locale::EnGb, PANEL, "export-tool-320-error", with_error;
+    the_tool_at_600_with_an_error_under_its_path: Builtin::Dark, Locale::EnGb, WIDEST, "export-tool-600-error", with_error;
+    the_tool_at_320_in_ukrainian: Builtin::Dark, Locale::Uk, PANEL, "export-tool-320-uk", |_| {};
+    the_tool_at_600_in_ukrainian: Builtin::Dark, Locale::Uk, WIDEST, "export-tool-600-uk", |_| {};
+    the_tool_at_320_in_polish: Builtin::Dark, Locale::Pl, PANEL, "export-tool-320-pl", |_| {};
+    the_tool_at_600_in_polish: Builtin::Dark, Locale::Pl, WIDEST, "export-tool-600-pl", |_| {};
+    the_tool_at_320_with_the_pseudo_locale: Builtin::Dark, Locale::Pseudo, PANEL, "export-tool-320-pseudo", |_| {};
+    the_tool_at_600_with_the_pseudo_locale: Builtin::Dark, Locale::Pseudo, WIDEST, "export-tool-600-pseudo", |_| {};
 }
 
-#[test]
-fn the_tool_at_the_widest_panel_in_the_light_theme() {
-    photographed(
-        Builtin::Light,
-        Locale::EnGb,
-        WIDEST,
-        "export-tool-600-light",
-        |_| {},
-    );
+/// The end of the tool in its busiest state: the summary open, a warning and a failed export.
+fn busy_end(harness: &mut Harness<'static, Bench>) {
+    let values = Values {
+        on_conflict: OnConflict::Overwrite,
+        width: 2048,
+        height: 2048,
+        ..Values::default()
+    };
+    harness.state_mut().content = home(values);
+    harness.state_mut().shown.summary = true;
+    // The photo at the limit's size: 2048 on its long side.
+    let mut limited = preview_with_file_there(Action::Overwrite);
+    limited.size = Some(ActiveSize {
+        source: PathBuf::from("/Users/anna/Pictures/IMG_2041.ARW"),
+        size: Ok(OutputSize {
+            extent: [6000, 4000],
+            width: 2048,
+            height: 1365,
+            scale: 0.341,
+        }),
+    });
+    let jobs = Jobs {
+        failed: Some((11, 12)),
+    };
+    tell(harness, ready(), jobs);
+    answer(harness, 3, limited);
 }
 
-#[test]
-fn the_tool_in_ukrainian() {
-    photographed(Builtin::Dark, Locale::Uk, PANEL, "export-tool-uk", |_| {});
-}
-
-#[test]
-fn the_tool_in_polish() {
-    photographed(Builtin::Dark, Locale::Pl, PANEL, "export-tool-pl", |_| {});
-}
-
-#[test]
-fn the_tool_with_the_longest_words_the_pseudo_locale_gives() {
-    photographed(
-        Builtin::Dark,
-        Locale::Pseudo,
-        PANEL,
-        "export-tool-pseudo",
-        |_| {},
-    );
-}
-
-#[test]
-fn the_tool_with_an_error_under_its_path() {
-    photographed(
-        Builtin::Dark,
-        Locale::EnGb,
-        PANEL,
-        "export-tool-error",
-        |harness| {
-            let mut p = preview();
-            p.problem = Some(PathProblem::Empty);
-            answer(harness, 2, p);
-        },
-    );
+looks! {
+    the_tool_s_end_with_a_failure_in_the_dark_theme: Builtin::Dark, Locale::EnGb, PANEL, "export-tool-end-dark", busy_end;
+    the_tool_s_end_with_a_failure_in_the_light_theme: Builtin::Light, Locale::EnGb, PANEL, "export-tool-end-light", busy_end;
 }
 
 #[test]
@@ -1550,4 +2256,182 @@ fn the_tool_in_print_sizes_at_the_narrowest_panel() {
     let mut harness = tool(values, Builtin::Dark, Locale::EnGb, NARROWEST);
     answer(&mut harness, 1, preview());
     photograph(&mut harness, "export-tool-240-narrow");
+}
+
+/// Where the path field and the folder button are, and the section's width: the sides of the
+/// Export button and of the Set size row, which fill the content.
+fn path_layout(harness: &Harness<'_, Bench>) -> [egui::Rect; 4] {
+    let across =
+        |rect: egui::Rect| egui::Rect::from_x_y_ranges(rect.x_range(), egui::Rangef::new(0.0, 0.0));
+    [
+        harness
+            .get_by_role_and_label(Role::TextInput, "Path")
+            .rect(),
+        harness.get_by_label("Choose…").rect(),
+        across(
+            harness
+                .get_by_role_and_label(Role::Button, "Export 1 photo")
+                .rect(),
+        ),
+        across(
+            harness
+                .get_by_role_and_label(Role::ComboBox, "Set size")
+                .rect(),
+        ),
+    ]
+}
+
+#[test]
+fn moving_the_caret_along_a_long_path_moves_nothing_across_the_row_or_the_panel() {
+    let long = "$(FILE_FOLDER)/apertrust_exported/a_folder_with_a_very_long_name/another_folder_that_goes_on/$(FILE_NAME)_$(EXIF.ISO)_$(EXIF.EXPOSURE)";
+    for width in [NARROWEST, PANEL, WIDEST] {
+        let values = Values {
+            path: long.to_owned(),
+            ..Values::default()
+        };
+        let mut harness = tool(values, Builtin::Dark, Locale::EnGb, width);
+        answer(&mut harness, 1, preview());
+        let before = path_layout(&harness);
+        // The field is the row's width less the button and the gap, whatever the text.
+        assert!(before[0].right() <= before[1].left(), "{width}: {before:?}");
+        assert!(before[1].right() <= width, "{width}: {before:?}");
+        // The button is the field's height, a square, on the field's line.
+        assert_eq!(
+            (before[1].top(), before[1].bottom()),
+            (before[0].top(), before[0].bottom()),
+            "{width}: {before:?}"
+        );
+        assert_eq!(before[1].width(), before[1].height(), "{width}");
+        harness
+            .get_by_role_and_label(Role::TextInput, "Path")
+            .focus();
+        harness.run();
+        assert_eq!(path_layout(&harness), before, "{width}: focused");
+        // From the start to the end and back, a key at a time: the caret passes the
+        // variable $(EXIF.EXPOSURE), where the list of variables opens under the row.
+        let mut keys = vec![egui::Key::Home, egui::Key::End];
+        keys.extend([egui::Key::ArrowLeft; 40]);
+        keys.push(egui::Key::Home);
+        keys.extend([egui::Key::ArrowRight; 60]);
+        keys.push(egui::Key::End);
+        keys.extend([egui::Key::ArrowLeft; 90]);
+        let mut listed = false;
+        for (step, key) in keys.into_iter().enumerate() {
+            harness.key_press(key);
+            harness.run_steps(2);
+            listed |= harness.query_by_role(Role::ListBox).is_some();
+            assert_eq!(path_layout(&harness), before, "{width}: {key:?} at {step}");
+        }
+        assert!(listed, "{width}: the list opened under the field");
+    }
+}
+
+/// The rectangles a frame filled with `colour`.
+fn filled(harness: &Harness<'_, Bench>, colour: egui::Color32) -> Vec<egui::Rect> {
+    fn rects(shape: &egui::Shape, colour: egui::Color32, out: &mut Vec<egui::Rect>) {
+        match shape {
+            egui::Shape::Rect(rect) if rect.fill == colour => out.push(rect.rect),
+            egui::Shape::Vec(shapes) => shapes.iter().for_each(|s| rects(s, colour, out)),
+            _ => {}
+        }
+    }
+    let mut out = Vec::new();
+    for clipped in &harness.output().shapes {
+        rects(&clipped.shape, colour, &mut out);
+    }
+    out
+}
+
+/// A slider of the tool: its format, how it sets its value in `Values`, its range, its
+/// default and a value below that.
+struct Slider {
+    format: FileFormat,
+    set: Setter,
+    range: (u8, u8),
+    default: u8,
+    below: u8,
+}
+
+/// Sets one slider's value in `Values`.
+type Setter = fn(&mut Values, u8);
+
+#[test]
+fn every_slider_paints_its_fill_between_the_handle_and_the_settings_default() {
+    let theme = Theme::builtin(Builtin::Dark);
+    let (track, fill) = (theme.colors.slider_track, theme.colors.slider_fill);
+    // The row's painted fill at `value`: the one rectangle in the fill's colour, and the
+    // track it runs along.
+    let painted_fill = |format: FileFormat, set: Setter, value: u8| {
+        let mut values = Values {
+            format,
+            ..Values::default()
+        };
+        set(&mut values, value);
+        let mut harness = tool(values, Builtin::Dark, Locale::EnGb, PANEL);
+        answer(&mut harness, 1, preview());
+        let (lines, fills) = (filled(&harness, track), filled(&harness, fill));
+        assert_eq!((lines.len(), fills.len()), (1, 1), "{format:?} {value}");
+        (lines[0], fills[0])
+    };
+    let sliders = [
+        Slider {
+            format: FileFormat::Jpeg,
+            set: |v, n| v.jpeg_quality = n,
+            range: (5, 100),
+            default: 95,
+            below: 50,
+        },
+        Slider {
+            format: FileFormat::Png,
+            set: |v, n| v.png_compression = n,
+            range: (0, 9),
+            default: 5,
+            below: 2,
+        },
+    ];
+    for Slider {
+        format,
+        set,
+        range: (low, high),
+        default,
+        below,
+    } in sliders
+    {
+        let (line, at_default) = painted_fill(format, set, default);
+        let (_, at_below) = painted_fill(format, set, below);
+        let (_, at_high) = painted_fill(format, set, high);
+        // At the default there is nothing to fill, and the fill sits at the default's place.
+        assert_eq!(at_default.width(), 0.0, "{format:?}: empty at its default");
+        let x_default = at_default.left();
+        // Below it the fill runs from the handle up to the default's place, over it from
+        // the default's place to the handle; never from the track's start.
+        assert!(
+            (at_below.right() - x_default).abs() < 0.01,
+            "{format:?}: {at_below:?}"
+        );
+        assert!(
+            (at_high.left() - x_default).abs() < 0.01,
+            "{format:?}: {at_high:?}"
+        );
+        assert!(
+            at_below.left() > line.left() + 1.0,
+            "{format:?}: from the track's start"
+        );
+        // The handle's place is linear in the value: the high end gives the slope.
+        let slope = (at_high.right() - x_default) / f32::from(high - default);
+        let handle = x_default + slope * (f32::from(below) - f32::from(default));
+        assert!(
+            (at_below.left() - handle).abs() < 0.5,
+            "{format:?}: the fill ends at {}, the handle at {handle}",
+            at_below.left()
+        );
+        // And the default sits where its fraction of the range says, within the handle's
+        // stop at each end.
+        let fraction = f32::from(default - low) / f32::from(high - low);
+        let along = (x_default - line.left()) / line.width();
+        assert!(
+            (along - fraction).abs() < 0.06,
+            "{format:?}: {along} against {fraction}"
+        );
+    }
 }

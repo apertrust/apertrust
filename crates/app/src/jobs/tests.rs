@@ -1290,3 +1290,65 @@ fn the_engine_stopping_fails_the_running_rows_and_forgets_the_exports_sent() {
     assert!(cause.is_some_and(|f| f.cause != "job-cause-engine"));
     assert_eq!(mirror.engine_stopped(), Show::Nothing);
 }
+
+/// What the Export tool reads of the exports: the last one's failure, until the next export
+/// is added or its row goes; other jobs are no exports, and clearing a later export does not
+/// bring an earlier failure back.
+#[test]
+fn the_last_exports_failure_is_what_the_export_tool_reads() {
+    let ids = ids(4);
+    let mut mirror = Mirror::new(None);
+    assert_eq!(mirror.failed_export(), None);
+    // A thumbnail job is no export.
+    mirror.apply(&Event::Job {
+        event: JobEvent::Added {
+            job: ids[3],
+            kind: "thumbnails",
+            queue: Some(Queue::SystemBackground),
+            title: Message::new("job-thumbnails"),
+            cancellable: false,
+            destination: None,
+            detail: None,
+            progress: Progress::default(),
+            retries: None,
+        },
+        command: None,
+    });
+    mirror.apply(&ended(
+        ids[3],
+        State::Finished,
+        Some(Failure::new("x", "a thumbnail failed")),
+    ));
+    assert_eq!(mirror.failed_export(), None);
+    // An export runs, then ends failed with 11 of 12 photos written.
+    mirror.apply(&export_added(ids[0], 12));
+    mirror.apply(&state(ids[0], State::Running));
+    assert_eq!(mirror.failed_export(), None, "not while it runs");
+    mirror.apply(&job(JobEvent::Progress {
+        job: ids[0],
+        done: 11,
+        total: Some(12),
+    }));
+    let failure = Failure::new("disk-full", "an error in the engine's words");
+    mirror.apply(&ended(ids[0], State::Finished, Some(failure)));
+    assert_eq!(mirror.failed_export(), Some((11, 12)));
+    // The next export supersedes it, running and then finished.
+    mirror.apply(&export_added(ids[1], 5));
+    assert_eq!(mirror.failed_export(), None);
+    mirror.apply(&ended(ids[1], State::Finished, None));
+    assert_eq!(mirror.failed_export(), None);
+    // Clearing the finished one leaves the earlier failure's row behind it, which is not the
+    // last export: no failure comes back.
+    mirror.act(ActivityAction::ClearFinished);
+    assert_eq!(mirror.failed_export(), None);
+    // A failure dismissed is gone.
+    mirror.apply(&export_added(ids[2], 3));
+    mirror.apply(&ended(
+        ids[2],
+        State::Finished,
+        Some(Failure::new("disk-full", "an error in the engine's words")),
+    ));
+    assert_eq!(mirror.failed_export(), Some((0, 3)));
+    mirror.act(ActivityAction::Dismiss(ids[2].get()));
+    assert_eq!(mirror.failed_export(), None);
+}

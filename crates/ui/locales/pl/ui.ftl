@@ -964,8 +964,53 @@ pick-warning-short-tip = { $control } osiągnęła granicę { $value }
 ## i $height piksele, $problem to, co zatrzymuje eksport.
 
 export-button = Eksportuj { photo-count }
-export-hint = Eksport działa w tle; możesz dalej pracować.
 export-reset = Przywróć ustawienia eksportu
+export-presets = Presety eksportu
+export-presets-later = Presety pojawią się w jednej z kolejnych wersji
+export-preset-default = Ustawienia domyślne
+export-metadata-note = Ta wersja nie zapisuje jeszcze w plikach EXIF, lokalizacji ani praw autorskich.
+export-path-tip-unexact = { $source } → { $pattern }, zostanie uzupełnione podczas eksportu
+
+## Podsumowanie, ostrzeżenia, przycisk i wiersz pod nim
+
+export-summary-title = Podsumowanie
+export-summary-label-preset = Preset
+export-summary-label-file-name = Nazwa pliku
+export-summary-label-size = Rozmiar
+export-summary-label-scale = Skala
+export-summary-label-profile = Profil
+export-summary-label-format = Format
+export-summary-label-destination = Miejsce docelowe
+export-summary-size = { $width } × { $height } px
+export-summary-size-print = { $width } × { $height } { $unit } ({ $pixels_width } × { $pixels_height } px)
+export-summary-scale = { $percent }%
+export-summary-jpeg = JPEG, jakość { $quality }
+export-summary-png = PNG, { $bits } bity
+
+export-view-only-left-out =
+    { $count ->
+        [one] Pominięto { $count } zdjęcie tylko do podglądu
+        [few] Pominięto { $count } zdjęcia tylko do podglądu
+        [many] Pominięto { $count } zdjęć tylko do podglądu
+       *[other] Pominięto { $count } zdjęcia tylko do podglądu
+    }
+export-warn-replaces =
+    { $count ->
+        [one] Zastąpi { $count } plik, który już istnieje
+        [few] Zastąpi { $count } pliki, które już istnieją
+        [many] Zastąpi { $count } plików, które już istnieją
+       *[other] Zastąpi { $count } pliku, który już istnieje
+    }
+export-warn-replaces-at-least =
+    { $count ->
+        [one] Zastąpi co najmniej { $count } plik, który już istnieje
+        [few] Zastąpi co najmniej { $count } pliki, które już istnieją
+        [many] Zastąpi co najmniej { $count } plików, które już istnieją
+       *[other] Zastąpi co najmniej { $count } pliku, który już istnieje
+    }
+export-show-jobs = Pokaż zadania
+export-failed = Eksport nie powiódł się: { $done } z { $total }
+
 # Podpowiedź wiersza lub grupy pokazanych jako wyłączone, bo jeszcze ich nie ma.
 export-later = Pojawi się w jednej z kolejnych wersji
 
@@ -997,13 +1042,6 @@ export-no-name = Ścieżka nie daje nazwy pliku dla tego zdjęcia.
 export-sequence-added = Zdjęć: { $count }, a w ścieżce nie ma zmiennej: dodawane jest _$(SEQUENCE), aby żaden plik nie nadpisał innego.
 # $names to zmienne darktable, dla których Apertrust nie ma wartości.
 export-not-here = { $names }: z darktable, tu bez wartości; rozwija się w nic.
-export-conflict-one-number = { $file } już istnieje, więc ten plik zostanie zapisany z dodanym numerem.
-export-conflict-one-overwrite = Zastąpi plik { $file }, który już istnieje.
-export-conflict-one-skip = Pominie plik { $file }, który już istnieje.
-export-conflict-one-unchanged = Pominie plik { $file }, który już istnieje i jest nowszy niż edycja zdjęcia.
-export-conflict-many-number = Już istnieją: { $count } z { $total }; zostaną zapisane z dodanym _01.
-export-conflict-many-overwrite = Zastąpi już istniejące: { $count } z { $total }.
-export-conflict-many-skip = Pominie już istniejące: { $count } z { $total }.
 
 ## Co zatrzymuje eksport (D8)
 
@@ -1025,7 +1063,8 @@ export-problem-failed = Nie można wyeksportować zdjęcia w tym rozmiarze: { $w
 # Podpowiedź przycisku „Eksportuj”, gdy jest wyłączony; $problem to jeden z komunikatów wyżej.
 export-why-path = Najpierw popraw ścieżkę: { $problem }
 export-why-size = Najpierw popraw rozmiar: { $problem }
-export-why-no-photo = Otwórz zdjęcie, aby je wyeksportować.
+export-why-view-only-newer = Te zmiany zapisała nowsza wersja Apertrust.
+export-why-view-only-unreadable = Nie można odczytać historii w { $file }.
 
 ## Opcje formatu
 
@@ -1071,6 +1110,8 @@ export-high-quality = Przepróbkowanie wysokiej jakości
 export-high-quality-tip = Przepróbkowanie wysokiej jakości podczas eksportu: wszystkie operacje w pełnym rozmiarze, potem zmniejszenie.
 export-masks = Zapisuj maski
 export-masks-later = Zapisuj maski jako warstwy w eksportowanych obrazach. Potrafią to tylko TIFF, OpenEXR i XCF, a warstwy pojawią się w kolejnej wersji.
+export-option-no = Nie
+export-option-yes = Tak
 export-profile = Profil
 export-profile-image = Ustawienia obrazu
 export-profile-tip = Ustawienia obrazu: własny profil zdjęcia, w „Raw › Wyjściowy profil koloru”, tak jak w podglądzie. Inny profil dotyczy tylko tego eksportu.

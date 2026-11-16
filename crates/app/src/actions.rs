@@ -299,6 +299,9 @@ pub struct State {
     /// Windows' until its task dialog, as its items say ([`why_unavailable`]): a message's
     /// id, `history::discard_why`'s.
     pub discard_why: Option<&'static str>,
+    /// Whether the photo open can be exported: one open for viewing only is left out, as the
+    /// Export tool leaves it, so File › Export Again rests.
+    pub exportable: bool,
     /// Whether a text field of the main window has the focus: Undo and Redo act on it, as
     /// the Mac's Edit menu does (decision 39), whatever the photo's history holds.
     pub text: bool,
@@ -673,7 +676,7 @@ pub static ACTIONS: [Action; 74] = [
         keys: &[],
         scope: Scope::App,
         trigger: Trigger::Press,
-        available: |s| s.photo && no_modal_dialog(s),
+        available: |s| s.photo && s.exportable && no_modal_dialog(s),
         emits: Emit::Intent(Intent::ExportAgain),
     },
     // No key by default, as darktable's discard history has none: its button is registered
@@ -2042,6 +2045,7 @@ mod tests {
             redo: true,
             discard: true,
             discard_why: None,
+            exportable: true,
             text: false,
             photos: 2,
             opened: true,

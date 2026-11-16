@@ -120,6 +120,9 @@ pub struct Mirror {
     /// How many exports have ended, whether finished, failed or cancelled: the files they
     /// wrote change what the Export tool's preview says of what is already there.
     exports_ended: u64,
+    /// The export added last, whichever client sent it: the one whose failure the Export
+    /// tool shows, until the next export is added or its row goes.
+    last_export: Option<JobId>,
 }
 
 /// What a button of the jobs window asks the app to do.
@@ -155,6 +158,7 @@ impl Mirror {
             opened: Vec::new(),
             home,
             exports_ended: 0,
+            last_export: None,
         }
     }
 
@@ -221,6 +225,9 @@ impl Mirror {
             } => {
                 if let Some(number) = command {
                     self.starting.retain(|starting| *starting != number);
+                }
+                if *kind == "export" {
+                    self.last_export = Some(*job);
                 }
                 // A row under this id is the same job's, or a retry's that reuses it; the
                 // job it tries again gives it its place.
@@ -346,6 +353,18 @@ impl Mirror {
             ActivityAction::Dismiss(job) => self.remove(|row| row.id.get() == job),
             ActivityAction::ClearFinished => self.remove(|row| row.phase.cleared()),
         }
+    }
+
+    /// The photos exported and the total of the last export, while it ended failed: the line
+    /// under the Export tool's button, until the next export is added or its row goes. The
+    /// export added last, not the last row left: a later export supersedes a failure, and
+    /// clearing that one does not bring an earlier failure back.
+    pub fn failed_export(&self) -> Option<(u64, u64)> {
+        let last = self
+            .last_export
+            .and_then(|job| self.rows.iter().find(|row| row.id == job))?;
+        (last.phase == JobPhase::Failed)
+            .then(|| (last.progress.done, last.progress.total.unwrap_or(0)))
     }
 
     /// The jobs the user started that are queued or running, as quitting counts them. A
