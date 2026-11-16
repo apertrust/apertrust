@@ -118,7 +118,7 @@ Goal: open, edit, save and reopen a photo with the first pass's tools. Migration
 
 **Next: one instance per user data folder, a window per place** (decision 89; [gui.md](gui.md#instances-and-windows)), five steps, each a pull request reviewed before the next:
 
-- [ ] 1. The single-instance hand-off, still one window: the instance lock in the user data folder, the Unix socket or named pipe, a second start or Open With handing its paths and activation token to the running app and exiting, Windows' files opened together joined into one open, a start with flags for one run refused; an open from outside replaces the window's place, as now.
+- [ ] 1. The single-instance hand-off, still one window: the instance lock in the user data folder, the Unix socket or named pipe, a second start or Open With handing its paths and activation token to the running app and exiting, Windows' files opened together joined into one open while each start comes within 500 ms of the one before, the gaps between Explorer's starts measured, a start with flags for one run refused; an open from outside replaces the window's place, as now.
 - [ ] 2. A spike: the main window in the app's own winit, egui-winit and egui-wgpu host instead of eframe, with AccessKit, measured on the Mac, Windows and Linux before it is committed to.
 - [ ] 3. Several sessions on one device: every window's session on one engine thread, the key window's photo live, one memory budget, one kernel cache and one edit per photo in the process.
 - [ ] 4. Several windows: New Window, the Mac's Window menu, settings sent to every window, closing a place giving the start window, the last window's close button and Quit, dialogs parented to their window.
