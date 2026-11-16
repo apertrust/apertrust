@@ -1174,7 +1174,7 @@ fn offered(locale: Locale, debug: bool) -> bool {
 /// for the edit's tone mapper, and the Tone curve has RGB curve's place until RGB curve
 /// replaces it.
 const TAB_TOOLS: [&[&str]; TABS.len()] = [
-    &[],
+    &[export::ID],
     &[
         "temperature",
         "channelmixerrgb",
@@ -1285,6 +1285,11 @@ struct App {
     places: Places,
     /// Export Again, between its preview and the answer to its question.
     again: export_again::Again,
+    /// The Export tool, which lives as long as the shell: its rows, and the session's
+    /// answers to its previews.
+    export: export::Export,
+    /// When the session is asked for the Export tool's preview ([`App::preview_export`]).
+    export_previews: export::Previews,
     /// The photo Discard History was asked for, until its question is answered.
     discarding: Option<alerts::Discarding>,
     /// Whether Quit waits for the open dialog's answer ([`hold_for_panel`]).
@@ -1747,11 +1752,9 @@ struct Shell {
     missing: BTreeMap<PathBuf, String>,
     /// Whether the photos references were measured on are still there (decision 88).
     references: pickers::ReferencePhotos,
-    /// Whether Export… ran, for the app to open the Export dialog's sheet.
-    export_asked: bool,
     /// Whether Export Again ran, for the app to send the preview that decides its question.
     export_again: bool,
-    /// The Export dialog's settings, as it left them (`export.*`).
+    /// The Export tool's settings, as it left them (`export.*`).
     export: export::Values,
     /// The tools' settings, as their rows and picks left them (`tools.*`).
     tool_settings: settings::ToolSettings,
@@ -1875,7 +1878,6 @@ impl Shell {
             locate: None,
             missing: BTreeMap::new(),
             references: pickers::ReferencePhotos::new(),
-            export_asked: false,
             export_again: false,
             export: settings.export.clone(),
             tool_settings: settings.tool_settings.clone(),
@@ -2629,7 +2631,8 @@ impl Shell {
                 self.recents.save();
             }
             Intent::Close => self.close = true,
-            Intent::Export => self.export_asked = true,
+            // The tool is in the Photos tab: chosen, opened, and scrolled to.
+            Intent::Export => self.reveal(export::ID),
             Intent::ExportAgain => self.export_again = true,
             Intent::DiscardHistory => self.discard_history = true,
             Intent::ToolAction { tool, action } => self.tool_action = Some((tool, action)),
@@ -2907,6 +2910,8 @@ impl App {
             recents,
             ..Shell::new(&settings, system_locale(), cc.egui_ctx.os())
         };
+        let export = export::Export::new(shell.export.clone())
+            .alerts(dialog_host::platform::shows_alerts(cc.egui_ctx.os()));
         prepare(&cc.egui_ctx, &shell, settings.scale);
         let (placement, built_start) = built;
         if let Some(window) = cc.winit_window() {
@@ -3018,6 +3023,8 @@ impl App {
             jobs_view: Vec::new(),
             places,
             again: export_again::Again::default(),
+            export,
+            export_previews: export::Previews::default(),
             discarding: None,
             quit_held: false,
             alerts: alerts::Alerts::default(),
@@ -3120,17 +3127,37 @@ impl App {
         }
     }
 
-    /// Takes what the Export dialog asked for the photo open: a new preview of the
-    /// settings it changed, and the export itself when Export was pressed, of the settings
-    /// the shell holds, which are the dialog's. The photo's edit is the session's to take
-    /// as the command is handled (D12). Export pressed with On conflict replacing files
-    /// asks first ([`export::Asked::confirm`]): the export goes on a yes
-    /// ([`App::alert_answered`]).
+    /// Takes what the Export tool asked of the app: the settings it changed, kept by the
+    /// shell, and the export itself when Export was pressed, of the settings the shell holds,
+    /// which are the tool's. The photo's edit is the session's to take as the command is
+    /// handled (D12). Export pressed with On conflict replacing files asks first
+    /// ([`export::Asked::confirm`]), as Export Again does: the export of the photo open
+    /// then is held, and a yes sends that one, whatever photo is open when it comes
+    /// ([`App::alert_answered`]). Nothing closes: the tool stays as it was, and the jobs window shows the export. Not
+    /// while the app is quitting, as Export Again: a job started now would be uncounted by
+    /// the quit alert's yes.
     fn export(&mut self, asked: export::Asked, ctx: &egui::Context) {
-        self.send_export(&asked);
-        if asked.confirm {
-            self.ask_overwrite(ctx);
+        if let Some(values) = asked.values {
+            self.shell.export = values;
         }
+        if !(asked.start || asked.confirm) {
+            return;
+        }
+        if self.quitting() {
+            tracing::warn!(target: "gpu", "export dropped: the app is quitting");
+            return;
+        }
+        if asked.start {
+            self.send_export();
+        } else {
+            self.export_again(ctx);
+        }
+    }
+
+    /// Whether the app is quitting, or waits for an alert's answer to quit: no export
+    /// starts then.
+    fn quitting(&self) -> bool {
+        self.quit.quitting() || self.quit_held
     }
 
     /// Asks the overwrite question, answered on a later frame ([`App::alert_answered`]),
@@ -3156,7 +3183,7 @@ impl App {
     }
 
     /// File › Export Again: darktable's export with the settings as last kept, for the
-    /// photo open, with no dialog. With On conflict Overwrite it asks the overwrite
+    /// photo open, with the tool left as it is. With On conflict Overwrite it asks the overwrite
     /// question first, unless the setting says not to ([`export::asks_before`],
     /// [`App::ask_overwrite`]); any other On conflict exports at once. Not while the app
     /// is quitting: a job started now would be uncounted by the quit alert's yes.
@@ -3164,7 +3191,7 @@ impl App {
         let PhotoState::Open(photo) = &self.mirror.photo else {
             return;
         };
-        if self.quit.quitting() || self.quit_held {
+        if self.quitting() {
             tracing::warn!(target: "gpu", "export again dropped: the app is quitting");
             return;
         }
@@ -3186,32 +3213,52 @@ impl App {
         self.mirror.jobs.starting(number);
     }
 
-    /// Sends the session what `asked` holds for the photo open.
-    fn send_export(&mut self, asked: &export::Asked) {
+    /// Sends the export of the photo open with the settings the shell holds.
+    fn send_export(&mut self) {
         let PhotoState::Open(photo) = &self.mirror.photo else {
             return;
         };
-        let commands = export::commands(&photo.path, asked, &self.shell.export, &self.places);
-        for command in commands {
-            let preview = matches!(command, Command::PreviewExport { .. });
-            let exporting = matches!(command, Command::Export { .. });
-            let number = self.session.send(command);
-            if preview && asked.opened {
-                self.mirror.previews_from(number);
-            }
-            if exporting {
-                self.mirror.jobs.starting(number);
-            }
+        let command = export_again::export(&photo.path, &self.shell.export, &self.places);
+        self.send_job(command);
+    }
+
+    /// Asks the session for a preview of the photo open and the settings the shell holds
+    /// while the Export tool is `shown`, open in the Photos tab, and again as either
+    /// changes ([`export::Previews`]). A first preview for a photo, or after the tool was out
+    /// of view, drops the answers to earlier ones and the answer held: they are for another
+    /// photo or showing. With no photo open there is nothing to say of one, so the answer
+    /// held goes too.
+    fn preview_export(&mut self, shown: bool) {
+        let photo = match &self.mirror.photo {
+            PhotoState::Open(photo) => Some(photo.path.as_path()),
+            _ => None,
+        };
+        if photo.is_none() {
+            self.export.forget();
+        }
+        let generation = self.mirror.preview_generation();
+        let ask = self
+            .export_previews
+            .next(photo, shown, &self.shell.export, generation);
+        let (export::Ask::Changed(path, values) | export::Ask::Fresh(path, values)) = &ask else {
+            return;
+        };
+        let number = self
+            .session
+            .send(export::preview_command(path, values, &self.places));
+        if matches!(ask, export::Ask::Fresh(..)) {
+            self.mirror.previews_from(number);
+            self.export.forget();
         }
     }
 
     /// Does what the answer to the alert asked for `purpose` says. Overwrite: a yes sends
-    /// the export, Export Again's if it asked, else the Export dialog's, which closes
-    /// with it; anything else leaves the dialog as it was and drops Export Again. Quit: a yes stops the jobs that can be stopped and goes on
-    /// quitting, which waits for the others; an alert that could not be shown after all
-    /// leaves; anything else stays, and the next Quit asks again. Save: Try Again writes
-    /// the edit again. Discard: a yes sends Discard History to the photo it was asked for,
-    /// opened the same way ([`alerts::discard_confirmed`]).
+    /// the export, Export Again's if it asked, else the Export tool's; anything else drops
+    /// Export Again and leaves the tool as it was. Quit: a yes stops the jobs that can be
+    /// stopped and goes on quitting, which waits for the others; an alert that could not be
+    /// shown after all leaves; anything else stays, and the next Quit asks again. Save: Try
+    /// Again writes the edit again. Discard: a yes sends Discard History to the photo it
+    /// was asked for, opened the same way ([`alerts::discard_confirmed`]).
     fn alert_answered(
         &mut self,
         purpose: alerts::Purpose,
@@ -3249,19 +3296,11 @@ impl App {
     }
 
     /// The overwrite question is settled in favour of exporting, by a yes or by the setting:
-    /// the question of Export Again, if it was waiting for it, goes to the session, and no
-    /// dialog is open to close; otherwise the Export dialog's export is sent, and the dialog
-    /// closes with it.
+    /// the export held when it was asked, Export Again's or the Export tool's, of the photo
+    /// that was open then, goes to the session; the tool stays as it is.
     fn overwrite_confirmed(&mut self) {
-        match self.again.confirmed() {
-            Some(command) => self.send_job(command),
-            None => {
-                self.send_export(&export::Asked {
-                    start: true,
-                    ..export::Asked::default()
-                });
-                self.dialogs.close();
-            }
+        if let Some(command) = self.again.confirmed() {
+            self.send_job(command);
         }
     }
 
@@ -3457,9 +3496,9 @@ impl App {
             for reaction in self.mirror.apply(event) {
                 match reaction {
                     Reaction::Jobs(asked) => show = show.max(asked),
-                    // The Export dialog shows the preview, the newest it holds.
+                    // The Export tool shows the preview, the newest it holds.
                     Reaction::Preview { through, preview } => {
-                        self.dialogs.preview(through, *preview);
+                        self.export.receive(through, *preview);
                     }
                     Reaction::FolderOpened(path) => self.shell.remember_folder(path),
                     // Settings a pick measured, kept as the user's own.
@@ -3971,14 +4010,34 @@ impl App {
         }
         self.shell.browse_shown = browse;
         if browse {
-            let actions = self.photos_tab(ui);
+            // The Export tool a menu or Ctrl+E asked for is scrolled to once its tab shows.
+            let revealed = self.shell.revealing();
+            // A photo opened since the last frame has no answer of the earlier one's to draw.
+            let photo = match &self.mirror.photo {
+                PhotoState::Open(photo) => Some(photo.path.as_path()),
+                _ => None,
+            };
+            self.export.retire(&self.export_previews, photo);
+            let (actions, export) = self.photos_tab(ui);
+            if revealed {
+                self.shell.reveal = None;
+            }
+            if export.toggle {
+                let open = self.shell.section_open(export::ID, export::OPEN);
+                self.shell.set_section_open(export::ID, !open);
+            }
             self.carry_out(actions, ui.ctx());
+            self.export(export.asked, ui.ctx());
+            // The preview is the tool's feedback: asked while it is open and shown.
+            let open = self.shell.section_open(export::ID, export::OPEN);
+            self.preview_export(open);
             // No eye is held on another tab.
             for command in self.shell.peek(None, self.mirror.photo.open()) {
                 self.session.send(command);
             }
             return tab_clicked;
         }
+        self.preview_export(false);
         // A tool's section a History line asked for is scrolled to once its tab shows.
         let revealed = self.shell.revealing();
         let (scopes, changes, history) =
@@ -4015,8 +4074,8 @@ impl App {
     }
 
     /// The Photos tab's body: its Browse section, as the mirror's folder and the recent
-    /// folders have it, under the tab bar.
-    fn photos_tab(&self, ui: &mut egui::Ui) -> Vec<library::Action> {
+    /// folders have it, then the Export tool, under the tab bar.
+    fn photos_tab(&mut self, ui: &mut egui::Ui) -> (Vec<library::Action>, export::Drawn) {
         let recent = self.shell.recent_folders();
         let folder = &self.mirror.folder.folder;
         let keys = self.shell.open_keys(ui.ctx());
@@ -4031,11 +4090,12 @@ impl App {
             keys: &keys,
             home: self.places.home.as_deref(),
         };
-        let mut actions = Vec::new();
-        PanelBody::new().show(ui, |ui| {
-            actions = library::browse(ui, &browse);
-        });
-        actions
+        let shown = ExportShown {
+            open: self.shell.section_open(export::ID, export::OPEN),
+            photo: matches!(self.mirror.photo, PhotoState::Open(_)),
+            reveal: self.shell.revealing() && self.shell.reveal == Some(export::ID),
+        };
+        photos_body(ui, &browse, &mut self.export, shown)
     }
 
     /// What Browse and the empty states asked for: the dialogs are asked after the frame, a
@@ -5269,9 +5329,6 @@ impl eframe::App for App {
             self.storage_asked(asked);
         }
         self.show_storage();
-        for asked in taken.export {
-            self.export(asked, ctx);
-        }
         for action in taken.jobs {
             self.jobs_action(action, ctx);
         }
@@ -5813,8 +5870,8 @@ fn dropped_opens(dropped: dropped::Dropped) -> Opening {
 /// and returns its command for the session. Close Window closes the key window: a dialog's
 /// own, Settings' on the Mac, else the main window. Quit, and Close Window on the main
 /// window, close the dialog open first, as its Cancel, and leave once it has gone
-/// ([`take_dialogs`]). Settings and Export asked for go to the dialog host, which opens
-/// them in their platform's form, or brings Settings' modeless window to the front. View ›
+/// ([`take_dialogs`]). Settings asked for goes to the dialog host, which opens it in its
+/// platform's form, or brings its modeless window to the front. View ›
 /// Jobs opens the jobs window with `jobs`, the rows as they stand, or brings it to the
 /// front, as the spinner's click does.
 #[allow(clippy::too_many_arguments)]
@@ -5852,11 +5909,6 @@ fn run_action(
             .with_hardware(hardware.clone());
         dialogs.open(settings, shell.settings_window, ctx);
     }
-    if std::mem::take(&mut shell.export_asked) {
-        let export = export::Export::new(shell.export.clone())
-            .alerts(dialog_host::platform::shows_alerts(ctx.os()));
-        dialogs.open(export, None, ctx);
-    }
     if std::mem::take(&mut shell.show_jobs) {
         let show = jobs::Show::Front;
         jobs::refresh(jobs, Vec::new(), dialogs, show, shell.jobs_window, ctx);
@@ -5867,9 +5919,7 @@ fn run_action(
 /// What the dialogs bring before each of the main window's frames, `ctx`'s, as
 /// `App::logic` takes it: what the user changed in Settings, for the keeper to keep and
 /// the shell to show (`Taken::settings`), and where Settings' window was left, kept for
-/// next time;
-/// the Export dialog's settings, kept by the shell as they change, and what it asks of the
-/// session (`Taken::export`); the app's keys pressed in a dialog's own window, the actions
+/// next time; the app's keys pressed in a dialog's own window, the actions
 /// they ask for that can run in `state`, the app's with the dialog open (`Taken::actions`);
 /// the main window's close, from its close button, held for the dialog open
 /// ([`hold_close`]); and the focus back from a dialog gone.
@@ -5879,7 +5929,6 @@ fn take_dialogs(
     state: &State,
     ctx: &egui::Context,
 ) -> Taken {
-    let mut export = Vec::new();
     let mut jobs = Vec::new();
     let mut log = Vec::new();
     let mut actions = Vec::new();
@@ -5907,12 +5956,6 @@ fn take_dialogs(
                 shell.log.size = Some([size.x.round(), size.y.round()]);
             }
             dialog_host::Output::Log(asked) => log.push(asked),
-            dialog_host::Output::Export(asked) => {
-                if let Some(values) = &asked.values {
-                    shell.export = values.clone();
-                }
-                export.push(asked);
-            }
         }
     }
     let held = hold_close(ctx, dialogs);
@@ -5921,7 +5964,6 @@ fn take_dialogs(
         quit: held || gone,
         settings,
         storage,
-        export,
         jobs,
         log,
         actions,
@@ -5950,8 +5992,6 @@ struct Taken {
     settings: Vec<settings_dialog::Change>,
     /// What Settings › Storage asked, in order, after the settings changed with it.
     storage: Vec<storage::Asked>,
-    /// What the Export dialog asked of the session, in order.
-    export: Vec<export::Asked>,
     /// What was pressed in the jobs window, in order.
     jobs: Vec<apertrust_ui::components::ActivityAction>,
     /// What the log window asked, in order.
@@ -6254,6 +6294,37 @@ fn edit_tab(
         &pickers,
     );
     (scopes, changes, Vec::new())
+}
+
+/// How the Photos tab shows the Export tool: whether its section is open, whether a photo
+/// is open to export, and whether Export… asked for it to be scrolled into view.
+#[derive(Clone, Copy, Debug)]
+struct ExportShown {
+    open: bool,
+    photo: bool,
+    reveal: bool,
+}
+
+/// The Photos tab's sections under its tab bar: Browse, then the Export tool, last
+/// (`TAB_TOOLS`). Returns what Browse and the tool asked for.
+fn photos_body(
+    ui: &mut egui::Ui,
+    browse: &library::Browse<'_>,
+    export: &mut export::Export,
+    shown: ExportShown,
+) -> (Vec<library::Action>, export::Drawn) {
+    let mut actions = Vec::new();
+    let mut drawn = export::Drawn::default();
+    PanelBody::new().show(ui, |ui| {
+        actions = library::browse(ui, browse);
+        let tool = ui.push_id(export::ID, |ui| export.show(ui, shown.open, shown.photo));
+        // The section Export… asked for, its header at the top.
+        if shown.reveal {
+            ui.scroll_to_rect(tool.response.rect, Some(egui::Align::TOP));
+        }
+        drawn = tool.inner;
+    });
+    (actions, drawn)
 }
 
 /// The side panel's sections under its tab bar: Scopes pinned over the band where the
@@ -11476,9 +11547,11 @@ mod tests {
     /// Edit's tabs and their tools as decision 38 records them, top to bottom, by tool id,
     /// those still to build included: Adjust in editing order, with the edit's tone mapper,
     /// one of AgX, Sigmoid and Filmic RGB, at its place, and the Tone curve at RGB curve's
-    /// until RGB curve replaces it; Raw in processing order.
+    /// until RGB curve replaces it; Raw in processing order. The Photos tab holds the
+    /// Export tool, a utility and the tab's last, after Browse, which is no entry of the
+    /// lists (decision 90).
     const DECISION_38: [(&str, &[&str]); 7] = [
-        ("photos", &[]),
+        ("photos", &["export"]),
         (
             "adjust",
             &[
@@ -11520,11 +11593,12 @@ mod tests {
         ("history", &[]),
     ];
 
-    /// Whether `id` is a built-in tool's.
+    /// Whether `id` is a built-in tool's, or the Export utility's.
     fn built(id: &str) -> bool {
-        apertrust_tools::TOOLS
-            .iter()
-            .any(|tool| tool.definition().id == id)
+        id == export::ID
+            || apertrust_tools::TOOLS
+                .iter()
+                .any(|tool| tool.definition().id == id)
     }
 
     /// Each of Edit's tabs, by id, lists the built tools decision 38 gives it, in its
@@ -11561,7 +11635,8 @@ mod tests {
     }
 
     /// Every built-in tool is drawn in one of Edit's tabs, once, and every tool a tab
-    /// names is built in, so a tool that joins `TOOLS` joins a tab too.
+    /// names is built in, so a tool that joins `TOOLS` joins a tab too. Export, a utility,
+    /// is the Photos tab's last.
     #[test]
     fn every_built_in_tool_is_in_one_tab() {
         let listed: Vec<&str> = TAB_TOOLS
@@ -11947,6 +12022,8 @@ mod tests {
         /// The alert up, and what each refusal's asking of it came to.
         alerts: alerts::Alerts,
         asked: Vec<dialog_host::Ask>,
+        /// The Export tool, which the Photos tab draws after Browse, as the app's does.
+        export: export::Export,
     }
 
     /// A stand-in for the open dialog and the person answering it: `answer` is what they
@@ -12065,6 +12142,36 @@ mod tests {
                     let side = ui.scope(|ui| {
                         ui.set_width(width);
                         let tab = bench.shell.tab_bar(ui);
+                        if bench.shell.panel_tab == PHOTOS {
+                            // As `App::side_panel` draws it: Browse, then the Export tool.
+                            let revealed = bench.shell.revealing();
+                            let shown = ExportShown {
+                                open: bench.shell.section_open(export::ID, export::OPEN),
+                                photo: bench.photo,
+                                reveal: revealed && bench.shell.reveal == Some(export::ID),
+                            };
+                            let browse_keys = library::Keys::default();
+                            let browse = library::Browse {
+                                folder: &folder::Folder::None,
+                                root: None,
+                                counts: &HashMap::new(),
+                                recent: &[],
+                                open: bench.shell.browse_open(),
+                                tree: &BTreeMap::new(),
+                                inside: &HashMap::new(),
+                                keys: &browse_keys,
+                                home: None,
+                            };
+                            let (_, drawn) = photos_body(ui, &browse, &mut bench.export, shown);
+                            if revealed {
+                                bench.shell.reveal = None;
+                            }
+                            if drawn.toggle {
+                                let open = bench.shell.section_open(export::ID, export::OPEN);
+                                bench.shell.set_section_open(export::ID, !open);
+                            }
+                            return tab;
+                        }
                         let out = Section::new("Exposure", true)
                             .edits()
                             .peek(keys.held.contains(&ActionId::PEEK))
@@ -12177,6 +12284,7 @@ mod tests {
                     mirror: mirror::tests::mirror(),
                     alerts: alerts::Alerts::default(),
                     asked: Vec::new(),
+                    export: export::Export::new(export::Values::default()),
                 },
             )
     }
@@ -12576,10 +12684,6 @@ mod tests {
         outputs: Vec<dialog_host::Output>,
         closed: Option<dialog_host::Closed>,
         closing: bool,
-        /// The Export settings each opening of the Export dialog held.
-        exports: Vec<export::Values>,
-        /// The numbers of the previews handed to the dialog.
-        previews: Vec<u64>,
         /// The jobs window, if open, and each time it was asked for open: its place and
         /// whether it took the focus.
         jobs: Option<dialog_host::Shown>,
@@ -12634,8 +12738,6 @@ mod tests {
                     let dialog = dialog as Box<dyn std::any::Any>;
                     if let Some(settings) = dialog.downcast_ref::<settings_dialog::Settings>() {
                         hosted.settings.push((settings.clone(), place));
-                    } else if let Some(export) = dialog.downcast_ref::<export::Export>() {
-                        hosted.exports.push(export.values().clone());
                     }
                     let form = given.or(hosted.form).unwrap_or(dialog_host::Form::Modeless);
                     let focused = true;
@@ -12681,10 +12783,6 @@ mod tests {
             } else {
                 hosted.closing = true;
             }
-        }
-
-        fn preview(&mut self, through: u64, _preview: apertrust_engine::session::ExportPreview) {
-            self.0.borrow_mut().previews.push(through);
         }
 
         fn storage(&mut self, _view: storage::View) {}
@@ -12837,6 +12935,8 @@ mod tests {
         sent: Vec<Command>,
         /// Quit waits for the overwrite question's answer, as `App::quit_held` does.
         quit_held: bool,
+        /// The photo open, as the exports find it.
+        open: PathBuf,
         /// The open photo's edit as Quit finds it.
         edit: TestEdit,
         /// Restart now, as `App::restart` notes it; its slot is the relaunch `main` would
@@ -12866,15 +12966,30 @@ mod tests {
         }
     }
 
-    /// As `App::overwrite_confirmed`: the export is sent, Export Again's if it was waiting,
-    /// else the dialog's, which closes with it.
-    fn overwrite_confirmed(d: &mut Dialogged) {
+    /// As `App::send_job`: the export command is sent, and has no job yet.
+    fn send_job(d: &mut Dialogged, command: Command) {
         d.exported += 1;
-        // The export is sent, and has no job yet.
         d.jobs.starting(d.exported as u64);
-        match d.again.confirmed() {
-            Some(command) => d.sent.push(command),
-            None => d.dialogs.close(),
+        d.sent.push(command);
+    }
+
+    /// The export of the photo open with the settings as the shell keeps them, as the app
+    /// makes it.
+    fn export_command(d: &Dialogged) -> Command {
+        export_again::export(&d.open, &d.shell.export, &export::places())
+    }
+
+    /// The export held for the overwrite question, as the app holds it as it asks.
+    fn hold_export(d: &mut Dialogged) {
+        let command = export_command(d);
+        d.again.hold(command);
+    }
+
+    /// As `App::overwrite_confirmed`: the export held when the question was asked is sent,
+    /// the tool staying as it is. With none held, nothing is sent.
+    fn overwrite_confirmed(d: &mut Dialogged) {
+        if let Some(command) = d.again.confirmed() {
+            send_job(d, command);
         }
     }
 
@@ -12898,15 +13013,28 @@ mod tests {
         if d.quit.quitting() || d.quit_held {
             return;
         }
-        let photo = Path::new(export_again::tests::PHOTO);
-        let command = export_again::export(photo, &d.shell.export, &export::places());
+        let command = export_command(d);
         if !export::asks_before(d.shell.export.on_conflict) {
-            d.sent.push(command);
+            send_job(d, command);
             return;
         }
         d.again.hold(command);
         if !ask_overwrite(d, ctx) {
             d.again.declined();
+        }
+    }
+
+    /// As `App::export`, for what the Export tool asked: nothing while quitting, else the
+    /// export sent, or held while the overwrite question is asked, as Export Again's.
+    fn export_tool(d: &mut Dialogged, ctx: &egui::Context, asked: export::Asked) {
+        if !(asked.start || asked.confirm) || d.quit.quitting() || d.quit_held {
+            return;
+        }
+        if asked.start {
+            let command = export_command(d);
+            send_job(d, command);
+        } else {
+            export_again(d, ctx);
         }
     }
 
@@ -13053,6 +13181,7 @@ mod tests {
                     again: export_again::Again::default(),
                     sent: Vec::new(),
                     quit_held: false,
+                    open: PathBuf::from(export_again::tests::PHOTO),
                     edit: TestEdit::Saved,
                     restart: restart::Restart::new(
                         vec!["-d".into(), "gpu".into()],
@@ -13118,8 +13247,8 @@ mod tests {
         assert_eq!(view.len(), 1);
         assert!(host.0.borrow().jobs.is_none() && host.0.borrow().jobs_opened.is_empty());
 
-        // The export of the user opens it, with the Export sheet still sliding away, and
-        // without taking the focus from the window the user is working in.
+        // The export of the user opens it, with a sheet still sliding away, and without
+        // taking the focus from the window the user is working in.
         host.0.borrow_mut().shown = Some(dialog_host::Shown {
             form: dialog_host::Form::Sheet,
             focused: true,
@@ -13465,31 +13594,10 @@ mod tests {
     }
 
     #[test]
-    fn export_opens_its_sheet_with_the_settings_as_the_shell_keeps_them() {
-        let host = FakeHost::sheets();
-        let mut harness = dialogged(host.clone());
-        harness.run();
-        let kept = export::Values {
-            path: "~/proofs/$(FILE_NAME)".to_owned(),
-            ..export::Values::default()
-        };
-        harness.state_mut().shell.export = kept.clone();
-        press_action(&mut harness, ActionId::EXPORT);
-        assert_eq!(host.0.borrow().exports, [kept]);
-        let shown = host.0.borrow().shown;
-        assert_eq!(shown.map(|s| s.form), Some(dialog_host::Form::Sheet));
-        // One dialog at a time: asked again, nothing opens.
-        press_action(&mut harness, ActionId::EXPORT);
-        assert_eq!(host.0.borrow().exports.len(), 1);
-    }
-
-    #[test]
     fn export_is_disabled_with_no_photo_open_on_every_platform() {
         let ctx = egui::Context::default();
         let shell = Shell::new(&Settings::default(), Locale::EnGb, OperatingSystem::Mac);
-        // Export Again does what the dialog's Export does, so it is available as it is.
-        // The host shows the dialog everywhere: a sheet on the Mac, a modal window
-        // elsewhere.
+        // Export Again does what the tool's Export does, so it is available as it is.
         for id in [ActionId::EXPORT, ActionId::EXPORT_AGAIN] {
             let export = actions::action(id).expect("declared");
             for os in [
@@ -13508,34 +13616,6 @@ mod tests {
                 );
             }
         }
-    }
-
-    #[test]
-    fn the_settings_the_export_dialog_changes_are_kept_by_the_shell_and_its_asks_reach_the_app() {
-        let host = FakeHost::sheets();
-        let mut harness = dialogged(host.clone());
-        harness.run();
-        let changed = export::Values {
-            format: apertrust_export::settings::FileFormat::Png,
-            ..export::Values::default()
-        };
-        let asked = export::Asked {
-            values: Some(changed.clone()),
-            start: false,
-            confirm: false,
-            opened: true,
-        };
-        host.0.borrow_mut().outputs = vec![dialog_host::Output::Export(asked.clone())];
-        let ctx = harness.ctx.clone();
-        let state = harness.state_mut();
-        let app = state.shell.state(&ctx, true, true);
-        let (shell, dialogs) = (&mut state.shell, &mut state.dialogs);
-        let taken = take_dialogs(shell, dialogs, &app, &ctx);
-        assert!(!taken.quit);
-        assert_eq!(taken.export, [asked]);
-        // What the shell keeps is what settings write.
-        assert_eq!(shell.export, changed);
-        assert_eq!(shell.to_settings(&ctx).export, changed);
     }
 
     #[test]
@@ -13905,8 +13985,8 @@ mod tests {
         }
         let mut dialogs = dialog_host::AppDialogs::new(host.clone());
         let ctx = egui::Context::default();
-        let export = export::Export::new(export::Values::default());
-        dialogs.open(export, None, &ctx);
+        let (keeper, _) = Keeper::nowhere();
+        dialogs.open(settings_dialog::Settings::new(&keeper, false), None, &ctx);
         let request = alerts::overwrite_request(&ctx, false);
         assert_eq!(dialogs.ask(&request, &ctx), dialog_host::Ask::Shown);
         assert!(!dialogs.quit());
@@ -14075,11 +14155,12 @@ mod tests {
     }
 
     #[test]
-    fn the_overwrite_question_sends_the_export_on_a_yes_and_leaves_the_dialog_on_a_no() {
+    fn the_overwrite_question_sends_the_export_on_a_yes_and_leaves_the_tool_on_a_no() {
         let ask = |harness: &mut Harness<'_, Dialogged>| {
             let ctx = harness.ctx.clone();
             let request = alerts::overwrite_request(&ctx, false);
             let state = harness.state_mut();
+            hold_export(state);
             let asked = state.alerts.ask(
                 &mut state.dialogs,
                 alerts::Purpose::Overwrite,
@@ -14096,14 +14177,16 @@ mod tests {
         let request = host.0.borrow().alerts[0].clone();
         assert_eq!(request.title, "Export in overwrite mode?");
         assert_eq!(request.buttons[0].label, "Overwrite");
-        // Until it is answered nothing is sent, and the dialog stays.
+        // Until it is answered nothing is sent.
         harness.step();
         assert_eq!(harness.state().exported, 0);
-        assert!(!host.0.borrow().closing);
         answer_alert(&host, dialog_host::Answer::Pressed(0));
         harness.step();
         assert_eq!(harness.state().exported, 1);
-        assert!(host.0.borrow().closing, "the dialog closes with the export");
+        let sent = harness.state().sent.clone();
+        assert_eq!(sent, [export_command(harness.state())], "the held export");
+        // Nothing closes with the export: the tool is no dialog.
+        assert!(!host.0.borrow().closing);
         assert!(harness.state().alerts.pending().is_none());
 
         for answer in [
@@ -14117,6 +14200,7 @@ mod tests {
             answer_alert(&host, answer);
             harness.step();
             assert_eq!(harness.state().exported, 0, "{answer:?}");
+            assert!(harness.state().sent.is_empty(), "{answer:?}");
             assert!(!host.0.borrow().closing, "{answer:?}");
             assert!(harness.state().alerts.pending().is_none());
         }
@@ -14208,7 +14292,7 @@ mod tests {
         assert_eq!(discards(&harness), 1);
     }
 
-    /// The settings the Export dialog left, as the shell keeps them.
+    /// The settings the Export tool left, as the shell keeps them.
     fn kept(
         harness: &mut Harness<'_, Dialogged>,
         on_conflict: apertrust_export::settings::OnConflict,
@@ -14249,15 +14333,15 @@ mod tests {
             };
             assert_eq!(photos, &[PathBuf::from(PHOTO)], "{conflict:?}");
             assert_eq!(settings, &values.settings(), "{conflict:?}");
-            assert!(host.0.borrow().exports.is_empty());
             assert!(host.0.borrow().alerts.is_empty(), "{conflict:?}");
             assert!(harness.state().alerts.pending().is_none());
         }
     }
 
-    /// The dialog's Export with a file to replace, as `App::export` takes it.
+    /// The tool's Export with a file to replace, as `App::export` takes it.
     fn export_replacing(harness: &mut Harness<'_, Dialogged>) {
         let ctx = harness.ctx.clone();
+        hold_export(harness.state_mut());
         ask_overwrite(harness.state_mut(), &ctx);
         harness.step();
     }
@@ -14276,17 +14360,21 @@ mod tests {
         harness.step();
         // The export went, and the setting is off where the shell hands it to settings.
         assert_eq!(harness.state().exported, 1);
+        assert_eq!(harness.state().sent.len(), 1, "the held export was sent");
         assert!(!harness.state().shell.overwrite.asks());
         let ctx = harness.ctx.clone();
         assert!(!harness.state().shell.to_settings(&ctx).ask_before_overwrite);
-        // The next Export with a file to replace goes ahead without a question, the dialog
-        // closing with it.
-        host.0.borrow_mut().closing = false;
+        // The next Export with a file to replace goes ahead without a question.
         export_replacing(&mut harness);
         assert_eq!(asked_alerts(&host), 1, "no second question");
         assert_eq!(harness.state().exported, 2);
+        assert_eq!(
+            harness.state().sent.len(),
+            2,
+            "sent at once, with no question"
+        );
         assert!(harness.state().alerts.pending().is_none());
-        assert!(host.0.borrow().closing);
+        assert!(!host.0.borrow().closing);
     }
 
     #[test]
@@ -14309,6 +14397,7 @@ mod tests {
             // Only the yes exported; the second time asks too, and exports nothing yet.
             let exported = usize::from(answer == dialog_host::Answer::Pressed(0));
             assert_eq!(harness.state().exported, exported, "{answer:?}");
+            assert_eq!(harness.state().sent.len(), exported, "{answer:?}");
             assert_eq!(asked_alerts(&host), 2, "{answer:?}");
         }
     }
@@ -14326,6 +14415,7 @@ mod tests {
         harness.step();
         // The export went, and the question stays on: the store would refuse the write.
         assert_eq!(harness.state().exported, 1);
+        assert_eq!(harness.state().sent.len(), 1);
         assert!(harness.state().shell.overwrite.asks());
         export_replacing(&mut harness);
         assert_eq!(asked_alerts(&host), 2);
@@ -14345,7 +14435,7 @@ mod tests {
             harness.run();
             kept(&mut harness, OnConflict::Overwrite);
             press_action(&mut harness, ActionId::EXPORT_AGAIN);
-            // The question the dialog's Export asks, with no preview to decide it, and
+            // The question the tool's Export asks, with no preview to decide it, and
             // nothing sent while it is up.
             let asked = host.0.borrow().alerts.clone();
             let ctx = harness.ctx.clone();
@@ -14422,7 +14512,7 @@ mod tests {
     }
 
     #[test]
-    fn export_again_rests_with_no_photo_and_under_the_export_sheet_or_an_alert() {
+    fn export_again_rests_with_no_photo_and_under_a_sheet_or_an_alert() {
         let host = FakeHost::sheets();
         let mut harness = dialogged(host.clone());
         harness.run();
@@ -14434,8 +14524,8 @@ mod tests {
         // An alert is up.
         let asking = with_dialogs(state, true, None);
         assert!(!again.enabled(&asking));
-        // The Export sheet is up: pressing it does nothing.
-        press_action(&mut harness, ActionId::EXPORT);
+        // A sheet is up: pressing it does nothing.
+        press_action(&mut harness, ActionId::SETTINGS);
         assert!(host.0.borrow().shown.is_some());
         press_action(&mut harness, ActionId::EXPORT_AGAIN);
         assert!(harness.state().sent.is_empty());
@@ -14513,6 +14603,99 @@ mod tests {
         assert!(closing(&harness));
     }
 
+    /// The Export tool's overwrite question holds the export of the photo open when it was
+    /// asked: a yes after another photo opened sends that photo's, never the new one's, and a
+    /// no sends nothing.
+    #[test]
+    fn the_export_tool_s_yes_exports_the_photo_that_was_open_when_it_asked() {
+        let confirm = export::Asked {
+            confirm: true,
+            ..export::Asked::default()
+        };
+        for (answer, sent) in [
+            (dialog_host::Answer::Pressed(0), 1),
+            (dialog_host::Answer::Pressed(1), 0),
+        ] {
+            let host = with_alerts();
+            let mut harness = dialogged(host.clone());
+            harness.run();
+            let ctx = harness.ctx.clone();
+            let values = kept(
+                &mut harness,
+                apertrust_export::settings::OnConflict::Overwrite,
+            );
+            let first = PathBuf::from("/Users/anna/Pictures/IMG_2041.ARW");
+            harness.state_mut().open = first.clone();
+            export_tool(harness.state_mut(), &ctx, confirm.clone());
+            assert_eq!(asked_alerts(&host), 1);
+            // A grid click opens another photo while the question waits.
+            harness.state_mut().open = PathBuf::from("/Users/anna/Pictures/IMG_9999.ARW");
+            answer_alert(&host, answer);
+            harness.step();
+            let state = harness.state();
+            assert_eq!(state.sent.len(), sent, "{answer:?}");
+            if let Some(Command::Export {
+                photos, settings, ..
+            }) = state.sent.first()
+            {
+                assert_eq!(photos, &[first]);
+                assert_eq!(settings, &values.settings());
+            }
+        }
+    }
+
+    /// The Export tool's Export, like Export Again, sends nothing and asks nothing while the
+    /// app is quitting, after a yes to the quit alert or while Quit waits for the overwrite
+    /// question; before that it exports.
+    #[test]
+    fn the_export_tool_exports_nothing_and_asks_nothing_while_the_app_is_quitting() {
+        let start = export::Asked {
+            start: true,
+            ..export::Asked::default()
+        };
+        let confirm = export::Asked {
+            confirm: true,
+            ..export::Asked::default()
+        };
+        let host = with_alerts();
+        let mut harness = dialogged(host.clone());
+        harness.run();
+        let ctx = harness.ctx.clone();
+        export_tool(harness.state_mut(), &ctx, start.clone());
+        assert_eq!(harness.state().exported, 1, "an export runs as usual");
+        assert_eq!(harness.state().sent.len(), 1);
+        // The quit alert's yes: the app waits for the jobs, and starts none.
+        press_action(&mut harness, ActionId::QUIT);
+        assert_eq!(asked_alerts(&host), 1);
+        answer_alert(&host, dialog_host::Answer::Pressed(0));
+        harness.step();
+        assert!(harness.state().quit.quitting());
+        export_tool(harness.state_mut(), &ctx, start.clone());
+        export_tool(harness.state_mut(), &ctx, confirm.clone());
+        assert_eq!(harness.state().exported, 1);
+        assert_eq!(harness.state().sent.len(), 1);
+        assert_eq!(asked_alerts(&host), 1, "no overwrite question either");
+
+        // Quit waiting for the overwrite question's answer.
+        let host = with_alerts();
+        let mut harness = dialogged(host.clone());
+        harness.run();
+        let request = alerts::overwrite_request(&ctx, false);
+        let state = harness.state_mut();
+        let purpose = alerts::Purpose::Overwrite;
+        hold_export(state);
+        state
+            .alerts
+            .ask(&mut state.dialogs, purpose, &request, &ctx);
+        press_action(&mut harness, ActionId::QUIT);
+        assert!(harness.state().quit_held);
+        export_tool(harness.state_mut(), &ctx, start);
+        export_tool(harness.state_mut(), &ctx, confirm);
+        assert_eq!(harness.state().exported, 0);
+        assert!(harness.state().sent.is_empty());
+        assert_eq!(asked_alerts(&host), 1);
+    }
+
     #[test]
     fn quit_pressed_under_the_overwrite_alert_asks_the_quit_question_once_the_export_is_sent() {
         let host = with_alerts();
@@ -14522,6 +14705,7 @@ mod tests {
         let request = alerts::overwrite_request(&ctx, false);
         let state = harness.state_mut();
         let purpose = alerts::Purpose::Overwrite;
+        hold_export(state);
         state
             .alerts
             .ask(&mut state.dialogs, purpose, &request, &ctx);
@@ -14533,6 +14717,7 @@ mod tests {
         answer_alert(&host, dialog_host::Answer::Pressed(0));
         harness.step();
         assert_eq!(harness.state().exported, 1);
+        assert_eq!(harness.state().sent.len(), 1, "the held export was sent");
         assert_eq!(asked_alerts(&host), 2);
         assert_eq!(
             host.0.borrow().alerts[1].title,
@@ -14545,6 +14730,7 @@ mod tests {
         harness.run();
         let ctx = harness.ctx.clone();
         let state = harness.state_mut();
+        hold_export(state);
         state
             .alerts
             .ask(&mut state.dialogs, purpose, &request, &ctx);
@@ -14552,6 +14738,7 @@ mod tests {
         answer_alert(&host, dialog_host::Answer::Pressed(1));
         harness.step();
         assert_eq!(asked_alerts(&host), 1);
+        assert!(harness.state().sent.is_empty(), "a no sends nothing");
         assert!(closing(&harness));
     }
 
@@ -15313,6 +15500,100 @@ mod tests {
         item.click();
         harness.run();
         assert_eq!(harness.state().shell.panel_tab, BROWSE);
+    }
+
+    /// Ctrl+E (Cmd+E on the Mac) reveals the Export tool from another tab: it chooses the
+    /// Photos tab, opens the section and scrolls it into view, and opens no dialog.
+    #[test]
+    fn ctrl_e_reveals_the_export_tool_from_another_tab() {
+        for (os, modifiers) in [
+            (OperatingSystem::Mac, Modifiers::COMMAND),
+            (OperatingSystem::Windows, Modifiers::COMMAND),
+            (OperatingSystem::Nix, Modifiers::COMMAND),
+        ] {
+            let mut harness = bench(os);
+            harness.run();
+            assert_eq!(harness.state().shell.panel_tab, ADJUST, "{os:?}");
+            assert!(harness.query_by_label("Export 1 photo").is_none());
+            harness.key_press_modifiers(modifiers, Key::E);
+            harness.run_steps(4);
+            let state = harness.state();
+            assert_eq!(state.pressed, [ActionId::EXPORT], "{os:?}");
+            assert_eq!(state.shell.panel_tab, PHOTOS, "{os:?}");
+            assert!(state.shell.section_open(export::ID, export::OPEN), "{os:?}");
+            assert_eq!(state.shell.reveal, None, "{os:?}: scrolled to once");
+            assert!(state.host.0.borrow().shown.is_none(), "{os:?}: no dialog");
+            // Its header is scrolled to the top of the panel, Browse's above it, out of view.
+            let header = harness.get_by_role_and_label(Role::Button, "Export").rect();
+            let tabs = harness.get_by_role_and_label(Role::Tab, "Photos").rect();
+            let browse = harness.get_by_role_and_label(Role::Button, "Browse").rect();
+            assert!(
+                header.top() < tabs.bottom() + 40.0,
+                "{os:?} {header:?} {tabs:?}"
+            );
+            assert!(browse.bottom() <= header.top(), "{os:?}");
+        }
+    }
+
+    /// File › Export… does the same from the ☰'s menu, with its key shown, and closed it
+    /// leaves the tool open for the next time.
+    #[test]
+    fn export_in_the_menu_reveals_the_tool_and_the_tool_stays_open_until_it_is_closed() {
+        let mut harness = bench(OperatingSystem::Nix);
+        harness.state_mut().shell.panel_tab = 3;
+        harness.run();
+        alt(&mut harness, Key::F, Some("f"));
+        let item = harness.get_by_role_and_label(Role::MenuItem, "Export…");
+        assert_eq!(
+            item.accesskit_node().data().keyboard_shortcut(),
+            Some("Ctrl+E")
+        );
+        item.click();
+        harness.run_steps(4);
+        assert_eq!(harness.state().chosen, [ActionId::EXPORT]);
+        assert_eq!(harness.state().shell.panel_tab, PHOTOS);
+        assert!(harness.state().shell.section_open(export::ID, export::OPEN));
+        harness.get_by_role_and_label(Role::Button, "Export 1 photo");
+        // A click on its header closes it, kept as `export` in `edit.sections`.
+        harness
+            .get_by_role_and_label(Role::Button, "Export")
+            .click();
+        harness.run_steps(4);
+        assert!(!harness.state().shell.section_open(export::ID, export::OPEN));
+        assert!(harness.query_by_label("Export 1 photo").is_none());
+        let kept = harness.state().shell.to_settings(&harness.ctx).edit;
+        assert_eq!(kept.sections.get(export::ID), Some(&false));
+        // Asked for again, it opens.
+        harness.state_mut().shell.panel_tab = 3;
+        harness.key_press_modifiers(Modifiers::COMMAND, Key::E);
+        harness.run_steps(4);
+        assert!(harness.state().shell.section_open(export::ID, export::OPEN));
+        harness.get_by_role_and_label(Role::Button, "Export 1 photo");
+    }
+
+    /// The Export tool is the Photos tab's last section, after Browse, and the tab lists
+    /// it last.
+    #[test]
+    fn the_export_tool_is_last_in_the_photos_tab() {
+        assert_eq!(TAB_TOOLS[PHOTOS].last(), Some(&export::ID));
+        let mut harness = bench(OperatingSystem::Mac);
+        harness.state_mut().shell.panel_tab = PHOTOS;
+        harness.state_mut().shell.set_section_open(export::ID, true);
+        harness.run_steps(4);
+        let browse = harness.get_by_role_and_label(Role::Button, "Browse").rect();
+        let export = harness.get_by_role_and_label(Role::Button, "Export").rect();
+        assert!(browse.top() < export.top(), "{browse:?} {export:?}");
+        // Every row of the tool is under its header, and its button under them all.
+        let button = harness
+            .get_by_role_and_label(Role::Button, "Export 1 photo")
+            .rect();
+        for row in ["Target storage", "On conflict", "File format", "Profile"] {
+            let at = harness.get_by_role_and_label(Role::ComboBox, row).rect();
+            assert!(
+                export.bottom() <= at.top() && at.bottom() <= button.top(),
+                "{row}"
+            );
+        }
     }
 
     #[test]

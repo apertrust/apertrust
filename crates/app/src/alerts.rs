@@ -18,7 +18,7 @@
 //! alerts, asked through the dialog host and answered on a later frame. Five so far:
 //!
 //! - **Export's overwrite question** ([`Purpose::Overwrite`]): Export asks before it
-//!   replaces files, as darktable does, from the Export dialog's own sheet.
+//!   replaces files, as darktable does, from the Export tool or Export Again.
 //! - **The quit alert** ([`Purpose::Quit`]): Quit or Close Window while a job the user
 //!   started runs, or after the edit's last write failed. The decision is [`Guard`], a
 //!   small machine the tests drive: it waits for a write of the edit under way, asks once,

@@ -14,28 +14,30 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! The Export dialog's content (`docs/gui.md`, The Export dialog; decision 56): darktable's
-//! export module row for row, in a sheet on the Mac. It is a function of `&mut Ui`
-//! (decision 41), so the dialog host draws it in the sheet's window and the interaction
-//! tests draw it in a harness.
+//! The Export tool (`docs/gui.md`, The Export tool; decision 56): darktable's export module
+//! row for row, a utility section of the Photos tab's side panel, after Browse. It is a
+//! function of `&mut Ui`, so the app draws it in the panel and the interaction tests draw it
+//! in a harness.
 //!
 //! **Its rows** are File on disk with its path, On conflict, JPEG and PNG, Set size's four
 //! modes, Allow upscaling, High quality resampling, and Profile with Image settings and
 //! sRGB. Every other row is drawn, disabled, saying it is to come: the other storages and
-//! formats, Store masks, Intent, Style, Metadata and Multi-preset export. The Presets column holds Default settings alone.
-//! The rows are the side panel's controls laid out as a tool's: Blended choices, toggles
-//! and sliders, one-line rows stacked with no spacing between them.
+//! formats, Store masks, Intent, Style, Metadata and Multi-preset export. The rows are the
+//! side panel's controls laid out as a tool's: Blended choices, toggles and sliders,
+//! one-line rows stacked with no spacing between them, a row whose label and fields do not
+//! fit the panel's width putting its label above them. The header's ↺ applies Default
+//! settings.
 //!
 //! **The settings** are the `export.*` settings, one [`Values`], read from the app's store
-//! when the dialog opens and offered back to it as they change (`Asked::values`), so Close
-//! keeps them as left, as darktable keeps its conf. The engine reads no settings
-//! (decision 43): [`Values::settings`] turns them into the plain [`ExportSettings`] the
-//! session's `Export` and `PreviewExport` take.
+//! as the app starts and offered back to it as they change (`Asked::values`), as darktable
+//! keeps its conf. The engine reads no settings (decision 43): [`Values::settings`] turns
+//! them into the plain [`ExportSettings`] the session's `Export` and `PreviewExport` take.
 //!
 //! **The feedback under the rows** comes from the session (`PreviewExport`,
-//! `Event::ExportPreview`): the app asks for a preview whenever the settings change, and
-//! hands the answer back with [`Export::receive`], which keeps the one with the highest
-//! `through`. The dialog exports the active photo, since nothing selects photos yet.
+//! `Event::ExportPreview`): the app asks for a preview whenever the settings or the photo
+//! change while the tool is open and shown, and hands the answer back with
+//! [`Export::receive`], which keeps the one with the highest `through`. The tool exports the
+//! active photo, since nothing selects photos yet; exporting closes nothing.
 
 use std::path::{Path, PathBuf};
 
@@ -56,33 +58,23 @@ use apertrust_export::settings::{FileFormat, OnConflict, Profile, SizeMode};
 use apertrust_export::size::{self, Request};
 use apertrust_export::variables::{self, PatternError};
 use apertrust_ui::components::{
-    Button, Choice, ChoiceAction, ChoiceStyle, CollapsibleGroup, PathField, SliderAction,
-    SliderRow, TextField, ToggleRow, ValueField, Variable, field_inset, group_label, quiet_scroll,
+    Button, Choice, ChoiceAction, ChoiceStyle, CollapsibleGroup, PathField, Section, SectionAction,
+    SliderAction, SliderRow, TextField, ToggleRow, ValueField, Variable, field_inset, group_label,
 };
 use apertrust_ui::i18n::Args;
 use apertrust_ui::{Theme, theme, tr, translator};
-use eframe::egui::os::OperatingSystem;
-use eframe::egui::{
-    self, Color32, Key, Label, Modifiers, Rect, RichText, ScrollArea, Sense, Ui, UiBuilder, vec2,
-};
+use eframe::egui::{self, Color32, Label, RichText, Ui, vec2};
 
-use crate::dialog_host::{self, Asks, Dialog, Form, Keys, Look, Output};
-
-/// The dialog's width, in points (`docs/gui.md`, The Export dialog, Its form).
-pub const WIDTH: f32 = 640.0;
-/// The Presets column's width.
-const PRESETS: f32 = 200.0;
-/// The header's height, with the hairline under it.
-const HEADER: f32 = 44.0;
-/// The two columns' height; the settings column scrolls inside it.
-const BODY: f32 = 440.0;
-/// The footer's height.
-const FOOTER: f32 = 52.0;
-/// How many photos the dialog exports: the active one, until a selection comes.
+/// The tool's id, as the shell keeps its section's state and Export… reveals it.
+pub const ID: &str = "export";
+/// Whether the section is open until the person opens or closes it, as every tool is
+/// closed at first (decision 29).
+pub const OPEN: bool = false;
+/// How many photos the tool exports: the active one, until a selection comes.
 const PHOTOS: usize = 1;
 
-/// The export settings as the dialog edits them: one field for each `export.*` setting the
-/// dialog's rows show.
+/// The export settings as the tool edits them: one field for each `export.*` setting the
+/// tool's rows show.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Values {
     /// File on disk's path, a pattern of darktable's variables without the extension.
@@ -203,11 +195,11 @@ impl Values {
     }
 
     /// What the session's `Export` and `PreviewExport` take: the path, On conflict, the
-    /// format with its options and the size as the dialog asks for it
+    /// format with its options and the size as the tool asks for it
     /// (`Request::dialog`, whose rule for a side left at 0 applies). A JPEG's density is
     /// the print dpi in the cm and inch modes, as darktable's `metadata/resolution` is.
     ///
-    /// The profile is not among them yet: both of the dialog's choices export the Output
+    /// The profile is not among them yet: both of the tool's choices export the Output
     /// colour profile's sRGB, the only profile an edit can have (decision 26).
     pub fn settings(&self) -> ExportSettings {
         let format = match self.format {
@@ -244,7 +236,7 @@ impl Values {
 #[cfg(test)]
 mod tests;
 
-/// Whether an export with `on_conflict` asks the overwrite question first, by the dialog's
+/// Whether an export with `on_conflict` asks the overwrite question first, by the tool's
 /// Export and by Export Again: darktable's rule (`disk.c`, `ask_user_confirmation`),
 /// On conflict Overwrite whether or not a file is there, and never Overwrite if changed.
 /// Whether it asks then is the setting's (`alerts::Question`).
@@ -270,67 +262,135 @@ pub fn places() -> Places {
     }
 }
 
-/// What the app sends the session for what the dialog asked of it, for the photo open at
-/// `photo`: the preview of the settings that changed, then, once Export is pressed, the
-/// export of the settings the app holds, `held`, which are the dialog's. The photo's edit
-/// is the session's to take as the export command is handled (D12).
-pub fn commands(photo: &Path, asked: &Asked, held: &Values, places: &Places) -> Vec<Command> {
-    let photos = vec![photo.to_owned()];
-    let mut commands = Vec::new();
-    if let Some(values) = &asked.values {
-        commands.push(Command::PreviewExport {
-            photos: photos.clone(),
-            settings: values.settings(),
-            places: places.clone(),
-        });
+/// The session's preview of what `values` would export for the photo open at `photo`: what
+/// the app asks for as the tool is shown, as the settings change and as the photo does.
+/// The export itself is [`crate::export_again::export`], whose settings are the ones the
+/// app holds; the photo's edit is the session's to take as it is handled (D12).
+pub fn preview_command(photo: &Path, values: &Values, places: &Places) -> Command {
+    Command::PreviewExport {
+        photos: vec![photo.to_owned()],
+        settings: values.settings(),
+        places: places.clone(),
     }
-    if asked.start {
-        commands.push(Command::Export {
-            photos,
-            settings: held.settings(),
-            places: places.clone(),
-        });
-    }
-    commands
 }
 
-/// What a frame of the dialog asked of the app.
+/// When the app asks the session for a preview: while the tool is open and the Photos tab
+/// shown, for the photo open, on the first frame it is, and again as the photo, the settings
+/// or the generation change, the generation being what else makes an answer stale: the
+/// photo's edit changing, an export ending. Nothing is asked while the tool is closed or
+/// out of view, so showing it again asks afresh.
+#[derive(Debug, Default)]
+pub struct Previews {
+    /// What the session was last asked about, none while the tool was not shown.
+    sent: Option<Sent>,
+}
+
+/// A preview asked for.
+#[derive(Debug)]
+struct Sent {
+    photo: PathBuf,
+    values: Values,
+    generation: u64,
+}
+
+/// What [`Previews::next`] says to ask.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Ask {
+    /// Nothing: nothing changed, or the tool is not shown.
+    Nothing,
+    /// The settings, or the photo's edit or an export's files, changed for the photo the
+    /// tool already previews.
+    Changed(PathBuf, Values),
+    /// A first preview, for a photo or a showing: answers to earlier commands, and the
+    /// answer held, are for another photo or showing.
+    Fresh(PathBuf, Values),
+}
+
+impl Previews {
+    /// Whether the last preview asked for was for `photo`, the one open or none, while the
+    /// tool was shown: an answer held is for that photo and showing alone.
+    pub fn asked_about(&self, photo: Option<&Path>) -> bool {
+        self.sent.as_ref().map(|sent| sent.photo.as_path()) == photo
+    }
+
+    /// What to ask now, with `photo` open or none, the tool `shown` or not, the settings as
+    /// `values` have them and the `generation` of what else the answer depends on. Called
+    /// every frame: it compares by reference and clones only when it asks.
+    pub fn next(
+        &mut self,
+        photo: Option<&Path>,
+        shown: bool,
+        values: &Values,
+        generation: u64,
+    ) -> Ask {
+        let wanted = photo.filter(|_| shown);
+        let same = match (&self.sent, wanted) {
+            (None, None) => true,
+            (Some(sent), Some(photo)) => {
+                sent.photo == photo && sent.values == *values && sent.generation == generation
+            }
+            _ => false,
+        };
+        if same {
+            return Ask::Nothing;
+        }
+        let fresh = self.sent.as_ref().map(|sent| sent.photo.as_path()) != wanted;
+        let Some(photo) = wanted else {
+            self.sent = None;
+            return Ask::Nothing;
+        };
+        self.sent = Some(Sent {
+            photo: photo.to_owned(),
+            values: values.clone(),
+            generation,
+        });
+        let (photo, values) = (photo.to_owned(), values.clone());
+        if fresh {
+            Ask::Fresh(photo, values)
+        } else {
+            Ask::Changed(photo, values)
+        }
+    }
+}
+
+/// What a frame of the tool asked of the app.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Asked {
-    /// The settings, whenever they changed and on the first frame: the app keeps them and
-    /// asks the session for a new preview.
+    /// The settings, when they changed this frame: the app keeps them and asks the session
+    /// for a new preview.
     pub values: Option<Values>,
     /// Export was pressed: the app sends the session the export of the settings it holds.
     pub start: bool,
-    /// Export was pressed with On conflict Overwrite ([`asks_before`]): the dialog stays
-    /// open and the app asks first (`alerts::overwrite_request`), sending the export, and
-    /// closing the dialog, only on a yes, or at once where the setting says not to ask.
-    /// Never together with `start`.
+    /// Export was pressed with On conflict Overwrite ([`asks_before`]): the app asks first
+    /// (`alerts::overwrite_request`), sending the export only on a yes, or at once where
+    /// the setting says not to ask. Never together with `start`.
     pub confirm: bool,
-    /// This is the dialog's first frame: the preview the app asks for is the first of its
-    /// opening, and no answer to an earlier one is the dialog's.
-    pub opened: bool,
 }
 
-/// The dialog's state while it is open.
+/// What the tool's section did this frame.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Drawn {
+    /// Its header was pressed: open it, or close it.
+    pub toggle: bool,
+    pub asked: Asked,
+}
+
+/// The tool's state: the settings it edits and what the session said of them.
 #[derive(Debug)]
 pub struct Export {
     values: Values,
-    /// Whether the first frame has said what the settings are, for the first preview.
-    started: bool,
     /// The newest answer of the session, with the number of the command it answers.
     preview: Option<(u64, ExportPreview)>,
     /// The person's home, which paths are shown relative to as `~`.
     home: Option<PathBuf>,
-    /// The three regions F6 moves between, as the last frame drew them: the presets, the
-    /// settings and the footer.
-    regions: [Rect; 3],
     /// The print lengths last entered, which a change of resolution keeps ([`Print`]).
     print: Option<Print>,
-    /// Whether the host can ask the overwrite question here
+    /// Whether the platform can ask the overwrite question here
     /// (`dialog_host::platform::shows_alerts`): where it cannot, On conflict's Overwrite
     /// is listed disabled, and Export rests while it is chosen.
     alerts: bool,
+    /// Whether a photo is open to export, as the last frame was told.
+    photo: bool,
 }
 
 /// What the cm and inch fields hold, as darktable's print entries do, with the pixels they
@@ -342,76 +402,26 @@ struct Print {
     pixels: [u32; 2],
 }
 
-/// Export in the dialog host (decision 41; `docs/gui.md`, The Export dialog, Its form): a
-/// sheet, AppKit's on the Mac and a modal window elsewhere, on the panel's colour and
-/// drawing its own margins; Esc, Cmd+. and Cmd+W close it, as its Close.
-impl Dialog for Export {
-    fn id(&self) -> &'static str {
-        "export"
-    }
-
-    /// "Export 1 photo", which its window's frame shows, and the Mac's sheet, which has
-    /// none, as its own heading.
-    fn title(&self, ctx: &egui::Context) -> String {
-        let mut args = Args::new();
-        args.set("count", PHOTOS as f64);
-        translator(ctx).text_with("export-title", Some(&args))
-    }
-
-    fn form(&self, _os: OperatingSystem) -> Form {
-        Form::Sheet
-    }
-
-    fn look(&self, t: &Theme) -> Look {
-        Look {
-            background: t.colors.panel,
-            margin: 0.0,
-        }
-    }
-
-    fn keys(&self, _os: OperatingSystem) -> Keys {
-        Keys {
-            escape: true,
-            close_window: true,
-            cancel: true,
-        }
-    }
-
-    fn show(&mut self, ui: &mut Ui) -> Asks {
-        let (asked, close, keeps_escape) = self.frame(ui);
-        let outputs = (asked.values.is_some() || asked.start || asked.confirm)
-            .then_some(Output::Export(asked))
-            .into_iter()
-            .collect();
-        Asks {
-            outputs,
-            close,
-            keeps_escape,
-        }
-    }
-}
-
 impl Export {
-    /// The dialog over `values`, with paths shown relative to the person's home.
+    /// The tool over `values`, with paths shown relative to the person's home.
     pub fn new(values: Values) -> Export {
         Export {
             values,
-            started: false,
             preview: None,
             home: places().home,
-            regions: [Rect::NOTHING; 3],
             print: None,
             alerts: true,
+            photo: true,
         }
     }
 
-    /// The dialog where the host can, or cannot, ask an alert.
+    /// The tool where the platform can, or cannot, ask an alert.
     pub fn alerts(mut self, alerts: bool) -> Export {
         self.alerts = alerts;
         self
     }
 
-    /// The dialog with a home of its own, for tests.
+    /// The tool with a home of its own, for tests.
     #[cfg(test)]
     pub fn with_home(values: Values, home: Option<PathBuf>) -> Export {
         Export {
@@ -433,188 +443,72 @@ impl Export {
         }
     }
 
+    /// Drops the answer held, which was for another photo or an earlier showing.
+    pub fn forget(&mut self) {
+        self.preview = None;
+    }
+
+    /// Drops the answer held unless `previews` last asked about `photo`, the one open, which
+    /// is the photo the answer was made for. Called before the tool is drawn, so a photo
+    /// opened since the last frame never shows the earlier one's feedback, nor lets it
+    /// decide whether Export rests; the first preview for the new photo is asked after the
+    /// draw ([`Previews::next`]).
+    pub fn retire(&mut self, previews: &Previews, photo: Option<&Path>) {
+        if !previews.asked_about(photo) {
+            self.forget();
+        }
+    }
+
     /// The settings as they stand.
     #[cfg(test)]
     pub fn values(&self) -> &Values {
         &self.values
     }
 
-    /// Draws the dialog in `ui`: its header in the Mac's sheet, the two columns, the footer,
-    /// and its keys but the host's. Returns what it asked of the app, whether it is to
-    /// close, and whether the path's variable list was open as the frame began, which
-    /// Escape closes first.
-    fn frame(&mut self, ui: &mut Ui) -> (Asked, bool, bool) {
+    /// Draws the section in `ui`, open or closed as `open` says, for a photo that is open
+    /// or not (`photo`). Returns what it asked of the app: the header pressed, the settings
+    /// changed, and Export.
+    pub fn show(&mut self, ui: &mut Ui, open: bool, photo: bool) -> Drawn {
         let ctx = ui.ctx().clone();
         let t = theme(&ctx);
         let before = self.values.clone();
-        let typing = dialog_host::typing(&ctx);
-        let focused = ctx.memory(|m| m.focused());
-        ui.set_width(WIDTH);
-        // The regions sit edge to edge; each column sets the spacing of its own rows.
-        ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
-        // The title is its window's frame's, the system's or the host's on Linux; a sheet
-        // has none, so it shows it here.
-        let os = ctx.os();
-        if dialog_host::platform::form(self.form(os), os) == Form::Sheet {
-            self.header(ui, &t);
-        }
-        let mut regions = [Rect::NOTHING; 3];
-        let mut list_was_open = false;
-        ui.horizontal_top(|ui| {
-            regions[0] = self.presets(ui, &t);
-            let (line, _) = ui.allocate_exact_size(vec2(1.0, BODY), Sense::hover());
-            ui.painter().rect_filled(line, 0.0, t.colors.separator);
-            let width = WIDTH - PRESETS - 1.0;
-            let area = ui.allocate_ui_with_layout(vec2(width, BODY), top_down(), |ui| {
-                ui.set_min_size(vec2(width, BODY));
-                quiet_scroll(
-                    ui,
-                    ScrollArea::vertical()
-                        .id_salt("export settings")
-                        .max_height(BODY)
-                        .auto_shrink([false, false]),
-                    |ui| {
-                        egui::Frame::NONE
-                            .inner_margin(egui::Margin::symmetric(t.spacing.xl as i8, 0))
-                            .show(ui, |ui| list_was_open = self.settings_column(ui, &t));
-                    },
-                );
-            });
-            regions[1] = area.response.rect;
-        });
-        let (close_pressed, export_pressed, footer) = self.footer(ui, &t);
-        regions[2] = footer;
-        self.regions = regions;
-
-        let mut close = close_pressed;
-        let mut start = export_pressed;
-        // The keys (docs/gui.md, The Export dialog, Keyboard): Esc, Cmd+. and Cmd+W are the
-        // host's ([`Dialog::keys`]), Esc leaving a list or a field being typed in to them;
-        // Return exports unless a control has the focus, which takes it itself, and
-        // Cmd+Return from anywhere; F6 moves between the three regions.
-        let plain = ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Enter));
-        let command = ctx.input_mut(|i| i.consume_key(Modifiers::COMMAND, Key::Enter));
-        start |= (command || plain && focused.is_none() && !typing)
-            && self.cannot_export(&ctx).is_none();
-        // Shift first: a key with no modifier asked for matches the shifted one too.
-        let back = ctx.input_mut(|i| i.consume_key(Modifiers::SHIFT, Key::F6));
-        let forward = ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::F6));
-        if forward || back {
-            let widgets = crate::focusable(&ctx);
-            let focused = ctx.memory(|m| m.focused());
-            if let Some(id) = crate::actions::next_region(&self.regions, &widgets, focused, forward)
-            {
-                ctx.memory_mut(|m| m.request_focus(id));
-            }
+        self.photo = photo;
+        let title = tr(&ctx, "section-export");
+        let reset = tr(&ctx, "export-reset");
+        let mut pressed = false;
+        // A utility: its reset applies Default settings, before its options, which hold
+        // nothing yet.
+        let out = Section::new(&title, open)
+            .utility_reset(&reset)
+            .reset(self.values != Values::default())
+            .options(false)
+            .show(ui, |ui| pressed = self.rows(ui, &t));
+        if out.actions.contains(&SectionAction::Reset) {
+            self.values = Values::default();
+            ctx.request_repaint();
         }
         // Overwriting asks first, as darktable's storage does whether or not a file is
-        // there: the dialog stays, and the app sends the export on a yes, or at once where
-        // the setting says not to ask.
-        let confirm = start && asks_before(self.values.on_conflict);
-        if confirm {
-            start = false;
+        // there: the app sends the export on a yes, or at once where the setting says not
+        // to ask.
+        let confirm = pressed && asks_before(self.values.on_conflict);
+        let values = (self.values != before).then(|| self.values.clone());
+        Drawn {
+            toggle: out.actions.contains(&SectionAction::Toggle),
+            asked: Asked {
+                values,
+                start: pressed && !confirm,
+                confirm,
+            },
         }
-        if start {
-            close = true;
-        }
-        let first = !std::mem::replace(&mut self.started, true);
-        let values = (first || self.values != before).then(|| self.values.clone());
-        let asked = Asked {
-            values,
-            start,
-            confirm,
-            opened: first,
-        };
-        (asked, close, list_was_open)
     }
 
-    /// The header: the title, 16 points Medium in a 44-point band with a hairline under
-    /// it, drawn only in the Mac's sheet, which has no title bar to show it.
-    fn header(&self, ui: &mut Ui, t: &Theme) {
-        let (rect, _) = ui.allocate_exact_size(vec2(WIDTH, HEADER), Sense::hover());
-        let title = self.title(ui.ctx());
-        let mut band = ui.new_child(
-            UiBuilder::new()
-                .max_rect(rect.shrink2(vec2(t.spacing.xl, 0.0)))
-                .layout(egui::Layout::left_to_right(egui::Align::Center)),
-        );
-        band.heading(title);
-        let line = Rect::from_min_size(
-            egui::pos2(rect.left(), rect.bottom() - 1.0),
-            vec2(WIDTH, 1.0),
-        );
-        ui.painter().rect_filled(line, 0.0, t.colors.separator);
-    }
-
-    /// The Presets column: Default settings alone, built in, ticked while the settings are
-    /// the defaults, else a line saying they match no preset. Choosing it resets them, as
-    /// darktable's reset does. Returns the column's rectangle.
-    fn presets(&mut self, ui: &mut Ui, t: &Theme) -> Rect {
-        let ctx = ui.ctx().clone();
-        let out = ui.allocate_ui_with_layout(vec2(PRESETS, BODY), top_down(), |ui| {
-            ui.set_min_size(vec2(PRESETS, BODY));
-            egui::Frame::NONE
-                .inner_margin(egui::Margin::same(t.spacing.m as i8))
-                .show(ui, |ui| {
-                    ui.spacing_mut().item_spacing = vec2(t.spacing.s, t.spacing.xs);
-                    group_label(ui, &tr(&ctx, "export-presets"));
-                    let matches = self.values == Values::default();
-                    let name = tr(&ctx, "export-preset-default");
-                    let tip = tr(&ctx, "export-preset-default-tip");
-                    let words = if matches {
-                        format!("✓  {name}")
-                    } else {
-                        format!("    {name}")
-                    };
-                    let row = ui.add(
-                        egui::Button::new(RichText::new(words).size(t.text.body))
-                            .frame(false)
-                            .selected(matches)
-                            .min_size(vec2(ui.available_width(), t.sizes.row)),
-                    );
-                    let row = row.on_hover_text(tip);
-                    ui.ctx().accesskit_node_builder(row.id, |node| {
-                        node.set_label(name);
-                        node.set_selected(matches);
-                    });
-                    if row.clicked() {
-                        self.values = Values::default();
-                    }
-                    note(
-                        ui,
-                        t,
-                        tr(&ctx, "export-preset-built-in"),
-                        t.colors.text_secondary,
-                    );
-                    if !matches {
-                        note(
-                            ui,
-                            t,
-                            tr(&ctx, "export-preset-matches-none"),
-                            t.colors.text_secondary,
-                        );
-                    }
-                    ui.add_space(t.spacing.m);
-                    note(
-                        ui,
-                        t,
-                        tr(&ctx, "export-presets-later"),
-                        t.colors.text_secondary,
-                    );
-                });
-        });
-        out.response.rect
-    }
-
-    /// The settings column's rows. Returns whether the path's variable list was open as
-    /// the frame began, for Escape to close it and nothing else.
-    fn settings_column(&mut self, ui: &mut Ui, t: &Theme) -> bool {
+    /// The section's rows, then the Export button. Returns whether Export was pressed.
+    fn rows(&mut self, ui: &mut Ui, t: &Theme) -> bool {
         let ctx = ui.ctx().clone();
         let later = tr(&ctx, "export-later");
         // Rows stack as a tool's do, each carrying its own gaps (docs/gui.md, How the rows
         // are laid out).
         ui.spacing_mut().item_spacing = vec2(t.spacing.s, 0.0);
-        let mut list_was_open = false;
 
         // Storage options.
         group_label(ui, &tr(&ctx, "export-storage-options"));
@@ -631,7 +525,7 @@ impl Export {
             .show(ui);
 
         // File on disk.
-        list_was_open |= self.path_rows(ui, t);
+        self.path_rows(ui, t);
         let conflicts = [
             "export-conflict-unique",
             "export-conflict-overwrite",
@@ -713,13 +607,12 @@ impl Export {
                 .show(ui, |_| {});
         }
         ui.add_space(t.spacing.m);
-        list_was_open
+        self.button(ui, t)
     }
 
     /// The path and, under it, what the session says of it: the file's name and where it
     /// goes, the variables with no value here, and the problems that stop Export (D8).
-    /// Returns whether the variable list was open as the frame began.
-    fn path_rows(&mut self, ui: &mut Ui, t: &Theme) -> bool {
+    fn path_rows(&mut self, ui: &mut Ui, t: &Theme) {
         let ctx = ui.ctx().clone();
         let label = tr(&ctx, "export-path");
         // The label on a line of its own, a row high, and the field on the next, as no row
@@ -750,7 +643,7 @@ impl Export {
                 .size()
                 .x
             }) + 2.0 * t.spacing.m;
-            let field = (width - button - t.spacing.s).max(120.0);
+            let field = (width - button - t.spacing.s).max(80.0);
             output = Some(
                 PathField::new(
                     egui::Id::unique("export path"),
@@ -770,7 +663,7 @@ impl Export {
             self.values.path = text;
         }
         let Some((_, preview)) = &self.preview else {
-            return output.list_open;
+            return;
         };
         if let Some(problem) = &problem {
             let mut fix = None;
@@ -786,7 +679,7 @@ impl Export {
             if let Some(text) = fix {
                 self.values.path = text;
             }
-            return output.list_open;
+            return;
         }
         // The first photo's name and where its file goes, the others summed up.
         if let Some(first) = preview.names.first() {
@@ -830,7 +723,6 @@ impl Export {
             let line = translator(&ctx).text_with("export-not-here", Some(&args));
             note(ui, t, line, t.colors.text_secondary);
         }
-        output.list_open
     }
 
     /// What stops the path or its folder, in words, with the fix the session suggests
@@ -1177,68 +1069,26 @@ impl Export {
         }
     }
 
-    /// The footer: what the dialog says of itself, Close, and Export, accented, last, as
-    /// the Mac has the default button. Returns whether each was pressed and the footer's
-    /// rectangle.
-    fn footer(&mut self, ui: &mut Ui, t: &Theme) -> (bool, bool, Rect) {
+    /// The Export button, primary, the section's full width, and what the tool says of
+    /// exporting under it. Disabled with its reason as its tooltip where Export cannot run.
+    /// Returns whether it was pressed.
+    fn button(&mut self, ui: &mut Ui, t: &Theme) -> bool {
         let ctx = ui.ctx().clone();
-        let (rect, _) = ui.allocate_exact_size(vec2(WIDTH, FOOTER), Sense::hover());
-        ui.painter().rect_filled(
-            Rect::from_min_size(rect.min, vec2(WIDTH, 1.0)),
-            0.0,
-            t.colors.separator,
-        );
-        let mut close = false;
-        let mut export = false;
         let reason = self.cannot_export(&ctx);
-        let mut row = ui.new_child(
-            UiBuilder::new()
-                .max_rect(rect.shrink2(vec2(t.spacing.xl, 0.0)))
-                .layout(egui::Layout::left_to_right(egui::Align::Center)),
-        );
-        // The theme's gap between buttons, as an alert's; the footer leaves the dialog's
-        // zero spacing.
-        row.spacing_mut().item_spacing.x = t.spacing.s;
-        let close_words = tr(&ctx, "export-close");
         let mut args = Args::new();
         args.set("count", PHOTOS as f64);
-        let export_words = translator(&ctx).text_with("export-button", Some(&args));
-        let id = egui::Id::unique("export footer buttons");
-        let width: Option<f32> = row.data(|d| d.get_temp(id));
-        // What the dialog says of itself takes the room the buttons leave, wrapping where
-        // a language needs more; it is no stop for F6 or Tab, so the footer's first is Close.
-        let room = (row.available_width() - width.unwrap_or(0.0) - t.spacing.l).max(0.0);
-        row.allocate_ui_with_layout(
-            vec2(room, FOOTER),
-            egui::Layout::left_to_right(egui::Align::Center),
-            |ui| {
-                ui.add(
-                    Label::new(
-                        RichText::new(tr(&ctx, "export-hint"))
-                            .size(t.text.small)
-                            .color(t.colors.text_secondary),
-                    )
-                    .selectable(false)
-                    .wrap(),
-                );
-            },
-        );
-        row.add_space((row.available_width() - width.unwrap_or(0.0)).max(0.0));
-        let start = row.cursor().min.x;
-        close = Button::new(&close_words).show(&mut row).clicked() || close;
-        let mut button = Button::new(&export_words)
+        let words = translator(&ctx).text_with("export-button", Some(&args));
+        let mut button = Button::new(&words)
             .primary(true)
-            .enabled(reason.is_none());
+            .enabled(reason.is_none())
+            .width(ui.available_width());
         if let Some(why) = &reason {
             button = button.tip(why);
         }
-        export |= button.show(&mut row).clicked();
-        let measured = row.min_rect().max.x - start;
-        if width != Some(measured) {
-            row.data_mut(|d| d.insert_temp(id, measured));
-            ctx.request_discard("the export footer measured");
-        }
-        (close, export, rect)
+        let pressed = button.show(ui).clicked();
+        ui.add_space(t.spacing.s);
+        note(ui, t, tr(&ctx, "export-hint"), t.colors.text_secondary);
+        pressed
     }
 
     /// Why Export cannot run, in words, if it cannot: the session has found a problem with
@@ -1250,6 +1100,9 @@ impl Export {
             args.set("problem", problem);
             translator(ctx).text_with(id, Some(&args))
         };
+        if !self.photo {
+            return Some(tr(ctx, "export-why-no-photo"));
+        }
         if let Some(problem) = self.path_problem(ctx) {
             return Some(say("export-why-path", &problem.text));
         }
@@ -1415,28 +1268,42 @@ pub(crate) fn shown(path: &Path, home: Option<&Path>) -> String {
     }
 }
 
-/// Rows top to bottom from the column's start, in a parent that lays out sideways.
-fn top_down() -> egui::Layout {
-    egui::Layout::top_down(egui::Align::Min)
-}
-
 /// A note under a row, in the small text.
 fn note(ui: &mut Ui, t: &Theme, text: impl Into<String>, colour: Color32) {
     ui.add(Label::new(RichText::new(text.into()).size(t.text.small).color(colour)).wrap());
 }
 
-/// A row of the dialog laid out as a tool's one-line row: `panel_line` high, `label` at
-/// its start, the fields `add` draws at its end, `inset` short of it, so a field's box ends
-/// with the row and a unit after the fields where slider values end ([`field_inset`]). The
-/// fields are added from the row's start, in reading order for readers and Tab, after a
-/// space as wide as the last pass found them, so a pass that finds them changed is drawn
-/// again.
+/// A row of the tool laid out as a tool's one-line row: `panel_line` high, `label` at its
+/// start, the fields `add` draws at its end, `inset` short of it, so a field's box ends with
+/// the row and a unit after the fields where slider values end ([`field_inset`]). Where the
+/// label and the fields do not fit the panel's width, the label has a line of its own and
+/// the fields the next, at the row's end as before. The fields are added from the row's
+/// start, in reading order for readers and Tab, after a space as wide as the last pass found
+/// them, so a pass that finds them changed is drawn again.
 fn end_row(ui: &mut Ui, t: &Theme, label: &str, inset: f32, add: impl FnOnce(&mut Ui)) {
     let id = ui.make_persistent_id(("export row", label));
     let width: Option<f32> = ui.data(|d| d.get_temp(id));
+    let named = ui.fonts_mut(|f| {
+        f.layout_no_wrap(
+            label.to_owned(),
+            egui::FontId::proportional(t.text.body),
+            t.colors.text,
+        )
+        .size()
+        .x
+    });
+    let fits = width.is_none_or(|w| named + t.spacing.s + w + inset <= ui.available_width());
+    if !fits {
+        ui.horizontal(|ui| {
+            ui.set_min_height(t.sizes.panel_line);
+            ui.label(RichText::new(label).size(t.text.body));
+        });
+    }
     ui.horizontal(|ui| {
         ui.set_min_height(t.sizes.panel_line);
-        ui.label(RichText::new(label).size(t.text.body));
+        if fits {
+            ui.label(RichText::new(label).size(t.text.body));
+        }
         ui.add_space((ui.available_width() - width.unwrap_or(0.0) - inset).max(0.0));
         let start = ui.cursor().min.x;
         add(ui);

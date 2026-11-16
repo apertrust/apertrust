@@ -21,7 +21,7 @@ The Phase 1 design is built through step 6 of the [build order](#phase-1-build-o
 | Spatial operations after demosaic | Planned: each declares its reach, export tiles are worked backward through them, with an untiled fallback (decision 13) | [Regions](#regions), [Tiling](#tiling) |
 | Geometry | Built: the `Geometry` interface and the planner's walk, tested on two test-only operations, orientation's groundwork, and orientation (`flip`), the first real geometry. Planned: crop and the warps (decision 16) | [Geometry](#geometry) |
 | Jobs | Built: darktable's control jobs in `apertrust-base` and the session's share of the GPU (decision 57) | [Jobs](#jobs) |
-| Export jobs | Built: the writers, darktable's size and resample, whole-image passes after a resample, the settings, darktable's variables, File on disk, the job and the dialog's preview. Planned: the rest (decision 56) | [Export jobs](#export-jobs) |
+| Export jobs | Built: the writers, darktable's size and resample, whole-image passes after a resample, the settings, darktable's variables, File on disk, the job and the Export tool's preview. Planned: the rest (decision 56) | [Export jobs](#export-jobs) |
 | Opening a photo | Built in the session: in three stages, a picture at once, the values before the decode, then the live frame; decoding on a job worker, kernels kept across photos; in the app, the picture at once and the values read-only until live (decision 77) | [Opening a photo](#opening-a-photo) |
 | Several photos in one session | Planned; spike W1 measures it first (decision 37); several windows' sessions on one engine thread per device (decision 89) | [Session and threads](#session-and-threads) |
 | Fusion | Open: a Phase 2 spike decides (decision 8) | [Fusion](#fusion) |
@@ -978,7 +978,7 @@ Commands are plain data in the engine and move into the protocol unchanged ([ses
 - what the scopes count of each frame (`Scopes`, [below](#scopes), decision 19);
 - the readouts a client shows, by tool (`Readouts`, [below](#readouts), decision 19, planned);
 - the active colour picker (`Picker`, built for the Colour picker's) and the stored samples (`Samples`, planned; [pickers.md](pickers.md#commands), decision 79);
-- an export of photos with the dialog's settings, and the dialog's preview (`Export`, `PreviewExport`, [Export jobs](#export-jobs), decision 56);
+- an export of photos with the Export tool's settings, and its preview (`Export`, `PreviewExport`, [Export jobs](#export-jobs), decision 56);
 - a job's cancel (`CancelJob`, [Jobs](#jobs), decision 57), and a failed job tried again (`RetryJob`, decision 72);
 - and the tool values (decision 28), below.
 
@@ -1234,7 +1234,7 @@ flowchart TD
 - **The session's end.** The edit is saved, then `Control::shutdown` runs on a short-lived thread of its own while the engine thread keeps stepping the tasks the workers hand it until every worker has ended. So a body that cannot be cancelled and still waits for the engine thread finishes, and the drop never hangs.
   - After a panic, saving the edit or stepping tasks at the end, the inbox and the waiting tasks go before the control waits for its workers, so their bodies hear `Stopped`, and the panic goes on once the workers have ended.
   - After a panic elsewhere on the engine thread the inbox is dropped first and the tasks before the control.
-- **Callers.** The export is the first job a client starts (`Command::Export`, [Export jobs](#export-jobs)), beside the Export dialog's preview and a folder's reading. The disk cache's `cache-walk` and `cache-evict` are `SystemBackground` jobs with no progress, the latter asked for by `Command::Cache(CacheCommand::Limit(limit))` and by a write past the limit, the former also by `CacheCommand::Sizes`; its `Clear { kind }` is a `cache-clear` job on `UserBackground` with a progress, cancellable ([cache.md](cache.md#through-the-session)). The tests' synthetic job stays behind a test-only command.
+- **Callers.** The export is the first job a client starts (`Command::Export`, [Export jobs](#export-jobs)), beside the Export tool's preview and a folder's reading. The disk cache's `cache-walk` and `cache-evict` are `SystemBackground` jobs with no progress, the latter asked for by `Command::Cache(CacheCommand::Limit(limit))` and by a write past the limit, the former also by `CacheCommand::Sizes`; its `Clear { kind }` is a `cache-clear` job on `UserBackground` with a progress, cancellable ([cache.md](cache.md#through-the-session)). The tests' synthetic job stays behind a test-only command.
 
 ### Differences from darktable
 
@@ -1820,7 +1820,7 @@ Built:
 - darktable's variables (`apertrust_export::variables`, `docs/ports/variables.md`);
 - File on disk ([Writing the file](#writing-the-file));
 - the export job ([The job](#the-job)), through which `apertrust-cli export` runs;
-- the dialog's preview (`PreviewExport`, [Commands and events](#commands-and-events)).
+- the Export tool's preview (`PreviewExport`, [Commands and events](#commands-and-events)).
 
 The rest is planned.
 
@@ -1920,11 +1920,11 @@ Event::Export { job, status }
                                             Skipped { path, why: Exists | NotChanged }
                                             Failed { error }, in plain words
   Finished { written, skipped, failed, not_reached, cancelled }
-Event::ExportPreview { through, preview }   the dialog's lines, for the latest PreviewExport
+Event::ExportPreview { through, preview }   the tool's lines, for the latest PreviewExport
 ```
 
-- **`ExportSettings`** is `apertrust-export`'s, the dialog's settings as plain data: the storage (File on disk: the path pattern and On conflict); the format and its options (JPEG: quality and chroma subsampling; PNG: bit depth and compression); the size (its mode, width and height in pixels, dpi, the scale as darktable's text, Allow upscaling, High quality resampling); the profile and intent; Store masks; the style and its mode; later the metadata.
-- **A preset is the client's to read:** the engine opens no file (decision 43), so the CLI's `--preset NAME`, the dialog and later the server and MCP read `presets/export.toml` and send its settings.
+- **`ExportSettings`** is `apertrust-export`'s, the tool's settings as plain data: the storage (File on disk: the path pattern and On conflict); the format and its options (JPEG: quality and chroma subsampling; PNG: bit depth and compression); the size (its mode, width and height in pixels, dpi, the scale as darktable's text, Allow upscaling, High quality resampling); the profile and intent; Store masks; the style and its mode; later the metadata.
+- **A preset is the client's to read:** the engine opens no file (decision 43), so the CLI's `--preset NAME`, the Export tool (planned) and later the server and MCP read `presets/export.toml` and send its settings.
 - **`PreviewExport`** runs as a `UserForeground` job with no progress (decision 57), an older one cancelled as a new one comes, never on the engine thread, since a NAS can take seconds to say which files exist; the latest answer wins.
   - It expands the active photo's name in full and the others' from what is known without decoding them (their file, folder and sequence).
   - It counts the files already there by On conflict's rule, and reports the active photo's output size, the pattern's errors (D8) and the folder's preflight.
@@ -1935,7 +1935,7 @@ Event::ExportPreview { through, preview }   the dialog's lines, for the latest P
 
 - **The job.** `Event::ExportPreview { through, preview }` is sent by a `UserForeground` job with no progress, on a job worker, `through` the command's number.
   - The session keeps the latest preview's job and cancels it when a new command comes (a `UserForeground` queue has no deduplication, so a cancel is the supersede). Once several clients share a session (decision 90, planned), it keeps one per client and a new `PreviewExport` cancels only its own client's earlier one, so another client's preview always gets its answer.
-  - A cancelled preview sends nothing; a preview that had already answered has, so a client takes the latest answer it can: the built dialog keeps the highest `through` received, and the Export tool (decision 90, planned) keeps the number of its latest `PreviewExport` and takes only an answer whose `through` is that number or later. No GPU is used.
+  - A cancelled preview sends nothing; a preview that had already answered has, so a client takes the latest answer it can: the built tool keeps the highest `through` received, and the Export tool (decision 90, planned) keeps the number of its latest `PreviewExport` and takes only an answer whose `through` is that number or later. No GPU is used.
   - Dropping the session cancels a preview that is running, as the shutdown cancels every job without a progress (decision 57, J9).
 - **The open photo is the active photo.** It is taken from the session's memory as the command is handled, like an export's live photo, only if it is among `photos`. Only its size is reported (`ActiveSize`): the output as `apertrust_export::size` computes it from its extent after every geometry, or the D8 problem, a side too large for the format, a size that leaves no pixel, a photo whose edit does not bind. Another photo's extent needs a decode, which the preview never makes.
 - **What is read of the other photos.** No image is decoded. A probe expands the path with and without values no photo has, to see whether it uses the shooting data a file records and, apart, what only a decode gives (the camera's name as the decoder reads it, the ISO, the exposure bias, the image's sizes). `apertrust_raw::read_exif_file`, the metadata alone, is read for each photo only if the path uses the first. For the second the open photo has them, and another photo's `PhotoName::exact` is false, those variables showing empty.
@@ -1954,11 +1954,11 @@ Event::ExportPreview { through, preview }   the dialog's lines, for the latest P
 As darktable computes it (`src/libs/export.c`, `src/control/jobs/control_jobs.c`, `src/imageio/imageio.c`'s `dt_imageio_export_with_flags` and darktable-cli's `src/cli/main.c`), in `apertrust-export`'s `size`: a pure function of the settings, the format's largest side and the photo's output extent at full resolution, after any geometry (decision 16), W × H, in f64 where darktable computes in double and f32 where it computes in float.
 
 1. **The limit, in pixels.** In pixels, the width and height. In cm `ceilf(cm × dpi / 2.54)` and in inches `ceilf(in × dpi)`, in f32, stored as pixels as darktable stores `width` and `height`, the print fields showing them back at two decimals (pixels × 2.54 / dpi, `%.2f`). By scale, no limit, and the factor read from darktable's text as `dt_imageio_resizing_factor_get_and_parsing` reads it (`,` or `.` for the decimal point; `a/b`, and `/b` for `1/b`; 0 or empty is 1), the field filtered and tidied as `_scale_changed` and `_scale_optim` do.
-2. **With Allow upscaling in the dialog, a side left at 0 becomes 100 times the other** (darktable's export module's `MAX_ASPECT_RATIO`). darktable-cli has no such rule, and the CLI keeps it: its side at 0 takes the photo's own, so along it the scale is at most 1 (`Request::dialog`).
+2. **With Allow upscaling in the Export tool, a side left at 0 becomes 100 times the other** (darktable's export module's `MAX_ASPECT_RATIO`). darktable-cli has no such rule, and the CLI keeps it: its side at 0 takes the photo's own, so along it the scale is at most 1 (`Request::dialog`).
 3. **The format's largest side caps a limit that is set,** as darktable-cli caps it: JPEG 65535, PNG 2147483647, File on disk none. A side left at 0 stays no limit. darktable's export module takes the format's largest side as the limit instead; as it turns upscaling off at 0 × 0 (`dt_control_export`) and fills a single side at 0 a hundred times the other first, the one effect is on a photo larger than the format's largest side, a JPEG past 65535 pixels, which its module fits within it, where Apertrust refuses (step 6), as darktable-cli exports at full size. That is not mirrored (decision 56, `docs/ports/finalscale.md`).
 4. **The scale,** as `dt_imageio_export_with_flags` computes it: a side with no limit takes the extent's; the largest scale allowed is 100 with upscaling, darktable's `fmin(100, …)` without its memory term, which would make the size depend on the computer, and 1 without; `scale = min(limit_w / W, limit_h / H, largest)`, and by scale `min(factor, largest)`.
 5. **The output** is `floor(scale × W)` by `floor(scale × H)`, and the operations after the resample see `scale` itself, as darktable's pipe passes it to every module. `$(WIDTH.EXPORT)` and `$(HEIGHT.EXPORT)` keep darktable's own rounding (`roundf` in float, `_init_expansion`), which can differ from the file by one: mirrored.
-6. **A side larger than the format's largest** refuses the export before it starts (D8): the dialog says so at the field, and the CLI exits with the message.
+6. **A side larger than the format's largest** refuses the export before it starts (D8): the Export tool says so at the field, and the CLI exits with the message.
 
 **The resample** is darktable's `dt_interpolation_resample` (`src/common/interpolation.c`). For each output row and column it takes the taps of darktable's scaling interpolator, its preference "pixel interpolator (scaling)" (`plugins/lighttable/export/pixel_interpolator`) at its default, lanczos3, made by `_maketaps_lanczos` with darktable's fast sine and normalised as its resampling plan normalises them; it applies them across, then down, in f32; at a scale of 1 in f32 it copies, as darktable's does. The plan is computed on the CPU and bound as tables; the kernel is the engine's own, `crates/engine/slang/resample.slang`, beside the viewport's downscale, with no derivative entry points. darktable's preference is not drawn; its other interpolators can come with the Settings dialog's Processing page.
 
@@ -2009,7 +2009,7 @@ In `apertrust-export`, on the job's worker (decision 57).
   - quality 5 to 100 (95) through libjpeg's `jpeg_set_quality`: the Annex K tables scaled by 5000 / q below 50 and 200 − 2q above, rounded and clamped to 1 to 255, jpeg-encoder's own formula, so the tables are libjpeg's exactly;
   - chroma subsampling Auto as libjpeg's default 2×2 with darktable's changes, vertical 1 above 90 and horizontal 1 above 92, so 4:4:4 at the default 95; or 4:4:4, 4:4:0, 4:2:2 or 4:2:0 as chosen;
   - optimised Huffman tables (`optimize_coding`); baseline; JFIF density in dots per inch from darktable's `metadata/resolution`, 300, or the print dpi in the cm and inch modes (`_dimensions_type_changed`); the ICC profile in APP2 markers;
-  - not mirrored: `metadata/resolution` is no setting of Apertrust's. The density follows `export.size.mode` and `export.size.dpi`, exactly as darktable's export module keeps `metadata/resolution` (`_dimensions_type_changed`, `_print_dpi_changed`), so the dialog and the CLI give the same density. darktable-cli reads `metadata/resolution` from darktablerc as it stands, so there `--conf metadata/resolution=N` sets the density in any mode, where Apertrust has no way to set it in the pixels and scale modes, which take 300;
+  - not mirrored: `metadata/resolution` is no setting of Apertrust's. The density follows `export.size.mode` and `export.size.dpi`, exactly as darktable's export module keeps `metadata/resolution` (`_dimensions_type_changed`, `_print_dpi_changed`), so the tool and the CLI give the same density. darktable-cli reads `metadata/resolution` from darktablerc as it stands, so there `--conf metadata/resolution=N` sets the density in any mode, where Apertrust has no way to set it in the pixels and scale modes, which take 300;
   - not mirrored, since jpeg-encoder has neither: libjpeg's DCT method by quality (float above 95, fast integer below 50) and its input smoothing below 80. A decoded file against darktable's at qualities 95, 85, 70 and 50 is measured and reported, with no bound set yet;
   - measured on the corpus's Nikon D5100 (the M4, jpeg-decoder reading both), each encoder's file against its own program's 8-bit PNG of the photo, since the two programs crop it differently (4928 × 3264 against darktable-cli's 4946 × 3280). The files are larger below 80, where libjpeg smooths:
 
@@ -2046,7 +2046,7 @@ In `apertrust-export`, on the job's worker (decision 57).
 
 **How it is built** (`apertrust_export::disk`):
 
-  - `Disk::new` takes the pattern, On conflict, the number of photos and the home folder, and refuses an empty path and a pattern `Pattern::parse` refuses before any photo; `Disk::prepare` makes the folder, applies On conflict, and either says to skip the photo, before it is rendered, or gives a `Target`: the temporary file, made in the folder at that point, which proves the folder can be written where darktable calls `g_access`. The caller writes into `Target::file` and `Target::finish` syncs and renames; a target dropped first removes the file. A skip is checked before the folder's writability, where darktable checks the folder first. `Disk::foresee` applies the same rule through the same `resolve` without making anything, for the dialog's preview (`Foreseen`, `Action`), and `disk::preflight` asks of a folder without making it ([Commands and events](#commands-and-events)).
+  - `Disk::new` takes the pattern, On conflict, the number of photos and the home folder, and refuses an empty path and a pattern `Pattern::parse` refuses before any photo; `Disk::prepare` makes the folder, applies On conflict, and either says to skip the photo, before it is rendered, or gives a `Target`: the temporary file, made in the folder at that point, which proves the folder can be written where darktable calls `g_access`. The caller writes into `Target::file` and `Target::finish` syncs and renames; a target dropped first removes the file. A skip is checked before the folder's writability, where darktable checks the folder first. `Disk::foresee` applies the same rule through the same `resolve` without making anything, for the tool's preview (`Foreseen`, `Action`), and `disk::preflight` asks of a folder without making it ([Commands and events](#commands-and-events)).
   - A pattern that expands to nothing for a photo, or still to a folder after `$(FILE_NAME)` follows it, is that photo's error (`NoName`), where darktable would read before the start of an empty text and loop.
   - `~name`, another user's home, is left as written: only `~` and `~/…` are the home folder (as `apertrust-base`'s folders have it), where darktable looks the user up.
   - The temporary file has the permissions a file made in the usual way has (0666 less the umask), not tempfile's 0600. A rename that Windows refuses, access denied or a sharing violation, is tried again 10 times, 50 ms apart; elsewhere a refused rename is final. That retry is untested here, as it needs Windows.
@@ -2067,7 +2067,7 @@ In `apertrust-export`, on the job's worker (decision 57).
 
 The engine reads neither (decision 43): the app and the CLI read them and send plain `ExportSettings`.
 
-- **The dialog's last settings** are settings of a third owner, `export`, in `data/settings.schema.toml` (decision 45), generated by `apertrust-export`'s `build.rs` as the engine's are by its own. The app writes them as the dialog changes, which keeps them as darktable keeps its conf, and the CLI reads them. There is one per darktable conf key the dialog holds, under darktable's defaults, their kinds and ranges darktable's:
+- **The tool's last settings** are settings of a third owner, `export`, in `data/settings.schema.toml` (decision 45), generated by `apertrust-export`'s `build.rs` as the engine's are by its own. The app writes them as the tool changes, which keeps them as darktable keeps its conf, and the CLI reads them. There is one per darktable conf key the tool holds, under darktable's defaults, their kinds and ranges darktable's:
 
   | Setting | darktable | Default |
   | --- | --- | --- |
@@ -2083,7 +2083,7 @@ The engine reads neither (decision 43): the app and the CLI read them and send p
   | `export.style`, `export.style_mode` | `…/style`, `…/style_append` | None, Replace history |
   | `export.ask_before_overwrite` | `plugins/lighttable/export/ask_before_export_overwrite` | Yes |
 
-  Each key comes with the work that uses it: the formats' other keys with their formats, the storages' with theirs, the metadata's with the metadata. `export.ask_before_overwrite` is the overwrite alert's "Don't ask again", built: the app keeps it apart from the dialog's settings (`Settings::ask_before_overwrite`). No Settings page shows it yet, as darktable's preferences show theirs; it is changed with `--conf` or the file.
+  Each key comes with the work that uses it: the formats' other keys with their formats, the storages' with theirs, the metadata's with the metadata. `export.ask_before_overwrite` is the overwrite alert's "Don't ask again", built: the app keeps it apart from the tool's settings (`Settings::ask_before_overwrite`). No Settings page shows it yet, as darktable's preferences show theirs; it is changed with `--conf` or the file.
 
   **What is built** (`apertrust_export::settings`): fifteen of them, the table's rows from `export.disk.path` to `export.size.high_quality` and `export.profile`, and `export.ask_before_overwrite`, true. `export.storage`, `export.masks`, `export.intent` and the style's two come with the work that uses them.
 
@@ -2100,7 +2100,7 @@ The engine reads neither (decision 43): the app and the CLI read them and send p
 
 `apertrust-cli export FILE... [-o PATTERN]` starts a session in-process, sends `Export` and prints each photo's line as its `Event::Export` comes, until the job's `Ended`, exiting with an error when one failed.
 
-- **darktable-cli's options** where it has them: `--width` and `--height` (0, no limit), `--hq` (true, darktable-cli's default, where the dialog's is no) and `--upscale` (false); `--out-ext` and `--icc-type` planned.
+- **darktable-cli's options** where it has them: `--width` and `--height` (0, no limit), `--hq` (true, darktable-cli's default, where the tool's is no) and `--upscale` (false); `--out-ext` and `--icc-type` planned.
 - **The format.** `-o`'s extension chooses the format as darktable-cli's does (`jpg` or `jpeg`, `png`), over `export.format`; the rest of it is the path pattern, with darktable's variables.
 - **Settings.** Its store is opened on the engine's and the export's registries, and `--conf export.…` is checked against them. It takes the format's options from the user data folder's `export.*` settings (`apertrust_export::settings::format`), as darktable-cli reads them from darktablerc, a JPEG's density with them, `--conf export.…` over them for one run, and logs each under `-d settings` with where it came from. Planned: `--preset NAME`, reading `presets/export.toml`, the flags over its settings.
 - **The size** comes from `--width`, `--height`, `--hq` and `--upscale` alone, with darktable-cli's defaults, never from `export.size`, as darktable-cli reads none of darktablerc's size keys.

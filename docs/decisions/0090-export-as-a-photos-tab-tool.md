@@ -2,7 +2,7 @@
 
 ## Context
 
-Export holds darktable's export module row for row ([0056](0056-export-as-an-engine-job.md)). It is built as a dialog of the host ([0041](0041-dialogs-as-native-modal-windows.md)), a sheet of AppKit's on the Mac and a modal window on Windows and Linux, acting on the active photo: its rows, drawn with the side panel's controls, are about 1,000 lines and 38 tests in `crates/app/src/export.rs` and `export/tests.rs`, its dialog frame about 300 lines and 10 tests.
+Export holds darktable's export module row for row ([0056](0056-export-as-an-engine-job.md)). It is built as a tool of the Photos tab acting on the active photo, its rows drawn with the side panel's controls in `crates/app/src/export.rs`, tested in `export/tests.rs`; what is planned is the selection, the groups' full design, the summary, presets and metadata.
 
 darktable draws its export module in the lighttable's side panel, acting on the selected images, parted by the section labels storage options, format options and global options (`src/libs/export.c` at the reference release). Its copy & import is a dialog listing the source's files (`src/libs/import.c`), its import module only buttons. In Apertrust the Photos tab already holds what is about photos as items, and the grid panel's selection already says which photos ([0037](0037-one-view-the-photos-tab.md), [0073](0073-the-photos-tabs-tools-browse-first-filters-in-folder-mode.md)); a sheet's checks would be a second way of choosing them.
 
@@ -10,7 +10,7 @@ The questions are where Export lives, what it acts on, what its keys do, what be
 
 ## Decision
 
-**Export is one tool of the side panel, a utility, last in the Photos tab:** darktable's export module, row for row, acting on the selection. Planned, Phase 3; the built dialog keeps working until the tool replaces it, and goes then.
+**Export is one tool of the side panel, a utility, last in the Photos tab:** darktable's export module, row for row, acting on the selection. Phase 3, its first part built: the rows are the tool's section for the active photo, which Export… and Ctrl+E reveal; the rest is planned.
 
 ### The tool
 
@@ -71,9 +71,9 @@ Nothing new: `Command::Export { photos, settings, places }` and `PreviewExport {
 
 ## Consequences
 
-- `crates/app/src/export.rs` becomes the Export tool's section; its rows and their tests carry over. The dialog's frame goes: AppKit's sheet and the modal window, the 44-point header, the 200-point Presets column, the footer and Close, `impl Dialog for Export` and its snapshots. The dialog host stays, for Settings, the jobs and log windows, Linux's alerts, the prompts and [0089](0089-one-instance-per-user-data-folder-a-window-per-place.md)'s windows.
+- `crates/app/src/export.rs` is the Export tool's section. The dialog host serves Settings, the jobs and log windows, Linux's alerts, the prompts and [0089](0089-one-instance-per-user-data-folder-a-window-per-place.md)'s windows, and no Export.
 - `apertrust-export`, the `UserExport` job and the `export.*` settings are unchanged. Export Again gains its key, and with Phase 3's selection it sends the selected photos where it sends the open photo alone today. `PreviewExport` gains only its `focus`, planned since [0056](0056-export-as-an-engine-job.md).
 - `apertrust-ui` gains the setting rows, a `Button` with its words centred, and a utility's header with ↺ and presets. The sheets' `export.column_width`, `export.order`, `export.keep_open` and `export.thumbnails` are never added.
 - [0084](0084-export-as-a-sheet-of-export-tools.md) is superseded. [0086](0086-import-as-a-full-window-sheet.md) is Import's alone; [0041](0041-dialogs-as-native-modal-windows.md) lists Import and Print as sheets and Export as a tool; [0056](0056-export-as-an-engine-job.md)'s `focus` is the active photo; [0073](0073-the-photos-tabs-tools-browse-first-filters-in-folder-mode.md) ends the Photos tab with Export; [0029](0029-a-tool-is-darktables-page.md) records Global options, open at first, as the one exception to "closed at first"; [0004](0004-tools-for-people-operations-for-algorithms.md), [0037](0037-one-view-the-photos-tab.md), [0042](0042-numbers-shown-typed-and-stored.md), [0083](0083-the-side-panels-layout-dragged-and-floating.md) and [0085](0085-import-in-folder-mode.md) follow; so do the scroll wheel's rule and the default keyboard map in [gui.md](../gui.md#the-scroll-wheel-over-a-row).
-- The first milestone: the rows, Default settings, the tool's end and Ctrl+E's reveal, the dialog removed; then presets, Multi-preset export, Metadata and Style ([gui.md](../gui.md#the-build-in-cards)). A spike first measures the rows at 320 points in the four languages and the pseudo-locale.
+- Built: the tool with the dialog's rows, Default settings, the Export button and Ctrl+E's reveal. Planned: its groups, the summary, the warnings and the button's states at the tool's end, the new keys, then presets, Multi-preset export, Metadata and Style ([gui.md](../gui.md#the-build-in-steps)).
 - [gui.md](../gui.md#the-export-tool) describes the tool; the wireframe's Export board is redrawn as the tool, and the `ui-conventions` and `desktop-architecture` skills are to describe it.

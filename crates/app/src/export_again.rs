@@ -15,10 +15,10 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 //! File › Export Again (`docs/gui.md`, Export Again): darktable's export with the settings
-//! as last kept, with no dialog. darktable's Ctrl+E is its export button's own
-//! `_export_with_current_settings`, which asks the storage for a confirmation first (File
-//! on disk: "export in overwrite mode?") and then exports; so this does what the dialog's
-//! Export does, from the settings the dialog left in `export.*`.
+//! as last kept, with the Export tool left as it is. darktable's Ctrl+E is its export
+//! button's own `_export_with_current_settings`, which asks the storage for a
+//! confirmation first (File on disk: "export in overwrite mode?") and then exports; so this
+//! does what the tool's Export button does, from the settings the tool left in `export.*`.
 //!
 //! The question is darktable's: asked when On conflict is Overwrite and the setting
 //! `export.ask_before_overwrite` is on, whether or not a file is there
@@ -31,7 +31,8 @@ use apertrust_engine::session::{Command, Places};
 
 use crate::export::Values;
 
-/// The export of `photo` with `values`, the settings as the dialog left them.
+/// The export of `photo` with `values`, the settings as the tool left them: Export Again's,
+/// and the Export button's.
 pub fn export(photo: &Path, values: &Values, places: &Places) -> Command {
     Command::Export {
         photos: vec![photo.to_owned()],

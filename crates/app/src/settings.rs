@@ -219,12 +219,12 @@ pub struct Settings {
     /// with what the keymap could not use as it was read; an empty list leaves an action
     /// without a key.
     pub keys: BTreeMap<String, Vec<String>>,
-    /// The Export dialog's last settings, `export.*`, kept as they are left.
+    /// The Export tool's last settings, `export.*`, kept as they are left.
     pub export: Values,
     /// The tools' settings, `tools.<tool>.*` (decision 29).
     pub tool_settings: ToolSettings,
     /// Whether Export and Export Again ask before replacing files, `export.ask_before_overwrite`:
-    /// kept apart from the dialog's settings, since the dialog does not edit it and its
+    /// kept apart from the tool's settings, since the tool does not edit it and its
     /// Default settings do not reset it.
     pub ask_before_overwrite: bool,
     /// Whether Discard History asks first, `history.ask_before_discard`.
@@ -1026,7 +1026,7 @@ pub struct ViewState {
 }
 
 /// The settings the app's store reads: its own, then the engine's, which the app hands
-/// the engine as options (decision 43), then the export settings the Export dialog edits
+/// the engine as options (decision 43), then the export settings the Export tool edits
 /// (decision 56).
 fn registries() -> Vec<&'static dyn Declared> {
     let engine = engine::registry::ALL.iter();
@@ -1550,7 +1550,7 @@ mod tests {
     }
 
     /// The settings the app's own settings write: the app's and the export settings the
-    /// Export dialog keeps. The engine's, and the page Settings last showed, the Settings
+    /// Export tool keeps. The engine's, and the page Settings last showed, the Settings
     /// dialog keeps through the keeper (`Keeper::apply`), and so is reopening what was open
     /// last, read once at the start (`Keeper::reopen_last`); the old recent folders are only
     /// read, for their move into `state.toml` (`Keeper::old_recent_folders`).

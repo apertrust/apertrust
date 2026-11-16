@@ -230,7 +230,7 @@ pub enum Intent {
     ClearRecent,
     /// File › Close: what is open closed, its edit saved, and nothing open after it.
     Close,
-    /// The Export dialog, a sheet on the Mac (`export`).
+    /// Export…: reveals the Export tool in the Photos tab (`export`).
     Export,
     /// The export with the settings as last kept, with no dialog (`export_again`).
     ExportAgain,

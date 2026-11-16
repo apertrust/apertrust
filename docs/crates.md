@@ -269,7 +269,7 @@ It writes and makes nothing and decodes no image; it reads the EXIF only for a p
 
 The session's events (decision 59, [docs/events.md](events.md)):
 
-- Each is a fact, superseding the last of its topic, or a notice (`Event::topic()`, `Topic::Fact(Fact)` or `Topic::Notice`). A job's progress, title, detail, destination and state are a fact each, by job, its `Added` and `Ended` notices; the Export dialog's preview and an opening photo's picture are facts.
+- Each is a fact, superseding the last of its topic, or a notice (`Event::topic()`, `Topic::Fact(Fact)` or `Topic::Notice`). A job's progress, title, detail, destination and state are a fact each, by job, its `Added` and `Ended` notices; the Export tool's preview and an opening photo's picture are facts.
 - A refused command names its number (`SessionError::Refused { command, error }`), its words the error's.
 - `Event::History`, a fact (decision 78): after `Values { live: false }` as a photo opens, and once in each batch that changed the log, its end or the undo records, after its `Values` and before its `Frame`, its steps shared behind `Arc`s. Building it takes about 0.01 ms in a batch at 200 and at 1,000 steps on the M4, and 0.08 and 0.4 ms with every step described anew; its JSON, estimated, is about 59 kB at 200 steps and 295 kB at 1,000, over its 256 kB budget, so the remote protocol takes the planned fallback ([history.md](history.md#the-history-event)).
 - Every thread of the session sends through one `Outbox` (`session/outbox.rs`): the engine thread, the edit writer, the jobs' observer, and the bodies of the export, the preview, the folder's reading, the thumbnails and an open.
@@ -464,7 +464,7 @@ The desktop GUI, on egui ([docs/gui.md](gui.md)), in `crates/app`.
 ```mermaid
 flowchart LR
     session["engine session"] -- events --> mirror["mirror (mirror.rs)"]
-    mirror -- reactions --> windows["jobs window, Export dialog"]
+    mirror -- reactions --> windows["jobs window, Export tool"]
     mirror --> panels["panels, drawn each frame"]
     panels -- commands --> session
 ```
@@ -681,7 +681,7 @@ File › Open… (`open`, Ctrl+O, first in File, and Browse's ＋; `src/dialogs.
 - One dialog at a time, in a winit window of its own beside eframe's, made and run by `Gated` with the submit gate held, and kept out of other windows' tabs.
 - It has its own egui context, egui-winit state and AccessKit adapter, and an egui-wgpu painter on the engine's device. Its events, AccessKit requests and repaints are routed to it.
 - It is sized to its content as it is drawn, but for one the person resizes (`Dialog::resize`, the log window alone), whose content takes the window's size; its title is translated.
-- A sheet on the Mac (the Export dialog) is begun and ended from the run loop, its window kept until `endSheet:` returns, the main window's input taken meanwhile. The sheet's phases are one pure function, `step`.
+- A sheet on the Mac is begun and ended from the run loop, its window kept until `endSheet:` returns, the main window's input taken meanwhile. The sheet's phases are one pure function, `step`.
 - A dialog's buttons sit at the row's end in the order given, the platform's, for readers and Tab too (`dialog_host::buttons`).
 
 **Settings on the Mac** is a modeless window:
@@ -768,22 +768,22 @@ The actions registry and the default keyboard map:
 - it holds the theme, the language once chosen, the scale, key overrides in a portable text form (clashing and clipboard ones refused), Edit's tab, tab names, the side panel's width, which sections and collapsible groups are open, the window's placement (restored on its monitor) and Settings' window's place;
 - a damaged file is kept as `.bak`, and a newer one is never overwritten.
 
-### The Export dialog
+### The Export tool
 
-`src/export.rs` (decision 56; [docs/gui.md](gui.md#as-built), The Export tool, As built): a sheet on the Mac, a modal window on Windows and Linux (`impl Dialog for Export`). Planned: the Export tool in its place, a utility last in the Photos tab (decision 90; [docs/gui.md](gui.md#the-export-tool)); its rows and their tests carry over, and the dialog's frame, `impl Dialog for Export` and its snapshots go.
+`src/export.rs` (decision 56; [docs/gui.md](gui.md#as-built), The Export tool, As built): the Photos tab's last section, after Browse, a utility with ↺ for Default settings (decision 90; [docs/gui.md](gui.md#the-export-tool)). It is no dialog: `Export::show(&mut Ui, open, photo)` draws it from `photos_body` in `main.rs`, and the field `App.export` keeps it for the app's life. Planned: its groups, summary, presets and the rest of decision 90.
 
-- File › Export… (`export`, Cmd+E) opens it, enabled with a photo open. Where the host shows no alert (`dialog_host::platform::shows_alerts`, the Mac's only so far), `Export::alerts(false)` lists Overwrite disabled and rests Export while it is chosen.
-- `Dialog::show(&mut Ui)` is its content: darktable's File on disk, JPEG and PNG, Set size's four modes, Allow upscaling, High quality resampling, and Profile (Image settings, sRGB). Every other row is drawn disabled, saying why. Its rows are drawn as a tool's: its choices Blended, its booleans toggles.
+- File › Export… and Ctrl+E (Cmd+E) (`export`) reveal it, enabled with a photo open: `Shell::reveal` chooses the Photos tab, opens the section and scrolls it into view. Where the host shows no alert (`dialog_host::platform::shows_alerts`, true on macOS and Linux, false on Windows alone, until its task dialog is built), `Export::alerts(false)` lists Overwrite disabled and rests Export while it is chosen.
+- Its rows are darktable's File on disk, JPEG and PNG, Set size's four modes, Allow upscaling, High quality resampling, and Profile (Image settings, sRGB). Every other row is drawn disabled, saying why. They are drawn as a tool's: its choices Blended, its booleans toggles, a row whose label and fields do not fit the panel's width putting its label above them (`end_row`).
 - The fifteen `export.*` settings are `export::Values` in `Settings::export`, kept as they change. The app's store opens on the export registry too, and `--conf export.…` is read.
-- Its feedback lines come from the session: `PreviewExport` on the first frame and on every change, through `export::commands`; `Event::ExportPreview` is handed back by `Dialogs::preview`, the highest `through` kept.
-- Export sends `Command::Export` for the active photo and closes the sheet.
-- Keys: Esc, Cmd+. and Cmd+W; Return and Cmd+Return; F6.
+- Its feedback lines come from the session: `PreviewExport` while the tool is open and the Photos tab shown, on the first frame and when the settings, the photo, the photo's becoming live or its edit, or the user's export jobs change (`export::Previews`, `export::preview_command`); `Event::ExportPreview` is handed back as `Reaction::Preview` to `Export::receive`, the highest `through` kept.
+- Export sends `Command::Export` for the active photo, unless the app is quitting, and closes nothing. With On conflict Overwrite the command is held in `export_again::Again` through the overwrite question, as Export Again's, so a yes sends the photo that was open when it was asked.
+- It has no keys of its own.
 
 ### Alerts
 
 `src/alerts.rs`; `Dialogs::ask` and `answer` in the host.
 
-- **Overwrite.** Asked from the Export dialog, the main window once the Export tool replaces it, when On conflict is Overwrite, as darktable's storage asks: whether or not a file is there, and never for Overwrite if changed (`export::asks_before`).
+- **Overwrite.** Asked over the main window, from the Export tool or Export Again, when On conflict is Overwrite, as darktable's storage asks: whether or not a file is there, and never for Overwrite if changed (`export::asks_before`).
   - Its default is Cancel, which Return and Escape press; Overwrite is destructive, with no key.
   - Don't ask again is a suppression box (`Request::suppression`). A ticked yes turns `export.ask_before_overwrite` off (`Question`), unless `--conf` holds it; Export and Export Again then ask nothing. Settings › General › Confirmations shows it.
 - **Discard History.** Asked by Edit › Discard History… and the History section's ⋯ (`discard_request`): Discard History, destructive, and Cancel, the default; a ticked yes turns `history.ask_before_discard` off (`Question`), unless `--conf` holds it. On an edit view-only because of a `sidecar::Problem` it always asks, with no box, naming the edit's file to copy first. What it does is `discard`'s, a pure function of the photo (`Discarding`), the setting and whether the platform shows alerts, and a yes reaches only the photo asked for, opened the same way (`discard_confirmed`). Where no alert can be shown, Windows' for now, it is disabled wherever it would ask, saying why (`discard_runs`).
@@ -800,10 +800,10 @@ The actions registry and the default keyboard map:
 The session's events enter the app in one place (decision 59, `src/mirror.rs`): the mirror's `apply(event) -> Vec<Reaction>`, with no egui type.
 
 - It is drained first in `App::logic`, so while the window is minimised too.
-- It holds what the app knows of the session: the photo, the values (with the changes sent since shown over them), the frame, the scopes' reading, whether the edit is saved, the photo's history, the active colour picker (`pickers::Mirror`), the jobs, the failure the central panel shows, the open folder with its thumbnails, and the Export dialog's floor for previews.
+- It holds what the app knows of the session: the photo, the values (with the changes sent since shown over them), the frame, the scopes' reading, whether the edit is saved, the photo's history, the active colour picker (`pickers::Mirror`), the jobs, the failure the central panel shows, the open folder with its thumbnails, and the Export tool's floor for previews.
 - It drops what an earlier open left on its way.
 - **The photo's history** (decision 78): `Mirror::history`, the latest `Event::History` by its `through`, one numbered lower dropped; none with no photo, while another opens until its own arrives, an earlier open's dropped as its values are, and once the photo closes or an open fails.
-- It returns the reactions the app owes: `Reaction::Jobs`, the jobs window to open or update, and `Reaction::Preview`, a preview for the Export dialog.
+- It returns the reactions the app owes: `Reaction::Jobs`, the jobs window to open or update, and `Reaction::Preview`, a preview for the Export tool.
 - A refused command's number (`SessionError::Refused`) drops its pending change and the save it would have waited for.
 - **A pick's write** (decision 79): a tool picker's command that completes a change, and `Settings` whatever picker is on (`pickers::completes_edit`), is sent to the save state as any completed change (`Saving::sent`), and waited for until the `Saved` the session always answers it with, or a failed write, is reported; the Colour picker's never.
 - It is tested by feeding it event sequences. There is no bus and no subscriptions: panels draw from the mirror each frame.
@@ -1450,7 +1450,7 @@ darktable's color calibration with every tab, owning every `channelmixerrgb` par
 
 ## apertrust-export
 
-What an export writes and where, with no GPU (decision 56). The engine's session runs the job; the app's dialog and the CLI take its settings.
+What an export writes and where, with no GPU (decision 56). The engine's session runs the job; the app's Export tool and the CLI take its settings.
 
 - the export settings as plain data, and their registry, generated by its `build.rs`;
 - darktable's size computation and darktable's variables;
@@ -1472,7 +1472,7 @@ What an export writes and where, with no GPU (decision 56). The engine's session
 `size`, darktable's export size:
 
 - the limit in pixels, centimetres or inches, and the scale text as darktable reads it;
-- Allow upscaling's side at 0: a hundred times the other in the dialog alone (`Request::dialog`), the photo's own in the CLI, as darktable-cli has it;
+- Allow upscaling's side at 0: a hundred times the other in the Export tool alone (`Request::dialog`), the photo's own in the CLI, as darktable-cli has it;
 - the format's largest side;
 - the scale and the output's floor in double, where the resample runs;
 - the refusals.
@@ -1500,7 +1500,7 @@ What an export writes and where, with no GPU (decision 56). The engine's session
 
 ### Planned
 
-The Export tool's presets, For sharing and Full size JPEG among them, and metadata ([docs/gui.md](gui.md#the-build-in-cards), The Export tool).
+The Export tool's presets, For sharing and Full size JPEG among them, and metadata ([docs/gui.md](gui.md#the-build-in-steps), The Export tool).
 
 ## apertrust-library
 

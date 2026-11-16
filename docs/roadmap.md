@@ -251,12 +251,11 @@ Goal: usable for daily editing, and the editor sets the sliders for a goal. Migr
 
 - [x] On the command line: JPEG and PNG with darktable's sRGB profile, at darktable's sizes and resampling, file names from darktable's variables, several files at once.
 - [x] Exports run as background jobs beside live editing, with a jobs window for progress and cancel.
-- [x] The Export dialog on the Mac: File on disk, JPEG and PNG, darktable's four size modes, high-quality resampling, the overwrite question, and Export Again (decision 56; [gui.md](gui.md#as-built)).
-- [x] The Export dialog on Windows and Linux, as a modal window, with Overwrite's alert on Linux.
+- [x] The Export tool's first section, last in the Photos tab, in place of the dialog, on the Mac, Windows and Linux: File on disk, JPEG and PNG, darktable's four size modes, high-quality resampling, ↺ for Default settings, and Export… and Ctrl+E revealing it (decisions 56 and 90; [gui.md](gui.md#as-built)). The overwrite question is asked on the Mac and Linux; on Windows Overwrite is listed disabled until its alert is built. Export Again is built, with no key yet; its key, Ctrl+Shift+E, is planned.
 - [ ] The setting rows Import's sheet and the Export tool share: a slider with no kept marker, the path row (labelled for Import, label-less for Export), note, field and size rows, an indented toggle (decisions 86 and 90).
-- [ ] The Export tool, a utility last in the Photos tab, in place of the dialog (decision 90; [gui.md](gui.md#the-export-tool)):
+- [ ] The rest of the Export tool, a utility last in the Photos tab (decision 90; [gui.md](gui.md#the-export-tool)):
   - [ ] a spike measuring every export row at the side panel's 320 points in British English, Ukrainian, Polish and the pseudo-locale;
-  - [ ] the first milestone: the rows in Storage options and Format options, always open, and Global options, collapsible and open at first; the preset or Custom starting the summary; ↺ and Default settings; the tool's end with the summary, warnings, Export N photos and its job's line; Export… and Ctrl+E revealing it, Export Again on Ctrl+Shift+E; the dialog removed;
+  - [ ] the first milestone: the rows in Storage options and Format options, always open, and Global options, collapsible and open at first; the preset or Custom starting the summary; ↺ and Default settings; the tool's end with the summary, warnings, Export N photos and its job's line; Export Again on Ctrl+Shift+E;
   - [ ] Edit › Previous Selection on Ctrl+Shift+D, with Phase 3's selection;
   - [ ] Browse's Import…, opening the Import sheet.
 - [ ] The Import sheet's frame (decision 86; [gui.md](gui.md#sheets)): the sheet bar, a grid of photos checked to go, a column of tools on the side panel's side, the footer with Keep open, Close and the primary button, its keys and modality, each tool kept to its place; then Import's first slice (the library's step 20a).

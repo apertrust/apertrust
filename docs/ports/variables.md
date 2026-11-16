@@ -201,7 +201,7 @@ Every Exiv2 rational with a denominator of 0 reads as 0, as Exiv2's `toFloat()` 
 - **A character that is no operation** (`NoOperation`) after a name and its parameters (`$(FILE_NAME=)`), which darktable drops.
 - **Variables nested more than 64 deep** (`TooDeep`, `MAX_DEPTH`), so that no pattern reads, expands or drops deeper than the stack takes: 30,000 deep would overflow it. darktable recurses as deep as its own stack lets it.
 
-Two of these go beyond D8's own two errors, an unknown variable and a missing `)`: a name with more name characters after it, and a character that is no operation. Planned: both read the pattern on as darktable reads it, with a warning in the Export dialog's feedback line rather than a refusal.
+Two of these go beyond D8's own two errors, an unknown variable and a missing `)`: a name with more name characters after it, and a character that is no operation. Planned: both read the pattern on as darktable reads it, with a warning in the Export tool's feedback line rather than a refusal.
 
 The name or variable a message shows is cut at 64 characters with an ellipsis, and a typed name is only compared with names whose length is within the suggestion's reach of its own, so a megabyte's name is refused at once.
 

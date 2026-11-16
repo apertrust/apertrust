@@ -46,7 +46,7 @@ Apertrust's processing starts from [darktable](https://www.darktable.org/)'s col
 Early development, in Phase 2: the desktop app. [docs/roadmap.md](docs/roadmap.md) has the details, phase by phase.
 
 - **The engine** renders raw files through the eight processing steps every photo needs, and matches darktable's render at a mean ΔE2000 of about 0.001 on 27 of the 29 comparable raw.pixls.us samples. Two lossy Sony formats wait for a decoder fix.
-- **The desktop app** opens and edits one photo with sixteen migrated tools, saves the edit after each change, shows the scopes and opens a folder. On the Mac it exports through a native Export dialog.
+- **The desktop app** opens and edits one photo with sixteen migrated tools, saves the edit after each change, shows the scopes and opens a folder. It exports the open photo through the Export tool of the Photos tab.
 - **The command line** edits, exports JPEG and PNG at darktable's sizes with file names from darktable's variables, and lists a folder.
 - **Platforms:** macOS (Metal), Windows (Direct3D 12) and Linux (Vulkan) pass CI, with software GPUs where there is no hardware one.
 

@@ -14,25 +14,38 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! The Export dialog in the dialog host's harness: every row, the keys, the preview's
-//! lines as the session's answers arrive, the rows drawn disabled, and the three languages
-//! and a narrow window photographed.
+//! The Export tool in a harness that draws it as the Photos tab's side panel does: every
+//! row, the preview's lines as the session's answers arrive, the rows drawn disabled, the
+//! rows reflowed to the panel's width, and the tool photographed at the panel's widths and
+//! in the languages.
 
 use apertrust_engine::export_preview::{ActiveSize, FolderCheck, OutputSize, PhotoName};
+use apertrust_ui::components::PanelBody;
 use apertrust_ui::{Builtin, Locale, Theme};
 use eframe::egui::accesskit::Role;
 use egui_kittest::Harness;
 use egui_kittest::kittest::{NodeT as _, Queryable as _};
 
 use super::*;
-use crate::dialog_host::{self, Output};
 
-/// The dialog as the host draws it in its sheet, over the panel's colour, and what each
-/// frame asked of the app and whether it asked to close.
+/// The side panel's width by default, in points, and the widest it can be dragged to.
+const PANEL: f32 = 320.0;
+const WIDEST: f32 = 600.0;
+/// The narrowest it can be dragged to.
+const NARROWEST: f32 = 240.0;
+
+/// The tool as the Photos tab draws it, and what each frame asked of the app.
 struct Bench {
     content: Export,
+    open: bool,
+    photo: bool,
     asked: Vec<Asked>,
-    closed: bool,
+    toggled: usize,
+    /// What the session was last asked to preview, as the app keeps it, and the photo open.
+    previews: Previews,
+    opened: Option<PathBuf>,
+    /// Where the section ended at the last frame.
+    bottom: f32,
 }
 
 impl Bench {
@@ -41,41 +54,25 @@ impl Bench {
     }
 }
 
-fn dialog(
-    values: Values,
-    which: Builtin,
-    locale: Locale,
-    size: egui::Vec2,
-) -> Harness<'static, Bench> {
-    dialog_of(home(values), which, locale, size)
+/// The tool over `values`, in a panel `width` wide that is tall enough to show every row.
+fn tool(values: Values, which: Builtin, locale: Locale, width: f32) -> Harness<'static, Bench> {
+    tool_of(home(values), which, locale, width)
 }
 
-/// The dialog over `values`, with Anna's home.
+/// The tool over `values`, with Anna's home.
 fn home(values: Values) -> Export {
     Export::with_home(values, Some(PathBuf::from("/Users/anna")))
 }
 
-/// `export` in the bench, drawn by the host on the Mac.
-fn dialog_of(
-    export: Export,
-    which: Builtin,
-    locale: Locale,
-    size: egui::Vec2,
-) -> Harness<'static, Bench> {
-    dialog_on(export, which, locale, size, OperatingSystem::Mac)
-}
-
-/// `export` in the bench, drawn by the host on `os`.
-fn dialog_on(
-    export: Export,
-    which: Builtin,
-    locale: Locale,
-    size: egui::Vec2,
-    os: OperatingSystem,
-) -> Harness<'static, Bench> {
+/// `export` in the bench.
+fn tool_of(export: Export, which: Builtin, locale: Locale, width: f32) -> Harness<'static, Bench> {
+    // The photo open is the one the session was asked about, as the tests' answers are for.
+    let photo = PathBuf::from("/Users/anna/Pictures/IMG_2041.ARW");
+    let mut previews = Previews::default();
+    previews.next(Some(&photo), true, export.values(), 0);
     let mut harness = Harness::builder()
-        .with_size(size)
-        .with_os(os)
+        .with_size(egui::vec2(width, 1600.0))
+        .with_os(egui::os::OperatingSystem::Mac)
         .with_context_setup(move |ctx| {
             apertrust_ui::install(ctx, Theme::builtin(which));
             apertrust_ui::set_locale(ctx, locale);
@@ -85,16 +82,34 @@ fn dialog_on(
                 let panel = theme(ui.ctx()).colors.panel;
                 ui.painter()
                     .rect_filled(ui.ctx().content_rect(), 0.0, panel);
-                let drawn = dialog_host::draw(ui, &mut bench.content);
-                if let Some(Output::Export(asked)) = drawn.outputs.into_iter().next() {
-                    bench.asked.push(asked);
-                }
-                bench.closed |= drawn.close;
+                let (open, photo) = (bench.open, bench.photo);
+                // As the side panel does before it draws the Photos tab.
+                bench
+                    .content
+                    .retire(&bench.previews, bench.opened.as_deref());
+                PanelBody::new().show(ui, |ui| {
+                    let section = ui.scope(|ui| bench.content.show(ui, open, photo));
+                    bench.bottom = section.response.rect.bottom();
+                    let drawn = section.inner;
+                    bench.toggled += usize::from(drawn.toggle);
+                    if drawn.toggle {
+                        bench.open = !bench.open;
+                    }
+                    let asked = drawn.asked;
+                    if asked.values.is_some() || asked.start || asked.confirm {
+                        bench.asked.push(asked);
+                    }
+                });
             },
             Bench {
                 content: export,
+                open: true,
+                photo: true,
                 asked: Vec::new(),
-                closed: false,
+                toggled: 0,
+                previews,
+                opened: Some(photo),
+                bottom: 0.0,
             },
         );
     harness.run();
@@ -102,12 +117,7 @@ fn dialog_on(
 }
 
 fn open() -> Harness<'static, Bench> {
-    dialog(
-        Values::default(),
-        Builtin::Dark,
-        Locale::EnGb,
-        egui::vec2(660.0, 640.0),
-    )
+    tool(Values::default(), Builtin::Dark, Locale::EnGb, PANEL)
 }
 
 /// What the session answers for the active photo `IMG_2041.ARW` and the default path.
@@ -147,7 +157,7 @@ fn answer(harness: &mut Harness<'_, Bench>, through: u64, preview: ExportPreview
     harness.run();
 }
 
-/// What the dialog holds now.
+/// What the tool holds now.
 fn held(harness: &mut Harness<'_, Bench>) -> Values {
     harness.state_mut().export().values().clone()
 }
@@ -182,7 +192,7 @@ fn type_into(harness: &mut Harness<'_, Bench>, role: Role, name: &str, text: &st
     harness.run();
 }
 
-/// The text of the session's feedback, if the dialog shows it.
+/// The text of the session's feedback, if the tool shows it.
 fn says(harness: &Harness<'_, Bench>, text: &str) -> bool {
     harness.query_by_label(text).is_some()
 }
@@ -190,73 +200,141 @@ fn says(harness: &Harness<'_, Bench>, text: &str) -> bool {
 // What the first frame and each change ask for.
 
 #[test]
-fn what_the_dialog_asks_becomes_the_session_s_commands_for_the_photo_open() {
+fn the_preview_and_the_export_are_the_session_s_commands_for_the_photo_open() {
     let places = Places::default();
     let photo = Path::new("/Users/anna/Pictures/IMG_2041.ARW");
     let held = Values {
         format: FileFormat::Png,
         ..Values::default()
     };
-    let preview = |values: &Values| Command::PreviewExport {
-        photos: vec![photo.to_owned()],
-        settings: values.settings(),
-        places: places.clone(),
-    };
-    let export = Command::Export {
-        photos: vec![photo.to_owned()],
-        settings: held.settings(),
-        places: places.clone(),
-    };
-    // A change: a preview of it, nothing else.
-    let changed = Asked {
-        values: Some(held.clone()),
-        start: false,
-        confirm: false,
-        opened: false,
-    };
-    assert_eq!(commands(photo, &changed, &held, &places), [preview(&held)]);
-    // Export pressed with a change in the same frame: the preview, then the export of the
-    // settings the app holds.
-    let both = Asked {
-        start: true,
-        ..changed
-    };
     assert_eq!(
-        commands(photo, &both, &held, &places),
-        [preview(&held), export.clone()]
+        preview_command(photo, &held, &places),
+        Command::PreviewExport {
+            photos: vec![photo.to_owned()],
+            settings: held.settings(),
+            places: places.clone(),
+        }
     );
-    // Export alone: only the export.
-    let only = Asked {
-        values: None,
-        start: true,
-        confirm: false,
-        opened: false,
-    };
-    assert_eq!(commands(photo, &only, &held, &places), [export]);
-    // Nothing asked, nothing sent; and an export awaiting the overwrite question is not
-    // sent until the app has the answer.
-    assert!(commands(photo, &Asked::default(), &held, &places).is_empty());
-    let confirming = Asked {
-        confirm: true,
-        ..Asked::default()
-    };
-    assert!(commands(photo, &confirming, &held, &places).is_empty());
+    assert_eq!(
+        crate::export_again::export(photo, &held, &places),
+        Command::Export {
+            photos: vec![photo.to_owned()],
+            settings: held.settings(),
+            places,
+        }
+    );
 }
 
 #[test]
-fn the_first_frame_asks_for_a_preview_and_a_change_for_another() {
-    let mut harness = open();
-    let asked = harness.state().asked.clone();
-    assert_eq!(asked.len(), 1, "{asked:?}");
-    assert!(asked[0].opened && !asked[0].start);
-    assert_eq!(asked[0].values, Some(Values::default()));
-    // Nothing changes, nothing is asked.
+fn a_preview_is_asked_only_while_the_tool_is_open_and_shown_and_afresh_when_it_comes_back() {
+    let (one, other) = (
+        Path::new("/Users/anna/Pictures/IMG_2041.ARW"),
+        Path::new("/Users/anna/Pictures/IMG_2042.ARW"),
+    );
+    let values = Values::default();
+    let png = Values {
+        format: FileFormat::Png,
+        ..Values::default()
+    };
+    let mut previews = Previews::default();
+    // Not shown, or no photo: nothing to ask.
+    assert_eq!(previews.next(Some(one), false, &values, 0), Ask::Nothing);
+    assert_eq!(previews.next(None, true, &values, 0), Ask::Nothing);
+    // Shown: a first preview, then none until something changes.
+    let fresh = Ask::Fresh(one.to_owned(), values.clone());
+    assert_eq!(previews.next(Some(one), true, &values, 0), fresh);
+    assert_eq!(previews.next(Some(one), true, &values, 0), Ask::Nothing);
+    // A setting changes: a preview of it, for the same photo.
+    assert_eq!(
+        previews.next(Some(one), true, &png, 0),
+        Ask::Changed(one.to_owned(), png.clone())
+    );
+    // Another photo is open: a first preview again.
+    assert_eq!(
+        previews.next(Some(other), true, &png, 0),
+        Ask::Fresh(other.to_owned(), png.clone())
+    );
+    // Out of view, closed or on another tab: nothing, and the way back asks afresh.
+    assert_eq!(previews.next(Some(other), false, &png, 0), Ask::Nothing);
+    assert_eq!(previews.next(Some(other), false, &png, 0), Ask::Nothing);
+    assert_eq!(
+        previews.next(Some(other), true, &png, 0),
+        Ask::Fresh(other.to_owned(), png.clone())
+    );
+    // The photo closes, then opens again: afresh as well.
+    assert_eq!(previews.next(None, true, &values, 0), Ask::Nothing);
+    assert_eq!(
+        previews.next(Some(other), true, &values, 0),
+        Ask::Fresh(other.to_owned(), values.clone())
+    );
+}
+
+#[test]
+fn a_photo_opened_before_the_next_frame_shows_nothing_of_the_one_before() {
+    let values = Values {
+        path: "$(FILE_FOLDER)/apertrust_exported/$(FILE_NAM)".to_owned(),
+        ..Values::default()
+    };
+    let mut harness = tool(values, Builtin::Dark, Locale::EnGb, PANEL);
+    let mut stopped = preview();
+    stopped.problem = Some(PathProblem::Pattern(PatternError::Unknown {
+        name: "FILE_NAM".to_owned(),
+        at: 36..44,
+        suggestion: Some("FILE_NAME"),
+    }));
+    stopped.names.clear();
+    answer(&mut harness, 1, stopped);
+    assert!(says(
+        &harness,
+        "Unknown variable $(FILE_NAM). Did you mean $(FILE_NAME)?"
+    ));
+    assert!(disabled(&harness, Role::Button, "Export 1 photo"));
+    // Another photo opens: the frame that draws it comes before the preview for it is
+    // asked, and has nothing of the first photo's answer to say or to rest Export for.
+    harness.state_mut().opened = Some(PathBuf::from("/Users/anna/Pictures/IMG_2042.ARW"));
     harness.run();
-    assert_eq!(harness.state().asked.len(), 1);
+    assert!(!says(
+        &harness,
+        "Unknown variable $(FILE_NAM). Did you mean $(FILE_NAME)?"
+    ));
+    assert!(!disabled(&harness, Role::Button, "Export 1 photo"));
+}
+
+#[test]
+fn a_preview_is_asked_again_when_the_edit_changes_or_an_export_ends() {
+    let photo = Path::new("/Users/anna/Pictures/IMG_2041.ARW");
+    let values = Values::default();
+    let mut previews = Previews::default();
+    assert!(matches!(
+        previews.next(Some(photo), true, &values, 3),
+        Ask::Fresh(..)
+    ));
+    assert_eq!(previews.next(Some(photo), true, &values, 3), Ask::Nothing);
+    // The generation moves, as an Undo or the end of an export moves it: the same photo and
+    // settings, asked again as a change, so the notes stay in view until the answer.
+    let again = Ask::Changed(photo.to_owned(), values.clone());
+    assert_eq!(previews.next(Some(photo), true, &values, 4), again);
+    assert_eq!(previews.next(Some(photo), true, &values, 4), Ask::Nothing);
+    assert_eq!(previews.next(Some(photo), true, &values, 5), again);
+    // Out of view, the generation changing asks nothing; showing it asks afresh.
+    assert_eq!(previews.next(Some(photo), false, &values, 6), Ask::Nothing);
+    assert!(matches!(
+        previews.next(Some(photo), true, &values, 6),
+        Ask::Fresh(..)
+    ));
+}
+
+#[test]
+fn a_change_asks_for_its_settings_and_the_first_frame_asks_nothing() {
+    let mut harness = open();
+    // The app asks for the first preview as the tool is shown, not the tool.
+    assert!(harness.state().asked.is_empty());
+    harness.run();
+    assert!(harness.state().asked.is_empty());
     // A letter typed in the path is a new preview, with the whole path.
     type_into(&mut harness, Role::TextInput, "Path", "x");
     let asked = harness.state().asked.last().cloned().expect("asked");
-    assert!(!asked.opened && !asked.start);
+    assert!(!asked.start && !asked.confirm);
     let path = asked.values.expect("the path changed").path;
     assert!(
         path.contains('x') && path != Values::default().path,
@@ -309,7 +387,9 @@ fn the_newest_answer_is_kept_and_an_older_one_never_replaces_it() {
 fn every_row_of_the_first_card_is_there_by_its_name() {
     let mut harness = open();
     answer(&mut harness, 1, preview());
-    harness.get_by_role_and_label(Role::Dialog, "Export 1 photo");
+    // The section's header, and its button.
+    harness.get_by_role_and_label(Role::Button, "Export");
+    harness.get_by_role_and_label(Role::Button, "Export 1 photo");
     for combo in [
         "Target storage",
         "On conflict",
@@ -440,12 +520,7 @@ fn a_resolution_keeps_the_print_size_and_moves_the_pixels() {
         height: 1500,
         ..Values::default()
     };
-    let mut harness = dialog(
-        values,
-        Builtin::Dark,
-        Locale::EnGb,
-        egui::vec2(660.0, 560.0),
-    );
+    let mut harness = tool(values, Builtin::Dark, Locale::EnGb, PANEL);
     type_into(&mut harness, Role::TextInput, "Resolution, in dpi", "600");
     harness.key_press(egui::Key::Enter);
     harness.run();
@@ -465,12 +540,7 @@ fn changing_the_resolution_and_back_returns_the_pixels_as_darktable_keeps_the_en
         height: 501,
         ..Values::default()
     };
-    let mut harness = dialog(
-        values,
-        Builtin::Dark,
-        Locale::EnGb,
-        egui::vec2(660.0, 560.0),
-    );
+    let mut harness = tool(values, Builtin::Dark, Locale::EnGb, PANEL);
     for (dpi, width, height) in [
         (301, 1005, 503),
         (300, 1002, 501),
@@ -562,7 +632,7 @@ fn the_settings_become_the_session_s_export_settings() {
             dpi: 300
         })
     );
-    // The dialog's rule for a side left at 0 applies.
+    // The tool's rule for a side left at 0 applies.
     assert_eq!(
         defaults.size,
         Request {
@@ -636,7 +706,7 @@ fn the_defaults_are_what_an_empty_store_holds_and_a_change_is_there_when_it_is_r
         },
     );
     keeper.flush();
-    // The file holds the three, in darktable's keys' places, and nothing else of the dialog.
+    // The file holds the three, in darktable's keys' places, and nothing else of the tool.
     let text = folder.text();
     assert!(
         text.contains("format = \"png\"") && text.contains("compression = 2"),
@@ -653,20 +723,15 @@ fn the_defaults_are_what_an_empty_store_holds_and_a_change_is_there_when_it_is_r
 }
 
 #[test]
-fn a_setting_conf_gives_is_what_the_dialog_opens_with_and_only_the_other_change_is_kept() {
+fn a_setting_conf_gives_is_what_the_tool_starts_with_and_only_the_other_change_is_kept() {
     use crate::settings::{Keeper, Settings, overrides, testing::Folder};
 
     let folder = Folder::new("export-conf");
     let given = overrides(&["export.size.mode=cm".to_owned()]).expect("a known key");
     let (mut keeper, settings) = Keeper::open_with(folder.storage(), &given);
     assert_eq!(settings.export.size_mode, SizeMode::Cm);
-    // The dialog opens with it, and the person changes that row and another.
-    let mut harness = dialog(
-        settings.export.clone(),
-        Builtin::Dark,
-        Locale::EnGb,
-        egui::vec2(660.0, 560.0),
-    );
+    // The tool starts with it, and the person changes that row and another.
+    let mut harness = tool(settings.export.clone(), Builtin::Dark, Locale::EnGb, PANEL);
     harness.get_by_label("Width, in cm");
     choose(&mut harness, "Set size", "In inch (for print)");
     choose(&mut harness, "File format", "PNG");
@@ -694,19 +759,44 @@ fn a_setting_conf_gives_is_what_the_dialog_opens_with_and_only_the_other_change_
     assert_eq!(next.export.format, FileFormat::Png);
 }
 
-// The presets column.
+// The header's reset.
 
 #[test]
-fn default_settings_is_ticked_while_the_settings_are_the_defaults_and_resets_them() {
+fn the_header_s_reset_applies_default_settings_and_rests_while_they_are_in_place() {
     let mut harness = open();
-    assert!(harness.query_by_label("Default settings").is_some());
-    assert!(!says(&harness, "The settings match no preset."));
+    assert!(disabled(&harness, Role::Button, "Reset export settings"));
     choose(&mut harness, "On conflict", "Skip");
-    assert!(says(&harness, "The settings match no preset."));
-    harness.get_by_label("Default settings").click();
+    assert!(!disabled(&harness, Role::Button, "Reset export settings"));
+    harness.state_mut().asked.clear();
+    harness
+        .get_by_role_and_label(Role::Button, "Reset export settings")
+        .click();
     settle(&mut harness);
     assert_eq!(held(&mut harness), Values::default());
-    assert!(!says(&harness, "The settings match no preset."));
+    assert!(disabled(&harness, Role::Button, "Reset export settings"));
+    // The change is asked of the app as any other: it keeps the settings and previews them.
+    let asked = harness.state().asked.last().cloned().expect("asked");
+    assert_eq!(asked.values, Some(Values::default()));
+    assert!(!asked.start && !asked.confirm);
+}
+
+#[test]
+fn the_header_opens_and_closes_the_tool_and_a_closed_one_draws_no_rows() {
+    let mut harness = open();
+    harness
+        .get_by_role_and_label(Role::Button, "Export")
+        .click();
+    settle(&mut harness);
+    assert_eq!(harness.state().toggled, 1);
+    assert!(!harness.state().open);
+    assert!(harness.query_by_label("Target storage").is_none());
+    assert!(harness.query_by_label("Export 1 photo").is_none());
+    harness
+        .get_by_role_and_label(Role::Button, "Export")
+        .click();
+    settle(&mut harness);
+    assert!(harness.state().open);
+    harness.get_by_label("Target storage");
 }
 
 // The rows that are drawn disabled.
@@ -763,28 +853,23 @@ fn overwrite_can_be_chosen_and_nothing_stops_export_for_it() {
     choose(&mut harness, "On conflict", "Overwrite");
     assert_eq!(held(&mut harness).on_conflict, OnConflict::Overwrite);
     assert!(!disabled(&harness, Role::Button, "Export 1 photo"));
-    // Set outside the dialog, as `--conf` or the file can, it is the same.
+    // Set outside the tool, as `--conf` or the file can, it is the same.
     let values = Values {
         on_conflict: OnConflict::Overwrite,
         ..Values::default()
     };
-    let harness = dialog(
-        values,
-        Builtin::Dark,
-        Locale::EnGb,
-        egui::vec2(660.0, 560.0),
-    );
+    let harness = tool(values, Builtin::Dark, Locale::EnGb, PANEL);
     assert!(!disabled(&harness, Role::Button, "Export 1 photo"));
 }
 
 #[test]
 fn on_linux_the_host_draws_the_alert_so_overwrite_is_listed_enabled() {
-    let alerts = dialog_host::platform::shows_alerts(egui::os::OperatingSystem::Nix);
-    let mut harness = dialog_of(
+    let alerts = crate::dialog_host::platform::shows_alerts(egui::os::OperatingSystem::Nix);
+    let mut harness = tool_of(
         home(Values::default()).alerts(alerts),
         Builtin::Dark,
         Locale::EnGb,
-        egui::vec2(660.0, 640.0),
+        PANEL,
     );
     harness
         .get_by_role_and_label(Role::ComboBox, "On conflict")
@@ -800,11 +885,11 @@ fn on_linux_the_host_draws_the_alert_so_overwrite_is_listed_enabled() {
 
 #[test]
 fn where_no_alert_can_ask_overwrite_is_listed_disabled_and_export_rests_while_it_is_kept() {
-    let mut harness = dialog_of(
+    let mut harness = tool_of(
         home(Values::default()).alerts(false),
         Builtin::Dark,
         Locale::EnGb,
-        egui::vec2(660.0, 640.0),
+        PANEL,
     );
     harness
         .get_by_role_and_label(Role::ComboBox, "On conflict")
@@ -825,9 +910,9 @@ fn where_no_alert_can_ask_overwrite_is_listed_disabled_and_export_rests_while_it
         OnConflict::CreateUniqueFilename
     );
     assert!(!disabled(&harness, Role::Button, "Export 1 photo"));
-    // Kept from a platform that asks: shown, but Export rests, saying why, and Return
+    // Kept from a platform that asks: shown, but Export rests, saying why, and a press
     // exports nothing.
-    let mut harness = dialog_of(
+    let mut harness = tool_of(
         home(Values {
             on_conflict: OnConflict::Overwrite,
             ..Values::default()
@@ -835,10 +920,12 @@ fn where_no_alert_can_ask_overwrite_is_listed_disabled_and_export_rests_while_it
         .alerts(false),
         Builtin::Dark,
         Locale::EnGb,
-        egui::vec2(660.0, 640.0),
+        PANEL,
     );
     assert!(disabled(&harness, Role::Button, "Export 1 photo"));
-    harness.key_press(egui::Key::Enter);
+    harness
+        .get_by_role_and_label(Role::Button, "Export 1 photo")
+        .click();
     harness.run();
     assert!(!harness.state().asked.iter().any(|a| a.start || a.confirm));
 }
@@ -858,65 +945,50 @@ fn preview_with_file_there(action: Action) -> ExportPreview {
 }
 
 fn overwriting(conflict: OnConflict) -> Harness<'static, Bench> {
-    dialog(
+    tool(
         Values {
             on_conflict: conflict,
             ..Values::default()
         },
         Builtin::Dark,
         Locale::EnGb,
-        egui::vec2(660.0, 640.0),
+        PANEL,
     )
 }
 
-/// Presses Export and says what the frame asked: whether the export starts, whether the
-/// overwrite question is to be asked, and whether the dialog closed.
-fn press_export(harness: &mut Harness<'_, Bench>) -> (bool, bool, bool) {
+/// Presses Export and says what the frame asked: whether the export starts and whether the
+/// overwrite question is to be asked. Nothing closes: the tool is never closed by it.
+fn press_export(harness: &mut Harness<'_, Bench>) -> (bool, bool) {
     let before = harness.state().asked.len();
     harness
         .get_by_role_and_label(Role::Button, "Export 1 photo")
         .click();
     harness.run();
     let state = harness.state();
+    assert!(state.open && state.toggled == 0, "Export closes nothing");
     let asked = &state.asked[before..];
     (
         asked.iter().any(|a| a.start),
         asked.iter().any(|a| a.confirm),
-        state.closed,
     )
 }
 
 #[test]
-fn export_in_overwrite_mode_asks_first_whether_or_not_a_file_is_there_and_the_dialog_stays() {
+fn export_in_overwrite_mode_asks_first_whether_or_not_a_file_is_there_and_the_tool_stays() {
     // darktable's rule (`ask_user_confirmation`): On conflict Overwrite asks, with no
     // preview yet, with one that finds no file and with one that finds a file to replace.
     let mut harness = overwriting(OnConflict::Overwrite);
-    // Not a start, and not closed: the app asks, and sends the export on a yes.
-    assert_eq!(press_export(&mut harness), (false, true, false));
+    // Not a start: the app asks, and sends the export on a yes.
+    assert_eq!(press_export(&mut harness), (false, true));
     answer(&mut harness, 1, preview());
-    assert_eq!(press_export(&mut harness), (false, true, false));
+    assert_eq!(press_export(&mut harness), (false, true));
     answer(&mut harness, 2, preview_with_file_there(Action::Overwrite));
-    assert_eq!(press_export(&mut harness), (false, true, false));
-    // Asked again, the same question: a no leaves the dialog as it was.
-    assert_eq!(press_export(&mut harness), (false, true, false));
+    assert_eq!(press_export(&mut harness), (false, true));
+    // Asked again, the same question: a no leaves the tool as it was.
+    assert_eq!(press_export(&mut harness), (false, true));
     // Changing the path does not change the rule, whatever the preview says.
     type_into(&mut harness, Role::TextInput, "Path", "x");
-    assert_eq!(press_export(&mut harness), (false, true, false));
-}
-
-#[test]
-fn return_and_cmd_return_ask_the_same_question() {
-    let mut harness = overwriting(OnConflict::Overwrite);
-    answer(&mut harness, 1, preview_with_file_there(Action::Overwrite));
-    harness.key_press(egui::Key::Enter);
-    harness.run();
-    let state = harness.state();
-    assert!(!state.closed);
-    assert!(state.asked.iter().any(|a| a.confirm) && state.asked.iter().all(|a| !a.start));
-    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Enter);
-    harness.run();
-    assert!(!harness.state().closed);
-    assert!(harness.state().asked.iter().all(|a| !a.start));
+    assert_eq!(press_export(&mut harness), (false, true));
 }
 
 #[test]
@@ -924,17 +996,17 @@ fn export_asks_nothing_in_the_other_ways_to_deal_with_a_file_there() {
     // Overwrite if changed never asks, as darktable's does not, a file replaced or not.
     let mut harness = overwriting(OnConflict::OverwriteIfChanged);
     answer(&mut harness, 1, preview_with_file_there(Action::Overwrite));
-    assert_eq!(press_export(&mut harness), (true, false, true));
+    assert_eq!(press_export(&mut harness), (true, false));
     let mut harness = overwriting(OnConflict::OverwriteIfChanged);
     answer(
         &mut harness,
         1,
         preview_with_file_there(Action::Skip(apertrust_export::disk::Why::NotChanged)),
     );
-    assert_eq!(press_export(&mut harness), (true, false, true));
+    assert_eq!(press_export(&mut harness), (true, false));
     // Nor do the other two, with no preview or with one.
     let mut harness = overwriting(OnConflict::CreateUniqueFilename);
-    assert_eq!(press_export(&mut harness), (true, false, true));
+    assert_eq!(press_export(&mut harness), (true, false));
     for (conflict, action) in [
         (OnConflict::CreateUniqueFilename, Action::Number),
         (
@@ -944,11 +1016,7 @@ fn export_asks_nothing_in_the_other_ways_to_deal_with_a_file_there() {
     ] {
         let mut harness = overwriting(conflict);
         answer(&mut harness, 1, preview_with_file_there(action));
-        assert_eq!(
-            press_export(&mut harness),
-            (true, false, true),
-            "{conflict:?}"
-        );
+        assert_eq!(press_export(&mut harness), (true, false), "{conflict:?}");
     }
 }
 
@@ -1103,12 +1171,7 @@ fn an_unknown_variable_stops_export_and_the_fix_replaces_it() {
         path: "$(FILE_FOLDER)/apertrust_exported/$(FILE_NAM)".to_owned(),
         ..Values::default()
     };
-    let mut harness = dialog(
-        values,
-        Builtin::Dark,
-        Locale::EnGb,
-        egui::vec2(660.0, 560.0),
-    );
+    let mut harness = tool(values, Builtin::Dark, Locale::EnGb, PANEL);
     let mut p = preview();
     let at = 36..44;
     p.problem = Some(PathProblem::Pattern(PatternError::Unknown {
@@ -1204,17 +1267,10 @@ fn a_size_over_the_format_s_limit_stops_export() {
     assert!(disabled(&harness, Role::Button, "Export 1 photo"));
 }
 
-// The footer and the keys.
+// The button and the keys.
 
 #[test]
-fn export_asks_for_the_export_and_closes_and_close_only_closes() {
-    let mut harness = open();
-    answer(&mut harness, 1, preview());
-    harness.get_by_label("Close").click();
-    harness.run();
-    assert!(harness.state().closed);
-    assert!(harness.state().asked.iter().all(|a| !a.start));
-
+fn export_asks_for_the_export_and_closes_nothing() {
     let mut harness = open();
     answer(&mut harness, 1, preview());
     harness
@@ -1222,55 +1278,59 @@ fn export_asks_for_the_export_and_closes_and_close_only_closes() {
         .click();
     harness.run();
     let state = harness.state();
-    assert!(state.closed);
     assert!(state.asked.last().is_some_and(|a| a.start));
+    assert!(state.open && state.toggled == 0);
+    // And it can be pressed again, as the settings stand.
+    harness
+        .get_by_role_and_label(Role::Button, "Export 1 photo")
+        .click();
+    harness.run();
+    assert_eq!(harness.state().asked.iter().filter(|a| a.start).count(), 2);
 }
 
 #[test]
-fn return_exports_when_nothing_has_the_focus_and_leaves_it_to_a_control_that_has() {
+fn with_no_photo_open_export_rests_and_says_why() {
+    let mut harness = open();
+    harness.state_mut().photo = false;
+    harness.run();
+    assert!(disabled(&harness, Role::Button, "Export 1 photo"));
+    harness
+        .get_by_role_and_label(Role::Button, "Export 1 photo")
+        .click();
+    harness.run();
+    assert!(harness.state().asked.is_empty());
+    let button = harness.get_by_role_and_label(Role::Button, "Export 1 photo");
+    harness.hover_at(button.rect().center());
+    harness.run_steps(40);
+    assert!(
+        harness
+            .query_by_label("Open a photo to export it.")
+            .is_some()
+    );
+}
+
+#[test]
+fn return_exports_nothing_of_its_own_and_leaves_the_rows_their_keys() {
     let mut harness = open();
     harness.key_press(egui::Key::Enter);
     harness.run();
-    assert!(harness.state().closed && harness.state().asked.iter().any(|a| a.start));
-
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Enter);
+    harness.run();
+    assert!(harness.state().asked.is_empty());
     // A dropdown row takes Return itself, to open its list.
-    let mut harness = open();
     harness
         .get_by_role_and_label(Role::ComboBox, "On conflict")
         .focus();
     harness.run();
     harness.key_press(egui::Key::Enter);
     settle(&mut harness);
-    assert!(!harness.state().closed && harness.state().asked.iter().all(|a| !a.start));
-
-    // Cmd+Return exports from anywhere.
-    let mut harness = open();
-    harness
-        .get_by_role_and_label(Role::TextInput, "Path")
-        .focus();
-    harness.run();
-    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Enter);
-    harness.run();
-    assert!(harness.state().closed && harness.state().asked.iter().any(|a| a.start));
+    assert!(harness.query_by_role(Role::Menu).is_some());
+    assert!(harness.state().asked.is_empty());
 }
 
 #[test]
-fn return_does_not_export_what_the_session_has_found_wrong() {
-    let mut harness = open();
-    let mut p = preview();
-    p.problem = Some(PathProblem::Empty);
-    answer(&mut harness, 1, p);
-    harness.key_press(egui::Key::Enter);
-    harness.run();
-    assert!(!harness.state().closed);
-    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Enter);
-    harness.run();
-    assert!(!harness.state().closed);
-}
-
-#[test]
-fn escape_closes_the_innermost_thing_first_then_the_dialog() {
-    // A dropdown's list first.
+fn escape_closes_a_list_and_a_row_being_typed_in_and_nothing_else() {
+    // A dropdown's list.
     let mut harness = open();
     harness
         .get_by_role_and_label(Role::ComboBox, "On conflict")
@@ -1280,7 +1340,6 @@ fn escape_closes_the_innermost_thing_first_then_the_dialog() {
     harness.key_press(egui::Key::Escape);
     settle(&mut harness);
     assert!(harness.query_by_role(Role::Menu).is_none());
-    assert!(!harness.state().closed, "the list closed, not the dialog");
     // The variable list in the path.
     let mut harness = open();
     harness
@@ -1293,195 +1352,202 @@ fn escape_closes_the_innermost_thing_first_then_the_dialog() {
     harness.key_press(egui::Key::Escape);
     harness.run();
     assert!(harness.query_by_role(Role::ListBox).is_none());
-    assert!(!harness.state().closed);
-    // A field typed in.
-    let mut harness = open();
-    harness
-        .get_by_role_and_label(Role::TextInput, "Width, in px")
-        .focus();
-    harness.run();
-    harness.event(egui::Event::Text("12".to_owned()));
-    harness.run();
-    harness.key_press(egui::Key::Escape);
-    harness.run();
-    assert!(!harness.state().closed);
-    // Then the dialog.
-    harness.key_press(egui::Key::Escape);
-    harness.run();
-    assert!(harness.state().closed);
+    // The tool stays open throughout.
+    assert!(harness.state().open && harness.state().toggled == 0);
 }
 
 #[test]
-fn cmd_period_and_cmd_w_close_it_too() {
-    for key in [egui::Key::Period, egui::Key::W] {
-        let mut harness = open();
-        harness.key_press_modifiers(egui::Modifiers::COMMAND, key);
-        harness.run();
-        assert!(harness.state().closed, "{key:?}");
-        assert!(harness.state().asked.iter().all(|a| !a.start));
-    }
-}
-
-#[test]
-fn f6_moves_between_the_presets_the_settings_and_the_footer_and_stays_inside() {
-    let mut harness = open();
-    harness.key_press(egui::Key::F6);
-    harness.run();
-    assert!(harness.get_by_label("Default settings").is_focused());
-    harness.key_press(egui::Key::F6);
-    harness.run();
-    assert!(
-        harness
-            .get_by_role_and_label(Role::ComboBox, "Target storage")
-            .is_focused()
-    );
-    harness.key_press(egui::Key::F6);
-    harness.run();
-    assert!(harness.get_by_label("Close").is_focused());
-    // Around, never out of the dialog.
-    harness.key_press(egui::Key::F6);
-    harness.run();
-    assert!(harness.get_by_label("Default settings").is_focused());
-    harness.key_press_modifiers(egui::Modifiers::SHIFT, egui::Key::F6);
-    harness.run();
-    assert!(harness.get_by_label("Close").is_focused());
-}
-
-#[test]
-fn tab_goes_through_the_presets_then_the_settings_in_the_order_they_read() {
+fn tab_goes_through_the_header_then_the_rows_in_the_order_they_read() {
     let mut harness = open();
     let mut order = Vec::new();
-    for _ in 0..4 {
+    for _ in 0..6 {
         harness.key_press(egui::Key::Tab);
         harness.run();
-        for label in ["Default settings", "Target storage", "Path", "On conflict"] {
+        for label in ["Export", "Target storage", "Path", "On conflict"] {
             let found = harness
                 .query_all_by_label(label)
                 .any(|node| node.is_focused());
-            if found {
+            if found && !order.contains(&label) {
                 order.push(label);
             }
         }
     }
-    assert_eq!(
-        order,
-        ["Default settings", "Target storage", "Path", "On conflict"]
-    );
+    assert_eq!(order, ["Export", "Target storage", "Path", "On conflict"]);
 }
 
 #[test]
-fn no_focus_ring_shows_as_the_dialog_opens() {
+fn no_focus_ring_shows_as_the_tool_is_drawn() {
     let harness = open();
     assert!(harness.ctx.memory(|m| m.focused()).is_none());
 }
 
+// The rows reflowed to the panel's width.
+
+/// The vertical middle of the first node labelled `label`.
+fn middle(harness: &Harness<'_, Bench>, label: &str) -> f32 {
+    harness.get_by_label(label).rect().center().y
+}
+
+#[test]
+fn a_row_whose_label_and_fields_do_not_fit_puts_its_label_above_its_fields() {
+    let values = Values {
+        size_mode: SizeMode::Cm,
+        ..Values::default()
+    };
+    // The narrowest panel: "Size in centimetres" has no room beside its two fields.
+    let narrow = tool(values.clone(), Builtin::Dark, Locale::EnGb, NARROWEST);
+    let label = middle(&narrow, "Size in centimetres");
+    let field = middle(&narrow, "Width, in cm");
+    assert!(field > label + 10.0, "label {label}, field {field}");
+    // The widest: the label and its fields share a line.
+    let wide = tool(values, Builtin::Dark, Locale::EnGb, WIDEST);
+    let label = middle(&wide, "Size in centimetres");
+    let field = middle(&wide, "Width, in cm");
+    assert!((field - label).abs() < 4.0, "label {label}, field {field}");
+}
+
+#[test]
+fn every_row_stays_inside_the_panel_at_each_width_in_each_language() {
+    for locale in [Locale::EnGb, Locale::Uk, Locale::Pl, Locale::Pseudo] {
+        for width in [NARROWEST, PANEL, WIDEST] {
+            for mode in [SizeMode::Pixels, SizeMode::Cm, SizeMode::Scale] {
+                let values = Values {
+                    size_mode: mode,
+                    ..Values::default()
+                };
+                let mut harness = tool(values, Builtin::Dark, locale, width);
+                answer(&mut harness, 1, preview());
+                let outside: Vec<String> = harness
+                    .root()
+                    .children_recursive()
+                    // A text run's box is the whole text, clipped by its field.
+                    .filter(|node| node.accesskit_node().role() != Role::TextRun)
+                    .filter_map(|node| {
+                        let at = node.accesskit_node().bounding_box()?;
+                        let out = at.x1 > f64::from(width) + 0.5 || at.x0 < -0.5;
+                        out.then(|| format!("{:?} {at:?}", node.accesskit_node().label()))
+                    })
+                    .collect();
+                assert!(
+                    outside.is_empty(),
+                    "{locale:?} {width} {mode:?}: {outside:#?}"
+                );
+            }
+        }
+    }
+}
+
 // How it looks.
+
+/// The panel as tall as the tool, and a little under it, for the snapshot `name`.
+fn photograph(harness: &mut Harness<'static, Bench>, name: &str) {
+    let width = harness.ctx.content_rect().width();
+    let height = harness.state().bottom + 12.0;
+    harness.set_size(egui::vec2(width, height));
+    harness.run();
+    harness.snapshot(name);
+}
 
 fn photographed(
     which: Builtin,
     locale: Locale,
+    width: f32,
     name: &str,
     changes: impl FnOnce(&mut Harness<'static, Bench>),
 ) {
-    let mut harness = dialog(
-        Values::default(),
-        which,
-        locale,
-        egui::vec2(WIDTH + 20.0, HEADER + BODY + FOOTER + 20.0),
-    );
+    let mut harness = tool(Values::default(), which, locale, width);
     answer(&mut harness, 1, preview());
     changes(&mut harness);
-    harness.snapshot(name);
+    photograph(&mut harness, name);
 }
 
 #[test]
-fn the_dialog_in_the_dark_theme() {
-    photographed(Builtin::Dark, Locale::EnGb, "export-dark", |_| {});
+fn the_tool_at_the_panel_s_width_in_the_dark_theme() {
+    photographed(
+        Builtin::Dark,
+        Locale::EnGb,
+        PANEL,
+        "export-tool-320-dark",
+        |_| {},
+    );
 }
 
 #[test]
-fn the_dialog_in_the_light_theme() {
-    photographed(Builtin::Light, Locale::EnGb, "export-light", |_| {});
+fn the_tool_at_the_panel_s_width_in_the_light_theme() {
+    photographed(
+        Builtin::Light,
+        Locale::EnGb,
+        PANEL,
+        "export-tool-320-light",
+        |_| {},
+    );
 }
 
 #[test]
-fn the_dialog_in_ukrainian() {
-    photographed(Builtin::Dark, Locale::Uk, "export-uk", |_| {});
+fn the_tool_at_the_widest_panel_in_the_dark_theme() {
+    photographed(
+        Builtin::Dark,
+        Locale::EnGb,
+        WIDEST,
+        "export-tool-600-dark",
+        |_| {},
+    );
 }
 
 #[test]
-fn the_dialog_in_polish() {
-    photographed(Builtin::Dark, Locale::Pl, "export-pl", |_| {});
+fn the_tool_at_the_widest_panel_in_the_light_theme() {
+    photographed(
+        Builtin::Light,
+        Locale::EnGb,
+        WIDEST,
+        "export-tool-600-light",
+        |_| {},
+    );
 }
 
 #[test]
-fn the_dialog_with_the_longest_words_the_pseudo_locale_gives() {
-    photographed(Builtin::Dark, Locale::Pseudo, "export-pseudo", |_| {});
+fn the_tool_in_ukrainian() {
+    photographed(Builtin::Dark, Locale::Uk, PANEL, "export-tool-uk", |_| {});
 }
 
 #[test]
-fn the_dialog_with_an_error_under_its_path() {
-    photographed(Builtin::Dark, Locale::EnGb, "export-error", |harness| {
-        let mut p = preview();
-        p.problem = Some(PathProblem::Empty);
-        answer(harness, 2, p);
-    });
+fn the_tool_in_polish() {
+    photographed(Builtin::Dark, Locale::Pl, PANEL, "export-tool-pl", |_| {});
 }
 
 #[test]
-fn the_dialog_is_as_wide_as_designed_in_every_language() {
-    for locale in [Locale::EnGb, Locale::Uk, Locale::Pl, Locale::Pseudo] {
-        let mut harness = dialog(
-            Values::default(),
-            Builtin::Dark,
-            locale,
-            egui::vec2(WIDTH + 20.0, HEADER + BODY + FOOTER + 20.0),
-        );
-        answer(&mut harness, 1, preview());
-        let size = harness.get_by_role(Role::Dialog).rect().size();
-        assert_eq!(size.x, WIDTH, "{locale:?}");
-        assert_eq!(size.y, HEADER + BODY + FOOTER, "{locale:?}");
-    }
+fn the_tool_with_the_longest_words_the_pseudo_locale_gives() {
+    photographed(
+        Builtin::Dark,
+        Locale::Pseudo,
+        PANEL,
+        "export-tool-pseudo",
+        |_| {},
+    );
 }
 
 #[test]
-fn its_title_is_its_window_s_frame_s_and_its_own_header_the_mac_sheet_s_alone() {
-    let title = "Export 1 photo";
-    let size = egui::vec2(WIDTH + 20.0, HEADER + BODY + FOOTER + 60.0);
-    for os in [
-        OperatingSystem::Mac,
-        OperatingSystem::Windows,
-        OperatingSystem::Nix,
-    ] {
-        let mut harness = dialog_on(
-            home(Values::default()),
-            Builtin::Dark,
-            Locale::EnGb,
-            size,
-            os,
-        );
-        answer(&mut harness, 1, preview());
-        let window = harness.get_by_role_and_label(Role::Dialog, title).rect();
-        let button = harness.get_by_role_and_label(Role::Button, title).rect();
-        // The title painted above the body: the sheet's header on the Mac, the host's
-        // strip on Windows and Linux.
-        let above: Vec<egui::Rect> = dialog_host::painted(harness.output())
-            .into_iter()
-            .filter(|(text, at)| text == title && !button.contains_rect(*at))
-            .map(|(_, at)| at)
-            .collect();
-        let (header, frame) = match os {
-            OperatingSystem::Mac => (HEADER, 0.0),
-            _ => (0.0, dialog_host::FRAME),
-        };
-        assert_eq!(above.len(), 1, "{os:?}");
-        if let Some(at) = above.first() {
-            assert!(
-                at.bottom() <= window.top() + header.max(frame),
-                "{os:?} {at:?}"
-            );
-        }
-        // The window is as tall as what it holds.
-        assert_eq!(window.height(), frame + header + BODY + FOOTER, "{os:?}");
-    }
+fn the_tool_with_an_error_under_its_path() {
+    photographed(
+        Builtin::Dark,
+        Locale::EnGb,
+        PANEL,
+        "export-tool-error",
+        |harness| {
+            let mut p = preview();
+            p.problem = Some(PathProblem::Empty);
+            answer(harness, 2, p);
+        },
+    );
+}
+
+#[test]
+fn the_tool_in_print_sizes_at_the_narrowest_panel() {
+    let values = Values {
+        size_mode: SizeMode::Cm,
+        ..Values::default()
+    };
+    let mut harness = tool(values, Builtin::Dark, Locale::EnGb, NARROWEST);
+    answer(&mut harness, 1, preview());
+    photograph(&mut harness, "export-tool-240-narrow");
 }
