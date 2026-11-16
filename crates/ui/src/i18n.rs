@@ -1055,6 +1055,9 @@ mod tests {
                 args.set("reference_photo", "IMG_2041");
                 // A reference row's photo.
                 args.set("photo", "IMG_2041");
+                // A short pick's warning: the L it reached and the L it was to reach.
+                args.set("reached", 12);
+                args.set("target", 50);
                 for channel in ["red", "green", "blue", "grey"] {
                     args.set(channel, 128);
                 }

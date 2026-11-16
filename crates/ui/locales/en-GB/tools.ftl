@@ -489,6 +489,8 @@ tool-exposure-picker-exposure-hint-reference = Match an area to { $reference_pho
 tool-exposure-picker-exposure-promise-reference-no-photo = Match an area to L { $reference_lightness } %
 tool-exposure-picker-exposure-hint-reference-no-photo = Match an area to L { $reference_lightness } %
 tool-exposure-picker-exposure-unavailable = Set a reference first, with the picker on the Reference row
+# Added to a short pick's tooltip where the pick moved Black level correction too.
+tool-exposure-picker-exposure-short-black = Black level was moved to keep black below white
 # The reference row's picker (decision 88): its label the row's, its name its action.
 tool-exposure-picker-reference-label = Reference
 tool-exposure-picker-reference-full = Set the reference from an area

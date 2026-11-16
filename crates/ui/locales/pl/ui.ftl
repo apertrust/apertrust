@@ -944,6 +944,14 @@ reference-more = Opcje wzorca
 reference-clear = Wyczyść wzorzec
 reference-set = Ustaw wzorzec z obszaru
 
+last-pick-label = Ostatni pomiar
+last-pick-value = L { $before } % → L { $after } % · { $change }
+last-pick-promise = Wybrany obszar przed i po oraz ekspozycja, jakiej to wymagało
+pick-warning-clipped = Obszar ma przycięte piksele
+pick-warning-clipped-tip = Jego jasność jest zaniżona: wybierz obszar bez przyciętych świateł
+pick-warning-short = { $control } { $value }: obszar ma L { $reached } %, a nie { $target } %
+pick-warning-short-tip = { $control } osiągnęła granicę { $value }
+
 ## Okno eksportu (docs/gui.md, The Export dialog): moduł eksportu darktable, nazwy
 ## wielką literą tylko pierwszego słowa. $count to liczba zdjęć, jedno zdjęcie to dokładnie
 ## liczba 1. $file to nazwa zdjęcia lub pliku, $source plik raw, $folder folder, $width

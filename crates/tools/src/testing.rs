@@ -465,6 +465,7 @@ fn patch(stats: &Stats) -> Shown {
             lch: [100.0 * grey(stats), 0.0, 0.0],
         }),
         settings: Vec::new(),
+        ..Shown::default()
     }
 }
 
@@ -1418,6 +1419,7 @@ mod tests {
         Reading {
             input: stats(mean),
             output: output.map(stats),
+            input_maximum: [1.0; 3],
         }
     }
 

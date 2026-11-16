@@ -48,7 +48,7 @@ use apertrust_engine::picker::{DEFAULT_AREA, DEFAULT_POINT};
 use apertrust_engine::session::{
     Command, ControlValue, PickKeys, PickerCommand, PickerReading, PickerRef, Region, Values,
 };
-use apertrust_tools::pick::{Patch, Shown};
+use apertrust_tools::pick::{LastPick, Patch, PickWarnings, Shown};
 use apertrust_tools::{ControlKind, Definition, PickerKind, Row, Tool, messages};
 use apertrust_ui::Translator;
 use apertrust_ui::components::{PickerAction, PickerMarks, PickerPlace};
@@ -201,11 +201,15 @@ impl Mirror {
 /// What the tools' picks showed on the photo, darktable's `spot_RGB` and L readout: each
 /// tool's last input patch, for its panel's patches (`Row::Patches`), kept after its
 /// picker turns off until the tool's values change from outside a pick ([`Picked::sent`])
-/// or the photo closes, as darktable's `gui_update` zeroes `spot_RGB`; and the tool's
-/// settings a pick measured, as a measure mode's target, handed to the app's settings once.
+/// or the photo closes, as darktable's `gui_update` zeroes `spot_RGB`; what its last pick
+/// did and its warnings, kept and taken away with it (decision 88); and the tool's settings
+/// a pick measured, as a measure mode's target, handed to the app's settings once.
 #[derive(Debug, Default)]
 pub struct Picked {
     patches: BTreeMap<&'static str, Patch>,
+    /// What each tool's last pick did and its warnings, kept and taken away as its patch is
+    /// (decision 88).
+    lasts: BTreeMap<&'static str, (&'static str, LastPick, PickWarnings)>,
     /// The latest pick shown of the tool whose picker is on: every reading after it
     /// carries it again, so its patch and the settings it measured are taken once.
     seen: Option<(&'static str, Shown)>,
@@ -222,6 +226,7 @@ impl Picked {
     pub const fn new() -> Picked {
         Picked {
             patches: BTreeMap::new(),
+            lasts: BTreeMap::new(),
             seen: None,
             cleared: 0,
             cleared_tool: BTreeMap::new(),
@@ -244,7 +249,7 @@ impl Picked {
             self.seen = None;
             return None;
         };
-        let PickerRef::Tool { tool, .. } = reading.picker else {
+        let PickerRef::Tool { tool, picker } = reading.picker else {
             return None;
         };
         let shown = reading.tool.as_ref()?.picked.as_ref()?;
@@ -266,6 +271,19 @@ impl Picked {
         {
             self.patches.insert(tool, patch);
         }
+        // A pick of the picker that gave the Last pick shown, with none of its own, as one
+        // toward L 0 that writes nothing, takes it away rather than leave an older one.
+        if reading.through >= cleared {
+            match shown.last {
+                Some(last) => {
+                    self.lasts.insert(tool, (picker, last, shown.warnings));
+                }
+                None if self.lasts.get(tool).is_some_and(|(by, ..)| *by == picker) => {
+                    self.lasts.remove(tool);
+                }
+                None => {}
+            }
+        }
         (!shown.settings.is_empty() && !refused).then(|| (tool, shown.settings.clone()))
     }
 
@@ -279,6 +297,13 @@ impl Picked {
     /// The input patch `tool`'s last pick showed on the photo.
     pub fn patch(&self, tool: &str) -> Option<&Patch> {
         self.patches.get(tool)
+    }
+
+    /// What `tool`'s last pick did, and its warnings (decision 88).
+    pub fn last(&self, tool: &str) -> Option<(&LastPick, &PickWarnings)> {
+        self.lasts
+            .get(tool)
+            .map(|(_, last, warnings)| (last, warnings))
     }
 
     /// The photo is left: its patches with it.
@@ -313,10 +338,12 @@ impl Picked {
         match clears {
             Some(None) => {
                 self.patches.clear();
+                self.lasts.clear();
                 self.cleared = number;
             }
             Some(Some(tool)) => {
                 self.patches.remove(tool.as_str());
+                self.lasts.remove(tool.as_str());
                 self.cleared_tool.insert(tool, number);
             }
             None => {}
@@ -621,6 +648,95 @@ pub fn by_setting(
         messages::picker_option(tool, picker.id, part, option)
     };
     Some(words.text_with(&id, Some(&args)))
+}
+
+/// A last pick's words (decision 88, `Row::LastPick`): its readout, "L 41 % → L 50 % ·
+/// +0.55 EV", and its warning lines, each with its tooltip, the clipped one first.
+#[derive(Debug, Clone, PartialEq)]
+pub struct LastPickWords {
+    pub label: String,
+    pub value: String,
+    pub promise: String,
+    pub warnings: Vec<(String, String)>,
+}
+
+impl LastPickWords {
+    /// What the live region says of it, once: its warnings, then the readout.
+    pub fn said(&self) -> String {
+        let mut lines: Vec<&str> = self
+            .warnings
+            .iter()
+            .map(|(text, _)| text.as_str())
+            .collect();
+        let readout = format!("{} {}", self.label, self.value);
+        lines.push(&readout);
+        lines.join(". ")
+    }
+}
+
+/// The words of `picker`'s last pick `last` with its `warnings`, the control it set the
+/// picker's first write, its change and an end it was held at written with its unit in
+/// the language's numbers, the Ls whole. `None` for a picker of no tool's or one that
+/// writes nothing.
+pub fn last_pick_words(
+    words: &Translator,
+    definition: &Definition,
+    picker: &apertrust_tools::Picker,
+    last: &LastPick,
+    warnings: &PickWarnings,
+) -> Option<LastPickWords> {
+    let tool = definition.id;
+    let control = *picker.writes.first()?;
+    let unit = definition.control(control).and_then(|found| found.unit);
+    let with_unit = |value: f32, decimals: usize| {
+        let number = words.format_number(f64::from(value), decimals, true);
+        match unit {
+            Some(unit) => {
+                let mut args = Args::new();
+                args.set("value", number);
+                words.text_with(&messages::unit_value(unit), Some(&args))
+            }
+            None => number,
+        }
+    };
+    let lightness = |l: f32| words.format_number(f64::from(l), 0, false);
+    let [
+        label,
+        value_id,
+        promise,
+        clipped,
+        clipped_tip,
+        short,
+        short_tip,
+    ] = messages::LAST_PICK;
+    let mut args = Args::new();
+    args.set("before", lightness(last.before));
+    args.set("after", lightness(last.after));
+    args.set("change", with_unit(last.exposure, 2));
+    let value = words.text_with(value_id, Some(&args));
+    let mut lines = Vec::new();
+    if warnings.clipped {
+        lines.push((words.text(clipped), words.text(clipped_tip)));
+    }
+    if let Some(held) = &warnings.short {
+        let mut args = Args::new();
+        args.set("control", words.text(&messages::label(tool, control)));
+        args.set("value", with_unit(held.exposure, 0));
+        args.set("reached", lightness(held.reached));
+        args.set("target", lightness(held.target));
+        let mut tip = words.text_with(short_tip, Some(&args));
+        if held.black {
+            tip.push('\n');
+            tip.push_str(&words.text(&messages::short_black(tool, picker.id)));
+        }
+        lines.push((words.text_with(short, Some(&args)), tip));
+    }
+    Some(LastPickWords {
+        label: words.text(label),
+        value,
+        promise: words.text(promise),
+        warnings: lines,
+    })
 }
 
 /// The name a reference's photo shows by, "IMG_2041": its file's name without its
@@ -1394,7 +1510,8 @@ fn tool_values(picker: PickerRef, values: &Values) -> Vec<(&'static str, Control
         .unwrap_or_default()
 }
 
-/// What `reading` read out says: each control its pick wrote that differs from `before`,
+/// What `reading` read out says: for a picker with a Last pick row, that row's words
+/// ([`LastPickWords::said`]); else each control its pick wrote that differs from `before`,
 /// with its value, or the frame's mean colour.
 fn said(
     reading: &PickerReading,
@@ -1403,6 +1520,20 @@ fn said(
     tools: &[&dyn Tool],
     words: &Translator,
 ) -> String {
+    // A picker with a Last pick row says that row's words, its warnings first (decision
+    // 88).
+    if let Some((definition, declared)) = declared(tools, reading.picker) {
+        let has_row = (definition.rows())
+            .any(|row| matches!(row, Row::LastPick { picker } if *picker == declared.id));
+        let picked = reading.tool.as_ref().and_then(|tool| tool.picked.as_ref());
+        if has_row
+            && let Some(shown) = picked
+            && let Some(last) = &shown.last
+            && let Some(said) = last_pick_words(words, definition, declared, last, &shown.warnings)
+        {
+            return said.said();
+        }
+    }
     let now = tool_values(reading.picker, values);
     let changed: Vec<String> = declared(tools, reading.picker)
         .map(|(definition, declared)| {
@@ -2510,5 +2641,61 @@ mod tests {
             std::thread::sleep(Duration::from_millis(5));
         }
         assert!(repaints.load(std::sync::atomic::Ordering::SeqCst) >= 1);
+    }
+
+    /// The live region reads Exposure's pick out as its Last pick row says it, its
+    /// warnings first, in place of each control the pick changed (decision 88).
+    #[test]
+    fn the_live_region_says_the_last_pick_row_s_words() {
+        use apertrust_engine::session::ToolReading;
+        use apertrust_tools::exposure::Exposure;
+        use apertrust_tools::pick::{LastPick, Patch, Short, Stats};
+        let stats = Stats {
+            mean: [0.15; 4],
+            min: [0.15; 4],
+            max: [0.15; 4],
+        };
+        let shown = Shown {
+            last: Some(LastPick {
+                before: 2.0,
+                after: 12.0,
+                exposure: 17.2,
+                patches: [
+                    Patch::of_lch([2.0, 0.0, 0.0]),
+                    Patch::of_lch([12.0, 0.0, 0.0]),
+                ],
+            }),
+            warnings: PickWarnings {
+                clipped: true,
+                short: Some(Short {
+                    exposure: 18.0,
+                    reached: 12.0,
+                    target: 50.0,
+                    black: false,
+                }),
+            },
+            ..Shown::default()
+        };
+        let reading = PickerReading {
+            through: 3,
+            picker: PickerRef::Tool {
+                tool: "exposure",
+                picker: "exposure",
+            },
+            region: Region::Area([0.2, 0.2, 0.4, 0.4]),
+            tool: Some(ToolReading {
+                input: Some(stats),
+                output: None,
+                picked: Some(shown),
+            }),
+            frame: None,
+        };
+        let words = Translator::new(Locale::EnGb);
+        let tools: &[&dyn Tool] = &[&Exposure];
+        assert_eq!(
+            super::said(&reading, &[], &values(), tools, &words),
+            "The area has clipped pixels. Exposure at +18 EV: the area is L 12 %, not 50 %. \
+             Last pick L 2 % → L 12 % · +17.20 EV"
+        );
     }
 }

@@ -21,7 +21,7 @@
 use apertrust_ui::components::{
     ActionRow, Button, Checkbox, Choice, ChoiceAction, ChoiceBox, ChoiceStyle, CollapsibleGroup,
     IconButton, Mark, Marker, Quad, ReadoutRow, Segmented, SliderAction, SliderRow, Swatch,
-    SwatchFill, Swatches, ToggleRow,
+    SwatchFill, Swatches, ToggleRow, WarningRow,
 };
 use apertrust_ui::{Builtin, Icon, Locale, Theme, Translator};
 use egui::accesskit::Role;
@@ -3639,4 +3639,70 @@ fn a_choice_box_is_a_named_combo_box_whose_tooltip_holds_what_it_cuts() {
     harness.get_by_role_and_label(Role::ComboBox, "Cut").hover();
     harness.run();
     harness.get_by_label("Folder: 2026-10 Lisbon");
+}
+
+/// Last pick's parts (decision 88): a readout of words of its own with two patches before
+/// them, heard as one label, its promise the tooltip; and a warning row, its words a label
+/// and its explanation the description and the tooltip, drawn in the warning colour.
+#[test]
+fn a_last_pick_readout_and_a_warning_row_say_what_they_show() {
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(360.0, 80.0))
+        .with_context_setup(|ctx| {
+            apertrust_ui::install(ctx, Theme::default());
+            ctx.global_style_mut(|style| style.interaction.tooltip_delay = 0.0);
+        })
+        .build_ui(|ui| {
+            WarningRow::new("The area has clipped pixels")
+                .tip("Its lightness reads low: pick an area with no clipped highlights")
+                .show(ui);
+            ReadoutRow::new("Last pick", None)
+                .text("L 41 % → L 50 % · +0.55 EV")
+                .patches(egui::Color32::from_gray(98), egui::Color32::from_gray(119))
+                .promise("The area picked, before and after, and the exposure it took")
+                .show(ui);
+        });
+    harness.run();
+    let warning = harness.get_by_role_and_label(Role::Label, "The area has clipped pixels");
+    assert_eq!(
+        warning.accesskit_node().description().as_deref(),
+        Some("Its lightness reads low: pick an area with no clipped highlights")
+    );
+    let warning_colour = Theme::default().colors.warning;
+    let painted = harness
+        .output()
+        .shapes
+        .iter()
+        .any(|clipped| match &clipped.shape {
+            egui::Shape::Text(text) => text
+                .galley
+                .job
+                .sections
+                .iter()
+                .any(|s| s.format.color == warning_colour),
+            _ => false,
+        });
+    assert!(painted, "the warning in the warning colour");
+    let readout =
+        harness.get_by_role_and_label(Role::Label, "Last pick L 41 % → L 50 % · +0.55 EV");
+    let row = readout.rect();
+    // The two patches, in their colours, inside the row.
+    let patches = harness
+        .output()
+        .shapes
+        .iter()
+        .filter(|clipped| match &clipped.shape {
+            egui::Shape::Rect(shape) => {
+                row.contains_rect(shape.rect)
+                    && [98, 119]
+                        .map(egui::Color32::from_gray)
+                        .contains(&shape.fill)
+            }
+            _ => false,
+        })
+        .count();
+    assert_eq!(patches, 2);
+    harness.hover_at(row.center());
+    harness.run();
+    harness.get_by_label("The area picked, before and after, and the exposure it took");
 }

@@ -34,8 +34,8 @@ use crate::components::{
     PickerMarks, PickerPlace, Place, Quad, Rail, RailLine, RailNode, ReadoutRow, Reference,
     ReferenceRow, SaveState, Scale, Scope, ScopeView, Section, SectionAction, Segmented,
     SliderAction, SliderRow, Swatch, SwatchFill, Swatches, TabBar, TabBarAction, Thumb, Toggle,
-    ToggleRow, ToolButton, TopPanel, TopPanelAction, Track, VectorscopeBins, WaveformBins, Zoom,
-    group_label,
+    ToggleRow, ToolButton, TopPanel, TopPanelAction, Track, VectorscopeBins, WarningRow,
+    WaveformBins, Zoom, group_label,
 };
 use crate::fonts::{MEDIUM, SEMIBOLD};
 use crate::i18n::{Args, Locale, Translator};
@@ -650,9 +650,25 @@ fn pickers(ui: &mut Ui, t: &Theme) {
             });
         }
     });
+    // Exposure's Last pick (decision 88): its warnings, then its readout with the area
+    // before and after the pick.
+    ui.push_id("last pick", |ui| {
+        WarningRow::new("The area has clipped pixels")
+            .tip("Its lightness reads low: pick an area with no clipped highlights")
+            .show(ui);
+        WarningRow::new("Exposure at +18 EV: the area is L 12 %, not 50 %")
+            .tip("Exposure reached its end of +18 EV")
+            .show(ui);
+        ReadoutRow::new("Last pick", None)
+            .text("L 41 % → L 50 % · +0.55 EV")
+            .patches(Color32::from_gray(98), Color32::from_gray(119))
+            .promise("The area picked, before and after, and the exposure it took")
+            .show(ui);
+    });
     ui.label(
         RichText::new(
-            "Reference rows: none, measuring, this photo, another photo, a photo gone, dimmed.",
+            "Reference rows: none, measuring, this photo, another photo, a photo gone, dimmed. \
+             Then the warnings and Last pick a pick shows.",
         )
         .color(t.colors.text_secondary),
     );

@@ -214,6 +214,28 @@ pub fn reference_options(definition: &Definition, picker: &crate::Picker) -> Vec
         .collect()
 }
 
+/// A last pick row's words ([`crate::Row::LastPick`], decision 88), every tool's: its
+/// label; its value, `$before` and `$after` the area's L and `$change` the change of the
+/// control with its unit, in the language's numbers; its tooltip; the clipped warning and
+/// its tooltip; and the short warning and its tooltip, `$control` the control's label,
+/// `$value` the end it is held at with its unit, `$reached` and `$target` the Ls.
+pub const LAST_PICK: [&str; 7] = [
+    "last-pick-label",
+    "last-pick-value",
+    "last-pick-promise",
+    "pick-warning-clipped",
+    "pick-warning-clipped-tip",
+    "pick-warning-short",
+    "pick-warning-short-tip",
+];
+
+/// What a short pick's tooltip adds where the pick moved another control too, the
+/// picker's own: `tool-<tool>-picker-<picker>-short-black`, as Exposure's "Black level was
+/// moved to keep black below white".
+pub fn short_black(tool: &str, picker: &str) -> String {
+    format!("tool-{tool}-picker-{picker}-short-black")
+}
+
 /// A picker's words over the photo where they are its own and follow no setting: the
 /// central bar's name of it, `tool-<tool>-picker-<picker>-hint`, as the reference row's
 /// picker's "Drag over the area to keep as the reference" (decision 88).
@@ -387,6 +409,10 @@ pub fn of(definition: &Definition) -> Vec<String> {
             Row::Guides => ids.extend(GUIDES.map(str::to_owned)),
             Row::Patches { .. } => ids.extend(PATCHES.map(str::to_owned)),
             Row::Reference { .. } => ids.extend(REFERENCE.map(str::to_owned)),
+            Row::LastPick { picker } => {
+                ids.extend(LAST_PICK.map(str::to_owned));
+                ids.push(short_black(tool, picker));
+            }
             _ => {}
         }
     }

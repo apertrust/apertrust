@@ -1226,6 +1226,18 @@ reference-more = Reference options
 reference-clear = Clear Reference
 reference-set = Set Reference from an Area
 
+## A last pick row (docs/pickers.md, Declaring pickers; decision 88): what the last pick did,
+## $before and $after the area's L and $change the change with its unit, then its two
+## warnings, $control the control's label, $value the end it is held at with its unit,
+## $reached and $target the L it reached and the L it was to reach.
+last-pick-label = Last pick
+last-pick-value = L { $before } % → L { $after } % · { $change }
+last-pick-promise = The area picked, before and after, and the exposure it took
+pick-warning-clipped = The area has clipped pixels
+pick-warning-clipped-tip = Its lightness reads low: pick an area with no clipped highlights
+pick-warning-short = { $control } at { $value }: the area is L { $reached } %, not { $target } %
+pick-warning-short-tip = { $control } reached its end of { $value }
+
 ## The Export dialog (docs/gui.md, The Export dialog): darktable's export module, its
 ## labels in sentence case. $count is the photos, a single one the exact number 1. $file
 ## is a photo's name or a file's, $source the raw, $folder a folder, $width and $height

@@ -457,6 +457,7 @@ tool-exposure-picker-exposure-hint-reference = Dopasuj obszar do { $reference_ph
 tool-exposure-picker-exposure-promise-reference-no-photo = Dopasuj obszar do L { $reference_lightness } %
 tool-exposure-picker-exposure-hint-reference-no-photo = Dopasuj obszar do L { $reference_lightness } %
 tool-exposure-picker-exposure-unavailable = Najpierw ustaw wzorzec próbnikiem w wierszu „Wzorzec”
+tool-exposure-picker-exposure-short-black = Poziom czerni przesunięto, aby czerń pozostała poniżej bieli
 tool-exposure-picker-reference-label = Wzorzec
 tool-exposure-picker-reference-full = Ustaw wzorzec z obszaru
 tool-exposure-picker-reference-promise = Ustaw wzorzec z obszaru

@@ -1395,6 +1395,7 @@ impl Tool for Configured {
             shown: apertrust_tools::pick::Shown {
                 patch: Some(patch),
                 settings: vec![("gain", ControlValue::Number(gain + 1.0))],
+                ..Default::default()
             },
         })
     }
@@ -1896,6 +1897,38 @@ fn exposure_s_picker_waits_for_a_reference_and_turns_off_when_it_goes() {
             assert_eq!(number(values, "exposure", "exposure"), picked);
         }
     }
+    remove(&path);
+}
+
+/// A tool picker's reading carries its operation's input's maximum, each channel's, which
+/// Exposure's pick reads clipped pixels by (decision 88), and the pick shows its Last pick.
+#[test]
+fn a_reading_carries_its_operation_s_input_maximum() {
+    use apertrust_tools::exposure::Exposure;
+    let path = scratch("picker-input-maximum");
+    let mut driven = Driven::new(&[&Exposure]);
+    driven.open(&path);
+    let mut events = driven.run([on_exposure("exposure", Vec::new())]);
+    events.extend(driven.picked());
+    assert!(failures(&events).is_empty(), "{events:?}");
+    let open = driven.engine.open.as_ref().unwrap();
+    let plan = open.pipeline.as_ref().expect("a live pipeline").plan();
+    let at = (plan.operations.iter())
+        .position(|operation| operation.id == "exposure")
+        .unwrap();
+    let expected = match at.checked_sub(1) {
+        Some(before) => plan.operations[before].output_desc.maximum,
+        None => plan.input.maximum,
+    };
+    let reading = driven.engine.pickers.latest_reading("exposure").unwrap();
+    assert_eq!(reading.input_maximum, expected);
+    assert!(expected.iter().all(|channel| *channel > 0.0));
+    let shown = readings(&events)
+        .into_iter()
+        .rev()
+        .find_map(|reading| reading.as_ref()?.tool.as_ref()?.picked.clone())
+        .unwrap_or_else(|| panic!("a pick shown in {events:?}"));
+    assert!(shown.last.is_some(), "{shown:?}");
     remove(&path);
 }
 

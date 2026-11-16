@@ -943,6 +943,14 @@ reference-more = Параметри еталона
 reference-clear = Очистити еталон
 reference-set = Задати еталон за ділянкою
 
+last-pick-label = Останнє взяття
+last-pick-value = L { $before } % → L { $after } % · { $change }
+last-pick-promise = Взята ділянка до і після та експозиція, якої це потребувало
+pick-warning-clipped = Ділянка має обрізані пікселі
+pick-warning-clipped-tip = Її світлість занижена: виберіть ділянку без обрізаних світлих тонів
+pick-warning-short = { $control } { $value }: ділянка має L { $reached } %, а не { $target } %
+pick-warning-short-tip = { $control } досягла межі { $value }
+
 ## Вікно експорту (docs/gui.md, The Export dialog): модуль експорту darktable, назви
 ## з великої літери лише першого слова. $count — кількість знімків, один знімок — точне
 ## число 1. $file — назва знімка чи файлу, $source — вихідний raw, $folder — тека, $width
