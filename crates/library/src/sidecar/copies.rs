@@ -706,6 +706,19 @@ fn read_step(fields: &[Property], copy: &str, problems: &mut Vec<Problem>) -> St
     ];
     let place = format!("step {step} of copy {copy}");
     unknown_fields(fields, &known, || place.clone(), problems);
+    plain_fields(
+        fields,
+        &[
+            "id",
+            "source",
+            "batch",
+            clock::WHEN,
+            clock::COUNTER,
+            clock::MACHINE,
+        ],
+        &place,
+        problems,
+    );
     let (source, batch) = (text("source").unwrap_or_default(), text("batch"));
     // What the engine reads as numbers and names, which it could not write back as read.
     if !is_hex_id(&id) {

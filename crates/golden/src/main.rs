@@ -192,6 +192,8 @@ enum Command {
         #[arg(short, long)]
         output: PathBuf,
         /// Write darktable's history for this render here, a sidecar for darktable-cli.
+        /// Must be a new file; it remains if a later export step fails. Use a new sidecar
+        /// path on retry, or remove the generated one after inspecting it.
         #[arg(long, value_name = "FILE")]
         darktable_xmp: Option<PathBuf>,
         /// Export within this width, as darktable-cli's --width.

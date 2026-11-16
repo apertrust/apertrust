@@ -727,6 +727,24 @@ fn read_operation(
             has: schema.version,
         });
     if !manifest.default_enabled {
+        // Known legacy values are deliberately left out, but data this schema cannot
+        // represent must still protect the file from a lossy save.
+        if !older {
+            for (name, text) in &params {
+                let supported = schema.param(name).is_some_and(|param| {
+                    param
+                        .parse(text)
+                        .and_then(|value| param.clamp(value).map(|clamped| clamped == value))
+                        .unwrap_or(false)
+                });
+                if !supported {
+                    incompatible.get_or_insert_with(|| Newer::Parameter {
+                        operation: id.to_owned(),
+                        parameter: name.clone(),
+                    });
+                }
+            }
+        }
         warnings.push(format!("{id}: runs only while a tool sets it; left out"));
         return incompatible;
     }
@@ -1420,6 +1438,13 @@ pub(crate) mod tests {
                 "{params}: {:?}",
                 read.newer
             );
+            assert!(read.view_only().is_some());
+            let optional = version_0(params).replace(
+                r#"apertrust:operation="fake""#,
+                r#"apertrust:operation="optional""#,
+            );
+            let read = from_xml(&optional, OPERATIONS, TOOLS, &[]).unwrap();
+            assert!(matches!(read.newer, Some(Newer::Parameter { .. })));
             assert!(read.view_only().is_some());
         }
     }
