@@ -2984,13 +2984,14 @@ mod tests {
         for gone in ["Area exposure mapping", "Area mode", "Target lightness"] {
             assert!(harness.query_by_label(gone).is_none(), "{gone}");
         }
-        // The board's order: Exposure, Picker target, then the camera's rows.
+        // The camera's rows first, as darktable's stack has them, then Exposure and
+        // Picker target right under it.
         let top = |role, name| harness.get_by_role_and_label(role, name).rect().top();
-        assert!(top(Role::Slider, "Exposure") < top(Role::ComboBox, "Picker target"));
         assert!(
-            top(Role::ComboBox, "Picker target")
-                < top(Role::CheckBox, "Compensate camera exposure −⅔ EV")
+            top(Role::CheckBox, "Highlight preservation mode +1.0 EV")
+                < top(Role::Slider, "Exposure")
         );
+        assert!(top(Role::Slider, "Exposure") < top(Role::ComboBox, "Picker target"));
         // Automatic's rows, which manual hides, and Contrast and its pivot, which left
         // Exposure for Colour balance RGB (decision 2).
         for hidden in ["Measure at", "Place it at", "Contrast", "Contrast pivot"] {

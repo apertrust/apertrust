@@ -140,13 +140,13 @@ Goal: open, edit, save and reopen a photo with the first pass's tools. Migration
   - [ ] Input colour profile and Colour equalizer as tools (their processing is ported).
   - [ ] Rotate and perspective, ported.
   - [ ] Denoise (profiled), ported, with darktable's noise profiles.
-- [ ] Exposure's page as redesigned, the one exception to darktable's page in the first pass, its edits and renders unchanged (decision 88; [tools/exposure.md](tools/exposure.md#the-page-as-redesigned-planned)), one pull request each:
+- [x] Exposure's page as redesigned, the one exception to darktable's page in the first pass, its edits and renders unchanged (decision 88; [tools/exposure.md](tools/exposure.md#the-page-as-redesigned)), one pull request each:
   - [x] 1. The camera's rows: hidden where the photo gives them nothing to do, their labels with the camera's value.
   - [x] 2. Automatic mode's page: Manual | Automatic, Automatic disabled on an image that is not a raw; Measure at, Place it at and This photo; Auto dropped from Exposure.
   - [x] 3. Picker target, Middle grey or Lightness, in place of Area exposure mapping; measure mode gone.
   - [x] 4. The reference: Picker target's Reference, kept across photos, with its own picker.
   - [x] 5. Last pick and the two warnings.
-  - [ ] 6. Checked against the wireframe's board in every variant.
+  - [x] 6. Checked against the wireframe's board in every variant.
 - [x] Switched tools (decision 32): tools darktable leaves off on a new photo start off, turn on with darktable's defaults when a control changes, and turn off again on reset; the Tone equalizer, Colour balance RGB, RGB primaries, Haze removal, Vignetting, Soften and Grain, each version 2 with its migration.
 - [ ] Undo, redo and the History tab, with the history saved in the sidecar as its log of steps (decisions 47 and 78; [history.md](history.md), [the library's step 9](#the-librarys-steps)).
 - [ ] Tools, not modules (decision 4):

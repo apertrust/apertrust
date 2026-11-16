@@ -1,6 +1,6 @@
 # Tools
 
-The tools users edit with. In the first pass each is darktable's own: one tool per darktable module Apertrust includes, under darktable's name and with darktable's controls (decision 2: rewrite first, improve later). Exposure's page is the one exception, redesigned over darktable's controls (decision 88, planned). Once the whole project is migrated (decision 2), Apertrust evolves on its own.
+The tools users edit with. In the first pass each is darktable's own: one tool per darktable module Apertrust includes, under darktable's name and with darktable's controls (decision 2: rewrite first, improve later). Exposure's page is the one exception, redesigned over darktable's controls (decision 88). Once the whole project is migrated (decision 2), Apertrust evolves on its own.
 
 - A built tool's controls, defaults and invariants are on its page here.
 - What each operation ports, and how, is in its spec in [ports/](../ports/).
@@ -157,7 +157,7 @@ Port specs, tool pages and code cite these by number.
    - Each of darktable's collapsible sections is a **collapsible group**, closed at first, its open state kept in settings, never in the edit. A group never holds another.
    - **Every darktable tab is a content tab**, in darktable's order, masking, masks, options and advanced included. Rows darktable shows under every tab show whichever tab is chosen.
    - **Rows follow darktable's conditions.** A row darktable shows only in one mode is hidden otherwise. A control that cannot act in the current state is drawn disabled, never hidden (decision 30), but for Exposure's two camera rows, hidden where the photo gives them nothing to do (`Tool::visible`, decision 88); hiding any other row needs a decision of its own. One parameter shown under two labels by mode has one row per mode.
-   - **Exposure is the one exception** (decision 88, planned): its page is redesigned. A Manual | Automatic switch replaces the Mode list, and Picker target with a reference replaces Area exposure mapping and measure mode; it adds Last pick with its warnings and labels with the camera's value, and drops Auto, while its controls, bindings and processing stay darktable's ([exposure.md](exposure.md#the-page-as-redesigned-planned)).
+   - **Exposure is the one exception** (decision 88): its page is redesigned. A Manual | Automatic switch replaces the Mode list, and Picker target with a reference replaces Area exposure mapping and measure mode; it adds Last pick with its warnings and labels with the camera's value, and drops Auto, while its controls, bindings and processing stay darktable's ([exposure.md](exposure.md#the-page-as-redesigned)).
 6. **Lossless views** (decision 2). Where darktable shows the same stored values twice, the second is a second row, an exact, invertible change of coordinates the tool gives ([below](#lossless-views)). Nothing is stored twice.
 7. **Presets are darktable's,** from `init_presets`, in the header's presets menu.
    - Applying one is one change and one history step.
