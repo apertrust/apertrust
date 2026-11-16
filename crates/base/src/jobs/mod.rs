@@ -826,9 +826,8 @@ impl Control {
                 shared.wake.notify_all();
             }
         }
-        let workers =
-            std::mem::take(&mut *self.workers.lock().unwrap_or_else(PoisonError::into_inner));
-        for worker in workers {
+        let mut workers = self.workers.lock().unwrap_or_else(PoisonError::into_inner);
+        for worker in workers.drain(..) {
             let _ = worker.join();
         }
     }

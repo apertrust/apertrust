@@ -156,7 +156,7 @@ fn write_with(
 
 /// Whether the file at `path` is there and holds exactly `bytes`.
 fn holds(path: &Path, bytes: &[u8]) -> bool {
-    fs::metadata(path).is_ok_and(|meta| meta.is_file() && meta.len() == bytes.len() as u64)
+    fs::symlink_metadata(path).is_ok_and(|meta| meta.is_file() && meta.len() == bytes.len() as u64)
         && fs::read(path).is_ok_and(|found| found == bytes)
 }
 
@@ -218,6 +218,19 @@ mod tests {
         assert_eq!(fs::read(&path).unwrap(), b"");
         // Only the file: no temporary stays.
         assert_eq!(names(folder.path()), ["IMG.ARW.apxmp"]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_link_is_replaced_even_when_its_target_holds_the_same_bytes() {
+        let folder = tempfile::tempdir().unwrap();
+        let target = folder.path().join("target");
+        let link = folder.path().join("link");
+        fs::write(&target, b"same").unwrap();
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+        assert_eq!(write(&link, b"same").unwrap(), Written::Replaced);
+        assert!(fs::symlink_metadata(&link).unwrap().is_file());
+        assert_eq!(fs::read(target).unwrap(), b"same");
     }
 
     #[test]

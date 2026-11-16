@@ -126,14 +126,24 @@ impl Stored for f32 {
     /// Whole with no decimals, rounded to them with some: 1.1 is kept as 1.1, not as
     /// 1.100000023841858, the `f32`'s own.
     fn write(kind: &Kind, value: &f32) -> Option<Value> {
-        Some(match number(kind).decimals {
+        let rounded = match number(kind).decimals {
             Some(0) => Value::Integer(value.round() as i64),
             Some(decimals) => {
                 let scale = 10f64.powi(decimals as i32);
                 Value::Float((f64::from(*value) * scale).round() / scale)
             }
             None => Value::Float(f64::from(*value)),
-        })
+        };
+        // Precision is presentation: keep the original when rounding would change
+        // its readable value to an invalid or clamped one.
+        let number = rounded
+            .as_float()
+            .unwrap_or_else(|| rounded.as_integer().unwrap() as f64) as f32;
+        if Self::read(kind, &rounded, "", &mut Vec::new()) == Some(number) {
+            Some(rounded)
+        } else {
+            Some(Value::Float(f64::from(*value)))
+        }
     }
 }
 
@@ -434,6 +444,30 @@ impl<T: Stored> Declared for Setting<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rounding_never_writes_an_unreadable_number() {
+        for decimals in [0, 1, 2] {
+            let kind = Kind::Number(Number {
+                above: Some(0.0),
+                decimals: Some(decimals),
+                ..Number::default()
+            });
+            let value = 0.1f32.powi(decimals as i32 + 1);
+            let written = f32::write(&kind, &value).unwrap();
+            assert_eq!(
+                f32::read(&kind, &written, "x", &mut Vec::new()),
+                Some(value)
+            );
+        }
+        let kind = Kind::Number(Number {
+            min: Some(0.15),
+            decimals: Some(1),
+            ..Number::default()
+        });
+        let written = f32::write(&kind, &0.15).unwrap();
+        assert!(f32::read(&kind, &written, "x", &mut Vec::new()).unwrap() >= 0.15);
+    }
 
     #[derive(Clone, Copy, Debug, PartialEq)]
     enum Theme {

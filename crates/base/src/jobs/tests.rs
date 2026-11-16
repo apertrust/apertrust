@@ -732,6 +732,39 @@ fn shutdown_cancels_what_can_be_cancelled_and_finishes_the_rest() {
     assert_eq!(heard.receiver.try_iter().count(), 0, "late never ran");
 }
 
+#[test]
+fn concurrent_shutdown_calls_both_wait_for_the_workers() {
+    let (control, _events) = control(1);
+    let (tell, mut heard) = told();
+    let (go, wait) = mpsc::channel();
+    control.add(
+        UserForeground,
+        counting("held", 1, Some(wait), &tell).progress(Message::new("job-test"), false),
+    );
+    heard.until(|told| *told == Told::Started("held"));
+    let start = std::sync::Barrier::new(3);
+    let (done, completed) = mpsc::channel();
+    let early = thread::scope(|scope| {
+        for _ in 0..2 {
+            let done = done.clone();
+            let control = &control;
+            let start = &start;
+            scope.spawn(move || {
+                start.wait();
+                control.shutdown();
+                done.send(()).unwrap();
+            });
+        }
+        start.wait();
+        let early = completed.recv_timeout(Duration::from_millis(100));
+        go.send(()).unwrap();
+        early
+    });
+    assert!(matches!(early, Err(mpsc::RecvTimeoutError::Timeout)));
+    completed.recv_timeout(PATIENCE).unwrap();
+    completed.recv_timeout(PATIENCE).unwrap();
+}
+
 /// A body's failure and a panic both end the job finished with the failure, never
 /// cancelled, a panic as cause `panicked` with its text the reason; the worker carries
 /// on.

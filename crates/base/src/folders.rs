@@ -546,10 +546,25 @@ fn explicit(
 /// own written in it, then removed. Its permissions alone cannot tell, for a folder
 /// another user owns, a read-only volume or an access list.
 fn writable(folder: &Path) -> io::Result<()> {
-    let probe = folder.join(format!(".apertrust-write-check-{}.tmp", std::process::id()));
-    let written = std::fs::write(&probe, b"");
-    let _ = std::fs::remove_file(&probe);
-    written
+    let probe = tempfile::Builder::new()
+        .prefix(".apertrust-write-check-")
+        .suffix(".tmp")
+        .rand_bytes(12)
+        .tempfile_in(folder)?;
+    drop(probe);
+    Ok(())
+}
+
+#[cfg(test)]
+#[test]
+fn a_write_probe_preserves_existing_files() {
+    let folder = tempfile::tempdir().unwrap();
+    let probe = folder
+        .path()
+        .join(format!(".apertrust-write-check-{}.tmp", std::process::id()));
+    std::fs::write(&probe, b"keep").unwrap();
+    writable(folder.path()).unwrap();
+    assert_eq!(std::fs::read(probe).unwrap(), b"keep");
 }
 
 /// The user data folder chosen, under `-d settings`, with `note` (`, created` or

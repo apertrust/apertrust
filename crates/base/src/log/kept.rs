@@ -197,6 +197,7 @@ struct Inner {
     /// Switches the layer's filter, which rebuilds tracing's interest cache.
     filter: Box<dyn Fn(Option<Switches>) + Send + Sync>,
     state: Mutex<State>,
+    configuration: Mutex<()>,
     /// What asks the log window for a frame when a line comes, while it is open.
     waker: Mutex<Option<Waker>>,
     /// Whether the waker was woken since the last read, so a burst of lines wakes it once.
@@ -281,6 +282,11 @@ impl Kept {
     /// kept. As keeping starts, the banner's lines, `banner`'s, are kept first. A change of
     /// the domains applies from the next line; the same domains again change nothing.
     pub fn keep(&self, chosen: Option<&[Domain]>, banner: impl FnOnce() -> String) {
+        let _configuration = self
+            .0
+            .configuration
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
         let switches = chosen.map(|chosen| with(&self.0.run, chosen));
         let mut state = self.0.state();
         if state.switches == switches {
@@ -428,6 +434,7 @@ where
             let _ = handle.modify(|keeping| keeping.0 = switches);
         }),
         state: Mutex::new(State::default()),
+        configuration: Mutex::new(()),
         waker: Mutex::new(None),
         woken: AtomicBool::new(false),
     });

@@ -284,7 +284,13 @@ impl Store {
         // An optional setting's None keeps nothing, nor does the schema's default where the
         // file holds none: changed and changed back, the file stays as it is.
         let default = matches!(setting.default, DefaultValue::Value(d) if d.owned() == value);
-        let none = T::write(&setting.kind, &value).is_none() || default && entry.written.is_none();
+        let written = T::write(&setting.kind, &value);
+        let empty_default = default
+            && written
+                .as_ref()
+                .and_then(Value::as_table)
+                .is_some_and(Table::is_empty);
+        let none = written.is_none() || default && entry.written.is_none() || empty_default;
         entry.value = (!none).then(|| Box::new(value) as Box<dyn Any + Send>);
         self.dirty = true;
     }
@@ -344,7 +350,7 @@ impl Store {
     /// Hands the writer what changed since the last write, if anything did.
     fn take(&mut self) {
         self.changed = None;
-        let mut job = Job::new();
+        let mut job = Job::default();
         // `--conf`'s values are never written, and the file keeps its own.
         let entries = self.entries.iter_mut();
         for (id, entry) in entries.filter(|(_, entry)| entry.overridden.is_none()) {
@@ -444,7 +450,26 @@ fn file_name(location: &str) -> std::borrow::Cow<'_, str> {
 
 /// What changed in the settings since the last write: each value's path in the file, with
 /// the value it had then and has now, None for none.
-type Job = BTreeMap<Vec<String>, Change>;
+#[derive(Default)]
+struct Job {
+    values: BTreeMap<Vec<String>, Change>,
+    tables: BTreeMap<Vec<String>, TableChange>,
+}
+
+struct TableChange {
+    before: bool,
+    after: bool,
+}
+
+impl Job {
+    fn is_empty(&self) -> bool {
+        self.values.is_empty()
+            && self
+                .tables
+                .values()
+                .all(|change| change.before == change.after)
+    }
+}
 
 #[derive(Clone, Debug, PartialEq)]
 struct Change {
@@ -462,10 +487,20 @@ fn diff(
     after: Option<&Value>,
     job: &mut Job,
 ) {
+    if before == after {
+        return;
+    }
     let none = Table::new();
     let old = before.map_or(Some(&none), Value::as_table);
     let new = after.map_or(Some(&none), Value::as_table);
     if let (Kind::Table { of, .. }, Some(old), Some(new)) = (kind, old, new) {
+        job.tables.insert(
+            path.clone(),
+            TableChange {
+                before: before.is_some(),
+                after: after.is_some(),
+            },
+        );
         let keys: BTreeSet<&String> = old.keys().chain(new.keys()).collect();
         for key in keys {
             path.push(key.clone());
@@ -477,7 +512,7 @@ fn diff(
             before: before.cloned(),
             after: after.cloned(),
         };
-        job.insert(path.clone(), change);
+        job.values.insert(path.clone(), change);
     }
 }
 
@@ -487,8 +522,8 @@ fn join(older: Option<Job>, newer: Job) -> Job {
     let Some(mut job) = older else {
         return newer;
     };
-    for (path, change) in newer {
-        match job.entry(path) {
+    for (path, change) in newer.values {
+        match job.values.entry(path) {
             btree_map::Entry::Vacant(entry) => _ = entry.insert(change),
             btree_map::Entry::Occupied(mut entry) => {
                 entry.get_mut().after = change.after;
@@ -496,6 +531,14 @@ fn join(older: Option<Job>, newer: Job) -> Job {
                     entry.remove();
                 }
             }
+        }
+    }
+    for (path, change) in newer.tables {
+        match job.tables.entry(path) {
+            btree_map::Entry::Vacant(entry) => {
+                entry.insert(change);
+            }
+            btree_map::Entry::Occupied(mut entry) => entry.get_mut().after = change.after,
         }
     }
     job
@@ -752,7 +795,13 @@ fn text(table: &Table) -> String {
 /// Sets each of `job`'s values in `table`, or removes it, with the tables its removal
 /// leaves empty.
 fn merge(table: &mut Table, job: &Job) {
-    for (path, change) in job {
+    let present: BTreeSet<_> = job
+        .tables
+        .keys()
+        .filter(|path| value_at(table, path).is_some_and(Value::is_table))
+        .cloned()
+        .collect();
+    for (path, change) in &job.values {
         let Some((key, parents)) = path.split_last() else {
             continue;
         };
@@ -766,6 +815,33 @@ fn merge(table: &mut Table, job: &Job) {
             None => remove(table, path),
         }
     }
+    // Table shape is distinct from its entries, including across coalesced jobs.
+    // Remove only an empty table, leaving entries added since it was read alone.
+    for (path, change) in job.tables.iter().rev() {
+        if change.before
+            && !change.after
+            && value_at(table, path)
+                .and_then(Value::as_table)
+                .is_some_and(Table::is_empty)
+        {
+            remove(table, path);
+        }
+    }
+    // Leaf removal prunes parents; restore the tables explicitly kept by the change.
+    for (path, change) in &job.tables {
+        if change.after && (!change.before || present.contains(path)) {
+            path.iter()
+                .fold(&mut *table, |table, key| within(table, key));
+        }
+    }
+}
+
+fn value_at<'a>(table: &'a Table, path: &[String]) -> Option<&'a Value> {
+    let (key, parents) = path.split_last()?;
+    parents
+        .iter()
+        .try_fold(table, |table, key| table.get(key)?.as_table())?
+        .get(key)
 }
 
 /// The table `key` of `table`, made one if it is missing or something else.
@@ -942,6 +1018,146 @@ mod tests {
 
     use super::*;
     use crate::settings::{self, Applies, Choice, FileStorage, Number, OverrideError, Owner};
+
+    #[test]
+    fn an_explicitly_empty_table_survives_reopening() {
+        static OPTIONS: Setting<settings::Table<bool>> = setting(
+            "options",
+            Kind::Table {
+                by: "name",
+                of: &Kind::Boolean,
+            },
+            DefaultValue::Value(&[("default", true)]),
+        );
+        let folder = Folder::new("empty-table");
+        let open = || Store::open(folder.storage(), &[&OPTIONS]);
+        let mut store = open();
+        assert_eq!(store.get(&OPTIONS).len(), 1);
+        store.set(&OPTIONS, BTreeMap::new());
+        store.flush();
+        assert!(open().get(&OPTIONS).is_empty());
+        let mut store = open();
+        store.set(&OPTIONS, BTreeMap::from([("chosen".to_owned(), true)]));
+        store.flush();
+        let mut store = open();
+        store.set(&OPTIONS, BTreeMap::new());
+        store.flush();
+        assert!(open().get(&OPTIONS).is_empty());
+        let mut store = open();
+        store.reset(&OPTIONS);
+        store.flush();
+        assert_eq!(open().get(&OPTIONS).len(), 1);
+        assert!(!folder.table().contains_key("options"));
+    }
+
+    #[test]
+    fn removing_an_empty_nested_table_keeps_its_siblings() {
+        let folder = Folder::new("empty-nested-table");
+        let mut store = folder.open();
+        store.set(
+            &GROUPS,
+            BTreeMap::from([
+                ("empty".to_owned(), BTreeMap::new()),
+                (
+                    "kept".to_owned(),
+                    BTreeMap::from([("open".to_owned(), true)]),
+                ),
+            ]),
+        );
+        store.flush();
+        let mut store = folder.open();
+        let mut groups = store.get(&GROUPS);
+        groups.remove("empty");
+        store.set(&GROUPS, groups);
+        store.flush();
+        assert_eq!(
+            folder.open().get(&GROUPS).keys().collect::<Vec<_>>(),
+            [&"kept".to_owned()]
+        );
+    }
+
+    #[test]
+    fn joined_table_changes_preserve_resets_and_unrelated_entries() {
+        let kind = Kind::Table {
+            by: "name",
+            of: &Kind::Boolean,
+        };
+        let empty = Value::Table(Table::new());
+        let populated = Value::Table(Table::from_iter([("a".to_owned(), Value::Boolean(true))]));
+        let change = |before: Option<&Value>, after: Option<&Value>| {
+            let mut job = Job::default();
+            diff(
+                &kind,
+                &mut vec!["options".to_owned()],
+                before,
+                after,
+                &mut job,
+            );
+            job
+        };
+        let cleared = change(Some(&populated), Some(&empty));
+        let reset = change(Some(&empty), None);
+        let job = join(Some(cleared), reset);
+        let mut table: Table = "[options]\na = true\nb = false\n".parse().unwrap();
+        merge(&mut table, &job);
+        assert_eq!(
+            table["options"]
+                .as_table()
+                .unwrap()
+                .keys()
+                .collect::<Vec<_>>(),
+            [&"b".to_owned()]
+        );
+
+        let job = join(
+            Some(change(None, Some(&empty))),
+            change(Some(&empty), Some(&populated)),
+        );
+        let job = join(Some(job), change(Some(&populated), None));
+        assert!(job.is_empty());
+        let mut table = Table::new();
+        merge(&mut table, &job);
+        assert!(!table.contains_key("options"));
+        // An unrelated change must not turn a cancelled local table edit into a
+        // removal of the empty table another writer added meanwhile.
+        let mut job = join(Some(change(None, Some(&empty))), change(Some(&empty), None));
+        job.values.insert(
+            vec!["scale".to_owned()],
+            Change {
+                before: Some(Value::Integer(1)),
+                after: Some(Value::Integer(2)),
+            },
+        );
+        let mut table: Table = "scale = 1\n[options]\n".parse().unwrap();
+        merge(&mut table, &job);
+        assert!(table["options"].as_table().unwrap().is_empty());
+        assert_eq!(table["scale"].as_integer(), Some(2));
+    }
+
+    #[test]
+    fn changing_one_nested_entry_does_not_restore_another_removed_table() {
+        let kind = Kind::Table {
+            by: "outer",
+            of: &Kind::Table {
+                by: "inner",
+                of: &Kind::Boolean,
+            },
+        };
+        let before = Value::Table("empty = {}\n[kept]\nopen = true\n".parse().unwrap());
+        let after = Value::Table("empty = {}\n[kept]\nopen = false\n".parse().unwrap());
+        let mut job = Job::default();
+        diff(
+            &kind,
+            &mut vec!["options".to_owned()],
+            Some(&before),
+            Some(&after),
+            &mut job,
+        );
+        let mut current: Table = "[options.kept]\nopen = true\n".parse().unwrap();
+        merge(&mut current, &job);
+        assert!(!current["options"].as_table().unwrap().contains_key("empty"));
+        assert_eq!(current["options"]["kept"]["open"].as_bool(), Some(false));
+    }
 
     #[derive(Clone, Copy, Debug, PartialEq)]
     enum Theme {

@@ -454,6 +454,73 @@ fn a_walk_its_own_clear_overlaps_keeps_nothing() {
 }
 
 #[test]
+fn a_walk_its_own_write_overlaps_keeps_nothing() {
+    let (_folder, cache) = cache();
+    cache.write(THUMBNAILS, b"a", b"v", b"old").unwrap();
+    cache.write(PIPELINES, b"p", b"v", b"pipeline").unwrap();
+    cache.walk(&never).unwrap().unwrap();
+
+    // The second question is in pipelines, after thumbnails have been counted.
+    let questions = AtomicU64::new(0);
+    let write_once = || {
+        if questions.fetch_add(1, Ordering::SeqCst) == 1 {
+            cache
+                .write(THUMBNAILS, b"a", b"v", b"longer replacement")
+                .unwrap();
+        }
+        false
+    };
+    assert_eq!(cache.walk(&write_once).unwrap(), None);
+    let counted = cache.sizes().unwrap();
+    let next = cache.walk(&never).unwrap().unwrap();
+    assert_eq!(counted, next, "the write's updated count is preserved");
+}
+
+#[test]
+fn concurrent_writes_of_one_slot_count_one_entry() {
+    let (_folder, cache) = cache();
+    cache.walk(&never).unwrap().unwrap();
+    let start = std::sync::Barrier::new(16);
+    std::thread::scope(|scope| {
+        for _ in 0..16 {
+            scope.spawn(|| {
+                start.wait();
+                cache.write(THUMBNAILS, b"same", b"v", b"bytes").unwrap();
+            });
+        }
+    });
+    let counted = cache.sizes().unwrap();
+    assert_eq!(counted.of(THUMBNAILS).entries, 1);
+    assert_eq!(cache.walk(&never).unwrap(), Some(counted));
+    cache.clear(THUMBNAILS, &quiet, &never).unwrap();
+    assert_eq!(cache.sizes().unwrap().of(THUMBNAILS), Usage::default());
+}
+
+#[test]
+fn cancelling_inside_a_kept_entry_keeps_no_partial_sizes() {
+    let (_folder, cache) = cache();
+    let nested = cache.kind_folder(LIBRARIES).join("library/a/b/c");
+    fs::create_dir_all(&nested).unwrap();
+    fs::write(nested.join("entry"), b"data").unwrap();
+    assert_eq!(
+        cache.walk(&cancel_after(2)).unwrap_err().kind(),
+        io::ErrorKind::Interrupted
+    );
+    assert_eq!(cache.sizes(), None);
+}
+
+#[test]
+fn creating_a_cache_preserves_an_existing_probe_name() {
+    let folder = tempfile::tempdir().unwrap();
+    let probe = folder
+        .path()
+        .join(format!(".apertrust-write-check-{}.tmp", std::process::id()));
+    fs::write(&probe, b"keep").unwrap();
+    Cache::create(folder.path()).unwrap();
+    assert_eq!(fs::read(probe).unwrap(), b"keep");
+}
+
+#[test]
 fn the_handle_counts_its_own_writes_and_removals_after_the_walk() {
     let (_folder, cache) = cache();
     let header = (MAGIC.len() + 4 + 1) as u64;
