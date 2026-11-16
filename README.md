@@ -93,6 +93,7 @@ Releases and the nightly builds, Apertrust Nightly, are on the [Releases page](h
   - **The tarball** installs into `~/.local`, with a menu entry and Open With for raw files:
 
     ```sh
+    mkdir -p ~/.local
     tar -xzf ~/Downloads/apertrust*.tar.gz -C ~/.local --strip-components=1
     update-desktop-database ~/.local/share/applications
     update-mime-database ~/.local/share/mime
