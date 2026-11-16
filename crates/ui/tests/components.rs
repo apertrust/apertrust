@@ -691,7 +691,7 @@ fn a_toggle_row_s_value_follows_its_label_and_is_heard_with_its_name() {
         .build_ui_state(
             |ui, state: &mut (bool, bool)| {
                 if let Some(on) = ToggleRow::new("Compensate camera exposure", state.0)
-                    .value("(−⅔ EV)")
+                    .value("−⅔ EV")
                     .enabled(state.1)
                     .show(ui)
                 {
@@ -701,7 +701,7 @@ fn a_toggle_row_s_value_follows_its_label_and_is_heard_with_its_name() {
             (true, true),
         );
     harness.run();
-    let heard = "Compensate camera exposure (−⅔ EV)";
+    let heard = "Compensate camera exposure −⅔ EV";
     let row = harness.get_by_role_and_label(Role::CheckBox, heard).rect();
     harness.snapshot("toggle-row-value");
     // The value is part of the target, at the row's end.
@@ -728,7 +728,7 @@ fn a_toggle_row_cuts_a_long_label_before_its_value() {
         .build_ui_state(
             move |ui, enabled: &mut bool| {
                 ToggleRow::new(label, true)
-                    .value("(−⅔ EV)")
+                    .value("−⅔ EV")
                     .promise(promise)
                     .enabled(*enabled)
                     .show(ui);
@@ -736,11 +736,11 @@ fn a_toggle_row_cuts_a_long_label_before_its_value() {
             true,
         );
     harness.run();
-    let heard = format!("{label} (−⅔ EV)");
+    let heard = format!("{label} −⅔ EV");
     let row = harness.get_by_role_and_label(Role::CheckBox, &heard).rect();
     assert!(row.right() <= 240.0, "{row:?}");
     harness.snapshot("toggle-row-value-long-label");
-    let tip = format!("{label} (−⅔ EV)\n{promise}");
+    let tip = format!("{label} −⅔ EV\n{promise}");
     for enabled in [true, false] {
         *harness.state_mut() = enabled;
         harness.hover_at(row.center());
@@ -760,13 +760,13 @@ fn a_toggle_row_with_room_has_its_promise_alone_as_its_tooltip() {
         })
         .build_ui(|ui| {
             ToggleRow::new("Compensate camera exposure", true)
-                .value("(−⅔ EV)")
+                .value("−⅔ EV")
                 .promise("Undoes the exposure compensation set on the camera.")
                 .show(ui);
         });
     harness.run();
     let row = harness
-        .get_by_role_and_label(Role::CheckBox, "Compensate camera exposure (−⅔ EV)")
+        .get_by_role_and_label(Role::CheckBox, "Compensate camera exposure −⅔ EV")
         .rect();
     harness.hover_at(row.center());
     harness.run();
@@ -783,13 +783,13 @@ fn a_checkbox_s_value_is_heard_after_its_label() {
         .build_ui_state(
             |ui, on: &mut bool| {
                 Checkbox::new(on, "Compensate camera exposure")
-                    .value("(−⅔ EV)")
+                    .value("−⅔ EV")
                     .show(ui);
             },
             true,
         );
     harness.run();
-    harness.get_by_role_and_label(Role::CheckBox, "Compensate camera exposure (−⅔ EV)");
+    harness.get_by_role_and_label(Role::CheckBox, "Compensate camera exposure −⅔ EV");
 }
 
 /// With no label, the value follows the box: drawn, given room and heard alone.
@@ -802,7 +802,7 @@ fn a_checkbox_with_no_label_shows_its_value_after_the_box() {
             |ui, width: &mut f32| {
                 let mut on = true;
                 *width = Checkbox::new(&mut on, "")
-                    .value("(−⅔ EV)")
+                    .value("−⅔ EV")
                     .show(ui)
                     .rect
                     .width();
@@ -810,7 +810,7 @@ fn a_checkbox_with_no_label_shows_its_value_after_the_box() {
             0.0,
         );
     harness.run();
-    harness.get_by_role_and_label(Role::CheckBox, "(−⅔ EV)");
+    harness.get_by_role_and_label(Role::CheckBox, "−⅔ EV");
     assert!(*harness.state() > 40.0, "room for the value after the box");
 }
 
@@ -2312,29 +2312,67 @@ fn a_segmented_option_can_be_disabled_with_its_reason() {
     assert_eq!(*harness.state(), (0, Some(0)));
 }
 
-/// With nothing left to choose, every option but the chosen one disabled, the whole
-/// switch is disabled: Manual held on an image that is not a raw. The disabled option
-/// still says why.
+/// With nothing else to choose, every other option disabled, the chosen one is drawn as it
+/// is anywhere, not dimmed or marked disabled, and only the others are disabled, each
+/// saying why: Manual held on an image that is not a raw (board C3).
 #[test]
-fn a_segmented_control_with_nothing_else_to_choose_is_disabled_whole() {
+fn a_segmented_control_with_nothing_else_to_choose_dims_only_the_unlisted_option() {
     let mut harness = mode_switch(0);
     harness.run();
     harness.snapshot("segmented-disabled");
-    for option in ["Manual", "Automatic"] {
-        let node = harness.get_by_role_and_label(Role::RadioButton, option);
-        assert!(node.accesskit_node().is_disabled(), "{option}");
-    }
+    let manual = harness.get_by_role_and_label(Role::RadioButton, "Manual");
+    assert!(!manual.accesskit_node().is_disabled());
+    assert_eq!(
+        manual.accesskit_node().toggled(),
+        Some(egui::accesskit::Toggled::True)
+    );
+    let automatic = harness.get_by_role_and_label(Role::RadioButton, "Automatic");
+    assert!(automatic.accesskit_node().is_disabled());
+    assert_eq!(
+        automatic.accesskit_node().description().as_deref(),
+        Some("Automatic needs a raw photo's histogram")
+    );
     let group = harness.get_by_role_and_label(Role::RadioGroup, "Mode");
-    assert!(group.accesskit_node().is_disabled());
-    let at = harness
-        .get_by_role_and_label(Role::RadioButton, "Automatic")
-        .rect()
-        .center();
+    assert!(!group.accesskit_node().is_disabled());
+    let at = automatic.rect().center();
     harness.hover_at(at);
     harness.run();
     harness.get_by_label("Automatic needs a raw photo's histogram");
+    // Nothing else can be chosen: neither a click on Automatic nor one on Manual changes it.
     click_at(&mut harness, at);
     assert_eq!(harness.state().1, None);
+    let manual_at = harness
+        .get_by_role_and_label(Role::RadioButton, "Manual")
+        .rect()
+        .center();
+    click_at(&mut harness, manual_at);
+    assert_eq!(harness.state().1, None);
+}
+
+/// A switch disabled as a whole, whatever its options, dims every option, the chosen one
+/// too, and takes no click.
+#[test]
+fn a_segmented_control_disabled_whole_dims_every_option() {
+    let mut chosen = None;
+    let mut harness = Harness::builder()
+        .with_context_setup(|ctx| apertrust_ui::install(ctx, Theme::default()))
+        .build_ui(|ui| {
+            if let Some(i) = Segmented::new("Scale", &["Linear", "Log"], 0)
+                .enabled(false)
+                .show(ui)
+            {
+                chosen = Some(i);
+            }
+        });
+    harness.run();
+    for option in ["Linear", "Log"] {
+        let node = harness.get_by_role_and_label(Role::RadioButton, option);
+        assert!(node.accesskit_node().is_disabled(), "{option}");
+    }
+    harness.get_by_label("Log").click();
+    harness.run();
+    drop(harness);
+    assert_eq!(chosen, None);
 }
 
 /// Colour calibration's illuminants, the third too long to share a line at the side
@@ -3657,8 +3695,8 @@ fn a_last_pick_readout_and_a_warning_row_say_what_they_show() {
                 .tip("Its lightness reads low: pick an area with no clipped highlights")
                 .show(ui);
             ReadoutRow::new("Last pick", None)
-                .text("L 41 % → L 50 % · +0.55 EV")
-                .patches(egui::Color32::from_gray(98), egui::Color32::from_gray(119))
+                .text("■ L 41 % → ■ L 50 % · +0.55 EV")
+                .patches(&[egui::Color32::from_gray(98), egui::Color32::from_gray(119)])
                 .promise("The area picked, before and after, and the exposure it took")
                 .show(ui);
         });

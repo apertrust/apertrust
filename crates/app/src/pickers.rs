@@ -51,7 +51,7 @@ use apertrust_engine::session::{
 use apertrust_tools::pick::{LastPick, Patch, PickWarnings, Shown};
 use apertrust_tools::{ControlKind, Definition, PickerKind, Row, Tool, messages};
 use apertrust_ui::Translator;
-use apertrust_ui::components::{PickerAction, PickerMarks, PickerPlace};
+use apertrust_ui::components::{PickerAction, PickerMarks, PickerPlace, ReadoutRow};
 use apertrust_ui::i18n::Args;
 use apertrust_ui::overlay::Overlay;
 use eframe::egui::{
@@ -658,8 +658,9 @@ pub fn by_setting(
     Some(words.text_with(&id, Some(&args)))
 }
 
-/// A last pick's words (decision 88, `Row::LastPick`): its readout, "L 41 % → L 50 % ·
-/// +0.55 EV", and its warning lines, each with its tooltip, the clipped one first.
+/// A last pick's words (decision 88, `Row::LastPick`): its readout, "■ L 41 % → ■ L 50 % ·
+/// +0.55 EV", each ■ where the row draws a patch, and its warning lines, each with its
+/// tooltip, the clipped one first.
 #[derive(Debug, Clone, PartialEq)]
 pub struct LastPickWords {
     pub label: String,
@@ -676,7 +677,7 @@ impl LastPickWords {
             .iter()
             .map(|(text, _)| text.as_str())
             .collect();
-        let readout = format!("{} {}", self.label, self.value);
+        let readout = format!("{} {}", self.label, ReadoutRow::spoken(&self.value));
         lines.push(&readout);
         lines.join(". ")
     }

@@ -660,8 +660,8 @@ fn pickers(ui: &mut Ui, t: &Theme) {
             .tip("Exposure reached its end of +18 EV")
             .show(ui);
         ReadoutRow::new("Last pick", None)
-            .text("L 41 % → L 50 % · +0.55 EV")
-            .patches(Color32::from_gray(98), Color32::from_gray(119))
+            .text("■ L 41 % → ■ L 50 % · +0.55 EV")
+            .patches(&[Color32::from_gray(98), Color32::from_gray(119)])
             .promise("The area picked, before and after, and the exposure it took")
             .show(ui);
     });
@@ -1449,7 +1449,8 @@ fn controls(ui: &mut Ui, t: &Theme, demo: &mut Demo) {
     }
     // A segmented row with an option disabled, its reason the tooltip: an edit from a raw
     // holding Automatic on an image that is not one, Manual still to choose; then, with
-    // Manual chosen there, nothing left to choose, so the whole switch is disabled.
+    // Manual chosen there, nothing left to choose: it stays as drawn anywhere, only
+    // Automatic disabled.
     let automatic = [(1, "Automatic needs a raw photo's histogram")];
     if let Some(i) = Segmented::new("Mode, pasted", &["Manual", "Automatic"], demo.exposure_mode)
         .full_width()
@@ -1467,7 +1468,7 @@ fn controls(ui: &mut Ui, t: &Theme, demo: &mut Demo) {
     // a photo that records no camera bias.
     if let Some(on) = ToggleRow::new("Use camera bias", demo.camera_bias)
         .name("Use the camera's exposure bias")
-        .value("(−⅔ EV)")
+        .value("−⅔ EV")
         .promise("Undoes the exposure compensation set on the camera.")
         .show(ui)
     {

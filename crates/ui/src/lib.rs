@@ -116,8 +116,11 @@ mod tests {
         for locale in Locale::ALL {
             let t = Translator::new(locale);
             for id in i18n::message_ids() {
-                // A line break is the layout's, no glyph: the start window's two lines.
-                let text = t.text_with(&id, Some(&args)).replace('\n', "");
+                // A line break is the layout's, no glyph: the start window's two lines;
+                // nor is a readout's patch, drawn as a box.
+                let text = t
+                    .text_with(&id, Some(&args))
+                    .replace(['\n', components::ReadoutRow::PATCH], "");
                 assert!(
                     fonts.has_glyphs(&font, &text),
                     "{} {id}: {text}",

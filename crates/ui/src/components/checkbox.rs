@@ -20,7 +20,7 @@
 //! `button_hover` under the pointer and `button_pressed` pressed, its edge then
 //! `text_secondary`. Ticked, it fills with `check`, neutral, never the accent, with a
 //! 1.5-point `check_mark` tick. Disabled, the edge, the label and a ticked box's fill are
-//! `text_disabled`. A value after the label, as Exposure's "(−⅔ EV)", is `text_secondary`,
+//! `text_disabled`. A value after the label, as Exposure's "−⅔ EV", is `text_secondary`,
 //! `text_disabled` with the rest, and part of the target; it is never cut, the label
 //! before it cut at its end with … where the row is too narrow.
 
@@ -58,8 +58,8 @@ impl<'a> Checkbox<'a> {
         }
     }
 
-    /// A value after the label, a word apart, in `text_secondary`: translated, as
-    /// Exposure's "(−⅔ EV)".
+    /// A value after the label, a small gap (`spacing.xs`) apart, in `text_secondary`:
+    /// translated, with no brackets, as Exposure's "−⅔ EV".
     pub fn value(mut self, value: &'a str) -> Self {
         self.value = Some(value);
         self
@@ -90,7 +90,7 @@ impl<'a> Checkbox<'a> {
         let enabled = self.enabled && ui.is_enabled() && self.state != Some(ButtonState::Disabled);
         let gap = ui.spacing().icon_spacing;
         let font = FontId::proportional(t.text.body);
-        // The value a word after the label, never cut.
+        // The value a small gap after the label, never cut.
         let value = self.value.map(|value| {
             let colour = if enabled {
                 t.colors.text_secondary
@@ -98,8 +98,11 @@ impl<'a> Checkbox<'a> {
                 t.colors.text_disabled
             };
             let mut job = LayoutJob::default();
-            job.append(" ", 0.0, TextFormat::simple(font.clone(), colour));
-            job.append(value, 0.0, TextFormat::simple(font.clone(), colour));
+            job.append(
+                value,
+                t.spacing.xs,
+                TextFormat::simple(font.clone(), colour),
+            );
             ui.painter().layout_job(job)
         });
         let galley = (!self.label.is_empty()).then(|| match &value {

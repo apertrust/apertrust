@@ -23,10 +23,14 @@
 //! An option can be drawn disabled with its reason as its tooltip, as Exposure's Automatic
 //! on an image that is not a raw (decision 88): dimmed, it takes no click and no focus,
 //! and screen readers hear the reason as its description. A disabled option may still be
-//! the chosen one, as an edit from another photo holds it. With nothing left to choose,
-//! every option but the chosen one disabled, the whole switch is disabled.
+//! the chosen one, as an edit from another photo holds it. With nothing else to choose,
+//! every other option disabled, the chosen one is drawn as it is anywhere, not dimmed, and
+//! only the others show disabled with their reasons.
+//!
+//! The chosen option is filled `raised` with `text_strong` and no border, on the `sunken`
+//! track.
 
-use egui::{Color32, FontId, Rect, Role, Sense, Stroke, StrokeKind, Ui, WidgetInfo, pos2, vec2};
+use egui::{Color32, FontId, Rect, Role, Sense, Ui, WidgetInfo, pos2, vec2};
 
 use super::focus_ring;
 use crate::theme;
@@ -70,8 +74,8 @@ impl<'a> Segmented<'a> {
         self
     }
 
-    /// A disabled switch is dimmed and ignores input: a control that can change nothing on
-    /// the photo.
+    /// A disabled switch, every option of it, the chosen one too, is dimmed and ignores
+    /// input: a control that can change nothing on the photo.
     pub fn enabled(mut self, enabled: bool) -> Self {
         self.enabled = enabled;
         self
@@ -97,10 +101,7 @@ impl<'a> Segmented<'a> {
         let t = theme(ui.ctx());
         let font = FontId::proportional(t.text.small);
         let pad = t.spacing.xxs;
-        // With nothing else to choose, the switch is disabled whole.
-        let live = self.enabled
-            && ui.is_enabled()
-            && (0..self.options.len()).any(|i| i != self.selected && self.reason(i).is_none());
+        let live = self.enabled && ui.is_enabled();
         // Laid out in the placeholder colour, so each is painted in its state's.
         let galleys: Vec<_> = self
             .options
@@ -147,13 +148,8 @@ impl<'a> Segmented<'a> {
             let response = ui.interact(rect, group_id.with(i), sense);
             let on = i == self.selected;
             if on {
-                ui.painter().rect(
-                    rect,
-                    t.shape.radius,
-                    t.colors.panel,
-                    Stroke::new(t.shape.hairline, t.colors.border),
-                    StrokeKind::Inside,
-                );
+                ui.painter()
+                    .rect_filled(rect, t.shape.radius, t.colors.raised);
             } else if enabled && response.hovered() {
                 ui.painter()
                     .rect_filled(rect, t.shape.radius, t.colors.hover);
@@ -161,7 +157,7 @@ impl<'a> Segmented<'a> {
             let colour = if !enabled {
                 t.colors.text_disabled
             } else if on {
-                t.colors.text
+                t.colors.text_strong
             } else {
                 t.colors.text_secondary
             };
