@@ -26,7 +26,7 @@ A tool's section already has its own buttons: reset, presets and options (⋯). 
   - the jobs window's rows: Cancel, Show in Folder and Copy Error;
   - a layer (Phase 4), the scopes, a tab's icon.
 - Another place opens to tools' items only by a decision of its own.
-- The top panel's empty areas never hold a menu of the app's: a right-click there is the system's window menu ([0039](0039-one-top-bar-native-menus-on-the-mac-one-menu-button-elsewhere.md)).
+- The top panel, `TopPanel`, is the app's alone: a right-click anywhere on it, an item or its empty areas, opens the toolbar menu ([0092](0092-the-toolbar.md)), the system's window menu staying on the system's own key ([0039](0039-one-top-bar-native-menus-on-the-mac-one-menu-button-elsewhere.md)).
 
 **A tool takes no right-click.**
 
