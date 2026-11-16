@@ -4,8 +4,9 @@
 #   tool-<tool>-group-<group>, tool-<tool>-collapsible-<group>,
 #   tool-<tool>-control-<control>-label, -full and -promise,
 #   tool-<tool>-control-<control>-label-value where the tool gives a value of the
-#   photo's after the label, tool-<tool>-control-<control>-option-<option>, a tool's
-#   setting's
+#   photo's after the label, tool-<tool>-control-<control>-option-<option>, with
+#   -option-<option>-unavailable for a segmented choice's option a photo does not list,
+#   a tool's setting's
 #   tool-<tool>-setting-<setting>-label, -full, -promise and -option-<option>, and a
 #   preset row's tool-<tool>-preset-<preset>-label, -full, -promise and
 #   -option-<option>.
@@ -419,17 +420,18 @@ tool-flip-action-flip_vertically-full = Flip vertically
 tool-flip-action-flip_vertically-promise = Mirror the image top to bottom.
 
 ## Exposure (docs/tools/exposure.md): darktable's exposure, its labels and tooltips in
-## British English. The promises of Exposure, Compensate camera exposure and Black level
-## correction are its invariants table's.
+## British English. The promises of Exposure and Compensate camera exposure are its
+## invariants table's, Black level correction's the redesign's (decision 88).
 
 tool-exposure-title = Exposure
 tool-exposure-description = Brightens or darkens the photo as if you had exposed it differently in the camera, keeping its colours. Usually the first tool to reach for.
-tool-exposure-auto = Sets Exposure so the photo's tones sit around middle grey. A kept Exposure stays as it is.
 tool-exposure-control-mode-label = Mode
 tool-exposure-control-mode-full = Mode
 tool-exposure-control-mode-promise = Manual sets the exposure by hand. Automatic sets it from each photo's raw histogram, to even out the exposure of a series.
 tool-exposure-control-mode-option-manual = Manual
 tool-exposure-control-mode-option-automatic = Automatic
+# The switch's Automatic, drawn disabled on an image that is not a raw (decision 88).
+tool-exposure-control-mode-option-automatic-unavailable = Automatic needs a raw photo's histogram
 tool-exposure-control-camera_bias-label = Compensate camera exposure
 tool-exposure-control-camera_bias-full = Compensate camera exposure
 tool-exposure-control-camera_bias-promise = Undoes the exposure compensation set on the camera.
@@ -444,17 +446,19 @@ tool-exposure-control-compensate_hilite_pres-label-value = ({ $value })
 tool-exposure-control-exposure-label = Exposure
 tool-exposure-control-exposure-full = Exposure
 tool-exposure-control-exposure-promise = Adjusts the exposure correction.
-tool-exposure-control-deflicker_percentile-label = Percentile
-tool-exposure-control-deflicker_percentile-full = Percentile
-tool-exposure-control-deflicker_percentile-promise = Where in the histogram to meter for deflickering: 50% is the median.
-tool-exposure-control-deflicker_target_level-label = Target level
-tool-exposure-control-deflicker_target_level-full = Target level
-tool-exposure-control-deflicker_target_level-promise = Where to place the exposure of processed photos, in EV below overexposure.
-tool-exposure-computed-computed_exposure-label = Computed EC
-tool-exposure-computed-computed_exposure-promise = What exposure correction has actually been used.
+# Automatic mode's rows as redesigned (decision 88), each tooltip starting with
+# darktable's name for it: Percentile, Target level and Computed EC.
+tool-exposure-control-deflicker_percentile-label = Measure at
+tool-exposure-control-deflicker_percentile-full = Measure at
+tool-exposure-control-deflicker_percentile-promise = Percentile: where in the raw histogram automatic mode measures. 50% is the median.
+tool-exposure-control-deflicker_target_level-label = Place it at
+tool-exposure-control-deflicker_target_level-full = Place it at
+tool-exposure-control-deflicker_target_level-promise = Target level: where automatic mode places what it measures, in EV below overexposure.
+tool-exposure-computed-computed_exposure-label = This photo
+tool-exposure-computed-computed_exposure-promise = Computed EC: the exposure correction automatic mode has actually used on this photo.
 tool-exposure-control-black_level-label = Black level correction
 tool-exposure-control-black_level-full = Black level correction
-tool-exposure-control-black_level-promise = Sets which level is black. Keeps white. 0 = untouched.
+tool-exposure-control-black_level-promise = For lifting clipped blacks, not for deeper blacks: use AgX's black relative exposure
 tool-exposure-collapsible-area_exposure_mapping = Area exposure mapping
 tool-exposure-setting-area_mode-label = Area mode
 tool-exposure-setting-area_mode-full = Area mode

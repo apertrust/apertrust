@@ -865,7 +865,7 @@ In `crates/ui/src/components`. Each reports its role, full name and value to Acc
 
 **Checkboxes, text buttons and icon buttons** ([docs/gui.md](gui.md#checkboxes-text-buttons-and-icon-buttons)): `Checkbox`, `Button` (default, or primary with `Button::primary`; at least a width, with the keys that do the same at its end, `Button::width` and `Button::keys`) and `ToolButton`, the bars' quiet one, drawn from one plate, and `IconButton`, drawn with none, its icon `text_secondary` at rest, `text_strong` under the pointer, `accent_text` held down and its filled form while on (decision 81), all with one focus ring with a point of ground inside it (`components/plate.rs`); `ButtonState` draws any of them in one state, as the gallery's strip of states does.
 
-**Others:** `Segmented`, `Swatches`, `ToggleRow` for a tool's checkboxes, with a value of the photo's after the label (`ToggleRow::value`, decision 88), `ActionRow` for its buttons, drawn disabled until what they run is built, `ReadoutRow` for a number the photo gives, its label at the start and its value at the end where a slider's ends (decision 87), and `ButtonsRow`, a control's label with darktable's icon buttons inline (`ButtonsAction`), as Orientation's transform row.
+**Others:** `Segmented`, an option a photo does not list drawn disabled with its reason (`Segmented::disabled_options`, decision 88), `Swatches`, `ToggleRow` for a tool's checkboxes, with a value of the photo's after the label (`ToggleRow::value`, decision 88), `ActionRow` for its buttons, drawn disabled until what they run is built, `ReadoutRow` for a number the photo gives, its label at the start and its value at the end where a slider's ends (decision 87), and `ButtonsRow`, a control's label with darktable's icon buttons inline (`ButtonsAction`), as Orientation's transform row.
 
 **`TextField` and `PathField`** (`components/text_field.rs`): a one-line text well, every edit reported whole, with a hint and an error outline. The path field has a list of variables with their descriptions, part of the row while the caret stands after `$(` and the letters of a name. A click, or ↓ ↑ and Enter, inserts one, closed; Escape closes the list alone (`PathOutput::list_open`).
 
@@ -1340,15 +1340,15 @@ darktable's white balance over the raw-stage `temperature` (decision 27).
 
 darktable's exposure page, on one untitled tab.
 
-- Mode, manual or automatic, darktable's deflicker (decision 87).
+- Mode, a Manual | Automatic switch, automatic darktable's deflicker (decision 87), listing manual alone on an image that is not a raw (`Tool::options`), Automatic drawn disabled there with its reason (decision 88). It has no Auto (`auto: false`).
 - In manual mode: Compensate camera exposure; Highlight preservation mode, on by default; both hidden where the photo gives them nothing to do and labelled with the camera's value (`Tool::visible`, `Tool::label_value`, decision 88); and Exposure, darktable's slider, `exposure.exposure` itself, its default the photo's, +0.7 EV on a colour raw (decision 30).
-- In automatic mode: Percentile, Target level and the computed EC (`Row::Computed`).
+- In automatic mode: Percentile, Target level and the computed EC (`Row::Computed`), labelled Measure at, Place it at and This photo (decision 88).
 - Black level correction, and the Area exposure mapping group's picker settings.
 - It owns every `exposure` parameter and drives only it; every control is ported. Its hidden Contrast and Pivot are left for Colour balance RGB (decision 2).
 - Ranges: Exposure holds darktable's −18 to +18 EV. Black level correction holds darktable's −1 to +1 over the photo's black; a black that reaches the white the photo renders goes 0.01 below it.
 - Version 2: an edit's version 1 Exposure, in exact stops, is left out with a warning. Version 3: Highlight preservation mode ported, on by default, an older edit's stored Exposure entry reading it off, as it rendered; an edit with no Exposure entry has nothing to migrate and takes the default, on, as an unedited photo does.
 - Its invariant rows are tests on the synthetic ramp and sweep, and locally on the corpus.
-- The page as redesigned (decision 88), in six steps ([tools/exposure.md](tools/exposure.md#the-page-as-redesigned-planned)): the first, the camera's rows, is built; the other five are planned: `Tool::picker_ready`; `Row::WhenSetting`, `Row::Reference` and `Row::LastPick`; `Picker::words_by`; `Shown::last` and `warnings`; `Reading::input_maximum`; `PickerTarget` and the `reference` picker; `auto: false`; `AreaMode` and the area exposure mapping removed.
+- The page as redesigned (decision 88), in six steps ([tools/exposure.md](tools/exposure.md#the-page-as-redesigned-planned)): the first two, the camera's rows and automatic mode's page, are built; the other four are planned: `Tool::picker_ready`; `Row::WhenSetting`, `Row::Reference` and `Row::LastPick`; `Picker::words_by`; `Shown::last` and `warnings`; `Reading::input_maximum`; `PickerTarget` and the `reference` picker; `AreaMode` and the area exposure mapping removed.
 
 #### Colour calibration
 

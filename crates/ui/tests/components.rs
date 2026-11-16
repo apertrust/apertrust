@@ -2252,6 +2252,91 @@ fn a_segmented_control_reports_the_chosen_option() {
     assert_eq!(chosen, Some(1));
 }
 
+/// Exposure's Mode as a tool draws it, in a window as wide as the side panel: `held` the
+/// option chosen and Automatic disabled with its reason, as on an image that is not a raw
+/// (decision 88); what it last reported in the state.
+fn mode_switch(held: usize) -> Harness<'static, (usize, Option<usize>)> {
+    Harness::builder()
+        .with_size(egui::vec2(320.0, 64.0))
+        .with_context_setup(|ctx| {
+            apertrust_ui::install(ctx, Theme::default());
+            ctx.global_style_mut(|style| style.interaction.tooltip_delay = 0.0);
+        })
+        .build_ui_state(
+            |ui, state: &mut (usize, Option<usize>)| {
+                let reasons = [(1, "Automatic needs a raw photo's histogram")];
+                let chosen = Segmented::new("Mode", &["Manual", "Automatic"], state.0)
+                    .label("Mode")
+                    .promise("Manual sets the exposure by hand.")
+                    .disabled_options(&reasons)
+                    .show(ui);
+                if let Some(i) = chosen {
+                    state.0 = i;
+                    state.1 = Some(i);
+                }
+            },
+            (held, None),
+        )
+}
+
+/// An option drawn disabled takes no click, says why in its tooltip and to screen
+/// readers, and may be the chosen one: an edit pasted onto an image that is not a raw
+/// holding Automatic, from which Manual can still be chosen.
+#[test]
+fn a_segmented_option_can_be_disabled_with_its_reason() {
+    let mut harness = mode_switch(1);
+    harness.run();
+    harness.snapshot("segmented-option-disabled");
+    let automatic = harness.get_by_role_and_label(Role::RadioButton, "Automatic");
+    let node = automatic.accesskit_node();
+    assert!(node.is_disabled());
+    assert_eq!(
+        node.description().as_deref(),
+        Some("Automatic needs a raw photo's histogram")
+    );
+    let at = automatic.rect().center();
+    harness.hover_at(at);
+    harness.run();
+    harness.get_by_label("Automatic needs a raw photo's histogram");
+    // Manual is live, its tooltip the promise, and choosing it is reported.
+    let manual = harness.get_by_role_and_label(Role::RadioButton, "Manual");
+    assert!(!manual.accesskit_node().is_disabled());
+    let manual_at = manual.rect().center();
+    harness.hover_at(manual_at);
+    harness.run();
+    harness.get_by_label("Manual sets the exposure by hand.");
+    click_at(&mut harness, manual_at);
+    assert_eq!(harness.state().1, Some(0));
+    // Automatic, now not chosen, cannot be chosen again.
+    click_at(&mut harness, at);
+    assert_eq!(*harness.state(), (0, Some(0)));
+}
+
+/// With nothing left to choose, every option but the chosen one disabled, the whole
+/// switch is disabled: Manual held on an image that is not a raw. The disabled option
+/// still says why.
+#[test]
+fn a_segmented_control_with_nothing_else_to_choose_is_disabled_whole() {
+    let mut harness = mode_switch(0);
+    harness.run();
+    harness.snapshot("segmented-disabled");
+    for option in ["Manual", "Automatic"] {
+        let node = harness.get_by_role_and_label(Role::RadioButton, option);
+        assert!(node.accesskit_node().is_disabled(), "{option}");
+    }
+    let group = harness.get_by_role_and_label(Role::RadioGroup, "Mode");
+    assert!(group.accesskit_node().is_disabled());
+    let at = harness
+        .get_by_role_and_label(Role::RadioButton, "Automatic")
+        .rect()
+        .center();
+    harness.hover_at(at);
+    harness.run();
+    harness.get_by_label("Automatic needs a raw photo's histogram");
+    click_at(&mut harness, at);
+    assert_eq!(harness.state().1, None);
+}
+
 /// Colour calibration's illuminants, the third too long to share a line at the side
 /// panel's narrowest.
 const ILLUMINANTS: [&str; 4] = [

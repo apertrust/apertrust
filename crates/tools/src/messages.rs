@@ -106,6 +106,16 @@ pub fn option(tool: &str, control: &str, option: &str) -> String {
     format!("tool-{tool}-control-{control}-option-{option}")
 }
 
+/// Why a segmented choice's option is drawn disabled on a photo that does not list it
+/// ([`crate::Tool::options`], decision 88), its tooltip:
+/// `tool-<tool>-control-<control>-option-<option>-unavailable`, as Exposure's "Automatic
+/// needs a raw photo's histogram". The definition does not imply it: which photos list an
+/// option is the tool's code, so the tests ask each tool which options a photo leaves out.
+/// A list leaves such an option out, and needs none.
+pub fn option_unavailable(tool: &str, control: &str, option: &str) -> String {
+    format!("tool-{tool}-control-{control}-option-{option}-unavailable")
+}
+
 /// A row's own words, where darktable labels its control otherwise in the mode the row
 /// shows for ([`crate::Slider::label`]): its short label, full name and promise,
 /// `tool-<tool>-control-<control>-as-<words>-label`, `-full` and `-promise`.

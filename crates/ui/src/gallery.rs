@@ -1081,6 +1081,8 @@ struct Demo {
     /// user's own, the box then showing Custom.
     mode: Option<usize>,
     tool: usize,
+    /// Exposure's Mode switch, pasted as Automatic onto an image that is not a raw.
+    exposure_mode: usize,
     camera_bias: bool,
     /// The collapsible groups ([`GROUPS`]): which are open, and their sliders' values,
     /// two to a group.
@@ -1147,6 +1149,7 @@ impl Default for Demo {
             adaptation_mark: Mark::Kept,
             mode: None,
             tool: 0,
+            exposure_mode: 1,
             camera_bias: true,
             groups: [false, false, true],
             group_sliders: vec![
@@ -1385,6 +1388,22 @@ fn controls(ui: &mut Ui, t: &Theme, demo: &mut Demo) {
     {
         demo.tool = i;
     }
+    // A segmented row with an option disabled, its reason the tooltip: an edit from a raw
+    // holding Automatic on an image that is not one, Manual still to choose; then, with
+    // Manual chosen there, nothing left to choose, so the whole switch is disabled.
+    let automatic = [(1, "Automatic needs a raw photo's histogram")];
+    if let Some(i) = Segmented::new("Mode, pasted", &["Manual", "Automatic"], demo.exposure_mode)
+        .label("Mode")
+        .promise("Manual sets the exposure by hand.")
+        .disabled_options(&automatic)
+        .show(ui)
+    {
+        demo.exposure_mode = i;
+    }
+    Segmented::new("Mode, not a raw", &["Manual", "Automatic"], 0)
+        .label("Mode")
+        .disabled_options(&automatic)
+        .show(ui);
     // A checkbox row, live with the photo's value after its label, and disabled, as on
     // a photo that records no camera bias.
     if let Some(on) = ToggleRow::new("Use camera bias", demo.camera_bias)
