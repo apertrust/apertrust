@@ -2005,7 +2005,7 @@ fn choice_row(
             let reasons: Vec<(usize, &str)> =
                 reasons.iter().map(|(i, why)| (*i, why.as_str())).collect();
             Segmented::new(&full, &all, index)
-                .label(&label)
+                .full_width()
                 .promise(&promise)
                 .enabled(shown.available)
                 .disabled_options(&reasons)
