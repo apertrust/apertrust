@@ -71,6 +71,7 @@ use apertrust_engine::session::{
 };
 use apertrust_plugin::ImageContext;
 use apertrust_tools::about::{self, Facts};
+use apertrust_tools::utility;
 use apertrust_tools::{
     Button, ButtonIcon, ChoiceStyle, Computed, ControlKind, Controls, Definition, MAX_POINTS,
     PickerKind, Quad, Row, SettingRow, Slider, Tool, Track, Unit, View, Widget, check, messages,
@@ -814,13 +815,13 @@ pub fn section(
 }
 
 /// What the header's tooltip of the tool or utility `id` says (`docs/gui.md`, The header's
-/// tooltip), in `words`: its sentence; for a utility ([`apertrust_tools::about::UTILITIES`]),
+/// tooltip), in `words`: its sentence; for a utility ([`apertrust_tools::utility::UTILITIES`]),
 /// that it edits nothing and what it measures; for a tool with darktable's `facts`, its
 /// kind and what it works on in plain words and darktable's lines word for word; for a tool
 /// that is not darktable's, its sentence alone.
 pub fn about(words: &Translator, id: &str, facts: Option<&Facts>) -> parts::About {
     let description = words.text(&messages::description(id));
-    if let Some(utility) = about::utility(id) {
+    if let Some(utility) = utility::utility(id) {
         return parts::About {
             description,
             kind: Some(words.text(about::Kind::EditsNothing.message())),

@@ -20,8 +20,9 @@
 //! darktable's lines read as darktable writes them, in its own Ukrainian and Polish.
 
 use apertrust_tools::TOOLS;
-use apertrust_tools::about::{Fact, Kind, UTILITIES, WorksOn};
+use apertrust_tools::about::{Fact, Kind, WorksOn};
 use apertrust_tools::messages;
+use apertrust_tools::utility::UTILITIES;
 use apertrust_ui::{Locale, Translator};
 
 /// darktable's `description()` of each built tool's module at the reference release,

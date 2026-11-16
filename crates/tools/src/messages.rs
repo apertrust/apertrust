@@ -31,7 +31,7 @@ pub fn title(tool: &str) -> String {
 
 /// What the tool does and when to reach for it, a sentence or two, first in its header's
 /// tooltip: `tool-<tool>-description`. A utility's, which has no definition, is the same
-/// under its id ([`crate::about::UTILITIES`]).
+/// under its id ([`crate::utility::UTILITIES`]).
 pub fn description(tool: &str) -> String {
     format!("tool-{tool}-description")
 }

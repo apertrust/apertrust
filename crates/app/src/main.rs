@@ -100,10 +100,10 @@ use apertrust_engine::session::{
 use apertrust_engine::sidecar::Reason;
 use apertrust_tools::Tool;
 use apertrust_ui::components::{
-    ActivityAction, Available, CellRating, CentralBar, CentralBarAction, GridEdge, GridEdgeAction,
-    GridPanel, GridPanelAction, GridPosition, Jobs, Margin, Marker, PanelBody, PanelEdge,
-    PanelEdgeAction, PanelTab, PhotoCaption, PhotoFrame, PickerAction, Placed, SaveState,
-    ScopeView, TabBar, TabBarAction, Thumb, Toggle, TopPanel, TopPanelAction, Zoom,
+    ActivityAction, Available, CellMenu, CellRating, CentralBar, CentralBarAction, GridEdge,
+    GridEdgeAction, GridPanel, GridPanelAction, GridPosition, Jobs, Margin, Marker, PanelBody,
+    PanelEdge, PanelEdgeAction, PanelTab, PhotoCaption, PhotoFrame, PickerAction, Placed,
+    SaveState, ScopeView, TabBar, TabBarAction, Thumb, Toggle, TopPanel, TopPanelAction, Zoom,
     grid_panel_lines, grid_panel_thickness,
 };
 use apertrust_ui::{
@@ -2359,7 +2359,7 @@ impl Shell {
             view: self.view,
             photo,
             // The app's, from the session's mirror ([`App::shell_state`]).
-            live: false,
+            waiting: false,
             edited,
             // The app's, from the photo's history ([`App::shell_state`]).
             undo: false,
@@ -3797,7 +3797,7 @@ impl App {
         let options = history_options(&self.mirror, self.shell.discard, ctx.os());
         State {
             shown: !self.mirror.folder.order().is_empty(),
-            live: open && self.mirror.live(),
+            waiting: self.mirror.photo.asked().is_some() && !self.mirror.live(),
             opened: opened(&self.mirror),
             undo: history.is_some_and(|h| h.undo.is_some()),
             redo: history.is_some_and(|h| h.redo.is_some()),
@@ -4068,8 +4068,10 @@ impl App {
     /// (`docs/gui.md`, The grid panel), and holding the photos open alone, just them, the
     /// active one's cell active. Each cell draws its thumbnail once it has come, and those
     /// in sight without one are asked for (`thumbnails.rs`), a photo alone's from its own
-    /// file, nothing of its folder read. Returns the action a choice in the grid bar's
-    /// menus, or its Labels, runs.
+    /// file, nothing of its folder read. A cell's right-click, or its menu keys, opens its
+    /// photo's menu, the photo made active first unless it is already ([`App::thumbnail_menu`]).
+    /// Returns the action a choice in the grid bar's menus, its Labels or the cell's menu
+    /// runs.
     fn grid_panel(&mut self, ui: &mut egui::Ui, lines: usize) -> Option<ActionId> {
         self.thumbnails.sync(ui.ctx(), &self.mirror.folder);
         let grid = self.shell.grid;
@@ -4078,7 +4080,7 @@ impl App {
         // shorter side must cover the square.
         let side = grid.thumbnails.side() * if grid.square_thumbnails { 1.5 } else { 1.0 };
         let size = thumbnails::size_for(side, ui.pixels_per_point());
-        let (clicked, asked, bar) = {
+        let (clicked, asked, bar, menu) = {
             let mirror = &self.mirror;
             let textures = &self.thumbnails;
             let listing = match &mirror.folder.folder {
@@ -4118,20 +4120,24 @@ impl App {
                 panel = panel.empty_hint(hint);
             }
             let output = panel.show(ui);
-            // The photo open stays as it is when its own cell is pressed again.
-            let clicked = match (output.action, listing, &mirror.folder.folder) {
-                (Some(GridPanelAction::Open(i)), _, _) if active == Some(i) => None,
-                (Some(GridPanelAction::Open(i)), Some(listing), _) => {
-                    Some(listing.path.join(&photos[order[i]].name))
-                }
-                (Some(GridPanelAction::Open(i)), None, folder::Folder::Alone { paths, .. }) => {
-                    paths.get(order[i]).cloned()
-                }
+            let path = |i: usize| match (listing, &mirror.folder.folder) {
+                (Some(listing), _) => Some(listing.path.join(&photos[order[i]].name)),
+                (None, folder::Folder::Alone { paths, .. }) => paths.get(order[i]).cloned(),
                 _ => None,
             };
+            // The photo open stays as it is when its own cell is pressed again.
+            let clicked = match output.action {
+                Some(GridPanelAction::Open(i)) if active == Some(i) => None,
+                Some(GridPanelAction::Open(i)) => path(i),
+                _ => None,
+            };
+            let menu = output.menu.map(|menu| {
+                let opens = made_active(menu.photo, active).and_then(path);
+                (menu, opens)
+            });
             let shown = order.get(output.shown).unwrap_or_default();
             let asked = (self.thumbnails_asked).command(&mirror.folder, shown, size);
-            (clicked, asked, output.bar)
+            (clicked, asked, output.bar, menu)
         };
         if let Some(asked) = asked {
             self.session.send(Command::Library(asked));
@@ -4139,7 +4145,39 @@ impl App {
         if let Some(path) = clicked {
             self.open(path);
         }
-        bar.map(|chosen| ActionId(chosen.id()))
+        let id = ui.make_persistent_id("thumbnail menu");
+        let chosen = self.thumbnail_menu(ui.ctx(), id, menu);
+        bar.map(|chosen| ActionId(chosen.id())).or(chosen)
+    }
+
+    /// A thumbnail's menu (decision 91), the popup `id`, asked for on a cell this frame by
+    /// `asked`, with the photo to open first where it is not the active one: opened as the
+    /// photo's menu is, Reset hidden while several photos are selected, drawn
+    /// while open; returns the action of the item chosen in it.
+    fn thumbnail_menu(
+        &mut self,
+        ctx: &egui::Context,
+        id: egui::Id,
+        asked: Option<(CellMenu, Option<PathBuf>)>,
+    ) -> Option<ActionId> {
+        if let Some((menu, opens)) = asked {
+            if let Some(path) = opens {
+                self.open(path);
+            }
+            let state = self.state(ctx);
+            let anchor = egui::Rect::from_min_size(menu.at, egui::Vec2::ZERO);
+            let place = menus::Place::Open(apertrust_tools::Place::Thumbnail);
+            let target = menus::Target::Selection;
+            let request = menus::context(ctx, place, &target, &self.shell.keymap, &state, anchor);
+            popup::open(ctx, id, request.opened_by(menu.cell));
+        }
+        if popup::is_open(ctx, id) {
+            popup::show(ctx);
+        }
+        match popup::answer(ctx, id)? {
+            popup::Answer::Chosen(chosen) => menus::chosen(&chosen),
+            popup::Answer::Dismissed => None,
+        }
     }
 
     /// The central bar, the photo and its caption. Returns the central bar's rectangle, a
@@ -4416,19 +4454,21 @@ impl App {
         pickers::live_region(ui, photo.left_bottom(), self.said.text());
     }
 
-    /// The surround's right-click menu, View › Background's items, hung from the pointer
-    /// where `slot` was right-clicked outside `photo`, the photo's rectangle while one is
-    /// open (`docs/gui.md`, The background). Returns the action of the item chosen.
+    /// The central panel's right-click menus, hung from the pointer where `slot` was
+    /// right-clicked ([`central_menu`]): the photo's on `photo`, the photo's rectangle while
+    /// one is shown, unless a picker is on, and the surround's, View › Background's items,
+    /// round it (`docs/gui.md`, The background, Context menus). Returns the action of the
+    /// item chosen.
     fn background_menu(
         &self,
         ctx: &egui::Context,
         slot: &egui::Response,
         photo: Option<egui::Rect>,
     ) -> Option<ActionId> {
-        surround_menu(ctx, slot, photo, |at| {
+        let picking = self.mirror.pickers.active().is_some();
+        central_menu(ctx, slot, photo, picking, |place, target, at| {
             let state = self.state(ctx);
             let anchor = egui::Rect::from_min_size(at, egui::Vec2::ZERO);
-            let (place, target) = (menus::Place::Surround, menus::Target::App);
             menus::context(ctx, place, &target, &self.shell.keymap, &state, anchor)
         })
     }
@@ -4830,23 +4870,54 @@ fn picture_texture(
     texture
 }
 
-/// Opens the menu `request` gives at the pointer when `slot` is right-clicked outside
-/// `photo`, and returns the action of the item chosen in it. The menu is drawn here while
-/// it is open, before its answer is read: a drawn menu (Windows, Linux) answers as it is
-/// drawn, and its answer lasts only that frame, so a read before the frame's later
-/// `popup::show` would miss it. The Mac's native menu answers between frames.
-fn surround_menu(
+/// The photo a thumbnail's menu makes active as it opens, by a right-click or its keys
+/// (decision 91): its cell's, `photo`, unless it is already in the selection, which is the
+/// `active` photo alone until several can be selected. So the menu acts on the photo it
+/// was opened on.
+fn made_active(photo: usize, active: Option<usize>) -> Option<usize> {
+    (active != Some(photo)).then_some(photo)
+}
+
+/// The point `at` in the coordinates of the photo drawn at `photo`, as pickers take them: 0
+/// to 1 across it, (0, 0) its top left (`apertrust_tools::pick::Region`).
+fn photo_point(photo: egui::Rect, at: egui::Pos2) -> [f32; 2] {
+    let point = (at - photo.min) / photo.size();
+    [point.x, point.y]
+}
+
+/// Opens the menu `request` gives at the pointer when `slot` is right-clicked, and returns
+/// the action of the item chosen in it: the photo's on `photo`, the photo's rectangle
+/// while one is shown, the point in the photo's coordinates as pickers take them, unless
+/// `picking`, a picker on, takes the right-click there (decision 91); the surround's
+/// outside it. The menu is drawn here while it is open, before its answer is read: a drawn
+/// menu (Windows, Linux) answers as it is drawn, and its answer lasts only that frame, so a
+/// read before the frame's later `popup::show` would miss it. The Mac's native menu
+/// answers between frames.
+fn central_menu(
     ctx: &egui::Context,
     slot: &egui::Response,
     photo: Option<egui::Rect>,
-    request: impl FnOnce(egui::Pos2) -> popup::Request,
+    picking: bool,
+    request: impl FnOnce(menus::Place, menus::Target, egui::Pos2) -> popup::Request,
 ) -> Option<ActionId> {
     let id = slot.id.with("menu");
     if slot.secondary_clicked()
         && let Some(at) = slot.interact_pointer_pos()
-        && !photo.is_some_and(|photo| photo.contains(at))
     {
-        popup::open(ctx, id, request(at));
+        let opened = match photo.filter(|photo| photo.contains(at)) {
+            Some(_) if picking => None,
+            Some(photo) => {
+                let target = menus::Target::Photo {
+                    point: Some(photo_point(photo, at)),
+                };
+                let place = menus::Place::Open(apertrust_tools::Place::Photo);
+                Some((place, target))
+            }
+            None => Some((menus::Place::Surround, menus::Target::App)),
+        };
+        if let Some((place, target)) = opened {
+            popup::open(ctx, id, request(place, target, at));
+        }
     }
     if popup::is_open(ctx, id) {
         popup::show(ctx);
@@ -9915,16 +9986,19 @@ mod tests {
         );
     }
 
-    /// A frame as the app's: the surround's menu read in the central panel, and the
-    /// frame's popups drawn after it.
+    /// A frame as the app's: the central panel's menus read over the whole window, the
+    /// photo at `photo` if any, a picker on while `picking`, and the frame's popups drawn
+    /// after it. The photo is open with an edit Reset can take back.
     struct Surround {
         shell: Shell,
+        photo: Option<egui::Rect>,
+        picking: bool,
         chosen: Vec<ActionId>,
     }
 
-    #[test]
-    fn the_surround_s_drawn_menu_gives_the_background_chosen_in_it() {
-        let mut harness = Harness::builder()
+    /// [`Surround`] in a window of 600 × 400 points.
+    fn surround(photo: Option<egui::Rect>, picking: bool) -> Harness<'static, Surround> {
+        Harness::builder()
             .with_size(egui::vec2(600.0, 400.0))
             .with_os(OperatingSystem::Nix)
             .with_context_setup(|ctx| {
@@ -9936,10 +10010,10 @@ mod tests {
                     let ctx = ui.ctx().clone();
                     let slot = ui.allocate_rect(ui.max_rect(), egui::Sense::click());
                     let shell = &surround.shell;
-                    let chosen = surround_menu(&ctx, &slot, None, |at| {
-                        let state = shell.state(&ctx, false, false);
+                    let (photo, picking) = (surround.photo, surround.picking);
+                    let chosen = central_menu(&ctx, &slot, photo, picking, |place, target, at| {
+                        let state = shell.state(&ctx, photo.is_some(), photo.is_some());
                         let anchor = egui::Rect::from_min_size(at, egui::Vec2::ZERO);
-                        let (place, target) = (menus::Place::Surround, menus::Target::App);
                         menus::context(&ctx, place, &target, &shell.keymap, &state, anchor)
                     });
                     surround.chosen.extend(chosen);
@@ -9947,10 +10021,15 @@ mod tests {
                 },
                 Surround {
                     shell: Shell::new(&Settings::default(), Locale::EnGb, OperatingSystem::Nix),
+                    photo,
+                    picking,
                     chosen: Vec::new(),
                 },
-            );
-        let at = egui::pos2(300.0, 200.0);
+            )
+    }
+
+    /// A right-click at `at`, in frames of its own.
+    fn right_click_at<T>(harness: &mut Harness<'_, T>, at: egui::Pos2) {
         harness.hover_at(at);
         harness.run();
         for pressed in [true, false] {
@@ -9962,11 +10041,87 @@ mod tests {
             });
         }
         harness.run();
+    }
+
+    #[test]
+    fn the_surround_s_drawn_menu_gives_the_background_chosen_in_it() {
+        let mut harness = surround(None, false);
+        right_click_at(&mut harness, egui::pos2(300.0, 200.0));
         harness
             .get_by_role_and_label(Role::MenuItemCheckBox, "White")
             .click();
         harness.run();
         assert_eq!(harness.state().chosen, [ActionId::BACKGROUND[5]]);
+    }
+
+    /// Decision 91: a right-click on the photo opens the photo's menu, drawn: History's
+    /// Reset, which a choice runs, then Export… and Background ▸; round it, the surround's
+    /// Background menu, as before.
+    #[test]
+    fn a_right_click_on_the_photo_opens_its_menu_reset_export_background() {
+        let photo = egui::Rect::from_min_size(egui::pos2(100.0, 50.0), egui::vec2(400.0, 300.0));
+        let mut harness = surround(Some(photo), false);
+        right_click_at(&mut harness, photo.center());
+        let menu = harness.get_by_role_and_label(Role::Menu, "Photo");
+        let items: Vec<String> = menu
+            .query_all(egui_kittest::kittest::by().predicate(|node| {
+                matches!(
+                    node.role(),
+                    Role::MenuItem | Role::MenuItemCheckBox | Role::MenuItemRadio
+                )
+            }))
+            .filter_map(|node| node.accesskit_node().label())
+            .collect();
+        assert_eq!(items, ["Reset", "Export…", "Background"]);
+        harness.get_by_label("Reset").click();
+        harness.run();
+        assert_eq!(harness.state().chosen, [ActionId::RESET]);
+        // Round the photo, the surround's.
+        right_click_at(&mut harness, egui::pos2(50.0, 200.0));
+        assert!(
+            harness
+                .query_by_role_and_label(Role::Menu, "Photo")
+                .is_none()
+        );
+        assert!(
+            harness
+                .query_by_role_and_label(Role::Menu, "Background")
+                .is_some()
+        );
+    }
+
+    /// Decision 91 (and 79): while a picker is on, the photo's right-click is the picker's,
+    /// and no menu opens there; the surround keeps its own.
+    #[test]
+    fn a_picker_on_takes_the_photo_s_right_click() {
+        let photo = egui::Rect::from_min_size(egui::pos2(100.0, 50.0), egui::vec2(400.0, 300.0));
+        let mut harness = surround(Some(photo), true);
+        right_click_at(&mut harness, photo.center());
+        assert!(!popup::any_open(&harness.ctx));
+        right_click_at(&mut harness, egui::pos2(50.0, 200.0));
+        assert!(
+            harness
+                .query_by_role_and_label(Role::Menu, "Background")
+                .is_some()
+        );
+    }
+
+    /// A thumbnail's menu makes its cell's photo active first, unless it is already: the
+    /// menu never acts on another photo than the one it opened on.
+    #[test]
+    fn a_thumbnail_s_menu_makes_its_photo_active_first() {
+        assert_eq!(made_active(3, Some(1)), Some(3));
+        assert_eq!(made_active(3, None), Some(3));
+        assert_eq!(made_active(3, Some(3)), None);
+    }
+
+    /// The photo's menu takes the point under the pointer in the photo's coordinates, 0 to 1
+    /// across the photo as pickers take them.
+    #[test]
+    fn the_photo_s_menu_targets_the_point_right_clicked() {
+        let photo = egui::Rect::from_min_size(egui::pos2(100.0, 50.0), egui::vec2(400.0, 200.0));
+        assert_eq!(photo_point(photo, egui::pos2(200.0, 200.0)), [0.25, 0.75]);
+        assert_eq!(photo_point(photo, photo.min), [0.0, 0.0]);
     }
 
     #[test]

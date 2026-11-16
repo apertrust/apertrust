@@ -268,11 +268,11 @@ pub enum Intent {
 pub struct State {
     pub view: View,
     pub photo: bool,
-    /// Whether the photo open is live, its values taking changes and its frames coming
-    /// (decision 77): not yet while it opens, as a photo just made active does, when the
-    /// photo's and a thumbnail's menus show an item that cannot run yet disabled, not
+    /// Whether the photo asked for, opening or open, is not yet live, its values taking
+    /// changes and its frames coming (decision 77), as a photo just made active is: the
+    /// photo's and a thumbnail's menus then show an item that cannot run yet disabled, not
     /// hidden (decision 91; `menus::context`).
-    pub live: bool,
+    pub waiting: bool,
     pub edited: bool,
     /// Whether the open photo's history has something for Undo, and for Redo, to do, and
     /// takes them: live and not open for viewing only (decision 78).
@@ -289,6 +289,8 @@ pub struct State {
     /// Whether a text field of the main window has the focus: Undo and Redo act on it, as
     /// the Mac's Edit menu does (decision 39), whatever the photo's history holds.
     pub text: bool,
+    /// The photos selected: the active one alone until several can be (decision 91 hides
+    /// what acts on one photo alone from a thumbnail's menu while several are).
     pub photos: usize,
     /// Whether anything is open, a folder or a photo, opening, open or failed: File ›
     /// Close's to close.
@@ -1955,7 +1957,7 @@ mod tests {
         State {
             view: View::Edit,
             photo: true,
-            live: true,
+            waiting: false,
             edited: true,
             undo: true,
             redo: true,

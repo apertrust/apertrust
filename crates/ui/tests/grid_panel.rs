@@ -18,8 +18,8 @@
 //! The grid bar).
 
 use apertrust_ui::components::{
-    GridBarAction, GridEdge, GridEdgeAction, GridPanel, GridPanelAction, GridPosition, Sort,
-    SortKey, Thumb, ThumbnailSize, grid_panel_height, grid_panel_width,
+    CellMenu, GridBarAction, GridEdge, GridEdgeAction, GridPanel, GridPanelAction, GridPosition,
+    Sort, SortKey, Thumb, ThumbnailSize, grid_panel_height, grid_panel_width,
 };
 use apertrust_ui::{Icon, Theme};
 use egui::accesskit::{HasPopup, Role, Toggled};
@@ -37,6 +37,8 @@ struct Grid {
     size: ThumbnailSize,
     labels: bool,
     chosen: Vec<GridBarAction>,
+    /// The cells' menus asked for.
+    menus: Vec<CellMenu>,
 }
 
 /// The panel with `count` photos, as the app keeps it: each choice taken in at once.
@@ -71,6 +73,7 @@ fn grid(count: usize) -> Harness<'static, Grid> {
                     }
                     grid.chosen.push(chosen);
                 }
+                grid.menus.extend(output.menu);
             },
             Grid {
                 count,
@@ -81,6 +84,7 @@ fn grid(count: usize) -> Harness<'static, Grid> {
                 size: ThumbnailSize::Medium,
                 labels: true,
                 chosen: Vec::new(),
+                menus: Vec::new(),
             },
         )
 }
@@ -589,6 +593,40 @@ fn a_right_click_on_the_grid_bar_opens_its_position_menu() {
             .query_by_role_and_label(Role::Menu, "Grid panel options")
             .is_some()
     );
+}
+
+/// Decision 91: a cell's right-click asks for its photo's menu at the pointer, and the menu
+/// key and Shift+F10 on the focused cell under it, each with the cell, which the menu's
+/// focus goes back to; the app builds the menu.
+#[test]
+fn a_cell_s_right_click_and_menu_keys_ask_for_its_photo_s_menu() {
+    let mut harness = grid(12);
+    harness.run();
+    let cell = harness.get_by_label("IMG_0002.ARW").rect();
+    right_click(&mut harness, cell.center());
+    let asked = harness.state().menus.clone();
+    assert_eq!(asked.len(), 1);
+    assert_eq!((asked[0].photo, asked[0].at), (2, cell.center()));
+    // No photo opens on a right-click: the app makes it active.
+    harness.get_by_label("IMG_0003.ARW").focus();
+    harness.run();
+    let under = harness.get_by_label("IMG_0003.ARW").rect().left_bottom();
+    for (modifiers, key) in [
+        (egui::Modifiers::NONE, egui::Key::Menu),
+        (egui::Modifiers::SHIFT, egui::Key::F10),
+    ] {
+        harness.key_press_modifiers(modifiers, key);
+        harness.run();
+        let menu = *harness.state().menus.last().unwrap();
+        assert_eq!((menu.photo, menu.at), (3, under), "{key:?}");
+    }
+    assert_eq!(harness.state().menus.len(), 3);
+    // Focused elsewhere, the keys ask for nothing.
+    harness.get_by_role_and_label(Role::Button, "Sort").focus();
+    harness.run();
+    harness.key_press(egui::Key::Menu);
+    harness.run();
+    assert_eq!(harness.state().menus.len(), 3);
 }
 
 /// A window with the grid panel as a column at `position`, `columns` wide as its edge

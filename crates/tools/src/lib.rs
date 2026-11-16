@@ -65,6 +65,7 @@ pub mod testing;
 pub mod tone_curve;
 pub mod tone_equalizer;
 pub mod transfer;
+pub mod utility;
 mod values;
 pub mod vignetting;
 pub mod white_balance;
@@ -76,8 +77,8 @@ use apertrust_plugin::{ImageContext, Operation, ParamValues, Value};
 pub use definition::{
     Button, ButtonIcon, ChoiceStyle, Computed, Control, ControlError, ControlKind, Coordinate,
     Definition, DefinitionError, MAX_POINTS, MIN_GAP, MenuItem, Picker, PickerKind, Place,
-    PresetRow, Quad, Range, Row, SettingRow, Slider, Space, Tab, Track, Unit, View, Widget,
-    check_menus, slider_step,
+    PresetRow, Quad, Range, Row, Section, SettingRow, Slider, Space, Tab, Track, Unit, View,
+    Widget, check_menus, slider_step,
 };
 use pick::{PickKeys, Picked, Reading};
 pub use values::{ControlValue, Controls, Mark, ToolValues};

@@ -81,8 +81,8 @@ pub struct Definition {
     pub pickers: &'static [Picker],
     /// The items it adds to context menus (decision 91; `docs/gui.md`, Context menus), each
     /// one of its own actions at a place; none for a tool with nothing to add. The app
-    /// builds the menus, its group after the place's own and the tools before it in
-    /// pipeline order.
+    /// builds the menus, every item, the app's included, where its section and order put
+    /// it ([`Section`]).
     pub menus: &'static [MenuItem],
     /// darktable's facts about the module the tool is, from its `description()` at the
     /// reference release (`docs/gui.md`, The header's tooltip): what its header's tooltip
@@ -160,16 +160,45 @@ impl Place {
     }
 }
 
-/// One item a tool or a utility adds to a context menu: an action, at a place. Every item
-/// is an action of the app's registry, which builds the menu and runs it; the tool runs no
-/// code there.
+/// Where an item stands in a context menu (decision 91): the menu lists its items by
+/// section, lowest first, then by [`MenuItem::order`] within one, a line wherever the
+/// section changes. The app's items and the tools' take the same sections, so a tool's
+/// Reset sits in Edit's whoever adds the rest of it.
+///
+/// The named sections are 1000 apart, and a tool may take one of its own value: a new
+/// section goes between two existing ones, the gaps leaving room to insert without
+/// renumbering.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct Section(pub u32);
+
+impl Section {
+    /// What changes the edit: Reset, and Copy Edit and Apply Edit once built.
+    pub const EDIT: Section = Section(1000);
+    /// What writes the photo out: Export….
+    pub const EXPORT: Section = Section(2000);
+    /// How the photo is shown: Background ▸.
+    pub const VIEW: Section = Section(3000);
+    /// The edit's history.
+    pub const HISTORY: Section = Section(4000);
+    /// Items about the panel's layout, which always come last; nothing is in it yet.
+    pub const LAYOUT: Section = Section(9000);
+}
+
+/// One item a tool or a utility adds to a context menu: an action, at a place, where its
+/// section and order put it. Every item is an action of the app's registry, which builds
+/// the menu and runs it; the tool runs no code there.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MenuItem {
     pub place: Place,
+    pub section: Section,
+    /// Its place within its section, lowest first, every item's in a place's section its
+    /// own, the app's included. Orders go 100 apart (100, 200, 300…): a new item goes
+    /// between two existing ones, the gaps leaving room to insert without renumbering.
+    pub order: u32,
     /// A tool's: one of its own actions, a [`Row::Action`]'s or a [`Row::Buttons`] button's
     /// id, which the app's registry holds as `tool-<tool>-<action>`. A utility's
-    /// ([`crate::about::Utility::menus`]): the registry action that runs it, by its id, as
-    /// History's Discard History… is `discard-history`.
+    /// ([`crate::utility::Utility::menus`]): the registry action that runs it, by its id, as
+    /// History's Reset is `reset`.
     pub action: &'static str,
 }
 
@@ -2738,7 +2767,12 @@ mod tests {
     }
 
     const fn item(place: Place, action: &'static str) -> MenuItem {
-        MenuItem { place, action }
+        MenuItem {
+            place,
+            section: Section::EDIT,
+            order: 100,
+            action,
+        }
     }
 
     /// Decision 91: a tool's context menu items name its own actions, a row's or a
@@ -2755,10 +2789,10 @@ mod tests {
         ]);
         assert_eq!(each.check(), Ok(()));
         // An item naming none of its actions, as one naming a registry action of the app's.
-        let unknown = with_menus(&[item(Place::Photo, "discard-history")]);
+        let unknown = with_menus(&[item(Place::Photo, "reset")]);
         assert_eq!(
             unknown.check(),
-            Err(DefinitionError::UnknownMenuAction("discard-history"))
+            Err(DefinitionError::UnknownMenuAction("reset"))
         );
         let twice = with_menus(&[
             item(Place::Options, "rotate"),
@@ -2785,13 +2819,13 @@ mod tests {
         }
         // The same limits hold a utility's items, which name the registry's actions.
         let history = [
-            item(Place::Photo, "discard-history"),
-            item(Place::Thumbnail, "discard-history"),
-            item(Place::Options, "discard-history"),
+            item(Place::Photo, "reset"),
+            item(Place::Thumbnail, "reset"),
+            item(Place::Options, "reset"),
         ];
         assert_eq!(check_menus(&history), Ok(()));
         let crowded = [
-            item(Place::Photo, "discard-history"),
+            item(Place::Photo, "reset"),
             item(Place::Photo, "undo"),
             item(Place::Photo, "redo"),
         ];

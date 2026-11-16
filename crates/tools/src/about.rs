@@ -24,9 +24,8 @@
 //! translations.
 //!
 //! A utility, a section that edits nothing (Scopes, History), has no definition: its
-//! words and what it measures are in [`UTILITIES`].
+//! words and what it measures are in [`crate::utility::UTILITIES`].
 
-use crate::MenuItem;
 use crate::messages;
 
 /// darktable's `description()` of the module a tool is, at the reference release, past
@@ -256,38 +255,6 @@ impl Fact {
     fn says(self, part: &str) -> bool {
         self.darktable().split(", ").any(|p| p == part)
     }
-}
-
-/// A utility section, which edits nothing, as its header's tooltip describes it: its id,
-/// whose sentence is `tool-<id>-description`, and what it measures, if anything.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Utility {
-    pub id: &'static str,
-    pub measures: Option<WorksOn>,
-    /// The items it adds to context menus (decision 91), each the registry action that
-    /// runs it, by its id, at a place, held to a tool's limits ([`crate::check_menus`]);
-    /// none for a utility with nothing to add. The app builds the menus, the utilities'
-    /// groups after the tools' in this list's order.
-    pub menus: &'static [MenuItem],
-}
-
-/// The utilities built: Scopes, which measures the finished picture, and History.
-pub const UTILITIES: &[Utility] = &[
-    Utility {
-        id: "scopes",
-        measures: Some(WorksOn::Display),
-        menus: &[],
-    },
-    Utility {
-        id: "history",
-        measures: None,
-        menus: &[],
-    },
-];
-
-/// The utility `id`, if it is one.
-pub fn utility(id: &str) -> Option<&'static Utility> {
-    UTILITIES.iter().find(|utility| utility.id == id)
 }
 
 #[cfg(test)]

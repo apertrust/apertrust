@@ -82,8 +82,9 @@ pub use grid_cell::{
 };
 pub use grid_edge::{GridEdge, GridEdgeAction};
 pub use grid_panel::{
-    GridBarAction, GridPanel, GridPanelAction, GridPanelOutput, GridPosition, Sort, SortKey, Thumb,
-    ThumbnailSize, grid_panel_height, grid_panel_lines, grid_panel_thickness, grid_panel_width,
+    CellMenu, GridBarAction, GridPanel, GridPanelAction, GridPanelOutput, GridPosition, Sort,
+    SortKey, Thumb, ThumbnailSize, grid_panel_height, grid_panel_lines, grid_panel_thickness,
+    grid_panel_width,
 };
 pub use histogram::{
     Channel, Clipped, Histogram, HistogramAction, HistogramBins, Scale, Scope, ScopeView,
