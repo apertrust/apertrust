@@ -173,6 +173,9 @@ pub struct Counts {
     pub skipped: usize,
     /// Photos the path gives no file name.
     pub unnamed: usize,
+    /// Photos whose name is a guess, known only as they are exported: left out of the
+    /// counts above, which are then a lower bound.
+    pub guessed: usize,
 }
 
 impl ExportPreview {
@@ -180,6 +183,11 @@ impl ExportPreview {
     pub fn counts(&self) -> Counts {
         let mut counts = Counts::default();
         for name in &self.names {
+            // A guessed name may clash with nothing, or with what it does not: counted apart.
+            if !name.exact {
+                counts.guessed += 1;
+                continue;
+            }
             let Fate::File { exists, action, .. } = name.fate else {
                 counts.unnamed += 1;
                 continue;
@@ -340,6 +348,8 @@ impl Run {
                 _ => (Shot::default(), UNKNOWN),
             };
             let values = names.values_with(path, &shot, index as u32 + 1, sizes, exif);
+            // A name that needs the decode, for a photo that is not the open one, is a guess.
+            let exact = open.is_some() || !uses.decoded;
             let changed = changed(path, open.map(|(_, active)| active));
             let fate = match disk.foresee(&values, extension, changed, &claimed) {
                 Ok(Foreseen {
@@ -347,7 +357,10 @@ impl Run {
                     exists,
                     action,
                 }) => {
-                    if !matches!(action, Action::Skip(_)) {
+                    // Only a name that is exact claims its file: a guessed one would make
+                    // a false clash for the photos after it, and the counts stay a lower
+                    // bound.
+                    if exact && !matches!(action, Action::Skip(_)) {
                         claimed.insert(&file);
                     }
                     let folder = file.parent().filter(|p| !p.as_os_str().is_empty());
@@ -368,7 +381,7 @@ impl Run {
             };
             preview.names.push(PhotoName {
                 source: path.clone(),
-                exact: open.is_some() || !uses.decoded,
+                exact,
                 fate,
             });
         }
@@ -738,6 +751,7 @@ mod tests {
             overwritten,
             skipped,
             unnamed: 0,
+            guessed: 0,
         };
 
         let unique = on(OnConflict::CreateUniqueFilename);
@@ -990,6 +1004,51 @@ mod tests {
         let path = path_in(&out, "$(FILE_NAME)");
         let plain = run(raws, settings(&path, OnConflict::Skip), None);
         assert!(preview(&plain).names.iter().all(|n| n.exact));
+    }
+
+    #[test]
+    fn a_guessed_name_claims_no_file_so_it_makes_no_false_clash() {
+        let out = scratch("guessed");
+        let raws = photos(&out, &["a.ARW", "b.ARW"]);
+        // Both photos guess the same name, the model being known only with a decode.
+        let path = path_in(&out, "x$(EXIF.MODEL)");
+        let unique = settings(&path, OnConflict::CreateUniqueFilename);
+        let guessed = preview(&run(raws.clone(), unique.clone(), None));
+        assert!(guessed.names.iter().all(|name| !name.exact));
+        assert_eq!(files(&guessed, &out), ["x.png", "x.png"]);
+        assert_eq!(guessed.counts().numbered, 0);
+        assert_eq!(guessed.counts().guessed, 2);
+        // With the open photo's own model its name is exact and claims its file.
+        let open = active(&raws[0], false);
+        let known = preview(&run(raws, unique, Some(open)));
+        assert_eq!(files(&known, &out), ["xModel.png", "x.png"]);
+        assert_eq!(known.counts().numbered, 0);
+    }
+
+    #[test]
+    fn a_guessed_name_is_left_out_of_the_counts_whatever_it_clashes_with() {
+        let out = scratch("guessed-counts");
+        // The second photo's guessed name, "Modela.png", is the first's exact one, and a
+        // file of that name is there too: neither makes it a clash in the counts, since
+        // its real name, "ModelModela.png", is known only as it is exported.
+        let raws = photos(&out, &["a.ARW", "Modela.ARW"]);
+        let path = path_in(&out, "$(EXIF.MODEL)$(FILE_NAME)");
+        std::fs::write(out.join("Modela.png"), b"").expect("a file there");
+        let open = active(&raws[0], false);
+        let unique = settings(&path, OnConflict::CreateUniqueFilename);
+        let preview = preview(&run(raws, unique, Some(open)));
+        let exact: Vec<_> = preview.names.iter().map(|name| name.exact).collect();
+        assert_eq!(exact, [true, false]);
+        // The exact name clashes with the file there and is counted; the guessed one clashes
+        // with both and is not.
+        let counts = preview.counts();
+        assert_eq!((counts.exist, counts.numbered), (1, 1), "{counts:?}");
+        assert_eq!(counts.guessed, 1);
+        // A preview of guessed names alone counts none of them.
+        let raws = photos(&out, &["a.ARW", "Modela.ARW"]);
+        let unique = settings(&path, OnConflict::CreateUniqueFilename);
+        let counts = self::preview(&run(raws, unique, None)).counts();
+        assert_eq!((counts.exist, counts.numbered, counts.guessed), (0, 0, 2));
     }
 
     #[test]

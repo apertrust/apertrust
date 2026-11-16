@@ -209,6 +209,53 @@ fn a_utility_s_reset_sits_before_its_options() {
     assert!(harness.state().is_empty());
 }
 
+/// A utility given a presets button, as the Export tool's header has, draws it between its
+/// reset and its options, reporting `Presets` while it can run and drawn disabled, with its
+/// tooltip saying why, while it cannot.
+#[test]
+fn a_utility_s_presets_button_sits_between_its_reset_and_its_options() {
+    let utility = |enabled: bool| {
+        Harness::builder()
+            .with_size(egui::vec2(400.0, 60.0))
+            .with_context_setup(|ctx| apertrust_ui::install(ctx, Theme::default()))
+            .build_ui_state(
+                move |ui, actions: &mut Vec<SectionAction>| {
+                    let out = Section::new("Export", false)
+                        .utility_reset("Reset export")
+                        .utility_presets("Export presets", enabled, "Presets come later")
+                        .options(false)
+                        .show(ui, |_| {});
+                    actions.extend(out.actions);
+                },
+                Vec::new(),
+            )
+    };
+    let mut harness = utility(true);
+    harness.run();
+    let t = Theme::default();
+    let (reset, presets, options) = (
+        harness.get_by_label("Reset export").rect(),
+        harness.get_by_label("Export presets").rect(),
+        harness.get_by_label("Export options").rect(),
+    );
+    assert_eq!(presets.left() - reset.right(), t.spacing.section_button_gap);
+    assert_eq!(
+        options.left() - presets.right(),
+        t.spacing.section_button_gap
+    );
+    harness.get_by_label("Export presets").click();
+    harness.run();
+    assert_eq!(*harness.state(), vec![SectionAction::Presets]);
+
+    let mut harness = utility(false);
+    harness.run();
+    let presets = harness.get_by_label("Export presets");
+    assert!(presets.accesskit_node().is_disabled());
+    presets.click();
+    harness.run();
+    assert!(harness.state().is_empty());
+}
+
 /// The header's last button's ink, not its box, ends where the rows do, `body_margin` from
 /// the section's end: ⋯'s last dot ends 4 of its 24 units inside its box less half its
 /// line, which the icon's own test holds.

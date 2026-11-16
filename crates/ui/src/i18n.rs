@@ -1063,6 +1063,22 @@ mod tests {
                 for channel in ["red", "green", "blue", "grey"] {
                     args.set(channel, 128);
                 }
+                // The Export tool's end: the summary's line and list, its warnings and the
+                // line under its button.
+                args.set("pattern", "$(FILE_FOLDER)/$(FILE_NAME)");
+                args.set("pixels_width", "6000");
+                args.set("pixels_height", "4000");
+                args.set("preset", "Default settings");
+                args.set("format", "JPEG");
+                args.set("size", "2048 px");
+                args.set("limit", "2048 px");
+                args.set("left", 1);
+                args.set("quality", 95);
+                args.set("bits", 16);
+                args.set("percent", "50");
+                args.set("unit", "cm");
+                args.set("dpi", 300);
+                args.set("option", "Create unique filename");
                 let mut errors = Vec::new();
                 bundle.format_pattern(pattern, Some(&args), &mut errors);
                 assert!(errors.is_empty(), "{} {id}: {errors:?}", locale.id());

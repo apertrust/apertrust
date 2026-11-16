@@ -1606,7 +1606,7 @@ The sheet has presets of all its tools' settings, as darktable's import module h
 
 ## The Export tool
 
-Export is one utility of the side panel, the last of the Photos tab's tools, holding darktable's export module row for row (`src/libs/export.c`, `export_metadata.c`, `src/imageio/storage/*.c` and `format/*.c` at the reference release) and acting on the selection, as darktable's module does in the lighttable's side panel (decision 90, planned, Phase 3). It edits nothing: its values are the `export.*` settings, never the edit, its history or the sidecar. Its first parts are [built](#as-built): the section with the dialog's rows, drawn at the side panel's width, and Export… and Ctrl+E revealing it; the rest is planned. The wireframe's Export board is to be redrawn as the tool.
+Export is one utility of the side panel, the last of the Photos tab's tools, holding darktable's export module row for row (`src/libs/export.c`, `export_metadata.c`, `src/imageio/storage/*.c` and `format/*.c` at the reference release) and acting on the selection, as darktable's module does in the lighttable's side panel (decision 90, planned, Phase 3). It edits nothing: its values are the `export.*` settings, never the edit, its history or the sidecar. Its first parts are [built](#as-built): the section with the dialog's rows in their groups, the path on one line, the header's ↺ and presets button, the Summary group, the warnings, the Export button in each of its states and a failed export's line, and Export… and Ctrl+E revealing it; the keys, the preview's rule and presets are planned. The wireframe's Export board is to be redrawn as the tool.
 
 - **Export… and Ctrl+E (Cmd+E) reveal it** and focus its button, so Return exports ([Keyboard and screen readers](#keyboard-and-screen-readers)). File › Export Again does darktable's export at once with the current settings, on Ctrl+Shift+E (Cmd+Shift+E) ([Export Again](#export-again)).
 - How it is built, the export job in the engine's session, darktable's size and resampling, the writers and the file on disk, is decision 56's ([engine.md](engine.md), Export jobs).
@@ -1627,7 +1627,7 @@ sequenceDiagram
         A->>A: the overwrite alert on the main window
     end
     A->>S: Command::Export { photos, settings }
-    Note over T: stays in view; the line under the button says it started
+    Note over T: stays in view
     S-->>A: Event::Job Added (UserExport): title, total, destination
     A->>J: Show::Open, without the focus
     S-->>A: Event::Job Title, Detail, Progress, Destination
@@ -1639,11 +1639,11 @@ sequenceDiagram
 - **The Photos tab's last section,** id `export`, after Browse, Filters, Keywords, Metadata and Styles (decision 73). A person moves, pins and floats it as any section (decision 83), but **every workspace keeps it:** Customise tabs, a drag and Move to Tab may move it, and none takes it out of a workspace's last tab holding it; a workspace the settings file leaves without it, `export` in its `hidden` included, gets it back as a section no tab holds is placed. So Ctrl+E always has a place to reveal it.
 - **A utility:** no on switch, no kept markers, no history step; a change is a setting written at once, Cmd+Z in a field undoing typing only.
 - **It exports the window's selection, else the active photo;** the active photo alone until Phase 3 can select several. A view-only photo, whose edit a newer Apertrust wrote or whose history cannot be read, is left out and counted in a warning.
-- **No per-photo marks** on the grid panel: On conflict's note and the warning give the counts. Marks are revisited in the usability pass after Phase 3.
+- **No per-photo marks** on the grid panel: the warning gives the counts. Marks are revisited in the usability pass after Phase 3.
 
 ### The tool's layout
 
-At the side panel's 320 points the rows are 296 wide, and they stretch with the panel up to 600. Every row is a tool setting's row (`Row::Setting`): choices Blended ([Choice rows: two styles](#choice-rows-two-styles)), Allow upscaling, High quality resampling and Store masks toggles (`ToggleRow`, D15), sliders with their marker's place left empty, a double-click or Delete resetting one row (Quality back to 95), unbuilt rows and options disabled, saying why. The rows the tool panel lacks, the path, note, field and size rows and the indented toggle, are [the sheet's](#the-rows-the-tool-panel-lacks), built once for both, but for the Path row's form here, darktable's: no visible label, the path field the content's width with the folder button at its end.
+At the side panel's 320 points the rows are 296 wide, and they stretch with the panel up to 600. Every row is a tool setting's row (`Row::Setting`): choices Blended ([Choice rows: two styles](#choice-rows-two-styles)), Allow upscaling, High quality resampling and Store masks among them, darktable's choices of No and Yes, sliders with their marker's place left empty, a double-click or Delete resetting one row (Quality back to 95), unbuilt rows and options disabled, saying why. The rows the tool panel lacks, the path, note, field and size rows and the indented toggle, are [the sheet's](#the-rows-the-tool-panel-lacks), built once for both, but for the Path row's form here, darktable's: no visible label, the path field the content's width with the folder button at its end.
 
 ```text
 ▾ Export                              ↺  ▤  ⋯
@@ -1651,30 +1651,32 @@ At the side panel's 320 points the rows are 296 wide, and they stretch with the 
   Target storage              File on disk ⌄
   [ …/apertrust_exported/$(FILE_NAME)   ] 🗀
   On conflict       Create unique filename ⌄
-  3 of the 12 are already there; those are saved with _01 added.
   Format options ──────────────────────────
   File format                 JPEG (8-bit) ⌄
   Quality                                 95
   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━■━
   Chroma subsampling                    Auto ⌄
-  This version writes no EXIF, location or copyright…
   Global options ──────────────────────── ⌄
   Set size            In pixels (for file) ⌄
-  Size in pixels        [2048] × [2048] px
-  IMG_2041.ARW will be 2048 × 1365 px.
-  ☐ Allow upscaling
-  ☐ High quality resampling
-  ☐ Store masks                       (disabled)
+  [   2048 ] × [   2048 ] px
+  Allow upscaling                       No ⌄
+  High quality resampling               No ⌄
+  Store masks                           No ⌄  (disabled)
   Profile                   Image settings ⌄
   Intent                    Image settings ⌄  (disabled, D10)
   Style                               None ⌄  (disabled)
   Metadata ────────────────────────────── ›  (disabled)
   Multi-preset export ─────────────────── ›  (disabled)
-▸ For sharing · 12 photos · JPEG · 2048 px
-    → ~/Pictures/2026-10 Wedding/apertrust_exported
-  ⚠ 1 view-only photo left out
-  [            Export 12 photos            ]
-  1 export running · 3 of 12        Show jobs
+  Summary ─────────────────────────────── ⌄
+       Preset  Default settings
+    File name  IMG_2041.jpg
+         Size  6000 × 4000 px
+      Profile  Image settings
+       Format  JPEG, quality 95
+  Destination  ~/Pictures/apertrust_exported
+  ⚠ Replaces 1 file already there
+  [              Export 1 photo             ]
+  Export failed: 11 of 12           Show jobs
 ```
 
 | Row | At 320 | At 600 | In the four languages |
@@ -1683,13 +1685,13 @@ At the side panel's 320 points the rows are 296 wide, and they stretch with the 
 | On conflict | One line, the label and the option sharing the width at their widest | One line | Ukrainian's "У разі конфлікту" and "Перезаписати, якщо змінено" take about 270 of 284: they fit at 320, and both are cut below about 300 |
 | Chroma subsampling | One line | One line | Ukrainian's "Субдискретизація кольору", about 150, fits |
 | Path | One line, no visible label, as darktable's: `PathField` the content's width less the folder `IconButton` (Choose…) at its end, centred on the line; a longer path scrolls inside the field, never wraps; Return sets the value. Its tooltip gives the resolved file name, "IMG_2041.ARW → …/IMG_2041.jpg" (`export-name`) | One line | The default pattern, about 290 points, scrolls inside the field at 320 in every language, the caret's end in view while typing |
-| Size, in cm or inches | The label above the fields, the row needing about 360 | One line | All four languages |
-| Size, in pixels | One line, about 263 at its widest (Polish's "Rozmiar w pikselach") | One line | The label goes above below about 300, at the side panel's 240 |
+| Size, in pixels | One line at 240, 320 and 600, with no label at any width (Set size above names the unit): `[w] × [h] px`, the fields sharing the row's width | One line | The fields shrink to fit; nothing runs past the row in any language |
+| Size, in cm or inches | One line at 240, 320 and 600, with no label at any width: `[w] × [h] cm @ [dpi] dpi` (`in @`), the resolution's field its number's width where there is room | One line | At 240 all three fields shrink alike, their numbers clipped inside them |
 | Scale | A field row, its field 80 points | The same | — |
 | The toggles | One line | One line | Polish's "Przepróbkowanie wysokiej jakości", about 185, and Ukrainian's "Передискретизація високої якості" fit |
-| Notes: On conflict's, the size's, "Which is equal to" | Wrap, a path anywhere | Mostly one line | Every note wraps in Ukrainian and Polish; the panel scrolls |
+| Problems under a row (the path's, the size's) | Wrap, a path anywhere | Mostly one line | Every problem wraps in Ukrainian and Polish; the panel scrolls |
 | Group titles | Fit | Fit | Ukrainian's "Експорт за кількома шаблонами", about 218, is cut at 240 |
-| The summary | Two lines, closed or open: the preset, the count, the format and the size, then the arrow and the destination, each cut in its middle; open, the list's labels and values one line each | Two lines | A long preset name of the person's own is cut first, whole in the tooltip |
+| The Summary | A group like Global options: a labelled list, one row 22 points high per line, the labels right-aligned in a column as wide as the longest, the values after it, each cut at its end with … (the destination in its middle) | The same, the values longer | Ukrainian's "Призначення" and Polish's "Miejsce docelowe" make the label column about 90, so a value is cut earlier; none runs past the panel at 240 |
 
 These widths are the design's estimates; the tool's tests hold every row inside the panel at 240, 320 and 600 points in British English, Ukrainian, Polish and the pseudo-locale ([The build, in steps](#the-build-in-steps)).
 
@@ -1699,9 +1701,9 @@ Five groups under darktable's labels in sentence case, in darktable's order: two
 
 | Group | darktable's | Rows | Kind and at first |
 | --- | --- | --- | --- |
-| **Storage options** (`export-storage-options`) | storage options | Target storage; the storage's rows: File on disk's Path, its resolved file name in its tooltip, and any problem; On conflict and its note | Plain, always open |
-| **Format options** (`export-format-options`) | format options | File format; the format's rows ([Each format's rows](#each-formats-rows)), JPEG's Quality and Chroma subsampling by default; until metadata, the note "This version writes no EXIF, location or copyright into exported files." | Plain, always open |
-| **Global options** (`export-global-options`) | global options | Set size; the size row or Scale, with their notes; Allow upscaling, High quality resampling and Store masks; Profile, Intent, Style, and Mode while a style is chosen | Collapsible, open at first |
+| **Storage options** (`export-storage-options`) | storage options | Target storage; the storage's rows: File on disk's Path, its resolved file name in its tooltip, and any problem; On conflict | Plain, always open |
+| **Format options** (`export-format-options`) | format options | File format; the format's rows ([Each format's rows](#each-formats-rows)), JPEG's Quality and Chroma subsampling by default; until metadata, File format's tooltip says "This version writes no EXIF, location or copyright into exported files." | Plain, always open |
+| **Global options** (`export-global-options`) | global options | Set size, whose tooltip says what the photo will be and, in the print modes and by scale, what the fields come to; the size row or Scale; Allow upscaling, High quality resampling and Store masks; Profile, Intent, Style, and Mode while a style is chosen | Collapsible, open at first |
 | **Metadata** | the ☰'s preferences, "edit metadata exportation" (D4) | General settings, a group label, and its toggles; Per metadata settings, a group label, and the Redefined tag / Formula table | Collapsible, closed at first; disabled until metadata, its tooltip "Exported files carry no metadata yet; it comes in a later version" |
 | **Multi-preset export** | multi-preset export | A toggle per preset of the person's own; Start batch export | Collapsible, closed at first; disabled until presets |
 
@@ -1714,65 +1716,68 @@ Five groups under darktable's labels in sentence case, in darktable's order: two
 ### Its header and presets
 
 - **The header has ↺, presets and ⋯** (decision 90), where another utility has ⋯ alone and History ↺ and ⋯. ↺ applies **Default settings**: every export setting at darktable's default, those of a storage or format not shown included, but `export.ask_before_overwrite`, which no preset sets, and any setting `--conf` holds for the run, whose reset the store refuses ([settings.md](settings.md)); drawn at rest while they all are at their defaults. ⋯ holds the section's layout items, as every section's (decision 83).
-- **Presets are reached through the header's presets button alone,** with no preset row (decision 90): its list, then Save as Preset…, Update "…", Rename… and Delete…, darktable's "delete preset?" and "update preset?" as alerts, as every tool's. The preset in use, or Custom (`preset-custom`) when the settings match none, starts [the summary](#the-tools-end) over the button.
+- **Presets are reached through the header's presets button alone,** with no preset row (decision 90): its list, then Save as Preset…, Update "…", Rename… and Delete…, darktable's "delete preset?" and "update preset?" as alerts, as every tool's. The preset in use, or Custom (`preset-custom`) when the settings match none, is the Summary's Preset row ([the tool's end](#the-tools-end)).
 - **The list:** Default settings (D2), then **For sharing** (JPEG, 2048 × 2048 px, sRGB) and **Full size JPEG** (JPEG, no size limit, sRGB), the rest of each at darktable's defaults (D17), then the person's own, ✓ on the one matching; kept in `presets/export.toml` in the user data folder, read by the client, so the CLI reads the ones the tool stores.
-- **Pointing at a preset,** or ↑ and ↓ in the list, shows its values in the rows with a banner under the header, "Showing For sharing. Click to use it." (`export-preset-showing`), the summary following, until the pointer leaves the list, or the list closes or loses the keyboard focus, whichever comes first (D3). Return or Space chooses; F2 renames.
-- **Until presets are built,** the header's presets button is disabled, "Presets come in a later version" (`export-presets-later`); ↺ applies Default settings, and the summary starts with Default settings or Custom.
+- **Pointing at a preset,** or ↑ and ↓ in the list, shows its values in the rows with a banner under the header, "Showing For sharing. Click to use it." (`export-preset-showing`), the Summary following, until the pointer leaves the list, or the list closes or loses the keyboard focus, whichever comes first (D3). Return or Space chooses; F2 renames.
+- **Until presets are built,** the header's presets button is disabled, "Presets come in a later version" (`export-presets-later`); ↺ applies Default settings, and the Summary's Preset row reads Default settings or Custom.
 
 ### The tool's end
 
-It scrolls with the tool, never pinned: 8 points after the last group, the summary, closed or open, 4, the warnings, 8, the button, 4, its job's line, then the tool's usual 8. The warnings and the button are outside the summary and always shown.
-
-Open, the summary reads:
+It scrolls with the tool, never pinned. The Summary is a group after Multi-preset export; below it come the warnings, the button and a failed export's line, 8 points between them, then the tool's usual 8.
 
 ```text
-▾ For sharing · 12 photos · JPEG · 2048 px
-    → ~/Pictures/2026-10 Wedding/apertrust_exported
-    Preset        For sharing
-    Photos        12; 1 view-only left out
-    Format        JPEG, quality 95
-    Size          2048 px; IMG_2041.ARW 2048 × 1365 px
-    Destination   ~/Pictures/2026-10 Wedding/apertrust_exported
-    On conflict   Create unique filename: 3 saved with _01 added
-  ⚠ 1 view-only photo left out
+  Summary ─────────────────────────────── ⌄
+       Preset  For sharing
+    File name  IMG_2041.jpg
+         Size  2048 × 1365 px
+      Profile  sRGB (web-safe)
+       Format  JPEG, quality 95
+  Destination  ~/Pictures/2026-10 Wedding/apertrust_exported
+  ⚠ Replaces 3 files already there
   [            Export 12 photos            ]
+  Export failed: 11 of 12           Show jobs
 ```
 
-- **The summary is a collapsible section of its own,** closed by default, its open state kept per tool as a group's is (`[side_panel.groups.export]`, `summary`).
-  - **Closed,** a disclosure, ▸ then the one-line summary and the destination line under it: it never hides them, since it is the guard against stale settings.
-  - **Open,** ▾ and the same two lines, then a labelled list, a label at the start and its value at the content's end, 16-point lines in the small text: **Preset** (the preset or Custom); **Photos** (the count, with "1 view-only left out"); **Format** (with its quality or bit depth); **Size** (the limit, with the `focus` photo's output size); **Destination** (the folder, cut in its middle, whole in its tooltip); **On conflict** (what it does, with the count). The labels are `export-summary-label-preset`, `-photos`, `-format`, `-size`, `-destination` and `-conflict`.
-  - **The one-line summary** (`export-summary`, `export-summary-one`, each with the preset as `$preset`), in `text`: it starts with the preset in use, or Custom when the settings match none, "For sharing · 12 photos · JPEG · 2048 px" then "→ ~/…/apertrust_exported", "Custom · 12 photos · JPEG · 2048 px"; for one photo the file name follows the preset, "For sharing · IMG_2041.ARW · JPEG · 2048 px → …". It is where the preset in use is shown, the tool having no preset row. The destination is always its own line, cut in its middle, and a long preset name of the person's own is cut first. The size reads "2048 px", "2048 × 1365 px", "full size", "50 %" or "20 × 30 cm @ 300 dpi". With nothing to export, "No photos selected" (`export-summary-none`).
-- **The warnings,** in `warning` with the warning sign: "Replaces 3 files already there", or "Replaces at least 3 files already there" where some photos' names are known only as they are exported (`export-warn-replaces`, `export-warn-replaces-at-least`); "1 view-only photo left out" (`export-view-only-left-out`). A problem that stops the export is an `error` note at its own row.
+- **The Summary is a collapsible group,** a `CollapsibleGroup` like Global options, **open at first**, its state kept as `summary` under `export` in `edit.groups` (`[side_panel.groups.export]`). It holds a labelled list of what an export would write, never the settings' explanations; it is drawn only while a photo can be exported, so with no photo open, or only a view-only one, the end is the button alone.
+- **Its rows** are one line each, 22 points high, the labels in `text_secondary` right-aligned in a column as wide as the longest, the values in `text` after it, 8 points on:
+  - **Preset:** the preset in use, or Custom when the settings match none (Default settings until presets are built).
+  - **File name:** the name the session resolved for the photo, "IMG_2041.jpg", with the extension of the format now chosen, so a change of format shows at once; where it is a guess, or the session has not answered yet, the pattern's file part and the extension as written, "$(FILE_NAME).jpg".
+  - **Size:** the size the session worked out, "6000 × 4000 px"; in cm or inch the physical size first, "20.00 × 13.33 cm (2362 × 1574 px)", the numbers in the language's decimals; "—" until there is an answer, or where the size is a problem.
+  - **Scale:** only where Set size is By scale, "50%".
+  - **Profile:** the Profile row's value.
+  - **Format:** the format with its one number, "JPEG, quality 95", "PNG, 8 bit".
+  - **Destination:** the folder the files go to, "~/Pictures/apertrust_exported", cut in its middle.
+  - The labels are `export-summary-label-preset`, `-file-name`, `-size`, `-scale`, `-profile`, `-format` and `-destination`. The photo count is the button's and what On conflict does is the warning, so neither has a row.
+- **A value too long for its row** is cut at its end with … (the destination in its middle, where its end, the folder's name, is what says it), and whole in the row's tooltip. None runs past the panel at any width or in any language.
+- **To screen readers** each row is a label reading as "File name IMG_2041.jpg", the whole value whatever is painted; the group is a button with its expanded state.
+- **The warnings,** in `warning` with the warning sign: "Replaces 3 files already there", or "Replaces at least 3 files already there" where some photos' names are known only as they are exported (`export-warn-replaces`, `export-warn-replaces-at-least`); "1 view-only photo left out" (`export-view-only-left-out`). A problem that stops the export is an `error` note at its own row. They sit outside the Summary, shown with it closed.
 - **The button, Export 12 photos** (`export-button`): the primary `Button`, the content's full width, its words centred (a new `Button` option), 26 points high (`sizes.row`), access key &Export.
-- **Its states and the line under it:**
+- **Its states and the line under it:** the line is only a failed export's.
 
 | State | The button | The line under it |
 | --- | --- | --- |
-| Nothing to export | Disabled, focusable; the reason in its tooltip and description, "Select the photos to export." (`export-why-none`) | — |
-| A problem stands | Disabled; the path's or the size's problem as its reason (`export-why-path`, `export-why-size`) | — |
+| Nothing to export | Disabled, and that is all: no reason, no Summary, no warnings | — |
+| A problem stands | Disabled; the path's or the size's problem as its reason (`export-why-path`, `export-why-size`), or, where the path gives no file name for any photo, `export-no-name` | — |
 | Every photo view-only | Disabled, saying why: "A newer Apertrust wrote these edits.", or that their history cannot be read, naming the edit's file | — |
-| Idle | Enabled | — |
-| Just pressed | Enabled; a second press within 0.5 s ignored | "Started: 12 photos → apertrust_exported" (`export-started`), until the next change |
-| A job running | Enabled | "1 export running · 3 of 12" (`export-job-running`; Ukrainian and Polish the jobs window's "Виконується: 1" form) and Show jobs, a quiet button opening the jobs window |
-| Pressed while one runs | Enabled | "This one starts after it." (`export-queued-after`) |
-| The same photos and settings queued or running | Enabled | "These 12 photos are already being exported with these settings." (`export-same-running`), shown before the press |
-| The last job failed | Enabled | "Export failed: 11 of 12" in `error` and Show jobs, until the next export or Dismiss |
+| Idle, or an export running | Enabled; a second press within 0.5 s ignored | — |
+| The last export failed | Enabled | "Export failed: 11 of 12" in `error` and Show jobs, a quiet button opening the jobs window, until the next export or until the row is dismissed |
 | Windows, until its alert is built | As above; On conflict's Overwrite listed disabled, saying why, as built | — |
 
 - **Pressing Export,** in order: the overwrite alert, the main window's, when On conflict is Overwrite and the question is on ([The alerts](#the-alerts)); then W10 (Phase 6); then `Command::Export` with the photos in the grid panel's order, each photo's edit taken as it is then and the settings as they stand (D12), so a change during a job reaches only the next. Cancel in an alert leaves everything as it was.
-- **After an export** the tab, the selection and the focus on the button stay as they were. The jobs window opens without taking the focus (decision 57), the line under the button gives the progress in words, and a notice says when it ends ([Exporting, and after](#exporting-and-after)).
+- **After an export** the tab, the selection and the focus on the button stay as they were. The jobs window opens without taking the focus (decision 57), where it shows the progress, and a notice says when it ends ([Exporting, and after](#exporting-and-after)). The tool draws no progress of its own.
+
 
 ### Exporting, and after
 
 - **The overwrite alert** is as built: "Export in overwrite mode?", Don't ask again, Overwrite, Cancel the default; the main window's.
-- **Export Again** exports the window's selection with the settings as they stand, whatever the last job's result: after a failure or a cancel it exports all of them again, and the job's Try again exports only those not written.
+- **Export Again** exports the window's selection with the settings as they stand, whatever the last job's result: after a failure or a cancel it exports all of them again, and the job's Try again exports only those not written. A photo open for viewing only is left out, as the tool leaves it: the menu's item rests (`State::exportable`), and `App::ask_export` sends nothing for it; an export held for the overwrite question is dropped on a yes if the photo has turned view-only meanwhile.
 - **A notice when each export ends,** since the jobs window closes itself after a clean end: "Exported 12 photos to apertrust_exported" when every photo was exported, otherwise its row's own result, "Export failed: 11 of 12 photos exported" or "Export cancelled: 3 of 12 photos exported"; with Show in Finder, kept in the notices' history (the library's step 12; [The jobs window](#the-jobs-window)).
 
 ### Mistake guards
 
 - **The wheel:** a plain scroll always scrolls the side panel; Option+scroll (Ctrl+scroll on Windows and Linux) changes only the focused export row, never one under the pointer ([The scroll wheel over a row](#the-scroll-wheel-over-a-row)).
-- **Stale settings:** the summary sits over the button, starting with the preset in use, and the button's description repeats it; Ctrl+E reveals the tool rather than exporting; Storage options and Format options never close, and a closed collapsible group shows the dot of a setting off its default; the settings are taken as Export is pressed.
-- **A stray click dropping the selection:** the count is in the button and the summary, the central bar says "12 selected", and Edit › Previous Selection takes the selection back one level ([Edit](#edit)).
+- **Stale settings:** the Summary sits over the button, open at first, its first row the preset in use; Ctrl+E reveals the tool rather than exporting; Storage options and Format options never close, and a closed collapsible group shows the dot of a setting off its default; the settings are taken as Export is pressed.
+- **A stray click dropping the selection:** the count is in the button, the central bar says "12 selected", and Edit › Previous Selection takes the selection back one level ([Edit](#edit)).
 
 ### darktable's controls and where they live
 
@@ -1782,11 +1787,11 @@ Open, the summary reads:
 | --- | --- | --- | --- | --- |
 | Header: reset button | The header's ↺, which applies **Default settings**, built in, the list's first (D2) | — | — | Built, in the dialog's Presets column; ↺ with the tool |
 | Header ☰: presets, store new preset.., update preset X, edit this preset.., delete this preset | The header's presets button: the list, ✓ on the matching preset, Custom when none does; Save as Preset…, Update, Rename…, Delete… | For sharing and Full size JPEG built in (D17), then the person's own; darktable ships no built-in export presets (`init_presets` only migrates) | — | With presets |
-| Header: the preset's name after the title (`has_preset_label`) | The start of the summary over the button, the preset or Custom | — | — | With presets |
+| Header: the preset's name after the title (`has_preset_label`) | The Summary's Preset row, the preset or Custom | — | — | With presets |
 | Header ☰ › preferences... ("edit metadata exportation" dialog) | The **Metadata** group (D4), rows below | — | Closed | With metadata |
 | storage options › target storage | Storage options › Target storage | LaTeX book template, File on disk, Send as email, Website gallery, in darktable's order; Piwigo left out (D5) | File on disk | File on disk only |
 | file on disk › path and select directory | Path field, with no visible label, and the folder button (the system's folder chooser) at its end; the resolved file name in its tooltip | darktable's variables (D7) | `$(FILE_FOLDER)/apertrust_exported/$(FILE_NAME)` (D6) | Built, but the folder chooser |
-| file on disk › on conflict | On conflict, with a line saying what happens to the files already there | Create unique filename, Overwrite, Overwrite if changed, Skip | Create unique filename | Built; Overwrite with its alert |
+| file on disk › on conflict | On conflict; what happens to the files already there is the warning, never a line under the row | Create unique filename, Overwrite, Overwrite if changed, Skip | Create unique filename | Built; Overwrite with its alert |
 | website gallery › path, title | The same two rows when chosen | — | `$(HOME)/apertrust_gallery/img_$(SEQUENCE)`, "Apertrust gallery" (darktable's renamed, D6) | Later |
 | LaTeX book template › path, title | The same two rows | — | Empty | Later |
 | send as email | No rows; darktable recommends 1536 × 1536; every format but Copy | — | — | Later |
@@ -1795,12 +1800,12 @@ Open, the summary reads:
 | global options › set size | Global options › Set size | In pixels (for file), In cm (for print), In inch (for print), By scale (for file) | In pixels | Built |
 | width × height px | Two fields, ×, px | 0 = no limit | 0 × 0 | Built |
 | print width × height cm/in @ dpi | Fields, unit, @, dpi | dpi 72–9600 | 0.00 × 0.00 @ 300 | Built |
-| "which is equal to W × H px" | The same note, in the cm and inch modes | — | — | Built |
+| "which is equal to W × H px" | In the Set size row's tooltip, in the cm and inch modes | — | — | Built |
 | scale | Scale field | Integer, decimal or fraction ("1/2"); 0 or empty = 1 | 1 | Built |
-| (none) | The active photo's output size, in every mode (D9) | — | — | Built |
-| allow upscaling | Allow upscaling | A toggle (D15) | Off | Built |
-| high quality resampling | High quality resampling | A toggle (D15) | Off | Built |
-| store masks | Store masks | A toggle (D15); only TIFF, OpenEXR and XCF can | Off | Disabled until layers (Phase 4) |
+| (none) | The active photo's output size, in every mode (D9), in the Set size row's tooltip and the Summary's Size row | — | — | Built |
+| allow upscaling | Allow upscaling | A choice of No and Yes | No | Built |
+| high quality resampling | High quality resampling | A choice of No and Yes | No | Built |
+| store masks | Store masks | A choice of No and Yes; only TIFF, OpenEXR and XCF can | No | Disabled until layers (Phase 4) |
 | profile | Profile | Image settings, then darktable's 12 export profiles; ICC files later | Image settings | Image settings and sRGB only |
 | intent | Intent | Image settings, Perceptual, Relative colorimetric, Saturation, Absolute colorimetric | Image settings | Disabled (D10) |
 | style and its styles button | Style, a dropdown | None, then the person's styles | None | When styles exist (Phase 3) |
@@ -1839,45 +1844,52 @@ Kept from darktable:
 
 ### As built
 
-The Export tool: `crates/app/src/export.rs` (its tests in `export/tests.rs`), the Photos tab's last section, after Browse (`photos_body`, `TAB_TOOLS`). Export is no dialog: the dialog host serves Settings, the jobs and log windows, Linux's alerts, the prompts and decision 89's windows. Not built yet: its groups' folding, the path on one line with the folder button, the summary and the button's states, presets, Ctrl+Return and Ctrl+Shift+E, the focus on the button, the wheel rule, the exact-name rule, and the preview rule of [Feedback](#feedback) below.
+The Export tool: `crates/app/src/export.rs`, with its end in `export/end.rs` and its tests in `export/tests.rs`, the Photos tab's last section, after Browse (`photos_body`, `TAB_TOOLS`). Export is no dialog: the dialog host serves Settings, the jobs and log windows, Linux's alerts, the prompts and decision 89's windows. Not built yet: the keys (Ctrl+Return, Esc, Ctrl+Shift+E, the focus on the button after the reveal, the wheel rule), the preview's "in view, with focus" rule and its `through` rule, presets and the later groups, and several photos.
 
-- **Revealing it.** File › Export… and Ctrl+E (Cmd+E) (`export`) reveal it, enabled with a photo open and no modal dialog, on every platform: `Shell::reveal` chooses the Photos tab, opens the section and scrolls it to the top of the panel. Nothing opens over the window. Where the host shows no alert yet, on Windows ([Dialogs and alerts](#still-to-build)), On conflict's Overwrite, which asks first, is listed disabled with its reason in the tooltip, and Export rests while a kept Overwrite is chosen. Linux's drawn alert asks above the main window.
-- **Its section** is a utility's: the title Export, then ↺, which applies Default settings (disabled while they are in place), and ⋯, drawn disabled; closed at first, as every tool, its state kept as `export` in `edit.sections`. The field `App.export` lives as long as the app; its values are the `export.*` settings and nothing of the edit.
-- **Its rows** are the side panel's controls, laid out as a tool's ([How the rows are laid out](#how-the-rows-are-laid-out)) inside the section's 12-point sides, 296 points wide in the 320-point panel: every choice a Blended `Choice`, one line that cuts its label and option where they do not fit, Allow upscaling, High quality resampling and Store masks `ToggleRow`s (D15), Quality and Compression `SliderRow`s, one-line rows 24 points high with no spacing between them, the option, a slider's value and the size rows' unit ending 5 points from the row's end, a field's box at it. The path is its label on a line, then the `PathField` and Choose… on the next, the field taking what the button leaves, 80 points at least. The sizes are `ValueField`s and the scale a `TextField` at the end of a one-line row; where the label and the fields do not fit the panel's width (240 to 600 points), the label has a line of its own and the fields the next, at the row's end (`end_row`). Metadata and Multi-preset export are drawn disabled, closed.
-- **Its rows, by name:** Target storage (File on disk the one that can be chosen), Path (`PathField`, below), On conflict, File format (JPEG and PNG; darktable's other twelve listed and disabled), JPEG's Quality and Chroma subsampling or PNG's Bit depth and Compression, Set size's four modes (width × height in pixels, in cm or in inch with the resolution kept as the physical size and "Which is equal to", or the scale text), Allow upscaling, High quality resampling, Profile (Image settings, sRGB, the other eleven of darktable's twelve disabled). Drawn disabled, each saying "Coming in a later version" (or why) in its tooltip: Store masks, Intent, Style, Metadata and Multi-preset export.
+- **Revealing it.** File › Export… and Ctrl+E (Cmd+E) (`export`) reveal it, enabled with a photo open and no modal dialog, on every platform: `Shell::reveal` chooses the Photos tab, opens the section and scrolls it to the top of the panel. Nothing opens over the window. Where the host shows no alert yet, on Windows ([Dialogs and alerts](#still-to-build)), On conflict's Overwrite, which asks first, is listed disabled with its reason in the tooltip, and Export rests while a kept Overwrite is chosen. Linux's drawn alert asks above the main window. Every workspace holds it once, in its Photos tab; there is no kept layout or `hidden` list to apply yet.
+- **Its header** is a utility's: the title Export, then ↺, which applies Default settings (disabled while they are in place), the presets button, drawn disabled with "Presets come in a later version", and ⋯, drawn disabled; closed at first, as every tool, its state kept as `export` in `edit.sections`. The field `App.export` lives as long as the app; its values are the `export.*` settings and nothing of the edit.
+- **Its groups,** in darktable's order: Storage options and Format options, plain titles over their rows (`group_label`) that never close; Global options, a `CollapsibleGroup` open at first, its state kept as `global` under `export` in `edit.groups` and, closed, the dot and "N set" for the settings in it off their defaults (`Values::set_in_global`); Metadata and Multi-preset export, collapsible, closed and drawn disabled. File format's tooltip says that this version writes no EXIF, location or copyright. No row has a line of explanation under it: explanations are tooltips, the summary and the warnings say the results, and only a problem that stops Export keeps its line, in `error`.
+- **Its rows** are the side panel's controls, laid out as a tool's ([How the rows are laid out](#how-the-rows-are-laid-out)) inside the section's 12-point sides, 296 points wide in the 320-point panel: every choice a Blended `Choice`, one line that cuts its label and option where they do not fit, Allow upscaling, High quality resampling and Store masks too, a choice of No and Yes each (`export-option-no`, `export-option-yes`; the settings stay booleans, No false and Yes true), Quality and Compression `SliderRow`s, one-line rows 24 points high with no spacing between them, the option, a slider's value and the size rows' unit ending 5 points from the row's end, a field's box at it. The size row has no label, Set size above it naming the unit: `ValueField`s on one line (`size_line`), `[w] × [h] px` or `[w] × [h] cm @ [dpi] dpi`, 6 points between its parts, the × and the words in `text_secondary`, the fields the row's width less those and the gaps, shared alike and the resolution's by its number's width where there is room, all shrinking at the narrowest panel. To screen readers the row is a group named "Size in pixels", "Size in centimetres" or "Size in inches", its fields "Width, in cm", "Height, in cm" and "Resolution, in dpi". What the size comes to, "which is equal to 119 × 237 px", is the Set size row's tooltip and description, never a line under the fields. The scale is a `TextField` at the end of a one-line row with its label (`end_row`), its label above where they do not fit.
+- **The path** is one line, the `PathField` taking the width less the folder `IconButton` at its end, which is drawn disabled until the system's chooser is built; it has no visible label, is named "Path" to screen readers, and scrolls inside the field, whose width is the row's less the button and the gap, never the text's. The button is drawn on the field's line by `PathField::beside`, so the list of variables, which opens under the line while the caret stands after `$(` and a name's letters, never lands between them and moves nothing across. The file name the session resolved, "IMG_2041.ARW → ~/Pictures/apertrust_exported/IMG_2041.jpg", is its tooltip and its description, with the sequence rule and the variables with no value here; a name only a decode can give, for a photo that is not the open one, stays as the pattern is written, "filled in as it is exported". A problem that stops Export is an `error` note under it, with its fix.
+- **Its rows, by name:** Target storage (File on disk the one that can be chosen), Path, On conflict, File format (JPEG and PNG; darktable's other twelve listed and disabled), JPEG's Quality and Chroma subsampling or PNG's Bit depth and Compression, Set size's four modes (width × height in pixels, in cm or in inch with the resolution kept as the physical size, or the scale text), Allow upscaling, High quality resampling, Profile (Image settings, sRGB, the other eleven of darktable's twelve disabled). Drawn disabled, each saying "Coming in a later version" (or why) in its tooltip: Store masks, Intent, Style, Metadata and Multi-preset export.
 - **The settings** are `export::Values`, the fifteen `export.*` settings, read from the app's store, whose registries hold the export settings beside the app's and the engine's, so `apertrust --conf export.…` is read too. The shell keeps them in `Settings::export` and the tool offers them back as they change (`Asked::values`); `Values::settings` turns them into the session's `ExportSettings`.
 - **The feedback** is the session's. While the tool is open and the Photos tab shown, `PreviewExport` is sent for the photo open on the first frame, and again when the settings or the photo change, when it becomes live, when its edit changes and when an export job of the user's ends, never while the tool is closed or on another tab (`export::Previews`, `App::preview_export`; `export::preview_command`). Showing it again, or another photo, sends a first preview that drops the answer held and the answers to earlier commands (`Mirror::previews_from`). The answer comes back as `Reaction::Preview` to `Export::receive`, which keeps the highest `through`.
-- **Export** is the button under the rows, primary and the section's full width, disabled, with the reason in its tooltip, with no photo open or while the session reports a problem with the path, its folder or the size. It sends `Command::Export` for the active photo (`PHOTOS` is 1 until a selection comes) and nothing while the app is quitting; with On conflict Overwrite the export of the photo open when it is pressed is held through the overwrite question, as Export Again's, so a yes exports that photo even if another has opened; it closes nothing, the tool and the tab staying as they were, and the jobs spinner and window show the job. A note under it says exports run in the background.
+- **The end** (`export/end.rs`) is [the tool's end](#the-tools-end), built but for the Summary's Preset row, always Default settings or Custom until presets, and the button's count, always one photo until a selection comes:
+  - **The Summary** is a `CollapsibleGroup` after Multi-preset export, titled `export-summary-title`, its state kept as `summary` under `export` in `edit.groups`, open at first (`SUMMARY_OPEN`), drawn only for `Photo::Ready`. `summary_rows` makes its rows from the settings, the session's answer and the translator; `summary_list` draws each in a 22-point row, the labels in one right-aligned column, a value cut at its end with … (`cut_end`) or a destination in its middle (`middle_cut`), whole in the row's tooltip, each a label to screen readers ("File name IMG_2041.jpg").
+  - **The warnings,** in `warning` with the sign: "1 view-only photo left out", and "Replaces 3 files already there", or "Replaces at least 3 files already there" where a name is a guess.
+  - **The button** is the primary `Button`, the content's full width and a row high (`sizes.row`), its words centred (`Button::centred`, `Button::height`). Where Export cannot run it is held off (`Button::held_off`): drawn disabled, said disabled to screen readers, still a stop for the keyboard, its reason its tooltip and its description, its presses ignored (`Button::show_pressed`); with no photo open it is plainly disabled, with no reason: "A newer Apertrust wrote these edits.", "The history in IMG_2041.ARW.apxmp can’t be read.", the path's or the size's problem, or Overwrite on a platform with no alert. A second press within half a second is ignored; with Overwrite the start is noted when the held export is sent on a yes, not when the question is asked, and not on Cancel. Its access key is not built.
+  - **The line under it** is a failed export's alone: the jobs mirror keeps the last export it saw (`jobs::Mirror::failed_export`), and while that one failed, "Export failed: 11 of 12" shows in `error` with Show jobs, a quiet button that runs View › Jobs, until the next export starts or the row is dismissed (Clear Finished included, which brings back no earlier failure). There is no line for a start, a running job, a queued one or the same photos again.
 - **`TextField` and `PathField`** in `apertrust-ui` (`components/text_field.rs`): the path field's list of darktable's variables with their descriptions is part of the row, shown while the caret stands after `$(` and the letters of a name. A click inserts one closed, ↓ ↑ and Enter choose, Escape closes the list alone.
-- **Not built, and drawn so:** the folder chooser (the Path row's Choose… is disabled); the profile carried to the session (`ExportSettings` has none: both choices export Output colour profile's sRGB, the only one an edit can have); the hover preview and the difference line (with presets and decision 26); every row the table above puts later.
-- **Tests:** interaction tests and snapshots (320 and 600 points wide, dark and light; 240 wide in cm; Ukrainian, Polish, the pseudo-locale and an error) in a harness that draws the section as the Photos tab does (`PanelBody`); in `main.rs`, Export… and Ctrl+E revealing it from another tab, and its place last in the tab.
+- **Export** sends `Command::Export` for the active photo (`PHOTOS` is 1 until a selection comes) and nothing while the app is quitting; with On conflict Overwrite the export of the photo open when it is pressed is held through the overwrite question, as Export Again's, so a yes exports that photo even if another has opened; it closes nothing, the tool and the tab staying as they were, and the jobs spinner and window show the job.
+- **Not built, and drawn so:** the folder chooser (the folder button is disabled); the profile carried to the session (`ExportSettings` has none: both choices export Output colour profile's sRGB, the only one an edit can have); the hover preview and the difference line (with presets and decision 26); every row the table above puts later.
+- **Tests:** interaction tests and snapshots (320 and 600 points wide: dark, light, an error under the path, Ukrainian, Polish and the pseudo-locale; the end with a warning and a failed export in dark and light; 240 wide in cm) in a harness that draws the section as the Photos tab does (`PanelBody`); in `main.rs`, Export… and Ctrl+E revealing it from another tab, its place last in the tab and every workspace holding it; in `apertrust-ui`, the button's two options and the presets button of a utility's header.
 
 ### Feedback
 
-The notes under the rows, and the path field's tooltip, come from the session (`PreviewExport`, [engine.md](engine.md), Export jobs), so a remote client sees the server's files. The tool sends it on a change of a setting, the selection or the active photo, as it comes into view, when the window regains the focus and when an export job ends, its files changing what is already there; never while it is closed or out of view. It keeps the number of its latest request and shows an answer only when its `through` is that number or later, dropping one to an earlier request that arrives after a change (planned; the built tool keeps the highest `through` received). Its `focus` is the window's active photo, or the first photo exported where the active one is left out, as a view-only photo is, so the notes always describe a photo that goes (planned). Export never waits for an answer: the notes are advice, and the job reports what actually happens, as Export Again's does. An answer for another photo is never shown: the tool drops it before drawing once another photo opens. On a change of settings the built tool keeps showing the last answer until the new one comes; never showing one for older settings, the path's tooltip, On conflict's note and the warning going empty meanwhile, is planned.
+The tooltips of the path field and the Set size row, the Summary's file name and size and the warnings come from the session (`PreviewExport`, [engine.md](engine.md), Export jobs), so a remote client sees the server's files. The tool sends it on a change of a setting, the selection or the active photo, as it comes into view, when the window regains the focus and when an export job ends, its files changing what is already there; never while it is closed or out of view. It keeps the number of its latest request and shows an answer only when its `through` is that number or later, dropping one to an earlier request that arrives after a change (planned; the built tool keeps the highest `through` received). Its `focus` is the window's active photo, or the first photo exported where the active one is left out, as a view-only photo is, so they always describe a photo that goes (planned). Export never waits for an answer: they are advice, and the job reports what actually happens, as Export Again's does. An answer for another photo is never shown: the tool drops it before drawing once another photo opens (`Export::retire`). On a change of settings the built tool keeps showing the last answer until the new one comes, the Summary's file name taking the format's extension at once; never showing one for older settings or another selection, the path's tooltip and the warning over the button going empty meanwhile, keeping their height, is planned.
 
-- **File names,** in the path field's tooltip and its description to screen readers, not in a note, since the summary already says where the files go (decision 90):
+- **File names,** in the path field's tooltip and its description to screen readers, not in a note, since the Summary already says where the files go (decision 90):
   - the `focus` photo's name, the active photo's or the first exported, and where its file will go, for example `IMG_2041.ARW → ~/Pictures/2026-10 Wedding/apertrust_exported/IMG_2041.jpg` (`export-name`, `~` for home), so a pattern with variables can be checked;
   - with several photos and no variable in the path, darktable's rule adds `_$(SEQUENCE)`, and the tooltip says so (`export-sequence-added`);
   - the variables with no value here (D7, `export-not-here`), and a path that gives no file name (`export-no-name`);
   - for PDF, "all in one PDF".
-  - The built tool's "and 11 more" message, `export-names-more`, leaves the locales when the tool's names move into the path field's tooltip.
+  - The "and 11 more" line, `export-names-more`, is a line of the path field's tooltip.
 - **The pattern's problem** (D8) in `error`, with the session's nearest name and **Use $(NAME)**, offered only while the place it names still holds that name; then the folder's preflight.
-- **On conflict:** a line saying what happens to the files already there, for example "3 of the 12 are already there; those are saved with _01 added". A replace's line is in the warning colour.
-- **Output size,** the `focus` photo's (planned, once it may be other than the open one: planned from its saved edit over its raw's dimensions, read without decoding the image): "IMG_2041.ARW, the active photo, will be 2048 × 1365 px. Each photo keeps its own shape.", with "not upscaled" or "full size" where that applies, or the size problem.
-- **Each photo's file and what On conflict does with it** give the counts in On conflict's note and the warning over the button; no mark is drawn on the grid panel (decision 90). A photo whose name is not exact (`PhotoName::exact`, its path using what only a decode tells) is left out of the counts, which then say "at least"; where it is the `focus`, the path's tooltip says its name is known once it is exported.
-- **The warning over the button** says in `warning` how many files will be replaced, as the On conflict note does.
+- **On conflict** has no line: a replace is the warning at the end, and a file saved under a number or skipped says nothing, as the Summary's file name is the name the session resolved.
+- **Output size,** the `focus` photo's (planned, once it may be other than the open one: planned from its saved edit over its raw's dimensions, read without decoding the image), in the Set size row's tooltip and the Summary's Size row: "IMG_2041.ARW will be 2048 × 1365 px.", with "not upscaled" or "full size" where that applies; the size problem is the one line a row keeps, in `error`.
+- **Each photo's file and what On conflict does with it** give the counts in the warning over the button; no mark is drawn on the grid panel (decision 90). A photo whose name is not exact (`PhotoName::exact`, its path using what only a decode tells) claims no file and is left out of the counts, which then say "at least"; where it is the `focus`, the path's tooltip says its name is known once it is exported, and the Summary shows the pattern's file name.
+- **The warning over the button** says in `warning` how many files will be replaced.
 - **Hover preview** (with presets): pointing at a preset, or ↑ and ↓ in the list, shows its settings in the rows, with a banner, until it is chosen, the pointer leaves the list, or the list closes or loses the keyboard focus.
 
 ### States
 
 | State | What shows |
 | --- | --- |
-| No photo open | The rows live, being settings; "No photos selected"; the button disabled; the photo's notes empty, keeping their height |
-| One photo | "Export 1 photo"; the summary's file name follows the preset |
+| No photo open | The rows live, being settings; no Summary; the button disabled; the tooltips of the path and the size empty |
+| One photo | "Export 1 photo"; the Summary's file name is that photo's |
 | Several selected | "Export 12 photos" |
 | A view-only photo | Left out, counted in the warning; all of them view-only, the button disabled, saying why, a newer Apertrust's edits or a history that cannot be read |
-| Defaults | The summary starting with Default settings; ↺ at rest |
+| Defaults | The Summary's Preset row reading Default settings; ↺ at rest |
 | Menu open | The Mac's pop-up menu; unbuilt options greyed, "Coming in a later version" |
 | Typing `$(` | The variable list with darktable's descriptions; a click inserts one |
 | Folder error | The path outlined in `error`: "Can't write to "/Volumes/Photos NAS/Exports": the disk isn't connected…"; Export greyed (`aria-disabled`, the reason in its tooltip); a closed group holding it opens and scrolls into view once |
@@ -1889,7 +1901,7 @@ The notes under the rows, and the path field's tooltip, come from the session (`
 | W10 alert | `NSAlert`: "Update the out-of-date AI erase before exporting?": **Update and Export** (default), Cancel, Export as Shown; "filling" and "not filled" alike |
 | Overwrite alert | "Export in overwrite mode?", "Don't ask again" (darktable's "ask before exporting in overwrite mode"), [Overwrite] (destructive) [Cancel] (default) |
 | Delete or update a preset | darktable's "delete preset?" and "update preset?" as alerts |
-| Running | The tool as it was, the line under the button giving the progress; the jobs spinner at the top panel's end, and the jobs window, opened by the job's start ([The jobs window](#the-jobs-window)): the export's row with its bar and ✕, "3 of 12 done · now IMG_2044.ARW", "To" the folder, Show in Finder |
+| Running | The tool as it was, with no line of its own; the jobs spinner at the top panel's end, and the jobs window, opened by the job's start ([The jobs window](#the-jobs-window)): the export's row with its bar and ✕, "3 of 12 done · now IMG_2044.ARW", "To" the folder, Show in Finder |
 | Finished | The export's row, "12 photos exported", "To" the folder and the time, Show in Finder; cleared by Clear Finished. A notice, "Exported 12 photos to apertrust_exported" with Show in Finder (with the library's step 12) |
 | Failed | "Export failed: 11 of 12 photos exported", its icon the warning sign; the reason in `error` ("IMG_2051.ARW: the disk is full"); Try again, Show in Finder, Dismiss |
 | Cancelled | "Export cancelled: 3 of 12 photos exported", the files written kept; cleared by Clear Finished |
@@ -1901,8 +1913,8 @@ The notes under the rows, and the path field's tooltip, come from the session (`
 - **Ctrl+E (Cmd+E)** and Export… choose the tab holding Export, or raise its floating panel (decision 83), open the tool, scroll its end into view and focus the button with the focus ring. Return then presses it; Esc gives the focus back to where Ctrl+E found it.
 - **Ctrl+Return (Cmd+Return)** anywhere in the tool presses Export while it is enabled; Return on a row keeps its own meaning (a choice opens its list, a slider its popup, a path field sets its value) and never exports.
 - **Export Again** is Ctrl+Shift+E (Cmd+Shift+E) ([Export Again](#export-again)).
-- **Tab order:** the header and its buttons; Storage options' rows and Format options' rows, their titles no stop, the path field then its folder button; Global options' header, then its rows while open; Metadata's and Multi-preset export's headers, then their rows while open; the summary's disclosure, its list no stop; the button; Show jobs. F6 is the side panel's, as for any section. The button's access key is &Export.
-- **Screen readers:** the tool is a section named "Export"; Storage options and Format options each a group labelled by its title; the path field named "Path", with no label drawn, its description the resolved file name, then the folder button, "Choose…"; Global options, Metadata and Multi-preset export each a Button with its expanded state and, while closed, "N set" as its description; the summary a disclosure button named by the one-line summary and the destination, `aria-expanded` its state, the open list a description list of its labels and values; the button named "Export 12 photos", its description the summary, starting with the preset or Custom, and the warnings, or why it is disabled. After Ctrl+E they hear "Export 12 photos, button, For sharing · 12 photos · JPEG · 2048 px to apertrust_exported". A polite live region says only "Started…" and the end; a problem is announced once, assertively; a change of the count is never announced.
+- **Tab order:** the header and its buttons; Storage options' rows and Format options' rows, their titles no stop, the path field then its folder button; Global options' header, then its rows while open; Metadata's and Multi-preset export's headers, then their rows while open; the Summary's header, its list no stop; the button; Show jobs. F6 is the side panel's, as for any section. The button's access key is &Export.
+- **Screen readers:** the tool is a section named "Export"; Storage options and Format options each a group labelled by its title; the path field named "Path", with no label drawn, its description the resolved file name, then the folder button, "Choose…"; Global options, Metadata and Multi-preset export each a Button with its expanded state and, while closed, "N set" as its description; the Summary a Button named "Summary" with its expanded state, its rows labels read as "Size 2048 × 1365 px"; the button named "Export 12 photos", its description the warnings, or why it is disabled. A polite live region says only the end of an export; a problem is announced once, assertively; a change of the count is never announced.
 
 As built, the tool has no keys of its own: Ctrl+E (Cmd+E) and Export… reveal it, Return on a row keeps the row's meaning and nowhere exports, Esc closes a dropdown's list or the path's variable list, and Tab goes through its rows in the order they read.
 
@@ -2045,7 +2057,6 @@ Export sits where darktable's export module sits, in the side panel, acting on t
 | D12 | Each photo's edit taken as it is when Export is pressed; darktable reads each photo's history when its turn comes | Predictable over clever |
 | D13 | The overwrite confirmation a system alert, Cancel the default, "Don't ask again" darktable's preference | The platform's replace convention |
 | D14 | Progress, Cancel and result in the jobs window, opened by the top panel's spinner and by the job's start, not darktable's background jobs panel at the left panel's bottom (decision 57) | Jobs seen wherever the person is working |
-| D15 | Allow upscaling, High quality resampling and Store masks are toggles, where darktable's are comboboxes of No and Yes (decision 90) | A boolean drawn as a tool draws one, a click instead of two |
 | D16 | Storage options and Format options stay darktable's section labels, always open; global options becomes a collapsible group, open at first, as Metadata and Multi-preset export are, closed at first (decision 90) | Where and what Export writes is always in view; the rest closes away, a closed group still showing that it is set |
 | D17 | Two presets built in, For sharing (JPEG, 2048 × 2048 px, sRGB) and Full size JPEG (JPEG, no size limit, sRGB), where darktable ships none (decision 90) | A small file for sharing, and back to full size, in one choice each |
 | D18 | Ctrl+E reveals the tool and focuses its button, Return then exporting; Export Again, on Ctrl+Shift+E, does what darktable's Ctrl+E does (decision 90) | A key that writes files shows the settings first |
@@ -2063,7 +2074,7 @@ The JPEG writer is jpeg-encoder, the pure Rust encoder that sets every option da
 Export is Phase 3's.
 
 1. **The first build:** File on disk with the path, on conflict and the name preview; JPEG and PNG; all four Set size modes, Allow upscaling and High quality resampling; Profile with Image settings and sRGB; the jobs window with progress, cancel and result; the overwrite and quit alerts; Export Again. The engine's part: an export at a size, with darktable's resample; the JPEG and PNG writers; darktable's variables and File on disk; the job API and the export job, sharing the GPU with the viewport ([engine.md](engine.md), Export jobs).
-2. **The Export tool** (decision 90), after the setting rows: the tool in the Photos tab, its groups, every row a tool setting's row, Blended choices, the three toggles, Default settings, the tool's end and Ctrl+E's reveal; before presets, so presets and metadata are built in the tool.
+2. **The Export tool** (decision 90), after the setting rows: the tool in the Photos tab, its groups, every row a tool setting's row, Blended choices, Default settings, the tool's end and Ctrl+E's reveal, the dialog removed; before presets, so presets and metadata are built in the tool.
 3. **Presets:** the header's presets with the hover preview, the preset's name in the summary, For sharing and Full size JPEG, and Multi-preset export.
 4. **Metadata,** and Style once styles exist.
 5. **Later:**

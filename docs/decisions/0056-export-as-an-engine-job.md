@@ -24,7 +24,7 @@ How does an export run, from the app and from the CLI, so that it writes what da
 
 **The CLI:** `apertrust-cli export FILE... -o PATTERN` runs a session in process and waits, with darktable-cli's `--width`, `--height`, `--hq` and `--upscale`, the extension choosing the format; `--out-ext`, `--icc-type` and `--preset` planned. `--runs`, `--tile`, `--skip`, `--set` and `--param` render directly.
 
-**Planned:** the pipeline kept from photo to photo, rayon in the encoding, other profiles, metadata written into the file, styles, multi-preset export, Export's groups, summary, presets and the selection ([0090](0090-export-as-a-photos-tab-tool.md)).
+**Planned:** the pipeline kept from photo to photo, rayon in the encoding, other profiles, metadata written into the file, styles, multi-preset export, Export's presets and the selection ([0090](0090-export-as-a-photos-tab-tool.md)).
 
 ## Options considered
 

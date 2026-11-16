@@ -1484,6 +1484,7 @@ mod tests {
             redo: true,
             discard: true,
             discard_why: None,
+            exportable: true,
             text: false,
             photos: 2,
             opened: true,

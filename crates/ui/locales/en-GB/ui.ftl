@@ -1252,8 +1252,47 @@ pick-warning-short-tip = { $control } reached its end of { $value }
 ## pixels, $problem what stops the export.
 
 export-button = Export { photo-count }
-export-hint = Exports run in the background; you can keep working.
 export-reset = Reset export settings
+export-presets = Export presets
+export-presets-later = Presets come in a later version
+export-preset-default = Default settings
+export-metadata-note = This version writes no EXIF, location or copyright into exported files.
+export-path-tip-unexact = { $source } → { $pattern }, filled in as it is exported
+
+## The Summary, the warnings, the button and the line under it
+
+export-summary-title = Summary
+export-summary-label-preset = Preset
+export-summary-label-file-name = File name
+export-summary-label-size = Size
+export-summary-label-scale = Scale
+export-summary-label-profile = Profile
+export-summary-label-format = Format
+export-summary-label-destination = Destination
+export-summary-size = { $width } × { $height } px
+export-summary-size-print = { $width } × { $height } { $unit } ({ $pixels_width } × { $pixels_height } px)
+export-summary-scale = { $percent }%
+export-summary-jpeg = JPEG, quality { $quality }
+export-summary-png = PNG, { $bits } bit
+
+export-view-only-left-out =
+    { $count ->
+        [one] { $count } view-only photo left out
+       *[other] { $count } view-only photos left out
+    }
+export-warn-replaces =
+    { $count ->
+        [one] Replaces { $count } file already there
+       *[other] Replaces { $count } files already there
+    }
+export-warn-replaces-at-least =
+    { $count ->
+        [one] Replaces at least { $count } file already there
+       *[other] Replaces at least { $count } files already there
+    }
+export-show-jobs = Show jobs
+export-failed = Export failed: { $done } of { $total }
+
 # The tooltip of every row and group drawn disabled because it is not built yet.
 export-later = Coming in a later version
 
@@ -1285,13 +1324,6 @@ export-no-name = The path gives no file name for this photo.
 export-sequence-added = With { $count } photos and no variable in the path, _$(SEQUENCE) is added so that none overwrites another.
 # $names are variables darktable has and Apertrust has no value for.
 export-not-here = { $names }: darktable's, with no value here; it expands to nothing.
-export-conflict-one-number = { $file } is already there, so this one is saved with a number added.
-export-conflict-one-overwrite = Replaces { $file }, which is already there.
-export-conflict-one-skip = Skips { $file }, which is already there.
-export-conflict-one-unchanged = Skips { $file }, which is already there and newer than the photo's edit.
-export-conflict-many-number = { $count } of the { $total } are already there; those are saved with _01 added.
-export-conflict-many-overwrite = Replaces the { $count } of the { $total } already there.
-export-conflict-many-skip = Skips the { $count } of the { $total } already there.
 
 ## What stops the export (D8)
 
@@ -1313,7 +1345,8 @@ export-problem-failed = The photo can’t be exported at this size: { $why }
 # The tooltip of Export while it cannot run; $problem is one of the messages above.
 export-why-path = Fix the path first: { $problem }
 export-why-size = Fix the size first: { $problem }
-export-why-no-photo = Open a photo to export it.
+export-why-view-only-newer = A newer Apertrust wrote these edits.
+export-why-view-only-unreadable = The history in { $file } can’t be read.
 
 ## Format options
 
@@ -1359,6 +1392,8 @@ export-high-quality = High quality resampling
 export-high-quality-tip = Do high quality resampling during export: every operation at full size, then scaled down.
 export-masks = Store masks
 export-masks-later = Store masks as layers in exported images. Only TIFF, OpenEXR and XCF can, and layers come with a later version.
+export-option-no = No
+export-option-yes = Yes
 export-profile = Profile
 export-profile-image = Image settings
 export-profile-tip = Image settings: the photo's own, in Raw › Output colour profile, as the view shows it. Another profile applies to this export alone.

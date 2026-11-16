@@ -19,14 +19,20 @@
 //! function of `&mut Ui`, so the app draws it in the panel and the interaction tests draw it
 //! in a harness.
 //!
-//! **Its rows** are File on disk with its path, On conflict, JPEG and PNG, Set size's four
-//! modes, Allow upscaling, High quality resampling, and Profile with Image settings and
-//! sRGB. Every other row is drawn, disabled, saying it is to come: the other storages and
-//! formats, Store masks, Intent, Style, Metadata and Multi-preset export. The rows are the
-//! side panel's controls laid out as a tool's: Blended choices, toggles and sliders,
+//! **Its groups** are Storage options and Format options, plain titled groups always
+//! shown; Global options, collapsible and open at first; and Metadata and Multi-preset
+//! export, collapsible, closed and drawn disabled. **Its rows** are File on disk with its
+//! path on one line that scrolls, the folder button at its end and no visible label; On
+//! conflict, JPEG and PNG, Set size's four modes, Allow upscaling, High quality resampling,
+//! and Profile with Image settings and sRGB. Every other row is drawn, disabled, saying it
+//! is to come: the other storages and formats, Store masks, Intent and Style. The rows are
+//! the side panel's controls laid out as a tool's: Blended choices, toggles and sliders,
 //! one-line rows stacked with no spacing between them, a row whose label and fields do not
-//! fit the panel's width putting its label above them. The header's ↺ applies Default
-//! settings.
+//! fit the panel's width putting its label above them. The header has ↺, which applies
+//! Default settings, the presets button, drawn disabled until presets come, and ⋯.
+//!
+//! **Its end** (`end.rs`) is the summary, a collapsible group of its own, the warnings, the
+//! Export button and the line under it with its job's progress.
 //!
 //! **The settings** are the `export.*` settings, one [`Values`], read from the app's store
 //! as the app starts and offered back to it as they change (`Asked::values`), as darktable
@@ -45,7 +51,7 @@ use apertrust_base::settings::{Choice as _, Store};
 use apertrust_engine::export_preview::{Fate, PathProblem, SizeProblem};
 use apertrust_engine::session::{Command, ExportPreview, ExportSettings, Places};
 use apertrust_export::Format;
-use apertrust_export::disk::{Action, Blocked, Preflight};
+use apertrust_export::disk::{Blocked, Preflight};
 use apertrust_export::jpeg::{self, Subsample};
 use apertrust_export::png::{self, BitDepth};
 use apertrust_export::settings::registry::{
@@ -57,16 +63,30 @@ use apertrust_export::settings::registry::{
 use apertrust_export::settings::{FileFormat, OnConflict, Profile, SizeMode};
 use apertrust_export::size::{self, Request};
 use apertrust_export::variables::{self, PatternError};
+use apertrust_ui::Icon;
 use apertrust_ui::components::{
-    Button, Choice, ChoiceAction, ChoiceStyle, CollapsibleGroup, PathField, Section, SectionAction,
-    SliderAction, SliderRow, TextField, ToggleRow, ValueField, Variable, field_inset, group_label,
+    Button, Choice, ChoiceAction, ChoiceStyle, CollapsibleGroup, IconButton, PathField, Section,
+    SectionAction, SliderAction, SliderRow, TextField, ValueField, Variable, field_inset,
+    group_label,
 };
 use apertrust_ui::i18n::Args;
 use apertrust_ui::{Theme, theme, tr, translator};
 use eframe::egui::{self, Color32, Label, RichText, Ui, vec2};
 
+mod end;
+pub use end::{Jobs, Photo, Shown, Why};
+
 /// The tool's id, as the shell keeps its section's state and Export… reveals it.
 pub const ID: &str = "export";
+/// The collapsible groups' ids, as the shell keeps their state under the tool's.
+pub const GLOBAL: &str = "global";
+pub const SUMMARY: &str = "summary";
+/// Whether Global options is open until the person closes it: the one group that starts
+/// open (decision 90).
+pub const GLOBAL_OPEN: bool = true;
+/// Whether the Summary is open until the person closes it: it starts open, as Global
+/// options does.
+pub const SUMMARY_OPEN: bool = true;
 /// Whether the section is open until the person opens or closes it, as every tool is
 /// closed at first (decision 29).
 pub const OPEN: bool = false;
@@ -192,6 +212,25 @@ impl Values {
         if self.profile != was.profile {
             store.set(&EXPORT_PROFILE, self.profile);
         }
+    }
+
+    /// How many of the settings Global options holds are off their defaults, for the dot a
+    /// closed group shows.
+    pub fn set_in_global(&self) -> usize {
+        let d = Values::default();
+        [
+            self.size_mode != d.size_mode,
+            self.width != d.width,
+            self.height != d.height,
+            self.dpi != d.dpi,
+            self.scale != d.scale,
+            self.upscale != d.upscale,
+            self.high_quality != d.high_quality,
+            self.profile != d.profile,
+        ]
+        .into_iter()
+        .filter(|set| *set)
+        .count()
     }
 
     /// What the session's `Export` and `PreviewExport` take: the path, On conflict, the
@@ -367,11 +406,25 @@ pub struct Asked {
     pub confirm: bool,
 }
 
+/// What the section's rows and end report for a frame.
+#[derive(Default)]
+struct Rows {
+    pressed: bool,
+    global: bool,
+    summary: bool,
+    show_jobs: bool,
+}
+
 /// What the tool's section did this frame.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Drawn {
     /// Its header was pressed: open it, or close it.
     pub toggle: bool,
+    /// Global options' row, or the summary's, was pressed: open it, or close it.
+    pub toggle_global: bool,
+    pub toggle_summary: bool,
+    /// Show jobs was pressed.
+    pub show_jobs: bool,
     pub asked: Asked,
 }
 
@@ -389,8 +442,11 @@ pub struct Export {
     /// (`dialog_host::platform::shows_alerts`): where it cannot, On conflict's Overwrite
     /// is listed disabled, and Export rests while it is chosen.
     alerts: bool,
-    /// Whether a photo is open to export, as the last frame was told.
-    photo: bool,
+    /// The photo it acts on and how the user's exports stand, as the last frame was told.
+    photo: Photo,
+    jobs: Jobs,
+    /// When Export was last pressed to some effect, for the guard against a second press.
+    pressed_at: Option<f64>,
 }
 
 /// What the cm and inch fields hold, as darktable's print entries do, with the pixels they
@@ -411,7 +467,9 @@ impl Export {
             home: places().home,
             print: None,
             alerts: true,
-            photo: true,
+            photo: Photo::None,
+            jobs: Jobs::default(),
+            pressed_at: None,
         }
     }
 
@@ -465,52 +523,66 @@ impl Export {
         &self.values
     }
 
-    /// Draws the section in `ui`, open or closed as `open` says, for a photo that is open
-    /// or not (`photo`). Returns what it asked of the app: the header pressed, the settings
-    /// changed, and Export.
-    pub fn show(&mut self, ui: &mut Ui, open: bool, photo: bool) -> Drawn {
+    /// Draws the section in `ui` as `shown` says: open or closed, its groups, the photo it
+    /// acts on and the jobs. Returns what it asked of the app: the header pressed, the
+    /// groups', the settings changed, Export and Show jobs.
+    pub fn show(&mut self, ui: &mut Ui, shown: &Shown) -> Drawn {
         let ctx = ui.ctx().clone();
         let t = theme(&ctx);
         let before = self.values.clone();
-        self.photo = photo;
+        self.photo = shown.photo.clone();
+        self.jobs = shown.jobs.clone();
         let title = tr(&ctx, "section-export");
         let reset = tr(&ctx, "export-reset");
-        let mut pressed = false;
-        // A utility: its reset applies Default settings, before its options, which hold
-        // nothing yet.
-        let out = Section::new(&title, open)
+        let presets = tr(&ctx, "export-presets");
+        let later = tr(&ctx, "export-presets-later");
+        let mut rows = Rows::default();
+        // A utility: its reset applies Default settings, then the presets button, drawn
+        // disabled until presets come, then its options, which hold nothing yet.
+        let out = Section::new(&title, shown.open)
             .utility_reset(&reset)
             .reset(self.values != Values::default())
+            .utility_presets(&presets, false, &later)
             .options(false)
-            .show(ui, |ui| pressed = self.rows(ui, &t));
+            .show(ui, |ui| rows = self.rows(ui, &t, shown));
         if out.actions.contains(&SectionAction::Reset) {
             self.values = Values::default();
             ctx.request_repaint();
         }
+        // A second press just after the first is ignored.
+        let now = ctx.input(|i| i.time);
+        let pressed = rows.pressed && !self.too_soon(now);
         // Overwriting asks first, as darktable's storage does whether or not a file is
         // there: the app sends the export on a yes, or at once where the setting says not
         // to ask.
         let confirm = pressed && asks_before(self.values.on_conflict);
+        let start = pressed && !confirm;
+        if start {
+            self.note_started(now);
+        }
         let values = (self.values != before).then(|| self.values.clone());
         Drawn {
             toggle: out.actions.contains(&SectionAction::Toggle),
+            toggle_global: rows.global,
+            toggle_summary: rows.summary,
+            show_jobs: rows.show_jobs,
             asked: Asked {
                 values,
-                start: pressed && !confirm,
+                start,
                 confirm,
             },
         }
     }
 
-    /// The section's rows, then the Export button. Returns whether Export was pressed.
-    fn rows(&mut self, ui: &mut Ui, t: &Theme) -> bool {
+    /// The section's rows in their groups, then the tool's end.
+    fn rows(&mut self, ui: &mut Ui, t: &Theme, shown: &Shown) -> Rows {
         let ctx = ui.ctx().clone();
         let later = tr(&ctx, "export-later");
         // Rows stack as a tool's do, each carrying its own gaps (docs/gui.md, How the rows
         // are laid out).
         ui.spacing_mut().item_spacing = vec2(t.spacing.s, 0.0);
 
-        // Storage options.
+        // Storage options, a plain group: always shown, so where files go is in view.
         group_label(ui, &tr(&ctx, "export-storage-options"));
         let storages = [
             tr(&ctx, "export-storage-latex"),
@@ -550,33 +622,59 @@ impl Export {
         {
             self.values.on_conflict = OnConflict::OPTIONS[i].0;
         }
-        self.conflict_lines(ui, t);
 
-        // Format options.
+        // Format options, a plain group.
         group_label(ui, &tr(&ctx, "export-format-options"));
         self.format_rows(ui);
 
-        // Global options.
-        group_label(ui, &tr(&ctx, "export-global-options"));
+        // Global options, collapsible and open at first: the size is the next thing an
+        // export depends on.
+        let title = tr(&ctx, "export-global-options");
+        let set = self.values.set_in_global();
+        let global = CollapsibleGroup::new(&title, shown.global)
+            .set(set)
+            .show(ui, |ui| self.global_rows(ui, t));
+
+        // Groups to come, each 4 points under the row before it, as in a tool.
+        for id in ["export-metadata", "export-multi-preset"] {
+            let title = tr(&ctx, id);
+            CollapsibleGroup::new(&title, false)
+                .disabled(&later)
+                .show(ui, |_| {});
+        }
+        // The Summary, open at first, of what an export would write; none with no photo.
+        let mut summary = false;
+        if matches!(self.photo, Photo::Ready { .. }) {
+            let title = tr(&ctx, "export-summary-title");
+            summary = CollapsibleGroup::new(&title, shown.summary)
+                .show(ui, |ui| self.summary_list(ui, t));
+        }
+        let end = self.end(ui, t);
+        Rows {
+            pressed: end.pressed,
+            global,
+            summary,
+            show_jobs: end.show_jobs,
+        }
+    }
+
+    /// Global options' rows: the size, the toggles, the profile and what is to come.
+    fn global_rows(&mut self, ui: &mut Ui, t: &Theme) {
+        let ctx = ui.ctx().clone();
         self.size_rows(ui, t);
-        // Toggles, as a tool draws a boolean, where darktable's are No and Yes (D15).
+        // darktable's choices of No and Yes, the settings staying booleans.
         let label = tr(&ctx, "export-upscale");
-        if let Some(on) = ToggleRow::new(&label, self.values.upscale).show(ui) {
+        if let Some(on) = no_or_yes(ui, &label, self.values.upscale, true, None) {
             self.values.upscale = on;
         }
         let label = tr(&ctx, "export-high-quality");
         let promise = tr(&ctx, "export-high-quality-tip");
-        if let Some(on) = ToggleRow::new(&label, self.values.high_quality)
-            .promise(&promise)
-            .show(ui)
-        {
+        if let Some(on) = no_or_yes(ui, &label, self.values.high_quality, true, Some(&promise)) {
             self.values.high_quality = on;
         }
         let label = tr(&ctx, "export-masks");
-        let _ = ToggleRow::new(&label, false)
-            .enabled(false)
-            .promise(&tr(&ctx, "export-masks-later"))
-            .show(ui);
+        let later = tr(&ctx, "export-masks-later");
+        let _ = no_or_yes(ui, &label, false, false, Some(&later));
         self.profile_rows(ui);
         let label = tr(&ctx, "export-intent");
         let intents = [
@@ -598,29 +696,15 @@ impl Export {
             .enabled(false)
             .promise(&tr(&ctx, "export-style-later"))
             .show(ui);
-
-        // Groups to come, each 4 points under the row before it, as in a tool.
-        for id in ["export-metadata", "export-multi-preset"] {
-            let title = tr(&ctx, id);
-            CollapsibleGroup::new(&title, false)
-                .disabled(&later)
-                .show(ui, |_| {});
-        }
-        ui.add_space(t.spacing.m);
-        self.button(ui, t)
     }
 
-    /// The path and, under it, what the session says of it: the file's name and where it
-    /// goes, the variables with no value here, and the problems that stop Export (D8).
+    /// The path on one line that scrolls, with the folder button at its end and no visible
+    /// label, as darktable's; to screen readers it is named "Path", and the file name the
+    /// session resolved is its tooltip and its description, with the variables with no value
+    /// here and the sequence rule. Under it, a problem that stops Export (D8) and its fix.
     fn path_rows(&mut self, ui: &mut Ui, t: &Theme) {
         let ctx = ui.ctx().clone();
-        let label = tr(&ctx, "export-path");
-        // The label on a line of its own, a row high, and the field on the next, as no row
-        // of a tool's holds a text field.
-        ui.horizontal(|ui| {
-            ui.set_min_height(t.sizes.panel_line);
-            ui.label(RichText::new(&label).size(t.text.body));
-        });
+        let name = tr(&ctx, "export-path");
         let listed: Vec<Variable> = variables::list()
             .iter()
             .map(|v| Variable {
@@ -630,41 +714,37 @@ impl Export {
             .collect();
         let problem = self.path_problem(&ctx);
         let choose = tr(&ctx, "export-choose-folder");
-        let width = ui.available_width();
-        let mut output = None;
-        ui.horizontal(|ui| {
-            ui.set_min_height(t.sizes.panel_line);
-            let button = ui.fonts_mut(|f| {
-                f.layout_no_wrap(
-                    choose.clone(),
-                    egui::FontId::proportional(t.text.body),
-                    t.colors.text,
-                )
-                .size()
-                .x
-            }) + 2.0 * t.spacing.m;
-            let field = (width - button - t.spacing.s).max(80.0);
-            output = Some(
-                PathField::new(
-                    egui::Id::unique("export path"),
-                    &label,
-                    &self.values.path,
-                    &listed,
-                )
-                .width(field)
-                .error(problem.is_some())
-                .show(ui),
-            );
-            let later = tr(&ctx, "export-later");
-            Button::new(&choose).enabled(false).tip(&later).show(ui);
-        });
-        let output = output.expect("the path field draws");
+        let later = tr(&ctx, "export-later");
+        let tip = self.path_tip(&ctx);
+        // As high as the field and centred on its line, a square beside it.
+        let folder = IconButton::new(Icon::Folder, &choose)
+            .size(t.sizes.field)
+            .enabled(false)
+            .tip(&later);
+        // The field's width is the row's less the button and the gap, never the text's. The
+        // field and the button share one line; the list of variables comes under it.
+        let field = (ui.available_width() - folder.side(ui) - t.spacing.s).max(80.0);
+        let output = PathField::new(
+            egui::Id::unique("export path"),
+            &name,
+            &self.values.path,
+            &listed,
+        )
+        .width(field)
+        .error(problem.is_some())
+        .beside(|ui| {
+            folder.show(ui);
+        })
+        .show(ui);
         if let Some(text) = output.text {
             self.values.path = text;
         }
-        let Some((_, preview)) = &self.preview else {
-            return;
-        };
+        if let Some(tip) = tip {
+            ctx.accesskit_node_builder(output.response.id, |node| {
+                node.set_description(tip.clone());
+            });
+            drop(output.response.on_hover_text(tip));
+        }
         if let Some(problem) = &problem {
             let mut fix = None;
             note(ui, t, problem.text.clone(), t.colors.error);
@@ -679,37 +759,51 @@ impl Export {
             if let Some(text) = fix {
                 self.values.path = text;
             }
-            return;
         }
-        // The first photo's name and where its file goes, the others summed up.
+    }
+
+    /// What the path field's tooltip says, from the session's answer: the first photo's
+    /// name and where its file goes, "IMG_2041.ARW → ~/…/IMG_2041.jpg", the others summed
+    /// up, the sequence rule and the variables with no value here. A name only a decode can
+    /// give, for a photo that is not the open one, is never shown as if exact: the pattern
+    /// stays as written, filled in as the photo is exported. None while there is no answer,
+    /// or a problem stops the path.
+    fn path_tip(&self, ctx: &egui::Context) -> Option<String> {
+        let (_, preview) = self.preview.as_ref()?;
+        if self.path_problem(ctx).is_some() {
+            return None;
+        }
+        let words = translator(ctx);
+        let mut lines = Vec::new();
         if let Some(first) = preview.names.first() {
             let source = first
                 .source
                 .file_name()
                 .map(|n| n.to_string_lossy().into_owned())
                 .unwrap_or_default();
-            let line = match &first.fate {
-                Fate::File { file, .. } => {
-                    let mut args = Args::new();
-                    args.set("source", source);
-                    args.set("file", shown(file, self.home.as_deref()));
-                    translator(&ctx).text_with("export-name", Some(&args))
+            let mut args = Args::new();
+            args.set("source", source);
+            lines.push(match &first.fate {
+                Fate::File { .. } if !first.exact => {
+                    args.set("pattern", self.values.path.as_str());
+                    words.text_with("export-path-tip-unexact", Some(&args))
                 }
-                Fate::NoName => tr(&ctx, "export-no-name"),
-            };
-            note(ui, t, line, t.colors.text_secondary);
+                Fate::File { file, .. } => {
+                    args.set("file", shown(file, self.home.as_deref()));
+                    words.text_with("export-name", Some(&args))
+                }
+                Fate::NoName => tr(ctx, "export-no-name"),
+            });
             if preview.names.len() > 1 {
                 let mut args = Args::new();
                 args.set("count", (preview.names.len() - 1) as f64);
-                let more = translator(&ctx).text_with("export-names-more", Some(&args));
-                note(ui, t, more, t.colors.text_secondary);
+                lines.push(words.text_with("export-names-more", Some(&args)));
             }
         }
         if preview.sequence_added {
             let mut args = Args::new();
             args.set("count", preview.names.len() as f64);
-            let line = translator(&ctx).text_with("export-sequence-added", Some(&args));
-            note(ui, t, line, t.colors.text_secondary);
+            lines.push(words.text_with("export-sequence-added", Some(&args)));
         }
         if !preview.not_here.is_empty() {
             let names: Vec<String> = preview
@@ -720,9 +814,9 @@ impl Export {
             let mut args = Args::new();
             args.set("names", names.join(", "));
             args.set("count", names.len() as f64);
-            let line = translator(&ctx).text_with("export-not-here", Some(&args));
-            note(ui, t, line, t.colors.text_secondary);
+            lines.push(words.text_with("export-not-here", Some(&args)));
         }
+        (!lines.is_empty()).then(|| lines.join("\n"))
     }
 
     /// What stops the path or its folder, in words, with the fix the session suggests
@@ -730,70 +824,6 @@ impl Export {
     fn path_problem(&self, ctx: &egui::Context) -> Option<Problem> {
         let (_, preview) = self.preview.as_ref()?;
         problem_of(ctx, preview, &self.values.path, self.home.as_deref())
-    }
-
-    /// The line under On conflict, saying what happens to the files already there.
-    fn conflict_lines(&self, ui: &mut Ui, t: &Theme) {
-        let ctx = ui.ctx().clone();
-        let Some((_, preview)) = &self.preview else {
-            return;
-        };
-        let counts = preview.counts();
-        if counts.exist == 0 || self.path_problem(&ctx).is_some() {
-            return;
-        }
-        let total = preview.names.len();
-        let mut args = Args::new();
-        args.set("total", total as f64);
-        args.set("exist", counts.exist as f64);
-        if total == 1 {
-            let Some(first) = preview.names.first() else {
-                return;
-            };
-            let Fate::File { file, action, .. } = &first.fate else {
-                return;
-            };
-            let name = file
-                .file_name()
-                .map(|n| n.to_string_lossy().into_owned())
-                .unwrap_or_default();
-            args.set("file", name);
-            let (id, colour) = match action {
-                Action::Write => return,
-                Action::Number => ("export-conflict-one-number", t.colors.text_secondary),
-                Action::Overwrite => ("export-conflict-one-overwrite", t.colors.warning),
-                Action::Skip(apertrust_export::disk::Why::Exists) => {
-                    ("export-conflict-one-skip", t.colors.text_secondary)
-                }
-                Action::Skip(apertrust_export::disk::Why::NotChanged) => {
-                    ("export-conflict-one-unchanged", t.colors.text_secondary)
-                }
-            };
-            note(ui, t, translator(&ctx).text_with(id, Some(&args)), colour);
-            return;
-        }
-        for (count, id, colour) in [
-            (
-                counts.numbered,
-                "export-conflict-many-number",
-                t.colors.text_secondary,
-            ),
-            (
-                counts.overwritten,
-                "export-conflict-many-overwrite",
-                t.colors.warning,
-            ),
-            (
-                counts.skipped,
-                "export-conflict-many-skip",
-                t.colors.text_secondary,
-            ),
-        ] {
-            if count > 0 {
-                args.set("count", count as f64);
-                note(ui, t, translator(&ctx).text_with(id, Some(&args)), colour);
-            }
-        }
     }
 
     /// File format and the rows of the format chosen: JPEG's quality and subsampling, PNG's
@@ -818,8 +848,12 @@ impl Export {
             FileFormat::Jpeg => JPEG,
             FileFormat::Png => PNG,
         };
+        // Until metadata is built an exported file carries none: the row's tooltip says so.
+        let metadata = tr(&ctx, "export-metadata-note");
         if let Some(ChoiceAction::Set(i)) = choice(&label, &names, current)
             .disabled_options(&unbuilt, &later)
+            .promise(&metadata)
+            .description(&metadata)
             .show(ui)
         {
             self.values.format = if i == PNG {
@@ -832,7 +866,13 @@ impl Export {
             FileFormat::Jpeg => {
                 let label = tr(&ctx, "export-jpeg-quality");
                 let quality = f64::from(self.values.jpeg_quality);
-                if let Some(value) = whole_slider(ui, &label, quality, 5.0..=100.0, 95.0) {
+                if let Some(value) = whole_slider(
+                    ui,
+                    &label,
+                    quality,
+                    5.0..=100.0,
+                    EXPORT_JPEG_QUALITY.default().into(),
+                ) {
                     self.values.jpeg_quality = value;
                 }
                 let label = tr(&ctx, "export-jpeg-subsample");
@@ -868,7 +908,13 @@ impl Export {
                 }
                 let label = tr(&ctx, "export-png-compression");
                 let compression = f64::from(self.values.png_compression);
-                if let Some(value) = whole_slider(ui, &label, compression, 0.0..=9.0, 5.0) {
+                if let Some(value) = whole_slider(
+                    ui,
+                    &label,
+                    compression,
+                    0.0..=9.0,
+                    EXPORT_PNG_COMPRESSION.default().into(),
+                ) {
                     self.values.png_compression = value;
                 }
             }
@@ -891,7 +937,13 @@ impl Export {
             .iter()
             .position(|(m, _)| *m == self.values.size_mode)
             .unwrap_or(0);
-        if let Some(ChoiceAction::Set(i)) = choice(&label, &modes, current).show(ui) {
+        // What the size comes to is the row's tooltip, not a line under it.
+        let tip = self.size_tip(&ctx);
+        let mut chooser = choice(&label, &modes, current);
+        if let Some(tip) = &tip {
+            chooser = chooser.promise(tip).description(tip);
+        }
+        if let Some(ChoiceAction::Set(i)) = chooser.show(ui) {
             self.values.size_mode = SizeMode::OPTIONS[i].0;
         }
         let v = &mut self.values;
@@ -900,7 +952,8 @@ impl Export {
                 let unit = tr(&ctx, "unit-pixels");
                 let name = tr(&ctx, "export-size-pixels");
                 let shown = [v.width, v.height].map(f64::from);
-                let [w, h] = size_fields(ui, t, &name, shown, 0, 100_000.0, &unit);
+                let (typed, _) = size_line(ui, t, &name, shown, 0, 100_000.0, &unit, None);
+                let [w, h] = typed;
                 v.width = w.map_or(v.width, |typed| typed.round() as u32);
                 v.height = h.map_or(v.height, |typed| typed.round() as u32);
             }
@@ -930,7 +983,8 @@ impl Export {
                     .filter(|p| p.mode == v.size_mode && p.pixels == [v.width, v.height]);
                 let mut lengths =
                     held.map_or_else(|| [shown(v.width), shown(v.height)], |p| p.lengths);
-                let typed = size_fields(ui, t, &name, lengths, 2, 10_000.0, &unit);
+                // One line: the lengths, the unit, @ and the resolution.
+                let (typed, new) = size_line(ui, t, &name, lengths, 2, 10_000.0, &unit, Some(dpi));
                 let mut pixels = [v.width, v.height];
                 for (i, typed) in typed.into_iter().enumerate() {
                     if let Some(length) = typed {
@@ -938,31 +992,6 @@ impl Export {
                         pixels[i] = pixels_of(length, cm, dpi);
                     }
                 }
-                // The resolution.
-                let name = tr(&ctx, "export-dpi");
-                let unit = tr(&ctx, "export-dpi-unit");
-                let mut new = None;
-                end_row(ui, t, &name, field_inset(t), |ui| {
-                    let field = ValueField::new(
-                        egui::Id::unique("export dpi"),
-                        &name,
-                        f64::from(dpi),
-                        72.0..=9600.0,
-                    )
-                    .unit(&unit)
-                    .number_only();
-                    let room = field.width(ui);
-                    ui.allocate_ui(vec2(room, t.sizes.field), |ui| {
-                        if let (_, Some(value)) = field.show(ui) {
-                            new = Some(value.round() as u32);
-                        }
-                    });
-                    ui.label(
-                        RichText::new(unit.clone())
-                            .size(t.text.small)
-                            .color(t.colors.text_secondary),
-                    );
-                });
                 if let Some(new) = new {
                     pixels = lengths.map(|length| pixels_of(length, cm, new));
                     v.dpi = new;
@@ -973,11 +1002,6 @@ impl Export {
                     lengths,
                     pixels,
                 });
-                let mut args = Args::new();
-                args.set("width", v.width.to_string());
-                args.set("height", v.height.to_string());
-                let line = translator(&ctx).text_with("export-equal-to", Some(&args));
-                note(ui, t, line, t.colors.text_secondary);
             }
             SizeMode::Scale => {
                 let name = tr(&ctx, "export-scale");
@@ -992,53 +1016,66 @@ impl Export {
                 if let Some(text) = new {
                     v.scale = text;
                 }
-                note(ui, t, tr(&ctx, "export-scale-tip"), t.colors.text_secondary);
             }
         }
-        self.size_line(ui, t);
+        self.size_problem(ui, t);
     }
 
-    /// What the active photo will be: its size and whether that is its full size, or the
-    /// problem that stops Export.
-    fn size_line(&self, ui: &mut Ui, t: &Theme) {
+    /// What the Set size row's tooltip says: what the active photo will be, its size and
+    /// whether that is its full size; in the print modes what the lengths come to in pixels,
+    /// and for a scale how it is written. None where there is nothing to say.
+    fn size_tip(&self, ctx: &egui::Context) -> Option<String> {
+        let words = translator(ctx);
+        let v = &self.values;
+        let mut lines = Vec::new();
+        if let Some((_, preview)) = &self.preview
+            && let Some(active) = &preview.size
+            && let Ok(size) = &active.size
+        {
+            let mut args = Args::new();
+            args.set("file", file_name_of(&active.source));
+            args.set("width", size.width.to_string());
+            args.set("height", size.height.to_string());
+            let full = size.scale == 1.0;
+            let limited = v.size_mode != SizeMode::Scale && (v.width > 0 || v.height > 0);
+            let bigger = (v.width > size.extent[0]) || (v.height > size.extent[1]);
+            let id = if !full {
+                "export-size"
+            } else if !v.upscale
+                && (bigger || v.size_mode == SizeMode::Scale && size::scale_factor(&v.scale) > 1.0)
+            {
+                "export-size-capped"
+            } else if v.size_mode != SizeMode::Scale && !limited {
+                "export-size-no-limit"
+            } else {
+                "export-size-full"
+            };
+            lines.push(words.text_with(id, Some(&args)));
+        }
+        match v.size_mode {
+            SizeMode::Cm | SizeMode::Inch => {
+                let mut args = Args::new();
+                args.set("width", v.width.to_string());
+                args.set("height", v.height.to_string());
+                lines.push(words.text_with("export-equal-to", Some(&args)));
+            }
+            SizeMode::Scale => lines.push(tr(ctx, "export-scale-tip")),
+            SizeMode::Pixels => {}
+        }
+        (!lines.is_empty()).then(|| lines.join("\n"))
+    }
+
+    /// The problem with the size that stops Export, `error` under its rows: a size over the
+    /// format's limit, or one that leaves no pixel.
+    fn size_problem(&self, ui: &mut Ui, t: &Theme) {
         let ctx = ui.ctx().clone();
         let Some((_, preview)) = &self.preview else {
             return;
         };
-        let Some(active) = &preview.size else {
-            return;
-        };
-        let file = active
-            .source
-            .file_name()
-            .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_default();
-        let mut args = Args::new();
-        args.set("file", file);
-        match &active.size {
-            Ok(size) => {
-                args.set("width", size.width.to_string());
-                args.set("height", size.height.to_string());
-                let v = &self.values;
-                let full = size.scale == 1.0;
-                let limited = v.size_mode != SizeMode::Scale && (v.width > 0 || v.height > 0);
-                let bigger = (v.width > size.extent[0]) || (v.height > size.extent[1]);
-                let id = if !full {
-                    "export-size"
-                } else if !v.upscale
-                    && (bigger
-                        || v.size_mode == SizeMode::Scale && size::scale_factor(&v.scale) > 1.0)
-                {
-                    "export-size-capped"
-                } else if v.size_mode != SizeMode::Scale && !limited {
-                    "export-size-no-limit"
-                } else {
-                    "export-size-full"
-                };
-                let line = translator(&ctx).text_with(id, Some(&args));
-                note(ui, t, line, t.colors.text_secondary);
-            }
-            Err(problem) => note(ui, t, size_problem(&ctx, problem), t.colors.error),
+        if let Some(active) = &preview.size
+            && let Err(problem) = &active.size
+        {
+            note(ui, t, size_problem(&ctx, problem), t.colors.error);
         }
     }
 
@@ -1066,54 +1103,6 @@ impl Export {
             } else {
                 Profile::Srgb
             };
-        }
-    }
-
-    /// The Export button, primary, the section's full width, and what the tool says of
-    /// exporting under it. Disabled with its reason as its tooltip where Export cannot run.
-    /// Returns whether it was pressed.
-    fn button(&mut self, ui: &mut Ui, t: &Theme) -> bool {
-        let ctx = ui.ctx().clone();
-        let reason = self.cannot_export(&ctx);
-        let mut args = Args::new();
-        args.set("count", PHOTOS as f64);
-        let words = translator(&ctx).text_with("export-button", Some(&args));
-        let mut button = Button::new(&words)
-            .primary(true)
-            .enabled(reason.is_none())
-            .width(ui.available_width());
-        if let Some(why) = &reason {
-            button = button.tip(why);
-        }
-        let pressed = button.show(ui).clicked();
-        ui.add_space(t.spacing.s);
-        note(ui, t, tr(&ctx, "export-hint"), t.colors.text_secondary);
-        pressed
-    }
-
-    /// Why Export cannot run, in words, if it cannot: the session has found a problem with
-    /// the path, its folder or the size (D8). Until the session answers there is none to find;
-    /// it checks again as the job starts.
-    fn cannot_export(&self, ctx: &egui::Context) -> Option<String> {
-        let say = |id: &str, problem: &str| {
-            let mut args = Args::new();
-            args.set("problem", problem);
-            translator(ctx).text_with(id, Some(&args))
-        };
-        if !self.photo {
-            return Some(tr(ctx, "export-why-no-photo"));
-        }
-        if let Some(problem) = self.path_problem(ctx) {
-            return Some(say("export-why-path", &problem.text));
-        }
-        // Overwrite kept from a platform that asks: no question here, so no export.
-        if !self.alerts && asks_before(self.values.on_conflict) {
-            return Some(tr(ctx, "export-conflict-overwrite-no-alert"));
-        }
-        let (_, preview) = self.preview.as_ref()?;
-        match &preview.size.as_ref()?.size {
-            Ok(_) => None,
-            Err(problem) => Some(say("export-why-size", &size_problem(ctx, problem))),
         }
     }
 }
@@ -1268,7 +1257,14 @@ pub(crate) fn shown(path: &Path, home: Option<&Path>) -> String {
     }
 }
 
-/// A note under a row, in the small text.
+/// The name of the file at `path`, as shown.
+fn file_name_of(path: &Path) -> String {
+    path.file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default()
+}
+
+/// A problem under a row, in the small text: what stops Export, the one line a row keeps.
 fn note(ui: &mut Ui, t: &Theme, text: impl Into<String>, colour: Color32) {
     ui.add(Label::new(RichText::new(text.into()).size(t.text.small).color(colour)).wrap());
 }
@@ -1315,6 +1311,30 @@ fn end_row(ui: &mut Ui, t: &Theme, label: &str, inset: f32, add: impl FnOnce(&mu
     });
 }
 
+/// A row of No and Yes, darktable's choice for a setting that is on or off: the new value
+/// where the person chose the other. `promise` is its tooltip; a disabled row gives none.
+fn no_or_yes(
+    ui: &mut Ui,
+    label: &str,
+    on: bool,
+    enabled: bool,
+    promise: Option<&str>,
+) -> Option<bool> {
+    let (no, yes) = (
+        tr(ui.ctx(), "export-option-no"),
+        tr(ui.ctx(), "export-option-yes"),
+    );
+    let options = [no.as_str(), yes.as_str()];
+    let mut row = choice(label, &options, usize::from(on)).enabled(enabled);
+    if let Some(promise) = promise {
+        row = row.promise(promise);
+    }
+    match row.show(ui)? {
+        ChoiceAction::Set(i) => Some(i == 1),
+        _ => None,
+    }
+}
+
 /// A dropdown row as a tool panel draws one: Blended, darktable's combobox, the option at
 /// the row's end with no box (decision 42).
 fn choice<'a>(label: &'a str, options: &'a [&'a str], selected: usize) -> Choice<'a> {
@@ -1331,9 +1351,13 @@ fn pixels_of(length: f64, cm: bool, dpi: u32) -> u32 {
     }
 }
 
-/// The width and height fields of a size row, `name` its label, `unit` after them. They
-/// show `width` and `height` with `decimals`. Returns what the user typed in each.
-fn size_fields(
+/// The size row, on one line with no label: the width and height fields sharing the row's
+/// width, `×` between them and `unit` after, and with a `dpi` the resolution, "@" then its
+/// field then dpi. `name` is the row's name to screen readers, a group of the fields. They
+/// show `width` and `height` with `decimals`. Returns what the user typed in each, and the
+/// resolution typed.
+#[allow(clippy::too_many_arguments)]
+fn size_line(
     ui: &mut Ui,
     t: &Theme,
     name: &str,
@@ -1341,45 +1365,105 @@ fn size_fields(
     decimals: usize,
     reach: f64,
     unit: &str,
-) -> [Option<f64>; 2] {
+    dpi: Option<u32>,
+) -> ([Option<f64>; 2], Option<u32>) {
     let ctx = ui.ctx().clone();
     let mut changed = [None; 2];
-    end_row(ui, t, name, field_inset(t), |ui| {
-        for (i, (value, side)) in [(width, "export-width"), (height, "export-height")]
-            .into_iter()
-            .enumerate()
-        {
-            if i == 1 {
+    let mut new_dpi = None;
+    let small = egui::FontId::proportional(t.text.small);
+    let wide = |ui: &Ui, text: &str| {
+        ui.painter()
+            .layout_no_wrap(text.to_owned(), small.clone(), t.colors.text_secondary)
+            .size()
+            .x
+    };
+    let dpi_unit = tr(&ctx, "export-dpi-unit");
+    let dpi_name = tr(&ctx, "export-dpi");
+    let scope = ui.scope(|ui| {
+        ui.spacing_mut().item_spacing.x = t.spacing.s;
+        ui.set_min_height(t.sizes.panel_line);
+        ui.horizontal(|ui| {
+            ui.set_min_height(t.sizes.panel_line);
+            let gap = t.spacing.s;
+            let dpi_field = dpi.map(|dpi| {
+                ValueField::new(
+                    egui::Id::unique("export dpi"),
+                    &dpi_name,
+                    f64::from(dpi),
+                    72.0..=9600.0,
+                )
+                .unit(&dpi_unit)
+                .number_only()
+            });
+            // The labels and the gaps take what they need; the fields share the rest, the
+            // resolution's by its number's width where there is room, and all shrink alike
+            // where there is not, so nothing runs past the row.
+            let mut fixed = wide(ui, "×") + wide(ui, unit) + 3.0 * gap;
+            if dpi_field.is_some() {
+                fixed += wide(ui, "@") + wide(ui, &dpi_unit) + 3.0 * gap;
+            }
+            let room = ui.available_width() - field_inset(t) - fixed;
+            let dpi_width = dpi_field
+                .as_ref()
+                .map(|field| field.width(ui).min(room * 0.8 / 2.8).floor());
+            let each = ((room - dpi_width.unwrap_or(0.0)) / 2.0).floor().max(8.0);
+            let label = |ui: &mut Ui, text: &str| {
                 ui.label(
-                    RichText::new("×")
+                    RichText::new(text)
                         .size(t.text.small)
                         .color(t.colors.text_secondary),
                 );
-            }
-            let side = tr(&ctx, side);
-            let field = ValueField::new(
-                egui::Id::unique(("export side", i)),
-                &side,
-                value,
-                0.0..=reach,
-            )
-            .decimals(decimals)
-            .unit(unit)
-            .number_only();
-            let room = field.width(ui);
-            ui.allocate_ui(vec2(room, t.sizes.field), |ui| {
-                if let (_, Some(typed)) = field.show(ui) {
-                    changed[i] = Some(typed);
+            };
+            for (i, (value, side)) in [(width, "export-width"), (height, "export-height")]
+                .into_iter()
+                .enumerate()
+            {
+                if i == 1 {
+                    label(ui, "×");
                 }
+                let side = tr(&ctx, side);
+                let field = ValueField::new(
+                    egui::Id::unique(("export side", i)),
+                    &side,
+                    value,
+                    0.0..=reach,
+                )
+                .decimals(decimals)
+                .unit(unit)
+                .number_only();
+                ui.allocate_ui(vec2(each, t.sizes.field), |ui| {
+                    if let (_, Some(typed)) = field.show(ui) {
+                        changed[i] = Some(typed);
+                    }
+                });
+            }
+            label(ui, unit);
+            if let Some(field) = dpi_field {
+                label(ui, "@");
+                let room = dpi_width.unwrap_or(0.0);
+                ui.allocate_ui(vec2(room, t.sizes.field), |ui| {
+                    if let (_, Some(value)) = field.show(ui) {
+                        new_dpi = Some(value.round() as u32);
+                    }
+                });
+                label(ui, &dpi_unit);
+            }
+        });
+        // The row is a group named by what it holds, the fields inside it.
+        let at = ui.min_rect();
+        ui.ctx().accesskit_node_builder(ui.unique_id(), |node| {
+            node.set_role(egui::accesskit::Role::Group);
+            node.set_label(name.to_owned());
+            node.set_bounds(egui::accesskit::Rect {
+                x0: f64::from(at.left()),
+                y0: f64::from(at.top()),
+                x1: f64::from(at.right()),
+                y1: f64::from(at.bottom()),
             });
-        }
-        ui.label(
-            RichText::new(unit)
-                .size(t.text.small)
-                .color(t.colors.text_secondary),
-        );
+        });
     });
-    changed
+    drop(scope);
+    (changed, new_dpi)
 }
 
 /// What the format list holds at a place.

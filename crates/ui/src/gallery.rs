@@ -241,6 +241,19 @@ fn button_states(ui: &mut Ui, t: &Theme) {
     row(ui, "Primary", &mut |ui, state| {
         Button::new("Export").primary(true).state(state).show(ui);
     });
+    // The Export tool's button where it cannot run: centred, a row high, drawn disabled yet
+    // a stop for the keyboard, its reason its tooltip.
+    row(ui, "Held off", &mut |ui, state| {
+        Button::new("Export")
+            .primary(true)
+            .centred(true)
+            .held_off(true)
+            .tip("Fix the path first.")
+            .width(72.0)
+            .height(crate::theme(ui.ctx()).sizes.row)
+            .state(state)
+            .show(ui);
+    });
     row(ui, "Quiet", &mut |ui, state| {
         ToolButton::new("Reset")
             .icon(Icon::Reset)
@@ -1166,7 +1179,7 @@ struct Demo {
     panel_width: Option<f32>,
     panel_tab: usize,
     tab_names: bool,
-    open: [bool; 7],
+    open: [bool; 8],
     exposure_tab: usize,
     peeking: Option<&'static str>,
     /// The scopes: a gradient measured, and the same half as bright again from a lower black,
@@ -1239,7 +1252,7 @@ impl Default for Demo {
             panel_width: None,
             panel_tab: 1,
             tab_names: true,
-            open: [true, false, false, true, false, false, false],
+            open: [true, false, false, true, false, false, false, false],
             exposure_tab: 0,
             peeking: None,
             gradient: Measured::of(gradient),
@@ -2063,6 +2076,16 @@ fn side_panel(page: &mut Ui, t: &Theme, demo: &mut Demo) {
                 "Colour grading",
                 "Vignette",
             ];
+            // A utility with a reset and presets of its own, as the Export tool's header: its
+            // reset, its presets button drawn disabled, and its options.
+            let out = Section::new("Export", open[7])
+                .utility_reset("Reset export")
+                .reset(false)
+                .utility_presets("Export presets", false, "Presets come in a later version")
+                .options(false)
+                .peek(peek)
+                .show(ui, |_| {});
+            scrolling_out.push((7, "Export", out));
             for (k, title) in tools.into_iter().enumerate() {
                 let i = k + 2;
                 let mut section = Section::new(title, open[i]).edits().peek(peek);
