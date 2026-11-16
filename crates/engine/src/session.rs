@@ -11081,10 +11081,10 @@ mod tests {
         let threads = std::thread::available_parallelism().map_or(1, |n| n.get());
         let workers = apertrust_base::jobs::workers(threads);
         let (session, wakes) = start_with(&gpu, &[], synthetic);
-        let ask = || {
+        let ask = |size| {
             Command::Library(LibraryCommand::PhotoThumbnails {
                 paths: photos.clone(),
-                size: 256,
+                size,
             })
         };
         // Each photo alone told, by its number and path; none has a picture.
@@ -11111,7 +11111,7 @@ mod tests {
         // number, since none was sent.
         let (hold, begun, permit) = export_job::testing::Hold::new();
         session.send(Command::HoldThumbnails(hold));
-        session.send(ask());
+        session.send(ask(256));
         begun.recv_timeout(TEST_WAIT).expect("a thumbnail begins");
         drop(permit);
         while alone_of(&events).len() < 2 {
@@ -11123,9 +11123,11 @@ mod tests {
         assert_eq!(told, each);
 
         // Held again, then a close: those held and those queued are dropped, none told.
+        // At another size, so no job is dropped as equal to one of the first ask's still
+        // ending after it told its photo.
         let (hold, begun, permit) = export_job::testing::Hold::new();
         session.send(Command::HoldThumbnails(hold));
-        session.send(ask());
+        session.send(ask(128));
         for _ in 0..workers.min(2) {
             begun.recv_timeout(TEST_WAIT).expect("a thumbnail begins");
         }
