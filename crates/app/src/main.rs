@@ -2358,6 +2358,8 @@ impl Shell {
         State {
             view: self.view,
             photo,
+            // The app's, from the session's mirror ([`App::shell_state`]).
+            live: false,
             edited,
             // The app's, from the photo's history ([`App::shell_state`]).
             undo: false,
@@ -3795,6 +3797,7 @@ impl App {
         let options = history_options(&self.mirror, self.shell.discard, ctx.os());
         State {
             shown: !self.mirror.folder.order().is_empty(),
+            live: open && self.mirror.live(),
             opened: opened(&self.mirror),
             undo: history.is_some_and(|h| h.undo.is_some()),
             redo: history.is_some_and(|h| h.redo.is_some()),
@@ -4424,7 +4427,9 @@ impl App {
     ) -> Option<ActionId> {
         surround_menu(ctx, slot, photo, |at| {
             let state = self.state(ctx);
-            menus::context(ctx, &self.shell.keymap, &state, &menus::BACKGROUND, at)
+            let anchor = egui::Rect::from_min_size(at, egui::Vec2::ZERO);
+            let (place, target) = (menus::Place::Surround, menus::Target::App);
+            menus::context(ctx, place, &target, &self.shell.keymap, &state, anchor)
         })
     }
 
@@ -9933,7 +9938,9 @@ mod tests {
                     let shell = &surround.shell;
                     let chosen = surround_menu(&ctx, &slot, None, |at| {
                         let state = shell.state(&ctx, false, false);
-                        menus::context(&ctx, &shell.keymap, &state, &menus::BACKGROUND, at)
+                        let anchor = egui::Rect::from_min_size(at, egui::Vec2::ZERO);
+                        let (place, target) = (menus::Place::Surround, menus::Target::App);
+                        menus::context(&ctx, place, &target, &shell.keymap, &state, anchor)
                     });
                     surround.chosen.extend(chosen);
                     popup::show(&ctx);

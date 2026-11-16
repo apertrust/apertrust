@@ -184,6 +184,7 @@ static DEFINITION: Definition = Definition {
     views: &VIEWS,
     pickers: &[],
     // darktable's `description()` in src/iop/temperature.c at the reference release.
+    menus: &[],
     facts: Some(Facts {
         purpose: Purpose::Corrective,
         input: Fact::LinearRawSceneReferred,

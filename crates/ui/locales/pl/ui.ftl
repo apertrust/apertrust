@@ -756,6 +756,11 @@ menu-minimise = Minimalizuj
 menu-zoom-window = Powiększ
 menu-bring-all-to-front = Umieść wszystko na wierzchu
 
+## Menu kontekstowe
+
+context-menu-photo = Zdjęcie
+context-menu-thumbnail = Miniatura
+
 ## Historia edycji: nazwa kroku
 
 history-reset = Resetowanie

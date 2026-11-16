@@ -609,6 +609,7 @@ mod tests {
             presets: &[],
             views: &[],
             pickers: &[],
+            menus: &[],
             facts: None,
         };
         LOCAL_CONTRAST.check().unwrap();
@@ -666,6 +667,7 @@ mod tests {
             presets: &[],
             views: &[],
             pickers: &[],
+            menus: &[],
             facts: None,
         };
         CHECKER.check().unwrap();
@@ -766,6 +768,7 @@ mod tests {
             presets: &[],
             views: &[],
             pickers: &[],
+            menus: &[],
             facts: None,
         };
         LEVELS.check().unwrap();

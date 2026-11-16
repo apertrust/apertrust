@@ -268,6 +268,11 @@ pub enum Intent {
 pub struct State {
     pub view: View,
     pub photo: bool,
+    /// Whether the photo open is live, its values taking changes and its frames coming
+    /// (decision 77): not yet while it opens, as a photo just made active does, when the
+    /// photo's and a thumbnail's menus show an item that cannot run yet disabled, not
+    /// hidden (decision 91; `menus::context`).
+    pub live: bool,
     pub edited: bool,
     /// Whether the open photo's history has something for Undo, and for Redo, to do, and
     /// takes them: live and not open for viewing only (decision 78).
@@ -1950,6 +1955,7 @@ mod tests {
         State {
             view: View::Edit,
             photo: true,
+            live: true,
             edited: true,
             undo: true,
             redo: true,

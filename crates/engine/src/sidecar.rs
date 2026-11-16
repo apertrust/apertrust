@@ -1021,6 +1021,7 @@ pub(crate) mod tests {
         presets: &[],
         views: &[],
         pickers: &[],
+        menus: &[],
         facts: None,
     };
 

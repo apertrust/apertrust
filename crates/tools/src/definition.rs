@@ -79,6 +79,11 @@ pub struct Definition {
     /// Nothing is stored under them: the session measures the photo and the tool's
     /// [`crate::Tool::pick`] writes its controls.
     pub pickers: &'static [Picker],
+    /// The items it adds to context menus (decision 91; `docs/gui.md`, Context menus), each
+    /// one of its own actions at a place; none for a tool with nothing to add. The app
+    /// builds the menus, its group after the place's own and the tools before it in
+    /// pipeline order.
+    pub menus: &'static [MenuItem],
     /// darktable's facts about the module the tool is, from its `description()` at the
     /// reference release (`docs/gui.md`, The header's tooltip): what its header's tooltip
     /// says after the tool's sentence, `tool-<tool>-description`. `None` for a tool that
@@ -130,6 +135,59 @@ pub struct Picker {
     /// ([`crate::messages::setting_option_promise`]). `None` for a picker with one
     /// promise.
     pub words_by: Option<&'static str>,
+}
+
+/// A context menu tools add items to (decision 91; `docs/gui.md`, Context menus). The
+/// list is closed: the app's other places, as the surround's, hold the app's items alone.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum Place {
+    /// The photo in the central panel.
+    Photo,
+    /// A thumbnail: a cell of the grid panel, or of Photo while several photos show.
+    Thumbnail,
+    /// The tool's own options, ⋯, in its own section only.
+    Options,
+}
+
+impl Place {
+    /// The most items one tool or utility adds here: two in the photo's and a thumbnail's
+    /// menus, four in ⋯.
+    pub const fn most(self) -> usize {
+        match self {
+            Place::Photo | Place::Thumbnail => 2,
+            Place::Options => 4,
+        }
+    }
+}
+
+/// One item a tool or a utility adds to a context menu: an action, at a place. Every item
+/// is an action of the app's registry, which builds the menu and runs it; the tool runs no
+/// code there.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MenuItem {
+    pub place: Place,
+    /// A tool's: one of its own actions, a [`Row::Action`]'s or a [`Row::Buttons`] button's
+    /// id, which the app's registry holds as `tool-<tool>-<action>`. A utility's
+    /// ([`crate::about::Utility::menus`]): the registry action that runs it, by its id, as
+    /// History's Discard History… is `discard-history`.
+    pub action: &'static str,
+}
+
+/// Whether `items`, one tool's or one utility's, hold together: none listed twice in its
+/// place, and no place holding more than it takes ([`Place::most`]).
+pub fn check_menus(items: &[MenuItem]) -> Result<(), DefinitionError> {
+    for (i, item) in items.iter().enumerate() {
+        if items[..i].contains(item) {
+            return Err(DefinitionError::DuplicateMenuItem(item.action));
+        }
+    }
+    for place in [Place::Photo, Place::Thumbnail, Place::Options] {
+        let held = items.iter().filter(|item| item.place == place).count();
+        if held > place.most() {
+            return Err(DefinitionError::MenuItems(place));
+        }
+    }
+    Ok(())
 }
 
 /// Whether a picker takes a point, an area or either: darktable's
@@ -948,6 +1006,12 @@ pub enum DefinitionError {
     NoPickers,
     #[error("the picker {picker} is in {rows} rows; each is in exactly one")]
     PickerRows { picker: &'static str, rows: usize },
+    #[error("a context menu item names {0}, none of the tool's actions")]
+    UnknownMenuAction(&'static str),
+    #[error("the context menu item {0} is listed twice in its place")]
+    DuplicateMenuItem(&'static str),
+    #[error("more items in the {0:?} menu than one tool may add there")]
+    MenuItems(Place),
 }
 
 /// snake_case ASCII: a lowercase letter, then lowercase letters, digits and single
@@ -1082,7 +1146,9 @@ impl Definition {
     /// shown wherever they are, for options it has, and hold no control and not it. A
     /// reference row's picker writes no control, and its two settings are the tool's,
     /// each once. A last
-    /// pick row names a picker of the tool that writes controls, once.
+    /// pick row names a picker of the tool that writes controls, once. Each context menu
+    /// item names one of its actions, once in its place, and no place holds more of
+    /// them than it takes ([`check_menus`]).
     pub fn check(&self) -> Result<(), DefinitionError> {
         if !is_id(self.id) {
             return Err(DefinitionError::Id(self.id));
@@ -1473,7 +1539,14 @@ impl Definition {
                 });
             }
         }
-        Ok(())
+        if let Some(item) = self
+            .menus
+            .iter()
+            .find(|item| !actions.contains(&item.action))
+        {
+            return Err(DefinitionError::UnknownMenuAction(item.action));
+        }
+        check_menus(self.menus)
     }
 
     /// Whether a picker's writes are controls of the tool and the settings it reads
@@ -2004,6 +2077,7 @@ mod tests {
         presets: &[],
         views: &[],
         pickers: &[],
+        menus: &[],
         facts: None,
     };
 
@@ -2130,6 +2204,7 @@ mod tests {
         presets: &[],
         views: &[],
         pickers: &[],
+        menus: &[],
         facts: None,
     };
 
@@ -2635,6 +2710,94 @@ mod tests {
         assert_eq!(
             page(with_mode(&named)).check(),
             Err(DefinitionError::Id("Auto tune"))
+        );
+    }
+
+    /// [`page`] with a row of buttons and action rows, five actions in all, adding `menus`
+    /// to context menus.
+    fn with_menus(menus: &[MenuItem]) -> Definition {
+        let rows = [
+            Row::Buttons {
+                control: "contrast",
+                buttons: &[Button {
+                    id: "rotate",
+                    icon: ButtonIcon::RotateLeft,
+                }],
+            },
+            Row::Action { id: "auto_tune" },
+            Row::Action {
+                id: "set_from_above",
+            },
+            Row::Action { id: "pick" },
+            Row::Action { id: "clear" },
+        ];
+        Definition {
+            menus: Box::leak(menus.to_vec().into_boxed_slice()),
+            ..page(with_mode(&rows))
+        }
+    }
+
+    const fn item(place: Place, action: &'static str) -> MenuItem {
+        MenuItem { place, action }
+    }
+
+    /// Decision 91: a tool's context menu items name its own actions, a row's or a
+    /// button's, each once in its place though in several places, and at most two in the
+    /// photo's and a thumbnail's menus and four in ⋯.
+    #[test]
+    fn a_tool_s_menu_items_name_its_actions_once_each_within_each_place_s_limit() {
+        assert_eq!(with_menus(&[]).check(), Ok(()));
+        let each = with_menus(&[
+            item(Place::Photo, "auto_tune"),
+            item(Place::Photo, "rotate"),
+            item(Place::Thumbnail, "auto_tune"),
+            item(Place::Options, "auto_tune"),
+        ]);
+        assert_eq!(each.check(), Ok(()));
+        // An item naming none of its actions, as one naming a registry action of the app's.
+        let unknown = with_menus(&[item(Place::Photo, "discard-history")]);
+        assert_eq!(
+            unknown.check(),
+            Err(DefinitionError::UnknownMenuAction("discard-history"))
+        );
+        let twice = with_menus(&[
+            item(Place::Options, "rotate"),
+            item(Place::Options, "rotate"),
+        ]);
+        assert_eq!(
+            twice.check(),
+            Err(DefinitionError::DuplicateMenuItem("rotate"))
+        );
+        // Up to each place's limit, and one more.
+        let actions = ["auto_tune", "rotate", "set_from_above", "pick", "clear"];
+        for (place, most) in [
+            (Place::Photo, 2),
+            (Place::Thumbnail, 2),
+            (Place::Options, 4),
+        ] {
+            assert_eq!(place.most(), most);
+            let items: Vec<MenuItem> = actions.iter().map(|a| item(place, a)).collect();
+            assert_eq!(with_menus(&items[..most]).check(), Ok(()), "{place:?}");
+            assert_eq!(
+                with_menus(&items[..=most]).check(),
+                Err(DefinitionError::MenuItems(place))
+            );
+        }
+        // The same limits hold a utility's items, which name the registry's actions.
+        let history = [
+            item(Place::Photo, "discard-history"),
+            item(Place::Thumbnail, "discard-history"),
+            item(Place::Options, "discard-history"),
+        ];
+        assert_eq!(check_menus(&history), Ok(()));
+        let crowded = [
+            item(Place::Photo, "discard-history"),
+            item(Place::Photo, "undo"),
+            item(Place::Photo, "redo"),
+        ];
+        assert_eq!(
+            check_menus(&crowded),
+            Err(DefinitionError::MenuItems(Place::Photo))
         );
     }
 
@@ -3432,6 +3595,7 @@ mod tests {
             presets: &[],
             views: &[],
             pickers: &[],
+            menus: &[],
             facts: None,
         };
         assert_eq!(
@@ -3501,6 +3665,7 @@ mod tests {
             presets: &[],
             views: &[],
             pickers: &[],
+            menus: &[],
             facts: None,
         };
         assert_eq!(with(&CONTROLS[..1], VIEWED).check(), Ok(()));

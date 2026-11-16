@@ -5965,6 +5965,7 @@ mod tests {
         presets: &[],
         views: &[],
         pickers: &[],
+        menus: &[],
         facts: None,
     };
 
@@ -6371,6 +6372,7 @@ mod tests {
         presets: &[],
         views: &[],
         pickers: &[],
+        menus: &[],
         facts: None,
     };
 
@@ -7795,6 +7797,7 @@ mod tests {
             }],
         }],
         pickers: &[],
+        menus: &[],
         facts: None,
     };
 
@@ -8603,6 +8606,7 @@ mod tests {
         }],
         views: &[],
         pickers: &[],
+        menus: &[],
         facts: None,
     };
 

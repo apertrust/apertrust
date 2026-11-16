@@ -265,6 +265,7 @@ static DEFINITION: Definition = Definition {
             words_by: None,
         },
     ],
+    menus: &[],
     facts: None,
 };
 
@@ -572,6 +573,7 @@ static FAULTY: Definition = Definition {
     presets: &[],
     views: &[],
     pickers: &[],
+    menus: &[],
     facts: None,
 };
 
@@ -672,6 +674,7 @@ static DEFAULTLESS: Definition = Definition {
     presets: &[],
     views: &[],
     pickers: &[],
+    menus: &[],
     facts: None,
 };
 
@@ -794,6 +797,7 @@ static TWIN: Definition = Definition {
         },
     ],
     pickers: &[],
+    menus: &[],
     facts: None,
 };
 

@@ -980,6 +980,12 @@ menu-minimise = Minimise
 menu-zoom-window = Zoom
 menu-bring-all-to-front = Bring All to Front
 
+## Context menus, by what screen readers call them (decision 91): the photo's and a
+## thumbnail's
+
+context-menu-photo = Photo
+context-menu-thumbnail = Thumbnail
+
 ## The edit's history: a step's name, as History lists it and Undo and Redo name it
 
 # A step that put the whole edit back to nothing: Reset Edit.

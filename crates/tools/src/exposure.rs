@@ -315,6 +315,7 @@ static DEFINITION: Definition = Definition {
     views: &[],
     pickers: &[PICKER, REFERENCE_PICKER],
     // darktable's `description()` in src/iop/exposure.c at the reference release.
+    menus: &[],
     facts: Some(Facts {
         purpose: Purpose::CorrectiveAndCreative,
         input: Fact::LinearRgbSceneReferred,
