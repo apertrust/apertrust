@@ -22,7 +22,7 @@ What is Apertrust, beyond a rewrite of darktable, and what do product decisions 
 
 **Assistants are a core capability but not the headline.** They work through the same tools, history and undo as a person.
 
-**A native mobile app** for phones and tablets, designed for touch, is planned after Phase 3.
+**Touch** is planned after Phase 3: Touch mode, a mode of the one interface, for tablets, and a phone's layout, designed apart ([0094](0094-one-interface-standard-and-touch-modes.md)).
 
 **Image-quality results are published** where photographers can see them.
 

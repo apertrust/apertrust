@@ -21,6 +21,11 @@ How is the interface built so that its parts are reused, it can be themed and tr
 - one actions registry for buttons, menus, tooltips and rebindable shortcuts ([0039](0039-one-top-bar-native-menus-on-the-mac-one-menu-button-elsewhere.md)), an action with an icon a candidate for the toolbar ([0092](0092-the-toolbar.md), planned);
 - AccessKit on, each component reporting its role, full name and value;
 - one versioned settings file for the interface (theme, language, scale, keyboard map, workspace), never edits ([0043](0043-settings-and-apertrusts-folders.md));
+- four rules for interface code, which keep Touch mode an add-on ([0094](0094-one-interface-standard-and-touch-modes.md)):
+  - no hard-coded sizes in components: every height, width and gap a theme token;
+  - nothing reachable only by hover: a tooltip explains, never the only way;
+  - no action only on a right-click, a double-click or a modifier key: each also a visible control or a menu item;
+  - sliders and pickers only through their components (`SliderRow`, `PickerButton` and the like), never drawn by hand for one tool;
 - tests with `egui_kittest` through AccessKit, and gallery snapshots in every theme and the pseudo-locale on CI's software GPU, allowed 2/255 a channel and 2 pixels between GPUs.
 
 ## Options considered

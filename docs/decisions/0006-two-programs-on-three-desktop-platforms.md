@@ -19,7 +19,7 @@ Which platforms does Apertrust run on, and as which programs? Photographers edit
 
 Both programs take the same debug domains, `--version`, user data folder flags and `--conf` overrides ([0043](0043-settings-and-apertrusts-folders.md), [0044](0044-logging-the-banner-and-versions.md)).
 
-A native mobile app is a later phase ([0001](0001-what-apertrust-is-the-principles.md)); a browser reaches a native engine as a remote client, never running the engine itself ([0058](0058-a-native-engine-every-client-through-the-session-protocol.md)).
+Touch is a later phase: the app's interface in Touch mode on tablets, and a phone's layout ([0001](0001-what-apertrust-is-the-principles.md), [0094](0094-one-interface-standard-and-touch-modes.md)); a browser reaches a native engine as a remote client, never running the engine itself ([0058](0058-a-native-engine-every-client-through-the-session-protocol.md)).
 
 ## Options considered
 

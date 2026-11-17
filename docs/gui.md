@@ -11,7 +11,7 @@ What the interface looks like and how it behaves is designed on the [UI wirefram
 | Part | Sections |
 | --- | --- |
 | How it fits together | [What is built](#what-is-built), [Goals](#goals), [Why egui](#why-egui), [Display colour](#display-colour), [Layers](#layers), [A frame](#a-frame) |
-| Foundations | [Design system](#design-system) (tokens, themes, components, [on-photo overlays](#on-photo-overlays)), [Translation](#translation) |
+| Foundations | [Design system](#design-system) (tokens, themes, components, [rules for interface code](#rules-for-interface-code), [on-photo overlays](#on-photo-overlays)), [Translation](#translation), [Touch mode](#touch-mode) |
 | The window and the platform | [The window frame and menus](#the-window-frame-and-menus), [The menu bar](#the-menu-bar), [Popups](#popups), [Dialogs and alerts](#dialogs-and-alerts), [Sheets](#sheets), [The Export tool](#the-export-tool), [Instances and windows](#instances-and-windows), [The start window](#the-start-window) |
 | The panels | [The shell](#the-shell) (the layouts, selection, workspaces, the top panel, the side panel, the photo frame, the central bar, the caption, the grid panel), [Tool panels from definitions](#tool-panels-from-definitions) |
 | Controls | [Slider values and choices](#slider-values-and-choices), [Painted widgets](#painted-widgets): [the curve](#the-curve), [the equalizer](#the-equalizer), [the scopes](#the-scopes) |
@@ -60,7 +60,7 @@ winit's default app menu on macOS is off (`with_default_menu(false)` on the app'
 
 ## Why egui
 
-One egui codebase serves the desktop app and the desktop browser (decision 35); a native mobile app is planned after Phase 3 (decision 1). [session-protocol.md](session-protocol.md#web-tablets-and-remote-access) holds how the browser and tablets reach the engine.
+One egui codebase serves the desktop app and the desktop browser (decision 35), in two modes, Standard and Touch, Touch planned for tablets after Phase 3 and a phone's layout a later design ([Touch mode](#touch-mode), decision 94). [session-protocol.md](session-protocol.md#web-tablets-and-remote-access) holds how the browser and tablets reach the engine.
 
 **Why egui.** The image is drawn by a wgpu paint callback in the same frame as the UI: no compositing of two technologies, no IPC for pixels, and on-image overlays are more painting. Custom widgets (curves, the tone equalizer, colour wheels, scopes) suit its painter API. It compiles to wasm with production-ready web support, which settled the choice over Iced once desktop and web share one UI.
 
@@ -282,6 +282,15 @@ An interface for photo editing must not be too contrasty, so:
 - A component is built there before any panel uses it.
 - The snapshot tests photograph it whole, in every theme and in the pseudo-locale: its top 8000 points and, below, the rest (`gallery-<theme>-end`), since a GPU makes no texture over 8192 pixels a side.
 
+### Rules for interface code
+
+Standard is built now and Touch mode later ([Touch mode](#touch-mode)), so every component and panel follows four rules that keep Touch an add-on (decision 94). A review sends back code that breaks one; existing code that breaks one is fixed as it is next changed.
+
+1. **No hard-coded sizes in components.** Every height, width and gap comes from a theme token (`sizes.row`, `sizes.field`, `sizes.control` and the rest), so Touch mode is a second set of token values.
+2. **Nothing reachable only by hover.** A tooltip may explain; it is never the only way to do or find something.
+3. **No action only on a right-click, a double-click or a modifier key.** Each also has a visible control or a menu item, as every context menu item already has (decision 91).
+4. **Sliders and pickers only through their components,** `SliderRow`, `PickerButton` and the like, never drawn by hand for one tool, so their touch behaviour is one change in one place.
+
 ### Checkboxes, text buttons and icon buttons
 
 One model for the three controls, as the wireframe's "Controls · checkboxes, text buttons and icon buttons: states and places · decided" and "Controls · checkboxes, text buttons and icon buttons in dark, light and high contrast · decided" frames draw them. Built in `crates/ui/src/components`: `Checkbox`, `Button` and `ToolButton`, drawn from one plate, and `IconButton`, drawn with none (decision 81), all with one focus ring (`plate.rs`), each taking a `ButtonState` to be drawn in one state whatever the pointer does, as the gallery's strip of states shows them in each theme.
@@ -379,6 +388,20 @@ The interface is in British English, as the docs are (colour, grey, centre, cust
   - English messages change with the code, and Ukrainian and Polish change with them: the tests fail on a message missing from a language, on a translation English no longer has, and on a translation whose variables differ from English's. At run time, a message a translation lacks still falls back to English.
   - Before a release, a native speaker reviews each language's new messages; `crates/ui/locales/README.md` says which are still drafts.
   - Other languages come from contributors, on a platform that reads Fluent (Weblate does), once the repository is public.
+
+## Touch mode
+
+Planned for tablets in the mobile phase (decision 94), its design on the wireframe's Tablet page. The interface has two modes, Standard and Touch, with the same tabs, tools and sections, rows, actions registry, selection and session commands. Touch mode changes sizes, spacing and gestures, and makes two named layout adaptations that present the same parts: the side panel as a bottom sheet in portrait, and the Photos tab's Select mode with its batch bar. A phone's layout is a later, separate design.
+
+- **The setting:** Settings › General › Interface, Automatic, Standard or Touch (`interface.mode`), applied at once; View › Touch Mode (`touch-mode`) switches between Touch and Standard. Standard is the default on Windows, macOS and Linux, Automatic a choice there; Touch is the default on Android. Automatic picks Touch on a device with a touch screen and no pointer.
+- **Sizes:** targets of at least 44 points, rows about 1.7 times Standard's, from Touch's own token values ([rules for interface code](#rules-for-interface-code)).
+- **Sliders:** a sideways drag anywhere on the row moves the value from where it is; a tap changes nothing, and a vertical move scrolls. A long press opens [the slider popup](#the-slider-popup) at touch size, with its own keypad.
+- **Lists:** a finger sliding across the options previews each, and lifting chooses, in place of the preview on hover.
+- **Pickers:** a tap picks a point, a drag an area; two fingers zoom and pan.
+- **Context menus:** a long press opens the same menus a right-click does ([Context menus](#context-menus)).
+- **The photo:** a swipe at Fit does nothing.
+- **Portrait:** the side panel becomes a bottom sheet.
+- **The Photos tab:** a Select mode, in which a tap or a slide selects photos, with a batch bar.
 
 ## The window frame and menus
 
@@ -771,6 +794,7 @@ Phase 4: the menu appears with Layers, and its keys are set with their design. I
 | Dock All Floating Panels | `dock-all` | — | New, with the floating panels in the UX pass (decision 83); also in the side panel's ⋮ |
 | Side Panel on the Right, Side Panel on the Left | `panel-right`, `panel-left` | — | New, Phase 3 |
 | Interface Size → Larger, Smaller, Normal Size | `scale-up`, `scale-down`, `scale-reset` | None by default; Settings sets the size too | Built; its keys go |
+| Touch Mode, checked while on | `touch-mode` | — | New, with Touch mode in the mobile phase (decision 94); Settings › General sets it too |
 | — | | | |
 | Jobs | `show-jobs`: the jobs window with its rows, finished ones too, or brought to the front ([The jobs window](#the-jobs-window)) | Ctrl+Shift+J | Built, every platform |
 | — | | | |
@@ -1152,7 +1176,7 @@ A place opens to tools' items only by a decision of its own, which adds it to `a
 
 - A right-click opens a menu, as does a Control-click on the Mac; on a focused element, Shift+F10, the Menu key and AccessKit's ShowContextMenu do too (`components::context_menu`). It opens at the pointer, or under the element from the keys, natively on the Mac and drawn elsewhere.
 - While a picker is on, the photo's right-click is the picker's ([pickers.md](pickers.md#on-the-photo)), and later a mask's while one is being drawn.
-- The photo is no focus stop in Phase 2, so its menu has no key; a focused thumbnail's opens with Shift+F10 and the Menu key. A long press on touch and pen comes later.
+- The photo is no focus stop in Phase 2, so its menu has no key; a focused thumbnail's opens with Shift+F10 and the Menu key. A long press on touch and pen opens it in Touch mode, planned ([Touch mode](#touch-mode)).
 
 **While it is open** (`context_popup` in `main.rs`):
 
@@ -4259,6 +4283,7 @@ The decisions this design rests on, by area; each decision record has the option
 | Window frame | The top panel from the window's top edge on every platform: the Mac's traffic lights in it, caption buttons drawn by the app on Windows and Linux, Windows' snap layouts flyout through native hit testing; the system's title bar as a setting there, off by default; a minimum width of 500 points (decision 39) |
 | Context menus | Only in named places, the photo, a thumbnail and a tool's ⋯ open to tools' items, the only places `apertrust-tools`' `Place` has, the surround and the rest the app's own; each item a registry action, a tool's own generated as `tool-<tool>-<action>`, declared as data (`MenuItem`: `Definition::menus`, `Utility::menus`, the app's `APP_ITEMS`), at most two a tool on the photo and a thumbnail, a submenu of up to eight of its own actions one of them; the app building every menu, its items and the tools' sorted by `(section, order)`; no right-click on a tool; every item reachable without one; the first slice built, History's Reset and Orientation ▸ its items (decision 91; [Context menus](#context-menus)) |
 | Toolbar | The top panel a toolbar a person customises, everything but the caption buttons and the traffic lights; one list of item ids per workspace, tools' actions offered in `Definition::toolbar`; icons by default, Toolbar Labels app-wide; a right-click anywhere on it opening the toolbar menu; the settings file until a Customise Toolbar window (decision 92, planned; [The top panel](#the-top-panel)) |
+| Touch | One interface in two modes, Standard and Touch, Touch changing sizes, spacing and gestures, with two layout adaptations presenting the same parts (the portrait bottom sheet, Photos' Select mode); Interface in Settings › General and View › Touch Mode, Standard on the desktop, Touch on Android; no literal sizes, nothing only on hover, right-click, double-click or a modifier, sliders and pickers only through their components (decision 94) |
 | Popups | Native `NSMenu`s on the Mac for plain lists and context menus, from `apertrust-display`; drawn for what previews or holds controls, and on Windows and Linux; one popup service; the drawn ones on egui `Area`s, owning their plain keys while open through an egui plugin, drawn by `popup::show` once a frame (decision 40) |
 | Dialogs and alerts | Every dialog a native window of its own, modal to the window it rises from, hosted by the app beside eframe's window with its own egui context, AccessKit adapter and surface on the engine's device; made modal as each platform does it (on the Mac a sheet, and Settings alone modeless, a native window of its own; an owned window with its owner disabled on Windows; transient-for and the modal state on X11; a parent on Wayland, with modality kept by the app); confirmations the system's alerts through one alert service, `NSAlert` and the task dialog, Linux's Apertrust's own in a dialog window; About and a future splash screen Apertrust's own over the window (decision 41) |
 | Sheets | Import as a full-window sheet inside the main window, drawn the same on every platform: the sheet bar with the presets row over the column, a grid of the grid panel's cells checked to go, a column of tools on the side panel's side, 440 points by default, each with the tool panel's header, ↺ and ⋯ for Move Up and Move Down, every row a setting row; whole-sheet presets; a footer with a two-line summary, Keep open, Close and the primary button, which Return presses; a tool in one place (decision 86, planned; [Sheets](#sheets)) |

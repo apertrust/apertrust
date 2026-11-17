@@ -214,7 +214,7 @@ Requirements every feature meets. They are not principles, because nobody would 
   - video;
   - archive-scale photo management, later;
   - a web version for a home server, later;
-  - a native mobile app, planned after the desktop editor is ready for daily use.
+  - touch, planned after the desktop editor is ready for daily use: Touch mode of the one interface for tablets, and a phone's layout.
 
 ## How we will know it works
 
