@@ -183,7 +183,7 @@ Port specs, tool pages and code cite these by number.
     - Its own menu is its header's ⋯, its presets the header's presets button.
     - Planned: it may add items to the photo's and a thumbnail's right-click menus, at most two each, and to its own ⋯, at most four, declared in `Definition::menus`, each naming one of its own actions (`Row::Action`, a button of `Row::Buttons`) and placed by its `section` (from `EDIT` to below `LAYOUT`, after Reset) and `order`, as the app's own items are, which the registry holds as `tool-<tool>-<action>`. A tool with nothing to add declares nothing, and a utility declares its items in `utility::UTILITIES` (`Utility::menus`, planned too).
     - Every item it adds is reachable without a right-click, and each one in the photo's or a thumbnail's menu is listed on the tool's page.
-    - It may offer up to two of its actions for the toolbar (decision 92; [gui.md](../gui.md#the-toolbar)), in `Definition::toolbar` with an icon of `apertrust-ui`'s by name, a `Row::Buttons` action taking its button's; offered, an action is on the toolbar only where a person places it. A utility offers its own in `utility::UTILITIES`.
+    - Planned: it may offer up to two of its actions for the toolbar (decision 92; [gui.md](../gui.md#the-toolbar)), in `Definition::toolbar` with an icon of `apertrust-ui`'s by name, a `Row::Buttons` action taking its button's; offered, an action is on the toolbar only where a person places it. A utility offers its own in `utility::UTILITIES` (`Utility::toolbar`, planned too).
 
 ### Switched tools
 

@@ -35,7 +35,7 @@ There is one ordered list of item ids for each workspace. The caption buttons an
 | Parts | `menu-button` (Windows and Linux), `mark`, `jobs`, `save-state`, `assistant` (Phase 6) | One each |
 | The app's actions | A registry action that is pressed or toggled and has an icon: Import…, Export…, Export Again, Cull, Reset, Undo, Redo, Copy edit, Apply edit, Copy or Apply Parts…, Open…, Open Folder…, Before and After, Clipping Warnings, Zoom to 100%, Zoom to Fit, Full Screen, Jobs, Browse, Show in Folder, Next Photo, Previous Photo, Settings… | One each |
 | Tools' actions | A generated `tool-<tool>-<action>` (91) that its tool offers for the toolbar | One each |
-| Spacing | `space`, 16 points; `flexible-space`, sharing what is left | Any number |
+| Spacing | `space`, 16 points; `flexible-space`, sharing what is left | Any number; the overflow removes fixed spaces as it narrows |
 
 - **Never placeable:** hold actions (H), focus moves (F6), the members of a set (the backgrounds, the workspaces), and the platform's own items.
 - **No separator line:** groups are told apart by space alone.
@@ -55,7 +55,7 @@ There is one ordered list of item ids for each workspace. The caption buttons an
 
 | Hidden | What still holds |
 | --- | --- |
-| The ☰ | F10, Alt alone on Windows and Alt with an access key still open the menus, hung from the toolbar's start; the toolbar menu gains Show Menu Button |
+| The ☰ | F10, Alt alone on Windows and Alt with an access key still open the menus, hung from the toolbar's start; View › Panels and the toolbar menu gain Show Menu Button, so the keys restore it |
 | The save state | A failed write still shows its warning and Not saved at the toolbar's end; the message over the photo, the live region and the quit alert are unchanged |
 | The jobs | The spinner shows while a failed job is left; View › Jobs and Ctrl+Shift+J still work |
 | The assistant | It shows whenever an assistant is connected |
@@ -79,6 +79,8 @@ The overflow always keeps 24 points of them. On Windows the hit map's `HTCAPTION
 3. a separator;
 4. Toolbar Labels, checked while on;
 5. Customise Toolbar…, drawn disabled until its window is built, its tip "Customise Toolbar comes in a later version".
+
+**Every item is reachable from the keys,** as decision 91 asks, whatever the toolbar shows: Hide "Undo" from Shift+F10 or the Menu key on that item, which is focusable while it is shown; the others in View › Panels, which F10 opens while the ☰ is hidden. Show Menu Button is there on Windows and Linux only, the Mac never showing the ☰. A toolbar with nothing focusable needs no keyboard route of its own, since nothing in its menu acts on it alone.
 
 **The system's window menu** is no longer on a right-click on the toolbar on Windows and Linux. It stays on the system's own key, Alt+Space on Windows and GNOME; X11 still has none, and the Mac's conventions are unchanged.
 
@@ -105,15 +107,16 @@ The overflow always keeps 24 points of them. On Windows the hit map's `HTCAPTION
 The toolbar is measured every frame at the current scale and language, and gives way one step at a time. A step is undone only once 16 points are spare.
 
 1. The labels fold, all at once.
-2. The fixed spaces narrow to 8 points.
+2. The fixed spaces narrow to 8 points, then go one at a time from the end, so that any number of them fits.
 3. The actions move into » (`top-panel-more`, 30 points) one at a time:
    - in reverse reading order, tools' items before the app's, Undo and Redo last;
-   - » stands just before the first flexible space.
+   - » stands just before the first flexible space, or, with none in the list, after the last item, at the toolbar's end before the caption buttons.
 4. The status words fold to their signs.
 5. Undo and Redo go into ».
 
 - » lists its items in the toolbar's order, with their keys, check marks and disabled states. It replaces the built ⋯ More actions and matches the side panel's ».
 - **Never folded:** the parts placed, », the caption buttons and 24 points of empty area.
+- **When even those do not fit,** at a large interface size, the window's minimum width grows to their width, so the bar never overlaps itself or the caption buttons and keeps its 24 points to move the window.
 - A test checks at 500 points, in every language, both platforms' defaults and a list with every part placed.
 
 ### Labels
@@ -147,6 +150,8 @@ The toolbar is measured every frame at the current scale and language, and gives
 
 - **A fixed top panel, as built.** No room for a person's own actions or a tool's.
 - **A palette inside the main window,** from which items are dragged onto the toolbar. Drags on a title bar compete with moving the window, and it is a second mode of the main window. A dedicated window is one place, and it can wait while the file serves.
+- **F6 landing on the toolbar itself when nothing in it is focusable,** with Shift+F10 there opening the toolbar menu. A focus stop with no control is a new kind of stop for one case; Show Menu Button in View › Panels uses the route F10 already keeps.
+- **A limit on fixed spaces.** A number would be arbitrary and still depend on the window's width; removing them as the bar narrows fits any number.
 - **Keeping the system's window menu on a right-click on empty space.** The toolbar menu would then open only on items, so a toolbar with every item hidden could never be reached from it, and one gesture would mean two things on one bar. The system's key keeps its menu.
 - **One toolbar for the app, or one per layout.** A toolbar suits a task as a workspace's tabs do (83). A layout is what the central panel shows, not a task.
 - **Labels per workspace, or per item.** Labels are about reading the bar, not about the task. One setting is simpler and folds as one step.
@@ -168,6 +173,8 @@ The toolbar is measured every frame at the current scale and language, and gives
   - the guards;
   - the toolbar menu;
   - `top_panel.labels` in the settings schema;
+  - Show Menu Button in View › Panels on Windows and Linux;
+  - the window's minimum width raised to what the toolbar never folds;
   - the tests: of the overflow at 500 points, of the parts' ids, of the icon names and of the words' width.
 - **`apertrust-tools`:** `ToolbarItem`, `Definition::toolbar` and `Utility::toolbar`, with their checks.
 - **Windows' native hit testing** (planned, `apertrust-display`): it takes a right-click on an `HTCAPTION` rectangle itself (`WM_NCRBUTTONUP`) and reports it, so Windows does not open its menu there.

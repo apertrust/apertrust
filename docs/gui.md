@@ -515,7 +515,7 @@ Through muda: built once the window exists, on the main thread, and handed to Ap
 
 One menu button, ☰, at the very start of the top panel, before the mark (decision 39), with the look and keys [the menu bar](#the-menu-bar) gives it. The Mac has no ☰: its menus are the native menu bar's.
 
-- **The button:** an icon button like the top panel's others, 30 points square, which never folds while shown, so the menus cost neither height nor a line of their own. From Phase 3 a person may hide it from the toolbar (decision 92, [The top panel](#the-top-panel)): F10, Alt alone on Windows and Alt with an access key still open the menu, hung from the toolbar's start, and the toolbar menu offers Show Menu Button. `TopPanel` draws it and reports `Menu`, as it reports its caption buttons.
+- **The button:** an icon button like the top panel's others, 30 points square, which never folds while shown, so the menus cost neither height nor a line of their own. From Phase 3 a person may hide it from the toolbar (decision 92, [The top panel](#the-top-panel)): F10, Alt alone on Windows and Alt with an access key still open the menu, hung from the toolbar's start, and View › Panels and the toolbar menu offer Show Menu Button. `TopPanel` draws it and reports `Menu`, as it reports its caption buttons.
 - **The menu:** one, drawn in the theme, listing the top-level menus of `MENUS` (File, Edit, Photo, Layer from Phase 4, View, Help) as submenus, with items, a shortcut column, check marks, separators, submenus and disabled items. AccessKit's menu roles, so Narrator and Orca read them as menus.
   - It is a pull-down from a button through [the popup service](#popups) (decision 40), drawn on Windows and Linux as every popup is there, so one drawn menu serves it and every other pull-down; there is no `MenuBar` component.
   - The popup service knows nothing of actions: the app turns `MENUS` into a request of entries with string ids and gets back the id chosen.
@@ -765,6 +765,7 @@ Phase 4: the menu appears with Layers, and its keys are set with their design. I
 | Side Panel | `side-panel` | — | New, Phase 3, proposed. No item hides the grid panel |
 | Tab Names | `panel-tab-names` | — | Built in the tab bar's ⋮; the action is new |
 | Customise Tabs… | `customise-tabs` | — | New, drawn disabled until step 7 builds it |
+| Show Menu Button, while the ☰ is hidden, on Windows and Linux | `show-menu-button` | — | New, Phase 3 (decision 92); also in the toolbar menu, and F10 reaches it with the ☰ hidden |
 | Toolbar Labels, checked while on | `toolbar-labels` | — | New, Phase 3 (decision 92); also in the toolbar menu and Settings › General |
 | Customise Toolbar… | `customise-toolbar` | — | New, Phase 3, drawn disabled, "Customise Toolbar comes in a later version", until its window is built (decision 92) |
 | Dock All Floating Panels | `dock-all` | — | New, with the floating panels in the UX pass (decision 83); also in the side panel's ⋮ |
@@ -2573,7 +2574,7 @@ Planned (decision 92): Phase 3 builds the toolbar, its menu, tools' items, the o
   - the parts `menu-button` (Windows and Linux), `mark`, `jobs`, `save-state` and `assistant`, one each;
   - the app's actions that are pressed or toggled and have an icon, one each: Import…, Export…, Export Again, Cull, Reset, Undo, Redo, Copy edit, Apply edit, Copy or Apply Parts…, Open…, Open Folder…, Before and After, Clipping Warnings, Zoom to 100%, Zoom to Fit, Full Screen, Jobs, Browse, Show in Folder, Next Photo, Previous Photo and Settings…; Before and After, Clipping Warnings, Zoom to 100% and Settings… are not in the default;
   - tools' actions, `tool-<tool>-<action>` ([Context menus](#context-menus)), that a tool offers in `Definition::toolbar` (`ToolbarItem { action, icon }`, at most two a tool) or a utility in `Utility::toolbar`; the icon one of `apertrust-ui`'s by name, a `Row::Buttons` action taking its button's; Orientation's Rotate 90° anticlockwise and clockwise first;
-  - `space`, 16 points, and `flexible-space`, sharing what is left, any number.
+  - `space`, 16 points, and `flexible-space`, sharing what is left, any number; the overflow removes fixed spaces as it narrows.
 - **Never placeable:** hold actions (H), focus moves (F6), a set's members (the backgrounds, the workspaces), the platform's own items. Groups are told apart by space, never a line.
 - **Moving the window:** flexible spaces, the parts of a fixed space outside egui's 5-point margin round a control, and a status slot showing nothing are empty areas. On Windows the hit map's `HTCAPTION` rectangles come from the toolbar's layout, the items are `HTCLIENT`, and `HTMAXBUTTON` stays over the maximise button.
 
@@ -2581,7 +2582,7 @@ Planned (decision 92): Phase 3 builds the toolbar, its menu, tools' items, the o
 
 | Hidden | What still holds |
 | --- | --- |
-| The ☰ | F10, Alt alone on Windows and Alt with an access key open the menus, hung from the toolbar's start; the toolbar menu gains Show Menu Button |
+| The ☰ | F10, Alt alone on Windows and Alt with an access key open the menus, hung from the toolbar's start; View › Panels and the toolbar menu gain Show Menu Button, so the keys restore it |
 | The save state | A failed write still shows its warning and Not saved at the toolbar's end; the message over the photo, the live region and the quit alert unchanged |
 | The jobs | The spinner shows while a failed job is left; View › Jobs and Ctrl+Shift+J still work |
 | The assistant | It shows whenever an assistant is connected |
@@ -2589,6 +2590,8 @@ Planned (decision 92): Phase 3 builds the toolbar, its menu, tools' items, the o
 | Everything | The toolbar is all empty area and still moves the window |
 
 **The toolbar menu,** `Place::TopPanel`, the app's alone ([Context menus](#context-menus)): a right-click anywhere on the toolbar, on an item or on empty space, on every platform, or Shift+F10 or the Menu key on a focused item, opens it. It holds Hide "Undo" (on an item); Show Menu Button (while the ☰ is hidden); a separator; Toolbar Labels, checked while on; Customise Toolbar…, drawn disabled with "Customise Toolbar comes in a later version" until its window is built. The system's window menu stays on the system's own key, Alt+Space on Windows and GNOME; X11 has none.
+
+Every item of the toolbar menu is reachable from the keys whatever the toolbar shows: Hide "Undo" from Shift+F10 or the Menu key on that focused item, the others in View › Panels, which F10 opens while the ☰ is hidden. A toolbar with nothing focusable, which F6 skips, has nothing in its menu that only it reaches.
 
 **Customising.** The settings file is the full way until the Customise Toolbar window, a dedicated window of the dialog host built much later, from the toolbar menu and View › Panels; there is no palette inside the main window.
 
@@ -2607,12 +2610,12 @@ labels = false
 **The overflow,** measured every frame at the current scale and language, a step undone only once 16 points are spare:
 
 1. the labels fold, all at once;
-2. the fixed spaces narrow to 8 points;
-3. the actions move into » (`top-panel-more`, 30 points) one at a time, in reverse reading order, tools' items before the app's, Undo and Redo last; » stands just before the first flexible space;
+2. the fixed spaces narrow to 8 points, then go one at a time from the end, so any number of them fits;
+3. the actions move into » (`top-panel-more`, 30 points) one at a time, in reverse reading order, tools' items before the app's, Undo and Redo last; » stands just before the first flexible space, or with none at the toolbar's end, after the last item and before the caption buttons;
 4. the status words fold to their signs;
 5. Undo and Redo go into ».
 
-» lists its items in the toolbar's order with their keys, check marks and disabled states; it replaces ⋯ More actions and matches the side panel's ». Never folded: the parts placed, », the caption buttons and 24 points of empty area. A test checks at 500 points, in every language, both platforms' defaults and a list with every part placed.
+» lists its items in the toolbar's order with their keys, check marks and disabled states; it replaces ⋯ More actions and matches the side panel's ». Never folded: the parts placed, », the caption buttons and 24 points of empty area; when even those do not fit, at a large interface size, the window's minimum width grows to their width, so the bar never overlaps and keeps its 24 points to move the window. A test checks at 500 points, in every language, both platforms' defaults and a list with every part placed.
 
 **Labels.** Icons by default. Toolbar Labels (`top_panel.labels`, off, app-wide) is in View › Panels, the toolbar menu and Settings › General.
 
