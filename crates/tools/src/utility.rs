@@ -36,8 +36,8 @@ use crate::{
 #[derive(Debug, Clone, Copy)]
 pub struct UtilityDefinition {
     /// Its id, whose sentence is `tool-<id>-description`; its header's ↺, a registry
-    /// action's, its own or none; its page, one custom row its app module draws whole until
-    /// the page is rows (step 93.4); and the items it adds to context menus and its ⋯
+    /// action's, its own or none; its page, rows that edit nothing ([`Self::check`]), its
+    /// own widgets custom rows its app module draws; and the items it adds to context menus and its ⋯
     /// (decision 91), each the registry action that runs it, by its id, at a place, held to
     /// a tool's limits ([`crate::check_menus`]); none for a utility with nothing to add. The
     /// app builds the menus, every item where its section and order put it ([`Section`]).
@@ -199,8 +199,9 @@ const fn option(section: Section, order: u32, action: &'static str) -> MenuItem 
 /// The utilities built: Scopes, which measures the finished picture; History, whose ↺ is
 /// Reset Edit, which it adds to the photo's and a thumbnail's menus, and whose ⋯ holds
 /// Compress History, Truncate History and Create a Style…, then Discard History… apart, as
-/// the destructive one; and Browse, the Photos tab's first. Each page is one custom row
-/// until step 93.4 makes it rows.
+/// the destructive one; and Browse, the Photos tab's first. Their pages are their own
+/// widgets as custom rows, which keep what each drew before (decision 93): Scopes' the graph
+/// with its buttons, History's its steps, and Browse's its recents line and its Folders.
 pub const UTILITIES: &[UtilityDefinition] = &[
     UtilityDefinition {
         tool: ToolDefinition {
@@ -262,10 +263,16 @@ pub const UTILITIES: &[UtilityDefinition] = &[
             id: "browse",
             tabs: &[Tab {
                 id: None,
-                rows: &[Row::Custom {
-                    widget: Widget::Browse,
-                    controls: &[],
-                }],
+                rows: &[
+                    Row::Custom {
+                        widget: Widget::Recents,
+                        controls: &[],
+                    },
+                    Row::Custom {
+                        widget: Widget::Folders,
+                        controls: &[],
+                    },
+                ],
             }],
             before: &[],
             after: &[],

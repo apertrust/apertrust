@@ -261,12 +261,13 @@ impl Browse<'_> {
 }
 
 /// Browse as a utility tool (decision 93), the Photos tab's first (decision 73), in folder
-/// mode's form: its page, drawn whole until it is rows (step 93.4), its top line, what is
-/// open, a box listing the recents to choose from, with ＋ beside it; then its Folders
-/// group, the tree of the folder opened, its root, with nothing above it. Its header is
-/// every tool's; its ⋯ holds its own items, not yet declared ([`options`]). Folders is
-/// open or closed as `browse.open` says. Albums and Smart albums join Folders with the
-/// library (Phase 5); folder mode never shows them.
+/// mode's form: its page two custom rows, which the page drawer draws through its body: its
+/// top line (`Widget::Recents`), what is open, a box listing the recents to choose from,
+/// with ＋ beside it; then its Folders (`Widget::Folders`), its group, the tree of the
+/// folder opened, its root, with nothing above it, scrolling under the top line. Its
+/// header is every tool's; its ⋯ holds its own items, not yet declared ([`options`]).
+/// Folders is open or closed as `browse.open` says. Albums and Smart albums join Folders
+/// with the library (Phase 5); folder mode never shows them.
 ///
 /// For photos alone, as the wireframe's one-photo column draws it, the top line names the
 /// active photo and Folders holds Open This Folder alone.
@@ -283,23 +284,29 @@ impl UtilityTool for Browse<'_> {
     }
 
     fn body(&mut self, widget: Widget, ui: &mut egui::Ui, cx: &mut Context<'_>) -> Vec<Action> {
-        if widget != Widget::Browse {
-            return Vec::new();
-        }
         let mut actions = Vec::new();
-        // The section's body has a tool's margins: the top line starts 4 points under
-        // the header and 12 in from the sides, as a tool's first row does.
-        ui.spacing_mut().item_spacing.y = 0.0;
-        top_line(ui, self, &mut actions);
-        // Its groups scroll under it, Browse keeping its height.
-        section_list(ui, "browse groups", |ui| {
-            let group = cx.words.text("browse-folders");
-            let toggled = CollapsibleGroup::new(&group, self.open.folders)
-                .show(ui, |ui| tree(ui, self, &mut actions));
-            if toggled {
-                actions.push(Action::ToggleFolders);
+        match widget {
+            // The section's body has a tool's margins: the top line starts 4 points under
+            // the header and 12 in from the sides, as a tool's first row does, its rows
+            // with no space between them.
+            Widget::Recents => {
+                ui.spacing_mut().item_spacing.y = 0.0;
+                top_line(ui, self, &mut actions);
             }
-        });
+            // Its groups scroll under the top line, Browse keeping its height.
+            Widget::Folders => {
+                ui.spacing_mut().item_spacing.y = 0.0;
+                section_list(ui, "browse groups", |ui| {
+                    let group = cx.words.text("browse-folders");
+                    let toggled = CollapsibleGroup::new(&group, self.open.folders)
+                        .show(ui, |ui| tree(ui, self, &mut actions));
+                    if toggled {
+                        actions.push(Action::ToggleFolders);
+                    }
+                });
+            }
+            _ => {}
+        }
         actions
     }
 }

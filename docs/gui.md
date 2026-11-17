@@ -42,7 +42,7 @@ Still to come:
 - Rebinding keys in Settings, the actions the menus add ([what arrives when](#what-arrives-when)), and on Windows Alt pressed and released alone and native hit testing (decision 39).
 - With the viewport: the scale's zoom, which needs the 100% view's regions, before and after, and the values under the cursor; the clipping overlays on the photo (the rest of step 8).
 - Decision 42's slider popup and the rest of [their cards](#slider-values-the-build-in-cards).
-- [One tool model](#one-tool-model) (decision 93): one page drawer for every tool, the utilities on the page model, then Export's page (the header and ⋯ are built).
+- [One tool model](#one-tool-model) (decision 93): Export's page as setting rows (the header and ⋯, one page drawer for every tool and the utilities on the page model are built).
 - The rest follows the build order.
 
 winit's default app menu on macOS is off (`with_default_menu(false)` on the app's own `EventLoop` builder, since eframe runs on the app's loop and ignores `NativeOptions::event_loop_builder`): the menu bar built from the registry takes its place.
@@ -2442,7 +2442,7 @@ The model's words:
 - **Everything in the side panel is a tool** (decisions 4 and 93): a processing tool, such as Exposure, or a utility tool, "utility" for short, such as the Photos tab's Browse, Scopes or History. A **section** is the side panel's block a tool is shown in, its header with its body.
   - Every section has its tool's id, a title message, header actions and a body.
   - The side panel lays out two lists of section ids per tab, its pinned sections and the rest, and a workspace is a named set of those lists with the sections that float over the central panel (decision 83). Dragging a section's header, its ⋯ menu, keys, the settings file and Customise tabs all edit the current workspace's, so any section can sit in any tab, pinned or not, or float ([Moving, pinning and floating sections](#moving-pinning-and-floating-sections)). The order is display order only, never the processing order.
-- **A processing tool's section is generated** from its definition (decision 4, `ui-conventions`). Every tool's header and ⋯ are drawn from its `ToolDefinition`, but Export's, which `export.rs` draws until decision 93's step 93.5; a utility's page is one custom row its app module draws, until its page is rows ([One tool model](#one-tool-model), decision 93).
+- **A processing tool's section is generated** from its definition (decision 4, `ui-conventions`). Every tool's header, ⋯ and page are drawn from its `ToolDefinition`, the page by one page drawer, a utility's own widgets custom rows its app module draws, but Export's header and page, which `export.rs` draws until decision 93's step 93.5 ([One tool model](#one-tool-model), decision 93).
 - **Keys** have one scope for the view, so a key means the same in every layout; a key that means nothing in a layout is unavailable there (H outside Photo).
 
 ### The central panel's layouts
@@ -3231,7 +3231,7 @@ flowchart LR
 
 Every tool, a processing tool or a utility, has one header, one page and one ⋯ (decision 93), as darktable's processing and utility modules both begin with its `dt_action_t`.
 
-**Built** (steps 93.1 to 93.3, and 93.4's page drawer with Scopes and History):
+**Built** (steps 93.1 to 93.4):
 
 | Kind | Its declaration, in `apertrust-tools` | Its behaviour | darktable's |
 | --- | --- | --- | --- |
@@ -3245,7 +3245,7 @@ Every tool, a processing tool or a utility, has one header, one page and one ⋯
 - **One `Context` for every utility** (`utility::Context`): the mirror, the settings, the words and the frame's command list. History draws its steps from the mirror and sends `GoTo` with the commands, and Scopes its graph from the settings' view and the mirror's reading. Browse draws from the frame's `library::Browse`, which holds the recents, the key tips and the home folder beside the mirror's folder, since the context holds none of them.
 - **One page drawer** (`tools::page`, step 93.4) draws every tool's page from its `ToolDefinition`, through the trait `tools::Rows`: labels, collapsible groups, rows following a value, settings and actions itself, the rest by the tool's kind, a processing tool's controls, pickers and computed values (`tools::section`), and a utility's custom rows by its `UtilityTool::body` with the row's `Widget`, once per custom row (`utility::rows`, which `utility::section` draws a utility's page with). Each utility matches its own widgets in `body`, their egui code in its module, taking its state and returning its actions; a processing tool's custom rows stay drawn by the app's `match` on `Widget`. A utility's groups open as the settings keep them, and its settings, none yet, are drawn disabled at their defaults until Export's bind them (step 93.5).
 - **`UtilityDefinition::check`** refuses a row that edits: one naming a control, a preset row, a row of pickers whatever it holds, the picker's other rows, a computed value and the guides. Settings, labels, groups, `Row::WhenSetting` (its setting shown outside the rows it hides) and custom rows naming no control remain, on one untitled tab, each custom row a utility's own widget (`Widget::is_utility`), as `ProcessingDefinition::check` refuses a utility's widget. Action rows are planned, bound to the registry, and refused until then; so are a utility's presets, and its ↺ is never `Reset::Tool`. A test holds every utility to it, and another every utility's labels, groups and settings to their words (`messages::of_utility`).
-- **Scopes' page** is one custom row, `Widget::Scopes`: the graph with its buttons over it, which graph, the scale, the channels and the clipping toggles being the graph's own state, kept in the settings' `scopes.*`. **History's page** is one custom row, `Widget::History`, its steps, drawn by `history::tab` with `utility::rows` under its header, which stays at the tab's top while the steps scroll. Browse's is one custom row, `Widget::Browse`, until it is two. `main.rs` draws Scopes and Browse with `utility::section` and History with `history::tab`, each through its `UtilityTool`.
+- **Scopes' page** is one custom row, `Widget::Scopes`: the graph with its buttons over it, which graph, the scale, the channels and the clipping toggles being the graph's own state, kept in the settings' `scopes.*`. **History's page** is one custom row, `Widget::History`, its steps, drawn by `history::tab` with `utility::rows` under its header, which stays at the tab's top while the steps scroll. **Browse's page** is two custom rows: its top line with the recents, `Widget::Recents`, and its Folders, `Widget::Folders`, its group, titled `browse-folders` and open as the settings keep Browse's groups, holding the tree in a list of fixed height that scrolls under the top line, so Browse keeps its height. `main.rs` draws Scopes and Browse with `utility::section` and History with `history::tab`, each through its `UtilityTool`.
 
 **Planned,** the rest of the model:
 
@@ -4352,7 +4352,7 @@ The decisions this design rests on, by area; each decision record has the option
 | Area | The choice |
 | --- | --- |
 | Reuse | A design-system crate, `apertrust-ui`, that knows nothing of the engine or tools, with translation in an egui-free module until a second client needs it; tool panels generated from definitions (decision 36) |
-| Tool model | Every tool a processing tool or a utility, darktable's processing and utility modules; one `ToolDefinition` embedded in `ProcessingDefinition` and `UtilityDefinition`, the trait `ProcessingTool` in `apertrust-tools` and `UtilityTool` in the app; one header and ⋯ for every tool (built, Export's with step 93.5); one page drawer, a utility's page of the same rows, never one that edits, its widgets as custom rows (decision 93, planned) |
+| Tool model | Every tool a processing tool or a utility, darktable's processing and utility modules; one `ToolDefinition` embedded in `ProcessingDefinition` and `UtilityDefinition`, the trait `ProcessingTool` in `apertrust-tools` and `UtilityTool` in the app; one header and ⋯ and one page drawer for every tool, a utility's page of the same rows, never one that edits, its widgets as custom rows (decision 93; built, Export's with step 93.5) |
 | Themes | Token sets named by role, in TOML; built-in themes compiled in; checked for contrast when they load; switched live (decision 36) |
 | Translation | Fluent, with ICU4X for numbers and dates (decision 36) |
 | Actions | One registry for buttons, menus, tooltips and shortcuts, all rebindable (decision 36) |

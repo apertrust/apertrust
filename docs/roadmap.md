@@ -130,7 +130,7 @@ Goal: open, edit, save and reopen a photo with the first pass's tools. Migration
 - [x] 93.1. The renames and the parent, mechanical, with no behaviour change: `Definition` to `ProcessingDefinition`, `Utility` to `UtilityDefinition`, the trait `Tool` to `ProcessingTool`, `Definition::presets` to `preset_rows`, and the fields every tool shares into `ToolDefinition`; the docs' names with them.
 - [x] 93.2. `UtilityTool` in the app, with one `Context`, History, Scopes and Browse implementing it, Browse joining `UTILITIES`.
 - [x] 93.3. One header and ⋯ for every tool in `TOOLS` and `UTILITIES`, from `&ToolDefinition`, History's ⋯ items declared with it, Truncate History an item of its own; Export's with 93.5.
-- [ ] 93.4. The utilities on the page model, their widgets as custom rows and `UtilityDefinition::check` refusing a row that edits: Scopes first, then History, then Browse.
+- [x] 93.4. The utilities on the page model, their widgets as custom rows and `UtilityDefinition::check` refusing a row that edits: Scopes first, then History, then Browse.
 - [ ] 93.5. Export's page as setting rows naming the `export.*` keys, with its presets, For sharing and Full size JPEG built in ([gui.md](gui.md#the-export-tool), step 16): Export implements `UtilityTool` and joins `UTILITIES`, the setting rows it builds shared later with Import's sheet ([Export](#export)).
 
 ### Editing

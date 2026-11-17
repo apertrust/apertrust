@@ -1042,8 +1042,11 @@ pub enum Widget {
     /// Scopes' graph with its buttons (decision 93): which graph, the scale, the channels
     /// and the clipping toggles are the graph's own state, kept in the app's settings.
     Scopes,
-    /// Browse's whole page, its recents line and its Folders, until its page is rows.
-    Browse,
+    /// Browse's top line: what is open, the recents to choose from, and ＋ (decision 93).
+    Recents,
+    /// Browse's Folders: its group, holding the open folder's tree in a list that scrolls
+    /// under the top line, so Browse keeps its height (decision 93).
+    Folders,
 }
 
 impl Widget {
@@ -1052,7 +1055,7 @@ impl Widget {
     /// (decision 93).
     pub fn is_utility(self) -> bool {
         match self {
-            Widget::History | Widget::Scopes | Widget::Browse => true,
+            Widget::History | Widget::Scopes | Widget::Recents | Widget::Folders => true,
             Widget::Curve
             | Widget::ColourWheels
             | Widget::Equalizer
@@ -2477,7 +2480,12 @@ mod tests {
     /// A utility's widget, drawn by its own body, is never a processing tool's row.
     #[test]
     fn a_processing_tool_shows_no_utility_s_widget() {
-        for widget in [Widget::Scopes, Widget::History, Widget::Browse] {
+        for widget in [
+            Widget::Scopes,
+            Widget::History,
+            Widget::Recents,
+            Widget::Folders,
+        ] {
             let rows = Box::leak(Box::new([Row::Custom {
                 widget,
                 controls: &[],
