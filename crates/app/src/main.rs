@@ -6455,7 +6455,12 @@ fn photos_body(
     let (mut actions, mut run) = (Vec::new(), Vec::new());
     let mut drawn = export::Drawn::default();
     PanelBody::new().show(ui, |ui| {
-        let head = library::head(ui, browse);
+        // The active photo's open, so a ⋯ choice made before another photo opened is
+        // dropped, never run on the new photo's folder.
+        let head = tools::Head {
+            photo: cx.mirror.photo.open(),
+            ..library::head(ui, browse)
+        };
         let section = utility::section(ui, browse, cx, head, false);
         for pressed in &section.pressed {
             match pressed {
