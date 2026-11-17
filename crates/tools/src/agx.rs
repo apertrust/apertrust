@@ -549,6 +549,7 @@ static DEFINITION: Definition = Definition {
     views: &[],
     pickers: &PICKERS,
     // darktable's `description()` in src/iop/agx.c at the reference release.
+    menus: &[],
     facts: Some(Facts {
         purpose: Purpose::CorrectiveAndCreative,
         input: Fact::LinearRgbSceneReferred,

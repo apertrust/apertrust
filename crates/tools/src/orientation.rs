@@ -33,7 +33,10 @@ use apertrust_plugin::{ImageContext, Value};
 
 use crate::about::{Fact, Facts, Purpose};
 use crate::definition::{Button, ButtonIcon, Control, ControlKind, Definition, Row, Tab};
-use crate::{Base, ControlValue, Controls, Owned, Setting, Tool, ToolValues};
+use crate::{
+    Base, ControlValue, Controls, MenuEntry, MenuItem, Owned, Place, Section, Setting, Tool,
+    ToolValues,
+};
 
 pub struct Orientation;
 
@@ -119,6 +122,17 @@ static DEFINITION: Definition = Definition {
     presets: &[],
     views: &[],
     pickers: &[],
+    // Its four buttons as Orientation ▸ in the photo's menu, after Background ▸ (decision
+    // 91).
+    menus: &[MenuItem {
+        place: Place::Photo,
+        section: Section::VIEW,
+        order: 200,
+        entry: MenuEntry::Submenu {
+            title: "tool-flip-title",
+            actions: &ACTIONS,
+        },
+    }],
     // darktable's `description()` in src/iop/flip.c at the reference release.
     facts: Some(Facts {
         purpose: Purpose::Corrective,

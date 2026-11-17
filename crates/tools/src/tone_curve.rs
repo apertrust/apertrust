@@ -142,6 +142,7 @@ static DEFINITION: Definition = Definition {
     views: &[],
     pickers: &[],
     // darktable's `description()` in src/iop/rgbcurve.c at the reference release.
+    menus: &[],
     facts: Some(Facts {
         purpose: Purpose::CorrectiveAndCreative,
         input: Fact::LinearRgbDisplayReferred,

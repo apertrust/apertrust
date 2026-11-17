@@ -46,7 +46,9 @@
 
 use apertrust_ui::i18n::Args;
 use apertrust_ui::{Translator, popup, translator};
-use eframe::egui::{self, Pos2, Rect, os::OperatingSystem};
+use eframe::egui::{self, Rect, os::OperatingSystem};
+
+use apertrust_tools::{MenuEntry, MenuItem, Section};
 
 use crate::actions::{self, Action, ActionId, Focus, Keymap, Platforms, Shortcut, State, Trigger};
 
@@ -555,20 +557,317 @@ pub fn request(
     popup::Request::pull_down(anchor, tr.text("top-panel-menu"), entries)
 }
 
-/// `menu`'s items alone, hung from the pointer at `at`, as a right-click menu: the central
-/// panel's, which is View › Background's. Its items' ids are their actions' ([`chosen`]).
+/// Where a context menu opens (decision 91; `docs/gui.md`, Context menus): a place tools
+/// add items to, or one of the app's alone.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Place {
+    /// The photo, a thumbnail or a tool's ⋯: the app's items and the tools', by section and
+    /// order.
+    Open(apertrust_tools::Place),
+    /// The central panel's surround, round the photo: View › Background's items alone
+    /// (`docs/gui.md`, The background).
+    Surround,
+}
+
+/// What a context menu's items act on (decision 91).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Target {
+    /// The active photo, with the point under the pointer in the photo's coordinates as
+    /// pickers take them (`apertrust_tools::pick::Region::Point`, 0 to 1 across the photo
+    /// as export renders it), none when the menu opens from the keys.
+    Photo { point: Option<[f32; 2]> },
+    /// A thumbnail's photo, which its menu selects as it opens: the selection, the active
+    /// photo alone until several can be selected.
+    Selection,
+    /// The tool or utility whose ⋯ it is, by its id: only its own items join the menu.
+    #[cfg_attr(not(test), expect(dead_code, reason = "⋯ opens on it once built"))]
+    Tool(&'static str),
+    /// The app itself, as the surround's items set its background.
+    App,
+}
+
+/// The context menu at `place`, acting on `target`, hung from `anchor`, the point
+/// right-clicked for a right-click (decision 91): the app's items there ([`APP_ITEMS`]) and
+/// those tools and utilities add ([`added`]) together, by section and order, a line
+/// wherever the section changes ([`built`]). The surround, the app's alone, holds View ›
+/// Background's items. Each item is its action's, as the ☰'s ([`shown`]); in the photo's
+/// and a thumbnail's menus an item that cannot run is hidden, but shown disabled while only
+/// the photo's not yet being live stops it, and no item shows its key ([`pared`]). In ⋯
+/// an item that cannot run is drawn disabled with its tip, as in a pull-down. Its items'
+/// ids are their actions' ([`chosen`]).
 pub fn context(
     ctx: &egui::Context,
+    place: Place,
+    target: &Target,
     keymap: &Keymap,
     state: &State,
-    menu: &'static Menu,
-    at: Pos2,
+    anchor: Rect,
 ) -> popup::Request {
-    let tr = translator(ctx);
+    let tools: Vec<_> = apertrust_tools::TOOLS
+        .iter()
+        .map(|tool| tool.definition())
+        .collect();
+    let added = match place {
+        Place::Open(open) => added(open, target, &tools, apertrust_tools::utility::UTILITIES),
+        Place::Surround => Vec::new(),
+    };
+    let (os, tr) = (ctx.os(), translator(ctx));
+    built(place, target, &added, keymap, state, os, &tr, anchor)
+}
+
+/// The app's items in the places open to tools' (decision 91), declared as the tools'
+/// are: the photo's Export… and Background ▸, View › Background's items as a submenu, and
+/// a thumbnail's Export…. Copy Edit and Apply Edit join Edit's section once built, Show in
+/// Finder and Show in Folder once built; Reset is History's. The app's are held to no
+/// section's rule.
+pub static APP_ITEMS: [MenuItem; 3] = [
+    MenuItem {
+        place: apertrust_tools::Place::Photo,
+        section: Section::EXPORT,
+        order: 100,
+        entry: MenuEntry::Action(ActionId::EXPORT.0),
+    },
+    MenuItem {
+        place: apertrust_tools::Place::Photo,
+        section: Section::VIEW,
+        order: 100,
+        entry: MenuEntry::Submenu {
+            title: BACKGROUND.title,
+            actions: &[
+                ActionId::BACKGROUND[0].0,
+                ActionId::BACKGROUND[1].0,
+                ActionId::BACKGROUND[2].0,
+                ActionId::BACKGROUND[3].0,
+                ActionId::BACKGROUND[4].0,
+                ActionId::BACKGROUND[5].0,
+            ],
+        },
+    },
+    MenuItem {
+        place: apertrust_tools::Place::Thumbnail,
+        section: Section::EXPORT,
+        order: 100,
+        entry: MenuEntry::Action(ActionId::EXPORT.0),
+    },
+];
+
+/// One item of a context menu with its actions by their registry ids, at its section and
+/// order: an action alone, or a submenu's, under its title.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct Added {
+    section: Section,
+    order: u32,
+    /// A submenu's title, a message id; none for an action alone.
+    title: Option<&'static str>,
+    actions: Vec<String>,
+}
+
+impl Added {
+    /// `item`, each of its actions' ids as `id` gives it.
+    fn of(item: &MenuItem, id: &dyn Fn(&str) -> String) -> Added {
+        let title = match item.entry {
+            MenuEntry::Action(_) => None,
+            MenuEntry::Submenu { title, .. } => Some(title),
+        };
+        Added {
+            section: item.section,
+            order: item.order,
+            title,
+            actions: item
+                .entry
+                .actions()
+                .iter()
+                .map(|action| id(action))
+                .collect(),
+        }
+    }
+}
+
+/// The app's items at `place` ([`APP_ITEMS`]).
+fn app_items(place: apertrust_tools::Place) -> Vec<Added> {
+    let items = APP_ITEMS.iter().filter(|item| item.place == place);
+    items
+        .map(|item| Added::of(item, &|id| id.to_string()))
+        .collect()
+}
+
+/// The items `tools` and `utilities` add to `place` for `target`, by their registry actions'
+/// ids: a tool's action is `tool-<tool>-<action>`, a utility's its own. In ⋯ only its own
+/// tool's join.
+fn added(
+    place: apertrust_tools::Place,
+    target: &Target,
+    tools: &[&apertrust_tools::Definition],
+    utilities: &[apertrust_tools::utility::Utility],
+) -> Vec<Added> {
+    let joins = |id: &str| {
+        place != apertrust_tools::Place::Options || matches!(target, Target::Tool(t) if *t == id)
+    };
+    let at = |items: &'static [MenuItem], id: &dyn Fn(&str) -> String| {
+        let items = items.iter().filter(move |item| item.place == place);
+        items.map(|item| Added::of(item, id)).collect::<Vec<_>>()
+    };
+    let tools = tools
+        .iter()
+        .filter(|tool| joins(tool.id))
+        .flat_map(|tool| at(tool.menus, &|action| format!("tool-{}-{action}", tool.id)));
+    let utilities = (utilities.iter())
+        .filter(|utility| joins(utility.id))
+        .flat_map(|utility| at(utility.menus, &|action| action.to_string()));
+    tools.chain(utilities).collect()
+}
+
+/// [`context`]'s menu with the app's items at `place` and `added`, sorted by section and
+/// order, a line wherever the section changes. An action the registry does not declare is
+/// left out, and in a thumbnail's menu one that acts on one photo alone while several are
+/// selected ([`ONE_PHOTO`]); so is a submenu left with none.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the menu's place, target and state"
+)]
+fn built(
+    place: Place,
+    target: &Target,
+    added: &[Added],
+    keymap: &Keymap,
+    state: &State,
+    os: OperatingSystem,
+    tr: &Translator,
+    anchor: Rect,
+) -> popup::Request {
     let steps = Steps::default();
-    let entries = drawn(menu, ctx.os(), keymap, state, &[], &steps, &tr).entries;
-    let anchor = Rect::from_min_size(at, egui::Vec2::ZERO);
-    popup::Request::pull_down(anchor, tr.text(menu.title), entries)
+    let Place::Open(open) = place else {
+        let entries = drawn(&BACKGROUND, os, keymap, state, &[], &steps, tr).entries;
+        return popup::Request::pull_down(anchor, name(place, target, tr), entries);
+    };
+    let several = *target == Target::Selection && state.photos > 1;
+    let item = |id: &String| {
+        let id = chosen(id).filter(|id| !(several && ONE_PHOTO.contains(id)))?;
+        action_item(id, keymap, state, &steps, os, tr)
+    };
+    let all = app_items(open);
+    let all = all.iter().chain(added).filter_map(|added| {
+        let entry = match added.title {
+            None => item(added.actions.first()?)?.into(),
+            Some(title) => {
+                let items = added.actions.iter().filter_map(item).map(Into::into);
+                let items: Vec<popup::Entry> = items.collect();
+                if items.is_empty() {
+                    return None;
+                }
+                popup::Submenu::new(title, tr.text(title), items).into()
+            }
+        };
+        Some((added.section, added.order, entry))
+    });
+    let mut items: Vec<(Section, u32, popup::Entry)> = all.collect();
+    items.sort_by_key(|(section, order, _)| (*section, *order));
+    let mut entries = Vec::new();
+    let mut last = None;
+    for (section, _, entry) in items {
+        if last.is_some_and(|last| last != section) {
+            entries.push(popup::Entry::Separator);
+        }
+        last = Some(section);
+        entries.push(entry);
+    }
+    if let apertrust_tools::Place::Photo | apertrust_tools::Place::Thumbnail = open {
+        // A photo open for viewing only never takes what waits for it to go live.
+        entries = pared(entries, state.waiting && !state.view_only);
+    }
+    popup::Request::pull_down(anchor, name(place, target, tr), entries)
+}
+
+/// The actions a thumbnail's menu hides while several photos are selected, since they act
+/// on one photo alone (decision 91): Reset, whose `Command::Reset` resets the open photo
+/// only, until resetting several is decided.
+const ONE_PHOTO: [ActionId; 1] = [ActionId::RESET];
+
+/// What screen readers call the menu at `place`: the surround's is Background, as View ›
+/// Background's submenu is; ⋯'s its tool's or utility's options, as its button is.
+fn name(place: Place, target: &Target, tr: &Translator) -> String {
+    match (place, target) {
+        (Place::Surround, _) => tr.text(BACKGROUND.title),
+        (Place::Open(apertrust_tools::Place::Photo), _) => tr.text("context-menu-photo"),
+        (Place::Open(apertrust_tools::Place::Thumbnail), _) => tr.text("context-menu-thumbnail"),
+        (Place::Open(apertrust_tools::Place::Options), target) => {
+            let tool = match target {
+                Target::Tool(id) if apertrust_tools::utility::utility(id).is_some() => {
+                    tr.text(&format!("section-{id}"))
+                }
+                Target::Tool(tool) => tr.text(&apertrust_tools::messages::title(tool)),
+                _ => String::new(),
+            };
+            let mut args = Args::new();
+            args.set("section", tool);
+            tr.text_with("section-options", Some(&args))
+        }
+    }
+}
+
+/// `entries` as the photo's and a thumbnail's menus show them (decision 91), as macOS's
+/// context menus do: with no keys, and an item that cannot run hidden, unless the photo
+/// `waits` to become live and nothing else stops it, no tip saying why
+/// ([`actions::why_unavailable`]), when it is shown disabled, since it runs in a moment. A
+/// submenu left with nothing is hidden too, and lines left at an end or beside another go.
+fn pared(entries: Vec<popup::Entry>, waits: bool) -> Vec<popup::Entry> {
+    let mut kept = Vec::new();
+    for entry in entries {
+        let entry = match entry {
+            popup::Entry::Item(item) if !item.enabled && (!waits || item.tip.is_some()) => {
+                continue;
+            }
+            popup::Entry::Item(item) => popup::Entry::Item(popup::Item {
+                shortcut: None,
+                ..item
+            }),
+            popup::Entry::Submenu(submenu) => {
+                let entries = pared(submenu.entries, waits);
+                if entries.iter().all(|e| matches!(e, popup::Entry::Separator)) {
+                    continue;
+                }
+                popup::Entry::Submenu(popup::Submenu { entries, ..submenu })
+            }
+            popup::Entry::Separator => {
+                if matches!(kept.last(), None | Some(popup::Entry::Separator)) {
+                    continue;
+                }
+                popup::Entry::Separator
+            }
+        };
+        kept.push(entry);
+    }
+    if matches!(kept.last(), Some(popup::Entry::Separator)) {
+        kept.pop();
+    }
+    kept
+}
+
+/// `id`'s item, as a menu shows it ([`shown`]): its words, enabled exactly when it can run
+/// where it is, the keymap's first key, a check mark where it turns something on or
+/// chooses one of a set, and why it cannot run where something says; none for an action
+/// the registry does not declare.
+fn action_item(
+    id: ActionId,
+    keymap: &Keymap,
+    state: &State,
+    steps: &Steps,
+    os: OperatingSystem,
+    tr: &Translator,
+) -> Option<popup::Item> {
+    let action = actions::action(id)?;
+    let shown = shown(id, keymap, state, Focus::None);
+    let mut item = popup::Item::new(id.0, words(action, steps, state, tr)).enabled(shown.enabled);
+    if let Some(key) = shown.key {
+        item = item.shortcut(key.spell(os, tr));
+    }
+    if let Some(on) = action.checked(state) {
+        item = item.checked(on);
+    }
+    if let Some(why) = actions::why_unavailable(id, state) {
+        item = item.tip(tr.text(why));
+    }
+    Some(item)
 }
 
 /// `menu` as a submenu of the ☰'s menu, its id its title's message id; one that lists the
@@ -612,22 +911,7 @@ fn drawn(
         for entry in group {
             match entry {
                 Entry::Action(id, _) => {
-                    let Some(action) = actions::action(*id) else {
-                        continue;
-                    };
-                    let shown = shown(*id, keymap, state, Focus::None);
-                    let words = words(action, steps, state, tr);
-                    let mut item = popup::Item::new(id.0, words).enabled(shown.enabled);
-                    if let Some(key) = shown.key {
-                        item = item.shortcut(key.spell(os, tr));
-                    }
-                    if let Some(on) = action.checked(state) {
-                        item = item.checked(on);
-                    }
-                    if let Some(why) = actions::why_unavailable(*id, state) {
-                        item = item.tip(tr.text(why));
-                    }
-                    entries.push(item.into());
+                    entries.extend(action_item(*id, keymap, state, steps, os, tr).map(Into::into));
                 }
                 Entry::Submenu(inner) => {
                     entries.push(drawn(inner, os, keymap, state, recents, steps, tr).into());
@@ -643,7 +927,7 @@ fn drawn(
 
 /// The action of the item chosen in the ☰'s menu, by its id.
 pub fn chosen(id: &str) -> Option<ActionId> {
-    actions::ACTIONS.iter().find(|a| a.id.0 == id).map(|a| a.id)
+    actions::named(id).map(|a| a.id)
 }
 
 #[cfg(target_os = "macos")]
@@ -691,7 +975,7 @@ mod mac {
         Entry, Listed, Recent, Role, Shown, Steps, System, groups, listed, lists_recents, menus,
         names_a_step, runs, shown, words,
     };
-    use crate::actions::{self, ACTIONS, ActionId, Focus, Keymap, Shortcut, State};
+    use crate::actions::{self, ActionId, Focus, Keymap, Shortcut, State};
 
     /// The Mac's menu bar, built from [`super::MENUS`] once the window exists, on the main
     /// thread, and handed to AppKit in place of winit's default menu.
@@ -916,7 +1200,7 @@ mod mac {
             self.chosen
                 .try_iter()
                 .filter_map(|(id, repeat)| {
-                    let action = ACTIONS.iter().find(|a| a.id.0 == id.0)?;
+                    let action = actions::named(&id.0)?;
                     runs(action.id, repeat).then_some(action.id)
                 })
                 .collect()
@@ -1192,6 +1476,9 @@ mod tests {
         State {
             view: View::Edit,
             photo: true,
+            waiting: false,
+            editable: true,
+            view_only: false,
             edited: true,
             undo: true,
             redo: true,
@@ -2040,5 +2327,647 @@ mod tests {
             Some(ActionId::PANEL_TABS[3])
         );
         assert_eq!(chosen("no-such-action"), None);
+    }
+
+    use apertrust_tools::{Definition, Place as Open, utility::Utility};
+
+    /// The item naming `action` at `place`, in the section `section` at `order`.
+    const fn at(place: Open, section: u32, order: u32, action: &'static str) -> MenuItem {
+        MenuItem {
+            place,
+            section: Section(section),
+            order,
+            entry: MenuEntry::Action(action),
+        }
+    }
+
+    /// Every built-in tool's definition.
+    fn definitions() -> Vec<&'static Definition> {
+        let tools = apertrust_tools::TOOLS.iter();
+        tools.map(|tool| tool.definition()).collect()
+    }
+
+    fn leak(items: &[MenuItem]) -> &'static [MenuItem] {
+        Box::leak(items.to_vec().into_boxed_slice())
+    }
+
+    /// A tool with nothing but `id` and the items it adds to context menus.
+    fn tool(id: &'static str, menus: &[MenuItem]) -> &'static Definition {
+        let menus = leak(menus);
+        Box::leak(Box::new(Definition {
+            id,
+            version: 1,
+            layers: false,
+            auto: false,
+            switched: false,
+            controls: &[],
+            tabs: &[],
+            before: &[],
+            after: &[],
+            presets: &[],
+            views: &[],
+            pickers: &[],
+            menus,
+            facts: None,
+        }))
+    }
+
+    /// Decision 91: every utility's items are within a tool's limits, each a registry
+    /// action the menu bar holds on every platform, so none is reached by a right-click
+    /// alone; and every tool's names its action in the registry.
+    #[test]
+    fn every_utility_s_item_is_within_the_limits_and_in_the_menu_bar() {
+        let in_menus = |action: &str| {
+            chosen(action).is_some_and(|id| PLATFORMS.iter().all(|os| placed(*os).contains(&id)))
+        };
+        // What the check refuses: an action in no menu, one the registry lacks.
+        assert!(in_menus(ActionId::RESET.0));
+        assert!(!in_menus(ActionId::RESTART.0));
+        assert!(!in_menus("no-such-action"));
+        for utility in apertrust_tools::utility::UTILITIES {
+            assert_eq!(
+                apertrust_tools::check_menus(utility.menus),
+                Ok(()),
+                "{}",
+                utility.id
+            );
+            for item in utility.menus {
+                for action in item.entry.actions() {
+                    assert!(in_menus(action), "{}: {action}", utility.id);
+                }
+                // A tool's sections, History's Reset alone first in Edit's.
+                let reset = (utility.id, item.section, item.order, item.entry)
+                    == ("history", Section::EDIT, 100, MenuEntry::Action("reset"));
+                if !reset {
+                    let placed = apertrust_tools::check_section(item);
+                    assert_eq!(placed, Ok(()), "{}: {item:?}", utility.id);
+                }
+            }
+        }
+        // History adds Reset alone to the photo's and a thumbnail's menus.
+        let history = apertrust_tools::utility::utility("history").unwrap();
+        for place in [Open::Photo, Open::Thumbnail] {
+            let items = (history.menus.iter())
+                .filter(|item| item.place == place)
+                .map(|item| item.entry)
+                .collect::<Vec<_>>();
+            assert_eq!(items, [MenuEntry::Action(ActionId::RESET.0)], "{place:?}");
+        }
+        assert_eq!(history.menus.len(), 2);
+        for tool in definitions() {
+            for action in tool.menus.iter().flat_map(|item| item.entry.actions()) {
+                let id = format!("tool-{}-{action}", tool.id);
+                assert!(chosen(&id).is_some(), "{id} is no registry action");
+            }
+        }
+    }
+
+    /// What tools and utilities add to a place: each item there with its section and
+    /// order, the tools' as their registry actions; in ⋯ only its own tool's.
+    #[test]
+    fn tools_and_utilities_add_their_items_at_their_places() {
+        let first = tool(
+            "first",
+            &[
+                at(Open::Photo, 1000, 200, "auto"),
+                at(Open::Options, 1000, 100, "auto"),
+                at(Open::Photo, 5000, 100, "pick"),
+            ],
+        );
+        let second = tool("second", &[at(Open::Thumbnail, 2000, 200, "level")]);
+        let utilities = [Utility {
+            id: "history",
+            measures: None,
+            menus: leak(&[
+                at(Open::Photo, 1000, 100, "reset"),
+                at(Open::Options, 4000, 100, "reset"),
+            ]),
+        }];
+        let tools = [first, tool("none", &[]), second];
+        let ids = |place, target: Target| -> Vec<(u32, u32, String)> {
+            let added = added(place, &target, &tools, &utilities).into_iter();
+            added
+                .map(|item| (item.section.0, item.order, item.actions.join(",")))
+                .collect()
+        };
+        let id = |section, order, action: &str| (section, order, action.to_string());
+        assert_eq!(
+            ids(Open::Photo, Target::Photo { point: None }),
+            [
+                id(1000, 200, "tool-first-auto"),
+                id(5000, 100, "tool-first-pick"),
+                id(1000, 100, "reset"),
+            ]
+        );
+        assert_eq!(
+            ids(Open::Thumbnail, Target::Selection),
+            [id(2000, 200, "tool-second-level")]
+        );
+        assert_eq!(
+            ids(Open::Options, Target::Tool("first")),
+            [id(1000, 100, "tool-first-auto")]
+        );
+        assert_eq!(
+            ids(Open::Options, Target::Tool("history")),
+            [id(4000, 100, "reset")]
+        );
+        assert!(ids(Open::Options, Target::Tool("second")).is_empty());
+    }
+
+    /// The menu lists the app's items and the added ones together by section, then order,
+    /// a line wherever the section changes: a tool's item may sit between two of the
+    /// app's sections, or before them all.
+    #[test]
+    fn a_menu_sorts_its_items_by_section_and_order_with_a_line_between_sections() {
+        let ctx = egui::Context::default();
+        ctx.set_os(OperatingSystem::Nix);
+        apertrust_ui::set_locale(&ctx, Locale::EnGb);
+        let added = |section, order, action: &str| Added {
+            section: Section(section),
+            order,
+            title: None,
+            actions: vec![action.into()],
+        };
+        let menu = built(
+            Place::Open(Open::Photo),
+            &Target::Photo { point: None },
+            &[
+                added(5000, 100, "undo"),
+                added(1000, 200, "redo"),
+                added(1000, 100, "reset"),
+                added(2500, 100, "show-log"),
+            ],
+            &Keymap::defaults(OperatingSystem::Nix),
+            &State {
+                photos: 1,
+                ..everything()
+            },
+            OperatingSystem::Nix,
+            &translator(&ctx),
+            Rect::NOTHING,
+        );
+        let ids: Vec<String> = lines(&menu).into_iter().map(|(id, ..)| id).collect();
+        assert_eq!(
+            ids,
+            [
+                "reset",
+                "redo",
+                "-",
+                "export",
+                "-",
+                "show-log",
+                "-",
+                "menu-background",
+                "-",
+                "undo"
+            ]
+        );
+    }
+
+    /// Every item's section and order at a place, the app's and those `tools` and
+    /// `utilities` add, that another item there has too.
+    fn clashes(
+        place: Open,
+        target: Target,
+        tools: &[&Definition],
+        utilities: &[Utility],
+    ) -> Vec<(Section, u32)> {
+        let app = (APP_ITEMS.iter())
+            .filter(|item| item.place == place)
+            .map(|item| (item.section, item.order));
+        let added = added(place, &target, tools, utilities).into_iter();
+        let mut keys: Vec<_> = app
+            .chain(added.map(|item| (item.section, item.order)))
+            .collect();
+        keys.sort();
+        let twice = keys.windows(2).filter(|pair| pair[0] == pair[1]);
+        twice.map(|pair| pair[0]).collect()
+    }
+
+    /// Decision 91: no two items in one place share a section and an order, the app's and
+    /// every tool's and utility's together, so their order is never left to chance; in ⋯
+    /// each tool's own with the app's.
+    #[test]
+    fn no_two_items_in_a_place_share_a_section_and_an_order() {
+        let tools = definitions();
+        let utilities = apertrust_tools::utility::UTILITIES;
+        let mut targets = vec![
+            (Open::Photo, Target::Photo { point: None }),
+            (Open::Thumbnail, Target::Selection),
+        ];
+        let ids = (tools.iter().map(|tool| tool.id)).chain(utilities.iter().map(|u| u.id));
+        targets.extend(ids.map(|id| (Open::Options, Target::Tool(id))));
+        for (place, target) in targets {
+            let clashes = clashes(place, target, &tools, utilities);
+            assert!(clashes.is_empty(), "{place:?} {target:?}: {clashes:?}");
+        }
+        // What the check refuses: a tool's item where the app's Export… is.
+        let export = tool("export", &[at(Open::Photo, 2000, 100, "send")]);
+        assert_eq!(
+            clashes(Open::Photo, Target::Photo { point: None }, &[export], &[]),
+            [(Section::EXPORT, 100)]
+        );
+    }
+
+    /// `groups`, each a group of actions' ids, as the context menu at `place` on `target`
+    /// shows them with `state`, on Linux in British English: each a section of its own,
+    /// after the app's.
+    fn context_menu(
+        place: Open,
+        target: Target,
+        groups: &[&[&str]],
+        state: &State,
+    ) -> popup::Request {
+        let ctx = egui::Context::default();
+        ctx.set_os(OperatingSystem::Nix);
+        apertrust_ui::set_locale(&ctx, Locale::EnGb);
+        let mut added = Vec::new();
+        for (section, group) in (5000..).step_by(1000).zip(groups) {
+            for (order, id) in (100..).step_by(100).zip(group.iter()) {
+                added.push(Added {
+                    section: Section(section),
+                    order,
+                    title: None,
+                    actions: vec![id.to_string()],
+                });
+            }
+        }
+        built(
+            Place::Open(place),
+            &target,
+            &added,
+            &Keymap::defaults(OperatingSystem::Nix),
+            state,
+            OperatingSystem::Nix,
+            &translator(&ctx),
+            Rect::NOTHING,
+        )
+    }
+
+    /// Each entry of `menu` as (id, enabled, key shown), a line as `-`.
+    fn lines(menu: &popup::Request) -> Vec<(String, bool, bool)> {
+        menu.entries
+            .iter()
+            .map(|entry| match entry {
+                popup::Entry::Item(item) => {
+                    (item.id.clone(), item.enabled, item.shortcut.is_some())
+                }
+                popup::Entry::Separator => ("-".into(), true, false),
+                popup::Entry::Submenu(submenu) => (submenu.id.clone(), true, false),
+            })
+            .collect()
+    }
+
+    /// Decision 91: in the photo's and a thumbnail's menus, the app's items with them, an item
+    /// that cannot run is hidden, and its group with it, unless the photo is not yet live,
+    /// when it is shown disabled, but for one something else stops, its tip saying why
+    /// (`actions::why_unavailable`; Discard History…'s missing alert stands in, though no
+    /// tool adds it here); no item shows its key. ⋯ draws one disabled, with its tip, and
+    /// keys.
+    #[test]
+    fn the_photo_s_menu_hides_what_cannot_run_shows_what_waits_disabled_and_no_keys() {
+        let groups: &[&[&str]] = &[&["undo", "redo"], &["discard-history"]];
+        let line = |id: &str, enabled| (id.to_string(), enabled, false);
+        let sep = || line("-", true);
+        let bg = || line("menu-background", true);
+        let one = State {
+            photos: 1,
+            ..everything()
+        };
+        let cannot = State {
+            edited: false,
+            undo: false,
+            redo: false,
+            discard: false,
+            discard_why: Some("history-discard-no-alert"),
+            ..one
+        };
+        // While the photo just made active opens.
+        let waiting = State {
+            photo: false,
+            waiting: true,
+            ..cannot
+        };
+        let none = State {
+            waiting: false,
+            ..waiting
+        };
+        let photo = Target::Photo { point: None };
+        let cases = [
+            (
+                Open::Photo,
+                photo,
+                &one,
+                vec![
+                    line("export", true),
+                    sep(),
+                    bg(),
+                    sep(),
+                    line("undo", true),
+                    line("redo", true),
+                    sep(),
+                    line("discard-history", true),
+                ],
+            ),
+            (
+                Open::Photo,
+                photo,
+                &cannot,
+                vec![line("export", true), sep(), bg()],
+            ),
+            (
+                Open::Photo,
+                photo,
+                &waiting,
+                vec![
+                    line("export", false),
+                    sep(),
+                    bg(),
+                    sep(),
+                    line("undo", false),
+                    line("redo", false),
+                ],
+            ),
+            (Open::Photo, photo, &none, vec![bg()]),
+            (
+                Open::Thumbnail,
+                Target::Selection,
+                &one,
+                vec![
+                    line("export", true),
+                    sep(),
+                    line("undo", true),
+                    line("redo", true),
+                    sep(),
+                    line("discard-history", true),
+                ],
+            ),
+            (
+                Open::Thumbnail,
+                Target::Selection,
+                &cannot,
+                vec![line("export", true)],
+            ),
+            (
+                Open::Thumbnail,
+                Target::Selection,
+                &waiting,
+                vec![
+                    line("export", false),
+                    sep(),
+                    line("undo", false),
+                    line("redo", false),
+                ],
+            ),
+            (Open::Thumbnail, Target::Selection, &none, vec![]),
+        ];
+        for (place, target, state, expected) in cases {
+            let menu = context_menu(place, target, groups, state);
+            assert_eq!(lines(&menu), expected, "{place:?} {state:?}");
+        }
+        let groups: &[&[&str]] = &[&["undo", "redo"], &["reset"], &["discard-history"]];
+        let options = State {
+            redo: false,
+            discard: false,
+            discard_why: Some("history-discard-no-alert"),
+            ..everything()
+        };
+        let menu = context_menu(Open::Options, Target::Tool("history"), groups, &options);
+        let keyed = |id: &str, enabled, key| (id.to_string(), enabled, key);
+        assert_eq!(
+            lines(&menu),
+            [
+                keyed("undo", true, true),
+                keyed("redo", false, true),
+                sep(),
+                keyed("reset", true, false),
+                sep(),
+                keyed("discard-history", false, false),
+            ]
+        );
+        let discard = items(&menu.entries)
+            .into_iter()
+            .find(|item| item.id == "discard-history")
+            .unwrap();
+        assert!(discard.tip.is_some());
+        assert_eq!(menu.name, "History options");
+    }
+
+    /// The photo's and a thumbnail's menus as the app opens them (decision 91), by section:
+    /// History's Reset in Edit's, the app's Export… in Export's and, on the photo,
+    /// Background ▸ in View's. Reset is hidden from a thumbnail's while several photos are
+    /// selected, since it acts on one photo alone.
+    #[test]
+    fn the_photo_s_and_a_thumbnail_s_menus_hold_reset_export_and_background_in_order() {
+        let ctx = egui::Context::default();
+        ctx.set_os(OperatingSystem::Nix);
+        apertrust_ui::set_locale(&ctx, Locale::EnGb);
+        let keymap = Keymap::defaults(OperatingSystem::Nix);
+        let open = |place, target: Target, state: &State| {
+            let place = Place::Open(place);
+            context(&ctx, place, &target, &keymap, state, Rect::NOTHING)
+        };
+        let words = |menu: &popup::Request| -> Vec<String> {
+            let line = |entry: &popup::Entry| match entry {
+                popup::Entry::Item(item) => item.text.clone(),
+                popup::Entry::Submenu(submenu) => format!("{} ▸", submenu.text),
+                popup::Entry::Separator => "-".into(),
+            };
+            menu.entries.iter().map(line).collect()
+        };
+        let one = State {
+            photos: 1,
+            ..everything()
+        };
+        let photo = Target::Photo {
+            point: Some([0.5, 0.5]),
+        };
+        let menu = open(Open::Photo, photo, &one);
+        assert_eq!(menu.name, "Photo");
+        assert_eq!(
+            words(&menu),
+            [
+                "Reset",
+                "-",
+                "Export…",
+                "-",
+                "Background ▸",
+                "Orientation ▸"
+            ]
+        );
+        // Orientation's buttons, in their order, as its submenu.
+        let orientation = match menu.entries.last() {
+            Some(popup::Entry::Submenu(submenu)) => submenu,
+            other => panic!("not Orientation ▸: {other:?}"),
+        };
+        let buttons: Vec<&str> = (orientation.entries.iter())
+            .map(|entry| match entry {
+                popup::Entry::Item(item) => item.id.as_str(),
+                other => panic!("not a button's: {other:?}"),
+            })
+            .collect();
+        assert_eq!(
+            buttons,
+            [
+                "tool-flip-rotate_ccw",
+                "tool-flip-rotate_cw",
+                "tool-flip-flip_horizontally",
+                "tool-flip-flip_vertically"
+            ]
+        );
+        // On a photo open for viewing only, neither Reset nor Orientation's buttons can
+        // run, and they go, its submenu with them.
+        let viewing = State {
+            editable: false,
+            view_only: true,
+            ..one
+        };
+        let menu = open(Open::Photo, photo, &viewing);
+        assert_eq!(words(&menu), ["Export…", "-", "Background ▸"]);
+        // Nor while it loads: what waits for it to go live would never run there.
+        let loading = State {
+            waiting: true,
+            ..viewing
+        };
+        let menu = open(Open::Photo, photo, &loading);
+        assert_eq!(words(&menu), ["Export…", "-", "Background ▸"]);
+        let menu = open(Open::Thumbnail, Target::Selection, &one);
+        assert_eq!(menu.name, "Thumbnail");
+        assert_eq!(words(&menu), ["Reset", "-", "Export…"]);
+        // Several selected: a thumbnail's acts on them, and Reset on one alone; the photo's
+        // on the active photo, as Edit › Reset does.
+        let several = State { photos: 2, ..one };
+        let menu = open(Open::Thumbnail, Target::Selection, &several);
+        assert_eq!(words(&menu), ["Export…"]);
+        let menu = open(Open::Photo, photo, &several);
+        assert_eq!(words(&menu)[0], "Reset");
+        // Nothing to reset: hidden.
+        let unedited = State {
+            edited: false,
+            ..one
+        };
+        let menu = open(Open::Photo, photo, &unedited);
+        assert_eq!(
+            words(&menu),
+            ["Export…", "-", "Background ▸", "Orientation ▸"]
+        );
+    }
+
+    /// The photo's Background ▸ is View › Background's items, in its order, so the two
+    /// never differ.
+    #[test]
+    fn the_photo_s_background_submenu_is_view_background_s_items() {
+        let background = APP_ITEMS.iter().find_map(|item| match item.entry {
+            MenuEntry::Submenu { title, actions } if title == BACKGROUND.title => Some(actions),
+            _ => None,
+        });
+        let mut menu_bar = Vec::new();
+        placed_in(&BACKGROUND, OperatingSystem::Nix, &mut menu_bar);
+        let menu_bar: Vec<&str> = menu_bar.iter().map(|id| id.0).collect();
+        assert_eq!(background, Some(&menu_bar[..]));
+    }
+
+    /// A line or a submenu left with nothing by hidden items goes with them, and every
+    /// key with them.
+    #[test]
+    fn a_context_menu_drops_the_lines_and_submenus_its_hidden_items_leave() {
+        let item = |id: &str, enabled| {
+            popup::Entry::from(popup::Item::new(id, id).enabled(enabled).shortcut("Ctrl+K"))
+        };
+        let submenu = |entries| popup::Entry::from(popup::Submenu::new("sub", "Sub", entries));
+        let entries = vec![
+            popup::Entry::Separator,
+            item("gone", false),
+            popup::Entry::Separator,
+            submenu(vec![item("gone-too", false), popup::Entry::Separator]),
+            popup::Entry::Separator,
+            item("kept", true),
+            popup::Entry::Separator,
+            submenu(vec![item("inner", true)]),
+            popup::Entry::Separator,
+        ];
+        let kept = pared(entries.clone(), false);
+        assert_eq!(
+            kept,
+            [
+                popup::Item::new("kept", "kept").into(),
+                popup::Entry::Separator,
+                submenu(vec![popup::Item::new("inner", "inner").into()]),
+            ]
+        );
+        // Waiting, the disabled items stay, still without keys.
+        let waiting = pared(entries, true);
+        assert_eq!(items(&waiting).len(), 4);
+        assert!(items(&waiting).iter().all(|item| item.shortcut.is_none()));
+    }
+
+    /// Decision 91's cap: the photo's and a thumbnail's menus, with every item every tool
+    /// and utility adds there shown, hold at most 16 items, a submenu's each counted. An
+    /// item past it needs a decision.
+    #[test]
+    fn the_photo_s_and_a_thumbnail_s_menus_hold_at_most_16_items() {
+        for (place, target) in [
+            (
+                Open::Photo,
+                Target::Photo {
+                    point: Some([0.5, 0.5]),
+                },
+            ),
+            (Open::Thumbnail, Target::Selection),
+        ] {
+            let tools = definitions();
+            let added = added(place, &target, &tools, apertrust_tools::utility::UTILITIES);
+            let all = app_items(place).into_iter().chain(added);
+            let count: usize = all.map(|item| item.actions.len()).sum();
+            assert!(count <= 16, "{place:?} holds {count} items");
+        }
+    }
+
+    /// The surround's menu is View › Background's items alone, as it was before the
+    /// places: each background checked as chosen, enabled, with no line, named Background.
+    #[test]
+    fn the_surround_s_menu_is_view_background_s_items() {
+        let ctx = egui::Context::default();
+        ctx.set_os(OperatingSystem::Nix);
+        apertrust_ui::set_locale(&ctx, Locale::EnGb);
+        let keymap = Keymap::defaults(OperatingSystem::Nix);
+        let state = everything();
+        let anchor = Rect::from_min_size(egui::pos2(30.0, 40.0), egui::Vec2::ZERO);
+        let menu = context(&ctx, Place::Surround, &Target::App, &keymap, &state, anchor);
+        let tr = translator(&ctx);
+        let background = drawn(
+            &BACKGROUND,
+            OperatingSystem::Nix,
+            &keymap,
+            &state,
+            &[],
+            &Steps::default(),
+            &tr,
+        );
+        assert_eq!(
+            menu,
+            popup::Request::pull_down(anchor, "Background", background.entries)
+        );
+        let words: Vec<(&str, Option<bool>)> = menu
+            .entries
+            .iter()
+            .map(|entry| match entry {
+                popup::Entry::Item(item) if item.enabled && item.shortcut.is_none() => {
+                    (item.text.as_str(), item.checked)
+                }
+                other => panic!("not a background's item: {other:?}"),
+            })
+            .collect();
+        assert_eq!(
+            words,
+            [
+                ("Black", Some(false)),
+                ("Very dark", Some(false)),
+                ("Dark", Some(true)),
+                ("Medium", Some(false)),
+                ("Light", Some(false)),
+                ("White", Some(false)),
+            ]
+        );
     }
 }

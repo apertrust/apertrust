@@ -106,6 +106,7 @@ static DEFINITION: Definition = Definition {
     views: &[],
     pickers: &[],
     // darktable's `description()` in src/iop/soften.c at the reference release.
+    menus: &[],
     facts: Some(Facts {
         purpose: Purpose::Creative,
         input: Fact::LinearRgbDisplayReferred,

@@ -478,6 +478,7 @@ static LISTING: Definition = Definition {
     }],
     views: &[],
     pickers: &[],
+    menus: &[],
     facts: None,
 };
 

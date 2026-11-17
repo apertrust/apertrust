@@ -394,6 +394,12 @@ pub fn is_open(ctx: &Context, id: Id) -> bool {
     anchor(ctx, id).is_some()
 }
 
+/// Whether the popup `id` is open and drawn here, not the installed [`Service`]'s, so a
+/// fresh request opened in place of it shows at once.
+pub fn is_drawn(ctx: &Context, id: Id) -> bool {
+    is_open(ctx, id) && !drawn::with(ctx, |popups| popups.is_native(id))
+}
+
 /// Where the open popup `id` hangs from; None while it is closed.
 pub fn anchor(ctx: &Context, id: Id) -> Option<Rect> {
     drawn::with(ctx, |popups| popups.anchor(id))

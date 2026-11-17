@@ -957,6 +957,7 @@ static SPOT: Definition = Definition {
         settings: &[],
         words_by: None,
     }],
+    menus: &[],
     facts: None,
 };
 
@@ -1345,6 +1346,7 @@ static CONFIGURED: Definition = Definition {
         settings: &["gain"],
         words_by: None,
     }],
+    menus: &[],
     facts: None,
 };
 

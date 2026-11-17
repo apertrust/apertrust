@@ -18,8 +18,8 @@
 //! The grid bar).
 
 use apertrust_ui::components::{
-    GridBarAction, GridEdge, GridEdgeAction, GridPanel, GridPanelAction, GridPosition, Sort,
-    SortKey, Thumb, ThumbnailSize, grid_panel_height, grid_panel_width,
+    CellMenu, GridBarAction, GridEdge, GridEdgeAction, GridPanel, GridPanelAction, GridPosition,
+    Sort, SortKey, Thumb, ThumbnailSize, grid_panel_height, grid_panel_width,
 };
 use apertrust_ui::{Icon, Theme};
 use egui::accesskit::{HasPopup, Role, Toggled};
@@ -37,12 +37,22 @@ struct Grid {
     size: ThumbnailSize,
     labels: bool,
     chosen: Vec<GridBarAction>,
+    /// The cells' menus asked for.
+    menus: Vec<CellMenu>,
+    /// What was done to the photos.
+    actions: Vec<GridPanelAction>,
 }
 
 /// The panel with `count` photos, as the app keeps it: each choice taken in at once.
 fn grid(count: usize) -> Harness<'static, Grid> {
+    grid_on(count, egui::os::OperatingSystem::Nix)
+}
+
+/// [`grid`] on `os`.
+fn grid_on(count: usize, os: egui::os::OperatingSystem) -> Harness<'static, Grid> {
     Harness::builder()
         .with_size(egui::vec2(900.0, 360.0))
+        .with_os(os)
         .with_context_setup(install)
         .build_ui_state(
             |ui, grid: &mut Grid| {
@@ -71,6 +81,8 @@ fn grid(count: usize) -> Harness<'static, Grid> {
                     }
                     grid.chosen.push(chosen);
                 }
+                grid.menus.extend(output.menu);
+                grid.actions.extend(output.action);
             },
             Grid {
                 count,
@@ -81,6 +93,8 @@ fn grid(count: usize) -> Harness<'static, Grid> {
                 size: ThumbnailSize::Medium,
                 labels: true,
                 chosen: Vec::new(),
+                menus: Vec::new(),
+                actions: Vec::new(),
             },
         )
 }
@@ -589,6 +603,135 @@ fn a_right_click_on_the_grid_bar_opens_its_position_menu() {
             .query_by_role_and_label(Role::Menu, "Grid panel options")
             .is_some()
     );
+}
+
+/// Decision 91: a cell's right-click asks for its photo's menu at the pointer, and the menu
+/// key and Shift+F10 on the focused cell under it, each with the cell, which the menu's
+/// focus goes back to; the app builds the menu.
+#[test]
+fn a_cell_s_right_click_and_menu_keys_ask_for_its_photo_s_menu() {
+    let mut harness = grid(12);
+    harness.run();
+    let cell = harness.get_by_label("IMG_0002.ARW").rect();
+    right_click(&mut harness, cell.center());
+    let asked = harness.state().menus.clone();
+    assert_eq!(asked.len(), 1);
+    assert_eq!((asked[0].photo, asked[0].at), (2, cell.center()));
+    // No photo opens on a right-click: the app makes it active.
+    harness.get_by_label("IMG_0003.ARW").focus();
+    harness.run();
+    let under = harness.get_by_label("IMG_0003.ARW").rect().left_bottom();
+    for (modifiers, key) in [
+        (egui::Modifiers::NONE, egui::Key::Menu),
+        (egui::Modifiers::SHIFT, egui::Key::F10),
+    ] {
+        harness.key_press_modifiers(modifiers, key);
+        harness.run();
+        let menu = *harness.state().menus.last().unwrap();
+        assert_eq!((menu.photo, menu.at), (3, under), "{key:?}");
+    }
+    assert_eq!(harness.state().menus.len(), 3);
+    // Focused elsewhere, the keys ask for nothing.
+    harness.get_by_role_and_label(Role::Button, "Sort").focus();
+    harness.run();
+    harness.key_press(egui::Key::Menu);
+    harness.run();
+    assert_eq!(harness.state().menus.len(), 3);
+}
+
+/// Decision 91: AccessKit's ShowContextMenu on a cell asks for its photo's menu under it,
+/// as its keys do.
+#[test]
+fn screen_readers_ask_for_a_cell_s_menu() {
+    let mut harness = grid(12);
+    harness.run();
+    let cell = harness.get_by_label("IMG_0004.ARW");
+    let under = cell.rect().left_bottom();
+    let node = cell.accesskit_node();
+    let show = egui::accesskit::Action::ShowContextMenu;
+    assert!(
+        node.data().supports_action(show),
+        "the cell offers its menu"
+    );
+    let (target_node, target_tree) = node.locate();
+    harness.event(egui::Event::AccessKitActionRequest(
+        egui::accesskit::ActionRequest {
+            target_node,
+            target_tree,
+            action: egui::accesskit::Action::ShowContextMenu,
+            data: None,
+        },
+    ));
+    harness.run();
+    let menus = &harness.state().menus;
+    assert_eq!(menus.len(), 1);
+    assert_eq!((menus[0].photo, menus[0].at), (4, under));
+}
+
+/// Decision 91: on the Mac a Control-click on a cell asks for its menu, as a right-click
+/// does, and opens no photo; elsewhere it is a click with Ctrl, which adds the photo to the
+/// selection.
+#[test]
+fn a_control_click_on_a_cell_opens_its_menu_on_the_mac_alone() {
+    use egui::os::OperatingSystem;
+    for os in [OperatingSystem::Mac, OperatingSystem::Nix] {
+        let mut harness = grid_on(12, os);
+        harness.run();
+        let at = harness.get_by_label("IMG_0002.ARW").rect().center();
+        // Control, which is Ctrl, the command key, off the Mac.
+        let ctrl = egui::Modifiers {
+            ctrl: true,
+            command: os != OperatingSystem::Mac,
+            ..egui::Modifiers::NONE
+        };
+        harness.get_by_label("IMG_0002.ARW").click_modifiers(ctrl);
+        harness.run();
+        let grid = harness.state();
+        if os == OperatingSystem::Mac {
+            assert_eq!(grid.menus.len(), 1, "{os:?}");
+            assert_eq!((grid.menus[0].photo, grid.menus[0].at), (2, at));
+            assert!(grid.actions.is_empty(), "{os:?}: {:?}", grid.actions);
+        } else {
+            assert!(grid.menus.is_empty(), "{os:?}");
+            assert_eq!(grid.actions, [GridPanelAction::ToggleSelected(2)]);
+        }
+    }
+}
+
+/// Decision 91: a Control-click on the Mac asks for the menu even when Control is let go
+/// in the frame the button comes up, after it: the click's own modifiers count.
+#[test]
+fn a_control_click_counts_control_as_the_button_came_up() {
+    let mut harness = grid_on(12, egui::os::OperatingSystem::Mac);
+    harness.run();
+    let at = harness.get_by_label("IMG_0002.ARW").rect().center();
+    let ctrl = egui::Modifiers {
+        ctrl: true,
+        ..egui::Modifiers::NONE
+    };
+    let button = |pressed| egui::Event::PointerButton {
+        pos: at,
+        button: egui::PointerButton::Primary,
+        pressed,
+        modifiers: ctrl,
+    };
+    harness.input_mut().events.extend([
+        egui::Event::PointerMoved(at),
+        egui::Event::ModifiersChanged(ctrl),
+        button(true),
+    ]);
+    harness.step();
+    // The button comes up, then Control, in one frame.
+    harness.input_mut().events.extend([
+        button(false),
+        egui::Event::ModifiersChanged(egui::Modifiers::NONE),
+    ]);
+    harness.step();
+    harness.run();
+    let grid = harness.state();
+    assert_eq!(grid.menus.len(), 1);
+    assert_eq!((grid.menus[0].photo, grid.menus[0].at), (2, at));
+    assert!(grid.actions.is_empty(), "{:?}", grid.actions);
 }
 
 /// A window with the grid panel as a column at `position`, `columns` wide as its edge

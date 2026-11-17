@@ -647,6 +647,7 @@ mod tests {
                 presets: &[],
                 views: &[],
                 pickers: &[],
+                menus: &[],
                 facts: None,
             })),
             owns: Box::leak(owns.into()),

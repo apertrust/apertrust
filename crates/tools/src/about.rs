@@ -24,7 +24,7 @@
 //! translations.
 //!
 //! A utility, a section that edits nothing (Scopes, History), has no definition: its
-//! words and what it measures are in [`UTILITIES`].
+//! words and what it measures are in [`crate::utility::UTILITIES`].
 
 use crate::messages;
 
@@ -255,31 +255,6 @@ impl Fact {
     fn says(self, part: &str) -> bool {
         self.darktable().split(", ").any(|p| p == part)
     }
-}
-
-/// A utility section, which edits nothing, as its header's tooltip describes it: its id,
-/// whose sentence is `tool-<id>-description`, and what it measures, if anything.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Utility {
-    pub id: &'static str,
-    pub measures: Option<WorksOn>,
-}
-
-/// The utilities built: Scopes, which measures the finished picture, and History.
-pub const UTILITIES: &[Utility] = &[
-    Utility {
-        id: "scopes",
-        measures: Some(WorksOn::Display),
-    },
-    Utility {
-        id: "history",
-        measures: None,
-    },
-];
-
-/// The utility `id`, if it is one.
-pub fn utility(id: &str) -> Option<&'static Utility> {
-    UTILITIES.iter().find(|utility| utility.id == id)
 }
 
 #[cfg(test)]

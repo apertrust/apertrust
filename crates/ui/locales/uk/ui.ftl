@@ -753,6 +753,11 @@ menu-minimise = Згорнути
 menu-zoom-window = Масштабувати
 menu-bring-all-to-front = Усі вікна на передній план
 
+## Контекстні меню
+
+context-menu-photo = Знімок
+context-menu-thumbnail = Мініатюра
+
 ## Історія обробки: назва кроку
 
 history-reset = Скидання

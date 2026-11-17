@@ -352,6 +352,7 @@ static DEFINITION: Definition = Definition {
     views: &[],
     pickers: &[],
     // darktable's `description()` in src/iop/demosaic.c at the reference release.
+    menus: &[],
     facts: Some(Facts {
         purpose: Purpose::Mandatory,
         input: Fact::LinearRawSceneReferred,
