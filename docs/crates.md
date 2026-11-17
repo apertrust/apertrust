@@ -1356,7 +1356,7 @@ darktable's AgX, the tone mapper.
 
 darktable's white balance over the raw-stage `temperature` (decision 27).
 
-- **Settings**, a preset row over the coefficients and `preset`: as shot, camera reference, as shot to reference; from image area turning the picker on; user modified the label when nothing matches, within darktable's 1e-5, and from image area while `preset` holds it.
+- **Settings**, a preset row over the coefficients and `preset`: as shot, camera reference, as shot to reference; from image area turning the picker on; user modified writing the coefficients the session remembers for the photo, darktable's `mod_coeff` (`ProcessingTool::remember` and `recall`, decision 27). Its label: the option the coefficients match within darktable's 1e-5, user modified when none, and from image area while `preset` holds it.
 - **The picker**, `spot`, an area of the mosaic at `temperature`'s input: darktable's `color_picker_apply`, the coefficients that make the area neutral, where every channel's mean is above darktable's 0.001 floor and every coefficient inside 0 to 8, and `preset` from image area (`ProcessingTool::pick`); redrawn, as the photo opens and after Undo, Redo or a move through history, from image area becomes what the coefficients match within 1e-5, as shot or camera reference, else user modified (`ProcessingTool::redrawn`).
 - **Temperature and Tint**, a view of the three coefficients through darktable's model, unavailable without the camera's matrix.
 - **The closed Channel coefficients group.** `various` is a control not ported, in no row, which Settings writes with the other three.

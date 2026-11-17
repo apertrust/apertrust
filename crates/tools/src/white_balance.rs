@@ -22,8 +22,10 @@
 //! - **Settings,** a preset row: as shot, from image area, user modified, camera reference
 //!   and as shot to reference, each writing the coefficients and where they came from,
 //!   `preset`, as darktable's `_preset_tune_callback` does. From image area turns the
-//!   picker on, and user modified is darktable's memory of the last coefficients, so
-//!   neither is ever applied. Its label is the option the coefficients hold, as
+//!   picker on, never applied; user modified writes back darktable's memory of the
+//!   coefficients last set, `mod_coeff`, which the session keeps for the open photo
+//!   ([`ProcessingTool::remember`] and [`ProcessingTool::recall`]). Its label is the option
+//!   the coefficients hold, as
 //!   `gui_update` names it within darktable's 1e-5, or from image area while `preset`
 //!   holds it after a pick.
 //! - **The picker,** `spot`, darktable's "from image area": an area of the mosaic at the
@@ -57,7 +59,7 @@ use crate::definition::{
     ProcessingDefinition, Reset, Row, Slider, Space, Tab, ToolDefinition, Unit, View,
 };
 use crate::pick::{PickKeys, Picked, Reading, Shown};
-use crate::{Base, ControlValue, Controls, Owned, ProcessingTool, Setting, ToolValues};
+use crate::{Base, ControlValue, Controls, Moment, Owned, ProcessingTool, Setting, ToolValues};
 
 pub struct WhiteBalance;
 
@@ -297,8 +299,9 @@ impl ProcessingTool for WhiteBalance {
     /// coefficients; camera reference, the camera's D65 ones
     /// (`_calculate_bogus_daylight_wb`); as shot to reference, the as-shot coefficients,
     /// under which colorin applies the late correction. darktable offers all three on
-    /// every photo, so does the row. From image area and user modified are never applied:
-    /// the first turns the picker on (`PresetRow::pickers`), whose pick writes the values.
+    /// every photo, so does the row. From image area is never applied: it turns the
+    /// picker on (`PresetRow::pickers`), whose pick writes the values; user modified
+    /// writes the session's memory ([`ProcessingTool::recall`]).
     fn preset(&self, preset: &str, option: &str, image: &ImageContext) -> Option<Controls> {
         if preset != SETTINGS_ROW {
             return None;
@@ -348,6 +351,57 @@ impl ProcessingTool for WhiteBalance {
             writes.set("preset", ControlValue::Choice(label(values, image)));
         }
         writes
+    }
+
+    /// darktable's `mod_coeff`, the four coefficients user modified writes back, and
+    /// whether they are set yet (`mod_temp` other than `-FLT_MAX`):
+    ///
+    /// - as the photo opens, the defaults' four, not set (`reload_defaults`,
+    ///   `temperature.c:1655`);
+    /// - redrawn, the four the controls hold, set, where the label works out as user
+    ///   modified or they are set already (`gui_update`, `:1344-1350`);
+    /// - a coefficient, Emerald, temperature or tint moved, the four the move leaves, set
+    ///   (`gui_changed`, `:1740`, and `_temp_tint_callback`, `:1720-1729`, whose
+    ///   normalising to green 1 [`ProcessingTool::unview`] has done).
+    fn remember(
+        &self,
+        moment: Moment<'_>,
+        memory: &Controls,
+        values: &Controls,
+        image: &ImageContext,
+    ) -> Controls {
+        let set = memory.get(SET).is_some();
+        match moment {
+            Moment::Opened => four(&self.defaults(image), false),
+            Moment::Redrawn if set || label(values, image) == USER => four(values, true),
+            Moment::Moved(control)
+                if FOUR.contains(&control) || matches!(control, "temperature" | "tint") =>
+            {
+                four(values, true)
+            }
+            Moment::Redrawn | Moment::Moved(_) => memory.clone(),
+        }
+    }
+
+    /// User modified, darktable's `_preset_tune_callback` (`temperature.c:1824-1827`): the
+    /// four coefficients the session remembers ([`ProcessingTool::remember`]) and `preset`
+    /// user modified. `None` for a memory that holds no coefficients.
+    fn recall(
+        &self,
+        preset: &str,
+        option: &str,
+        memory: &Controls,
+        _: &ImageContext,
+    ) -> Option<Controls> {
+        if (preset, option) != (SETTINGS_ROW, "user") {
+            return None;
+        }
+        let mut values = Controls::new();
+        for control in FOUR {
+            values.set(control, memory.get(control)?.clone());
+        }
+        values.set("preset", ControlValue::Choice(USER));
+        Some(values)
     }
 
     /// darktable's `color_picker_apply` (`temperature.c:1948-1969`) on the area's mean at
@@ -460,6 +514,24 @@ fn colour_raw(image: &ImageContext) -> Option<&Camera> {
 
 /// The four coefficients, `various` the fourth, as `_temp_params_from_array` writes them.
 const FOUR: [&str; 4] = ["red", "green", "blue", "various"];
+
+/// In White balance's memory, that its coefficients are set: darktable's `mod_temp` other
+/// than `-FLT_MAX`.
+const SET: &str = "set";
+
+/// The four coefficients `values` holds, as White balance's memory keeps them, set or not.
+fn four(values: &Controls, set: bool) -> Controls {
+    let mut memory = Controls::new();
+    for control in FOUR {
+        if let Some(value) = values.get(control) {
+            memory.set(control, value.clone());
+        }
+    }
+    if set {
+        memory.set(SET, ControlValue::Bool(true));
+    }
+    memory
+}
 
 /// The camera's XYZ to camera matrix, darktable's for its temperature and tint.
 fn matrix(image: &ImageContext) -> Option<apertrust_color::Mat3> {
@@ -905,6 +977,63 @@ mod tests {
             values.set("preset", ControlValue::Choice(setting));
             assert!(preset(&values).is_empty(), "{setting}");
         }
+    }
+
+    /// darktable's `mod_coeff` (`temperature.c:1344-1350`, `:1655`, `:1720-1742`): the
+    /// defaults' four as the photo opens, not set; redrawn, the four held where the label
+    /// reads user modified or they are set; a coefficient, Emerald, temperature or tint
+    /// moved, the four held, set; anything else leaves it. User modified writes it back
+    /// (`:1824-1827`), and no other option recalls.
+    #[test]
+    fn user_modified_remembers_and_writes_back_darktable_s_mod_coeff() {
+        let image = crate::testing::image();
+        let defaults = WhiteBalance.defaults(&image);
+        let opened = WhiteBalance.remember(Moment::Opened, &Controls::new(), &defaults, &image);
+        assert_eq!(opened, four(&defaults, false));
+        // Redrawn at the defaults, as shot to reference: not set, so left.
+        let redrawn = WhiteBalance.remember(Moment::Redrawn, &opened, &defaults, &image);
+        assert_eq!(redrawn, opened);
+        // Red moved: the four, set.
+        let mut moved = defaults.clone();
+        moved.set("red", ControlValue::Number(2.5));
+        moved.set("preset", ControlValue::Choice(USER));
+        for control in ["red", "green", "blue", "various", "temperature", "tint"] {
+            let after = WhiteBalance.remember(Moment::Moved(control), &opened, &moved, &image);
+            assert_eq!(after, four(&moved, true), "{control}");
+        }
+        for control in ["preset", "finetune"] {
+            let after = WhiteBalance.remember(Moment::Moved(control), &opened, &moved, &image);
+            assert_eq!(after, opened, "{control}");
+        }
+        // Redrawn reading user modified, or set already: the four the controls hold.
+        assert_eq!(
+            WhiteBalance.remember(Moment::Redrawn, &opened, &moved, &image),
+            four(&moved, true)
+        );
+        let set = four(&moved, true);
+        assert_eq!(
+            WhiteBalance.remember(Moment::Redrawn, &set, &defaults, &image),
+            four(&defaults, true)
+        );
+        // User modified writes the four back with its setting.
+        let recalled = WhiteBalance
+            .recall(SETTINGS_ROW, "user", &set, &image)
+            .unwrap();
+        for control in FOUR {
+            assert_eq!(recalled.get(control), moved.get(control), "{control}");
+        }
+        assert_eq!(recalled.get("preset"), Some(&ControlValue::Choice(USER)));
+        assert_eq!(recalled.get(SET), None);
+        for option in ["as_shot", "spot", "d65", "d65_late"] {
+            assert_eq!(
+                WhiteBalance.recall(SETTINGS_ROW, option, &set, &image),
+                None
+            );
+        }
+        assert_eq!(
+            WhiteBalance.recall(SETTINGS_ROW, "user", &Controls::new(), &image),
+            None
+        );
     }
 
     #[test]

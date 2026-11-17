@@ -47,7 +47,7 @@ use apertrust_plugin::{ImageContext, ParamValues, Value};
 use apertrust_tools::white_balance::{
     COEFFICIENTS, SETTINGS, SETTINGS_ROW, TEMPERATURE_TINT, WhiteBalance,
 };
-use apertrust_tools::{Base, ControlValue, Controls, Mark, ProcessingTool, Row, TOOLS};
+use apertrust_tools::{Base, ControlValue, Controls, Mark, Moment, ProcessingTool, Row, TOOLS};
 use golden::cases::CASES;
 
 use common::{Bench, Rendered, exact, id, raw_context, small_raw};
@@ -557,8 +557,9 @@ fn w4_the_x_t50_s_as_shot_reads_as_darktable_s_panel() {
 // W5: Settings.
 
 /// W5 on `image`: each option writes darktable's values and reads back; a moved
-/// coefficient reads user modified; from image area and user modified are never given,
-/// from image area being an option that turns the picker on.
+/// coefficient reads user modified; from image area is never given, an option that turns
+/// the picker on; user modified writes back the memory the session keeps, darktable's
+/// `mod_coeff`.
 fn w5_holds(image: &ImageContext) {
     let camera = image.camera.as_ref().unwrap();
     let as_shot = coefficients(&WhiteBalance.defaults(image));
@@ -588,10 +589,27 @@ fn w5_holds(image: &ImageContext) {
         assert_eq!(WhiteBalance.preset(SETTINGS_ROW, option, image), None);
     }
     // From image area turns the picker on, which the session offers wherever the photo can
-    // be edited; user modified is never offered.
+    // be edited.
     let row = WhiteBalance.definition().preset(SETTINGS_ROW).unwrap();
     assert_eq!(row.pickers, [("spot", "spot")]);
     assert!(WhiteBalance.definition().picker("spot").is_some());
+    // User modified writes the session's memory back, darktable's `mod_coeff`: as the photo
+    // opens, the defaults' four coefficients; after a move, the four it leaves.
+    let defaults = WhiteBalance.defaults(image);
+    let opened = WhiteBalance.remember(Moment::Opened, &Controls::new(), &defaults, image);
+    let user = WhiteBalance
+        .recall(SETTINGS_ROW, "user", &opened, image)
+        .unwrap();
+    assert_eq!(coefficients(&user), coefficients(&defaults));
+    assert_eq!(user.get("various"), defaults.get("various"));
+    assert_eq!(user.get("preset"), Some(&setting("user")));
+    let mut moved = defaults.clone();
+    moved.set("blue", number(coefficients(&defaults)[2] + 0.25));
+    let remembered = WhiteBalance.remember(Moment::Moved("blue"), &opened, &moved, image);
+    let user = WhiteBalance
+        .recall(SETTINGS_ROW, "user", &remembered, image)
+        .unwrap();
+    assert_eq!(coefficients(&user), coefficients(&moved));
     let defaults = WhiteBalance.defaults(image);
     let untouched = if camera.xyz_to_camera.is_some() {
         "d65_late"

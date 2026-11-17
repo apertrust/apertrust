@@ -128,7 +128,7 @@ pub use apertrust_library::ops::{LibraryCommand, LibraryEvent};
 pub use apertrust_plugin::Value;
 use apertrust_plugin::{ImageContext, ImageDesc, Operation, ParamValues};
 use apertrust_tools::check::{self, ToolError};
-use apertrust_tools::{Base, ControlKind, Controls, ProcessingTool};
+use apertrust_tools::{Base, ControlKind, Controls, Moment, ProcessingTool};
 pub use apertrust_tools::{ControlValue, LabelValue, Mark, Range, Setting, ValueFormat};
 use thiserror::Error;
 
@@ -2299,6 +2299,10 @@ struct Open {
     pipeline: Option<Pipeline>,
     /// The edit's history in memory, and its undo records (decision 78).
     history: history::PhotoHistory,
+    /// Each tool's memory of the photo, as darktable's panel keeps one, which no edit
+    /// stores (`ProcessingTool::remember`, decision 27): White balance's user-modified
+    /// coefficients. Gone with the photo.
+    memories: BTreeMap<&'static str, Controls>,
     /// The tools the History tab's eye hides from the live frame ([`Command::Hide`]):
     /// view state, never in the edit, gone with the photo.
     hidden: BTreeSet<&'static str>,
@@ -2326,6 +2330,40 @@ struct Gesture {
     /// Whether `edit` differs from the edit handed to the writer last, so that putting it
     /// back leaves something to write.
     unsaved: bool,
+    /// The tools' memories before it (decision 27), which a move's remembering changed.
+    memories: BTreeMap<&'static str, Controls>,
+}
+
+/// `memories`, the tools' memories while the edit is `edit` on `image`, after `moment`
+/// ([`ProcessingTool::remember`]), every tool's, or `only`'s. A tool whose code panics keeps
+/// the memory it had.
+fn remember(
+    memories: &mut BTreeMap<&'static str, Controls>,
+    edit: &Edit,
+    image: &ImageContext,
+    tools: &[&dyn ProcessingTool],
+    moment: Moment<'_>,
+    only: Option<&str>,
+) {
+    for &tool in tools {
+        let id = tool.definition().tool.id;
+        if only.is_some_and(|only| only != id) {
+            continue;
+        }
+        let memory = memories.get(id).cloned().unwrap_or_default();
+        let remembered = catch_unwind(AssertUnwindSafe(|| {
+            tool.remember(moment, &memory, &edit.every(tool, image), image)
+        }));
+        match remembered {
+            Ok(next) if next.is_empty() => {
+                memories.remove(id);
+            }
+            Ok(next) => {
+                memories.insert(id, next);
+            }
+            Err(_) => {}
+        }
+    }
 }
 
 struct Display {
@@ -2995,6 +3033,7 @@ impl Engine {
                     }
                     edit.follow(&before, tool, edit::written(tool, &control), image)
                 })?;
+                self.remember_moved(&tool, &control, changed);
                 (changed, done)
             }
             Command::ResetControl { tool, control } => {
@@ -3009,6 +3048,7 @@ impl Engine {
                     }
                     edit.follow(&before, tool, edit::written(tool, &control), image)
                 })?;
+                self.remember_moved(&tool, &control, changed);
                 (changed, true)
             }
             Command::ResetTool { tool } => {
@@ -3016,6 +3056,8 @@ impl Engine {
                     edit.reset_tool(edit::tool(tools, &tool)?);
                     Ok(())
                 })?;
+                // darktable's reset runs `reload_defaults`, then `gui_update`.
+                self.remember_redrawn(Some(&tool), changed);
                 (changed, true)
             }
             Command::Keep {
@@ -3066,8 +3108,13 @@ impl Engine {
                 // An option's values are the tool's own, every control it describes,
                 // so they take no follow writes, as darktable's `_preset_tune_callback`
                 // writes its parameters without `gui_changed`.
+                // An option the tool's memory gives writes it back, as user modified does.
+                let memory = (self.open.as_ref())
+                    .and_then(|open| open.memories.get(tool.as_str()).cloned())
+                    .unwrap_or_default();
                 let changed = self.change(|edit, tools, _, image| {
-                    edit.apply_preset(edit::tool(tools, &tool)?, &preset, &option, image)
+                    let found = edit::tool(tools, &tool)?;
+                    edit.apply_preset_recalling(found, &preset, &option, &memory, image)
                 })?;
                 (changed, true)
             }
@@ -3097,6 +3144,7 @@ impl Engine {
                     *edit = Edit::default();
                     Ok(())
                 })?;
+                self.remember_redrawn(None, changed);
                 (changed, true)
             }
             Command::Undo => return self.undo(false),
@@ -3138,6 +3186,29 @@ impl Engine {
             cancelled: false,
             wrote: Vec::new(),
         })
+    }
+
+    /// A control or a coordinate of `tool` that a command set or reset, moved where
+    /// `changed`: the tool's memory after it ([`Open::remember`]), as darktable's
+    /// `gui_changed` runs only when a slider's value changes.
+    fn remember_moved(&mut self, tool: &str, control: &str, changed: bool) {
+        if let Some(open) = &mut self.open
+            && changed
+        {
+            open.remember(&self.tools, Moment::Moved(control), Some(tool));
+        }
+    }
+
+    /// The tools reset by a command that `changed` the edit, `only`'s or every tool's:
+    /// their memories as darktable's reset leaves them, its `reload_defaults` then
+    /// `gui_update` (`imageop.c:2329-2336`), which a redraw gives, the coefficients
+    /// `reload_defaults` writes being those the reset leaves.
+    fn remember_redrawn(&mut self, only: Option<&str>, changed: bool) {
+        if let Some(open) = &mut self.open
+            && changed
+        {
+            open.remember(&self.tools, Moment::Redrawn, only);
+        }
     }
 
     /// Changes the open photo's edit, given its image context, and says whether it
@@ -3438,6 +3509,7 @@ impl Engine {
             // Shown as read, redrawn but not clamped, in the session alone: it is never
             // written.
             open.edit.redraw(&self.tools, &open.image);
+            open.remember(&self.tools, Moment::Redrawn, None);
             open.view_only = Some(view_only.clone());
             open.gesture = None;
             open.unsaved = false;
@@ -3476,9 +3548,20 @@ impl Engine {
             if let (Some(gesture), Some(from)) = (&mut open.gesture, gesture_from) {
                 let rebased = crate::history::rebase(&gesture.edit, &from, &now);
                 gesture.edit = open.history.read_of(&rebased);
+                // Its memories follow the edit a cancel puts back, as the open ones do.
+                let (memories, image) = (&mut gesture.memories, &open.image);
+                remember(
+                    memories,
+                    &gesture.edit,
+                    image,
+                    &self.tools,
+                    Moment::Redrawn,
+                    None,
+                );
             }
             open.edit = crate::history::rebase(&open.edit, &from, &now);
             history::as_read(&mut open.edit, &self.tools, &open.image);
+            open.remember(&self.tools, Moment::Redrawn, None);
             open.held.prune(&open.edit);
             open.unsaved = true;
         }
@@ -3702,11 +3785,17 @@ impl Engine {
             views_failed: BTreeSet::new(),
             pipeline: None,
             history,
+            memories: BTreeMap::new(),
             hidden: BTreeSet::new(),
             histogram_failed: false,
             stale_frame: false,
             stale_tries: 0,
         });
+        // darktable's panel memory as the photo loads, then as it is first drawn.
+        if let Some(open) = &mut self.open {
+            open.remember(&self.tools, Moment::Opened, None);
+            open.remember(&self.tools, Moment::Redrawn, None);
+        }
         photo
     }
 
@@ -3785,6 +3874,10 @@ impl Engine {
             } else {
                 photo.edit.redraw(&self.tools, &photo.image);
             }
+            // darktable's panel memory as the photo loads on the decode's context, then
+            // as it is drawn, so a memory not set takes the decode's defaults.
+            photo.remember(&self.tools, Moment::Opened, None);
+            photo.remember(&self.tools, Moment::Redrawn, None);
             // Its steps described on the new context; a value clamped is a change not yet a
             // step.
             photo.history.describe_anew();
@@ -4557,6 +4650,19 @@ impl Engine {
 }
 
 impl Open {
+    /// Each tool's memory of the photo after `moment` ([`ProcessingTool::remember`]), every
+    /// tool's, or `only`'s. A tool whose code panics keeps the memory it had.
+    fn remember(&mut self, tools: &[&dyn ProcessingTool], moment: Moment<'_>, only: Option<&str>) {
+        remember(
+            &mut self.memories,
+            &self.edit,
+            &self.image,
+            tools,
+            moment,
+            only,
+        );
+    }
+
     /// The edit as its file holds it, which thumbnails and exports render, as every reader
     /// of the file folds it from the log at its saved end, the tools not applied among
     /// it: the edit, but for a log of default steps never written, which the file lacks,
@@ -4613,6 +4719,7 @@ impl Open {
                     edit: self.edit.clone(),
                     held: self.held.clone(),
                     unsaved: self.unsaved,
+                    memories: self.memories.clone(),
                 });
             }
         } else if !matches!(command, Command::CancelGesture { .. } | Command::RetrySave) {
@@ -4620,13 +4727,15 @@ impl Open {
         }
     }
 
-    /// Puts the edit, the held coordinates and whether the writer has that edit back as
-    /// they stood before the gesture under way on `tool`, and says whether the edit
+    /// Puts the edit, the held coordinates, whether the writer has that edit and the tools'
+    /// memories back as they stood before the gesture under way on `tool`, and says whether
+    /// the edit
     /// changed; `None`, changing nothing, where no gesture is under way on it.
     fn cancel(&mut self, tool: &str) -> Option<bool> {
         let gesture = self.gesture.take_if(|gesture| gesture.tool == tool)?;
         let changed = self.edit != gesture.edit;
         (self.edit, self.held, self.unsaved) = (gesture.edit, gesture.held, gesture.unsaved);
+        self.memories = gesture.memories;
         Some(changed)
     }
 
@@ -4842,8 +4951,15 @@ impl Open {
                         // An option that turns a picker on, wherever a picker can start.
                         .filter(|option| {
                             let picks = row.pickers.iter().any(|(id, _)| id == option);
+                            let memory = self.memories.get(tool.definition().tool.id);
+                            let recalls = || {
+                                let memory = memory.cloned().unwrap_or_default();
+                                (tool.recall(row.id, option, &memory, &self.image)).is_some()
+                            };
                             editable
-                                && (picks || tool.preset(row.id, option, &self.image).is_some())
+                                && (picks
+                                    || tool.preset(row.id, option, &self.image).is_some()
+                                    || recalls())
                         })
                         .collect(),
                 })
@@ -8102,6 +8218,215 @@ mod tests {
             "{views:?}"
         );
         assert!(control(values, "temperature", "red").available);
+        driven.writes();
+        remove(&path);
+    }
+
+    /// White balance's user modified writes back the coefficients the session remembers
+    /// for the photo, darktable's `mod_coeff` (decision 27): a move's, past another option;
+    /// the photo's as it opens with user-modified coefficients; and after Undo past a move,
+    /// the coefficients the redraw reads, as darktable's `gui_update` sets the memory once
+    /// it is set.
+    #[test]
+    fn white_balance_s_user_modified_writes_back_the_coefficients_the_session_remembers() {
+        use apertrust_tools::white_balance::{SETTINGS, WhiteBalance};
+        let path = scratch("white-balance-user");
+        let mut driven = Driven::new(&[&WhiteBalance]);
+        let opened = driven.open(&path);
+        let as_shot =
+            ["red", "blue"].map(|id| control(values(&opened), "temperature", id).value.clone());
+        let user = ControlValue::Choice(SETTINGS.iter().position(|o| *o == "user").unwrap() as u32);
+        let settings = |values: &Values| {
+            let row = values.tools[0]
+                .presets
+                .iter()
+                .find(|p| p.preset == "settings");
+            row.unwrap().clone()
+        };
+        assert!(settings(values(&opened)).available.contains(&"user"));
+        let set = |id: &str, value: f32| Command::SetControl {
+            tool: "temperature".to_owned(),
+            control: id.to_owned(),
+            value: ControlValue::Number(value),
+            done: true,
+        };
+        let apply = |option: &str| Command::ApplyPreset {
+            tool: "temperature".to_owned(),
+            preset: "settings".to_owned(),
+            option: option.to_owned(),
+        };
+        let coefficients = |events: &[Event]| {
+            ["red", "blue"].map(|id| control(values(events), "temperature", id).value.clone())
+        };
+        let number = ControlValue::Number;
+
+        // A move, then as shot, then user modified: the move's coefficients back.
+        driven.run([set("red", 2.5)]);
+        driven.run([apply("as_shot")]);
+        let events = driven.run([apply("user")]);
+        assert!(failures(&events).is_empty(), "{events:?}");
+        assert_eq!(coefficients(&events), [number(2.5), as_shot[1].clone()]);
+        assert_eq!(
+            control(values(&events), "temperature", "preset").value,
+            user
+        );
+        assert_eq!(settings(values(&events)).matching, Some("user"));
+
+        // Reopened with those coefficients, user modified gives them, the photo's own.
+        driven.open(&scratch("white-balance-user-other"));
+        driven.writes();
+        driven.open(&path);
+        driven.run([apply("as_shot")]);
+        let events = driven.run([apply("user")]);
+        assert_eq!(coefficients(&events), [number(2.5), as_shot[1].clone()]);
+
+        // Undo past a move: the redraw sets the memory to what the edit holds then.
+        driven.run([set("blue", 2.0)]);
+        let undone = driven.run([Command::Undo]);
+        assert_eq!(coefficients(&undone), [number(2.5), as_shot[1].clone()]);
+        driven.run([apply("as_shot")]);
+        let events = driven.run([apply("user")]);
+        assert_eq!(coefficients(&events), [number(2.5), as_shot[1].clone()]);
+
+        // A refused `Step` and a cancelled gesture leave the memory as it was.
+        let refused = driven.run([Command::Step {
+            source: crate::history::StepSource::You,
+            note: None,
+            commands: vec![set("red", 3.0), set("nothing", 1.0)],
+        }]);
+        assert_eq!(failures(&refused).len(), 1, "{refused:?}");
+        driven.run([Command::SetControl {
+            tool: "temperature".to_owned(),
+            control: "red".to_owned(),
+            value: number(4.0),
+            done: false,
+        }]);
+        driven.run([Command::CancelGesture {
+            tool: "temperature".to_owned(),
+        }]);
+        driven.run([apply("as_shot")]);
+        let events = driven.run([apply("user")]);
+        assert_eq!(coefficients(&events), [number(2.5), as_shot[1].clone()]);
+        driven.writes();
+        remove(&path);
+    }
+
+    /// darktable's reset runs `reload_defaults`, then `gui_update` (`imageop.c:2329-2336`):
+    /// once the memory is set, a reset of White balance, or of the edit, leaves the as-shot
+    /// coefficients there, which user modified then writes back.
+    #[test]
+    fn a_reset_sets_white_balance_s_memory_to_what_it_leaves() {
+        use apertrust_tools::white_balance::WhiteBalance;
+        let path = scratch("white-balance-user-reset");
+        let mut driven = Driven::new(&[&WhiteBalance]);
+        let opened = driven.open(&path);
+        let red = |events: &[Event]| control(values(events), "temperature", "red").value.clone();
+        let as_shot = red(&opened);
+        let user = || Command::ApplyPreset {
+            tool: "temperature".to_owned(),
+            preset: "settings".to_owned(),
+            option: "user".to_owned(),
+        };
+        let resets = [
+            Command::ResetTool {
+                tool: "temperature".to_owned(),
+            },
+            Command::Reset,
+        ];
+        for reset in resets {
+            driven.run([Command::SetControl {
+                tool: "temperature".to_owned(),
+                control: "red".to_owned(),
+                value: ControlValue::Number(2.5),
+                done: true,
+            }]);
+            let events = driven.run([reset.clone()]);
+            assert_eq!(red(&events), as_shot, "{reset:?}");
+            let events = driven.run([user()]);
+            assert!(failures(&events).is_empty(), "{events:?}");
+            assert_eq!(red(&events), as_shot, "{reset:?}");
+        }
+        driven.writes();
+        remove(&path);
+    }
+
+    /// A newer file taken in during a gesture on White balance rebases the edit the cancel
+    /// puts back, and the memory it puts back with it follows that edit, redrawn: blue
+    /// moved, so the memory is set; another program's red of 2.5 found by an Exposure
+    /// change's write and taken in during a drag of red; the drag cancelled, then user
+    /// modified gives the 2.5 the restored edit holds.
+    #[test]
+    fn a_cancel_after_a_take_in_puts_back_the_memory_of_the_rebased_edit() {
+        use apertrust_tools::exposure::Exposure;
+        use apertrust_tools::white_balance::WhiteBalance;
+
+        use crate::history::{Change, StepSource};
+        const TOOLS: &[&dyn ProcessingTool] = &[&WhiteBalance, &Exposure];
+        let path = scratch("white-balance-user-cancel-newer");
+        let sidecar = sidecar::path_for(&path);
+        let mut driven = Driven::new(TOOLS);
+        driven.open(&path);
+        // A first change, so the file holds the history the newer one extends.
+        let blue = |value: f32| Command::SetControl {
+            tool: "temperature".to_owned(),
+            control: "blue".to_owned(),
+            value: ControlValue::Number(value),
+            done: true,
+        };
+        driven.run([blue(1.6)]);
+        driven.writes();
+
+        // Another program's step a minute on: red at 2.5.
+        let open = driven.engine.open.as_ref().unwrap();
+        let mut theirs = open.history.log().clone();
+        let mut clocks = open.history.clocks().to_vec();
+        let last = theirs.steps().last().unwrap().clock.when;
+        let clock = Clock::at(last + 60_000, None, "00000000".parse().unwrap());
+        let fold = theirs.fold();
+        let mut newer = fold.clone();
+        let red = ControlValue::Number(2.5);
+        let image = testing::image();
+        (newer.set_control(&WhiteBalance, "red", red.clone(), &image)).unwrap();
+        let changes = Change::between(&fold, &newer, &[]);
+        theirs.add_change(changes, StepSource::You, None, clock);
+        clocks.push(clock);
+        let file = sidecar::Edits::new("");
+        let tools = (OPERATIONS, TOOLS);
+        sidecar::write_log(&sidecar, &file, &theirs, &clocks, tools, "cli").unwrap();
+
+        // A change of Exposure, whose write finds that file, then a drag of red begun
+        // before the file is taken in.
+        driven.run([Command::SetControl {
+            tool: "exposure".to_owned(),
+            control: "exposure".to_owned(),
+            value: ControlValue::Number(0.5),
+            done: true,
+        }]);
+        driven.run([Command::SetControl {
+            tool: "temperature".to_owned(),
+            control: "red".to_owned(),
+            value: ControlValue::Number(3.0),
+            done: false,
+        }]);
+        driven.writes();
+        let taken = driven.engine.newer_file(false);
+        assert!(failures(&taken).is_empty(), "{taken:?}");
+        assert!(driven.engine.open.as_ref().unwrap().gesture.is_some());
+
+        // The drag cancelled: the newer red, and user modified gives it back.
+        let events = driven.run([Command::CancelGesture {
+            tool: "temperature".to_owned(),
+        }]);
+        assert_eq!(control(values(&events), "temperature", "red").value, red);
+        let apply = |option: &str| Command::ApplyPreset {
+            tool: "temperature".to_owned(),
+            preset: "settings".to_owned(),
+            option: option.to_owned(),
+        };
+        driven.run([apply("as_shot")]);
+        let events = driven.run([apply("user")]);
+        assert!(failures(&events).is_empty(), "{events:?}");
+        assert_eq!(control(values(&events), "temperature", "red").value, red);
         driven.writes();
         remove(&path);
     }

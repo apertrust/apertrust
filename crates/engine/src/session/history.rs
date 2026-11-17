@@ -72,7 +72,7 @@ use std::time::{Duration, Instant};
 
 use apertrust_library::clock::{Clock, MachineId};
 use apertrust_plugin::{ImageContext, Operation};
-use apertrust_tools::{ProcessingTool, ToolValues};
+use apertrust_tools::{Moment, ProcessingTool, ToolValues};
 
 use super::{Command, Effect, Engine, Event, Open, SessionError, on_edit};
 use crate::edit::Edit;
@@ -1315,8 +1315,9 @@ impl Engine {
     }
 
     /// [`Command::Step`]'s commands applied in order to the open photo's edit, in place, all
-    /// or none: the edit, the held coordinates and whether the writer has the edit are kept
-    /// aside and put back should one be refused, which refuses the whole, naming its index.
+    /// or none: the edit, the held coordinates, whether the writer has the edit and the
+    /// tools' memories are kept aside and put back should one be refused, which refuses the
+    /// whole, naming its index.
     /// Its source, its steps and its gesture are left to [`Self::apply_edit`]. What it wrote
     /// is what its commands that changed the edit wrote, in order: one that changes nothing
     /// counts as none, as on its own.
@@ -1325,7 +1326,12 @@ impl Engine {
             return Ok(Effect::default());
         };
         let save = commands.iter().any(|command| !goes_on(command));
-        let kept = (open.edit.clone(), open.held.clone(), open.unsaved);
+        let kept = (
+            open.edit.clone(),
+            open.held.clone(),
+            open.unsaved,
+            open.memories.clone(),
+        );
         let mut render = false;
         let mut written = Vec::new();
         for (index, command) in commands.into_iter().enumerate() {
@@ -1345,7 +1351,7 @@ impl Engine {
                 }
                 Err(error) => {
                     if let Some(open) = &mut self.open {
-                        (open.edit, open.held, open.unsaved) = kept;
+                        (open.edit, open.held, open.unsaved, open.memories) = kept;
                     }
                     let error = Box::new(error);
                     return Err(SessionError::InStep { index, error });
@@ -1488,6 +1494,7 @@ fn moved_to(open: &mut Open, moved: Option<Edit>, tools: &[&dyn ProcessingTool])
     as_read(&mut edit, tools, &open.image);
     let changed = edit != open.edit;
     open.edit = edit;
+    open.remember(tools, Moment::Redrawn, None);
     open.held.prune(&open.edit);
     // The end is saved; a log of default steps never written is not ([`PhotoHistory::unwritten`]).
     open.unsaved = true;
