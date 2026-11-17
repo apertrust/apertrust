@@ -772,7 +772,8 @@ fn built(
         entries.push(entry);
     }
     if let apertrust_tools::Place::Photo | apertrust_tools::Place::Thumbnail = open {
-        entries = pared(entries, state.waiting);
+        // A photo open for viewing only never takes what waits for it to go live.
+        entries = pared(entries, state.waiting && !state.view_only);
     }
     popup::Request::pull_down(anchor, name(place, target, tr), entries)
 }
@@ -2822,6 +2823,13 @@ mod tests {
             ..one
         };
         let menu = open(Open::Photo, photo, &viewing);
+        assert_eq!(words(&menu), ["Export…", "-", "Background ▸"]);
+        // Nor while it loads: what waits for it to go live would never run there.
+        let loading = State {
+            waiting: true,
+            ..viewing
+        };
+        let menu = open(Open::Photo, photo, &loading);
         assert_eq!(words(&menu), ["Export…", "-", "Background ▸"]);
         let menu = open(Open::Thumbnail, Target::Selection, &one);
         assert_eq!(menu.name, "Thumbnail");
