@@ -4172,7 +4172,8 @@ impl App {
             }
         });
         let state = self.state(ctx);
-        context_popup(ctx, id, opened, &self.shell.keymap, &state)
+        let asked = self.mirror.photo.asked();
+        context_popup(ctx, id, opened, &self.shell.keymap, &state, asked)
     }
 
     /// The central bar, the photo and its caption. Returns the central bar's rectangle, a
@@ -4462,7 +4463,8 @@ impl App {
     ) -> Option<ActionId> {
         let picking = self.mirror.pickers.active().is_some();
         let state = self.state(ctx);
-        central_menu(ctx, slot, photo, picking, &self.shell.keymap, &state)
+        let asked = self.mirror.photo.asked();
+        central_menu(ctx, slot, photo, picking, &self.shell.keymap, &state, asked)
     }
 
     /// Whether the main window is the start window this frame ([`shows_start`]): it becomes
@@ -4878,7 +4880,7 @@ fn photo_point(photo: egui::Rect, at: egui::Pos2) -> [f32; 2] {
 }
 
 /// Opens the context menu at the pointer when `slot` is right-clicked, built from `keymap`
-/// and `state` ([`context_popup`]), and returns the action of the item chosen in it: the
+/// and `state` for the photo `asked` for ([`context_popup`]), and returns the action of the item chosen in it: the
 /// photo's on `photo`, the photo's rectangle while one is shown, the point in the photo's
 /// coordinates as pickers take them, unless `picking`, a picker on, takes the right-click
 /// there (decision 91); the surround's outside it.
@@ -4889,6 +4891,7 @@ fn central_menu(
     picking: bool,
     keymap: &Keymap,
     state: &State,
+    asked: Option<&Path>,
 ) -> Option<ActionId> {
     let id = slot.id.with("menu");
     let at = slot
@@ -4913,7 +4916,7 @@ fn central_menu(
             opener: None,
         })
     });
-    context_popup(ctx, id, opened, keymap, state)
+    context_popup(ctx, id, opened, keymap, state, asked)
 }
 
 /// What a context menu opened with: its place and target, where it hangs from, and the
@@ -4928,6 +4931,12 @@ struct Opened {
 
 /// The context menu `opened` this frame, if any, as the popup `id`, built from `keymap` and
 /// `state` (`menus::context`), and the action of the item chosen in it.
+///
+/// The photo's and a thumbnail's act on the photo asked for as they open, `photo`, opening
+/// or open (decision 91): while one is open another photo can become active, by a drop,
+/// Open… or an open asked for earlier, and the menu then closes with nothing chosen, so it
+/// never acts on a photo other than its own. The Mac's native menu is modal, so nothing
+/// changes while it is open.
 ///
 /// One opened while its photo waits to go live (decision 91), as a thumbnail's does on a
 /// photo it has just made active, shows the items that wait disabled; once the photo is
@@ -4945,8 +4954,10 @@ fn context_popup(
     opened: Option<Opened>,
     keymap: &Keymap,
     state: &State,
+    photo: Option<&Path>,
 ) -> Option<ActionId> {
     let waiting = id.with("waiting");
+    let own = id.with("photo");
     let open = |opened: &Opened| {
         let request = menus::context(
             ctx,
@@ -4970,8 +4981,26 @@ fn context_popup(
             } else {
                 d.remove::<Opened>(waiting);
             }
+            if let menus::Place::Open(_) = opened.place {
+                d.insert_temp(own, photo.map(Path::to_path_buf));
+            } else {
+                d.remove::<Option<PathBuf>>(own);
+            }
         });
-    } else if let Some(opened) = ctx.data(|d| d.get_temp::<Opened>(waiting)) {
+    } else if let Some(asked) = ctx.data(|d| d.get_temp::<Option<PathBuf>>(own)) {
+        if !popup::is_open(ctx, id) {
+            ctx.data_mut(|d| d.remove::<Option<PathBuf>>(own));
+        } else if asked.as_deref() != photo {
+            popup::dismiss(ctx, id);
+            ctx.data_mut(|d| {
+                d.remove::<Option<PathBuf>>(own);
+                d.remove::<Opened>(waiting);
+            });
+        }
+    }
+    if opened.is_none()
+        && let Some(opened) = ctx.data(|d| d.get_temp::<Opened>(waiting))
+    {
         if !popup::is_drawn(ctx, id) {
             ctx.data_mut(|d| d.remove::<Opened>(waiting));
         } else if !state.waiting {
@@ -10072,7 +10101,8 @@ mod tests {
                     let shell = &surround.shell;
                     let (photo, picking) = (surround.photo, surround.picking);
                     let state = shell.state(&ctx, photo.is_some(), photo.is_some());
-                    let chosen = central_menu(&ctx, &slot, photo, picking, &shell.keymap, &state);
+                    let chosen =
+                        central_menu(&ctx, &slot, photo, picking, &shell.keymap, &state, None);
                     surround.chosen.extend(chosen);
                     popup::show(&ctx);
                 },
@@ -10172,19 +10202,19 @@ mod tests {
         assert_eq!(made_active(3, Some(3)), None);
     }
 
-    /// A frame with a thumbnail's menu opened on a right-click anywhere, its photo `live` or
-    /// still opening, as one a right-click has just made active is.
+    /// A frame with a thumbnail's menu opened on a right-click anywhere for the photo
+    /// `asked` for, `live` or still opening, as one a right-click has just made active is,
+    /// and what was chosen in it.
     struct Thumbnail {
         shell: Shell,
+        asked: PathBuf,
         live: bool,
+        chosen: Vec<ActionId>,
     }
 
-    /// Decision 91: a thumbnail's menu opened on a photo still opening shows Reset and
-    /// Export… disabled, waiting; once the photo is live they are enabled in the menu still
-    /// open, built again in place of itself, with no reopening.
-    #[test]
-    fn a_thumbnail_s_menu_enables_what_waited_once_its_photo_is_live() {
-        let mut harness = Harness::builder()
+    /// [`Thumbnail`] in a window of 600 × 400 points, its photo `a.ARW`, `live` or not.
+    fn thumbnail(live: bool) -> Harness<'static, Thumbnail> {
+        Harness::builder()
             .with_size(egui::vec2(600.0, 400.0))
             .with_os(OperatingSystem::Nix)
             .with_context_setup(|ctx| {
@@ -10209,13 +10239,25 @@ mod tests {
                             opener: Some(slot.id),
                         });
                     let id = slot.id.with("menu");
-                    context_popup(&ctx, id, opened, &thumbnail.shell.keymap, &state);
+                    let (keymap, asked) = (&thumbnail.shell.keymap, Some(&*thumbnail.asked));
+                    let chosen = context_popup(&ctx, id, opened, keymap, &state, asked);
+                    thumbnail.chosen.extend(chosen);
                 },
                 Thumbnail {
                     shell: Shell::new(&Settings::default(), Locale::EnGb, OperatingSystem::Nix),
-                    live: false,
+                    asked: PathBuf::from("a.ARW"),
+                    live,
+                    chosen: Vec::new(),
                 },
-            );
+            )
+    }
+
+    /// Decision 91: a thumbnail's menu opened on a photo still opening shows Reset and
+    /// Export… disabled, waiting; once the photo is live they are enabled in the menu still
+    /// open, built again in place of itself, with no reopening.
+    #[test]
+    fn a_thumbnail_s_menu_enables_what_waited_once_its_photo_is_live() {
+        let mut harness = thumbnail(false);
         right_click_at(&mut harness, egui::pos2(300.0, 200.0));
         let enabled = |harness: &Harness<'_, Thumbnail>, name: &str| {
             let menu = harness.get_by_role_and_label(Role::Menu, "Thumbnail");
@@ -10225,6 +10267,36 @@ mod tests {
         harness.state_mut().live = true;
         harness.run();
         assert!(enabled(&harness, "Reset") && enabled(&harness, "Export…"));
+    }
+
+    /// Decision 91: the menu acts on the photo it opened for. Another photo made active
+    /// while it is open, by a drop, Open… or an open asked for earlier, closes it with
+    /// nothing chosen.
+    #[test]
+    fn a_thumbnail_s_menu_closes_when_another_photo_becomes_active() {
+        let mut harness = thumbnail(true);
+        right_click_at(&mut harness, egui::pos2(300.0, 200.0));
+        assert!(
+            harness
+                .query_by_role_and_label(Role::Menu, "Thumbnail")
+                .is_some()
+        );
+        // Still its photo: it stays open.
+        harness.run();
+        assert!(
+            harness
+                .query_by_role_and_label(Role::Menu, "Thumbnail")
+                .is_some()
+        );
+        harness.state_mut().asked = PathBuf::from("b.ARW");
+        harness.run();
+        assert!(
+            harness
+                .query_by_role_and_label(Role::Menu, "Thumbnail")
+                .is_none()
+        );
+        assert!(!popup::any_open(&harness.ctx));
+        assert!(harness.state().chosen.is_empty());
     }
 
     /// The photo's menu takes the point under the pointer in the photo's coordinates, 0 to 1
