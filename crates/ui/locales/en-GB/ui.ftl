@@ -1001,13 +1001,11 @@ history-go-to-step = Go to Step
 history-compress = Compress History
 history-truncate = Truncate History
 history-discard = Discard History
-# The History section's options (⋯), as items: Compress History, which Option on the Mac
-# and Alt elsewhere, $key, turns into Truncate History while held, its tip saying so where
-# it can; Create a Style…, which comes with styles; and Discard History…'s tip.
+# The History section's options (⋯), as items, each with its tip: Compress History,
+# Truncate History, Create a Style…, which comes with styles, and Discard History…'s tip.
 history-options-compress = Compress History
 history-options-truncate = Truncate History
 history-compress-tip = Keeps each tool’s last step up to the chosen one and removes the rest. The photo stays as it is, but at Original, where the whole history goes and the photo starts again from its defaults.
-history-compress-tip-truncate = Keeps each tool’s last step up to the chosen one and removes the rest. The photo stays as it is, but at Original, where the whole history goes and the photo starts again from its defaults. Hold { $key } to truncate instead.
 history-truncate-tip = Removes the steps after the chosen one and keeps the rest as they are. The photo stays as it is, but at Original, where the whole history goes and the photo starts again from its defaults.
 history-options-style = Create a Style…
 history-options-style-later = Styles come in a later version.

@@ -24,8 +24,8 @@ use apertrust_plugin::{Camera, ImageContext, Pattern, Value};
 
 use crate::definition::{
     ChoiceStyle, Control, ControlKind, Coordinate, Picker, PickerKind, PresetRow,
-    ProcessingDefinition, Quad, Range, Row, SettingRow, Slider, Space, Tab, ToolDefinition, Unit,
-    View, slider_step,
+    ProcessingDefinition, Quad, Range, Reset, Row, SettingRow, Slider, Space, Tab, ToolDefinition,
+    Unit, View, slider_step,
 };
 use crate::pick::{Patch, PickKeys, Picked, Reading, Shown, Stats};
 use crate::transfer::{Linear, Transfer};
@@ -134,6 +134,8 @@ static DEFINITION: ProcessingDefinition = ProcessingDefinition {
             Row::Slider(Slider::new("brightness").quad(Quad::Picker("brightness"))),
         ],
         after: &[],
+        reset: Reset::Tool,
+        presets: true,
         menus: &[],
     },
     version: 1,
@@ -556,6 +558,8 @@ static FAULTY: ProcessingDefinition = ProcessingDefinition {
         }],
         before: &[],
         after: &[],
+        reset: Reset::Tool,
+        presets: true,
         menus: &[],
     },
     version: 1,
@@ -662,6 +666,8 @@ static DEFAULTLESS: ProcessingDefinition = ProcessingDefinition {
         }],
         before: &[],
         after: &[],
+        reset: Reset::Tool,
+        presets: true,
         menus: &[],
     },
     version: 1,
@@ -733,6 +739,8 @@ static TWIN: ProcessingDefinition = ProcessingDefinition {
         }],
         before: &[],
         after: &[],
+        reset: Reset::Tool,
+        presets: true,
         menus: &[],
     },
     version: 1,

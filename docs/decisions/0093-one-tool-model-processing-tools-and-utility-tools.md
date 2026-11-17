@@ -11,7 +11,7 @@ So the headers drift apart, a utility's ↺, presets and ⋯ behave as its modul
 
 ## Decision
 
-**One tool model: a tool is the parent, a processing tool and a utility tool its two kinds, sharing one declaration and one header.** Planned, in five steps (below), the first built.
+**One tool model: a tool is the parent, a processing tool and a utility tool its two kinds, sharing one declaration and one header.** Planned, in five steps (below), the first three built.
 
 ### The terms
 
@@ -87,7 +87,7 @@ pub trait UtilityTool {
 
 - **The app draws every tool's header, page, ⋯ menu, open state and layout from `&ToolDefinition`,** so ↺, presets and ⋯ behave alike in every tool. This departs from darktable, which builds the header twice (`dt_iop_gui_set_expander`, `dt_lib_gui_get_expander`).
 - **`apertrust-ui` keeps no tool types** ([0036](0036-the-design-system.md)): the app turns a `ToolDefinition` into the design system's `Section` and rows.
-- **The header's buttons follow the declaration:** ↺ where `reset` is not none, presets where `presets` is true, ⋯ always, holding the tool's declared `MenuItem`s at `Place::Options` before the layout's items (decision 91). History's Compress History, Truncate History, Create a Style… and Discard History… become such declared items, four, ⋯'s most. Truncate History, built as Compress History's alternate while Option (Alt) is held (`history::options`), becomes an item of its own, so a declared item stays one action and `MenuEntry` needs no alternate.
+- **The header's buttons follow the declaration:** ↺ where `reset` is not none, presets where `presets` is true, ⋯ always, holding the tool's declared `MenuItem`s at `Place::Options` before the layout's items (decision 91). History's Compress History, Truncate History, Create a Style… and Discard History… are such declared items, four, ⋯'s most, Truncate History an item of its own, so a declared item stays one action and `MenuEntry` needs no alternate.
 
 ### A utility's page
 
@@ -121,11 +121,11 @@ pub trait UtilityTool {
 
 ### The steps
 
-Each step is one pull request, reviewed before the next.
+Each step is one pull request, reviewed before the next, but 93.2 and 93.3, which are one.
 
 1. **93.1, the renames and the parent,** built: mechanical, with no behaviour change: `Definition` to `ProcessingDefinition`, `Utility` to `UtilityDefinition`, the trait `Tool` to `ProcessingTool` (about 250 uses), `Definition::presets` to `preset_rows`, and the shared fields into `ToolDefinition`, `Utility::menus` among them. The docs' names follow in the same pull request.
-2. **93.2, `UtilityTool` in the app,** with History, Scopes and Browse implementing it, Browse joining `UTILITIES`, `main.rs` calling them through the trait.
-3. **93.3, one header and ⋯** for every tool in `TOOLS` and `UTILITIES`, from `&ToolDefinition`, History's ⋯ items declared with it, Truncate History an item of its own, so its ⋯ never goes empty; Export's comes with step 93.5, when it joins `UTILITIES`.
+2. **93.2, `UtilityTool` in the app,** built, with History, Scopes and Browse implementing it, Browse joining `UTILITIES`, `main.rs` calling them through the trait. Until step 93.4 each utility's page is one custom row, a `Widget` of its own (`History`, `Scopes`, `Browse`), its `body` drawing what its module drew.
+3. **93.3, one header and ⋯** for every tool in `TOOLS` and `UTILITIES`, built with 93.2: `ToolDefinition::reset` and `presets`, the header drawn from `&ToolDefinition`, History's ⋯ items declared with it, Truncate History an item of its own, so its ⋯ never goes empty; Export's comes with step 93.5, when it joins `UTILITIES`.
 4. **93.4, the utilities on the page model:** Scopes, the smallest, first, then History, then Browse.
 5. **93.5, Export's page as setting rows,** with its presets: Export implements `UtilityTool` and joins `UTILITIES`, its section drawn by `export.rs` until then.
 
@@ -144,6 +144,6 @@ Each step is one pull request, reviewed before the next.
 
 - **[0004](0004-tools-for-people-operations-for-algorithms.md)** names the parent and its two kinds; **[0028](0028-tools-bound-to-operations.md)** describes `ProcessingDefinition` and `ProcessingTool` over the shared parent; **[0086](0086-import-as-a-full-window-sheet.md)** puts a tool's place in `ToolDefinition`; **[0090](0090-export-as-a-photos-tab-tool.md)** declares Export's page as a utility's setting rows; **[0091](0091-context-menus-places-and-tools-items-as-actions.md)** and **[0092](0092-the-toolbar.md)** declare every tool's items in `ToolDefinition::menus` and `ToolDefinition::toolbar`.
 - `apertrust-tools` holds `ToolDefinition`, `ProcessingDefinition`, `UtilityDefinition`, `ProcessingTool`, `UTILITIES` with every utility and `UtilityDefinition::check`; `Widget` gains the utilities' widgets. The app holds `UtilityTool`, its `Context`, the one header and page drawer, and each utility's widgets in its module. No crate is added, and no dependency changes.
-- Nothing a person sees changes but one item, and no setting, no Fluent id, no session command and nothing in the sidecar: each utility keeps its look on the page model, its custom widgets drawing what its module draws today. The one is History's ⋯, where Truncate History, today Compress History's alternate while Option is held, becomes an item of its own in step 93.3, with the words it has. A change of a utility's look is a design question of its own. The engine and its session are untouched but for the trait's name.
-- The new names are built, step 93.1; the rest of the model is planned. [gui.md](../gui.md#one-tool-model) describes the model, [the roadmap](../roadmap.md) holds the steps.
+- Nothing a person sees changes but one item, and no setting, no Fluent id, no session command and nothing in the sidecar: each utility keeps its look on the page model, its custom widgets drawing what its module draws today. The one is History's ⋯, where Truncate History is an item of its own from step 93.3, with the words it had. A change of a utility's look is a design question of its own. The engine and its session are untouched but for the trait's name.
+- The new names are built, step 93.1, and `UtilityTool` with the one header and ⋯, steps 93.2 and 93.3; the utilities' pages as rows and Export's are planned. [gui.md](../gui.md#one-tool-model) describes the model, [the roadmap](../roadmap.md) holds the steps.
 - The agent kit's `tool-bindings`, `ui-conventions` and `desktop-architecture` skills are to state the terms and the model.

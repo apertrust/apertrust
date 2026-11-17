@@ -14,9 +14,10 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! The Scopes section (`docs/gui.md`, The scopes; decision 19): a utility section pinned
-//! at the top of the side panel's editing tabs, showing the design system's `Histogram`
-//! with what the engine counted of the frame shown.
+//! The Scopes tool (`docs/gui.md`, The scopes; decision 19): a utility tool pinned at the
+//! top of the side panel's editing tabs, showing the design system's `Histogram` with what
+//! the engine counted of the frame shown, its header every tool's (decision 93), with ⋯
+//! alone, drawn disabled while nothing is behind it.
 //!
 //! - **What it shows:** the app's `ScopeView` (the graph, the scale, the channels, the
 //!   clipping overlays' toggles), which the shell keeps in settings, and the latest
@@ -30,12 +31,16 @@
 //!   again for a graph it was not counted for, so a graph chosen shows at once.
 
 use apertrust_engine::session::{Command, Graphs, Reading};
+use apertrust_tools::Widget;
+use apertrust_tools::utility::UtilityDefinition;
 use apertrust_ui::components::{
-    Clipped, Histogram, HistogramAction, HistogramBins, Scope, ScopeView, Section, SectionAction,
-    VectorscopeBins, WaveformBins,
+    Clipped, Histogram, HistogramAction, HistogramBins, Scope, ScopeView, VectorscopeBins,
+    WaveformBins,
 };
-use apertrust_ui::tr;
 use eframe::egui::{self, Color32};
+
+use crate::mirror::Shown;
+use crate::utility::{Context, UtilityTool};
 
 /// The section's id, by which settings keep whether it is open.
 pub const ID: &str = "scopes";
@@ -46,7 +51,7 @@ pub const OPEN: bool = true;
 /// What the user did to the section this frame.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Change {
-    /// Open it, or close it.
+    /// Open it, or close it, from its header.
     Toggle,
     /// The graph, the scale, a channel or a clipping toggle.
     View(HistogramAction),
@@ -150,67 +155,70 @@ impl Scopes {
     }
 }
 
-/// Draws the section, open or closed as `open` says, its graph as `view` has it with what
-/// `measured` holds, drawn disabled unless `enabled` (no photo is shown); it peeks while
-/// `peek` holds, as every section does. Returns what the user did.
-pub fn section(
+/// Scopes as a utility tool (decision 93): its page, the graph with its buttons, as the
+/// settings' `scopes` has it, with what the mirror measured of the photo shown, drawn
+/// disabled with no photo, and while one opens until it is live (decision 77).
+#[derive(Debug, Default)]
+pub struct ScopesTool;
+
+impl UtilityTool for ScopesTool {
+    type Action = Change;
+
+    fn definition(&self) -> &'static UtilityDefinition {
+        apertrust_tools::utility::utility(ID).expect("Scopes is built in")
+    }
+
+    fn body(&mut self, widget: Widget, ui: &mut egui::Ui, cx: &mut Context<'_>) -> Vec<Change> {
+        if widget != Widget::Scopes {
+            return Vec::new();
+        }
+        let photo = matches!(cx.mirror.shown(), Shown::Photo { .. });
+        let measured = photo.then(|| cx.mirror.scopes.measured()).flatten();
+        let action = graph(ui, cx.settings.scopes, measured, photo);
+        action.into_iter().map(Change::View).collect()
+    }
+}
+
+/// Draws the graph as `view` has it with what `measured` holds, drawn disabled unless
+/// `enabled` (no photo is shown). Returns what the user did to it.
+fn graph(
     ui: &mut egui::Ui,
     view: ScopeView,
-    open: bool,
     measured: Option<&Measured>,
-    peek: bool,
     enabled: bool,
-) -> Vec<Change> {
-    let title = tr(ui.ctx(), "section-scopes");
-    let mut action = None;
-    // A utility: options only, drawn disabled while nothing is behind them.
-    let about = crate::tools::about(&apertrust_ui::translator(ui.ctx()), "scopes", None);
-    let out = Section::new(&title, open)
-        .options(false)
-        .about(about)
-        .peek(peek)
-        .show(ui, |ui| {
-            let mut scopes = Histogram::new(view).overlays(false);
-            if let Some(measured) = measured {
-                if let Some([red, green, blue, luminance]) = &measured.histogram {
-                    scopes = scopes.histogram(HistogramBins {
-                        red,
-                        green,
-                        blue,
-                        luminance,
-                    });
-                }
-                if let Some((columns, levels, [red, green, blue, luminance])) = &measured.waveform {
-                    scopes = scopes.waveform(WaveformBins {
-                        columns: *columns,
-                        levels: *levels,
-                        red,
-                        green,
-                        blue,
-                        luminance,
-                    });
-                }
-                if let Some((size, counts, colours)) = &measured.vectorscope {
-                    scopes = scopes.vectorscope(VectorscopeBins {
-                        size: *size,
-                        counts,
-                        colours,
-                    });
-                }
-                if let Some(clipped) = measured.clipped {
-                    scopes = scopes.clipped(clipped);
-                }
-            }
-            action = ui.add_enabled_ui(enabled, |ui| scopes.show(ui)).inner;
-        });
-    // Options is drawn disabled: nothing is behind it yet.
-    let toggled = out
-        .actions
-        .into_iter()
-        .filter(|a| *a == SectionAction::Toggle);
-    let mut changes: Vec<Change> = toggled.map(|_| Change::Toggle).collect();
-    changes.extend(action.map(Change::View));
-    changes
+) -> Option<HistogramAction> {
+    let mut scopes = Histogram::new(view).overlays(false);
+    if let Some(measured) = measured {
+        if let Some([red, green, blue, luminance]) = &measured.histogram {
+            scopes = scopes.histogram(HistogramBins {
+                red,
+                green,
+                blue,
+                luminance,
+            });
+        }
+        if let Some((columns, levels, [red, green, blue, luminance])) = &measured.waveform {
+            scopes = scopes.waveform(WaveformBins {
+                columns: *columns,
+                levels: *levels,
+                red,
+                green,
+                blue,
+                luminance,
+            });
+        }
+        if let Some((size, counts, colours)) = &measured.vectorscope {
+            scopes = scopes.vectorscope(VectorscopeBins {
+                size: *size,
+                counts,
+                colours,
+            });
+        }
+        if let Some(clipped) = measured.clipped {
+            scopes = scopes.clipped(clipped);
+        }
+    }
+    ui.add_enabled_ui(enabled, |ui| scopes.show(ui)).inner
 }
 
 /// What tests of the scopes share.

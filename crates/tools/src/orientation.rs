@@ -33,7 +33,7 @@ use apertrust_plugin::{ImageContext, Value};
 
 use crate::about::{Fact, Facts, Purpose};
 use crate::definition::{
-    Button, ButtonIcon, Control, ControlKind, ProcessingDefinition, Row, Tab, ToolDefinition,
+    Button, ButtonIcon, Control, ControlKind, ProcessingDefinition, Reset, Row, Tab, ToolDefinition,
 };
 use crate::{
     Base, ControlValue, Controls, MenuEntry, MenuItem, Owned, Place, ProcessingTool, Section,
@@ -119,6 +119,8 @@ static DEFINITION: ProcessingDefinition = ProcessingDefinition {
         after: &[],
         // Its four buttons as Orientation ▸ in the photo's menu, after Background ▸
         // (decision 91).
+        reset: Reset::Tool,
+        presets: true,
         menus: &[MenuItem {
             place: Place::Photo,
             section: Section::VIEW,

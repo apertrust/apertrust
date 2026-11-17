@@ -1784,10 +1784,12 @@ mod tests {
                                 ui,
                                 &Sample,
                                 state,
-                                true,
+                                tools::Head {
+                                    open: true,
+                                    ..tools::Head::default()
+                                },
                                 &Panels::default(),
                                 &|_: &str| false,
-                                false,
                                 true,
                                 None,
                                 &pickers,

@@ -47,8 +47,8 @@ use apertrust_plugin::{Camera, ImageContext, Value};
 
 use crate::about::{Fact, Facts, Purpose};
 use crate::definition::{
-    ChoiceStyle, Control, ControlKind, Coordinate, PresetRow, ProcessingDefinition, Row, Slider,
-    Tab, ToolDefinition, Unit, View,
+    ChoiceStyle, Control, ControlKind, Coordinate, PresetRow, ProcessingDefinition, Reset, Row,
+    Slider, Tab, ToolDefinition, Unit, View,
 };
 use crate::{Base, ControlValue, Controls, Owned, ProcessingTool, Setting, ToolValues};
 
@@ -171,6 +171,8 @@ static DEFINITION: ProcessingDefinition = ProcessingDefinition {
         }],
         before: &[],
         after: &[],
+        reset: Reset::Tool,
+        presets: true,
         menus: &[],
     },
     version: 1,

@@ -580,7 +580,6 @@ pub enum Target {
     /// photo alone until several can be selected.
     Selection,
     /// The tool or utility whose ⋯ it is, by its id: only its own items join the menu.
-    #[cfg_attr(not(test), expect(dead_code, reason = "⋯ opens on it once built"))]
     Tool(&'static str),
     /// The app itself, as the surround's items set its background.
     App,
@@ -613,6 +612,30 @@ pub fn context(
     };
     let (os, tr) = (ctx.os(), translator(ctx));
     built(place, target, &added, keymap, state, os, &tr, anchor)
+}
+
+/// The entries of `tool`'s ⋯, its header's options (decisions 91 and 93): the items it
+/// declares at `Place::Options`, each its registry action's, built as [`context`] builds
+/// every menu, enabled from `state`, an item that cannot run drawn disabled with its tip,
+/// each saying in its tip what it does where the registry words it
+/// ([`actions::options_tip`]). The layout's items join them, last, once built. None for a
+/// tool that declares none.
+pub fn options(
+    ctx: &egui::Context,
+    tool: &'static str,
+    keymap: &Keymap,
+    state: &State,
+) -> Vec<popup::Entry> {
+    let place = Place::Open(apertrust_tools::Place::Options);
+    context(
+        ctx,
+        place,
+        &Target::Tool(tool),
+        keymap,
+        state,
+        Rect::NOTHING,
+    )
+    .entries
 }
 
 /// The app's items in the places open to tools' (decision 91), declared as the tools'
@@ -745,9 +768,15 @@ fn built(
         return popup::Request::pull_down(anchor, name(place, target, tr), entries);
     };
     let several = *target == Target::Selection && state.photos > 1;
+    let options = open == apertrust_tools::Place::Options;
     let item = |id: &String| {
         let id = chosen(id).filter(|id| !(several && ONE_PHOTO.contains(id)))?;
-        action_item(id, keymap, state, &steps, os, tr)
+        let item = action_item(id, keymap, state, &steps, os, tr)?;
+        // In ⋯ an item says what it does, as a pull-down's items do (decision 93).
+        Some(match actions::options_tip(id, state).filter(|_| options) {
+            Some(tip) => item.tip(tr.text(tip)),
+            None => item,
+        })
     };
     let all = app_items(open);
     let all = all.iter().chain(added).filter_map(|added| {
@@ -1424,13 +1453,17 @@ mod tests {
     /// two layouts; F6's, which move the focus as Tab does; and H's peek, held, while a menu
     /// item is a press; the ☰'s menu's own, which opens the menu it would be in; and
     /// Restart, Settings' Restart now's for now (decision 82).
-    const LEFT_OUT: [ActionId; 6] = [
+    const LEFT_OUT: [ActionId; 9] = [
         ActionId::EDIT_VIEW,
         ActionId::NEXT_REGION,
         ActionId::PREVIOUS_REGION,
         ActionId::PEEK,
         ActionId::MENU,
         ActionId::RESTART,
+        // History's ⋯ items, which its ⋯ holds alone (decision 93).
+        ActionId::COMPRESS_HISTORY,
+        ActionId::TRUNCATE_HISTORY,
+        ActionId::CREATE_STYLE,
     ];
 
     /// The actions only the Mac's menus hold: Close Window, since Windows and Linux close
@@ -1486,7 +1519,10 @@ mod tests {
             edited: true,
             undo: true,
             redo: true,
+            compress: true,
+            truncate: true,
             discard: true,
+            unreadable: false,
             discard_why: None,
             exportable: true,
             text: false,
@@ -2335,7 +2371,7 @@ mod tests {
     }
 
     use apertrust_tools::{
-        Place as Open, ProcessingDefinition, ToolDefinition, utility::UtilityDefinition,
+        Place as Open, ProcessingDefinition, Reset, ToolDefinition, utility::UtilityDefinition,
     };
 
     /// The item naming `action` at `place`, in the section `section` at `order`.
@@ -2367,6 +2403,8 @@ mod tests {
                 tabs: &[],
                 before: &[],
                 after: &[],
+                reset: Reset::Tool,
+                presets: true,
                 menus,
             },
             version: 1,
@@ -2382,8 +2420,9 @@ mod tests {
     }
 
     /// Decision 91: every utility's items are within a tool's limits, each a registry
-    /// action the menu bar holds on every platform, so none is reached by a right-click
-    /// alone; and every tool's names its action in the registry.
+    /// action, and those of the photo's and a thumbnail's menus in the menu bar on every
+    /// platform, so none is reached by a right-click alone; ⋯'s are reached in ⋯
+    /// (decision 93). Every tool's names its action in the registry.
     #[test]
     fn every_utility_s_item_is_within_the_limits_and_in_the_menu_bar() {
         let in_menus = |action: &str| {
@@ -2402,7 +2441,13 @@ mod tests {
             );
             for item in utility.tool.menus {
                 for action in item.entry.actions() {
-                    assert!(in_menus(action), "{}: {action}", utility.tool.id);
+                    let id = utility.tool.id;
+                    assert!(
+                        chosen(action).is_some(),
+                        "{id}: {action} is no registry action"
+                    );
+                    let reached = item.place == Open::Options || in_menus(action);
+                    assert!(reached, "{id}: {action}");
                 }
                 // A tool's sections, History's Reset alone first in Edit's.
                 let reset = (utility.tool.id, item.section, item.order, item.entry)
@@ -2413,16 +2458,30 @@ mod tests {
                 }
             }
         }
-        // History adds Reset alone to the photo's and a thumbnail's menus.
+        // History adds Reset alone to the photo's and a thumbnail's menus, and its ⋯ holds
+        // its four.
         let history = apertrust_tools::utility::utility("history").unwrap();
-        for place in [Open::Photo, Open::Thumbnail] {
-            let items = (history.tool.menus.iter())
+        let at = |place| {
+            (history.tool.menus.iter())
                 .filter(|item| item.place == place)
                 .map(|item| item.entry)
-                .collect::<Vec<_>>();
-            assert_eq!(items, [MenuEntry::Action(ActionId::RESET.0)], "{place:?}");
+                .collect::<Vec<_>>()
+        };
+        for place in [Open::Photo, Open::Thumbnail] {
+            assert_eq!(
+                at(place),
+                [MenuEntry::Action(ActionId::RESET.0)],
+                "{place:?}"
+            );
         }
-        assert_eq!(history.tool.menus.len(), 2);
+        let options = [
+            ActionId::COMPRESS_HISTORY,
+            ActionId::TRUNCATE_HISTORY,
+            ActionId::CREATE_STYLE,
+            ActionId::DISCARD_HISTORY,
+        ];
+        assert_eq!(at(Open::Options), options.map(|id| MenuEntry::Action(id.0)));
+        assert_eq!(history.tool.menus.len(), 6);
         for tool in definitions() {
             for action in tool.tool.menus.iter().flat_map(|item| item.entry.actions()) {
                 let id = format!("tool-{}-{action}", tool.tool.id);
@@ -2450,6 +2509,8 @@ mod tests {
                 tabs: &[],
                 before: &[],
                 after: &[],
+                reset: Reset::None,
+                presets: false,
                 menus: leak(&[
                     at(Open::Photo, 1000, 100, "reset"),
                     at(Open::Options, 4000, 100, "reset"),

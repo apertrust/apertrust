@@ -21,7 +21,7 @@
 //! an editing tool's reset, presets and options, a utility's options alone, or with a reset
 //! before them where it has one, as History's resets the edit, each as narrow as its
 //! icon and evenly spaced, the last one's ink ending where the rows do. An editing tool's
-//! options are drawn disabled until what their menu holds is decided; a utility with
+//! options are drawn disabled while it gives them nothing to hold; a utility with
 //! presets of its own, the Export tool, has the presets button between its reset and its
 //! options ([`Section::utility_presets`]). A title that would
 //! run under the buttons is cut at its end with …, whole in the tooltip and for screen
@@ -71,8 +71,8 @@ pub struct SectionOutput {
     /// The id of the item chosen this frame in the menu its options button opens, given
     /// by [`Section::options_menu`].
     pub chosen: Option<String>,
-    /// A utility's options button, by which its menu's popup is known
-    /// (`popup::button_menu`), so its caller can close it.
+    /// The options button where it opens a menu or is a utility's, by which its menu's
+    /// popup is known (`popup::button_menu`), so its caller can close it.
     pub options: Option<egui::Id>,
 }
 
@@ -135,7 +135,8 @@ impl<'a> Section<'a> {
     }
 
     /// A tool that edits the photo: reset, presets and options, its options drawn disabled
-    /// for now ("No options yet", `section-options-none`).
+    /// ("No options yet", `section-options-none`) unless it gives them a menu
+    /// ([`Self::options_menu`]).
     pub fn edits(mut self) -> Self {
         self.edits = true;
         self
@@ -185,16 +186,17 @@ impl<'a> Section<'a> {
         self
     }
 
-    /// Whether a utility's options button can run; see [`Self::presets`]. An editing
-    /// tool's is drawn disabled whatever this says, so this changes nothing on one.
+    /// Whether the options button can run while it has a menu ([`Self::options_menu`]);
+    /// see [`Self::presets`]. An editing tool's with none is drawn disabled whatever this
+    /// says.
     pub fn options(mut self, enabled: bool) -> Self {
         self.options = enabled;
         self
     }
 
-    /// A utility's options as a menu its options button opens, `entries` translated: the
-    /// item chosen comes back as [`SectionOutput::chosen`], in place of
-    /// [`SectionAction::Options`].
+    /// The options as a menu its options button opens, `entries` translated, a utility's or
+    /// an editing tool's: the item chosen comes back as [`SectionOutput::chosen`], in place
+    /// of [`SectionAction::Options`].
     pub fn options_menu(mut self, entries: Vec<Entry>) -> Self {
         self.menu = Some(entries);
         self
@@ -278,13 +280,26 @@ impl<'a> Section<'a> {
                     let mut pressed = Vec::new();
                     let name = say("section-options");
                     if self.edits {
-                        // Drawn disabled until what its menu holds is decided.
-                        let none = tr.text("section-options-none");
-                        IconButton::new(Icon::Options, &name)
-                            .width(narrow)
-                            .tip(&none)
-                            .enabled(false)
-                            .show(ui);
+                        match menu {
+                            // The tool's own items, where it has any.
+                            Some(entries) => {
+                                let options = IconButton::new(Icon::Options, &name)
+                                    .width(narrow)
+                                    .enabled(self.options)
+                                    .show(ui);
+                                options_id = Some(options.id);
+                                chosen = pull_down(ui, &options, &name, || entries);
+                            }
+                            // Drawn disabled while it holds nothing.
+                            None => {
+                                let none = tr.text("section-options-none");
+                                IconButton::new(Icon::Options, &name)
+                                    .width(narrow)
+                                    .tip(&none)
+                                    .enabled(false)
+                                    .show(ui);
+                            }
+                        }
                         if IconButton::new(Icon::Presets, &say("section-presets"))
                             .width(narrow)
                             .enabled(self.presets)

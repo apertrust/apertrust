@@ -779,7 +779,6 @@ history-discard = Odrzucenie historii
 history-options-compress = Kompresuj historię
 history-options-truncate = Przytnij historię
 history-compress-tip = Zachowuje ostatni krok każdego narzędzia do wybranego i usuwa resztę. Zdjęcie się nie zmienia, chyba że na Oryginale: wtedy znika cała historia, a zdjęcie zaczyna od nowa od kroków domyślnych.
-history-compress-tip-truncate = Zachowuje ostatni krok każdego narzędzia do wybranego i usuwa resztę. Zdjęcie się nie zmienia, chyba że na Oryginale: wtedy znika cała historia, a zdjęcie zaczyna od nowa od kroków domyślnych. Przytrzymaj { $key }, aby zamiast tego przyciąć.
 history-truncate-tip = Usuwa kroki po wybranym, a resztę zostawia bez zmian. Zdjęcie się nie zmienia, chyba że na Oryginale: wtedy znika cała historia, a zdjęcie zaczyna od nowa od kroków domyślnych.
 history-options-style = Utwórz styl…
 history-options-style-later = Style pojawią się w jednej z kolejnych wersji.

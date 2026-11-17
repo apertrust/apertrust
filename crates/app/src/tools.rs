@@ -74,8 +74,8 @@ use apertrust_tools::about::{self, Facts};
 use apertrust_tools::utility;
 use apertrust_tools::{
     Button, ButtonIcon, ChoiceStyle, Computed, ControlKind, Controls, MAX_POINTS, PickerKind,
-    ProcessingDefinition, ProcessingTool, Quad, Row, SettingRow, Slider, Track, Unit, View, Widget,
-    check, messages,
+    ProcessingDefinition, ProcessingTool, Quad, Reset, Row, SettingRow, Slider, ToolDefinition,
+    Track, Unit, View, Widget, check, messages,
 };
 use apertrust_ui::components::{
     self as parts, ActionRow, ButtonState, ButtonsAction, ButtonsRow, Choice, ChoiceAction,
@@ -84,9 +84,10 @@ use apertrust_ui::components::{
     Segmented, SliderAction, SliderRow, ToggleRow, WarningRow, group_label,
 };
 use apertrust_ui::i18n::Args;
-use apertrust_ui::{Translator, translator};
+use apertrust_ui::{Translator, popup, translator};
 use eframe::egui;
 
+use crate::actions::ActionId;
 use crate::pickers::Picked;
 use crate::settings::ToolSettings;
 
@@ -165,6 +166,128 @@ pub enum Change {
         lightness: &'static str,
         photo: &'static str,
     },
+    /// An item of the tool's ⋯ chosen (decision 93): its registry action, which the app
+    /// runs as its keys run it.
+    Run(ActionId),
+}
+
+/// What the shell gives a tool's header each frame (decision 93; `docs/gui.md`, One tool
+/// model): its section open or closed, the peek keys, and its ⋯. What the header shows
+/// besides follows from the tool's declaration ([`header`]).
+#[derive(Debug, Default)]
+pub struct Head {
+    pub open: bool,
+    /// Whether the keys that peek are held (`Section::peek`).
+    pub peek: bool,
+    /// ⋯'s entries: the items the tool declares at `Place::Options`, as
+    /// [`crate::menus::options`] builds them, then, until they are declared, Browse's own.
+    pub options: Vec<popup::Entry>,
+    /// Whether ⋯ opens while it holds anything: History's only while the photo has a
+    /// history.
+    pub enabled: bool,
+    /// The open of the photo ⋯'s items act on: another since the last frame closes ⋯, and
+    /// a choice from it is dropped, never run on the photo after ([`pressed`]).
+    pub photo: Option<u64>,
+}
+
+/// What a tool's header asked for this frame (decision 93).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Pressed {
+    /// Open the section, or close it.
+    Toggle,
+    /// Another of its tabs.
+    Tab(usize),
+    /// ↺ where it is the tool's own: a processing tool's `ResetTool`, a utility's
+    /// `UtilityTool::reset`.
+    Reset,
+    /// A registry action: ↺'s where it runs one, as History's Reset Edit, or an item of ⋯.
+    Run(ActionId),
+    /// An item of ⋯ the tool has not declared yet, by its id: Browse's.
+    Own(String),
+}
+
+/// The design system's section for `tool`'s header (decision 93), titled `title`, as `head`
+/// has it: ↺ where the declaration's `reset` is not none, presets where its `presets`
+/// holds, and ⋯ always, holding `head.options`, drawn disabled while it holds nothing. A
+/// processing tool's are an editing tool's three (`Section::edits`), its presets drawn
+/// disabled until presets come; a utility's ↺ is named `reset_name`. ↺ is drawn disabled
+/// unless `resettable`. Its tooltip says `about`, where the tool says anything.
+pub fn header<'a>(
+    tool: &ToolDefinition,
+    title: &'a str,
+    reset_name: &'a str,
+    resettable: bool,
+    about: Option<parts::About>,
+    head: Head,
+) -> Section<'a> {
+    let mut section = Section::new(title, head.open).peek(head.peek);
+    if let Some(about) = about {
+        section = section.about(about);
+    }
+    section = match tool.reset {
+        Reset::Tool => section.edits().reset(resettable).presets(false),
+        Reset::Action(_) | Reset::Own => section.utility_reset(reset_name).reset(resettable),
+        Reset::None => section,
+    };
+    if head.options.is_empty() {
+        section.options(false)
+    } else {
+        section.options(head.enabled).options_menu(head.options)
+    }
+}
+
+/// What `tool`'s header, drawn as `out` reports, asked for this frame: its ↺ as the
+/// declaration's `reset` says, and the item chosen in ⋯, a registry action or one of its
+/// own, unless the photo ⋯ acts on is no longer `photo`, the open of the photo now: ⋯,
+/// opened for the photo before, then closes, and its choice is dropped. Presets and an
+/// empty ⋯ are drawn disabled, nothing behind them yet.
+pub fn pressed(
+    ui: &egui::Ui,
+    tool: &ToolDefinition,
+    out: &parts::SectionOutput,
+    photo: Option<u64>,
+) -> Vec<Pressed> {
+    let photo_id = ui.make_persistent_id(("options photo", tool.id));
+    let before = ui.data(|d| d.get_temp::<Option<u64>>(photo_id));
+    ui.data_mut(|d| d.insert_temp(photo_id, photo));
+    let replaced = before.is_some_and(|before| before != photo);
+    let reset = match tool.reset {
+        Reset::Tool | Reset::Own => Some(Pressed::Reset),
+        Reset::Action(id) => crate::menus::chosen(id).map(Pressed::Run),
+        Reset::None => None,
+    };
+    let mut pressed: Vec<Pressed> = (out.actions.iter())
+        .filter_map(|action| match action {
+            SectionAction::Toggle => Some(Pressed::Toggle),
+            SectionAction::Tab(tab) => Some(Pressed::Tab(*tab)),
+            SectionAction::Reset => reset.clone(),
+            SectionAction::Presets | SectionAction::Options => None,
+        })
+        .collect();
+    if replaced {
+        if let Some(button) = out.options {
+            popup::close(ui.ctx(), popup::button_menu(button));
+        }
+    } else if let Some(id) = out.chosen.as_deref() {
+        pressed.push(match crate::menus::chosen(id) {
+            Some(action) => Pressed::Run(action),
+            None => Pressed::Own(id.to_owned()),
+        });
+    }
+    pressed
+}
+
+/// What a utility's ↺ is called, `title` its title: for what it resets, "Reset edit" for
+/// the one that runs Reset Edit, History's; otherwise "Reset" and its title.
+pub fn reset_name(words: &Translator, tool: &ToolDefinition, title: &str) -> String {
+    match tool.reset {
+        Reset::Action(id) if id == ActionId::RESET.0 => words.text("history-reset-edit"),
+        _ => {
+            let mut args = Args::new();
+            args.set("section", title);
+            words.text_with("section-reset", Some(&args))
+        }
+    }
 }
 
 /// The tools whose pickers the panel draws: those whose pick is built, each joining with
@@ -703,9 +826,9 @@ fn equalizer_curve(
     }))
 }
 
-/// Draws `tool`'s section from its definition, with the values `state` mirrors, open
-/// or closed as `open` says, each of its collapsible groups open as `groups` says by the
-/// group's id. The section peeks while `peek` holds (`Section::peek`). Its reset is drawn
+/// Draws `tool`'s section from its definition, with the values `state` mirrors, its header
+/// as `head` has it ([`header`]), each of its collapsible groups open as `groups` says by
+/// the group's id. Its reset is drawn
 /// disabled unless `editable`, as on a photo open for viewing only, whose controls the
 /// session reports unavailable, and for a switched tool unless it is edited, as one off
 /// never is (decision 32), whose section screen readers describe as not applied. While
@@ -720,10 +843,9 @@ pub fn section(
     ui: &mut egui::Ui,
     tool: &dyn ProcessingTool,
     state: &ToolState,
-    open: bool,
+    head: Head,
     panels: &Panels,
     groups: &dyn Fn(&str) -> bool,
-    peek: bool,
     editable: bool,
     opening: Option<&str>,
     pickers: &Pickers,
@@ -752,13 +874,11 @@ pub fn section(
     // (decision 32): off, it has nothing to reset, and shows nothing more than that, but
     // for screen readers, who hear "Not applied".
     let resettable = state.edited || !definition.switched;
-    let mut section = Section::new(&title, open)
-        .edits()
-        .about(about(&words, id, definition.facts.as_ref()))
-        .reset(editable && resettable)
-        .presets(false)
-        .peek(peek)
-        .not_applied(!state.enabled);
+    let about = about(&words, id, definition.facts.as_ref());
+    let photo = head.photo;
+    let reset = editable && resettable;
+    let mut section =
+        header(&definition.tool, &title, "", reset, Some(about), head).not_applied(!state.enabled);
     if tabs.len() > 1 {
         section = section
             .tabs(&tabs, selected)
@@ -807,13 +927,14 @@ pub fn section(
         let rows = page.controls.take();
         ui.ctx().data_mut(|data| data.insert_temp(rows_id, rows));
     });
-    for action in out.actions {
-        changes.push(match action {
-            SectionAction::Toggle => Change::Toggle { tool: id },
-            SectionAction::Tab(tab) => Change::Tab { tool: id, tab },
-            SectionAction::Reset => Change::ResetTool { tool: id },
-            // Drawn disabled: nothing is behind them yet.
-            SectionAction::Presets | SectionAction::Options => continue,
+    for pressed in pressed(ui, &definition.tool, &out, photo) {
+        changes.push(match pressed {
+            Pressed::Toggle => Change::Toggle { tool: id },
+            Pressed::Tab(tab) => Change::Tab { tool: id, tab },
+            Pressed::Reset => Change::ResetTool { tool: id },
+            Pressed::Run(action) => Change::Run(action),
+            // A processing tool's ⋯ holds its declared items alone.
+            Pressed::Own(_) => continue,
         });
     }
     changes
@@ -2395,7 +2516,6 @@ fn track(track: Track, (min, max): (f32, f32)) -> parts::Track {
 #[cfg(test)]
 mod tests {
     use apertrust_engine::session::PresetState;
-    use apertrust_tools::ToolDefinition;
     use apertrust_tools::agx::Agx;
     use apertrust_tools::colour_balance_rgb::ColourBalanceRgb;
     use apertrust_tools::colour_calibration::ColourCalibration;
@@ -2408,6 +2528,7 @@ mod tests {
     use apertrust_tools::tone_curve::{self, ToneCurve};
     use apertrust_tools::tone_equalizer::{self, ToneEqualizer};
     use apertrust_tools::vignetting::Vignetting;
+    use apertrust_tools::{Reset, ToolDefinition};
     use apertrust_ui::components::Marker;
     use apertrust_ui::{Builtin, Locale, Theme, theme};
     use egui::accesskit::{Role, Toggled};
@@ -2650,10 +2771,12 @@ mod tests {
                         ui,
                         panel.tool,
                         &panel.state,
-                        panel.open,
+                        Head {
+                            open: panel.open,
+                            ..Head::default()
+                        },
                         &panel.panels,
                         &groups,
-                        false,
                         true,
                         None,
                         &pickers,
@@ -4399,6 +4522,8 @@ mod tests {
             ],
             before: &[],
             after: &[Row::Toggle { control: "mask" }],
+            reset: Reset::Tool,
+            presets: true,
             menus: &[],
         },
         version: 1,
@@ -6333,10 +6458,12 @@ mod tests {
                             ui,
                             &ToneCurve,
                             state,
-                            true,
+                            Head {
+                                open: true,
+                                ..Head::default()
+                            },
                             panels,
                             &groups,
-                            false,
                             true,
                             None,
                             &Pickers::NONE,
@@ -6428,10 +6555,12 @@ mod tests {
                             ui,
                             &Exposure,
                             state,
-                            open,
+                            Head {
+                                open,
+                                ..Head::default()
+                            },
                             panels,
                             &groups,
-                            false,
                             true,
                             None,
                             &Pickers::NONE,
@@ -6498,10 +6627,12 @@ mod tests {
                             ui,
                             &Exposure,
                             state,
-                            true,
+                            Head {
+                                open: true,
+                                ..Head::default()
+                            },
                             &Panels::default(),
                             &|_: &str| false,
-                            false,
                             true,
                             None,
                             &Pickers::DRAWN,
@@ -6586,10 +6717,12 @@ mod tests {
                         ui,
                         &Exposure,
                         &state,
-                        true,
+                        Head {
+                            open: true,
+                            ..Head::default()
+                        },
                         &Panels::default(),
                         &groups,
-                        false,
                         true,
                         None,
                         &pickers,

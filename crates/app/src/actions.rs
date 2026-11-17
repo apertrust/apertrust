@@ -91,6 +91,11 @@ impl ActionId {
     /// Edit › Discard History… and the History section's ⋯ item: asks, then
     /// `Command::DiscardHistory` (decision 78).
     pub const DISCARD_HISTORY: ActionId = ActionId("discard-history");
+    /// The History section's ⋯ items (decision 93): `Command::Compress`, `Command::Truncate`,
+    /// and Create a Style…, which waits for styles (Phase 3).
+    pub const COMPRESS_HISTORY: ActionId = ActionId("compress-history");
+    pub const TRUNCATE_HISTORY: ActionId = ActionId("truncate-history");
+    pub const CREATE_STYLE: ActionId = ActionId("create-style");
     pub const UNDO: ActionId = ActionId("undo");
     pub const REDO: ActionId = ActionId("redo");
     pub const COPY_EDIT: ActionId = ActionId("copy-edit");
@@ -291,10 +296,17 @@ pub struct State {
     /// takes them: live and not open for viewing only (decision 78).
     pub undo: bool,
     pub redo: bool,
+    /// Whether Compress History, and Truncate History, have something to do and are taken:
+    /// the photo live and not open for viewing only (decision 78; `history::options`).
+    pub compress: bool,
+    pub truncate: bool,
     /// Whether Discard History has something to do and is taken: the photo live and not
     /// open for viewing only, or open for viewing only because part of its history cannot
     /// be read, which it starts afresh (decision 78; `history::options`).
     pub discard: bool,
+    /// Whether the photo open is open for viewing only because part of its history cannot
+    /// be read, which Discard History's tip says it starts afresh.
+    pub unreadable: bool,
     /// Why Discard History… cannot run where only the platform's missing alert stops it,
     /// Windows' until its task dialog, as its items say ([`why_unavailable`]): a message's
     /// id, `history::discard_why`'s.
@@ -485,6 +497,20 @@ pub fn why_unavailable(id: ActionId, state: &State) -> Option<&'static str> {
         .filter(|_| id == ActionId::DISCARD_HISTORY)
 }
 
+/// What the action `id`'s item says in its tip in a tool's ⋯ (decision 93), as the
+/// pull-down's items do: why it cannot run where something says ([`why_unavailable`]),
+/// else what it does, for History's items. The message's id, or none.
+pub fn options_tip(id: ActionId, state: &State) -> Option<&'static str> {
+    why_unavailable(id, state).or(match id {
+        ActionId::COMPRESS_HISTORY => Some("history-compress-tip"),
+        ActionId::TRUNCATE_HISTORY => Some("history-truncate-tip"),
+        ActionId::CREATE_STYLE => Some("history-options-style-later"),
+        ActionId::DISCARD_HISTORY if state.unreadable => Some("history-discard-tip-unreadable"),
+        ActionId::DISCARD_HISTORY => Some("history-discard-tip"),
+        _ => None,
+    })
+}
+
 fn no_modal_dialog(state: &State) -> bool {
     !state.modal
 }
@@ -568,7 +594,7 @@ fn tab_enabled<const I: usize>(state: &State) -> bool {
 
 /// Every action, in the order a keyboard map lists them (`docs/gui.md`, The default
 /// keyboard map). Slider keys are not here: they are the slider's own (`SliderRow`).
-pub static ACTIONS: [Action; 74] = [
+pub static ACTIONS: [Action; 77] = [
     // The top panel's mark, and About Apertrust in the menus once they come.
     Action {
         id: ActionId::ABOUT,
@@ -704,6 +730,37 @@ pub static ACTIONS: [Action; 74] = [
         trigger: Trigger::Press,
         available: |s| s.photo && s.discard && on_main_window(s) && no_modal_dialog(s),
         emits: Emit::Intent(Intent::DiscardHistory),
+    },
+    // darktable's compress history stack and its Ctrl-click, which truncates
+    // (`src/libs/history.c:1239-1250`): History's ⋯ items, with no key, as darktable's
+    // button has none. They rewrite the log, so they rest as Undo does.
+    Action {
+        id: ActionId::COMPRESS_HISTORY,
+        message: "history-options-compress",
+        keys: &[],
+        scope: Scope::App,
+        trigger: Trigger::Press,
+        available: |s| s.compress && on_main_window(s) && !s.modal,
+        emits: Emit::Command(Command::Compress),
+    },
+    Action {
+        id: ActionId::TRUNCATE_HISTORY,
+        message: "history-options-truncate",
+        keys: &[],
+        scope: Scope::App,
+        trigger: Trigger::Press,
+        available: |s| s.truncate && on_main_window(s) && !s.modal,
+        emits: Emit::Command(Command::Truncate),
+    },
+    // History's ⋯ item, drawn disabled until styles come (Phase 3).
+    Action {
+        id: ActionId::CREATE_STYLE,
+        message: "history-options-style",
+        keys: &[],
+        scope: Scope::App,
+        trigger: Trigger::Press,
+        available: never,
+        emits: Emit::Later,
     },
     // darktable's Ctrl+Z and Ctrl+Y (`src/views/darkroom.c:3425-3428`), with the
     // platforms' Shift for Redo: Redo shows Ctrl+Y first on Windows, Ctrl+Shift+Z first on
@@ -2019,7 +2076,7 @@ pub fn next_region(
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use std::collections::HashSet;
 
     use apertrust_ui::Locale;
@@ -2033,7 +2090,7 @@ mod tests {
     ];
 
     /// A state in which everything built can run.
-    fn everything() -> State {
+    pub(crate) fn everything() -> State {
         State {
             view: View::Edit,
             photo: true,
@@ -2043,7 +2100,10 @@ mod tests {
             edited: true,
             undo: true,
             redo: true,
+            compress: true,
+            truncate: true,
             discard: true,
+            unreadable: false,
             discard_why: None,
             exportable: true,
             text: false,
