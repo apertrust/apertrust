@@ -769,6 +769,15 @@ apertrust_export() {
   local path=$1 file=$2 image=$3
   shift 3
   if [[ $harness == 1 ]]; then
+    # Exclusive creation protects raw aliases. Each warm-up, measurement and retry
+    # owns fresh destinations, including across invocations of this script.
+    local attempt
+    attempt=$(mktemp -d "$image.XXXXXX") || return 1
+    image="$attempt/export.png"
+    if [[ -n ${export_history[*]-} ]]; then
+      xmp="$attempt/history.xmp"
+      export_history=(--darktable-xmp "$xmp")
+    fi
     "$golden" -d perf -d gpu "$@" export "$file" -o "$image" \
       ${export_history[@]+"${export_history[@]}"} ${harness_flags[@]+"${harness_flags[@]}"}
   else
@@ -944,9 +953,10 @@ for raw in ${raws//,/ }; do
     if [[ $want_gpu == 1 ]]; then
       time_apertrust "$raw" gpu
     else
-      "$golden" export "$(raw_file "$raw")" -o "$out/images/$raw.history.png" \
-        --darktable-xmp "$xmp" ${harness_flags[@]+"${harness_flags[@]}"} >/dev/null 2>&1 ||
+      export_history=(--darktable-xmp "$xmp")
+      apertrust_export gpu "$(raw_file "$raw")" "$out/images/$raw.history.png" >/dev/null 2>&1 ||
         die "apertrust-golden export failed for $(raw_label "$raw")"
+      export_history=()
     fi
     has "$paths" dt-cpu && time_darktable "$raw" cpu
     has "$paths" dt-opencl && time_darktable "$raw" opencl

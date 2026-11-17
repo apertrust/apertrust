@@ -229,6 +229,45 @@ fn the_start_tidies_then_walks_then_evicts_past_the_limit() {
     assert_eq!(within.eviction(), Eviction::Idle);
 }
 
+#[test]
+fn startup_walks_overtaken_before_any_count_retry_and_remain_cancellable() {
+    for stopped in [false, true] {
+        let session = Session::new(&format!("start-overtaken-{stopped}"), 1, Limit::Bytes(0));
+        // Remove the stale fixture and its otherwise empty subfolder, leaving exactly
+        // one subfolder and therefore one cancellation checkpoint per walk pass.
+        fs::remove_file(&session.temporary).unwrap();
+        let _ = fs::remove_dir(session.temporary.parent().unwrap());
+        let (begun, permit) = session.hold_walk();
+        session.upkeep.start_walk(&session.control);
+        // The only thumbnail subfolder is visited once per pass. Touch its slot after
+        // each pass begins, invalidating both initial generations without any count.
+        for _ in 0..2 {
+            begun.recv_timeout(WAIT).expect("a walk begins");
+            write(&session.cache, 0..1);
+            permit.send(()).unwrap();
+        }
+        begun
+            .recv_timeout(WAIT)
+            .expect("startup retries without a count");
+        assert_eq!(session.steps(), [Step::Tidy, Step::Walk, Step::Walk]);
+        assert!(session.cache.sizes().is_none());
+        if stopped {
+            session.stop.store(true, Ordering::Relaxed);
+        }
+        drop(permit);
+        session.settle();
+        if stopped {
+            assert!(session.cache.sizes().is_none());
+            assert!(!session.steps().contains(&Step::Evict));
+        } else {
+            assert_eq!(session.held(), 0);
+            assert!(session.steps().contains(&Step::Evict));
+            assert_eq!(session.entries(), 0);
+        }
+        assert_eq!(session.eviction(), Eviction::Idle);
+    }
+}
+
 /// The start's walk counts as an eviction running: a limit lowered during it is folded
 /// in, evicted once the walk is done, with no job beside it.
 #[test]

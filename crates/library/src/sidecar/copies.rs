@@ -483,6 +483,7 @@ fn top_level(xmp: &Xmp, version: u32) -> (Vec<Property>, Vec<Problem>) {
             });
         }
     }
+    plain_fields(&xmp.properties, &["version"], "the file", &mut problems);
     (other, problems)
 }
 
