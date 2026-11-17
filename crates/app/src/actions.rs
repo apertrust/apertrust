@@ -282,6 +282,10 @@ pub struct State {
     /// Whether the photo open takes edits: live and not open for viewing only, as a tool's
     /// buttons need (decisions 77 and 91).
     pub editable: bool,
+    /// Whether the photo open is open for viewing only (decision 43): a newer Apertrust
+    /// wrote its edit, or part of its history cannot be read. Reset rests, as every change
+    /// of its edit does.
+    pub view_only: bool,
     pub edited: bool,
     /// Whether the open photo's history has something for Undo, and for Redo, to do, and
     /// takes them: live and not open for viewing only (decision 78).
@@ -683,7 +687,7 @@ pub static ACTIONS: [Action; 74] = [
         keys: &[],
         scope: Scope::App,
         trigger: Trigger::Press,
-        available: |s| s.photo && s.edited && on_main_window(s),
+        available: |s| s.photo && s.edited && !s.view_only && on_main_window(s),
         emits: Emit::Command(Command::Reset),
     },
     // No key by default either, as darktable's discard history has none. It asks first
@@ -2032,6 +2036,7 @@ mod tests {
             photo: true,
             waiting: false,
             editable: true,
+            view_only: false,
             edited: true,
             undo: true,
             redo: true,
@@ -2216,6 +2221,19 @@ mod tests {
             assert!(!action.can_run(&state), "{}", action.id.0);
         }
         assert!(action(ActionId::RESET).is_some_and(|a| a.can_run(&state)));
+    }
+
+    /// Reset rests on a photo open for viewing only, whose edit takes no change, even
+    /// where the edit holds something.
+    #[test]
+    fn reset_rests_on_a_photo_open_for_viewing_only() {
+        let reset = action(ActionId::RESET).unwrap();
+        assert!(reset.enabled(&everything()));
+        let viewing = State {
+            view_only: true,
+            ..everything()
+        };
+        assert!(!reset.enabled(&viewing));
     }
 
     #[test]

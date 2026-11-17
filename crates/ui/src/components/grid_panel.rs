@@ -25,8 +25,9 @@
 //! those on screen as it scrolls.
 //!
 //! A click opens a photo; Shift-click selects a range, Ctrl or Cmd-click adds or removes
-//! one. A right-click on a cell, or the menu key or Shift+F10 on the one focused, asks for
-//! its photo's menu, which the caller builds ([`GridPanelOutput::menu`]). With a cell focused, ← and → move the focus to the next or previous photo, Home and
+//! one. A right-click on a cell, a Control-click on the Mac, or the menu key, Shift+F10 or
+//! AccessKit's ShowContextMenu on the one focused, asks for its photo's menu, which the
+//! caller builds ([`GridPanelOutput::menu`]). With a cell focused, ← and → move the focus to the next or previous photo, Home and
 //! End to the first and last, and Enter or Space opens the one focused; the panel scrolls
 //! to keep it in sight. The active photo's cell is scrolled into view when it changes.
 //! With no photos it is drawn empty and, where the app gives one, says why: a struck-through
@@ -50,7 +51,8 @@ use egui::{
 
 use super::side_panel::{restore, scroll_area};
 use super::{
-    CellAction, CellPicture, CellRating, CellStatus, CentralBar, GridCell, IconButton, pull_down,
+    CellAction, CellPicture, CellRating, CellStatus, CentralBar, GridCell, IconButton,
+    context_click, menu_asked, pull_down,
 };
 use crate::i18n::Args;
 use crate::popup::{self, Answer, Entry, Item, Request, Submenu};
@@ -204,8 +206,8 @@ pub struct GridPanelOutput {
     pub menu: Option<CellMenu>,
 }
 
-/// A photo's menu asked for on its cell: by a right-click, at the pointer, or by the menu
-/// key or Shift+F10 on the focused cell, under it. The caller builds the menu and opens it
+/// A photo's menu asked for on its cell: by a right-click or the Mac's Control-click, at
+/// the pointer, or by the menu key, Shift+F10 or AccessKit's ShowContextMenu, under it. The caller builds the menu and opens it
 /// through the popup service, the focus going back to the cell as it closes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct CellMenu {
@@ -552,12 +554,9 @@ impl<'a, F: Fn(usize) -> Thumb<'a>> GridPanel<'a, F> {
                             if response.has_focus() {
                                 moved = moved.or(keyed(ui, id, i, &cells));
                             }
-                            let keys = response.has_focus()
-                                && ui.input_mut(|i| {
-                                    i.consume_key(Modifiers::NONE, Key::Menu)
-                                        || i.consume_key(Modifiers::SHIFT, Key::F10)
-                                });
-                            if response.secondary_clicked() || keys {
+                            let keys = menu_asked(ui.ctx(), &response);
+                            let clicked = context_click(ui.ctx(), &response);
+                            if clicked || keys {
                                 let pointer = response.interact_pointer_pos().filter(|_| !keys);
                                 let at = pointer.unwrap_or(response.rect.left_bottom());
                                 menu = Some(CellMenu {
@@ -566,7 +565,7 @@ impl<'a, F: Fn(usize) -> Thumb<'a>> GridPanel<'a, F> {
                                     cell: id,
                                 });
                             }
-                            if response.clicked() {
+                            if response.clicked() && !clicked {
                                 let modifiers = ui.input(|input| input.modifiers);
                                 action = Some(if modifiers.shift {
                                     GridPanelAction::SelectRange(i)

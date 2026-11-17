@@ -39,12 +39,20 @@ struct Grid {
     chosen: Vec<GridBarAction>,
     /// The cells' menus asked for.
     menus: Vec<CellMenu>,
+    /// What was done to the photos.
+    actions: Vec<GridPanelAction>,
 }
 
 /// The panel with `count` photos, as the app keeps it: each choice taken in at once.
 fn grid(count: usize) -> Harness<'static, Grid> {
+    grid_on(count, egui::os::OperatingSystem::Nix)
+}
+
+/// [`grid`] on `os`.
+fn grid_on(count: usize, os: egui::os::OperatingSystem) -> Harness<'static, Grid> {
     Harness::builder()
         .with_size(egui::vec2(900.0, 360.0))
+        .with_os(os)
         .with_context_setup(install)
         .build_ui_state(
             |ui, grid: &mut Grid| {
@@ -74,6 +82,7 @@ fn grid(count: usize) -> Harness<'static, Grid> {
                     grid.chosen.push(chosen);
                 }
                 grid.menus.extend(output.menu);
+                grid.actions.extend(output.action);
             },
             Grid {
                 count,
@@ -85,6 +94,7 @@ fn grid(count: usize) -> Harness<'static, Grid> {
                 labels: true,
                 chosen: Vec::new(),
                 menus: Vec::new(),
+                actions: Vec::new(),
             },
         )
 }
@@ -627,6 +637,59 @@ fn a_cell_s_right_click_and_menu_keys_ask_for_its_photo_s_menu() {
     harness.key_press(egui::Key::Menu);
     harness.run();
     assert_eq!(harness.state().menus.len(), 3);
+}
+
+/// Decision 91: AccessKit's ShowContextMenu on a cell asks for its photo's menu under it,
+/// as its keys do.
+#[test]
+fn screen_readers_ask_for_a_cell_s_menu() {
+    let mut harness = grid(12);
+    harness.run();
+    let cell = harness.get_by_label("IMG_0004.ARW");
+    let under = cell.rect().left_bottom();
+    let (target_node, target_tree) = cell.accesskit_node().locate();
+    harness.event(egui::Event::AccessKitActionRequest(
+        egui::accesskit::ActionRequest {
+            target_node,
+            target_tree,
+            action: egui::accesskit::Action::ShowContextMenu,
+            data: None,
+        },
+    ));
+    harness.run();
+    let menus = &harness.state().menus;
+    assert_eq!(menus.len(), 1);
+    assert_eq!((menus[0].photo, menus[0].at), (4, under));
+}
+
+/// Decision 91: on the Mac a Control-click on a cell asks for its menu, as a right-click
+/// does, and opens no photo; elsewhere it is a click with Ctrl, which adds the photo to the
+/// selection.
+#[test]
+fn a_control_click_on_a_cell_opens_its_menu_on_the_mac_alone() {
+    use egui::os::OperatingSystem;
+    for os in [OperatingSystem::Mac, OperatingSystem::Nix] {
+        let mut harness = grid_on(12, os);
+        harness.run();
+        let at = harness.get_by_label("IMG_0002.ARW").rect().center();
+        // Control, which is Ctrl, the command key, off the Mac.
+        let ctrl = egui::Modifiers {
+            ctrl: true,
+            command: os != OperatingSystem::Mac,
+            ..egui::Modifiers::NONE
+        };
+        harness.get_by_label("IMG_0002.ARW").click_modifiers(ctrl);
+        harness.run();
+        let grid = harness.state();
+        if os == OperatingSystem::Mac {
+            assert_eq!(grid.menus.len(), 1, "{os:?}");
+            assert_eq!((grid.menus[0].photo, grid.menus[0].at), (2, at));
+            assert!(grid.actions.is_empty(), "{os:?}: {:?}", grid.actions);
+        } else {
+            assert!(grid.menus.is_empty(), "{os:?}");
+            assert_eq!(grid.actions, [GridPanelAction::ToggleSelected(2)]);
+        }
+    }
 }
 
 /// A window with the grid panel as a column at `position`, `columns` wide as its edge

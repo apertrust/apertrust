@@ -214,6 +214,34 @@ pub fn context_menu(
     }
 }
 
+/// Whether `response` was right-clicked this frame, or on the Mac clicked with Control
+/// held, which asks for its menu as a right-click does (decision 91): that click is then
+/// no click, so its caller takes no primary action for it.
+pub fn context_click(ctx: &egui::Context, response: &Response) -> bool {
+    let mac = ctx.os() == egui::os::OperatingSystem::Mac;
+    let control = || ctx.input(|i| i.modifiers.ctrl);
+    response.secondary_clicked() || (mac && response.clicked() && control())
+}
+
+/// Whether `response`'s element asked for its menu this frame other than by the pointer
+/// (decision 91): AccessKit's ShowContextMenu for it, or the menu key or Shift+F10 while it
+/// has the focus, each taken out of the frame's input.
+pub fn menu_asked(ctx: &egui::Context, response: &Response) -> bool {
+    let focused = response.has_focus();
+    ctx.input_mut(|i| {
+        let mut asked = false;
+        i.consume_accesskit_action_requests(response.id, |request| {
+            let show = request.action == egui::accesskit::Action::ShowContextMenu;
+            asked |= show;
+            show
+        });
+        let keys = |i: &mut egui::InputState| {
+            i.consume_key(Modifiers::NONE, Key::Menu) || i.consume_key(Modifiers::SHIFT, Key::F10)
+        };
+        asked || (focused && keys(i))
+    })
+}
+
 /// `text` on one line at most `width` wide, cut at its end with … when longer.
 fn truncated(text: &str, font: FontId, width: f32, colour: Color32) -> LayoutJob {
     let mut job = LayoutJob::simple_singleline(text.to_owned(), font, colour);

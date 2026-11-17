@@ -107,7 +107,7 @@ use apertrust_ui::components::{
     grid_panel_lines, grid_panel_thickness,
 };
 use apertrust_ui::{
-    Background, Builtin, Icon, Locale, Theme, Translator, popup, theme, tr, translator,
+    Background, Builtin, Icon, Locale, Theme, Translator, components, popup, theme, tr, translator,
 };
 use eframe::egui::{self, os::OperatingSystem};
 use eframe::egui_wgpu::{self, WgpuSetup, WgpuSetupCreateNew};
@@ -2365,6 +2365,7 @@ impl Shell {
             // The app's, from the session's mirror ([`App::shell_state`]).
             waiting: false,
             editable: false,
+            view_only: false,
             edited,
             // The app's, from the photo's history ([`App::shell_state`]).
             undo: false,
@@ -3805,6 +3806,7 @@ impl App {
             shown: !self.mirror.folder.order().is_empty(),
             waiting: self.mirror.photo.asked().is_some() && !self.mirror.live(),
             editable: takes && self.mirror.live(),
+            view_only: self.view_only(),
             opened: opened(&self.mirror),
             undo: history.is_some_and(|h| h.undo.is_some()),
             redo: history.is_some_and(|h| h.redo.is_some()),
@@ -4912,11 +4914,14 @@ fn photo_point(photo: egui::Rect, at: egui::Pos2) -> [f32; 2] {
     [point.x, point.y]
 }
 
-/// Opens the context menu at the pointer when `slot` is right-clicked, built from `keymap`
-/// and `state` for the photo `asked` for ([`context_popup`]), and returns the action of the item chosen in it: the
-/// photo's on `photo`, the photo's rectangle while one is shown, the point in the photo's
-/// coordinates as pickers take them, unless `picking`, a picker on, takes the right-click
-/// there (decision 91); the surround's outside it.
+/// Opens the context menu at the pointer when `slot` is right-clicked, or Control-clicked
+/// on the Mac, built from `keymap` and `state` for the photo `asked` for
+/// ([`context_popup`]), and returns the action of the item chosen in it: the photo's on
+/// `photo`, the photo's rectangle while one is shown, the point in the photo's coordinates
+/// as pickers take them, unless `picking`, a picker on, takes the right-click there
+/// (decision 91); the surround's outside it. Asked for otherwise, by AccessKit's
+/// ShowContextMenu or the keys, the photo's opens at its centre with no point, or the
+/// surround's at the slot's with no photo.
 fn central_menu(
     ctx: &egui::Context,
     slot: &egui::Response,
@@ -4927,15 +4932,17 @@ fn central_menu(
     asked: Option<&Path>,
 ) -> Option<ActionId> {
     let id = slot.id.with("menu");
-    let at = slot
-        .interact_pointer_pos()
-        .filter(|_| slot.secondary_clicked());
+    let keys = components::menu_asked(ctx, slot);
+    let clicked = components::context_click(ctx, slot);
+    let at = slot.interact_pointer_pos().filter(|_| clicked);
+    let centre = photo.map_or(slot.rect.center(), |photo| photo.center());
+    let at = at.or_else(|| keys.then_some(centre));
     let opened = at.and_then(|at| {
         let (place, target) = match photo.filter(|photo| photo.contains(at)) {
             Some(_) if picking => return None,
             Some(photo) => {
                 let target = menus::Target::Photo {
-                    point: Some(photo_point(photo, at)),
+                    point: (!keys).then(|| photo_point(photo, at)),
                 };
                 (menus::Place::Open(apertrust_tools::Place::Photo), target)
             }
@@ -4969,7 +4976,8 @@ struct Opened {
 /// or open (decision 91): while one is open another photo can become active, by a drop,
 /// Open… or an open asked for earlier, and the menu then closes with nothing chosen, so it
 /// never acts on a photo other than its own. The Mac's native menu is modal, so nothing
-/// changes while it is open.
+/// changes while it is open, but it answers after it closes: its choice is dropped when
+/// another photo became active meanwhile.
 ///
 /// One opened while its photo waits to go live (decision 91), as a thumbnail's does on a
 /// photo it has just made active, shows the items that wait disabled; once the photo is
@@ -5020,16 +5028,12 @@ fn context_popup(
                 d.remove::<Option<PathBuf>>(own);
             }
         });
-    } else if let Some(asked) = ctx.data(|d| d.get_temp::<Option<PathBuf>>(own)) {
-        if !popup::is_open(ctx, id) {
-            ctx.data_mut(|d| d.remove::<Option<PathBuf>>(own));
-        } else if asked.as_deref() != photo {
-            popup::dismiss(ctx, id);
-            ctx.data_mut(|d| {
-                d.remove::<Option<PathBuf>>(own);
-                d.remove::<Opened>(waiting);
-            });
-        }
+    } else if let Some(asked) = ctx.data(|d| d.get_temp::<Option<PathBuf>>(own))
+        && popup::is_open(ctx, id)
+        && asked.as_deref() != photo
+    {
+        popup::dismiss(ctx, id);
+        ctx.data_mut(|d| d.remove::<Opened>(waiting));
     }
     if opened.is_none()
         && let Some(opened) = ctx.data(|d| d.get_temp::<Opened>(waiting))
@@ -5044,7 +5048,14 @@ fn context_popup(
     if popup::is_open(ctx, id) {
         popup::show(ctx);
     }
-    match popup::answer(ctx, id)? {
+    let answer = popup::answer(ctx, id)?;
+    // The photo it was for, kept until its answer is read: the Mac's native menu answers
+    // after it has closed, and its choice is taken only for the photo it opened on.
+    let own = ctx.data_mut(|d| d.remove_temp::<Option<PathBuf>>(own));
+    if own.is_some_and(|own| own.as_deref() != photo) {
+        return None;
+    }
+    match answer {
         popup::Answer::Chosen(chosen) => menus::chosen(&chosen),
         popup::Answer::Dismissed => None,
     }
@@ -10310,6 +10321,8 @@ mod tests {
         asked: PathBuf,
         live: bool,
         chosen: Vec<ActionId>,
+        /// The menu's popup, once drawn.
+        menu: Option<egui::Id>,
     }
 
     /// [`Thumbnail`] in a window of 600 × 400 points, its photo `a.ARW`, `live` or not.
@@ -10339,6 +10352,7 @@ mod tests {
                             opener: Some(slot.id),
                         });
                     let id = slot.id.with("menu");
+                    thumbnail.menu = Some(id);
                     let (keymap, asked) = (&thumbnail.shell.keymap, Some(&*thumbnail.asked));
                     let chosen = context_popup(&ctx, id, opened, keymap, &state, asked);
                     thumbnail.chosen.extend(chosen);
@@ -10348,8 +10362,43 @@ mod tests {
                     asked: PathBuf::from("a.ARW"),
                     live,
                     chosen: Vec::new(),
+                    menu: None,
                 },
             )
+    }
+
+    /// A popup service that takes every request and answers when told, as the Mac's
+    /// native menus do between frames.
+    struct Native;
+
+    impl popup::Service for Native {
+        fn takes(&self, _: &popup::Request) -> bool {
+            true
+        }
+
+        fn open(&self, _: egui::Id, _: popup::Request) {}
+    }
+
+    /// Decision 91: the Mac's native menu answers after it closes; its choice runs only
+    /// while the photo it opened on is still the one asked for, and is dropped once
+    /// another has become active meanwhile.
+    #[test]
+    fn a_native_menu_s_answer_is_dropped_once_another_photo_is_active() {
+        for (other, chosen) in [(false, vec![ActionId::RESET]), (true, Vec::new())] {
+            let mut harness = thumbnail(true);
+            popup::install(&harness.ctx, std::sync::Arc::new(Native));
+            right_click_at(&mut harness, egui::pos2(300.0, 200.0));
+            let id = harness.state().menu.unwrap();
+            assert!(popup::is_open(&harness.ctx, id));
+            // Chosen and closed between frames, the photo changed or not meanwhile.
+            if other {
+                harness.state_mut().asked = PathBuf::from("b.ARW");
+            }
+            let answer = popup::Answer::Chosen(ActionId::RESET.0.to_owned());
+            popup::answered(&harness.ctx, id, answer);
+            harness.run();
+            assert_eq!(harness.state().chosen, chosen, "another photo: {other}");
+        }
     }
 
     /// Decision 91: a thumbnail's menu opened on a photo still opening shows Reset and

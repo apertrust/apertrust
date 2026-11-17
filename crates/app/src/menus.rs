@@ -1477,6 +1477,7 @@ mod tests {
             photo: true,
             waiting: false,
             editable: true,
+            view_only: false,
             edited: true,
             undo: true,
             redo: true,
@@ -2813,14 +2814,15 @@ mod tests {
                 "tool-flip-flip_vertically"
             ]
         );
-        // On a photo that takes no edits, as one open for viewing only, Orientation's
-        // buttons cannot run, and its submenu goes with them.
+        // On a photo open for viewing only, neither Reset nor Orientation's buttons can
+        // run, and they go, its submenu with them.
         let viewing = State {
             editable: false,
+            view_only: true,
             ..one
         };
         let menu = open(Open::Photo, photo, &viewing);
-        assert_eq!(words(&menu), ["Reset", "-", "Export…", "-", "Background ▸"]);
+        assert_eq!(words(&menu), ["Export…", "-", "Background ▸"]);
         let menu = open(Open::Thumbnail, Target::Selection, &one);
         assert_eq!(menu.name, "Thumbnail");
         assert_eq!(words(&menu), ["Reset", "-", "Export…"]);
