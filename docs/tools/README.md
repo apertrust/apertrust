@@ -231,7 +231,7 @@ AgX now, Sigmoid and Filmic RGB as they come, each a tool of its own, as in dark
 
 ### Owners by operation
 
-Each operation parameter has exactly one owning tool (decisions 4 and 28). For the ported operations:
+Each operation parameter has at most one owning tool, and gets one as its tool is built (decisions 4 and 28). For the ported operations:
 
 | Operation | Slot | Owner | Fixed, or without an owner |
 | --- | --- | --- | --- |
