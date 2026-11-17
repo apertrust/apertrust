@@ -6341,7 +6341,8 @@ fn hold_close(ctx: &egui::Context, dialogs: &dialog_host::AppDialogs) -> bool {
 struct EditTab {
     /// Scopes', its header's toggle among them.
     scopes: Vec<scopes::Change>,
-    /// The processing tools', their headers' among them.
+    /// The processing tools', their headers' among them, and the page drawer's rows of the
+    /// utilities' pages.
     changes: Vec<Change>,
     /// History's list's: the eye held and a tool opened.
     history: Vec<history::Action>,
@@ -6393,10 +6394,11 @@ fn edit_tab(
             ..head
         };
         let resettable = utility::resettable(definition, state);
-        let (pressed, actions) = history::tab(ui, head, resettable, |ui| {
-            utility::page(ui, &mut history, &mut cx)
+        let (pressed, (changes, actions)) = history::tab(ui, head, resettable, |ui| {
+            utility::rows(ui, &mut history, &mut cx)
         });
         tab.pressed = pressed;
+        tab.changes = changes;
         tab.history = actions;
         return tab;
     }

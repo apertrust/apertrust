@@ -29,8 +29,8 @@
 //! - **One page drawer** ([`crate::tools::page`]) draws a utility's page as it draws a
 //!   processing tool's ([`rows`]): labels, groups, settings and actions itself, and each
 //!   custom row by the utility's `body`. `UtilityDefinition::check` refuses every row that
-//!   edits, so the drawer leaves a utility nothing else. History's page is drawn apart by
-//!   [`page`] until it joins.
+//!   edits, so the drawer leaves a utility nothing else. History's tab draws its page with
+//!   [`rows`] under a header of its own ([`header`]), which stays at the tab's top.
 
 use std::cell::RefCell;
 
@@ -179,8 +179,8 @@ impl<T: UtilityTool> Rows for Page<'_, '_, T> {
 
 /// Draws the header of the utility `definition` alone, as `head` has it, for a section
 /// whose header stays at its tab's top while its page scrolls under it, as History's
-/// does: the caller draws the page apart while it is open. Returns what it asked for, its
-/// own ↺ among it, for the caller to carry out.
+/// does: the caller draws the page apart while it is open, with [`rows`]. Returns what it
+/// asked for, its own ↺ among it, for the caller to carry out.
 pub fn header(
     ui: &mut egui::Ui,
     definition: &ToolDefinition,
@@ -194,27 +194,6 @@ pub fn header(
     let section = tools::header(definition, &title, &reset, resettable, about, head);
     let out = section.show_header(ui);
     tools::pressed(ui, definition, &out, photo)
-}
-
-/// Draws `tool`'s page: each custom row by its body, in the page's order, the rows before
-/// its tab's, its one tab's, then those after. Until step 93.4 a utility's page holds custom
-/// rows alone.
-pub fn page<T: UtilityTool>(
-    ui: &mut egui::Ui,
-    tool: &mut T,
-    cx: &mut Context<'_>,
-) -> Vec<T::Action> {
-    let definition = &tool.definition().tool;
-    let tab = definition.tabs.first().map_or(&[][..], |tab| tab.rows);
-    let mut actions = Vec::new();
-    for rows in [definition.before, tab, definition.after] {
-        for row in rows {
-            if let Row::Custom { widget, .. } = row {
-                actions.extend(tool.body(*widget, ui, cx));
-            }
-        }
-    }
-    actions
 }
 
 /// Whether the utility `definition`'s ↺ can run in `state`: as its registry action can,

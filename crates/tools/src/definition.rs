@@ -1037,8 +1037,7 @@ pub enum Widget {
     Equalizer,
     HueCurve,
     Swatches,
-    /// History's whole page, its steps: drawn by the app's History tool until its page is
-    /// rows (decision 93, step 93.4).
+    /// History's steps, the edit's history as a list (decision 93).
     History,
     /// Scopes' graph with its buttons (decision 93): which graph, the scale, the channels
     /// and the clipping toggles are the graph's own state, kept in the app's settings.
