@@ -132,7 +132,7 @@ Planned (decision 58). The browser and tablets are remote clients of a native en
 - Bandwidth-aware frame streaming: compressed frames at reduced resolution while dragging sliders, full quality when idle. Wide-gamut and HDR frames need a codec that keeps them.
 - The photo library lives on the server; the client only browses and edits it.
 
-**Touch** comes with the mobile phase, after Phase 3 (decision 1): a native app for phones and tablets over the session protocol, designed for touch rather than adapted from the desktop layout.
+**Touch** comes with the mobile phase, after Phase 3 (decisions 1 and 94): on tablets, Touch mode of the one interface, its tabs, tools, actions and session commands the same as Standard's, Touch changing sizes, spacing and gestures, with two named layout adaptations ([gui.md](gui.md#touch-mode)); a phone's layout is a later, separate design. A tablet reaches the engine through the session protocol as any client does.
 
 ## Remote clients
 

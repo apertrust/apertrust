@@ -87,7 +87,7 @@ A tool's section already has its own buttons: reset, presets and options (⋯). 
 **Opening.**
 
 - A right-click opens a menu, and so does a Control-click on the Mac. On a focused element, Shift+F10, the Menu key and AccessKit's ShowContextMenu open it too (`components::context_menu`).
-- It opens at the pointer, or under the element from the keys: native on the Mac, drawn elsewhere (40). A long press on touch and pen comes later.
+- It opens at the pointer, or under the element from the keys: native on the Mac, drawn elsewhere (40). A long press on touch and pen opens it in Touch mode, planned ([0094](0094-one-interface-standard-and-touch-modes.md)).
 - While a picker is on, the photo's right-click is the picker's (79), and later a mask's while one is being drawn; the photo's menu opens only when nothing on the photo takes the right-click.
 - The photo is no focus stop in Phase 2, so its menu has no key. Every item in it is in the menu bar too.
 

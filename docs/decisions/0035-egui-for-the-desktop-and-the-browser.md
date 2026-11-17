@@ -15,7 +15,7 @@ Which toolkit draws Apertrust's interface, and can one interface serve both the 
 - a design system before panels are written: tokens, typography and standard components ([0036](0036-the-design-system.md));
 - widgets only emit session commands; they never touch engine state.
 
-**Touch is not a layout of this interface.** Phones and tablets get a native mobile app, designed for touch, after Phase 3 ([0001](0001-what-apertrust-is-the-principles.md)).
+**Touch is a mode of this interface,** Touch beside Standard, with the same tabs, tools, rows and actions, Touch changing sizes, spacing and gestures and adapting the layout in two named places; planned for tablets after Phase 3, a phone's layout a later design ([0094](0094-one-interface-standard-and-touch-modes.md)).
 
 The accepted costs of a canvas-drawn browser interface: weaker accessibility than the DOM, no native text selection, a download of several megabytes, less integration with the browser.
 

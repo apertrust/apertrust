@@ -302,7 +302,8 @@ Goal: controls people find and predict, the first step on Apertrust's own way: u
 
 ## Mobile, after Phase 3
 
-- [ ] A native app for phones and tablets over the session protocol, designed for touch rather than adapted from the desktop layout (decision 1; [session-protocol.md](session-protocol.md#web-tablets-and-remote-access)). Its scope is set when the phase is planned.
+- [ ] Touch mode for tablets: the one interface with Touch's sizes, spacing and gestures, Settings › General's Interface (Automatic, Standard, Touch) and View › Touch Mode, Touch the default on Android (decision 94; [gui.md](gui.md#touch-mode)). Its scope is set when the phase is planned.
+- [ ] A phone's layout, a separate design over the same session protocol (decisions 1 and 94; [session-protocol.md](session-protocol.md#web-tablets-and-remote-access)).
 
 ## Phase 4: layers and masks
 
