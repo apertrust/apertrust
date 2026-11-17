@@ -3231,7 +3231,7 @@ flowchart LR
 
 Every tool, a processing tool or a utility, has one header, one page and one ⋯ (decision 93), as darktable's processing and utility modules both begin with its `dt_action_t`.
 
-**Built** (steps 93.1 to 93.3):
+**Built** (steps 93.1 to 93.3, and 93.4's page drawer with Scopes):
 
 | Kind | Its declaration, in `apertrust-tools` | Its behaviour | darktable's |
 | --- | --- | --- | --- |
@@ -3243,21 +3243,21 @@ Every tool, a processing tool or a utility, has one header, one page and one ⋯
 - **History's ⋯** holds four declared items, registry actions: Compress History (`compress-history`), Truncate History (`truncate-history`), an item of its own, Create a Style… (`create-style`, drawn disabled until styles come) and, apart, Discard History… (`discard-history`), each saying in its tip what it does (`actions::options_tip`) and enabled from the photo's history (`history::options`) through the actions' state.
 - **Browse's ⋯** holds its own items, Show in Finder and, for photos alone, Open This Folder, not yet registry actions, given to the header beside its declared items, of which it has none; and Browse's header has no tooltip yet, its sentence a design question of its own.
 - **One `Context` for every utility** (`utility::Context`): the mirror, the settings, the words and the frame's command list. History draws its steps from the mirror and sends `GoTo` with the commands, and Scopes its graph from the settings' view and the mirror's reading. Browse draws from the frame's `library::Browse`, which holds the recents, the key tips and the home folder beside the mirror's folder, since the context holds none of them.
-- **Each utility's page is one custom row** until step 93.4, `Widget::History`, `Widget::Scopes` or `Widget::Browse`: `utility::page` calls its `body` for each custom row, which draws what its module drew, so each utility keeps its look. `main.rs` draws Scopes and Browse with `utility::section` and History with `history::tab`, its header staying at the tab's top, each through its `UtilityTool`.
+- **One page drawer** (`tools::page`, step 93.4) draws every tool's page from its `ToolDefinition`, through the trait `tools::Rows`: labels, collapsible groups, rows following a value, settings and actions itself, the rest by the tool's kind, a processing tool's controls, pickers and computed values (`tools::section`), and a utility's custom rows by its `UtilityTool::body` with the row's `Widget`, once per custom row (`utility::rows`, which `utility::section` draws a utility's page with). Each utility matches its own widgets in `body`, their egui code in its module, taking its state and returning its actions; a processing tool's custom rows stay drawn by the app's `match` on `Widget`. A utility's groups open as the settings keep them, and its settings, none yet, are drawn disabled at their defaults until Export's bind them (step 93.5).
+- **`UtilityDefinition::check`** refuses a row that edits: one naming a control, a preset row, a row of pickers whatever it holds, the picker's other rows, a computed value and the guides. Settings, labels, groups, `Row::WhenSetting` (its setting shown outside the rows it hides) and custom rows naming no control remain, on one untitled tab, each custom row a utility's own widget (`Widget::is_utility`), as `ProcessingDefinition::check` refuses a utility's widget. Action rows are planned, bound to the registry, and refused until then; so are a utility's presets, and its ↺ is never `Reset::Tool`. A test holds every utility to it, and another every utility's labels, groups and settings to their words (`messages::of_utility`).
+- **Scopes' page** is one custom row, `Widget::Scopes`: the graph with its buttons over it, which graph, the scale, the channels and the clipping toggles being the graph's own state, kept in the settings' `scopes.*`. History's page, its steps, is drawn by `utility::page`, and Browse's is one custom row, `Widget::Browse`, until each joins the page drawer. `main.rs` draws Scopes and Browse with `utility::section` and History with `history::tab`, its header staying at the tab's top, each through its `UtilityTool`.
 
 **Planned,** the rest of the model:
 
-- **A utility's page uses the same rows.** `UtilityDefinition::check` refuses a row that edits: one naming a control, a preset row, a picker's rows and a computed value. Settings, labels, groups, `Row::WhenSetting`, actions and buttons, and custom rows naming no control, remain.
-- **Variation goes into custom widgets,** each a `Widget`: the page drawer, reaching a utility's custom row, calls that utility's `UtilityTool::body` with the row's `Widget`, once per custom row, and the utility matches its own widgets there, their egui code in its module, taking its state and returning its actions; a processing tool's custom rows stay drawn by the app's `match` on `Widget`. The page drawer draws every other row of a utility's page too, as a processing tool's.
 - **A utility with presets** (`presets` true; Export for now, History, Scopes and Browse having none) has presets of its setting rows. Export's rows name the `export.*` settings by key, a test failing on a key not in the schema, so `apertrust-tools` never depends on `apertrust-export`.
 
 | Tool | Its page |
 | --- | --- |
 | Processing tools | As now; the tone equalizer's graph a custom row |
 | Export | Groups of setting rows, format-specific rows shown for their formats, the path line a custom row, presets in the header ([The Export tool](#the-export-tool)) |
-| Scopes | A setting row for which scope, drawn as its buttons over the graph are today, the graph a custom row |
+| Scopes | The graph with its buttons a custom row, which graph the graph's own state |
 | History | The steps a custom row; ↺ the `reset` action; ⋯ holding Compress History, Truncate History, Create a Style… and Discard History… as declared items |
-| Browse | The recents line a custom row; a Folders group holding the tree as a custom row |
+| Browse | Two custom rows: the recents line, and Folders, its group holding the tree in its scrolling list |
 
 - **Each utility keeps its look** on the page model: its custom widgets draw what its module draws today, and a change of look is a design question of its own.
 - **A utility that draws over the photo** gains `UtilityTool::overlay` and `pointer` when one needs them, darktable's `gui_post_expose` and mouse callbacks.

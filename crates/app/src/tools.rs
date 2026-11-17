@@ -914,16 +914,7 @@ pub fn section(
                 row.on_hover_text_at_pointer(tip);
             }
         }
-        let tab = definition
-            .tool
-            .tabs
-            .get(selected)
-            .map_or(&[][..], |tab| tab.rows);
-        for rows in [definition.tool.before, tab, definition.tool.after] {
-            for row in rows {
-                draw_row(ui, &page, row, &mut changes);
-            }
-        }
+        self::page(ui, &page, selected, &mut changes);
         let rows = page.controls.take();
         ui.ctx().data_mut(|data| data.insert_temp(rows_id, rows));
     });
@@ -979,8 +970,68 @@ fn control<'s>(state: &'s ToolState, id: &str) -> Option<&'s ControlState> {
     state.controls.iter().find(|control| control.control == id)
 }
 
-/// What a tool's rows are drawn from: the words, the tool, the values the mirror
-/// shows, and whether each collapsible group is open, by its id.
+/// What the one page drawer ([`page`]) asks of a tool's page (decision 93; `docs/gui.md`,
+/// One tool model): a processing tool's ([`section`]) or a utility's
+/// ([`crate::utility::section`]). The drawer draws the rows any tool may hold itself,
+/// labels, collapsible groups, rows following a value, settings and actions; its kind
+/// draws the rest ([`Rows::own`]): a processing tool's controls, pickers and computed
+/// values, and every custom row, a utility's by its `UtilityTool::body`.
+pub trait Rows {
+    fn words(&self) -> &Translator;
+
+    fn definition(&self) -> &ToolDefinition;
+
+    /// Whether its collapsible group `group` is open, as the app keeps it.
+    fn group_open(&self, group: &str) -> bool;
+
+    /// The tools' settings, as the app keeps them (decision 29).
+    fn settings(&self) -> &ToolSettings;
+
+    /// Whether a picker's words follow its setting `setting` (decision 88).
+    fn words_by(&self, _setting: &str) -> bool {
+        false
+    }
+
+    /// Whether the photo hides `row` (decision 88).
+    fn hidden(&self, _row: &Row) -> bool {
+        false
+    }
+
+    /// How many controls `rows` show now, those inside them included, are off their
+    /// defaults for the photo: a collapsible group's "N set".
+    fn set_in(&self, _rows: &[Row]) -> usize {
+        0
+    }
+
+    /// Whether rows following its control `control` show: whether its value is one of
+    /// `is` (`Row::When`).
+    fn follows(&self, _control: &str, _is: &[&str]) -> bool {
+        false
+    }
+
+    /// Keeps `rect`, where a row of controls on the edit was drawn, which a photo opening
+    /// says over (decision 77).
+    fn on_edit(&self, _rect: egui::Rect) {}
+
+    /// Draws `row`, one of the rows its kind draws.
+    fn own(&self, ui: &mut egui::Ui, row: &Row, changes: &mut Vec<Change>);
+}
+
+/// The one page drawer (decision 93): draws the page of `rows`' tool, the rows before its
+/// tabs', its tab `tab`'s, then those after, every tool's alike. Returns what the user did
+/// in `changes`.
+pub fn page(ui: &mut egui::Ui, rows: &dyn Rows, tab: usize, changes: &mut Vec<Change>) {
+    let definition = rows.definition();
+    let tab = definition.tabs.get(tab).map_or(&[][..], |tab| tab.rows);
+    for list in [definition.before, tab, definition.after] {
+        for row in list {
+            draw_row(ui, rows, row, changes);
+        }
+    }
+}
+
+/// What a processing tool's rows are drawn from: the words, the tool, the values the
+/// mirror shows, and whether each collapsible group is open, by its id.
 struct Page<'a> {
     words: &'a Translator,
     tool: &'a dyn ProcessingTool,
@@ -994,61 +1045,6 @@ struct Page<'a> {
 }
 
 impl Page<'_> {
-    /// Whether rows following `control` show: whether its value in the mirror is one of
-    /// `is`.
-    fn follows(&self, control: &str, is: &[&str]) -> bool {
-        let found = self.tool.definition().control(control);
-        match (found, self::control(self.state, control)) {
-            (Some(found), Some(shown)) => found.is_one_of(&shown.value, is),
-            _ => false,
-        }
-    }
-
-    /// How many controls `rows` show now, those inside them included, are off their
-    /// defaults for the photo: a collapsible group's "N set".
-    fn set_in(&self, rows: &[Row]) -> usize {
-        let mut shown = Vec::new();
-        self.shown(rows, &mut shown);
-        shown
-            .into_iter()
-            .filter(|id| control(self.state, id).is_some_and(|c| c.value != c.default))
-            .count()
-    }
-
-    /// Whether rows following the tool's setting `setting` show: whether the option it
-    /// holds, as the app keeps it, else its default, is one of `is` (`Row::WhenSetting`).
-    fn follows_setting(&self, setting: &str, is: &[&str]) -> bool {
-        let definition = self.tool.definition();
-        let Some(options) = definition.choice_setting(setting) else {
-            return false;
-        };
-        let row = definition.rows().find_map(|row| match row {
-            Row::Setting(row) if row.id == setting => Some(row),
-            _ => None,
-        });
-        let kept = self
-            .pickers
-            .settings
-            .get(definition.tool.id, setting)
-            .cloned();
-        match kept.or_else(|| row.map(SettingRow::default)) {
-            Some(ControlValue::Choice(at)) => options
-                .get(at as usize)
-                .is_some_and(|option| is.contains(option)),
-            _ => false,
-        }
-    }
-
-    /// Whether the photo hides `row` (decision 88): it names controls, and the mirror
-    /// reports every one of them hidden on this photo (`ControlState::visible`).
-    fn hidden(&self, row: &Row) -> bool {
-        let controls = row.controls();
-        !controls.is_empty()
-            && controls
-                .iter()
-                .all(|id| control(self.state, id).is_some_and(|shown| !shown.visible))
-    }
-
     /// The controls `rows` show now, each once, into `into`.
     fn shown(&self, rows: &[Row], into: &mut Vec<&'static str>) {
         for row in rows {
@@ -1058,7 +1054,7 @@ impl Page<'_> {
                 continue;
             }
             if let Row::WhenSetting { setting, is, .. } = row
-                && !self.follows_setting(setting, is)
+                && !follows_setting(self, setting, is)
             {
                 continue;
             }
@@ -1075,10 +1071,133 @@ impl Page<'_> {
     }
 }
 
-fn draw_row(ui: &mut egui::Ui, page: &Page, row: &Row, changes: &mut Vec<Change>) {
+impl Rows for Page<'_> {
+    fn words(&self) -> &Translator {
+        self.words
+    }
+
+    fn definition(&self) -> &ToolDefinition {
+        &self.tool.definition().tool
+    }
+
+    fn group_open(&self, group: &str) -> bool {
+        (self.groups)(group)
+    }
+
+    fn settings(&self) -> &ToolSettings {
+        self.pickers.settings
+    }
+
+    fn words_by(&self, setting: &str) -> bool {
+        (self.tool.definition().pickers.iter()).any(|picker| picker.words_by == Some(setting))
+    }
+
+    /// Whether the photo hides `row` (decision 88): it names controls, and the mirror
+    /// reports every one of them hidden on this photo (`ControlState::visible`).
+    fn hidden(&self, row: &Row) -> bool {
+        let controls = row.controls();
+        !controls.is_empty()
+            && controls
+                .iter()
+                .all(|id| control(self.state, id).is_some_and(|shown| !shown.visible))
+    }
+
+    fn set_in(&self, rows: &[Row]) -> usize {
+        let mut shown = Vec::new();
+        self.shown(rows, &mut shown);
+        shown
+            .into_iter()
+            .filter(|id| control(self.state, id).is_some_and(|c| c.value != c.default))
+            .count()
+    }
+
+    /// Whether its value in the mirror is one of `is`.
+    fn follows(&self, control: &str, is: &[&str]) -> bool {
+        let found = self.tool.definition().control(control);
+        match (found, self::control(self.state, control)) {
+            (Some(found), Some(shown)) => found.is_one_of(&shown.value, is),
+            _ => false,
+        }
+    }
+
+    fn on_edit(&self, rect: egui::Rect) {
+        self.controls.borrow_mut().push(rect);
+    }
+
+    fn own(&self, ui: &mut egui::Ui, row: &Row, changes: &mut Vec<Change>) {
+        let (words, tool, state) = (self.words, self.tool, self.state);
+        let definition = tool.definition();
+        match row {
+            Row::Slider(slider) => slider_row(ui, self, slider, changes),
+            Row::Choice { control, style } => {
+                choice_row(ui, words, definition, control, *style, state, changes);
+            }
+            Row::Toggle { control } => toggle_row(ui, words, definition, control, state, changes),
+            Row::Custom {
+                widget: Widget::Curve,
+                controls: [points, ..],
+            } => curve_row(ui, words, tool, points, state, changes),
+            Row::Custom {
+                widget: Widget::Equalizer,
+                controls,
+            } => equalizer_row(ui, words, tool, controls, state, changes),
+            // The closed registry's other painted widgets (the colour wheels, the hue
+            // curve) join the renderer with the first tool that uses each.
+            Row::Custom { .. } => {}
+            // A list whatever its style: `ProcessingDefinition::check` refuses segments,
+            // which cannot draw Custom or an option disabled yet.
+            Row::Preset { preset, .. } => {
+                preset_row(ui, words, definition, preset, state, changes);
+            }
+            Row::Patches { picker, target } => patches_row(ui, self, picker, target),
+            Row::Computed(computed) => {
+                computed_row(ui, words, definition.tool.id, computed, state);
+            }
+            Row::Reference {
+                picker,
+                lightness,
+                photo,
+            } => reference_row(ui, self, picker, lightness, photo, changes),
+            Row::LastPick { picker } => last_pick_row(ui, self, picker),
+            Row::Pickers { label, pickers } => pickers_row(ui, self, *label, pickers, changes),
+            Row::Buttons { control, buttons } => {
+                buttons_row(ui, words, definition, control, buttons, state, changes);
+            }
+            Row::Guides => guides_row(ui, words),
+            // The page drawer's own.
+            Row::Label { .. }
+            | Row::Group { .. }
+            | Row::When { .. }
+            | Row::WhenSetting { .. }
+            | Row::Setting(_)
+            | Row::Action { .. } => {}
+        }
+    }
+}
+
+/// Whether rows following the setting `setting` of `rows`' tool show: whether the option
+/// it holds, as the app keeps it, else its default, is one of `is` (`Row::WhenSetting`).
+fn follows_setting(rows: &dyn Rows, setting: &str, is: &[&str]) -> bool {
+    let definition = rows.definition();
+    let Some(row) = definition.setting(setting) else {
+        return false;
+    };
+    let ControlKind::Choice { options, .. } = row.kind else {
+        return false;
+    };
+    let kept = rows.settings().get(definition.id, setting).cloned();
+    match kept.unwrap_or_else(|| row.default()) {
+        ControlValue::Choice(at) => options
+            .get(at as usize)
+            .is_some_and(|option| is.contains(option)),
+        _ => false,
+    }
+}
+
+fn draw_row(ui: &mut egui::Ui, rows: &dyn Rows, row: &Row, changes: &mut Vec<Change>) {
     // A row the photo gives nothing to do is not drawn, and screen readers find no node
     // for it (decision 88).
-    if page.hidden(row) {
+    if rows.hidden(row) {
         return;
     }
     // Where a row of controls on the edit is drawn, for a photo opening's tip.
@@ -1098,68 +1217,47 @@ fn draw_row(ui: &mut egui::Ui, page: &Page, row: &Row, changes: &mut Vec<Change>
             | Row::Guides
     );
     let top = ui.cursor().top();
-    draw_kind(ui, page, row, changes);
+    draw_kind(ui, rows, row, changes);
     if on_edit {
         let bottom = ui.min_rect().bottom().max(top);
-        let rect = egui::Rect::from_x_y_ranges(ui.max_rect().x_range(), top..=bottom);
-        page.controls.borrow_mut().push(rect);
+        rows.on_edit(egui::Rect::from_x_y_ranges(
+            ui.max_rect().x_range(),
+            top..=bottom,
+        ));
     }
 }
 
-fn draw_kind(ui: &mut egui::Ui, page: &Page, row: &Row, changes: &mut Vec<Change>) {
-    let (words, tool, state) = (page.words, page.tool, page.state);
-    let definition = tool.definition();
+/// Draws `row`: the rows any tool may hold here, the others by `rows`' kind.
+fn draw_kind(ui: &mut egui::Ui, rows: &dyn Rows, row: &Row, changes: &mut Vec<Change>) {
+    let (words, tool) = (rows.words(), rows.definition().id);
     match row {
-        Row::Slider(slider) => slider_row(ui, page, slider, changes),
-        Row::Choice { control, style } => {
-            choice_row(ui, words, definition, control, *style, state, changes);
-        }
-        Row::Toggle { control } => toggle_row(ui, words, definition, control, state, changes),
-        Row::Label { id } => group_label(ui, &words.text(&messages::group(definition.tool.id, id))),
-        Row::Group { id, rows } => group_row(ui, page, id, rows, changes),
-        Row::When { control, is, rows } => {
-            if page.follows(control, is) {
-                for row in *rows {
-                    draw_row(ui, page, row, changes);
+        Row::Label { id } => group_label(ui, &words.text(&messages::group(tool, id))),
+        Row::Group { id, rows: inside } => group_row(ui, rows, id, inside, changes),
+        Row::When {
+            control,
+            is,
+            rows: inside,
+        } => {
+            if rows.follows(control, is) {
+                for row in *inside {
+                    draw_row(ui, rows, row, changes);
                 }
             }
         }
-        Row::WhenSetting { setting, is, rows } => {
-            if page.follows_setting(setting, is) {
-                for row in *rows {
-                    draw_row(ui, page, row, changes);
+        Row::WhenSetting {
+            setting,
+            is,
+            rows: inside,
+        } => {
+            if follows_setting(rows, setting, is) {
+                for row in *inside {
+                    draw_row(ui, rows, row, changes);
                 }
             }
         }
-        Row::Custom {
-            widget: Widget::Curve,
-            controls: [points, ..],
-        } => curve_row(ui, words, tool, points, state, changes),
-        Row::Custom {
-            widget: Widget::Equalizer,
-            controls,
-        } => equalizer_row(ui, words, tool, controls, state, changes),
-        // The closed registry's other painted widgets (the colour wheels, the hue curve)
-        // join the renderer with the first tool that uses each.
-        Row::Custom { .. } => {}
-        // A list whatever its style: `ProcessingDefinition::check` refuses segments, which
-        // cannot draw Custom or an option disabled yet.
-        Row::Preset { preset, .. } => preset_row(ui, words, definition, preset, state, changes),
-        Row::Setting(setting) => setting_row(ui, page, setting, changes),
-        Row::Patches { picker, target } => patches_row(ui, page, picker, target),
-        Row::Action { id } => action_row(ui, words, definition.tool.id, id),
-        Row::Computed(computed) => computed_row(ui, words, definition.tool.id, computed, state),
-        Row::Reference {
-            picker,
-            lightness,
-            photo,
-        } => reference_row(ui, page, picker, lightness, photo, changes),
-        Row::LastPick { picker } => last_pick_row(ui, page, picker),
-        Row::Pickers { label, pickers } => pickers_row(ui, page, *label, pickers, changes),
-        Row::Buttons { control, buttons } => {
-            buttons_row(ui, words, definition, control, buttons, state, changes);
-        }
-        Row::Guides => guides_row(ui, words),
+        Row::Setting(setting) => setting_row(ui, rows, setting, changes),
+        Row::Action { id } => action_row(ui, words, tool, id),
+        _ => rows.own(ui, row, changes),
     }
 }
 
@@ -1379,13 +1477,18 @@ fn preset_row(
 /// One the app keeps in settings is drawn live with its value there, a change reported as
 /// [`Change::Setting`]; any other, the colour checker's chart, is drawn disabled at
 /// darktable's default until what uses it is built.
-fn setting_row(ui: &mut egui::Ui, page: &Page, setting: &SettingRow, changes: &mut Vec<Change>) {
-    let (words, tool) = (page.words, page.tool.definition().tool.id);
+fn setting_row(
+    ui: &mut egui::Ui,
+    page: &dyn Rows,
+    setting: &SettingRow,
+    changes: &mut Vec<Change>,
+) {
+    let (words, tool) = (page.words(), page.definition().id);
     let [label, full, promise] = messages::setting(tool, setting.id).map(|id| words.text(&id));
-    let kept = page.pickers.settings.get(tool, setting.id);
+    let kept = page.settings().get(tool, setting.id);
     // One `--conf` gives keeps its value for the run, its row disabled as the Settings
     // dialog draws an overridden row (decision 43).
-    let live = kept.is_some() && !page.pickers.settings.overridden(tool, setting.id);
+    let live = kept.is_some() && !page.settings().overridden(tool, setting.id);
     let value = kept.cloned().unwrap_or_else(|| setting.default());
     let mut set = |value: ControlValue, done: bool| {
         changes.push(Change::Setting {
@@ -1444,9 +1547,7 @@ fn setting_row(ui: &mut egui::Ui, page: &Page, setting: &SettingRow, changes: &m
             let names: Vec<&str> = names.iter().map(String::as_str).collect();
             // What each option makes a picker do, where a picker's words follow the setting
             // (decision 88).
-            let words_by = (page.tool.definition().pickers.iter())
-                .any(|picker| picker.words_by == Some(setting.id));
-            let tips: Vec<String> = if words_by {
+            let tips: Vec<String> = if page.words_by(setting.id) {
                 options
                     .iter()
                     .map(|o| words.text(&messages::setting_option_promise(tool, setting.id, o)))
@@ -1734,22 +1835,22 @@ fn colour(srgb: [f32; 3]) -> egui::Color32 {
 /// wireframe's "Margins: 1 set".
 fn group_row(
     ui: &mut egui::Ui,
-    page: &Page,
+    page: &dyn Rows,
     id: &'static str,
     rows: &[Row],
     changes: &mut Vec<Change>,
 ) {
-    let tool = page.tool.definition().tool.id;
-    let title = page.words.text(&messages::collapsible(tool, id));
+    let tool = page.definition().id;
+    let title = page.words().text(&messages::collapsible(tool, id));
     // A group with no rows has nothing behind it yet: drawn disabled, as a tab with none.
     if rows.is_empty() {
-        let later = page.words.text("section-tab-later");
+        let later = page.words().text("section-tab-later");
         CollapsibleGroup::new(&title, false)
             .disabled(&later)
             .show(ui, |_| {});
         return;
     }
-    let open = (page.groups)(id);
+    let open = page.group_open(id);
     let set = page.set_in(rows);
     // A scope, whose response is the group's row while it is closed, carries the tooltip.
     let group = ui.scope(|ui| {
@@ -1763,7 +1864,7 @@ fn group_row(
         let mut args = Args::new();
         args.set("group", title.as_str());
         args.set("count", set);
-        let tip = page.words.text_with("collapsible-group-tip", Some(&args));
+        let tip = page.words().text_with("collapsible-group-tip", Some(&args));
         group.response.on_hover_text(tip);
     }
     if group.inner {
