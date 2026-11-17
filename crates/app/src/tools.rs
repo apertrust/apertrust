@@ -2673,7 +2673,7 @@ mod tests {
     use apertrust_tools::tone_equalizer::{self, ToneEqualizer};
     use apertrust_tools::vignetting::Vignetting;
     use apertrust_tools::white_balance::WhiteBalance;
-    use apertrust_tools::{Reset, ToolDefinition};
+    use apertrust_tools::{Moment, Reset, ToolDefinition};
     use apertrust_ui::components::Marker;
     use apertrust_ui::{Builtin, Locale, Theme, theme};
     use egui::accesskit::{Role, Toggled};
@@ -2835,14 +2835,18 @@ mod tests {
             .map(|row| PresetState {
                 preset: row.id,
                 matching: tool.matching(row.id, &values, &image),
-                // As the session lists them: an option that turns a picker on among them.
+                // As the session lists them: an option that turns a picker on among them,
+                // and one the tool's memory as the photo opens gives.
                 available: row
                     .options
                     .iter()
                     .copied()
                     .filter(|option| {
+                        let memory =
+                            tool.remember(Moment::Opened, &Controls::new(), &values, &image);
                         row.pickers.iter().any(|(id, _)| id == option)
                             || tool.preset(row.id, option, &image).is_some()
+                            || tool.recall(row.id, option, &memory, &image).is_some()
                     })
                     .collect(),
             })
@@ -2950,7 +2954,16 @@ mod tests {
                             }
                             Change::ApplyPreset { preset, option, .. } => {
                                 let image = testing::image();
-                                let values = panel.tool.preset(preset, option, &image).unwrap();
+                                let tool = panel.tool;
+                                let memory = tool.remember(
+                                    Moment::Opened,
+                                    &Controls::new(),
+                                    &values(&panel.state),
+                                    &image,
+                                );
+                                let values = (tool.preset(preset, option, &image))
+                                    .or_else(|| tool.recall(preset, option, &memory, &image))
+                                    .unwrap();
                                 let row = panel.tool.definition().preset(preset).unwrap();
                                 for control in row.controls {
                                     let value = values.get(control).unwrap().clone();
@@ -4087,6 +4100,36 @@ mod tests {
         option.click();
         harness.run();
         harness.state().changes.clone()
+    }
+
+    /// White balance's User modified is offered and sent as any option is: the session
+    /// writes back the coefficients it remembers (decision 27).
+    #[test]
+    fn user_modified_is_offered_and_applied() {
+        // The photo's defaults, as shot to reference, so User modified is another option.
+        let mut state = untouched(&WhiteBalance);
+        for (control, value) in WhiteBalance.defaults(&testing::image()).iter() {
+            set(&mut state, control, value.clone(), None);
+        }
+        let mut harness = panel(&WhiteBalance, state);
+        harness.run();
+        harness
+            .get_by_role_and_label(Role::ComboBox, WHITE_BALANCE_SETTINGS)
+            .click();
+        harness.run();
+        let option = harness.get_by_label("User modified");
+        assert!(!option.accesskit_node().is_disabled());
+        option.click();
+        harness.run();
+        assert!(
+            harness.state().changes.contains(&Change::ApplyPreset {
+                tool: "temperature",
+                preset: "settings",
+                option: "user",
+            }),
+            "{:?}",
+            harness.state().changes
+        );
     }
 
     /// Settings' From image area turns White balance's picker on as an area, as darktable's

@@ -287,12 +287,27 @@ impl Edit {
     /// is one whose tool fails, giving values its controls refuse, a choice's option the
     /// photo does not list (decision 30), or panicking: every value is checked before any
     /// is set, so a refused option changes nothing. Applied, it turns a switched tool on
-    /// (decision 32).
+    /// (decision 32). An option that recalls the tool's memory is refused, as with no
+    /// memory ([`Self::apply_preset_recalling`]).
     pub fn apply_preset(
         &mut self,
         tool: &dyn ProcessingTool,
         preset: &str,
         option: &str,
+        image: &ImageContext,
+    ) -> Result<(), EditError> {
+        self.apply_preset_recalling(tool, preset, option, &Controls::new(), image)
+    }
+
+    /// [`Self::apply_preset`], an option whose values the tool's `memory` gives where
+    /// [`ProcessingTool::preset`] gives none ([`ProcessingTool::recall`], decision 27), as
+    /// White balance's user modified writes back the coefficients the session remembers.
+    pub fn apply_preset_recalling(
+        &mut self,
+        tool: &dyn ProcessingTool,
+        preset: &str,
+        option: &str,
+        memory: &Controls,
         image: &ImageContext,
     ) -> Result<(), EditError> {
         let definition = tool.definition();
@@ -321,13 +336,16 @@ impl Edit {
         };
         // A tool's code may panic, as its binding is guarded against: the option is
         // refused, never the photo.
-        let given = catch_unwind(AssertUnwindSafe(|| tool.preset(row.id, option, image)))
-            .map_err(|panic| failed(panic_message(panic.as_ref())))?
-            .ok_or(EditError::Unavailable {
-                tool: id,
-                preset: row.id,
-                option,
-            })?;
+        let given = catch_unwind(AssertUnwindSafe(|| {
+            (tool.preset(row.id, option, image))
+                .or_else(|| tool.recall(row.id, option, memory, image))
+        }))
+        .map_err(|panic| failed(panic_message(panic.as_ref())))?
+        .ok_or(EditError::Unavailable {
+            tool: id,
+            preset: row.id,
+            option,
+        })?;
         let mut checked = Vec::with_capacity(row.controls.len());
         for &control in row.controls {
             let value = given

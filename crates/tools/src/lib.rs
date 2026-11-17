@@ -344,6 +344,40 @@ pub trait ProcessingTool: Send + Sync {
         Controls::new()
     }
 
+    /// What the tool remembers for the open photo after `moment`, darktable's memory of
+    /// its panel that no edit stores and a preset row's option writes back ([`Self::recall`];
+    /// decision 27): White balance's user-modified coefficients, darktable's `mod_coeff`.
+    /// `memory` is what it remembered before, empty as the photo opens; `values` every
+    /// control after the moment, the edit's over the defaults. Pure, as [`Self::bind`] is:
+    /// the session keeps what it gives, one memory per tool for the open photo, never in
+    /// the edit or its history, and forgets it as the photo closes. The memory as it was,
+    /// as provided.
+    fn remember(
+        &self,
+        _moment: Moment<'_>,
+        memory: &Controls,
+        _values: &Controls,
+        _image: &ImageContext,
+    ) -> Controls {
+        memory.clone()
+    }
+
+    /// The values option `option` of the preset row `preset` writes from the tool's memory
+    /// ([`Self::remember`]), for an option whose values darktable's panel remembers rather
+    /// than [`Self::preset`] gives, as White balance's user modified writes `mod_coeff`
+    /// back: one for each control the row names, each within its range, the option
+    /// applied and offered as [`Self::preset`]'s are. `None`, as provided, for an option
+    /// that does not recall.
+    fn recall(
+        &self,
+        _preset: &str,
+        _option: &str,
+        _memory: &Controls,
+        _image: &ImageContext,
+    ) -> Option<Controls> {
+        None
+    }
+
     /// What the picker `picker` of [`ProcessingDefinition::pickers`] makes of `reading`,
     /// darktable's `color_picker_apply` (decision 79; `docs/pickers.md`, Declaring
     /// pickers): the controls it writes, each among the picker's `writes` and stored as
@@ -409,6 +443,21 @@ pub fn switched_from(mut values: ToolValues, rendered: bool) -> ToolValues {
     }
     values.set_enabled(rendered);
     values
+}
+
+/// When darktable's panel updates its memory of a tool ([`ProcessingTool::remember`],
+/// decision 27).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Moment<'a> {
+    /// The photo opened, before it is first redrawn: darktable's `reload_defaults`.
+    Opened,
+    /// The tool redrawn, darktable's `gui_update`: wherever [`ProcessingTool::redrawn`]
+    /// runs, and after a reset of the tool or of the edit that changed it, as darktable's
+    /// reset runs `reload_defaults`, then `gui_update`.
+    Redrawn,
+    /// A control, or a lossless view's coordinate, moved by a command that set or reset
+    /// it: darktable's `gui_changed` and its sliders' callbacks.
+    Moved(&'a str),
 }
 
 /// A value of the photo's for a row's label ([`ProcessingTool::label_value`], decision 88):
