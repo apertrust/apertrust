@@ -630,7 +630,7 @@ macOS only: the app menu, which macOS titles with the app's name.
 | Export as Project… | `export-as-project` | — | Phase 5, after the library, on an album (decision 46) |
 | Add Folder… | `add-folder` | — | Phase 5, in a library or project (decision 46) |
 | Export…; Export 12 Photos… with several selected | `export` | Ctrl+E | Built on the Mac, Windows and Linux, for the active photo, as a dialog; planned, revealing the Export tool with its button focused ([The Export tool](#the-export-tool), decision 90) |
-| Export Again; Export 12 Photos Again with several selected: the current export settings, at once, as darktable's Ctrl+E does | `export-again` | Ctrl+Shift+E (decision 90) | Built on the Mac, for the active photo, with no key yet ([Export Again](#export-again)) |
+| Export Again; Export 12 Photos Again with several selected: the current export settings, at once, as darktable's Ctrl+E does | `export-again` | Ctrl+Shift+E (decision 90) | Built, for the active photo, with no key yet ([Export Again](#export-again)) |
 | Print… | `print` | Ctrl+P | New, with the Print sheet, after Phase 5 (decision 37) |
 | — | | | |
 | Show in Folder; on macOS Show in Finder | `show-in-folder` | — | New, Phase 2, with folder mode |
@@ -1801,7 +1801,7 @@ As built, the dialog's: Esc closes the innermost thing first, then the dialog (C
 File › Export Again (`export-again`, Ctrl+Shift+E, Cmd+Shift+E on the Mac) is darktable's export with the current settings, with no dialog and without revealing the tool, for the window's selection from Phase 3 ("Export 12 Photos Again") and for the active photo until then: the one open when Export Again was pressed, whatever is open when a question is answered. The item names its count, so what it acts on is in view.
 
 - **darktable's own.** darktable's Ctrl+E is its export button's `_export_with_current_settings` (`src/libs/export.c`): it asks the storage for its confirmation (File on disk's "export in overwrite mode?") and then exports with the conf as it stands. There is no separate "export again" command; this does the same from the `export.*` settings the tool shows.
-- **Declared** in `actions.rs` after `export` in File (`menus.rs`), with no key as built and Ctrl+Shift+E planned with the tool (decision 90), with the message `action-export-again` ("Export Again", "Експортувати ще раз", "Eksportuj ponownie"). Available exactly as Export… is: a photo open, the Mac, no modal dialog or alert up.
+- **Declared** in `actions.rs` after `export` in File (`menus.rs`), with no key as built and Ctrl+Shift+E planned with the tool (decision 90), with the message `action-export-again` ("Export Again", "Експортувати ще раз", "Eksportuj ponownie"). Available exactly as Export… is: a photo open, no modal dialog or alert up.
 - **It follows darktable's rule,** as the dialog's Export does: with On conflict Overwrite and `export.ask_before_overwrite` on, it asks with the dialog's own alert (`Purpose::Overwrite`), whether or not a file is there, holding the export in `export_again::Again` until the answer. A yes sends the export; a no or a taken-away alert sends nothing. With Overwrite if changed, Create unique filename or Skip, or the setting off, it sends the export at once (`export::asks_before`).
 - **Nothing waits for the session,** so there is no preview to number and no stale answer to drop. A path or size problem is not read from a preview: the export job fails with its cause, which the jobs window shows.
 - **Under the quit alert,** confirmed or held, it does nothing (logged under `-d gpu`), so no job starts uncounted by the quit alert's yes.
@@ -1964,17 +1964,15 @@ Export is Phase 3's.
    - the other storages;
    - W10 (Phase 6).
 
-### The build, in cards
+### The build, in steps
 
-Each card one deliverable, reviewed before the next. Cards 1 to 14 are built and described above and in [engine.md](engine.md), Export jobs: the writers (1), the export size and resample (2), the settings (3), the variables (4), File on disk (5), the job API and the export job (6), the submissions' first bound (8a, 8b), the preview (9), the Mac's sheet (10), the dialog (11), the jobs window (12), the alerts (13) and Export Again (14). What is left:
+Each step one deliverable, reviewed before the next. Steps 1 to 14 are built and described above and in [engine.md](engine.md), Export jobs: the writers (1), the export size and resample (2), the settings (3), the variables (4), File on disk (5), the job API and the export job (6), the submissions' first bound (8a, 8b), the preview (9), the Mac's sheet (10), the dialog (11), the jobs window (12), the alerts (13) and Export Again (14). What is left:
 
 - **7. Spike X1, an export beside the viewport** ([engine.md](engine.md), Export jobs), through `apertrust-cli preview --beside-export`: measured on the M4; the RTX 5060, the Radeon 780M, WARP and exports at 2048 pixels still to run. Out of scope: changing the scheduler beyond a switch for the measured slices.
 - **8c. A tile's passes split** into steps where one tile's render runs longer; quantising moves onto the GPU only if X1's readback on the discrete GPUs calls for it. Out of scope: stills.
-- **20. The Export tool** (decision 90), before presets, so presets and metadata are built in it; the wireframe's Export board is redrawn as the tool first ([roadmap.md](roadmap.md#export)):
-  - 20s. A spike: every export row at the side panel's 320 points, and at 240 and 600, in British English, Ukrainian, Polish and the pseudo-locale, measured against [the layout's table](#the-tools-layout), the rows drawn from the dialog's in a gallery example. Out of scope: building the rows.
-  - 20a. The setting rows, shared with Import: the slider row with no kept marker, the path row, labelled for Import's sheet and with no label, its folder button at the field's end, for the Export tool, the note rows, the field rows, the size row and its two-line form, the indented toggle, a utility's header with ↺ and presets, a `Button` with its words centred, each in the gallery with snapshots (dark, light, Ukrainian, Polish, the pseudo-locale). Out of scope: `export.rs`.
-  - 20b. The sheet frame, for Import alone ([Sheets](#sheets)). Out of scope: any real tool, presets, reordering.
-  - 20c. The Export tool's first milestone: the tool last in the Photos tab, in every workspace; its groups from 20a's rows, Storage options and Format options plain, Global options collapsible and open at first, Metadata and Multi-preset export collapsible, closed and drawn disabled; ↺ and Default settings; the tool's end with its states; Export… and Ctrl+E's reveal, Ctrl+Return, Export Again on Ctrl+Shift+E; the wheel on the focused row; `PreviewExport` sent while the tool is in view, its `focus` the active photo; the dialog's frame, its host code and its snapshots removed, its rows' tests carried over. Snapshots dark, light, an error, Ukrainian, Polish and the pseudo-locale at 320 and 600. Out of scope: presets, metadata, the notice (with step 12), several photos (Phase 3's selection).
+- **T. The Export tool** (decision 90), before presets, so presets and metadata are built in it; the wireframe's Export board is redrawn as the tool first ([roadmap.md](roadmap.md#export)):
+  - T1. Export moved into the Photos tab as a tool, as it is: the dialog's rows reflowed to the side panel, Export… and Ctrl+E revealing it, the dialog's frame removed.
+  - T2. The tool as decision 90 designs it: its groups, Storage options and Format options plain, Global options collapsible and open at first, Metadata and Multi-preset export collapsible, closed and drawn disabled; ↺ and Default settings; the tool's end with its states; Export… and Ctrl+E's reveal, Ctrl+Return, Export Again on Ctrl+Shift+E; the wheel on the focused row; `PreviewExport` sent while the tool is in view, its `focus` the active photo; the dialog's frame, its host code and its snapshots removed, its rows' tests carried over. Snapshots dark, light, an error, Ukrainian, Polish and the pseudo-locale at 320 and 600. Out of scope: presets, metadata, the notice (with step 12), several photos (Phase 3's selection).
 - **15. Windows and Linux:** the dialog in the host there, a modal window, is built; their alerts are not ([Dialogs and alerts](#still-to-build)), so Overwrite waits for them.
 - **16. Presets:** `presets/export.toml` through `apertrust-export`'s `presets`, For sharing and Full size JPEG built in (D17); the header's presets with ✓, the preset's name in the summary, Save as Preset…, the hover preview and its banner (D3), F2's rename, darktable's "delete preset?" and "update preset?" as alerts; `apertrust-cli export --preset NAME`.
 - **17. Multi-preset export:** its group and Start batch export, one job per ticked preset, queued in their order.
@@ -3719,7 +3717,7 @@ Ctrl means Cmd on macOS.
 | App | Open… | Ctrl+O | Opens the platform's open dialog: raws into folder mode; a library's or project's file in Phase 5 |
 | App | Open Folder… | Ctrl+Shift+O | Opens the platform's folder dialog |
 | App | Import, Export | Ctrl+I, Ctrl+E | Import not built: listed and disabled. Export built on the Mac, Windows and Linux as a dialog; planned, Ctrl+E reveals the Export tool and focuses its button, which acts on every selected photo (decision 90) |
-| App | Export Again | Ctrl+Shift+E (decision 90) | Built on the Mac, with no key yet |
+| App | Export Again | Ctrl+Shift+E (decision 90) | Built, with no key yet |
 | App | Undo, Redo | Ctrl+Z; Ctrl+Shift+Z, and Ctrl+Y on Windows and Linux | Built: the photo's history, a focused text field keeping them for its own |
 | App | Copy edit, Apply edit | Ctrl+Shift+C, Ctrl+Shift+V | Not built; Copy or apply parts has no key. Apply edit acts on every selected photo |
 | App | Reset | None, as darktable's discard history has no default key | Its button; the active photo only |
