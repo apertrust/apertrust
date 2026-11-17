@@ -557,7 +557,8 @@ fn w4_the_x_t50_s_as_shot_reads_as_darktable_s_panel() {
 // W5: Settings.
 
 /// W5 on `image`: each option writes darktable's values and reads back; a moved
-/// coefficient reads user modified; from image area and user modified are never given.
+/// coefficient reads user modified; from image area and user modified are never given,
+/// from image area being an option that turns the picker on.
 fn w5_holds(image: &ImageContext) {
     let camera = image.camera.as_ref().unwrap();
     let as_shot = coefficients(&WhiteBalance.defaults(image));
@@ -586,6 +587,11 @@ fn w5_holds(image: &ImageContext) {
     for option in ["spot", "user"] {
         assert_eq!(WhiteBalance.preset(SETTINGS_ROW, option, image), None);
     }
+    // From image area turns the picker on, which the session offers wherever the photo can
+    // be edited; user modified is never offered.
+    let row = WhiteBalance.definition().preset(SETTINGS_ROW).unwrap();
+    assert_eq!(row.pickers, [("spot", "spot")]);
+    assert!(WhiteBalance.definition().picker("spot").is_some());
     let defaults = WhiteBalance.defaults(image);
     let untouched = if camera.xyz_to_camera.is_some() {
         "d65_late"
@@ -756,6 +762,113 @@ fn w9_temperature_and_tint_need_the_camera_s_matrix() {
             ..
         })
     ));
+}
+
+// W15: the picker.
+
+/// W15: a pick on a grey patch of a synthetic raw, White balance's pick of the patch's
+/// reading, its means per CFA colour at temperature's input as the session measures them,
+/// makes temperature's output over the patch neutral, R = G = B, within 1e-5 relative. The
+/// patch lies under a light that leaves red, green and blue at their own levels, in a
+/// gradient the area leaves out, every mean above darktable's 0.001 floor and every
+/// coefficient inside 0 to 8, where the invariant holds.
+#[test]
+fn w15_a_pick_on_a_grey_patch_makes_it_neutral() {
+    use apertrust_engine::compute::GpuImage;
+    use apertrust_engine::pipeline::Pipeline;
+    use apertrust_tools::pick::{PickKeys, Reading, Stats};
+
+    let (width, height) = (32u32, 32u32);
+    let patch = 8..24u32;
+    // Red, green and blue of the grey under the light, of the raw's 4000.
+    let levels = [1180u16, 2410, 1730];
+    let colour = |x: u32, y: u32| [0, 1, 1, 2][((y % 2) * 2 + x % 2) as usize];
+    let mosaic: Vec<u16> = (0..width * height)
+        .map(|i| {
+            let (x, y) = (i % width, i / width);
+            if patch.contains(&x) && patch.contains(&y) {
+                levels[colour(x, y)]
+            } else {
+                (300 + 100 * x + 7 * y) as u16
+            }
+        })
+        .collect();
+    let image = raw_context(width, height, 0.0);
+    // The area's reading at temperature's input, rawprepare's value over the white, per
+    // colour, as the session's `picker_mosaic` measures it.
+    let (mut sum, mut count) = ([0f64; 3], [0u32; 3]);
+    for y in patch.clone() {
+        for x in patch.clone() {
+            let c = colour(x, y);
+            sum[c] += f64::from(mosaic[(y * width + x) as usize]) / 4000.0;
+            count[c] += 1;
+        }
+    }
+    let [r, g, b] = std::array::from_fn(|c| (sum[c] / f64::from(count[c])) as f32);
+    let stats = Stats {
+        mean: [r, g, b, 0.0],
+        min: [r, g, b, f32::MAX],
+        max: [r, g, b, -f32::MAX],
+    };
+    let reading = Reading {
+        input: stats,
+        output: None,
+        input_maximum: [1.0; 3],
+    };
+    let values = WhiteBalance.defaults(&image);
+    let picked = WhiteBalance
+        .pick(
+            "spot",
+            &reading,
+            &values,
+            &image,
+            &[],
+            None,
+            None,
+            PickKeys::default(),
+        )
+        .unwrap();
+    let mut edit = Edit::default();
+    let picker = WhiteBalance.definition().picker("spot").unwrap();
+    edit.pick(&WhiteBalance, picker, &picked.writes, &image)
+        .unwrap();
+    assert_eq!(
+        edit.tool(TOOL).and_then(|values| values.get("preset")),
+        Some(&setting("spot"))
+    );
+    // The raw stage as far as temperature, at full resolution.
+    let instances: Vec<Instance> = edit::instances(&edit, OPERATIONS, TOOLS, &image)
+        .all()
+        .unwrap()
+        .into_iter()
+        .filter(|instance| matches!(id(instance), "rawprepare" | "temperature"))
+        .collect();
+    assert_eq!(instances.len(), 2);
+    let gpu = common::gpu();
+    let input = GpuImage::upload_mosaic(gpu, width, height, &mosaic).unwrap();
+    let plan = pipeline::plan(
+        &instances,
+        &image,
+        input.desc(),
+        Pipe::Export,
+        &Limits::of(gpu),
+    )
+    .unwrap();
+    let mut pipeline = pollster::block_on(Pipeline::new(gpu, plan, input)).unwrap();
+    pipeline.render(gpu).unwrap();
+    let output = pipeline.output().download_mosaic(gpu).unwrap();
+    let (mut low, mut high) = ([f64::MAX; 3], [f64::MIN; 3]);
+    for y in patch.clone() {
+        for x in patch.clone() {
+            let (c, v) = (colour(x, y), f64::from(output[(y * width + x) as usize]));
+            (low[c], high[c]) = (low[c].min(v), high[c].max(v));
+        }
+    }
+    let lowest = low.into_iter().fold(f64::MAX, f64::min);
+    let highest = high.into_iter().fold(f64::MIN, f64::max);
+    let off = highest / lowest - 1.0;
+    println!("W15: R, G and B within {off:.2e} of each other, {lowest} to {highest}");
+    assert!(off <= 1e-5, "W15: {off:e} relative, {low:?} to {high:?}");
 }
 
 // The corpus, locally.

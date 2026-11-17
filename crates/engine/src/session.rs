@@ -834,7 +834,9 @@ pub struct PresetState {
     pub matching: Option<&'static str>,
     /// The options this photo can have, in the row's order, none while it is open for
     /// viewing only; a panel draws the others disabled, and [`Command::ApplyPreset`]
-    /// refuses them.
+    /// refuses them. An option that turns a picker on (`PresetRow::pickers`) is listed
+    /// wherever the photo can be edited, as a picker can start there: a client sends
+    /// `PickerCommand::On` for it, and `ApplyPreset` refuses it.
     pub available: Vec<&'static str>,
 }
 
@@ -3260,11 +3262,10 @@ impl Engine {
             // The file holds the log, whose fold is the edit but for a change not yet a
             // step, as a gesture a batch began after completing a change: that is still to
             // write, and so is the edit before a gesture where it is not the log's fold. A
-            // clamp of the fold alone is never a step, and nothing to write.
-            open.unsaved = !history::clamp_only(open, &self.tools);
-            let stepped = open.history.stepped();
+            // clamp or a redraw of the fold alone is never a step, and nothing to write.
+            open.unsaved = !history::as_read_only(open);
             if let Some(gesture) = &mut open.gesture {
-                gesture.unsaved = gesture.edit != *stepped;
+                gesture.unsaved = !open.history.holds(&gesture.edit);
             }
         }
     }
@@ -3411,7 +3412,7 @@ impl Engine {
             tracing::warn!(target: "pipe", "{name} changed, now for viewing only: {view_only}");
             let unsaved = (open.history.base() != *base
                 && (!open.history.unwritten() || open.history.cleared()))
-                || !history::clamp_only(open, &self.tools);
+                || !history::as_read_only(open);
             if unsaved {
                 events.push(Event::Failed(SessionError::NotSaved {
                     path: path.clone(),
@@ -3432,7 +3433,11 @@ impl Engine {
                 open.file.fingerprint = fingerprint.or(open.file.fingerprint.take());
             }
             open.history = history::PhotoHistory::read(loaded.log, clocks, &[]);
+            open.history.set_reader(&self.tools, &open.image);
             open.edit = loaded.edit;
+            // Shown as read, redrawn but not clamped, in the session alone: it is never
+            // written.
+            open.edit.redraw(&self.tools, &open.image);
             open.view_only = Some(view_only.clone());
             open.gesture = None;
             open.unsaved = false;
@@ -3454,21 +3459,26 @@ impl Engine {
             open.file = loaded.file;
             open.file.photo = photo;
             open.file.fingerprint = fingerprint.or(open.file.fingerprint.take());
-            let (was, kept) = open.history.take_in(loaded.log, clocks, &base);
+            // What the changes not yet a step are measured from: the old fold, but for a
+            // tool the edit holds as the fold as read, so that neither a clamp nor a redraw,
+            // nor a pick's value the redraw would change, is laid over the newer file's tool.
+            let from = open.history.baseline(&open.edit);
+            let gesture_from = (open.gesture.as_ref()).map(|g| open.history.baseline(&g.edit));
+            let (_, kept) = open.history.take_in(loaded.log, clocks, &base);
             if !kept {
                 tracing::warn!(target: "pipe", "{name}: another program moved the end of its history, so the session's move since its last save is not kept");
                 events.push(Event::Failed(SessionError::MoveNotKept {
                     path: path.clone(),
                 }));
             }
+            // The changes not yet a step laid on the newer fold, then read in turn.
             let now = open.history.stepped().clone();
-            if let Some(gesture) = &mut open.gesture {
-                gesture.edit = crate::history::rebase(&gesture.edit, &was, &now);
+            if let (Some(gesture), Some(from)) = (&mut open.gesture, gesture_from) {
+                let rebased = crate::history::rebase(&gesture.edit, &from, &now);
+                gesture.edit = open.history.read_of(&rebased);
             }
-            open.edit = crate::history::rebase(&open.edit, &was, &now);
-            for warning in open.edit.clamp_read(&self.tools, &open.image) {
-                tracing::warn!(target: "pipe", "{warning}");
-            }
+            open.edit = crate::history::rebase(&open.edit, &from, &now);
+            history::as_read(&mut open.edit, &self.tools, &open.image);
             open.held.prune(&open.edit);
             open.unsaved = true;
         }
@@ -3638,7 +3648,8 @@ impl Engine {
             None => crate::history::default_tools(&self.tools, self.operations),
             Some(_) => Vec::new(),
         };
-        let history = history::PhotoHistory::read(log, clocks, &defaults);
+        let mut history = history::PhotoHistory::read(log, clocks, &defaults);
+        history.set_reader(&self.tools, &metadata.image);
         let path = (self.opening.as_ref())
             .map(|opening| opening.path.clone())
             .unwrap_or_default();
@@ -3755,17 +3766,24 @@ impl Engine {
         };
         if metadata.image != photo.image {
             tracing::debug!(target: "raw", "{name}: the decode's image context differs from the metadata's, taken");
+            // An edit holding nothing but what reading the fold made of it is read again
+            // from the fold on the decode's context, as the history will read it.
+            if history::as_read_only(photo) {
+                photo.edit = photo.history.stepped().clone();
+            }
             photo.options = listed_options(&self.tools, &metadata.image);
             photo.rows = photo_rows(&self.tools, &metadata.image);
             photo.image = metadata.image;
             photo.photo.width = photo.image.width;
             photo.photo.height = photo.image.height;
             *photo.photo.image = photo.image.clone();
-            // Clamped again to the ranges the decode's context gives, as an opened edit is.
+            // Clamped again to the ranges the decode's context gives and redrawn, as an
+            // opened edit is; one open for viewing only redrawn alone.
+            photo.history.set_reader(&self.tools, &photo.image);
             if photo.view_only.is_none() {
-                for warning in photo.edit.clamp_read(&self.tools, &photo.image) {
-                    tracing::warn!(target: "pipe", "{warning}");
-                }
+                history::as_read(&mut photo.edit, &self.tools, &photo.image);
+            } else {
+                photo.edit.redraw(&self.tools, &photo.image);
             }
             // Its steps described on the new context; a value clamped is a change not yet a
             // step.
@@ -4797,9 +4815,10 @@ impl Open {
     }
 
     /// Each of the tool's preset rows while its controls hold `controls`: the option
-    /// they match and the options the photo can have, none while it is open for viewing
-    /// only. Should the tool's code panic, every row reads Custom, with no option to
-    /// apply, and a warning says so once for the photo.
+    /// they match and the options the photo can have, an option that turns a picker on
+    /// among them, none while it is open for viewing only. Should the tool's code panic,
+    /// every row reads Custom, with no option to apply, and a warning says so once for the
+    /// photo.
     fn presets(
         &mut self,
         tool: &dyn ProcessingTool,
@@ -4820,8 +4839,11 @@ impl Open {
                         .options
                         .iter()
                         .copied()
+                        // An option that turns a picker on, wherever a picker can start.
                         .filter(|option| {
-                            editable && tool.preset(row.id, option, &self.image).is_some()
+                            let picks = row.pickers.iter().any(|(id, _)| id == option);
+                            editable
+                                && (picks || tool.preset(row.id, option, &self.image).is_some())
                         })
                         .collect(),
                 })
@@ -7806,6 +7828,7 @@ mod tests {
             id: "look",
             options: &["full"],
             controls: &["amount"],
+            pickers: &[],
         }],
         views: &[View {
             id: "scaled",
@@ -8629,6 +8652,7 @@ mod tests {
             id: "look",
             options: &["photo"],
             controls: &["level"],
+            pickers: &[],
         }],
         views: &[],
         pickers: &[],

@@ -373,6 +373,9 @@ tool-temperature-control-blue-promise = Przez co mnożone są niebieskie fotodio
 tool-temperature-control-various-label = Szmaragdowy
 tool-temperature-control-various-full = Współczynnik szmaragdowego
 tool-temperature-control-various-promise = Przez co mnożone są szmaragdowe fotodiody raw czujnika czterokolorowego.
+tool-temperature-picker-spot-label = Z obszaru obrazu
+tool-temperature-picker-spot-full = Balans bieli z obszaru obrazu
+tool-temperature-picker-spot-promise = Ustaw balans bieli na wykryty z obszaru
 
 ## Orientacja (docs/tools/orientation.md)
 

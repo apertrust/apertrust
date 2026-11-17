@@ -39,7 +39,7 @@ Light and colour together, since a scene-referred edit interleaves them. The tab
 
 | Tool | darktable module | Operation, slot | Layers | Status | Docs |
 | --- | --- | --- | --- | --- | --- |
-| White balance | white balance | `temperature`, raw 3 | Background only | Built; the camera's presets with Finetune designed (decision 27), to build | [page](white-balance.md), [port](../ports/temperature.md) |
+| White balance | white balance | `temperature`, raw 3 | Background only | Built, its picker from Settings' from image area (decision 79); the button bar to come; the camera's presets with Finetune designed (decision 27), to build | [page](white-balance.md), [port](../ports/temperature.md) |
 | Colour calibration | color calibration | `channelmixerrgb`, working 28.5 | Background only, until layers | Built, every tab, the CAT tab with follow writes; runs on every colour raw (decision 27) | [page](colour-calibration.md), [port](../ports/channelmixerrgb.md) |
 | Exposure | exposure | `exposure`, camera RGB 21 | Yes | Built, every control ported, automatic mode with its computed EC readout (decision 87); Contrast and Pivot left for Colour balance RGB | [page](exposure.md), [port](../ports/exposure.md) |
 | AgX | AgX | `agx`, working 45.5 | Background; on layers when they come, as a replacement | Built, the default tone mapper; its pickers, actions and Show curve to come | [page](agx.md), [port](../ports/agx.md) |
@@ -189,7 +189,7 @@ Port specs, tool pages and code cite these by number.
     - darktable's own settings for a tool, kept in darktablerc and never in an edit, are rows of the tool (`Row::Setting`), kept in `settings.toml` under `[tools.<module>]` once what uses them is built (decision 43).
     - A control darktable shows only under a preference that is off by default, or only for an edit made with an older algorithm, is not shown; its parameter stays at darktable's default or current value.
 13. **Follow writes** (decision 27). Where darktable's GUI writes other parameters with a control, to keep one quantity consistent (colour calibration's illuminant writing `x`, `y` and the temperature; White balance's coefficients writing `preset`), the tool gives those writes (`ProcessingTool::follow`) and the session applies them in the same change.
-    - A preset row's option takes none: it writes every control itself (`ProcessingTool::preset`).
+    - A preset row's option takes none: it writes every control itself (`ProcessingTool::preset`), but for an option that turns a picker on (`PresetRow::pickers`), which writes nothing and leaves the writing to the pick.
     - A range that follows other controls clamps a value it leaves outside in the same change (decision 30).
     - darktable's session memory, values its GUI keeps but no edit stores, is not mirrored.
 14. **Menus and the toolbar** (decisions 91 and 92; [gui.md](../gui.md#context-menus)). A tool takes no right-click: its header, body and controls open no context menu, a control keeping its own gesture (a slider's fine control, a picker button's area).

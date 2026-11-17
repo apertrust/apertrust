@@ -106,9 +106,10 @@ fn every_built_in_tool_is_accepted() {
 }
 
 /// darktable's pickers on the built tools' sliders, each named by its quad (decision
-/// 79; `docs/pickers.md`, The first pass's pickers). White balance's, Colour calibration's
-/// and AgX's Auto tune levels come with their buttons' rows; Exposure's reference picker is
-/// on its reference row (decision 88).
+/// 79; `docs/pickers.md`, The first pass's pickers). Colour calibration's and AgX's Auto
+/// tune levels come with their buttons' rows; Exposure's reference picker is on its
+/// reference row (decision 88), and White balance's turned on by Settings' from image
+/// area until its button bar comes.
 #[test]
 fn the_built_in_tools_declare_darktable_s_pickers_on_their_sliders() {
     let pickers: Vec<(&str, Vec<&str>)> = TOOLS
@@ -126,6 +127,7 @@ fn the_built_in_tools_declare_darktable_s_pickers_on_their_sliders() {
         pickers,
         [
             ("agx", vec!["white", "black", "pivot", "pivot_output"]),
+            ("temperature", vec!["spot"]),
             ("exposure", vec!["exposure", "reference"]),
             (
                 "colorbalancergb",
@@ -482,6 +484,7 @@ static LISTING: ProcessingDefinition = ProcessingDefinition {
         id: "style",
         options: &["warm"],
         controls: &["tone", "grid"],
+        pickers: &[],
     }],
     views: &[],
     pickers: &[],

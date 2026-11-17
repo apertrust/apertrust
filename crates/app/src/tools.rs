@@ -300,9 +300,11 @@ pub fn reset_name(words: &Translator, tool: &ToolDefinition, title: &str) -> Str
 }
 
 /// The tools whose pickers the panel draws: those whose pick is built, each joining with
-/// it (`docs/pickers.md`, The plan): Exposure's. Until then a tool's quad, its picker
-/// rows and its patches' input are not drawn, as a quad with nothing behind it is not.
-pub const PICKING: &[&str] = &["exposure"];
+/// it (`docs/pickers.md`, The plan): Exposure's and White balance's, the latter turned on
+/// from Settings. Until then a tool's quad, its picker rows and its patches' input are
+/// not drawn, as a quad with nothing behind it is not, and a preset option that turns its
+/// picker on is drawn disabled.
+pub const PICKING: &[&str] = &["exposure", "temperature"];
 
 /// The colour pickers as a section draws them.
 #[derive(Clone, Copy)]
@@ -1163,9 +1165,7 @@ impl Rows for Page<'_> {
             Row::Custom { .. } => {}
             // A list whatever its style: `ProcessingDefinition::check` refuses segments,
             // which cannot draw Custom or an option disabled yet.
-            Row::Preset { preset, .. } => {
-                preset_row(ui, words, definition, preset, state, changes);
-            }
+            Row::Preset { preset, .. } => preset_row(ui, self, preset, changes),
             Row::Patches { picker, target } => patches_row(ui, self, picker, target),
             Row::Computed(computed) => {
                 computed_row(ui, words, definition.tool.id, computed, state);
@@ -1442,14 +1442,13 @@ fn computed_row(
 /// session reports the controls hold, or Custom, which the list never offers; the options
 /// this photo cannot have are listed disabled. Choosing one applies it. It stores nothing,
 /// so it has no marker and no reset of its own.
-fn preset_row(
-    ui: &mut egui::Ui,
-    words: &Translator,
-    definition: &ProcessingDefinition,
-    id: &'static str,
-    state: &ToolState,
-    changes: &mut Vec<Change>,
-) {
+///
+/// An option that turns a picker on (`PresetRow::pickers`), White balance's From image
+/// area, asks for its picker as an area, as a press on its button would, and nothing while
+/// that picker is on, as darktable presses the button only when it is not active
+/// (`temperature.c:1816-1822`); it is disabled where its picker cannot be pressed.
+fn preset_row(ui: &mut egui::Ui, page: &Page, id: &'static str, changes: &mut Vec<Change>) {
+    let (words, definition, state) = (page.words, page.tool.definition(), page.state);
     let tool = definition.tool.id;
     let shown = state.presets.iter().find(|shown| shown.preset == id);
     let (Some(row), Some(shown)) = (definition.preset(id), shown) else {
@@ -1463,10 +1462,27 @@ fn preset_row(
         .collect();
     let names: Vec<&str> = names.iter().map(String::as_str).collect();
     let custom = words.text(messages::PRESET_CUSTOM);
+    let picker_of = |option: &str| {
+        (row.pickers.iter())
+            .find(|(turning, _)| *turning == option)
+            .map(|&(_, picker)| picker)
+    };
+    let pickers = page.pickers;
+    let can_pick = pickers.enabled && pickers.drawn.contains(&tool);
     let unavailable: Vec<usize> = (0..row.options.len())
-        .filter(|&i| !shown.available.contains(&row.options[i]))
+        .filter(|&i| {
+            let option = row.options[i];
+            !shown.available.contains(&option) || (picker_of(option).is_some() && !can_pick)
+        })
         .collect();
-    let unavailable_tip = words.text("preset-option-unavailable");
+    // An option that turns a picker on, disabled as its picker is, says why as its button
+    // would: the photo opening, or open for viewing only.
+    let picker_disabled = (row.options.iter())
+        .any(|option| picker_of(option).is_some() && shown.available.contains(option) && !can_pick);
+    let unavailable_tip = match pickers.why {
+        Some(why) if picker_disabled => why.to_owned(),
+        _ => words.text("preset-option-unavailable"),
+    };
     let matching = shown
         .matching
         .and_then(|matching| row.options.iter().position(|&option| option == matching));
@@ -1480,13 +1496,23 @@ fn preset_row(
         .enabled(!shown.available.is_empty())
         .show(ui);
     if let Some(ChoiceAction::Set(chosen)) = chosen {
-        // The box shows it once the session reports it: its values are the photo's, which
-        // only the session knows.
-        changes.push(Change::ApplyPreset {
-            tool,
-            preset: id,
-            option: row.options[chosen],
-        });
+        let option = row.options[chosen];
+        match picker_of(option) {
+            Some(picker) => {
+                let this = PickerRef::Tool { tool, picker };
+                if pickers.on != Some(this) {
+                    let on = PickerAction::On { area: true };
+                    changes.push(page.pressed(ui, picker, on));
+                }
+            }
+            // The box shows it once the session reports it: its values are the photo's,
+            // which only the session knows.
+            None => changes.push(Change::ApplyPreset {
+                tool,
+                preset: id,
+                option,
+            }),
+        }
     }
 }
 
@@ -2646,6 +2672,7 @@ mod tests {
     use apertrust_tools::tone_curve::{self, ToneCurve};
     use apertrust_tools::tone_equalizer::{self, ToneEqualizer};
     use apertrust_tools::vignetting::Vignetting;
+    use apertrust_tools::white_balance::WhiteBalance;
     use apertrust_tools::{Reset, ToolDefinition};
     use apertrust_ui::components::Marker;
     use apertrust_ui::{Builtin, Locale, Theme, theme};
@@ -2808,11 +2835,15 @@ mod tests {
             .map(|row| PresetState {
                 preset: row.id,
                 matching: tool.matching(row.id, &values, &image),
+                // As the session lists them: an option that turns a picker on among them.
                 available: row
                     .options
                     .iter()
                     .copied()
-                    .filter(|option| tool.preset(row.id, option, &image).is_some())
+                    .filter(|option| {
+                        row.pickers.iter().any(|(id, _)| id == option)
+                            || tool.preset(row.id, option, &image).is_some()
+                    })
                     .collect(),
             })
             .collect()
@@ -2878,8 +2909,9 @@ mod tests {
                     panel.state.presets = presets(panel.tool, &panel.state);
                     let groups =
                         |group: &str| panel.groups.get(group).copied().unwrap_or(GROUP_OPEN);
+                    // Sample's pickers, and White balance's, which Settings turns on.
                     let pickers = Pickers {
-                        drawn: &["sample"],
+                        drawn: &["sample", "temperature"],
                         on: panel.on,
                         enabled: panel.why.is_none(),
                         why: panel.why,
@@ -4029,6 +4061,56 @@ mod tests {
                 option: "untouched"
             }]
         );
+    }
+
+    /// White balance's Settings and its From image area, by their words.
+    const WHITE_BALANCE_SETTINGS: &str = "White balance settings";
+    const FROM_IMAGE_AREA: &str = "From image area";
+    const SPOT: PickerRef = PickerRef::Tool {
+        tool: "temperature",
+        picker: "spot",
+    };
+
+    /// What choosing From image area in White balance's Settings sends, with the picker
+    /// `on` and the pickers pressable unless `why` says why not.
+    fn from_image_area(on: Option<PickerRef>, why: Option<&'static str>) -> Vec<Change> {
+        let mut harness = panel(&WhiteBalance, untouched(&WhiteBalance));
+        harness.state_mut().on = on;
+        harness.state_mut().why = why;
+        harness.run();
+        harness
+            .get_by_role_and_label(Role::ComboBox, WHITE_BALANCE_SETTINGS)
+            .click();
+        harness.run();
+        let option = harness.get_by_label(FROM_IMAGE_AREA);
+        assert_eq!(option.accesskit_node().is_disabled(), why.is_some());
+        option.click();
+        harness.run();
+        harness.state().changes.clone()
+    }
+
+    /// Settings' From image area turns White balance's picker on as an area, as darktable's
+    /// `_preset_tune_callback` presses its button (`temperature.c:1816-1822`), never
+    /// applying the option; again while the picker is on, nothing, as darktable presses it
+    /// only when it is not active; and it is disabled where the pickers cannot be pressed,
+    /// as on a photo open for viewing only.
+    #[test]
+    fn from_image_area_turns_white_balance_s_picker_on() {
+        let changes = from_image_area(None, None);
+        assert!(
+            matches!(
+                changes[..],
+                [Change::Picker {
+                    tool: "temperature",
+                    picker: "spot",
+                    action: PickerAction::On { area: true },
+                    ..
+                }]
+            ),
+            "{changes:?}"
+        );
+        assert_eq!(from_image_area(Some(SPOT), None), []);
+        assert_eq!(from_image_area(None, Some("Open for viewing only")), []);
     }
 
     /// Sample's pair's rows and grain's and bias's own, by their full names. Sample has no

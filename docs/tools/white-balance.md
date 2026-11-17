@@ -13,6 +13,7 @@ A change runs the raw stage and demosaic again (decision 12; `docs/engine.md`, P
 - A first-pass table (decision 22): the rows every table has, and darktable's match.
 - Every row is a test in `crates/tools/tests/white_balance.rs`, the corpus's in `w_rows_on_the_corpus`; [Results](#results) gives what they measured.
 - One proposed bound fails where darktable's own model does: W3's 0.01 K, kept as an ignored test (decision 30). A coefficient reset control by control leaves darktable's own state, as built (W1).
+- Its picker is built (decision 79, [The picker](#the-picker)): Settings' from image area turns it on, and its pick sets the coefficients that make the area neutral, where every channel's mean is above darktable's 0.001 floor and every coefficient inside 0 to 8 (W15); the button bar's toggle comes with the button bar.
 - Temperature and tint reach coefficients outside the operation's 0 to 8 on every corpus camera. The tool reports this rather than narrowing the ranges, and the session refuses such coordinates; the operation taking them, as darktable's does, is planned ([Gaps](#gaps)).
 - The [design choices](#design-choices) are settled.
 - Measures and test images are in [README.md](README.md).
@@ -37,7 +38,7 @@ darktable's page, top to bottom: the button bar, Settings, Finetune, the SCENE I
 - `as_shot`: the as-shot coefficients and `preset` as shot.
 - `d65`: the camera's D65 coefficients (`_calculate_bogus_daylight_wb`, the temperature port's daylight multipliers, Emerald's 1, darktable's being no number on a three-colour sensor) and `preset` camera reference.
 - `d65_late`: the as-shot coefficients and `preset` as shot to reference, under which colorin applies the late correction (decision 21).
-- `spot`, from image area, is the picker's, drawn disabled until the picker comes (`ProcessingTool::preset` gives `None`); choosing it turns the picker on, and a pick stores it ([below](#controls), After a pick).
+- `spot`, from image area, turns the picker on as an area ([The picker](#the-picker)), as darktable's `_preset_tune_callback` presses the picker's button (`temperature.c:1816-1822`): an option that turns a picker on (`PresetRow::pickers`), never applied (`ProcessingTool::preset` gives `None`, so `ApplyPreset` refuses it), offered wherever the photo can be edited, as a picker button is. Chosen while the picker is on, it does nothing, as darktable presses the button only when it is not active; any other option turns the picker off, as `dt_iop_color_picker_reset` does (`:1794-1795`), since the session turns a tool's picker off when `ApplyPreset` changes its tool. A pick stores it (After a pick, below). A script turns the picker on with `PickerCommand::On`.
 - `user`, user modified, is never applied. darktable restores the coefficients its session last had from temperature and tint (`mod_coeff`), which no edit stores (principle 5's first pass, decision 27), so its `preset` gives `None` and it is drawn disabled.
 
 The first three are offered on every photo, as darktable lists them. Without a colour matrix, camera reference writes darktable's D65 coefficients then, every one 1, darktable's own. Its `reload_defaults` looks for the camera's Daylight preset there, but compares the file's names, which its reader lowercases, with "Daylight" and "DirectSunlight", so it never finds one (decision 27).
@@ -50,10 +51,10 @@ The first three are offered on every photo, as darktable lists them. Without a c
 - where the coefficients are any of the camera's presets, the stored `preset` (decision 27, [below](#the-cameras-presets-and-finetune));
 - user modified otherwise, which `matching` names though no command applies it.
 
-**After a pick** (decision 79, [pickers.md](../pickers.md#the-first-passs-pickers)), Settings shows "from image area", the `preset` the pick stored, as darktable's combobox shows it at once (`temperature.c:1967`), and only in the session it was picked. Whenever the module is shown again, darktable's `gui_update` works the label out from the coefficients alone, as above (`temperature.c:1195-1360`), and a picked balance matches nothing, so it is "user modified" (`DT_IOP_TEMP_USER`, `:1338`):
+**After a pick** (decision 79, [pickers.md](../pickers.md#the-first-passs-pickers)), Settings shows "from image area", the `preset` the pick stored, as darktable's combobox shows it at once (`temperature.c:1967`): `matching` names `spot` while the stored `preset` is `spot`, before its other checks. That lasts only in the session it was picked. Whenever darktable redraws the module, which it does when history is read again, not when the module is expanded, its `gui_update` works the label out from the coefficients alone, by the rules above (`temperature.c:1195-1360`): most picks match nothing and read "user modified" (`DT_IOP_TEMP_USER`, `:1338`), while a pick whose coefficients match as shot or camera reference within 1e-5, such as 1, 1, 1 on a photo without a colour matrix, reads that option:
 
-- **When:** as the photo opens, and when Undo, Redo or a `GoTo` bring back White balance's values, as darktable redraws the module then; never right after a pick or a Settings change.
-- **The stored setting** becomes user modified in the session's edit, as darktable sets `p->preset`, and is saved only with the next change. It is never a history step of its own, and nothing is written on open (decision 77).
+- **When:** whenever history's saved state is read again, as darktable redraws the module then: as the photo opens, after Undo, Redo or a `GoTo`, after Compress, Truncate and Discard History, and as a newer file is taken in; never right after a pick or a Settings change. A photo open for viewing only is redrawn too, in the session alone, which never writes it.
+- **The stored setting** becomes what `matching` gives from the coefficients alone, as darktable sets `p->preset` (`:1336-1340`): as shot, camera reference or user modified, never as shot to reference, which needs that setting stored (`ProcessingTool::redrawn`, applied by the session's `Edit::redraw`). It goes into the session's edit and is saved only with White balance's own next change, as darktable's parameters reach its history only with the module's next history item: another tool's change is measured from the fold as read and leaves White balance's step alone. It is never a history step of its own, and nothing is written on open (decision 77). Any other stored setting is left as it is, as the label only names it.
 
 An option writes its values as they are, with no follow writes, as `_preset_tune_callback` writes its parameters without `gui_changed`.
 
@@ -78,6 +79,27 @@ The view reads the camera, so the session's `Photo` carries the photo's image co
 - `ApplyPreset { tool: "temperature", preset: "settings", option: "d65" }` gives camera reference.
 - `apertrust-cli edit --set temperature.red=2.1` sets a coefficient, `preset` left as it was.
 - `--param temperature.red` is refused, since the tool owns it, and a value an edit holds that way is dropped with a warning.
+- `Picker(On { picker: Tool { tool: "temperature", picker: "spot" }, area: true, .. })` turns the picker on, as Settings' from image area does; `ApplyPreset` of `spot` is refused.
+
+### The picker
+
+`spot`, darktable's "from image area" (`dt_color_picker_new_with_cst(self, DT_COLOR_PICKER_AREA, NULL, IOP_CS_NONE)`, `temperature.c:2088`): an area, not denoised, read at `temperature`'s input in no space of its own, so the mosaic per CFA colour (`Space::Operation`), not keep-active, writing `red`, `green`, `blue` and `preset`, reading no setting. Until the button bar comes, Settings' from image area is its one place (`PresetRow::pickers`). Its words: `tool-temperature-picker-spot-label` "From image area", which the central bar shows as "White balance · From image area" with the area sentence, and `-promise` darktable's tooltip, "Set white balance to detected from area".
+
+**Its pick** (`ProcessingTool::pick`, darktable's `color_picker_apply`, `temperature.c:1948-1969`), on the reading's input mean `m`, one channel per CFA colour:
+
+- `g = m[1] > 0.001 ? 1 / m[1] : 1`;
+- each of red, green and blue `clamp(((m[c] > 0.001) ? 1 / m[c] : 1) / g, 0, 8)`, darktable's own bound;
+- then green 1, and `preset` from image area, so Settings reads from image area ([After a pick](#controls)).
+
+**Where neutrality is not reached:** a channel whose mean is 0.001 or below takes 1 in place of its inverse, and a coefficient past 0 to 8 is held at the bound, as darktable's rule does, so such an area does not come out neutral. W15 holds where every mean is above the floor and every coefficient inside the bound.
+
+Nothing else is written, and no follow write runs after it ([pickers.md](../pickers.md#what-a-pick-writes)); an area with no red photosite writes nothing, as darktable returns on an empty reading. It shows no patch, as darktable's white balance has none. A pick is one step of source Auto, undoable as any change. The raw stage runs at full resolution, so the mean is over the export's photosites, not darktable's downscaled preview ([pickers.md](../pickers.md#the-scale)); a picker whose operation runs in tiles reads nothing.
+
+**Deliberate differences:**
+
+- darktable writes the fourth coefficient too. Emerald (`various`) is not ported and stays as it is: nothing reads it on a three-colour sensor, and temperature ports no four-colour one.
+- Choosing from image area in darktable stores `spot` with the old coefficients and adds a history item before the picker is pressed (`_preset_tune_callback`: `_update_preset`, `:1807`, the picker pressed, `:1816-1822`, then `dt_dev_add_history_item`, `:1945`). Apertrust writes nothing until the pick; the end state is the same.
+- Only `spot` is redrawn ([After a pick](#controls)), where darktable's `gui_update` rewrites any stored setting the coefficients no longer match (`:1214-1340`).
 
 ### The camera's presets and Finetune
 
@@ -173,11 +195,12 @@ A first-pass table (decision 22): the rows every table has, and darktable's matc
 | W2 | Order | Temperature then tint, and tint then temperature | `red`, `green`, `blue`; frame | The same coefficients whichever came first, the session holding the other coordinate | Exact | CPU, session; the small raw |
 | W3 | The view | Temperature across 1901 to 25000 K and tint across 0.135 to 2.326, but for darktable's twins from 3900.33 to 4102.41 K; each corpus camera's as-shot coefficients | `view` of `unview` where the coefficients lie in their range; `unview` of `view` | Each coordinate back where it was; the coefficients back normalised to green 1 | 1e-6 of the temperature and 1e-6 in tint; 4 `f32` units in each coefficient (proposed: 0.01 K everywhere) | CPU: the small raw's camera, the 40D and the X-T4; every corpus camera |
 | W4 | darktable's model | The coordinates of W3 | `view` and `unview` against darktable's `_mul2temp` and `_temp2mul` restated in `f64`, its 1 K bisection included | The same coefficients from the same coordinates; the same temperature within darktable's 1 K bisection and the same tint at it | 1e-9 relative in the coefficients; 1 K; 1e-6 in tint | CPU: the same cameras |
-| W5 | Settings | Each option, on every corpus raw; with and without a colour matrix | The values written; `matching` | darktable's: as shot and as shot to reference the as-shot coefficients, camera reference the D65 ones, every one 1 without a matrix, all four coefficients with its `preset`; `matching` names each, user modified a moved coefficient, from image area and user modified unavailable | Exact | CPU: the same cameras, and each without its matrix; every corpus raw |
+| W5 | Settings | Each option, on every corpus raw; with and without a colour matrix | The values written; `matching` | darktable's: as shot and as shot to reference the as-shot coefficients, camera reference the D65 ones, every one 1 without a matrix, all four coefficients with its `preset`; `matching` names each, user modified a moved coefficient; from image area never applied, an option that turns the picker on (`PresetRow::pickers`), and user modified never applied | Exact | CPU: the same cameras, and each without its matrix; every corpus raw |
 | W6 | Follow writes | A coefficient, temperature and tint, each moved from "as shot to reference"; a Settings option | `preset`; the operation's parameters | `preset` user modified, kept, in the same change and history step, so no late correction, as darktable stores it; an option writes none | Exact | CPU, session; the synthetic raw |
 | W7 | darktable's match | The temperature parameters of darktable's golden sidecars at version 4 (test 0174's "as shot to reference", and the coefficients the integration tests store), set as the tool's controls | The parameters the edit binds | darktable's own for the sidecar, so the raw stage's `raw-run` against darktable is the tool's | Exact | CPU; the golden sidecars |
 | W8 | On a layer | | The definition | Background only: never offered on a layer, as the raw stage | Exact | CPU |
 | W9 | Availability | A photo without a colour matrix; a three-colour sensor | `available`; the session's coordinates; Settings' options | Temperature and tint unavailable without a matrix (decision 30), the coefficients and Settings available, Settings offering as shot, camera reference and as shot to reference with a matrix or without, as darktable; Emerald not ported, in no row | Exact | CPU, session |
+| W15 | The picker | A pick on a grey patch, flat in each CFA colour at its own level under the light, in a gradient the area leaves out, from the patch's reading at `temperature`'s input; every channel's mean above darktable's 0.001 floor and every coefficient it gives inside 0 to 8 | `temperature`'s output over the patch, the mosaic | Neutral: R = G = B, where those hold | 1e-5 relative | GPU: a synthetic 32 × 32 raw through `rawprepare` and `temperature` |
 
 Proposed with the camera's presets and Finetune (decision 27), planned; each is a test against a restatement of darktable's functions in the test, over the file as `apertrust-raw` reads it:
 
@@ -202,11 +225,16 @@ Run on the M4: `cargo test -p apertrust-tools --test white_balance`, and on the 
 | W2 | Holds, exactly: 4300 K then tint 1.1, and the reverse, give the same edit and the same frame |
 | W3 | Holds within the CI bounds on the small raw's camera, the 40D, the X-T4 and every corpus camera; the proposed 0.01 K fails twice, kept in `w3_temperature_and_tint_round_trip_to_0_01_k_everywhere` (below) |
 | W4 | Holds, on the three cameras and every corpus camera, anchored by hard-coded numbers (below) |
-| W5 | Holds, exactly, on the three cameras, each with and without its matrix, and every corpus raw: as shot and as shot to reference write the as-shot coefficients and camera reference the D65 ones, every one 1 without a matrix, all four with its `preset`, and `matching` names each back; a moved coefficient reads user modified; from image area and user modified give nothing |
+| W5 | Holds, exactly, on the three cameras, each with and without its matrix, and every corpus raw: as shot and as shot to reference write the as-shot coefficients and camera reference the D65 ones, every one 1 without a matrix, all four with its `preset`, and `matching` names each back; a moved coefficient reads user modified; from image area and user modified give nothing, from image area turning the picker on |
 | W6 | Holds, exactly: a coefficient, temperature and tint each write `preset` user modified, kept, in the same change, so the operation's parameters carry no late correction. Through the session (`a_white_balance_coefficient_writes_user_modified_and_a_setting_writes_none`), red at 2.5 writes user modified in one change and one write, and camera reference then reads camera reference, no follow write turning it into user modified |
 | W7 | Holds, exactly, on the six golden sidecars whose `temperature` is at version 4: the tool's controls bind darktable's parameters. Older versions, which darktable migrates with `preset` unknown, are left out |
 | W8 | Holds: background only |
 | W9 | Holds, exactly: without a colour matrix temperature and tint are unavailable, through `available` and in the session's report, the coefficients and Settings available, Settings offering its three options with a matrix or without; Emerald is a control not ported, in no row, which Settings writes |
+| W15 | Holds: R, G and B over the patch within 9.9e-8 of each other on the M4 (`w15_a_pick_on_a_grey_patch_makes_it_neutral`), against the bound of 1e-5 |
+
+**The picker in detail.** The pick against darktable's `color_picker_apply` restated, in `white_balance.rs`'s unit tests: means 0.2, 0.4 and 0.3 give 2, 1 and 1.333…; a red mean of 0.0005 with green 0.4 gives red 0.4; a green mean at or below 0.001 normalises by 1; a coefficient above 8 is held at 8; `preset` is from image area and Emerald is not written. Through the session (`white_balance_s_picker_reads_from_image_area_then_user_modified_when_shown_again`), on the synthetic raw: `On` applies the first reading as one step of source Auto, the coefficients darktable's rule gives for the mosaic's means, Settings reading from image area; Undo then Redo, and the photo reopened, read user modified, the file holding from image area through the close and the reopening, and through a change of Exposure, which is one Exposure step alone, until White balance's own next step saves user modified; as shot applied while the picker is on turns it off. A newer file another program wrote with White balance's red and as shot, taken in while the redraw is not yet saved, keeps its White balance (`a_redraw_not_yet_saved_never_replaces_a_newer_file_s_white_balance`).
+
+**The hand check against darktable** is to come, the maintainer's: in darktable 5.6.2's panel, pick the same areas on the corpus' 7R V and X-T5 and record the coefficients beside Apertrust's here, with no bound, since darktable picks on its downscaled preview and Apertrust on the photo at full resolution ([pickers.md](../pickers.md#the-scale)).
 
 **W1 in detail.** Each coefficient, temperature 3500 K and tint 1.2 change the frame, and so do as shot and camera reference. `ResetTool` gives the untouched frame, and so does an option once the five controls it writes are reset.
 
@@ -230,7 +258,7 @@ As-shot readings, for instance: the 5D Mark III 3584 K at tint 0.970, the X-T5 5
 
 ## Design choices
 
-- **Emerald (`various`):** a control not ported, in no row, which Settings writes with the other three, as `_temp_params_from_array` writes all four. darktable shows it on a four-colour sensor alone, temperature ports none, and a row drawn disabled on every photo would show what darktable never does. Settings writes the fourth as-shot coefficient, or 1, and camera reference 1, darktable's D65 fourth being no number on a three-colour sensor.
+- **Emerald (`various`):** a control not ported, in no row, which Settings writes with the other three, as `_temp_params_from_array` writes all four. darktable shows it on a four-colour sensor alone, temperature ports none, and a row drawn disabled on every photo would show what darktable never does. Settings writes the fourth as-shot coefficient, or 1, and camera reference 1, darktable's D65 fourth being no number on a three-colour sensor. The picker leaves it as it is where darktable's pick writes it too, a deliberate difference ([The picker](#the-picker)).
 - **`preset`:** a control in no row of its own, shown by Settings, which writes it. `ProcessingDefinition::check` allows a control in no row when a placed preset row writes it.
 - **Settings' options and follow writes:** none. `ApplyPreset` writes the option's values as they are, as `_preset_tune_callback` does without `gui_changed`.
 - **The view's matrix without one:** sRGB's, darktable's for an image that is not a raw, so the view is always given. The session reports the coordinates unavailable (`CoordinateState::available`, from `ProcessingTool::available` on the coordinate's own id).
@@ -243,9 +271,8 @@ As-shot readings, for instance: the 5D Mark III 3584 K at tint 0.970, the X-T5 5
 
 What is not built yet, and what brings it:
 
-- **The button bar:** darktable's five settings as icon toggles above Settings, the one Settings names pressed, shown by darktable's `button_bar` preference, on by default; a second row of the Settings preset row, waiting for a row that draws a preset row's options as buttons.
+- **The button bar:** darktable's five settings as icon toggles above Settings, the one Settings names pressed, shown by darktable's `button_bar` preference, on by default; a second row of the Settings preset row, waiting for a row that draws a preset row's options as buttons. Its from image area toggle is the picker's button, and darktable's "settings › from image area" shortcut comes with it.
 - **The camera's presets with Finetune:** designed by decision 27 ([The camera's presets and Finetune](#the-cameras-presets-and-finetune)), planned in the tasks of [Build](#build). Camera reference without a colour matrix is not among them: its 1, 1, 1 is darktable's own, whose fallback to the camera's Daylight preset never matches.
-- **From image area:** the picker, designed in [pickers.md](../pickers.md) (decision 79, its pull request 79.8): its toggle and Settings' `spot` turning it on, its pick writing the coefficients and `preset` from the mosaic's means over the area.
 - **The trouble message:** "white balance applied twice (details)" while Colour calibration adapts and the coefficients are off the camera's reference (decision 27), planned after this tool.
 - **Painted tracks:** darktable's coloured-sliders preference ("no color" by default; a click on SCENE ILLUMINANT TEMP cycles it), an interface setting, to come with painted tracks ([README.md](README.md), rule 12); plain tracks meanwhile.
 - **A monochrome raw:** darktable shows "white balance disabled for camera" in place of the controls; the pipeline takes no monochrome raw yet. A four-colour sensor's labels (cyan, yellow, green, magenta, reordered) and Emerald wait with temperature's port of one.
@@ -257,7 +284,7 @@ What is not built yet, and what brings it:
 
 ## Phases
 
-- **Phase 2:** the tool with W0 to W9, built. Then the trouble message. The picker, after the picker's engine and app ([pickers.md](../pickers.md#the-plan)).
+- **Phase 2:** the tool with W0 to W9, built, and its picker with W15, built ([pickers.md](../pickers.md#the-plan), 79.8). Then the trouble message, and the button bar with the picker's toggle.
 - **Phase 3:** the camera's presets with Finetune (decision 27, its tasks in [Build](#build), the generic ones free to start before).
 
 ## Build

@@ -331,6 +331,19 @@ pub trait ProcessingTool: Send + Sync {
         Controls::new()
     }
 
+    /// The controls darktable's `gui_update` writes as it redraws the tool, while they hold
+    /// `values`, every control, the edit's over the defaults: White balance's `preset` from
+    /// image area turned into what its coefficients match, as `gui_update` writes
+    /// `p->preset`. Each within its range. Pure, as [`Self::bind`] is: the session writes
+    /// them into its edit wherever history's saved state is read again, as darktable
+    /// redraws the tool: as the photo opens, after Undo, Redo or a move through history,
+    /// and as a newer file is taken in. Never a history step of its own, it is saved with
+    /// the tool's own next step; never after a change of the tool's own, as a pick, after
+    /// which darktable shows the values as written. None, as provided.
+    fn redrawn(&self, _values: &Controls, _image: &ImageContext) -> Controls {
+        Controls::new()
+    }
+
     /// What the picker `picker` of [`ProcessingDefinition::pickers`] makes of `reading`,
     /// darktable's `color_picker_apply` (decision 79; `docs/pickers.md`, Declaring
     /// pickers): the controls it writes, each among the picker's `writes` and stored as

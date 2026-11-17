@@ -183,7 +183,8 @@ darktable's colour pickers and its Colour picker, one API (decision 79; [pickers
 - [x] 79.5 The picker button and the picker's marks in the design system.
 - [x] 79.6 The app: quads and picker rows, the marks over the photo, the central bar's words, the pointer, the keys and focus, the live region.
 - [x] 79.7 Exposure's picker: its pick and its settings in settings; the design system's patches with their L readout.
-- [ ] 79.8 to 79.11 Each other tool's pickers: White balance, Colour calibration, Colour balance RGB and AgX.
+- [x] 79.8 White balance's picker: Settings' from image area turns it on, its pick makes the area neutral where every mean is above darktable's 0.001 floor and every coefficient inside 0 to 8, and once history is read again it reads what the coefficients match, user modified for most picks.
+- [ ] 79.9 to 79.11 Each other tool's pickers: Colour calibration, Colour balance RGB and AgX.
 - [ ] 79.14 Stored samples through the session.
 - [ ] 79.15 The scopes restricted to the Colour picker's selection.
 - [ ] 79.16 The Colour picker, hidden by default, its place to be decided: the live sample, numbered stored samples, statistics and colour modes, samples on the photo.

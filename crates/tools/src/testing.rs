@@ -212,6 +212,7 @@ static DEFINITION: ProcessingDefinition = ProcessingDefinition {
         id: "look",
         options: &["untouched", "grainy", "camera"],
         controls: &["brightness", "grain", "size"],
+        pickers: &[],
     }],
     views: &[View {
         id: "pair",

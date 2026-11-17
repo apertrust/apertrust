@@ -738,6 +738,47 @@ impl Edit {
         warnings
     }
 
+    /// Writes what each tool's [`ProcessingTool::redrawn`] gives for its values on `image`, as
+    /// darktable's `gui_update` writes some parameters as it redraws a module: White
+    /// balance's `preset` from image area becomes what its coefficients match. Each value
+    /// is written with its mark as it was, its default for the photo taken out of the
+    /// edit, as a clamp of a read edit is ([`Self::clamp_read`]). The session calls it
+    /// where darktable redraws, as a photo opens and after a move of the history's end:
+    /// a change not yet a step. A tool whose code panics, or that gives a control it
+    /// lacks or a value its control cannot take, is left as it is.
+    pub fn redraw(&mut self, tools: &[&dyn ProcessingTool], image: &ImageContext) {
+        for &tool in tools {
+            let definition = tool.definition();
+            let id = definition.tool.id;
+            if !self.tools.contains_key(id) {
+                continue;
+            }
+            // A tool's code may panic, as its binding is guarded against: that tool is
+            // left as it is, and the photo opens.
+            let Ok((writes, defaults)) = catch_unwind(AssertUnwindSafe(|| {
+                let now = self.every(tool, image);
+                (tool.redrawn(&now, image), tool.defaults(image))
+            })) else {
+                continue;
+            };
+            let holds = writes.iter().all(|(control, value)| {
+                (definition.control(control)).is_some_and(|found| found.check(value).is_ok())
+            });
+            if !holds {
+                continue;
+            }
+            let values = self.tools.entry(id.to_owned()).or_default();
+            for (control, value) in writes.iter() {
+                if defaults.get(control) == Some(value) {
+                    values.remove(control);
+                } else {
+                    values.set(control, value.clone());
+                }
+            }
+            self.tidy(id);
+        }
+    }
+
     /// Writes `coordinates` into the view's controls through [`ProcessingTool::unview`],
     /// each kept, once every value is checked, and holds them; `coordinate` is the one set.
     fn write_view(

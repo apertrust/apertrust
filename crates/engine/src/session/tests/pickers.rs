@@ -2089,3 +2089,268 @@ fn a_tool_picker_applies_no_reading_while_a_tool_is_hidden() {
     assert_eq!(reading.picker, PickerRef::ColourPicker);
     remove(&path);
 }
+
+/// The tool of each step of the open photo's log, in order.
+fn steps_of(driven: &Driven) -> Vec<String> {
+    use crate::history::{Change, Entry};
+    let open = driven.engine.open.as_ref().unwrap();
+    (open.history.log().steps().iter())
+        .map(|step| match &step.change {
+            Change::Entry(Entry::Tool { tool, .. }) => tool.clone(),
+            other => format!("{other:?}"),
+        })
+        .collect()
+}
+
+/// White balance's picker (`docs/tools/white-balance.md`, After a pick): Settings offers
+/// from image area as soon as the photo can be edited; `On` through it applies its first
+/// reading as one step of source Auto, the coefficients darktable's `color_picker_apply`
+/// gives for the mosaic's means and `preset` from image area, and Settings reads from
+/// image area. Shown again, as darktable's `gui_update` redraws the tool, it reads user
+/// modified: after Undo then Redo, and reopened, never a step of its own and nothing
+/// written for it, the file holding from image area through another tool's change until
+/// White balance's own next step. A Settings option while the picker is on turns it off.
+#[test]
+fn white_balance_s_picker_reads_from_image_area_then_user_modified_when_shown_again() {
+    use apertrust_tools::exposure::Exposure;
+    use apertrust_tools::white_balance::{SETTINGS, WhiteBalance};
+
+    use crate::history::StepSource;
+    const TOOLS: &[&dyn ProcessingTool] = &[&WhiteBalance, &Exposure];
+    let path = scratch("picker-white-balance");
+    let sidecar = sidecar::path_for(&path);
+    let mut driven = Driven::new(TOOLS);
+    let row = |values: &Values| {
+        let tool = (values.tools.iter())
+            .find(|tool| tool.tool == "temperature")
+            .unwrap();
+        (tool.presets.iter())
+            .find(|row| row.preset == "settings")
+            .unwrap()
+            .clone()
+    };
+    let preset = |option| {
+        let at = SETTINGS.iter().position(|o| *o == option).unwrap();
+        ControlValue::Choice(at as u32)
+    };
+    let settings = |values: &Values| {
+        let value = control(values, "temperature", "preset").value.clone();
+        (row(values).matching, value)
+    };
+    // What the file holds of `preset`, once the writer is done.
+    let saved = |driven: &Driven| {
+        driven.writes();
+        let read = sidecar::read(&sidecar, OPERATIONS, TOOLS, &[]).unwrap();
+        let values = read.edit.tool("temperature").cloned().unwrap_or_default();
+        values.get("preset").cloned()
+    };
+    let steps = |driven: &Driven| {
+        let open = driven.engine.open.as_ref().unwrap();
+        (open.history.log().steps().iter())
+            .map(|step| step.source)
+            .collect::<Vec<_>>()
+    };
+    let opened = driven.open(&path);
+    assert!(row(values(&opened)).available.contains(&"spot"));
+    let before = steps(&driven);
+
+    // The pick: the coefficients that make the area neutral, from image area.
+    let mut events = driven.run([on_picker("temperature", "spot", true)]);
+    events.extend(driven.picked());
+    assert!(failures(&events).is_empty(), "{events:?}");
+    assert_eq!(settings(values(&events)), (Some("spot"), preset("spot")));
+    let m = latest(&events).input.expect("its input read").mean;
+    let inverse = |mean: f32| if mean > 0.001 { 1.0 / mean } else { 1.0 };
+    for (c, id) in ["red", "green", "blue"].into_iter().enumerate() {
+        let expected = match c {
+            1 => 1.0,
+            _ => (inverse(m[c]) / inverse(m[1])).clamp(0.0, 8.0),
+        };
+        let picked = number(values(&events), "temperature", id);
+        assert!(
+            (picked - expected).abs() <= 1e-6,
+            "{id}: {picked} against {expected}"
+        );
+    }
+    let after = steps(&driven);
+    assert_eq!(after.len(), before.len() + 1, "{after:?}");
+    assert_eq!(after.last(), Some(&StepSource::Auto));
+    assert_eq!(saved(&driven), Some(preset("spot")));
+    driven.run([picker(PickerCommand::Off)]);
+
+    // Undo, then Redo: shown again, user modified, the file still holding from image area.
+    let undone = driven.run([Command::Undo]);
+    assert_eq!(settings(values(&undone)).0, Some("d65_late"));
+    let redone = driven.run([Command::Redo]);
+    assert!(failures(&redone).is_empty(), "{redone:?}");
+    assert_eq!(settings(values(&redone)), (Some("user"), preset("user")));
+    assert_eq!(saved(&driven), Some(preset("spot")));
+    assert_eq!(steps(&driven), after);
+
+    // Another photo, closing this one, then this one again: user modified, nothing
+    // written.
+    driven.open(&scratch("picker-white-balance-other"));
+    assert_eq!(saved(&driven), Some(preset("spot")));
+    let file = std::fs::read(&sidecar).unwrap();
+    let reopened = driven.open(&path);
+    assert_eq!(settings(values(&reopened)), (Some("user"), preset("user")));
+    assert!(written(&driven.writes()).is_empty());
+    assert_eq!(std::fs::read(&sidecar).unwrap(), file);
+    // The next change, of another tool, is one step of its own, the file still holding
+    // from image area.
+    let before = steps_of(&driven);
+    let events = driven.run([Command::SetControl {
+        tool: "exposure".to_owned(),
+        control: "exposure".to_owned(),
+        value: ControlValue::Number(0.5),
+        done: true,
+    }]);
+    assert!(failures(&events).is_empty(), "{events:?}");
+    let after = steps_of(&driven);
+    assert_eq!(after[..before.len()], before[..]);
+    assert_eq!(after[before.len()..], ["exposure".to_owned()]);
+    assert_eq!(saved(&driven), Some(preset("spot")));
+    // White balance's own next change, here a coefficient released, saves it.
+    let events = driven.run([Command::Keep {
+        tool: "temperature".to_owned(),
+        control: "blue".to_owned(),
+        kept: false,
+    }]);
+    assert!(failures(&events).is_empty(), "{events:?}");
+    assert_eq!(
+        steps_of(&driven).last().map(String::as_str),
+        Some("temperature")
+    );
+    assert_eq!(steps_of(&driven).len(), after.len() + 1);
+    assert_eq!(saved(&driven), Some(preset("user")));
+
+    // A Settings option while the picker is on turns it off.
+    let mut events = driven.run([on_picker("temperature", "spot", true)]);
+    events.extend(driven.picked());
+    assert_eq!(settings(values(&events)).0, Some("spot"));
+    assert!(driven.engine.pickers.on());
+    let events = driven.run([Command::ApplyPreset {
+        tool: "temperature".to_owned(),
+        preset: "settings".to_owned(),
+        option: "as_shot".to_owned(),
+    }]);
+    assert!(failures(&events).is_empty(), "{events:?}");
+    assert!(end(&events).is_some(), "{events:?}");
+    assert!(!driven.engine.pickers.on());
+    assert_eq!(
+        settings(values(&events)),
+        (Some("as_shot"), preset("as_shot"))
+    );
+    // From image area is never applied.
+    let refused = driven.run([Command::ApplyPreset {
+        tool: "temperature".to_owned(),
+        preset: "settings".to_owned(),
+        option: "spot".to_owned(),
+    }]);
+    assert_eq!(failures(&refused).len(), 1, "{refused:?}");
+    driven.writes();
+    remove(&path);
+}
+
+/// A redraw not yet saved is never laid over a newer file's White balance: picked, then
+/// reopened, Settings reads user modified with the file holding from image area; another
+/// program then writes White balance's red and as shot, and the session's next change, of
+/// Exposure, takes that file in, its White balance standing as the other program wrote it.
+#[test]
+fn a_redraw_not_yet_saved_never_replaces_a_newer_file_s_white_balance() {
+    a_newer_file_s_white_balance_stands("picker-white-balance-newer", true);
+}
+
+/// Nor is a pick saved this session, which the edit holds as from image area while its
+/// fold as read is user modified: picked, then a newer file with White balance's red and
+/// as shot taken in, the newer White balance stands.
+#[test]
+fn a_pick_saved_this_session_never_replaces_a_newer_file_s_white_balance() {
+    a_newer_file_s_white_balance_stands("picker-white-balance-newer-pick", false);
+}
+
+/// A pick, then the photo reopened where `reopen`, then another program's White balance
+/// taken in with the session's next change, of Exposure: the other program's stands.
+fn a_newer_file_s_white_balance_stands(name: &str, reopen: bool) {
+    use apertrust_tools::exposure::Exposure;
+    use apertrust_tools::white_balance::WhiteBalance;
+
+    use crate::history::{Change, StepSource};
+    const TOOLS: &[&dyn ProcessingTool] = &[&WhiteBalance, &Exposure];
+    let path = scratch(name);
+    let sidecar = sidecar::path_for(&path);
+    let mut driven = Driven::new(TOOLS);
+    driven.open(&path);
+    let mut events = driven.run([on_picker("temperature", "spot", true)]);
+    events.extend(driven.picked());
+    assert!(failures(&events).is_empty(), "{events:?}");
+    driven.run([picker(PickerCommand::Off)]);
+    driven.writes();
+    if reopen {
+        driven.open(&scratch(&format!("{name}-other")));
+        driven.writes();
+        let reopened = driven.open(&path);
+        let user = ControlValue::Choice(2);
+        assert_eq!(
+            control(values(&reopened), "temperature", "preset").value,
+            user
+        );
+    }
+
+    // Another program's step a minute on: red at 2.5 and as shot.
+    let open = driven.engine.open.as_ref().unwrap();
+    let mut theirs = open.history.log().clone();
+    let mut clocks = open.history.clocks().to_vec();
+    let last = theirs.steps().last().unwrap().clock.when;
+    let clock = Clock::at(last + 60_000, None, "00000000".parse().unwrap());
+    let fold = theirs.fold();
+    let mut newer = fold.clone();
+    let image = testing::image();
+    let red = ControlValue::Number(2.5);
+    newer
+        .set_control(&WhiteBalance, "red", red.clone(), &image)
+        .unwrap();
+    let as_shot = ControlValue::Choice(0);
+    (newer.set_control(&WhiteBalance, "preset", as_shot.clone(), &image)).unwrap();
+    theirs.add_change(
+        Change::between(&fold, &newer, &[]),
+        StepSource::You,
+        None,
+        clock,
+    );
+    clocks.push(clock);
+    let file = sidecar::Edits::new("");
+    sidecar::write_log(
+        &sidecar,
+        &file,
+        &theirs,
+        &clocks,
+        (OPERATIONS, TOOLS),
+        "cli",
+    )
+    .unwrap();
+
+    // The session's next change, of Exposure, finds it and takes it in.
+    let events = driven.run([Command::SetControl {
+        tool: "exposure".to_owned(),
+        control: "exposure".to_owned(),
+        value: ControlValue::Number(0.5),
+        done: true,
+    }]);
+    assert!(failures(&events).is_empty(), "{events:?}");
+    driven.writes();
+    let taken = driven.engine.newer_file(false);
+    assert!(failures(&taken).is_empty(), "{taken:?}");
+    driven.writes();
+    let shown = values(&taken);
+    assert_eq!(control(shown, "temperature", "red").value, red);
+    assert_eq!(control(shown, "temperature", "preset").value, as_shot);
+    assert_eq!(number(shown, "exposure", "exposure"), 0.5);
+    let read = sidecar::read(&sidecar, OPERATIONS, TOOLS, &[]).unwrap();
+    let saved = read.edit.tool("temperature").unwrap();
+    assert_eq!(
+        (saved.get("red"), saved.get("preset")),
+        (Some(&red), Some(&as_shot))
+    );
+    remove(&path);
+}

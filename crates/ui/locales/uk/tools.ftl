@@ -372,6 +372,9 @@ tool-temperature-control-blue-promise = На що множаться сині ф
 tool-temperature-control-various-label = Смарагдовий
 tool-temperature-control-various-full = Коефіцієнт смарагдового
 tool-temperature-control-various-promise = На що множаться смарагдові фотосайти чотириколірного сенсора raw.
+tool-temperature-picker-spot-label = З області зображення
+tool-temperature-picker-spot-full = Баланс білого з області зображення
+tool-temperature-picker-spot-promise = Встановити баланс білого на виявлений з області зображення
 
 ## Орієнтація (docs/tools/orientation.md)
 

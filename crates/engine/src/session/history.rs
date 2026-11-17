@@ -84,10 +84,18 @@ use crate::history::{
 /// The open photo's log, its undo records and what its next step is measured from.
 pub(super) struct PhotoHistory {
     log: Log,
-    /// The edit as the log's last step left it, or as it was read: what the next step's
-    /// entries are measured from, so a change not yet a step, a `Set` or a gesture under
-    /// way, joins the next.
+    /// The log's fold: the edit as the log's last step left it, or as it was read, what
+    /// the next step's entries are measured from, so a change not yet a step, a `Set` or a
+    /// gesture under way, joins the next.
     stepped: Edit,
+    /// What the session makes of a fold as it reads one ([`Reader`]): the tools a change
+    /// did not write are measured from the fold as read, so that a clamp or a redraw is
+    /// saved only with its own tool's next step, never a step of its own. `None`, the fold
+    /// as it is, for a history no photo's session reads.
+    reader: Option<Reader>,
+    /// [`Self::stepped`] as the reader reads it, kept as `stepped` changes
+    /// ([`Self::set_stepped`]).
+    read: Edit,
     done: Vec<Record>,
     undone: Vec<Record>,
     machine: MachineId,
@@ -257,6 +265,8 @@ impl PhotoHistory {
         PhotoHistory {
             clock,
             stepped: log.fold(),
+            reader: None,
+            read: log.fold(),
             log,
             done: Vec::new(),
             undone: Vec::new(),
@@ -330,6 +340,66 @@ impl PhotoHistory {
     /// The edit as the log's last step left it, which the next step is measured from.
     pub(super) fn stepped(&self) -> &Edit {
         &self.stepped
+    }
+
+    /// Reads folds as the session does on the photo's `image` with `tools`, from now on.
+    pub(super) fn set_reader(
+        &mut self,
+        tools: &[&'static dyn ProcessingTool],
+        image: &ImageContext,
+    ) {
+        self.reader = Some(Reader {
+            tools: tools.to_vec(),
+            image: image.clone(),
+        });
+        self.set_stepped(self.stepped.clone());
+    }
+
+    /// `edit` as the session reads a fold ([`Reader`]), or as it is with no reader.
+    pub(super) fn read_of(&self, edit: &Edit) -> Edit {
+        self.reader
+            .as_ref()
+            .map_or_else(|| edit.clone(), |reader| reader.read(edit))
+    }
+
+    /// The log's fold becomes `stepped`, and its reading with it.
+    fn set_stepped(&mut self, stepped: Edit) {
+        self.read = match &self.reader {
+            Some(reader) => reader.read(&stepped),
+            None => stepped.clone(),
+        };
+        self.stepped = stepped;
+    }
+
+    /// What `edit`'s changes not yet a step are measured from: the log's fold, but for
+    /// each tool `edit` holds as the fold as read, its clamp or its redraw, the fold as
+    /// read. A tool's state counts as changed only where it differs from both, so neither
+    /// a clamp nor a redraw is ever a change of its own.
+    pub(super) fn baseline(&self, edit: &Edit) -> Edit {
+        let mut from = self.stepped.clone();
+        let state = |edit: &Edit, tool: &str| {
+            (edit.tools.get(tool).cloned()).filter(|values| !values.is_empty())
+        };
+        let tools: BTreeSet<&String> = (self.read.tools.keys())
+            .chain(self.stepped.tools.keys())
+            .collect();
+        for tool in tools {
+            let as_read = state(&self.read, tool);
+            if as_read != state(&self.stepped, tool) && as_read == state(edit, tool) {
+                match as_read {
+                    Some(values) => from.tools.insert(tool.clone(), values),
+                    None => from.tools.remove(tool),
+                };
+            }
+        }
+        from
+    }
+
+    /// Whether `edit` holds no change not yet a step: each tool's state is the log's fold's
+    /// or the fold's as read, its clamp and its redraw, which never become a step of their
+    /// own ([`Self::baseline`]).
+    pub(super) fn holds(&self, edit: &Edit) -> bool {
+        Entry::between(&self.baseline(edit), edit).is_empty()
     }
 
     /// What the sidecar would hold of this history once written: its steps, none for default
@@ -472,7 +542,9 @@ impl PhotoHistory {
         self.cleared = false;
         self.dropped.clear();
         self.changed = true;
-        (std::mem::replace(&mut self.stepped, self.log.fold()), kept)
+        let was = self.stepped.clone();
+        self.set_stepped(self.log.fold());
+        (was, kept)
     }
 
     /// Makes what changed since the last step a step of each tool it touched, of `source`
@@ -481,13 +553,15 @@ impl PhotoHistory {
     /// `history-reset`. They drop the steps after the end, which Undo brings back, and clear
     /// the undone records. A change of one tool that merges into the step before it makes
     /// none of its own and adds no record: that step keeps its id, takes the change's entry
-    /// and the latest clock.
+    /// and the latest clock. A tool the change did not write that the edit holds as the
+    /// fold as read, its clamp or its redraw, makes no step ([`Self::measured_from`]), and
+    /// the fold keeps it as it was, so it is saved with that tool's own next step.
     pub(super) fn complete(&mut self, edit: &Edit, source: StepSource, note: Option<Note>) -> bool {
         let written = self.written.take();
         let wrote = written
             .as_ref()
             .map_or(&[][..], |written| &written.wrote[..]);
-        let mut changes = Change::between(&self.stepped, edit, wrote);
+        let mut changes = Change::between(&self.measured_from(edit, wrote), edit, wrote);
         // A Reset or a tool's reset with the end among the default steps moves no value,
         // but applies the tools not applied: a step of what it reset.
         if changes.is_empty() && edit.unapplied.is_empty() && !self.stepped.unapplied.is_empty() {
@@ -496,6 +570,12 @@ impl PhotoHistory {
         if changes.is_empty() {
             return false;
         }
+        let touched: BTreeSet<String> = (changes.iter().flat_map(Change::entries))
+            .filter_map(|entry| match entry {
+                Entry::Tool { tool, .. } => Some(tool.clone()),
+                Entry::Operation { .. } => None,
+            })
+            .collect();
         let clock = Clock::now(self.clock.as_ref(), self.machine);
         // Of one target, source You or Auto, no note: what may merge, or be merged into.
         let target = written.as_ref().and_then(|written| {
@@ -537,17 +617,47 @@ impl PhotoHistory {
         }
         self.clock = Some(clock);
         advance(&mut self.clocks, clock);
-        self.stepped = edit.clone();
-        self.stepped.unapplied = self.log.unapplied(self.log.end());
+        // The fold the steps leave: a clamp or a redraw of a tool they did not touch is
+        // still to come.
+        let mut stepped = edit.clone();
+        stepped.unapplied = self.log.unapplied(self.log.end());
+        for tool in (self.stepped.tools.keys()).chain(edit.tools.keys()) {
+            if !touched.contains(tool) {
+                match self.stepped.tools.get(tool) {
+                    Some(values) => stepped.tools.insert(tool.clone(), values.clone()),
+                    None => stepped.tools.remove(tool),
+                };
+            }
+        }
+        self.set_stepped(stepped);
         self.changed = true;
         true
+    }
+
+    /// What a change to `edit` that wrote `wrote` is measured from: the log's fold, but
+    /// for a tool it did not write that `edit` holds as the fold as read, its clamp or its
+    /// redraw, which is then no step of that tool's. After a Reset, the fold.
+    fn measured_from(&self, edit: &Edit, wrote: &[Wrote]) -> Edit {
+        if wrote.contains(&Wrote::All) {
+            return self.stepped.clone();
+        }
+        let mut from = self.baseline(edit);
+        for wrote in wrote {
+            if let Wrote::Tool(tool) = wrote {
+                match self.stepped.tools.get(tool) {
+                    Some(values) => from.tools.insert(tool.clone(), values.clone()),
+                    None => from.tools.remove(tool),
+                };
+            }
+        }
+        from
     }
 
     /// The tools not applied in `edit`, the edit as it stands: those the last step left
     /// unapplied while its values are the last step's, and none once they move away, as a
     /// change keeps the default steps after the end and applies them ([`Log::add`]).
     pub(super) fn unapplied(&self, edit: &Edit) -> BTreeSet<String> {
-        if Entry::between(&self.stepped, edit).is_empty() {
+        if self.holds(edit) {
             self.stepped.unapplied.clone()
         } else {
             BTreeSet::new()
@@ -582,7 +692,7 @@ impl PhotoHistory {
     /// after a cancelled gesture.
     pub(super) fn interrupted(&mut self, edit: &Edit) {
         self.merge = None;
-        if Entry::between(&self.stepped, edit).is_empty() {
+        if self.holds(edit) {
             self.written = None;
         }
     }
@@ -812,7 +922,7 @@ impl PhotoHistory {
     fn moved_at(&mut self, clock: Clock) -> Edit {
         self.clock = Some(clock);
         advance(&mut self.clocks, clock);
-        self.stepped = self.log.fold();
+        self.set_stepped(self.log.fold());
         self.merge = None;
         self.changed = true;
         self.stepped.clone()
@@ -1194,11 +1304,7 @@ impl Engine {
     /// source and note of the change that began the gesture under way, else of source You
     /// with no note.
     pub(super) fn step_pending(&mut self) {
-        if self
-            .open
-            .as_ref()
-            .is_some_and(|open| clamp_only(open, &self.tools))
-        {
+        if self.open.as_ref().is_some_and(as_read_only) {
             return;
         }
         let gesture = (self.open.as_ref()).and_then(|open| open.gesture.as_ref());
@@ -1260,7 +1366,7 @@ impl Engine {
         let Some(open) = &mut self.open else {
             return Ok(Effect::default());
         };
-        let edit = pending(open, &self.tools);
+        let edit = pending(open);
         let moved = if redo {
             open.history.redo(&edit)
         } else {
@@ -1275,7 +1381,7 @@ impl Engine {
         let Some(open) = &mut self.open else {
             return Ok(Effect::default());
         };
-        let edit = pending(open, &self.tools);
+        let edit = pending(open);
         let moved =
             (open.history.go_to(&edit, step)).map_err(|step| SessionError::UnknownStep { step })?;
         Ok(moved_to(open, moved, &self.tools))
@@ -1300,7 +1406,7 @@ impl Engine {
             *open.photo.image = open.image.clone();
             return Ok(moved_to(open, Some(afresh), &self.tools));
         }
-        let edit = pending(open, &self.tools);
+        let edit = pending(open);
         let moved = match what {
             Rewrite::Compress => open.history.compress(&edit, &defaults),
             Rewrite::Truncate => open.history.truncate(&edit, &defaults),
@@ -1317,19 +1423,48 @@ impl Engine {
     }
 }
 
-/// Whether the only change of `open`'s edit not yet a step is the clamp a move of the end or
-/// the photo's open made of the log's fold, which never becomes a step of its own: else an
-/// Undo would take back that clamp's step and land where it began, never past it.
-pub(super) fn clamp_only(open: &Open, tools: &[&dyn ProcessingTool]) -> bool {
-    let mut clamped = open.history.stepped().clone();
-    clamped.clamp_read(tools, &open.image);
-    clamped == open.edit
+/// Whether `open`'s edit holds no change not yet a step but what a move of the end or the
+/// photo's open made of the log's fold, the clamp and the tools redrawn ([`as_read`]),
+/// which never becomes a step of its own: else an Undo would take back that step and land
+/// where it began, never past it. Tool by tool: each tool's state is the fold's, as right
+/// after a step, or the fold's as read ([`PhotoHistory::holds`]).
+pub(super) fn as_read_only(open: &Open) -> bool {
+    open.history.holds(&open.edit)
+}
+
+/// What the session makes of a log's fold as it reads one, as [`as_read`] does but telling
+/// nothing: the photo's tools and image context, which [`PhotoHistory`] measures a change
+/// of the tools it did not write from.
+pub(super) struct Reader {
+    tools: Vec<&'static dyn ProcessingTool>,
+    image: ImageContext,
+}
+
+impl Reader {
+    fn read(&self, edit: &Edit) -> Edit {
+        let mut read = edit.clone();
+        read.clamp_read(&self.tools, &self.image);
+        read.redraw(&self.tools, &self.image);
+        read
+    }
+}
+
+/// `edit` as the session reads a log's fold, as a photo opens and after a move of the
+/// history's end: held to the ranges its tools' values give on `image` (decisions 21 and
+/// 30), each clamp warned of, then its tools redrawn as darktable's `gui_update` redraws
+/// its modules ([`Edit::redraw`]); a change not yet a step, saved with its own tool's next
+/// step ([`PhotoHistory::complete`]).
+pub(super) fn as_read(edit: &mut Edit, tools: &[&dyn ProcessingTool], image: &ImageContext) {
+    for warning in edit.clamp_read(tools, image) {
+        tracing::warn!(target: "pipe", "{warning}");
+    }
+    edit.redraw(tools, image);
 }
 
 /// The edit a move of the end makes a step of first, as a change not yet a step: `open`'s,
-/// or the log's fold where its only change is a clamp ([`clamp_only`]).
-fn pending(open: &Open, tools: &[&dyn ProcessingTool]) -> Edit {
-    if clamp_only(open, tools) {
+/// or the log's fold where its only change is what reading it made ([`as_read_only`]).
+fn pending(open: &Open) -> Edit {
+    if as_read_only(open) {
         open.history.stepped().clone()
     } else {
         open.edit.clone()
@@ -1348,11 +1483,9 @@ fn moved_to(open: &mut Open, moved: Option<Edit>, tools: &[&dyn ProcessingTool])
             ..Effect::default()
         };
     };
-    // Held to the ranges its tools' values give on the photo, as an opened edit is: the
-    // clamp is a change not yet a step.
-    for warning in edit.clamp_read(tools, &open.image) {
-        tracing::warn!(target: "pipe", "{warning}");
-    }
+    // Held to the ranges its tools' values give on the photo and redrawn, as an opened edit
+    // is: a change not yet a step.
+    as_read(&mut edit, tools, &open.image);
     let changed = edit != open.edit;
     open.edit = edit;
     open.held.prune(&open.edit);

@@ -33,8 +33,9 @@
 //! some stored controls ([`View`]), shown by a [`Row::Slider`] that names it.
 //!
 //! A tool's colour pickers (decision 79) are declared apart from the rows too
-//! ([`Picker`]), and each shown by one row: a slider's quad ([`Quad::Picker`]) or a row of
-//! picker buttons ([`Row::Pickers`]).
+//! ([`Picker`]), and each shown in one place: a slider's quad ([`Quad::Picker`]), a row of
+//! picker buttons ([`Row::Pickers`]), a reference row ([`Row::Reference`]), or an option
+//! of a preset row that turns it on ([`PresetRow::pickers`]).
 
 use std::collections::BTreeSet;
 
@@ -166,7 +167,9 @@ pub struct ProcessingDefinition {
     /// stored under them.
     pub views: &'static [View],
     /// Its colour pickers (decision 79), each darktable's `dt_color_picker_new` call, shown
-    /// by a slider's quad ([`Quad::Picker`]) or a row of picker buttons ([`Row::Pickers`]).
+    /// by a slider's quad ([`Quad::Picker`]), a row of picker buttons ([`Row::Pickers`]), a
+    /// reference row ([`Row::Reference`]) or a preset row's option that turns it on
+    /// ([`PresetRow::pickers`]), as White balance's Settings' from image area.
     /// Nothing is stored under them: the session measures the photo and the tool's
     /// [`crate::ProcessingTool::pick`] writes its controls.
     pub pickers: &'static [Picker],
@@ -179,7 +182,9 @@ pub struct ProcessingDefinition {
 
 /// One of the tool's colour pickers (decision 79; `docs/pickers.md`, Declaring
 /// pickers): darktable's `dt_color_picker_new` call, its flags and colour space, and what
-/// its pick may write and read.
+/// its pick may write and read. It is in exactly one place: a slider's quad, a row of
+/// pickers, a reference row, or a preset row's option that turns it on
+/// ([`PresetRow::pickers`]).
 ///
 /// Its words come with its button and the central bar (`docs/pickers.md`, The picker
 /// button, On the photo), in the controls' and actions' scheme:
@@ -411,6 +416,13 @@ pub struct PresetRow {
     pub options: &'static [&'static str],
     /// The controls every option writes.
     pub controls: &'static [&'static str],
+    /// The options that turn a picker of [`ProcessingDefinition::pickers`] on instead of writing
+    /// values, each an option of the row and a picker's id, as White balance's Settings'
+    /// from image area turns its `spot` picker on, as darktable's `_preset_tune_callback`
+    /// presses the picker's button. Such an option is its picker's one place where the
+    /// row is drawn, and its pick writes the values; [`crate::ProcessingTool::preset`] gives `None`
+    /// for it, so it is never applied.
+    pub pickers: &'static [(&'static str, &'static str)],
 }
 
 /// A lossless view of some of the tool's controls, every one a number (decision 2):
@@ -575,7 +587,8 @@ pub struct Tab {
 /// row per mode where darktable labels it differently by mode ([`Slider::label`]) or shows
 /// it under conditions one [`Row::When`] cannot join, as highlight reconstruction's Noise
 /// level, or only in the rows of the views covering it; each coordinate is in one row at
-/// most, and each picker in exactly one.
+/// most, and each picker in exactly one place: one row, or a drawn preset row's option
+/// that turns it on ([`PresetRow::pickers`]).
 #[derive(Debug, Clone)]
 pub enum Row {
     Slider(Slider),
@@ -1232,8 +1245,14 @@ pub enum DefinitionError {
     UnknownPicker(&'static str),
     #[error("a row of pickers holds none")]
     NoPickers,
-    #[error("the picker {picker} is in {rows} rows; each is in exactly one")]
+    #[error(
+        "the picker {picker} is in {rows} places, rows and preset options; each is in exactly one"
+    )]
     PickerRows { picker: &'static str, rows: usize },
+    #[error(
+        "the preset row {0}: an option turning a picker on is none of its options, is named twice, or names a picker the tool lacks"
+    )]
+    PresetPickers(&'static str),
     #[error("a context menu item names {0}, none of the tool's actions")]
     UnknownMenuAction(&'static str),
     #[error("the context menu item {0} is listed twice in its place")]
@@ -1379,8 +1398,9 @@ impl ProcessingDefinition {
     /// kind as a control's, and each action once. Control, preset row and coordinate ids
     /// are unique together. Each picker has an id of its own, writes controls of the
     /// tool and reads its settings, each once, its words following a choice setting of the
-    /// tool if any, and is in exactly one row, a slider's quad or a row of pickers, which
-    /// holds at least one. Rows following a setting follow a choice setting of the tool,
+    /// tool if any, and is in exactly one place: a slider's quad, a row of pickers, which
+    /// holds at least one, a reference row, or a drawn preset row's option that turns it
+    /// on, an option of the row named once. Rows following a setting follow a choice setting of the tool,
     /// shown wherever they are, for options it has, and hold no control and not it. A
     /// reference row's picker writes no control, and its two settings are the tool's,
     /// each once. A last
@@ -1771,12 +1791,25 @@ impl ProcessingDefinition {
                 return Err(DefinitionError::DuplicatePicker(picker.id));
             }
             self.check_picker(picker, &settings)?;
-            // Counted where they are named, so a row naming one twice shows it twice.
-            let rows = placed
+            // Counted where they are named, so a row naming one twice shows it twice; a
+            // drawn preset row's option that turns it on is a place too.
+            let in_rows = placed
                 .iter()
                 .flat_map(|placed| placed.row.pickers())
                 .filter(|&&id| id == picker.id)
                 .count();
+            let by_options = self
+                .preset_rows
+                .iter()
+                .filter(|preset| {
+                    placed.iter().any(|placed| {
+                        matches!(placed.row, Row::Preset { preset: id, .. } if *id == preset.id)
+                    })
+                })
+                .flat_map(|preset| preset.pickers)
+                .filter(|(_, id)| *id == picker.id)
+                .count();
+            let rows = in_rows + by_options;
             if rows != 1 {
                 return Err(DefinitionError::PickerRows {
                     picker: picker.id,
@@ -1861,6 +1894,16 @@ impl ProcessingDefinition {
             && preset.controls.iter().all(|id| self.control(id).is_some());
         if !controls_hold {
             return Err(DefinitionError::PresetControls(preset.id));
+        }
+        // An option that turns a picker on is one of the row's, once, and names a picker
+        // of the tool.
+        let turning: BTreeSet<_> = preset.pickers.iter().map(|(option, _)| option).collect();
+        let pickers_hold = turning.len() == preset.pickers.len()
+            && preset.pickers.iter().all(|(option, picker)| {
+                preset.options.contains(option) && self.picker(picker).is_some()
+            });
+        if !pickers_hold {
+            return Err(DefinitionError::PresetPickers(preset.id));
         }
         Ok(())
     }
@@ -3290,6 +3333,56 @@ mod tests {
         );
     }
 
+    /// A preset row's option that turns a picker on, as White balance's Settings' from
+    /// image area turns `spot` on, is that picker's one place while the row is drawn: an
+    /// option of the row, named once, and a picker of the tool.
+    #[test]
+    fn a_preset_row_s_option_is_a_picker_s_one_place() {
+        const LOOK: Row = Row::Preset {
+            preset: "look",
+            style: ChoiceStyle::List,
+        };
+        const CONTRAST: Row = Row::Slider(Slider::new("contrast"));
+        const QUAD: Row = Row::Slider(Slider::new("contrast").quad(Quad::Picker("level")));
+        let with = |turning: &[(&'static str, &'static str)], rows: &[Row]| {
+            let mut all = vec![Row::Setting(CHART)];
+            all.extend(rows.iter().cloned());
+            ProcessingDefinition {
+                pickers: &[LEVEL],
+                preset_rows: Box::leak(Box::new([PresetRow {
+                    id: "look",
+                    options: &["soft", "spot"],
+                    controls: &["amount"],
+                    pickers: Box::leak(turning.into()),
+                }])),
+                ..page(with_mode(&all))
+            }
+            .check()
+        };
+        assert_eq!(with(&[("spot", "level")], &[LOOK, CONTRAST]), Ok(()));
+        let rows = |rows| {
+            Err(DefinitionError::PickerRows {
+                picker: "level",
+                rows,
+            })
+        };
+        // Placed both by an option and in a row, or by an option of a row not drawn.
+        assert_eq!(with(&[("spot", "level")], &[LOOK, QUAD]), rows(2));
+        assert_eq!(with(&[("spot", "level")], &[CONTRAST]), rows(0));
+        // The option is the row's, once, and the picker the tool's.
+        for turning in [
+            &[("sharp", "level")][..],
+            &[("spot", "level"), ("spot", "level")],
+            &[("spot", "missing")],
+        ] {
+            assert_eq!(
+                with(turning, &[LOOK, QUAD]),
+                Err(DefinitionError::PresetPickers("look")),
+                "{turning:?}"
+            );
+        }
+    }
+
     #[test]
     fn a_picker_writes_the_tool_s_controls_and_reads_its_settings_each_once() {
         let quad = |picker| Row::Slider(Slider::new("contrast").quad(Quad::Picker(picker)));
@@ -3560,6 +3653,7 @@ mod tests {
                 id: "look",
                 options: &["soft"],
                 controls: &["amount"],
+                pickers: &[],
             }],
             ..PAGE
         };
@@ -3592,6 +3686,7 @@ mod tests {
                 id: "look",
                 options,
                 controls,
+                pickers: &[],
             };
             with(Box::leak(Box::new([preset])), &[LOOK, AMOUNT])
         };
@@ -3604,6 +3699,7 @@ mod tests {
             id: "look",
             options: &["soft"],
             controls: &["amount"],
+            pickers: &[],
         }];
         assert_eq!(with(presets, &[AMOUNT]), Ok(()));
         // A control in no row of its own shows through a preset row that writes it, once
@@ -3656,6 +3752,7 @@ mod tests {
             id,
             options: &["soft"],
             controls: &["amount"],
+            pickers: &[],
         };
         let twice = Box::leak(Box::new([named("look"), named("look")]));
         assert_eq!(
@@ -3792,6 +3889,7 @@ mod tests {
                     id: "look",
                     options: &["soft"],
                     controls: &["amount"],
+                    pickers: &[],
                 }],
                 ..PAGE
             }
