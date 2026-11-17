@@ -4071,7 +4071,10 @@ impl App {
                 _ => None,
             };
             self.export.retire(&self.export_previews, photo);
-            let (actions, run, export) = self.photos_tab(ui);
+            let (actions, run, changes, export) = self.photos_tab(ui);
+            for change in changes {
+                self.change(change, ui.ctx());
+            }
             if revealed {
                 self.shell.reveal = None;
             }
@@ -4144,11 +4147,17 @@ impl App {
 
     /// The Photos tab's body: its Browse section, as the mirror's folder and the recent
     /// folders have it, then the Export tool, under the tab bar. Returns what Browse asked
-    /// for, the registry actions its header ran, and what the Export tool asked for.
+    /// for, the registry actions its header ran, what the page drawer's rows of its page
+    /// asked for, and what the Export tool asked for.
     fn photos_tab(
         &mut self,
         ui: &mut egui::Ui,
-    ) -> (Vec<library::Action>, Vec<ActionId>, export::Drawn) {
+    ) -> (
+        Vec<library::Action>,
+        Vec<ActionId>,
+        Vec<Change>,
+        export::Drawn,
+    ) {
         let recent = self.shell.recent_folders();
         let folder = &self.mirror.folder.folder;
         let keys = self.shell.open_keys(ui.ctx());
@@ -6444,15 +6453,21 @@ struct ExportShown {
 
 /// The Photos tab's sections under its tab bar: Browse, through its `UtilityTool`, its
 /// header from its declaration with its own ⋯ items, then the Export tool, last
-/// (`TAB_TOOLS`). Returns what Browse, its header's registry actions and the tool asked for.
+/// (`TAB_TOOLS`). Returns what Browse, its header's registry actions, the page drawer's rows
+/// of Browse's page and the tool asked for.
 fn photos_body(
     ui: &mut egui::Ui,
     cx: &mut utility::Context<'_>,
     browse: &mut library::Browse<'_>,
     export: &mut export::Export,
     shown: ExportShown,
-) -> (Vec<library::Action>, Vec<ActionId>, export::Drawn) {
-    let (mut actions, mut run) = (Vec::new(), Vec::new());
+) -> (
+    Vec<library::Action>,
+    Vec<ActionId>,
+    Vec<Change>,
+    export::Drawn,
+) {
+    let (mut actions, mut run, mut changes) = (Vec::new(), Vec::new(), Vec::new());
     let mut drawn = export::Drawn::default();
     PanelBody::new().show(ui, |ui| {
         // The active photo's open, so a ⋯ choice made before another photo opened is
@@ -6469,6 +6484,7 @@ fn photos_body(
             }
         }
         actions.extend(section.actions);
+        changes = section.changes;
         let tool = ui.push_id(export::ID, |ui| export.show(ui, &shown.shown));
         // The section Export… asked for, its header at the top.
         if shown.reveal {
@@ -6476,7 +6492,7 @@ fn photos_body(
         }
         drawn = tool.inner;
     });
-    (actions, run, drawn)
+    (actions, run, changes, drawn)
 }
 
 /// The side panel's sections under its tab bar: Scopes pinned over the band where the
@@ -6485,8 +6501,9 @@ fn photos_body(
 /// their definitions with the mirror's values; each section open as the shell keeps it,
 /// peeking while `peek` holds, its header's buttons and ⋯ enabled as `state` says, its
 /// reset disabled unless `editable`, and its colour pickers as `pickers` says; the section
-/// a History line opened scrolled to. Returns what Scopes, the tools and Scopes' header
-/// asked for beyond its toggle.
+/// a History line opened scrolled to. Returns what Scopes asked for, what the page
+/// drawer's rows of Scopes' page and the tools asked for, and what Scopes' header asked
+/// for beyond its toggle.
 #[expect(
     clippy::too_many_arguments,
     reason = "the app's own state for the side panel, each part apart"
@@ -6504,6 +6521,8 @@ fn panel_body(
 ) -> (Vec<scopes::Change>, Vec<Change>, Vec<tools::Pressed>) {
     let shown = TAB_TOOLS.get(shell.panel_tab).copied().unwrap_or_default();
     let (mut pinned, mut changes, mut pressed) = (Vec::new(), Vec::new(), Vec::new());
+    // What the page drawer's rows of Scopes' page asked for, before the tools'.
+    let mut scopes_changes = Vec::new();
     let mirror = cx.mirror;
     let (tools, values) = (mirror.tools(), &mirror.values);
     let ctx = ui.ctx().clone();
@@ -6515,6 +6534,7 @@ fn panel_body(
         body = body.pinned(|ui| {
             let drawn = utility::section(ui, &mut scopes, cx, head, false);
             pinned = drawn.actions;
+            scopes_changes = drawn.changes;
             for header in drawn.pressed {
                 match header {
                     tools::Pressed::Toggle => pinned.push(scopes::Change::Toggle),
@@ -6550,7 +6570,8 @@ fn panel_body(
             }
         }
     });
-    (pinned, changes, pressed)
+    scopes_changes.extend(changes);
+    (pinned, scopes_changes, pressed)
 }
 
 /// Prepares `ctx` for the shell before its first frame: its theme, its language and
@@ -12415,7 +12436,7 @@ mod tests {
                                 commands: &mut commands,
                             };
                             let export = &mut bench.export;
-                            let (_, _, drawn) =
+                            let (_, _, _, drawn) =
                                 photos_body(ui, &mut cx, &mut browse, export, shown);
                             if revealed {
                                 bench.shell.reveal = None;

@@ -26,8 +26,13 @@
 //! - **The shell's part,** its section open or closed and the peek keys, is the header's
 //!   ([`crate::tools::Head`]), drawn from the declaration by [`crate::tools::header`] as
 //!   every tool's is, so neither `body` nor the context holds it.
-//! - **Until step 93.4** each utility's page is one custom row, drawn whole by today's code;
-//!   [`page`] draws the custom rows, and a test holds every page to them.
+//! - **One page drawer** ([`crate::tools::page`]) draws a utility's page as it draws a
+//!   processing tool's ([`rows`]): labels, groups, settings and actions itself, and each
+//!   custom row by the utility's `body`. `UtilityDefinition::check` refuses every row that
+//!   edits, so the drawer leaves a utility nothing else. History's page is drawn apart by
+//!   [`page`] until it joins.
+
+use std::cell::RefCell;
 
 use apertrust_engine::session::Command;
 use apertrust_tools::utility::UtilityDefinition;
@@ -38,8 +43,8 @@ use eframe::egui;
 
 use crate::actions::{self, State};
 use crate::mirror::Mirror;
-use crate::settings::Settings;
-use crate::tools::{self, Head, Pressed};
+use crate::settings::{Settings, ToolSettings};
+use crate::tools::{self, Change, Head, Pressed, Rows};
 
 /// What every utility is given each frame (decision 93): what the session reported, the
 /// settings, the words, and the commands the frame sends the session once the side panel is
@@ -73,15 +78,17 @@ pub trait UtilityTool {
 }
 
 /// What a utility's section did this frame: what its header asked the app for, its own
-/// ↺ carried out, and what its page asked for.
+/// ↺ carried out; what the page drawer's rows asked for, a collapsible group opened or
+/// closed; and what its custom rows asked for.
 #[derive(Debug)]
 pub struct Drawn<A> {
     pub pressed: Vec<Pressed>,
+    pub changes: Vec<Change>,
     pub actions: Vec<A>,
 }
 
 /// Draws `tool`'s section, its header from its declaration ([`tools::header`]) as `head`
-/// has it, ↺ drawn disabled unless `resettable`, and, while open, its page ([`page`]).
+/// has it, ↺ drawn disabled unless `resettable`, and, while open, its page ([`rows`]).
 /// Its own ↺ is carried out here ([`UtilityTool::reset`]).
 pub fn section<T: UtilityTool>(
     ui: &mut egui::Ui,
@@ -94,15 +101,80 @@ pub fn section<T: UtilityTool>(
     let (title, reset) = titles(cx.words, definition);
     let about = about(cx.words, definition);
     let photo = head.photo;
-    let mut actions = Vec::new();
+    let (mut changes, mut actions) = (Vec::new(), Vec::new());
     let section = tools::header(definition, &title, &reset, resettable, about, head);
-    let out = section.show(ui, |ui| actions = page(ui, tool, cx));
+    let out = section.show(ui, |ui| (changes, actions) = rows(ui, tool, cx));
     let mut pressed = tools::pressed(ui, definition, &out, photo);
     if pressed.contains(&Pressed::Reset) {
         tool.reset(cx);
     }
     pressed.retain(|pressed| *pressed != Pressed::Reset);
-    Drawn { pressed, actions }
+    Drawn {
+        pressed,
+        changes,
+        actions,
+    }
+}
+
+/// Draws `tool`'s page with the one page drawer every tool's is drawn with
+/// ([`tools::page`]): its rows as its declaration lists them, each custom row by its
+/// [`UtilityTool::body`]. Returns what the drawer's rows and the custom rows asked for.
+pub fn rows<T: UtilityTool>(
+    ui: &mut egui::Ui,
+    tool: &mut T,
+    cx: &mut Context<'_>,
+) -> (Vec<Change>, Vec<T::Action>) {
+    let (words, settings) = (cx.words, cx.settings);
+    let definition = &tool.definition().tool;
+    let page = Page {
+        words,
+        settings,
+        definition,
+        drawn: RefCell::new((tool, cx, Vec::new())),
+    };
+    let mut changes = Vec::new();
+    tools::page(ui, &page, 0, &mut changes);
+    let (_, _, actions) = page.drawn.into_inner();
+    (changes, actions)
+}
+
+/// A utility's page as the one page drawer draws it (decision 93): its words, its
+/// declaration, its collapsible groups open as the settings keep them, and the utility,
+/// whose body draws its custom rows, with what they asked for.
+struct Page<'t, 'c, T: UtilityTool> {
+    words: &'c Translator,
+    settings: &'c Settings,
+    definition: &'static ToolDefinition,
+    drawn: RefCell<(&'t mut T, &'t mut Context<'c>, Vec<T::Action>)>,
+}
+
+impl<T: UtilityTool> Rows for Page<'_, '_, T> {
+    fn words(&self) -> &Translator {
+        self.words
+    }
+
+    fn definition(&self) -> &ToolDefinition {
+        self.definition
+    }
+
+    fn group_open(&self, group: &str) -> bool {
+        let groups = self.settings.edit.groups.get(self.definition.id);
+        let kept = groups.and_then(|groups| groups.get(group));
+        kept.copied().unwrap_or(tools::GROUP_OPEN)
+    }
+
+    fn settings(&self) -> &ToolSettings {
+        &self.settings.tool_settings
+    }
+
+    /// A custom row, by the utility's body; `UtilityDefinition::check` refuses every other
+    /// row the page drawer leaves to a tool's kind, each of them one that edits.
+    fn own(&self, ui: &mut egui::Ui, row: &Row, _changes: &mut Vec<Change>) {
+        if let Row::Custom { widget, .. } = row {
+            let (tool, cx, actions) = &mut *self.drawn.borrow_mut();
+            actions.extend(tool.body(*widget, ui, cx));
+        }
+    }
 }
 
 /// Draws the header of the utility `definition` alone, as `head` has it, for a section
@@ -173,21 +245,21 @@ fn titles(words: &Translator, definition: &ToolDefinition) -> (String, String) {
 #[cfg(test)]
 mod tests {
     use apertrust_tools::utility::UTILITIES;
-    use apertrust_tools::{Reset, Row, TOOLS};
+    use apertrust_tools::{Reset, TOOLS, Tab};
+    use egui_kittest::Harness;
+    use egui_kittest::kittest::Queryable;
 
-    /// Until step 93.4 every utility's page is custom rows alone, each one of its own
-    /// widgets, which its body draws; every header follows its declaration: a processing
-    /// tool's ↺ its own, with presets, a utility's no presets and ↺ a registry action's,
-    /// its own or none, as the header draws them.
+    use super::*;
+
+    /// Every utility's page holds no row that edits, which leaves the page drawer nothing
+    /// of a processing tool's to draw for it; every header follows its declaration: a
+    /// processing tool's ↺ its own, with presets, a utility's no presets and ↺ a registry
+    /// action's, its own or none, as the header draws them.
     #[test]
-    fn every_page_is_custom_rows_and_every_header_one_the_header_draws() {
+    fn every_page_edits_nothing_and_every_header_is_one_the_header_draws() {
         for utility in UTILITIES {
             let tool = &utility.tool;
-            let tab = tool.tabs.iter().flat_map(|tab| tab.rows);
-            for row in tool.before.iter().chain(tab).chain(tool.after) {
-                assert!(matches!(row, Row::Custom { .. }), "{}: {row:?}", tool.id);
-            }
-            assert!(tool.tabs.len() <= 1 && tool.tabs.iter().all(|tab| tab.id.is_none()));
+            assert_eq!(utility.check(), Ok(()), "{}", tool.id);
             assert!(!tool.presets, "{}", tool.id);
             assert_ne!(tool.reset, Reset::Tool, "{}", tool.id);
             if let Reset::Action(id) = tool.reset {
@@ -203,5 +275,96 @@ mod tests {
                 tool.id
             );
         }
+    }
+
+    /// A utility whose page is a label, a custom row, then a collapsible group holding
+    /// another custom row.
+    static SAMPLE: UtilityDefinition = UtilityDefinition {
+        tool: ToolDefinition {
+            id: "sample",
+            tabs: &[Tab {
+                id: None,
+                rows: &[
+                    Row::Label { id: "first" },
+                    Row::Custom {
+                        widget: Widget::Scopes,
+                        controls: &[],
+                    },
+                    Row::Group {
+                        id: "more",
+                        rows: &[Row::Custom {
+                            widget: Widget::History,
+                            controls: &[],
+                        }],
+                    },
+                ],
+            }],
+            before: &[],
+            after: &[],
+            reset: Reset::None,
+            presets: false,
+            menus: &[],
+        },
+        measures: None,
+    };
+
+    /// Draws each custom row as a line naming its widget, and says it drew it.
+    struct Sample;
+
+    impl UtilityTool for Sample {
+        type Action = Widget;
+
+        fn definition(&self) -> &'static UtilityDefinition {
+            &SAMPLE
+        }
+
+        fn body(&mut self, widget: Widget, ui: &mut egui::Ui, _: &mut Context<'_>) -> Vec<Widget> {
+            ui.label(format!("{widget:?}"));
+            vec![widget]
+        }
+    }
+
+    /// The one page drawer draws a utility's rows in their order, its label and its group
+    /// itself, open as the settings keep it, and each custom row by its body.
+    #[test]
+    fn the_page_drawer_draws_a_utility_s_rows_and_its_custom_rows_by_its_body() {
+        struct Scene {
+            settings: Settings,
+            drawn: (Vec<Change>, Vec<Widget>),
+        }
+        let mut settings = Settings::default();
+        let open = [("more".to_owned(), true)].into_iter().collect();
+        settings.edit.groups.insert("sample".to_owned(), open);
+        let mut harness = Harness::builder()
+            .with_size(egui::vec2(320.0, 300.0))
+            .with_context_setup(|ctx| apertrust_ui::install(ctx, apertrust_ui::Theme::default()))
+            .build_ui_state(
+                |ui, scene: &mut Scene| {
+                    let mirror = crate::mirror::tests::mirror();
+                    let (words, mut commands) = (translator(ui.ctx()), Vec::new());
+                    let mut cx = Context {
+                        mirror: &mirror,
+                        settings: &scene.settings,
+                        words: &words,
+                        commands: &mut commands,
+                    };
+                    scene.drawn = rows(ui, &mut Sample, &mut cx);
+                },
+                Scene {
+                    settings,
+                    drawn: Default::default(),
+                },
+            );
+        harness.run();
+        let (changes, drawn) = &harness.state().drawn;
+        assert_eq!(drawn, &[Widget::Scopes, Widget::History]);
+        assert!(changes.is_empty());
+        let scopes = harness.get_by_label("Scopes").rect();
+        let history = harness.get_by_label("History").rect();
+        assert!(scopes.bottom() <= history.top());
+        // Closed as the settings keep it, the group hides its custom row.
+        harness.state_mut().settings.edit.groups.clear();
+        harness.run();
+        assert_eq!(harness.state().drawn.1, [Widget::Scopes]);
     }
 }

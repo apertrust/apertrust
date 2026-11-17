@@ -23,6 +23,7 @@
 use std::collections::BTreeSet;
 
 use crate::definition::{ControlKind, ProcessingDefinition, Row, SettingRow, Slider, Unit};
+use crate::utility::UtilityDefinition;
 
 /// The tool's title: `tool-<tool>-title`.
 pub fn title(tool: &str) -> String {
@@ -471,6 +472,40 @@ pub fn of(definition: &ProcessingDefinition) -> Vec<String> {
         ids.extend([facts.input, facts.process, facts.output].map(|fact| fact.message()));
     }
     // A control's rows in two modes may share their words.
+    let mut seen = BTreeSet::new();
+    ids.retain(|id| seen.insert(id.clone()));
+    ids
+}
+
+/// Every message a utility's rows imply, each once, as [`of`] lists a processing tool's:
+/// each group label's, each collapsible group's title, and each setting's words and
+/// options. Its custom rows' words are its widgets' own.
+pub fn of_utility(utility: &UtilityDefinition) -> Vec<String> {
+    fn rows(tool: &str, list: &[Row], ids: &mut Vec<String>) {
+        for row in list {
+            match row {
+                Row::Label { id } => ids.push(group(tool, id)),
+                Row::Group { id, .. } => ids.push(collapsible(tool, id)),
+                Row::Setting(SettingRow { id, kind, .. }) => {
+                    ids.extend(setting(tool, id));
+                    if let ControlKind::Choice { options, .. } = kind {
+                        ids.extend(options.iter().map(|o| setting_option(tool, id, o)));
+                    }
+                }
+                _ => {}
+            }
+            rows(tool, row.rows(), ids);
+        }
+    }
+    let definition = &utility.tool;
+    let mut ids = Vec::new();
+    let tabs = definition.tabs.iter().map(|tab| tab.rows);
+    for list in std::iter::once(definition.before)
+        .chain(tabs)
+        .chain(std::iter::once(definition.after))
+    {
+        rows(definition.id, list, &mut ids);
+    }
     let mut seen = BTreeSet::new();
     ids.retain(|id| seen.insert(id.clone()));
     ids

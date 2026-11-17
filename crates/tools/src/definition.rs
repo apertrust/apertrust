@@ -67,6 +67,61 @@ pub struct ToolDefinition {
     pub menus: &'static [MenuItem],
 }
 
+impl ToolDefinition {
+    /// Its setting row `id` ([`Row::Setting`]), wherever its page shows it: before its tabs,
+    /// on one of them or after them, in a group or among rows following a value.
+    pub fn setting(&self, id: &str) -> Option<&'static SettingRow> {
+        fn find(rows: &'static [Row], id: &str) -> Option<&'static SettingRow> {
+            rows.iter().find_map(|row| match row {
+                Row::Setting(found) if found.id == id => Some(found),
+                _ => find(row.rows(), id),
+            })
+        }
+        let tabs = self.tabs.iter().map(|tab| tab.rows);
+        std::iter::once(self.before)
+            .chain(tabs)
+            .chain(std::iter::once(self.after))
+            .find_map(|rows| find(rows, id))
+    }
+
+    /// Every row in the order the panel lists them, each before the rows inside it, with
+    /// where it shows: its tab, its group, its modes and the settings it follows. A lone
+    /// tab draws no tab strip, so its rows show beside those before and after it.
+    fn placed(&self) -> Vec<Placed<'static>> {
+        let mut placed = Vec::new();
+        let strip = self.tabs.len() > 1;
+        let tabs = self.tabs.iter().enumerate();
+        let all = std::iter::once((None, self.before))
+            .chain(tabs.map(|(i, tab)| (strip.then_some(i), tab.rows)))
+            .chain(std::iter::once((None, self.after)));
+        for (tab, rows) in all {
+            let at = Where {
+                tab,
+                ..Where::default()
+            };
+            place(rows, &at, &mut placed);
+        }
+        placed
+    }
+
+    /// The first setting that rows follow ([`Row::WhenSetting`]) but that is not sure to
+    /// show wherever they do, as two settings each among the rows the other hides; none
+    /// where every such setting shows. A setting the page lacks is no concern of this.
+    pub(crate) fn hidden_setting(&self) -> Option<&'static str> {
+        let placed = self.placed();
+        placed.iter().find_map(|Placed { row, at }| {
+            let Row::WhenSetting { setting, .. } = row else {
+                return None;
+            };
+            let its = placed.iter().find_map(|its| match its.row {
+                Row::Setting(found) if found.id == *setting => Some(&its.at),
+                _ => None,
+            })?;
+            (!its.shows_wherever(at)).then_some(*setting)
+        })
+    }
+}
+
 /// What a tool's header's ↺ does (decision 93).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Reset {
@@ -926,7 +981,7 @@ impl SettingRow {
 
     /// Whether the setting holds together: its id, and its kind as a control's; curve
     /// points are no setting darktable has.
-    fn check(&self) -> Result<(), DefinitionError> {
+    pub(crate) fn check(&self) -> Result<(), DefinitionError> {
         if !is_id(self.id) {
             return Err(DefinitionError::Id(self.id));
         }
@@ -985,10 +1040,27 @@ pub enum Widget {
     /// History's whole page, its steps: drawn by the app's History tool until its page is
     /// rows (decision 93, step 93.4).
     History,
-    /// Scopes' whole page, the graph with its buttons, until its page is rows.
+    /// Scopes' graph with its buttons (decision 93): which graph, the scale, the channels
+    /// and the clipping toggles are the graph's own state, kept in the app's settings.
     Scopes,
     /// Browse's whole page, its recents line and its Folders, until its page is rows.
     Browse,
+}
+
+impl Widget {
+    /// Whether it is a utility's own widget, drawn by its `UtilityTool::body`, which only a
+    /// utility's page shows; the others are a processing tool's, drawn over its controls
+    /// (decision 93).
+    pub fn is_utility(self) -> bool {
+        match self {
+            Widget::History | Widget::Scopes | Widget::Browse => true,
+            Widget::Curve
+            | Widget::ColourWheels
+            | Widget::Equalizer
+            | Widget::HueCurve
+            | Widget::Swatches => false,
+        }
+    }
 }
 
 /// A value a control cannot take.
@@ -1154,6 +1226,20 @@ pub enum DefinitionError {
         "the context menu item {0} comes before Reset: a tool's in EDIT take order 200 or more"
     )]
     MenuOrder(&'static str),
+    #[error(
+        "a utility's row edits, by {0}: a utility holds settings, labels, groups and custom rows naming no control"
+    )]
+    Edits(&'static str),
+    #[error("a custom row shows {0:?}, the other kind of tool's widget")]
+    Widget(Widget),
+    #[error(
+        "a utility's action row {0}: its rows name no action until they are bound to the registry"
+    )]
+    UtilityAction(&'static str),
+    #[error(
+        "a utility's ↺ is a registry action's, its own or none, and it has no presets until its setting rows have them"
+    )]
+    UtilityHeader,
 }
 
 /// snake_case ASCII: a lowercase letter, then lowercase letters, digits and single
@@ -1252,19 +1338,7 @@ impl ProcessingDefinition {
 
     /// Every row, as [`Self::rows`], with where it shows: its tab, its group, its modes.
     fn placed(&self) -> Vec<Placed<'_>> {
-        let mut placed = Vec::new();
-        let tabs = self.tool.tabs.iter().enumerate();
-        let all = std::iter::once((None, self.tool.before))
-            .chain(tabs.map(|(i, tab)| (Some(i), tab.rows)))
-            .chain(std::iter::once((None, self.tool.after)));
-        for (tab, rows) in all {
-            let at = Where {
-                tab,
-                ..Where::default()
-            };
-            place(rows, &at, &mut placed);
-        }
-        placed
+        self.tool.placed()
     }
 
     /// Whether the definition holds together: ids, ranges, options, tabs, groups that
@@ -1375,6 +1449,13 @@ impl ProcessingDefinition {
                 && rows.is_empty()
             {
                 return Err(DefinitionError::Empty(id));
+            }
+            // A utility's widget is drawn by its own body, which a processing tool has none
+            // of (decision 93).
+            if let Row::Custom { widget, .. } = row
+                && widget.is_utility()
+            {
+                return Err(DefinitionError::Widget(*widget));
             }
             match row {
                 // A row of pickers' label shares a group label's words, so its id is one.
@@ -1910,7 +1991,7 @@ fn holds_control(rows: &[Row]) -> bool {
 }
 
 /// Whether `rows`, or the rows inside them, show the setting `setting`.
-fn shows_setting(rows: &[Row], setting: &str) -> bool {
+pub(crate) fn shows_setting(rows: &[Row], setting: &str) -> bool {
     rows.iter().any(|row| {
         matches!(row, Row::Setting(found) if found.id == setting)
             || shows_setting(row.rows(), setting)
@@ -2392,6 +2473,18 @@ mod tests {
             DEFINITION.defaults().get("curve"),
             Some(&ControlValue::Points(Vec::new()))
         );
+    }
+
+    /// A utility's widget, drawn by its own body, is never a processing tool's row.
+    #[test]
+    fn a_processing_tool_shows_no_utility_s_widget() {
+        for widget in [Widget::Scopes, Widget::History, Widget::Browse] {
+            let rows = Box::leak(Box::new([Row::Custom {
+                widget,
+                controls: &[],
+            }]));
+            assert_eq!(page(rows).check(), Err(DefinitionError::Widget(widget)));
+        }
     }
 
     #[test]

@@ -27,6 +27,7 @@ use std::collections::BTreeSet;
 
 use apertrust_operations::OPERATIONS;
 use apertrust_plugin::{Camera, ImageContext, Pattern};
+use apertrust_tools::utility::UTILITIES;
 use apertrust_tools::{
     Base, Control, ControlKind, ControlValue, Controls, Owned, ProcessingDefinition,
     ProcessingTool, Quad, Reset, Row, Setting, Slider, TOOLS, Tab, ToolDefinition, ToolValues,
@@ -784,5 +785,15 @@ fn every_message_a_definition_implies_is_translated() {
         }
     }
     let missing: Vec<&String> = wanted.iter().filter(|id| !known.contains(*id)).collect();
+    assert!(missing.is_empty(), "no message for {missing:?}");
+}
+
+/// Every utility's labels, groups and settings have their words, as a processing tool's
+/// rows do.
+#[test]
+fn every_message_a_utility_s_rows_imply_is_translated() {
+    let known: BTreeSet<String> = apertrust_ui::i18n::message_ids().into_iter().collect();
+    let wanted = UTILITIES.iter().flat_map(messages::of_utility);
+    let missing: Vec<String> = wanted.filter(|id| !known.contains(id)).collect();
     assert!(missing.is_empty(), "no message for {missing:?}");
 }
