@@ -55,11 +55,31 @@ pub struct ToolDefinition {
     pub before: &'static [Row],
     /// And these after them, as the tone equalizer's mask display.
     pub after: &'static [Row],
+    /// What its header's ↺ does, or none for a header with no ↺.
+    pub reset: Reset,
+    /// Whether its header has the presets button: every processing tool's, drawn disabled
+    /// until presets come; a utility's only where it has presets of its own.
+    pub presets: bool,
     /// The items it adds to context menus (decision 91; `docs/gui.md`, Context menus), each
     /// one of its own actions at a place; none for a tool with nothing to add. The app
     /// builds the menus, every item, the app's included, where its section and order put
     /// it ([`Section`]).
     pub menus: &'static [MenuItem],
+}
+
+/// What a tool's header's ↺ does (decision 93).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Reset {
+    /// A processing tool's own reset, `ResetTool`.
+    Tool,
+    /// A registry action of the app's, by its id, as History's `reset`, Reset Edit, which
+    /// Edit › Reset Edit runs too.
+    Action(&'static str),
+    /// The utility's own, `UtilityTool::reset` in the app, as Export's Default settings
+    /// will be.
+    Own,
+    /// No ↺, as Scopes' and Browse's headers have none.
+    None,
 }
 
 /// A processing tool, as data: the shared [`ToolDefinition`] and what editing needs.
@@ -962,6 +982,13 @@ pub enum Widget {
     Equalizer,
     HueCurve,
     Swatches,
+    /// History's whole page, its steps: drawn by the app's History tool until its page is
+    /// rows (decision 93, step 93.4).
+    History,
+    /// Scopes' whole page, the graph with its buttons, until its page is rows.
+    Scopes,
+    /// Browse's whole page, its recents line and its Folders, until its page is rows.
+    Browse,
 }
 
 /// A value a control cannot take.
@@ -2185,6 +2212,8 @@ mod tests {
             }],
             before: &[],
             after: &[],
+            reset: Reset::Tool,
+            presets: true,
             menus: &[],
         },
         version: 1,
@@ -2314,6 +2343,8 @@ mod tests {
             tabs: PAGE_TABS,
             before: &[Row::Slider(Slider::new("amount"))],
             after: &[Row::Toggle { control: "mask" }],
+            reset: Reset::Tool,
+            presets: true,
             menus: &[],
         },
         version: 1,
@@ -3851,6 +3882,8 @@ mod tests {
                 tabs: Box::leak(Box::new([Tab { id: None, rows }])),
                 before: &[],
                 after: &[],
+                reset: Reset::Tool,
+                presets: true,
                 menus: &[],
             },
             version: 1,
@@ -3923,6 +3956,8 @@ mod tests {
                 tabs: Box::leak(Box::new([Tab { id: None, rows }])),
                 before: &[],
                 after: &[],
+                reset: Reset::Tool,
+                presets: true,
                 menus: &[],
             },
             version: 1,

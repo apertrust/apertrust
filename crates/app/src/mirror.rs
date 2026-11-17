@@ -2663,27 +2663,36 @@ pub(crate) mod tests {
         struct Scene {
             live: Live,
             actions: Vec<crate::history::Action>,
+            commands: Vec<Command>,
         }
         let mut harness = Harness::builder()
             .with_size(eframe::egui::vec2(320.0, 600.0))
             .with_context_setup(|ctx| apertrust_ui::install(ctx, apertrust_ui::Theme::default()))
             .build_ui_state(
                 |ui, scene: &mut Scene| {
-                    let m = &scene.live.mirror;
-                    let (history, takes) = (m.history.as_ref(), m.takes_edits());
-                    let tools = m.tools();
-                    let today = crate::history::today();
-                    let state = crate::history::State {
-                        editable: takes,
-                        ..crate::history::State::default()
+                    // As the History tab draws it, through its `UtilityTool`.
+                    let settings = crate::settings::Settings::default();
+                    let words = apertrust_ui::translator(ui.ctx());
+                    let mut cx = crate::utility::Context {
+                        mirror: &scene.live.mirror,
+                        settings: &settings,
+                        words: &words,
+                        commands: &mut scene.commands,
                     };
-                    let asked =
-                        crate::history::tab(ui, history, tools, &[], true, false, state, today);
+                    let mut tool = crate::history::HistoryTool;
+                    let head = crate::tools::Head {
+                        open: true,
+                        ..crate::tools::Head::default()
+                    };
+                    let (_, asked) = crate::history::tab(ui, head, false, |ui| {
+                        crate::utility::page(ui, &mut tool, &mut cx)
+                    });
                     scene.actions.extend(asked);
                 },
                 Scene {
                     live,
                     actions: Vec::new(),
+                    commands: Vec::new(),
                 },
             );
         harness.run();
@@ -2699,13 +2708,12 @@ pub(crate) mod tests {
         }
         item(&harness, &first_name).click();
         harness.run();
-        assert_eq!(
-            harness.state().actions,
-            [crate::history::Action::GoTo(Some(first))]
-        );
+        let go_to = Command::GoTo { step: Some(first) };
+        assert_eq!(harness.state().commands, std::slice::from_ref(&go_to));
+        assert!(harness.state().actions.is_empty());
         // The app sends it; the session goes there.
         let live = &mut harness.state_mut().live;
-        live.session.send(Command::GoTo { step: Some(first) });
+        live.session.send(go_to);
         live.until(|m| m.history.as_ref().is_some_and(|h| h.end == n + 1));
         assert_eq!(live.exposure("exposure"), Some(ControlValue::Number(1.0)));
         assert_eq!(live.exposure("black_level"), Some(before));

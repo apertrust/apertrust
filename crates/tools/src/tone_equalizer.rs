@@ -52,7 +52,7 @@ use apertrust_plugin::{ImageContext, Value};
 
 use crate::about::{Fact, Facts, Purpose};
 use crate::definition::{
-    ChoiceStyle, Control, ControlKind, ProcessingDefinition, Row, SettingRow, Slider, Tab,
+    ChoiceStyle, Control, ControlKind, ProcessingDefinition, Reset, Row, SettingRow, Slider, Tab,
     ToolDefinition, Track, Unit, Widget,
 };
 use crate::transfer::Transfer;
@@ -283,6 +283,8 @@ static DEFINITION: ProcessingDefinition = ProcessingDefinition {
             decimals: 0,
             track: Track::Plain,
         })],
+        reset: Reset::Tool,
+        presets: true,
         menus: &[],
     },
     version: 2,

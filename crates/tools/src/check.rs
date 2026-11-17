@@ -605,7 +605,7 @@ mod tests {
 
     use super::*;
     use crate::definition::{
-        Picker, PickerKind, ProcessingDefinition, Quad, Row, Slider, Tab, ToolDefinition,
+        Picker, PickerKind, ProcessingDefinition, Quad, Reset, Row, Slider, Tab, ToolDefinition,
     };
     use crate::testing::{self, Sample};
 
@@ -658,6 +658,8 @@ mod tests {
                     tabs: TABS,
                     before: &[],
                     after: &[],
+                    reset: Reset::Tool,
+                    presets: true,
                     menus: &[],
                 },
                 version: 1,

@@ -829,8 +829,8 @@ pub(crate) mod tests {
         Schema, Slot, Stage, Value,
     };
     use apertrust_tools::{
-        ChoiceStyle, Control, ControlKind, ControlValue, Owned, ProcessingDefinition, Row, Setting,
-        Slider, Tab, ToolDefinition, Widget,
+        ChoiceStyle, Control, ControlKind, ControlValue, Owned, ProcessingDefinition, Reset, Row,
+        Setting, Slider, Tab, ToolDefinition, Widget,
     };
 
     use super::*;
@@ -990,6 +990,8 @@ pub(crate) mod tests {
             }],
             before: &[],
             after: &[],
+            reset: Reset::Tool,
+            presets: true,
             menus: &[],
         },
         version: 2,

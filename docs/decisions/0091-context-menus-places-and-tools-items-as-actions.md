@@ -54,7 +54,7 @@ A tool's section already has its own buttons: reset, presets and options (⋯). 
 - `MenuEntry::Action(id)` is one action. `MenuEntry::Submenu { title, actions }` is a submenu of actions, one level deep: `title` a message id, `actions` from one to eight (`MOST_IN_SUBMENU`), each once, in order. A submenu counts as one item towards its place's limit.
 - A processing tool: `ToolDefinition::menus: &'static [MenuItem]` in its `ProcessingDefinition`, each action one of the tool's own, a submenu's children included.
 - A utility: `ToolDefinition::menus` in its `UtilityDefinition`, in `utility::UTILITIES`, each action the registry action that runs it.
-- Both are one field, `ToolDefinition::menus`, of the parent every tool's definition embeds ([0093](0093-one-tool-model-processing-tools-and-utility-tools.md)). Planned with the shared ⋯ (step 93.3), its items at `Place::Options` are the tool's ⋯, before the layout's, History's Compress History, Truncate History, Create a Style… and Discard History… among them, Truncate History an item of its own.
+- Both are one field, `ToolDefinition::menus`, of the parent every tool's definition embeds ([0093](0093-one-tool-model-processing-tools-and-utility-tools.md)). Built with the shared ⋯ (step 93.3), its items at `Place::Options` are the tool's ⋯, before the layout's, History's Compress History, Truncate History, Create a Style… and Discard History… among them, Truncate History an item of its own.
 - The app: `menus::APP_ITEMS`, each action a registry action's id.
 - **Background ▸** is the app's `Submenu { title: "menu-background", actions: [View › Background's ids] }`, and an app test keeps its actions equal to the menu bar's `menus::BACKGROUND`, in its order.
 - A submenu's children follow the item rules below: each hidden or shown disabled as an item is, and none shows its keys. A submenu left with no child shown is hidden.
@@ -106,7 +106,7 @@ A tool's section already has its own buttons: reset, presets and options (⋯). 
 | --- | --- | --- | --- |
 | The photo | Export… (`EXPORT`, 100); Background ▸ (`VIEW`, 100); Show in Finder joining once folder mode can reveal a photo | History's Reset (`EDIT`, 100); Orientation's Orientation ▸ (`VIEW`, 200), its four buttons: rotate 90° anticlockwise, rotate 90° clockwise, flip horizontally and flip vertically | Reset, —, Export…, —, Background ▸, Orientation ▸ |
 | A thumbnail | Export… (`EXPORT`, 100); Show in Folder once built | History's Reset (`EDIT`, 100), hidden while several photos are selected, since it acts on one photo | Reset, —, Export… |
-| ⋯ | Reset, then Copy Settings and Paste Settings with Copy and Apply Parts (Phase 3), in `EDIT`; the layout's items ([0083](0083-the-side-panels-layout-dragged-and-floating.md)) in `LAYOUT` | The tool's own, in a section of its choosing between them; History's are Compress History, with Truncate History its alternate while Option is held, Create a Style… and Discard History…; planned, Truncate History an item of its own ([0093](0093-one-tool-model-processing-tools-and-utility-tools.md)) | — |
+| ⋯ | Reset, then Copy Settings and Paste Settings with Copy and Apply Parts (Phase 3), in `EDIT`; the layout's items ([0083](0083-the-side-panels-layout-dragged-and-floating.md)) in `LAYOUT` | The tool's own, in a section of its choosing between them; History's are Compress History, Truncate History, Create a Style… and Discard History…, each an item of its own ([0093](0093-one-tool-model-processing-tools-and-utility-tools.md)) | — |
 
 Discard History… is in no context menu: it stays in Edit and History's ⋯ ([0078](0078-undo-redo-and-the-edits-history.md)).
 
@@ -121,7 +121,7 @@ Discard History… is in no context menu: it stays in Edit and History's ⋯ ([0
 - the items: History's Reset in both menus, and Orientation ▸ on the photo, after Background ▸, the first submenu a tool adds;
 - the tests: the limits and the section rules, the menus' size, a repeated `(section, order)` in one menu, Background ▸ equal to View › Background, every item reachable elsewhere, the photo's and a thumbnail's menus as they read, and the generated actions' ids, words, availability and keys.
 
-Pickers as items, the other places, and ⋯ built through `menus::context` with Reset, Copy Settings and Paste Settings come later.
+Pickers as items, the other places, and the app's items in ⋯, Reset, Copy Settings and Paste Settings, come later; ⋯ is built through `menus::context` with each tool's declared items (decision 93's step 93.3, `menus::options`).
 
 ## Options considered
 

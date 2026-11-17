@@ -78,6 +78,7 @@ mod storage;
 mod testing;
 mod thumbnails;
 mod tools;
+mod utility;
 mod viewport;
 
 use std::collections::{BTreeMap, HashMap};
@@ -98,7 +99,7 @@ use apertrust_engine::session::{
     PickerCommand, PickerRef, Places, Session, SessionError, StepSource, Values, ViewOnly,
 };
 use apertrust_engine::sidecar::Reason;
-use apertrust_tools::ProcessingTool;
+use apertrust_tools::ToolDefinition;
 use apertrust_ui::components::{
     ActivityAction, Available, CellMenu, CellRating, CentralBar, CentralBarAction, GridEdge,
     GridEdgeAction, GridPanel, GridPanelAction, GridPosition, Jobs, Margin, Marker, PanelBody,
@@ -115,10 +116,11 @@ use egui_winit::winit::application::ApplicationHandler;
 use egui_winit::winit::event::{DeviceEvent, DeviceId, StartCause, WindowEvent};
 use egui_winit::winit::event_loop::ActiveEventLoop;
 use egui_winit::winit::window::WindowId;
-use mirror::{Mirror, PhotoState, Picture, Reaction, Shown};
+use mirror::{Mirror, PhotoState, Picture, Reaction};
 use recents::Recents;
 use settings::{Keeper, Settings};
 use tools::{Change, Panels, Pending};
+use utility::UtilityTool;
 
 /// What the command line asks of the app: `apertrust [-d DOMAIN]... [--user-data-dir DIR]
 /// [--cache-dir DIR] [--conf KEY=VALUE]... [--safe-mode] [FILE... | FOLDER]` ([`USAGE`]).
@@ -1355,17 +1357,6 @@ struct App {
     start: start::Window,
 }
 
-/// What a History section's action asks of the app beyond the shell's own state
-/// ([`Shell::history_action`]).
-#[derive(Clone, Debug, PartialEq)]
-enum FromHistory {
-    /// A command on the edit, for the session, boxed: a `Command` is far larger than an
-    /// action id, most of all on Windows.
-    Send(Box<Command>),
-    /// A registry action, run as its button runs it.
-    Run(ActionId),
-}
-
 /// What the top panel asked for this frame.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum FromTopPanel {
@@ -2147,43 +2138,54 @@ impl Shell {
         self.reveal = Some(tool);
     }
 
-    /// Carries out what the History section asked for (`history::Action`): opens or closes
-    /// it, or opens a tool ([`Shell::reveal`]); returns the command a step's click sends,
-    /// `GoTo`, and its options' Compress History and Truncate History, only while the photo
-    /// `takes` edits, live and not open for viewing only; Reset Edit for the header's
-    /// reset, run as the top panel's Reset runs it, and Discard History… for its options'
-    /// item, as Edit's runs it, which asks first. The eye held is [`Shell::peek`]'s.
-    fn history_action(
-        &mut self,
-        action: history::Action,
-        takes: bool,
+    /// What `definition`'s header is given by the shell (decision 93): its section open as
+    /// kept, or `default`, peeking while `peek` holds, and ⋯ holding its declared items as
+    /// the menu builder lists them, with the keymap's keys, enabled as `state` says.
+    fn head(
+        &self,
         ctx: &egui::Context,
-    ) -> Option<FromHistory> {
-        match action {
-            history::Action::Toggle => {
-                let open = self.section_open(history::ID, history::OPEN);
-                self.set_section_open(history::ID, !open);
-                None
+        definition: &ToolDefinition,
+        state: &State,
+        peek: bool,
+        default: bool,
+    ) -> tools::Head {
+        tools::Head {
+            open: self.section_open(definition.id, default),
+            peek,
+            options: menus::options(ctx, definition.id, &self.keymap, state),
+            enabled: true,
+            photo: None,
+        }
+    }
+
+    /// Carries out what the History section's header and list asked for beyond the
+    /// session's commands: its header's toggle, and a tool's section opened ([`Shell::reveal`]),
+    /// as Shift-click on a step asks; returns the registry action its ↺ or ⋯ ran, Reset Edit
+    /// or one of its items, run as its button runs it. The eye held is [`Shell::peek`]'s.
+    fn history_asked(
+        &mut self,
+        pressed: Vec<tools::Pressed>,
+        actions: &[history::Action],
+        ctx: &egui::Context,
+    ) -> Option<ActionId> {
+        let mut run = None;
+        for pressed in pressed {
+            match pressed {
+                tools::Pressed::Toggle => {
+                    let open = self.section_open(history::ID, history::OPEN);
+                    self.set_section_open(history::ID, !open);
+                }
+                tools::Pressed::Run(id) => run = Some(id),
+                tools::Pressed::Tab(_) | tools::Pressed::Reset | tools::Pressed::Own(_) => {}
             }
-            history::Action::GoTo(step) => {
-                takes.then_some(FromHistory::Send(Box::new(Command::GoTo { step })))
-            }
-            history::Action::Open(tool) => {
+        }
+        for action in actions {
+            if let history::Action::Open(tool) = action {
                 self.reveal(tool);
                 ctx.request_repaint();
-                None
             }
-            history::Action::Reset => Some(FromHistory::Run(ActionId::RESET)),
-            history::Action::Compress => {
-                takes.then_some(FromHistory::Send(Box::new(Command::Compress)))
-            }
-            history::Action::Truncate => {
-                takes.then_some(FromHistory::Send(Box::new(Command::Truncate)))
-            }
-            history::Action::Discard => Some(FromHistory::Run(ActionId::DISCARD_HISTORY)),
-            // The eye held: what it hides follows the frame's, `Shell::peek`.
-            history::Action::Peek(_) => None,
         }
+        run
     }
 
     /// What the History tab's eye holds this frame, `held`, the tool it shows the photo
@@ -2372,7 +2374,10 @@ impl Shell {
             // The app's, from the photo's history ([`App::shell_state`]).
             undo: false,
             redo: false,
+            compress: false,
+            truncate: false,
             discard: false,
+            unreadable: false,
             discard_why: None,
             // The app's, from the photo ([`App::shell_state`]).
             exportable: photo,
@@ -3706,6 +3711,8 @@ impl App {
             }
             Change::Group { tool, group } => self.shell.toggle_group(tool, group),
             Change::Tab { .. } => self.panels.apply(&change),
+            // An item of the tool's ⋯, run where it can run then, as its keys run it.
+            Change::Run(id) => self.run_actions([id], ctx, &[]),
             Change::Picker {
                 tool,
                 picker,
@@ -3891,7 +3898,10 @@ impl App {
             opened: opened(&self.mirror),
             undo: history.is_some_and(|h| h.undo.is_some()),
             redo: history.is_some_and(|h| h.redo.is_some()),
+            compress: options.compress,
+            truncate: options.truncate,
             discard: options.discard,
+            unreadable: options.unreadable,
             discard_why: history::discard_why(options),
             exportable: open && !self.view_only(),
             ..state
@@ -4061,7 +4071,7 @@ impl App {
                 _ => None,
             };
             self.export.retire(&self.export_previews, photo);
-            let (actions, export) = self.photos_tab(ui);
+            let (actions, run, export) = self.photos_tab(ui);
             if revealed {
                 self.shell.reveal = None;
             }
@@ -4087,6 +4097,7 @@ impl App {
             if export.show_jobs {
                 self.run_actions([ActionId::SHOW_JOBS], ui.ctx(), &[]);
             }
+            self.run_actions(run, ui.ctx(), &[]);
             // The preview is the tool's feedback: asked while it is open and shown.
             let open = self.shell.section_open(export::ID, export::OPEN);
             self.preview_export(open);
@@ -4099,19 +4110,25 @@ impl App {
         self.preview_export(false);
         // A tool's section a History line asked for is scrolled to once its tab shows.
         let revealed = self.shell.revealing();
-        let (scopes, changes, history) =
-            edit_tab(ui, &self.shell, &self.mirror, &self.panels, peek);
+        let (state, settings) = (
+            self.state_in_window(ui.ctx()),
+            self.shell.to_settings(ui.ctx()),
+        );
+        let (mirror, panels) = (&self.mirror, &self.panels);
+        let tab = edit_tab(ui, &self.shell, mirror, &settings, &state, panels, peek);
         if revealed {
             self.shell.reveal = None;
         }
-        for change in scopes {
+        for change in tab.scopes {
             self.shell.scopes_change(change);
         }
-        for change in changes {
+        for change in tab.changes {
             self.change(change, ui.ctx());
         }
-        let mut run = tab_clicked;
-        let held = history.iter().find_map(|action| match action {
+        for command in tab.commands {
+            self.send_edit(command);
+        }
+        let held = tab.history.iter().find_map(|action| match action {
             history::Action::Peek(tool) => Some(*tool),
             _ => None,
         });
@@ -4119,26 +4136,23 @@ impl App {
         for command in self.shell.peek(held, self.mirror.photo.open()) {
             self.session.send(command);
         }
-        for action in history {
-            let takes = self.mirror.takes_edits();
-            match self.shell.history_action(action, takes, ui.ctx()) {
-                Some(FromHistory::Send(command)) => {
-                    self.send_edit(*command);
-                }
-                Some(FromHistory::Run(id)) => run = Some(id),
-                None => {}
-            }
-        }
-        run
+        let asked = self
+            .shell
+            .history_asked(tab.pressed, &tab.history, ui.ctx());
+        asked.or(tab_clicked)
     }
 
     /// The Photos tab's body: its Browse section, as the mirror's folder and the recent
-    /// folders have it, then the Export tool, under the tab bar.
-    fn photos_tab(&mut self, ui: &mut egui::Ui) -> (Vec<library::Action>, export::Drawn) {
+    /// folders have it, then the Export tool, under the tab bar. Returns what Browse asked
+    /// for, the registry actions its header ran, and what the Export tool asked for.
+    fn photos_tab(
+        &mut self,
+        ui: &mut egui::Ui,
+    ) -> (Vec<library::Action>, Vec<ActionId>, export::Drawn) {
         let recent = self.shell.recent_folders();
         let folder = &self.mirror.folder.folder;
         let keys = self.shell.open_keys(ui.ctx());
-        let browse = library::Browse {
+        let mut browse = library::Browse {
             folder,
             root: self.mirror.folder.root(),
             counts: self.mirror.folder.counts(),
@@ -4153,7 +4167,16 @@ impl App {
             shown: self.export_shown(),
             reveal: self.shell.revealing() && self.shell.reveal == Some(export::ID),
         };
-        photos_body(ui, &browse, &mut self.export, shown)
+        let (settings, words) = (self.shell.to_settings(ui.ctx()), translator(ui.ctx()));
+        // Browse sends no command of its own yet.
+        let mut commands = Vec::new();
+        let mut cx = utility::Context {
+            mirror: &self.mirror,
+            settings: &settings,
+            words: &words,
+            commands: &mut commands,
+        };
+        photos_body(ui, &mut cx, &mut browse, &mut self.export, shown)
     }
 
     /// What the Export tool is told each frame: its groups as the shell keeps them, the
@@ -6304,27 +6327,70 @@ fn hold_close(ctx: &egui::Context, dialogs: &dialog_host::AppDialogs) -> bool {
     held
 }
 
+/// What an editing tab's sections asked for this frame ([`edit_tab`]).
+#[derive(Debug, Default)]
+struct EditTab {
+    /// Scopes', its header's toggle among them.
+    scopes: Vec<scopes::Change>,
+    /// The processing tools', their headers' among them.
+    changes: Vec<Change>,
+    /// History's list's: the eye held and a tool opened.
+    history: Vec<history::Action>,
+    /// What the utilities' headers asked for beyond their own: History's toggle, and the
+    /// registry actions ↺ and ⋯ run.
+    pressed: Vec<tools::Pressed>,
+    /// The commands the utilities sent, History's `GoTo`.
+    commands: Vec<Command>,
+}
+
 /// An editing tab's sections as the mirror's photo has them (`docs/gui.md`, The side
 /// panel): the open photo's values and Scopes; with no photo, and from the moment another
 /// is asked for until its values arrive, every tool at its defaults and Scopes with no
-/// graph, all drawn disabled and each open or closed as it was, never a blank panel. Only the open photo's sections send the session
-/// anything ([`Mirror::takes_edits`], which [`App::change`] asks); every section opens,
-/// closes and changes tab whatever it shows. The History tab holds the History section,
-/// drawn from the mirror's history, Original alone and disabled while it has none.
+/// graph, all drawn disabled and each open or closed as it was, never a blank panel. Only
+/// the open photo's sections send the session anything ([`Mirror::takes_edits`], which
+/// [`App::change`] asks); every section opens, closes and changes tab whatever it shows.
+/// The History tab holds the History section, drawn from the mirror's history, Original
+/// alone and disabled while it has none. The utilities are drawn through their
+/// `UtilityTool`s with `settings`, every header from its declaration, its buttons and ⋯'s
+/// items enabled as `state` says (decision 93).
 fn edit_tab(
     ui: &mut egui::Ui,
     shell: &Shell,
     mirror: &Mirror,
+    settings: &Settings,
+    state: &State,
     panels: &Panels,
     peek: bool,
-) -> (Vec<scopes::Change>, Vec<Change>, Vec<history::Action>) {
+) -> EditTab {
     let shown = mirror.shown();
-    // A photo opening shows Scopes as with no photo until it is live (decision 77).
-    let photo = matches!(shown, Shown::Photo { .. });
-    let scopes = Some((photo.then(|| mirror.scopes.measured()).flatten(), photo));
-    let (tools, values) = (mirror.tools(), &mirror.values);
     // Every control of a photo opening says why it is disabled.
     let words = translator(ui.ctx());
+    let mut tab = EditTab::default();
+    let mut cx = utility::Context {
+        mirror,
+        settings,
+        words: &words,
+        commands: &mut tab.commands,
+    };
+    // The History tab holds History alone, its header staying at the tab's top.
+    if shell.panel_tab == HISTORY {
+        let mut history = history::HistoryTool;
+        let definition = &history::declared().tool;
+        let head = shell.head(ui.ctx(), definition, state, peek, history::OPEN);
+        let head = tools::Head {
+            // ⋯ opens while there is a history.
+            enabled: mirror.history.is_some(),
+            photo: mirror.photo.open(),
+            ..head
+        };
+        let resettable = utility::resettable(definition, state);
+        let (pressed, actions) = history::tab(ui, head, resettable, |ui| {
+            utility::page(ui, &mut history, &mut cx)
+        });
+        tab.pressed = pressed;
+        tab.history = actions;
+        return tab;
+    }
     let opening = mirror.opening_name().map(|name| {
         let mut args = apertrust_ui::i18n::Args::new();
         args.set(
@@ -6335,28 +6401,6 @@ fn edit_tab(
         );
         words.text_with("controls-opening", Some(&args))
     });
-    // The History tab holds History alone, its header staying at the tab's top.
-    if shell.panel_tab == HISTORY {
-        let open = shell.section_open(history::ID, history::OPEN);
-        let takes = mirror.takes_edits();
-        // As Reset Edit: while the edit holds anything the photo takes back.
-        let resettable = takes && mirror.resettable();
-        let shown = mirror.history.as_ref();
-        // The eye's tools, as the photo's values report them.
-        let hidden: Vec<&str> = (values.tools.iter())
-            .filter(|state| state.hidden)
-            .map(|state| state.tool)
-            .collect();
-        let today = history::today();
-        let state = history::State {
-            editable: takes,
-            resettable,
-            options: history_options(mirror, shell.discard, ui.ctx().os()),
-            photo: mirror.photo.open(),
-        };
-        let history = history::tab(ui, shown, tools, &hidden, open, peek, state, today);
-        return (Vec::new(), Vec::new(), history);
-    }
     // A tool's picker is pressed only on the open photo once live, and never on one
     // open for viewing only, whose notice says why.
     let view_only = match &mirror.photo {
@@ -6375,19 +6419,19 @@ fn edit_tab(
         photo: mirror.photo.asked(),
         gone: &gone,
     };
-    let (scopes, changes) = panel_body(
+    let drawn = panel_body(
         ui,
         shell,
-        scopes,
-        tools,
-        values,
+        &mut cx,
+        state,
         panels,
         peek,
         shown.editable(),
         opening.as_deref(),
         &pickers,
     );
-    (scopes, changes, Vec::new())
+    (tab.scopes, tab.changes, tab.pressed) = drawn;
+    tab
 }
 
 /// How the Photos tab shows the Export tool: what the tool is told each frame, and whether
@@ -6398,18 +6442,28 @@ struct ExportShown {
     reveal: bool,
 }
 
-/// The Photos tab's sections under its tab bar: Browse, then the Export tool, last
-/// (`TAB_TOOLS`). Returns what Browse and the tool asked for.
+/// The Photos tab's sections under its tab bar: Browse, through its `UtilityTool`, its
+/// header from its declaration with its own ⋯ items, then the Export tool, last
+/// (`TAB_TOOLS`). Returns what Browse, its header's registry actions and the tool asked for.
 fn photos_body(
     ui: &mut egui::Ui,
-    browse: &library::Browse<'_>,
+    cx: &mut utility::Context<'_>,
+    browse: &mut library::Browse<'_>,
     export: &mut export::Export,
     shown: ExportShown,
-) -> (Vec<library::Action>, export::Drawn) {
-    let mut actions = Vec::new();
+) -> (Vec<library::Action>, Vec<ActionId>, export::Drawn) {
+    let (mut actions, mut run) = (Vec::new(), Vec::new());
     let mut drawn = export::Drawn::default();
     PanelBody::new().show(ui, |ui| {
-        actions = library::browse(ui, browse);
+        let head = library::head(ui, browse);
+        let section = utility::section(ui, browse, cx, head, false);
+        for pressed in &section.pressed {
+            match pressed {
+                tools::Pressed::Run(id) => run.push(*id),
+                pressed => actions.extend(library::pressed(browse, pressed)),
+            }
+        }
+        actions.extend(section.actions);
         let tool = ui.push_id(export::ID, |ui| export.show(ui, &shown.shown));
         // The section Export… asked for, its header at the top.
         if shown.reveal {
@@ -6417,16 +6471,17 @@ fn photos_body(
         }
         drawn = tool.inner;
     });
-    (actions, drawn)
+    (actions, run, drawn)
 }
 
 /// The side panel's sections under its tab bar: Scopes pinned over the band where the
-/// tab pins it, unless `scopes` is `None`, its graph from what it holds and drawn disabled
-/// unless its flag says a photo is shown, then the tab's
-/// tools among `tools`, drawn from their definitions with the mirror's `values`; each
-/// section open as the shell keeps it, peeking while `peek` holds, its reset disabled
-/// unless `editable`, and its colour pickers as `pickers` says; the section a History line
-/// opened scrolled to. Returns what Scopes and the tools asked for.
+/// tab pins it, through its `UtilityTool`, its graph from what `cx`'s mirror measured, drawn
+/// disabled unless a photo is shown, then the tab's tools among the mirror's, drawn from
+/// their definitions with the mirror's values; each section open as the shell keeps it,
+/// peeking while `peek` holds, its header's buttons and ⋯ enabled as `state` says, its
+/// reset disabled unless `editable`, and its colour pickers as `pickers` says; the section
+/// a History line opened scrolled to. Returns what Scopes, the tools and Scopes' header
+/// asked for beyond its toggle.
 #[expect(
     clippy::too_many_arguments,
     reason = "the app's own state for the side panel, each part apart"
@@ -6434,38 +6489,52 @@ fn photos_body(
 fn panel_body(
     ui: &mut egui::Ui,
     shell: &Shell,
-    scopes: Option<(Option<&scopes::Measured>, bool)>,
-    tools: &[&dyn ProcessingTool],
-    values: &Values,
+    cx: &mut utility::Context<'_>,
+    state: &State,
     panels: &Panels,
     peek: bool,
     editable: bool,
     opening: Option<&str>,
     pickers: &tools::Pickers,
-) -> (Vec<scopes::Change>, Vec<Change>) {
+) -> (Vec<scopes::Change>, Vec<Change>, Vec<tools::Pressed>) {
     let shown = TAB_TOOLS.get(shell.panel_tab).copied().unwrap_or_default();
-    let (mut pinned, mut changes) = (Vec::new(), Vec::new());
-    let open = shell.section_open(scopes::ID, scopes::OPEN);
+    let (mut pinned, mut changes, mut pressed) = (Vec::new(), Vec::new(), Vec::new());
+    let mirror = cx.mirror;
+    let (tools, values) = (mirror.tools(), &mirror.values);
+    let ctx = ui.ctx().clone();
     let mut body = PanelBody::new();
-    let scopes = scopes.filter(|_| shell.scopes_pinned());
-    let (measured, enabled) = scopes.unwrap_or((None, false));
-    if scopes.is_some() {
-        body = body
-            .pinned(|ui| pinned = scopes::section(ui, shell.scopes, open, measured, peek, enabled));
+    let mut scopes = scopes::ScopesTool;
+    if shell.scopes_pinned() {
+        let definition = &scopes.definition().tool;
+        let head = shell.head(&ctx, definition, state, peek, scopes::OPEN);
+        body = body.pinned(|ui| {
+            let drawn = utility::section(ui, &mut scopes, cx, head, false);
+            pinned = drawn.actions;
+            for header in drawn.pressed {
+                match header {
+                    tools::Pressed::Toggle => pinned.push(scopes::Change::Toggle),
+                    other => pressed.push(other),
+                }
+            }
+        });
     }
     body.show(ui, |ui| {
         for id in shown {
             let tool = tools.iter().find(|tool| tool.definition().tool.id == *id);
-            let state = values.tools.iter().find(|state| state.tool == *id);
-            if let (Some(tool), Some(state)) = (tool, state) {
-                let open = shell.section_open(id, tools::OPEN);
+            let state_of = values.tools.iter().find(|state| state.tool == *id);
+            if let (Some(tool), Some(tool_state)) = (tool, state_of) {
+                let head = tools::Head {
+                    enabled: true,
+                    photo: mirror.photo.open(),
+                    ..shell.head(&ctx, &tool.definition().tool, state, peek, tools::OPEN)
+                };
                 let groups = |group: &str| shell.group_open(id, group);
                 // Each section's widgets in an id of their own, the tool's: two tools'
                 // sliders of one name, as Vignetting's and Soften's Brightness, never share
                 // one.
                 let drawn = ui.push_id(id, |ui| {
                     tools::section(
-                        ui, *tool, state, open, panels, &groups, peek, editable, opening, pickers,
+                        ui, *tool, tool_state, head, panels, &groups, editable, opening, pickers,
                     )
                 });
                 // The section a History line opened, its header at the top.
@@ -6476,7 +6545,7 @@ fn panel_body(
             }
         }
     });
-    (pinned, changes)
+    (pinned, changes, pressed)
 }
 
 /// Prepares `ctx` for the shell before its first frame: its theme, its language and
@@ -6682,9 +6751,10 @@ fn file_name(path: &std::path::Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::mirror::{reported, show};
+    use crate::mirror::{Shown, reported, show};
     use apertrust_engine::session::{Event, LibraryEvent, Mark, Photo};
     use apertrust_plugin::ImageContext;
+    use apertrust_tools::ProcessingTool;
     use apertrust_ui::components::{Section, SliderRow};
     use egui::accesskit::{Role, Toggled};
     use egui::{Key, Modifiers};
@@ -9074,10 +9144,12 @@ mod tests {
                         ui,
                         &Sample,
                         &state,
-                        true,
+                        tools::Head {
+                            open: true,
+                            ..tools::Head::default()
+                        },
                         &panels,
                         &groups,
-                        false,
                         true,
                         None,
                         &tools::Pickers::NONE,
@@ -9125,8 +9197,8 @@ mod tests {
     struct Side {
         shell: Shell,
         keeper: Keeper,
-        scopes: scopes::Scopes,
-        values: Values,
+        /// Its photo open and live, its readings in its `scopes`.
+        mirror: Mirror,
         sent: Vec<Command>,
     }
 
@@ -9164,6 +9236,16 @@ mod tests {
             views: Vec::new(),
             computed: Vec::new(),
         };
+        let mut mirror = crate::mirror::tests::mirror();
+        mirror.apply(Event::Opened(crate::mirror::tests::photo(1)));
+        mirror.apply(Event::Values(Values {
+            tools: vec![untouched],
+            settings: Vec::new(),
+            edited: false,
+            through: 1,
+            extent: [84, 62],
+            live: true,
+        }));
         Harness::builder()
             .with_size(egui::vec2(360.0, 700.0))
             .with_context_setup(|ctx| apertrust_ui::install(ctx, Theme::default()))
@@ -9175,16 +9257,21 @@ mod tests {
                         side.shell.run(id, &state, &ctx, &[]);
                     }
                     ui.spacing_mut().item_spacing.y = 0.0;
-                    let (shell, measured) = (&side.shell, side.scopes.measured());
+                    let shell = &side.shell;
                     let panels = tools::Panels::default();
-                    let tools = apertrust_tools::TOOLS;
-                    let values = &side.values;
-                    let (scopes, _) = panel_body(
+                    let (settings, words) = (shell.to_settings(&ctx), translator(&ctx));
+                    let mut commands = Vec::new();
+                    let mut cx = utility::Context {
+                        mirror: &side.mirror,
+                        settings: &settings,
+                        words: &words,
+                        commands: &mut commands,
+                    };
+                    let (scopes, _, _) = panel_body(
                         ui,
                         shell,
-                        Some((measured, true)),
-                        tools,
-                        values,
+                        &mut cx,
+                        &state,
                         &panels,
                         false,
                         true,
@@ -9194,22 +9281,14 @@ mod tests {
                     for change in scopes {
                         side.shell.scopes_change(change);
                     }
-                    side.sent
-                        .extend(side.scopes.ask(side.shell.scopes_wanted()));
+                    let wanted = side.shell.scopes_wanted();
+                    side.sent.extend(side.mirror.scopes.ask(wanted));
                     keep(&mut side.shell, &mut side.keeper, &ctx, true);
                 },
                 Side {
                     shell: Shell::new(&settings, Locale::EnGb, OperatingSystem::Mac),
                     keeper,
-                    scopes: scopes::Scopes::default(),
-                    values: Values {
-                        tools: vec![untouched],
-                        settings: Vec::new(),
-                        edited: false,
-                        through: 1,
-                        extent: [84, 62],
-                        live: true,
-                    },
+                    mirror,
                     sent: Vec::new(),
                 },
             )
@@ -9242,6 +9321,22 @@ mod tests {
         sent: Vec<Command>,
     }
 
+    /// The settings and the actions' state the side panel is drawn with, as
+    /// [`App::side_panel`] makes them, for `mirror`'s photo.
+    fn editing_state(ctx: &egui::Context, shell: &Shell, mirror: &Mirror) -> (Settings, State) {
+        let takes = mirror.takes_edits();
+        let open = matches!(mirror.photo, PhotoState::Open(_));
+        let options = history_options(mirror, shell.discard, ctx.os());
+        let state = State {
+            editable: takes,
+            compress: options.compress,
+            truncate: options.truncate,
+            discard: options.discard,
+            ..shell.state(ctx, open, takes && mirror.resettable())
+        };
+        (shell.to_settings(ctx), state)
+    }
+
     fn editing(folder: &settings::testing::Folder) -> Harness<'static, Editing> {
         let (_, settings) = Keeper::open(folder.storage());
         Harness::builder()
@@ -9255,8 +9350,11 @@ mod tests {
                     ui.spacing_mut().item_spacing.y = 0.0;
                     let panels = tools::Panels::default();
                     let (shell, mirror) = (&editing.shell, &editing.mirror);
-                    let (_, changes, history) = edit_tab(ui, shell, mirror, &panels, false);
-                    editing.history.extend(history);
+                    let (settings, state) = editing_state(ui.ctx(), shell, mirror);
+                    let tab = edit_tab(ui, shell, mirror, &settings, &state, &panels, false);
+                    let changes = tab.changes;
+                    editing.history.extend(tab.history);
+                    editing.sent.extend(tab.commands);
                     let own = |change: &Change| {
                         matches!(
                             change,
@@ -9386,7 +9484,7 @@ mod tests {
             .click();
         harness.run();
         harness.get_by_role_and_label(Role::TreeItem, "Step 1: Exposure");
-        assert_eq!(harness.state().history, [history::Action::GoTo(None)]);
+        assert_eq!(harness.state().sent, [Command::GoTo { step: None }]);
         harness.state_mut().shell.panel_tab = ADJUST;
         harness.run();
         assert!(harness.query_by_role(Role::List).is_none());
@@ -9394,7 +9492,7 @@ mod tests {
 
     /// The side panel as `App::side_panel` draws it, its tab bar with every tab in sight:
     /// a tab clicked runs its action, and what the History section asks for is carried
-    /// out as the app does ([`Shell::history_action`]), the commands it sends kept in
+    /// out as the app does ([`Shell::history_asked`]), the commands it sends kept in
     /// `sent`.
     fn side_panel(folder: &settings::testing::Folder) -> Harness<'static, Editing> {
         let (_, settings) = Keeper::open(folder.storage());
@@ -9412,24 +9510,20 @@ mod tests {
                     let panels = tools::Panels::default();
                     let (shell, mirror) = (&editing.shell, &editing.mirror);
                     let revealed = shell.revealing();
-                    let (_, _, history) = edit_tab(ui, shell, mirror, &panels, false);
+                    let (settings, state) = editing_state(&ctx, shell, mirror);
+                    let tab = edit_tab(ui, shell, mirror, &settings, &state, &panels, false);
                     if revealed {
                         editing.shell.reveal = None;
                     }
-                    let takes = editing.mirror.takes_edits();
-                    let held = history.iter().find_map(|action| match action {
+                    let held = tab.history.iter().find_map(|action| match action {
                         history::Action::Peek(tool) => Some(*tool),
                         _ => None,
                     });
                     let peeks = editing.shell.peek(held, editing.mirror.photo.open());
                     editing.sent.extend(peeks);
-                    for action in history {
-                        editing.history.push(action);
-                        match editing.shell.history_action(action, takes, &ctx) {
-                            Some(FromHistory::Send(command)) => editing.sent.push(*command),
-                            Some(FromHistory::Run(_)) | None => {}
-                        }
-                    }
+                    editing.sent.extend(tab.commands);
+                    editing.history.extend(tab.history.iter().copied());
+                    editing.shell.history_asked(tab.pressed, &tab.history, &ctx);
                 },
                 Editing {
                     shell: Shell::new(&settings, Locale::EnGb, OperatingSystem::Mac),
@@ -9808,7 +9902,9 @@ mod tests {
                     ui.scope_builder(egui::UiBuilder::new().max_rect(side), |ui| {
                         ui.spacing_mut().item_spacing.y = 0.0;
                         let panels = tools::Panels::default();
-                        edit_tab(ui, &scene.shell, &scene.mirror, &panels, false);
+                        let (shell, mirror) = (&scene.shell, &scene.mirror);
+                        let (settings, state) = editing_state(ui.ctx(), shell, mirror);
+                        edit_tab(ui, shell, mirror, &settings, &state, &panels, false);
                     });
                 },
                 Opening {
@@ -10085,7 +10181,7 @@ mod tests {
         let mut harness = side(&folder);
         harness.run();
         let reading = scopes::testing::reading(true, false, false);
-        harness.state_mut().scopes.receive(&reading);
+        harness.state_mut().mirror.scopes.receive(&reading);
         harness.run();
         assert_eq!(
             graph_says(&harness, "Histogram"),
@@ -10098,14 +10194,14 @@ mod tests {
         harness.run();
         assert_eq!(graph_says(&harness, "Waveform"), "Nothing measured yet");
         let reading = scopes::testing::reading(false, true, false);
-        harness.state_mut().scopes.receive(&reading);
+        harness.state_mut().mirror.scopes.receive(&reading);
         harness.run();
         assert_eq!(
             graph_says(&harness, "Waveform"),
             "Shadows clipped: 0.01%, highlights clipped: 5%"
         );
         // A photo closing takes its reading with it.
-        harness.state_mut().scopes.forget();
+        harness.state_mut().mirror.scopes.forget();
         harness.run();
         assert_eq!(graph_says(&harness, "Waveform"), "Nothing measured yet");
     }
@@ -10205,12 +10301,12 @@ mod tests {
         };
         // A reading without it, as one counted before it was chosen, measures nothing.
         let histogram = scopes::testing::reading(true, false, false);
-        harness.state_mut().scopes.receive(&histogram);
+        harness.state_mut().mirror.scopes.receive(&histogram);
         harness.run();
         assert_eq!(graph_says(&harness, "Vectorscope"), "Nothing measured yet");
         assert!(!drawn(&harness));
         let reading = scopes::testing::reading(false, false, true);
-        harness.state_mut().scopes.receive(&reading);
+        harness.state_mut().mirror.scopes.receive(&reading);
         harness.run();
         assert_eq!(
             graph_says(&harness, "Vectorscope"),
@@ -11560,7 +11656,7 @@ mod tests {
             .build_ui_state(
                 |ui, shell: &mut Shell| {
                     let keys = library::Keys::default();
-                    let browse = library::Browse {
+                    let mut browse = library::Browse {
                         folder: &folder::Folder::None,
                         root: None,
                         counts: &HashMap::new(),
@@ -11571,9 +11667,22 @@ mod tests {
                         keys: &keys,
                         home: None,
                     };
+                    // As the Photos tab draws it ([`photos_body`]).
+                    let (mirror, settings) = (crate::mirror::tests::mirror(), Settings::default());
+                    let (words, mut commands) = (translator(ui.ctx()), Vec::new());
+                    let mut cx = utility::Context {
+                        mirror: &mirror,
+                        settings: &settings,
+                        words: &words,
+                        commands: &mut commands,
+                    };
                     let mut actions = Vec::new();
                     PanelBody::new().show(ui, |ui| {
-                        actions = library::browse(ui, &browse);
+                        let head = library::head(ui, &browse);
+                        let drawn = utility::section(ui, &mut browse, &mut cx, head, false);
+                        let pressed = drawn.pressed.iter();
+                        actions.extend(pressed.filter_map(|p| library::pressed(&browse, p)));
+                        actions.extend(drawn.actions);
                     });
                     for action in actions {
                         match action {
@@ -12280,7 +12389,7 @@ mod tests {
                                 reveal: revealed && bench.shell.reveal == Some(export::ID),
                             };
                             let browse_keys = library::Keys::default();
-                            let browse = library::Browse {
+                            let mut browse = library::Browse {
                                 folder: &folder::Folder::None,
                                 root: None,
                                 counts: &HashMap::new(),
@@ -12291,7 +12400,18 @@ mod tests {
                                 keys: &browse_keys,
                                 home: None,
                             };
-                            let (_, drawn) = photos_body(ui, &browse, &mut bench.export, shown);
+                            let (mirror, settings) =
+                                (crate::mirror::tests::mirror(), Settings::default());
+                            let (words, mut commands) = (translator(&ctx), Vec::new());
+                            let mut cx = utility::Context {
+                                mirror: &mirror,
+                                settings: &settings,
+                                words: &words,
+                                commands: &mut commands,
+                            };
+                            let export = &mut bench.export;
+                            let (_, _, drawn) =
+                                photos_body(ui, &mut cx, &mut browse, export, shown);
                             if revealed {
                                 bench.shell.reveal = None;
                             }

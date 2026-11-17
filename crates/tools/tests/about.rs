@@ -347,12 +347,17 @@ fn the_plain_words_are_the_designed_ones_for_the_tools_shown() {
     }
 }
 
+/// The utilities whose headers say nothing yet, their sentences a design question of their
+/// own: Browse, which joined [`UTILITIES`] with no tooltip, as it is drawn (decision 93).
+const SAYS_NOTHING: [&str; 1] = ["browse"];
+
 #[test]
 fn every_tool_and_utility_says_what_it_is_for_in_every_language() {
     let ids = TOOLS
         .iter()
         .map(|tool| tool.definition().tool.id)
-        .chain(UTILITIES.iter().map(|utility| utility.tool.id));
+        .chain(UTILITIES.iter().map(|utility| utility.tool.id))
+        .filter(|id| !SAYS_NOTHING.contains(id));
     let mut wanted: Vec<String> = ids.map(messages::description).collect();
     wanted.extend(Kind::ALL.map(|kind| kind.message().to_owned()));
     wanted.extend(WorksOn::ALL.map(|place| place.message().to_owned()));
@@ -392,7 +397,8 @@ fn each_description_is_a_sentence_or_two() {
     let ids = TOOLS
         .iter()
         .map(|tool| tool.definition().tool.id)
-        .chain(UTILITIES.iter().map(|utility| utility.tool.id));
+        .chain(UTILITIES.iter().map(|utility| utility.tool.id))
+        .filter(|id| !SAYS_NOTHING.contains(id));
     for id in ids {
         let text = english.text(&messages::description(id));
         let sentences = text.matches(". ").count() + usize::from(text.ends_with('.'));

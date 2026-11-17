@@ -4963,7 +4963,7 @@ mod tests {
     use apertrust_tools::testing::{self, Defaultless, Faulty, Pushing, Sample};
     use apertrust_tools::{
         ChoiceStyle, Control, ControlError, ControlKind, Coordinate, Owned, PresetRow,
-        ProcessingDefinition, Row, Slider, Tab, ToolDefinition, ToolValues, View,
+        ProcessingDefinition, Reset, Row, Slider, Tab, ToolDefinition, ToolValues, View,
     };
 
     use super::*;
@@ -5957,6 +5957,8 @@ mod tests {
             }],
             before: &[],
             after: &[],
+            reset: Reset::Tool,
+            presets: true,
             menus: &[],
         },
         version: 1,
@@ -6355,6 +6357,8 @@ mod tests {
             }],
             before: &[],
             after: &[],
+            reset: Reset::Tool,
+            presets: true,
             menus: &[],
         },
         version: 1,
@@ -7779,6 +7783,8 @@ mod tests {
             }],
             before: &[],
             after: &[],
+            reset: Reset::Tool,
+            presets: true,
             menus: &[],
         },
         version: 1,
@@ -8586,6 +8592,8 @@ mod tests {
             }],
             before: &[],
             after: &[],
+            reset: Reset::Tool,
+            presets: true,
             menus: &[],
         },
         version: 1,

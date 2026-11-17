@@ -42,7 +42,7 @@ use apertrust_plugin::{ImageContext, Value};
 
 use crate::about::{Fact, Facts, Purpose};
 use crate::definition::{
-    ChoiceStyle, Control, ControlKind, ProcessingDefinition, Row, Tab, ToolDefinition,
+    ChoiceStyle, Control, ControlKind, ProcessingDefinition, Reset, Row, Tab, ToolDefinition,
 };
 use crate::{Base, Controls, Owned, ProcessingTool, Setting, ToolValues};
 
@@ -120,6 +120,8 @@ static DEFINITION: ProcessingDefinition = ProcessingDefinition {
         }],
         before: &[],
         after: &[],
+        reset: Reset::Tool,
+        presets: true,
         menus: &[],
     },
     version: 1,

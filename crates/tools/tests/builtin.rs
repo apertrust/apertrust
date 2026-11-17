@@ -29,8 +29,8 @@ use apertrust_operations::OPERATIONS;
 use apertrust_plugin::{Camera, ImageContext, Pattern};
 use apertrust_tools::{
     Base, Control, ControlKind, ControlValue, Controls, Owned, ProcessingDefinition,
-    ProcessingTool, Quad, Row, Setting, Slider, TOOLS, Tab, ToolDefinition, ToolValues, Unit,
-    check, messages,
+    ProcessingTool, Quad, Reset, Row, Setting, Slider, TOOLS, Tab, ToolDefinition, ToolValues,
+    Unit, check, messages,
 };
 
 /// Image contexts the bindings are swept over: an image that is not a raw, a Bayer raw,
@@ -447,6 +447,8 @@ static LISTING: ProcessingDefinition = ProcessingDefinition {
         }],
         before: &[],
         after: &[],
+        reset: Reset::Tool,
+        presets: true,
         menus: &[],
     },
     version: 1,

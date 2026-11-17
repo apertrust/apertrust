@@ -58,8 +58,8 @@ use apertrust_plugin::{ImageContext, Value};
 
 use crate::about::{Fact, Facts, Purpose};
 use crate::definition::{
-    ChoiceStyle, Control, ControlKind, Picker, PickerKind, ProcessingDefinition, Quad, Range, Row,
-    Slider, Space, Tab, ToolDefinition, Unit, slider_step,
+    ChoiceStyle, Control, ControlKind, Picker, PickerKind, ProcessingDefinition, Quad, Range,
+    Reset, Row, Slider, Space, Tab, ToolDefinition, Unit, slider_step,
 };
 use crate::{Base, Controls, Owned, ProcessingTool, Setting, ToolValues};
 
@@ -540,6 +540,8 @@ static DEFINITION: ProcessingDefinition = ProcessingDefinition {
         ],
         before: &[],
         after: &[],
+        reset: Reset::Tool,
+        presets: true,
         menus: &[],
     },
     version: 1,

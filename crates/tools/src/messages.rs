@@ -480,7 +480,7 @@ pub fn of(definition: &ProcessingDefinition) -> Vec<String> {
 mod tests {
     use super::*;
     use crate::ProcessingTool;
-    use crate::definition::{ChoiceStyle, Control, Tab, ToolDefinition, Track};
+    use crate::definition::{ChoiceStyle, Control, Reset, Tab, ToolDefinition, Track};
     use crate::testing::Sample;
 
     #[test]
@@ -606,6 +606,8 @@ mod tests {
                 }],
                 before: &[],
                 after: &[],
+                reset: Reset::Tool,
+                presets: true,
                 menus: &[],
             },
             version: 1,
@@ -666,6 +668,8 @@ mod tests {
                     decimals: 0,
                     track: Track::Plain,
                 })],
+                reset: Reset::Tool,
+                presets: true,
                 menus: &[],
             },
             version: 1,
@@ -772,6 +776,8 @@ mod tests {
                 }],
                 before: &[],
                 after: &[],
+                reset: Reset::Tool,
+                presets: true,
                 menus: &[],
             },
             version: 1,

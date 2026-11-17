@@ -167,7 +167,7 @@ Details: [plugins.md](plugins.md), with the order in [engine.md, Order](engine.m
 
 `apertrust-tools` describes each processing tool as static data, darktable's page with its tabs and collapsible groups, and binds it to operation parameters with a pure function the session runs (decisions 28 to 33); the utilities join that model in decision 93's steps, planned. Preset rows, lossless views and curves are other views of the same stored values; one tone mapper is planned per edit.
 
-Every tool shares one declaration, `ToolDefinition`, embedded in a processing tool's `ProcessingDefinition` and a utility's `UtilityDefinition`, as darktable's processing and utility modules both begin with `dt_action_t` (decision 93). The engine runs `ProcessingTool`; planned, the app runs `UtilityTool` and draws every tool's header, page and ⋯ alike.
+Every tool shares one declaration, `ToolDefinition`, embedded in a processing tool's `ProcessingDefinition` and a utility's `UtilityDefinition`, as darktable's processing and utility modules both begin with `dt_action_t` (decision 93). The engine runs `ProcessingTool`; the app runs `UtilityTool` and draws every tool's header and ⋯ alike, and, planned, its page.
 
 Details: [engine.md, The tool layer](engine.md#the-tool-layer), [tools/README.md](tools/README.md) for every tool of the first pass and its invariants.
 

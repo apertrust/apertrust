@@ -38,8 +38,8 @@ use apertrust_plugin::{ImageContext, Value};
 
 use crate::about::{Fact, Facts, Purpose};
 use crate::definition::{
-    ChoiceStyle, Control, ControlKind, MAX_POINTS, ProcessingDefinition, Row, Tab, ToolDefinition,
-    Widget,
+    ChoiceStyle, Control, ControlKind, MAX_POINTS, ProcessingDefinition, Reset, Row, Tab,
+    ToolDefinition, Widget,
 };
 use crate::{Base, ControlValue, Controls, Owned, ProcessingTool, Setting, ToolValues};
 
@@ -118,6 +118,8 @@ static DEFINITION: ProcessingDefinition = ProcessingDefinition {
         ],
         before: &[],
         after: &[],
+        reset: Reset::Tool,
+        presets: true,
         menus: &[],
     },
     version: 1,

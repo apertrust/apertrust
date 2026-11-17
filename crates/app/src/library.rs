@@ -24,9 +24,11 @@
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 
+use apertrust_tools::Widget;
+use apertrust_tools::utility::UtilityDefinition;
 use apertrust_ui::components::{
-    Button, ChoiceBox, CollapsibleGroup, IconButton, Section, SectionAction, context_menu,
-    focus_ring_centred, middle_cut, pull_down, section_list,
+    Button, ChoiceBox, CollapsibleGroup, IconButton, context_menu, focus_ring_centred, middle_cut,
+    pull_down, section_list,
 };
 use apertrust_ui::i18n::Args;
 use apertrust_ui::popup::{self, Entry, Item, Submenu};
@@ -35,6 +37,8 @@ use eframe::egui::{self, Align, Layout, Rect, Sense, UiBuilder, pos2, vec2};
 
 use crate::folder::Folder;
 use crate::recents::OpenKind;
+use crate::tools::{Head, Pressed};
+use crate::utility::{Context, UtilityTool};
 use crate::{export, jobs};
 
 /// Browse's id (decision 73), by which settings keep whether its section is open, and
@@ -256,61 +260,99 @@ impl Browse<'_> {
     }
 }
 
-/// The Photos tab's Browse section (decision 73), in folder mode's form: its top line,
-/// what is open, a box listing the recents to choose from, with ＋ beside it; then its
-/// Folders group, the tree of the folder opened, its root, with nothing above it; ⋯ holds
-/// Show in Finder, which shows the root, what the top line names. Each part is open or
-/// closed as `browse.open` says. Albums and Smart albums join Folders with the library
-/// (Phase 5); folder mode never shows them.
+/// Browse as a utility tool (decision 93), the Photos tab's first (decision 73), in folder
+/// mode's form: its page, drawn whole until it is rows (step 93.4), its top line, what is
+/// open, a box listing the recents to choose from, with ＋ beside it; then its Folders
+/// group, the tree of the folder opened, its root, with nothing above it. Its header is
+/// every tool's; its ⋯ holds its own items, not yet declared ([`options`]). Folders is
+/// open or closed as `browse.open` says. Albums and Smart albums join Folders with the
+/// library (Phase 5); folder mode never shows them.
 ///
 /// For photos alone, as the wireframe's one-photo column draws it, the top line names the
-/// active photo, Folders holds Open This Folder alone, and ⋯ holds Open This Folder, then
-/// Show in Finder, which shows the active photo in its folder.
-pub fn browse(ui: &mut egui::Ui, browse: &Browse<'_>) -> Vec<Action> {
+/// active photo and Folders holds Open This Folder alone.
+///
+/// What it draws is the frame's, as the app gives it: the mirror's folder and the recents,
+/// the tree's open folders, the keys and the home folder. The context's mirror holds the
+/// folder too; the recents, the keys and the home folder are in neither the mirror nor the
+/// settings, so Browse keeps every input here until that is settled.
+impl UtilityTool for Browse<'_> {
+    type Action = Action;
+
+    fn definition(&self) -> &'static UtilityDefinition {
+        apertrust_tools::utility::utility(ID).expect("Browse is built in")
+    }
+
+    fn body(&mut self, widget: Widget, ui: &mut egui::Ui, cx: &mut Context<'_>) -> Vec<Action> {
+        if widget != Widget::Browse {
+            return Vec::new();
+        }
+        let mut actions = Vec::new();
+        // The section's body has a tool's margins: the top line starts 4 points under
+        // the header and 12 in from the sides, as a tool's first row does.
+        ui.spacing_mut().item_spacing.y = 0.0;
+        top_line(ui, self, &mut actions);
+        // Its groups scroll under it, Browse keeping its height.
+        section_list(ui, "browse groups", |ui| {
+            let group = cx.words.text("browse-folders");
+            let toggled = CollapsibleGroup::new(&group, self.open.folders)
+                .show(ui, |ui| tree(ui, self, &mut actions));
+            if toggled {
+                actions.push(Action::ToggleFolders);
+            }
+        });
+        actions
+    }
+}
+
+/// What Browse's header is given (decision 93): open as `browse.open` says, ⋯ holding its
+/// own items ([`options`]), which act on no photo, and no peek, since it edits nothing of
+/// the photo's.
+pub fn head(ui: &egui::Ui, browse: &Browse<'_>) -> Head {
+    Head {
+        open: browse.open.browse,
+        options: options(ui, browse),
+        enabled: true,
+        ..Head::default()
+    }
+}
+
+/// Browse's own items in its ⋯, not yet declared as registry actions (decision 93 leaves
+/// them open): Show in Finder, which shows the root, what the top line names, or the
+/// active photo alone in its folder; for photos alone Open This Folder before it.
+fn options(ui: &egui::Ui, browse: &Browse<'_>) -> Vec<Entry> {
     let words = translator(ui.ctx());
-    let mut actions = Vec::new();
-    let title = words.text("section-browse");
-    let open = browse.root.map(Path::to_owned);
+    let open = browse.root.is_some();
     let alone = alone(browse.folder);
-    let reveal = Item::new("reveal", words.text(jobs::FILE_MANAGER.show_message()))
-        .enabled(open.is_some() || alone.is_some());
+    let reveal = Item::new(REVEAL, words.text(jobs::FILE_MANAGER.show_message()))
+        .enabled(open || alone.is_some());
     let mut options = vec![Entry::Item(reveal)];
     if alone.is_some() {
-        let this = Item::new("open-this-folder", words.text("browse-open-this-folder"));
+        let this = Item::new(OPEN_THIS_FOLDER, words.text("browse-open-this-folder"));
         options.insert(0, Entry::Item(this));
     }
-    let out = Section::new(&title, browse.open.browse)
-        .options_menu(options)
-        .show(ui, |ui| {
-            // The section's body has a tool's margins: the top line starts 4 points under
-            // the header and 12 in from the sides, as a tool's first row does.
-            ui.spacing_mut().item_spacing.y = 0.0;
-            top_line(ui, browse, &mut actions);
-            // Its groups scroll under it, Browse keeping its height.
-            section_list(ui, "browse groups", |ui| {
-                let group = words.text("browse-folders");
-                let toggled = CollapsibleGroup::new(&group, browse.open.folders)
-                    .show(ui, |ui| tree(ui, browse, &mut actions));
-                if toggled {
-                    actions.push(Action::ToggleFolders);
-                }
-            });
-        });
-    if out.actions.contains(&SectionAction::Toggle) {
-        actions.push(Action::Toggle);
-    }
-    match (out.chosen.as_deref(), open, alone) {
-        (Some("reveal"), Some(path), _) => actions.push(Action::Reveal(path)),
-        (Some("reveal"), None, Some((photo, _))) => {
-            actions.push(Action::ShowInFolder(photo.to_owned()));
-        }
-        (Some("open-this-folder"), _, Some((_, folder))) => {
-            actions.push(Action::Open(folder.to_owned()));
-        }
-        _ => {}
-    }
-    actions
+    options
 }
+
+/// What Browse's header asked for, `pressed`, as Browse's actions: its toggle, and its own
+/// ⋯ items ([`options`]).
+pub fn pressed(browse: &Browse<'_>, pressed: &Pressed) -> Option<Action> {
+    let alone = alone(browse.folder);
+    match (pressed, browse.root, alone) {
+        (Pressed::Toggle, _, _) => Some(Action::Toggle),
+        (Pressed::Own(id), Some(root), _) if id == REVEAL => Some(Action::Reveal(root.to_owned())),
+        (Pressed::Own(id), None, Some((photo, _))) if id == REVEAL => {
+            Some(Action::ShowInFolder(photo.to_owned()))
+        }
+        (Pressed::Own(id), _, Some((_, folder))) if id == OPEN_THIS_FOLDER => {
+            Some(Action::Open(folder.to_owned()))
+        }
+        _ => None,
+    }
+}
+
+/// Browse's own ⋯ items' ids, as they answer.
+const REVEAL: &str = "reveal";
+const OPEN_THIS_FOLDER: &str = "open-this-folder";
 
 /// The active one of the photos alone and its folder, which Open This Folder opens.
 fn alone(folder: &Folder) -> Option<(&Path, &Path)> {
@@ -1002,6 +1044,26 @@ pub fn empty_state(ui: &mut egui::Ui, slot: Rect, what: Empty<'_>, keys: &Keys) 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Browse drawn as the Photos tab draws it (`photos_body`): its header every tool's,
+    /// with its own ⋯ items, its page through its `UtilityTool`. Returns what it asked for.
+    fn drawn(ui: &mut egui::Ui, browse: &mut Browse<'_>) -> Vec<Action> {
+        let (mirror, settings) = (crate::mirror::tests::mirror(), Settings::default());
+        let (words, mut commands) = (translator(ui.ctx()), Vec::new());
+        let mut cx = Context {
+            mirror: &mirror,
+            settings: &settings,
+            words: &words,
+            commands: &mut commands,
+        };
+        let head = head(ui, browse);
+        let section = crate::utility::section(ui, browse, &mut cx, head, false);
+        let mut actions: Vec<Action> = (section.pressed.iter())
+            .filter_map(|asked| pressed(browse, asked))
+            .collect();
+        actions.extend(section.actions);
+        actions
+    }
     use crate::folder::Listing;
 
     fn listing(photos: usize, done: bool) -> Folder {
@@ -1054,7 +1116,8 @@ mod tests {
         assert_eq!(Empty::of(&listing(3, true)), Empty::NoneChosen);
     }
 
-    use apertrust_ui::components::PanelBody;
+    use crate::settings::Settings;
+    use apertrust_ui::components::{PanelBody, Section};
     use apertrust_ui::{Builtin, Locale, Theme};
     use egui::accesskit::Role;
     use egui_kittest::Harness;
@@ -1139,7 +1202,7 @@ mod tests {
             if let Some(path) = shown(&folder).filter(|_| !tree) {
                 kept.insert(path.to_owned(), false);
             }
-            let browse = Browse {
+            let mut browse = Browse {
                 folder: &folder,
                 root: shown(&folder),
                 counts: &HashMap::new(),
@@ -1150,7 +1213,7 @@ mod tests {
                 keys: &keys,
                 home: None,
             };
-            PanelBody::new().show(ui, |ui| actions.extend(super::browse(ui, &browse)));
+            PanelBody::new().show(ui, |ui| actions.extend(drawn(ui, &mut browse)));
         })
     }
 
@@ -1209,7 +1272,7 @@ mod tests {
         let mut harness = sized(egui::vec2(320.0, 700.0), |ui, actions| {
             let (folder, recent, keys) = (wedding(), recent(), keys());
             let counts = HashMap::from([(PathBuf::from("/photos/Wedding/Edits"), 7)]);
-            let browse = Browse {
+            let mut browse = Browse {
                 folder: &folder,
                 root: shown(&folder),
                 counts: &counts,
@@ -1220,7 +1283,7 @@ mod tests {
                 keys: &keys,
                 home: None,
             };
-            PanelBody::new().show(ui, |ui| actions.extend(super::browse(ui, &browse)));
+            PanelBody::new().show(ui, |ui| actions.extend(drawn(ui, &mut browse)));
         });
         harness.run();
         let description = |name: &str| {
@@ -1260,7 +1323,7 @@ mod tests {
         };
         let mut harness = sized(egui::vec2(320.0, 700.0), move |ui, actions| {
             let (folder, keys, tree, inside) = (listed(), keys(), opened(), listed_inside());
-            let browse = Browse {
+            let mut browse = Browse {
                 folder: &folder,
                 root: shown(&folder),
                 counts: &HashMap::new(),
@@ -1271,7 +1334,7 @@ mod tests {
                 keys: &keys,
                 home: None,
             };
-            PanelBody::new().show(ui, |ui| actions.extend(super::browse(ui, &browse)));
+            PanelBody::new().show(ui, |ui| actions.extend(drawn(ui, &mut browse)));
         });
         harness.run();
         let picks = harness.get_by_role_and_label(Role::TreeItem, "Picks");
@@ -1318,7 +1381,7 @@ mod tests {
             let tree = tree.clone();
             let mut harness = sized(egui::vec2(320.0, 700.0), move |ui, actions| {
                 let (folder, keys) = (wedding(), keys());
-                let browse = Browse {
+                let mut browse = Browse {
                     folder: &folder,
                     root: shown(&folder),
                     counts: &HashMap::new(),
@@ -1329,7 +1392,7 @@ mod tests {
                     keys: &keys,
                     home: None,
                 };
-                PanelBody::new().show(ui, |ui| actions.extend(super::browse(ui, &browse)));
+                PanelBody::new().show(ui, |ui| actions.extend(drawn(ui, &mut browse)));
             });
             harness.run();
             let mut asks: Vec<Action> = harness.state().clone();
@@ -1351,7 +1414,7 @@ mod tests {
         let inside = HashMap::from([(edits.clone(), Err("the share is down".to_owned()))]);
         let mut harness = sized(egui::vec2(320.0, 700.0), move |ui, actions| {
             let (folder, keys) = (wedding(), keys());
-            let browse = Browse {
+            let mut browse = Browse {
                 folder: &folder,
                 root: shown(&folder),
                 counts: &HashMap::new(),
@@ -1362,7 +1425,7 @@ mod tests {
                 keys: &keys,
                 home: None,
             };
-            PanelBody::new().show(ui, |ui| actions.extend(super::browse(ui, &browse)));
+            PanelBody::new().show(ui, |ui| actions.extend(drawn(ui, &mut browse)));
         });
         harness.run();
         let row = harness.get_by_role_and_label(Role::TreeItem, "Edits");
@@ -1416,7 +1479,7 @@ mod tests {
             let folder = with(subfolders);
             sized(egui::vec2(320.0, 1200.0), move |ui, actions| {
                 let (folder, recent, keys) = (folder(), recent(), keys());
-                let browse = Browse {
+                let mut browse = Browse {
                     folder: &folder,
                     root: shown(&folder),
                     counts: &HashMap::new(),
@@ -1428,7 +1491,7 @@ mod tests {
                     home: None,
                 };
                 PanelBody::new().show(ui, |ui| {
-                    actions.extend(super::browse(ui, &browse));
+                    actions.extend(drawn(ui, &mut browse));
                     ui.label("After Browse");
                 });
             })
@@ -1513,7 +1576,7 @@ mod tests {
             let (folder, keys, recent) = (chosen(), keys(), recent());
             let names = vec!["Edits".to_owned(), "Selects".to_owned()];
             let inside = HashMap::from([(portraits.to_owned(), Ok(names))]);
-            let browse = Browse {
+            let mut browse = Browse {
                 folder: &folder,
                 root: Some(portraits),
                 counts: &HashMap::from([(portraits.to_owned(), 120)]),
@@ -1524,7 +1587,7 @@ mod tests {
                 keys: &keys,
                 home: None,
             };
-            PanelBody::new().show(ui, |ui| actions.extend(super::browse(ui, &browse)));
+            PanelBody::new().show(ui, |ui| actions.extend(drawn(ui, &mut browse)));
         });
         harness.run();
         let what = harness.get_by_role_and_label(Role::ComboBox, "What is open");
@@ -1647,7 +1710,7 @@ mod tests {
                     },
                 );
             }
-            let browse = Browse {
+            let mut browse = Browse {
                 folder: &folder,
                 root: shown(&folder),
                 counts: &HashMap::new(),
@@ -1658,7 +1721,7 @@ mod tests {
                 keys: &keys,
                 home: None,
             };
-            PanelBody::new().show(ui, |ui| actions.extend(super::browse(ui, &browse)));
+            PanelBody::new().show(ui, |ui| actions.extend(drawn(ui, &mut browse)));
         });
         harness.run();
         harness
@@ -2329,7 +2392,7 @@ mod tests {
                         (trip.join("Panoramas"), Ok(Vec::new())),
                     ]);
                     let tree = BTreeMap::from([(day, true)]);
-                    let browse = Browse {
+                    let mut browse = Browse {
                         folder: &folder,
                         root: shown(&folder),
                         counts: &HashMap::new(),
@@ -2340,7 +2403,7 @@ mod tests {
                         keys: &keys,
                         home: None,
                     };
-                    PanelBody::new().show(ui, |ui| actions.extend(super::browse(ui, &browse)));
+                    PanelBody::new().show(ui, |ui| actions.extend(drawn(ui, &mut browse)));
                 },
             );
             tab.run();
@@ -2369,7 +2432,7 @@ mod tests {
                     (trip.join("Panoramas"), Ok(Vec::new())),
                 ]);
                 let tree = BTreeMap::from([(day, true)]);
-                let browse = Browse {
+                let mut browse = Browse {
                     folder: &folder,
                     root: Some(trip),
                     counts: &HashMap::from([(trip.to_owned(), 212)]),
@@ -2380,7 +2443,7 @@ mod tests {
                     keys: &keys,
                     home: None,
                 };
-                PanelBody::new().show(ui, |ui| actions.extend(super::browse(ui, &browse)));
+                PanelBody::new().show(ui, |ui| actions.extend(drawn(ui, &mut browse)));
             },
         );
         chosen.run();
@@ -2395,7 +2458,7 @@ mod tests {
                 let panel = theme(ui.ctx()).colors.panel;
                 ui.painter().rect_filled(ui.max_rect(), 0.0, panel);
                 let (folder, recent, keys) = (alone(), recent(), keys());
-                let browse = Browse {
+                let mut browse = Browse {
                     folder: &folder,
                     root: None,
                     counts: &HashMap::new(),
@@ -2406,7 +2469,7 @@ mod tests {
                     keys: &keys,
                     home: None,
                 };
-                PanelBody::new().show(ui, |ui| actions.extend(super::browse(ui, &browse)));
+                PanelBody::new().show(ui, |ui| actions.extend(drawn(ui, &mut browse)));
             },
         );
         tab.run();
