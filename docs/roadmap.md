@@ -125,6 +125,14 @@ Goal: open, edit, save and reopen a photo with the first pass's tools. Migration
 - [ ] 4. Several windows: New Window, the Mac's Window menu, settings sent to every window, closing a place giving the start window, the last window's close button and Quit, dialogs parented to their window.
 - [ ] 5. Files opened from outside in a new window, with the setting for the current window instead, and another user data folder's name in the windows' titles.
 
+**One tool model** (decision 93; [gui.md](gui.md#one-tool-model)): every tool a processing tool or a utility, sharing one declaration and one header, in five steps, each a pull request reviewed before the next:
+
+- [ ] 93.1. The renames and the parent, mechanical, with no behaviour change: `Definition` to `ProcessingDefinition`, `Utility` to `UtilityDefinition`, the trait `Tool` to `ProcessingTool`, `Definition::presets` to `preset_rows`, and the fields every tool shares into `ToolDefinition`; the docs' names with them.
+- [ ] 93.2. `UtilityTool` in the app, with one `Context`, History, Scopes and Browse implementing it, Browse joining `UTILITIES`.
+- [ ] 93.3. One header and ⋯ for every tool, from `&ToolDefinition`.
+- [ ] 93.4. The utilities on the page model, their widgets as custom rows and `UtilityDefinition::check` refusing a row that edits: Scopes first, then History, then Browse.
+- [ ] 93.5. Export's page as setting rows naming the `export.*` keys, with its presets, after the setting rows the Export tool and Import's sheet share ([Export](#export)).
+
 ### Editing
 
 - [x] The viewport with app-managed colour.
@@ -253,7 +261,7 @@ Goal: usable for daily editing, and the editor sets the sliders for a goal. Migr
 - [x] Exports run as background jobs beside live editing, with a jobs window for progress and cancel.
 - [x] The Export tool's first section, last in the Photos tab, in place of the dialog, on the Mac, Windows and Linux: File on disk, JPEG and PNG, darktable's four size modes, high-quality resampling, ↺ for Default settings, and Export… and Ctrl+E revealing it (decisions 56 and 90; [gui.md](gui.md#as-built)). The overwrite question is asked on the Mac and Linux; on Windows Overwrite is listed disabled until its alert is built. Export Again is built, with no key yet; its key, Ctrl+Shift+E, is planned.
 - [ ] The setting rows Import's sheet and the Export tool share: a slider with no kept marker, the path row (labelled for Import, label-less for Export), note, field and size rows, an indented toggle (decisions 86 and 90).
-- [ ] The rest of the Export tool, a utility last in the Photos tab (decision 90; [gui.md](gui.md#the-export-tool)):
+- [ ] The rest of the Export tool, a utility last in the Photos tab (decision 90; [gui.md](gui.md#the-export-tool)), its page declared as setting rows in decision 93's step 93.5 ([The window and the shell](#the-window-and-the-shell)):
   - [ ] a spike measuring every export row at the side panel's 320 points in British English, Ukrainian, Polish and the pseudo-locale;
   - [ ] the first milestone: the rows in Storage options and Format options, always open, and Global options, collapsible and open at first; the preset or Custom starting the summary; ↺ and Default settings; the tool's end with the summary, warnings, Export N photos and its job's line; Export Again on Ctrl+Shift+E;
   - [ ] Edit › Previous Selection on Ctrl+Shift+D, with Phase 3's selection;
@@ -279,7 +287,7 @@ The library's steps 10 to 20 and 15b, [listed below](#the-librarys-steps) (decis
   - [ ] Moving a section by dragging its header within its tab; dropping it in the pinned area pins it, dragging it out unpins it.
   - [ ] The section's ⋯ menu (Move Up, Move Down, Move to Pinned Area or Scrolling Area, Move to Tab), Alt+↑ and Alt+↓, and screen readers' actions and announcements.
   - [ ] Moving a section to another tab, by a drop on its icon or into it; any section in any tab.
-- [ ] With them, the toolbar (decision 92; [gui.md](gui.md#the-toolbar)): the top panel drawn from each workspace's list of items, kept in the settings file, with spaces, the guards for the ☰, the save state, the jobs, an assistant and the mark, actions folding into » as it narrows, and Toolbar Labels; the toolbar menu on a right-click anywhere on it, the system's window menu on its own key; tools' items from `Definition::toolbar`, Orientation's rotations first.
+- [ ] With them, the toolbar (decision 92; [gui.md](gui.md#the-toolbar)): the top panel drawn from each workspace's list of items, kept in the settings file, with spaces, the guards for the ☰, the save state, the jobs, an assistant and the mark, actions folding into » as it narrows, and Toolbar Labels; the toolbar menu on a right-click anywhere on it, the system's window menu on its own key; tools' items from `ToolDefinition::toolbar` (decision 93), Orientation's rotations first.
 - [ ] Changes made outside Apertrust noticed; nothing overwritten without reading it first.
 - [ ] Virtual copies.
 - [ ] Two computers editing the same photo: both versions kept, never one lost.

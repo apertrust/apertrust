@@ -13,7 +13,7 @@ What the interface looks like and how it behaves is designed on the [UI wirefram
 | How it fits together | [What is built](#what-is-built), [Goals](#goals), [Why egui](#why-egui), [Display colour](#display-colour), [Layers](#layers), [A frame](#a-frame) |
 | Foundations | [Design system](#design-system) (tokens, themes, components, [rules for interface code](#rules-for-interface-code), [on-photo overlays](#on-photo-overlays)), [Translation](#translation), [Touch mode](#touch-mode) |
 | The window and the platform | [The window frame and menus](#the-window-frame-and-menus), [The menu bar](#the-menu-bar), [Popups](#popups), [Dialogs and alerts](#dialogs-and-alerts), [Sheets](#sheets), [The Export tool](#the-export-tool), [Instances and windows](#instances-and-windows), [The start window](#the-start-window) |
-| The panels | [The shell](#the-shell) (the layouts, selection, workspaces, the top panel, the side panel, the photo frame, the central bar, the caption, the grid panel), [Tool panels from definitions](#tool-panels-from-definitions) |
+| The panels | [The shell](#the-shell) (the layouts, selection, workspaces, the top panel, the side panel, the photo frame, the central bar, the caption, the grid panel), [Tool panels from definitions](#tool-panels-from-definitions) ([one tool model](#one-tool-model)) |
 | Controls | [Slider values and choices](#slider-values-and-choices), [Painted widgets](#painted-widgets): [the curve](#the-curve), [the equalizer](#the-equalizer), [the scopes](#the-scopes) |
 | Keys and settings | [Keyboard and actions](#keyboard-and-actions), [Settings and workspace](#settings-and-workspace) |
 | Quality | [Accessibility](#accessibility), [Testing](#testing), [Performance](#performance) |
@@ -30,7 +30,7 @@ Steps 1 to 5 of the [build order](#build-order) are built, step 6 has its render
 - The section frame (header, buttons, [the header's tooltip](#the-headers-tooltip), tabs, group labels, collapsible groups, peeking with H) and the side panel's tab bar, body and edge ([Tool panels from definitions](#tool-panels-from-definitions), [The side panel](#the-side-panel)).
 - The shell's parts: `TopPanel`, `CentralBar` and `GridPanel`, with interaction tests and a snapshot at a full window's width ([The shell](#the-shell)).
 - The app as that shell, with one raw open: the engine renders it on its own thread through the viewport pipe, every ported operation from the saved edit, and a paint callback draws each frame pixel for pixel (decision 17), scaled only while the window resizes (decision 18).
-- The tool panel renderer (`crates/app/src/tools.rs`), which draws any tool's section from its definition, with every tool of the first pass built so far.
+- The tool panel renderer (`crates/app/src/tools.rs`), which draws any processing tool's section from its definition, with every tool of the first pass built so far; each utility's section is drawn by its own module until [one tool model](#one-tool-model) (decision 93).
 - The actions registry and the [default keyboard map](#the-default-keyboard-map) in `crates/app/src/actions.rs`.
 - [The settings file](#settings-and-workspace), `settings.toml`, in the user data folder (decision 43).
 - The Mac's [window frame](#the-frame) and native [menu bar](#the-menus), and the frames of Windows and Linux with the ☰ and its drawn menu (decision 39), on the first piece of [the popup service](#popups) (decision 40).
@@ -42,6 +42,7 @@ Still to come:
 - Rebinding keys in Settings, the actions the menus add ([what arrives when](#what-arrives-when)), and on Windows Alt pressed and released alone and native hit testing (decision 39).
 - With the viewport: the scale's zoom, which needs the 100% view's regions, before and after, and the values under the cursor; the clipping overlays on the photo (the rest of step 8).
 - Decision 42's slider popup and the rest of [their cards](#slider-values-the-build-in-cards).
+- [One tool model](#one-tool-model) (decision 93): one header, page drawer and ⋯ for every tool, the utilities on the page model.
 - The rest follows the build order.
 
 winit's default app menu on macOS is off (`with_default_menu(false)` on the app's own `EventLoop` builder, since eframe runs on the app's loop and ignores `NativeOptions::event_loop_builder`): the menu bar built from the registry takes its place.
@@ -1149,7 +1150,7 @@ A place opens to tools' items only by a decision of its own, which adds it to `a
 **Declared as data.**
 
 - Every item, the app's included, is a `MenuItem { place, section, order, entry }`, its `entry` a `MenuEntry`: `Action(id)`, or `Submenu { title, actions }`, one level deep.
-- A tool declares its items in `Definition::menus`, each action one of its own. A utility declares them in `utility::UTILITIES` (`Utility::menus`), each a registry action. The app declares its own in `menus::APP_ITEMS`.
+- A tool declares its items in `Definition::menus`, each action one of its own. A utility declares them in `utility::UTILITIES` (`Utility::menus`), each a registry action. The app declares its own in `menus::APP_ITEMS`. Planned, every tool's are in one field, `ToolDefinition::menus` ([One tool model](#one-tool-model), decision 93).
 - **A submenu** holds from one to eight actions (`MOST_IN_SUBMENU`), the declarer's own, each once, in order, under `title`, a message id; it counts as one item towards its place's limit. Its children follow the item rules, each hidden or disabled as an item is and showing no keys, and a submenu left with no child shown is hidden. Orientation's Orientation ▸ holds its four buttons. Background ▸ is the app's `Submenu { title: "menu-background", actions: [View › Background's ids] }`, and an app test keeps it equal to the menu bar's `BACKGROUND`.
 - **`section`** is one of the `Section` constants in `apertrust-tools`, shared by the app and the tools, whose value sets the section's place in a menu, 1000 apart: `EDIT` 1000, `EXPORT` 2000, `VIEW` 3000, `HISTORY` 4000, and `LAYOUT` 9000 for ⋯'s layout items. A tool's or a utility's item takes a section from `EDIT` up to, not including, `LAYOUT`, named or its own, so its items fall between the app's editing items and the layout's, last. In `EDIT`, order 100 is Reset's (the app's in ⋯, History's on the photo and a thumbnail), so a tool's item there takes order 200 or more and Reset stays first. The app's own items are exempt.
 - **`order`** places an item within its section, 100 apart (100, 200, 300…), lower first. The gaps leave room to insert an item without renumbering. "Order", not "weight" or "priority", whose direction is ambiguous.
@@ -1609,6 +1610,7 @@ Export is one utility of the side panel, the last of the Photos tab's tools, hol
 
 - **Export… and Ctrl+E (Cmd+E) reveal it** and focus its button, so Return exports ([Keyboard and screen readers](#keyboard-and-screen-readers)). File › Export Again does darktable's export at once with the current settings, on Ctrl+Shift+E (Cmd+Shift+E) ([Export Again](#export-again)).
 - How it is built, the export job in the engine's session, darktable's size and resampling, the writers and the file on disk, is decision 56's ([engine.md](engine.md), Export jobs).
+- **Its page is a utility's declaration** (decision 93, planned; [One tool model](#one-tool-model)): a `UtilityDefinition` whose groups of setting rows name the `export.*` settings by key, the path line a custom row, drawn with every tool's header and page drawer and bound by the app to `apertrust-export`'s settings; its presets are presets of those rows. Until step 93.5 `export.rs` draws the section itself.
 - darktable's labels are lower case; the tool writes them in sentence case and British English ("B&W as greyscale").
 - Anything not built is drawn disabled, saying why. Its later parts, presets and metadata among them, are in [the phases](#the-phases).
 
@@ -2401,10 +2403,10 @@ The model's words:
 
 - **A layout** (Photo; Map later) implements one trait: what the central panel shows and the central bar's contents after the Map toggle. Everything else is the shell's and stays as it is when the layout changes: the photo's toggles and the Map toggle, the grid panel, the side panel and its tabs, the keys and what they act on, the caption, the top panel and the menus. A new layout adds what the central panel shows and the end of the central bar, and nothing more.
 - **Over the view** ([below](#dialogs-sheets-and-the-slideshow)): Settings and Customise tabs are dialogs, each a native window of its own (decision 41, [Dialogs and alerts](#dialogs-and-alerts)). About is Apertrust's own modal over the window. Import and Print are full-window sheets ([Sheets](#sheets)), and the slideshow plays full screen. Each is modal, and the view's keys rest under it ([Keyboard and actions](#keyboard-and-actions)). Export is not over the view but a tool of the Photos tab ([The Export tool](#the-export-tool)), modal to nothing.
-- **A section** is anything in the side panel: a tool, such as Exposure or the Photos tab's Browse, or a utility such as Scopes, Layers, History or Match.
-  - Every section has an id, a title message, header actions and a body.
+- **Everything in the side panel is a tool** (decisions 4 and 93): a processing tool, such as Exposure, or a utility tool, "utility" for short, such as the Photos tab's Browse, Scopes or History. A **section** is the side panel's block a tool is shown in, its header with its body.
+  - Every section has its tool's id, a title message, header actions and a body.
   - The side panel lays out two lists of section ids per tab, its pinned sections and the rest, and a workspace is a named set of those lists with the sections that float over the central panel (decision 83). Dragging a section's header, its ⋯ menu, keys, the settings file and Customise tabs all edit the current workspace's, so any section can sit in any tab, pinned or not, or float ([Moving, pinning and floating sections](#moving-pinning-and-floating-sections)). The order is display order only, never the processing order.
-- **Tool sections are generated** from tool definitions (decision 4, `ui-conventions`). Utility sections are written by hand, from the same components.
+- **A processing tool's section is generated** from its definition (decision 4, `ui-conventions`). A utility's is written by hand in its own app module, from the same components, for now; planned, every tool's header, page and ⋯ are drawn from its `ToolDefinition`, a utility's widgets as custom rows ([One tool model](#one-tool-model), decision 93).
 - **Keys** have one scope for the view, so a key means the same in every layout; a key that means nothing in a layout is unavailable there (H outside Photo).
 
 ### The central panel's layouts
@@ -2607,7 +2609,7 @@ Planned (decision 92): Phase 3 builds the toolbar, its menu, tools' items, the o
 - **What can be placed:**
   - the parts `menu-button` (Windows and Linux), `mark`, `jobs`, `save-state` and `assistant`, one each;
   - the app's actions that are pressed or toggled and have an icon, one each: Import…, Export…, Export Again, Cull, Reset, Undo, Redo, Copy edit, Apply edit, Copy or Apply Parts…, Open…, Open Folder…, Before and After, Clipping Warnings, Zoom to 100%, Zoom to Fit, Full Screen, Jobs, Browse, Show in Folder, Next Photo, Previous Photo and Settings…; Before and After, Clipping Warnings, Zoom to 100% and Settings… are not in the default;
-  - tools' actions, the `tool-<tool>-<action>` actions decision 91 built ([Context menus](#context-menus)), that a tool offers in `Definition::toolbar` (`ToolbarItem { action, icon }`, at most two a tool) or a utility in `Utility::toolbar`; the icon one of `apertrust-ui`'s by name, a `Row::Buttons` action taking its button's; Orientation's Rotate 90° anticlockwise and clockwise first;
+  - tools' actions, the `tool-<tool>-<action>` actions decision 91 built ([Context menus](#context-menus)), that a tool offers in `ToolDefinition::toolbar` (`ToolbarItem { action, icon }`, at most two a tool), a processing tool's or a utility's ([One tool model](#one-tool-model), decision 93); the icon one of `apertrust-ui`'s by name, a `Row::Buttons` action taking its button's; Orientation's Rotate 90° anticlockwise and clockwise first;
   - `space`, 16 points, and `flexible-space`, sharing what is left, any number; the overflow removes fixed spaces as it narrows.
 - **Never placeable:** hold actions (H), focus moves (F6), a set's members (the backgrounds, the workspaces), the platform's own items. Groups are told apart by space, never a line.
 - **Moving the window:** flexible spaces, the parts of a fixed space outside egui's 5-point margin round a control, and a status slot showing nothing are empty areas. On Windows the hit map's `HTCAPTION` rectangles come from the toolbar's layout, the items are `HTCLIENT`, and `HTMAXBUTTON` stays over the maximise button.
@@ -3174,7 +3176,7 @@ Three icon buttons, **Sort** and **Labels** at its start and **Zoom** at its end
 
 `apertrust-tools` describes each tool as data, and the app renders it (decision 28).
 
-- **A definition** holds the tool's id, version, its place, whether it works on layers, whether it has Auto, its controls and its tabs. The place is one of two (decisions 86 and 90): the side panel, Export among its utilities, or Import; a tool is drawn only in its place, and a test checks every list of tools against it.
+- **A definition** holds the tool's id, version, whether it works on layers, whether it has Auto, its controls and its tabs: a processing tool's `Definition`, `ProcessingDefinition` once decision 93's renames land ([One tool model](#one-tool-model)). Planned, its place, one of two (decisions 86 and 90): the side panel, Export among its utilities, or Import, a field of `ToolDefinition`, every tool's; a tool is drawn only in its place, and a test checks every list of tools against it.
 - **A control** is what the edit stores: an id, a kind (a number with range, step and default; a choice with its options; a boolean; curve points) and a unit.
 - **A row** is how a tab shows one control. Each control appears in one row, or only in the rows of its lossless views, a second view of the same stored values (decision 2). A number control may also appear in one equalizer's row, the tone equalizer's graph of its bands (`Row::Custom` with `Widget::Equalizer`), the one widget allowed as a second row beside the controls' own until another needs it.
 
@@ -3188,6 +3190,38 @@ flowchart LR
     app -->|SetControl, ResetControl, Keep,<br/>ApplyPreset, CancelGesture| session["engine session"]
     session -->|reports| mirror
 ```
+
+### One tool model
+
+Every tool, a processing tool or a utility, has one header, one page and one ⋯ (decision 93), as darktable's processing and utility modules both begin with its `dt_action_t`.
+
+**Built:** a processing tool is a `Definition` with the trait `Tool`, drawn by `crates/app/src/tools.rs` with no code of its own. A utility is drawn wholly by its own module (`history.rs`, `scopes.rs`, `library.rs` for Browse, `export.rs`), each building its own `Section` header, called by `main.rs` one by one; `utility::UTILITIES` lists Scopes and History as `Utility { id, measures, menus }`.
+
+**Planned,** by composition:
+
+| Kind | Its declaration, in `apertrust-tools` | Its behaviour | darktable's |
+| --- | --- | --- | --- |
+| Every tool | `ToolDefinition`: id, tabs, `before` and `after`, `reset`, `presets`, `menus`, `toolbar` | — | `dt_action_t` |
+| Processing tool | `ProcessingDefinition` (today's `Definition`), embedding it, with controls, version, switched, layers, Auto, preset rows (`preset_rows`), views, pickers and facts | `ProcessingTool` (today's `Tool`), run by the engine's session | `dt_iop_module_so_t`, `iop_api.h`'s non-GUI half |
+| Utility | `UtilityDefinition` (today's `Utility`), embedding it, with `measures` | `UtilityTool`, in the app: `body`, its widgets drawn each frame, and `reset`, provided as no-ops but `body` | `dt_lib_module_t`, `lib_api.h` |
+
+- **One header, page drawer and ⋯** in the app take `&ToolDefinition` and build `apertrust-ui`'s `Section`, which keeps no tool types (decision 36): ↺ where the tool has a reset, presets where it has presets, ⋯ holding its declared items at `Place::Options` before the layout's ([Context menus](#context-menus)), an item naming an alternate action where it has one, as Truncate History is Compress History's. ↺ is a processing tool's `ResetTool`, a registry action (History's `reset`), the utility's own `UtilityTool::reset` (Export's Default settings), or absent (Scopes, Browse).
+- **One `Context` for every utility:** the mirror, the settings, the words and the frame's command list. History's steps, Browse's folder, Scopes' measurements and Export's jobs are the mirror's; Export's choices are settings.
+- **A utility's page uses the same rows.** `UtilityDefinition::check` refuses a row that edits: one naming a control, a preset row, a picker's rows and a computed value. Settings, labels, groups, `Row::WhenSetting`, actions and buttons, and custom rows naming no control, remain.
+- **Variation goes into custom widgets,** each a `Widget` drawn through one `match` in the app, its egui code in its utility's module, taking that utility's state and returning its actions.
+- **A utility's presets** are presets of its setting rows, Export's first. Export's rows name the `export.*` settings by key, a test failing on a key not in the schema, so `apertrust-tools` never depends on `apertrust-export`.
+
+| Tool | Its page |
+| --- | --- |
+| Processing tools | As now; the tone equalizer's graph a custom row |
+| Export | Groups of setting rows, format-specific rows shown for their formats, the path line a custom row, presets in the header ([The Export tool](#the-export-tool)) |
+| Scopes | A setting row for which scope, drawn as its buttons over the graph are today, the graph a custom row |
+| History | The steps a custom row; ↺ the `reset` action; ⋯ holding Compress History (Truncate History its alternate while Option is held), Create a Style… and Discard History… as declared items |
+| Browse | The recents line a custom row; a Folders group holding the tree as a custom row |
+
+- **Each utility keeps its look** on the page model: its custom widgets draw what its module draws today, and a change of look is a design question of its own.
+- **A utility that draws over the photo** gains `UtilityTool::overlay` and `pointer` when one needs them, darktable's `gui_post_expose` and mouse callbacks.
+- **The steps,** 93.1 to 93.5, are in [the roadmap](roadmap.md#the-window-and-the-shell): the renames and the parent, `UtilityTool` with History, Scopes and Browse, the one header and ⋯, the utilities on the page model, then Export's page.
 
 ### Content tabs and collapsible groups
 
@@ -3316,7 +3350,7 @@ Compact rows, from the wireframe's ModulePanel board, with darktable's sliders t
   - 12 at the sides, the header's chevron at 8.
 - **A section's header** is 30 points (`sizes.section_header`) with its title and buttons centred vertically and the whole 30 its click target.
   - Its title is 15-point Medium (`text.section_title`; `text.title` stays for About's version line), and its chevron `text_secondary` while closed and `text` while open or under the pointer.
-  - A tool's buttons are reset, presets and options (⋯), options at the header's end; the header itself takes no right-click ([Context menus](#context-menus), decision 91). Options holds the section's layout items, a tool's and a utility's alike, after the app's editing items and the tool's own (planned, decision 91) (decision 83, [Moving, pinning and floating sections](#moving-pinning-and-floating-sections)); until they are built it is drawn disabled on a tool, its tooltip "No options yet" (`section-options-none`). A utility, such as Scopes, has options only; History has a reset before its options, which resets the edit (`Section::utility_reset`, "Reset edit"). Export has a tool's three, reset, presets and options, its reset applying Default settings (decision 90, [Its header and presets](#its-header-and-presets)).
+  - A tool's buttons are reset, presets and options (⋯), options at the header's end; the header itself takes no right-click ([Context menus](#context-menus), decision 91). Options holds the section's layout items, a tool's and a utility's alike, after the app's editing items and the tool's own (planned, decision 91) (decision 83, [Moving, pinning and floating sections](#moving-pinning-and-floating-sections)); until they are built it is drawn disabled on a tool, its tooltip "No options yet" (`section-options-none`). A utility, such as Scopes, has options only; History has a reset before its options, which resets the edit (`Section::utility_reset`, "Reset edit"). Export has a tool's three, reset, presets and options, its reset applying Default settings (decision 90, [Its header and presets](#its-header-and-presets)). Planned, every tool's buttons follow its `ToolDefinition`'s `reset` and `presets`, drawn by one header ([One tool model](#one-tool-model), decision 93).
   - Each button is 14 points wide round its 14-point icon (`sizes.section_button`) and a control high, with 4 points between every two (`spacing.section_button_gap`). The last one's ink, not its box, ends where the rows do, 12 points from the section's edge: Lucide's ⋯ ends 1.7 points inside its box at 14 points, so the header's end inset is 10.3.
   - Over its chevron, title and empty space, never its buttons, the header's tooltip says what the section is for ([The header's tooltip](#the-headers-tooltip)).
   - A title that would run under the header's buttons is cut at its end with …, as labels are, the header's tooltip giving it whole, in bold, first, and screen readers hearing it whole. At the side panel's narrowest, 240 points, a tool's title has about 139 points: three English titles are cut, Highlight reconstruction (166 points), Raw black/white point (154) and Output colour profile (143), and more Polish and Ukrainian ones, Usuwanie zamglenia (141) and Balans kolorów RGB (139) among them, Відновлення переекспонованого (238) the longest.
@@ -3397,7 +3431,7 @@ Over a section's header, its chevron, title and empty space, never its buttons, 
   | input scene-referred, output display-referred | Works on · From the light as captured to the finished picture |
   | input and output display-referred | Works on · The finished picture |
 
-  The utilities, which have no definition, are listed in `apertrust_tools::utility::UTILITIES`. darktable translates each of its lines whole, so each is a message of its own, its English darktable's `msgid` and its Ukrainian and Polish darktable's own `msgstr` (`po/uk.po`, `po/pl.po` at the reference release). `crates/tools/tests/about.rs` holds every built tool's facts to darktable's `description()`, each line to darktable's words and translations, and every tool's and utility's sentence to every language.
+  The utilities, which have no `Definition`, are listed in `apertrust_tools::utility::UTILITIES`, each a `UtilityDefinition` once decision 93's renames land ([One tool model](#one-tool-model)). darktable translates each of its lines whole, so each is a message of its own, its English darktable's `msgid` and its Ukrainian and Polish darktable's own `msgstr` (`po/uk.po`, `po/pl.po` at the reference release). `crates/tools/tests/about.rs` holds every built tool's facts to darktable's `description()`, each line to darktable's words and translations, and every tool's and utility's sentence to every language.
 - **Where.** Beside the side panel, over the photo, its top level with the header's, 8 points from the panel's edge, on the side with more room, so it is mirrored when the panel is on the start side; moved up to stay inside the window. 340 points wide at most, 10 points of padding at its sides and 8 and 9 at its top and bottom. Where that side has under 336 points (a window near its 500-point minimum), it hangs 4 points under the header inside the panel, 8 points in from each side and 304 wide at most, and goes above the header near the window's foot. This is an exception to the tooltips' placement.
 - **When.** These timings are this tooltip's own; egui's tooltips, which the rest of the app draws, keep egui's 0.5 s. After 0.6 s at rest on the header; moving to the next header within 0.4 s of one going shows the next at once, so a sweep down the panel reads the tools one by one. Gone on a click, a key, a scroll, a drag (a header's, a slider's), the peek keys held, or a menu open, until the pointer leaves the header. A header focused by a key shows it after the same 0.6 s, placed the same way, the Tab or Shift+Tab that brought the focus hiding nothing; Esc, or any later key, hides it until the focus moves. It is a tooltip, not a popover: painted on the tooltip layer, it never takes the focus or a click. One shows at a time, the pointer's over the focus's.
 - **Its look.** `raised`, the menus' edge and shadow (`menu_edge`, `menu_shadow`, `popup_hairline`) and `popup_radius`; `text_strong` for the name, the description and the rows' values, `text_secondary` for the labels, the icons and darktable's lines. The labels' column is as wide as the widest of the six labels in the language, so every tooltip lines its values up alike, at least 64 points, between a 13-point icon column and the values, 8 points apart; rows 3 points apart. No accent.
@@ -4217,6 +4251,8 @@ Phase 2's interface, each step usable on its own. Steps 1 to 5 are built; steps 
 
 Decision 42's slider values and choice rows are Phase 2's, built beside steps 7 to 9 in [their cards' order](#slider-values-the-build-in-cards).
 
+Decision 93's one tool model is Phase 2's too, in its steps 93.1 to 93.5 ([One tool model](#one-tool-model); [the roadmap](roadmap.md#the-window-and-the-shell)), Export's page, the last, with the Export tool's setting rows.
+
 Phase 3 adds, for the interface:
 
 - selecting several photos, Photo's cells and the batch actions;
@@ -4229,7 +4265,7 @@ Phase 3 adds, for the interface:
   - 2, moving by drag within a tab, pinning by drag included;
   - 3, the ⋯ menu's items, the keys and the screen readers' actions, but for floating's;
   - 4, another tab: drops on a tab, the spring-loaded tab, Move to Tab ›, any section in any tab;
-- the toolbar (decision 92; [The top panel](#the-top-panel)): the top panel drawn from the workspace's list in place of its fixed parts, with spaces, the guards, » and labels, the toolbar menu, and tools' items (`Definition::toolbar`), Orientation's rotations first; the Customise Toolbar window much later;
+- the toolbar (decision 92; [The top panel](#the-top-panel)): the top panel drawn from the workspace's list in place of its fixed parts, with spaces, the guards, » and labels, the toolbar menu, and tools' items (`ToolDefinition::toolbar`, decision 93), Orientation's rotations first; the Customise Toolbar window much later;
 - Export, built as a section of the Photos tab on the session's export job (decision 56), then grown into the Export tool (decision 90) in [its steps' order](#the-build-in-steps): built on the Mac and on Windows and Linux, the width spike, the setting rows, the tool, presets and metadata left;
 - the system's alerts: built on the Mac with Export's overwrite question and the quit alert; Delete Workspace… and the other platforms left.
 
@@ -4276,13 +4312,14 @@ The decisions this design rests on, by area; each decision record has the option
 | Area | The choice |
 | --- | --- |
 | Reuse | A design-system crate, `apertrust-ui`, that knows nothing of the engine or tools, with translation in an egui-free module until a second client needs it; tool panels generated from definitions (decision 36) |
+| Tool model | Every tool a processing tool or a utility, darktable's processing and utility modules; one `ToolDefinition` embedded in `ProcessingDefinition` and `UtilityDefinition`, the trait `ProcessingTool` in `apertrust-tools` and `UtilityTool` in the app; one header, page drawer and ⋯ for every tool; a utility's page of the same rows, never one that edits, its widgets as custom rows (decision 93, planned) |
 | Themes | Token sets named by role, in TOML; built-in themes compiled in; checked for contrast when they load; switched live (decision 36) |
 | Translation | Fluent, with ICU4X for numbers and dates (decision 36) |
 | Actions | One registry for buttons, menus, tooltips and shortcuts, all rebindable (decision 36) |
 | Settings | One settings schema in TOML, each setting declared once, each owner's crate generating typed statics from it, which the file, the Settings dialog and the CLI read; the dialog's nine pages, General, Import, Photos, Editing, Processing, Storage, Shortcuts, Presets and AI, its rows drawn from the schema and Shortcuts, Storage, Presets and AI built by hand; the generator, the machinery and the user data and cache folders in `apertrust-base`, with the log; a user data folder of one's own by `--user-data-dir` or `APERTRUST_USER_DATA_DIR`, separating settings only; the library in another place, next to the images; an edit a newer Apertrust wrote never overwritten (decision 43) |
 | Window frame | The top panel from the window's top edge on every platform: the Mac's traffic lights in it, caption buttons drawn by the app on Windows and Linux, Windows' snap layouts flyout through native hit testing; the system's title bar as a setting there, off by default; a minimum width of 500 points (decision 39) |
 | Context menus | Only in named places, the photo, a thumbnail and a tool's ⋯ open to tools' items, the only places `apertrust-tools`' `Place` has, the surround and the rest the app's own; each item a registry action, a tool's own generated as `tool-<tool>-<action>`, declared as data (`MenuItem`: `Definition::menus`, `Utility::menus`, the app's `APP_ITEMS`), at most two a tool on the photo and a thumbnail, a submenu of up to eight of its own actions one of them; the app building every menu, its items and the tools' sorted by `(section, order)`; no right-click on a tool; every item reachable without one; the first slice built, History's Reset and Orientation ▸ its items (decision 91; [Context menus](#context-menus)) |
-| Toolbar | The top panel a toolbar a person customises, everything but the caption buttons and the traffic lights; one list of item ids per workspace, tools' actions offered in `Definition::toolbar`; icons by default, Toolbar Labels app-wide; a right-click anywhere on it opening the toolbar menu; the settings file until a Customise Toolbar window (decision 92, planned; [The top panel](#the-top-panel)) |
+| Toolbar | The top panel a toolbar a person customises, everything but the caption buttons and the traffic lights; one list of item ids per workspace, tools' actions offered in `ToolDefinition::toolbar` (decision 93); icons by default, Toolbar Labels app-wide; a right-click anywhere on it opening the toolbar menu; the settings file until a Customise Toolbar window (decision 92, planned; [The top panel](#the-top-panel)) |
 | Touch | One interface in two modes, Standard and Touch, Touch changing sizes, spacing and gestures, with two layout adaptations presenting the same parts (the portrait bottom sheet, Photos' Select mode); Interface in Settings › General and View › Touch Mode, Standard on the desktop, Touch on Android; no literal sizes, nothing only on hover, right-click, double-click or a modifier, sliders and pickers only through their components (decision 94) |
 | Popups | Native `NSMenu`s on the Mac for plain lists and context menus, from `apertrust-display`; drawn for what previews or holds controls, and on Windows and Linux; one popup service; the drawn ones on egui `Area`s, owning their plain keys while open through an egui plugin, drawn by `popup::show` once a frame (decision 40) |
 | Dialogs and alerts | Every dialog a native window of its own, modal to the window it rises from, hosted by the app beside eframe's window with its own egui context, AccessKit adapter and surface on the engine's device; made modal as each platform does it (on the Mac a sheet, and Settings alone modeless, a native window of its own; an owned window with its owner disabled on Windows; transient-for and the modal state on X11; a parent on Wayland, with modality kept by the app); confirmations the system's alerts through one alert service, `NSAlert` and the task dialog, Linux's Apertrust's own in a dialog window; About and a future splash screen Apertrust's own over the window (decision 41) |

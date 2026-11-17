@@ -8,11 +8,12 @@ Apertrust ports darktable's processing, and darktable calls both what a person w
 
 **Two terms.**
 
-- A **tool** is what a person sees and works with: one section of the side panel, or of the Import sheet's column, with its controls, tabs and collapsible groups, under one name ([0028](0028-tools-bound-to-operations.md)).
+- A **tool** is what a person sees and works with: in the side panel, or in the Import sheet's column, with one header, one page and one ⋯, under one name ([0028](0028-tools-bound-to-operations.md)). It is the parent of two kinds, as darktable's module is of its processing and utility modules ([0093](0093-one-tool-model-processing-tools-and-utility-tools.md)).
   - **Everything in the side panel is a tool:** the tools that edit the photo, such as Exposure or Colour calibration, and Browse, Filters, Keywords, Metadata, Export, Scopes, History, Snapshots and the Colour picker.
   - **A tool has one place:** the side panel, Export among its utilities ([0090](0090-export-as-a-photos-tab-tool.md)), or the Import sheet (import tools), and appears nowhere else ([0086](0086-import-as-a-full-window-sheet.md)).
-  - **A processing tool** binds operations, as darktable's processing modules do.
-  - **A utility** is a tool that edits nothing, such as Scopes, Export or the Colour picker, as darktable's utility modules. "Utility" names only that kind of tool, never a second level beside tools.
+  - **A processing tool** edits the photo through operations it binds, as darktable's processing modules (iop) do.
+  - **A utility tool,** "utility" for short, edits nothing of its own, with no controls and no operation, such as Browse, Scopes, History, Export or the Colour picker, as darktable's utility modules (lib). "Utility" names only that kind of tool, never a second level beside tools.
+  - **"Section" names only the side panel's block,** a header with its body, in which a tool is shown, never the tool itself.
   - **A processing tool has controls,** and the edit stores them. **Any tool may have settings,** the options darktable keeps in darktablerc, which Apertrust keeps in `settings.toml`, never in an edit. What another tool holds is what it is: view state, such as the folder Browse shows or the Scopes' mode, or the photo's metadata, such as Keywords' and Metadata's fields ([0073](0073-the-photos-tabs-tools-browse-first-filters-in-folder-mode.md)), never controls in the edit.
 - An **operation** is one algorithm in the engine, usually a darktable port, with its manifest, schema and kernels ([0020](0020-operations-as-native-plugins-one-crate-each.md)). darktable's own XMP history calls these operations (`darktable:operation`).
 - **An MCP tool is always written "MCP tool",** never a bare "tool". The MCP tools are generated from the tools' definitions and the library's commands ([0058](0058-a-native-engine-every-client-through-the-session-protocol.md)).
@@ -35,14 +36,14 @@ Apertrust ports darktable's processing, and darktable calls both what a person w
 - **Keeping "tool" for MCP alone:** an MCP tool is a protocol's entry point, generated from a tool's commands. Writing "MCP tool" in full keeps the two apart at the cost of one word.
 - **"Adjustments":** Browse, Scopes and History adjust nothing.
 - **"Panels":** the side panel is a panel, and a floating panel holds a tool ([0083](0083-the-side-panels-layout-dragged-and-floating.md)); a tool would be a panel inside a panel.
-- **Tools for editing and "sections" for the rest:** two names for what the side panel shows, moves and floats alike ([0083](0083-the-side-panels-layout-dragged-and-floating.md)). "Section" stays the side panel's word for the place a tool is shown.
+- **Tools for editing and "sections" for the rest:** two names for what the side panel shows, moves and floats alike ([0083](0083-the-side-panels-layout-dragged-and-floating.md)). "Section" stays the side panel's word for the block a tool is shown in.
 - **Reading the sidecar's old names beside the new:** a compatibility path kept for good, for files only nightly builds wrote.
 - **Keeping `apertrust:module` in the sidecar:** free, but the file would disagree with the vocabulary for good.
 - **An Expert tab with direct operation access:** a second, unowned way to set parameters tools drive; operation parameters in saved edits beside tool values; ports no tool needs; darktable's whole surface back in the interface.
 
 ## Consequences
 
-- **The docs, code, sidecar and skills use the two terms.**
+- **The docs, code, sidecar and skills use the two terms,** and the two kinds of tool: in the code, `ToolDefinition` the parent, `ProcessingDefinition` with the trait `ProcessingTool`, and `UtilityDefinition` with the app's trait `UtilityTool`, planned ([0093](0093-one-tool-model-processing-tools-and-utility-tools.md)); built today as `Definition`, the trait `Tool` and `Utility`.
 - **The rename lands in steps,** 4.1 to 4.7 built and 4.8 planned, the identifiers in backticks following their own step:
   - 4.1, built: a tool's settings named settings in the code, freeing the word;
   - 4.2, built: the docs say tool, the tools' pages in `docs/tools/`;

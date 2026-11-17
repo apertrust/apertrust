@@ -1281,6 +1281,8 @@ flowchart TD
 
 `apertrust-tools` describes each tool as static data and binds it with a pure function (decision 28). The engine's session runs the bindings, because the edit, its history and `.apxmp` are the engine's and hold tool values.
 
+The session runs processing tools alone, the tools that edit the photo; utilities, which edit nothing of their own, are the app's. Below, `Definition` and the trait `Tool` are as built; decision 93 renames them `ProcessingDefinition` and `ProcessingTool`, the fields every tool shares moving into an embedded `ToolDefinition`, with no change to the session ([gui.md](gui.md#one-tool-model)).
+
 **A definition** holds:
 
 - **an id,** snake\_case and permanent, since it is in every saved edit; a version; whether the tool works on layers; whether it has Auto; its controls and its tabs;

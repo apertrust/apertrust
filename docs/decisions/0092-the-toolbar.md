@@ -43,11 +43,10 @@ There is one ordered list of item ids for each workspace. The caption buttons an
 
 **Tools' items.**
 
-- A tool offers actions with `Definition::toolbar: &'static [ToolbarItem]`, where `ToolbarItem { action, icon }`:
-  - `action` names one of its own actions, as `Definition::menus` does;
+- A tool offers actions with `ToolDefinition::toolbar: &'static [ToolbarItem]`, in the parent every tool's definition embeds, a processing tool's and a utility's alike ([0093](0093-one-tool-model-processing-tools-and-utility-tools.md)), where `ToolbarItem { action, icon }`:
+  - `action` names one of its own actions, as its menu items do, or for a utility a registry action;
   - `icon` names one of `apertrust-ui`'s icons, or is none for a `Row::Buttons` action, which takes its button's icon.
-- A utility offers its own with `Utility::toolbar`.
-- `Definition::check` refuses an unknown action, a repeat and more than two items for a tool. An app test fails on an icon name `apertrust-ui` does not have.
+- The definition's check refuses an unknown action, a repeat and more than two items for a tool. An app test fails on an icon name `apertrust-ui` does not have.
 - Offering an action only makes it a candidate: it is on the toolbar only where a person places it.
 - The first items: Orientation's Rotate 90° anticlockwise and Rotate 90° clockwise.
 
@@ -176,6 +175,6 @@ The toolbar is measured every frame at the current scale and language, and gives
   - Show Menu Button in View › Panels on Windows and Linux;
   - the window's minimum width raised to what the toolbar never folds;
   - the tests: of the overflow at 500 points, of the parts' ids, of the icon names and of the words' width.
-- **`apertrust-tools`:** `ToolbarItem`, `Definition::toolbar` and `Utility::toolbar`, with their checks.
+- **`apertrust-tools`:** `ToolbarItem` and `ToolDefinition::toolbar`, with their checks.
 - **Windows' native hit testing** (planned, `apertrust-display`): it takes a right-click on an `HTCAPTION` rectangle itself (`WM_NCRBUTTONUP`) and reports it, so Windows does not open its menu there.
 - **The default changes:** Import…, Export…, Cull and Reset lose their words by default, labels being off, and the narrowing's thresholds change with it.
