@@ -34,7 +34,7 @@ There is one ordered list of item ids for each workspace. The caption buttons an
 | --- | --- | --- |
 | Parts | `menu-button` (Windows and Linux), `mark`, `jobs`, `save-state`, `assistant` (Phase 6) | One each |
 | The app's actions | A registry action that is pressed or toggled and has an icon: Import…, Export…, Export Again, Cull, Reset, Undo, Redo, Copy edit, Apply edit, Copy or Apply Parts…, Open…, Open Folder…, Before and After, Clipping Warnings, Zoom to 100%, Zoom to Fit, Full Screen, Jobs, Browse, Show in Folder, Next Photo, Previous Photo, Settings… | One each |
-| Tools' actions | A `tool-<tool>-<action>`, generated from the tool's own actions as decision 91 built them, that its tool offers for the toolbar | One each |
+| Tools' actions | A processing tool's `tool-<tool>-<action>`, generated from its own actions as decision 91 built them, or the registry action a utility names, as History's `reset`, that its tool offers for the toolbar; the item's id is the action's | One each |
 | Spacing | `space`, 16 points; `flexible-space`, sharing what is left | Any number; the overflow removes fixed spaces as it narrows |
 
 - **Never placeable:** hold actions (H), focus moves (F6), the members of a set (the backgrounds, the workspaces), and the platform's own items.

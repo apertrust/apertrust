@@ -2609,7 +2609,7 @@ Planned (decision 92): Phase 3 builds the toolbar, its menu, tools' items, the o
 - **What can be placed:**
   - the parts `menu-button` (Windows and Linux), `mark`, `jobs`, `save-state` and `assistant`, one each;
   - the app's actions that are pressed or toggled and have an icon, one each: Import…, Export…, Export Again, Cull, Reset, Undo, Redo, Copy edit, Apply edit, Copy or Apply Parts…, Open…, Open Folder…, Before and After, Clipping Warnings, Zoom to 100%, Zoom to Fit, Full Screen, Jobs, Browse, Show in Folder, Next Photo, Previous Photo and Settings…; Before and After, Clipping Warnings, Zoom to 100% and Settings… are not in the default;
-  - tools' actions, the `tool-<tool>-<action>` actions decision 91 built ([Context menus](#context-menus)), that a tool offers in `ToolDefinition::toolbar` (`ToolbarItem { action, icon }`, at most two a tool), a processing tool's or a utility's ([One tool model](#one-tool-model), decision 93); the icon one of `apertrust-ui`'s by name, a `Row::Buttons` action taking its button's; Orientation's Rotate 90° anticlockwise and clockwise first;
+  - tools' actions, a processing tool's `tool-<tool>-<action>` actions decision 91 built ([Context menus](#context-menus)) or the registry action a utility names, as History's `reset`, the item's id the action's, that a tool offers in `ToolDefinition::toolbar` (`ToolbarItem { action, icon }`, at most two a tool), a processing tool's or a utility's ([One tool model](#one-tool-model), decision 93); the icon one of `apertrust-ui`'s by name, a `Row::Buttons` action taking its button's; Orientation's Rotate 90° anticlockwise and clockwise first;
   - `space`, 16 points, and `flexible-space`, sharing what is left, any number; the overflow removes fixed spaces as it narrows.
 - **Never placeable:** hold actions (H), focus moves (F6), a set's members (the backgrounds, the workspaces), the platform's own items. Groups are told apart by space, never a line.
 - **Moving the window:** flexible spaces, the parts of a fixed space outside egui's 5-point margin round a control, and a status slot showing nothing are empty areas. On Windows the hit map's `HTCAPTION` rectangles come from the toolbar's layout, the items are `HTCLIENT`, and `HTMAXBUTTON` stays over the maximise button.
@@ -3221,7 +3221,7 @@ Every tool, a processing tool or a utility, has one header, one page and one ⋯
 
 - **Each utility keeps its look** on the page model: its custom widgets draw what its module draws today, and a change of look is a design question of its own.
 - **A utility that draws over the photo** gains `UtilityTool::overlay` and `pointer` when one needs them, darktable's `gui_post_expose` and mouse callbacks.
-- **The steps,** 93.1 to 93.5, are in [the roadmap](roadmap.md#the-window-and-the-shell): the renames and the parent, `UtilityTool` with History, Scopes and Browse, the one header and ⋯, the utilities on the page model, then Export's page.
+- **The steps,** 93.1 to 93.5, are in the roadmap, 93.1 to 93.4 in [Phase 2](roadmap.md#the-window-and-the-shell) and 93.5 in [Phase 3](roadmap.md#export): the renames and the parent, `UtilityTool` with History, Scopes and Browse, the one header and ⋯, the utilities on the page model, then Export's page.
 
 ### Content tabs and collapsible groups
 
@@ -4251,7 +4251,7 @@ Phase 2's interface, each step usable on its own. Steps 1 to 5 are built; steps 
 
 Decision 42's slider values and choice rows are Phase 2's, built beside steps 7 to 9 in [their cards' order](#slider-values-the-build-in-cards).
 
-Decision 93's one tool model is Phase 2's too, in its steps 93.1 to 93.5 ([One tool model](#one-tool-model); [the roadmap](roadmap.md#the-window-and-the-shell)), Export's page, the last, with the Export tool's setting rows.
+Decision 93's one tool model is Phase 2's too, in its steps 93.1 to 93.4 ([One tool model](#one-tool-model); [the roadmap](roadmap.md#the-window-and-the-shell)); the last, 93.5, Export's page, is Phase 3's, with the setting rows the Export tool and Import's sheet share ([the roadmap](roadmap.md#export)).
 
 Phase 3 adds, for the interface:
 

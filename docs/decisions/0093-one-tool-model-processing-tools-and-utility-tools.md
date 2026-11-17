@@ -125,7 +125,7 @@ Each step is one pull request, reviewed before the next.
 
 1. **93.1, the renames and the parent,** mechanical, with no behaviour change: `Definition` to `ProcessingDefinition`, `Utility` to `UtilityDefinition`, the trait `Tool` to `ProcessingTool` (about 250 uses), `Definition::presets` to `preset_rows`, and the shared fields into `ToolDefinition`, `Utility::menus` among them. The docs' names follow in the same pull request.
 2. **93.2, `UtilityTool` in the app,** with History, Scopes and Browse implementing it, Browse joining `UTILITIES`, `main.rs` calling them through the trait.
-3. **93.3, one header and ⋯** for every tool, from `&ToolDefinition`.
+3. **93.3, one header and ⋯** for every tool in `TOOLS` and `UTILITIES`, from `&ToolDefinition`; Export's comes with step 93.5, when it joins `UTILITIES`.
 4. **93.4, the utilities on the page model:** Scopes, the smallest, first, then History, then Browse.
 5. **93.5, Export's page as setting rows,** with its presets: Export implements `UtilityTool` and joins `UTILITIES`, its section drawn by `export.rs` until then.
 
