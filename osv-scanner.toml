@@ -15,3 +15,9 @@ reason = "zbus_names merged into zbus 6; AccessKit's Linux bridge is still on zb
 [[IgnoredVulns]]
 id = "RUSTSEC-2026-0372"
 reason = "zvariant_derive merged into zbus 6; AccessKit's Linux bridge is still on zbus 5"
+
+# chrono is unmaintained, not vulnerable. rawler uses it for its metadata's dates. Remove
+# this when no crate in the tree needs chrono.
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0543"
+reason = "chrono unmaintained, not a vulnerability; rawler still depends on it"
