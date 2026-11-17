@@ -1132,17 +1132,21 @@ fn guides_row(ui: &mut egui::Ui, words: &Translator) {
     let [label, full, promise, settings, settings_promise] =
         messages::GUIDES.map(|id| words.text(id));
     let settings = format!("{settings}. {settings_promise}");
+    let t = apertrust_ui::theme(ui.ctx());
     ui.horizontal(|ui| {
-        let _ = ToggleRow::new(&label, false)
-            .name(&full)
-            .promise(&promise)
-            .enabled(false)
-            .show(ui);
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            let _ = IconButton::new(apertrust_ui::Icon::Grid, &settings)
+        // The row takes the width it is given, so the button's room, and the gap before it,
+        // are kept back first.
+        let button = IconButton::new(apertrust_ui::Icon::Grid, &settings).enabled(false);
+        let room = (ui.available_width() - button.side(ui) - t.spacing.xs).max(0.0);
+        ui.allocate_ui(egui::vec2(room, t.sizes.panel_line), |ui| {
+            let _ = ToggleRow::new(&label, false)
+                .name(&full)
+                .promise(&promise)
                 .enabled(false)
                 .show(ui);
         });
+        ui.add_space(t.spacing.xs);
+        let _ = button.show(ui);
     });
 }
 
@@ -2948,7 +2952,7 @@ mod tests {
                 .is_none()
         );
         harness.get_by_role_and_label(Role::Slider, "Green, input R");
-        harness.get_by_role_and_label(Role::CheckBox, "Green, normalise channels");
+        harness.get_by_role_and_label(Role::Switch, "Green, normalise channels");
     }
 
     #[test]
@@ -2970,7 +2974,7 @@ mod tests {
             "Compensate camera exposure −⅔ EV",
             "Highlight preservation mode +1.0 EV",
         ] {
-            harness.get_by_role_and_label(Role::CheckBox, name);
+            harness.get_by_role_and_label(Role::Switch, name);
         }
         for name in ["Exposure", "Black level correction"] {
             harness.get_by_role_and_label(Role::Slider, name);
@@ -2989,7 +2993,7 @@ mod tests {
         // Picker target right under it.
         let top = |role, name| harness.get_by_role_and_label(role, name).rect().top();
         assert!(
-            top(Role::CheckBox, "Highlight preservation mode +1.0 EV")
+            top(Role::Switch, "Highlight preservation mode +1.0 EV")
                 < top(Role::Slider, "Exposure")
         );
         assert!(top(Role::Slider, "Exposure") < top(Role::ComboBox, "Picker target"));
@@ -3107,7 +3111,7 @@ mod tests {
         image.camera.as_mut().unwrap().exposure_bias = 4.0 / 3.0;
         on_photo(&Exposure, &mut harness.state_mut().state, &image);
         harness.run();
-        harness.get_by_role_and_label(Role::CheckBox, "Compensate camera exposure +1⅓ EV");
+        harness.get_by_role_and_label(Role::Switch, "Compensate camera exposure +1⅓ EV");
         assert!(
             harness
                 .query_by_label_contains("Highlight preservation mode")
@@ -3145,7 +3149,7 @@ mod tests {
         let mut harness = panel(&Exposure, state);
         harness.run();
         let name = "Compensate camera exposure −⅔ EV";
-        let toggle = harness.get_by_role_and_label(Role::CheckBox, name);
+        let toggle = harness.get_by_role_and_label(Role::Switch, name);
         assert!(toggle.accesskit_node().is_disabled());
         toggle.click();
         harness.run();
@@ -3155,7 +3159,7 @@ mod tests {
             control.available = true;
         }
         harness.run();
-        harness.get_by_role_and_label(Role::CheckBox, name).click();
+        harness.get_by_role_and_label(Role::Switch, name).click();
         harness.run();
         assert_eq!(
             harness.state().changes,
@@ -4494,7 +4498,7 @@ mod tests {
         let mut harness = panel(&LocalContrast, untouched(&LocalContrast));
         harness.run();
         let mask = "tool-bilat-control-mask-full";
-        harness.get_by_role_and_label(Role::CheckBox, mask);
+        harness.get_by_role_and_label(Role::Switch, mask);
         harness
             .get_by_role_and_label(Role::Tab, "tool-bilat-tab-detail")
             .click();
@@ -4505,7 +4509,7 @@ mod tests {
         let detail = harness
             .get_by_role_and_label(Role::Slider, "tool-bilat-control-detail-full")
             .rect();
-        let below = harness.get_by_role_and_label(Role::CheckBox, mask).rect();
+        let below = harness.get_by_role_and_label(Role::Switch, mask).rect();
         assert!(below.top() >= detail.bottom(), "{below:?} after {detail:?}");
     }
 
@@ -4784,7 +4788,7 @@ mod tests {
             );
         }
         harness.get_by_role_and_label(Role::Slider, "Gamut compression");
-        harness.get_by_role_and_label(Role::CheckBox, "Clip negative RGB from gamut");
+        harness.get_by_role_and_label(Role::Switch, "Clip negative RGB from gamut");
         let mapping = harness.get_by_role_and_label(Role::Button, "Area colour mapping");
         assert_eq!(mapping.accesskit_node().data().is_expanded(), Some(false));
         harness.get_by_role_and_label(Role::Button, CHECKER);
@@ -4819,7 +4823,7 @@ mod tests {
                 harness.get_by_role_and_label(Role::Slider, &slider);
             }
             let normalise = format!("{rows}, normalise channels");
-            harness.get_by_role_and_label(Role::CheckBox, &normalise);
+            harness.get_by_role_and_label(Role::Switch, &normalise);
             // Every other tab's rows are out of sight.
             for (_, other) in tabs.iter().filter(|(_, other)| *other != rows) {
                 let slider = format!("{other}, input R");
@@ -4952,7 +4956,7 @@ mod tests {
         ("Horizontal centre", Role::Slider),
         ("Vertical centre", Role::Slider),
         ("Shape", Role::Slider),
-        ("Automatic ratio", Role::CheckBox),
+        ("Automatic ratio", Role::Switch),
         ("Width/height ratio", Role::Slider),
         ("Dithering", Role::ComboBox),
     ];
@@ -5072,7 +5076,7 @@ mod tests {
         };
         let toggle = |harness: &mut Harness<'static, Panel>| {
             harness
-                .get_by_role_and_label(Role::CheckBox, "Automatic ratio")
+                .get_by_role_and_label(Role::Switch, "Automatic ratio")
                 .click();
             harness.run();
         };
@@ -5144,7 +5148,7 @@ mod tests {
             assert!(harness.query_by_label("Capture sharpen controls").is_none());
             let mut rows: Vec<(f32, String, Option<String>, bool)> = harness
                 .get_all_by_role(Role::ComboBox)
-                .chain(harness.get_all_by_role(Role::CheckBox))
+                .chain(harness.get_all_by_role(Role::Switch))
                 .map(|node| {
                     let n = node.accesskit_node();
                     let name = n.label().unwrap_or_default();
@@ -5862,7 +5866,7 @@ mod tests {
                 );
             }
             // The mask's display after them, drawn disabled until the mask preview comes.
-            let mask = harness.get_by_role_and_label(Role::CheckBox, MASK_DISPLAY);
+            let mask = harness.get_by_role_and_label(Role::Switch, MASK_DISPLAY);
             assert!(mask.accesskit_node().is_disabled(), "{tab}");
             let last = harness
                 .get_by_role_and_label(Role::Slider, sliders[sliders.len() - 1])
@@ -5938,7 +5942,7 @@ mod tests {
                 "{name} without a filter"
             );
         }
-        harness.get_by_role_and_label(Role::CheckBox, MASK_DISPLAY);
+        harness.get_by_role_and_label(Role::Switch, MASK_DISPLAY);
         // The guided filters are listed but not ported, so drawn disabled; Averaged EIGF,
         // a filter, brings the rows back.
         harness

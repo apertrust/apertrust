@@ -669,12 +669,12 @@ fn a_toggle_row_reports_its_full_name_and_ignores_input_while_disabled() {
         );
     harness.run();
     let name = "Use the camera's exposure bias";
-    harness.get_by_role_and_label(Role::CheckBox, name).click();
+    harness.get_by_role_and_label(Role::Switch, name).click();
     harness.run();
     assert_eq!(harness.state().2, [false]);
     harness.state_mut().1 = false;
     harness.run();
-    let toggle = harness.get_by_role_and_label(Role::CheckBox, name);
+    let toggle = harness.get_by_role_and_label(Role::Switch, name);
     assert!(toggle.accesskit_node().is_disabled());
     toggle.click();
     harness.run();
@@ -702,9 +702,9 @@ fn a_toggle_row_s_value_follows_its_label_and_is_heard_with_its_name() {
         );
     harness.run();
     let heard = "Compensate camera exposure −⅔ EV";
-    let row = harness.get_by_role_and_label(Role::CheckBox, heard).rect();
+    let row = harness.get_by_role_and_label(Role::Switch, heard).rect();
     harness.snapshot("toggle-row-value");
-    // The value is part of the target, at the row's end.
+    // The value is part of the target: a click at the row's end toggles it.
     click_at(&mut harness, pos2(row.right() - 4.0, row.center().y));
     assert!(!harness.state().0);
     harness.state_mut().1 = false;
@@ -737,7 +737,7 @@ fn a_toggle_row_cuts_a_long_label_before_its_value() {
         );
     harness.run();
     let heard = format!("{label} −⅔ EV");
-    let row = harness.get_by_role_and_label(Role::CheckBox, &heard).rect();
+    let row = harness.get_by_role_and_label(Role::Switch, &heard).rect();
     assert!(row.right() <= 240.0, "{row:?}");
     harness.snapshot("toggle-row-value-long-label");
     let tip = format!("{label} −⅔ EV\n{promise}");
@@ -766,52 +766,12 @@ fn a_toggle_row_with_room_has_its_promise_alone_as_its_tooltip() {
         });
     harness.run();
     let row = harness
-        .get_by_role_and_label(Role::CheckBox, "Compensate camera exposure −⅔ EV")
+        .get_by_role_and_label(Role::Switch, "Compensate camera exposure −⅔ EV")
         .rect();
     harness.hover_at(row.center());
     harness.run();
     let promise = "Undoes the exposure compensation set on the camera.";
     assert!(harness.query_by_label(promise).is_some());
-}
-
-/// A checkbox with a value is heard with it, used alone as in a row.
-#[test]
-fn a_checkbox_s_value_is_heard_after_its_label() {
-    let mut harness = Harness::builder()
-        .with_size(egui::vec2(400.0, 40.0))
-        .with_context_setup(|ctx| apertrust_ui::install(ctx, Theme::default()))
-        .build_ui_state(
-            |ui, on: &mut bool| {
-                Checkbox::new(on, "Compensate camera exposure")
-                    .value("−⅔ EV")
-                    .show(ui);
-            },
-            true,
-        );
-    harness.run();
-    harness.get_by_role_and_label(Role::CheckBox, "Compensate camera exposure −⅔ EV");
-}
-
-/// With no label, the value follows the box: drawn, given room and heard alone.
-#[test]
-fn a_checkbox_with_no_label_shows_its_value_after_the_box() {
-    let mut harness = Harness::builder()
-        .with_size(egui::vec2(400.0, 40.0))
-        .with_context_setup(|ctx| apertrust_ui::install(ctx, Theme::default()))
-        .build_ui_state(
-            |ui, width: &mut f32| {
-                let mut on = true;
-                *width = Checkbox::new(&mut on, "")
-                    .value("−⅔ EV")
-                    .show(ui)
-                    .rect
-                    .width();
-            },
-            0.0,
-        );
-    harness.run();
-    harness.get_by_role_and_label(Role::CheckBox, "−⅔ EV");
-    assert!(*harness.state() > 40.0, "room for the value after the box");
 }
 
 #[test]
@@ -893,7 +853,7 @@ fn an_action_row_reports_its_full_name_and_ignores_input_while_disabled() {
 }
 
 #[test]
-fn clicking_a_toggle_row_s_label_toggles_it() {
+fn clicking_beside_a_toggle_row_s_switch_toggles_it() {
     let mut harness = Harness::builder()
         .with_size(egui::vec2(320.0, 60.0))
         .with_context_setup(|ctx| apertrust_ui::install(ctx, Theme::default()))
@@ -910,9 +870,9 @@ fn clicking_a_toggle_row_s_label_toggles_it() {
         );
     harness.run();
     let row = harness
-        .get_by_role_and_label(Role::CheckBox, "Use the camera's exposure bias")
+        .get_by_role_and_label(Role::Switch, "Use the camera's exposure bias")
         .rect();
-    // The checkbox at the start, its label after it: click the label's end.
+    // The whole row is the target: its end, beside the switch, toggles it.
     assert!(row.width() > 60.0, "{row:?}");
     click_at(&mut harness, pos2(row.right() - 4.0, row.center().y));
     assert!(!*harness.state());
@@ -3320,7 +3280,7 @@ fn a_held_off_button_is_disabled_yet_a_stop_for_the_keyboard() {
     assert!(!harness.get_by_label("Off").is_focused());
 }
 
-/// Two collapsible groups as a tool shows them, each holding a slider, and a checkbox
+/// Two collapsible groups as a tool shows them, each holding a slider, and a boolean's
 /// row after them; what is open, how often each was toggled, and how many controls in
 /// each are set, applied as the app would.
 #[derive(Default)]
@@ -3404,7 +3364,7 @@ fn a_collapsible_group_is_four_above_a_panel_line_and_four_after_its_rows() {
     assert_eq!(between, t.sizes.slider_row + 2.0 * t.spacing.xs);
     // A closed group has no end gap: the toggle row, 24 high, follows at once.
     let toggle = harness
-        .get_by_role_and_label(Role::CheckBox, "Use camera bias")
+        .get_by_role_and_label(Role::Switch, "Use camera bias")
         .rect();
     assert!(
         (toggle.center().y - (margins.bottom() + t.sizes.panel_line / 2.0)).abs() < 0.01,
@@ -3475,12 +3435,12 @@ fn tab_skips_a_closed_group_s_rows() {
         }
         seen
     };
-    // Closed, one stop each: Look, Margins, then the checkbox after them.
+    // Closed, one stop each: Look, Margins, then the boolean's row after them.
     assert_eq!(
         tab_from_look(&mut harness),
         [
             (Role::Button, "Margins".to_owned()),
-            (Role::CheckBox, "Use camera bias".to_owned()),
+            (Role::Switch, "Use camera bias".to_owned()),
         ]
     );
     // Open, Look's slider comes next, starting with its marker.

@@ -442,8 +442,9 @@ fn every_row_of_the_first_card_is_there_by_its_name() {
     ] {
         harness.get_by_role_and_label(Role::ComboBox, combo);
     }
-    // No row is a check box: darktable's No and Yes are choices.
+    // No row is a check box or a switch: darktable's No and Yes are choices.
     assert!(harness.query_by_role(Role::CheckBox).is_none());
+    assert!(harness.query_by_role(Role::Switch).is_none());
     harness.get_by_role_and_label(Role::TextInput, "Path");
     harness.get_by_role_and_label(Role::Slider, "Quality");
     // The defaults are darktable's.

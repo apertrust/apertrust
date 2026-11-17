@@ -473,6 +473,11 @@ pub struct Sizes {
     /// dropdown row's box can be.
     pub marker_column: f32,
     pub value_column: f32,
+    /// A switch's track, `switch_width` by `switch_height`, fully rounded, and its round
+    /// knob, `switch_knob` across, centred in the end it sits at.
+    pub switch_width: f32,
+    pub switch_height: f32,
+    pub switch_knob: f32,
     pub side_panel: f32,
     /// The height a list scrolls in inside a section, so the section keeps its height
     /// whatever the list holds: ten one-line rows (`panel_line`). Browse's groups.
@@ -754,6 +759,15 @@ impl Theme {
                 TEXT,
             ),
             ("text", c.text, "button_pressed", c.button_pressed, TEXT),
+            // A switch's knob on its track, on (`docs/gui.md`, Switches and boolean rows).
+            ("text_strong", c.text_strong, "button", c.button, CONTROL),
+            (
+                "text_strong",
+                c.text_strong,
+                "button_hover",
+                c.button_hover,
+                CONTROL,
+            ),
             // A ticked box is a control's part on every ground it is drawn on, and so is
             // its tick on it in each state, a disabled one's included.
             ("check", c.check, "panel", c.panel, CONTROL),

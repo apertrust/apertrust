@@ -40,7 +40,7 @@ use std::task::Waker;
 use apertrust_base::log::{CAPACITY, Cursor, Domain, Kept, Line, Severity, Switches};
 use apertrust_base::settings::Choice;
 use apertrust_export::variables::DateTime;
-use apertrust_ui::components::{Button, ToggleRow, quiet_scroll_rows};
+use apertrust_ui::components::{Button, Checkbox, quiet_scroll_rows};
 use apertrust_ui::{Theme, fonts, theme, tr, translator};
 use eframe::egui::os::OperatingSystem;
 use eframe::egui::text::{LayoutJob, TextFormat, TextWrapping};
@@ -321,7 +321,18 @@ impl Window {
             };
             let warnings = words.text("log-filter-warnings");
             wrap(ui, &warnings);
-            if let Some(on) = ToggleRow::new(&warnings, self.filters.warnings).show(ui) {
+            // The filters are checks in a strip, not a boolean's row.
+            let mut on = self.filters.warnings;
+            let line = t.sizes.panel_line;
+            let check = |ui: &mut Ui, on: &mut bool, name: &str, enabled: bool| {
+                // As high as a tool's row, as the strip's checks always were.
+                ui.horizontal(|ui| {
+                    ui.set_min_height(line);
+                    Checkbox::new(on, name).enabled(enabled).show(ui)
+                })
+                .inner
+            };
+            if check(ui, &mut on, &warnings, true).changed() {
                 self.filters.warnings = on;
                 changed = true;
             }
@@ -329,11 +340,16 @@ impl Window {
                 let kept = kept(self.keeps.as_ref(), domain);
                 let name = words.text(&format!("setting-log-domains-option-{id}"));
                 wrap(ui, &name);
-                let mut toggle = ToggleRow::new(&name, kept && self.filters.domains[i]);
-                if !kept {
-                    toggle = toggle.enabled(false).promise(&not_kept);
-                }
-                if let Some(on) = toggle.show(ui) {
+                let mut on = kept && self.filters.domains[i];
+                let response = check(ui, &mut on, &name, kept);
+                let response = if kept {
+                    response
+                } else {
+                    response
+                        .on_hover_text(&not_kept)
+                        .on_disabled_hover_text(&not_kept)
+                };
+                if response.changed() {
                     self.filters.domains[i] = on;
                     changed = true;
                 }

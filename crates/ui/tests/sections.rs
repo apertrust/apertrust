@@ -1233,9 +1233,9 @@ fn a_tool_without_tabs_starts_four_points_under_its_header() {
         .get_by_role_and_label(Role::Button, "Exposure")
         .rect();
     let row = harness
-        .get_by_role_and_label(Role::CheckBox, "Use camera bias")
+        .get_by_role_and_label(Role::Switch, "Use camera bias")
         .rect();
-    // The checkbox is centred in its 24-point row.
+    // The switch's row is 24 points.
     let first = row.center().y - t.sizes.panel_line / 2.0;
     assert!(
         (first - (header.bottom() + t.spacing.xs)).abs() < 0.01,

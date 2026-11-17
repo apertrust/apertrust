@@ -9318,12 +9318,7 @@ mod tests {
                 })
                 .collect();
         let mut drawn = 0;
-        for role in [
-            Role::Slider,
-            Role::ComboBox,
-            Role::CheckBox,
-            Role::SpinButton,
-        ] {
+        for role in [Role::Slider, Role::ComboBox, Role::Switch, Role::SpinButton] {
             for node in harness.query_all_by_role(role) {
                 let node = node.accesskit_node();
                 let name = node.label().unwrap_or_default();
