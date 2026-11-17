@@ -106,7 +106,7 @@ A tool's section already has its own buttons: reset, presets and options (⋯). 
 | --- | --- | --- | --- |
 | The photo | Export… (`EXPORT`, 100); Background ▸ (`VIEW`, 100); Show in Finder joining once folder mode can reveal a photo | History's Reset (`EDIT`, 100); Orientation's Orientation ▸ (`VIEW`, 200), its four buttons: rotate 90° anticlockwise, rotate 90° clockwise, flip horizontally and flip vertically | Reset, —, Export…, —, Background ▸, Orientation ▸ |
 | A thumbnail | Export… (`EXPORT`, 100); Show in Folder once built | History's Reset (`EDIT`, 100), hidden while several photos are selected, since it acts on one photo | Reset, —, Export… |
-| ⋯ | Reset, then Copy Settings and Paste Settings with Copy and Apply Parts (Phase 3), in `EDIT`; the layout's items ([0083](0083-the-side-panels-layout-dragged-and-floating.md)) in `LAYOUT` | The tool's own, in a section of its choosing between them; History's are Compress History, Truncate History, Create a Style… and Discard History… | — |
+| ⋯ | Reset, then Copy Settings and Paste Settings with Copy and Apply Parts (Phase 3), in `EDIT`; the layout's items ([0083](0083-the-side-panels-layout-dragged-and-floating.md)) in `LAYOUT` | The tool's own, in a section of its choosing between them; History's are Compress History, with Truncate History its alternate while Option is held, Create a Style… and Discard History…; planned, Truncate History an item of its own ([0093](0093-one-tool-model-processing-tools-and-utility-tools.md)) | — |
 
 Discard History… is in no context menu: it stays in Edit and History's ⋯ ([0078](0078-undo-redo-and-the-edits-history.md)).
 
