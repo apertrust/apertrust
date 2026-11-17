@@ -6,7 +6,7 @@ darktable draws some stored values twice: White balance's coefficients as temper
 
 ## Decision
 
-**A lossless view is a second row** over the same stored values: an exact, invertible change of coordinates the tool gives as pure methods of `Tool`, `view` (the coordinates from the stored values) and `unview` (back).
+**A lossless view is a second row** over the same stored values: an exact, invertible change of coordinates the tool gives as pure methods of `ProcessingTool`, `view` (the coordinates from the stored values) and `unview` (back).
 
 - A coordinate is addressed like a control: `SetControl`, `ResetControl` and `Keep` take it, the session holding the view's other coordinates through a gesture (`edit::Held`) and reporting every view's coordinates with the values (`CoordinateState`).
 - Nothing is stored under a coordinate's id. Marks and reset belong to the stored controls; once every coordinate is back at its default, the stored values are reset exactly.
