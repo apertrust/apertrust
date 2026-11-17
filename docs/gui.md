@@ -2050,7 +2050,7 @@ Export is Phase 3's.
 
 ### The build, in steps
 
-Each step one deliverable, reviewed before the next. Steps 1 to 14 are built and described above and in [engine.md](engine.md), Export jobs: the writers (1), the export size and resample (2), the settings (3), the variables (4), File on disk (5), the job API and the export job (6), the submissions' first bound (8a, 8b), the preview (9), the host's sheet and modal window (10, 11), the jobs window (12), the alerts (13) and Export Again (14). What is left:
+Each step one deliverable, reviewed before the next. Steps 1 to 6, 8a, 8b and 9 to 14 are built and described above and in [engine.md](engine.md), Export jobs: the writers (1), the export size and resample (2), the settings (3), the variables (4), File on disk (5), the job API and the export job (6), the submissions' first bound (8a, 8b), the preview (9), the host's sheet and modal window (10, 11), the jobs window (12), the alerts (13) and Export Again (14). What is left:
 
 - **7. Spike X1, an export beside the viewport** ([engine.md](engine.md), Export jobs), through `apertrust-cli preview --beside-export`: measured on the M4; the RTX 5060, the Radeon 780M, WARP and exports at 2048 pixels still to run. Out of scope: changing the scheduler beyond a switch for the measured slices.
 - **8c. A tile's passes split** into steps where one tile's render runs longer; quantising moves onto the GPU only if X1's readback on the discrete GPUs calls for it. Out of scope: stills.
