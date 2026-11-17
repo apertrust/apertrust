@@ -58,6 +58,7 @@ mod segmented;
 mod side_panel;
 mod slider;
 mod swatches;
+mod switch;
 mod tabs;
 mod text_field;
 mod toggle_row;
@@ -114,6 +115,7 @@ pub use side_panel::{
 };
 pub use slider::{Mark, Quad, SliderAction, SliderRow, Track};
 pub use swatches::{Swatch, SwatchFill, Swatches};
+pub use switch::Switch;
 pub use tabs::{Tabs, group_label};
 pub use text_field::{PathField, PathOutput, TextField, Variable};
 pub use toggle_row::ToggleRow;

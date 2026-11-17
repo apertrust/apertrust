@@ -33,8 +33,8 @@ use crate::components::{
     PanelEdge, PanelEdgeAction, PanelTab, Patch, Patches, PhotoCaption, PhotoFrame, PickerButton,
     PickerMarks, PickerPlace, Place, Quad, Rail, RailLine, RailNode, ReadoutRow, Reference,
     ReferenceRow, SaveState, Scale, Scope, ScopeView, Section, SectionAction, Segmented,
-    SliderAction, SliderRow, Swatch, SwatchFill, Swatches, TabBar, TabBarAction, Thumb, Toggle,
-    ToggleRow, ToolButton, TopPanel, TopPanelAction, Track, VectorscopeBins, WarningRow,
+    SliderAction, SliderRow, Swatch, SwatchFill, Swatches, Switch, TabBar, TabBarAction, Thumb,
+    Toggle, ToggleRow, ToolButton, TopPanel, TopPanelAction, Track, VectorscopeBins, WarningRow,
     WaveformBins, Zoom, group_label,
 };
 use crate::fonts::{MEDIUM, SEMIBOLD};
@@ -233,6 +233,14 @@ fn button_states(ui: &mut Ui, t: &Theme) {
         row(ui, name, &mut |ui, state| {
             let mut on = ticked;
             Checkbox::new(&mut on, "Guides").state(state).show(ui);
+        });
+    }
+    // The switch of a boolean's row, the track and its knob in each state.
+    for on in [false, true] {
+        let name = if on { "Switch on" } else { "Switch off" };
+        row(ui, name, &mut |ui, state| {
+            let mut on = on;
+            Switch::new(&mut on, "Guides").state(state).show(ui);
         });
     }
     row(ui, "Button", &mut |ui, state| {
@@ -1477,8 +1485,8 @@ fn controls(ui: &mut Ui, t: &Theme, demo: &mut Demo) {
         .full_width()
         .disabled_options(&automatic)
         .show(ui);
-    // A checkbox row, live with the photo's value after its label, and disabled, as on
-    // a photo that records no camera bias.
+    // A boolean's row, live with the photo's value after its label, and disabled off and
+    // on, as on a photo that records no camera bias.
     if let Some(on) = ToggleRow::new("Use camera bias", demo.camera_bias)
         .name("Use the camera's exposure bias")
         .value("−⅔ EV")
@@ -1489,6 +1497,10 @@ fn controls(ui: &mut Ui, t: &Theme, demo: &mut Demo) {
     }
     ToggleRow::new("Use camera bias", true)
         .name("Use the camera's exposure bias, no bias recorded")
+        .enabled(false)
+        .show(ui);
+    ToggleRow::new("Use camera bias", false)
+        .name("Use the camera's exposure bias, none recorded")
         .enabled(false)
         .show(ui);
     // An action row, live, and disabled as an action is until what it runs is built.
