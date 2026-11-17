@@ -210,12 +210,15 @@ pub enum Pressed {
 /// has it: ↺ where the declaration's `reset` is not none, presets where its `presets`
 /// holds, and ⋯ always, holding `head.options`, drawn disabled while it holds nothing. A
 /// processing tool's are an editing tool's three (`Section::edits`), its presets drawn
-/// disabled until presets come; a utility's ↺ is named `reset_name`. ↺ is drawn disabled
-/// unless `resettable`. Its tooltip says `about`, where the tool says anything.
+/// disabled until presets come; a utility's ↺ is named `reset_name`, and its presets button,
+/// where it has one, is named by the first of `presets` and drawn disabled, its tooltip the
+/// second, until its presets are built (decision 93, step 93.6). ↺ is drawn disabled unless
+/// `resettable`. Its tooltip says `about`, where the tool says anything.
 pub fn header<'a>(
     tool: &ToolDefinition,
     title: &'a str,
     reset_name: &'a str,
+    presets: [&'a str; 2],
     resettable: bool,
     about: Option<parts::About>,
     head: Head,
@@ -229,6 +232,10 @@ pub fn header<'a>(
         Reset::Action(_) | Reset::Own => section.utility_reset(reset_name).reset(resettable),
         Reset::None => section,
     };
+    if tool.presets && tool.reset != Reset::Tool {
+        let [name, later] = presets;
+        section = section.utility_presets(name, false, later);
+    }
     if head.options.is_empty() {
         section.options(false)
     } else {
@@ -278,10 +285,12 @@ pub fn pressed(
 }
 
 /// What a utility's ↺ is called, `title` its title: for what it resets, "Reset edit" for
-/// the one that runs Reset Edit, History's; otherwise "Reset" and its title.
+/// the one that runs Reset Edit, History's; its own, `<id>-reset`, for a utility whose ↺ is
+/// its own, as Export's; otherwise "Reset" and its title.
 pub fn reset_name(words: &Translator, tool: &ToolDefinition, title: &str) -> String {
     match tool.reset {
         Reset::Action(id) if id == ActionId::RESET.0 => words.text("history-reset-edit"),
+        Reset::Own => words.text(&messages::utility_reset(tool.id)),
         _ => {
             let mut args = Args::new();
             args.set("section", title);
@@ -877,8 +886,16 @@ pub fn section(
     let about = about(&words, id, definition.facts.as_ref());
     let photo = head.photo;
     let reset = editable && resettable;
-    let mut section =
-        header(&definition.tool, &title, "", reset, Some(about), head).not_applied(!state.enabled);
+    let mut section = header(
+        &definition.tool,
+        &title,
+        "",
+        ["", ""],
+        reset,
+        Some(about),
+        head,
+    )
+    .not_applied(!state.enabled);
     if tabs.len() > 1 {
         section = section
             .tabs(&tabs, selected)

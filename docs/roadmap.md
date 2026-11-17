@@ -125,13 +125,14 @@ Goal: open, edit, save and reopen a photo with the first pass's tools. Migration
 - [ ] 4. Several windows: New Window, the Mac's Window menu, settings sent to every window, closing a place giving the start window, the last window's close button and Quit, dialogs parented to their window.
 - [ ] 5. Files opened from outside in a new window, with the setting for the current window instead, and another user data folder's name in the windows' titles.
 
-**One tool model** (decision 93; [gui.md](gui.md#one-tool-model)): every tool a processing tool or a utility, sharing one declaration and one header, in five steps, each a pull request reviewed before the next, 93.2 and 93.3 one together:
+**One tool model** (decision 93; [gui.md](gui.md#one-tool-model)): every tool a processing tool or a utility, sharing one declaration and one header, in six steps, each reviewed before the next, 93.2 and 93.3 one pull request, 93.4 and 93.5 another:
 
 - [x] 93.1. The renames and the parent, mechanical, with no behaviour change: `Definition` to `ProcessingDefinition`, `Utility` to `UtilityDefinition`, the trait `Tool` to `ProcessingTool`, `Definition::presets` to `preset_rows`, and the fields every tool shares into `ToolDefinition`; the docs' names with them.
 - [x] 93.2. `UtilityTool` in the app, with one `Context`, History, Scopes and Browse implementing it, Browse joining `UTILITIES`.
 - [x] 93.3. One header and ⋯ for every tool in `TOOLS` and `UTILITIES`, from `&ToolDefinition`, History's ⋯ items declared with it, Truncate History an item of its own; Export's with 93.5.
 - [x] 93.4. The utilities on the page model, their widgets as custom rows and `UtilityDefinition::check` refusing a row that edits: Scopes first, then History, then Browse.
-- [ ] 93.5. Export's page as setting rows naming the `export.*` keys, with its presets, For sharing and Full size JPEG built in ([gui.md](gui.md#the-export-tool), step 16): Export implements `UtilityTool` and joins `UTILITIES`, the setting rows it builds shared later with Import's sheet ([Export](#export)).
+- [x] 93.5. Export on the tool model: Export implements `UtilityTool` and joins `UTILITIES`, drawn with the shared header, its ↺ its own and its presets button drawn disabled, its page five custom rows for now, so nothing a person sees changes.
+- [ ] 93.6. Export's page as setting rows naming the `export.*` keys by full key, with its presets, For sharing and Full size JPEG built in ([gui.md](gui.md#the-export-tool), step 16), before Import's sheet shares those rows ([Export](#export)): the page model grows setting rows naming a key in full with their words declared, a utility's settings kept in the store and never sent through `PickerCommand::Settings`, options disabled at run time, a No and Yes style, tooltips and notes the utility supplies, and settings counted in a group; Export's header drawn through the shell's head with its `photo` set.
 
 ### Editing
 
@@ -261,7 +262,7 @@ Goal: usable for daily editing, and the editor sets the sliders for a goal. Migr
 - [x] Exports run as background jobs beside live editing, with a jobs window for progress and cancel.
 - [x] The Export tool's first section, last in the Photos tab, in place of the dialog, on the Mac, Windows and Linux: File on disk, JPEG and PNG, darktable's four size modes, high-quality resampling, ↺ for Default settings, and Export… and Ctrl+E revealing it (decisions 56 and 90; [gui.md](gui.md#as-built)). The overwrite question is asked on the Mac and Linux; on Windows Overwrite is listed disabled until its alert is built. Export Again is built, with no key yet; its key, Ctrl+Shift+E, is planned.
 - [ ] The setting rows Import's sheet and the Export tool share: a slider with no kept marker, the path row (labelled for Import, label-less for Export), note, field and size rows, an indented toggle (decisions 86 and 90).
-- [ ] The rest of the Export tool, a utility last in the Photos tab (decision 90; [gui.md](gui.md#the-export-tool)), its page declared as setting rows in decision 93's step 93.5 ([The window and the shell](#the-window-and-the-shell)):
+- [ ] The rest of the Export tool, a utility last in the Photos tab (decision 90; [gui.md](gui.md#the-export-tool)), its page declared as setting rows in decision 93's step 93.6 ([The window and the shell](#the-window-and-the-shell)):
   - [ ] a spike measuring every export row at the side panel's 320 points in British English, Ukrainian, Polish and the pseudo-locale;
   - [x] the groups and the end: Storage options and Format options, always open, and Global options, collapsible and open at first; the path on one line; ↺, the presets button drawn disabled, and ⋯; the Summary group (Preset, File name, Size, Profile, Format, Destination), the warnings, Export N photos in each of its states and a failed export's line (the Summary's preset is Default settings or Custom until presets); names never guessed as exact;
   - [ ] the keys: Export Again on Ctrl+Shift+E, Ctrl+Return, Esc, the focus on the button after the reveal, and the wheel on the focused row; the preview sent only while the tool is in view, with `focus`, and an answer shown only for its latest request;
@@ -269,7 +270,7 @@ Goal: usable for daily editing, and the editor sets the sliders for a goal. Migr
   - [ ] Browse's Import…, opening the Import sheet.
 - [ ] The Import sheet's frame (decision 86; [gui.md](gui.md#sheets)): the sheet bar, a grid of photos checked to go, a column of tools on the side panel's side, the footer with Keep open, Close and the primary button, its keys and modality, each tool kept to its place; then Import's first slice (the library's step 20a).
 - [ ] Alerts on Windows, for Overwrite and the quit question; Linux's are built.
-- [ ] Several presets in one go, Multi-preset export ([gui.md](gui.md#the-export-tool), step 17); the presets themselves come with step 93.5.
+- [ ] Several presets in one go, Multi-preset export ([gui.md](gui.md#the-export-tool), step 17); the presets themselves come with step 93.6.
 - [ ] Metadata in exported files, and styles applied on export.
 
 ### Culling, metadata and several computers, in folder mode

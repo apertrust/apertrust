@@ -98,11 +98,19 @@ pub fn section<T: UtilityTool>(
     resettable: bool,
 ) -> Drawn<T::Action> {
     let definition = &tool.definition().tool;
-    let (title, reset) = titles(cx.words, definition);
+    let [title, reset, name, later] = titles(cx.words, definition);
     let about = about(cx.words, definition);
     let photo = head.photo;
     let (mut changes, mut actions) = (Vec::new(), Vec::new());
-    let section = tools::header(definition, &title, &reset, resettable, about, head);
+    let section = tools::header(
+        definition,
+        &title,
+        &reset,
+        [&name, &later],
+        resettable,
+        about,
+        head,
+    );
     let out = section.show(ui, |ui| (changes, actions) = rows(ui, tool, cx));
     let mut pressed = tools::pressed(ui, definition, &out, photo);
     if pressed.contains(&Pressed::Reset) {
@@ -188,10 +196,18 @@ pub fn header(
     resettable: bool,
 ) -> Vec<Pressed> {
     let words = translator(ui.ctx());
-    let (title, reset) = titles(&words, definition);
+    let [title, reset, name, later] = titles(&words, definition);
     let about = about(&words, definition);
     let photo = head.photo;
-    let section = tools::header(definition, &title, &reset, resettable, about, head);
+    let section = tools::header(
+        definition,
+        &title,
+        &reset,
+        [&name, &later],
+        resettable,
+        about,
+        head,
+    );
     let out = section.show_header(ui);
     tools::pressed(ui, definition, &out, photo)
 }
@@ -214,11 +230,18 @@ fn about(words: &Translator, definition: &ToolDefinition) -> Option<parts::About
     (words.has(&messages::description(id))).then(|| tools::about(words, id, None))
 }
 
-/// The utility `definition`'s title, `section-<id>`, and its ↺'s name.
-fn titles(words: &Translator, definition: &ToolDefinition) -> (String, String) {
+/// The utility `definition`'s title, `section-<id>`, its ↺'s name, and its presets
+/// button's name and tooltip where it has one, else empty.
+fn titles(words: &Translator, definition: &ToolDefinition) -> [String; 4] {
     let title = words.text(&format!("section-{}", definition.id));
     let reset = tools::reset_name(words, definition, &title);
-    (title, reset)
+    // Its presets button's words, where it has one.
+    let [name, later] = if definition.presets {
+        messages::utility_presets(definition.id).map(|id| words.text(&id))
+    } else {
+        Default::default()
+    };
+    [title, reset, name, later]
 }
 
 #[cfg(test)]
@@ -232,14 +255,13 @@ mod tests {
 
     /// Every utility's page holds no row that edits, which leaves the page drawer nothing
     /// of a processing tool's to draw for it; every header follows its declaration: a
-    /// processing tool's ↺ its own, with presets, a utility's no presets and ↺ a registry
-    /// action's, its own or none, as the header draws them.
+    /// processing tool's ↺ its own, with presets, a utility's ↺ a registry action's, its
+    /// own or none, with presets where it declares them, as the header draws them.
     #[test]
     fn every_page_edits_nothing_and_every_header_is_one_the_header_draws() {
         for utility in UTILITIES {
             let tool = &utility.tool;
             assert_eq!(utility.check(), Ok(()), "{}", tool.id);
-            assert!(!tool.presets, "{}", tool.id);
             assert_ne!(tool.reset, Reset::Tool, "{}", tool.id);
             if let Reset::Action(id) = tool.reset {
                 assert!(crate::actions::named(id).is_some(), "{}: {id}", tool.id);

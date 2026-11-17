@@ -58,7 +58,9 @@ pub struct ToolDefinition {
     /// What its header's ↺ does, or none for a header with no ↺.
     pub reset: Reset,
     /// Whether its header has the presets button: every processing tool's, drawn disabled
-    /// until presets come; a utility's only where it has presets of its own.
+    /// until presets come; a utility's only where it will have presets of its setting rows,
+    /// as Export's, named `<id>-presets` and drawn disabled, its tooltip
+    /// `<id>-presets-later`, until they are built (decision 93, step 93.6).
     pub presets: bool,
     /// The items it adds to context menus (decision 91; `docs/gui.md`, Context menus), each
     /// one of its own actions at a place; none for a tool with nothing to add. The app
@@ -130,8 +132,8 @@ pub enum Reset {
     /// A registry action of the app's, by its id, as History's `reset`, Reset Edit, which
     /// Edit › Reset Edit runs too.
     Action(&'static str),
-    /// The utility's own, `UtilityTool::reset` in the app, as Export's Default settings
-    /// will be.
+    /// The utility's own, `UtilityTool::reset` in the app, named `<id>-reset`, as Export's
+    /// Default settings.
     Own,
     /// No ↺, as Scopes' and Browse's headers have none.
     None,
@@ -1047,6 +1049,18 @@ pub enum Widget {
     /// Browse's Folders: its group, holding the open folder's tree in a list that scrolls
     /// under the top line, so Browse keeps its height (decision 93).
     Folders,
+    /// Export's Storage options: Target storage, the path line and On conflict, until its
+    /// rows are setting rows (decision 93, step 93.6).
+    ExportStorage,
+    /// Export's Format options: File format and the rows of the format chosen.
+    ExportFormat,
+    /// Export's Global options: the collapsible group of the size, the toggles, the profile
+    /// and the rows to come.
+    ExportGlobal,
+    /// Export's groups still to come, Metadata and Multi-preset export, drawn disabled.
+    ExportLater,
+    /// Export's end: the Summary, the warnings, the Export button and its job's line.
+    ExportEnd,
 }
 
 impl Widget {
@@ -1055,7 +1069,15 @@ impl Widget {
     /// (decision 93).
     pub fn is_utility(self) -> bool {
         match self {
-            Widget::History | Widget::Scopes | Widget::Recents | Widget::Folders => true,
+            Widget::History
+            | Widget::Scopes
+            | Widget::Recents
+            | Widget::Folders
+            | Widget::ExportStorage
+            | Widget::ExportFormat
+            | Widget::ExportGlobal
+            | Widget::ExportLater
+            | Widget::ExportEnd => true,
             Widget::Curve
             | Widget::ColourWheels
             | Widget::Equalizer
@@ -1238,9 +1260,7 @@ pub enum DefinitionError {
         "a utility's action row {0}: its rows name no action until they are bound to the registry"
     )]
     UtilityAction(&'static str),
-    #[error(
-        "a utility's ↺ is a registry action's, its own or none, and it has no presets until its setting rows have them"
-    )]
+    #[error("a utility's ↺ is a registry action's, its own or none, never a processing tool's")]
     UtilityHeader,
 }
 

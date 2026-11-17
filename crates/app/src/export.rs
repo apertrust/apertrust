@@ -28,8 +28,11 @@
 //! is to come: the other storages and formats, Store masks, Intent and Style. The rows are
 //! the side panel's controls laid out as a tool's: Blended choices, toggles and sliders,
 //! one-line rows stacked with no spacing between them, a row whose label and fields do not
-//! fit the panel's width putting its label above them. The header has ↺, which applies
-//! Default settings, the presets button, drawn disabled until presets come, and ⋯.
+//! fit the panel's width putting its label above them. The header is every tool's
+//! (decision 93), drawn from its declaration in `UTILITIES`: ↺, which applies Default
+//! settings, the presets button, drawn disabled until presets come, and ⋯. Its page is the
+//! one page drawer's, five custom rows this module draws through its `UtilityTool`, until
+//! its rows are setting rows (step 93.6).
 //!
 //! **Its end** (`end.rs`) is the summary, a collapsible group of its own, the warnings, the
 //! Export button and the line under it with its job's progress.
@@ -63,15 +66,19 @@ use apertrust_export::settings::registry::{
 use apertrust_export::settings::{FileFormat, OnConflict, Profile, SizeMode};
 use apertrust_export::size::{self, Request};
 use apertrust_export::variables::{self, PatternError};
+use apertrust_tools::Widget;
+use apertrust_tools::utility::UtilityDefinition;
 use apertrust_ui::Icon;
 use apertrust_ui::components::{
-    Button, Choice, ChoiceAction, ChoiceStyle, CollapsibleGroup, IconButton, PathField, Section,
-    SectionAction, SliderAction, SliderRow, TextField, ValueField, Variable, field_inset,
-    group_label,
+    Button, Choice, ChoiceAction, ChoiceStyle, CollapsibleGroup, IconButton, PathField,
+    SliderAction, SliderRow, TextField, ValueField, Variable, field_inset, group_label,
 };
 use apertrust_ui::i18n::Args;
 use apertrust_ui::{Theme, theme, tr, translator};
 use eframe::egui::{self, Color32, Label, RichText, Ui, vec2};
+
+use crate::tools::{Head, Pressed};
+use crate::utility::{Context, UtilityTool};
 
 mod end;
 pub use end::{Jobs, Photo, Shown, Why};
@@ -406,13 +413,17 @@ pub struct Asked {
     pub confirm: bool,
 }
 
-/// What the section's rows and end report for a frame.
-#[derive(Default)]
-struct Rows {
-    pressed: bool,
-    global: bool,
-    summary: bool,
-    show_jobs: bool,
+/// What the page's custom rows asked for this frame (decision 93).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Page {
+    /// Global options' row: open it, or close it.
+    Global,
+    /// The Summary's row: open it, or close it.
+    Summary,
+    /// Export was pressed.
+    Pressed,
+    /// Show jobs was pressed.
+    ShowJobs,
 }
 
 /// What the tool's section did this frame.
@@ -447,6 +458,52 @@ pub struct Export {
     jobs: Jobs,
     /// When Export was last pressed to some effect, for the guard against a second press.
     pressed_at: Option<f64>,
+    /// Whether Global options and the Summary are open, as the last frame was told.
+    groups: (bool, bool),
+    /// Whether its ↺ applied Default settings this frame, which the app shows at once.
+    reset: bool,
+}
+
+/// Export as a utility tool (decision 93): its page five custom rows, Storage options,
+/// Format options, Global options, the groups to come and the Summary with the tool's end,
+/// each drawn here as before, until its rows are setting rows (step 93.6); its ↺ its own,
+/// Default settings.
+impl UtilityTool for Export {
+    type Action = Page;
+
+    fn definition(&self) -> &'static UtilityDefinition {
+        apertrust_tools::utility::utility(ID).expect("Export is built in")
+    }
+
+    fn body(&mut self, widget: Widget, ui: &mut Ui, _cx: &mut Context<'_>) -> Vec<Page> {
+        let t = theme(ui.ctx());
+        // Rows stack as a tool's do, each carrying its own gaps (docs/gui.md, How the rows
+        // are laid out).
+        ui.spacing_mut().item_spacing = vec2(t.spacing.s, 0.0);
+        match widget {
+            Widget::ExportStorage => self.storage_rows(ui, &t),
+            // Format options, a plain group.
+            Widget::ExportFormat => {
+                group_label(ui, &tr(ui.ctx(), "export-format-options"));
+                self.format_rows(ui);
+            }
+            Widget::ExportGlobal => {
+                if self.global_group(ui, &t) {
+                    return vec![Page::Global];
+                }
+            }
+            Widget::ExportLater => Export::later_groups(ui),
+            Widget::ExportEnd => return self.summary_and_end(ui, &t),
+            _ => {}
+        }
+        Vec::new()
+    }
+
+    /// Default settings: every export setting at darktable's default.
+    fn reset(&mut self, _cx: &mut Context<'_>) {
+        self.values = Values::default();
+        self.reset = true;
+    }
 }
 
 /// What the cm and inch fields hold, as darktable's print entries do, with the pixels they
@@ -470,6 +527,8 @@ impl Export {
             photo: Photo::None,
             jobs: Jobs::default(),
             pressed_at: None,
+            groups: (GLOBAL_OPEN, SUMMARY_OPEN),
+            reset: false,
         }
     }
 
@@ -523,35 +582,32 @@ impl Export {
         &self.values
     }
 
-    /// Draws the section in `ui` as `shown` says: open or closed, its groups, the photo it
-    /// acts on and the jobs. Returns what it asked of the app: the header pressed, the
-    /// groups', the settings changed, Export and Show jobs.
-    pub fn show(&mut self, ui: &mut Ui, shown: &Shown) -> Drawn {
+    /// Draws the section in `ui` as `shown` says, through its `UtilityTool` with every
+    /// tool's header and the one page drawer (decision 93): open or closed, its groups, the
+    /// photo it acts on and the jobs. Returns what it asked of the app: the header pressed,
+    /// the groups', the settings changed, Export and Show jobs.
+    pub fn show(&mut self, ui: &mut Ui, shown: &Shown, cx: &mut Context<'_>) -> Drawn {
         let ctx = ui.ctx().clone();
-        let t = theme(&ctx);
         let before = self.values.clone();
         self.photo = shown.photo.clone();
         self.jobs = shown.jobs.clone();
-        let title = tr(&ctx, "section-export");
-        let reset = tr(&ctx, "export-reset");
-        let presets = tr(&ctx, "export-presets");
-        let later = tr(&ctx, "export-presets-later");
-        let mut rows = Rows::default();
-        // A utility: its reset applies Default settings, then the presets button, drawn
-        // disabled until presets come, then its options, which hold nothing yet.
-        let out = Section::new(&title, shown.open)
-            .utility_reset(&reset)
-            .reset(self.values != Values::default())
-            .utility_presets(&presets, false, &later)
-            .options(false)
-            .show(ui, |ui| rows = self.rows(ui, &t, shown));
-        if out.actions.contains(&SectionAction::Reset) {
-            self.values = Values::default();
+        self.groups = (shown.global, shown.summary);
+        // Its ↺ applies Default settings, drawn disabled while they hold; then the presets
+        // button, drawn disabled until presets come, then its options, which hold nothing
+        // yet.
+        let head = Head {
+            open: shown.open,
+            ..Head::default()
+        };
+        let resettable = self.values != Values::default();
+        let drawn = crate::utility::section(ui, self, cx, head, resettable);
+        if std::mem::take(&mut self.reset) {
             ctx.request_repaint();
         }
+        let has = |action: Page| drawn.actions.contains(&action);
         // A second press just after the first is ignored.
         let now = ctx.input(|i| i.time);
-        let pressed = rows.pressed && !self.too_soon(now);
+        let pressed = has(Page::Pressed) && !self.too_soon(now);
         // Overwriting asks first, as darktable's storage does whether or not a file is
         // there: the app sends the export on a yes, or at once where the setting says not
         // to ask.
@@ -562,10 +618,10 @@ impl Export {
         }
         let values = (self.values != before).then(|| self.values.clone());
         Drawn {
-            toggle: out.actions.contains(&SectionAction::Toggle),
-            toggle_global: rows.global,
-            toggle_summary: rows.summary,
-            show_jobs: rows.show_jobs,
+            toggle: drawn.pressed.contains(&Pressed::Toggle),
+            toggle_global: has(Page::Global),
+            toggle_summary: has(Page::Summary),
+            show_jobs: has(Page::ShowJobs),
             asked: Asked {
                 values,
                 start,
@@ -574,15 +630,11 @@ impl Export {
         }
     }
 
-    /// The section's rows in their groups, then the tool's end.
-    fn rows(&mut self, ui: &mut Ui, t: &Theme, shown: &Shown) -> Rows {
+    /// Storage options, a plain group: always shown, so where files go is in view. Target
+    /// storage, File on disk's path and On conflict.
+    fn storage_rows(&mut self, ui: &mut Ui, t: &Theme) {
         let ctx = ui.ctx().clone();
         let later = tr(&ctx, "export-later");
-        // Rows stack as a tool's do, each carrying its own gaps (docs/gui.md, How the rows
-        // are laid out).
-        ui.spacing_mut().item_spacing = vec2(t.spacing.s, 0.0);
-
-        // Storage options, a plain group: always shown, so where files go is in view.
         group_label(ui, &tr(&ctx, "export-storage-options"));
         let storages = [
             tr(&ctx, "export-storage-latex"),
@@ -622,40 +674,50 @@ impl Export {
         {
             self.values.on_conflict = OnConflict::OPTIONS[i].0;
         }
+    }
 
-        // Format options, a plain group.
-        group_label(ui, &tr(&ctx, "export-format-options"));
-        self.format_rows(ui);
-
-        // Global options, collapsible and open at first: the size is the next thing an
-        // export depends on.
-        let title = tr(&ctx, "export-global-options");
+    /// Global options, collapsible and open at first: the size is the next thing an export
+    /// depends on. Whether it was pressed, to open or close it.
+    fn global_group(&mut self, ui: &mut Ui, t: &Theme) -> bool {
+        let title = tr(ui.ctx(), "export-global-options");
         let set = self.values.set_in_global();
-        let global = CollapsibleGroup::new(&title, shown.global)
+        CollapsibleGroup::new(&title, self.groups.0)
             .set(set)
-            .show(ui, |ui| self.global_rows(ui, t));
+            .show(ui, |ui| self.global_rows(ui, t))
+    }
 
-        // Groups to come, each 4 points under the row before it, as in a tool.
+    /// The groups to come, Metadata and Multi-preset export, each 4 points under the row
+    /// before it, as in a tool, drawn disabled.
+    fn later_groups(ui: &mut Ui) {
+        let later = tr(ui.ctx(), "export-later");
         for id in ["export-metadata", "export-multi-preset"] {
-            let title = tr(&ctx, id);
+            let title = tr(ui.ctx(), id);
             CollapsibleGroup::new(&title, false)
                 .disabled(&later)
                 .show(ui, |_| {});
         }
-        // The Summary, open at first, of what an export would write; none with no photo.
-        let mut summary = false;
+    }
+
+    /// The Summary, open at first, of what an export would write, none with no photo; then
+    /// the tool's end. What was pressed.
+    fn summary_and_end(&mut self, ui: &mut Ui, t: &Theme) -> Vec<Page> {
+        let mut pressed = Vec::new();
         if matches!(self.photo, Photo::Ready { .. }) {
-            let title = tr(&ctx, "export-summary-title");
-            summary = CollapsibleGroup::new(&title, shown.summary)
+            let title = tr(ui.ctx(), "export-summary-title");
+            let summary = CollapsibleGroup::new(&title, self.groups.1)
                 .show(ui, |ui| self.summary_list(ui, t));
+            if summary {
+                pressed.push(Page::Summary);
+            }
         }
         let end = self.end(ui, t);
-        Rows {
-            pressed: end.pressed,
-            global,
-            summary,
-            show_jobs: end.show_jobs,
+        if end.pressed {
+            pressed.push(Page::Pressed);
         }
+        if end.show_jobs {
+            pressed.push(Page::ShowJobs);
+        }
+        pressed
     }
 
     /// Global options' rows: the size, the toggles, the profile and what is to come.
