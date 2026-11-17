@@ -3201,7 +3201,7 @@ Every tool, a processing tool or a utility, has one header, one page and one ⋯
 
 | Kind | Its declaration, in `apertrust-tools` | Its behaviour | darktable's |
 | --- | --- | --- | --- |
-| Every tool | `ToolDefinition`: id, tabs, `before` and `after`, `reset`, `presets`, `menus`, `toolbar` | — | `dt_action_t` |
+| Every tool | `ToolDefinition`: id, tabs, `before` and `after`, `reset`, `presets`, `menus`, `toolbar`, and its place once built (decisions 86 and 90) | — | `dt_action_t` |
 | Processing tool | `ProcessingDefinition` (today's `Definition`), embedding it, with controls, version, switched, layers, Auto, preset rows (`preset_rows`), views, pickers and facts | `ProcessingTool` (today's `Tool`), run by the engine's session | `dt_iop_module_so_t`, `iop_api.h`'s non-GUI half |
 | Utility | `UtilityDefinition` (today's `Utility`), embedding it, with `measures` | `UtilityTool`, in the app: `body`, one of its custom rows drawn each frame, called by the page drawer with the row's `Widget`, and `reset`, provided as no-ops but `body` | `dt_lib_module_t`, `lib_api.h` |
 
