@@ -994,7 +994,7 @@ Native popup menus on the Mac for plain lists and context menus; drawn everywher
   Each is opened by its button, or ↓ on it, and closed by a second press or Esc, with the focus back on the button, which stays lit while its menu is open (`components::pull_down`, `popup::button_menu`).
 - On the Mac, the native service, which shows every one of them, ⋯, », ⋮ and `Choice`'s list, as AppKit's menu, in the main window and in a dialog's (below). Windows and Linux keep the drawn ones.
 
-Context menus are built as a pull-down at the pointer, or under the control from the keys (`components::context_menu`), native on the Mac as every pull-down is: Browse's folder rows have one. Where context menus open and what tools add to them is [Context menus](#context-menus) (decision 91). Not built: the slider popup, darktable's fine control, drawn on every platform (decision 42; [The slider popup](#the-slider-popup), planned in [its cards](#slider-values-the-build-in-cards)).
+Context menus are built as a pull-down at the pointer, or under the control from the keys (`components::context_menu`), native on the Mac as every pull-down is: the photo, a thumbnail, the surround, the grid bar and Browse's folder rows have one. Where context menus open and what tools add to them is [Context menus](#context-menus) (decision 91). Not built: the slider popup, darktable's fine control, drawn on every platform (decision 42; [The slider popup](#the-slider-popup), planned in [its cards](#slider-values-the-build-in-cards)).
 
 | Popup | macOS | Windows, Linux, browser |
 | --- | --- | --- |
@@ -1086,16 +1086,16 @@ sequenceDiagram
 
 ### Context menus
 
-Planned (decision 91). A right-click menu opens only in a named place, and tools add items to it as data. Every item is an action of the registry, the app builds every menu, and no tool runs code in a menu.
+Decision 91; its first slice is built. A right-click menu opens only in a named place, and tools add items to it as data. Every item is an action of the registry, the app builds every menu, and no tool runs code in a menu.
 
-**The places,** `Place`, a closed list of every place a context menu opens, each added with its place's menu; only the photo, a thumbnail and ⋯ take tools' items:
+**The places.** `Place` in `apertrust-tools` holds only the places open to tools' items: `Photo`, `Thumbnail` and `Options`. The app's own list, `menus::Place`, is `Open` for those three and a variant for each place of the app's alone, added with its place's menu, `Surround` first; a tool's item cannot name one, its type having none:
 
 | Place | Tools' items | The app's items | When |
 | --- | --- | --- | --- |
-| The photo | Yes, at most two a tool; History's Reset first | Export…; Background ▸ ([The background](#the-background)) | The first slice |
-| A thumbnail, in the grid panel or a cell in Photo | Yes, at most two a tool; History's Reset first | Export…; Show in Folder once built | The first slice |
+| The photo | Yes, at most two a tool; History's Reset first, Orientation ▸ | Export…; Background ▸ ([The background](#the-background)) | Built |
+| A thumbnail, in the grid panel or a cell in Photo | Yes, at most two a tool; History's Reset first | Export…; Show in Folder once built | Built |
 | A tool's ⋯ (`Options`), its own section only | Yes, at most four | Reset, Copy Settings and Paste Settings (with Copy and Apply Parts, Phase 3) in `EDIT`; the layout's items ([Moving, pinning and floating sections](#moving-pinning-and-floating-sections)) in `LAYOUT`, last | With the layout's ⋯ |
-| The surround | No | Background ▸ | Built |
+| The surround (`Surround`) | No | View › Background's items | Built |
 | The grid bar | No | Position ▸ | Built |
 | Browse's folder rows | No | Show in Folder, Open | Built |
 | The grid panel's empty area | No | The grid bar's options, Select All, Select None | Later |
@@ -1104,7 +1104,7 @@ Planned (decision 91). A right-click menu opens only in a named place, and tools
 | A layer, the scopes, a tab's icon | No | — | With them |
 | The top panel, an item or its empty areas (`TopPanel`) | No | The toolbar menu: Hide "Undo", Show Menu Button, Toolbar Labels, Customise Toolbar… ([The top panel](#the-top-panel), decision 92) | Phase 3 |
 
-A place opens to tools' items only by a decision of its own.
+A place opens to tools' items only by a decision of its own, which adds it to `apertrust-tools`' `Place`.
 
 **A tool takes no right-click.**
 
@@ -1115,35 +1115,38 @@ A place opens to tools' items only by a decision of its own.
 **Items.**
 
 - Each item is a registry action ([Keyboard and actions](#keyboard-and-actions)), so it can be given keys, is in the menu bar or its tool too, is enabled and checked from the state, and the native menu only reports which was chosen.
-- A tool's own actions, each `Row::Action` and each button of `Row::Buttons`, become registry actions as the app starts:
-  - each has the id `tool-<tool>-<action>` and the action's full name as its words (`tool-<tool>-action-<action>-full`);
-  - none has a default key, and each runs as its button does.
+- A tool's own actions, each `Row::Action` and each button of `Row::Buttons` of every tool, become registry actions as the app starts (`actions::tool_actions`):
+  - made once into a `OnceLock` beside the static `ACTIONS`, they are found by every lookup by id: the keymap, the keys settings keep, the context menus and the Mac's menus;
+  - each has the id `tool-<tool>-<action>` and the action's full name as its words (`tool-<tool>-action-<action>-full`), and none has a default key;
+  - each is available while the photo takes edits, live and not open for viewing only, on the main window with no modal dialog over it;
+  - a button's runs as its button does: `Change::Action` on the values shown, `Tool::action`, then a `SetControl` for each control it writes, one change; a `Row::Action`'s never runs until what it runs is built.
 - A utility's items are registry actions it has already: History's Reset is `reset`.
 
 **Declared as data.**
 
-- A tool declares its items in `Definition::menus` (`MenuItem { place, section, order, entry }`), each naming one of its own actions (`MenuEntry::Action`). A utility declares them in `utility::UTILITIES` (`Utility::menus`), each naming a registry action. The app declares its own items for each place as `MenuItem`s too.
-- **A submenu** is the app's alone: `MenuEntry::Submenu` names a submenu of the menu bar by its title's id, and its children are that submenu's items in its order, as Background ▸ is View › Background's (`menu-background`). Its children follow the item rules, and it is hidden when none is shown. A tool declares no submenu.
-- **`section`** is one of the `Section` constants in `apertrust-tools`, shared by the app and the tools, whose value sets the section's place in a menu, 1000 apart: `EDIT` 1000, `EXPORT` 2000, `VIEW` 3000, `HISTORY` 4000, and `LAYOUT` 9000 for ⋯'s layout items. A tool or a utility uses a section from `EDIT` to 8999, named or its own, so its items fall between the app's editing items and the layout's, last. In `EDIT`, order 100 is Reset's (the app's in ⋯, History's on the photo and a thumbnail), so another item there takes 200 or more and Reset stays first.
+- Every item, the app's included, is a `MenuItem { place, section, order, entry }`, its `entry` a `MenuEntry`: `Action(id)`, or `Submenu { title, actions }`, one level deep.
+- A tool declares its items in `Definition::menus`, each action one of its own. A utility declares them in `utility::UTILITIES` (`Utility::menus`), each a registry action. The app declares its own in `menus::APP_ITEMS`.
+- **A submenu** holds from one to eight actions (`MOST_IN_SUBMENU`), the declarer's own, each once, in order, under `title`, a message id; it counts as one item towards its place's limit. Its children follow the item rules, each hidden or disabled as an item is and showing no keys, and a submenu left with no child shown is hidden. Orientation's Orientation ▸ holds its four buttons. Background ▸ is the app's `Submenu { title: "menu-background", actions: [View › Background's ids] }`, and an app test keeps it equal to the menu bar's `BACKGROUND`.
+- **`section`** is one of the `Section` constants in `apertrust-tools`, shared by the app and the tools, whose value sets the section's place in a menu, 1000 apart: `EDIT` 1000, `EXPORT` 2000, `VIEW` 3000, `HISTORY` 4000, and `LAYOUT` 9000 for ⋯'s layout items. A tool's or a utility's item takes a section from `EDIT` up to, not including, `LAYOUT`, named or its own, so its items fall between the app's editing items and the layout's, last. In `EDIT`, order 100 is Reset's (the app's in ⋯, History's on the photo and a thumbnail), so a tool's item there takes order 200 or more and Reset stays first. The app's own items are exempt.
 - **`order`** places an item within its section, 100 apart (100, 200, 300…), lower first. The gaps leave room to insert an item without renumbering. "Order", not "weight" or "priority", whose direction is ambiguous.
 - A tool with nothing to add declares nothing.
-- `Definition::check` refuses an unknown action, a repeat, more items than the place's limit, a place closed to tools, a section outside `EDIT` to 8999 or an `EDIT` order below 200, and a submenu. An app test holds the utilities to the same rules and to the registry's actions.
+- `Definition::check` refuses an unknown action, an action twice in one place, a submenu's children included, a submenu of none or more than eight, more items than the place's limit (`check_menus`), and a section from `LAYOUT` up or under `EDIT` (`MenuSection`) or an `EDIT` order under 200 (`MenuOrder`; `check_section`). An app test holds the utilities to the same rules, History's Reset alone at `(EDIT, 100)`, and to the registry's actions.
 
 **Building a menu,** `menus::context(place, target)`:
 
-1. Every item for the place, the app's and the tools', is sorted by `(section, order)`.
+1. Every item for the place, the app's and the tools', is sorted by `(section, order)`. The surround's holds View › Background's items alone, read from `BACKGROUND`.
 2. A separator falls wherever `section` changes; a section with no item shown, empty or all hidden, leaves no line.
 3. A test fails on two items with the same `(section, order)` in one menu, built as it shows: the photo's and a thumbnail's with every tool's items, and each tool's and utility's ⋯ with the app's items and its own. Two tools may share a `(section, order)` in their own ⋯.
 4. In the photo's and a thumbnail's menus an item whose action cannot run on the target is hidden, whatever stops it; one that waits only for the photo to become live, as on a thumbnail just made active, is shown disabled. ⋯, a pull-down from a button, keeps the pull-down's rule: an item that cannot run is drawn disabled with its tip.
 5. A submenu goes one level deep, and the photo's and a thumbnail's menus show no keys.
-6. A test holds the photo's and a thumbnail's menus, every item of every tool shown, to at most 16 items; an item past that needs a decision.
+6. A test holds the photo's and a thumbnail's menus, every item of every tool shown, to at most 16 items, a submenu's children each counted; an item past that needs a decision.
 7. An item a tool adds to either menu is listed on its tool's page.
 
 **The target:**
 
 - **On the photo:** the active photo, with the point under the pointer in the photo's coordinates as pickers take them, none from the keys; an action that needs a point is hidden without one.
 - **On a thumbnail:** its photo. Opening its menu, by a right-click or from the keys on its focused cell, selects it alone and makes it active first unless it is in the selection ([Selection and the active photo](#selection-and-the-active-photo)), so the selection the menu acts on always includes the photo it was opened on, and in Phase 2, where the selection is the active photo alone, each item acts on the active photo as from the menu bar. From Phase 3 the selection when the photo is in it; while several are selected, an item that acts on one photo alone is hidden, History's Reset among them.
-- **In ⋯:** its tool.
+- **In ⋯:** its tool. **On the surround:** the app.
 
 **Opening.**
 
@@ -1151,9 +1154,15 @@ A place opens to tools' items only by a decision of its own.
 - While a picker is on, the photo's right-click is the picker's ([pickers.md](pickers.md#on-the-photo)), and later a mask's while one is being drawn.
 - The photo is no focus stop in Phase 2, so its menu has no key; a focused thumbnail's opens with Shift+F10 and the Menu key. A long press on touch and pen comes later.
 
+**While it is open** (`context_popup` in `main.rs`):
+
+- A drawn menu opened while its photo waits to go live, as a thumbnail's on the photo it has just made active, shows the waiting items disabled, and is rebuilt in place, at the same anchor with the same opener, once the photo is live.
+- The photo's and a thumbnail's menus act on the photo asked for as they opened: when another photo becomes the one asked for, by a drop, Open… or an open asked for earlier, the menu is dismissed, taking no answer.
+- The Mac's native menu is modal: nothing changes while it is open, and it keeps what it opened with.
+
 **Every item is reachable without a right-click:** in the menu bar, in its tool's section or ⋯, or by its keys. A right-click menu is a shortcut. A tool's action has its button by construction, and a test holds each utility's item to a menu bar item.
 
-**The first slice:** `Place` (`Photo`, `Thumbnail`, `Options`, and `Surround`, whose menu moves into the builder), `Section`, `MenuItem`, `MenuEntry`, `Definition::menus`, `Utility::menus` and their checks, `UTILITIES` moved from `about` into `utility`; the generated tool actions; `Target` and `menus::context(place, target)`; the photo's menu and a thumbnail's; History's Reset in both, reading on the photo Reset, —, Export…, —, Background ▸. Discard History… is in no context menu. Pickers as items wait for the open question ([Open questions](#open-questions)).
+**Built, the first slice:** in `apertrust-tools`, `Place`, `Section`, `MenuItem`, `MenuEntry`, `Definition::menus`, `Utility::menus` and their checks, `UTILITIES` in `utility`; in the app, the generated tool actions, `menus::Place` with `Surround`, `Target`, `menus::APP_ITEMS` and `menus::context(place, target)`, the photo's menu and a thumbnail's with the two behaviours while one is open; History's Reset in both, and Orientation ▸ on the photo, so the photo's reads Reset, —, Export…, —, Background ▸, Orientation ▸ and a thumbnail's Reset, —, Export…. Discard History… is in no context menu. Pickers as items wait for the open question ([Open questions](#open-questions)), and ⋯ through the builder comes with the layout's ⋯.
 
 ### Checks
 
@@ -2573,7 +2582,7 @@ Planned (decision 92): Phase 3 builds the toolbar, its menu, tools' items, the o
 - **What can be placed:**
   - the parts `menu-button` (Windows and Linux), `mark`, `jobs`, `save-state` and `assistant`, one each;
   - the app's actions that are pressed or toggled and have an icon, one each: Import…, Export…, Export Again, Cull, Reset, Undo, Redo, Copy edit, Apply edit, Copy or Apply Parts…, Open…, Open Folder…, Before and After, Clipping Warnings, Zoom to 100%, Zoom to Fit, Full Screen, Jobs, Browse, Show in Folder, Next Photo, Previous Photo and Settings…; Before and After, Clipping Warnings, Zoom to 100% and Settings… are not in the default;
-  - tools' actions, `tool-<tool>-<action>` ([Context menus](#context-menus)), that a tool offers in `Definition::toolbar` (`ToolbarItem { action, icon }`, at most two a tool) or a utility in `Utility::toolbar`; the icon one of `apertrust-ui`'s by name, a `Row::Buttons` action taking its button's; Orientation's Rotate 90° anticlockwise and clockwise first;
+  - tools' actions, the `tool-<tool>-<action>` actions decision 91 built ([Context menus](#context-menus)), that a tool offers in `Definition::toolbar` (`ToolbarItem { action, icon }`, at most two a tool) or a utility in `Utility::toolbar`; the icon one of `apertrust-ui`'s by name, a `Row::Buttons` action taking its button's; Orientation's Rotate 90° anticlockwise and clockwise first;
   - `space`, 16 points, and `flexible-space`, sharing what is left, any number; the overflow removes fixed spaces as it narrows.
 - **Never placeable:** hold actions (H), focus moves (F6), a set's members (the backgrounds, the workspaces), the platform's own items. Groups are told apart by space, never a line.
 - **Moving the window:** flexible spaces, the parts of a fixed space outside egui's 5-point margin round a control, and a status slot showing nothing are empty areas. On Windows the hit map's `HTCAPTION` rectangles come from the toolbar's layout, the items are `HTCLIENT`, and `HTMAXBUTTON` stays over the maximise button.
@@ -2881,7 +2890,7 @@ The central panel's photo is for looking: nothing is drawn on it, and its marks 
 
 Built. The surround behind the photo is one of six neutral greys (`Background`), chosen from a right-click on the surround, anywhere in the central panel's slot but the photo, or from View › Background. The photo keeps its own right-click for a menu of its own.
 
-**The photo's right-click menu** (planned; [Context menus](#context-menus), decision 91) follows macOS's rules for context menus: a few of the most-used commands for what is under the pointer, every one also in the menu bar or its tool, an item that cannot run hidden rather than dimmed, a separator where the section changes, at most one level of submenu, and no shortcuts shown. Its items are sorted by section and order, the app's and the tools' alike: History's Reset (`EDIT`); Export… (`EXPORT`); Background ▸ (`VIEW`), built in the surround's menu; so it reads Reset, —, Export…, —, Background ▸. Show in Finder joins once folder mode can reveal a photo. Discard History… and Create a Style… are not in it: they are in Edit and the History section's ⋯. The choice is kept in `central_panel.background`, for the app, never for one photo; its default is computed, so until one is chosen it follows the theme.
+**The photo's right-click menu** (built; [Context menus](#context-menus), decision 91) follows macOS's rules for context menus: a few of the most-used commands for what is under the pointer, every one also in the menu bar or its tool, an item that cannot run hidden rather than dimmed, a separator where the section changes, at most one level of submenu, and no shortcuts shown. Its items are sorted by section and order, the app's and the tools' alike: History's Reset (`EDIT`); Export… (`EXPORT`); Background ▸, View › Background's items, then Orientation ▸, Orientation's four buttons (`VIEW`); so it reads Reset, —, Export…, —, Background ▸, Orientation ▸. Show in Finder joins once folder mode can reveal a photo. Discard History… and Create a Style… are not in it: they are in Edit and the History section's ⋯. The choice is kept in `central_panel.background`, for the app, never for one photo; its default is computed, so until one is chosen it follows the theme.
 
 | Choice | sRGB | Luminance, of white's | ISO 12646 | Its caption |
 | --- | --- | --- | --- | --- |
@@ -3814,6 +3823,7 @@ Decision 19; engine.md's [Scopes](engine.md#scopes). Built for the histogram, th
 
 - **Every action is declared once**, in an actions registry (`crates/app/src/actions.rs`): a stable id, a message id, its default keys, its scope, when it is available and what it emits, a session command or a UI intent.
   - Buttons, menus, tooltips (which show the first key), the keyboard handler and, later, a command palette all read the registry, so a shortcut and its button never disagree.
+  - A tool's own actions, each `Row::Action` and each button of `Row::Buttons`, are generated into it from the tools' definitions as the app starts, `tool-<tool>-<action>` with no default keys, and found by id as the others are ([Context menus](#context-menus), decision 91).
   - On the Mac the native menu holds the registry's keys as its key equivalents and runs its actions, holding none that the focused widget keeps; on Windows and Linux the registry reads every key and the drawn menus only show them ([Who owns the keys](#who-owns-the-keys), decision 39).
   - An action that can't run is drawn disabled, and its keys do nothing. One not built yet is listed all the same, so that its keys are kept and shown, and never runs.
   - The keys are read once a frame, before anything is drawn; what they ask for runs after the frame, with what was clicked. No widget handles a shortcut: a section is told whether the keys that peek are held.
@@ -4171,8 +4181,7 @@ Phase 2's interface, each step usable on its own. Steps 1 to 5 are built; steps 
 5. The shell: top panel, central bar, the viewport's paint callback, grid panel. No Map toggle on the central bar, since Photo is the only layout until the Map (decision 37), and no switcher in the top panel.
 6. The tool renderer, from `apertrust-tools` definitions (decision 28), and the first pass's tools for the ported operations, darktable's (decision 2; `docs/roadmap.md`, Phase 2), the side panel's tabs by editing stage (decision 38). Built: the renderer, every tool listed in [the renderer](#the-renderer), and the tabs by editing stage. Left: RGB levels and RGB curve, then the rest.
 7. The actions registry, the keyboard map, settings, Customise tabs on the Edit workspace, the window frame, the popup service and the menu bar ([the window frame and menus](#the-window-frame-and-menus); [what arrives when](#what-arrives-when)).
-   - Built: the registry and the keyboard map; the Mac's frame and native menu bar; Linux's frame and its ☰ with the drawn menu, on the popup service's first piece (decisions 39 and 40); the popup service's native lists on the Mac; the settings file on the settings schema (decision 43), in its build plan's order: `apertrust-base` with the schema and its generator, the store, the user data folder, the engine's first settings with the CLI reading them, `--conf`, and an edit a newer Apertrust wrote opened for viewing only; the dialog host with Settings in it, on every platform (decision 41), its pages of rows drawn from the registry.
-   - Next: context menus' first slice ([Context menus](#context-menus), decision 91): `Place`, `Section`, `MenuItem`, `MenuEntry`, `Definition::menus` and `Utility::menus`, the generated tool actions, `Target` and `menus::context(place, target)`, the photo's menu and a thumbnail's, with History's Reset in both and Background ▸ read from View › Background.
+   - Built: the registry and the keyboard map; the Mac's frame and native menu bar; Linux's frame and its ☰ with the drawn menu, on the popup service's first piece (decisions 39 and 40); the popup service's native lists on the Mac; the settings file on the settings schema (decision 43), in its build plan's order: `apertrust-base` with the schema and its generator, the store, the user data folder, the engine's first settings with the CLI reading them, `--conf`, and an edit a newer Apertrust wrote opened for viewing only; the dialog host with Settings in it, on every platform (decision 41), its pages of rows drawn from the registry; context menus' first slice ([Context menus](#context-menus), decision 91): `Place`, `Section`, `MenuItem`, `MenuEntry` with tools' submenus, `Definition::menus` and `Utility::menus`, the generated `tool-<tool>-<action>` actions, `Target` and `menus::context(place, target)`, the photo's menu and a thumbnail's, with History's Reset in both, and on the photo Background ▸ and Orientation ▸.
    - Left: Windows' Alt pressed and released alone, then its native hit testing; Settings' hand-built pages, Shortcuts first, with rebinding keys; Linux's and Windows' native modality ([Dialogs and alerts](#still-to-build)); Customise tabs in the host, editing the Edit workspace's fixed tab lists; Phase 3 reworks it onto the side panel's layout model (decision 83).
 8. Scopes, from the engine's reductions. Built: the widget ([the scopes](#the-scopes)), the engine's counts for the histogram, the waveform, the vectorscope and the totals, sent as session events (engine.md, Scopes; decision 19), and the app's Scopes section, pinned in the editing tabs and drawing all four. Left: the photo's clipping overlays.
 9. Folder mode in one view (decision 37): the Photos tab first, with Browse's Folders; the grid panel showing the folder, with the engine's thumbnails and its grid bar, never hidden, in one line or several, resized from its edge, at the bottom, left or right ([The grid panel](#the-grid-panel)); File › Open…, Open Folder… and Open Recent; the central panel's empty states ([The central panel's layouts](#the-central-panels-layouts)). The library's side is its own build plan (decision 46; architecture, Implementation plan, The library's cards).
@@ -4247,7 +4256,7 @@ The decisions this design rests on, by area; each decision record has the option
 | Actions | One registry for buttons, menus, tooltips and shortcuts, all rebindable (decision 36) |
 | Settings | One settings schema in TOML, each setting declared once, each owner's crate generating typed statics from it, which the file, the Settings dialog and the CLI read; the dialog's nine pages, General, Import, Photos, Editing, Processing, Storage, Shortcuts, Presets and AI, its rows drawn from the schema and Shortcuts, Storage, Presets and AI built by hand; the generator, the machinery and the user data and cache folders in `apertrust-base`, with the log; a user data folder of one's own by `--user-data-dir` or `APERTRUST_USER_DATA_DIR`, separating settings only; the library in another place, next to the images; an edit a newer Apertrust wrote never overwritten (decision 43) |
 | Window frame | The top panel from the window's top edge on every platform: the Mac's traffic lights in it, caption buttons drawn by the app on Windows and Linux, Windows' snap layouts flyout through native hit testing; the system's title bar as a setting there, off by default; a minimum width of 500 points (decision 39) |
-| Context menus | Only in named places, the photo, a thumbnail and a tool's ⋯ open to tools' items; each item a registry action, a tool's own generated as `tool-<tool>-<action>`, declared as data (`Definition::menus`, `Utility::menus`), at most two a tool on the photo and a thumbnail; the app building every menu, its items and the tools' sorted by `(section, order)`, a submenu the app's alone and read from the menu bar's; no right-click on a tool; every item reachable without one (decision 91, planned; [Context menus](#context-menus)) |
+| Context menus | Only in named places, the photo, a thumbnail and a tool's ⋯ open to tools' items, the only places `apertrust-tools`' `Place` has, the surround and the rest the app's own; each item a registry action, a tool's own generated as `tool-<tool>-<action>`, declared as data (`MenuItem`: `Definition::menus`, `Utility::menus`, the app's `APP_ITEMS`), at most two a tool on the photo and a thumbnail, a submenu of up to eight of its own actions one of them; the app building every menu, its items and the tools' sorted by `(section, order)`; no right-click on a tool; every item reachable without one; the first slice built, History's Reset and Orientation ▸ its items (decision 91; [Context menus](#context-menus)) |
 | Toolbar | The top panel a toolbar a person customises, everything but the caption buttons and the traffic lights; one list of item ids per workspace, tools' actions offered in `Definition::toolbar`; icons by default, Toolbar Labels app-wide; a right-click anywhere on it opening the toolbar menu; the settings file until a Customise Toolbar window (decision 92, planned; [The top panel](#the-top-panel)) |
 | Popups | Native `NSMenu`s on the Mac for plain lists and context menus, from `apertrust-display`; drawn for what previews or holds controls, and on Windows and Linux; one popup service; the drawn ones on egui `Area`s, owning their plain keys while open through an egui plugin, drawn by `popup::show` once a frame (decision 40) |
 | Dialogs and alerts | Every dialog a native window of its own, modal to the window it rises from, hosted by the app beside eframe's window with its own egui context, AccessKit adapter and surface on the engine's device; made modal as each platform does it (on the Mac a sheet, and Settings alone modeless, a native window of its own; an owned window with its owner disabled on Windows; transient-for and the modal state on X11; a parent on Wayland, with modality kept by the app); confirmations the system's alerts through one alert service, `NSAlert` and the task dialog, Linux's Apertrust's own in a dialog window; About and a future splash screen Apertrust's own over the window (decision 41) |
@@ -4274,5 +4283,6 @@ What is still undecided in the interface. Each says what the app does meanwhile.
 - **What the next start reopens with several windows** (decision 89). `library.reopen_last` reopens one place today, and Restart now passes what one window holds (decision 82). With several windows the next start could reopen every window open at Quit, each with its place, or only the key window's. Recommended: every window's place, in its own window, but a window of photos opened alone, which never reopens at the next start (decision 46); Restart now reopens every window, photos opened alone included, as it passes them today (decision 82), since a restart that drops windows loses the person's set-up. Reopening photos opened alone at the next start would change decision 46 and needs a decision of its own. Meanwhile, until step 4, there is one window, and it reopens as now.
 - **Retouch in the Detail tab** (decision 38): darktable's retouch comes as retouch layers, listed in the Layers section (decision 74; [layers.md](layers.md#retouch-layers)), and Detail lists Retouch too; what its entry there is, a section that adds a heal or clone layer or a view of those layers, is designed with layers. Meanwhile Detail has no Retouch, since nothing of it is built.
 - **An item that picks at the pointer** (decision 91), such as "Set Exposure from Here" in the photo's menu: it needs a pick at one point that starts, reads and ends as one completed change, which the picker commands (decision 79) may not express. Settled when a tool first adds one; meanwhile a picker is no menu item, and pickers start from their buttons.
+- **A tool's action on a photo it cannot change** (decision 91): a generated `tool-<tool>-<action>` is available while the photo takes edits, live and not open for viewing only, and does not ask whether its own control can take a change on that photo, as its row in the panel may. Every built tool's buttons apply to every photo, so nothing differs yet. Settled when a tool's action first cannot run on a photo that takes edits, by an availability the tool declares or the app derives from its definition; meanwhile an item is shown wherever the photo takes edits.
 - **Native popups' repaint** (decision 40): whether the window repaints while a native popup is open waits for a spike on the M4.
 - **A small Import tool** (decision 90): a section of the side panel holding import's defaults, the metadata, rating and labels stamped at import and its presets, may earn its place beside Browse's Import…. Meanwhile there is none: Import's settings are the sheet's, and Settings › Import shows darktable's four preferences.
