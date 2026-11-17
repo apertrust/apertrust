@@ -21,10 +21,16 @@
 //!
 //! - **Settings,** a preset row: as shot, from image area, user modified, camera reference
 //!   and as shot to reference, each writing the coefficients and where they came from,
-//!   `preset`, as darktable's `_preset_tune_callback` does. From image area is the
-//!   picker's and user modified darktable's memory of the last coefficients, so neither is
-//!   ever applied. Its label is the option the coefficients hold, as `gui_update` names
-//!   it within darktable's 1e-5.
+//!   `preset`, as darktable's `_preset_tune_callback` does. From image area turns the
+//!   picker on, and user modified is darktable's memory of the last coefficients, so
+//!   neither is ever applied. Its label is the option the coefficients hold, as
+//!   `gui_update` names it within darktable's 1e-5, or from image area while `preset`
+//!   holds it after a pick.
+//! - **The picker,** `spot`, darktable's "from image area": an area of the mosaic at the
+//!   operation's input, its pick setting the coefficients that make the area neutral and
+//!   `preset` from image area ([`ProcessingTool::pick`]). Where darktable redraws the tool, as the
+//!   photo opens and after Undo, Redo or a move through history, from image area becomes
+//!   what the coefficients match, user modified for a picked balance ([`ProcessingTool::redrawn`]).
 //! - **Temperature and Tint,** under the scene illuminant temp label: darktable's model of
 //!   the coefficients through the camera's colour matrix
 //!   (`apertrust_color::white_balance`), a lossless view of the three with two
@@ -39,17 +45,18 @@
 //! where the camera has a colour matrix. Moving a coefficient, temperature or tint writes
 //! `preset` user modified, as darktable's `gui_changed` and `_temp_tint_callback` do
 //! ([`ProcessingTool::follow`]), so colorin's late correction runs only with "as shot to
-//! reference" and the as-shot coefficients. The button bar, the camera's presets with
-//! Finetune and the picker come later (`docs/tools/white-balance.md`, Gaps).
+//! reference" and the as-shot coefficients. The button bar and the camera's presets with
+//! Finetune come later (`docs/tools/white-balance.md`, Gaps).
 
 use apertrust_color::white_balance::{Matrices, TEMPERATURE_RANGE, TINT_RANGE};
 use apertrust_plugin::{Camera, ImageContext, Value};
 
 use crate::about::{Fact, Facts, Purpose};
 use crate::definition::{
-    ChoiceStyle, Control, ControlKind, Coordinate, PresetRow, ProcessingDefinition, Reset, Row,
-    Slider, Tab, ToolDefinition, Unit, View,
+    ChoiceStyle, Control, ControlKind, Coordinate, Picker, PickerKind, PresetRow,
+    ProcessingDefinition, Reset, Row, Slider, Space, Tab, ToolDefinition, Unit, View,
 };
+use crate::pick::{PickKeys, Picked, Reading, Shown};
 use crate::{Base, ControlValue, Controls, Owned, ProcessingTool, Setting, ToolValues};
 
 pub struct WhiteBalance;
@@ -64,6 +71,7 @@ pub const COEFFICIENTS: [&str; 3] = ["red", "green", "blue"];
 /// as shot, from image area, user modified, camera reference, as shot to reference.
 pub const SETTINGS: [&str; 5] = ["as_shot", "spot", "user", "d65", "d65_late"];
 const AS_SHOT: u32 = 0;
+const SPOT: u32 = 1;
 const USER: u32 = 2;
 const D65: u32 = 3;
 const D65_LATE: u32 = 4;
@@ -185,9 +193,11 @@ static DEFINITION: ProcessingDefinition = ProcessingDefinition {
         id: SETTINGS_ROW,
         options: &SETTINGS,
         controls: &["red", "green", "blue", "various", "preset"],
+        // From image area turns the picker on, its one place until the button bar comes.
+        pickers: &[("spot", PICKER.id)],
     }],
     views: &VIEWS,
-    pickers: &[],
+    pickers: &[PICKER],
     // darktable's `description()` in src/iop/temperature.c at the reference release.
     facts: Some(Facts {
         purpose: Purpose::Corrective,
@@ -196,6 +206,29 @@ static DEFINITION: ProcessingDefinition = ProcessingDefinition {
         output: Fact::LinearRawSceneReferred,
     }),
 };
+
+/// darktable's picker, "from image area": `dt_color_picker_new_with_cst(self,
+/// DT_COLOR_PICKER_AREA, NULL, IOP_CS_NONE)` (`temperature.c:2088`), an area with no
+/// denoise read in no space of its own, so the mosaic at the operation's input per CFA
+/// colour; its pick writes the coefficients and `preset` ([`ProcessingTool::pick`]).
+const PICKER: Picker = Picker {
+    id: "spot",
+    operation: OPERATION,
+    kind: PickerKind::Area,
+    denoise: false,
+    output: false,
+    space: Space::Operation,
+    keep: false,
+    writes: &["red", "green", "blue", "preset"],
+    settings: &[],
+    words_by: None,
+};
+
+/// darktable's bound on a picked coefficient, `color_picker_apply`'s own.
+const PICKED_MAX: f32 = 8.0;
+
+/// A mean at or below which darktable takes a channel as giving 1.
+const PICKED_FLOOR: f32 = 0.001;
 
 /// Every parameter of `temperature`: the four coefficients and `preset`.
 static OWNS: [Owned; 5] = [
@@ -264,7 +297,8 @@ impl ProcessingTool for WhiteBalance {
     /// coefficients; camera reference, the camera's D65 ones
     /// (`_calculate_bogus_daylight_wb`); as shot to reference, the as-shot coefficients,
     /// under which colorin applies the late correction. darktable offers all three on
-    /// every photo, so does the row. From image area and user modified are never applied.
+    /// every photo, so does the row. From image area and user modified are never applied:
+    /// the first turns the picker on (`PresetRow::pickers`), whose pick writes the values.
     fn preset(&self, preset: &str, option: &str, image: &ImageContext) -> Option<Controls> {
         if preset != SETTINGS_ROW {
             return None;
@@ -283,12 +317,11 @@ impl ProcessingTool for WhiteBalance {
         Some(values)
     }
 
-    /// darktable's `gui_update` label, within its `dt_dev_equal_chroma`, 1e-5 on each of
-    /// the first three coefficients, against what the options write, as darktable compares
-    /// the parameters with the `as_shot` and `D65coeffs` it wrote: as shot to reference
-    /// with the as-shot coefficients and that setting; as shot with the as-shot
-    /// coefficients; camera reference with the D65 ones; user modified otherwise, which no
-    /// option applies.
+    /// From image area while `preset` holds it, as darktable's combobox shows it right
+    /// after a pick (`temperature.c:1967`); otherwise darktable's `gui_update` label, within
+    /// its `dt_dev_equal_chroma`, 1e-5 on each of the first three coefficients: as shot to
+    /// reference with the as-shot coefficients and that setting, as shot with the as-shot
+    /// coefficients, camera reference with the D65 ones, user modified otherwise.
     fn matching(
         &self,
         preset: &str,
@@ -298,17 +331,65 @@ impl ProcessingTool for WhiteBalance {
         if preset != SETTINGS_ROW {
             return None;
         }
-        let coefficients = COEFFICIENTS.map(|control| values.number(control));
-        let equal = |other: [f32; 4]| (0..3).all(|c| (coefficients[c] - other[c]).abs() < 1e-5);
-        let as_shot = equal(as_shot(image));
-        Some(if as_shot && values.choice("preset") == D65_LATE {
-            "d65_late"
-        } else if as_shot {
-            "as_shot"
-        } else if equal(daylight(image)) {
-            "d65"
-        } else {
-            "user"
+        if values.choice("preset") == SPOT {
+            return Some("spot");
+        }
+        Some(SETTINGS[label(values, image) as usize])
+    }
+
+    /// darktable's `gui_update` writing the label back into `p->preset`
+    /// (`temperature.c:1336-1340`) where it holds from image area: what the coefficients
+    /// alone match, as [`ProcessingTool::matching`] names it, a picked balance user modified. Any
+    /// other setting is left
+    /// as it is, as Settings' label only names it.
+    fn redrawn(&self, values: &Controls, image: &ImageContext) -> Controls {
+        let mut writes = Controls::new();
+        if values.choice("preset") == SPOT {
+            writes.set("preset", ControlValue::Choice(label(values, image)));
+        }
+        writes
+    }
+
+    /// darktable's `color_picker_apply` (`temperature.c:1948-1969`) on the area's mean at
+    /// the operation's input, one channel per CFA colour, `m`: green normalises by `1 /
+    /// m[1]`, or 1 where `m[1]` is 0.001 or below; each coefficient is `1 / m[c]`, or 1
+    /// where `m[c]` is 0.001 or below, over that, held to darktable's own 0 to 8, then
+    /// green is 1 and `preset` from image area. darktable writes Emerald too, which is not
+    /// ported and stays as it is: nothing reads it on a three-colour sensor. Nothing where
+    /// the area holds no red photosite, as darktable returns on an empty reading. It shows
+    /// nothing, as darktable's white balance has no patch.
+    fn pick(
+        &self,
+        picker: &str,
+        reading: &Reading,
+        _values: &Controls,
+        _image: &ImageContext,
+        _settings: &[(&str, ControlValue)],
+        _channel: Option<&str>,
+        _last: Option<&Reading>,
+        _keys: PickKeys,
+    ) -> Option<Picked> {
+        let input = &reading.input;
+        if picker != PICKER.id || input.max[0] < input.min[0] {
+            return None;
+        }
+        let m = input.mean;
+        let inverse = |mean: f32| {
+            if mean > PICKED_FLOOR { 1.0 / mean } else { 1.0 }
+        };
+        let green = inverse(m[1]);
+        let mut writes = Controls::new();
+        for (c, control) in COEFFICIENTS.into_iter().enumerate() {
+            // `fmaxf(0, fminf(8, …))`; a mean is never NaN, and a value that is not
+            // finite the session would not write.
+            let coefficient = (inverse(m[c]) / green).clamp(0.0, PICKED_MAX);
+            writes.set(control, ControlValue::Number(coefficient));
+        }
+        writes.set("green", ControlValue::Number(1.0));
+        writes.set("preset", ControlValue::Choice(SPOT));
+        Some(Picked {
+            writes,
+            shown: Shown::default(),
         })
     }
 
@@ -348,6 +429,27 @@ impl ProcessingTool for WhiteBalance {
             writes.set("preset", ControlValue::Choice(USER));
         }
         writes
+    }
+}
+
+/// darktable's `gui_update` label (`temperature.c:1206-1340`), the setting by its value,
+/// within its `dt_dev_equal_chroma`, 1e-5 on each of the first three coefficients, against
+/// what the options write, as darktable compares the parameters with the `as_shot` and
+/// `D65coeffs` it wrote: as shot to reference with the as-shot coefficients and that
+/// setting; as shot with the as-shot coefficients; camera reference with the D65 ones;
+/// user modified otherwise, which no option applies.
+fn label(values: &Controls, image: &ImageContext) -> u32 {
+    let coefficients = COEFFICIENTS.map(|control| values.number(control));
+    let equal = |other: [f32; 4]| (0..3).all(|c| (coefficients[c] - other[c]).abs() < 1e-5);
+    let as_shot = equal(as_shot(image));
+    if as_shot && values.choice("preset") == D65_LATE {
+        D65_LATE
+    } else if as_shot {
+        AS_SHOT
+    } else if equal(daylight(image)) {
+        D65
+    } else {
+        USER
     }
 }
 
@@ -417,7 +519,7 @@ mod tests {
 
     use super::*;
     use crate::check;
-    use crate::testing::DarktableSlider;
+    use crate::testing::{DarktablePicker, DarktableSlider};
 
     fn operation() -> &'static dyn apertrust_plugin::Operation {
         apertrust_operations::operation(OPERATION).unwrap()
@@ -616,6 +718,193 @@ mod tests {
             .preset(SETTINGS_ROW, "as_shot", &image)
             .unwrap();
         assert_eq!(as_shot.get("red"), Some(&ControlValue::Number(8.0)));
+    }
+
+    /// darktable's picker, `dt_color_picker_new_with_cst(self, DT_COLOR_PICKER_AREA, NULL,
+    /// IOP_CS_NONE)` (`temperature.c:2088`): an area, not denoised, the operation's input
+    /// alone in no space of its own, so the mosaic, writing the coefficients and `preset`
+    /// (`:1948-1969`) and reading no setting; Settings' from image area its one place.
+    #[test]
+    fn its_picker_is_darktable_s() {
+        let darktable = [DarktablePicker {
+            id: "spot",
+            slider: "",
+            kind: PickerKind::Area,
+            denoise: false,
+            output: false,
+            writes: &["red", "green", "blue", "preset"],
+            settings: &[],
+        }];
+        assert_eq!(crate::testing::pickers_on_sliders(&DEFINITION), darktable);
+        let picker = DEFINITION.picker("spot").unwrap();
+        assert_eq!(picker.operation, OPERATION);
+        assert_eq!(picker.space, Space::Operation);
+        assert!(!picker.keep);
+        let row = DEFINITION.preset(SETTINGS_ROW).unwrap();
+        assert_eq!(row.pickers, [("spot", "spot")]);
+        assert!(DEFINITION.rows().all(|row| row.pickers().is_empty()));
+    }
+
+    // The pick: darktable's `color_picker_apply` (`temperature.c:1948-1969`) restated on
+    // readings made for the test.
+
+    /// A reading whose mean at the operation's input is `m`, one channel per CFA colour,
+    /// the fourth empty as on a three-colour mosaic.
+    fn reading(m: [f32; 3]) -> Reading {
+        let [r, g, b] = m;
+        Reading {
+            input: crate::pick::Stats {
+                mean: [r, g, b, 0.0],
+                min: [r, g, b, f32::MAX],
+                max: [r, g, b, -f32::MAX],
+            },
+            output: None,
+            input_maximum: [1.0; 3],
+        }
+    }
+
+    fn pick_by(picker: &str, m: [f32; 3]) -> Option<Picked> {
+        let image = crate::testing::image();
+        WhiteBalance.pick(
+            picker,
+            &reading(m),
+            &WhiteBalance.defaults(&image),
+            &image,
+            &[],
+            None,
+            None,
+            PickKeys::default(),
+        )
+    }
+
+    /// The coefficients the pick of `m` writes, and its `preset`.
+    fn picked(m: [f32; 3]) -> ([f32; 3], ControlValue) {
+        let writes = pick_by("spot", m).unwrap().writes;
+        (
+            COEFFICIENTS.map(|control| writes.number(control)),
+            writes.get("preset").unwrap().clone(),
+        )
+    }
+
+    /// darktable's arithmetic, restated: `gnormal`, then each channel's inverse over it,
+    /// held to 0 to 8, then green 1.
+    fn darktable(m: [f32; 3]) -> [f32; 3] {
+        let gnormal = if m[1] > 0.001 { 1.0 / m[1] } else { 1.0 };
+        let mut coefficients = m.map(|mean| {
+            let inverse: f32 = if mean > 0.001 { 1.0 / mean } else { 1.0 };
+            (inverse / gnormal).clamp(0.0, 8.0)
+        });
+        coefficients[1] = 1.0;
+        coefficients
+    }
+
+    #[test]
+    fn a_pick_is_darktable_s_color_picker_apply() {
+        let spot = ControlValue::Choice(SPOT);
+        for m in [
+            // 2, 1 and 1.333….
+            [0.2, 0.4, 0.3],
+            // Red below the floor: 1 over green's 1 / 0.4, so 0.4.
+            [0.0005, 0.4, 0.3],
+            // Green at and below the floor normalises by 1.
+            [0.2, 0.001, 0.3],
+            [0.2, 0.0002, 0.3],
+            // A coefficient above 8 is held at 8.
+            [0.01, 0.4, 0.3],
+        ] {
+            assert_eq!(picked(m), (darktable(m), spot.clone()), "{m:?}");
+        }
+        let (coefficients, _) = picked([0.2, 0.4, 0.3]);
+        assert_eq!(coefficients[..2], [2.0, 1.0]);
+        assert!(
+            (coefficients[2] - 4.0 / 3.0).abs() < 1e-6,
+            "{coefficients:?}"
+        );
+        assert_eq!(picked([0.0005, 0.4, 0.3]).0[0], 0.4);
+        assert_eq!(picked([0.2, 0.001, 0.3]).0, [5.0, 1.0, 1.0 / 0.3]);
+        assert_eq!(picked([0.01, 0.4, 0.3]).0[0], 8.0);
+        // Emerald is not written, and nothing is shown.
+        let all = pick_by("spot", [0.2, 0.4, 0.3]).unwrap();
+        let written: Vec<&str> = all.writes.iter().map(|(control, _)| control).collect();
+        assert_eq!(written, ["blue", "green", "preset", "red"]);
+        assert_eq!(all.shown, Shown::default());
+        // Another picker's id, or an area with no red photosite, gives nothing.
+        assert_eq!(pick_by("exposure", [0.2, 0.4, 0.3]), None);
+        let mut empty = reading([0.0, 0.4, 0.3]);
+        (empty.input.min[0], empty.input.max[0]) = (f32::MAX, -f32::MAX);
+        let image = crate::testing::image();
+        let values = WhiteBalance.defaults(&image);
+        let none = WhiteBalance.pick(
+            "spot",
+            &empty,
+            &values,
+            &image,
+            &[],
+            None,
+            None,
+            PickKeys::default(),
+        );
+        assert_eq!(none, None);
+    }
+
+    /// The coefficients a pick of `m` writes over the photo's defaults, `preset` with them.
+    fn picked_values(image: &ImageContext, m: [f32; 3]) -> Controls {
+        let mut values = WhiteBalance.defaults(image);
+        for (control, value) in pick_by("spot", m).unwrap().writes.iter() {
+            values.set(control, value.clone());
+        }
+        values
+    }
+
+    #[test]
+    fn settings_reads_from_image_area_while_preset_holds_it_whatever_the_coefficients() {
+        let image = crate::testing::image();
+        let picked = picked_values(&image, [0.2, 0.4, 0.3]);
+        assert_eq!(
+            WhiteBalance.matching(SETTINGS_ROW, &picked, &image),
+            Some("spot")
+        );
+        // The as-shot coefficients under from image area still read from image area.
+        let mut as_shot = WhiteBalance.defaults(&image);
+        as_shot.set("preset", ControlValue::Choice(SPOT));
+        assert_eq!(
+            WhiteBalance.matching(SETTINGS_ROW, &as_shot, &image),
+            Some("spot")
+        );
+    }
+
+    /// Redrawn, from image area becomes what the coefficients match: user modified for a
+    /// picked balance, as shot for the as-shot coefficients, camera reference for the D65
+    /// ones; any other setting is left as it is.
+    #[test]
+    fn redrawn_from_image_area_becomes_what_the_coefficients_match() {
+        let image = crate::testing::image();
+        let preset = |values: &Controls| WhiteBalance.redrawn(values, &image);
+        let only = |option: u32| {
+            let mut writes = Controls::new();
+            writes.set("preset", ControlValue::Choice(option));
+            writes
+        };
+        assert_eq!(preset(&picked_values(&image, [0.2, 0.4, 0.3])), only(USER));
+        let mut as_shot = WhiteBalance.defaults(&image);
+        as_shot.set("preset", ControlValue::Choice(SPOT));
+        assert_eq!(preset(&as_shot), only(AS_SHOT));
+        let mut daylight = as_shot.clone();
+        for (control, value) in WhiteBalance
+            .preset(SETTINGS_ROW, "d65", &image)
+            .unwrap()
+            .iter()
+        {
+            if control != "preset" {
+                daylight.set(control, value.clone());
+            }
+        }
+        assert_eq!(preset(&daylight), only(D65));
+        for setting in [AS_SHOT, USER, D65, D65_LATE] {
+            let mut values = picked_values(&image, [0.2, 0.4, 0.3]);
+            values.set("preset", ControlValue::Choice(setting));
+            assert!(preset(&values).is_empty(), "{setting}");
+        }
     }
 
     #[test]

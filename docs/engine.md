@@ -1435,6 +1435,7 @@ pub struct PresetRow {
     pub id: &'static str,                   // permanent, in the controls' namespace
     pub options: &'static [&'static str],   // option ids, in the row's order
     pub controls: &'static [&'static str],  // the controls every option writes
+    pub pickers: &'static [(&'static str, &'static str)], // options that turn a picker on, by option and picker (decision 79)
     pub camera: &'static [&'static str],    // options a photo lists after these, under a heading (decision 27)
     pub tuning: Option<&'static str>,       // its options' tuning, addressed like a control (decision 27)
 }

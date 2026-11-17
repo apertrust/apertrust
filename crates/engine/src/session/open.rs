@@ -672,13 +672,16 @@ fn edit(run: &Run, context: &Context<'_>, metadata: Metadata) -> Result<Read, Se
         ..
     } = loaded;
     // A number outside the range its tool's values give, as only a hand-written file
-    // holds, is clamped as it is read (decisions 21 and 30); an edit open for viewing only
-    // is shown as it was. The clamp is a change not yet a step.
+    // holds, is clamped as it is read (decisions 21 and 30), and the tools are redrawn as
+    // darktable's `gui_update` redraws its modules as the photo opens, White balance's
+    // from image area becoming what its coefficients match; an edit open for viewing only
+    // is redrawn alone, in the session, which never writes it. Both are a change not yet a
+    // step, nothing written.
     if view_only.is_none() {
-        for warning in edit.clamp_read(&run.tools, &read.metadata.image) {
-            tracing::warn!(target: "pipe", "{warning}");
-        }
+        super::history::as_read(&mut edit, &run.tools, &read.metadata.image);
         identify(&mut file);
+    } else {
+        edit.redraw(&run.tools, &read.metadata.image);
     }
     Ok(Read {
         edit,
