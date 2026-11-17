@@ -6,6 +6,19 @@ The tools users edit with. In the first pass each is darktable's own: one tool p
 - What each operation ports, and how, is in its spec in [ports/](../ports/).
 - A tool still to build takes its controls from darktable's source at the reference release: the params struct's `$DESCRIPTION`s, `gui_init`, `gui_changed` and `gui_update` for when a row shows, and `init_presets` for its presets.
 
+## Processing tools and utilities
+
+Every tool in the side panel has one header, one page and one ⋯, and is one of two kinds (decisions 4 and 93):
+
+| Kind | Is | darktable's | Examples |
+| --- | --- | --- | --- |
+| **Processing tool** | Edits the photo through the operations it binds; its controls are what the edit stores | processing module (iop) | Exposure, AgX, Colour calibration |
+| **Utility tool**, "utility" for short | Edits nothing of its own, with no controls and no operation; it holds settings, view state or the photo's metadata | utility module (lib) | Browse, Export, Scopes, History |
+
+- **Built:** a processing tool is a `Definition` with the trait `Tool` in `apertrust-tools`, drawn by the app's renderer with no code of its own; a utility is drawn by its own app module, Scopes and History listed in `utility::UTILITIES`.
+- **Planned** (decision 93; [gui.md](../gui.md#one-tool-model)): both kinds embed one `ToolDefinition`, the parent, in `ProcessingDefinition` and `UtilityDefinition`; a utility's page uses the same rows, never one that edits, its own widgets as custom rows, so the app draws every tool's header, page and ⋯ alike.
+- "Section" names only the side panel's block a tool is shown in, a header with its body.
+
 ## The tools by tab
 
 Every tool's operation keeps darktable's place, darktable's v5.0 order throughout (decision 22; `src/common/iop_order.c`; [engine.md](../engine.md), Order): the tone equalizer at camera RGB 24.0, RGB curve and RGB levels at 42 and 43, before the tone mapper.
@@ -181,9 +194,9 @@ Port specs, tool pages and code cite these by number.
     - darktable's session memory, values its GUI keeps but no edit stores, is not mirrored.
 14. **Menus and the toolbar** (decisions 91 and 92; [gui.md](../gui.md#context-menus)). A tool takes no right-click: its header, body and controls open no context menu, a control keeping its own gesture (a slider's fine control, a picker button's area).
     - Its own menu is its header's ⋯, its presets the header's presets button.
-    - It may add items to the photo's and a thumbnail's right-click menus, at most two each, and to its own ⋯, at most four, once ⋯ opens through the menu builder, declared in `Definition::menus`, each one of its own actions (`Row::Action`, a button of `Row::Buttons`) or a submenu of up to eight of them, and placed by its `section` (from `EDIT` up to, not including, `LAYOUT`, and in `EDIT` from order 200, after Reset) and `order`, as the app's own items are. The registry holds each of its actions as `tool-<tool>-<action>`, generated as the app starts. Orientation's Orientation ▸ is the first. A tool with nothing to add declares nothing, and a utility declares its items in `utility::UTILITIES` (`Utility::menus`), as History's Reset.
+    - It may add items to the photo's and a thumbnail's right-click menus, at most two each, and to its own ⋯, at most four, once ⋯ opens through the menu builder, declared in `Definition::menus`, each one of its own actions (`Row::Action`, a button of `Row::Buttons`), or for a utility a registry action it names, as History's `reset`, or a submenu of up to eight of them, and placed by its `section` (from `EDIT` up to, not including, `LAYOUT`, and in `EDIT` from order 200, after Reset, History's Reset itself alone at `(EDIT, 100)`) and `order`, as the app's own items are. The registry holds each of a processing tool's actions as `tool-<tool>-<action>`, generated as the app starts; a utility names a registry action that already exists. Orientation's Orientation ▸ is the first. A tool with nothing to add declares nothing, and a utility declares its items in `utility::UTILITIES` (`Utility::menus`), as History's Reset; planned, every tool's in `ToolDefinition::menus` (decision 93).
     - Every item it adds is reachable without a right-click, and each one in the photo's or a thumbnail's menu is listed on the tool's page.
-    - Planned: it may offer up to two of its actions for the toolbar (decision 92; [gui.md](../gui.md#the-toolbar)), in `Definition::toolbar` with an icon of `apertrust-ui`'s by name, a `Row::Buttons` action taking its button's; offered, an action is on the toolbar only where a person places it. A utility offers its own in `utility::UTILITIES` (`Utility::toolbar`, planned too).
+    - Planned: it may offer up to two of its actions for the toolbar (decision 92; [gui.md](../gui.md#the-toolbar)), in `ToolDefinition::toolbar` (decision 93), a utility's as a processing tool's, with an icon of `apertrust-ui`'s by name, a `Row::Buttons` action taking its button's; offered, an action is on the toolbar only where a person places it.
 
 ### Switched tools
 
@@ -218,7 +231,7 @@ AgX now, Sigmoid and Filmic RGB as they come, each a tool of its own, as in dark
 
 ### Owners by operation
 
-Each operation parameter has exactly one owning tool (decisions 4 and 28). For the ported operations:
+Each operation parameter has at most one owning tool, and gets one as its tool is built (decisions 4 and 28). For the ported operations:
 
 | Operation | Slot | Owner | Fixed, or without an owner |
 | --- | --- | --- | --- |
