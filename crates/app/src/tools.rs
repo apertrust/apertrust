@@ -1135,7 +1135,8 @@ fn guides_row(ui: &mut egui::Ui, words: &Translator) {
     let t = apertrust_ui::theme(ui.ctx());
     ui.horizontal(|ui| {
         // The row takes the width it is given, so the button's room, and the gap before it,
-        // are kept back first.
+        // are kept back first; the gap is the only space between them.
+        ui.spacing_mut().item_spacing.x = 0.0;
         let button = IconButton::new(apertrust_ui::Icon::Grid, &settings).enabled(false);
         let room = (ui.available_width() - button.side(ui) - t.spacing.xs).max(0.0);
         ui.allocate_ui(egui::vec2(room, t.sizes.panel_line), |ui| {
