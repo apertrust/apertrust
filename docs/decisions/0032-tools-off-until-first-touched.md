@@ -6,7 +6,7 @@ darktable leaves most modules off on a new photo, and turning one on applies its
 
 ## Decision
 
-**A tool darktable leaves off on a new photo is switched** (`Definition::switched`): off until a command writes one of its controls, then on with darktable's defaults for every control not set, until its reset turns it off. **A tool that is off is a no-op**, covered by an invariant test. A tool whose operation every photo runs is always on, untouched at its defaults ([0028](0028-tools-bound-to-operations.md)); `check::accept` refuses a switched tool over such an operation.
+**A tool darktable leaves off on a new photo is switched** (`ProcessingDefinition::switched`): off until a command writes one of its controls, then on with darktable's defaults for every control not set, until its reset turns it off. **A tool that is off is a no-op**, covered by an invariant test. A tool whose operation every photo runs is always on, untouched at its defaults ([0028](0028-tools-bound-to-operations.md)); `check::accept` refuses a switched tool over such an operation.
 
 **From darktable:** `dt_iop_gui_changed` enables a module on every slider and combobox callback, without comparing values, so a click at the same value turns an off module on; its history stores `enabled` with the parameters.
 

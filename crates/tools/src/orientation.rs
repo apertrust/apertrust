@@ -24,18 +24,20 @@
 //! stored orientation, with darktable's four buttons inline, rotate 90° anticlockwise
 //! and clockwise, flip horizontally and vertically, each composing the orientation shown
 //! with its turn or mirror as darktable's `do_rotate`, `_flip_h` and `_flip_v` do
-//! (`Tool::action`), a `SetControl` of the orientation; then darktable's guides widget,
-//! show guides with the global guide settings button at its end, no edit's, drawn
-//! disabled until the tool's guides come. darktable's presets wait for the
-//! header's presets menu.
+//! (`ProcessingTool::action`), a `SetControl` of the orientation; then darktable's guides
+//! widget, show guides with the global guide settings button at its end, no edit's, drawn
+//! disabled until the tool's guides come. darktable's presets wait for the header's presets
+//! menu.
 
 use apertrust_plugin::{ImageContext, Value};
 
 use crate::about::{Fact, Facts, Purpose};
-use crate::definition::{Button, ButtonIcon, Control, ControlKind, Definition, Row, Tab};
+use crate::definition::{
+    Button, ButtonIcon, Control, ControlKind, ProcessingDefinition, Row, Tab, ToolDefinition,
+};
 use crate::{
-    Base, ControlValue, Controls, MenuEntry, MenuItem, Owned, Place, Section, Setting, Tool,
-    ToolValues,
+    Base, ControlValue, Controls, MenuEntry, MenuItem, Owned, Place, ProcessingTool, Section,
+    Setting, ToolValues,
 };
 
 pub struct Orientation;
@@ -82,57 +84,59 @@ static CONTROLS: [Control; 1] = [Control {
     unported: false,
 }];
 
-static DEFINITION: Definition = Definition {
-    id: FLIP,
+static DEFINITION: ProcessingDefinition = ProcessingDefinition {
+    tool: ToolDefinition {
+        id: FLIP,
+        tabs: &[Tab {
+            id: None,
+            rows: &[
+                Row::Buttons {
+                    control: ORIENTATION,
+                    buttons: &[
+                        Button {
+                            id: ACTIONS[0],
+                            icon: ButtonIcon::RotateLeft,
+                        },
+                        Button {
+                            id: ACTIONS[1],
+                            icon: ButtonIcon::RotateRight,
+                        },
+                        Button {
+                            id: ACTIONS[2],
+                            icon: ButtonIcon::FlipHorizontal,
+                        },
+                        Button {
+                            id: ACTIONS[3],
+                            icon: ButtonIcon::FlipVertical,
+                        },
+                    ],
+                },
+                // darktable's guides widget (`IOP_FLAGS_GUIDES_WIDGET`, `flags()`).
+                Row::Guides,
+            ],
+        }],
+        before: &[],
+        after: &[],
+        // Its four buttons as Orientation ▸ in the photo's menu, after Background ▸
+        // (decision 91).
+        menus: &[MenuItem {
+            place: Place::Photo,
+            section: Section::VIEW,
+            order: 200,
+            entry: MenuEntry::Submenu {
+                title: "tool-flip-title",
+                actions: &ACTIONS,
+            },
+        }],
+    },
     version: 1,
     layers: false,
     auto: false,
     switched: false,
     controls: &CONTROLS,
-    tabs: &[Tab {
-        id: None,
-        rows: &[
-            Row::Buttons {
-                control: ORIENTATION,
-                buttons: &[
-                    Button {
-                        id: ACTIONS[0],
-                        icon: ButtonIcon::RotateLeft,
-                    },
-                    Button {
-                        id: ACTIONS[1],
-                        icon: ButtonIcon::RotateRight,
-                    },
-                    Button {
-                        id: ACTIONS[2],
-                        icon: ButtonIcon::FlipHorizontal,
-                    },
-                    Button {
-                        id: ACTIONS[3],
-                        icon: ButtonIcon::FlipVertical,
-                    },
-                ],
-            },
-            // darktable's guides widget (`IOP_FLAGS_GUIDES_WIDGET`, `flags()`).
-            Row::Guides,
-        ],
-    }],
-    before: &[],
-    after: &[],
-    presets: &[],
+    preset_rows: &[],
     views: &[],
     pickers: &[],
-    // Its four buttons as Orientation ▸ in the photo's menu, after Background ▸ (decision
-    // 91).
-    menus: &[MenuItem {
-        place: Place::Photo,
-        section: Section::VIEW,
-        order: 200,
-        entry: MenuEntry::Submenu {
-            title: "tool-flip-title",
-            actions: &ACTIONS,
-        },
-    }],
     // darktable's `description()` in src/iop/flip.c at the reference release.
     facts: Some(Facts {
         purpose: Purpose::Corrective,
@@ -144,8 +148,8 @@ static DEFINITION: Definition = Definition {
 
 static OWNS: [Owned; 1] = [Owned::new(FLIP, ORIENTATION)];
 
-impl Tool for Orientation {
-    fn definition(&self) -> &'static Definition {
+impl ProcessingTool for Orientation {
+    fn definition(&self) -> &'static ProcessingDefinition {
         &DEFINITION
     }
 

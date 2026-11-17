@@ -17,10 +17,10 @@
 //! Apertrust's tools (architecture decisions 4 and 28): what the user edits with. A
 //! tool is one editing task, as the tools README lists them (`docs/tools/README.md`),
 //! with its controls, its tabs and maybe Auto; an operation is one of the engine's
-//! algorithms. A tool implements [`Tool`]:
+//! algorithms. A tool implements [`ProcessingTool`]:
 //!
-//! - its [`Definition`], static data: the controls an edit stores apart from the rows a
-//!   panel draws them in, and no text, since every word is a message id that follows
+//! - its [`ProcessingDefinition`], static data: the controls an edit stores apart from the
+//!   rows a panel draws them in, and no text, since every word is a message id that follows
 //!   from the ids ([`messages`]);
 //! - its defaults for a photo, the definition's unless they come from the photo, and
 //!   whether each control can change anything on it while the tool's values stand;
@@ -76,9 +76,9 @@ use apertrust_plugin::{ImageContext, Operation, ParamValues, Value};
 
 pub use definition::{
     Button, ButtonIcon, ChoiceStyle, Computed, Control, ControlError, ControlKind, Coordinate,
-    Definition, DefinitionError, MAX_POINTS, MIN_GAP, MOST_IN_SUBMENU, MenuEntry, MenuItem, Picker,
-    PickerKind, Place, PresetRow, Quad, Range, Row, Section, SettingRow, Slider, Space, Tab, Track,
-    Unit, View, Widget, check_menus, check_section, slider_step,
+    DefinitionError, MAX_POINTS, MIN_GAP, MOST_IN_SUBMENU, MenuEntry, MenuItem, Picker, PickerKind,
+    Place, PresetRow, ProcessingDefinition, Quad, Range, Row, Section, SettingRow, Slider, Space,
+    Tab, ToolDefinition, Track, Unit, View, Widget, check_menus, check_section, slider_step,
 };
 use pick::{PickKeys, Picked, Reading};
 pub use values::{ControlValue, Controls, Mark, ToolValues};
@@ -91,7 +91,7 @@ pub use values::{ControlValue, Controls, Mark, ToolValues};
 /// Profile and Adjust tabs listed them in earlier builds; the order the side panel shows
 /// them in is the app's (decision 38). The first pass's other tools follow (`docs/gui.md`,
 /// Build order).
-pub const TOOLS: &[&dyn Tool] = &[
+pub const TOOLS: &[&dyn ProcessingTool] = &[
     &raw_black_white_point::RawBlackWhitePoint,
     &highlight_reconstruction::HighlightReconstruction,
     &demosaic::Demosaic,
@@ -120,8 +120,8 @@ pub const TOOLS: &[&dyn Tool] = &[
 pub const RETIRED: &[&str] = &[];
 
 /// The contract between the engine's session and a tool (decision 28).
-pub trait Tool: Send + Sync {
-    fn definition(&self) -> &'static Definition;
+pub trait ProcessingTool: Send + Sync {
+    fn definition(&self) -> &'static ProcessingDefinition;
 
     /// Each control's untouched value for the photo: the definition's, unless it comes
     /// from the photo, as White balance's as-shot temperature will.
@@ -217,15 +217,15 @@ pub trait Tool: Send + Sync {
     /// The range of the number control `control` while the tool's controls hold
     /// `values`, every control, the edit's over the defaults (decision 30): what a value
     /// may hold, what the track spans at rest and what a key moves, as darktable's slider
-    /// has them for those values. The definition's, as provided ([`Definition::range`]);
-    /// `None` for a control that is no number. Override it where darktable's `gui_changed`
-    /// moves a slider's range with other controls, as AgX's pivot spans black to white
-    /// relative exposure: the definition's range is then the widest any values give, and
-    /// its soft range and step those at the tool's defaults. Pure, as [`Self::bind`] is,
-    /// reading the tool's values but never `control`'s own, nor the photo. The session
-    /// reports it, refuses a command outside it, and after every change clamps a number a
-    /// moved range leaves outside, written at its nearer end in the same change
-    /// ([`check::clamp`]).
+    /// has them for those values. The definition's, as provided
+    /// ([`ProcessingDefinition::range`]); `None` for a control that is no number. Override
+    /// it where darktable's `gui_changed` moves a slider's range with other controls, as
+    /// AgX's pivot spans black to white relative exposure: the definition's range is then
+    /// the widest any values give, and its soft range and step those at the tool's
+    /// defaults. Pure, as [`Self::bind`] is, reading the tool's values but never
+    /// `control`'s own, nor the photo. The session reports it, refuses a command outside
+    /// it, and after every change clamps a number a moved range leaves outside, written at
+    /// its nearer end in the same change ([`check::clamp`]).
     fn range(&self, control: &str, _values: &Controls) -> Option<Range> {
         self.definition().range(control)
     }
@@ -331,19 +331,19 @@ pub trait Tool: Send + Sync {
         Controls::new()
     }
 
-    /// What the picker `picker` of [`Definition::pickers`] makes of `reading`, darktable's
-    /// `color_picker_apply` (decision 79; `docs/pickers.md`, Declaring pickers): the
-    /// controls it writes, each among the picker's `writes` and stored as darktable's rule
-    /// gives it, with no other bound, and what the panel shows of the reading. `values`
-    /// is every control, the edit's over the defaults; `settings` the settings its
-    /// picker reads, as the client sent them; `channel` the channel tab the tool shows,
-    /// as RGB levels' and RGB curve's; `last` the tool's last reading applied, one per
-    /// tool and shared by its pickers, as darktable's `picked_color`; `keys` the keys
-    /// held as the reading was asked for. Pure, as [`Self::bind`] is, so the tool's tests
-    /// drive it with readings and no GPU: the session calls it as a reading arrives and
-    /// applies what it gives as one change, with no follow writes ([`Self::follow`]).
-    /// `None`, as provided, for a picker the tool does not run, and where a reading
-    /// writes and shows nothing, as RGB levels' when it equals the last.
+    /// What the picker `picker` of [`ProcessingDefinition::pickers`] makes of `reading`,
+    /// darktable's `color_picker_apply` (decision 79; `docs/pickers.md`, Declaring
+    /// pickers): the controls it writes, each among the picker's `writes` and stored as
+    /// darktable's rule gives it, with no other bound, and what the panel shows of the
+    /// reading. `values` is every control, the edit's over the defaults; `settings` the
+    /// settings its picker reads, as the client sent them; `channel` the channel tab the
+    /// tool shows, as RGB levels' and RGB curve's; `last` the tool's last reading applied,
+    /// one per tool and shared by its pickers, as darktable's `picked_color`; `keys` the
+    /// keys held as the reading was asked for. Pure, as [`Self::bind`] is, so the tool's
+    /// tests drive it with readings and no GPU: the session calls it as a reading arrives
+    /// and applies what it gives as one change, with no follow writes ([`Self::follow`]).
+    /// `None`, as provided, for a picker the tool does not run, and where a reading writes
+    /// and shows nothing, as RGB levels' when it equals the last.
     #[allow(
         clippy::too_many_arguments,
         reason = "darktable's picker state, each part read by some tool's pick"
@@ -384,8 +384,8 @@ pub trait Tool: Send + Sync {
 /// A tool's values saved before it became switched (decision 32), as its migration
 /// gives them back: on with every value, where they rendered something then, else off,
 /// their values dropped, since they rendered nothing, and their marks kept. A tool that
-/// becomes switched raises its version, and its [`Tool::migrate`] says whether an older
-/// edit rendered, writing first, where darktable's defaults differ from the older
+/// becomes switched raises its version, and its [`ProcessingTool::migrate`] says whether an
+/// older edit rendered, writing first, where darktable's defaults differ from the older
 /// version's, those older defaults, so each edit binds what it bound.
 pub fn switched_from(mut values: ToolValues, rendered: bool) -> ToolValues {
     if !rendered {
@@ -398,8 +398,8 @@ pub fn switched_from(mut values: ToolValues, rendered: bool) -> ToolValues {
     values
 }
 
-/// A value of the photo's for a row's label ([`Tool::label_value`], decision 88): plain
-/// data, which a client writes with its unit, `unit-<unit>-value`, in the language's
+/// A value of the photo's for a row's label ([`ProcessingTool::label_value`], decision 88):
+/// plain data, which a client writes with its unit, `unit-<unit>-value`, in the language's
 /// number format.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct LabelValue {
@@ -610,7 +610,7 @@ mod tests {
     fn no_retired_id_is_a_built_in_tool_s() {
         for id in RETIRED {
             assert!(
-                !TOOLS.iter().any(|tool| tool.definition().id == *id),
+                !TOOLS.iter().any(|tool| tool.definition().tool.id == *id),
                 "{id} is retired and built in"
             );
         }

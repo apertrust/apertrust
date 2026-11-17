@@ -34,8 +34,10 @@
 use apertrust_plugin::{ImageContext, Value};
 
 use crate::about::{Fact, Facts, Purpose};
-use crate::definition::{Control, ControlKind, Definition, Row, Slider, Tab};
-use crate::{Base, Owned, Setting, Tool, ToolValues, switched_from};
+use crate::definition::{
+    Control, ControlKind, ProcessingDefinition, Row, Slider, Tab, ToolDefinition,
+};
+use crate::{Base, Owned, ProcessingTool, Setting, ToolValues, switched_from};
 
 pub struct HazeRemoval;
 
@@ -80,29 +82,31 @@ static CONTROLS: [Control; 2] = [
     },
 ];
 
-static DEFINITION: Definition = Definition {
-    id: HAZEREMOVAL,
+static DEFINITION: ProcessingDefinition = ProcessingDefinition {
+    tool: ToolDefinition {
+        id: HAZEREMOVAL,
+        tabs: &[Tab {
+            id: None,
+            rows: &[
+                // `dt_bauhaus_slider_from_params`' two decimals.
+                Row::Slider(Slider::new(STRENGTH)),
+                // `dt_bauhaus_slider_set_digits(g->distance, 3)`.
+                Row::Slider(Slider::new(DISTANCE).decimals(3)),
+            ],
+        }],
+        before: &[],
+        after: &[],
+        menus: &[],
+    },
     version: 2,
     layers: true,
     auto: false,
     switched: true,
     controls: &CONTROLS,
-    tabs: &[Tab {
-        id: None,
-        rows: &[
-            // `dt_bauhaus_slider_from_params`' two decimals.
-            Row::Slider(Slider::new(STRENGTH)),
-            // `dt_bauhaus_slider_set_digits(g->distance, 3)`.
-            Row::Slider(Slider::new(DISTANCE).decimals(3)),
-        ],
-    }],
-    before: &[],
-    after: &[],
-    presets: &[],
+    preset_rows: &[],
     views: &[],
     pickers: &[],
     // darktable's `description()` in src/iop/hazeremoval.c at the reference release.
-    menus: &[],
     facts: Some(Facts {
         purpose: Purpose::Corrective,
         input: Fact::LinearRgbSceneReferred,
@@ -117,8 +121,8 @@ static OWNS: [Owned; 2] = [
     Owned::new(HAZEREMOVAL, DISTANCE),
 ];
 
-impl Tool for HazeRemoval {
-    fn definition(&self) -> &'static Definition {
+impl ProcessingTool for HazeRemoval {
+    fn definition(&self) -> &'static ProcessingDefinition {
         &DEFINITION
     }
 

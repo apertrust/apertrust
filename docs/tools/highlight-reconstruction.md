@@ -53,7 +53,7 @@ darktable's enum's last value, reconstruct colour, is listed for no sensor, so t
 
 **For now** the tool lists darktable's Bayer list on every photo. So an X-Trans raw shows guided laplacians too, disabled as on a Bayer raw. Method stays enabled on a colour raw, as darktable's combobox is, though it has one option to choose, as Exposure's Mode does.
 
-**Planned:** the tool lists each photo's own through `Tool::options` (decision 30: a choice lists the options darktable lists for the photo). Then:
+**Planned:** the tool lists each photo's own through `ProcessingTool::options` (decision 30: a choice lists the options darktable lists for the photo). Then:
 
 - **each photo lists darktable's methods,** as in the table above;
 - **Method defaults to clip highlights** where darktable's `reload_defaults` does, an image that is not a raw or a four-colour sensor's raw, and to inpaint opposed elsewhere;
@@ -154,7 +154,7 @@ Measured on the Apple M4 (Metal) by `crates/tools/tests/highlight_reconstruction
 What darktable's page has or does that the panel does not yet:
 
 1. **The showmask buttons** beside Clipping threshold, Combine, Candidating and Strength: the renderer draws no quad of that kind yet, and the false-colour views they toggle need the engine to render a mask. They store nothing, so no edit waits on them.
-2. **The method's list per sensor,** planned through `Tool::options` (decision 30). darktable leaves guided laplacians out of an X-Trans raw's list, lists two methods for a linear raw and clip highlights alone for an image that is not a raw or a four-colour sensor's raw. Until the tool gives each photo its own list, it lists the Bayer list there too, every method but inpaint opposed disabled, as every method not ported is. What changes then is under [Controls](#controls): each photo's list, clip highlights as the default where darktable's is, `gui_changed`'s rewrites for a stored method the photo does not list, and Method unavailable where one option is listed. The image context has to tell a linear raw from a monochrome one first.
+2. **The method's list per sensor,** planned through `ProcessingTool::options` (decision 30). darktable leaves guided laplacians out of an X-Trans raw's list, lists two methods for a linear raw and clip highlights alone for an image that is not a raw or a four-colour sensor's raw. Until the tool gives each photo its own list, it lists the Bayer list there too, every method but inpaint opposed disabled, as every method not ported is. What changes then is under [Controls](#controls): each photo's list, clip highlights as the default where darktable's is, `gui_changed`'s rewrites for a stored method the photo does not list, and Method unavailable where one option is listed. The image context has to tell a linear raw from a monochrome one first.
 3. **The other methods,** and their controls with them, wait for their ports (decision 51): reconstruct in LCh, clip highlights, segmentation based and guided laplacians.
 4. **The tool's tooltip,** darktable's "avoid magenta highlights and try to recover highlights colors": a definition implies no message for the tool's own tooltip, as for Grain.
 5. **A drag's frame time.** A change restarts the viewport at the uploaded mosaic and runs highlight reconstruction's statistic and demosaic at full resolution, as Raw black/white point's do (`docs/tools/raw-black-white-point.md`, Gaps).
@@ -162,7 +162,7 @@ What darktable's page has or does that the panel does not yet:
 ## Design choices
 
 - **Tool id and control ids:** `highlights`, darktable's operation name (rule 1), and darktable's parameter names. The method's options take the operation's choice ids; Rebuild's and the diameter's take darktable's descriptions as ids (`flat_generic`, `px_128`).
-- **The method's options:** darktable's list for a Bayer raw, in its order, on every photo for now, until each photo lists darktable's own through `Tool::options` (decision 30; [Controls](#controls)). Reconstruct colour is left out, as darktable lists it for no sensor.
+- **The method's options:** darktable's list for a Bayer raw, in its order, on every photo for now, until each photo lists darktable's own through `ProcessingTool::options` (decision 30; [Controls](#controls)). Reconstruct colour is left out, as darktable lists it for no sensor.
 - **The other methods' controls:** controls not ported, at darktable's defaults, in rows following their method as `gui_changed` shows them, owning no parameter until their methods come, as the `tool-bindings` skill's rule 6 allows.
 - **Noise level:** one control in two rows, one under each method that shows it, never shown at once, with the control's own words, as the `tool-bindings` skill's rule 3 and `docs/engine.md`'s tool layer allow. One row under a condition of both methods is something `Row::When` cannot say.
 - **The default threshold:** the operation's for the photo, restated in the tool from the image context, as Raw black/white point restates its levels, with tests holding the restatement to the operation's own.

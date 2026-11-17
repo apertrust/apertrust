@@ -127,10 +127,11 @@ Goal: open, edit, save and reopen a photo with the first pass's tools. Migration
 
 **One tool model** (decision 93; [gui.md](gui.md#one-tool-model)): every tool a processing tool or a utility, sharing one declaration and one header, in five steps, each a pull request reviewed before the next:
 
-- [ ] 93.1. The renames and the parent, mechanical, with no behaviour change: `Definition` to `ProcessingDefinition`, `Utility` to `UtilityDefinition`, the trait `Tool` to `ProcessingTool`, `Definition::presets` to `preset_rows`, and the fields every tool shares into `ToolDefinition`; the docs' names with them.
+- [x] 93.1. The renames and the parent, mechanical, with no behaviour change: `Definition` to `ProcessingDefinition`, `Utility` to `UtilityDefinition`, the trait `Tool` to `ProcessingTool`, `Definition::presets` to `preset_rows`, and the fields every tool shares into `ToolDefinition`; the docs' names with them.
 - [ ] 93.2. `UtilityTool` in the app, with one `Context`, History, Scopes and Browse implementing it, Browse joining `UTILITIES`.
 - [ ] 93.3. One header and ⋯ for every tool in `TOOLS` and `UTILITIES`, from `&ToolDefinition`, History's ⋯ items declared with it, Truncate History an item of its own; Export's with 93.5.
 - [ ] 93.4. The utilities on the page model, their widgets as custom rows and `UtilityDefinition::check` refusing a row that edits: Scopes first, then History, then Browse.
+- [ ] 93.5. Export's page as setting rows naming the `export.*` keys, with its presets, For sharing and Full size JPEG built in ([gui.md](gui.md#the-export-tool), step 16): Export implements `UtilityTool` and joins `UTILITIES`, the setting rows it builds shared later with Import's sheet ([Export](#export)).
 
 ### Editing
 
@@ -175,7 +176,7 @@ Goal: open, edit, save and reopen a photo with the first pass's tools. Migration
 darktable's colour pickers and its Colour picker, one API (decision 79; [pickers.md](pickers.md#the-plan)), one pull request each, each reviewed before the next that needs it:
 
 - [x] 79.1 The reduction kernel on the frame and the Colour picker's picker through the session, regions mapped through the geometry.
-- [x] 79.2 Tool pickers in `apertrust-tools`: `Picker`, `Quad::Picker(id)`, `Row::Pickers`, `Tool::pick` and its checks.
+- [x] 79.2 Tool pickers in `apertrust-tools`: `Picker`, `Quad::Picker(id)`, `Row::Pickers`, `ProcessingTool::pick` and its checks.
 - [x] 79.3 Tool pickers in the engine: the reduction at an operation's input and output, the mosaic and denoise, sample-only renders, a pick applied as one change, the moved area's budgets measured.
 - [x] 79.4 The design system's on-photo overlay primitives, one language for every mark on the photo, before any mark is drawn.
 - [x] 79.5 The picker button and the picker's marks in the design system.
@@ -260,7 +261,7 @@ Goal: usable for daily editing, and the editor sets the sliders for a goal. Migr
 - [x] Exports run as background jobs beside live editing, with a jobs window for progress and cancel.
 - [x] The Export tool's first section, last in the Photos tab, in place of the dialog, on the Mac, Windows and Linux: File on disk, JPEG and PNG, darktable's four size modes, high-quality resampling, ↺ for Default settings, and Export… and Ctrl+E revealing it (decisions 56 and 90; [gui.md](gui.md#as-built)). The overwrite question is asked on the Mac and Linux; on Windows Overwrite is listed disabled until its alert is built. Export Again is built, with no key yet; its key, Ctrl+Shift+E, is planned.
 - [ ] The setting rows Import's sheet and the Export tool share: a slider with no kept marker, the path row (labelled for Import, label-less for Export), note, field and size rows, an indented toggle (decisions 86 and 90).
-- [ ] The rest of the Export tool, a utility last in the Photos tab (decision 90; [gui.md](gui.md#the-export-tool)), its page declared as setting rows in decision 93's step 93.5, below:
+- [ ] The rest of the Export tool, a utility last in the Photos tab (decision 90; [gui.md](gui.md#the-export-tool)), its page declared as setting rows in decision 93's step 93.5 ([The window and the shell](#the-window-and-the-shell)):
   - [ ] a spike measuring every export row at the side panel's 320 points in British English, Ukrainian, Polish and the pseudo-locale;
   - [x] the groups and the end: Storage options and Format options, always open, and Global options, collapsible and open at first; the path on one line; ↺, the presets button drawn disabled, and ⋯; the Summary group (Preset, File name, Size, Profile, Format, Destination), the warnings, Export N photos in each of its states and a failed export's line (the Summary's preset is Default settings or Custom until presets); names never guessed as exact;
   - [ ] the keys: Export Again on Ctrl+Shift+E, Ctrl+Return, Esc, the focus on the button after the reveal, and the wheel on the focused row; the preview sent only while the tool is in view, with `focus`, and an answer shown only for its latest request;
@@ -268,9 +269,8 @@ Goal: usable for daily editing, and the editor sets the sliders for a goal. Migr
   - [ ] Browse's Import…, opening the Import sheet.
 - [ ] The Import sheet's frame (decision 86; [gui.md](gui.md#sheets)): the sheet bar, a grid of photos checked to go, a column of tools on the side panel's side, the footer with Keep open, Close and the primary button, its keys and modality, each tool kept to its place; then Import's first slice (the library's step 20a).
 - [ ] Alerts on Windows, for Overwrite and the quit question; Linux's are built.
-- [ ] Export presets, For sharing and Full size JPEG built in, and several presets in one go.
+- [ ] Several presets in one go, Multi-preset export ([gui.md](gui.md#the-export-tool), step 17); the presets themselves come with step 93.5.
 - [ ] Metadata in exported files, and styles applied on export.
-- [ ] 93.5. Export's page as setting rows naming the `export.*` keys, with its presets, after the setting rows the Export tool and Import's sheet share, above.
 
 ### Culling, metadata and several computers, in folder mode
 

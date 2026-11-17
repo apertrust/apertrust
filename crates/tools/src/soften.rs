@@ -35,8 +35,10 @@
 use apertrust_plugin::{ImageContext, Value};
 
 use crate::about::{Fact, Facts, Purpose};
-use crate::definition::{Control, ControlKind, Definition, Row, Slider, Tab, Unit};
-use crate::{Base, Owned, Setting, Tool, ToolValues, switched_from};
+use crate::definition::{
+    Control, ControlKind, ProcessingDefinition, Row, Slider, Tab, ToolDefinition, Unit,
+};
+use crate::{Base, Owned, ProcessingTool, Setting, ToolValues, switched_from};
 
 pub struct Soften;
 
@@ -82,31 +84,33 @@ static CONTROLS: [Control; 4] = [
     number("amount", (0.0, 100.0), 1.0, 50.0, Unit::Percent),
 ];
 
-static DEFINITION: Definition = Definition {
-    id: "soften",
+static DEFINITION: ProcessingDefinition = ProcessingDefinition {
+    tool: ToolDefinition {
+        id: "soften",
+        tabs: &[Tab {
+            id: None,
+            // Two decimals each, as `dt_bauhaus_slider_from_params` gives these ranges:
+            // "50.00%", "+0.33 EV".
+            rows: &[
+                Row::Slider(Slider::new("size")),
+                Row::Slider(Slider::new("saturation")),
+                Row::Slider(Slider::new("brightness")),
+                Row::Slider(Slider::new("amount")),
+            ],
+        }],
+        before: &[],
+        after: &[],
+        menus: &[],
+    },
     version: 2,
     layers: true,
     auto: false,
     switched: true,
     controls: &CONTROLS,
-    tabs: &[Tab {
-        id: None,
-        // Two decimals each, as `dt_bauhaus_slider_from_params` gives these ranges:
-        // "50.00%", "+0.33 EV".
-        rows: &[
-            Row::Slider(Slider::new("size")),
-            Row::Slider(Slider::new("saturation")),
-            Row::Slider(Slider::new("brightness")),
-            Row::Slider(Slider::new("amount")),
-        ],
-    }],
-    before: &[],
-    after: &[],
-    presets: &[],
+    preset_rows: &[],
     views: &[],
     pickers: &[],
     // darktable's `description()` in src/iop/soften.c at the reference release.
-    menus: &[],
     facts: Some(Facts {
         purpose: Purpose::Creative,
         input: Fact::LinearRgbDisplayReferred,
@@ -123,8 +127,8 @@ static OWNS: [Owned; 4] = [
     Owned::new(SOFTEN, "amount"),
 ];
 
-impl Tool for Soften {
-    fn definition(&self) -> &'static Definition {
+impl ProcessingTool for Soften {
+    fn definition(&self) -> &'static ProcessingDefinition {
         &DEFINITION
     }
 

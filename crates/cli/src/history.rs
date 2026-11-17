@@ -36,7 +36,7 @@ use apertrust_engine::sidecar::{self, Reason, ViewOnly};
 use apertrust_engine::{edit::Edit, raw};
 use apertrust_library::clock::format_when;
 use apertrust_plugin::{ImageContext, Operation};
-use apertrust_tools::{ControlValue, Tool};
+use apertrust_tools::{ControlValue, ProcessingTool};
 
 /// `history FILE` and its moves, one at most.
 #[derive(Debug, clap::Args)]
@@ -111,7 +111,7 @@ pub fn run(
     photo: &Path,
     chosen: Option<Move>,
     operations: &[&'static dyn Operation],
-    tools: &[&'static dyn Tool],
+    tools: &[&'static dyn ProcessingTool],
 ) -> Result<()> {
     if !photo.is_file() {
         bail!("no file {}", photo.display());
@@ -171,7 +171,7 @@ pub fn make(
     photo: &Path,
     chosen: Move,
     operations: &[&'static dyn Operation],
-    tools: &[&'static dyn Tool],
+    tools: &[&'static dyn ProcessingTool],
 ) -> Result<Made> {
     prepare(photo, chosen, operations, tools)?.write()
 }
@@ -190,7 +190,7 @@ pub struct Prepared<'a> {
     clocks: Vec<Clock>,
     said: String,
     operations: &'a [&'static dyn Operation],
-    tools: &'a [&'static dyn Tool],
+    tools: &'a [&'static dyn ProcessingTool],
 }
 
 /// Reads the edit saved beside `photo` and makes `chosen` on its log, to be written.
@@ -201,7 +201,7 @@ pub fn prepare<'a>(
     photo: &'a Path,
     chosen: Move,
     operations: &'a [&'static dyn Operation],
-    tools: &'a [&'static dyn Tool],
+    tools: &'a [&'static dyn ProcessingTool],
 ) -> Result<Prepared<'a>> {
     let path = sidecar::path_for(photo);
     let read = crate::stamp(&path)?;
@@ -378,7 +378,7 @@ pub fn moved(log: &Log, chosen: Move) -> Result<Moved> {
 fn started_afresh(
     edit: &Edit,
     operations: &[&'static dyn Operation],
-    tools: &[&'static dyn Tool],
+    tools: &[&'static dyn ProcessingTool],
     clock: Clock,
 ) -> (Log, String) {
     let defaults = default_tools(tools, operations);

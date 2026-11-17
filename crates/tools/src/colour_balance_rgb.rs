@@ -45,10 +45,10 @@ use apertrust_plugin::{ImageContext, Value};
 
 use crate::about::{Fact, Facts, Purpose};
 use crate::definition::{
-    ChoiceStyle, Control, ControlKind, Definition, Picker, PickerKind, Quad, Row, Slider, Space,
-    Tab, Track, Unit,
+    ChoiceStyle, Control, ControlKind, Picker, PickerKind, ProcessingDefinition, Quad, Row, Slider,
+    Space, Tab, ToolDefinition, Track, Unit,
 };
-use crate::{Base, Owned, Setting, Tool, ToolValues, switched_from};
+use crate::{Base, Owned, ProcessingTool, Setting, ToolValues, switched_from};
 
 pub struct ColourBalanceRgb;
 
@@ -284,96 +284,99 @@ const fn chroma_row(control: &'static str, (min, max): (f32, f32)) -> Row {
     Row::Slider(Slider::new(control).track(Track::Saturation).soft(min, max))
 }
 
-static DEFINITION: Definition = Definition {
-    id: "colorbalancergb",
+static DEFINITION: ProcessingDefinition = ProcessingDefinition {
+    tool: ToolDefinition {
+        id: "colorbalancergb",
+        tabs: &[
+            Tab {
+                id: Some("master"),
+                rows: &[
+                    slider("hue_angle"),
+                    soft("vibrance", -50.0, 50.0),
+                    soft("contrast", -50.0, 50.0),
+                    Row::Label {
+                        id: "linear_chroma_grading",
+                    },
+                    soft("chroma_global", -50.0, 50.0),
+                    slider("chroma_shadows"),
+                    slider("chroma_midtones"),
+                    slider("chroma_highlights"),
+                    Row::Label {
+                        id: "perceptual_saturation_grading",
+                    },
+                    slider("saturation_global"),
+                    slider("saturation_shadows"),
+                    slider("saturation_midtones"),
+                    slider("saturation_highlights"),
+                    Row::Label {
+                        id: "perceptual_brilliance_grading",
+                    },
+                    slider("brilliance_global"),
+                    slider("brilliance_shadows"),
+                    slider("brilliance_midtones"),
+                    slider("brilliance_highlights"),
+                ],
+            },
+            Tab {
+                id: Some("four_ways"),
+                rows: &[
+                    Row::Label {
+                        id: "global_offset",
+                    },
+                    luminance_row("global_y", (-5.0, 5.0)),
+                    hue_row("global_h", "global_hue"),
+                    chroma_row("global_c", (0.0, 1.0)),
+                    Row::Label { id: "shadows_lift" },
+                    // darktable sets the shadows' soft range to the whole range.
+                    luminance_row("shadows_y", (-100.0, 100.0)),
+                    hue_row("shadows_h", "shadows_hue"),
+                    chroma_row("shadows_c", (0.0, 50.0)),
+                    Row::Label {
+                        id: "highlights_gain",
+                    },
+                    luminance_row("highlights_y", (-50.0, 50.0)),
+                    hue_row("highlights_h", "highlights_hue"),
+                    chroma_row("highlights_c", (0.0, 20.0)),
+                    Row::Label { id: "power" },
+                    luminance_row("midtones_y", (-25.0, 25.0)),
+                    hue_row("midtones_h", "midtones_hue"),
+                    chroma_row("midtones_c", (0.0, 10.0)),
+                ],
+            },
+            Tab {
+                id: Some("masks"),
+                rows: &[
+                    Row::Choice {
+                        control: FORMULA,
+                        style: ChoiceStyle::List,
+                    },
+                    // darktable's graph of the three ranges comes first, once a widget
+                    // draws it.
+                    Row::Label {
+                        id: "luminance_ranges",
+                    },
+                    slider("shadows_weight"),
+                    slider("mask_grey_fulcrum"),
+                    slider("highlights_weight"),
+                    Row::Label { id: "threshold" },
+                    fulcrum_row("white_fulcrum", (-2.0, 2.0)),
+                    fulcrum_row("grey_fulcrum", (10.0, 50.0)),
+                ],
+            },
+        ],
+        before: &[],
+        after: &[],
+        menus: &[],
+    },
     version: 2,
     layers: true,
     auto: false,
     switched: true,
     controls: &CONTROLS,
-    tabs: &[
-        Tab {
-            id: Some("master"),
-            rows: &[
-                slider("hue_angle"),
-                soft("vibrance", -50.0, 50.0),
-                soft("contrast", -50.0, 50.0),
-                Row::Label {
-                    id: "linear_chroma_grading",
-                },
-                soft("chroma_global", -50.0, 50.0),
-                slider("chroma_shadows"),
-                slider("chroma_midtones"),
-                slider("chroma_highlights"),
-                Row::Label {
-                    id: "perceptual_saturation_grading",
-                },
-                slider("saturation_global"),
-                slider("saturation_shadows"),
-                slider("saturation_midtones"),
-                slider("saturation_highlights"),
-                Row::Label {
-                    id: "perceptual_brilliance_grading",
-                },
-                slider("brilliance_global"),
-                slider("brilliance_shadows"),
-                slider("brilliance_midtones"),
-                slider("brilliance_highlights"),
-            ],
-        },
-        Tab {
-            id: Some("four_ways"),
-            rows: &[
-                Row::Label {
-                    id: "global_offset",
-                },
-                luminance_row("global_y", (-5.0, 5.0)),
-                hue_row("global_h", "global_hue"),
-                chroma_row("global_c", (0.0, 1.0)),
-                Row::Label { id: "shadows_lift" },
-                // darktable sets the shadows' soft range to the whole range.
-                luminance_row("shadows_y", (-100.0, 100.0)),
-                hue_row("shadows_h", "shadows_hue"),
-                chroma_row("shadows_c", (0.0, 50.0)),
-                Row::Label {
-                    id: "highlights_gain",
-                },
-                luminance_row("highlights_y", (-50.0, 50.0)),
-                hue_row("highlights_h", "highlights_hue"),
-                chroma_row("highlights_c", (0.0, 20.0)),
-                Row::Label { id: "power" },
-                luminance_row("midtones_y", (-25.0, 25.0)),
-                hue_row("midtones_h", "midtones_hue"),
-                chroma_row("midtones_c", (0.0, 10.0)),
-            ],
-        },
-        Tab {
-            id: Some("masks"),
-            rows: &[
-                Row::Choice {
-                    control: FORMULA,
-                    style: ChoiceStyle::List,
-                },
-                // darktable's graph of the three ranges comes first, once a widget draws it.
-                Row::Label {
-                    id: "luminance_ranges",
-                },
-                slider("shadows_weight"),
-                slider("mask_grey_fulcrum"),
-                slider("highlights_weight"),
-                Row::Label { id: "threshold" },
-                fulcrum_row("white_fulcrum", (-2.0, 2.0)),
-                fulcrum_row("grey_fulcrum", (10.0, 50.0)),
-            ],
-        },
-    ],
-    before: &[],
-    after: &[],
-    presets: &[],
+    preset_rows: &[],
     views: &[],
     pickers: &PICKERS,
     // darktable's `description()` in src/iop/colorbalancergb.c at the reference release.
-    menus: &[],
     facts: Some(Facts {
         purpose: Purpose::CorrectiveOrCreative,
         input: Fact::LinearRgbSceneReferred,
@@ -395,8 +398,8 @@ const fn owns() -> [Owned; 33] {
     owns
 }
 
-impl Tool for ColourBalanceRgb {
-    fn definition(&self) -> &'static Definition {
+impl ProcessingTool for ColourBalanceRgb {
+    fn definition(&self) -> &'static ProcessingDefinition {
         &DEFINITION
     }
 

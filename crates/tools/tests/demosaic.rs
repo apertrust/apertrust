@@ -39,7 +39,7 @@ use apertrust_engine::pipeline::{self, Instance, Limits, Pipe};
 use apertrust_operations::OPERATIONS;
 use apertrust_plugin::{ImageContext, Pattern, Value};
 use apertrust_tools::demosaic::{Demosaic, METHODS};
-use apertrust_tools::{Base, ControlError, ControlValue, Tool};
+use apertrust_tools::{Base, ControlError, ControlValue, ProcessingTool};
 
 use common::{Bench, exact, small_raw};
 use corpus::{CORPUS_VIEWPORT, NINETY_D, corpus_bench, each_corpus_raw, export_bench};

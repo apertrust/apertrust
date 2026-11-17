@@ -40,8 +40,12 @@
 use apertrust_plugin::{ImageContext, Value};
 
 use crate::about::{Fact, Facts, Purpose};
-use crate::definition::{ChoiceStyle, Control, ControlKind, Definition, Row, Slider, Tab, Unit};
-use crate::{Base, ControlValue, Controls, Owned, Setting, Tool, ToolValues, switched_from};
+use crate::definition::{
+    ChoiceStyle, Control, ControlKind, ProcessingDefinition, Row, Slider, Tab, ToolDefinition, Unit,
+};
+use crate::{
+    Base, ControlValue, Controls, Owned, ProcessingTool, Setting, ToolValues, switched_from,
+};
 
 pub struct Vignetting;
 
@@ -114,45 +118,47 @@ static CONTROLS: [Control; 10] = [
     },
 ];
 
-static DEFINITION: Definition = Definition {
-    id: VIGNETTE,
+static DEFINITION: ProcessingDefinition = ProcessingDefinition {
+    tool: ToolDefinition {
+        id: VIGNETTE,
+        tabs: &[Tab {
+            id: None,
+            rows: &[
+                // The radii with two decimals, as `dt_bauhaus_slider_from_params` gives
+                // them; brightness and saturation with three, as `gui_init` sets them.
+                Row::Slider(Slider::new("scale")),
+                Row::Slider(Slider::new("falloff_scale")),
+                Row::Slider(Slider::new("brightness").decimals(3)),
+                Row::Slider(Slider::new("saturation").decimals(3)),
+                Row::Label {
+                    id: "position_form",
+                },
+                Row::Slider(Slider::new("center_x").decimals(3)),
+                Row::Slider(Slider::new("center_y").decimals(3)),
+                Row::Slider(Slider::new("shape")),
+                Row::Toggle {
+                    control: "autoratio",
+                },
+                Row::Slider(Slider::new("whratio").decimals(3)),
+                Row::Choice {
+                    control: "dithering",
+                    style: ChoiceStyle::List,
+                },
+            ],
+        }],
+        before: &[],
+        after: &[],
+        menus: &[],
+    },
     version: 2,
     layers: true,
     auto: false,
     switched: true,
     controls: &CONTROLS,
-    tabs: &[Tab {
-        id: None,
-        rows: &[
-            // The radii with two decimals, as `dt_bauhaus_slider_from_params` gives them;
-            // brightness and saturation with three, as `gui_init` sets them.
-            Row::Slider(Slider::new("scale")),
-            Row::Slider(Slider::new("falloff_scale")),
-            Row::Slider(Slider::new("brightness").decimals(3)),
-            Row::Slider(Slider::new("saturation").decimals(3)),
-            Row::Label {
-                id: "position_form",
-            },
-            Row::Slider(Slider::new("center_x").decimals(3)),
-            Row::Slider(Slider::new("center_y").decimals(3)),
-            Row::Slider(Slider::new("shape")),
-            Row::Toggle {
-                control: "autoratio",
-            },
-            Row::Slider(Slider::new("whratio").decimals(3)),
-            Row::Choice {
-                control: "dithering",
-                style: ChoiceStyle::List,
-            },
-        ],
-    }],
-    before: &[],
-    after: &[],
-    presets: &[],
+    preset_rows: &[],
     views: &[],
     pickers: &[],
     // darktable's `description()` in src/iop/vignette.c at the reference release.
-    menus: &[],
     facts: Some(Facts {
         purpose: Purpose::Creative,
         input: Fact::NonLinearRgbDisplayReferred,
@@ -177,8 +183,8 @@ static OWNS: [Owned; 11] = [
     Owned::new(VIGNETTE, "unbound"),
 ];
 
-impl Tool for Vignetting {
-    fn definition(&self) -> &'static Definition {
+impl ProcessingTool for Vignetting {
+    fn definition(&self) -> &'static ProcessingDefinition {
         &DEFINITION
     }
 
@@ -294,7 +300,7 @@ mod tests {
         let controls: Vec<&str> = CONTROLS.iter().map(|c| c.id).collect();
         assert_eq!(controls, order);
         // The group label after saturation, darktable's "position / form".
-        let rows = DEFINITION.tabs[0].rows;
+        let rows = DEFINITION.tool.tabs[0].rows;
         assert!(matches!(
             rows[4],
             Row::Label {

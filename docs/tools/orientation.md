@@ -22,7 +22,7 @@ It drives one operation, `flip` (camera RGB 16, [../ports/flip.md](../ports/flip
 
 **The stored orientation** is darktable's `dt_image_orientation_t` from -1 (`src/common/image.h`), its options the operation's choices of the same index: `auto` (autodetect), `none`, `flip_vertically`, `flip_horizontally`, `rotate_180`, `transpose`, `rotate_cw_90`, `rotate_ccw_90` and `transverse`, by darktable's `$DESCRIPTION`s. The binding writes it once off auto. darktable shows it only as the photo itself; so does the panel, with no list.
 
-**darktable's buttons**, inline after the label, each an action (`Tool::action`) that writes the orientation from the one shown, auto read as the photo's own, as darktable's do, a `SetControl` of the orientation, one change and one history step:
+**darktable's buttons**, inline after the label, each an action (`ProcessingTool::action`) that writes the orientation from the one shown, auto read as the photo's own, as darktable's do, a `SetControl` of the orientation, one change and one history step:
 
 | Button | Icon | darktable | Writes |
 | --- | --- | --- | --- |
@@ -94,7 +94,7 @@ None: the page is darktable's.
 
 - **Control id:** `orientation`, darktable's params field and the operation's parameter; option ids the operation's choices, so the binding needs no table.
 - **The default:** auto, darktable's, rather than the photo's orientation itself: the edit holds nothing until the user turns the photo, and the photo's own orientation stays the camera's.
-- **The buttons:** a button row (`Row::Buttons`) and `Tool::action`, the generic piece another tool's buttons reuse: a pure function of the values shown and the photo, its writes sent as `SetControl`, so no new command and no stored state.
+- **The buttons:** a button row (`Row::Buttons`) and `ProcessingTool::action`, the generic piece another tool's buttons reuse: a pure function of the values shown and the photo, its writes sent as `SetControl`, so no new command and no stored state.
 - **Rows:** F0 to F6; no first step, since every photo runs `flip`, and no order row, since there is one control.
 - **Row ids:** F, for flip.
 - **In `TOOLS`:** after White balance, before Exposure.

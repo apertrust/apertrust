@@ -88,7 +88,7 @@ use apertrust_engine::session::{
     BatchId, ControlChange, ControlValue, History, HistoryStep, Mark, Move, Note, StepId,
     StepSource,
 };
-use apertrust_tools::{ControlKind, Definition, Row, Slider, Tool, messages};
+use apertrust_tools::{ControlKind, ProcessingDefinition, ProcessingTool, Row, Slider, messages};
 use apertrust_ui::components::{
     IconButton, PanelBody, Rail, RailLine, RailNode, Section, SectionAction, focus_ring_centred,
     section_body,
@@ -474,7 +474,7 @@ fn range(first: &str, last: &str) -> String {
 /// are the session's, whose titles, controls and rows word the lines.
 pub fn listed(
     history: Option<&History>,
-    tools: &[&dyn Tool],
+    tools: &[&dyn ProcessingTool],
     tr: &Translator,
     today: i32,
 ) -> Listed {
@@ -563,7 +563,7 @@ fn step_line(
     step: &HistoryStep,
     number: usize,
     end: usize,
-    tools: &[&dyn Tool],
+    tools: &[&dyn ProcessingTool],
     tr: &Translator,
 ) -> Line {
     Line {
@@ -601,7 +601,7 @@ fn batch_line(
     steps: &[Arc<HistoryStep>],
     first: usize,
     end: usize,
-    tools: &[&dyn Tool],
+    tools: &[&dyn ProcessingTool],
     tr: &Translator,
 ) -> Line {
     let newest = &steps[steps.len() - 1];
@@ -664,7 +664,7 @@ fn batch_line(
 fn defaults_group(
     steps: &[Arc<HistoryStep>],
     end: usize,
-    tools: &[&dyn Tool],
+    tools: &[&dyn ProcessingTool],
     tr: &Translator,
 ) -> Entry {
     let lines = (1..=steps.len())
@@ -898,7 +898,7 @@ fn through(rows: &[Drawn<'_>], at: usize) -> RailLine {
 pub fn tab(
     ui: &mut egui::Ui,
     history: Option<&History>,
-    tools: &[&dyn Tool],
+    tools: &[&dyn ProcessingTool],
     hidden: &[&str],
     open: bool,
     peek: bool,
@@ -1021,7 +1021,7 @@ fn chosen(id: &str) -> Option<Action> {
 fn list(
     ui: &mut egui::Ui,
     history: Option<&History>,
-    tools: &[&dyn Tool],
+    tools: &[&dyn ProcessingTool],
     hidden: &[&str],
     editable: bool,
     today: i32,
@@ -1266,7 +1266,7 @@ fn keyed(
 fn kept(
     ctx: &egui::Context,
     history: Option<&History>,
-    tools: &[&dyn Tool],
+    tools: &[&dyn ProcessingTool],
     tr: &Translator,
     today: i32,
 ) -> Arc<Listed> {
@@ -2008,21 +2008,21 @@ fn shift_clicked(ui: &egui::Ui) -> bool {
 
 /// `id` among `tools`, as the app knows it; none for a tool or an operation it does
 /// not.
-fn known(tools: &[&dyn Tool], id: &str) -> Option<&'static str> {
+fn known(tools: &[&dyn ProcessingTool], id: &str) -> Option<&'static str> {
     (tools.iter())
-        .map(|tool| tool.definition().id)
+        .map(|tool| tool.definition().tool.id)
         .find(|known| *known == id)
 }
 
 /// The definition of the tool `id`, where the app knows it.
-fn definition(tools: &[&dyn Tool], id: &str) -> Option<&'static Definition> {
+fn definition(tools: &[&dyn ProcessingTool], id: &str) -> Option<&'static ProcessingDefinition> {
     (tools.iter())
         .map(|tool| tool.definition())
-        .find(|definition| definition.id == id)
+        .find(|definition| definition.tool.id == id)
 }
 
 /// A tool's title, or the stored name of one the app does not know.
-fn title(tools: &[&dyn Tool], id: &str, tr: &Translator) -> String {
+fn title(tools: &[&dyn ProcessingTool], id: &str, tr: &Translator) -> String {
     match known(tools, id) {
         Some(id) => tr.text(&messages::title(id)),
         None => id.to_owned(),
@@ -2113,7 +2113,7 @@ fn tag(source_of: StepSource, tr: &Translator) -> Option<String> {
 /// which has no control; an operation's unowned parameter, with no definition, by its
 /// name, as the tooltip and screen readers have it. The before and after are the
 /// tooltip's.
-fn summary(step: &HistoryStep, tools: &[&dyn Tool], tr: &Translator) -> Option<String> {
+fn summary(step: &HistoryStep, tools: &[&dyn ProcessingTool], tr: &Translator) -> Option<String> {
     if step.source == StepSource::Default || is_reset(step) {
         return None;
     }
@@ -2154,7 +2154,7 @@ const DOWN: &str = "↓";
 /// What a step changed as screen readers hear it in its name: each control's label and its
 /// value before and after, as the tooltip has them, the label left out where it is the
 /// tool's own; nothing where the line says nothing.
-fn heard(step: &HistoryStep, tools: &[&dyn Tool], tr: &Translator) -> Option<String> {
+fn heard(step: &HistoryStep, tools: &[&dyn ProcessingTool], tr: &Translator) -> Option<String> {
     if step.source == StepSource::Default || is_reset(step) {
         return None;
     }
@@ -2184,9 +2184,13 @@ fn heard(step: &HistoryStep, tools: &[&dyn Tool], tr: &Translator) -> Option<Str
 }
 
 /// A control's label, or an unowned parameter's name, with no definition.
-fn label(definition: Option<&'static Definition>, control: &str, tr: &Translator) -> String {
+fn label(
+    definition: Option<&'static ProcessingDefinition>,
+    control: &str,
+    tr: &Translator,
+) -> String {
     match definition {
-        Some(definition) => tr.text(&messages::label(definition.id, control)),
+        Some(definition) => tr.text(&messages::label(definition.tool.id, control)),
         None => control.to_owned(),
     }
 }
@@ -2196,7 +2200,7 @@ fn label(definition: Option<&'static Definition>, control: &str, tr: &Translator
 /// build's or an operation's unowned parameters; Reset's, which touches every tool it
 /// reset, its note, Reset. A step that names nothing reads its source, so a line never
 /// reads empty.
-fn line_name(step: &HistoryStep, tools: &[&dyn Tool], tr: &Translator) -> String {
+fn line_name(step: &HistoryStep, tools: &[&dyn ProcessingTool], tr: &Translator) -> String {
     match (&step.note, step.changes.as_slice()) {
         (Some(note), _) if is_reset(step) => noted(note, tr),
         (_, [one]) => title(tools, &one.tool, tr),
@@ -2209,7 +2213,7 @@ fn line_name(step: &HistoryStep, tools: &[&dyn Tool], tr: &Translator) -> String
 /// local clock. Reset's, the one step of several tools, has a heading over each
 /// tool's rows, and its note is its line's name. A default step, the photo's own, has
 /// who and when alone.
-fn tip(step: &HistoryStep, tools: &[&dyn Tool], tr: &Translator) -> Tip {
+fn tip(step: &HistoryStep, tools: &[&dyn ProcessingTool], tr: &Translator) -> Tip {
     let several = step.changes.len() > 1;
     let mut changed = Vec::new();
     let shown = (step.source != StepSource::Default).then_some(&step.changes);
@@ -2245,12 +2249,12 @@ fn tip(step: &HistoryStep, tools: &[&dyn Tool], tr: &Translator) -> Tip {
 /// kept, released or set by Auto. An operation's unowned parameter, with no definition,
 /// by its name.
 fn control_change(
-    definition: Option<&'static Definition>,
+    definition: Option<&'static ProcessingDefinition>,
     change: &ControlChange,
     tr: &Translator,
 ) -> TipRow {
     let label = match definition {
-        Some(definition) => tr.text(&messages::label(definition.id, change.control)),
+        Some(definition) => tr.text(&messages::label(definition.tool.id, change.control)),
         None => change.control.to_owned(),
     };
     if change.before == change.after {
@@ -2275,7 +2279,7 @@ fn control_change(
 /// where its range spans zero, and its unit; a choice's option; on or off; a curve's
 /// points. An unowned parameter's number with the decimals it needs, up to four.
 fn value_text(
-    definition: Option<&'static Definition>,
+    definition: Option<&'static ProcessingDefinition>,
     control: &str,
     value: &ControlValue,
     tr: &Translator,
@@ -2309,7 +2313,7 @@ fn value_text(
             let option = defined.and_then(|(definition, control)| match control.kind {
                 ControlKind::Choice { options, .. } => {
                     let option = options.get(*index as usize)?;
-                    Some(messages::option(definition.id, control.id, option))
+                    Some(messages::option(definition.tool.id, control.id, option))
                 }
                 _ => None,
             });
@@ -2340,7 +2344,7 @@ fn natural_decimals(value: f64) -> usize {
 /// What Undo and Redo would do in `history`, the open photo's, in `tr`'s words: none where
 /// there is nothing to do, or nothing to name. `tools` are the session's, whose titles
 /// name a step.
-pub fn steps(history: Option<&History>, tools: &[&dyn Tool], tr: &Translator) -> Steps {
+pub fn steps(history: Option<&History>, tools: &[&dyn ProcessingTool], tr: &Translator) -> Steps {
     let side = |wanted: fn(&History) -> Option<Move>| {
         let history = history?;
         named(history, wanted(history)?, tools, tr)
@@ -2353,7 +2357,12 @@ pub fn steps(history: Option<&History>, tools: &[&dyn Tool], tr: &Translator) ->
 
 /// What `moved` does, as History names it; none for steps not in `history`, or whose first
 /// names no tool the app knows, as an operation's unowned parameters alone.
-fn named(history: &History, moved: Move, tools: &[&dyn Tool], tr: &Translator) -> Option<String> {
+fn named(
+    history: &History,
+    moved: Move,
+    tools: &[&dyn ProcessingTool],
+    tr: &Translator,
+) -> Option<String> {
     match moved {
         Move::GoTo => Some(tr.text("history-go-to-step")),
         Move::Compress => Some(tr.text("history-compress")),
@@ -2370,7 +2379,11 @@ fn named(history: &History, moved: Move, tools: &[&dyn Tool], tr: &Translator) -
 /// The name of one change's steps: its note, which a batch's steps share and its last
 /// carries, a Reset's coming first; else the name of its first step the app knows, and how
 /// many more of those it knows.
-fn name(steps: &[Arc<HistoryStep>], tools: &[&dyn Tool], tr: &Translator) -> Option<String> {
+fn name(
+    steps: &[Arc<HistoryStep>],
+    tools: &[&dyn ProcessingTool],
+    tr: &Translator,
+) -> Option<String> {
     if let Some(note) = &steps.last()?.note {
         return Some(noted(note, tr));
     }
@@ -2387,13 +2400,13 @@ fn name(steps: &[Arc<HistoryStep>], tools: &[&dyn Tool], tr: &Translator) -> Opt
 }
 
 /// One step's name: its note, else its tool's title.
-fn step_name(step: &HistoryStep, tools: &[&dyn Tool], tr: &Translator) -> Option<String> {
+fn step_name(step: &HistoryStep, tools: &[&dyn ProcessingTool], tr: &Translator) -> Option<String> {
     if let Some(note) = &step.note {
         return Some(noted(note, tr));
     }
     let change = step.changes.first()?;
     (tools.iter())
-        .any(|m| m.definition().id == change.tool)
+        .any(|m| m.definition().tool.id == change.tool)
         .then(|| tr.text(&apertrust_tools::messages::title(&change.tool)))
 }
 

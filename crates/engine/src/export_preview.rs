@@ -49,7 +49,7 @@ pub use apertrust_export::disk::{Action, Blocked, Preflight, Why};
 use apertrust_export::variables::{DateTime, Pattern, PatternError, Size, Unavailable, Values};
 use apertrust_export::{ExportSettings, Places};
 use apertrust_plugin::{ImageContext, ImageDesc, Operation};
-use apertrust_tools::Tool;
+use apertrust_tools::ProcessingTool;
 
 use crate::edit::{self, Edit};
 use crate::export_job::{self, Live, SizeError};
@@ -231,7 +231,7 @@ impl Active {
 /// What a preview job runs with, owned: its body borrows nothing of the engine thread's.
 pub(crate) struct Run {
     pub operations: &'static [&'static dyn Operation],
-    pub tools: Vec<&'static dyn Tool>,
+    pub tools: Vec<&'static dyn ProcessingTool>,
     pub limits: Limits,
     pub photos: Vec<PathBuf>,
     pub settings: ExportSettings,
@@ -587,7 +587,7 @@ mod tests {
     use crate::session::open::{self, Metadata, Mosaic};
     use crate::session::{Command, Session, SessionError, TEST_WAIT};
 
-    const TOOLS: &[&dyn Tool] = &[&Sample];
+    const TOOLS: &[&dyn ProcessingTool] = &[&Sample];
 
     /// A folder of the test's own, empty.
     fn scratch(name: &str) -> PathBuf {

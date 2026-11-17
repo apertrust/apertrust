@@ -54,7 +54,7 @@ use apertrust_engine::session::{
 };
 use apertrust_engine::{edit, sidecar};
 use apertrust_plugin::ImageContext;
-use apertrust_tools::Tool;
+use apertrust_tools::ProcessingTool;
 use apertrust_ui::components::SaveState;
 
 use crate::folder::{self, FolderState};
@@ -121,7 +121,7 @@ impl Shown {
 /// The session as the app last heard of it.
 pub struct Mirror {
     /// The tools the session was started with, whose views show the pending values.
-    tools: &'static [&'static dyn Tool],
+    tools: &'static [&'static dyn ProcessingTool],
     pub photo: PhotoState,
     /// The tools' controls and the unowned parameters as the engine last reported them,
     /// with the pending ones in their place (`docs/gui.md`, A frame); with no photo, and
@@ -186,12 +186,12 @@ pub struct Mirror {
 
 impl Mirror {
     /// The tools the session was started with.
-    pub fn tools(&self) -> &'static [&'static dyn Tool] {
+    pub fn tools(&self) -> &'static [&'static dyn ProcessingTool] {
         self.tools
     }
 
     /// The mirror before any event: no photo, every tool untouched, the jobs as given.
-    pub fn new(tools: &'static [&'static dyn Tool], jobs: jobs::Mirror) -> Mirror {
+    pub fn new(tools: &'static [&'static dyn ProcessingTool], jobs: jobs::Mirror) -> Mirror {
         let untouched = untouched(tools);
         Mirror {
             tools,
@@ -240,8 +240,9 @@ impl Mirror {
     pub fn resettable(&self) -> bool {
         let unapplied = |state: &ToolState| {
             !state.enabled
-                && (self.tools.iter())
-                    .any(|tool| tool.definition().id == state.tool && !tool.definition().switched)
+                && (self.tools.iter()).any(|tool| {
+                    tool.definition().tool.id == state.tool && !tool.definition().switched
+                })
         };
         self.values.edited || self.values.tools.iter().any(unapplied)
     }
@@ -597,7 +598,7 @@ impl Mirror {
 /// whose tool cannot is left out, as the session leaves it out. Whether each control's
 /// row shows, and a value after its label, are the tool's on that image too (decision
 /// 88), so Exposure's camera rows, which no photo gives anything to do, are hidden.
-fn untouched(tools: &[&dyn Tool]) -> Values {
+fn untouched(tools: &[&dyn ProcessingTool]) -> Values {
     let image = PhotoState::None.image();
     let states = tools.iter().map(|tool| {
         let definition = tool.definition();
@@ -620,7 +621,7 @@ fn untouched(tools: &[&dyn Tool]) -> Values {
             })
             .collect();
         let presets = definition
-            .presets
+            .preset_rows
             .iter()
             .map(|row| PresetState {
                 preset: row.id,
@@ -652,7 +653,7 @@ fn untouched(tools: &[&dyn Tool]) -> Values {
             }
         }
         ToolState {
-            tool: definition.id,
+            tool: definition.tool.id,
             enabled: !definition.switched,
             edited: false,
             hidden: false,
@@ -966,7 +967,7 @@ impl Saving {
 pub fn reported(
     mut reported: Values,
     pending: &mut Vec<(u64, Pending)>,
-    tools: &[&dyn Tool],
+    tools: &[&dyn ProcessingTool],
     image: &ImageContext,
 ) -> Values {
     pending.retain(|(number, _)| *number > reported.through);
@@ -980,9 +981,14 @@ pub fn reported(
 /// control set shows as kept, as the session keeps it, one reset its default, released,
 /// and a lossless view's coordinates and controls move together. `image` is what the
 /// tool's view reads.
-pub fn show(values: &mut Values, change: &Pending, tools: &[&dyn Tool], image: &ImageContext) {
+pub fn show(
+    values: &mut Values,
+    change: &Pending,
+    tools: &[&dyn ProcessingTool],
+    image: &ImageContext,
+) {
     let id = change.tool();
-    let tool = tools.iter().find(|tool| tool.definition().id == id);
+    let tool = tools.iter().find(|tool| tool.definition().tool.id == id);
     let state = values.tools.iter_mut().find(|state| state.tool == id);
     let (Some(tool), Some(state)) = (tool, state) else {
         return;
@@ -1805,7 +1811,7 @@ pub(crate) mod tests {
     fn untouched_all(values: &Values) -> bool {
         let ids: Vec<&str> = apertrust_tools::TOOLS
             .iter()
-            .map(|tool| tool.definition().id)
+            .map(|tool| tool.definition().tool.id)
             .collect();
         let shown: Vec<&str> = values.tools.iter().map(|state| state.tool).collect();
         let controls = values.tools.iter().flat_map(|state| &state.controls);

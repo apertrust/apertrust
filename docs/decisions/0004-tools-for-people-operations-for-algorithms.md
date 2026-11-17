@@ -43,7 +43,7 @@ Apertrust ports darktable's processing, and darktable calls both what a person w
 
 ## Consequences
 
-- **The docs, code, sidecar and skills use the two terms,** and the two kinds of tool: in the code, `ToolDefinition` the parent, `ProcessingDefinition` with the trait `ProcessingTool`, and `UtilityDefinition` with the app's trait `UtilityTool`, planned ([0093](0093-one-tool-model-processing-tools-and-utility-tools.md)); built today as `Definition`, the trait `Tool` and `Utility`.
+- **The docs, code, sidecar and skills use the two terms,** and the two kinds of tool: in the code, `ToolDefinition` the parent, `ProcessingDefinition` with the trait `ProcessingTool`, and `UtilityDefinition`, built, with the app's trait `UtilityTool`, planned ([0093](0093-one-tool-model-processing-tools-and-utility-tools.md)).
 - **The rename lands in steps,** 4.1 to 4.7 built and 4.8 planned, the identifiers in backticks following their own step:
   - 4.1, built: a tool's settings named settings in the code, freeing the word;
   - 4.2, built: the docs say tool, the tools' pages in `docs/tools/`;

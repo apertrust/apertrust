@@ -28,8 +28,9 @@ use std::collections::BTreeSet;
 use apertrust_operations::OPERATIONS;
 use apertrust_plugin::{Camera, ImageContext, Pattern};
 use apertrust_tools::{
-    Base, Control, ControlKind, ControlValue, Controls, Definition, Owned, Quad, Row, Setting,
-    Slider, TOOLS, Tab, Tool, ToolValues, Unit, check, messages,
+    Base, Control, ControlKind, ControlValue, Controls, Owned, ProcessingDefinition,
+    ProcessingTool, Quad, Row, Setting, Slider, TOOLS, Tab, ToolDefinition, ToolValues, Unit,
+    check, messages,
 };
 
 /// Image contexts the bindings are swept over: an image that is not a raw, a Bayer raw,
@@ -115,7 +116,7 @@ fn the_built_in_tools_declare_darktable_s_pickers_on_their_sliders() {
         .filter(|definition| !definition.pickers.is_empty())
         .map(|definition| {
             (
-                definition.id,
+                definition.tool.id,
                 definition.pickers.iter().map(|p| p.id).collect(),
             )
         })
@@ -140,11 +141,11 @@ fn the_built_in_tools_declare_darktable_s_pickers_on_their_sliders() {
     );
     // Every slider's quad picks: a line only where darktable draws one, as rotate and
     // perspective's horizon, which no built tool has; which picker each names, and that
-    // each picker is in one row, are the tools' tables and `Definition::check`.
+    // each picker is in one row, are the tools' tables and `ProcessingDefinition::check`.
     let not_pickers: Vec<(&str, &str, Quad)> = TOOLS
         .iter()
         .flat_map(|tool| {
-            let id = tool.definition().id;
+            let id = tool.definition().tool.id;
             tool.definition().rows().filter_map(move |row| match row {
                 Row::Slider(Slider {
                     control,
@@ -167,7 +168,7 @@ fn every_fixed_parameter_is_one_its_tool_owns() {
             assert!(
                 tool.owns().contains(fixed),
                 "{}: {}.{}",
-                tool.definition().id,
+                tool.definition().tool.id,
                 fixed.operation,
                 fixed.param
             );
@@ -198,7 +199,7 @@ fn every_switched_tool_s_defaults_bind_its_operations_defaults() {
         .iter()
         .map(|tool| tool.definition())
         .filter(|definition| definition.switched)
-        .map(|definition| definition.id)
+        .map(|definition| definition.tool.id)
         .collect();
     assert_eq!(
         switched.iter().copied().collect::<BTreeSet<_>>(),
@@ -210,7 +211,7 @@ fn every_switched_tool_s_defaults_bind_its_operations_defaults() {
             assert!(
                 problems.is_empty(),
                 "{}: {problems:?}",
-                tool.definition().id
+                tool.definition().tool.id
             );
         }
     }
@@ -220,9 +221,9 @@ fn every_switched_tool_s_defaults_bind_its_operations_defaults() {
 /// leave that operation untouched.
 #[test]
 fn a_switched_tool_over_an_operation_every_photo_runs_is_refused() {
-    struct Switched(&'static Definition);
-    impl Tool for Switched {
-        fn definition(&self) -> &'static Definition {
+    struct Switched(&'static ProcessingDefinition);
+    impl ProcessingTool for Switched {
+        fn definition(&self) -> &'static ProcessingDefinition {
             self.0
         }
         fn owns(&self) -> &'static [Owned] {
@@ -232,7 +233,7 @@ fn a_switched_tool_over_an_operation_every_photo_runs_is_refused() {
             Vec::new()
         }
     }
-    let over_exposure = Box::leak(Box::new(Definition {
+    let over_exposure = Box::leak(Box::new(ProcessingDefinition {
         switched: true,
         ..*apertrust_tools::exposure::Exposure.definition()
     }));
@@ -267,16 +268,16 @@ const LABELLED_WITHOUT: &[(&str, &str)] = &[("temperature.settings", "preset")];
 
 /// What is wrong with the tool's preset rows on `image` (`docs/engine.md`, Preset rows
 /// and lossless views, Tests): a row with no option a colour raw can have, which a tool
-/// that declares the row and leaves `Tool::preset` as provided has; an option missing a
-/// value for a control its row writes, or giving one the control cannot take; and an
-/// option `Tool::matching` does not give back, or one with the same values, but for the
-/// control a row in [`LABELLED_WITHOUT`] names.
-fn preset_problems(tool: &dyn Tool, image: &ImageContext) -> Vec<String> {
+/// that declares the row and leaves `ProcessingTool::preset` as provided has; an option
+/// missing a value for a control its row writes, or giving one the control cannot take; and
+/// an option `ProcessingTool::matching` does not give back, or one with the same values,
+/// but for the control a row in [`LABELLED_WITHOUT`] names.
+fn preset_problems(tool: &dyn ProcessingTool, image: &ImageContext) -> Vec<String> {
     let definition = tool.definition();
     let colour_raw = image.camera.as_ref().is_some_and(|c| c.cfa.is_some());
     let mut problems = Vec::new();
-    for row in definition.presets {
-        let name = format!("{}.{}", definition.id, row.id);
+    for row in definition.preset_rows {
+        let name = format!("{}.{}", definition.tool.id, row.id);
         let aside = LABELLED_WITHOUT
             .iter()
             .find(|(id, _)| *id == name)
@@ -339,9 +340,9 @@ const SEGMENTS_PER_PHOTO: [(&str, &str); 1] = [("exposure", "mode")];
 /// order, or without the photo's default ([`check::listed`]); an option no image lists; a
 /// choice drawn as segments that lists other options on another image; and a preset
 /// option an image can have that writes an option the image does not list.
-fn list_problems(tool: &dyn Tool, images: &[ImageContext]) -> Vec<String> {
+fn list_problems(tool: &dyn ProcessingTool, images: &[ImageContext]) -> Vec<String> {
     let definition = tool.definition();
-    let id = definition.id;
+    let id = definition.tool.id;
     let segmented: BTreeSet<&str> = definition
         .rows()
         .filter_map(|row| match row {
@@ -382,7 +383,7 @@ fn list_problems(tool: &dyn Tool, images: &[ImageContext]) -> Vec<String> {
     }
     for (image, row) in images
         .iter()
-        .flat_map(|image| definition.presets.iter().map(move |row| (image, row)))
+        .flat_map(|image| definition.preset_rows.iter().map(move |row| (image, row)))
     {
         for &option in row.options {
             let Some(values) = tool.preset(row.id, option, image) else {
@@ -424,8 +425,30 @@ fn every_built_in_choice_lists_options_that_hold_on_every_photo() {
 /// writes the grid's three, which a raw does not list.
 struct Listing;
 
-static LISTING: Definition = Definition {
-    id: "listing",
+static LISTING: ProcessingDefinition = ProcessingDefinition {
+    tool: ToolDefinition {
+        id: "listing",
+        tabs: &[Tab {
+            id: None,
+            rows: &[
+                Row::Preset {
+                    preset: "style",
+                    style: apertrust_tools::ChoiceStyle::List,
+                },
+                Row::Choice {
+                    control: "tone",
+                    style: apertrust_tools::ChoiceStyle::List,
+                },
+                Row::Choice {
+                    control: "grid",
+                    style: apertrust_tools::ChoiceStyle::Segmented,
+                },
+            ],
+        }],
+        before: &[],
+        after: &[],
+        menus: &[],
+    },
     version: 1,
     layers: false,
     auto: false,
@@ -452,38 +475,18 @@ static LISTING: Definition = Definition {
             unported: false,
         },
     ],
-    tabs: &[Tab {
-        id: None,
-        rows: &[
-            Row::Preset {
-                preset: "style",
-                style: apertrust_tools::ChoiceStyle::List,
-            },
-            Row::Choice {
-                control: "tone",
-                style: apertrust_tools::ChoiceStyle::List,
-            },
-            Row::Choice {
-                control: "grid",
-                style: apertrust_tools::ChoiceStyle::Segmented,
-            },
-        ],
-    }],
-    before: &[],
-    after: &[],
-    presets: &[apertrust_tools::PresetRow {
+    preset_rows: &[apertrust_tools::PresetRow {
         id: "style",
         options: &["warm"],
         controls: &["tone", "grid"],
     }],
     views: &[],
     pickers: &[],
-    menus: &[],
     facts: None,
 };
 
-impl Tool for Listing {
-    fn definition(&self) -> &'static Definition {
+impl ProcessingTool for Listing {
+    fn definition(&self) -> &'static ProcessingDefinition {
         &LISTING
     }
 
@@ -529,19 +532,19 @@ fn a_choice_s_lists_are_held_to_the_rules() {
 
 /// What is wrong with the tool's lossless views on `image` (`docs/engine.md`, Preset
 /// rows and lossless views, Tests): a view the tool does not give at its defaults, which
-/// one that declares the view and leaves `Tool::view` as provided has, or whose inverse
-/// gives nothing; a coordinate whose default lies outside its range; and coordinates in
-/// their ranges that put a control outside its own, for a view [`GRID_EXEMPT`] names only
-/// with `exempt`. With none of these,
-/// neither setting a coordinate in its range nor resetting one is ever refused while the
-/// others are in theirs. The ranges are tried on a grid, ends included, of about 10,000
-/// points. A view may read the camera (decision 27): the session's `Photo` carries the
-/// image context the app's pending display reads.
-fn view_problems(tool: &dyn Tool, image: &ImageContext, exempt: bool) -> Vec<String> {
+/// one that declares the view and leaves `ProcessingTool::view` as provided has, or whose
+/// inverse gives nothing; a coordinate whose default lies outside its range; and
+/// coordinates in their ranges that put a control outside its own, for a view
+/// [`GRID_EXEMPT`] names only with `exempt`. With none of these, neither setting a
+/// coordinate in its range nor resetting one is ever refused while the others are in
+/// theirs. The ranges are tried on a grid, ends included, of about 10,000 points. A view
+/// may read the camera (decision 27): the session's `Photo` carries the image context the
+/// app's pending display reads.
+fn view_problems(tool: &dyn ProcessingTool, image: &ImageContext, exempt: bool) -> Vec<String> {
     let definition = tool.definition();
     let mut problems = Vec::new();
     for view in definition.views {
-        let name = format!("{}.{}", definition.id, view.id);
+        let name = format!("{}.{}", definition.tool.id, view.id);
         let n = view.coordinates.len();
         let defaults = tool.defaults(image);
         match tool.view(view.id, &defaults, image) {
@@ -604,7 +607,7 @@ const GRID_EXEMPT: &[(&str, &str)] = &[("temperature.temperature_tint", "tempera
 /// defaults for the photo, that puts a control the view covers outside its range. Not on
 /// an image that is not a raw, which Apertrust does not open, where darktable reads the
 /// coefficients through sRGB's matrix, its blue at 1901 K 4852.
-fn exempt_problems(tool: &dyn Tool, image: &ImageContext) -> Vec<String> {
+fn exempt_problems(tool: &dyn ProcessingTool, image: &ImageContext) -> Vec<String> {
     let definition = tool.definition();
     let mut problems = Vec::new();
     if !image
@@ -615,7 +618,7 @@ fn exempt_problems(tool: &dyn Tool, image: &ImageContext) -> Vec<String> {
         return problems;
     }
     for view in definition.views {
-        let name = format!("{}.{}", definition.id, view.id);
+        let name = format!("{}.{}", definition.tool.id, view.id);
         let Some((_, swept)) = GRID_EXEMPT.iter().find(|(id, _)| *id == name) else {
             continue;
         };
@@ -688,14 +691,14 @@ fn only_exposure_s_camera_rows_are_ever_hidden() {
     for tool in TOOLS {
         let definition = tool.definition();
         for control in definition.controls {
-            if hiding.contains(&(definition.id, control.id)) {
+            if hiding.contains(&(definition.tool.id, control.id)) {
                 continue;
             }
             for image in images() {
                 assert!(
                     tool.visible(control.id, &image),
                     "{}.{} hidden",
-                    definition.id,
+                    definition.tool.id,
                     control.id
                 );
             }
@@ -726,7 +729,7 @@ fn every_message_a_definition_implies_is_translated() {
                 .iter()
                 .any(|image| tool.label_value(control.id, image).is_some())
             {
-                wanted.push(messages::label_value(definition.id, control.id));
+                wanted.push(messages::label_value(definition.tool.id, control.id));
             }
         }
         // A segmented choice draws an option a photo does not list disabled, with its
@@ -749,7 +752,11 @@ fn every_message_a_definition_implies_is_translated() {
                     .iter()
                     .any(|image| !tool.options(control, image).contains(option))
                 {
-                    wanted.push(messages::option_unavailable(definition.id, control, option));
+                    wanted.push(messages::option_unavailable(
+                        definition.tool.id,
+                        control,
+                        option,
+                    ));
                 }
             }
         }
@@ -770,7 +777,7 @@ fn every_message_a_definition_implies_is_translated() {
                 .iter()
                 .any(|settings| !tool.picker_ready(picker.id, settings))
             {
-                wanted.push(messages::picker_unavailable(definition.id, picker.id));
+                wanted.push(messages::picker_unavailable(definition.tool.id, picker.id));
             }
         }
     }

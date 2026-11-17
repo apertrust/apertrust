@@ -51,7 +51,7 @@
 use std::collections::BTreeMap;
 
 use apertrust_engine::session::Command;
-use apertrust_tools::{Definition, Row};
+use apertrust_tools::{ProcessingDefinition, Row};
 use apertrust_ui::components::{GridBarAction, GridPosition, SortKey, ThumbnailSize};
 use apertrust_ui::{Background, Translator};
 use eframe::egui::{self, Key, Modifiers, os::OperatingSystem};
@@ -1178,16 +1178,16 @@ pub fn tool_actions() -> &'static [Action] {
         for tool in apertrust_tools::TOOLS {
             let definition = tool.definition();
             for (action, button) in own_actions(definition) {
-                let [_, full, _] = apertrust_tools::messages::action(definition.id, action);
+                let [_, full, _] = apertrust_tools::messages::action(definition.tool.id, action);
                 let emits = match button {
                     true => Emit::Intent(Intent::ToolAction {
-                        tool: definition.id,
+                        tool: definition.tool.id,
                         action,
                     }),
                     false => Emit::Later,
                 };
                 made.push(Action {
-                    id: ActionId(leak(format!("tool-{}-{action}", definition.id))),
+                    id: ActionId(leak(format!("tool-{}-{action}", definition.tool.id))),
                     message: leak(full),
                     keys: &[],
                     scope: Scope::View(View::Edit),
@@ -1202,7 +1202,7 @@ pub fn tool_actions() -> &'static [Action] {
 }
 
 /// A tool's own actions, in its panel's order, each with whether it is a button's.
-fn own_actions(definition: &'static Definition) -> Vec<(&'static str, bool)> {
+fn own_actions(definition: &'static ProcessingDefinition) -> Vec<(&'static str, bool)> {
     let mut actions = Vec::new();
     for row in definition.rows() {
         match row {

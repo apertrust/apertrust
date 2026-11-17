@@ -44,7 +44,7 @@ use apertrust_plugin::{ImageContext, ImageDesc, Kind, Operation, ParamValues, Va
 use apertrust_tools::agx::{
     Agx, BASE_PRIMARIES, BLACK, FLAGS, PARAMETERS, PIVOT, Parameter, SCALING, WHITE, pivot_ev,
 };
-use apertrust_tools::{Base, ControlError, ControlValue, Mark, Row, TOOLS, Tool};
+use apertrust_tools::{Base, ControlError, ControlValue, Mark, ProcessingTool, Row, TOOLS};
 
 use common::{BEFORE_THE_WORKING_SPACE, Bench, Picture, exact, id, jump, small_raw, sweep};
 use corpus::{CORPUS_VIEWPORT, NINETY_D, corpus_bench, each_corpus_raw, export_bench};

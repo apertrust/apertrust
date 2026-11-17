@@ -67,7 +67,7 @@ use apertrust_export::size::Request;
 use apertrust_export::{Format, Places, png, variables};
 use apertrust_plugin::{ImageContext, ImageDesc, Operation, ParamValues};
 use apertrust_raw::{CfaColor, Pixels, Rect};
-use apertrust_tools::{Control, ControlKind, ControlValue, Mark, Tool, ToolValues};
+use apertrust_tools::{Control, ControlKind, ControlValue, Mark, ProcessingTool, ToolValues};
 use clap::{CommandFactory, FromArgMatches, Parser, Subcommand};
 
 mod beside;
@@ -77,7 +77,7 @@ mod library;
 
 /// The operations and the tools the CLI hands the engine, as the app hands them.
 const OPERATIONS: &[&dyn Operation] = apertrust_operations::OPERATIONS;
-const TOOLS: &[&dyn Tool] = apertrust_tools::TOOLS;
+const TOOLS: &[&dyn ProcessingTool] = apertrust_tools::TOOLS;
 
 /// The control `preview` times: the Exposure tool's Exposure.
 const EXPOSURE: (&str, &str) = ("exposure", "exposure");
@@ -620,7 +620,7 @@ fn flag_named(flags: &[&'static str], args: impl IntoIterator<Item = OsString>) 
 fn saved(
     photo: &Path,
     operations: &[&dyn Operation],
-    tools: &[&dyn Tool],
+    tools: &[&dyn ProcessingTool],
 ) -> Result<Option<sidecar::Loaded>> {
     let path = sidecar::path_for(photo);
     if !path.exists() {
@@ -638,7 +638,7 @@ fn saved(
 fn saved_edit(
     photo: &Path,
     operations: &[&dyn Operation],
-    tools: &[&dyn Tool],
+    tools: &[&dyn ProcessingTool],
 ) -> Result<(Edit, bool)> {
     Ok(saved(photo, operations, tools)?.map_or_else(
         || (Edit::default(), false),
@@ -653,7 +653,7 @@ fn saved_edit(
 /// photo's list of a choice's options may still refuse.
 struct ControlSet<'m> {
     flag: &'m str,
-    tool: &'m dyn Tool,
+    tool: &'m dyn ProcessingTool,
     control: &'static Control,
     value: ControlValue,
 }
@@ -667,14 +667,17 @@ impl ControlSet<'_> {
 
 /// Reads each `--set`, refusing one that names no control or a value the control cannot
 /// take, before any photo is decoded.
-fn read_sets<'m>(sets: &'m [String], tools: &[&'m dyn Tool]) -> Result<Vec<ControlSet<'m>>> {
+fn read_sets<'m>(
+    sets: &'m [String],
+    tools: &[&'m dyn ProcessingTool],
+) -> Result<Vec<ControlSet<'m>>> {
     sets.iter()
         .map(|set| read_set(tools, set).with_context(|| format!("--set {set}")))
         .collect()
 }
 
 /// `TOOL.CONTROL=VALUE`.
-fn read_set<'m>(tools: &[&'m dyn Tool], set: &'m str) -> Result<ControlSet<'m>> {
+fn read_set<'m>(tools: &[&'m dyn ProcessingTool], set: &'m str) -> Result<ControlSet<'m>> {
     let (target, text) = set.split_once('=').context("expected TOOL.CONTROL=VALUE")?;
     let (id, name) = target.split_once('.').context("expected TOOL.CONTROL")?;
     let tool = edit::tool(tools, id)?;
@@ -711,7 +714,7 @@ fn set_controls(edit: &mut Edit, sets: &[ControlSet], image: &ImageContext) -> R
 /// Brings a saved edit's numbers inside the ranges its tools' values give on `image`
 /// (decision 30), each with a warning. Never for an edit a newer Apertrust wrote, which
 /// is rendered as it was, as the session shows it (decision 43).
-fn clamp_read(edit: &mut Edit, tools: &[&dyn Tool], image: &ImageContext) {
+fn clamp_read(edit: &mut Edit, tools: &[&dyn ProcessingTool], image: &ImageContext) {
     for warning in edit.clamp_read(tools, image) {
         tracing::warn!(target: "pipe", "{warning}");
     }
@@ -722,7 +725,7 @@ fn set_params(
     edit: &mut Edit,
     params: &[String],
     operations: &[&dyn Operation],
-    tools: &[&dyn Tool],
+    tools: &[&dyn ProcessingTool],
 ) -> Result<()> {
     if !params.is_empty() {
         edit.apply_all();
@@ -737,7 +740,7 @@ fn set_params(
 /// number the reset's move of a range leaves outside (decision 30).
 fn reset_control(
     edit: &mut Edit,
-    tools: &[&dyn Tool],
+    tools: &[&dyn ProcessingTool],
     reset: &str,
     image: &ImageContext,
 ) -> Result<()> {
@@ -752,7 +755,7 @@ fn reset_control(
 fn set_param(
     edit: &mut Edit,
     operations: &[&dyn Operation],
-    tools: &[&dyn Tool],
+    tools: &[&dyn ProcessingTool],
     set: &str,
 ) -> Result<()> {
     let (target, text) = set
@@ -770,7 +773,7 @@ fn set_param(
 fn reset_param(
     edit: &mut Edit,
     operations: &[&dyn Operation],
-    tools: &[&dyn Tool],
+    tools: &[&dyn ProcessingTool],
     reset: &str,
 ) -> Result<()> {
     let (id, name) = reset
@@ -805,11 +808,15 @@ fn instances(
 /// The edit as lines to show: each tool it touches, then each operation it sets a
 /// parameter of. A switched tool on with no control to show reads `<tool>: on`
 /// (decision 32).
-fn describe(edit: &Edit, operations: &[&dyn Operation], tools: &[&dyn Tool]) -> Vec<String> {
+fn describe(
+    edit: &Edit,
+    operations: &[&dyn Operation],
+    tools: &[&dyn ProcessingTool],
+) -> Vec<String> {
     let mut lines = Vec::new();
     for tool in tools {
         let definition = tool.definition();
-        let Some(values) = edit.tool(definition.id) else {
+        let Some(values) = edit.tool(definition.tool.id) else {
             continue;
         };
         let controls: Vec<String> = definition
@@ -830,9 +837,9 @@ fn describe(edit: &Edit, operations: &[&dyn Operation], tools: &[&dyn Tool]) -> 
             })
             .collect();
         if !controls.is_empty() {
-            lines.push(format!("{}: {}", definition.id, controls.join(", ")));
+            lines.push(format!("{}: {}", definition.tool.id, controls.join(", ")));
         } else if definition.switched && values.enabled() {
-            lines.push(format!("{}: on", definition.id));
+            lines.push(format!("{}: on", definition.tool.id));
         }
     }
     for operation in operations {
@@ -909,7 +916,7 @@ fn edit(
     photo: &Path,
     args: EditArgs,
     operations: &[&'static dyn Operation],
-    tools: &[&'static dyn Tool],
+    tools: &[&'static dyn ProcessingTool],
 ) -> Result<()> {
     if !photo.is_file() {
         bail!("no file {}", photo.display());
@@ -979,7 +986,7 @@ fn write_history(
     read: Stamp,
     mut file: sidecar::Edits,
     (log, clocks): (&Log, &[Clock]),
-    (operations, tools): (&[&dyn Operation], &[&dyn Tool]),
+    (operations, tools): (&[&dyn Operation], &[&dyn ProcessingTool]),
 ) -> Result<bool> {
     let path = sidecar::path_for(photo);
     file.photo = Some(apertrust_base::log::file_name(photo).into_owned());
@@ -999,7 +1006,7 @@ fn edit_once(
     photo: &Path,
     args: &EditArgs,
     operations: &[&'static dyn Operation],
-    tools: &[&'static dyn Tool],
+    tools: &[&'static dyn ProcessingTool],
 ) -> Result<Option<Edit>> {
     let path = sidecar::path_for(photo);
     let read_stamp = stamp(&path)?;
@@ -1129,7 +1136,7 @@ fn wrote(args: &EditArgs, sets: &[ControlSet]) -> Vec<Wrote> {
     );
     let tools = sets
         .iter()
-        .map(|set| Wrote::Tool(set.tool.definition().id.to_owned()));
+        .map(|set| Wrote::Tool(set.tool.definition().tool.id.to_owned()));
     place(&order.sets, tools.collect());
     place(
         &order.params,
@@ -2438,7 +2445,7 @@ mod tests {
 
     use super::*;
 
-    const WITH_SAMPLE: &[&dyn Tool] = &[&Sample];
+    const WITH_SAMPLE: &[&dyn ProcessingTool] = &[&Sample];
 
     #[test]
     fn preview_output_never_truncates_an_existing_photo() {
@@ -2585,7 +2592,7 @@ mod tests {
         edit: &mut Edit,
         flags: &SetFlags,
         operations: &[&dyn Operation],
-        tools: &[&dyn Tool],
+        tools: &[&dyn ProcessingTool],
         image: &ImageContext,
     ) -> Result<()> {
         let sets = read_sets(&flags.sets, tools)?;
@@ -2599,7 +2606,7 @@ mod tests {
         edit: &mut Edit,
         flags: &SetFlags,
         operations: &[&dyn Operation],
-        tools: &[&dyn Tool],
+        tools: &[&dyn ProcessingTool],
     ) -> Result<()> {
         let image = apertrust_tools::testing::image();
         apply_on(edit, flags, operations, tools, &image)
@@ -2661,7 +2668,7 @@ mod tests {
     #[test]
     fn a_switched_tool_on_at_its_defaults_is_shown_on() {
         use apertrust_tools::grain::Grain;
-        let tools: &[&dyn Tool] = &[&Grain];
+        let tools: &[&dyn ProcessingTool] = &[&Grain];
         let mut edit = Edit::default();
         apply(
             &mut edit,

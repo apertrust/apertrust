@@ -45,7 +45,7 @@ use apertrust_operations::OPERATIONS;
 use apertrust_operations::vignette::{self, PARAMS_SIZE, Vignette};
 use apertrust_plugin::{ImageContext, ImageDesc, Operation, ParamValues, Value};
 use apertrust_tools::vignetting::Vignetting;
-use apertrust_tools::{ControlValue, Controls, TOOLS, Tool};
+use apertrust_tools::{ControlValue, Controls, ProcessingTool, TOOLS};
 
 use common::{
     BEFORE_THE_WORKING_SPACE, Bench, Picture, Rendered, exact, id, jump, small_raw, sweep,

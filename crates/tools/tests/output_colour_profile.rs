@@ -41,7 +41,7 @@ use apertrust_engine::pipeline::{self, Instance, Limits, Pipe};
 use apertrust_operations::OPERATIONS;
 use apertrust_plugin::{ImageContext, Value};
 use apertrust_tools::output_colour_profile::{HELD_BACK, OutputColourProfile, PROFILES};
-use apertrust_tools::{Base, ControlError, ControlValue, TOOLS, Tool, ToolValues};
+use apertrust_tools::{Base, ControlError, ControlValue, ProcessingTool, TOOLS, ToolValues};
 
 use common::{BEFORE_THE_WORKING_SPACE, Bench, Rendered, exact, id, small_raw, sweep};
 use corpus::{CORPUS_VIEWPORT, NINETY_D, corpus_bench, each_corpus_raw, export_bench};

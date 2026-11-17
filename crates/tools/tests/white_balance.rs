@@ -47,7 +47,7 @@ use apertrust_plugin::{ImageContext, ParamValues, Value};
 use apertrust_tools::white_balance::{
     COEFFICIENTS, SETTINGS, SETTINGS_ROW, TEMPERATURE_TINT, WhiteBalance,
 };
-use apertrust_tools::{Base, ControlValue, Controls, Mark, Row, TOOLS, Tool};
+use apertrust_tools::{Base, ControlValue, Controls, Mark, ProcessingTool, Row, TOOLS};
 use golden::cases::CASES;
 
 use common::{Bench, Rendered, exact, id, raw_context, small_raw};
@@ -750,7 +750,7 @@ fn w9_temperature_and_tint_need_the_camera_s_matrix() {
             .contains(&"various")
     );
     assert!(matches!(
-        definition.tabs[0].rows.last(),
+        definition.tool.tabs[0].rows.last(),
         Some(Row::Group {
             id: "channel_coefficients",
             ..

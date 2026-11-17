@@ -28,7 +28,7 @@ use apertrust_plugin::{ImageContext, Operation, Param, ParamError, ParamValues, 
 use apertrust_tools::check::{self, ToolError};
 use apertrust_tools::{
     Base, Control, ControlError, ControlKind, ControlValue, Controls, Coordinate, LabelValue, Mark,
-    Picker, Range, Tool, ToolValues, Unit, View,
+    Picker, ProcessingTool, Range, ToolValues, Unit, View,
 };
 use thiserror::Error;
 
@@ -150,7 +150,7 @@ pub enum EditError {
         tool: &'static str,
     },
     /// A parameter its tool owns with no control, holding it at the operation's value
-    /// for the photo (`Tool::fixed`), as Raw black/white point holds the crop.
+    /// for the photo (`ProcessingTool::fixed`), as Raw black/white point holds the crop.
     #[error("{operation}.{param} is fixed by the tool {tool}")]
     Fixed {
         operation: &'static str,
@@ -196,13 +196,13 @@ impl Edit {
     }
 
     /// Sets a control, refusing a value of another kind, a number outside the range the
-    /// tool's values give it now (`Tool::range`, decision 30), the definition's where
-    /// the tool's defaults for the photo panic, and a choice's option the photo, `image`,
-    /// does not list (decision 30). Setting a control keeps it, so Auto and Match leave it
-    /// alone, and turns a switched tool on, whatever the value (decision 32).
+    /// tool's values give it now (`ProcessingTool::range`, decision 30), the definition's
+    /// where the tool's defaults for the photo panic, and a choice's option the photo,
+    /// `image`, does not list (decision 30). Setting a control keeps it, so Auto and Match
+    /// leave it alone, and turns a switched tool on, whatever the value (decision 32).
     pub fn set_control(
         &mut self,
-        tool: &dyn Tool,
+        tool: &dyn ProcessingTool,
         control: &str,
         value: ControlValue,
         image: &ImageContext,
@@ -245,28 +245,32 @@ impl Edit {
 
     /// Turns a switched tool on (decision 32), as every write of one of its controls
     /// does; a tool that is not switched is always on, and stays as it is.
-    fn switch_on(&mut self, tool: &dyn Tool) {
+    fn switch_on(&mut self, tool: &dyn ProcessingTool) {
         let definition = tool.definition();
         if definition.switched {
-            let values = self.tools.entry(definition.id.to_owned()).or_default();
+            let values = self.tools.entry(definition.tool.id.to_owned()).or_default();
             values.set_enabled(true);
         }
     }
 
     /// Whether the tool renders: a switched tool while it is on (decision 32), every
     /// other but while the history's end lies before its default step (decision 78).
-    pub fn is_on(&self, tool: &dyn Tool) -> bool {
+    pub fn is_on(&self, tool: &dyn ProcessingTool) -> bool {
         let definition = tool.definition();
         if definition.switched {
-            (self.tools.get(definition.id)).is_some_and(ToolValues::enabled)
+            (self.tools.get(definition.tool.id)).is_some_and(ToolValues::enabled)
         } else {
-            !self.unapplied.contains(definition.id)
+            !self.unapplied.contains(definition.tool.id)
         }
     }
 
     /// Takes a control back to its default for the photo, no longer kept. A switched
     /// tool on stays on (decision 32).
-    pub fn reset_control(&mut self, tool: &dyn Tool, control: &str) -> Result<(), EditError> {
+    pub fn reset_control(
+        &mut self,
+        tool: &dyn ProcessingTool,
+        control: &str,
+    ) -> Result<(), EditError> {
         let (id, control) = find_control(tool, control)?;
         if let Some(values) = self.tools.get_mut(id) {
             values.remove(control.id);
@@ -286,13 +290,13 @@ impl Edit {
     /// (decision 32).
     pub fn apply_preset(
         &mut self,
-        tool: &dyn Tool,
+        tool: &dyn ProcessingTool,
         preset: &str,
         option: &str,
         image: &ImageContext,
     ) -> Result<(), EditError> {
         let definition = tool.definition();
-        let id = definition.id;
+        let id = definition.tool.id;
         let row = definition
             .preset(preset)
             .ok_or_else(|| EditError::UnknownPreset {
@@ -361,12 +365,12 @@ impl Edit {
     /// written. It turns a switched tool on (decision 32).
     pub fn pick(
         &mut self,
-        tool: &dyn Tool,
+        tool: &dyn ProcessingTool,
         picker: &Picker,
         writes: &Controls,
         image: &ImageContext,
     ) -> Result<(), EditError> {
-        let id = tool.definition().id;
+        let id = tool.definition().tool.id;
         let failed = |message: String| EditError::PickFailed {
             tool: id,
             picker: picker.id,
@@ -415,24 +419,24 @@ impl Edit {
 
     /// Turns a switched tool on (decision 32), as its picker turning on does, darktable
     /// turning the tool on with its picker; a tool that is not switched is always on.
-    pub fn turn_on(&mut self, tool: &dyn Tool) {
+    pub fn turn_on(&mut self, tool: &dyn ProcessingTool) {
         self.switch_on(tool);
     }
 
     /// Sets `coordinate`, a coordinate of one of the tool's lossless views, to `value`
     /// on `image` (decision 2), holding the view's other coordinates: those `held` keeps
     /// while the view's controls hold what it last wrote, else the tool's view of the
-    /// edit's values. The view's controls take [`Tool::unview`]'s values, each kept, and
-    /// `held` keeps the coordinates. A value outside the coordinate's range, or one that
-    /// would put a control outside its own, is refused, and so is one whose tool fails:
-    /// every value is checked before any is set, so a refused one changes nothing. Set to
-    /// the value it has, it writes no value and keeps the controls, as setting a control
-    /// keeps it, so the stored values move only when the view is edited. Either way it
-    /// turns a switched tool on, as setting a control does (decision 32).
+    /// edit's values. The view's controls take [`ProcessingTool::unview`]'s values, each
+    /// kept, and `held` keeps the coordinates. A value outside the coordinate's range, or
+    /// one that would put a control outside its own, is refused, and so is one whose tool
+    /// fails: every value is checked before any is set, so a refused one changes nothing.
+    /// Set to the value it has, it writes no value and keeps the controls, as setting a
+    /// control keeps it, so the stored values move only when the view is edited. Either way
+    /// it turns a switched tool on, as setting a control does (decision 32).
     pub fn set_coordinate(
         &mut self,
         held: &mut Held,
-        tool: &dyn Tool,
+        tool: &dyn ProcessingTool,
         coordinate: &str,
         value: ControlValue,
         image: &ImageContext,
@@ -458,7 +462,7 @@ impl Edit {
     pub fn reset_coordinate(
         &mut self,
         held: &mut Held,
-        tool: &dyn Tool,
+        tool: &dyn ProcessingTool,
         coordinate: &str,
         image: &ImageContext,
     ) -> Result<(), EditError> {
@@ -488,7 +492,7 @@ impl Edit {
     /// are its controls'.
     pub fn keep_coordinate(
         &mut self,
-        tool: &dyn Tool,
+        tool: &dyn ProcessingTool,
         coordinate: &str,
         kept: bool,
     ) -> Result<(), EditError> {
@@ -500,17 +504,17 @@ impl Edit {
     }
 
     /// The coordinates of the tool's view `view` on `image`: those `held` keeps while
-    /// the view's controls hold what it last wrote, else [`Tool::view`] of every control,
-    /// the edit's value over its default for the photo.
+    /// the view's controls hold what it last wrote, else [`ProcessingTool::view`] of every
+    /// control, the edit's value over its default for the photo.
     pub fn coordinates(
         &self,
         held: &Held,
-        tool: &dyn Tool,
+        tool: &dyn ProcessingTool,
         view: &View,
         image: &ImageContext,
     ) -> Result<Vec<f32>, EditError> {
         let definition = tool.definition();
-        if let Some(coordinates) = held.get(self, definition.id, view) {
+        if let Some(coordinates) = held.get(self, definition.tool.id, view) {
             return Ok(coordinates.to_vec());
         }
         viewed(tool, view, image, || self.every(tool, image))
@@ -518,10 +522,10 @@ impl Edit {
 
     /// Every control of the tool on `image`: the edit's value over its default for the
     /// photo.
-    pub(crate) fn every(&self, tool: &dyn Tool, image: &ImageContext) -> Controls {
+    pub(crate) fn every(&self, tool: &dyn ProcessingTool, image: &ImageContext) -> Controls {
         let definition = tool.definition();
         let mut values = tool.defaults(image);
-        if let Some(set) = self.tools.get(definition.id) {
+        if let Some(set) = self.tools.get(definition.tool.id) {
             for control in definition.controls {
                 if let Some(value) = set.get(control.id) {
                     values.set(control.id, value.clone());
@@ -534,8 +538,8 @@ impl Edit {
     /// The tool's follow writes (decision 27; `docs/tools/README.md`, rule 13) for a
     /// change from `before` that set `set`, the controls a command wrote ([`written`]):
     /// for each of them whose value the change moved, in the definition's order, what
-    /// [`Tool::follow`] gives on `image`, a later control's write over an earlier one's,
-    /// each written and kept, as the command's own are, but a write of the control's
+    /// [`ProcessingTool::follow`] gives on `image`, a later control's write over an earlier
+    /// one's, each written and kept, as the command's own are, but a write of the control's
     /// default for the photo resets it, value and mark, as a reset does. A write that
     /// leaves a control as it is changes nothing. A write to a control the tool lacks or
     /// the change set, of a value its control cannot take or a choice's option the photo
@@ -545,7 +549,7 @@ impl Edit {
     pub fn follow(
         &mut self,
         before: &Edit,
-        tool: &dyn Tool,
+        tool: &dyn ProcessingTool,
         set: &[&str],
         image: &ImageContext,
     ) -> Result<(), EditError> {
@@ -560,12 +564,12 @@ impl Edit {
     fn write_follows(
         &mut self,
         before: &Edit,
-        tool: &dyn Tool,
+        tool: &dyn ProcessingTool,
         set: &[&str],
         image: &ImageContext,
     ) -> Result<(), EditError> {
         let definition = tool.definition();
-        let id = definition.id;
+        let id = definition.tool.id;
         let failed = |control: &'static str, message: String| EditError::FollowFailed {
             tool: id,
             control,
@@ -651,11 +655,11 @@ impl Edit {
     pub fn clamp(
         &mut self,
         before: &Edit,
-        tools: &[&dyn Tool],
+        tools: &[&dyn ProcessingTool],
         image: &ImageContext,
     ) -> Result<(), EditError> {
         for &tool in tools {
-            let id = tool.definition().id;
+            let id = tool.definition().tool.id;
             // A tool's code may panic, as its binding is guarded against: that tool
             // clamps nothing, and the change goes on.
             let Ok((now, then, writes, defaults)) = catch_unwind(AssertUnwindSafe(|| {
@@ -693,10 +697,14 @@ impl Edit {
     /// (decision 21): each written at its range's nearer end, its mark as it was. Returns a
     /// warning for each, empty when every number holds; only a hand-written file holds one.
     /// A tool whose defaults or ranges panic is left as it is.
-    pub fn clamp_read(&mut self, tools: &[&dyn Tool], image: &ImageContext) -> Vec<String> {
+    pub fn clamp_read(
+        &mut self,
+        tools: &[&dyn ProcessingTool],
+        image: &ImageContext,
+    ) -> Vec<String> {
         let mut warnings = Vec::new();
         for &tool in tools {
-            let id = tool.definition().id;
+            let id = tool.definition().tool.id;
             if !self.tools.contains_key(id) {
                 continue;
             }
@@ -730,18 +738,18 @@ impl Edit {
         warnings
     }
 
-    /// Writes `coordinates` into the view's controls through [`Tool::unview`], each
-    /// kept, once every value is checked, and holds them; `coordinate` is the one set.
+    /// Writes `coordinates` into the view's controls through [`ProcessingTool::unview`],
+    /// each kept, once every value is checked, and holds them; `coordinate` is the one set.
     fn write_view(
         &mut self,
         held: &mut Held,
-        tool: &dyn Tool,
+        tool: &dyn ProcessingTool,
         view: &'static View,
         coordinates: Vec<f32>,
         coordinate: &'static str,
         image: &ImageContext,
     ) -> Result<(), EditError> {
-        let id = tool.definition().id;
+        let id = tool.definition().tool.id;
         let failed = |message: String| EditError::ViewFailed {
             tool: id,
             view: view.id,
@@ -790,14 +798,19 @@ impl Edit {
 
     /// Takes every control of the tool back to its default, with no marks, and turns a
     /// switched tool off (decision 32).
-    pub fn reset_tool(&mut self, tool: &dyn Tool) {
-        self.tools.remove(tool.definition().id);
+    pub fn reset_tool(&mut self, tool: &dyn ProcessingTool) {
+        self.tools.remove(tool.definition().tool.id);
     }
 
     /// Keeps a control or releases it. Keeping an untouched control holds it at its
     /// default; releasing a set one leaves its value, free for Auto and Match. It never
     /// turns a switched tool on, nor off (decision 32).
-    pub fn keep(&mut self, tool: &dyn Tool, control: &str, kept: bool) -> Result<(), EditError> {
+    pub fn keep(
+        &mut self,
+        tool: &dyn ProcessingTool,
+        control: &str,
+        kept: bool,
+    ) -> Result<(), EditError> {
         let (id, control) = find_control(tool, control)?;
         let values = self.tools.entry(id.to_owned()).or_default();
         values.set_mark(control.id, kept.then_some(Mark::Kept));
@@ -810,7 +823,7 @@ impl Edit {
     pub fn set_param(
         &mut self,
         operations: &[&dyn Operation],
-        tools: &[&dyn Tool],
+        tools: &[&dyn ProcessingTool],
         operation: &str,
         param: &str,
         value: Value,
@@ -830,7 +843,7 @@ impl Edit {
     pub fn reset_param(
         &mut self,
         operations: &[&dyn Operation],
-        tools: &[&dyn Tool],
+        tools: &[&dyn ProcessingTool],
         operation: &str,
         param: &str,
     ) -> Result<(), EditError> {
@@ -853,18 +866,21 @@ impl Edit {
 }
 
 /// The tool called `id`.
-pub fn tool<'m>(tools: &[&'m dyn Tool], id: &str) -> Result<&'m dyn Tool, EditError> {
+pub fn tool<'m>(
+    tools: &[&'m dyn ProcessingTool],
+    id: &str,
+) -> Result<&'m dyn ProcessingTool, EditError> {
     tools
         .iter()
         .copied()
-        .find(|tool| tool.definition().id == id)
+        .find(|tool| tool.definition().tool.id == id)
         .ok_or_else(|| EditError::UnknownTool(id.to_owned()))
 }
 
 /// The controls a command on `control`, one of the tool's controls or a coordinate of one
 /// of its views, writes: the control, or the view's controls; none for an id the tool
 /// lacks, which the command refuses.
-pub fn written(tool: &dyn Tool, control: &str) -> &'static [&'static str] {
+pub fn written(tool: &dyn ProcessingTool, control: &str) -> &'static [&'static str] {
     let definition = tool.definition();
     match (definition.coordinate(control), definition.control(control)) {
         (Some((view, _)), _) => view.controls,
@@ -873,13 +889,13 @@ pub fn written(tool: &dyn Tool, control: &str) -> &'static [&'static str] {
     }
 }
 
-/// The options the choice `control` lists on `image` (decision 30): [`Tool::options`],
-/// or every option where the tool's code panics or gives a list that does not hold
-/// together ([`check::listed`]), with why. A control that is no choice lists none. The
-/// edit refuses any other option, and the session reports the list, warning once of a
-/// failure, so both read it alike.
+/// The options the choice `control` lists on `image` (decision 30):
+/// [`ProcessingTool::options`], or every option where the tool's code panics or gives a
+/// list that does not hold together ([`check::listed`]), with why. A control that is no
+/// choice lists none. The edit refuses any other option, and the session reports the list,
+/// warning once of a failure, so both read it alike.
 pub fn listed(
-    tool: &dyn Tool,
+    tool: &dyn ProcessingTool,
     control: &Control,
     image: &ImageContext,
 ) -> (Vec<&'static str>, Option<String>) {
@@ -903,7 +919,8 @@ pub fn listed(
 }
 
 /// What the photo shows of one control's row (decision 88): whether it shows at all
-/// ([`Tool::visible`]) and a value of the photo's after its label ([`Tool::label_value`]).
+/// ([`ProcessingTool::visible`]) and a value of the photo's after its label
+/// ([`ProcessingTool::label_value`]).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PhotoRow {
     pub visible: bool,
@@ -924,7 +941,10 @@ impl Default for PhotoRow {
 /// (decision 88): every row shown with no value where the tool's code panics, with why,
 /// and a value that is not finite left out. Both read the photo alone, so the session
 /// asks as the photo opens and again where its decode's context replaces the metadata's.
-pub fn photo_rows(tool: &dyn Tool, image: &ImageContext) -> (Vec<PhotoRow>, Option<String>) {
+pub fn photo_rows(
+    tool: &dyn ProcessingTool,
+    image: &ImageContext,
+) -> (Vec<PhotoRow>, Option<String>) {
     let controls = tool.definition().controls;
     // A tool's code may panic, as its binding is guarded against: every row shows, as
     // before the redesign.
@@ -953,7 +973,11 @@ pub fn photo_rows(tool: &dyn Tool, image: &ImageContext) -> (Vec<PhotoRow>, Opti
 /// gives one that does not hold ([`check::range`]). `None` for a control that is no
 /// number. The edit refuses a value outside it and the session reports it, warning once of
 /// a failure, so both read it alike.
-pub fn range(tool: &dyn Tool, control: &str, values: &Controls) -> Option<(Range, Option<String>)> {
+pub fn range(
+    tool: &dyn ProcessingTool,
+    control: &str,
+    values: &Controls,
+) -> Option<(Range, Option<String>)> {
     let definition = tool.definition().range(control)?;
     // A tool's code may panic, as its binding is guarded against: the range is the
     // definition's, which every value it may hold lies in.
@@ -967,14 +991,14 @@ pub fn range(tool: &dyn Tool, control: &str, values: &Controls) -> Option<(Range
 }
 
 /// [`range`]'s range alone.
-fn range_now(tool: &dyn Tool, control: &str, values: &Controls) -> Option<Range> {
+fn range_now(tool: &dyn ProcessingTool, control: &str, values: &Controls) -> Option<Range> {
     range(tool, control, values).map(|(range, _)| range)
 }
 
 /// The option `value` holds, where `control` is a choice that `image` does not list it
 /// for.
 fn unlisted(
-    tool: &dyn Tool,
+    tool: &dyn ProcessingTool,
     control: &Control,
     value: &ControlValue,
     image: &ImageContext,
@@ -989,23 +1013,23 @@ fn unlisted(
 }
 
 fn find_control(
-    tool: &dyn Tool,
+    tool: &dyn ProcessingTool,
     control: &str,
 ) -> Result<(&'static str, &'static Control), EditError> {
     let definition = tool.definition();
     let found = definition
         .control(control)
         .ok_or_else(|| EditError::UnknownControl {
-            tool: definition.id,
+            tool: definition.tool.id,
             control: control.to_owned(),
         })?;
-    Ok((definition.id, found))
+    Ok((definition.tool.id, found))
 }
 
 /// The coordinate called `coordinate` of one of the tool's views: the tool's id, the
 /// view, the coordinate's place in it, and the coordinate.
 fn find_coordinate(
-    tool: &dyn Tool,
+    tool: &dyn ProcessingTool,
     coordinate: &str,
 ) -> Result<(&'static str, &'static View, usize, &'static Coordinate), EditError> {
     let definition = tool.definition();
@@ -1013,32 +1037,32 @@ fn find_coordinate(
         definition
             .coordinate(coordinate)
             .ok_or_else(|| EditError::UnknownControl {
-                tool: definition.id,
+                tool: definition.tool.id,
                 control: coordinate.to_owned(),
             })?;
-    Ok((definition.id, view, at, &view.coordinates[at]))
+    Ok((definition.tool.id, view, at, &view.coordinates[at]))
 }
 
 /// The coordinates of the tool's view `view` at its defaults for `image`: what a
 /// coordinate's reset takes it back to.
 pub fn default_coordinates(
-    tool: &dyn Tool,
+    tool: &dyn ProcessingTool,
     view: &View,
     image: &ImageContext,
 ) -> Result<Vec<f32>, EditError> {
     viewed(tool, view, image, || tool.defaults(image))
 }
 
-/// [`Tool::view`] of the values `values` gives, one coordinate for each of the view's;
-/// the tool's failure, a panic included, an error.
+/// [`ProcessingTool::view`] of the values `values` gives, one coordinate for each of the
+/// view's; the tool's failure, a panic included, an error.
 fn viewed(
-    tool: &dyn Tool,
+    tool: &dyn ProcessingTool,
     view: &View,
     image: &ImageContext,
     values: impl FnOnce() -> Controls,
 ) -> Result<Vec<f32>, EditError> {
     let failed = |message: String| EditError::ViewFailed {
-        tool: tool.definition().id,
+        tool: tool.definition().tool.id,
         view: view.id,
         message,
     };
@@ -1059,7 +1083,8 @@ fn viewed(
 /// it, so dragging one coordinate leaves the others exactly where they were however many
 /// steps the drag takes. Any change that leaves those controls holding other values drops
 /// them, and the next edit starts from the stored values again; a view reads only its own
-/// controls ([`Tool::view`]), so no other change can move them. Nothing of it is saved.
+/// controls ([`ProcessingTool::view`]), so no other change can move them. Nothing of it is
+/// saved.
 #[derive(Debug, Clone, Default)]
 pub struct Held(BTreeMap<(&'static str, &'static str), Hold>);
 
@@ -1100,7 +1125,7 @@ impl Hold {
 /// can never wait unseen on an optional operation and appear once a tool adds it.
 pub fn unowned(
     operations: &[&dyn Operation],
-    tools: &[&dyn Tool],
+    tools: &[&dyn ProcessingTool],
     operation: &str,
     param: &str,
 ) -> Result<(&'static str, &'static Param), EditError> {
@@ -1122,7 +1147,7 @@ pub fn unowned(
         });
     }
     if let Some(owner) = check::owner(tools, manifest.id, param.name) {
-        let (operation, param, tool) = (manifest.id, param.name, owner.definition().id);
+        let (operation, param, tool) = (manifest.id, param.name, owner.definition().tool.id);
         let fixed = owner
             .fixed()
             .iter()
@@ -1176,13 +1201,13 @@ impl<'a> Bound<'a> {
 /// switched tool off is never bound; one on is bound with its values off its defaults,
 /// possibly none (decision 32).
 fn bind(
-    tool: &dyn Tool,
+    tool: &dyn ProcessingTool,
     edit: &Edit,
     operations: &[&dyn Operation],
     image: &ImageContext,
     base: &mut Option<Base>,
 ) -> Result<Vec<apertrust_tools::Setting>, ToolError> {
-    let Some(values) = edit.tools.get(tool.definition().id) else {
+    let Some(values) = edit.tools.get(tool.definition().tool.id) else {
         return Ok(Vec::new());
     };
     let switched = tool.definition().switched;
@@ -1220,7 +1245,7 @@ fn bind(
 pub fn instances<'a>(
     edit: &Edit,
     operations: &[&'a dyn Operation],
-    tools: &[&dyn Tool],
+    tools: &[&dyn ProcessingTool],
     image: &ImageContext,
 ) -> Bound<'a> {
     let mut bound: BTreeMap<&'static str, ParamValues> = BTreeMap::new();
@@ -1242,12 +1267,12 @@ pub fn instances<'a>(
                         .set(setting.param, setting.value);
                 }
             }
-            Err(error) => failed.push((tool.definition().id, error)),
+            Err(error) => failed.push((tool.definition().tool.id, error)),
         }
     }
     // A tool not applied leaves out each operation it owns a parameter of (decision 78).
     let unapplied: BTreeSet<&str> = (tools.iter())
-        .filter(|tool| edit.unapplied.contains(tool.definition().id))
+        .filter(|tool| edit.unapplied.contains(tool.definition().tool.id))
         .flat_map(|tool| tool.owns().iter().map(|owned| owned.operation))
         .collect();
     let instances = operations.iter().filter_map(|&operation| {
@@ -1278,11 +1303,11 @@ pub fn instances<'a>(
 mod tests {
     use apertrust_operations::OPERATIONS;
     use apertrust_tools::testing::{self, Defaultless, Pushing, Sample};
-    use apertrust_tools::{Controls, Definition, Owned, Setting};
+    use apertrust_tools::{Controls, Owned, ProcessingDefinition, Setting};
 
     use super::*;
 
-    const TOOLS: &[&dyn Tool] = &[&Sample];
+    const TOOLS: &[&dyn ProcessingTool] = &[&Sample];
 
     #[test]
     fn defaults_that_panic_during_follow_restore_the_previous_edit() {
@@ -1540,7 +1565,7 @@ mod tests {
     #[test]
     fn a_misbehaving_binding_leaves_out_only_its_own_tool() {
         use apertrust_tools::testing::Faulty;
-        let tools: &[&dyn Tool] = &[&Faulty, &Sample];
+        let tools: &[&dyn ProcessingTool] = &[&Faulty, &Sample];
         let mut edit = Edit::default();
         edit.set_control(
             &Sample,
@@ -1627,8 +1652,8 @@ mod tests {
     /// brightness in range, then a grain past its own, and `untouched` gives no size.
     struct Wrong;
 
-    impl Tool for Wrong {
-        fn definition(&self) -> &'static Definition {
+    impl ProcessingTool for Wrong {
+        fn definition(&self) -> &'static ProcessingDefinition {
             Sample.definition()
         }
 
@@ -1701,8 +1726,8 @@ mod tests {
     /// back infinite, bias as Sample gives it.
     struct Overflowing;
 
-    impl Tool for Overflowing {
-        fn definition(&self) -> &'static Definition {
+    impl ProcessingTool for Overflowing {
+        fn definition(&self) -> &'static ProcessingDefinition {
             Sample.definition()
         }
 
@@ -1733,7 +1758,7 @@ mod tests {
     /// `control` set to `value` with its follow writes, as the session sets one.
     fn set_following(
         edit: &mut Edit,
-        tool: &dyn Tool,
+        tool: &dyn ProcessingTool,
         control: &str,
         value: ControlValue,
     ) -> Result<(), EditError> {
@@ -1819,7 +1844,7 @@ mod tests {
     /// `control` set to `value` as the session sets one, its range's moves clamped after.
     fn set_clamping(
         edit: &mut Edit,
-        tool: &dyn Tool,
+        tool: &dyn ProcessingTool,
         control: &str,
         value: f32,
     ) -> Result<(), EditError> {
@@ -1917,7 +1942,7 @@ mod tests {
     #[test]
     fn a_tool_whose_defaults_panic_leaves_the_others_ranges_to_hold() {
         let image = testing::image();
-        let tools: &[&dyn Tool] = &[&Defaultless, &Sample];
+        let tools: &[&dyn ProcessingTool] = &[&Defaultless, &Sample];
         let number = ControlValue::Number;
         let mut edit = Edit::default();
         edit.set_control(&Defaultless, "amount", number(5.0), &image)
@@ -2007,8 +2032,8 @@ mod tests {
         Unordered,
     }
 
-    impl Tool for Narrow {
-        fn definition(&self) -> &'static Definition {
+    impl ProcessingTool for Narrow {
+        fn definition(&self) -> &'static ProcessingDefinition {
             Sample.definition()
         }
 
@@ -2155,7 +2180,7 @@ mod tests {
 
     /// Each instance's operation planned for `edit` with Grain, a switched tool, alone.
     fn planned_with_grain(edit: &Edit) -> Vec<(&'static str, Vec<(String, Value)>)> {
-        let tools: &[&dyn Tool] = &[&apertrust_tools::grain::Grain];
+        let tools: &[&dyn ProcessingTool] = &[&apertrust_tools::grain::Grain];
         instances(edit, OPERATIONS, tools, &testing::image())
             .all()
             .unwrap()

@@ -45,16 +45,16 @@ A tool's section already has its own buttons: reset, presets and options (⋯). 
   - its words are the action's full name, `tool-<tool>-action-<action>-full`;
   - it has no default keys and works in the view's scope;
   - it is available while the photo takes edits, live and not open for viewing only, on the main window, with no modal dialog over it;
-  - a button's runs as pressing the button does: `Intent::ToolAction`, then `Change::Action` on the tool's values the mirror holds, `Tool::action`, and a `SetControl` for each control it writes, one change and one history step;
+  - a button's runs as pressing the button does: `Intent::ToolAction`, then `Change::Action` on the tool's values the mirror holds, `ProcessingTool::action`, and a `SetControl` for each control it writes, one change and one history step;
   - a `Row::Action`'s, whose row is drawn disabled until what it runs is built, is listed and never runs.
 - A utility's items are the registry actions it already has, as History's Reset is `reset`.
 
 **Tools declare their items as data.** Every item, a tool's, a utility's or the app's, is a `MenuItem { place: Place, section: Section, order: u32, entry: MenuEntry }`, so the app's items and the tools' are placed by one rule.
 
 - `MenuEntry::Action(id)` is one action. `MenuEntry::Submenu { title, actions }` is a submenu of actions, one level deep: `title` a message id, `actions` from one to eight (`MOST_IN_SUBMENU`), each once, in order. A submenu counts as one item towards its place's limit.
-- A processing tool: `Definition::menus: &'static [MenuItem]`, each action one of the tool's own, a submenu's children included.
-- A utility: `Utility::menus` in `utility::UTILITIES`, each action the registry action that runs it.
-- Planned, both in one field, `ToolDefinition::menus`, the parent every tool's definition embeds ([0093](0093-one-tool-model-processing-tools-and-utility-tools.md)); its items at `Place::Options` are the tool's ⋯, before the layout's, History's Compress History, Truncate History, Create a Style… and Discard History… among them, Truncate History an item of its own.
+- A processing tool: `ToolDefinition::menus: &'static [MenuItem]` in its `ProcessingDefinition`, each action one of the tool's own, a submenu's children included.
+- A utility: `ToolDefinition::menus` in its `UtilityDefinition`, in `utility::UTILITIES`, each action the registry action that runs it.
+- Both are one field, `ToolDefinition::menus`, of the parent every tool's definition embeds ([0093](0093-one-tool-model-processing-tools-and-utility-tools.md)). Planned with the shared ⋯ (step 93.3), its items at `Place::Options` are the tool's ⋯, before the layout's, History's Compress History, Truncate History, Create a Style… and Discard History… among them, Truncate History an item of its own.
 - The app: `menus::APP_ITEMS`, each action a registry action's id.
 - **Background ▸** is the app's `Submenu { title: "menu-background", actions: [View › Background's ids] }`, and an app test keeps its actions equal to the menu bar's `menus::BACKGROUND`, in its order.
 - A submenu's children follow the item rules below: each hidden or shown disabled as an item is, and none shows its keys. A submenu left with no child shown is hidden.
@@ -65,7 +65,7 @@ A tool's section already has its own buttons: reset, presets and options (⋯). 
 - **`order`** places an item within its section, 100 apart (100, 200, 300 and on), lower first.
 - The gaps leave room to put an item between two others without renumbering them.
 - A tool with nothing to add declares nothing.
-- `Definition::check` refuses an item that names none of the tool's actions (`UnknownMenuAction`), an action listed twice in one place, a submenu's children included (`DuplicateMenuItem`), a submenu of no action or of more than eight (`SubmenuItems`), and more than two items in one place among `Photo` and `Thumbnail`, or more than four in `Options` (`MenuItems`), through `check_menus`, and the section rules through `check_section`. An app test holds the utilities' items to the same limits and to actions the registry declares, each in the menu bar on every platform.
+- `ProcessingDefinition::check` refuses an item that names none of the tool's actions (`UnknownMenuAction`), an action listed twice in one place, a submenu's children included (`DuplicateMenuItem`), a submenu of no action or of more than eight (`SubmenuItems`), and more than two items in one place among `Photo` and `Thumbnail`, or more than four in `Options` (`MenuItems`), through `check_menus`, and the section rules through `check_section`. An app test holds the utilities' items to the same limits and to actions the registry declares, each in the menu bar on every platform.
 - A picker is no item yet: an item that picks at the pointer waits for the open question below.
 
 **How a menu is built.** The app builds every menu, `menus::context(place, target)`, from the app's items for the place and the items tools and utilities add. The surround's is View › Background's items alone, read from `menus::BACKGROUND`.
@@ -112,7 +112,7 @@ Discard History… is in no context menu: it stays in Edit and History's ⋯ ([0
 
 **The first slice** is built:
 
-- in `apertrust-tools`: `Place` (`Photo`, `Thumbnail`, `Options`), `Section`, `MenuItem`, `MenuEntry` with its submenus, `MOST_IN_SUBMENU`, `Definition::menus`, `Utility::menus`, `check_menus` and `check_section` with their `DefinitionError`s; `UTILITIES` in a `utility` module, moved from `about`;
+- in `apertrust-tools`: `Place` (`Photo`, `Thumbnail`, `Options`), `Section`, `MenuItem`, `MenuEntry` with its submenus, `MOST_IN_SUBMENU`, `ToolDefinition::menus`, `check_menus` and `check_section` with their `DefinitionError`s; `UTILITIES` in a `utility` module, moved from `about`;
 - in the app:
   - the generated `tool-<tool>-<action>` actions (`actions::tool_actions`), run through `Intent::ToolAction` and `tool_action`;
   - `menus::Place` with `Surround`, the surround's menu built by `menus::context` too;
@@ -139,7 +139,7 @@ Pickers as items, the other places, and ⋯ built through `menus::context` with 
 
 ## Consequences
 
-- `apertrust-tools`: `Place`, `Section`, `MenuItem`, `MenuEntry`, `MOST_IN_SUBMENU`, `Definition::menus`, `Utility::menus`, `check_menus`, `check_section`, and the `DefinitionError`s for an item that names no action, one repeated, a submenu of none or too many, too many in a place, a section outside `EDIT` up to `LAYOUT` and an `EDIT` order under 200; `UTILITIES` in a `utility` module.
+- `apertrust-tools`: `Place`, `Section`, `MenuItem`, `MenuEntry`, `MOST_IN_SUBMENU`, `ToolDefinition::menus`, `check_menus`, `check_section`, and the `DefinitionError`s for an item that names no action, one repeated, a submenu of none or too many, too many in a place, a section outside `EDIT` up to `LAYOUT` and an `EDIT` order under 200; `UTILITIES` in a `utility` module.
 - The app:
   - the generated tool actions in `actions.rs`, found by every lookup by id;
   - `menus::Place` and `Target`;

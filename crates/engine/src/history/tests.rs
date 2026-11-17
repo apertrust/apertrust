@@ -22,7 +22,7 @@ use apertrust_tools::testing::{self, Sample};
 
 use super::*;
 
-const TOOLS: &[&'static dyn Tool] = &[&Sample, &Grain];
+const TOOLS: &[&'static dyn ProcessingTool] = &[&Sample, &Grain];
 
 /// An edit with Sample's brightness at `brightness`, kept.
 fn brightened(brightness: f32) -> Edit {
@@ -621,7 +621,7 @@ fn the_default_tools_are_darktable_s_for_a_new_raw_in_its_history_order() {
     let switched = |id: &&str| {
         apertrust_tools::TOOLS
             .iter()
-            .any(|m| m.definition().id == *id && m.definition().switched)
+            .any(|m| m.definition().tool.id == *id && m.definition().switched)
     };
     assert!(!lines.iter().any(switched), "{lines:?}");
 }

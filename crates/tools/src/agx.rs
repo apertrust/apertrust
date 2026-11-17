@@ -58,10 +58,10 @@ use apertrust_plugin::{ImageContext, Value};
 
 use crate::about::{Fact, Facts, Purpose};
 use crate::definition::{
-    ChoiceStyle, Control, ControlKind, Definition, Picker, PickerKind, Quad, Range, Row, Slider,
-    Space, Tab, Unit, slider_step,
+    ChoiceStyle, Control, ControlKind, Picker, PickerKind, ProcessingDefinition, Quad, Range, Row,
+    Slider, Space, Tab, ToolDefinition, Unit, slider_step,
 };
-use crate::{Base, Controls, Owned, Setting, Tool, ToolValues};
+use crate::{Base, Controls, Owned, ProcessingTool, Setting, ToolValues};
 
 pub struct Agx;
 
@@ -525,31 +525,33 @@ static PRIMARIES_PAGE: [Row; 3] = [
     },
 ];
 
-static DEFINITION: Definition = Definition {
-    id: AGX,
+static DEFINITION: ProcessingDefinition = ProcessingDefinition {
+    tool: ToolDefinition {
+        id: AGX,
+        tabs: &[
+            Tab {
+                id: Some("settings"),
+                rows: &SETTINGS,
+            },
+            Tab {
+                id: Some("primaries"),
+                rows: &PRIMARIES_PAGE,
+            },
+        ],
+        before: &[],
+        after: &[],
+        menus: &[],
+    },
     version: 1,
     // Background only: the tone mapper's parameters are global (decision 33).
     layers: false,
     auto: false,
     switched: false,
     controls: &CONTROLS,
-    tabs: &[
-        Tab {
-            id: Some("settings"),
-            rows: &SETTINGS,
-        },
-        Tab {
-            id: Some("primaries"),
-            rows: &PRIMARIES_PAGE,
-        },
-    ],
-    before: &[],
-    after: &[],
-    presets: &[],
+    preset_rows: &[],
     views: &[],
     pickers: &PICKERS,
     // darktable's `description()` in src/iop/agx.c at the reference release.
-    menus: &[],
     facts: Some(Facts {
         purpose: Purpose::CorrectiveAndCreative,
         input: Fact::LinearRgbSceneReferred,
@@ -577,8 +579,8 @@ const fn owns() -> [Owned; 35] {
     owns
 }
 
-impl Tool for Agx {
-    fn definition(&self) -> &'static Definition {
+impl ProcessingTool for Agx {
+    fn definition(&self) -> &'static ProcessingDefinition {
         &DEFINITION
     }
 
@@ -687,7 +689,7 @@ mod tests {
             .collect();
         let controls: Vec<&str> = CONTROLS.iter().map(|c| c.id).collect();
         assert_eq!(controls, shown);
-        let tabs: Vec<Option<&str>> = DEFINITION.tabs.iter().map(|tab| tab.id).collect();
+        let tabs: Vec<Option<&str>> = DEFINITION.tool.tabs.iter().map(|tab| tab.id).collect();
         assert_eq!(tabs, [Some("settings"), Some("primaries")]);
         let groups: Vec<&str> = DEFINITION
             .rows()

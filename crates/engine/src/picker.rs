@@ -91,7 +91,7 @@ pub const DEFAULT_AREA: Region = Region::Area([0.02, 0.02, 0.98, 0.98]);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum PickerRef {
     /// A tool's picker, by its tool's id and the picker's id in its definition
-    /// (`Definition::pickers`).
+    /// (`ProcessingDefinition::pickers`).
     Tool {
         tool: &'static str,
         picker: &'static str,

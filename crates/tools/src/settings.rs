@@ -68,7 +68,7 @@ mod tests {
             };
             let found = TOOLS
                 .iter()
-                .find(|m| m.definition().id == tool)
+                .find(|m| m.definition().tool.id == tool)
                 .unwrap_or_else(|| panic!("no tool {tool}"));
             // A reference row's two (decision 88): its L, an optional percentage, and its
             // photo's path, an optional text.

@@ -38,9 +38,10 @@ use apertrust_plugin::{ImageContext, Value};
 
 use crate::about::{Fact, Facts, Purpose};
 use crate::definition::{
-    ChoiceStyle, Control, ControlKind, Definition, MAX_POINTS, Row, Tab, Widget,
+    ChoiceStyle, Control, ControlKind, MAX_POINTS, ProcessingDefinition, Row, Tab, ToolDefinition,
+    Widget,
 };
-use crate::{Base, ControlValue, Controls, Owned, Setting, Tool, ToolValues};
+use crate::{Base, ControlValue, Controls, Owned, ProcessingTool, Setting, ToolValues};
 
 pub struct ToneCurve;
 
@@ -79,8 +80,46 @@ pub const LUMINANCE: u32 = 0;
 const LINKED: u32 = 0;
 const MONOTONE_HERMITE: u32 = 2;
 
-static DEFINITION: Definition = Definition {
-    id: "tone_curve",
+static DEFINITION: ProcessingDefinition = ProcessingDefinition {
+    tool: ToolDefinition {
+        id: "tone_curve",
+        tabs: &[
+            Tab {
+                id: Some("luma"),
+                rows: &[Row::Custom {
+                    widget: Widget::Curve,
+                    controls: &[LUMA],
+                }],
+            },
+            // To come when the tool becomes RGB curve (decision 2).
+            Tab {
+                id: Some("rgb"),
+                rows: &[],
+            },
+            Tab {
+                id: Some("red"),
+                rows: &[],
+            },
+            Tab {
+                id: Some("green"),
+                rows: &[],
+            },
+            Tab {
+                id: Some("blue"),
+                rows: &[],
+            },
+            Tab {
+                id: Some("advanced"),
+                rows: &[Row::Choice {
+                    control: PRESERVE,
+                    style: ChoiceStyle::List,
+                }],
+            },
+        ],
+        before: &[],
+        after: &[],
+        menus: &[],
+    },
     version: 1,
     layers: true,
     auto: false,
@@ -103,46 +142,10 @@ static DEFINITION: Definition = Definition {
             unported: false,
         },
     ],
-    tabs: &[
-        Tab {
-            id: Some("luma"),
-            rows: &[Row::Custom {
-                widget: Widget::Curve,
-                controls: &[LUMA],
-            }],
-        },
-        // To come when the tool becomes RGB curve (decision 2).
-        Tab {
-            id: Some("rgb"),
-            rows: &[],
-        },
-        Tab {
-            id: Some("red"),
-            rows: &[],
-        },
-        Tab {
-            id: Some("green"),
-            rows: &[],
-        },
-        Tab {
-            id: Some("blue"),
-            rows: &[],
-        },
-        Tab {
-            id: Some("advanced"),
-            rows: &[Row::Choice {
-                control: PRESERVE,
-                style: ChoiceStyle::List,
-            }],
-        },
-    ],
-    before: &[],
-    after: &[],
-    presets: &[],
+    preset_rows: &[],
     views: &[],
     pickers: &[],
     // darktable's `description()` in src/iop/rgbcurve.c at the reference release.
-    menus: &[],
     facts: Some(Facts {
         purpose: Purpose::CorrectiveAndCreative,
         input: Fact::LinearRgbDisplayReferred,
@@ -205,8 +208,8 @@ const fn owns() -> [Owned; OWNED] {
     owns
 }
 
-impl Tool for ToneCurve {
-    fn definition(&self) -> &'static Definition {
+impl ProcessingTool for ToneCurve {
+    fn definition(&self) -> &'static ProcessingDefinition {
         &DEFINITION
     }
 

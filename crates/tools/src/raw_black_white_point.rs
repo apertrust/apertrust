@@ -40,8 +40,10 @@
 use apertrust_plugin::{ImageContext, Value};
 
 use crate::about::{Fact, Facts, Purpose};
-use crate::definition::{ChoiceStyle, Control, ControlKind, Definition, Row, Slider, Tab};
-use crate::{Base, ControlValue, Controls, Owned, Setting, Tool, ToolValues};
+use crate::definition::{
+    ChoiceStyle, Control, ControlKind, ProcessingDefinition, Row, Slider, Tab, ToolDefinition,
+};
+use crate::{Base, ControlValue, Controls, Owned, ProcessingTool, Setting, ToolValues};
 
 pub struct RawBlackWhitePoint;
 
@@ -114,34 +116,36 @@ const fn slider(control: &'static str) -> Row {
     Row::Slider(Slider::new(control).decimals(0).soft(0.0, SOFT_MAX))
 }
 
-static DEFINITION: Definition = Definition {
-    id: "rawprepare",
+static DEFINITION: ProcessingDefinition = ProcessingDefinition {
+    tool: ToolDefinition {
+        id: "rawprepare",
+        tabs: &[Tab {
+            id: None,
+            rows: &[
+                slider(BLACK[0]),
+                slider(BLACK[1]),
+                slider(BLACK[2]),
+                slider(BLACK[3]),
+                slider(WHITE),
+                Row::Choice {
+                    control: FLAT_FIELD,
+                    style: ChoiceStyle::List,
+                },
+            ],
+        }],
+        before: &[],
+        after: &[],
+        menus: &[],
+    },
     version: 1,
     layers: false,
     auto: false,
     switched: false,
     controls: &CONTROLS,
-    tabs: &[Tab {
-        id: None,
-        rows: &[
-            slider(BLACK[0]),
-            slider(BLACK[1]),
-            slider(BLACK[2]),
-            slider(BLACK[3]),
-            slider(WHITE),
-            Row::Choice {
-                control: FLAT_FIELD,
-                style: ChoiceStyle::List,
-            },
-        ],
-    }],
-    before: &[],
-    after: &[],
-    presets: &[],
+    preset_rows: &[],
     views: &[],
     pickers: &[],
     // darktable's `description()` in src/iop/rawprepare.c at the reference release.
-    menus: &[],
     facts: Some(Facts {
         purpose: Purpose::Mandatory,
         input: Fact::LinearRawSceneReferred,
@@ -168,8 +172,8 @@ static OWNS: [Owned; 10] = [
 /// How many of [`OWNS`] are the crop margins, which the tool fixes.
 const CROP: usize = 4;
 
-impl Tool for RawBlackWhitePoint {
-    fn definition(&self) -> &'static Definition {
+impl ProcessingTool for RawBlackWhitePoint {
+    fn definition(&self) -> &'static ProcessingDefinition {
         &DEFINITION
     }
 
@@ -320,8 +324,8 @@ mod tests {
 
     #[test]
     fn its_page_is_darktable_s_in_gui_init_s_order_on_one_untitled_tab() {
-        assert_eq!(DEFINITION.tabs.len(), 1);
-        assert_eq!(DEFINITION.tabs[0].id, None);
+        assert_eq!(DEFINITION.tool.tabs.len(), 1);
+        assert_eq!(DEFINITION.tool.tabs[0].id, None);
         let shown: Vec<&str> = DEFINITION
             .rows()
             .flat_map(|row| row.controls().iter().copied())

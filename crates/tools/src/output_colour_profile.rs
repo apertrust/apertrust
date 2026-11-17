@@ -41,8 +41,10 @@ use apertrust_color::PROFILE_TYPES;
 use apertrust_plugin::{ImageContext, Value};
 
 use crate::about::{Fact, Facts, Purpose};
-use crate::definition::{ChoiceStyle, Control, ControlKind, Definition, Row, Tab};
-use crate::{Base, Controls, Owned, Setting, Tool, ToolValues};
+use crate::definition::{
+    ChoiceStyle, Control, ControlKind, ProcessingDefinition, Row, Tab, ToolDefinition,
+};
+use crate::{Base, Controls, Owned, ProcessingTool, Setting, ToolValues};
 
 pub struct OutputColourProfile;
 
@@ -106,27 +108,29 @@ static CONTROLS: [Control; 1] = [Control {
     unported: false,
 }];
 
-static DEFINITION: Definition = Definition {
-    id: COLOROUT,
+static DEFINITION: ProcessingDefinition = ProcessingDefinition {
+    tool: ToolDefinition {
+        id: COLOROUT,
+        tabs: &[Tab {
+            id: None,
+            rows: &[Row::Choice {
+                control: TYPE,
+                style: ChoiceStyle::List,
+            }],
+        }],
+        before: &[],
+        after: &[],
+        menus: &[],
+    },
     version: 1,
     layers: false,
     auto: false,
     switched: false,
     controls: &CONTROLS,
-    tabs: &[Tab {
-        id: None,
-        rows: &[Row::Choice {
-            control: TYPE,
-            style: ChoiceStyle::List,
-        }],
-    }],
-    before: &[],
-    after: &[],
-    presets: &[],
+    preset_rows: &[],
     views: &[],
     pickers: &[],
     // darktable's `description()` in src/iop/colorout.c at the reference release.
-    menus: &[],
     facts: Some(Facts {
         purpose: Purpose::Mandatory,
         input: Fact::LinearOrNonLinearLabDisplayReferred,
@@ -139,8 +143,8 @@ static DEFINITION: Definition = Definition {
 /// output intent last, fixed ([`OutputColourProfile::fixed`]).
 static OWNS: [Owned; 2] = [Owned::new(COLOROUT, TYPE), Owned::new(COLOROUT, "intent")];
 
-impl Tool for OutputColourProfile {
-    fn definition(&self) -> &'static Definition {
+impl ProcessingTool for OutputColourProfile {
+    fn definition(&self) -> &'static ProcessingDefinition {
         &DEFINITION
     }
 

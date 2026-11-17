@@ -24,15 +24,21 @@
 use apertrust_plugin::{ImageContext, Operation, ParamError, Stage, Value};
 
 use crate::definition::{Computed, ControlKind, DefinitionError, MAX_POINTS, Row, Space};
-use crate::{Base, Control, ControlValue, Controls, Owned, Range, Setting, Tool, ToolValues};
+use crate::{
+    Base, Control, ControlValue, Controls, Owned, ProcessingTool, Range, Setting, ToolValues,
+};
 
 /// A number control's range while the tool's controls hold `values`, every control,
-/// as the session reports it (decision 30): the tool's [`Tool::range`] where it
+/// as the session reports it (decision 30): the tool's [`ProcessingTool::range`] where it
 /// holds inside the definition's ([`Range::holds_inside`]), else `Err` with the
 /// definition's, where the tool gives none or one that does not hold. `None` for a
 /// control that is no number. A tool's code may panic, which a caller that must go on,
 /// as the session, guards against.
-pub fn range(tool: &dyn Tool, control: &str, values: &Controls) -> Option<Result<Range, Range>> {
+pub fn range(
+    tool: &dyn ProcessingTool,
+    control: &str,
+    values: &Controls,
+) -> Option<Result<Range, Range>> {
     let definition = tool.definition().range(control)?;
     Some(match tool.range(control, values) {
         Some(range) if range.holds_inside(&definition) => Ok(range),
@@ -47,7 +53,7 @@ pub fn range(tool: &dyn Tool, control: &str, values: &Controls) -> Option<Result
 /// control not ported takes only its default, which its range always holds, and is left
 /// alone. Empty while every number is inside. The edit writes them in the same change,
 /// and the app's pending display shows them, so both clamp alike.
-pub fn clamp(tool: &dyn Tool, values: &Controls) -> Controls {
+pub fn clamp(tool: &dyn ProcessingTool, values: &Controls) -> Controls {
     let mut writes = Controls::new();
     for control in tool.definition().controls {
         let (Some(ControlValue::Number(value)), false) = (values.get(control.id), control.unported)
@@ -176,16 +182,16 @@ pub struct Rejected {
 /// parameter belongs to the first tool that owns it; a later one that owns it too is
 /// left out whole, so a faulty tool never takes a parameter.
 pub fn accept<'m>(
-    tools: &[&'m dyn Tool],
+    tools: &[&'m dyn ProcessingTool],
     operations: &[&dyn Operation],
-) -> (Vec<&'m dyn Tool>, Vec<Rejected>) {
-    let mut accepted: Vec<&'m dyn Tool> = Vec::new();
+) -> (Vec<&'m dyn ProcessingTool>, Vec<Rejected>) {
+    let mut accepted: Vec<&'m dyn ProcessingTool> = Vec::new();
     let mut rejected = Vec::new();
     for &tool in tools {
         match admit(tool, &accepted, operations) {
             Ok(()) => accepted.push(tool),
             Err(error) => rejected.push(Rejected {
-                tool: tool.definition().id,
+                tool: tool.definition().tool.id,
                 error,
             }),
         }
@@ -194,17 +200,17 @@ pub fn accept<'m>(
 }
 
 fn admit(
-    tool: &dyn Tool,
-    accepted: &[&dyn Tool],
+    tool: &dyn ProcessingTool,
+    accepted: &[&dyn ProcessingTool],
     operations: &[&dyn Operation],
 ) -> Result<(), ToolError> {
     let definition = tool.definition();
     definition.check()?;
     if accepted
         .iter()
-        .any(|other| other.definition().id == definition.id)
+        .any(|other| other.definition().tool.id == definition.tool.id)
     {
-        return Err(ToolError::Duplicate(definition.id));
+        return Err(ToolError::Duplicate(definition.tool.id));
     }
     let owns = tool.owns();
     for (i, &Owned { operation, param }) in owns.iter().enumerate() {
@@ -219,9 +225,9 @@ fn admit(
             return Err(ToolError::SwitchedOverBase { operation, param });
         }
         let owner = if owns[..i].contains(&owns[i]) {
-            Some(definition.id)
+            Some(definition.tool.id)
         } else {
-            owner(accepted, operation, param).map(|other| other.definition().id)
+            owner(accepted, operation, param).map(|other| other.definition().tool.id)
         };
         if let Some(owner) = owner {
             return Err(ToolError::OwnedTwice {
@@ -263,7 +269,11 @@ fn admit(
 }
 
 /// The tool among `tools` that owns `operation.param`.
-pub fn owner<'m>(tools: &[&'m dyn Tool], operation: &str, param: &str) -> Option<&'m dyn Tool> {
+pub fn owner<'m>(
+    tools: &[&'m dyn ProcessingTool],
+    operation: &str,
+    param: &str,
+) -> Option<&'m dyn ProcessingTool> {
     tools.iter().copied().find(|tool| {
         tool.owns()
             .iter()
@@ -274,7 +284,7 @@ pub fn owner<'m>(tools: &[&'m dyn Tool], operation: &str, param: &str) -> Option
 /// Whether `tool` may set what `setting` sets: a parameter it owns, of one of
 /// `operations`, with a value its schema takes.
 pub fn setting(
-    tool: &dyn Tool,
+    tool: &dyn ProcessingTool,
     operations: &[&dyn Operation],
     setting: &Setting,
 ) -> Result<(), ToolError> {
@@ -312,7 +322,7 @@ pub const ONE_STEP_FROM_DEFAULT: [(&str, &str); 2] = [
 /// those of [`ONE_STEP_FROM_DEFAULT`], within one f32 step. Empty when they hold, and for a
 /// tool that is not switched.
 pub fn switched_defaults(
-    tool: &dyn Tool,
+    tool: &dyn ProcessingTool,
     operations: &[&dyn Operation],
     image: &ImageContext,
 ) -> Vec<String> {
@@ -385,11 +395,14 @@ fn sweep_values(control: &Control) -> Vec<ControlValue> {
 /// Sweeps `tool`'s binding over `image`: at its defaults it must set nothing; with
 /// each control alone across its range, and with every control at one end of its range
 /// together, it must set only parameters it owns, each within its schema. With each
-/// control alone across its range, its follow writes ([`Tool::follow`]) must name other
-/// controls of the tool, each within its range. Over the same states each number's
-/// range must hold (decision 30's rules). Returns what fails, empty when the binding
-/// holds.
-pub fn sweep(tool: &dyn Tool, operations: &[&dyn Operation], image: &ImageContext) -> Vec<String> {
+/// control alone across its range, its follow writes ([`ProcessingTool::follow`]) must name
+/// other controls of the tool, each within its range. Over the same states each number's
+/// range must hold (decision 30's rules). Returns what fails, empty when the binding holds.
+pub fn sweep(
+    tool: &dyn ProcessingTool,
+    operations: &[&dyn Operation],
+    image: &ImageContext,
+) -> Vec<String> {
     let definition = tool.definition();
     let defaults = tool.defaults(image);
     let base = Base::new(operations, image);
@@ -445,7 +458,7 @@ pub fn sweep(tool: &dyn Tool, operations: &[&dyn Operation], image: &ImageContex
         }
         for set in tool.bind(&values, image, &base) {
             if let Err(error) = setting(tool, operations, &set) {
-                problems.push(format!("{}, {what}: {error}", definition.id));
+                problems.push(format!("{}, {what}: {error}", definition.tool.id));
             }
         }
     }
@@ -459,12 +472,12 @@ pub fn sweep(tool: &dyn Tool, operations: &[&dyn Operation], image: &ImageContex
 /// definition's for a control a lossless view covers; one [`clamp`] pass must bring every
 /// number inside; and no preset option written over the defaults may need one.
 fn range_problems(
-    tool: &dyn Tool,
+    tool: &dyn ProcessingTool,
     image: &ImageContext,
     states: &[(String, Controls)],
 ) -> Vec<String> {
     let definition = tool.definition();
-    let id = definition.id;
+    let id = definition.tool.id;
     let mut problems = Vec::new();
     let numbers: Vec<&Control> = definition
         .controls
@@ -539,7 +552,7 @@ fn range_problems(
             problems.push(format!("{id}, {what}: one clamp pass is not enough"));
         }
     }
-    for row in definition.presets {
+    for row in definition.preset_rows {
         for &option in row.options {
             let Some(written) = tool.preset(row.id, option, image) else {
                 continue;
@@ -560,7 +573,7 @@ fn range_problems(
 /// write to the control itself, to a control the tool lacks, or of a value its control
 /// cannot take.
 fn follow_problems(
-    tool: &dyn Tool,
+    tool: &dyn ProcessingTool,
     control: &str,
     values: &crate::Controls,
     image: &ImageContext,
@@ -577,7 +590,10 @@ fn follow_problems(
                 Err(error) => error.to_string(),
             },
         };
-        problems.push(format!("{}, following {what}: {problem}", definition.id));
+        problems.push(format!(
+            "{}, following {what}: {problem}",
+            definition.tool.id
+        ));
     }
     problems
 }
@@ -588,19 +604,21 @@ mod tests {
     use apertrust_plugin::Value;
 
     use super::*;
-    use crate::definition::{Definition, Picker, PickerKind, Quad, Row, Slider, Tab};
+    use crate::definition::{
+        Picker, PickerKind, ProcessingDefinition, Quad, Row, Slider, Tab, ToolDefinition,
+    };
     use crate::testing::{self, Sample};
 
     /// A tool with one control, owning `owns`, whose binding sets `sets` whenever the
     /// control is off its default.
     struct Fake {
-        definition: &'static Definition,
+        definition: &'static ProcessingDefinition,
         owns: &'static [Owned],
         sets: Vec<Setting>,
     }
 
-    impl Tool for Fake {
-        fn definition(&self) -> &'static Definition {
+    impl ProcessingTool for Fake {
+        fn definition(&self) -> &'static ProcessingDefinition {
             self.definition
         }
 
@@ -634,20 +652,22 @@ mod tests {
             rows: &[Row::Slider(Slider::new("amount"))],
         }];
         Fake {
-            definition: Box::leak(Box::new(Definition {
-                id,
+            definition: Box::leak(Box::new(ProcessingDefinition {
+                tool: ToolDefinition {
+                    id,
+                    tabs: TABS,
+                    before: &[],
+                    after: &[],
+                    menus: &[],
+                },
                 version: 1,
                 layers: true,
                 auto: false,
                 switched: false,
                 controls: CONTROLS,
-                tabs: TABS,
-                before: &[],
-                after: &[],
-                presets: &[],
+                preset_rows: &[],
                 views: &[],
                 pickers: &[],
-                menus: &[],
                 facts: None,
             })),
             owns: Box::leak(owns.into()),
@@ -737,13 +757,16 @@ mod tests {
         // A tool owning `owns` with one picker on its slider's quad.
         let picking = |owns: &[Owned], picker: Picker| {
             let mut tool = fake("picking", owns, Vec::new());
-            tool.definition = Box::leak(Box::new(Definition {
-                tabs: Box::leak(Box::new([Tab {
-                    id: None,
-                    rows: Box::leak(Box::new([Row::Slider(
-                        Slider::new("amount").quad(Quad::Picker(picker.id)),
-                    )])),
-                }])),
+            tool.definition = Box::leak(Box::new(ProcessingDefinition {
+                tool: ToolDefinition {
+                    tabs: Box::leak(Box::new([Tab {
+                        id: None,
+                        rows: Box::leak(Box::new([Row::Slider(
+                            Slider::new("amount").quad(Quad::Picker(picker.id)),
+                        )])),
+                    }])),
+                    ..tool.definition.tool
+                },
                 pickers: Box::leak(Box::new([picker])),
                 ..*tool.definition
             }));
@@ -811,8 +834,11 @@ mod tests {
                 is: &["true"],
                 rows: AMOUNT,
             }]));
-            tool.definition = Box::leak(Box::new(Definition {
-                tabs: Box::leak(Box::new([Tab { id: None, rows }])),
+            tool.definition = Box::leak(Box::new(ProcessingDefinition {
+                tool: ToolDefinition {
+                    tabs: Box::leak(Box::new([Tab { id: None, rows }])),
+                    ..tool.definition.tool
+                },
                 ..*tool.definition
             }));
             tool
@@ -890,8 +916,8 @@ mod tests {
     /// find; its presets and pair are Sample's.
     struct Ranged(&'static str);
 
-    impl Tool for Ranged {
-        fn definition(&self) -> &'static Definition {
+    impl ProcessingTool for Ranged {
+        fn definition(&self) -> &'static ProcessingDefinition {
             Sample.definition()
         }
 
@@ -1009,7 +1035,7 @@ mod tests {
             assert!(
                 !sweep(tool, OPERATIONS, &image).is_empty(),
                 "{}",
-                tool.definition.id
+                tool.definition.tool.id
             );
         }
         let fine = fake(

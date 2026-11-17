@@ -114,7 +114,7 @@ What darktable's page has or does that the panel does not yet:
 - **Control ids:** darktable's parameter names, `strength` and `distance`, so `--set` and scripts name what darktable's history names, as RGB primaries' do. They are darktable's labels too.
 - **When the operation is planned:** while the tool is on (decision 32), from the first write of a control until the tool's reset, whatever the controls hold.
 - **What binds:** each control only while off its default, darktable's 0.2, the operation's own.
-- **The distance at a strength of 0:** enabled, as darktable draws it (no `gtk_widget_set_sensitive`). `Tool::available` is kept for what darktable's own GUI disables (decision 30).
+- **The distance at a strength of 0:** enabled, as darktable draws it (no `gtk_widget_set_sensitive`). `ProcessingTool::available` is kept for what darktable's own GUI disables (decision 30).
 - **Units and decimals:** darktable's: the parameters as they are, the strength's two decimals and the distance's three. darktable's slider shows no percentage.
 - **Row ids:** Z, for haZe removal, D left for the detail tools (denoise, diffuse or sharpen).
 - **The files' names:** by the tool's English name, `haze_removal.rs` and this page, `haze-removal.md`, apart from the operation's `hazeremoval` (the `tool-bindings` skill).

@@ -42,9 +42,9 @@ pub enum Mark {
 /// A tool's values: for each control a value where one is set, its default for the
 /// photo otherwise, and a mark. A control can be kept without a value, held at its
 /// default. Controls are named by id; values read from an older edit may name controls
-/// the tool no longer has, until [`crate::Tool::migrate`] maps them.
+/// the tool no longer has, until [`crate::ProcessingTool::migrate`] maps them.
 ///
-/// A switched tool (decision 32, [`crate::Definition::switched`]) is on while
+/// A switched tool (decision 32, [`crate::ProcessingDefinition::switched`]) is on while
 /// [`Self::enabled`] holds: off, it holds no value, only marks, and renders nothing; on,
 /// it renders with darktable's defaults for the controls it holds no value for. A tool
 /// that is not switched never sets it.
@@ -156,7 +156,7 @@ impl ToolValues {
     }
 }
 
-/// Every control's untouched value for a photo ([`crate::Tool::defaults`]).
+/// Every control's untouched value for a photo ([`crate::ProcessingTool::defaults`]).
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Controls(BTreeMap<&'static str, ControlValue>);
 

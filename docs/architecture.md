@@ -167,7 +167,7 @@ Details: [plugins.md](plugins.md), with the order in [engine.md, Order](engine.m
 
 `apertrust-tools` describes each processing tool as static data, darktable's page with its tabs and collapsible groups, and binds it to operation parameters with a pure function the session runs (decisions 28 to 33); the utilities join that model in decision 93's steps, planned. Preset rows, lossless views and curves are other views of the same stored values; one tone mapper is planned per edit.
 
-Every tool is planned to share one declaration, `ToolDefinition`, embedded in a processing tool's `ProcessingDefinition` and a utility's `UtilityDefinition`, as darktable's processing and utility modules both begin with `dt_action_t`; the engine runs `ProcessingTool`, the app `UtilityTool`, and the app draws every tool's header, page and ⋯ alike (decision 93).
+Every tool shares one declaration, `ToolDefinition`, embedded in a processing tool's `ProcessingDefinition` and a utility's `UtilityDefinition`, as darktable's processing and utility modules both begin with `dt_action_t` (decision 93). The engine runs `ProcessingTool`; planned, the app runs `UtilityTool` and draws every tool's header, page and ⋯ alike.
 
 Details: [engine.md, The tool layer](engine.md#the-tool-layer), [tools/README.md](tools/README.md) for every tool of the first pass and its invariants.
 
@@ -204,7 +204,7 @@ Details: [history.md](history.md).
 
 ### Colour pickers
 
-One active picker per session, a tool's or the Colour picker's, and stored samples beside it. Built: 79.1, the Colour picker's own picker through the session, its region kept through the geometry and measured on the frame; 79.2, each tool's pickers declared in its definition with `Tool::pick`; 79.3, tool pickers in the engine, measured at their operation in the render or a sample-only render and applied through the tool's `pick`; the rest planned. The engine reduces the area on the GPU at the tool's operation in the fitted viewport pipe and on the frame, reads back a few numbers without waiting, and the session applies a reading through the tool's own pure `pick` as one change of source Auto, the same for every client. The marks on the photo use the design system's one overlay language (decision 79).
+One active picker per session, a tool's or the Colour picker's, and stored samples beside it. Built: 79.1, the Colour picker's own picker through the session, its region kept through the geometry and measured on the frame; 79.2, each tool's pickers declared in its definition with `ProcessingTool::pick`; 79.3, tool pickers in the engine, measured at their operation in the render or a sample-only render and applied through the tool's `pick`; the rest planned. The engine reduces the area on the GPU at the tool's operation in the fitted viewport pipe and on the frame, reads back a few numbers without waiting, and the session applies a reading through the tool's own pure `pick` as one change of source Auto, the same for every client. The marks on the photo use the design system's one overlay language (decision 79).
 
 Details: [pickers.md](pickers.md).
 

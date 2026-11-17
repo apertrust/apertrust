@@ -64,7 +64,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use apertrust_library::clock::{Clock, MachineId};
 use apertrust_plugin::{Operation, ParamValues};
-use apertrust_tools::{ControlValue, Definition, Mark, Tool, ToolValues, check};
+use apertrust_tools::{
+    ControlValue, Mark, ProcessingDefinition, ProcessingTool, ToolValues, check,
+};
 
 use apertrust_library::sidecar::{self as text, Document, Entry, FIRST_COPY, VirtualCopy};
 pub use apertrust_library::sidecar::{
@@ -126,7 +128,7 @@ pub fn write(
     path: &Path,
     edit: &Edit,
     operations: &[&dyn Operation],
-    tools: &[&dyn Tool],
+    tools: &[&dyn ProcessingTool],
     build: &str,
 ) -> io::Result<()> {
     write_xml(path, &to_xml(edit, operations, tools, build))
@@ -139,7 +141,7 @@ pub fn write_log(
     file: &Edits,
     log: &Log,
     clocks: &[Clock],
-    (operations, tools): (&[&dyn Operation], &[&dyn Tool]),
+    (operations, tools): (&[&dyn Operation], &[&dyn ProcessingTool]),
     build: &str,
 ) -> io::Result<()> {
     write_xml(
@@ -154,7 +156,7 @@ pub fn write_log(
 pub fn read(
     path: &Path,
     operations: &[&dyn Operation],
-    tools: &[&dyn Tool],
+    tools: &[&dyn ProcessingTool],
     retired: &[&str],
 ) -> Result<Loaded, SidecarError> {
     let loaded = from_edits(text::read_edits(path)?, operations, tools, retired);
@@ -171,13 +173,13 @@ pub fn read(
 pub fn to_xml(
     edit: &Edit,
     operations: &[&dyn Operation],
-    tools: &[&dyn Tool],
+    tools: &[&dyn ProcessingTool],
     build: &str,
 ) -> String {
     let mut document = Document::new(build);
     for tool in tools {
         let definition = tool.definition();
-        if let Some(values) = edit.tools.get(definition.id).filter(|v| !v.is_empty()) {
+        if let Some(values) = edit.tools.get(definition.tool.id).filter(|v| !v.is_empty()) {
             document.entries.push(tool_entry(definition, values));
         }
     }
@@ -198,7 +200,7 @@ pub fn log_xml(
     file: &Edits,
     log: &Log,
     clocks: &[Clock],
-    (operations, tools): (&[&dyn Operation], &[&dyn Tool]),
+    (operations, tools): (&[&dyn Operation], &[&dyn ProcessingTool]),
     build: &str,
 ) -> String {
     let first = file.copies.first();
@@ -230,7 +232,7 @@ pub fn log_xml(
 pub fn from_xml(
     xml: &str,
     operations: &[&dyn Operation],
-    tools: &[&dyn Tool],
+    tools: &[&dyn ProcessingTool],
     retired: &[&str],
 ) -> Result<Loaded, SidecarError> {
     from_xml_at(xml, None, operations, tools, retired)
@@ -244,7 +246,7 @@ pub fn from_xml_at(
     xml: &str,
     modified: Option<SystemTime>,
     operations: &[&dyn Operation],
-    tools: &[&dyn Tool],
+    tools: &[&dyn ProcessingTool],
     retired: &[&str],
 ) -> Result<Loaded, SidecarError> {
     let modified = (modified.and_then(|modified| modified.duration_since(UNIX_EPOCH).ok()))
@@ -261,7 +263,7 @@ pub fn from_xml_at(
 fn from_edits(
     file: Edits,
     operations: &[&dyn Operation],
-    tools: &[&dyn Tool],
+    tools: &[&dyn ProcessingTool],
     retired: &[&str],
 ) -> Loaded {
     let mut newer = file.newer();
@@ -340,7 +342,7 @@ fn typed_step(step: &text::Step, mut entries: Vec<history::Entry>) -> Step {
 fn read_entry(
     entry: Entry,
     warnings: &mut Vec<String>,
-    (operations, tools): (&[&dyn Operation], &[&dyn Tool]),
+    (operations, tools): (&[&dyn Operation], &[&dyn ProcessingTool]),
     retired: &[&str],
 ) -> (Option<history::Entry>, Option<Newer>) {
     let mut read = Edit::default();
@@ -361,7 +363,7 @@ fn read_entry(
                 [(kept, Mark::Kept), (auto, Mark::Auto)],
                 (enabled, controls),
             );
-            let known = tools.iter().any(|m| m.definition().id == tool);
+            let known = tools.iter().any(|m| m.definition().tool.id == tool);
             let entry = (known || newer.is_some()).then(|| history::Entry::Tool {
                 values: read.tools.remove(&tool).unwrap_or_default(),
                 tool,
@@ -395,7 +397,11 @@ fn read_entry(
 
 /// A step as the text layer holds it: its id, clock, source, note and batch as text, and
 /// its entries each as version 1 writes one.
-fn step_text(step: &Step, operations: &[&dyn Operation], tools: &[&dyn Tool]) -> text::Step {
+fn step_text(
+    step: &Step,
+    operations: &[&dyn Operation],
+    tools: &[&dyn ProcessingTool],
+) -> text::Step {
     text::Step {
         id: step.id.to_string(),
         clock: Some(step.clock),
@@ -414,10 +420,14 @@ fn step_text(step: &Step, operations: &[&dyn Operation], tools: &[&dyn Tool]) ->
 /// An entry as version 1 writes it; one of a tool or an operation this build does not
 /// have, which only an edit open for viewing only holds and which is never written, by its
 /// id alone.
-fn entry_text(entry: &history::Entry, operations: &[&dyn Operation], tools: &[&dyn Tool]) -> Entry {
+fn entry_text(
+    entry: &history::Entry,
+    operations: &[&dyn Operation],
+    tools: &[&dyn ProcessingTool],
+) -> Entry {
     match entry {
         history::Entry::Tool { tool, values } => {
-            match tools.iter().find(|m| m.definition().id == tool) {
+            match tools.iter().find(|m| m.definition().tool.id == tool) {
                 Some(found) => tool_entry(found.definition(), values),
                 None => Entry::Tool {
                     tool: tool.clone(),
@@ -444,7 +454,7 @@ fn entry_text(entry: &history::Entry, operations: &[&dyn Operation], tools: &[&d
 
 /// A tool's state as its entry: its version, its marks, `enabled` where a switched tool
 /// is on, and each control set, in the definition's order.
-fn tool_entry(definition: &Definition, values: &ToolValues) -> Entry {
+fn tool_entry(definition: &ProcessingDefinition, values: &ToolValues) -> Entry {
     let marked = |mark| {
         definition
             .controls
@@ -455,7 +465,7 @@ fn tool_entry(definition: &Definition, values: &ToolValues) -> Entry {
             .collect()
     };
     Entry::Tool {
-        tool: definition.id.to_owned(),
+        tool: definition.tool.id.to_owned(),
         version: Some(definition.version.to_string()),
         kept: marked(Mark::Kept),
         auto: marked(Mark::Auto),
@@ -494,12 +504,12 @@ fn operation_entry(operation: &dyn Operation, params: &ParamValues) -> Entry {
 fn read_tool(
     edit: &mut Edit,
     warnings: &mut Vec<String>,
-    (tools, retired): (&[&dyn Tool], &[&str]),
+    (tools, retired): (&[&dyn ProcessingTool], &[&str]),
     (id, saved): (&str, Option<&str>),
     marks: [(Vec<String>, Mark); 2],
     (enabled, controls): (Option<String>, Vec<(String, String)>),
 ) -> Option<Newer> {
-    let Some(tool) = tools.iter().find(|m| m.definition().id == id) else {
+    let Some(tool) = tools.iter().find(|m| m.definition().tool.id == id) else {
         if retired.contains(&id) {
             warnings.push(format!("tool {id} is retired; left out"));
             return None;
@@ -637,7 +647,7 @@ fn read_tool(
     }
     let newer = newer.or(incompatible).or(enabled);
     if !checked.is_empty() {
-        edit.tools.insert(definition.id.to_owned(), checked);
+        edit.tools.insert(definition.tool.id.to_owned(), checked);
     }
     newer
 }
@@ -653,12 +663,12 @@ fn read_tool(
 /// from the photo, as Lens correction's will, would take a value at its per-photo default
 /// for one off it here, and read as on.
 fn switch(
-    definition: &Definition,
+    definition: &ProcessingDefinition,
     values: &ToolValues,
     checked: &mut ToolValues,
     warnings: &mut Vec<String>,
 ) -> Option<Newer> {
-    let id = definition.id;
+    let id = definition.tool.id;
     if !definition.switched {
         if values.enabled() {
             warnings.push(format!(
@@ -708,7 +718,7 @@ fn read_operation(
     edit: &mut Edit,
     warnings: &mut Vec<String>,
     operations: &[&dyn Operation],
-    tools: &[&dyn Tool],
+    tools: &[&dyn ProcessingTool],
     (id, saved): (&str, Option<u32>),
     params: Vec<(String, String)>,
 ) -> Option<Newer> {
@@ -769,7 +779,7 @@ fn read_operation(
         if let Some(owner) = check::owner(tools, manifest.id, param.name) {
             warnings.push(format!(
                 "{id}.{name}: the tool {} owns it now; left out",
-                owner.definition().id
+                owner.definition().tool.id
             ));
             continue;
         }
@@ -819,8 +829,8 @@ pub(crate) mod tests {
         Schema, Slot, Stage, Value,
     };
     use apertrust_tools::{
-        ChoiceStyle, Control, ControlKind, ControlValue, Definition, Owned, Row, Setting, Slider,
-        Tab, Widget,
+        ChoiceStyle, Control, ControlKind, ControlValue, Owned, ProcessingDefinition, Row, Setting,
+        Slider, Tab, ToolDefinition, Widget,
     };
 
     use super::*;
@@ -958,8 +968,30 @@ pub(crate) mod tests {
     /// called `strength` `amount`.
     struct Look;
 
-    static LOOK: Definition = Definition {
-        id: "look",
+    static LOOK: ProcessingDefinition = ProcessingDefinition {
+        tool: ToolDefinition {
+            id: "look",
+            tabs: &[Tab {
+                id: None,
+                rows: &[
+                    Row::Slider(Slider::new("strength")),
+                    Row::Choice {
+                        control: "style",
+                        style: ChoiceStyle::List,
+                    },
+                    Row::Toggle {
+                        control: "preserve",
+                    },
+                    Row::Custom {
+                        widget: Widget::Curve,
+                        controls: &["curve"],
+                    },
+                ],
+            }],
+            before: &[],
+            after: &[],
+            menus: &[],
+        },
         version: 2,
         layers: true,
         auto: true,
@@ -999,34 +1031,14 @@ pub(crate) mod tests {
                 unported: false,
             },
         ],
-        tabs: &[Tab {
-            id: None,
-            rows: &[
-                Row::Slider(Slider::new("strength")),
-                Row::Choice {
-                    control: "style",
-                    style: ChoiceStyle::List,
-                },
-                Row::Toggle {
-                    control: "preserve",
-                },
-                Row::Custom {
-                    widget: Widget::Curve,
-                    controls: &["curve"],
-                },
-            ],
-        }],
-        before: &[],
-        after: &[],
-        presets: &[],
+        preset_rows: &[],
         views: &[],
         pickers: &[],
-        menus: &[],
         facts: None,
     };
 
-    impl Tool for Look {
-        fn definition(&self) -> &'static Definition {
+    impl ProcessingTool for Look {
+        fn definition(&self) -> &'static ProcessingDefinition {
             &LOOK
         }
 
@@ -1061,7 +1073,7 @@ pub(crate) mod tests {
     }
 
     const OPERATIONS: &[&dyn Operation] = &[&Fake, &Optional];
-    const TOOLS: &[&dyn Tool] = &[&Look];
+    const TOOLS: &[&dyn ProcessingTool] = &[&Look];
     /// The build the tests' edits are written by, a development build's version.
     const BUILD: &str = "0.4.0+12~g1a2b3c4";
 
@@ -1483,7 +1495,7 @@ pub(crate) mod tests {
     }
 
     /// Grain, a switched tool (decision 32), with the fake's tools.
-    const WITH_GRAIN: &[&dyn Tool] = &[&Look, &apertrust_tools::grain::Grain];
+    const WITH_GRAIN: &[&dyn ProcessingTool] = &[&Look, &apertrust_tools::grain::Grain];
 
     /// A switched tool on writes `enabled`, with only its values off darktable's
     /// defaults, none at them; one off, only its marks, and nothing at all untouched.

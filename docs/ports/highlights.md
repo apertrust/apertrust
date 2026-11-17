@@ -138,7 +138,7 @@ The tool is built (`crates/tools/src/highlight_reconstruction.rs`, [../tools/hig
 
 The other methods' controls are in its definition, not ported, at darktable's defaults, with no parameter here until their methods come.
 
-The method lists darktable's methods for the photo, as `reload_defaults` rebuilds its list (`Tool::options`, decision 30). Reconstruct colour, which darktable lists on no photo, is left out.
+The method lists darktable's methods for the photo, as `reload_defaults` rebuilds its list (`ProcessingTool::options`, decision 30). Reconstruct colour, which darktable lists on no photo, is left out.
 
 An edit from another photo that holds a method this photo does not list renders as darktable's darkroom renders it:
 

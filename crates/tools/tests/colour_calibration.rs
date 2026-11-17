@@ -50,7 +50,7 @@ use apertrust_plugin::{ImageContext, ParamValues, Value};
 use apertrust_tools::colour_calibration::{
     CAT, ColourCalibration, HUE_CHROMA, ILLUMINANT_VALUES, ILLUMINANTS, PARAMS,
 };
-use apertrust_tools::{Base, ControlKind, ControlValue, Controls, Row, TOOLS, Tool};
+use apertrust_tools::{Base, ControlKind, ControlValue, Controls, ProcessingTool, Row, TOOLS};
 use golden::cases::CASES;
 
 use common::{
@@ -983,7 +983,7 @@ fn shown(values: &Controls) -> Vec<&'static str> {
     }
     let mut out = Vec::new();
     walk(
-        ColourCalibration.definition().tabs[0].rows,
+        ColourCalibration.definition().tool.tabs[0].rows,
         values,
         &mut out,
     );
@@ -1001,9 +1001,9 @@ fn shown(values: &Controls) -> Vec<&'static str> {
 #[test]
 fn c7_the_cat_tab_shows_its_rows_as_darktable_does() {
     let definition = ColourCalibration.definition();
-    assert_eq!(definition.tabs[0].id, Some("cat"));
+    assert_eq!(definition.tool.tabs[0].id, Some("cat"));
     assert!(matches!(
-        definition.tabs[0].rows.last(),
+        definition.tool.tabs[0].rows.last(),
         Some(Row::Group {
             id: "area_colour_mapping",
             ..

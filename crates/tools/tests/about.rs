@@ -284,7 +284,7 @@ const TRANSLATED: &[(&str, &str, &str)] = &[
 
 #[test]
 fn every_built_tool_s_facts_are_darktable_s_word_for_word() {
-    let ids: Vec<&str> = TOOLS.iter().map(|tool| tool.definition().id).collect();
+    let ids: Vec<&str> = TOOLS.iter().map(|tool| tool.definition().tool.id).collect();
     let listed: Vec<&str> = DARKTABLE.iter().map(|(id, _, _)| *id).collect();
     let mut sorted = (ids.clone(), listed.clone());
     sorted.0.sort_unstable();
@@ -294,11 +294,11 @@ fn every_built_tool_s_facts_are_darktable_s_word_for_word() {
         let definition = tool.definition();
         let (_, source, [purpose, input, process, output]) = DARKTABLE
             .iter()
-            .find(|(id, _, _)| *id == definition.id)
+            .find(|(id, _, _)| *id == definition.tool.id)
             .expect("listed");
         let facts = definition
             .facts
-            .unwrap_or_else(|| panic!("{} has no facts", definition.id));
+            .unwrap_or_else(|| panic!("{} has no facts", definition.tool.id));
         assert_eq!(
             [
                 facts.purpose.darktable(),
@@ -308,12 +308,12 @@ fn every_built_tool_s_facts_are_darktable_s_word_for_word() {
             ],
             [*purpose, *input, *process, *output],
             "{} against src/iop/{source}",
-            definition.id
+            definition.tool.id
         );
         assert!(
             facts.works_on().is_some(),
             "{} works on nothing the tooltip can say",
-            definition.id
+            definition.tool.id
         );
     }
 }
@@ -336,7 +336,7 @@ fn the_plain_words_are_the_designed_ones_for_the_tools_shown() {
     for (id, kind, place) in expected {
         let tool = TOOLS
             .iter()
-            .find(|tool| tool.definition().id == id)
+            .find(|tool| tool.definition().tool.id == id)
             .expect("built");
         let facts = tool.definition().facts.expect("darktable's");
         assert_eq!(
@@ -351,8 +351,8 @@ fn the_plain_words_are_the_designed_ones_for_the_tools_shown() {
 fn every_tool_and_utility_says_what_it_is_for_in_every_language() {
     let ids = TOOLS
         .iter()
-        .map(|tool| tool.definition().id)
-        .chain(UTILITIES.iter().map(|utility| utility.id));
+        .map(|tool| tool.definition().tool.id)
+        .chain(UTILITIES.iter().map(|utility| utility.tool.id));
     let mut wanted: Vec<String> = ids.map(messages::description).collect();
     wanted.extend(Kind::ALL.map(|kind| kind.message().to_owned()));
     wanted.extend(WorksOn::ALL.map(|place| place.message().to_owned()));
@@ -391,8 +391,8 @@ fn each_description_is_a_sentence_or_two() {
     let english = Translator::new(Locale::EnGb);
     let ids = TOOLS
         .iter()
-        .map(|tool| tool.definition().id)
-        .chain(UTILITIES.iter().map(|utility| utility.id));
+        .map(|tool| tool.definition().tool.id)
+        .chain(UTILITIES.iter().map(|utility| utility.tool.id));
     for id in ids {
         let text = english.text(&messages::description(id));
         let sentences = text.matches(". ").count() + usize::from(text.ends_with('.'));

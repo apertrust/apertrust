@@ -47,7 +47,7 @@ use apertrust_plugin::{
     Camera, Format, ImageContext, ImageDesc, Operation, ParamValues, Pattern, Stage,
 };
 use apertrust_tools::raw_black_white_point::{BLACK, RawBlackWhitePoint, WHITE};
-use apertrust_tools::{Base, ControlValue, TOOLS, Tool};
+use apertrust_tools::{Base, ControlValue, ProcessingTool, TOOLS};
 
 use common::{Bench, exact, id, small_raw};
 use corpus::{CORPUS_VIEWPORT, NINETY_D, corpus_bench, decoded, each_corpus_raw, export_bench};

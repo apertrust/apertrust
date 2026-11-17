@@ -24,8 +24,8 @@
 //!   inpaint opposed, ported and the default, then reconstruct in LCh, clip highlights,
 //!   segmentation based and guided laplacians, which are not ported, so they are drawn
 //!   disabled and refused. It lists them on every photo for now, an interim until
-//!   `Tool::options` lands (decision 30): then each photo lists darktable's own, clip
-//!   highlights alone and the default on an image that is not a raw or a four-colour
+//!   `ProcessingTool::options` lands (decision 30): then each photo lists darktable's own,
+//!   clip highlights alone and the default on an image that is not a raw or a four-colour
 //!   sensor's raw, and a stored method the photo lacks binds as darktable's `gui_changed`
 //!   rewrites it (`docs/tools/highlight-reconstruction.md`, Controls).
 //! - **Clipping threshold,** 0 to 2 with darktable's three decimals: where clipping starts,
@@ -50,8 +50,10 @@
 use apertrust_plugin::{ImageContext, Value};
 
 use crate::about::{Fact, Facts, Purpose};
-use crate::definition::{ChoiceStyle, Control, ControlKind, Definition, Row, Slider, Tab, Unit};
-use crate::{Base, ControlValue, Controls, Owned, Setting, Tool, ToolValues};
+use crate::definition::{
+    ChoiceStyle, Control, ControlKind, ProcessingDefinition, Row, Slider, Tab, ToolDefinition, Unit,
+};
+use crate::{Base, ControlValue, Controls, Owned, ProcessingTool, Setting, ToolValues};
 
 pub struct HighlightReconstruction;
 
@@ -185,72 +187,74 @@ const fn whole(control: &'static str) -> Row {
 /// Noise level's row: darktable's three digits.
 const NOISE_LEVEL: Row = Row::Slider(Slider::new("noise_level").decimals(3));
 
-static DEFINITION: Definition = Definition {
-    id: "highlights",
+static DEFINITION: ProcessingDefinition = ProcessingDefinition {
+    tool: ToolDefinition {
+        id: "highlights",
+        tabs: &[Tab {
+            id: None,
+            rows: &[
+                Row::Choice {
+                    control: "mode",
+                    style: ChoiceStyle::List,
+                },
+                // `dt_bauhaus_slider_set_digits(g->clip, 3)`: "1.000".
+                Row::Slider(Slider::new(CLIP).decimals(3)),
+                // `gui_changed`: segmentation based shows combine, candidating and rebuild,
+                // and a rebuild mode strength and noise level.
+                Row::When {
+                    control: "mode",
+                    is: &["segments"],
+                    rows: &[
+                        whole("combine"),
+                        whole("candidating"),
+                        Row::Choice {
+                            control: "recovery",
+                            style: ChoiceStyle::List,
+                        },
+                        Row::When {
+                            control: "recovery",
+                            is: &[
+                                "generic",
+                                "flat_generic",
+                                "small_segments",
+                                "large_segments",
+                                "flat_small_segments",
+                                "flat_large_segments",
+                            ],
+                            rows: &[whole("strength"), NOISE_LEVEL],
+                        },
+                    ],
+                },
+                // Guided laplacians, on a Bayer raw, shows noise level, iterations, a flat
+                // colour and the diameter.
+                Row::When {
+                    control: "mode",
+                    is: &["laplacian"],
+                    rows: &[
+                        NOISE_LEVEL,
+                        whole("iterations"),
+                        whole("solid_color"),
+                        Row::Choice {
+                            control: "scales",
+                            style: ChoiceStyle::List,
+                        },
+                    ],
+                },
+            ],
+        }],
+        before: &[],
+        after: &[],
+        menus: &[],
+    },
     version: 1,
     layers: false,
     auto: false,
     switched: false,
     controls: &CONTROLS,
-    tabs: &[Tab {
-        id: None,
-        rows: &[
-            Row::Choice {
-                control: "mode",
-                style: ChoiceStyle::List,
-            },
-            // `dt_bauhaus_slider_set_digits(g->clip, 3)`: "1.000".
-            Row::Slider(Slider::new(CLIP).decimals(3)),
-            // `gui_changed`: segmentation based shows combine, candidating and rebuild,
-            // and a rebuild mode strength and noise level.
-            Row::When {
-                control: "mode",
-                is: &["segments"],
-                rows: &[
-                    whole("combine"),
-                    whole("candidating"),
-                    Row::Choice {
-                        control: "recovery",
-                        style: ChoiceStyle::List,
-                    },
-                    Row::When {
-                        control: "recovery",
-                        is: &[
-                            "generic",
-                            "flat_generic",
-                            "small_segments",
-                            "large_segments",
-                            "flat_small_segments",
-                            "flat_large_segments",
-                        ],
-                        rows: &[whole("strength"), NOISE_LEVEL],
-                    },
-                ],
-            },
-            // Guided laplacians, on a Bayer raw, shows noise level, iterations, a flat
-            // colour and the diameter.
-            Row::When {
-                control: "mode",
-                is: &["laplacian"],
-                rows: &[
-                    NOISE_LEVEL,
-                    whole("iterations"),
-                    whole("solid_color"),
-                    Row::Choice {
-                        control: "scales",
-                        style: ChoiceStyle::List,
-                    },
-                ],
-            },
-        ],
-    }],
-    before: &[],
-    after: &[],
-    presets: &[],
+    preset_rows: &[],
     views: &[],
     pickers: &[],
     // darktable's `description()` in src/iop/highlights.c at the reference release.
-    menus: &[],
     facts: Some(Facts {
         purpose: Purpose::Corrective,
         input: Fact::LinearRawSceneReferred,
@@ -263,8 +267,8 @@ static DEFINITION: Definition = Definition {
 /// darktable's and owns them all.
 static OWNS: [Owned; 2] = [Owned::new(HIGHLIGHTS, "mode"), Owned::new(HIGHLIGHTS, CLIP)];
 
-impl Tool for HighlightReconstruction {
-    fn definition(&self) -> &'static Definition {
+impl ProcessingTool for HighlightReconstruction {
+    fn definition(&self) -> &'static ProcessingDefinition {
         &DEFINITION
     }
 
@@ -286,7 +290,8 @@ impl Tool for HighlightReconstruction {
     /// depends on the tool's values. The controls not ported are unavailable
     /// everywhere, as the session reports every such control. A raw with no colour filter
     /// array is read as monochrome; a linear raw has none either, so the image context
-    /// must tell the two apart before `Tool::options` lists a linear raw's two methods.
+    /// must tell the two apart before `ProcessingTool::options` lists a linear raw's two
+    /// methods.
     fn available(&self, _: &str, _: &Controls, image: &ImageContext) -> bool {
         image
             .camera
@@ -390,8 +395,8 @@ mod tests {
 
     #[test]
     fn its_page_is_darktable_s_in_gui_init_s_order_on_one_untitled_tab() {
-        assert_eq!(DEFINITION.tabs.len(), 1);
-        assert_eq!(DEFINITION.tabs[0].id, None);
+        assert_eq!(DEFINITION.tool.tabs.len(), 1);
+        assert_eq!(DEFINITION.tool.tabs[0].id, None);
         let controls: Vec<&str> = CONTROLS.iter().map(|c| c.id).collect();
         assert_eq!(
             controls,
@@ -458,7 +463,7 @@ mod tests {
             values.set("mode", ControlValue::Choice(at(&METHODS, method)));
             values.set("recovery", ControlValue::Choice(at(&REBUILDS, recovery)));
             let mut out = Vec::new();
-            shown(DEFINITION.tabs[0].rows, &values, &mut out);
+            shown(DEFINITION.tool.tabs[0].rows, &values, &mut out);
             out
         };
         for method in ["opposed", "lch", "clip"] {

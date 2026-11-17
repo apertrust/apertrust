@@ -65,7 +65,7 @@ use apertrust_export::size::{self, Request};
 use apertrust_export::variables::{DateTime, Size};
 use apertrust_export::{ExportSettings, Format, Image, Places};
 use apertrust_plugin::{ImageContext, ImageDesc, Operation};
-use apertrust_tools::Tool;
+use apertrust_tools::ProcessingTool;
 use thiserror::Error;
 
 use crate::compute::GpuImage;
@@ -447,7 +447,7 @@ impl Snapshot {
 pub(crate) struct Run {
     pub gpu: GpuContext,
     pub operations: &'static [&'static dyn Operation],
-    pub tools: Vec<&'static dyn Tool>,
+    pub tools: Vec<&'static dyn ProcessingTool>,
     pub retired: &'static [&'static str],
     pub limits: Limits,
     pub load: Load,
@@ -1217,7 +1217,7 @@ mod tests {
     const BUILD: &str = "0.4.0+12~g1a2b3c4";
 
     /// The tools the tests edit with: `Sample`'s brightness moves exposure.
-    const TOOLS: &[&dyn Tool] = &[&Sample];
+    const TOOLS: &[&dyn ProcessingTool] = &[&Sample];
 
     fn gpu() -> GpuContext {
         pollster::block_on(GpuContext::new(&GpuOptions::default()))

@@ -79,10 +79,10 @@ Every variant of `Event` today, with its kind. "Through" is the number of comman
 
 **What `Values` holds** (decisions 17, 27, 28 and 30). For each tool, in the tools' order:
 
-- its controls, each with its value, its default for the photo, its marks (kept, Auto) and whether it can change the photo (`Tool::available`, recomputed after each change; a choice whose photo lists only the option it holds is unavailable);
-- for a number, its range, track and step for the tool's values (`ControlState::range`, from `Tool::range`; the definition's where the tool's code panics or gives one that does not hold, warned of once);
+- its controls, each with its value, its default for the photo, its marks (kept, Auto) and whether it can change the photo (`ProcessingTool::available`, recomputed after each change; a choice whose photo lists only the option it holds is unavailable);
+- for a number, its range, track and step for the tool's values (`ControlState::range`, from `ProcessingTool::range`; the definition's where the tool's code panics or gives one that does not hold, warned of once);
 - for a choice, the options this photo lists (`ControlState::options`, computed once as the photo opens; every option where the tool's code fails, warned of once);
-- whether its row shows on this photo (`ControlState::visible`, from `Tool::visible`) and a value of the photo's for its label (`ControlState::label_value`, from `Tool::label_value`), both computed as the photo opens and again where its decode's context replaces the metadata's, true and none where the tool's code panics (decision 88);
+- whether its row shows on this photo (`ControlState::visible`, from `ProcessingTool::visible`) and a value of the photo's for its label (`ControlState::label_value`, from `ProcessingTool::label_value`), both computed as the photo opens and again where its decode's context replaces the metadata's, true and none where the tool's code panics (decision 88);
 - each preset row's matching option (`PresetState`) and each view's coordinates (`CoordinateState`, [engine.md](engine.md#preset-rows-and-lossless-views));
 - each computed value, the number its operation computes from the photo as the edit renders it, while its row shows, else none (`ToolState::computed`, `ComputedState`, decision 87; [engine.md](engine.md#the-raws-histogram));
 - whether the tool is edited.
