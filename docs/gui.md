@@ -779,7 +779,7 @@ Phase 4: the menu appears with Layers, and its keys are set with their design. I
 - **The photo's zoom** has the keys macOS and commercial raw editors give a document's zoom, and Zoom to 100%, the view where the screen is the export (principle 2), has the single key Z. Both act at the point under the pointer when the pointer is over the photo. In Photo they zoom the photo, every cell together when several are shown.
 - **The layouts** join the menu with the Map and its central-bar toggle, once there are two: a choice of one is no choice. Map, chosen again, goes back to Photo, as its toggle and Shift+M do and as Zoom to 100% goes back to Fit. Choosing one changes only the central panel (decision 37).
 - **Browse** chooses the first tab holding Browse, as L does, wherever the workspace puts it. L is darktable's key for its lighttable, whose part Browse plays.
-- **Workspace** switches the side panel's tabs and nothing else; the same list is in the side panel's ⋮.
+- **Workspace** switches the side panel's tabs and the toolbar's items (decision 92, planned), nothing else; the same list is in the side panel's ⋮.
 - **Slideshow** plays the selected photos when several are selected, else the folder or album from the active photo.
 - **Clipping Warnings** is one item and one key, J, for both of the photo's clipping overlays: checked while both are on; choosing it turns both on, or both off when both are on. The scopes' corner toggles set each alone. One state, three places.
 - **Side Panel Tab** lists every tab, those under » too; only the first five have keys.
@@ -855,7 +855,7 @@ The menus open from one menu button, ☰, at the very start of the top panel, be
 | Access keys | None | On the top-level menus in the ☰'s menu, underlined while Alt is held | The same as Windows |
 | Keys spelt | By macOS, with its glyphs: ⌘⇧Z | As the tooltips spell them | As the tooltips spell them |
 
-- **A narrow top panel:** the ☰ never folds while shown, and the menus need no room of their own, so the top panel gives way only by its actions and words ([the top panel](#the-top-panel)); every action hidden under ⋯ (» with the toolbar, decision 92) is also in the menus. This matters since the window's minimum width is 500 points, for Windows' snap zones (decision 39; how the side panel gives way in a narrow window is an open design item, [Open questions](#open-questions)).
+- **A narrow top panel:** the ☰ never folds while shown, and the menus need no room of their own, so the top panel gives way only by its actions and words ([the top panel](#the-top-panel)); every app action hidden under ⋯ (» with the toolbar, decision 92) is also in the menus; a tool's action folded into » is always in its tool, and in a menu where the tool declares one (decision 91). This matters since the window's minimum width is 500 points, for Windows' snap zones (decision 39; how the side panel gives way in a narrow window is an open design item, [Open questions](#open-questions)).
 - **Inside an open menu,** typing a letter moves to the next item whose name starts with it, and Enter runs it, as menus without item access keys do on Windows; screen readers announce the item.
 
 **What the platforms provide.** macOS performs Services, Hide, Hide Others, Show All, Minimise, Zoom, its tiling items, Bring All to Front, the window list and the Help search, and adds AutoFill, Start Dictation… and Emoji & Symbols to Edit; these stay, Dictation included. It can also add full-screen and tab-bar items of its own to View: the menu has its own full-screen item, and Apertrust's windows have no tabs, so neither may appear (decision 39's checks). Windows keeps the window menu, Alt+Space, outside the menus. On Linux Apertrust draws everything.
@@ -2351,7 +2351,7 @@ The model's words:
 
 - **one view** for the model;
 - **layout** for what the central panel shows: Photo and later Map;
-- **workspace** for a named, saved set of the side panel's tabs, built in or the user's own, switched only when the person asks ([Workspaces](#workspaces));
+- **workspace** for a named, saved set of the side panel's tabs and the toolbar's items, built in or the user's own, switched only when the person asks ([Workspaces](#workspaces));
 - **Folder**, **Album**, **Smart album** and **Group** for what Browse shows.
 
 ### The regions
@@ -2475,7 +2475,7 @@ With several photos selected, the rating, reject and label keys, Apply Edit and 
 
 ### Workspaces
 
-A workspace is a named, saved set of the side panel's tabs, built in or the user's own. It is switched only when the person asks, and never with the central panel's layout.
+A workspace is a named, saved set of the side panel's tabs and the toolbar's items (decision 92, planned), built in or the user's own. It is switched only when the person asks, and never with the central panel's layout.
 
 - **What one holds:** its tabs in order, each with its id, name and icon, its sections in order and which of them are pinned; the sections that float, and the tab each left (decision 83); the side the panel sits on; and the toolbar's items, from Phase 3 (decision 92, [The top panel](#the-top-panel)). Not the panel's width nor a floating panel's place and width, which suit a screen rather than a task; not the central panel's layout, the theme or the keys; never a photo or an edit.
 - **Built in.** Each may leave tools out: Customise tabs lists what a workspace leaves out, and every side-panel tool stays in at least one workspace, Edit holding them all, and Export stays in every workspace, so Ctrl+E always has a place to reveal it (decision 90). Import tools belong to the Import sheet and are in no workspace (decision 86).
@@ -2485,7 +2485,7 @@ A workspace is a named, saved set of the side panel's tabs, built in or the user
   - **Map,** with the map: the Photos tab first, holding the Location section; then the rest.
 - **Changing and saving.** Dragging a section's header, its ⋯ menu's items, Customise tabs, renaming a tab, moving, pinning or floating a section change the current workspace, kept at once, as every setting is; so does editing the settings file, where the built-in workspaces can always be changed ([What the file looks like](#what-the-file-looks-like)). None of it is an edit: no step in the history, never undone by Undo (decision 83). View › Workspace › Save as Workspace… keeps a copy of the current one under a new name, as the user's own. Rename Workspace… and Delete Workspace… act on the user's own; Reset Workspace takes a built-in one back to how it shipped.
 - **Switching:** View › Workspace →, listing them with the current one checked; the side panel's ⋮ holds the same list. No default keys: the first nine by position are actions a user may give keys, as the side panel's tabs are by position.
-  - A switch changes only the side panel: the central panel, the selection and what every key acts on stay. The tab shown is the one last shown in that workspace; a section's open or closed state is the same in every workspace.
+  - A switch changes only the side panel and the toolbar (decision 92, planned): the central panel, the selection and what every key acts on stay. The tab shown is the one last shown in that workspace; a section's open or closed state is the same in every workspace.
   - Nothing switches it but the person: no layout, photo or tab changes the workspace.
 - **Kept** in settings ([Settings and workspace](#settings-and-workspace)): the current workspace by id; what the user changed in a built-in one; the user's own whole; in each, the tab last shown.
 - **What a script sees:** nothing; workspaces are interface state.
