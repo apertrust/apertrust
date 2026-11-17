@@ -2442,7 +2442,7 @@ The model's words:
 - **Everything in the side panel is a tool** (decisions 4 and 93): a processing tool, such as Exposure, or a utility tool, "utility" for short, such as the Photos tab's Browse, Scopes or History. A **section** is the side panel's block a tool is shown in, its header with its body.
   - Every section has its tool's id, a title message, header actions and a body.
   - The side panel lays out two lists of section ids per tab, its pinned sections and the rest, and a workspace is a named set of those lists with the sections that float over the central panel (decision 83). Dragging a section's header, its ⋯ menu, keys, the settings file and Customise tabs all edit the current workspace's, so any section can sit in any tab, pinned or not, or float ([Moving, pinning and floating sections](#moving-pinning-and-floating-sections)). The order is display order only, never the processing order.
-- **A processing tool's section is generated** from its definition (decision 4, `ui-conventions`). Every tool's header and ⋯ are drawn from its `ToolDefinition`; a utility's page is one custom row its app module draws, until its page is rows ([One tool model](#one-tool-model), decision 93).
+- **A processing tool's section is generated** from its definition (decision 4, `ui-conventions`). Every tool's header and ⋯ are drawn from its `ToolDefinition`, but Export's, which `export.rs` draws until decision 93's step 93.5; a utility's page is one custom row its app module draws, until its page is rows ([One tool model](#one-tool-model), decision 93).
 - **Keys** have one scope for the view, so a key means the same in every layout; a key that means nothing in a layout is unavailable there (H outside Photo).
 
 ### The central panel's layouts
@@ -4352,7 +4352,7 @@ The decisions this design rests on, by area; each decision record has the option
 | Area | The choice |
 | --- | --- |
 | Reuse | A design-system crate, `apertrust-ui`, that knows nothing of the engine or tools, with translation in an egui-free module until a second client needs it; tool panels generated from definitions (decision 36) |
-| Tool model | Every tool a processing tool or a utility, darktable's processing and utility modules; one `ToolDefinition` embedded in `ProcessingDefinition` and `UtilityDefinition`, the trait `ProcessingTool` in `apertrust-tools` and `UtilityTool` in the app; one header and ⋯ for every tool (built); one page drawer, a utility's page of the same rows, never one that edits, its widgets as custom rows (decision 93, planned) |
+| Tool model | Every tool a processing tool or a utility, darktable's processing and utility modules; one `ToolDefinition` embedded in `ProcessingDefinition` and `UtilityDefinition`, the trait `ProcessingTool` in `apertrust-tools` and `UtilityTool` in the app; one header and ⋯ for every tool (built, Export's with step 93.5); one page drawer, a utility's page of the same rows, never one that edits, its widgets as custom rows (decision 93, planned) |
 | Themes | Token sets named by role, in TOML; built-in themes compiled in; checked for contrast when they load; switched live (decision 36) |
 | Translation | Fluent, with ICU4X for numbers and dates (decision 36) |
 | Actions | One registry for buttons, menus, tooltips and shortcuts, all rebindable (decision 36) |
