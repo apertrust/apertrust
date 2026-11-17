@@ -49,10 +49,11 @@ A tool's section already has its own buttons: reset, presets and options (⋯). 
 
 **Tools declare their items as data.**
 
-- A tool: `Definition::menus: &'static [MenuItem]`, where `MenuItem { place: Place, section: Section, order: u32, action: &'static str }` names one of the tool's own actions.
+- A tool: `Definition::menus: &'static [MenuItem]`, where `MenuItem { place: Place, section: Section, order: u32, entry: MenuEntry }` names one of the tool's own actions, `MenuEntry::Action(id)`.
 - A utility, which has no definition: `Utility::menus` in `utility::UTILITIES`, each item naming the registry action that runs it.
 - The app declares its own items for each place the same way, as `MenuItem`s, so its items and the tools' are placed by one rule.
-- **`section`** says which section of the menu an item is in. `Section` is a set of named constants, in `apertrust-tools` and shared by the app and the tools, whose value sets the section's place in a menu, 1000 apart: `Section::EDIT` 1000, `EXPORT` 2000, `VIEW` 3000, `HISTORY` 4000, and `LAYOUT` 9000 for ⋯'s layout items, last. A tool may use a section value of its own.
+- **A submenu** is the app's alone: `MenuEntry::Submenu(id)` names a submenu of the menu bar by its title's id, as Background ▸ names View › Background (`menu-background`). The builder reads that submenu's items, in its order, as the item's children, so the two never differ and every child is in the menu bar by construction. Its children follow the item rules below, and the submenu is hidden when none of them is shown. `Definition::check` refuses a submenu from a tool, and an app test refuses one that names no submenu of the menu bar.
+- **`section`** says which section of the menu an item is in. `Section` is a set of named constants, in `apertrust-tools` and shared by the app and the tools, whose value sets the section's place in a menu, 1000 apart: `Section::EDIT` 1000, `EXPORT` 2000, `VIEW` 3000, `HISTORY` 4000, and `LAYOUT` 9000 for ⋯'s layout items, last. A tool may use a section value of its own between 1 and 8999; `LAYOUT` and above are the app's, so the layout's items stay last. `Definition::check` refuses a section of 9000 or more, and an app test holds the utilities to the same range.
 - **`order`** places an item within its section, 100 apart (100, 200, 300 and on), lower first.
 - The gaps leave room to put an item between two others without renumbering them.
 - A tool with nothing to add declares nothing.
@@ -63,7 +64,7 @@ A tool's section already has its own buttons: reset, presets and options (⋯). 
 
 1. Every item for the place, the app's and those tools add, is sorted by `(section, order)`.
 2. A separator falls wherever `section` changes. A section with no item shown, empty or all hidden, leaves no line.
-3. A test fails on two items with the same `(section, order)` in one place, whoever declares them.
+3. A test fails on two items with the same `(section, order)` in one menu, whoever declares them. It builds each menu as it would show: the photo's and a thumbnail's, with every tool's and utility's items for the place, and each tool's and utility's ⋯, the app's items with that one's own. Two tools may use the same `(section, order)` in their own ⋯, which never show together.
 4. In the photo's and a thumbnail's menus, an item whose action cannot run on the target is hidden, as macOS's context menus hide what does not apply, whatever stops it. One that waits only for the photo to become live, as a photo just made active does, is shown disabled, since it runs in a moment. ⋯ is a pull-down from a button, not a context menu, and keeps the pull-down's rule: an item that cannot run is drawn disabled with its tip, as Move to Tab › draws the tab a section is in (83).
 5. A submenu goes one level deep. The photo's and a thumbnail's menus show no keys, as macOS's context menus show none.
 6. A test holds the photo's menu and a thumbnail's, with every item of every tool shown, to at most 16 items. An item that would pass that needs a decision.
@@ -96,10 +97,10 @@ Discard History… is in no context menu: it stays in Edit and History's ⋯ ([0
 
 **The first slice** (planned) builds:
 
-- `Place`, `Section`, `MenuItem`, `Definition::menus`, `Utility::menus` and their checks;
+- `Place`, `Section`, `MenuItem`, `MenuEntry`, `Definition::menus`, `Utility::menus` and their checks;
 - the generated `tool-<tool>-<action>` actions;
 - `Target` and `menus::context(place, target)`;
-- the photo's menu and a thumbnail's;
+- the photo's menu and a thumbnail's, with Background ▸ read from View › Background (`MenuEntry::Submenu`);
 - History's Reset in both, the first item a tool adds.
 
 Pickers as items, the other places and ⋯'s Reset, Copy Settings and Paste Settings come later.
@@ -111,19 +112,22 @@ Pickers as items, the other places and ⋯'s Reset, Copy Settings and Paste Sett
 - **Only the focused tool adds items to the photo's menu, or tools' items go under a Tools ▸ submenu.** Shorter menus, but an item moves with the focus or hides a level down. The limit per tool and the test of the whole menu keep it short instead.
 - **A context menu on a tool's header or its controls.** The header already has its presets button and ⋯, and a slider's right-click is its fine control (42), so a menu there would give one gesture two meanings on a tool.
 - **The app's groups first, then one group per tool in pipeline order, then the utilities.** A tool's item could never sit beside the app's items it belongs with, as History's Reset beside Export… and the edit's other commands.
+- **A submenu's children declared in the context menu, or by a callback naming a source.** Either would hold a second list of View › Background's choices, or code in a declaration; reading the menu bar's submenu keeps one list.
+- **Tools' sections unbounded, or a sort that puts `LAYOUT` last whatever the values.** The first breaks "layout last"; the second hides a rule in the sort. A range below `LAYOUT` says it in the check.
 - **A single weight number for each item, with bands of it for the separators.** One number would do, but the rule for where a separator falls would be hidden in its value. Two fields say it plainly: `section` for the line, `order` within it.
 - **The words.** "Order", lower first, rather than "weight" or "priority", whose direction is ambiguous: a heavier item could sink or rise, and a higher priority could come first or last.
 
 ## Consequences
 
-- `apertrust-tools`: `Place`, `Section`, `MenuItem`, `Definition::menus`, `Utility::menus`, and the `DefinitionError`s for an item that names no action, one repeated and one past the limit.
+- `apertrust-tools`: `Place`, `Section`, `MenuItem`, `MenuEntry`, `Definition::menus`, `Utility::menus`, and the `DefinitionError`s for an item that names no action, one repeated, one past the limit, a section of `LAYOUT` or above, and a submenu from a tool.
 - The app:
   - the generated tool actions in `actions.rs`;
   - `Target`;
   - `menus::context(place, target)` in place of the surround's form;
   - the photo's right-click in `main.rs`, and a thumbnail's from the grid panel;
   - the app's own items as `MenuItem`s;
-  - tests of the limits, of the menu's size, of a repeated `(section, order)` in a place, and of every item being reachable elsewhere.
+  - the submenus the app's items name, read from the menu bar's (`menus::BACKGROUND` first);
+  - tests of the limits, of the menu's size, of a repeated `(section, order)` in one menu, of a submenu naming one of the menu bar's, and of every item being reachable elsewhere.
 - `apertrust-ui`: the grid panel reports a cell's right-click and its menu keys, with the cell. It still holds no tool types.
 - The engine and the session protocol are unchanged: an item runs an action that already sends its command.
 - Decisions 83 and 86 no longer open anything on a right-click on a section's header.
