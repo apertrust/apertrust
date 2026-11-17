@@ -90,8 +90,18 @@ fn tool_of(export: Export, which: Builtin, locale: Locale, width: f32) -> Harnes
                     .content
                     .retire(&bench.previews, bench.opened.as_deref());
                 let shown = bench.shown.clone();
+                // As the Photos tab gives every utility its context.
+                let mirror = crate::mirror::tests::mirror();
+                let settings = crate::settings::Settings::default();
+                let (words, mut commands) = (apertrust_ui::translator(ui.ctx()), Vec::new());
+                let mut cx = crate::utility::Context {
+                    mirror: &mirror,
+                    settings: &settings,
+                    words: &words,
+                    commands: &mut commands,
+                };
                 PanelBody::new().show(ui, |ui| {
-                    let section = ui.scope(|ui| bench.content.show(ui, &shown));
+                    let section = ui.scope(|ui| bench.content.show(ui, &shown, &mut cx));
                     bench.bottom = section.response.rect.bottom();
                     let drawn = section.inner;
                     bench.toggled += usize::from(drawn.toggle);

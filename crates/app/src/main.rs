@@ -4177,7 +4177,6 @@ impl App {
             reveal: self.shell.revealing() && self.shell.reveal == Some(export::ID),
         };
         let (settings, words) = (self.shell.to_settings(ui.ctx()), translator(ui.ctx()));
-        // Browse sends no command of its own yet.
         let mut commands = Vec::new();
         let mut cx = utility::Context {
             mirror: &self.mirror,
@@ -4185,7 +4184,12 @@ impl App {
             words: &words,
             commands: &mut commands,
         };
-        photos_body(ui, &mut cx, &mut browse, &mut self.export, shown)
+        let drawn = photos_body(ui, &mut cx, &mut browse, &mut self.export, shown);
+        // The commands Browse and Export send, none yet, as an editing tab's utilities'.
+        for command in commands {
+            self.send_edit(command);
+        }
+        drawn
     }
 
     /// What the Export tool is told each frame: its groups as the shell keeps them, the
@@ -6487,7 +6491,7 @@ fn photos_body(
         }
         actions.extend(section.actions);
         changes = section.changes;
-        let tool = ui.push_id(export::ID, |ui| export.show(ui, &shown.shown));
+        let tool = ui.push_id(export::ID, |ui| export.show(ui, &shown.shown, cx));
         // The section Export… asked for, its header at the top.
         if shown.reveal {
             ui.scroll_to_rect(tool.response.rect, Some(egui::Align::TOP));

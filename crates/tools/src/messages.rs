@@ -22,7 +22,7 @@
 
 use std::collections::BTreeSet;
 
-use crate::definition::{ControlKind, ProcessingDefinition, Row, SettingRow, Slider, Unit};
+use crate::definition::{ControlKind, ProcessingDefinition, Reset, Row, SettingRow, Slider, Unit};
 use crate::utility::UtilityDefinition;
 
 /// The tool's title: `tool-<tool>-title`.
@@ -477,9 +477,24 @@ pub fn of(definition: &ProcessingDefinition) -> Vec<String> {
     ids
 }
 
-/// Every message a utility's rows imply, each once, as [`of`] lists a processing tool's:
-/// each group label's, each collapsible group's title, and each setting's words and
-/// options. Its custom rows' words are its widgets' own.
+/// A utility's own ↺'s name (`Reset::Own`): `<utility>-reset`, as Export's.
+pub fn utility_reset(utility: &str) -> String {
+    format!("{utility}-reset")
+}
+
+/// A utility's presets button's name, and its tooltip while it is drawn disabled, until
+/// its presets are built: `<utility>-presets` and `<utility>-presets-later`, as Export's.
+pub fn utility_presets(utility: &str) -> [String; 2] {
+    [
+        format!("{utility}-presets"),
+        format!("{utility}-presets-later"),
+    ]
+}
+
+/// Every message a utility's header and rows imply, each once, as [`of`] lists a
+/// processing tool's: its own ↺'s name, its presets button's words, each group label's,
+/// each collapsible group's title, and each setting's words and options. Its custom rows'
+/// words are its widgets' own.
 pub fn of_utility(utility: &UtilityDefinition) -> Vec<String> {
     fn rows(tool: &str, list: &[Row], ids: &mut Vec<String>) {
         for row in list {
@@ -499,6 +514,12 @@ pub fn of_utility(utility: &UtilityDefinition) -> Vec<String> {
     }
     let definition = &utility.tool;
     let mut ids = Vec::new();
+    if definition.reset == Reset::Own {
+        ids.push(utility_reset(definition.id));
+    }
+    if definition.presets {
+        ids.extend(utility_presets(definition.id));
+    }
     let tabs = definition.tabs.iter().map(|tab| tab.rows);
     for list in std::iter::once(definition.before)
         .chain(tabs)

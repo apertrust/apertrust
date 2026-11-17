@@ -165,9 +165,9 @@ Details: [plugins.md](plugins.md), with the order in [engine.md, Order](engine.m
 
 ### Tools
 
-`apertrust-tools` describes each processing tool as static data, darktable's page with its tabs and collapsible groups, and binds it to operation parameters with a pure function the session runs (decisions 28 to 33); the utilities are declared there too, History, Scopes and Browse with one header and one page drawer from their definitions, their own widgets custom rows, and Export joining them in decision 93's last step, planned. Preset rows, lossless views and curves are other views of the same stored values; one tone mapper is planned per edit.
+`apertrust-tools` describes each processing tool as static data, darktable's page with its tabs and collapsible groups, and binds it to operation parameters with a pure function the session runs (decisions 28 to 33); the utilities are declared there too, History, Scopes, Browse and Export with one header and one page drawer from their definitions, their own widgets custom rows, Export's rows becoming setting rows in decision 93's last step, planned. Preset rows, lossless views and curves are other views of the same stored values; one tone mapper is planned per edit.
 
-Every tool shares one declaration, `ToolDefinition`, embedded in a processing tool's `ProcessingDefinition` and a utility's `UtilityDefinition`, as darktable's processing and utility modules both begin with `dt_action_t` (decision 93). The engine runs `ProcessingTool`; the app runs `UtilityTool` and draws every tool's header, ⋯ and page alike, but Export's, which its own module draws until decision 93's step 93.5.
+Every tool shares one declaration, `ToolDefinition`, embedded in a processing tool's `ProcessingDefinition` and a utility's `UtilityDefinition`, as darktable's processing and utility modules both begin with `dt_action_t` (decision 93). The engine runs `ProcessingTool`; the app runs `UtilityTool` and draws every tool's header, ⋯ and page alike.
 
 Details: [engine.md, The tool layer](engine.md#the-tool-layer), [tools/README.md](tools/README.md) for every tool of the first pass and its invariants.
 

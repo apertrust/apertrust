@@ -15,7 +15,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 //! The utilities (`docs/gui.md`, The side panel, One tool model): side-panel tools that
-//! edit nothing, Scopes, History and Browse, with no
+//! edit nothing, Scopes, History, Browse and Export, with no
 //! [`ProcessingDefinition`](crate::ProcessingDefinition). Each is listed in [`UTILITIES`]
 //! with its words, its sentence `tool-<id>-description` as a tool's, what it measures,
 //! which its header's tooltip says ([`crate::about`]), what its header's ↺ does, its page
@@ -37,31 +37,32 @@ use crate::{
 pub struct UtilityDefinition {
     /// Its id, whose sentence is `tool-<id>-description`; its header's ↺, a registry
     /// action's, its own or none; its page, rows that edit nothing ([`Self::check`]), its
-    /// own widgets custom rows its app module draws; and the items it adds to context menus and its ⋯
-    /// (decision 91), each the registry action that runs it, by its id, at a place, held to
-    /// a tool's limits ([`crate::check_menus`]); none for a utility with nothing to add. The
-    /// app builds the menus, every item where its section and order put it ([`Section`]).
+    /// own widgets custom rows its app module draws; and the items it adds to context menus
+    /// and its ⋯ (decision 91), each the registry action that runs it, by its id, at a
+    /// place, held to a tool's limits ([`crate::check_menus`]); none for a utility with
+    /// nothing to add. The app builds the menus, every item where its section and order put
+    /// it ([`Section`]).
     pub tool: ToolDefinition,
     pub measures: Option<WorksOn>,
 }
 
 impl UtilityDefinition {
     /// Whether the utility holds together (decision 93): its id; its header's ↺ a registry
-    /// action's, its own or none, and no presets until its setting rows have them; its page
-    /// one untitled tab, since its header draws no tab strip; no row that edits, so its rows
-    /// are settings, labels, groups, rows following a setting and custom rows naming no
-    /// control, each a utility's own widget; no action row until a utility's are bound to
-    /// the registry; each label, group and setting once by its id, a group holding no group,
-    /// each setting's kind as a control's; rows following a setting following a choice
-    /// setting of its own, shown outside them and wherever they show, for options it has,
-    /// with rows of their own; and its context menu items held to a tool's limits
-    /// ([`check_menus`]).
+    /// action's, its own or none, never a processing tool's, a presets button allowed, drawn
+    /// disabled until its presets are built (step 93.6); its page one untitled tab, since
+    /// its header draws no tab strip; no row that edits, so its rows are settings, labels,
+    /// groups, rows following a setting and custom rows naming no control, each a utility's
+    /// own widget; no action row until a utility's are bound to the registry; each label,
+    /// group and setting once by its id, a group holding no group, each setting's kind as a
+    /// control's; rows following a setting following a choice setting of its own, shown
+    /// outside them and wherever they show, for options it has, with rows of their own; and
+    /// its context menu items held to a tool's limits ([`check_menus`]).
     pub fn check(&self) -> Result<(), DefinitionError> {
         let tool = &self.tool;
         if !is_id(tool.id) {
             return Err(DefinitionError::Id(tool.id));
         }
-        if tool.reset == Reset::Tool || tool.presets {
+        if tool.reset == Reset::Tool {
             return Err(DefinitionError::UtilityHeader);
         }
         if !matches!(tool.tabs, [Tab { id: None, .. }]) {
@@ -199,9 +200,12 @@ const fn option(section: Section, order: u32, action: &'static str) -> MenuItem 
 /// The utilities built: Scopes, which measures the finished picture; History, whose ↺ is
 /// Reset Edit, which it adds to the photo's and a thumbnail's menus, and whose ⋯ holds
 /// Compress History, Truncate History and Create a Style…, then Discard History… apart, as
-/// the destructive one; and Browse, the Photos tab's first. Their pages are their own
-/// widgets as custom rows, which keep what each drew before (decision 93): Scopes' the graph
-/// with its buttons, History's its steps, and Browse's its recents line and its Folders.
+/// the destructive one; Browse, the Photos tab's first; and Export, its last, whose ↺ is
+/// its own Default settings and whose presets button is drawn disabled until its presets
+/// come. Their pages are their own widgets as custom rows, which keep what each drew before
+/// (decision 93): Scopes' the graph with its buttons, History's its steps, Browse's its
+/// recents line and its Folders, and Export's its groups and its end, until its rows are
+/// setting rows (step 93.6).
 pub const UTILITIES: &[UtilityDefinition] = &[
     UtilityDefinition {
         tool: ToolDefinition {
@@ -278,6 +282,42 @@ pub const UTILITIES: &[UtilityDefinition] = &[
             after: &[],
             reset: Reset::None,
             presets: false,
+            menus: &[],
+        },
+        measures: None,
+    },
+    UtilityDefinition {
+        tool: ToolDefinition {
+            id: "export",
+            tabs: &[Tab {
+                id: None,
+                rows: &[
+                    Row::Custom {
+                        widget: Widget::ExportStorage,
+                        controls: &[],
+                    },
+                    Row::Custom {
+                        widget: Widget::ExportFormat,
+                        controls: &[],
+                    },
+                    Row::Custom {
+                        widget: Widget::ExportGlobal,
+                        controls: &[],
+                    },
+                    Row::Custom {
+                        widget: Widget::ExportLater,
+                        controls: &[],
+                    },
+                    Row::Custom {
+                        widget: Widget::ExportEnd,
+                        controls: &[],
+                    },
+                ],
+            }],
+            before: &[],
+            after: &[],
+            reset: Reset::Own,
+            presets: true,
             menus: &[],
         },
         measures: None,
@@ -391,16 +431,16 @@ mod tests {
         }
     }
 
-    /// A utility's ↺ is never a processing tool's, and it has no presets until its
-    /// setting rows have them.
+    /// A utility's ↺ is never a processing tool's; it may have a presets button, drawn
+    /// disabled until its presets are built.
     #[test]
-    fn a_utility_s_header_has_no_tool_reset_and_no_presets_yet() {
+    fn a_utility_s_header_has_no_tool_reset_and_may_have_presets() {
         let mut reset = with(&[]);
         reset.tool.reset = Reset::Tool;
         assert_eq!(reset.check(), Err(DefinitionError::UtilityHeader));
         let mut presets = with(&[]);
         presets.tool.presets = true;
-        assert_eq!(presets.check(), Err(DefinitionError::UtilityHeader));
+        assert_eq!(presets.check(), Ok(()));
     }
 
     /// Every row that edits is refused, by what edits in it, inside a group too.
