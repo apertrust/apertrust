@@ -219,7 +219,7 @@ The groundwork for orientation:
 
 `export_job` (decisions 56 and 57): `Command::Export`, a `UserExport` job, one at a time.
 
-- Each photo's edit is taken as Export is pressed (the Export dialog's D12 in [docs/gui.md](gui.md)): the open photo's from memory, the others' read by the edit writer after its writes.
+- Each photo's edit is taken as Export is pressed (Export's D12 in [docs/gui.md](gui.md#deviations-from-darktable)): the open photo's from memory, the others' read by the edit writer after its writes.
 - The job's worker decodes, encodes, writes and renames. Its render is a `GpuTask`, planned, compiled and allocated on the worker; the engine thread only steps its submissions, one at a time.
 - It always renders in tiles of at most 1024 (`Tiling::AtMost`), each tile one step. A tile's readback is mapped as the engine thread polls, and waited for by the worker (`export::export_handing`).
 - The operations before the tiles (the raw stage, on a default edit) take a step per pass, in row strips of about 8 MP, a step per strip (`export_job::STRIP_BINDING`). Highlights' dilation, which binds only scratch, runs in bands of its rows too.
@@ -761,10 +761,10 @@ The actions registry and the default keyboard map:
 
 ### The Export dialog
 
-`src/export.rs` (decision 56; [docs/gui.md](gui.md#as-built), The Export sheet, As built): a sheet on the Mac, a modal window on Windows and Linux (`impl Dialog for Export`).
+`src/export.rs` (decision 56; [docs/gui.md](gui.md#as-built), The Export tool, As built): a sheet on the Mac, a modal window on Windows and Linux (`impl Dialog for Export`). Planned: the Export tool in its place, a utility last in the Photos tab (decision 90; [docs/gui.md](gui.md#the-export-tool)); its rows and their tests carry over, and the dialog's frame, `impl Dialog for Export` and its snapshots go.
 
 - File › Export… (`export`, Cmd+E) opens it, enabled with a photo open. Where the host shows no alert (`dialog_host::platform::shows_alerts`, the Mac's only so far), `Export::alerts(false)` lists Overwrite disabled and rests Export while it is chosen.
-- `Dialog::show(&mut Ui)` is its content: darktable's File on disk, JPEG and PNG, Set size's four modes, Allow upscaling, High quality resampling, and Profile (Image settings, sRGB). Every other row is drawn disabled, saying why. Its rows are drawn as a tool's: its choices Blended, its booleans toggles. Planned: the Export sheet in its place, the photos it was opened with checked beside five export tools, every row a tool's setting, its choices Blended (decisions 84 and 86; [docs/gui.md](gui.md#the-export-sheet)).
+- `Dialog::show(&mut Ui)` is its content: darktable's File on disk, JPEG and PNG, Set size's four modes, Allow upscaling, High quality resampling, and Profile (Image settings, sRGB). Every other row is drawn disabled, saying why. Its rows are drawn as a tool's: its choices Blended, its booleans toggles.
 - The fifteen `export.*` settings are `export::Values` in `Settings::export`, kept as they change. The app's store opens on the export registry too, and `--conf export.…` is read.
 - Its feedback lines come from the session: `PreviewExport` on the first frame and on every change, through `export::commands`; `Event::ExportPreview` is handed back by `Dialogs::preview`, the highest `through` kept.
 - Export sends `Command::Export` for the active photo and closes the sheet.
@@ -774,7 +774,7 @@ The actions registry and the default keyboard map:
 
 `src/alerts.rs`; `Dialogs::ask` and `answer` in the host.
 
-- **Overwrite.** Asked from the Export sheet when On conflict is Overwrite, as darktable's storage asks: whether or not a file is there, and never for Overwrite if changed (`export::asks_before`).
+- **Overwrite.** Asked from the Export dialog, the main window once the Export tool replaces it, when On conflict is Overwrite, as darktable's storage asks: whether or not a file is there, and never for Overwrite if changed (`export::asks_before`).
   - Its default is Cancel, which Return and Escape press; Overwrite is destructive, with no key.
   - Don't ask again is a suppression box (`Request::suppression`). A ticked yes turns `export.ask_before_overwrite` off (`Question`), unless `--conf` holds it; Export and Export Again then ask nothing. Settings › General › Confirmations shows it.
 - **Discard History.** Asked by Edit › Discard History… and the History section's ⋯ (`discard_request`): Discard History, destructive, and Cancel, the default; a ticked yes turns `history.ask_before_discard` off (`Question`), unless `--conf` holds it. On an edit view-only because of a `sidecar::Problem` it always asks, with no box, naming the edit's file to copy first. What it does is `discard`'s, a pure function of the photo (`Discarding`), the setting and whether the platform shows alerts, and a yes reaches only the photo asked for, opened the same way (`discard_confirmed`). Where no alert can be shown, Windows' for now, it is disabled wherever it would ask, saying why (`discard_runs`).
@@ -782,7 +782,7 @@ The actions registry and the default keyboard map:
 
 ### Export Again
 
-`src/export_again.rs`: File › Export Again (`export-again`, no key; available as Export… is) exports the active photo with the settings as last kept, with no dialog and no preview:
+`src/export_again.rs`: File › Export Again (`export-again`, no key yet, Ctrl+Shift+E planned with the Export tool, decision 90; available as Export… is) exports the active photo with the settings as last kept, with no dialog and no preview:
 
 - at once, or after the overwrite question when On conflict is Overwrite and the setting is on (`Again` holds the export meanwhile).
 
@@ -808,7 +808,8 @@ The session's events enter the app in one place (decision 59, `src/mirror.rs`): 
 - **Slider popups** (decision 42; [docs/gui.md](gui.md), Slider values and choices): a slider popup's cancel sent as `CancelGesture`, the tool shown as reported when the gesture began until a report includes it.
 - Windows' Alt pressed and released alone, opening the ☰'s menu.
 - **Colour pickers** (decision 79; [pickers.md](pickers.md)): each other tool's pickers drawn as its pick lands; and the Colour picker section, hidden by default, its place to be decided.
-- **Sheets** (decisions 84 and 86; [docs/gui.md](gui.md#sheets)): the sheets' modality, the view's keys and the top panel resting under one; Export on its sheet in `export.rs`'s place, its photos written as the selection after an export; each tool's place declared and tested.
+- **The Import sheet** (decision 86; [docs/gui.md](gui.md#sheets)): its modality, the view's keys and the top panel resting under it; each tool's place, the side panel or Import, declared and tested.
+- **The Export tool** (decision 90; [docs/gui.md](gui.md#the-export-tool)): `export.rs` as the Photos tab's last section, Export… and Ctrl+E revealing it, Export Again on Ctrl+Shift+E, Export kept in every workspace; Edit › Previous Selection with Phase 3's selection; Browse's Import….
 - **Instances and windows** (decision 89; [docs/gui.md](gui.md#instances-and-windows)), in five steps: `src/instance.rs`, the instance lock (`instance.lock` in the user data folder, `File::try_lock`), the channel (a Unix socket through the standard library, its path written in the lock file for a second start to read, Windows' named pipe through `apertrust-display`), the hand-off's message and answer, the 500 ms join on Windows, each start within 500 ms of the one before, and the refusal of flags for one run, `--help`, `--version` and `--list-adapters` taking no lock and Restart now releasing it first; a spike moving the main window from eframe's root into the app's own host beside the dialog host's windows, with its AccessKit adapter; the engine's sessions of every window on one engine thread per device; a registry of windows, each with its place, session, layout state and egui context, `new-window` (Ctrl+N), the Mac's Window menu and the closing rules; `library.open_in` and the user data folder's name in the titles.
 
 ## apertrust-ui
@@ -1485,7 +1486,7 @@ What an export writes and where, with no GPU (decision 56). The engine's session
 
 ### Planned
 
-Export on its sheet, presets, For sharing and Full size JPEG among them, and metadata ([docs/gui.md](gui.md#the-build-in-cards), The Export sheet).
+The Export tool's presets, For sharing and Full size JPEG among them, and metadata ([docs/gui.md](gui.md#the-build-in-cards), The Export tool).
 
 ## apertrust-library
 
