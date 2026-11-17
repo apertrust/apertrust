@@ -51,6 +51,7 @@
 use std::collections::BTreeMap;
 
 use apertrust_engine::session::Command;
+use apertrust_tools::{Definition, Row};
 use apertrust_ui::components::{GridBarAction, GridPosition, SortKey, ThumbnailSize};
 use apertrust_ui::{Background, Translator};
 use eframe::egui::{self, Key, Modifiers, os::OperatingSystem};
@@ -261,6 +262,11 @@ pub enum Intent {
     Grid(GridBarAction),
     /// The background behind the photo (`docs/gui.md`, The background).
     Background(Background),
+    /// A tool's own action, run as pressing its button does ([`tool_actions`]).
+    ToolAction {
+        tool: &'static str,
+        action: &'static str,
+    },
 }
 
 /// What the actions' availability depends on, as the app is this frame.
@@ -273,6 +279,9 @@ pub struct State {
     /// photo's and a thumbnail's menus then show an item that cannot run yet disabled, not
     /// hidden (decision 91; `menus::context`).
     pub waiting: bool,
+    /// Whether the photo open takes edits: live and not open for viewing only, as a tool's
+    /// buttons need (decisions 77 and 91).
+    pub editable: bool,
     pub edited: bool,
     /// Whether the open photo's history has something for Undo, and for Redo, to do, and
     /// takes them: live and not open for viewing only (decision 78).
@@ -1132,9 +1141,76 @@ pub static ACTIONS: [Action; 74] = [
     ),
 ];
 
-/// The action `id`, if the registry has it.
+/// The action `id`, if the registry has it: one of [`ACTIONS`] or a tool's ([`tool_actions`]).
 pub fn action(id: ActionId) -> Option<&'static Action> {
-    ACTIONS.iter().find(|a| a.id == id)
+    all().find(|a| a.id == id)
+}
+
+/// The action whose id reads `id`, if the registry has it, as settings and menus name one.
+pub fn named(id: &str) -> Option<&'static Action> {
+    all().find(|a| a.id.0 == id)
+}
+
+/// Every action: [`ACTIONS`], then the tools' own ([`tool_actions`]).
+pub fn all() -> impl Iterator<Item = &'static Action> {
+    ACTIONS.iter().chain(tool_actions())
+}
+
+/// The built-in tools' own actions as registry actions (decision 91), made once as the
+/// app starts from their definitions: one for each [`Row::Action`] and each button of a
+/// [`Row::Buttons`], `tool-<tool>-<action>`, its words the action's full name
+/// (`tool-<tool>-action-<action>-full`), no default keys, in the view's scope. A button's
+/// runs as pressing it does ([`Intent::ToolAction`]), while the photo takes edits and no
+/// modal dialog is open; a [`Row::Action`]'s, which the panel draws disabled until what it
+/// runs is built, is listed and never runs.
+pub fn tool_actions() -> &'static [Action] {
+    static MADE: std::sync::OnceLock<Vec<Action>> = std::sync::OnceLock::new();
+    MADE.get_or_init(|| {
+        let leak = |text: String| -> &'static str { Box::leak(text.into_boxed_str()) };
+        let mut made = Vec::new();
+        for tool in apertrust_tools::TOOLS {
+            let definition = tool.definition();
+            for (action, button) in own_actions(definition) {
+                let [_, full, _] = apertrust_tools::messages::action(definition.id, action);
+                let emits = match button {
+                    true => Emit::Intent(Intent::ToolAction {
+                        tool: definition.id,
+                        action,
+                    }),
+                    false => Emit::Later,
+                };
+                made.push(Action {
+                    id: ActionId(leak(format!("tool-{}-{action}", definition.id))),
+                    message: leak(full),
+                    keys: &[],
+                    scope: Scope::View(View::Edit),
+                    trigger: Trigger::Press,
+                    available: tool_action_available,
+                    emits,
+                });
+            }
+        }
+        made
+    })
+}
+
+/// A tool's own actions, in its panel's order, each with whether it is a button's.
+fn own_actions(definition: &'static Definition) -> Vec<(&'static str, bool)> {
+    let mut actions = Vec::new();
+    for row in definition.rows() {
+        match row {
+            Row::Action { id } => actions.push((*id, false)),
+            Row::Buttons { buttons, .. } => actions.extend(buttons.iter().map(|b| (b.id, true))),
+            _ => {}
+        }
+    }
+    actions
+}
+
+/// Whether a tool's button can run: the photo takes edits, live and not open for viewing
+/// only, on the main window, with no modal dialog over it, as its button is enabled.
+fn tool_action_available(state: &State) -> bool {
+    state.editable && on_main_window(state) && no_modal_dialog(state)
 }
 
 /// Each action's keys: the platform's defaults, with the user's own from settings in
@@ -1154,8 +1230,7 @@ impl Keymap {
     pub fn defaults(os: OperatingSystem) -> Keymap {
         Keymap {
             os,
-            keys: ACTIONS
-                .iter()
+            keys: all()
                 .map(|a| {
                     let keys = a.keys.iter().filter(|b| b.applies(os));
                     (a.id, keys.map(|b| b.shortcut).collect())
@@ -1184,7 +1259,7 @@ impl Keymap {
         let mut refused = BTreeMap::new();
         let mut wanted: Vec<(ActionId, Vec<Shortcut>)> = Vec::new();
         for (name, texts) in overrides {
-            let Some(action) = ACTIONS.iter().find(|a| a.id.0 == name) else {
+            let Some(action) = named(name) else {
                 warnings.push(format!("keys.{name}: no action has this id; kept, unused"));
                 refused.insert(name.clone(), texts.clone());
                 continue;
@@ -1303,8 +1378,7 @@ fn clash(
         let text = key.text(os);
         defaults.keys(a).iter().any(|d| d.text(os) == text)
     };
-    ACTIONS
-        .iter()
+    all()
         .filter(|other| other.id != id && together(scope, other.scope))
         .find_map(|other| {
             keys.iter().find_map(|&key| {
@@ -1705,7 +1779,7 @@ fn bound(
     mac: bool,
 ) -> Option<&'static Action> {
     scopes(state).find_map(|scope| {
-        ACTIONS.iter().find(|a| {
+        all().find(|a| {
             a.scope == scope
                 && keymap
                     .keys(a.id)
@@ -1827,8 +1901,7 @@ pub fn read(ctx: &egui::Context, keymap: &Keymap, state: &State) -> Keys {
     let mut keys = Keys::default();
     ctx.input_mut(|input| {
         keys.pressed = take_presses(&mut input.events, keymap, state, focus, mac);
-        let holds = ACTIONS
-            .iter()
+        let holds = all()
             .filter(|a| a.trigger == Trigger::Hold && scopes(state).any(|scope| scope == a.scope));
         for action in holds {
             let down = keymap.keys(action.id).iter().any(|s| {
@@ -1958,6 +2031,7 @@ mod tests {
             view: View::Edit,
             photo: true,
             waiting: false,
+            editable: true,
             edited: true,
             undo: true,
             redo: true,
@@ -2884,6 +2958,89 @@ mod tests {
             Keymap::defaults(os).keys(ActionId::UNDO)
         );
         assert_eq!(keymap.overrides(), &wanted);
+    }
+
+    /// Decision 91: every built tool's own actions are registry actions, one for each
+    /// action row and each button, `tool-<tool>-<action>`, with no default keys, found by
+    /// id beside the static ones; a button's runs as pressing it does, an action row's,
+    /// drawn disabled until built, never.
+    #[test]
+    fn every_tool_s_own_actions_are_registry_actions_found_by_id() {
+        let ids: Vec<&str> = tool_actions().iter().map(|a| a.id.0).collect();
+        for id in [
+            "tool-flip-rotate_ccw",
+            "tool-flip-rotate_cw",
+            "tool-flip-flip_horizontally",
+            "tool-flip-flip_vertically",
+            "tool-agx-auto_tune_levels",
+        ] {
+            assert!(ids.contains(&id), "{id} in {ids:?}");
+        }
+        let unique: HashSet<&str> = all().map(|a| a.id.0).collect();
+        assert_eq!(unique.len(), ACTIONS.len() + tool_actions().len());
+        let rotate = named("tool-flip-rotate_cw").expect("Rotate 90° clockwise");
+        assert_eq!(action(rotate.id).map(|a| a.id), Some(rotate.id));
+        assert_eq!(rotate.message, "tool-flip-action-rotate_cw-full");
+        assert!(rotate.keys.is_empty());
+        assert_eq!(rotate.scope, Scope::View(View::Edit));
+        assert_eq!(
+            rotate.emits,
+            Emit::Intent(Intent::ToolAction {
+                tool: "flip",
+                action: "rotate_cw"
+            })
+        );
+        // Only while the photo takes edits, with no modal dialog.
+        assert!(rotate.enabled(&everything()));
+        for rest in [
+            State {
+                editable: false,
+                ..everything()
+            },
+            State {
+                modal: true,
+                ..everything()
+            },
+            State {
+                dialog_window: true,
+                ..everything()
+            },
+        ] {
+            assert!(!rotate.enabled(&rest), "{rest:?}");
+        }
+        let auto = named("tool-agx-auto_tune_levels").expect("Auto tune levels");
+        assert_eq!(auto.emits, Emit::Later);
+        assert!(!auto.enabled(&everything()));
+    }
+
+    #[test]
+    fn every_tool_action_has_its_words_in_every_language() {
+        for locale in Locale::ALL {
+            let tr = Translator::new(locale);
+            for action in tool_actions() {
+                assert!(tr.has(action.message), "{locale:?}: {}", action.message);
+            }
+        }
+    }
+
+    /// A tool's action takes keys from the settings file as any action does, and only one
+    /// that clashes with none.
+    #[test]
+    fn a_tool_s_action_takes_keys_from_settings() {
+        let os = OperatingSystem::Nix;
+        let rotate = named("tool-flip-rotate_cw").unwrap().id;
+        assert!(Keymap::defaults(os).keys(rotate).is_empty());
+        let wanted = overrides(&[("tool-flip-rotate_cw", &["Ctrl+Alt+R"])]);
+        let (keymap, warnings) = Keymap::load(os, &wanted);
+        assert!(warnings.is_empty(), "{warnings:?}");
+        let key = Shortcut::parse("Ctrl+Alt+R").unwrap();
+        assert_eq!(keymap.keys(rotate), [key]);
+        assert_eq!(keymap.overrides(), &wanted);
+        // Undo's own keys clash with Undo.
+        let (keymap, warnings) =
+            Keymap::load(os, &overrides(&[("tool-flip-rotate_cw", &["Ctrl+Z"])]));
+        assert_eq!(warnings.len(), 1, "{warnings:?}");
+        assert!(keymap.keys(rotate).is_empty());
     }
 
     #[test]

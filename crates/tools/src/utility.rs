@@ -21,7 +21,7 @@
 //! context menus (decision 91).
 
 use crate::about::WorksOn;
-use crate::{MenuItem, Place, Section};
+use crate::{MenuEntry, MenuItem, Place, Section};
 
 /// A utility section, which edits nothing: its id, whose sentence is
 /// `tool-<id>-description`, what it measures, if anything, and its context menu items.
@@ -53,13 +53,13 @@ pub const UTILITIES: &[Utility] = &[
                 place: Place::Photo,
                 section: Section::EDIT,
                 order: 100,
-                action: "reset",
+                entry: MenuEntry::Action("reset"),
             },
             MenuItem {
                 place: Place::Thumbnail,
                 section: Section::EDIT,
                 order: 100,
-                action: "reset",
+                entry: MenuEntry::Action("reset"),
             },
         ],
     },

@@ -76,9 +76,9 @@ use apertrust_plugin::{ImageContext, Operation, ParamValues, Value};
 
 pub use definition::{
     Button, ButtonIcon, ChoiceStyle, Computed, Control, ControlError, ControlKind, Coordinate,
-    Definition, DefinitionError, MAX_POINTS, MIN_GAP, MenuItem, Picker, PickerKind, Place,
-    PresetRow, Quad, Range, Row, Section, SettingRow, Slider, Space, Tab, Track, Unit, View,
-    Widget, check_menus, slider_step,
+    Definition, DefinitionError, MAX_POINTS, MIN_GAP, MOST_IN_SUBMENU, MenuEntry, MenuItem, Picker,
+    PickerKind, Place, PresetRow, Quad, Range, Row, Section, SettingRow, Slider, Space, Tab, Track,
+    Unit, View, Widget, check_menus, check_section, slider_step,
 };
 use pick::{PickKeys, Picked, Reading};
 pub use values::{ControlValue, Controls, Mark, ToolValues};

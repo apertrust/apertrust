@@ -184,32 +184,82 @@ impl Section {
     pub const LAYOUT: Section = Section(9000);
 }
 
-/// One item a tool or a utility adds to a context menu: an action, at a place, where its
-/// section and order put it. Every item is an action of the app's registry, which builds
-/// the menu and runs it; the tool runs no code there.
+/// One item of a context menu, a tool's, a utility's or the app's: an action or a
+/// submenu of actions, at a place, where its section and order put it. Every action is
+/// one of the app's registry, which builds the menu and runs it; the tool runs no code
+/// there.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MenuItem {
     pub place: Place,
+    /// A tool's or a utility's from [`Section::EDIT`] up to, not including,
+    /// [`Section::LAYOUT`] ([`check_section`]); the app's anywhere.
     pub section: Section,
     /// Its place within its section, lowest first, every item's in a place's section its
     /// own, the app's included. Orders go 100 apart (100, 200, 300…): a new item goes
-    /// between two existing ones, the gaps leaving room to insert without renumbering.
+    /// between two existing ones, the gaps leaving room to insert without renumbering. In
+    /// `EDIT`, 100 is Reset's, so a tool's there take 200 or more.
     pub order: u32,
-    /// A tool's: one of its own actions, a [`Row::Action`]'s or a [`Row::Buttons`] button's
-    /// id, which the app's registry holds as `tool-<tool>-<action>`. A utility's
-    /// ([`crate::utility::Utility::menus`]): the registry action that runs it, by its id, as
-    /// History's Reset is `reset`.
-    pub action: &'static str,
+    pub entry: MenuEntry,
 }
 
-/// Whether `items`, one tool's or one utility's, hold together: none listed twice in its
-/// place, and no place holding more than it takes ([`Place::most`]).
+/// What a context menu item holds: an action, or a submenu of actions, one level deep.
+///
+/// An action is a tool's own, a [`Row::Action`]'s or a [`Row::Buttons`] button's id, which
+/// the app's registry holds as `tool-<tool>-<action>`; a utility's or the app's, the
+/// registry action's id, as History's Reset is `reset`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MenuEntry {
+    Action(&'static str),
+    /// Its title, a message id, and its actions, from one up to [`MOST_IN_SUBMENU`], each
+    /// once, in order. It counts as one item towards its place's limit.
+    Submenu {
+        title: &'static str,
+        actions: &'static [&'static str],
+    },
+}
+
+impl MenuEntry {
+    /// The actions it names: its own, or the submenu's, in order.
+    pub fn actions(&self) -> &[&'static str] {
+        match self {
+            MenuEntry::Action(action) => std::slice::from_ref(action),
+            MenuEntry::Submenu { actions, .. } => actions,
+        }
+    }
+
+    /// What names it in an error: its action, or the submenu's title.
+    pub fn name(&self) -> &'static str {
+        match self {
+            MenuEntry::Action(action) => action,
+            MenuEntry::Submenu { title, .. } => title,
+        }
+    }
+}
+
+/// The most actions a context menu's submenu holds.
+pub const MOST_IN_SUBMENU: usize = 8;
+
+/// Whether `items`, one tool's or one utility's, hold together: no action listed twice in
+/// a place, a submenu's included, each submenu holding one to [`MOST_IN_SUBMENU`] actions,
+/// and no place holding more items than it takes ([`Place::most`]), a submenu one.
 pub fn check_menus(items: &[MenuItem]) -> Result<(), DefinitionError> {
     for (i, item) in items.iter().enumerate() {
-        // Its action at its place, whatever its section and order.
-        let twice = |other: &MenuItem| other.place == item.place && other.action == item.action;
-        if items[..i].iter().any(twice) {
-            return Err(DefinitionError::DuplicateMenuItem(item.action));
+        let actions = item.entry.actions();
+        if let MenuEntry::Submenu { title, .. } = item.entry
+            && !(1..=MOST_IN_SUBMENU).contains(&actions.len())
+        {
+            return Err(DefinitionError::SubmenuItems(title));
+        }
+        // Its actions at its place, whatever its section and order.
+        let earlier = items[..i].iter().filter(|other| other.place == item.place);
+        let earlier: Vec<&str> = earlier
+            .flat_map(|other| other.entry.actions())
+            .copied()
+            .collect();
+        for (j, action) in actions.iter().enumerate() {
+            if earlier.contains(action) || actions[..j].contains(action) {
+                return Err(DefinitionError::DuplicateMenuItem(action));
+            }
         }
     }
     for place in [Place::Photo, Place::Thumbnail, Place::Options] {
@@ -217,6 +267,20 @@ pub fn check_menus(items: &[MenuItem]) -> Result<(), DefinitionError> {
         if held > place.most() {
             return Err(DefinitionError::MenuItems(place));
         }
+    }
+    Ok(())
+}
+
+/// Whether a tool's or a utility's item stands where they may (decision 91): in a section
+/// from [`Section::EDIT`] up to, not including, [`Section::LAYOUT`], the rest being the
+/// app's, and in `EDIT` at order 200 or more, after Reset. The app's own items are exempt,
+/// and so is History's Reset, at `EDIT`, 100.
+pub fn check_section(item: &MenuItem) -> Result<(), DefinitionError> {
+    if !(Section::EDIT..Section::LAYOUT).contains(&item.section) {
+        return Err(DefinitionError::MenuSection(item.entry.name()));
+    }
+    if item.section == Section::EDIT && item.order < 200 {
+        return Err(DefinitionError::MenuOrder(item.entry.name()));
     }
     Ok(())
 }
@@ -1043,6 +1107,16 @@ pub enum DefinitionError {
     DuplicateMenuItem(&'static str),
     #[error("more items in the {0:?} menu than one tool may add there")]
     MenuItems(Place),
+    #[error("the context menu's submenu {0} holds no action, or more than {MOST_IN_SUBMENU}")]
+    SubmenuItems(&'static str),
+    #[error(
+        "the context menu item {0} is in a section of the app's: a tool's are from EDIT up to LAYOUT"
+    )]
+    MenuSection(&'static str),
+    #[error(
+        "the context menu item {0} comes before Reset: a tool's in EDIT take order 200 or more"
+    )]
+    MenuOrder(&'static str),
 }
 
 /// snake_case ASCII: a lowercase letter, then lowercase letters, digits and single
@@ -1570,12 +1644,12 @@ impl Definition {
                 });
             }
         }
-        if let Some(item) = self
-            .menus
-            .iter()
-            .find(|item| !actions.contains(&item.action))
-        {
-            return Err(DefinitionError::UnknownMenuAction(item.action));
+        for item in self.menus {
+            let entry = item.entry.actions();
+            if let Some(action) = entry.iter().find(|action| !actions.contains(*action)) {
+                return Err(DefinitionError::UnknownMenuAction(action));
+            }
+            check_section(item)?;
         }
         check_menus(self.menus)
     }
@@ -2768,12 +2842,24 @@ mod tests {
         }
     }
 
+    /// The item naming `action` at `place`, in View's section.
     const fn item(place: Place, action: &'static str) -> MenuItem {
         MenuItem {
             place,
-            section: Section::EDIT,
+            section: Section::VIEW,
             order: 100,
-            action,
+            entry: MenuEntry::Action(action),
+        }
+    }
+
+    /// The submenu `title` of `actions` at `place`, in View's section.
+    fn submenu(place: Place, title: &'static str, actions: &[&'static str]) -> MenuItem {
+        MenuItem {
+            entry: MenuEntry::Submenu {
+                title,
+                actions: Box::leak(actions.to_vec().into_boxed_slice()),
+            },
+            ..item(place, "")
         }
     }
 
@@ -2810,8 +2896,8 @@ mod tests {
             order,
             ..item(Place::Photo, "rotate")
         };
-        for other in [moved(Section::EDIT, 200), moved(Section::VIEW, 100)] {
-            let twice = [moved(Section::EDIT, 100), other];
+        for other in [moved(Section::VIEW, 200), moved(Section::EXPORT, 100)] {
+            let twice = [moved(Section::VIEW, 100), other];
             assert_eq!(
                 check_menus(&twice),
                 Err(DefinitionError::DuplicateMenuItem("rotate")),
@@ -2848,6 +2934,92 @@ mod tests {
         assert_eq!(
             check_menus(&crowded),
             Err(DefinitionError::MenuItems(Place::Photo))
+        );
+    }
+
+    /// Decision 91: a tool's submenu holds its own actions, one to eight, each once and
+    /// none listed beside it in its place too, and counts as one item towards the limit.
+    #[test]
+    fn a_tool_s_submenu_holds_one_to_eight_of_its_own_actions_and_counts_as_one() {
+        let turn = |actions: &[&'static str]| submenu(Place::Photo, "tool-page-title", actions);
+        let both = with_menus(&[
+            turn(&["rotate", "auto_tune", "pick", "clear"]),
+            item(Place::Photo, "set_from_above"),
+        ]);
+        assert_eq!(both.check(), Ok(()));
+        let unknown = with_menus(&[turn(&["rotate", "spin"])]);
+        assert_eq!(
+            unknown.check(),
+            Err(DefinitionError::UnknownMenuAction("spin"))
+        );
+        let empty = with_menus(&[turn(&[])]);
+        assert_eq!(
+            empty.check(),
+            Err(DefinitionError::SubmenuItems("tool-page-title"))
+        );
+        let nine = [&["rotate"; 1][..], &["clear"; 8]].concat();
+        assert_eq!(
+            check_menus(&[turn(&nine)]),
+            Err(DefinitionError::SubmenuItems("tool-page-title"))
+        );
+        let inside = with_menus(&[turn(&["rotate", "pick", "rotate"])]);
+        assert_eq!(
+            inside.check(),
+            Err(DefinitionError::DuplicateMenuItem("rotate"))
+        );
+        let beside = with_menus(&[turn(&["rotate", "pick"]), item(Place::Photo, "pick")]);
+        assert_eq!(
+            beside.check(),
+            Err(DefinitionError::DuplicateMenuItem("pick"))
+        );
+        // Beside it in another place, as on a thumbnail.
+        let elsewhere = with_menus(&[turn(&["rotate"]), item(Place::Thumbnail, "rotate")]);
+        assert_eq!(elsewhere.check(), Ok(()));
+        let crowded = with_menus(&[
+            turn(&["rotate"]),
+            item(Place::Photo, "pick"),
+            item(Place::Photo, "clear"),
+        ]);
+        assert_eq!(
+            crowded.check(),
+            Err(DefinitionError::MenuItems(Place::Photo))
+        );
+    }
+
+    /// Decision 91: a tool's item stands from Edit's section up to, not including, the
+    /// layout's, and in Edit's after Reset, at order 200 or more.
+    #[test]
+    fn a_tool_s_item_stands_between_edit_and_layout_after_reset() {
+        let at = |section, order| MenuItem {
+            section: Section(section),
+            order,
+            ..item(Place::Photo, "pick")
+        };
+        for fine in [at(1000, 200), at(2000, 100), at(4500, 100), at(8999, 100)] {
+            assert_eq!(with_menus(&[fine]).check(), Ok(()), "{fine:?}");
+        }
+        for (outside, why) in [
+            (at(999, 100), DefinitionError::MenuSection("pick")),
+            (at(0, 100), DefinitionError::MenuSection("pick")),
+            (at(9000, 100), DefinitionError::MenuSection("pick")),
+            (at(1000, 100), DefinitionError::MenuOrder("pick")),
+            (at(1000, 199), DefinitionError::MenuOrder("pick")),
+        ] {
+            assert_eq!(
+                with_menus(&[outside]).check(),
+                Err(why.clone()),
+                "{outside:?}"
+            );
+            assert_eq!(check_section(&outside), Err(why));
+        }
+        // A submenu is named by its title.
+        let turn = MenuItem {
+            section: Section::LAYOUT,
+            ..submenu(Place::Photo, "tool-page-title", &["pick"])
+        };
+        assert_eq!(
+            check_section(&turn),
+            Err(DefinitionError::MenuSection("tool-page-title"))
         );
     }
 

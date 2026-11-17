@@ -48,7 +48,7 @@ use apertrust_ui::i18n::Args;
 use apertrust_ui::{Translator, popup, translator};
 use eframe::egui::{self, Rect, os::OperatingSystem};
 
-use apertrust_tools::{MenuItem, Section};
+use apertrust_tools::{MenuEntry, MenuItem, Section};
 
 use crate::actions::{self, Action, ActionId, Focus, Keymap, Platforms, Shortcut, State, Trigger};
 
@@ -615,46 +615,80 @@ pub fn context(
     built(place, target, &added, keymap, state, os, &tr, anchor)
 }
 
-/// One item the app adds to a context menu, as tools add theirs ([`MenuItem`]): a registry
-/// action or one of the menu bar's submenus, at its place, section and order.
-pub struct AppItem {
-    pub place: apertrust_tools::Place,
-    pub section: Section,
-    pub order: u32,
-    pub entry: Entry,
-}
-
-/// The app's items in the places open to tools' (decision 91): the photo's Export… and
-/// Background ▸, a thumbnail's Export…. Copy Edit and Apply Edit join Edit's section once
-/// built, Show in Finder and Show in Folder once built; Reset is History's.
-pub static APP_ITEMS: [AppItem; 3] = [
-    AppItem {
+/// The app's items in the places open to tools' (decision 91), declared as the tools'
+/// are: the photo's Export… and Background ▸, View › Background's items as a submenu, and
+/// a thumbnail's Export…. Copy Edit and Apply Edit join Edit's section once built, Show in
+/// Finder and Show in Folder once built; Reset is History's. The app's are held to no
+/// section's rule.
+pub static APP_ITEMS: [MenuItem; 3] = [
+    MenuItem {
         place: apertrust_tools::Place::Photo,
         section: Section::EXPORT,
         order: 100,
-        entry: item(ActionId::EXPORT),
+        entry: MenuEntry::Action(ActionId::EXPORT.0),
     },
-    AppItem {
+    MenuItem {
         place: apertrust_tools::Place::Photo,
         section: Section::VIEW,
         order: 100,
-        entry: Entry::Submenu(&BACKGROUND),
+        entry: MenuEntry::Submenu {
+            title: BACKGROUND.title,
+            actions: &[
+                ActionId::BACKGROUND[0].0,
+                ActionId::BACKGROUND[1].0,
+                ActionId::BACKGROUND[2].0,
+                ActionId::BACKGROUND[3].0,
+                ActionId::BACKGROUND[4].0,
+                ActionId::BACKGROUND[5].0,
+            ],
+        },
     },
-    AppItem {
+    MenuItem {
         place: apertrust_tools::Place::Thumbnail,
         section: Section::EXPORT,
         order: 100,
-        entry: item(ActionId::EXPORT),
+        entry: MenuEntry::Action(ActionId::EXPORT.0),
     },
 ];
 
-/// One item a tool or a utility adds, by its registry action's id, at its section and
-/// order.
+/// One item of a context menu with its actions by their registry ids, at its section and
+/// order: an action alone, or a submenu's, under its title.
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct Added {
     section: Section,
     order: u32,
-    action: String,
+    /// A submenu's title, a message id; none for an action alone.
+    title: Option<&'static str>,
+    actions: Vec<String>,
+}
+
+impl Added {
+    /// `item`, each of its actions' ids as `id` gives it.
+    fn of(item: &MenuItem, id: &dyn Fn(&str) -> String) -> Added {
+        let title = match item.entry {
+            MenuEntry::Action(_) => None,
+            MenuEntry::Submenu { title, .. } => Some(title),
+        };
+        Added {
+            section: item.section,
+            order: item.order,
+            title,
+            actions: item
+                .entry
+                .actions()
+                .iter()
+                .map(|action| id(action))
+                .collect(),
+        }
+    }
+}
+
+/// The app's items at `place` ([`APP_ITEMS`]).
+fn app_items(place: apertrust_tools::Place) -> Vec<Added> {
+    let items = APP_ITEMS.iter().filter(|item| item.place == place);
+    items
+        .map(|item| Added::of(item, &|id| id.to_string()))
+        .collect()
 }
 
 /// The items `tools` and `utilities` add to `place` for `target`, by their registry actions'
@@ -669,15 +703,9 @@ fn added(
     let joins = |id: &str| {
         place != apertrust_tools::Place::Options || matches!(target, Target::Tool(t) if *t == id)
     };
-    let at = |items: &'static [MenuItem], action: &dyn Fn(&str) -> String| {
+    let at = |items: &'static [MenuItem], id: &dyn Fn(&str) -> String| {
         let items = items.iter().filter(move |item| item.place == place);
-        items
-            .map(|item| Added {
-                section: item.section,
-                order: item.order,
-                action: action(item.action),
-            })
-            .collect::<Vec<_>>()
+        items.map(|item| Added::of(item, id)).collect::<Vec<_>>()
     };
     let tools = tools
         .iter()
@@ -690,9 +718,9 @@ fn added(
 }
 
 /// [`context`]'s menu with the app's items at `place` and `added`, sorted by section and
-/// order, a line wherever the section changes; an action the registry does not declare is
+/// order, a line wherever the section changes. An action the registry does not declare is
 /// left out, and in a thumbnail's menu one that acts on one photo alone while several are
-/// selected ([`ONE_PHOTO`]).
+/// selected ([`ONE_PHOTO`]); so is a submenu left with none.
 #[expect(
     clippy::too_many_arguments,
     reason = "the menu's place, target and state"
@@ -713,21 +741,26 @@ fn built(
         return popup::Request::pull_down(anchor, name(place, target, tr), entries);
     };
     let several = *target == Target::Selection && state.photos > 1;
-    let app = APP_ITEMS.iter().filter(|item| item.place == open);
-    let app = app.filter_map(|item| {
-        let entry = match &item.entry {
-            Entry::Action(id, _) => action_item(*id, keymap, state, &steps, os, tr)?.into(),
-            Entry::Submenu(menu) => drawn(menu, os, keymap, state, &[], &steps, tr).into(),
-            Entry::System(_) | Entry::Recents => return None,
+    let item = |id: &String| {
+        let id = chosen(id).filter(|id| !(several && ONE_PHOTO.contains(id)))?;
+        action_item(id, keymap, state, &steps, os, tr)
+    };
+    let all = app_items(open);
+    let all = all.iter().chain(added).filter_map(|added| {
+        let entry = match added.title {
+            None => item(added.actions.first()?)?.into(),
+            Some(title) => {
+                let items = added.actions.iter().filter_map(item).map(Into::into);
+                let items: Vec<popup::Entry> = items.collect();
+                if items.is_empty() {
+                    return None;
+                }
+                popup::Submenu::new(title, tr.text(title), items).into()
+            }
         };
-        Some((item.section, item.order, entry))
+        Some((added.section, added.order, entry))
     });
-    let added = added.iter().filter_map(|item| {
-        let id = chosen(&item.action).filter(|id| !(several && ONE_PHOTO.contains(id)))?;
-        let entry = action_item(id, keymap, state, &steps, os, tr)?;
-        Some((item.section, item.order, entry.into()))
-    });
-    let mut items: Vec<(Section, u32, popup::Entry)> = app.chain(added).collect();
+    let mut items: Vec<(Section, u32, popup::Entry)> = all.collect();
     items.sort_by_key(|(section, order, _)| (*section, *order));
     let mut entries = Vec::new();
     let mut last = None;
@@ -893,7 +926,7 @@ fn drawn(
 
 /// The action of the item chosen in the ☰'s menu, by its id.
 pub fn chosen(id: &str) -> Option<ActionId> {
-    actions::ACTIONS.iter().find(|a| a.id.0 == id).map(|a| a.id)
+    actions::named(id).map(|a| a.id)
 }
 
 #[cfg(target_os = "macos")]
@@ -941,7 +974,7 @@ mod mac {
         Entry, Listed, Recent, Role, Shown, Steps, System, groups, listed, lists_recents, menus,
         names_a_step, runs, shown, words,
     };
-    use crate::actions::{self, ACTIONS, ActionId, Focus, Keymap, Shortcut, State};
+    use crate::actions::{self, ActionId, Focus, Keymap, Shortcut, State};
 
     /// The Mac's menu bar, built from [`super::MENUS`] once the window exists, on the main
     /// thread, and handed to AppKit in place of winit's default menu.
@@ -1166,7 +1199,7 @@ mod mac {
             self.chosen
                 .try_iter()
                 .filter_map(|(id, repeat)| {
-                    let action = ACTIONS.iter().find(|a| a.id.0 == id.0)?;
+                    let action = actions::named(&id.0)?;
                     runs(action.id, repeat).then_some(action.id)
                 })
                 .collect()
@@ -1443,6 +1476,7 @@ mod tests {
             view: View::Edit,
             photo: true,
             waiting: false,
+            editable: true,
             edited: true,
             undo: true,
             redo: true,
@@ -2301,7 +2335,7 @@ mod tests {
             place,
             section: Section(section),
             order,
-            action,
+            entry: MenuEntry::Action(action),
         }
     }
 
@@ -2356,22 +2390,31 @@ mod tests {
                 utility.id
             );
             for item in utility.menus {
-                assert!(in_menus(item.action), "{}: {}", utility.id, item.action);
+                for action in item.entry.actions() {
+                    assert!(in_menus(action), "{}: {action}", utility.id);
+                }
+                // A tool's sections, History's Reset alone first in Edit's.
+                let reset = (utility.id, item.section, item.order, item.entry)
+                    == ("history", Section::EDIT, 100, MenuEntry::Action("reset"));
+                if !reset {
+                    let placed = apertrust_tools::check_section(item);
+                    assert_eq!(placed, Ok(()), "{}: {item:?}", utility.id);
+                }
             }
         }
         // History adds Reset alone to the photo's and a thumbnail's menus.
         let history = apertrust_tools::utility::utility("history").unwrap();
         for place in [Open::Photo, Open::Thumbnail] {
-            let items: Vec<&str> = (history.menus.iter())
+            let items = (history.menus.iter())
                 .filter(|item| item.place == place)
-                .map(|item| item.action)
-                .collect();
-            assert_eq!(items, [ActionId::RESET.0], "{place:?}");
+                .map(|item| item.entry)
+                .collect::<Vec<_>>();
+            assert_eq!(items, [MenuEntry::Action(ActionId::RESET.0)], "{place:?}");
         }
         assert_eq!(history.menus.len(), 2);
         for tool in definitions() {
-            for item in tool.menus {
-                let id = format!("tool-{}-{}", tool.id, item.action);
+            for action in tool.menus.iter().flat_map(|item| item.entry.actions()) {
+                let id = format!("tool-{}-{action}", tool.id);
                 assert!(chosen(&id).is_some(), "{id} is no registry action");
             }
         }
@@ -2402,7 +2445,7 @@ mod tests {
         let ids = |place, target: Target| -> Vec<(u32, u32, String)> {
             let added = added(place, &target, &tools, &utilities).into_iter();
             added
-                .map(|item| (item.section.0, item.order, item.action))
+                .map(|item| (item.section.0, item.order, item.actions.join(",")))
                 .collect()
         };
         let id = |section, order, action: &str| (section, order, action.to_string());
@@ -2440,7 +2483,8 @@ mod tests {
         let added = |section, order, action: &str| Added {
             section: Section(section),
             order,
-            action: action.into(),
+            title: None,
+            actions: vec![action.into()],
         };
         let menu = built(
             Place::Open(Open::Photo),
@@ -2541,7 +2585,8 @@ mod tests {
                 added.push(Added {
                     section: Section(section),
                     order,
-                    action: id.to_string(),
+                    title: None,
+                    actions: vec![id.to_string()],
                 });
             }
         }
@@ -2737,6 +2782,44 @@ mod tests {
         };
         let menu = open(Open::Photo, photo, &one);
         assert_eq!(menu.name, "Photo");
+        assert_eq!(
+            words(&menu),
+            [
+                "Reset",
+                "-",
+                "Export…",
+                "-",
+                "Background ▸",
+                "Orientation ▸"
+            ]
+        );
+        // Orientation's buttons, in their order, as its submenu.
+        let orientation = match menu.entries.last() {
+            Some(popup::Entry::Submenu(submenu)) => submenu,
+            other => panic!("not Orientation ▸: {other:?}"),
+        };
+        let buttons: Vec<&str> = (orientation.entries.iter())
+            .map(|entry| match entry {
+                popup::Entry::Item(item) => item.id.as_str(),
+                other => panic!("not a button's: {other:?}"),
+            })
+            .collect();
+        assert_eq!(
+            buttons,
+            [
+                "tool-flip-rotate_ccw",
+                "tool-flip-rotate_cw",
+                "tool-flip-flip_horizontally",
+                "tool-flip-flip_vertically"
+            ]
+        );
+        // On a photo that takes no edits, as one open for viewing only, Orientation's
+        // buttons cannot run, and its submenu goes with them.
+        let viewing = State {
+            editable: false,
+            ..one
+        };
+        let menu = open(Open::Photo, photo, &viewing);
         assert_eq!(words(&menu), ["Reset", "-", "Export…", "-", "Background ▸"]);
         let menu = open(Open::Thumbnail, Target::Selection, &one);
         assert_eq!(menu.name, "Thumbnail");
@@ -2754,7 +2837,24 @@ mod tests {
             ..one
         };
         let menu = open(Open::Photo, photo, &unedited);
-        assert_eq!(words(&menu), ["Export…", "-", "Background ▸"]);
+        assert_eq!(
+            words(&menu),
+            ["Export…", "-", "Background ▸", "Orientation ▸"]
+        );
+    }
+
+    /// The photo's Background ▸ is View › Background's items, in its order, so the two
+    /// never differ.
+    #[test]
+    fn the_photo_s_background_submenu_is_view_background_s_items() {
+        let background = APP_ITEMS.iter().find_map(|item| match item.entry {
+            MenuEntry::Submenu { title, actions } if title == BACKGROUND.title => Some(actions),
+            _ => None,
+        });
+        let mut menu_bar = Vec::new();
+        placed_in(&BACKGROUND, OperatingSystem::Nix, &mut menu_bar);
+        let menu_bar: Vec<&str> = menu_bar.iter().map(|id| id.0).collect();
+        assert_eq!(background, Some(&menu_bar[..]));
     }
 
     /// A line or a submenu left with nothing by hidden items goes with them, and every
@@ -2792,8 +2892,8 @@ mod tests {
     }
 
     /// Decision 91's cap: the photo's and a thumbnail's menus, with every item every tool
-    /// and utility adds there shown, hold at most 16 items, a submenu one. An item past
-    /// it needs a decision.
+    /// and utility adds there shown, hold at most 16 items, a submenu's each counted. An
+    /// item past it needs a decision.
     #[test]
     fn the_photo_s_and_a_thumbnail_s_menus_hold_at_most_16_items() {
         for (place, target) in [
@@ -2805,10 +2905,10 @@ mod tests {
             ),
             (Open::Thumbnail, Target::Selection),
         ] {
-            let app = APP_ITEMS.iter().filter(|item| item.place == place).count();
             let tools = definitions();
             let added = added(place, &target, &tools, apertrust_tools::utility::UTILITIES);
-            let count = app + added.len();
+            let all = app_items(place).into_iter().chain(added);
+            let count: usize = all.map(|item| item.actions.len()).sum();
             assert!(count <= 16, "{place:?} holds {count} items");
         }
     }

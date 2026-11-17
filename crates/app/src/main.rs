@@ -1762,6 +1762,9 @@ struct Shell {
     discard: alerts::Question,
     /// Whether Discard History… ran, for the app to ask first, or send it.
     discard_history: bool,
+    /// A tool's own action that ran, by its tool and action, for the app to run as its
+    /// button does ([`App::tool_action`]).
+    tool_action: Option<(&'static str, &'static str)>,
     /// Whether the menus are the ☰'s, drawn: on Windows and Linux (decision 39), where the
     /// frameless window has no menu bar. The Mac has its own.
     drawn_menus: bool,
@@ -1879,6 +1882,7 @@ impl Shell {
             overwrite: alerts::Question::overwrite(settings.ask_before_overwrite, false),
             discard: alerts::Question::discard(settings.ask_before_discard, false),
             discard_history: false,
+            tool_action: None,
             drawn_menus: os != OperatingSystem::Mac,
             menu: false,
             close_menu: false,
@@ -2360,6 +2364,7 @@ impl Shell {
             photo,
             // The app's, from the session's mirror ([`App::shell_state`]).
             waiting: false,
+            editable: false,
             edited,
             // The app's, from the photo's history ([`App::shell_state`]).
             undo: false,
@@ -2626,6 +2631,7 @@ impl Shell {
             Intent::Export => self.export_asked = true,
             Intent::ExportAgain => self.export_again = true,
             Intent::DiscardHistory => self.discard_history = true,
+            Intent::ToolAction { tool, action } => self.tool_action = Some((tool, action)),
             Intent::Menu => self.menu = true,
             Intent::View(view) => self.view = view,
             Intent::PanelTab(tab) => self.choose_tab(tab),
@@ -3798,6 +3804,7 @@ impl App {
         State {
             shown: !self.mirror.folder.order().is_empty(),
             waiting: self.mirror.photo.asked().is_some() && !self.mirror.live(),
+            editable: takes && self.mirror.live(),
             opened: opened(&self.mirror),
             undo: history.is_some_and(|h| h.undo.is_some()),
             redo: history.is_some_and(|h| h.redo.is_some()),
@@ -3805,6 +3812,14 @@ impl App {
             discard_why: history::discard_why(options),
             ..state
         }
+    }
+
+    /// Runs `tool`'s own action `action` as pressing its button does (decision 91): on the
+    /// tool's values the mirror holds, through the same change, each control it writes one
+    /// change and one history step.
+    fn tool_action(&mut self, tool: &'static str, action: &'static str, ctx: &egui::Context) {
+        let change = tool_action_change(&self.mirror.values, tool, action);
+        self.change(change, ctx);
     }
 
     /// Whether the photo open is open for viewing only: a newer Apertrust wrote its edit,
@@ -3883,6 +3898,9 @@ impl App {
             }
             if std::mem::take(&mut self.shell.discard_history) {
                 self.discard_history(ctx);
+            }
+            if let Some((tool, action)) = self.shell.tool_action.take() {
+                self.tool_action(tool, action, ctx);
             }
             if let Some(path) = self.shell.open_recent.take() {
                 self.open_folder(path);
@@ -4862,6 +4880,21 @@ fn picture_texture(
     let texture = ctx.load_texture("opening picture", pixels, egui::TextureOptions::LINEAR);
     *kept = Some((generation, texture.clone()));
     texture
+}
+
+/// What `tool`'s own action `action` asks of the session, run from the registry (decision
+/// 91): the change pressing its button makes, on the tool's controls in `values`.
+fn tool_action_change(values: &Values, tool: &'static str, action: &'static str) -> Change {
+    let mut controls = apertrust_tools::Controls::new();
+    let state = values.tools.iter().find(|state| state.tool == tool);
+    for shown in state.iter().flat_map(|state| &state.controls) {
+        controls.set(shown.control, shown.value.clone());
+    }
+    Change::Action {
+        tool,
+        action,
+        values: controls,
+    }
 }
 
 /// The photo a thumbnail's menu makes active as it opens, by a right-click or its keys
@@ -10100,7 +10133,10 @@ mod tests {
                     let slot = ui.allocate_rect(ui.max_rect(), egui::Sense::click());
                     let shell = &surround.shell;
                     let (photo, picking) = (surround.photo, surround.picking);
-                    let state = shell.state(&ctx, photo.is_some(), photo.is_some());
+                    let state = State {
+                        editable: photo.is_some(),
+                        ..shell.state(&ctx, photo.is_some(), photo.is_some())
+                    };
                     let chosen =
                         central_menu(&ctx, &slot, photo, picking, &shell.keymap, &state, None);
                     surround.chosen.extend(chosen);
@@ -10159,7 +10195,7 @@ mod tests {
             }))
             .filter_map(|node| node.accesskit_node().label())
             .collect();
-        assert_eq!(items, ["Reset", "Export…", "Background"]);
+        assert_eq!(items, ["Reset", "Export…", "Background", "Orientation"]);
         harness.get_by_label("Reset").click();
         harness.run();
         assert_eq!(harness.state().chosen, [ActionId::RESET]);
@@ -10177,6 +10213,35 @@ mod tests {
         );
     }
 
+    /// Decision 91: Orientation ▸ in the photo's menu holds its buttons, and choosing one
+    /// chooses its registry action, which runs as the button does.
+    #[test]
+    fn the_photo_s_orientation_submenu_chooses_a_button_s_action() {
+        let photo = egui::Rect::from_min_size(egui::pos2(100.0, 50.0), egui::vec2(400.0, 300.0));
+        let mut harness = surround(Some(photo), false);
+        right_click_at(&mut harness, photo.center());
+        harness.get_by_label("Orientation").click();
+        harness.run();
+        let submenu = harness.get_by_role_and_label(Role::Menu, "Orientation");
+        let buttons: Vec<String> = submenu
+            .query_all_by_role(Role::MenuItem)
+            .filter_map(|node| node.accesskit_node().label())
+            .collect();
+        assert_eq!(
+            buttons,
+            [
+                "Rotate 90° anticlockwise",
+                "Rotate 90° clockwise",
+                "Flip horizontally",
+                "Flip vertically"
+            ]
+        );
+        harness.get_by_label("Rotate 90° clockwise").click();
+        harness.run();
+        let rotate = actions::named("tool-flip-rotate_cw").unwrap().id;
+        assert_eq!(harness.state().chosen, [rotate]);
+    }
+
     /// Decision 91 (and 79): while a picker is on, the photo's right-click is the picker's,
     /// and no menu opens there; the surround keeps its own.
     #[test]
@@ -10191,6 +10256,41 @@ mod tests {
                 .query_by_role_and_label(Role::Menu, "Background")
                 .is_some()
         );
+    }
+
+    /// Decision 91: a tool's own action from the registry runs as its button does: the
+    /// shell notes it, and the app sends the change its button's press makes, which writes
+    /// what the tool's action writes.
+    #[test]
+    fn a_tool_s_registry_action_runs_as_its_button_does() {
+        let ctx = egui::Context::default();
+        let mut shell = Shell::new(&Settings::default(), Locale::EnGb, OperatingSystem::Nix);
+        let rotate = actions::named("tool-flip-rotate_cw").unwrap().id;
+        // Not while the photo takes no edits.
+        let state = shell.state(&ctx, true, true);
+        shell.run(rotate, &state, &ctx, &[]);
+        assert_eq!(shell.tool_action, None);
+        let state = State {
+            editable: true,
+            ..state
+        };
+        assert_eq!(shell.run(rotate, &state, &ctx, &[]), None);
+        assert_eq!(shell.tool_action, Some(("flip", "rotate_cw")));
+        let mirror = Mirror::new(apertrust_tools::TOOLS, jobs::Mirror::new(None));
+        let change = tool_action_change(&mirror.values, "flip", "rotate_cw");
+        let Change::Action {
+            tool,
+            action,
+            values,
+        } = change
+        else {
+            panic!("not a button's press: {change:?}");
+        };
+        assert_eq!((tool, action), ("flip", "rotate_cw"));
+        let image = mirror.photo.image();
+        let writes = tools::action_writes(mirror.tools(), tool, action, &values, &image, false);
+        assert_eq!(writes.len(), 1, "{writes:?}");
+        assert_eq!((writes[0].0, writes[0].2), ("orientation", true));
     }
 
     /// A thumbnail's menu makes its cell's photo active first, unless it is already: the
