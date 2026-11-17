@@ -255,15 +255,31 @@ impl Upkeep {
                 0
             }
         };
-        #[cfg(test)]
-        self.took(Step::Walk);
-        match self.walk(&cancel) {
-            Ok(Some(sizes)) => log_walk(&sizes, tidied, self.limit(), started.elapsed()),
-            Ok(None) => log_overtaken(),
-            Err(error) if error.kind() == io::ErrorKind::Interrupted => {
+        loop {
+            if cancel() {
                 return self.idle();
             }
-            Err(error) => tracing::warn!(target: "settings", "cache not walked: {folder}: {error}"),
+            #[cfg(test)]
+            self.took(Step::Walk);
+            match self.walk(&cancel) {
+                Ok(Some(sizes)) => log_walk(&sizes, tidied, self.limit(), started.elapsed()),
+                Ok(None) => {
+                    log_overtaken();
+                    if self.cache.sizes().is_none() {
+                        // No count exists for subsequent writes to update, so keep the
+                        // startup job alive until it can count a quiet pass.
+                        std::thread::sleep(Duration::from_millis(10));
+                        continue;
+                    }
+                }
+                Err(error) if error.kind() == io::ErrorKind::Interrupted => {
+                    return self.idle();
+                }
+                Err(error) => {
+                    tracing::warn!(target: "settings", "cache not walked: {folder}: {error}")
+                }
+            }
+            break;
         }
         // Running still, so the check folds its own request in.
         self.check();
@@ -443,17 +459,6 @@ impl Upkeep {
     fn walk_while_asked(&self, context: &Context<'_>, tell: &Tell) {
         let _unwinding = SizingUnwinding(self);
         let stopped = || context.cancelled() || self.stop.load(Ordering::Relaxed);
-        let cancel = || {
-            #[cfg(test)]
-            if let Some(hold) = &*self
-                .walk_hold
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-            {
-                hold.wait();
-            }
-            stopped()
-        };
         loop {
             let commands = {
                 let mut state = self.lock();
@@ -465,7 +470,7 @@ impl Upkeep {
                 commands
             };
             let started = Instant::now();
-            match self.walk(&cancel) {
+            match self.walk(&stopped) {
                 Ok(Some(sizes)) => {
                     log_sizes(&sizes, self.limit(), started.elapsed());
                     self.tell_counted(tell);
@@ -492,9 +497,20 @@ impl Upkeep {
     /// the walk ([`Cache::walk`]); `None` where it overtook both, the handle's count then
     /// holding what they removed.
     fn walk(&self, cancel: &(dyn Fn() -> bool + Sync)) -> io::Result<Option<Sizes>> {
-        match self.cache.walk(cancel)? {
+        let cancel = || {
+            #[cfg(test)]
+            if let Some(hold) = &*self
+                .walk_hold
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+            {
+                hold.wait();
+            }
+            cancel()
+        };
+        match self.cache.walk(&cancel)? {
             Some(sizes) => Ok(Some(sizes)),
-            None => self.cache.walk(cancel),
+            None => self.cache.walk(&cancel),
         }
     }
 
@@ -700,10 +716,10 @@ pub fn size_in_unit(bytes: u64) -> (f64, usize, &'static str) {
     (size, usize::from(size < 10.0), unit)
 }
 
-/// A walk the handle's own eviction or clear overtook twice, under `-d perf`: the count
+/// A walk the handle's own writes or removals overtook twice, under `-d perf`: the count
 /// stays as it was.
 fn log_overtaken() {
-    tracing::debug!(target: "perf", "cache walked while it removed, twice: its count kept");
+    tracing::debug!(target: "perf", "cache walks overtaken twice: count unchanged");
 }
 
 /// An eviction under `-d perf`: what it removed, what it could not, and the time.

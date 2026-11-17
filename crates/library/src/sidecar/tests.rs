@@ -1176,6 +1176,33 @@ fn qualified_or_resource_step_scalars_are_reported() {
     }
 }
 
+#[test]
+fn qualified_or_resource_top_level_versions_are_reported() {
+    use crate::xmp::{Node, Value, Xmp};
+    for xml in [Document::new("test").to_xml(), edits().to_xml()] {
+        assert!(Edits::parse(&xml, 0).unwrap().problems.is_empty());
+        for resource in [false, true] {
+            let mut xmp = Xmp::parse(&xml).unwrap();
+            let node = &mut xmp
+                .properties
+                .iter_mut()
+                .find(|p| p.name.local == "version")
+                .unwrap()
+                .node;
+            if resource {
+                let Value::Simple(text) = &node.value else {
+                    panic!("version")
+                };
+                node.value = Value::Resource(text.clone());
+            } else {
+                node.qualifiers = Node::with_lang("", "en").qualifiers;
+            }
+            let read = Edits::parse(&xmp.to_xml(), 0).unwrap();
+            assert!(read.problems.iter().any(|p| matches!(p, Problem::UnknownField { field, .. } if field == "apertrust:version")), "version {}, resource={resource}: {:?}", read.version, read.problems);
+        }
+    }
+}
+
 /// In a step's entries, a field a newer build may write that this one would drop is a
 /// problem, by the kind of entry: one of Apertrust's own it does not write, another
 /// namespace's, an operation's control or a tool's parameter, an item that is no entry,
