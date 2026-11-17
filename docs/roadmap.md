@@ -131,7 +131,7 @@ Goal: open, edit, save and reopen a photo with the first pass's tools. Migration
 - [ ] 93.2. `UtilityTool` in the app, with one `Context`, History, Scopes and Browse implementing it, Browse joining `UTILITIES`.
 - [ ] 93.3. One header and ⋯ for every tool in `TOOLS` and `UTILITIES`, from `&ToolDefinition`, History's ⋯ items declared with it, Truncate History an item of its own; Export's with 93.5.
 - [ ] 93.4. The utilities on the page model, their widgets as custom rows and `UtilityDefinition::check` refusing a row that edits: Scopes first, then History, then Browse.
-- [ ] 93.5. Export's page as setting rows naming the `export.*` keys, with its presets: Export implements `UtilityTool` and joins `UTILITIES`, the setting rows it builds shared later with Import's sheet ([Export](#export)).
+- [ ] 93.5. Export's page as setting rows naming the `export.*` keys, with its presets, For sharing and Full size JPEG built in ([gui.md](gui.md#the-export-tool), step 16): Export implements `UtilityTool` and joins `UTILITIES`, the setting rows it builds shared later with Import's sheet ([Export](#export)).
 
 ### Editing
 
@@ -269,7 +269,7 @@ Goal: usable for daily editing, and the editor sets the sliders for a goal. Migr
   - [ ] Browse's Import…, opening the Import sheet.
 - [ ] The Import sheet's frame (decision 86; [gui.md](gui.md#sheets)): the sheet bar, a grid of photos checked to go, a column of tools on the side panel's side, the footer with Keep open, Close and the primary button, its keys and modality, each tool kept to its place; then Import's first slice (the library's step 20a).
 - [ ] Alerts on Windows, for Overwrite and the quit question; Linux's are built.
-- [ ] Export presets, For sharing and Full size JPEG built in, and several presets in one go.
+- [ ] Several presets in one go, Multi-preset export ([gui.md](gui.md#the-export-tool), step 17); the presets themselves come with step 93.5.
 - [ ] Metadata in exported files, and styles applied on export.
 
 ### Culling, metadata and several computers, in folder mode

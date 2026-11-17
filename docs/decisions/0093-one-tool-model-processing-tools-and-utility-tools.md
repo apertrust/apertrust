@@ -4,8 +4,8 @@
 
 Everything in the side panel is a tool ([0004](0004-tools-for-people-operations-for-algorithms.md)), and the tools that edit the photo and those that edit nothing look mostly the same: a header with ↺, presets and ⋯, a page of rows, items for context menus and the toolbar ([0091](0091-context-menus-places-and-tools-items-as-actions.md), [0092](0092-the-toolbar.md)). They are coded in two ways:
 
-- **A tool that edits the photo** is a declaration in `apertrust-tools`, a `Definition` with a page of `Row`s, and an implementation of the trait `Tool` ([0028](0028-tools-bound-to-operations.md)); `crates/app/src/tools.rs` draws every one of them with no code of its own.
-- **A utility** is drawn wholly by its own app module (`history.rs`, `scopes.rs`, `library.rs` for Browse, `export.rs`), each building its own `Section` header, and `main.rs` calls each one by hand. `utility::UTILITIES` lists only Scopes and History, as `Utility { id, measures, menus }`; Browse is in no list.
+- **A tool that edits the photo** is a declaration in `apertrust-tools`, a `ProcessingDefinition` with a page of `Row`s, and an implementation of the trait `ProcessingTool` ([0028](0028-tools-bound-to-operations.md)); `crates/app/src/tools.rs` draws every one of them with no code of its own.
+- **A utility** is drawn wholly by its own app module (`history.rs`, `scopes.rs`, `library.rs` for Browse, `export.rs`), each building its own `Section` header, and `main.rs` calls each one by hand. `utility::UTILITIES` lists only Scopes and History, as `UtilityDefinition { tool, measures }`; Browse is in no list.
 
 So the headers drift apart, a utility's ↺, presets and ⋯ behave as its module makes them, and Export's rows, which are settings, are drawn by code no other tool can share. darktable has the same split, and joins its two kinds by composition: its processing modules (`dt_iop_module_so_t`, `src/iop/iop_api.h`) and its utility modules (`dt_lib_module_t`, `src/libs/lib_api.h`) both begin with one embedded struct, `dt_action_t`, which names them for shortcuts and actions, and each kind has an API of its own. The question is what the two kinds are called, and how one model in the code covers both.
 
@@ -47,19 +47,19 @@ pub struct ToolDefinition {
     pub toolbar: &'static [ToolbarItem],  // decision 92
 }
 
-/// A processing tool's declaration, today's `Definition`.
+/// A processing tool's declaration.
 pub struct ProcessingDefinition {
     pub tool: ToolDefinition,
     // version, layers, auto, switched, controls, preset_rows, views, pickers, facts…
 }
 
-/// A utility tool's declaration, today's `Utility`.
+/// A utility tool's declaration.
 pub struct UtilityDefinition {
     pub tool: ToolDefinition,
     pub measures: Option<WorksOn>,
 }
 
-/// A processing tool's contract with the session, today's trait `Tool`: iop_api.h's non-GUI half.
+/// A processing tool's contract with the session: iop_api.h's non-GUI half.
 pub trait ProcessingTool: Send + Sync {
     fn definition(&self) -> &'static ProcessingDefinition;
     // defaults, owns, bind, available, options, range, curve, pick, action…, as today
@@ -77,7 +77,7 @@ pub trait UtilityTool {
 
 - **The parent is data both kinds embed,** as darktable's `dt_action_t` is; behaviour is an API for each kind. The fields every tool shares move into `ToolDefinition`; what editing needs stays in `ProcessingDefinition`; a utility adds only `measures`.
 - **`reset`** says what the header's ↺ does: a processing tool's own reset (`ResetTool`); a registry action, as History's `reset`, which Edit › Reset runs too; the utility's own `UtilityTool::reset`, as Export's Default settings; or none, as Scopes and Browse.
-- **`presets`** is the header's presets button. A processing tool's preset rows, today's `Definition::presets` ([0031](0031-views-and-curves-of-the-same-stored-values.md)), become `ProcessingDefinition::preset_rows`, so the two never share a name.
+- **`presets`** is the header's presets button. A processing tool's preset rows ([0031](0031-views-and-curves-of-the-same-stored-values.md)) are `ProcessingDefinition::preset_rows`, so the two never share a name.
 - **A tool's place** ([0086](0086-import-as-a-full-window-sheet.md), planned), the side panel or Import, is a field of `ToolDefinition` when it is built, since every tool has one.
 - **`ProcessingTool` stays in `apertrust-tools`,** run by the engine's session, with no egui ([0028](0028-tools-bound-to-operations.md)). **`UtilityTool` lives in the app,** since a utility's behaviour is its widgets: `apertrust-tools` keeps no egui, and the engine never sees a utility.
 - **One `Context` for every utility:** the mirror, the settings, the words and a way to send commands, the frame's command list. History's steps, Browse's folder, Scopes' measurements and Export's jobs are in the mirror, and Export's choices in the settings, so one context covers them all. `body` is required; `reset` and every later method are provided as no-ops.
@@ -132,7 +132,7 @@ Each step is one pull request, reviewed before the next.
 ## Options considered
 
 - **Two models, as today:** each utility draws its own header and page, so ↺, presets and ⋯ drift apart, Browse is in no list, and Export's setting rows, presets and the Import sheet's tools, all settings, would each be drawn by code of their own.
-- **One flat `Definition` for both,** a utility leaving the editing fields empty: a utility would carry a version, layers, Auto, switched, controls and pickers that mean nothing for it, each needing a check that it is empty; darktable keeps the two apart.
+- **One flat definition for both,** a utility leaving the editing fields empty: a utility would carry a version, layers, Auto, switched, controls and pickers that mean nothing for it, each needing a check that it is empty; darktable keeps the two apart.
 - **One trait for both kinds,** in `apertrust-tools`: a utility's behaviour is its widgets, which needs egui there, against [0028](0028-tools-bound-to-operations.md); the processing half is what the engine runs, which a utility never is.
 - **A shared header only,** each utility's page still written by hand: the header would agree, but setting rows, their presets and a check on what a utility may show would not be shared, and Export's and Import's rows would stay two codes.
 - **The header built per kind, as darktable's two expanders:** two codes to keep alike for one block that looks the same.
