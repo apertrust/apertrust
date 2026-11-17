@@ -1085,7 +1085,7 @@ sequenceDiagram
 
 Planned (decision 91). A right-click menu opens only in a named place, and tools add items to it as data. Every item is an action of the registry, the app builds every menu, and no tool runs code in a menu.
 
-**The places,** `Place`, a closed list:
+**The places,** `Place`, a closed list of every place a context menu opens, each added with its place's menu; only the photo, a thumbnail and ⋯ take tools' items:
 
 | Place | Tools' items | The app's items | When |
 | --- | --- | --- | --- |
@@ -1121,10 +1121,10 @@ A place opens to tools' items only by a decision of its own.
 
 - A tool declares its items in `Definition::menus` (`MenuItem { place, section, order, entry }`), each naming one of its own actions (`MenuEntry::Action`). A utility declares them in `utility::UTILITIES` (`Utility::menus`), each naming a registry action. The app declares its own items for each place as `MenuItem`s too.
 - **A submenu** is the app's alone: `MenuEntry::Submenu` names a submenu of the menu bar by its title's id, and its children are that submenu's items in its order, as Background ▸ is View › Background's (`menu-background`). Its children follow the item rules, and it is hidden when none is shown. A tool declares no submenu.
-- **`section`** is one of the `Section` constants in `apertrust-tools`, shared by the app and the tools, whose value sets the section's place in a menu, 1000 apart: `EDIT` 1000, `EXPORT` 2000, `VIEW` 3000, `HISTORY` 4000, and `LAYOUT` 9000 for ⋯'s layout items. A tool or a utility may use a value of its own from 1 to 8999; `LAYOUT` and above are the app's, so the layout's items stay last.
+- **`section`** is one of the `Section` constants in `apertrust-tools`, shared by the app and the tools, whose value sets the section's place in a menu, 1000 apart: `EDIT` 1000, `EXPORT` 2000, `VIEW` 3000, `HISTORY` 4000, and `LAYOUT` 9000 for ⋯'s layout items. A tool or a utility uses a section from `EDIT` to 8999, named or its own, so its items fall between the app's editing items and the layout's, last. In `EDIT`, order 100 is Reset's (the app's in ⋯, History's on the photo and a thumbnail), so another item there takes 200 or more and Reset stays first.
 - **`order`** places an item within its section, 100 apart (100, 200, 300…), lower first. The gaps leave room to insert an item without renumbering. "Order", not "weight" or "priority", whose direction is ambiguous.
 - A tool with nothing to add declares nothing.
-- `Definition::check` refuses an unknown action, a repeat, more items than the place's limit, a section of 9000 or more, and a submenu. An app test holds the utilities to the same rules and to the registry's actions.
+- `Definition::check` refuses an unknown action, a repeat, more items than the place's limit, a place closed to tools, a section outside `EDIT` to 8999 or an `EDIT` order below 200, and a submenu. An app test holds the utilities to the same rules and to the registry's actions.
 
 **Building a menu,** `menus::context(place, target)`:
 
@@ -1139,7 +1139,7 @@ A place opens to tools' items only by a decision of its own.
 **The target:**
 
 - **On the photo:** the active photo, with the point under the pointer in the photo's coordinates as pickers take them, none from the keys; an action that needs a point is hidden without one.
-- **On a thumbnail:** its photo. Opening its menu, by a right-click or from the keys on its focused cell, selects it alone and makes it active first unless it is in the selection ([Selection and the active photo](#selection-and-the-active-photo)), so the menu never acts on another photo than the one it was opened on, and in Phase 2, where the selection is the active photo alone, each item acts on the active photo as from the menu bar. From Phase 3 the selection when the photo is in it; while several are selected, an item that acts on one photo alone is hidden, History's Reset among them.
+- **On a thumbnail:** its photo. Opening its menu, by a right-click or from the keys on its focused cell, selects it alone and makes it active first unless it is in the selection ([Selection and the active photo](#selection-and-the-active-photo)), so the selection the menu acts on always includes the photo it was opened on, and in Phase 2, where the selection is the active photo alone, each item acts on the active photo as from the menu bar. From Phase 3 the selection when the photo is in it; while several are selected, an item that acts on one photo alone is hidden, History's Reset among them.
 - **In ⋯:** its tool.
 
 **Opening.**
@@ -1150,7 +1150,7 @@ A place opens to tools' items only by a decision of its own.
 
 **Every item is reachable without a right-click:** in the menu bar, in its tool's section or ⋯, or by its keys. A right-click menu is a shortcut. A tool's action has its button by construction, and a test holds each utility's item to a menu bar item.
 
-**The first slice:** `Place`, `MenuItem`, `Definition::menus`, `Utility::menus` and their checks; the generated tool actions; `Target` and `menus::context(place, target)`; the photo's menu and a thumbnail's; History's Reset in both, reading on the photo Reset, —, Export…, —, Background ▸. Discard History… is in no context menu. Pickers as items wait for the open question ([Open questions](#open-questions)).
+**The first slice:** `Place` (`Photo`, `Thumbnail`, `Options`, and `Surround`, whose menu moves into the builder), `Section`, `MenuItem`, `MenuEntry`, `Definition::menus`, `Utility::menus` and their checks, `UTILITIES` moved from `about` into `utility`; the generated tool actions; `Target` and `menus::context(place, target)`; the photo's menu and a thumbnail's; History's Reset in both, reading on the photo Reset, —, Export…, —, Background ▸. Discard History… is in no context menu. Pickers as items wait for the open question ([Open questions](#open-questions)).
 
 ### Checks
 
@@ -3277,7 +3277,7 @@ Over a section's header, its chevron, title and empty space, never its buttons, 
   | input scene-referred, output display-referred | Works on · From the light as captured to the finished picture |
   | input and output display-referred | Works on · The finished picture |
 
-  The utilities, which have no definition, are listed in `apertrust_tools::utility::UTILITIES`. darktable translates each of its lines whole, so each is a message of its own, its English darktable's `msgid` and its Ukrainian and Polish darktable's own `msgstr` (`po/uk.po`, `po/pl.po` at the reference release). `crates/tools/tests/about.rs` holds every built tool's facts to darktable's `description()`, each line to darktable's words and translations, and every tool's and utility's sentence to every language.
+  The utilities, which have no definition, are listed in `apertrust_tools::about::UTILITIES` (in `utility` from context menus' first slice, decision 91, planned). darktable translates each of its lines whole, so each is a message of its own, its English darktable's `msgid` and its Ukrainian and Polish darktable's own `msgstr` (`po/uk.po`, `po/pl.po` at the reference release). `crates/tools/tests/about.rs` holds every built tool's facts to darktable's `description()`, each line to darktable's words and translations, and every tool's and utility's sentence to every language.
 - **Where.** Beside the side panel, over the photo, its top level with the header's, 8 points from the panel's edge, on the side with more room, so it is mirrored when the panel is on the start side; moved up to stay inside the window. 340 points wide at most, 10 points of padding at its sides and 8 and 9 at its top and bottom. Where that side has under 336 points (a window near its 500-point minimum), it hangs 4 points under the header inside the panel, 8 points in from each side and 304 wide at most, and goes above the header near the window's foot. This is an exception to the tooltips' placement.
 - **When.** These timings are this tooltip's own; egui's tooltips, which the rest of the app draws, keep egui's 0.5 s. After 0.6 s at rest on the header; moving to the next header within 0.4 s of one going shows the next at once, so a sweep down the panel reads the tools one by one. Gone on a click, a key, a scroll, a drag (a header's, a slider's), the peek keys held, or a menu open, until the pointer leaves the header. A header focused by a key shows it after the same 0.6 s, placed the same way, the Tab or Shift+Tab that brought the focus hiding nothing; Esc, or any later key, hides it until the focus moves. It is a tooltip, not a popover: painted on the tooltip layer, it never takes the focus or a click. One shows at a time, the pointer's over the focus's.
 - **Its look.** `raised`, the menus' edge and shadow (`menu_edge`, `menu_shadow`, `popup_hairline`) and `popup_radius`; `text_strong` for the name, the description and the rows' values, `text_secondary` for the labels, the icons and darktable's lines. The labels' column is as wide as the widest of the six labels in the language, so every tooltip lines its values up alike, at least 64 points, between a 13-point icon column and the values, 8 points apart; rows 3 points apart. No accent.

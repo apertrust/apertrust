@@ -14,7 +14,7 @@ A tool's section already has its own buttons: reset, presets and options (⋯). 
 
 **Context menus open only in named places, and tools add items to them as data.** Every item is a registry action, the app builds every menu, and no tool runs code in a menu.
 
-**The places.** `Place` is a closed list.
+**The places.** `Place` is a closed list naming every place a context menu opens, each variant added with its place's menu. Only `Photo`, `Thumbnail` and `Options` take tools' items: `Definition::check` refuses an item in any other, and an app test holds the utilities to the same.
 
 - Open to tools' items: `Photo` (the photo in the central panel), `Thumbnail` (a grid panel cell, and a cell in Photo when several photos show), and `Options` (a tool's own ⋯, in its own section only).
 - The app's alone, each built with its feature:
@@ -53,7 +53,7 @@ A tool's section already has its own buttons: reset, presets and options (⋯). 
 - A utility, which has no definition: `Utility::menus` in `utility::UTILITIES`, each item naming the registry action that runs it.
 - The app declares its own items for each place the same way, as `MenuItem`s, so its items and the tools' are placed by one rule.
 - **A submenu** is the app's alone: `MenuEntry::Submenu(id)` names a submenu of the menu bar by its title's id, as Background ▸ names View › Background (`menu-background`). The builder reads that submenu's items, in its order, as the item's children, so the two never differ and every child is in the menu bar by construction. Its children follow the item rules below, and the submenu is hidden when none of them is shown. `Definition::check` refuses a submenu from a tool, and an app test refuses one that names no submenu of the menu bar.
-- **`section`** says which section of the menu an item is in. `Section` is a set of named constants, in `apertrust-tools` and shared by the app and the tools, whose value sets the section's place in a menu, 1000 apart: `Section::EDIT` 1000, `EXPORT` 2000, `VIEW` 3000, `HISTORY` 4000, and `LAYOUT` 9000 for ⋯'s layout items, last. A tool may use a section value of its own between 1 and 8999; `LAYOUT` and above are the app's, so the layout's items stay last. `Definition::check` refuses a section of 9000 or more, and an app test holds the utilities to the same range.
+- **`section`** says which section of the menu an item is in. `Section` is a set of named constants, in `apertrust-tools` and shared by the app and the tools, whose value sets the section's place in a menu, 1000 apart: `Section::EDIT` 1000, `EXPORT` 2000, `VIEW` 3000, `HISTORY` 4000, and `LAYOUT` 9000 for ⋯'s layout items, last. A tool or a utility uses a section from `EDIT` to 8999, a named one or a value of its own: below `EDIT` and from `LAYOUT` up are the app's, so its items fall between the app's editing items and the layout's, which stay last. In `EDIT`, order 100 is Reset's, the app's in ⋯ and History's on the photo and a thumbnail, so another item there takes 200 or more and Reset stays first. `Definition::check` refuses a section outside that range and an `EDIT` item below 200; an app test holds the utilities to the same, History's Reset alone at `(EDIT, 100)`.
 - **`order`** places an item within its section, 100 apart (100, 200, 300 and on), lower first.
 - The gaps leave room to put an item between two others without renumbering them.
 - A tool with nothing to add declares nothing.
@@ -73,7 +73,7 @@ A tool's section already has its own buttons: reset, presets and options (⋯). 
 **What an item acts on**, `Target`:
 
 - On the photo: the active photo, with the point under the pointer in the photo's coordinates as pickers take them (79), or no point when the menu opens from the keys. An action that needs a point is hidden without one.
-- On a thumbnail: its photo. Opening its menu, by a right-click or from the keys on its focused cell, selects it alone and makes it active first, unless it is in the selection ([0037](0037-one-view-the-photos-tab.md)), so the menu never acts on a photo other than the one it was opened on, and in Phase 2, where the selection is the active photo alone, every item acts on the active photo as it would from the menu bar. From Phase 3, the selection when the photo is in it; while several photos are selected, an item that acts on one photo alone is hidden.
+- On a thumbnail: its photo. Opening its menu, by a right-click or from the keys on its focused cell, selects it alone and makes it active first, unless it is in the selection ([0037](0037-one-view-the-photos-tab.md)), so the selection the menu acts on always includes the photo it was opened on, and in Phase 2, where the selection is the active photo alone, every item acts on the active photo as it would from the menu bar. From Phase 3, the selection when the photo is in it; while several photos are selected, an item that acts on one photo alone is hidden.
 - In ⋯: its tool.
 
 **Opening.**
@@ -97,7 +97,8 @@ Discard History… is in no context menu: it stays in Edit and History's ⋯ ([0
 
 **The first slice** (planned) builds:
 
-- `Place`, `Section`, `MenuItem`, `MenuEntry`, `Definition::menus`, `Utility::menus` and their checks;
+- `Place` with `Photo`, `Thumbnail`, `Options` and `Surround`, the surround's menu moving into the builder, the other built places joining it later; `Section`, `MenuItem`, `MenuEntry`, `Definition::menus`, `Utility::menus` and their checks;
+- `UTILITIES` moved from `about` into a `utility` module, where `Utility::menus` lives;
 - the generated `tool-<tool>-<action>` actions;
 - `Target` and `menus::context(place, target)`;
 - the photo's menu and a thumbnail's, with Background ▸ read from View › Background (`MenuEntry::Submenu`);
@@ -119,7 +120,7 @@ Pickers as items, the other places and ⋯'s Reset, Copy Settings and Paste Sett
 
 ## Consequences
 
-- `apertrust-tools`: `Place`, `Section`, `MenuItem`, `MenuEntry`, `Definition::menus`, `Utility::menus`, and the `DefinitionError`s for an item that names no action, one repeated, one past the limit, a section of `LAYOUT` or above, and a submenu from a tool.
+- `apertrust-tools`: `Place`, `Section`, `MenuItem`, `MenuEntry`, `Definition::menus`, `Utility::menus`, and the `DefinitionError`s for an item that names no action, one repeated, one past the limit, one in a place closed to tools, a section outside `EDIT` to 8999 or an `EDIT` order below 200, and a submenu from a tool; `UTILITIES` in a `utility` module.
 - The app:
   - the generated tool actions in `actions.rs`;
   - `Target`;
