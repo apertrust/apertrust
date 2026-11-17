@@ -55,13 +55,14 @@ use apertrust_plugin::{ImageContext, Value};
 
 use crate::about::{Fact, Facts, Purpose};
 use crate::definition::{
-    ChoiceStyle, Computed, Control, ControlKind, Definition, Picker, PickerKind, Quad, Row,
-    SettingRow, Slider, Space, Tab, Track, Unit,
+    ChoiceStyle, Computed, Control, ControlKind, Picker, PickerKind, ProcessingDefinition, Quad,
+    Row, SettingRow, Slider, Space, Tab, ToolDefinition, Track, Unit,
 };
 use crate::pick::{LastPick, Patch, PickKeys, PickWarnings, Picked, Reading, Short, Shown};
 use crate::transfer::Transfer;
 use crate::{
-    Base, ControlValue, Controls, LabelValue, Owned, Setting, Tool, ToolValues, ValueFormat,
+    Base, ControlValue, Controls, LabelValue, Owned, ProcessingTool, Setting, ToolValues,
+    ValueFormat,
 };
 
 pub struct Exposure;
@@ -250,72 +251,76 @@ impl Choice for PickerTarget {
     ];
 }
 
-static DEFINITION: Definition = Definition {
-    id: "exposure",
+static DEFINITION: ProcessingDefinition = ProcessingDefinition {
+    tool: ToolDefinition {
+        id: "exposure",
+        tabs: &[Tab {
+            id: None,
+            rows: &[
+                // Manual | Automatic, the one segmented choice listed per photo (decision
+                // 88).
+                Row::Choice {
+                    control: "mode",
+                    style: ChoiceStyle::Segmented,
+                },
+                // The manual page (decision 88): the camera's rows first, as darktable's
+                // stack has them, then Exposure with its picker and Picker target right
+                // under it.
+                Row::When {
+                    control: "mode",
+                    is: &["manual"],
+                    rows: &[
+                        Row::Toggle {
+                            control: "camera_bias",
+                        },
+                        Row::Toggle {
+                            control: "compensate_hilite_pres",
+                        },
+                        Row::Slider(
+                            Slider::new("exposure")
+                                .decimals(3)
+                                .soft(-3.0, 4.0)
+                                .quad(Quad::Picker("exposure")),
+                        ),
+                        TARGET,
+                        LIGHTNESS,
+                        REFERENCE,
+                        // What the last pick did, its warnings above it.
+                        Row::LastPick { picker: "exposure" },
+                    ],
+                },
+                Row::When {
+                    control: "mode",
+                    is: &["automatic"],
+                    rows: &[
+                        Row::Slider(Slider::new("deflicker_percentile")),
+                        Row::Slider(Slider::new("deflicker_target_level")),
+                        // darktable's "computed EC", `%.2f EV`.
+                        Row::Computed(Computed {
+                            id: COMPUTED_EXPOSURE,
+                            operation: EXPOSURE,
+                            unit: Some(Unit::Ev),
+                            decimals: 2,
+                        }),
+                    ],
+                },
+                Row::Slider(Slider::new("black_level").decimals(4).soft(-0.1, 0.1)),
+            ],
+        }],
+        before: &[],
+        after: &[],
+        menus: &[],
+    },
     version: 3,
     layers: true,
     // Automatic mode is its one automatic way (decision 88).
     auto: false,
     switched: false,
     controls: &CONTROLS,
-    tabs: &[Tab {
-        id: None,
-        rows: &[
-            // Manual | Automatic, the one segmented choice listed per photo (decision 88).
-            Row::Choice {
-                control: "mode",
-                style: ChoiceStyle::Segmented,
-            },
-            // The manual page (decision 88): the camera's rows first, as darktable's stack
-            // has them, then Exposure with its picker and Picker target right under it.
-            Row::When {
-                control: "mode",
-                is: &["manual"],
-                rows: &[
-                    Row::Toggle {
-                        control: "camera_bias",
-                    },
-                    Row::Toggle {
-                        control: "compensate_hilite_pres",
-                    },
-                    Row::Slider(
-                        Slider::new("exposure")
-                            .decimals(3)
-                            .soft(-3.0, 4.0)
-                            .quad(Quad::Picker("exposure")),
-                    ),
-                    TARGET,
-                    LIGHTNESS,
-                    REFERENCE,
-                    // What the last pick did, its warnings above it.
-                    Row::LastPick { picker: "exposure" },
-                ],
-            },
-            Row::When {
-                control: "mode",
-                is: &["automatic"],
-                rows: &[
-                    Row::Slider(Slider::new("deflicker_percentile")),
-                    Row::Slider(Slider::new("deflicker_target_level")),
-                    // darktable's "computed EC", `%.2f EV`.
-                    Row::Computed(Computed {
-                        id: COMPUTED_EXPOSURE,
-                        operation: EXPOSURE,
-                        unit: Some(Unit::Ev),
-                        decimals: 2,
-                    }),
-                ],
-            },
-            Row::Slider(Slider::new("black_level").decimals(4).soft(-0.1, 0.1)),
-        ],
-    }],
-    before: &[],
-    after: &[],
-    presets: &[],
+    preset_rows: &[],
     views: &[],
     pickers: &[PICKER, REFERENCE_PICKER],
     // darktable's `description()` in src/iop/exposure.c at the reference release.
-    menus: &[],
     facts: Some(Facts {
         purpose: Purpose::CorrectiveAndCreative,
         input: Fact::LinearRgbSceneReferred,
@@ -385,8 +390,8 @@ const WHITE_FLOOR: f32 = 1e-20;
 /// the reader leaves it out with a warning.
 const STOPS: &str = "exposure_in_stops";
 
-impl Tool for Exposure {
-    fn definition(&self) -> &'static Definition {
+impl ProcessingTool for Exposure {
+    fn definition(&self) -> &'static ProcessingDefinition {
         &DEFINITION
     }
 
@@ -550,7 +555,7 @@ impl Tool for Exposure {
     ///   a target lightness of 0's, which is not finite, showing the patch still.
     /// - **Reference:** toward `tools.exposure.reference_lightness`; with none set, the
     ///   patch alone and nothing written, the picker not being ready
-    ///   ([`Tool::picker_ready`]).
+    ///   ([`ProcessingTool::picker_ready`]).
     ///
     /// The reference row's picker, `reference`, takes darktable's measure mode's
     /// arithmetic (`exposure.c:900-934`): no control, and the L the area renders at at the
@@ -944,8 +949,8 @@ mod tests {
     /// rows; in automatic mode its rows; then Black level correction.
     #[test]
     fn its_page_is_the_board_s_with_darktable_s_camera_rows_first() {
-        assert_eq!(DEFINITION.tabs.len(), 1);
-        assert_eq!(DEFINITION.tabs[0].id, None);
+        assert_eq!(DEFINITION.tool.tabs.len(), 1);
+        assert_eq!(DEFINITION.tool.tabs[0].id, None);
         assert_eq!(
             page(),
             [

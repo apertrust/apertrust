@@ -16,9 +16,10 @@
 
 //! What a tool is for, as its header's tooltip says it (`docs/gui.md`, The header's
 //! tooltip): its own sentence (`tool-<tool>-description`), then darktable's facts about
-//! its module, [`Facts`], which [`Definition::facts`](crate::Definition::facts) holds. Two
-//! of the tooltip's rows say those facts in plain words through one mapping, so every tool
-//! says them alike: its [`Kind`], from darktable's purpose, and what it [`WorksOn`], from
+//! its module, [`Facts`], which
+//! [`ProcessingDefinition::facts`](crate::ProcessingDefinition::facts) holds. Two of the
+//! tooltip's rows say those facts in plain words through one mapping, so every tool says
+//! them alike: its [`Kind`], from darktable's purpose, and what it [`WorksOn`], from
 //! darktable's input and output. The other three are darktable's input, process and output
 //! word for word, each a [`Fact`] whose message is darktable's string and its own
 //! translations.

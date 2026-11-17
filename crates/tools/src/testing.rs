@@ -23,12 +23,13 @@
 use apertrust_plugin::{Camera, ImageContext, Pattern, Value};
 
 use crate::definition::{
-    ChoiceStyle, Control, ControlKind, Coordinate, Definition, Picker, PickerKind, PresetRow, Quad,
-    Range, Row, SettingRow, Slider, Space, Tab, Unit, View, slider_step,
+    ChoiceStyle, Control, ControlKind, Coordinate, Picker, PickerKind, PresetRow,
+    ProcessingDefinition, Quad, Range, Row, SettingRow, Slider, Space, Tab, ToolDefinition, Unit,
+    View, slider_step,
 };
 use crate::pick::{Patch, PickKeys, Picked, Reading, Shown, Stats};
 use crate::transfer::{Linear, Transfer};
-use crate::{Base, ControlValue, Controls, Owned, Setting, Tool, ToolValues};
+use crate::{Base, ControlValue, Controls, Owned, ProcessingTool, Setting, ToolValues};
 
 /// A tool over one operation an unedited photo runs and one it does not, its page laid
 /// out as darktable lays one out (decision 29):
@@ -67,16 +68,16 @@ use crate::{Base, ControlValue, Controls, Owned, Setting, Tool, ToolValues};
 ///   difference, exact in f32 but for a rounding; a pair of coordinates in range may still
 ///   give a grain or a bias outside its own, which the session refuses;
 /// - three colour pickers (decision 79), each reading the exposure operation, as darktable's
-///   tools pick ([`Tool::pick`]): `brightness`, on brightness's quad, an area read
-///   at exposure's output, which moves brightness by what brings the area's mean to 18 %
-///   grey, darktable's Exposure correction in short, and shows the area's patch; `spread`,
-///   a point or an area read at exposure's input, denoised, which sets grain to the
-///   spread from the area's minimum to its maximum in percent, of the channel shown,
+///   tools pick ([`ProcessingTool::pick`]): `brightness`, on brightness's quad, an area
+///   read at exposure's output, which moves brightness by what brings the area's mean to 18
+///   % grey, darktable's Exposure correction in short, and shows the area's patch;
+///   `spread`, a point or an area read at exposure's input, denoised, which sets grain to
+///   the spread from the area's minimum to its maximum in percent, of the channel shown,
 ///   `red`, `green` or `blue`, else of the three's widest, and with `shift` held coarse
-///   grain, with `command` fine, writing nothing for a reading that equals the tool's
-///   last, as RGB levels' picks; and `show`, a point or an area read at exposure's input
-///   and output, kept on as the tool changes, which writes nothing and shows the
-///   output's patch, as RGB curve's show colour.
+///   grain, with `command` fine, writing nothing for a reading that equals the tool's last,
+///   as RGB levels' picks; and `show`, a point or an area read at exposure's input and
+///   output, kept on as the tool changes, which writes nothing and shows the output's
+///   patch, as RGB curve's show colour.
 ///
 /// The look's row and brightness's are before every tab's, shown whichever is open. The
 /// Grain tab holds grain, size and coarseness under a group label, then the spread and
@@ -85,8 +86,56 @@ use crate::{Base, ControlValue, Controls, Owned, Setting, Tool, ToolValues};
 /// range of 50 to 150 %, as darktable's sliders have one.
 pub struct Sample;
 
-static DEFINITION: Definition = Definition {
-    id: "sample",
+static DEFINITION: ProcessingDefinition = ProcessingDefinition {
+    tool: ToolDefinition {
+        id: "sample",
+        tabs: &[
+            Tab {
+                id: Some("grain"),
+                rows: &[
+                    Row::Label { id: "grain" },
+                    Row::Slider(Slider::new("grain").decimals(0)),
+                    Row::Choice {
+                        control: "size",
+                        style: ChoiceStyle::Segmented,
+                    },
+                    Row::Slider(Slider::new("coarseness").decimals(0)),
+                    Row::Pickers {
+                        label: Some("measure"),
+                        pickers: &["spread", "show"],
+                    },
+                ],
+            },
+            Tab {
+                id: Some("shape"),
+                rows: &[Row::Group {
+                    id: "midtones",
+                    rows: &[
+                        Row::Choice {
+                            control: "method",
+                            style: ChoiceStyle::List,
+                        },
+                        Row::When {
+                            control: "method",
+                            is: &["biased"],
+                            rows: &[Row::Slider(Slider::new("bias").decimals(0))],
+                        },
+                        Row::Slider(Slider::new("sum").decimals(0).soft(50.0, 150.0)),
+                        Row::Slider(Slider::new("difference").decimals(0)),
+                    ],
+                }],
+            },
+        ],
+        before: &[
+            Row::Preset {
+                preset: "look",
+                style: ChoiceStyle::List,
+            },
+            Row::Slider(Slider::new("brightness").quad(Quad::Picker("brightness"))),
+        ],
+        after: &[],
+        menus: &[],
+    },
     version: 1,
     layers: true,
     auto: false,
@@ -157,52 +206,7 @@ static DEFINITION: Definition = Definition {
             unported: false,
         },
     ],
-    tabs: &[
-        Tab {
-            id: Some("grain"),
-            rows: &[
-                Row::Label { id: "grain" },
-                Row::Slider(Slider::new("grain").decimals(0)),
-                Row::Choice {
-                    control: "size",
-                    style: ChoiceStyle::Segmented,
-                },
-                Row::Slider(Slider::new("coarseness").decimals(0)),
-                Row::Pickers {
-                    label: Some("measure"),
-                    pickers: &["spread", "show"],
-                },
-            ],
-        },
-        Tab {
-            id: Some("shape"),
-            rows: &[Row::Group {
-                id: "midtones",
-                rows: &[
-                    Row::Choice {
-                        control: "method",
-                        style: ChoiceStyle::List,
-                    },
-                    Row::When {
-                        control: "method",
-                        is: &["biased"],
-                        rows: &[Row::Slider(Slider::new("bias").decimals(0))],
-                    },
-                    Row::Slider(Slider::new("sum").decimals(0).soft(50.0, 150.0)),
-                    Row::Slider(Slider::new("difference").decimals(0)),
-                ],
-            }],
-        },
-    ],
-    before: &[
-        Row::Preset {
-            preset: "look",
-            style: ChoiceStyle::List,
-        },
-        Row::Slider(Slider::new("brightness").quad(Quad::Picker("brightness"))),
-    ],
-    after: &[],
-    presets: &[PresetRow {
+    preset_rows: &[PresetRow {
         id: "look",
         options: &["untouched", "grainy", "camera"],
         controls: &["brightness", "grain", "size"],
@@ -265,7 +269,6 @@ static DEFINITION: Definition = Definition {
             words_by: None,
         },
     ],
-    menus: &[],
     facts: None,
 };
 
@@ -288,8 +291,8 @@ const BIASED: u32 = 1;
 /// `size`'s coarse option.
 const COARSE: u32 = 2;
 
-impl Tool for Sample {
-    fn definition(&self) -> &'static Definition {
+impl ProcessingTool for Sample {
+    fn definition(&self) -> &'static ProcessingDefinition {
         &DEFINITION
     }
 
@@ -492,8 +495,8 @@ pub enum Follow {
     Panics,
 }
 
-impl Tool for Following {
-    fn definition(&self) -> &'static Definition {
+impl ProcessingTool for Following {
+    fn definition(&self) -> &'static ProcessingDefinition {
         &DEFINITION
     }
 
@@ -541,8 +544,20 @@ impl Tool for Following {
 /// so it passes [`crate::check::accept`].
 pub struct Faulty;
 
-static FAULTY: Definition = Definition {
-    id: "faulty",
+static FAULTY: ProcessingDefinition = ProcessingDefinition {
+    tool: ToolDefinition {
+        id: "faulty",
+        tabs: &[Tab {
+            id: None,
+            rows: &[
+                Row::Toggle { control: "stray" },
+                Row::Toggle { control: "panic" },
+            ],
+        }],
+        before: &[],
+        after: &[],
+        menus: &[],
+    },
     version: 1,
     layers: false,
     auto: false,
@@ -561,24 +576,14 @@ static FAULTY: Definition = Definition {
             unported: false,
         },
     ],
-    tabs: &[Tab {
-        id: None,
-        rows: &[
-            Row::Toggle { control: "stray" },
-            Row::Toggle { control: "panic" },
-        ],
-    }],
-    before: &[],
-    after: &[],
-    presets: &[],
+    preset_rows: &[],
     views: &[],
     pickers: &[],
-    menus: &[],
     facts: None,
 };
 
-impl Tool for Faulty {
-    fn definition(&self) -> &'static Definition {
+impl ProcessingTool for Faulty {
+    fn definition(&self) -> &'static ProcessingDefinition {
         &FAULTY
     }
 
@@ -608,8 +613,8 @@ impl Tool for Faulty {
 /// control or through the pair. Its page, binding, ranges and pair are Sample's.
 pub struct Pushing;
 
-impl Tool for Pushing {
-    fn definition(&self) -> &'static Definition {
+impl ProcessingTool for Pushing {
+    fn definition(&self) -> &'static ProcessingDefinition {
         &DEFINITION
     }
 
@@ -642,14 +647,23 @@ impl Tool for Pushing {
     }
 }
 
-/// A tool whose defaults for the photo panic, as a bug in [`Tool::defaults`] may make
-/// them, for the tests that the edit and the session go on without it where they ask
-/// every tool, as each change's clamp does (decision 30). Its one control, `amount`,
-/// is a number from 0 to 10 at 0; it binds nothing and owns nothing.
+/// A tool whose defaults for the photo panic, as a bug in [`ProcessingTool::defaults`] may
+/// make them, for the tests that the edit and the session go on without it where they ask
+/// every tool, as each change's clamp does (decision 30). Its one control, `amount`, is a
+/// number from 0 to 10 at 0; it binds nothing and owns nothing.
 pub struct Defaultless;
 
-static DEFAULTLESS: Definition = Definition {
-    id: "defaultless",
+static DEFAULTLESS: ProcessingDefinition = ProcessingDefinition {
+    tool: ToolDefinition {
+        id: "defaultless",
+        tabs: &[Tab {
+            id: None,
+            rows: &[Row::Slider(Slider::new("amount"))],
+        }],
+        before: &[],
+        after: &[],
+        menus: &[],
+    },
     version: 1,
     layers: false,
     auto: false,
@@ -665,21 +679,14 @@ static DEFAULTLESS: Definition = Definition {
         unit: None,
         unported: false,
     }],
-    tabs: &[Tab {
-        id: None,
-        rows: &[Row::Slider(Slider::new("amount"))],
-    }],
-    before: &[],
-    after: &[],
-    presets: &[],
+    preset_rows: &[],
     views: &[],
     pickers: &[],
-    menus: &[],
     facts: None,
 };
 
-impl Tool for Defaultless {
-    fn definition(&self) -> &'static Definition {
+impl ProcessingTool for Defaultless {
+    fn definition(&self) -> &'static ProcessingDefinition {
         &DEFAULTLESS
     }
 
@@ -710,8 +717,24 @@ impl Tool for Defaultless {
 /// Every control and coordinate has a slider row on its one page.
 pub struct Twin;
 
-static TWIN: Definition = Definition {
-    id: "twin",
+static TWIN: ProcessingDefinition = ProcessingDefinition {
+    tool: ToolDefinition {
+        id: "twin",
+        tabs: &[Tab {
+            id: None,
+            rows: &[
+                Row::Slider(Slider::new("x")),
+                Row::Slider(Slider::new("y")),
+                Row::Slider(Slider::new("sum")),
+                Row::Slider(Slider::new("difference")),
+                Row::Slider(Slider::new("u")),
+                Row::Slider(Slider::new("v")),
+            ],
+        }],
+        before: &[],
+        after: &[],
+        menus: &[],
+    },
     version: 1,
     layers: false,
     auto: false,
@@ -740,20 +763,7 @@ static TWIN: Definition = Definition {
             unported: false,
         },
     ],
-    tabs: &[Tab {
-        id: None,
-        rows: &[
-            Row::Slider(Slider::new("x")),
-            Row::Slider(Slider::new("y")),
-            Row::Slider(Slider::new("sum")),
-            Row::Slider(Slider::new("difference")),
-            Row::Slider(Slider::new("u")),
-            Row::Slider(Slider::new("v")),
-        ],
-    }],
-    before: &[],
-    after: &[],
-    presets: &[],
+    preset_rows: &[],
     views: &[
         View {
             id: "pair",
@@ -797,12 +807,11 @@ static TWIN: Definition = Definition {
         },
     ],
     pickers: &[],
-    menus: &[],
     facts: None,
 };
 
-impl Tool for Twin {
-    fn definition(&self) -> &'static Definition {
+impl ProcessingTool for Twin {
+    fn definition(&self) -> &'static ProcessingDefinition {
         &TWIN
     }
 
@@ -898,7 +907,7 @@ pub struct DarktablePicker {
 
 /// Every picker of `definition` as a [`DarktablePicker`], in the definition's order, with
 /// the slider whose quad names it; `""` for one on a row of pickers.
-pub fn pickers_on_sliders(definition: &Definition) -> Vec<DarktablePicker> {
+pub fn pickers_on_sliders(definition: &ProcessingDefinition) -> Vec<DarktablePicker> {
     definition
         .pickers
         .iter()
@@ -1021,10 +1030,10 @@ impl DarktableSlider {
 /// `darktable`, by id, in the units shown: the range a value may hold, what the track
 /// spans at rest, the decimals and the key step; then each of darktable's sliders that no
 /// row shows. A control's range, track and step are the tool's for `values`
-/// ([`Tool::range`], decision 30), the tool's defaults for every tool's own test,
+/// ([`ProcessingTool::range`], decision 30), the tool's defaults for every tool's own test,
 /// and other values where its range moves, as AgX's pivot's does with the input range.
 pub fn slider_differences(
-    tool: &dyn Tool,
+    tool: &dyn ProcessingTool,
     values: &Controls,
     darktable: &[DarktableSlider],
 ) -> Vec<String> {
@@ -1198,7 +1207,8 @@ mod tests {
     }
 
     /// Every control of [`Sample`] at its default for `image`, but those the look's
-    /// `option` writes, as the session reports them: what [`Tool::matching`] reads.
+    /// `option` writes, as the session reports them: what [`ProcessingTool::matching`]
+    /// reads.
     fn holding(image: &ImageContext, option: &Controls) -> Controls {
         let mut values = Sample.defaults(image);
         for control in ["brightness", "grain", "size"] {
@@ -1224,7 +1234,8 @@ mod tests {
         assert_eq!(Sample.matching("tone", &values, &image), None);
     }
 
-    /// Grain and bias as [`Tool::unview`] gives them for the pair's `coordinates`.
+    /// Grain and bias as [`ProcessingTool::unview`] gives them for the pair's
+    /// `coordinates`.
     fn unviewed(coordinates: [f32; 2]) -> [f32; 2] {
         let values = Sample.unview("pair", &coordinates, &image()).unwrap();
         ["grain", "bias"].map(|id| values.number(id))

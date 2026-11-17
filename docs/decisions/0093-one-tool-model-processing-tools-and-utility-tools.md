@@ -11,7 +11,7 @@ So the headers drift apart, a utility's ↺, presets and ⋯ behave as its modul
 
 ## Decision
 
-**One tool model: a tool is the parent, a processing tool and a utility tool its two kinds, sharing one declaration and one header.** Planned, in five steps (below); the code keeps today's names until the first lands.
+**One tool model: a tool is the parent, a processing tool and a utility tool its two kinds, sharing one declaration and one header.** Planned, in five steps (below), the first built.
 
 ### The terms
 
@@ -93,7 +93,7 @@ pub trait UtilityTool {
 
 - **A utility uses the same `Row`s** as a processing tool. `UtilityDefinition::check` refuses every row that edits: a row naming a control (a slider, a choice, a toggle, `Row::When`, a control's row of buttons, `Row::Buttons`, a custom row naming controls), a preset row, a picker's rows (`Row::Pickers`, `Row::Patches`, `Row::Reference`, `Row::LastPick`) and a computed value. A utility's rows are settings, labels, groups, `Row::WhenSetting`, actions and buttons, each running a registry action, and custom rows naming no control. A utility's action rows and buttons name registry actions, each with its own availability, never a generated `tool-<tool>-<action>`, whose rule, a photo that takes edits, is a processing tool's ([0091](0091-context-menus-places-and-tools-items-as-actions.md)): Import's Use $(MONTH) is available while the sheet shows the problem it fixes, with or without a photo in the window.
 - **All variation goes into custom widgets.** `Row::Custom { widget }`, as the tone equalizer's graph is today, also covers History's steps, Browse's recents and folder tree, the scope graph and Export's path line, each a `Widget` of the closed registry. The page drawer draws every other row itself and, reaching a utility's custom row, calls that utility's `UtilityTool::body` with the row's `Widget`, once per custom row: Browse's `body` is called for its recents line and again for its folder tree. Each utility matches its own widgets in `body`, whose egui code stays in its app module, takes that utility's state and returns its own actions. A processing tool's custom rows, as the tone equalizer's graph, stay drawn by the app's own `match` on `Widget`, as today.
-- **A utility's presets are presets of its setting rows,** as darktable's `get_params` and `set_params` are presets of a utility module's state, with no binary blob. Export's are the first ([0090](0090-export-as-a-photos-tab-tool.md)).
+- **A utility with presets has presets of its setting rows,** `presets` true in its `ToolDefinition`: Export for now, History, Scopes and Browse having none. They are presets of its setting rows, as darktable's `get_params` and `set_params` are presets of a utility module's state, with no binary blob. Export's are the first ([0090](0090-export-as-a-photos-tab-tool.md)).
 - **A setting row may name its key in full.** Export's rows name `export.*` settings by their keys as strings, and the app binds them to `apertrust-export`'s settings; a test fails on a key that is not in the settings schema. `apertrust-tools` does not depend on `apertrust-export`, as it depends on no operation crate, and `apertrust-export` stays its own crate ([0056](0056-export-as-an-engine-job.md)).
 
 | Tool | Its page |
@@ -123,7 +123,7 @@ pub trait UtilityTool {
 
 Each step is one pull request, reviewed before the next.
 
-1. **93.1, the renames and the parent,** mechanical, with no behaviour change: `Definition` to `ProcessingDefinition`, `Utility` to `UtilityDefinition`, the trait `Tool` to `ProcessingTool` (about 250 uses), `Definition::presets` to `preset_rows`, and the shared fields into `ToolDefinition`, `Utility::menus` among them. The docs' names follow in the same pull request.
+1. **93.1, the renames and the parent,** built: mechanical, with no behaviour change: `Definition` to `ProcessingDefinition`, `Utility` to `UtilityDefinition`, the trait `Tool` to `ProcessingTool` (about 250 uses), `Definition::presets` to `preset_rows`, and the shared fields into `ToolDefinition`, `Utility::menus` among them. The docs' names follow in the same pull request.
 2. **93.2, `UtilityTool` in the app,** with History, Scopes and Browse implementing it, Browse joining `UTILITIES`, `main.rs` calling them through the trait.
 3. **93.3, one header and ⋯** for every tool in `TOOLS` and `UTILITIES`, from `&ToolDefinition`, History's ⋯ items declared with it, Truncate History an item of its own, so its ⋯ never goes empty; Export's comes with step 93.5, when it joins `UTILITIES`.
 4. **93.4, the utilities on the page model:** Scopes, the smallest, first, then History, then Browse.
@@ -145,5 +145,5 @@ Each step is one pull request, reviewed before the next.
 - **[0004](0004-tools-for-people-operations-for-algorithms.md)** names the parent and its two kinds; **[0028](0028-tools-bound-to-operations.md)** describes `ProcessingDefinition` and `ProcessingTool` over the shared parent; **[0086](0086-import-as-a-full-window-sheet.md)** puts a tool's place in `ToolDefinition`; **[0090](0090-export-as-a-photos-tab-tool.md)** declares Export's page as a utility's setting rows; **[0091](0091-context-menus-places-and-tools-items-as-actions.md)** and **[0092](0092-the-toolbar.md)** declare every tool's items in `ToolDefinition::menus` and `ToolDefinition::toolbar`.
 - `apertrust-tools` holds `ToolDefinition`, `ProcessingDefinition`, `UtilityDefinition`, `ProcessingTool`, `UTILITIES` with every utility and `UtilityDefinition::check`; `Widget` gains the utilities' widgets. The app holds `UtilityTool`, its `Context`, the one header and page drawer, and each utility's widgets in its module. No crate is added, and no dependency changes.
 - Nothing a person sees changes but one item, and no setting, no Fluent id, no session command and nothing in the sidecar: each utility keeps its look on the page model, its custom widgets drawing what its module draws today. The one is History's ⋯, where Truncate History, today Compress History's alternate while Option is held, becomes an item of its own in step 93.3, with the words it has. A change of a utility's look is a design question of its own. The engine and its session are untouched but for the trait's name.
-- The docs describe today's names as built and the new ones as planned, until step 93.1 sweeps them; [gui.md](../gui.md#one-tool-model) describes the model, [the roadmap](../roadmap.md) holds the steps.
+- The new names are built, step 93.1; the rest of the model is planned. [gui.md](../gui.md#one-tool-model) describes the model, [the roadmap](../roadmap.md) holds the steps.
 - The agent kit's `tool-bindings`, `ui-conventions` and `desktop-architecture` skills are to state the terms and the model.

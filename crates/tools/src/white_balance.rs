@@ -38,7 +38,7 @@
 //! the operation's for the photo: the as-shot coefficients, with "as shot to reference"
 //! where the camera has a colour matrix. Moving a coefficient, temperature or tint writes
 //! `preset` user modified, as darktable's `gui_changed` and `_temp_tint_callback` do
-//! ([`Tool::follow`]), so colorin's late correction runs only with "as shot to
+//! ([`ProcessingTool::follow`]), so colorin's late correction runs only with "as shot to
 //! reference" and the as-shot coefficients. The button bar, the camera's presets with
 //! Finetune and the picker come later (`docs/tools/white-balance.md`, Gaps).
 
@@ -47,10 +47,10 @@ use apertrust_plugin::{Camera, ImageContext, Value};
 
 use crate::about::{Fact, Facts, Purpose};
 use crate::definition::{
-    ChoiceStyle, Control, ControlKind, Coordinate, Definition, PresetRow, Row, Slider, Tab, Unit,
-    View,
+    ChoiceStyle, Control, ControlKind, Coordinate, PresetRow, ProcessingDefinition, Row, Slider,
+    Tab, ToolDefinition, Unit, View,
 };
-use crate::{Base, ControlValue, Controls, Owned, Setting, Tool, ToolValues};
+use crate::{Base, ControlValue, Controls, Owned, ProcessingTool, Setting, ToolValues};
 
 pub struct WhiteBalance;
 
@@ -89,9 +89,9 @@ const fn coefficient(id: &'static str) -> Control {
 }
 
 /// The coefficients and their setting, darktable's parameters. A photo's defaults are
-/// the operation's ([`Tool::defaults`]); before it, darktable's for an image that is not
-/// a raw, every coefficient 1, as shot. `various`, the fourth, is not ported: temperature
-/// takes no four-colour sensor, and on any other nothing reads it.
+/// the operation's ([`ProcessingTool::defaults`]); before it, darktable's for an image that
+/// is not a raw, every coefficient 1, as shot. `various`, the fourth, is not ported:
+/// temperature takes no four-colour sensor, and on any other nothing reads it.
 static CONTROLS: [Control; 5] = [
     coefficient("red"),
     coefficient("green"),
@@ -144,39 +144,42 @@ const fn coefficient_row(control: &'static str) -> Row {
 /// darktable's page, `gui_init`'s order: Settings, the scene illuminant temp label with
 /// temperature, no digits, and tint, three, then the channel coefficients' collapsible
 /// group. The button bar above Settings and Finetune after it are planned.
-static DEFINITION: Definition = Definition {
-    id: "temperature",
+static DEFINITION: ProcessingDefinition = ProcessingDefinition {
+    tool: ToolDefinition {
+        id: "temperature",
+        tabs: &[Tab {
+            id: None,
+            rows: &[
+                Row::Preset {
+                    preset: SETTINGS_ROW,
+                    style: ChoiceStyle::List,
+                },
+                Row::Label {
+                    id: "scene_illuminant_temp",
+                },
+                Row::Slider(Slider::new("temperature").decimals(0)),
+                Row::Slider(Slider::new("tint").decimals(3)),
+                Row::Group {
+                    id: "channel_coefficients",
+                    rows: &[
+                        coefficient_row("red"),
+                        coefficient_row("green"),
+                        coefficient_row("blue"),
+                    ],
+                },
+            ],
+        }],
+        before: &[],
+        after: &[],
+        menus: &[],
+    },
     version: 1,
     // Background only, as the raw stage.
     layers: false,
     auto: false,
     switched: false,
     controls: &CONTROLS,
-    tabs: &[Tab {
-        id: None,
-        rows: &[
-            Row::Preset {
-                preset: SETTINGS_ROW,
-                style: ChoiceStyle::List,
-            },
-            Row::Label {
-                id: "scene_illuminant_temp",
-            },
-            Row::Slider(Slider::new("temperature").decimals(0)),
-            Row::Slider(Slider::new("tint").decimals(3)),
-            Row::Group {
-                id: "channel_coefficients",
-                rows: &[
-                    coefficient_row("red"),
-                    coefficient_row("green"),
-                    coefficient_row("blue"),
-                ],
-            },
-        ],
-    }],
-    before: &[],
-    after: &[],
-    presets: &[PresetRow {
+    preset_rows: &[PresetRow {
         id: SETTINGS_ROW,
         options: &SETTINGS,
         controls: &["red", "green", "blue", "various", "preset"],
@@ -184,7 +187,6 @@ static DEFINITION: Definition = Definition {
     views: &VIEWS,
     pickers: &[],
     // darktable's `description()` in src/iop/temperature.c at the reference release.
-    menus: &[],
     facts: Some(Facts {
         purpose: Purpose::Corrective,
         input: Fact::LinearRawSceneReferred,
@@ -202,8 +204,8 @@ static OWNS: [Owned; 5] = [
     Owned::new(OPERATION, "preset"),
 ];
 
-impl Tool for WhiteBalance {
-    fn definition(&self) -> &'static Definition {
+impl ProcessingTool for WhiteBalance {
+    fn definition(&self) -> &'static ProcessingDefinition {
         &DEFINITION
     }
 

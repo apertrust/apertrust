@@ -920,8 +920,17 @@ fn a_pick_reads_the_channel_and_keys_shown_as_it_reads() {
 /// coefficient, which it owns and binds to nothing.
 struct Spot;
 
-static SPOT: Definition = Definition {
-    id: "spot",
+static SPOT: ProcessingDefinition = ProcessingDefinition {
+    tool: ToolDefinition {
+        id: "spot",
+        tabs: &[Tab {
+            id: None,
+            rows: &[Row::Slider(Slider::new("red").quad(Quad::Picker("red")))],
+        }],
+        before: &[],
+        after: &[],
+        menus: &[],
+    },
     version: 1,
     layers: false,
     auto: false,
@@ -937,13 +946,7 @@ static SPOT: Definition = Definition {
         unit: None,
         unported: false,
     }],
-    tabs: &[Tab {
-        id: None,
-        rows: &[Row::Slider(Slider::new("red").quad(Quad::Picker("red")))],
-    }],
-    before: &[],
-    after: &[],
-    presets: &[],
+    preset_rows: &[],
     views: &[],
     pickers: &[Picker {
         id: "red",
@@ -957,14 +960,13 @@ static SPOT: Definition = Definition {
         settings: &[],
         words_by: None,
     }],
-    menus: &[],
     facts: None,
 };
 
 static SPOT_OWNS: [Owned; 1] = [Owned::new("temperature", "red")];
 
-impl Tool for Spot {
-    fn definition(&self) -> &'static Definition {
+impl ProcessingTool for Spot {
+    fn definition(&self) -> &'static ProcessingDefinition {
         &SPOT
     }
 
@@ -1047,7 +1049,7 @@ fn a_moved_area_s_reading_at_its_operation_on_the_7r_v() {
     std::fs::hard_link(&raw, &path)
         .or_else(|_| std::fs::copy(&raw, &path).map(|_| ()))
         .expect("the corpus raw");
-    let cases: [(&str, &'static [&'static dyn Tool], &str, &str); 2] = [
+    let cases: [(&str, &'static [&'static dyn ProcessingTool], &str, &str); 2] = [
         (
             "exposure, after the downscale",
             &[&Exposure],
@@ -1282,8 +1284,31 @@ fn a_release_whose_reading_misses_completes_the_drag_s_change() {
 /// exposure's exposure and binds nothing.
 struct Configured;
 
-static CONFIGURED: Definition = Definition {
-    id: "configured",
+static CONFIGURED: ProcessingDefinition = ProcessingDefinition {
+    tool: ToolDefinition {
+        id: "configured",
+        tabs: &[Tab {
+            id: None,
+            rows: &[
+                Row::Slider(Slider::new("level").quad(Quad::Picker("level"))),
+                Row::Slider(Slider::new("other")),
+                Row::Setting(apertrust_tools::SettingRow {
+                    id: "gain",
+                    kind: ControlKind::Number {
+                        min: 0.0,
+                        max: 4.0,
+                        step: 0.1,
+                        default: 1.0,
+                    },
+                    decimals: 1,
+                    track: apertrust_tools::Track::Plain,
+                }),
+            ],
+        }],
+        before: &[],
+        after: &[],
+        menus: &[],
+    },
     version: 1,
     layers: false,
     auto: false,
@@ -1312,27 +1337,7 @@ static CONFIGURED: Definition = Definition {
             unported: false,
         },
     ],
-    tabs: &[Tab {
-        id: None,
-        rows: &[
-            Row::Slider(Slider::new("level").quad(Quad::Picker("level"))),
-            Row::Slider(Slider::new("other")),
-            Row::Setting(apertrust_tools::SettingRow {
-                id: "gain",
-                kind: ControlKind::Number {
-                    min: 0.0,
-                    max: 4.0,
-                    step: 0.1,
-                    default: 1.0,
-                },
-                decimals: 1,
-                track: apertrust_tools::Track::Plain,
-            }),
-        ],
-    }],
-    before: &[],
-    after: &[],
-    presets: &[],
+    preset_rows: &[],
     views: &[],
     pickers: &[Picker {
         id: "level",
@@ -1346,14 +1351,13 @@ static CONFIGURED: Definition = Definition {
         settings: &["gain"],
         words_by: None,
     }],
-    menus: &[],
     facts: None,
 };
 
 static CONFIGURED_OWNS: [Owned; 1] = [Owned::new("exposure", "exposure")];
 
-impl Tool for Configured {
-    fn definition(&self) -> &'static Definition {
+impl ProcessingTool for Configured {
+    fn definition(&self) -> &'static ProcessingDefinition {
         &CONFIGURED
     }
 

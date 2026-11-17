@@ -29,7 +29,7 @@
 //!   disabled until the picker comes. Choosing an illuminant, a source or a temperature
 //!   writes the light's `x`, `y` and temperature, and editing hue or chroma its
 //!   temperature, as darktable's `gui_changed` and `_illum_xy_callback` do
-//!   ([`Tool::follow`]).
+//!   ([`ProcessingTool::follow`]).
 //! - **R, G and B:** the mixer's output rows, each from Input R, G and B, −2 to 2, the
 //!   identity by default, and Normalise channels, which divides the row by its sum.
 //! - **Colourfulness, Brightness and Grey:** the same per input channel, 0 by default:
@@ -54,10 +54,10 @@ use apertrust_plugin::{ImageContext, Value};
 
 use crate::about::{Fact, Facts, Purpose};
 use crate::definition::{
-    ChoiceStyle, Control, ControlKind, Coordinate, Definition, Row, SettingRow, Slider, Tab, Track,
-    Unit, View,
+    ChoiceStyle, Control, ControlKind, Coordinate, ProcessingDefinition, Row, SettingRow, Slider,
+    Tab, ToolDefinition, Track, Unit, View,
 };
-use crate::{Base, ControlValue, Controls, Owned, Setting, Tool, ToolValues};
+use crate::{Base, ControlValue, Controls, Owned, ProcessingTool, Setting, ToolValues};
 
 pub struct ColourCalibration;
 
@@ -507,51 +507,53 @@ static CHECKER: [Row; 1] = [Row::Group {
     ],
 }];
 
-static DEFINITION: Definition = Definition {
-    id: "channelmixerrgb",
+static DEFINITION: ProcessingDefinition = ProcessingDefinition {
+    tool: ToolDefinition {
+        id: "channelmixerrgb",
+        tabs: &[
+            Tab {
+                id: Some("cat"),
+                rows: &CAT_TAB,
+            },
+            Tab {
+                id: Some("red"),
+                rows: &RED,
+            },
+            Tab {
+                id: Some("green"),
+                rows: &GREEN,
+            },
+            Tab {
+                id: Some("blue"),
+                rows: &BLUE,
+            },
+            Tab {
+                id: Some("colourfulness"),
+                rows: &COLOURFULNESS,
+            },
+            Tab {
+                id: Some("brightness"),
+                rows: &BRIGHTNESS,
+            },
+            Tab {
+                id: Some("grey"),
+                rows: &GREY,
+            },
+        ],
+        before: &[],
+        after: &CHECKER,
+        menus: &[],
+    },
     version: 1,
     // Background only until Phase 4's layers (`docs/tools/colour-calibration.md`).
     layers: false,
     auto: false,
     switched: false,
     controls: &CONTROLS,
-    tabs: &[
-        Tab {
-            id: Some("cat"),
-            rows: &CAT_TAB,
-        },
-        Tab {
-            id: Some("red"),
-            rows: &RED,
-        },
-        Tab {
-            id: Some("green"),
-            rows: &GREEN,
-        },
-        Tab {
-            id: Some("blue"),
-            rows: &BLUE,
-        },
-        Tab {
-            id: Some("colourfulness"),
-            rows: &COLOURFULNESS,
-        },
-        Tab {
-            id: Some("brightness"),
-            rows: &BRIGHTNESS,
-        },
-        Tab {
-            id: Some("grey"),
-            rows: &GREY,
-        },
-    ],
-    before: &[],
-    after: &CHECKER,
-    presets: &[],
+    preset_rows: &[],
     views: &VIEWS,
     pickers: &[],
     // darktable's `description()` in src/iop/channelmixerrgb.c at the reference release.
-    menus: &[],
     facts: Some(Facts {
         purpose: Purpose::CorrectiveOrCreative,
         input: Fact::LinearRgbSceneReferred,
@@ -577,8 +579,8 @@ const fn owns() -> [Owned; CAT.len() + PARAMS.len() + 1] {
     owns
 }
 
-impl Tool for ColourCalibration {
-    fn definition(&self) -> &'static Definition {
+impl ProcessingTool for ColourCalibration {
+    fn definition(&self) -> &'static ProcessingDefinition {
         &DEFINITION
     }
 

@@ -42,21 +42,22 @@
 //!
 //! The Advanced tab opens with darktable's graph of the bands, a second view of them
 //! (decision 2): the design system's equalizer, drawing the curve the operation renders
-//! through them ([`Tool::curve`], decision 31), from the fit `apertrust-color` holds for
-//! the operation's setup and the graph alike (decision 65). Left out until the renderer
-//! can draw them: the wands on the two compensations, which need the mask's histogram.
+//! through them ([`ProcessingTool::curve`], decision 31), from the fit `apertrust-color`
+//! holds for the operation's setup and the graph alike (decision 65). Left out until the
+//! renderer can draw them: the wands on the two compensations, which need the mask's
+//! histogram.
 
 use apertrust_color::tone_equalizer::Curve;
 use apertrust_plugin::{ImageContext, Value};
 
 use crate::about::{Fact, Facts, Purpose};
 use crate::definition::{
-    ChoiceStyle, Control, ControlKind, Definition, Row, SettingRow, Slider, Tab, Track, Unit,
-    Widget,
+    ChoiceStyle, Control, ControlKind, ProcessingDefinition, Row, SettingRow, Slider, Tab,
+    ToolDefinition, Track, Unit, Widget,
 };
 use crate::transfer::Transfer;
 use crate::values::{ControlValue, Controls};
-use crate::{Base, Owned, Setting, Tool, ToolValues, switched_from};
+use crate::{Base, Owned, ProcessingTool, Setting, ToolValues, switched_from};
 
 pub struct ToneEqualizer;
 
@@ -211,86 +212,88 @@ const fn soft(control: &'static str, min: f32, max: f32) -> Row {
     Row::Slider(Slider::new(control).soft(min, max))
 }
 
-static DEFINITION: Definition = Definition {
-    id: "toneequal",
+static DEFINITION: ProcessingDefinition = ProcessingDefinition {
+    tool: ToolDefinition {
+        id: "toneequal",
+        tabs: &[
+            Tab {
+                id: Some("simple"),
+                rows: &[
+                    slider(BANDS[0]),
+                    slider(BANDS[1]),
+                    slider(BANDS[2]),
+                    slider(BANDS[3]),
+                    slider(BANDS[4]),
+                    slider(BANDS[5]),
+                    slider(BANDS[6]),
+                    slider(BANDS[7]),
+                    slider(BANDS[8]),
+                ],
+            },
+            Tab {
+                id: Some("advanced"),
+                rows: &[
+                    // darktable's graph of the bands, a second view of them (decision 2).
+                    Row::Custom {
+                        widget: Widget::Equalizer,
+                        controls: &BANDS,
+                    },
+                    soft(SMOOTHING, -1.0, 1.0),
+                    // darktable's wands on the two compensations come with the mask's
+                    // histogram.
+                    soft("exposure_boost", -4.0, 4.0),
+                    // Following the Masking tab's filter, as darktable's does.
+                    Row::When {
+                        control: DETAILS,
+                        is: &CONTRASTED,
+                        rows: &[soft("contrast_boost", -2.0, 2.0)],
+                    },
+                ],
+            },
+            Tab {
+                id: Some("masking"),
+                rows: &[
+                    Row::Choice {
+                        control: METHOD,
+                        style: ChoiceStyle::List,
+                    },
+                    Row::Choice {
+                        control: DETAILS,
+                        style: ChoiceStyle::List,
+                    },
+                    Row::When {
+                        control: DETAILS,
+                        is: &FILTERED,
+                        rows: &[
+                            Row::Slider(Slider::new(ITERATIONS).decimals(0).soft(1.0, 5.0)),
+                            soft("blending", 1.0, 45.0),
+                            soft("feathering", 0.1, 50.0),
+                            slider("quantization"),
+                        ],
+                    },
+                ],
+            },
+        ],
+        before: &[],
+        // darktable's toggle under its notebook: the mask in place of the photo, a view
+        // mode that no edit stores (`docs/tools/README.md`, rule 10).
+        after: &[Row::Setting(SettingRow {
+            id: "display_exposure_mask",
+            kind: ControlKind::Bool { default: false },
+            decimals: 0,
+            track: Track::Plain,
+        })],
+        menus: &[],
+    },
     version: 2,
     layers: true,
     auto: false,
     switched: true,
     controls: &CONTROLS,
-    tabs: &[
-        Tab {
-            id: Some("simple"),
-            rows: &[
-                slider(BANDS[0]),
-                slider(BANDS[1]),
-                slider(BANDS[2]),
-                slider(BANDS[3]),
-                slider(BANDS[4]),
-                slider(BANDS[5]),
-                slider(BANDS[6]),
-                slider(BANDS[7]),
-                slider(BANDS[8]),
-            ],
-        },
-        Tab {
-            id: Some("advanced"),
-            rows: &[
-                // darktable's graph of the bands, a second view of them (decision 2).
-                Row::Custom {
-                    widget: Widget::Equalizer,
-                    controls: &BANDS,
-                },
-                soft(SMOOTHING, -1.0, 1.0),
-                // darktable's wands on the two compensations come with the mask's
-                // histogram.
-                soft("exposure_boost", -4.0, 4.0),
-                // Following the Masking tab's filter, as darktable's does.
-                Row::When {
-                    control: DETAILS,
-                    is: &CONTRASTED,
-                    rows: &[soft("contrast_boost", -2.0, 2.0)],
-                },
-            ],
-        },
-        Tab {
-            id: Some("masking"),
-            rows: &[
-                Row::Choice {
-                    control: METHOD,
-                    style: ChoiceStyle::List,
-                },
-                Row::Choice {
-                    control: DETAILS,
-                    style: ChoiceStyle::List,
-                },
-                Row::When {
-                    control: DETAILS,
-                    is: &FILTERED,
-                    rows: &[
-                        Row::Slider(Slider::new(ITERATIONS).decimals(0).soft(1.0, 5.0)),
-                        soft("blending", 1.0, 45.0),
-                        soft("feathering", 0.1, 50.0),
-                        slider("quantization"),
-                    ],
-                },
-            ],
-        },
-    ],
-    before: &[],
-    // darktable's toggle under its notebook: the mask in place of the photo, a view mode
-    // that no edit stores (`docs/tools/README.md`, rule 10).
-    after: &[Row::Setting(SettingRow {
-        id: "display_exposure_mask",
-        kind: ControlKind::Bool { default: false },
-        decimals: 0,
-        track: Track::Plain,
-    })],
-    presets: &[],
+    preset_rows: &[],
     views: &[],
     pickers: &[],
     // darktable's `description()` in src/iop/toneequal.c at the reference release.
-    menus: &[],
     facts: Some(Facts {
         purpose: Purpose::CorrectiveAndCreative,
         input: Fact::LinearRgbSceneReferred,
@@ -318,8 +321,8 @@ fn smoothing(s: f32) -> f32 {
     CurveSmoothing.value(s)
 }
 
-impl Tool for ToneEqualizer {
-    fn definition(&self) -> &'static Definition {
+impl ProcessingTool for ToneEqualizer {
+    fn definition(&self) -> &'static ProcessingDefinition {
         &DEFINITION
     }
 
@@ -618,8 +621,8 @@ mod tests {
         assert_eq!(settings.len(), 7);
     }
 
-    /// Every control at its default, `set` over them, as the panel hands `Tool::curve`
-    /// its values.
+    /// Every control at its default, `set` over them, as the panel hands
+    /// `ProcessingTool::curve` its values.
     fn shown(set: &[(&str, ControlValue)]) -> Controls {
         let mut values = DEFINITION.defaults();
         for (control, value) in set {

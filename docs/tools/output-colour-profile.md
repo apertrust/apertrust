@@ -26,7 +26,7 @@ Linear XYZ and Lab, which darktable lists only while its `allow_lab_output` pref
 
 **sRGB is the only profile an edit can choose.** colorout ports sRGB, linear Rec709 and linear Rec2020 (`docs/ports/colorout.md`). But the viewport draws colorout's output as sRGB, and the CLI tags its PNG sRGB, so a linear profile would show and save wrong. Decision 26 makes the display path's conversion from the edit's profile the condition for letting an edit choose another profile, and that conversion is not built ([Gaps](#gaps), 1).
 
-So the two linear profiles are refused as commands, as the nine the operation does not port are. The control, whose one value is its default, can change nothing on any photo: it is unavailable (`Tool::available`, decision 30), its box drawn disabled at sRGB (web-safe), as Raw black/white point's flat field correction is.
+So the two linear profiles are refused as commands, as the nine the operation does not port are. The control, whose one value is its default, can change nothing on any photo: it is unavailable (`ProcessingTool::available`, decision 30), its box drawn disabled at sRGB (web-safe), as Raw black/white point's flat field correction is.
 
 A disabled box does not open, so its list is not seen until the control is available. Then every profile still refused shows in it drawn disabled, "Coming in a later version". The binding already writes every profile by its name ([O2](#invariants)), so once the display converts, a profile becomes choosable by leaving the definition's `unported` list, and the control becomes available.
 

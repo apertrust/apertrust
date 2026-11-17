@@ -98,7 +98,7 @@ use apertrust_engine::session::{
     PickerCommand, PickerRef, Places, Session, SessionError, StepSource, Values, ViewOnly,
 };
 use apertrust_engine::sidecar::Reason;
-use apertrust_tools::Tool;
+use apertrust_tools::ProcessingTool;
 use apertrust_ui::components::{
     ActivityAction, Available, CellMenu, CellRating, CentralBar, CentralBarAction, GridEdge,
     GridEdgeAction, GridPanel, GridPanelAction, GridPosition, Jobs, Margin, Marker, PanelBody,
@@ -4594,7 +4594,7 @@ impl App {
         let words = translator(ui.ctx());
         let name = match picker {
             PickerRef::Tool { tool, picker } => (self.mirror.tools().iter())
-                .find(|m| m.definition().id == tool)
+                .find(|m| m.definition().tool.id == tool)
                 .map(|m| pickers::name(&words, m.definition(), picker))
                 .unwrap_or_default(),
             PickerRef::ColourPicker => String::new(),
@@ -6435,7 +6435,7 @@ fn panel_body(
     ui: &mut egui::Ui,
     shell: &Shell,
     scopes: Option<(Option<&scopes::Measured>, bool)>,
-    tools: &[&dyn Tool],
+    tools: &[&dyn ProcessingTool],
     values: &Values,
     panels: &Panels,
     peek: bool,
@@ -6455,7 +6455,7 @@ fn panel_body(
     }
     body.show(ui, |ui| {
         for id in shown {
-            let tool = tools.iter().find(|tool| tool.definition().id == *id);
+            let tool = tools.iter().find(|tool| tool.definition().tool.id == *id);
             let state = values.tools.iter().find(|state| state.tool == *id);
             if let (Some(tool), Some(state)) = (tool, state) {
                 let open = shell.section_open(id, tools::OPEN);
@@ -6947,7 +6947,7 @@ mod tests {
         }
 
         let image = testing::image();
-        let tools: &[&dyn Tool] = &[&Twin];
+        let tools: &[&dyn ProcessingTool] = &[&Twin];
         let definition = Twin.definition();
         let coordinate = |id| definition.coordinate(id).is_some();
         // What the session reports of Twin with `edit` and `held`: each control's value
@@ -7132,7 +7132,7 @@ mod tests {
         let viewed = WhiteBalance.view(view.id, &defaults, &image).unwrap();
         let report = Values {
             tools: vec![ToolState {
-                tool: definition.id,
+                tool: definition.tool.id,
                 enabled: true,
                 edited: false,
                 hidden: false,
@@ -7176,9 +7176,9 @@ mod tests {
             extent: [84, 62],
             live: true,
         };
-        let tools: &[&dyn Tool] = &[&WhiteBalance];
+        let tools: &[&dyn ProcessingTool] = &[&WhiteBalance];
         let drag = Pending::Control {
-            tool: definition.id,
+            tool: definition.tool.id,
             control: "temperature",
             value: ControlValue::Number(5000.0),
         };
@@ -9024,7 +9024,7 @@ mod tests {
     #[test]
     fn a_collapsible_group_opened_stays_open_in_the_next_run() {
         use apertrust_engine::session::{ControlState, ToolState};
-        use apertrust_tools::Tool as _;
+        use apertrust_tools::ProcessingTool as _;
         use apertrust_tools::testing::Sample;
 
         let folder = settings::testing::Folder::new("groups");
@@ -9033,7 +9033,7 @@ mod tests {
         let shell = Shell::new(&settings, Locale::EnGb, windows);
         let definition = Sample.definition();
         let state = ToolState {
-            tool: definition.id,
+            tool: definition.tool.id,
             enabled: true,
             edited: false,
             hidden: false,
@@ -9137,11 +9137,11 @@ mod tests {
         let (keeper, settings) = Keeper::open(folder.storage());
         let exposure = apertrust_tools::TOOLS
             .iter()
-            .find(|tool| tool.definition().id == "exposure")
+            .find(|tool| tool.definition().tool.id == "exposure")
             .expect("Exposure is built in")
             .definition();
         let untouched = ToolState {
-            tool: exposure.id,
+            tool: exposure.tool.id,
             enabled: true,
             edited: false,
             hidden: false,
@@ -9305,18 +9305,17 @@ mod tests {
         // A tool's setting, such as Exposure's Picker target, is the app's, not the
         // photo's, and stays usable, as it does while a photo opens (decision 77).
         let words = Translator::new(Locale::EnGb);
-        let settings: Vec<String> =
-            (apertrust_tools::TOOLS.iter())
-                .flat_map(|tool| {
-                    let definition = tool.definition();
-                    definition.rows().filter_map(|row| match row {
-                        apertrust_tools::Row::Setting(setting) => Some(words.text(
-                            &apertrust_tools::messages::setting(definition.id, setting.id)[1],
-                        )),
-                        _ => None,
-                    })
+        let settings: Vec<String> = (apertrust_tools::TOOLS.iter())
+            .flat_map(|tool| {
+                let definition = tool.definition();
+                definition.rows().filter_map(|row| match row {
+                    apertrust_tools::Row::Setting(setting) => Some(words.text(
+                        &apertrust_tools::messages::setting(definition.tool.id, setting.id)[1],
+                    )),
+                    _ => None,
                 })
-                .collect();
+            })
+            .collect();
         let mut drawn = 0;
         for role in [Role::Slider, Role::ComboBox, Role::Switch, Role::SpinButton] {
             for node in harness.query_all_by_role(role) {
@@ -11686,7 +11685,7 @@ mod tests {
         id == export::ID
             || apertrust_tools::TOOLS
                 .iter()
-                .any(|tool| tool.definition().id == id)
+                .any(|tool| tool.definition().tool.id == id)
     }
 
     /// Each of Edit's tabs, by id, lists the built tools decision 38 gives it, in its
@@ -11732,7 +11731,7 @@ mod tests {
             .flat_map(|tab| tab.iter().copied())
             .collect();
         for tool in apertrust_tools::TOOLS {
-            let id = tool.definition().id;
+            let id = tool.definition().tool.id;
             let tabs = listed.iter().filter(|listed| **listed == id).count();
             assert_eq!(tabs, 1, "{id} is in {tabs} tabs");
         }
@@ -11801,7 +11800,7 @@ mod tests {
             .flat_map(|(_, tools)| tools.iter().copied())
             .collect();
         for tool in apertrust_tools::TOOLS {
-            let id = tool.definition().id;
+            let id = tool.definition().tool.id;
             let groups = listed.iter().filter(|listed| **listed == id).count();
             assert_eq!(groups, 1, "{id} is in {groups} groups");
         }

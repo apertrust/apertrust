@@ -40,7 +40,7 @@ use apertrust_plugin::{ImageContext, ParamValues};
 use apertrust_tools::tone_curve::{
     self, LUMA, LUMINANCE, LumaCurve, NORMS, PRESERVE, ToneCurve, nodes,
 };
-use apertrust_tools::{Base, ControlValue, MIN_GAP, TOOLS, Tool};
+use apertrust_tools::{Base, ControlValue, MIN_GAP, ProcessingTool, TOOLS};
 use golden::synthetic;
 
 use common::{

@@ -29,9 +29,9 @@
 //! [`Event::Picker`] when they change what a client shows: after the frame they measured.
 //!
 //! The session applies a tool's reading itself, through the tool's pure
-//! [`apertrust_tools::Tool::pick`]: the first after the picker turns on and each after
-//! its region moves, never one an edit upstream caused, a drag's readings one gesture. A
-//! failure turns the pickers off for the session, never the frame.
+//! [`apertrust_tools::ProcessingTool::pick`]: the first after the picker turns on and each
+//! after its region moves, never one an edit upstream caused, a drag's readings one
+//! gesture. A failure turns the pickers off for the session, never the frame.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::hash::{DefaultHasher, Hash, Hasher};
@@ -794,7 +794,7 @@ impl Engine {
                 // is a history item, saved with the log.
                 if applies {
                     if let Some(open) = &mut self.open {
-                        let wrote = vec![Wrote::Tool(found.definition().id.to_owned())];
+                        let wrote = vec![Wrote::Tool(found.definition().tool.id.to_owned())];
                         open.history.wrote(None, wrote, std::time::Instant::now());
                         open.unsaved = true;
                     }
@@ -804,7 +804,7 @@ impl Engine {
             }
             self.pickers
                 .settings
-                .insert(found.definition().id, settings);
+                .insert(found.definition().tool.id, settings);
             // The picker it replaces off first, its own commands answered; then a drag of
             // its own, complete as it begins, answered once its first reading is applied or
             // dropped.
@@ -821,7 +821,7 @@ impl Engine {
             tool = Some((
                 area,
                 OnTool {
-                    tool: found.definition().id,
+                    tool: found.definition().tool.id,
                     picker: declared,
                     channel,
                     measured: None,
@@ -861,7 +861,7 @@ impl Engine {
     ) -> Result<PickerEffect, SessionError> {
         let tool = edit::tool(&self.tools, id)?;
         check_settings(tool.definition().pickers, &settings)?;
-        let id = tool.definition().id;
+        let id = tool.definition().tool.id;
         let changed: BTreeSet<&str> = settings.iter().map(|(setting, _)| *setting).collect();
         // The tool's picker on that these settings leave not ready turns off, applying
         // nothing, as Exposure's when its reference is cleared (decision 88).
@@ -1582,17 +1582,17 @@ fn keep_due(old: &Probed, new: &mut Probed) {
 }
 
 /// Whether `tool`'s picker `picker` can start with `settings`
-/// ([`apertrust_tools::Tool::picker_ready`]); a tool that panics there is taken as not
-/// ready, so its picker picks nothing.
+/// ([`apertrust_tools::ProcessingTool::picker_ready`]); a tool that panics there is taken
+/// as not ready, so its picker picks nothing.
 fn ready(
-    tool: &dyn apertrust_tools::Tool,
+    tool: &dyn apertrust_tools::ProcessingTool,
     picker: &str,
     settings: &[(&'static str, ControlValue)],
 ) -> bool {
     let asked = catch_unwind(AssertUnwindSafe(|| tool.picker_ready(picker, settings)));
     asked.unwrap_or_else(|panic| {
         let message = panic_message(&*panic);
-        let id = tool.definition().id;
+        let id = tool.definition().tool.id;
         tracing::warn!(target: "pipe", "tool {id}'s picker {picker} not ready: {message}");
         false
     })

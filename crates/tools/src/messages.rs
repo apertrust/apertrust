@@ -22,7 +22,7 @@
 
 use std::collections::BTreeSet;
 
-use crate::definition::{ControlKind, Definition, Row, SettingRow, Slider, Unit};
+use crate::definition::{ControlKind, ProcessingDefinition, Row, SettingRow, Slider, Unit};
 
 /// The tool's title: `tool-<tool>-title`.
 pub fn title(tool: &str) -> String {
@@ -93,8 +93,8 @@ pub fn promise(tool: &str, control: &str) -> String {
     format!("tool-{tool}-control-{control}-promise")
 }
 
-/// A control's label's value of the photo's ([`crate::Tool::label_value`], decision 88),
-/// drawn after the label, `$value` the value with its unit:
+/// A control's label's value of the photo's ([`crate::ProcessingTool::label_value`],
+/// decision 88), drawn after the label, `$value` the value with its unit:
 /// `tool-<tool>-control-<control>-label-value`. The definition does not imply it: the
 /// tool's code gives it, so the tests ask each tool which controls have one.
 pub fn label_value(tool: &str, control: &str) -> String {
@@ -107,7 +107,7 @@ pub fn option(tool: &str, control: &str, option: &str) -> String {
 }
 
 /// Why a segmented choice's option is drawn disabled on a photo that does not list it
-/// ([`crate::Tool::options`], decision 88), its tooltip:
+/// ([`crate::ProcessingTool::options`], decision 88), its tooltip:
 /// `tool-<tool>-control-<control>-option-<option>-unavailable`, as Exposure's "Automatic
 /// needs a raw photo's histogram". The definition does not imply it: which photos list an
 /// option is the tool's code, so the tests ask each tool which options a photo leaves out.
@@ -202,7 +202,10 @@ pub fn picker_option_this_photo(tool: &str, picker: &str, part: &str, option: &s
 
 /// The options of the setting `picker`'s words follow under which a reference row shows
 /// (a [`crate::Row::WhenSetting`] of that setting holding a [`crate::Row::Reference`]).
-pub fn reference_options(definition: &Definition, picker: &crate::Picker) -> Vec<&'static str> {
+pub fn reference_options(
+    definition: &ProcessingDefinition,
+    picker: &crate::Picker,
+) -> Vec<&'static str> {
     let Some(setting) = picker.words_by else {
         return Vec::new();
     };
@@ -251,10 +254,10 @@ pub fn picker_hint(tool: &str, picker: &str) -> String {
     format!("tool-{tool}-picker-{picker}-hint")
 }
 
-/// Why a picker cannot start ([`crate::Tool::picker_ready`]), its tooltip while drawn
-/// disabled: `tool-<tool>-picker-<picker>-unavailable`, as Exposure's "Set a reference
-/// first, with the picker on the Reference row". The definition does not imply it:
-/// readiness is the tool's code, so the tests ask each tool when its pickers are ready.
+/// Why a picker cannot start ([`crate::ProcessingTool::picker_ready`]), its tooltip while
+/// drawn disabled: `tool-<tool>-picker-<picker>-unavailable`, as Exposure's "Set a
+/// reference first, with the picker on the Reference row". The definition does not imply
+/// it: readiness is the tool's code, so the tests ask each tool when its pickers are ready.
 pub fn picker_unavailable(tool: &str, picker: &str) -> String {
     format!("tool-{tool}-picker-{picker}-unavailable")
 }
@@ -292,8 +295,8 @@ pub fn picker_option(tool: &str, picker: &str, part: &str, option: &str) -> Stri
 /// button's name too, the action; its name
 /// where it is no slider's quad, which takes its control's label; and its sentence where
 /// it takes a point, an area picker's being every picker's.
-pub fn picker_words(definition: &Definition, picker: &crate::Picker) -> Vec<String> {
-    let tool = definition.id;
+pub fn picker_words(definition: &ProcessingDefinition, picker: &crate::Picker) -> Vec<String> {
+    let tool = definition.tool.id;
     let [label, full, promise, what] = self::picker(tool, picker.id);
     let on_quad = definition
         .rows()
@@ -376,14 +379,15 @@ pub fn unit_value(unit: Unit) -> String {
 /// one, and each picker's words its button and the central bar use ([`picker_words`]),
 /// then, where it has darktable's facts, its kind's and what it works on, and each of
 /// darktable's lines.
-pub fn of(definition: &Definition) -> Vec<String> {
-    let tool = definition.id;
+pub fn of(definition: &ProcessingDefinition) -> Vec<String> {
+    let tool = definition.tool.id;
     let mut ids = vec![title(tool), description(tool)];
     if definition.auto {
         ids.push(auto(tool));
     }
     ids.extend(
         definition
+            .tool
             .tabs
             .iter()
             .filter_map(|t| t.id)
@@ -445,7 +449,7 @@ pub fn of(definition: &Definition) -> Vec<String> {
         let id = coordinate.id;
         ids.extend([label(tool, id), full(tool, id), promise(tool, id)]);
     }
-    for row in definition.presets {
+    for row in definition.preset_rows {
         ids.extend(preset(tool, row.id));
         ids.extend(row.options.iter().map(|o| preset_option(tool, row.id, o)));
     }
@@ -458,7 +462,7 @@ pub fn of(definition: &Definition) -> Vec<String> {
             ids.push(unit(used));
         }
     }
-    if !definition.presets.is_empty() {
+    if !definition.preset_rows.is_empty() {
         ids.push(PRESET_CUSTOM.to_owned());
     }
     if let Some(facts) = definition.facts {
@@ -475,8 +479,8 @@ pub fn of(definition: &Definition) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Tool;
-    use crate::definition::{ChoiceStyle, Control, Tab, Track};
+    use crate::ProcessingTool;
+    use crate::definition::{ChoiceStyle, Control, Tab, ToolDefinition, Track};
     use crate::testing::Sample;
 
     #[test]
@@ -593,23 +597,25 @@ mod tests {
                 rows: &[Row::Slider(Slider::new("sigma_r").label("highlights"))],
             },
         ];
-        static LOCAL_CONTRAST: Definition = Definition {
-            id: "bilat",
+        static LOCAL_CONTRAST: ProcessingDefinition = ProcessingDefinition {
+            tool: ToolDefinition {
+                id: "bilat",
+                tabs: &[Tab {
+                    id: None,
+                    rows: ROWS,
+                }],
+                before: &[],
+                after: &[],
+                menus: &[],
+            },
             version: 1,
             layers: true,
             auto: false,
             switched: false,
             controls: CONTROLS,
-            tabs: &[Tab {
-                id: None,
-                rows: ROWS,
-            }],
-            before: &[],
-            after: &[],
-            presets: &[],
+            preset_rows: &[],
             views: &[],
             pickers: &[],
-            menus: &[],
             facts: None,
         };
         LOCAL_CONTRAST.check().unwrap();
@@ -642,32 +648,34 @@ mod tests {
             unit: None,
             unported: false,
         }];
-        static CHECKER: Definition = Definition {
-            id: "mixer",
+        static CHECKER: ProcessingDefinition = ProcessingDefinition {
+            tool: ToolDefinition {
+                id: "mixer",
+                tabs: &[Tab {
+                    id: None,
+                    rows: &[Row::Slider(Slider::new("amount"))],
+                }],
+                before: &[],
+                after: &[Row::Setting(SettingRow {
+                    id: "chart",
+                    kind: ControlKind::Choice {
+                        options: &["classic", "passport"],
+                        default: 0,
+                        unported: &[],
+                    },
+                    decimals: 0,
+                    track: Track::Plain,
+                })],
+                menus: &[],
+            },
             version: 1,
             layers: false,
             auto: false,
             switched: false,
             controls: CONTROLS,
-            tabs: &[Tab {
-                id: None,
-                rows: &[Row::Slider(Slider::new("amount"))],
-            }],
-            before: &[],
-            after: &[Row::Setting(SettingRow {
-                id: "chart",
-                kind: ControlKind::Choice {
-                    options: &["classic", "passport"],
-                    default: 0,
-                    unported: &[],
-                },
-                decimals: 0,
-                track: Track::Plain,
-            })],
-            presets: &[],
+            preset_rows: &[],
             views: &[],
             pickers: &[],
-            menus: &[],
             facts: None,
         };
         CHECKER.check().unwrap();
@@ -707,8 +715,11 @@ mod tests {
                 Slider::new("amount").quad(crate::Quad::Picker("amount")),
             )],
         }];
-        let following = Definition {
-            tabs: QUAD,
+        let following = ProcessingDefinition {
+            tool: ToolDefinition {
+                tabs: QUAD,
+                ..CHECKER.tool
+            },
             pickers: std::slice::from_ref(&PICKER),
             ..CHECKER
         };
@@ -749,26 +760,28 @@ mod tests {
             unit: None,
             unported: false,
         }];
-        static LEVELS: Definition = Definition {
-            id: "levels",
+        static LEVELS: ProcessingDefinition = ProcessingDefinition {
+            tool: ToolDefinition {
+                id: "levels",
+                tabs: &[Tab {
+                    id: None,
+                    rows: &[
+                        Row::Slider(Slider::new("white")),
+                        Row::Action { id: "auto_tune" },
+                    ],
+                }],
+                before: &[],
+                after: &[],
+                menus: &[],
+            },
             version: 1,
             layers: false,
             auto: false,
             switched: false,
             controls: CONTROLS,
-            tabs: &[Tab {
-                id: None,
-                rows: &[
-                    Row::Slider(Slider::new("white")),
-                    Row::Action { id: "auto_tune" },
-                ],
-            }],
-            before: &[],
-            after: &[],
-            presets: &[],
+            preset_rows: &[],
             views: &[],
             pickers: &[],
-            menus: &[],
             facts: None,
         };
         LEVELS.check().unwrap();

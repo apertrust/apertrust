@@ -73,8 +73,9 @@ use apertrust_plugin::ImageContext;
 use apertrust_tools::about::{self, Facts};
 use apertrust_tools::utility;
 use apertrust_tools::{
-    Button, ButtonIcon, ChoiceStyle, Computed, ControlKind, Controls, Definition, MAX_POINTS,
-    PickerKind, Quad, Row, SettingRow, Slider, Tool, Track, Unit, View, Widget, check, messages,
+    Button, ButtonIcon, ChoiceStyle, Computed, ControlKind, Controls, MAX_POINTS, PickerKind,
+    ProcessingDefinition, ProcessingTool, Quad, Row, SettingRow, Slider, Track, Unit, View, Widget,
+    check, messages,
 };
 use apertrust_ui::components::{
     self as parts, ActionRow, ButtonState, ButtonsAction, ButtonsRow, Choice, ChoiceAction,
@@ -316,7 +317,7 @@ impl Pending {
     /// number's range, through the tool's pure `range`, a value the moved range leaves
     /// outside shown clamped, as the session will store it (decision 30,
     /// [`follow_ranges`]).
-    pub fn show(&self, tool: &dyn Tool, state: &mut ToolState, image: &ImageContext) {
+    pub fn show(&self, tool: &dyn ProcessingTool, state: &mut ToolState, image: &ImageContext) {
         let definition = tool.definition();
         let before = values(state);
         match *self {
@@ -384,7 +385,7 @@ impl Pending {
 /// Whether the tool's reset would change what `state` shows rendered, as the session
 /// reports it (`ToolState::edited`): a control off its default for the photo, or a
 /// switched tool on (decision 32). Its reset is available only then.
-pub fn edited(tool: &dyn Tool, state: &ToolState) -> bool {
+pub fn edited(tool: &dyn ProcessingTool, state: &ToolState) -> bool {
     (tool.definition().switched && state.enabled)
         || state.controls.iter().any(|c| c.value != c.default)
 }
@@ -396,7 +397,7 @@ pub fn edited(tool: &dyn Tool, state: &ToolState) -> bool {
 /// values shown than for `before`, the new range, held to the definition's
 /// (`edit::range`). Every other range shows what the session reported. A tool whose
 /// `range` panics leaves the values and ranges as reported, as `available` panicking does.
-fn follow_ranges(tool: &dyn Tool, state: &mut ToolState, before: &Controls) {
+fn follow_ranges(tool: &dyn ProcessingTool, state: &mut ToolState, before: &Controls) {
     let after = values(state);
     if after == *before {
         return;
@@ -442,7 +443,7 @@ fn values(state: &ToolState) -> Controls {
 /// option it now shows, by the options the session reported, is unavailable, as the
 /// session will report it (decision 30).
 fn follow_availability(
-    tool: &dyn Tool,
+    tool: &dyn ProcessingTool,
     state: &mut ToolState,
     before: &Controls,
     image: &ImageContext,
@@ -528,7 +529,7 @@ fn show_coordinates(state: &mut ToolState, view: &View, values: &[f32]) {
 
 /// The view's coordinate `at` set to `value`, in its range, the others held as shown.
 fn set_coordinate(
-    tool: &dyn Tool,
+    tool: &dyn ProcessingTool,
     state: &mut ToolState,
     view: &View,
     at: usize,
@@ -554,7 +555,7 @@ fn set_coordinate(
 /// The view's coordinate `at` back to its default, the others held as shown; once every
 /// coordinate is at its default, the view's controls are back at theirs, released.
 fn reset_coordinate(
-    tool: &dyn Tool,
+    tool: &dyn ProcessingTool,
     state: &mut ToolState,
     view: &View,
     at: usize,
@@ -587,7 +588,7 @@ fn reset_coordinate(
 /// shows the tool's view of the values, as the session's next report will, since the
 /// change ends that view's hold.
 fn write(
-    tool: &dyn Tool,
+    tool: &dyn ProcessingTool,
     state: &mut ToolState,
     view: &View,
     values: &[f32],
@@ -626,7 +627,7 @@ fn write(
 /// report leaves out, as one whose tool failed, is left as it is, its tool not called;
 /// so is one the tool does not give, or whose `view` panics.
 fn follow(
-    tool: &dyn Tool,
+    tool: &dyn ProcessingTool,
     state: &mut ToolState,
     moved: &[&'static str],
     except: Option<&str>,
@@ -657,7 +658,7 @@ fn follow(
 
 /// Shows each coordinate with the mark its view's controls share, `None` where they
 /// differ, as the session reports it.
-fn coordinate_marks(definition: &Definition, state: &mut ToolState) {
+fn coordinate_marks(definition: &ProcessingDefinition, state: &mut ToolState) {
     let marks: Vec<Option<Mark>> = state
         .views
         .iter()
@@ -683,7 +684,7 @@ fn coordinate_marks(definition: &Definition, state: &mut ToolState) {
 /// nothing, so its curve is drawn flat (decision 32); on, it is the curve the operation
 /// renders, darktable's ripple at the defaults.
 fn equalizer_curve(
-    tool: &dyn Tool,
+    tool: &dyn ProcessingTool,
     enabled: bool,
     first: &str,
     values: &Controls,
@@ -717,7 +718,7 @@ fn equalizer_curve(
 )]
 pub fn section(
     ui: &mut egui::Ui,
-    tool: &dyn Tool,
+    tool: &dyn ProcessingTool,
     state: &ToolState,
     open: bool,
     panels: &Panels,
@@ -728,19 +729,22 @@ pub fn section(
     pickers: &Pickers,
 ) -> Vec<Change> {
     let definition = tool.definition();
-    let id = definition.id;
+    let id = definition.tool.id;
     let words = translator(ui.ctx());
     let title = words.text(&messages::title(id));
     let tabs: Vec<String> = definition
+        .tool
         .tabs
         .iter()
         .filter_map(|tab| tab.id)
         .map(|tab| words.text(&messages::tab(id, tab)))
         .collect();
     let tabs: Vec<&str> = tabs.iter().map(String::as_str).collect();
-    let selected = panels.tab(id).min(definition.tabs.len().saturating_sub(1));
-    let later: Vec<usize> = (0..definition.tabs.len())
-        .filter(|&i| definition.tabs[i].rows.is_empty())
+    let selected = panels
+        .tab(id)
+        .min(definition.tool.tabs.len().saturating_sub(1));
+    let later: Vec<usize> = (0..definition.tool.tabs.len())
+        .filter(|&i| definition.tool.tabs[i].rows.is_empty())
         .collect();
     let later_tip = words.text("section-tab-later");
 
@@ -791,10 +795,11 @@ pub fn section(
             }
         }
         let tab = definition
+            .tool
             .tabs
             .get(selected)
             .map_or(&[][..], |tab| tab.rows);
-        for rows in [definition.before, tab, definition.after] {
+        for rows in [definition.tool.before, tab, definition.tool.after] {
             for row in rows {
                 draw_row(ui, &page, row, &mut changes);
             }
@@ -857,7 +862,7 @@ fn control<'s>(state: &'s ToolState, id: &str) -> Option<&'s ControlState> {
 /// shows, and whether each collapsible group is open, by its id.
 struct Page<'a> {
     words: &'a Translator,
-    tool: &'a dyn Tool,
+    tool: &'a dyn ProcessingTool,
     state: &'a ToolState,
     groups: &'a dyn Fn(&str) -> bool,
     pickers: &'a Pickers<'a>,
@@ -900,7 +905,11 @@ impl Page<'_> {
             Row::Setting(row) if row.id == setting => Some(row),
             _ => None,
         });
-        let kept = self.pickers.settings.get(definition.id, setting).cloned();
+        let kept = self
+            .pickers
+            .settings
+            .get(definition.tool.id, setting)
+            .cloned();
         match kept.or_else(|| row.map(SettingRow::default)) {
             Some(ControlValue::Choice(at)) => options
                 .get(at as usize)
@@ -985,7 +994,7 @@ fn draw_kind(ui: &mut egui::Ui, page: &Page, row: &Row, changes: &mut Vec<Change
             choice_row(ui, words, definition, control, *style, state, changes);
         }
         Row::Toggle { control } => toggle_row(ui, words, definition, control, state, changes),
-        Row::Label { id } => group_label(ui, &words.text(&messages::group(definition.id, id))),
+        Row::Label { id } => group_label(ui, &words.text(&messages::group(definition.tool.id, id))),
         Row::Group { id, rows } => group_row(ui, page, id, rows, changes),
         Row::When { control, is, rows } => {
             if page.follows(control, is) {
@@ -1012,13 +1021,13 @@ fn draw_kind(ui: &mut egui::Ui, page: &Page, row: &Row, changes: &mut Vec<Change
         // The closed registry's other painted widgets (the colour wheels, the hue curve)
         // join the renderer with the first tool that uses each.
         Row::Custom { .. } => {}
-        // A list whatever its style: `Definition::check` refuses segments, which cannot
-        // draw Custom or an option disabled yet.
+        // A list whatever its style: `ProcessingDefinition::check` refuses segments, which
+        // cannot draw Custom or an option disabled yet.
         Row::Preset { preset, .. } => preset_row(ui, words, definition, preset, state, changes),
         Row::Setting(setting) => setting_row(ui, page, setting, changes),
         Row::Patches { picker, target } => patches_row(ui, page, picker, target),
-        Row::Action { id } => action_row(ui, words, definition.id, id),
-        Row::Computed(computed) => computed_row(ui, words, definition.id, computed, state),
+        Row::Action { id } => action_row(ui, words, definition.tool.id, id),
+        Row::Computed(computed) => computed_row(ui, words, definition.tool.id, computed, state),
         Row::Reference {
             picker,
             lightness,
@@ -1038,13 +1047,13 @@ fn draw_kind(ui: &mut egui::Ui, page: &Page, row: &Row, changes: &mut Vec<Change
 fn buttons_row(
     ui: &mut egui::Ui,
     words: &Translator,
-    definition: &Definition,
+    definition: &ProcessingDefinition,
     id: &'static str,
     buttons: &[Button],
     state: &ToolState,
     changes: &mut Vec<Change>,
 ) {
-    let tool = definition.id;
+    let tool = definition.tool.id;
     let Some(shown) = control(state, id) else {
         return;
     };
@@ -1091,7 +1100,7 @@ fn buttons_row(
 /// None on a photo open for viewing only, nor for a tool or action the tools do not
 /// have.
 pub fn action_writes(
-    tools: &[&dyn Tool],
+    tools: &[&dyn ProcessingTool],
     tool: &str,
     action: &str,
     values: &Controls,
@@ -1101,7 +1110,9 @@ pub fn action_writes(
     if view_only {
         return Vec::new();
     }
-    let found = tools.iter().find(|found| found.definition().id == tool);
+    let found = tools
+        .iter()
+        .find(|found| found.definition().tool.id == tool);
     let writes = found.and_then(|found| found.action(action, values, image));
     let writes: Vec<(&'static str, ControlValue)> = writes
         .iter()
@@ -1198,12 +1209,12 @@ fn computed_row(
 fn preset_row(
     ui: &mut egui::Ui,
     words: &Translator,
-    definition: &Definition,
+    definition: &ProcessingDefinition,
     id: &'static str,
     state: &ToolState,
     changes: &mut Vec<Change>,
 ) {
-    let tool = definition.id;
+    let tool = definition.tool.id;
     let shown = state.presets.iter().find(|shown| shown.preset == id);
     let (Some(row), Some(shown)) = (definition.preset(id), shown) else {
         return;
@@ -1248,7 +1259,7 @@ fn preset_row(
 /// [`Change::Setting`]; any other, the colour checker's chart, is drawn disabled at
 /// darktable's default until what uses it is built.
 fn setting_row(ui: &mut egui::Ui, page: &Page, setting: &SettingRow, changes: &mut Vec<Change>) {
-    let (words, tool) = (page.words, page.tool.definition().id);
+    let (words, tool) = (page.words, page.tool.definition().tool.id);
     let [label, full, promise] = messages::setting(tool, setting.id).map(|id| words.text(&id));
     let kept = page.pickers.settings.get(tool, setting.id);
     // One `--conf` gives keeps its value for the run, its row disabled as the Settings
@@ -1354,7 +1365,8 @@ fn setting_row(ui: &mut egui::Ui, page: &Page, setting: &SettingRow, changes: &m
                 set(ControlValue::Bool(on), true);
             }
         }
-        // No setting is curve points (`Definition::check`), and a kept value is its kind's.
+        // No setting is curve points (`ProcessingDefinition::check`), and a kept value is
+        // its kind's.
         _ => {}
     }
 }
@@ -1394,7 +1406,7 @@ fn reference_row(
         return;
     };
     let words = page.words;
-    let tool = page.tool.definition().id;
+    let tool = page.tool.definition().tool.id;
     let [label, _, promise, _] = messages::picker(tool, picker).map(|id| words.text(&id));
     let [
         value_id,
@@ -1484,7 +1496,7 @@ fn reference_row(
 /// nor where the tool's pickers are not drawn.
 fn last_pick_row(ui: &mut egui::Ui, page: &Page, picker: &str) {
     let definition = page.tool.definition();
-    let tool = definition.id;
+    let tool = definition.tool.id;
     if !page.pickers.drawn.contains(&tool) {
         return;
     }
@@ -1513,8 +1525,12 @@ fn last_pick_row(ui: &mut egui::Ui, page: &Page, picker: &str) {
 /// The setting holding the photo of the reference whose L is `tool`'s setting `setting`,
 /// if a reference row names it (decision 88): where the app keeps the open photo's path as
 /// a pick hands the L back.
-pub fn reference_photo(tools: &[&dyn Tool], tool: &str, setting: &str) -> Option<&'static str> {
-    let found = tools.iter().find(|t| t.definition().id == tool)?;
+pub fn reference_photo(
+    tools: &[&dyn ProcessingTool],
+    tool: &str,
+    setting: &str,
+) -> Option<&'static str> {
+    let found = tools.iter().find(|t| t.definition().tool.id == tool)?;
     found.definition().rows().find_map(|row| match row {
         Row::Reference {
             lightness, photo, ..
@@ -1529,7 +1545,7 @@ pub fn reference_photo(tools: &[&dyn Tool], tool: &str, setting: &str) -> Option
 /// their defaults. Drawn disabled while the tool's pickers are not drawn.
 fn patches_row(ui: &mut egui::Ui, page: &Page, picker: &str, target: &[&'static str]) {
     let (words, definition) = (page.words, page.tool.definition());
-    let tool = definition.id;
+    let tool = definition.tool.id;
     let enabled = page.pickers.drawn.contains(&tool) && definition.picker(picker).is_some();
     let lch: Vec<f32> = target
         .iter()
@@ -1602,7 +1618,7 @@ fn group_row(
     rows: &[Row],
     changes: &mut Vec<Change>,
 ) {
-    let tool = page.tool.definition().id;
+    let tool = page.tool.definition().tool.id;
     let title = page.words.text(&messages::collapsible(tool, id));
     // A group with no rows has nothing behind it yet: drawn disabled, as a tab with none.
     if rows.is_empty() {
@@ -1668,7 +1684,7 @@ impl Shown {
     /// The number `id` names: one of the tool's controls, or else a coordinate of one of
     /// its views. A coordinate's mark is the one its view's controls share, and it can
     /// change the photo while one of them can.
-    fn of(definition: &Definition, state: &ToolState, id: &str) -> Option<Self> {
+    fn of(definition: &ProcessingDefinition, state: &ToolState, id: &str) -> Option<Self> {
         if let Some(found) = definition.control(id) {
             let shown = control(state, id)?;
             let (
@@ -1725,7 +1741,7 @@ impl Shown {
 fn slider_row(ui: &mut egui::Ui, page: &Page, slider: &Slider, changes: &mut Vec<Change>) {
     let (words, state) = (page.words, page.state);
     let definition = page.tool.definition();
-    let (tool, id) = (definition.id, slider.control);
+    let (tool, id) = (definition.tool.id, slider.control);
     let Some(shown) = Shown::of(definition, state, id) else {
         return;
     };
@@ -1801,7 +1817,8 @@ struct PickerWords<'a> {
     focus: bool,
     enabled: bool,
     why: Option<&'a str>,
-    /// Why it cannot start with the tool's settings (`Tool::picker_ready`, decision 88).
+    /// Why it cannot start with the tool's settings (`ProcessingTool::picker_ready`,
+    /// decision 88).
     unready: Option<String>,
 }
 
@@ -1832,7 +1849,7 @@ impl<'a> Page<'a> {
         id: &'static str,
     ) -> Option<(&'static str, PickerWords<'a>)> {
         let definition = self.tool.definition();
-        let tool = definition.id;
+        let tool = definition.tool.id;
         if !self.pickers.drawn.contains(&tool) {
             return None;
         }
@@ -1878,7 +1895,7 @@ impl<'a> Page<'a> {
     fn pressed(&self, ui: &egui::Ui, picker: &'static str, action: PickerAction) -> Change {
         let keys = crate::pickers::pick_keys(ui.input(|i| i.modifiers));
         Change::Picker {
-            tool: self.tool.definition().id,
+            tool: self.tool.definition().tool.id,
             picker,
             action,
             keys,
@@ -1903,7 +1920,7 @@ fn pickers_row(
     if buttons.is_empty() {
         return;
     }
-    let tool = page.tool.definition().id;
+    let tool = page.tool.definition().tool.id;
     let label = label.map(|id| page.words.text(&messages::group(tool, id)));
     let t = apertrust_ui::theme(ui.ctx());
     ui.horizontal(|ui| {
@@ -1943,13 +1960,13 @@ fn shown_as(value: f64, decimals: u8, min: f32, max: f32) -> f32 {
 fn choice_row(
     ui: &mut egui::Ui,
     words: &Translator,
-    definition: &Definition,
+    definition: &ProcessingDefinition,
     id: &'static str,
     style: ChoiceStyle,
     state: &ToolState,
     changes: &mut Vec<Change>,
 ) {
-    let tool = definition.id;
+    let tool = definition.tool.id;
     let (Some(control), Some(shown)) = (definition.control(id), control(state, id)) else {
         return;
     };
@@ -2058,12 +2075,12 @@ fn choice_row(
 fn toggle_row(
     ui: &mut egui::Ui,
     words: &Translator,
-    definition: &Definition,
+    definition: &ProcessingDefinition,
     id: &'static str,
     state: &ToolState,
     changes: &mut Vec<Change>,
 ) {
-    let tool = definition.id;
+    let tool = definition.tool.id;
     let Some(shown) = control(state, id) else {
         return;
     };
@@ -2107,14 +2124,14 @@ fn label_value(words: &Translator, tool: &str, control: &str, value: &LabelValue
 }
 
 /// A curve of points: the points from the mirror between the curve's ends, (0, 0) and
-/// (1, 1), drawn through the curve the tool says it renders (`Tool::curve`), straight
-/// lines if it says none. Moving, adding and removing a point set the whole list, which
-/// holds the points between the ends; the ends stay where they are, so moving one sends
-/// nothing. Resetting the curve resets its control.
+/// (1, 1), drawn through the curve the tool says it renders (`ProcessingTool::curve`),
+/// straight lines if it says none. Moving, adding and removing a point set the whole list,
+/// which holds the points between the ends; the ends stay where they are, so moving one
+/// sends nothing. Resetting the curve resets its control.
 fn curve_row(
     ui: &mut egui::Ui,
     words: &Translator,
-    tool: &dyn Tool,
+    tool: &dyn ProcessingTool,
     id: &'static str,
     state: &ToolState,
     changes: &mut Vec<Change>,
@@ -2126,7 +2143,7 @@ fn curve_row(
     let ControlValue::Points(points) = &shown.value else {
         return;
     };
-    let full = words.text(&messages::full(definition.id, id));
+    let full = words.text(&messages::full(definition.tool.id, id));
     // The widget's points are the ends with the control's between them: its point i is
     // the control's i − 1.
     let pairs: Vec<(f32, f32)> = std::iter::once((0.0, 0.0))
@@ -2145,7 +2162,7 @@ fn curve_row(
     if let Some(drawn) = &drawn {
         curve = curve.function(drawn.as_ref());
     }
-    let tool = definition.id;
+    let tool = definition.tool.id;
     let mut points = points.clone();
     // The handles come with the controls they set; this curve draws none.
     let done = match curve.show(ui) {
@@ -2185,26 +2202,26 @@ const EQUALIZER_SAMPLES: usize = 256;
 
 /// darktable's graph of a tone equalizer's bands (`Widget::Equalizer`): the bands from the
 /// mirror, each node named by its band, the curve the tool says the operation renders
-/// through them (`Tool::curve` of the first) sampled as darktable samples its graph, in
-/// the warning colour where the tool says none fits, and a drag reaching as far as the
-/// tool says the curve is wide (`Tool::curve_width`), each step of it settling the bands
-/// on the curve the tool says they give, as darktable's does. It draws no histogram until
-/// the engine measures the mask (decision 19). Moving the bands sets each band whose value,
-/// rounded to the decimals of the band's own row, changes, no key moving one by less than
-/// the last of them, and the release ends the gesture on each band it moved, as one history
-/// step with the drag; a reset resets the bands, one or all, all as one step. The tool's
-/// code runs on the UI thread, so a panic in it draws
-/// no curve and moves nothing, as a pending change's `view` and `unview` are guarded.
+/// through them (`ProcessingTool::curve` of the first) sampled as darktable samples its
+/// graph, in the warning colour where the tool says none fits, and a drag reaching as far
+/// as the tool says the curve is wide (`ProcessingTool::curve_width`), each step of it
+/// settling the bands on the curve the tool says they give, as darktable's does. It draws
+/// no histogram until the engine measures the mask (decision 19). Moving the bands sets
+/// each band whose value, rounded to the decimals of the band's own row, changes, no key
+/// moving one by less than the last of them, and the release ends the gesture on each band
+/// it moved, as one history step with the drag; a reset resets the bands, one or all, all
+/// as one step. The tool's code runs on the UI thread, so a panic in it draws no curve and
+/// moves nothing, as a pending change's `view` and `unview` are guarded.
 fn equalizer_row(
     ui: &mut egui::Ui,
     words: &Translator,
-    tool: &dyn Tool,
+    tool: &dyn ProcessingTool,
     controls: &[&'static str],
     state: &ToolState,
     changes: &mut Vec<Change>,
 ) {
     let definition = tool.definition();
-    let id = definition.id;
+    let id = definition.tool.id;
     // Each band as the mirror shows it, with its range, its row's decimals and its step.
     let shown: Option<Vec<Band>> = controls
         .iter()
@@ -2324,7 +2341,7 @@ struct Band {
 
 impl Band {
     /// The number control `id`, its decimals those of its own slider row.
-    fn of(definition: &Definition, state: &ToolState, id: &'static str) -> Option<Self> {
+    fn of(definition: &ProcessingDefinition, state: &ToolState, id: &'static str) -> Option<Self> {
         let shown = control(state, id)?;
         let (Some(ControlKind::Number { min, max, step, .. }), ControlValue::Number(value)) =
             (definition.control(id).map(|c| c.kind), &shown.value)
@@ -2378,6 +2395,7 @@ fn track(track: Track, (min, max): (f32, f32)) -> parts::Track {
 #[cfg(test)]
 mod tests {
     use apertrust_engine::session::PresetState;
+    use apertrust_tools::ToolDefinition;
     use apertrust_tools::agx::Agx;
     use apertrust_tools::colour_balance_rgb::ColourBalanceRgb;
     use apertrust_tools::colour_calibration::ColourCalibration;
@@ -2408,10 +2426,10 @@ mod tests {
 
     /// A tool's controls at their definition's defaults, as the session reports them
     /// for an untouched photo, the sample photo.
-    fn untouched(tool: &dyn Tool) -> ToolState {
+    fn untouched(tool: &dyn ProcessingTool) -> ToolState {
         let definition = tool.definition();
         let mut state = ToolState {
-            tool: definition.id,
+            tool: definition.tool.id,
             enabled: !definition.switched,
             edited: false,
             hidden: false,
@@ -2441,7 +2459,7 @@ mod tests {
 
     /// Each control's availability as the session reports it for the values `state`
     /// shows on the sample photo: what the tool says, never for a control not ported.
-    fn report_availability(tool: &dyn Tool, state: &mut ToolState) {
+    fn report_availability(tool: &dyn ProcessingTool, state: &mut ToolState) {
         let (image, values) = (testing::image(), values(state));
         for (control, shown) in tool.definition().controls.iter().zip(&mut state.controls) {
             shown.available = !control.unported && tool.available(control.id, &values, &image);
@@ -2489,7 +2507,7 @@ mod tests {
 
     /// The tool's views' coordinates at its defaults, as the session reports them for
     /// an untouched photo.
-    fn views(tool: &dyn Tool) -> Vec<CoordinateState> {
+    fn views(tool: &dyn ProcessingTool) -> Vec<CoordinateState> {
         let image = testing::image();
         let defaults = tool.defaults(&image);
         let mut views = Vec::new();
@@ -2539,14 +2557,14 @@ mod tests {
 
     /// The tool's preset rows while its controls hold what `state` shows, as the
     /// session reports them for the sample photo, which records no exposure bias.
-    fn presets(tool: &dyn Tool, state: &ToolState) -> Vec<PresetState> {
+    fn presets(tool: &dyn ProcessingTool, state: &ToolState) -> Vec<PresetState> {
         let image = testing::image();
         let mut values = Controls::new();
         for shown in &state.controls {
             values.set(shown.control, shown.value.clone());
         }
         tool.definition()
-            .presets
+            .preset_rows
             .iter()
             .map(|row| PresetState {
                 preset: row.id,
@@ -2573,7 +2591,7 @@ mod tests {
 
     /// `state` as the session reports it on `image`: each row shown or hidden, the values
     /// after their labels, and what each can change, as the tool says for that photo.
-    fn on_photo(tool: &dyn Tool, state: &mut ToolState, image: &ImageContext) {
+    fn on_photo(tool: &dyn ProcessingTool, state: &mut ToolState, image: &ImageContext) {
         let values = values(state);
         for (definition, control) in tool.definition().controls.iter().zip(&mut state.controls) {
             control.visible = tool.visible(control.control, image);
@@ -2599,7 +2617,7 @@ mod tests {
     /// applied and its preset rows reported each frame as the session would, its groups
     /// opened and closed as the app's shell keeps them.
     struct Panel {
-        tool: &'static dyn Tool,
+        tool: &'static dyn ProcessingTool,
         state: ToolState,
         open: bool,
         panels: Panels,
@@ -2610,7 +2628,7 @@ mod tests {
         why: Option<&'static str>,
     }
 
-    fn panel(tool: &'static dyn Tool, state: ToolState) -> Harness<'static, Panel> {
+    fn panel(tool: &'static dyn ProcessingTool, state: ToolState) -> Harness<'static, Panel> {
         Harness::builder()
             .with_size(egui::vec2(400.0, 300.0))
             // Frames a sixtieth of a second apart, so two clicks make a double-click.
@@ -4062,8 +4080,8 @@ mod tests {
         }
     }
 
-    impl Tool for Panicking {
-        fn definition(&self) -> &'static Definition {
+    impl ProcessingTool for Panicking {
+        fn definition(&self) -> &'static ProcessingDefinition {
             Twin.definition()
         }
 
@@ -4351,8 +4369,38 @@ mod tests {
     /// nothing; its words are its message ids.
     struct LocalContrast;
 
-    static LOCAL_CONTRAST: Definition = Definition {
-        id: "bilat",
+    static LOCAL_CONTRAST: ProcessingDefinition = ProcessingDefinition {
+        tool: ToolDefinition {
+            id: "bilat",
+            tabs: &[
+                apertrust_tools::Tab {
+                    id: Some("main"),
+                    rows: &[
+                        Row::Choice {
+                            control: "mode",
+                            style: ChoiceStyle::List,
+                        },
+                        Row::When {
+                            control: "mode",
+                            is: &["bilateral"],
+                            rows: &[Row::Slider(Slider::new("sigma_r"))],
+                        },
+                        Row::When {
+                            control: "mode",
+                            is: &["laplacian"],
+                            rows: &[Row::Slider(Slider::new("sigma_r").label("highlights"))],
+                        },
+                    ],
+                },
+                apertrust_tools::Tab {
+                    id: Some("detail"),
+                    rows: &[Row::Slider(Slider::new("detail"))],
+                },
+            ],
+            before: &[],
+            after: &[Row::Toggle { control: "mask" }],
+            menus: &[],
+        },
         version: 1,
         layers: true,
         auto: false,
@@ -4397,42 +4445,14 @@ mod tests {
                 unported: false,
             },
         ],
-        tabs: &[
-            apertrust_tools::Tab {
-                id: Some("main"),
-                rows: &[
-                    Row::Choice {
-                        control: "mode",
-                        style: ChoiceStyle::List,
-                    },
-                    Row::When {
-                        control: "mode",
-                        is: &["bilateral"],
-                        rows: &[Row::Slider(Slider::new("sigma_r"))],
-                    },
-                    Row::When {
-                        control: "mode",
-                        is: &["laplacian"],
-                        rows: &[Row::Slider(Slider::new("sigma_r").label("highlights"))],
-                    },
-                ],
-            },
-            apertrust_tools::Tab {
-                id: Some("detail"),
-                rows: &[Row::Slider(Slider::new("detail"))],
-            },
-        ],
-        before: &[],
-        after: &[Row::Toggle { control: "mask" }],
-        presets: &[],
+        preset_rows: &[],
         views: &[],
         pickers: &[],
-        menus: &[],
         facts: None,
     };
 
-    impl Tool for LocalContrast {
-        fn definition(&self) -> &'static Definition {
+    impl ProcessingTool for LocalContrast {
+        fn definition(&self) -> &'static ProcessingDefinition {
             &LOCAL_CONTRAST
         }
 
@@ -4714,7 +4734,7 @@ mod tests {
 
     #[test]
     fn colour_balance_rgb_draws_darktable_s_three_tabs() {
-        let tool: &'static dyn Tool = &ColourBalanceRgb;
+        let tool: &'static dyn ProcessingTool = &ColourBalanceRgb;
         let mut harness = panel(tool, untouched(tool));
         harness.run();
         for name in ["Master", "4 ways", "Masks"] {
@@ -4893,7 +4913,7 @@ mod tests {
 
     #[test]
     fn rgb_primaries_draws_darktable_s_eight_sliders_in_order() {
-        let tool: &'static dyn Tool = &RgbPrimaries;
+        let tool: &'static dyn ProcessingTool = &RgbPrimaries;
         let mut state = untouched(tool);
         set(
             &mut state,
@@ -5384,8 +5404,8 @@ mod tests {
 
         /// Orientation, its rotate writing a second control too.
         struct Twice;
-        impl Tool for Twice {
-            fn definition(&self) -> &'static Definition {
+        impl ProcessingTool for Twice {
+            fn definition(&self) -> &'static ProcessingDefinition {
                 Orientation.definition()
             }
             fn owns(&self) -> &'static [Owned] {
@@ -5404,7 +5424,7 @@ mod tests {
 
         let image = testing::image();
         let values = Orientation.defaults(&image);
-        let orientation: &[&dyn Tool] = &[&Orientation];
+        let orientation: &[&dyn ProcessingTool] = &[&Orientation];
         assert_eq!(
             action_writes(orientation, "flip", "rotate_cw", &values, &image, false),
             [("orientation", ControlValue::Choice(6), true)]
@@ -5414,7 +5434,7 @@ mod tests {
         assert!(
             action_writes(orientation, "exposure", "rotate_cw", &values, &image, false).is_empty()
         );
-        let twice: &[&dyn Tool] = &[&Twice];
+        let twice: &[&dyn ProcessingTool] = &[&Twice];
         let dones: Vec<bool> = action_writes(twice, "flip", "rotate_cw", &values, &image, false)
             .into_iter()
             .map(|(_, _, done)| done)
@@ -5644,7 +5664,7 @@ mod tests {
         for locale in [Locale::EnGb, Locale::Uk, Locale::Pl, Locale::Pseudo] {
             let mut cut = 0;
             for at_max in [false, true] {
-                let states: Vec<(&'static dyn Tool, ToolState)> = apertrust_tools::TOOLS
+                let states: Vec<(&'static dyn ProcessingTool, ToolState)> = apertrust_tools::TOOLS
                     .iter()
                     .map(|&tool| {
                         let mut state = untouched(tool);
@@ -5685,7 +5705,7 @@ mod tests {
                                 pickers: &Pickers::NONE,
                                 controls: Default::default(),
                             };
-                            ui.push_id(definition.id, |ui| {
+                            ui.push_id(definition.tool.id, |ui| {
                                 for slider in sliders(definition) {
                                     let mut changes = Vec::new();
                                     slider_row(ui, &page, slider, &mut changes);
@@ -5765,7 +5785,7 @@ mod tests {
 
     /// The slider rows a definition draws, each control once, in its tabs, groups and
     /// modes.
-    fn sliders(definition: &Definition) -> Vec<&Slider> {
+    fn sliders(definition: &ProcessingDefinition) -> Vec<&Slider> {
         let mut seen = Vec::new();
         definition
             .rows()
@@ -6156,8 +6176,8 @@ mod tests {
         width: bool,
     }
 
-    impl Tool for Shaky {
-        fn definition(&self) -> &'static Definition {
+    impl ProcessingTool for Shaky {
+        fn definition(&self) -> &'static ProcessingDefinition {
             ToneEqualizer.definition()
         }
 

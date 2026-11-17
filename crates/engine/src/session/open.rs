@@ -50,7 +50,7 @@ use apertrust_base::jobs::{Context, Interrupted};
 use apertrust_library::ops::{self as library, RawStamp, RawThumbnails, Thumbnail};
 use apertrust_plugin::{Format, ImageContext, ImageDesc, Operation};
 use apertrust_raw::{Exif, Pixels, RawImage};
-use apertrust_tools::Tool;
+use apertrust_tools::ProcessingTool;
 
 use super::cache::Upkeep;
 use super::{Decoded, Event, Inbox, OpenPreview, Outbox, PreviewSource, SessionError};
@@ -363,7 +363,7 @@ pub(crate) struct Run {
     pub load: Load,
     pub cache: Option<Upkeep>,
     pub operations: &'static [&'static dyn Operation],
-    pub tools: Vec<&'static dyn Tool>,
+    pub tools: Vec<&'static dyn ProcessingTool>,
     pub retired: &'static [&'static str],
     /// The sidecar as the edit writer reads it once it has written what it was handed.
     pub snapshot: mpsc::Receiver<Vec<Snapshot>>,

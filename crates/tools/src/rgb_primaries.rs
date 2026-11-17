@@ -37,8 +37,10 @@
 use apertrust_plugin::{ImageContext, Value};
 
 use crate::about::{Fact, Facts, Purpose};
-use crate::definition::{Control, ControlKind, Definition, Row, Slider, Tab, Unit};
-use crate::{Base, Owned, Setting, Tool, ToolValues, switched_from};
+use crate::definition::{
+    Control, ControlKind, ProcessingDefinition, Row, Slider, Tab, ToolDefinition, Unit,
+};
+use crate::{Base, Owned, ProcessingTool, Setting, ToolValues, switched_from};
 
 pub struct RgbPrimaries;
 
@@ -166,34 +168,36 @@ const fn purity_row(control: &'static str) -> Row {
     Row::Slider(slider(control).soft(-50.0, 50.0))
 }
 
-static DEFINITION: Definition = Definition {
-    id: "primaries",
+static DEFINITION: ProcessingDefinition = ProcessingDefinition {
+    tool: ToolDefinition {
+        id: "primaries",
+        tabs: &[Tab {
+            id: None,
+            rows: &[
+                hue_row("red_hue"),
+                purity_row("red_purity"),
+                hue_row("green_hue"),
+                purity_row("green_purity"),
+                hue_row("blue_hue"),
+                purity_row("blue_purity"),
+                // The tint's hue spans the whole turn, as darktable sets it no soft range.
+                Row::Slider(slider("achromatic_tint_hue")),
+                Row::Slider(slider("achromatic_tint_purity").soft(0.0, 20.0)),
+            ],
+        }],
+        before: &[],
+        after: &[],
+        menus: &[],
+    },
     version: 2,
     layers: true,
     auto: false,
     switched: true,
     controls: &CONTROLS,
-    tabs: &[Tab {
-        id: None,
-        rows: &[
-            hue_row("red_hue"),
-            purity_row("red_purity"),
-            hue_row("green_hue"),
-            purity_row("green_purity"),
-            hue_row("blue_hue"),
-            purity_row("blue_purity"),
-            // The tint's hue spans the whole turn, as darktable sets it no soft range.
-            Row::Slider(slider("achromatic_tint_hue")),
-            Row::Slider(slider("achromatic_tint_purity").soft(0.0, 20.0)),
-        ],
-    }],
-    before: &[],
-    after: &[],
-    presets: &[],
+    preset_rows: &[],
     views: &[],
     pickers: &[],
     // darktable's `description()` in src/iop/primaries.c at the reference release.
-    menus: &[],
     facts: Some(Facts {
         purpose: Purpose::CorrectiveOrCreative,
         input: Fact::LinearRgbSceneReferred,
@@ -215,8 +219,8 @@ const fn owns() -> [Owned; 8] {
     owns
 }
 
-impl Tool for RgbPrimaries {
-    fn definition(&self) -> &'static Definition {
+impl ProcessingTool for RgbPrimaries {
+    fn definition(&self) -> &'static ProcessingDefinition {
         &DEFINITION
     }
 

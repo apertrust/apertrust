@@ -49,7 +49,9 @@ use apertrust_engine::session::{
     Command, ControlValue, PickKeys, PickerCommand, PickerReading, PickerRef, Region, Values,
 };
 use apertrust_tools::pick::{LastPick, Patch, PickWarnings, Shown};
-use apertrust_tools::{ControlKind, Definition, PickerKind, Row, Tool, messages};
+use apertrust_tools::{
+    ControlKind, PickerKind, ProcessingDefinition, ProcessingTool, Row, messages,
+};
 use apertrust_ui::Translator;
 use apertrust_ui::components::{PickerAction, PickerMarks, PickerPlace, ReadoutRow};
 use apertrust_ui::i18n::Args;
@@ -401,7 +403,7 @@ pub struct Showing {
 
 impl Showing {
     /// What `command` shows, its picker among `tools`.
-    pub fn of(command: &PickerCommand, tools: &[&dyn Tool]) -> Showing {
+    pub fn of(command: &PickerCommand, tools: &[&dyn ProcessingTool]) -> Showing {
         let asked = match *command {
             PickerCommand::On { picker, area, .. } => {
                 let kind = declared(tools, picker).map(|(_, declared)| declared.kind);
@@ -548,21 +550,21 @@ fn mac_right_click(modifiers: Modifiers, mac: bool) -> bool {
 
 /// A tool's picker and its definition, among `tools`.
 fn declared<'m>(
-    tools: &'m [&'m dyn Tool],
+    tools: &'m [&'m dyn ProcessingTool],
     picker: PickerRef,
-) -> Option<(&'m Definition, &'static apertrust_tools::Picker)> {
+) -> Option<(&'m ProcessingDefinition, &'static apertrust_tools::Picker)> {
     let PickerRef::Tool { tool, picker } = picker else {
         return None;
     };
-    let found = tools.iter().find(|m| m.definition().id == tool)?;
+    let found = tools.iter().find(|m| m.definition().tool.id == tool)?;
     let definition = found.definition();
     Some((definition, definition.picker(picker)?))
 }
 
 /// A picker's name (`docs/pickers.md`, On the photo): its control's label where it sits in
 /// a slider's quad, else its own words.
-pub fn name(words: &Translator, definition: &Definition, picker: &str) -> String {
-    let tool = definition.id;
+pub fn name(words: &Translator, definition: &ProcessingDefinition, picker: &str) -> String {
+    let tool = definition.tool.id;
     let quad = definition.rows().find_map(|row| match row {
         Row::Slider(slider) if row.pickers() == [picker] => Some(slider),
         _ => None,
@@ -588,13 +590,13 @@ pub fn name(words: &Translator, definition: &Definition, picker: &str) -> String
 /// is the `open` one. `None` for a picker whose words follow no setting.
 pub fn by_setting(
     words: &Translator,
-    definition: &Definition,
+    definition: &ProcessingDefinition,
     picker: &apertrust_tools::Picker,
     settings: &ToolSettings,
     open: Option<&std::path::Path>,
     part: &str,
 ) -> Option<String> {
-    let tool = definition.id;
+    let tool = definition.tool.id;
     let setting = picker.words_by?;
     let options = definition.choice_setting(setting)?;
     let rows: Vec<&apertrust_tools::SettingRow> = (definition.rows())
@@ -689,12 +691,12 @@ impl LastPickWords {
 /// writes nothing.
 pub fn last_pick_words(
     words: &Translator,
-    definition: &Definition,
+    definition: &ProcessingDefinition,
     picker: &apertrust_tools::Picker,
     last: &LastPick,
     warnings: &PickWarnings,
 ) -> Option<LastPickWords> {
-    let tool = definition.id;
+    let tool = definition.tool.id;
     let control = *picker.writes.first()?;
     let unit = definition.control(control).and_then(|found| found.unit);
     let with_unit = |value: f32, decimals: usize| {
@@ -843,7 +845,7 @@ impl ReferencePhotos {
 /// photo. `None` for the Colour picker's, whose words come with its tool.
 pub fn bar_words(
     words: &Translator,
-    tools: &[&dyn Tool],
+    tools: &[&dyn ProcessingTool],
     settings: &ToolSettings,
     open: Option<&std::path::Path>,
     picker: PickerRef,
@@ -852,13 +854,13 @@ pub fn bar_words(
 ) -> Option<(String, String)> {
     let (definition, declared) = declared(tools, picker)?;
     let mut args = Args::new();
-    args.set("tool", words.text(&messages::title(definition.id)));
+    args.set("tool", words.text(&messages::title(definition.tool.id)));
     // What a pick will do, where the picker's words follow a setting; a reference row's
     // picker's own words over the photo.
     let reference = (definition.rows())
         .any(|row| matches!(row, Row::Reference { picker, .. } if *picker == declared.id));
     let hint = by_setting(words, definition, declared, settings, open, "hint").or_else(|| {
-        reference.then(|| words.text(&messages::picker_hint(definition.id, declared.id)))
+        reference.then(|| words.text(&messages::picker_hint(definition.tool.id, declared.id)))
     });
     args.set(
         "picker",
@@ -874,7 +876,7 @@ pub fn bar_words(
         let what = if declared.kind == PickerKind::Area {
             words.text("picker-bar-point-what")
         } else {
-            words.text(&messages::picker(definition.id, declared.id)[3])
+            words.text(&messages::picker(definition.tool.id, declared.id)[3])
         };
         args.set("what", what);
         words.text_with("picker-bar-point", Some(&args))
@@ -1490,7 +1492,7 @@ impl Said {
         now: Instant,
         reading: Option<&PickerReading>,
         values: &Values,
-        tools: &[&dyn Tool],
+        tools: &[&dyn ProcessingTool],
         words: &Translator,
     ) -> Option<Duration> {
         let rest = self.rest.as_ref()?;
@@ -1531,7 +1533,7 @@ fn said(
     reading: &PickerReading,
     before: &[(&'static str, ControlValue)],
     values: &Values,
-    tools: &[&dyn Tool],
+    tools: &[&dyn ProcessingTool],
     words: &Translator,
 ) -> String {
     // A picker with a Last pick row says that row's words, its warnings first (decision
@@ -1563,7 +1565,7 @@ fn said(
                     let mut args = Args::new();
                     args.set(
                         "control",
-                        words.text(&messages::label(definition.id, control)),
+                        words.text(&messages::label(definition.tool.id, control)),
                     );
                     args.set("value", value_said(words, definition, control, &value)?);
                     Some(words.text_with("picker-said-control", Some(&args)))
@@ -1589,11 +1591,11 @@ fn said(
 /// its range spans zero, and its unit; an option by its words.
 fn value_said(
     words: &Translator,
-    definition: &Definition,
+    definition: &ProcessingDefinition,
     control: &str,
     value: &ControlValue,
 ) -> Option<String> {
-    let tool = definition.id;
+    let tool = definition.tool.id;
     let found = definition.control(control)?;
     match (found.kind, value) {
         (ControlKind::Number { min, max, .. }, ControlValue::Number(value)) => {
@@ -1644,7 +1646,7 @@ mod tests {
         ToolState, Values,
     };
     use apertrust_tools::testing::Sample;
-    use apertrust_tools::{ControlValue, Tool};
+    use apertrust_tools::{ControlValue, ProcessingTool};
     use apertrust_ui::{Builtin, Locale, Theme};
     use egui::accesskit::{Action, ActionData, ActionRequest, Role, Toggled, TreeId};
     use egui::os::OperatingSystem;
@@ -1655,7 +1657,7 @@ mod tests {
     use super::*;
     use crate::tools::{self, Change, Panels};
 
-    static TOOLS: &[&dyn Tool] = &[&Sample];
+    static TOOLS: &[&dyn ProcessingTool] = &[&Sample];
 
     /// `testing::Sample`'s pickers: brightness's quad, an area; and the row's spread and
     /// show, each a point or an area.
@@ -1738,7 +1740,7 @@ mod tests {
             .collect();
         Values {
             tools: vec![ToolState {
-                tool: definition.id,
+                tool: definition.tool.id,
                 enabled: true,
                 edited: false,
                 hidden: false,
@@ -2578,7 +2580,7 @@ mod tests {
     #[test]
     fn the_central_bar_says_what_exposure_s_pick_will_do_by_its_target() {
         use apertrust_tools::exposure::Exposure;
-        let tools: &[&dyn Tool] = &[&Exposure];
+        let tools: &[&dyn ProcessingTool] = &[&Exposure];
         let exposure = PickerRef::Tool {
             tool: "exposure",
             picker: "exposure",
@@ -2765,7 +2767,7 @@ mod tests {
             frame: None,
         };
         let words = Translator::new(Locale::EnGb);
-        let tools: &[&dyn Tool] = &[&Exposure];
+        let tools: &[&dyn ProcessingTool] = &[&Exposure];
         assert_eq!(
             super::said(&reading, &[], &values(), tools, &words),
             "The area has clipped pixels. Exposure at +18 EV: the area is L 12 %, not 50 %. \

@@ -128,7 +128,7 @@ pub use apertrust_library::ops::{LibraryCommand, LibraryEvent};
 pub use apertrust_plugin::Value;
 use apertrust_plugin::{ImageContext, ImageDesc, Operation, ParamValues};
 use apertrust_tools::check::{self, ToolError};
-use apertrust_tools::{Base, ControlKind, Controls, Tool};
+use apertrust_tools::{Base, ControlKind, Controls, ProcessingTool};
 pub use apertrust_tools::{ControlValue, LabelValue, Mark, Range, Setting, ValueFormat};
 use thiserror::Error;
 
@@ -829,7 +829,8 @@ pub struct CoordinateState {
 #[derive(Debug, Clone, PartialEq)]
 pub struct PresetState {
     pub preset: &'static str,
-    /// The option whose values the controls hold (`Tool::matching`); `None` for Custom.
+    /// The option whose values the controls hold (`ProcessingTool::matching`); `None` for
+    /// Custom.
     pub matching: Option<&'static str>,
     /// The options this photo can have, in the row's order, none while it is open for
     /// viewing only; a panel draws the others disabled, and [`Command::ApplyPreset`]
@@ -845,35 +846,36 @@ pub struct ControlState {
     pub default: ControlValue,
     pub mark: Option<Mark>,
     /// Whether it can change anything on this photo while the tool's controls hold the
-    /// values reported with it (`Tool::available`, asked again after every change, so a
-    /// control another's value disables follows it; decision 30), never for a control
-    /// not ported (`Control::unported`) nor on a photo open for viewing only
+    /// values reported with it (`ProcessingTool::available`, asked again after every
+    /// change, so a control another's value disables follows it; decision 30), never for a
+    /// control not ported (`Control::unported`) nor on a photo open for viewing only
     /// ([`Photo::view_only`]), nor for a choice whose photo lists only the option it holds
     /// (decision 30); a panel draws one that cannot as disabled, its value kept.
     pub available: bool,
     /// For a choice, the options this photo lists, by id, in the definition's order
-    /// (`Tool::options`, decision 30), computed once as the photo opened: every option
-    /// where the tool's code panics or gives a list that does not hold together. The
+    /// (`ProcessingTool::options`, decision 30), computed once as the photo opened: every
+    /// option where the tool's code panics or gives a list that does not hold together. The
     /// session refuses any other; `value` may still hold one, from another photo's edit.
     /// Empty for a control that is no choice.
     pub options: Vec<&'static str>,
     /// For a number, its range while the tool's controls hold the values reported with
-    /// it (`Tool::range`, decision 30): what a value may hold, what the track spans at
-    /// rest and what a key moves, asked again after every change, so a range another
-    /// control moves follows it; the definition's where the tool's code panics or gives
-    /// one that does not hold, warned of once for the photo. The session refuses a value
-    /// outside it, and clamps one a change leaves outside. `None` for a control that is no
-    /// number.
+    /// it (`ProcessingTool::range`, decision 30): what a value may hold, what the track
+    /// spans at rest and what a key moves, asked again after every change, so a range
+    /// another control moves follows it; the definition's where the tool's code panics or
+    /// gives one that does not hold, warned of once for the photo. The session refuses a
+    /// value outside it, and clamps one a change leaves outside. `None` for a control that
+    /// is no number.
     pub range: Option<Range>,
-    /// Whether its row shows on this photo at all (`Tool::visible`, decision 88),
+    /// Whether its row shows on this photo at all (`ProcessingTool::visible`, decision 88),
     /// computed once as the photo opened, from its metadata alone: false only for
     /// Exposure's two camera rows where the photo gives them nothing to do. A hidden
     /// control keeps its value and its binding. True where the tool's code panics, warned
     /// of once for the photo.
     pub visible: bool,
-    /// A value of the photo's that its row shows after its label (`Tool::label_value`,
-    /// decision 88), as Exposure's camera bias, computed once as the photo opened; `None`
-    /// for a row with none, and where the tool's code panics.
+    /// A value of the photo's that its row shows after its label
+    /// (`ProcessingTool::label_value`, decision 88), as Exposure's camera bias, computed
+    /// once as the photo opened; `None` for a row with none, and where the tool's code
+    /// panics.
     pub label_value: Option<LabelValue>,
 }
 
@@ -1012,8 +1014,8 @@ pub enum SessionError {
     #[error("a tool is hidden in the view")]
     Hidden,
     /// [`PickerCommand::On`] named a tool's picker that cannot start with the settings it
-    /// carries ([`apertrust_tools::Tool::picker_ready`], decision 88), as Exposure's toward
-    /// a reference with none set, so a script cannot pick toward nothing.
+    /// carries ([`apertrust_tools::ProcessingTool::picker_ready`], decision 88), as
+    /// Exposure's toward a reference with none set, so a script cannot pick toward nothing.
     #[error("the colour picker cannot start with these settings")]
     NotReady,
     /// The colour pickers could not be measured or read back; they are off for the rest
@@ -1111,12 +1113,12 @@ fn computed(
 /// (decision 30): [`edit::listed`], every option where a tool's code panics or gives a
 /// list that does not hold together, warned of once for the photo.
 fn listed_options(
-    tools: &[&'static dyn Tool],
+    tools: &[&'static dyn ProcessingTool],
     image: &ImageContext,
 ) -> BTreeMap<(&'static str, &'static str), Vec<&'static str>> {
     let mut lists = BTreeMap::new();
     for &tool in tools {
-        let id = tool.definition().id;
+        let id = tool.definition().tool.id;
         let choices = tool.definition().controls.iter();
         for control in choices.filter(|c| matches!(c.kind, ControlKind::Choice { .. })) {
             let (listed, failed) = edit::listed(tool, control, image);
@@ -1134,7 +1136,7 @@ fn listed_options(
 /// (decision 88): [`edit::photo_rows`], every row shown with no value where a tool's code
 /// panics, warned of once for the photo.
 fn photo_rows(
-    tools: &[&'static dyn Tool],
+    tools: &[&'static dyn ProcessingTool],
     image: &ImageContext,
 ) -> BTreeMap<(&'static str, &'static str), edit::PhotoRow> {
     let mut shown = BTreeMap::new();
@@ -1142,11 +1144,11 @@ fn photo_rows(
         let definition = tool.definition();
         let (rows, failed) = edit::photo_rows(tool, image);
         if let Some(message) = failed {
-            let id = definition.id;
+            let id = definition.tool.id;
             tracing::warn!(target: "pipe", "tool {id}'s rows all shown, no values: {message}");
         }
         for (control, row) in definition.controls.iter().zip(rows) {
-            shown.insert((definition.id, control.id), row);
+            shown.insert((definition.tool.id, control.id), row);
         }
     }
     shown
@@ -1183,7 +1185,7 @@ impl Session {
     pub fn start(
         gpu: GpuContext,
         operations: &'static [&'static dyn Operation],
-        tools: &'static [&'static dyn Tool],
+        tools: &'static [&'static dyn ProcessingTool],
         build: &str,
         budget: u64,
         cache: Option<CacheOptions>,
@@ -1208,7 +1210,7 @@ impl Session {
     pub(crate) fn spawn(
         gpu: GpuContext,
         operations: &'static [&'static dyn Operation],
-        tools: &'static [&'static dyn Tool],
+        tools: &'static [&'static dyn ProcessingTool],
         build: &str,
         budget: u64,
         cache: Option<CacheOptions>,
@@ -1898,7 +1900,7 @@ struct Engine {
     gpu: GpuContext,
     operations: &'static [&'static dyn Operation],
     /// The tools that hold, in order.
-    tools: Vec<&'static dyn Tool>,
+    tools: Vec<&'static dyn ProcessingTool>,
     /// The ids of the tools Apertrust has retired, whose values a saved edit loses
     /// without making the photo view-only: `apertrust_tools::RETIRED`.
     retired: &'static [&'static str],
@@ -2352,7 +2354,7 @@ impl Engine {
     fn new(
         gpu: GpuContext,
         operations: &'static [&'static dyn Operation],
-        tools: &'static [&'static dyn Tool],
+        tools: &'static [&'static dyn ProcessingTool],
         build: String,
         budget: u64,
         writer: Writer,
@@ -2919,7 +2921,7 @@ impl Engine {
     /// hidden tools changed; none with no photo open. A tool the session lacks is
     /// refused.
     fn hide(&mut self, tool: &str, hidden: bool) -> Result<bool, SessionError> {
-        let id = edit::tool(&self.tools, tool)?.definition().id;
+        let id = edit::tool(&self.tools, tool)?.definition().tool.id;
         let Some(open) = &mut self.open else {
             return Ok(false);
         };
@@ -3143,7 +3145,7 @@ impl Engine {
         &mut self,
         change: impl FnOnce(
             &mut Edit,
-            &[&dyn Tool],
+            &[&dyn ProcessingTool],
             &[&dyn Operation],
             &ImageContext,
         ) -> Result<(), EditError>,
@@ -3164,7 +3166,7 @@ impl Engine {
         change: impl FnOnce(
             &mut Edit,
             &mut Held,
-            &[&dyn Tool],
+            &[&dyn ProcessingTool],
             &[&dyn Operation],
             &ImageContext,
         ) -> Result<(), EditError>,
@@ -4569,7 +4571,7 @@ impl Open {
     fn xml(
         &self,
         operations: &[&'static dyn Operation],
-        tools: &[&'static dyn Tool],
+        tools: &[&'static dyn ProcessingTool],
         build: &str,
     ) -> String {
         let (log, clocks) = (self.history.written(), self.history.clocks());
@@ -4613,7 +4615,7 @@ impl Open {
     fn values(
         &mut self,
         operations: &[&dyn Operation],
-        tools: &[&dyn Tool],
+        tools: &[&dyn ProcessingTool],
         through: u64,
     ) -> Values {
         let mut edited = false;
@@ -4626,7 +4628,7 @@ impl Open {
             .enumerate()
             .map(|(at, tool)| {
                 let definition = tool.definition();
-                let set = self.edit.tools.get(definition.id);
+                let set = self.edit.tools.get(definition.tool.id);
                 // Every control's value: the edit's over its default for the photo.
                 let over = |defaults: &Controls| {
                     let mut values = Controls::new();
@@ -4663,7 +4665,7 @@ impl Open {
                 // as the render, which never asks, binds over them, and every control
                 // ported shows live; a warning says so once for the photo.
                 let available = available.unwrap_or_else(|panic| {
-                    let id = definition.id;
+                    let id = definition.tool.id;
                     if self.available_failed.insert(id) {
                         let message = panic_message(panic.as_ref());
                         tracing::warn!(target: "pipe", "tool {id}'s controls all live: {message}");
@@ -4685,7 +4687,7 @@ impl Open {
                             .unwrap_or_else(|| default.clone());
                         let options = self
                             .options
-                            .get(&(definition.id, control.id))
+                            .get(&(definition.tool.id, control.id))
                             .cloned()
                             .unwrap_or_default();
                         // A choice whose photo lists only the option it holds can change
@@ -4694,7 +4696,7 @@ impl Open {
                         // A number's range for the values reported (decision 30).
                         let range = edit::range(*tool, control.id, &values).map(
                             |(range, failed)| {
-                                let id = definition.id;
+                                let id = definition.tool.id;
                                 if let Some(message) = failed
                                     && self.ranges_failed.insert(id)
                                 {
@@ -4705,7 +4707,7 @@ impl Open {
                         );
                         let row = self
                             .rows
-                            .get(&(definition.id, control.id))
+                            .get(&(definition.tool.id, control.id))
                             .copied()
                             .unwrap_or_default();
                         ControlState {
@@ -4734,10 +4736,10 @@ impl Open {
                     }
                 }
                 ToolState {
-                    tool: definition.id,
+                    tool: definition.tool.id,
                     enabled,
                     edited: tool_edited,
-                    hidden: self.hidden.contains(definition.id),
+                    hidden: self.hidden.contains(definition.tool.id),
                     controls,
                     presets,
                     views,
@@ -4798,8 +4800,12 @@ impl Open {
     /// they match and the options the photo can have, none while it is open for viewing
     /// only. Should the tool's code panic, every row reads Custom, with no option to
     /// apply, and a warning says so once for the photo.
-    fn presets(&mut self, tool: &dyn Tool, controls: &[ControlState]) -> Vec<PresetState> {
-        let rows = tool.definition().presets;
+    fn presets(
+        &mut self,
+        tool: &dyn ProcessingTool,
+        controls: &[ControlState],
+    ) -> Vec<PresetState> {
+        let rows = tool.definition().preset_rows;
         let editable = self.view_only.is_none();
         let mut values = Controls::new();
         for control in controls {
@@ -4824,7 +4830,7 @@ impl Open {
         match states {
             Ok(states) => states,
             Err(panic) => {
-                let id = tool.definition().id;
+                let id = tool.definition().tool.id;
                 // The values are reported after every change: once is enough.
                 if self.presets_failed.insert(id) {
                     let message = panic_message(panic.as_ref());
@@ -4848,11 +4854,11 @@ impl Open {
     /// warning says so once for the photo.
     fn views(
         &mut self,
-        tool: &dyn Tool,
+        tool: &dyn ProcessingTool,
         controls: &[ControlState],
         values: &Controls,
     ) -> Vec<CoordinateState> {
-        let id = tool.definition().id;
+        let id = tool.definition().tool.id;
         let mut states = Vec::new();
         for view in tool.definition().views {
             let image = &self.image;
@@ -4919,7 +4925,7 @@ pub mod testing {
     pub fn start(
         gpu: GpuContext,
         operations: &'static [&'static dyn Operation],
-        tools: &'static [&'static dyn Tool],
+        tools: &'static [&'static dyn ProcessingTool],
         build: &str,
         wake: impl Fn() + Send + Sync + 'static,
     ) -> Session {
@@ -4956,8 +4962,8 @@ mod tests {
     use apertrust_operations::OPERATIONS;
     use apertrust_tools::testing::{self, Defaultless, Faulty, Pushing, Sample};
     use apertrust_tools::{
-        ChoiceStyle, Control, ControlError, ControlKind, Coordinate, Definition, Owned, PresetRow,
-        Row, Slider, Tab, ToolValues, View,
+        ChoiceStyle, Control, ControlError, ControlKind, Coordinate, Owned, PresetRow,
+        ProcessingDefinition, Row, Slider, Tab, ToolDefinition, ToolValues, View,
     };
 
     use super::*;
@@ -5036,7 +5042,7 @@ mod tests {
     /// A session opening the synthetic photos `develop` gives.
     fn start_with(
         gpu: &GpuContext,
-        tools: &'static [&'static dyn Tool],
+        tools: &'static [&'static dyn ProcessingTool],
         develop: open::testing::Develop,
     ) -> (Session, Receiver<()>) {
         spawned(gpu, tools, None, loading(develop))
@@ -5045,7 +5051,7 @@ mod tests {
     /// A session opening the raws `load` gives, keeping `cache`.
     fn spawned(
         gpu: &GpuContext,
-        tools: &'static [&'static dyn Tool],
+        tools: &'static [&'static dyn ProcessingTool],
         cache: Option<CacheOptions>,
         load: Load,
     ) -> (Session, Receiver<()>) {
@@ -5067,7 +5073,10 @@ mod tests {
     }
 
     /// A session opening the raws on disk.
-    fn start(gpu: &GpuContext, tools: &'static [&'static dyn Tool]) -> (Session, Receiver<()>) {
+    fn start(
+        gpu: &GpuContext,
+        tools: &'static [&'static dyn ProcessingTool],
+    ) -> (Session, Receiver<()>) {
         spawned(gpu, tools, None, open::files())
     }
 
@@ -5939,8 +5948,17 @@ mod tests {
     /// Owns exposure's exposure too, which [`Sample`] has.
     struct Rival;
 
-    static RIVAL: Definition = Definition {
-        id: "rival",
+    static RIVAL: ProcessingDefinition = ProcessingDefinition {
+        tool: ToolDefinition {
+            id: "rival",
+            tabs: &[Tab {
+                id: None,
+                rows: &[Row::Slider(Slider::new("amount"))],
+            }],
+            before: &[],
+            after: &[],
+            menus: &[],
+        },
         version: 1,
         layers: true,
         auto: false,
@@ -5956,23 +5974,16 @@ mod tests {
             unit: None,
             unported: false,
         }],
-        tabs: &[Tab {
-            id: None,
-            rows: &[Row::Slider(Slider::new("amount"))],
-        }],
-        before: &[],
-        after: &[],
-        presets: &[],
+        preset_rows: &[],
         views: &[],
         pickers: &[],
-        menus: &[],
         facts: None,
     };
 
     static RIVAL_OWNS: [Owned; 1] = [Owned::new("exposure", "exposure")];
 
-    impl Tool for Rival {
-        fn definition(&self) -> &'static Definition {
+    impl ProcessingTool for Rival {
+        fn definition(&self) -> &'static ProcessingDefinition {
             &RIVAL
         }
 
@@ -6035,17 +6046,17 @@ mod tests {
     }
 
     impl Driven {
-        fn new(tools: &'static [&'static dyn Tool]) -> Self {
+        fn new(tools: &'static [&'static dyn ProcessingTool]) -> Self {
             Driven::within(tools, pipeline::BUDGET)
         }
 
         /// An engine that plans within `budget` bytes.
-        fn within(tools: &'static [&'static dyn Tool], budget: u64) -> Self {
+        fn within(tools: &'static [&'static dyn ProcessingTool], budget: u64) -> Self {
             Driven::on(gpu(), tools, budget)
         }
 
         /// An engine on `gpu` that plans within `budget` bytes.
-        fn on(gpu: GpuContext, tools: &'static [&'static dyn Tool], budget: u64) -> Self {
+        fn on(gpu: GpuContext, tools: &'static [&'static dyn ProcessingTool], budget: u64) -> Self {
             let (sent, saved) = outbox::channel(Arc::new(|| {}));
             let (tasks, inbox) = mpsc::channel();
             let (mut engine, _) = Engine::new(
@@ -6326,8 +6337,26 @@ mod tests {
     /// it is asked. It owns and binds nothing.
     struct Lists;
 
-    static LISTS: Definition = Definition {
-        id: "lists",
+    static LISTS: ProcessingDefinition = ProcessingDefinition {
+        tool: ToolDefinition {
+            id: "lists",
+            tabs: &[Tab {
+                id: None,
+                rows: &[
+                    Row::Choice {
+                        control: "mode",
+                        style: ChoiceStyle::List,
+                    },
+                    Row::Choice {
+                        control: "counted",
+                        style: ChoiceStyle::List,
+                    },
+                ],
+            }],
+            before: &[],
+            after: &[],
+            menus: &[],
+        },
         version: 1,
         layers: false,
         auto: false,
@@ -6354,30 +6383,14 @@ mod tests {
                 unported: false,
             },
         ],
-        tabs: &[Tab {
-            id: None,
-            rows: &[
-                Row::Choice {
-                    control: "mode",
-                    style: ChoiceStyle::List,
-                },
-                Row::Choice {
-                    control: "counted",
-                    style: ChoiceStyle::List,
-                },
-            ],
-        }],
-        before: &[],
-        after: &[],
-        presets: &[],
+        preset_rows: &[],
         views: &[],
         pickers: &[],
-        menus: &[],
         facts: None,
     };
 
-    impl Tool for Lists {
-        fn definition(&self) -> &'static Definition {
+    impl ProcessingTool for Lists {
+        fn definition(&self) -> &'static ProcessingDefinition {
             &LISTS
         }
 
@@ -6663,8 +6676,8 @@ mod tests {
     /// A tool whose `visible` and `label_value` panic, as a tool's bug may make them.
     struct Hiding;
 
-    impl Tool for Hiding {
-        fn definition(&self) -> &'static Definition {
+    impl ProcessingTool for Hiding {
+        fn definition(&self) -> &'static ProcessingDefinition {
             Sample.definition()
         }
 
@@ -7750,8 +7763,24 @@ mod tests {
     /// tool's bug may make them.
     struct Brittle;
 
-    static BRITTLE: Definition = Definition {
-        id: "brittle",
+    static BRITTLE: ProcessingDefinition = ProcessingDefinition {
+        tool: ToolDefinition {
+            id: "brittle",
+            tabs: &[Tab {
+                id: None,
+                rows: &[
+                    Row::Preset {
+                        preset: "look",
+                        style: ChoiceStyle::List,
+                    },
+                    Row::Slider(Slider::new("amount")),
+                    Row::Slider(Slider::new("percent")),
+                ],
+            }],
+            before: &[],
+            after: &[],
+            menus: &[],
+        },
         version: 1,
         layers: false,
         auto: false,
@@ -7767,20 +7796,7 @@ mod tests {
             unit: None,
             unported: false,
         }],
-        tabs: &[Tab {
-            id: None,
-            rows: &[
-                Row::Preset {
-                    preset: "look",
-                    style: ChoiceStyle::List,
-                },
-                Row::Slider(Slider::new("amount")),
-                Row::Slider(Slider::new("percent")),
-            ],
-        }],
-        before: &[],
-        after: &[],
-        presets: &[PresetRow {
+        preset_rows: &[PresetRow {
             id: "look",
             options: &["full"],
             controls: &["amount"],
@@ -7797,12 +7813,11 @@ mod tests {
             }],
         }],
         pickers: &[],
-        menus: &[],
         facts: None,
     };
 
-    impl Tool for Brittle {
-        fn definition(&self) -> &'static Definition {
+    impl ProcessingTool for Brittle {
+        fn definition(&self) -> &'static ProcessingDefinition {
             &BRITTLE
         }
 
@@ -8097,8 +8112,8 @@ mod tests {
     /// view on one tool, for the tests of a gesture's cancel.
     struct Followed;
 
-    impl Tool for Followed {
-        fn definition(&self) -> &'static Definition {
+    impl ProcessingTool for Followed {
+        fn definition(&self) -> &'static ProcessingDefinition {
             Sample.definition()
         }
 
@@ -8554,8 +8569,25 @@ mod tests {
     /// photo's width, which its preset row's one option writes, and `later` is not ported.
     struct Touchy;
 
-    static TOUCHY: Definition = Definition {
-        id: "touchy",
+    static TOUCHY: ProcessingDefinition = ProcessingDefinition {
+        tool: ToolDefinition {
+            id: "touchy",
+            tabs: &[Tab {
+                id: None,
+                rows: &[
+                    Row::Preset {
+                        preset: "look",
+                        style: ChoiceStyle::List,
+                    },
+                    Row::Slider(Slider::new("level")),
+                    Row::Toggle { control: "trigger" },
+                    Row::Toggle { control: "later" },
+                ],
+            }],
+            before: &[],
+            after: &[],
+            menus: &[],
+        },
         version: 1,
         layers: false,
         auto: false,
@@ -8585,28 +8617,13 @@ mod tests {
                 unported: true,
             },
         ],
-        tabs: &[Tab {
-            id: None,
-            rows: &[
-                Row::Preset {
-                    preset: "look",
-                    style: ChoiceStyle::List,
-                },
-                Row::Slider(Slider::new("level")),
-                Row::Toggle { control: "trigger" },
-                Row::Toggle { control: "later" },
-            ],
-        }],
-        before: &[],
-        after: &[],
-        presets: &[PresetRow {
+        preset_rows: &[PresetRow {
             id: "look",
             options: &["photo"],
             controls: &["level"],
         }],
         views: &[],
         pickers: &[],
-        menus: &[],
         facts: None,
     };
 
@@ -8617,8 +8634,8 @@ mod tests {
         values
     }
 
-    impl Tool for Touchy {
-        fn definition(&self) -> &'static Definition {
+    impl ProcessingTool for Touchy {
+        fn definition(&self) -> &'static ProcessingDefinition {
             &TOUCHY
         }
 
@@ -8826,7 +8843,7 @@ mod tests {
 
     /// [`brightened`] as version 2 writes it, a log of its one step.
     fn brightened_log(build: &str) -> String {
-        let tools: &[&dyn Tool] = &[&Sample];
+        let tools: &[&dyn ProcessingTool] = &[&Sample];
         let loaded = sidecar::from_xml(&brightened(build), OPERATIONS, tools, &[]).unwrap();
         let (log, clocks) = (&loaded.log, loaded.clocks());
         sidecar::log_xml(&loaded.file, log, clocks, (OPERATIONS, tools), build)
@@ -11850,7 +11867,7 @@ mod tests {
 
         fn cached_with(
             name: &str,
-            tools: &'static [&'static dyn Tool],
+            tools: &'static [&'static dyn ProcessingTool],
         ) -> (Driven, Arc<Cache>, PathBuf) {
             let path = scratch(name);
             std::fs::write(&path, b"synthetic raw").unwrap();

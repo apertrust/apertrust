@@ -43,8 +43,10 @@
 use apertrust_plugin::{ImageContext, Value};
 
 use crate::about::{Fact, Facts, Purpose};
-use crate::definition::{ChoiceStyle, Control, ControlKind, Definition, Row, Slider, Tab, Unit};
-use crate::{Base, ControlValue, Controls, Owned, Setting, Tool, ToolValues};
+use crate::definition::{
+    ChoiceStyle, Control, ControlKind, ProcessingDefinition, Row, Slider, Tab, ToolDefinition, Unit,
+};
+use crate::{Base, ControlValue, Controls, Owned, ProcessingTool, Setting, ToolValues};
 
 pub struct Demosaic;
 
@@ -282,77 +284,79 @@ const CAPTURE: Row = Row::Group {
     ],
 };
 
-static DEFINITION: Definition = Definition {
-    id: DEMOSAIC,
+static DEFINITION: ProcessingDefinition = ProcessingDefinition {
+    tool: ToolDefinition {
+        id: DEMOSAIC,
+        tabs: &[Tab {
+            id: None,
+            rows: &[
+                Row::Choice {
+                    control: METHOD,
+                    style: ChoiceStyle::List,
+                },
+                Row::When {
+                    control: METHOD,
+                    is: &DUAL,
+                    rows: &[Row::Slider(Slider::new("dual_thrs"))],
+                },
+                Row::When {
+                    control: METHOD,
+                    is: &["ppg"],
+                    rows: &[Row::Slider(Slider::new("median_thrs").decimals(3))],
+                },
+                Row::When {
+                    control: METHOD,
+                    is: &["lmmse"],
+                    rows: &[Row::Choice {
+                        control: "lmmse_refine",
+                        style: ChoiceStyle::List,
+                    }],
+                },
+                Row::When {
+                    control: METHOD,
+                    is: &SMOOTHED,
+                    rows: &[Row::Choice {
+                        control: "color_smoothing",
+                        style: ChoiceStyle::List,
+                    }],
+                },
+                Row::When {
+                    control: METHOD,
+                    is: &BAYER,
+                    rows: &[Row::Choice {
+                        control: "green_eq",
+                        style: ChoiceStyle::List,
+                    }],
+                },
+                Row::When {
+                    control: METHOD,
+                    is: &SHARPENED,
+                    rows: &[
+                        Row::Toggle {
+                            control: "cs_enabled",
+                        },
+                        Row::When {
+                            control: "cs_enabled",
+                            is: &["true"],
+                            rows: &[CAPTURE],
+                        },
+                    ],
+                },
+            ],
+        }],
+        before: &[],
+        after: &[],
+        menus: &[],
+    },
     version: 1,
     layers: false,
     auto: false,
     switched: false,
     controls: &CONTROLS,
-    tabs: &[Tab {
-        id: None,
-        rows: &[
-            Row::Choice {
-                control: METHOD,
-                style: ChoiceStyle::List,
-            },
-            Row::When {
-                control: METHOD,
-                is: &DUAL,
-                rows: &[Row::Slider(Slider::new("dual_thrs"))],
-            },
-            Row::When {
-                control: METHOD,
-                is: &["ppg"],
-                rows: &[Row::Slider(Slider::new("median_thrs").decimals(3))],
-            },
-            Row::When {
-                control: METHOD,
-                is: &["lmmse"],
-                rows: &[Row::Choice {
-                    control: "lmmse_refine",
-                    style: ChoiceStyle::List,
-                }],
-            },
-            Row::When {
-                control: METHOD,
-                is: &SMOOTHED,
-                rows: &[Row::Choice {
-                    control: "color_smoothing",
-                    style: ChoiceStyle::List,
-                }],
-            },
-            Row::When {
-                control: METHOD,
-                is: &BAYER,
-                rows: &[Row::Choice {
-                    control: "green_eq",
-                    style: ChoiceStyle::List,
-                }],
-            },
-            Row::When {
-                control: METHOD,
-                is: &SHARPENED,
-                rows: &[
-                    Row::Toggle {
-                        control: "cs_enabled",
-                    },
-                    Row::When {
-                        control: "cs_enabled",
-                        is: &["true"],
-                        rows: &[CAPTURE],
-                    },
-                ],
-            },
-        ],
-    }],
-    before: &[],
-    after: &[],
-    presets: &[],
+    preset_rows: &[],
     views: &[],
     pickers: &[],
     // darktable's `description()` in src/iop/demosaic.c at the reference release.
-    menus: &[],
     facts: Some(Facts {
         purpose: Purpose::Mandatory,
         input: Fact::LinearRawSceneReferred,
@@ -435,8 +439,8 @@ fn method(name: &str) -> u32 {
         .expect("a method of METHODS") as u32
 }
 
-impl Tool for Demosaic {
-    fn definition(&self) -> &'static Definition {
+impl ProcessingTool for Demosaic {
+    fn definition(&self) -> &'static ProcessingDefinition {
         &DEFINITION
     }
 
@@ -918,12 +922,12 @@ mod tests {
             let mut values = Demosaic.defaults(&bayer());
             values.set(METHOD, chosen(name));
             let mut got = Vec::new();
-            shown(DEFINITION.tabs[0].rows, &values, &mut got);
+            shown(DEFINITION.tool.tabs[0].rows, &values, &mut got);
             assert_eq!(got, expected, "{name}");
             // Capture sharpen on shows its controls, but where the method has none.
             values.set("cs_enabled", ControlValue::Bool(true));
             let mut on = Vec::new();
-            shown(DEFINITION.tabs[0].rows, &values, &mut on);
+            shown(DEFINITION.tool.tabs[0].rows, &values, &mut on);
             let group = ["cs_iter", "cs_radius", "cs_thrs", "cs_boost", "cs_center"];
             let more = if passing { 0 } else { group.len() };
             assert_eq!(on.len(), got.len() + more, "{name}");

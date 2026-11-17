@@ -17,8 +17,8 @@
 //! What a colour picker reads and where (decision 79; `docs/pickers.md`): its point or
 //! area on the photo, the statistics of a reading and the keys held as it reads, and what
 //! a tool's pick makes of a reading. The engine's session takes and gives them, and
-//! [`crate::Tool::pick`] takes a [`Reading`] and gives what it writes and shows; plain
-//! data, so they move into the protocol unchanged.
+//! [`crate::ProcessingTool::pick`] takes a [`Reading`] and gives what it writes and shows;
+//! plain data, so they move into the protocol unchanged.
 
 use crate::{ControlValue, Controls};
 
@@ -52,10 +52,10 @@ pub struct PickKeys {
     pub shift: bool,
 }
 
-/// What a tool's picker measured at its operation, as [`crate::Tool::pick`] reads it:
-/// the operation's input and, with the picker's [`crate::Picker::output`], its output,
-/// each in the picker's space. A region that misses the operation's image measures
-/// nothing, and gives no reading to pick from.
+/// What a tool's picker measured at its operation, as [`crate::ProcessingTool::pick`] reads
+/// it: the operation's input and, with the picker's [`crate::Picker::output`], its output,
+/// each in the picker's space. A region that misses the operation's image measures nothing,
+/// and gives no reading to pick from.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Reading {
     pub input: Stats,
@@ -68,7 +68,7 @@ pub struct Reading {
     pub input_maximum: [f32; 3],
 }
 
-/// What a tool's pick makes of a reading ([`crate::Tool::pick`]): darktable's
+/// What a tool's pick makes of a reading ([`crate::ProcessingTool::pick`]): darktable's
 /// `color_picker_apply`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Picked {

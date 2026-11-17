@@ -43,7 +43,7 @@ use apertrust_operations::highlights::Highlights;
 use apertrust_plugin::{Format, ImageContext, ImageDesc, Operation, ParamValues};
 use apertrust_tools::highlight_reconstruction::{CLIP, HighlightReconstruction, threshold};
 use apertrust_tools::raw_black_white_point::{RawBlackWhitePoint, WHITE};
-use apertrust_tools::{Base, ControlValue, TOOLS, Tool};
+use apertrust_tools::{Base, ControlValue, ProcessingTool, TOOLS};
 
 use common::{Bench, exact, id, small_raw};
 use corpus::{CORPUS_VIEWPORT, NINETY_D, corpus_bench, each_corpus_raw, export_bench};
@@ -62,7 +62,7 @@ impl common::Measure for Frame {
 
 /// An edit with these controls set on `image`, in this order: each a tool and a
 /// control of it.
-fn edit_of(set: &[(&dyn Tool, &str, f32)], image: &ImageContext) -> Edit {
+fn edit_of(set: &[(&dyn ProcessingTool, &str, f32)], image: &ImageContext) -> Edit {
     let mut edit = Edit::default();
     for &(tool, control, value) in set {
         edit.set_control(tool, control, ControlValue::Number(value), image)
@@ -244,7 +244,11 @@ fn k2_holds(new: impl Fn() -> Bench) {
         RawBlackWhitePoint.defaults(&bench.image).number(WHITE) - 100.0,
     );
     let threshold_first = [
-        (&HighlightReconstruction as &dyn Tool, CLIP, threshold),
+        (
+            &HighlightReconstruction as &dyn ProcessingTool,
+            CLIP,
+            threshold,
+        ),
         (&RawBlackWhitePoint, WHITE, white),
     ];
     let white_first = [threshold_first[1], threshold_first[0]];

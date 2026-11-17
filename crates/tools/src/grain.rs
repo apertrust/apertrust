@@ -37,8 +37,10 @@
 use apertrust_plugin::{ImageContext, Value};
 
 use crate::about::{Fact, Facts, Purpose};
-use crate::definition::{Control, ControlKind, Definition, Row, Slider, Tab, Unit};
-use crate::{Base, Owned, Setting, Tool, ToolValues, switched_from};
+use crate::definition::{
+    Control, ControlKind, ProcessingDefinition, Row, Slider, Tab, ToolDefinition, Unit,
+};
+use crate::{Base, Owned, ProcessingTool, Setting, ToolValues, switched_from};
 
 pub struct Grain;
 
@@ -95,31 +97,33 @@ static CONTROLS: [Control; 3] = [
     number("midtones_bias", (0.0, 100.0), 1.0, 100.0, Unit::Percent),
 ];
 
-static DEFINITION: Definition = Definition {
-    id: "grain",
+static DEFINITION: ProcessingDefinition = ProcessingDefinition {
+    tool: ToolDefinition {
+        id: "grain",
+        tabs: &[Tab {
+            id: None,
+            rows: &[
+                // darktable's `dt_bauhaus_slider_set_digits(g->scale, 0)`: "1600 ISO".
+                Row::Slider(Slider::new("scale").decimals(0)),
+                // Two decimals, as `dt_bauhaus_slider_from_params` gives a range of 100:
+                // "25.00%".
+                Row::Slider(Slider::new("strength")),
+                Row::Slider(Slider::new("midtones_bias")),
+            ],
+        }],
+        before: &[],
+        after: &[],
+        menus: &[],
+    },
     version: 2,
     layers: false,
     auto: false,
     switched: true,
     controls: &CONTROLS,
-    tabs: &[Tab {
-        id: None,
-        rows: &[
-            // darktable's `dt_bauhaus_slider_set_digits(g->scale, 0)`: "1600 ISO".
-            Row::Slider(Slider::new("scale").decimals(0)),
-            // Two decimals, as `dt_bauhaus_slider_from_params` gives a range of 100:
-            // "25.00%".
-            Row::Slider(Slider::new("strength")),
-            Row::Slider(Slider::new("midtones_bias")),
-        ],
-    }],
-    before: &[],
-    after: &[],
-    presets: &[],
+    preset_rows: &[],
     views: &[],
     pickers: &[],
     // darktable's `description()` in src/iop/grain.c at the reference release.
-    menus: &[],
     facts: Some(Facts {
         purpose: Purpose::Creative,
         input: Fact::NonLinearLabDisplayReferred,
@@ -135,8 +139,8 @@ static OWNS: [Owned; 3] = [
     Owned::new(GRAIN, "midtones_bias"),
 ];
 
-impl Tool for Grain {
-    fn definition(&self) -> &'static Definition {
+impl ProcessingTool for Grain {
+    fn definition(&self) -> &'static ProcessingDefinition {
         &DEFINITION
     }
 

@@ -128,7 +128,7 @@ fn a_photo_opens_with_its_history_after_its_values_not_yet_live() {
 
 /// White balance, Exposure and Colour calibration: darktable has the first on by default and
 /// applies the other two to a new raw as its workflow's presets.
-const DEFAULTS: &[&dyn Tool] = &[&WhiteBalance, &Exposure, &ColourCalibration];
+const DEFAULTS: &[&dyn ProcessingTool] = &[&WhiteBalance, &Exposure, &ColourCalibration];
 
 /// The operations the open photo's edit plans, in order.
 fn planned(driven: &Driven) -> Vec<&'static str> {
@@ -1658,7 +1658,7 @@ fn a_change_that_changes_nothing_counts_as_none() {
 // -- Saved in the sidecar (9.5) -----------------------------------------------------------
 
 /// The tools of the tests that save: Sample, and Soften, which another program changes.
-const SAVING: &[&dyn apertrust_tools::Tool] = &[&Sample, &Soften];
+const SAVING: &[&dyn apertrust_tools::ProcessingTool] = &[&Sample, &Soften];
 
 /// The sidecar of `path` as this build reads it.
 fn saved(path: &Path) -> sidecar::Loaded {
@@ -2861,7 +2861,7 @@ fn shown(history: &History) -> (Vec<StepId>, usize) {
 /// The sidecar of `path` read back with `tools`, once every write is done: it holds the
 /// log as the session is to write it, the default steps not yet written left out, and the
 /// copy's clock vector, with no problem.
-fn assert_saved(driven: &Driven, path: &Path, tools: &[&dyn Tool]) -> sidecar::Loaded {
+fn assert_saved(driven: &Driven, path: &Path, tools: &[&dyn ProcessingTool]) -> sidecar::Loaded {
     driven.writes();
     let read = sidecar::read(&sidecar::path_for(path), OPERATIONS, tools, &[]).unwrap();
     let open = driven.engine.open.as_ref().unwrap();
@@ -2983,7 +2983,7 @@ fn compress_right_after_reset_leaves_an_empty_history() {
 }
 
 /// Soften beside darktable's default modules of [`DEFAULTS`].
-const DISCARDING: &[&dyn Tool] = &[&Soften, &WhiteBalance, &Exposure, &ColourCalibration];
+const DISCARDING: &[&dyn ProcessingTool] = &[&Soften, &WhiteBalance, &Exposure, &ColourCalibration];
 
 /// Discard History clears the log and resets the edit, as going to Original and then
 /// Compress: the photo, with no history, is given its default steps again, the file

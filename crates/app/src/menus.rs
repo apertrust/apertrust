@@ -697,8 +697,8 @@ fn app_items(place: apertrust_tools::Place) -> Vec<Added> {
 fn added(
     place: apertrust_tools::Place,
     target: &Target,
-    tools: &[&apertrust_tools::Definition],
-    utilities: &[apertrust_tools::utility::Utility],
+    tools: &[&apertrust_tools::ProcessingDefinition],
+    utilities: &[apertrust_tools::utility::UtilityDefinition],
 ) -> Vec<Added> {
     let joins = |id: &str| {
         place != apertrust_tools::Place::Options || matches!(target, Target::Tool(t) if *t == id)
@@ -709,11 +709,15 @@ fn added(
     };
     let tools = tools
         .iter()
-        .filter(|tool| joins(tool.id))
-        .flat_map(|tool| at(tool.menus, &|action| format!("tool-{}-{action}", tool.id)));
+        .filter(|tool| joins(tool.tool.id))
+        .flat_map(|tool| {
+            at(tool.tool.menus, &|action| {
+                format!("tool-{}-{action}", tool.tool.id)
+            })
+        });
     let utilities = (utilities.iter())
-        .filter(|utility| joins(utility.id))
-        .flat_map(|utility| at(utility.menus, &|action| action.to_string()));
+        .filter(|utility| joins(utility.tool.id))
+        .flat_map(|utility| at(utility.tool.menus, &|action| action.to_string()));
     tools.chain(utilities).collect()
 }
 
@@ -2330,7 +2334,9 @@ mod tests {
         assert_eq!(chosen("no-such-action"), None);
     }
 
-    use apertrust_tools::{Definition, Place as Open, utility::Utility};
+    use apertrust_tools::{
+        Place as Open, ProcessingDefinition, ToolDefinition, utility::UtilityDefinition,
+    };
 
     /// The item naming `action` at `place`, in the section `section` at `order`.
     const fn at(place: Open, section: u32, order: u32, action: &'static str) -> MenuItem {
@@ -2343,7 +2349,7 @@ mod tests {
     }
 
     /// Every built-in tool's definition.
-    fn definitions() -> Vec<&'static Definition> {
+    fn definitions() -> Vec<&'static ProcessingDefinition> {
         let tools = apertrust_tools::TOOLS.iter();
         tools.map(|tool| tool.definition()).collect()
     }
@@ -2353,22 +2359,24 @@ mod tests {
     }
 
     /// A tool with nothing but `id` and the items it adds to context menus.
-    fn tool(id: &'static str, menus: &[MenuItem]) -> &'static Definition {
+    fn tool(id: &'static str, menus: &[MenuItem]) -> &'static ProcessingDefinition {
         let menus = leak(menus);
-        Box::leak(Box::new(Definition {
-            id,
+        Box::leak(Box::new(ProcessingDefinition {
+            tool: ToolDefinition {
+                id,
+                tabs: &[],
+                before: &[],
+                after: &[],
+                menus,
+            },
             version: 1,
             layers: false,
             auto: false,
             switched: false,
             controls: &[],
-            tabs: &[],
-            before: &[],
-            after: &[],
-            presets: &[],
+            preset_rows: &[],
             views: &[],
             pickers: &[],
-            menus,
             facts: None,
         }))
     }
@@ -2387,37 +2395,37 @@ mod tests {
         assert!(!in_menus("no-such-action"));
         for utility in apertrust_tools::utility::UTILITIES {
             assert_eq!(
-                apertrust_tools::check_menus(utility.menus),
+                apertrust_tools::check_menus(utility.tool.menus),
                 Ok(()),
                 "{}",
-                utility.id
+                utility.tool.id
             );
-            for item in utility.menus {
+            for item in utility.tool.menus {
                 for action in item.entry.actions() {
-                    assert!(in_menus(action), "{}: {action}", utility.id);
+                    assert!(in_menus(action), "{}: {action}", utility.tool.id);
                 }
                 // A tool's sections, History's Reset alone first in Edit's.
-                let reset = (utility.id, item.section, item.order, item.entry)
+                let reset = (utility.tool.id, item.section, item.order, item.entry)
                     == ("history", Section::EDIT, 100, MenuEntry::Action("reset"));
                 if !reset {
                     let placed = apertrust_tools::check_section(item);
-                    assert_eq!(placed, Ok(()), "{}: {item:?}", utility.id);
+                    assert_eq!(placed, Ok(()), "{}: {item:?}", utility.tool.id);
                 }
             }
         }
         // History adds Reset alone to the photo's and a thumbnail's menus.
         let history = apertrust_tools::utility::utility("history").unwrap();
         for place in [Open::Photo, Open::Thumbnail] {
-            let items = (history.menus.iter())
+            let items = (history.tool.menus.iter())
                 .filter(|item| item.place == place)
                 .map(|item| item.entry)
                 .collect::<Vec<_>>();
             assert_eq!(items, [MenuEntry::Action(ActionId::RESET.0)], "{place:?}");
         }
-        assert_eq!(history.menus.len(), 2);
+        assert_eq!(history.tool.menus.len(), 2);
         for tool in definitions() {
-            for action in tool.menus.iter().flat_map(|item| item.entry.actions()) {
-                let id = format!("tool-{}-{action}", tool.id);
+            for action in tool.tool.menus.iter().flat_map(|item| item.entry.actions()) {
+                let id = format!("tool-{}-{action}", tool.tool.id);
                 assert!(chosen(&id).is_some(), "{id} is no registry action");
             }
         }
@@ -2436,13 +2444,18 @@ mod tests {
             ],
         );
         let second = tool("second", &[at(Open::Thumbnail, 2000, 200, "level")]);
-        let utilities = [Utility {
-            id: "history",
+        let utilities = [UtilityDefinition {
+            tool: ToolDefinition {
+                id: "history",
+                tabs: &[],
+                before: &[],
+                after: &[],
+                menus: leak(&[
+                    at(Open::Photo, 1000, 100, "reset"),
+                    at(Open::Options, 4000, 100, "reset"),
+                ]),
+            },
             measures: None,
-            menus: leak(&[
-                at(Open::Photo, 1000, 100, "reset"),
-                at(Open::Options, 4000, 100, "reset"),
-            ]),
         }];
         let tools = [first, tool("none", &[]), second];
         let ids = |place, target: Target| -> Vec<(u32, u32, String)> {
@@ -2530,8 +2543,8 @@ mod tests {
     fn clashes(
         place: Open,
         target: Target,
-        tools: &[&Definition],
-        utilities: &[Utility],
+        tools: &[&ProcessingDefinition],
+        utilities: &[UtilityDefinition],
     ) -> Vec<(Section, u32)> {
         let app = (APP_ITEMS.iter())
             .filter(|item| item.place == place)
@@ -2556,7 +2569,8 @@ mod tests {
             (Open::Photo, Target::Photo { point: None }),
             (Open::Thumbnail, Target::Selection),
         ];
-        let ids = (tools.iter().map(|tool| tool.id)).chain(utilities.iter().map(|u| u.id));
+        let ids = (tools.iter().map(|definition| definition.tool.id))
+            .chain(utilities.iter().map(|u| u.tool.id));
         targets.extend(ids.map(|id| (Open::Options, Target::Tool(id))));
         for (place, target) in targets {
             let clashes = clashes(place, target, &tools, utilities);

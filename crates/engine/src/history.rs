@@ -55,7 +55,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 pub use apertrust_library::clock::{Clock, MachineId};
 use apertrust_plugin::{ImageContext, Operation, ParamValues, Value};
-use apertrust_tools::{Base, ControlValue, Controls, Mark, Tool, ToolValues};
+use apertrust_tools::{Base, ControlValue, Controls, Mark, ProcessingTool, ToolValues};
 
 use crate::edit::Edit;
 
@@ -859,10 +859,10 @@ fn on_by_default(tool: &str) -> bool {
 /// workflow auto-applies, each in the pipe's order, by the first operation each tool
 /// owns.
 pub fn default_tools(
-    tools: &[&'static dyn Tool],
+    tools: &[&'static dyn ProcessingTool],
     operations: &[&'static dyn Operation],
 ) -> Vec<&'static str> {
-    let position = |tool: &dyn Tool| {
+    let position = |tool: &dyn ProcessingTool| {
         (tool.owns().iter())
             .filter_map(|owned| {
                 (operations.iter()).position(|operation| operation.manifest().id == owned.operation)
@@ -883,7 +883,7 @@ pub fn default_tools(
     };
     let mut lines: Vec<(u8, usize, &'static str)> = (tools.iter())
         .map(|tool| {
-            let id = tool.definition().id;
+            let id = tool.definition().tool.id;
             (group(id), position(*tool), id)
         })
         .filter(|&(group, _, _)| group < 3)
@@ -912,7 +912,7 @@ impl Described {
     pub fn steps(
         &mut self,
         log: &Log,
-        tools: &[&'static dyn Tool],
+        tools: &[&'static dyn ProcessingTool],
         operations: &[&'static dyn Operation],
         image: &ImageContext,
     ) -> Vec<Arc<HistoryStep>> {
@@ -961,7 +961,7 @@ impl Described {
         &mut self,
         before: Option<&Entry>,
         entry: &Entry,
-        tools: &[&'static dyn Tool],
+        tools: &[&'static dyn ProcessingTool],
         operations: &[&'static dyn Operation],
         image: &ImageContext,
     ) -> ToolChange {
@@ -985,17 +985,17 @@ impl Described {
         &mut self,
         before: Option<&Entry>,
         entry: &Entry,
-        tools: &[&'static dyn Tool],
+        tools: &[&'static dyn ProcessingTool],
         operations: &[&'static dyn Operation],
         image: &ImageContext,
     ) -> Option<ToolChange> {
         match entry {
             Entry::Tool { tool, values } => {
-                let tool = *tools.iter().find(|m| m.definition().id == tool)?;
+                let tool = *tools.iter().find(|m| m.definition().tool.id == tool)?;
                 let definition = tool.definition();
                 // A tool's code may panic, as its binding is guarded against: its
                 // controls then read the definition's defaults, as the values do.
-                let defaults = self.defaults.entry(definition.id).or_insert_with(|| {
+                let defaults = self.defaults.entry(definition.tool.id).or_insert_with(|| {
                     catch_unwind(AssertUnwindSafe(|| tool.defaults(image)))
                         .unwrap_or_else(|_| definition.defaults())
                 });
@@ -1024,7 +1024,7 @@ impl Described {
                     })
                     .collect();
                 Some(ToolChange {
-                    tool: Cow::Borrowed(definition.id),
+                    tool: Cow::Borrowed(definition.tool.id),
                     enabled,
                     controls,
                 })

@@ -213,8 +213,8 @@ Automatic mode (decision 87):
 Exposure owns every parameter (`docs/tools/exposure.md`).
 
 - **Highlight preservation mode** is `compensate_hilite_pres` itself, on by default, as darktable's first instance. Written only where set.
-- **Availability:** it can change the photo only where `_get_highlight_bias` is above 0. darktable hides the toggle elsewhere, and so does Apertrust, through the tool's redesign (decision 88: `Tool::visible`).
-- **Its label:** darktable's "highlight preservation mode (0.5 EV)" shows the value; the redesign adds it as "+0.5 EV", one decimal, signed, and Compensate camera exposure's as the camera writes it, in thirds, "(−⅔ EV)", where darktable writes `%+.1f` (decision 88: `Tool::label_value`).
+- **Availability:** it can change the photo only where `_get_highlight_bias` is above 0. darktable hides the toggle elsewhere, and so does Apertrust, through the tool's redesign (decision 88: `ProcessingTool::visible`).
+- **Its label:** darktable's "highlight preservation mode (0.5 EV)" shows the value; the redesign adds it as "+0.5 EV", one decimal, signed, and Compensate camera exposure's as the camera writes it, in thirds, "(−⅔ EV)", where darktable writes `%+.1f` (decision 88: `ProcessingTool::label_value`).
 - **The tool's version 3:** before it the toggle was not ported and took only off, the one value an edit held, so an edit of version 2 or 1 reads it off, as it rendered.
 - **The picker** adds the held-back exposure as darktable's `_auto_set_exposure` does: correction writes `−log2(Y / Y_target)` plus the compensated bias less the held-back exposure, and measure reads the area at the exposure the operation applies.
 - **Automatic mode:** Mode takes automatic where the photo is a raw, every raw the engine develops being one of 16 bits in one channel, darktable's test, and is drawn disabled elsewhere; an edit holding automatic on an image that is not a raw renders as manual mode, as darktable's `commit_params` leaves it. Mode, Percentile and Target level are their parameters, written where set. Percentile, Target level and the computed EC, a computed value (`Row::Computed`, `computed_exposure`, the operation's `computed`, two decimals in EV) show in automatic mode; Compensate camera exposure, Highlight preservation mode, Exposure and its picker in manual mode only, as darktable's stack has them, with Picker target in place of darktable's Area exposure mapping (decision 88); Black level correction in both. Defaults do not change, so the tool keeps version 3 with no migration; E32 now holds that every value is taken.
@@ -258,7 +258,7 @@ Automatic mode:
 ## Open questions
 
 - **Metering rawspeed's crop** would give darktable's computed exposure on every raw, from rawspeed's camera data as a data file (decision 87, Options considered); kept for later, should the up to 0.012 EV matter.
-- [x] **Hiding the toggle and its label with the value:** settled by decision 88, the tool's redesign: this toggle and Compensate camera exposure hidden where the photo gives them nothing to do, by `Tool::visible`, and labels with the photo's value by `Tool::label_value`; built ([tools/exposure.md](../tools/exposure.md#the-page-as-redesigned)).
+- [x] **Hiding the toggle and its label with the value:** settled by decision 88, the tool's redesign: this toggle and Compensate camera exposure hidden where the photo gives them nothing to do, by `ProcessingTool::visible`, and labels with the photo's value by `ProcessingTool::label_value`; built ([tools/exposure.md](../tools/exposure.md#the-page-as-redesigned)).
 - **Denoise (profiled)** reads the same value (`_get_iso_highlight_preservation_shift`, whole EV only); its port still takes the shift as 0 (`docs/ports/denoiseprofile.md`, difference 6), and can now read it from the image context.
 
 ## Input validation

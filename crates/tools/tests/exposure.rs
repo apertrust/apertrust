@@ -47,7 +47,7 @@ use apertrust_engine::sidecar;
 use apertrust_operations::OPERATIONS;
 use apertrust_plugin::{ImageContext, ImageDesc, ParamValues, Value};
 use apertrust_tools::exposure::{self, Exposure};
-use apertrust_tools::{Base, ControlValue, TOOLS, Tool};
+use apertrust_tools::{Base, ControlValue, ProcessingTool, TOOLS};
 
 use common::{
     BEFORE_THE_WORKING_SPACE, Bench, Picture, RAMP_STEPS, Rendered, exact, extended_ramp, id,

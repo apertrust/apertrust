@@ -21,8 +21,8 @@
 //!
 //! The rows are darktable's page as darktable has it (decision 29): its tabs,
 //! its collapsible sections as [`Row::Group`]s, the rows it shows only in some modes as
-//! [`Row::When`], the rows it draws outside its notebook in [`Definition::before`] and
-//! [`Definition::after`], every option of a choice, those not ported marked, its own
+//! [`Row::When`], the rows it draws outside its notebook in [`ToolDefinition::before`] and
+//! [`ToolDefinition::after`], every option of a choice, those not ported marked, its own
 //! settings, which no edit stores, as [`Row::Setting`], and its buttons,
 //! actions no edit stores either, as [`Row::Action`]. Which rows show
 //! and which options can be chosen is the panel's, from the values, so the edit and the
@@ -40,14 +40,35 @@ use std::collections::BTreeSet;
 
 use crate::values::{ControlValue, Controls};
 
-/// A tool, as data. Its words are message ids that follow from its ids
+/// What every tool declares, a processing tool's and a utility tool's alike (decision 93):
+/// the parent each kind's definition embeds, as darktable's `dt_action_t` begins both its
+/// processing and its utility modules. Its words are message ids that follow from its id
 /// ([`crate::messages`]), so it holds no text.
-#[derive(Debug)]
-pub struct Definition {
+#[derive(Debug, Clone, Copy)]
+pub struct ToolDefinition {
     /// snake_case ASCII and permanent: every saved edit, the CLI and scripts name it.
     pub id: &'static str,
+    /// One untitled tab draws no tab strip.
+    pub tabs: &'static [Tab],
+    /// Rows darktable draws outside its notebook, shown whichever tab is open: these
+    /// before the tab's rows, as the colour equalizer's node placement.
+    pub before: &'static [Row],
+    /// And these after them, as the tone equalizer's mask display.
+    pub after: &'static [Row],
+    /// The items it adds to context menus (decision 91; `docs/gui.md`, Context menus), each
+    /// one of its own actions at a place; none for a tool with nothing to add. The app
+    /// builds the menus, every item, the app's included, where its section and order put
+    /// it ([`Section`]).
+    pub menus: &'static [MenuItem],
+}
+
+/// A processing tool, as data: the shared [`ToolDefinition`] and what editing needs.
+#[derive(Debug)]
+pub struct ProcessingDefinition {
+    /// Its id, page and context menu items, as every tool's.
+    pub tool: ToolDefinition,
     /// From 1, raised whenever a control's meaning or the binding changes, with a
-    /// migration ([`crate::Tool::migrate`]).
+    /// migration ([`crate::ProcessingTool::migrate`]).
     pub version: u32,
     /// Whether the tool works on a masked layer.
     pub layers: bool,
@@ -60,16 +81,9 @@ pub struct Definition {
     /// operations' own ([`crate::check::switched_defaults`]).
     pub switched: bool,
     pub controls: &'static [Control],
-    /// One untitled tab draws no tab strip.
-    pub tabs: &'static [Tab],
-    /// Rows darktable draws outside its notebook, shown whichever tab is open: these
-    /// before the tab's rows, as the colour equalizer's node placement.
-    pub before: &'static [Row],
-    /// And these after them, as the tone equalizer's mask display.
-    pub after: &'static [Row],
     /// The preset rows its [`Row::Preset`]s draw (decision 2): options that each write
     /// several of its controls, as White balance's Mode. Nothing is stored under them.
-    pub presets: &'static [PresetRow],
+    pub preset_rows: &'static [PresetRow],
     /// Its lossless views (decision 2): second views of some of its controls, as White
     /// balance shows its light as temperature and tint, and as hue and chroma. Nothing is
     /// stored under them.
@@ -77,13 +91,8 @@ pub struct Definition {
     /// Its colour pickers (decision 79), each darktable's `dt_color_picker_new` call, shown
     /// by a slider's quad ([`Quad::Picker`]) or a row of picker buttons ([`Row::Pickers`]).
     /// Nothing is stored under them: the session measures the photo and the tool's
-    /// [`crate::Tool::pick`] writes its controls.
+    /// [`crate::ProcessingTool::pick`] writes its controls.
     pub pickers: &'static [Picker],
-    /// The items it adds to context menus (decision 91; `docs/gui.md`, Context menus), each
-    /// one of its own actions at a place; none for a tool with nothing to add. The app
-    /// builds the menus, every item, the app's included, where its section and order put
-    /// it ([`Section`]).
-    pub menus: &'static [MenuItem],
     /// darktable's facts about the module the tool is, from its `description()` at the
     /// reference release (`docs/gui.md`, The header's tooltip): what its header's tooltip
     /// says after the tool's sentence, `tool-<tool>-description`. `None` for a tool that
@@ -313,8 +322,9 @@ pub enum Space {
 
 /// Options that each write several of the tool's controls, as White balance's Mode
 /// writes its light (decision 2). Nothing is stored under it: the tool gives each
-/// option's values for a photo ([`crate::Tool::preset`]) and says which option the
-/// values hold ([`crate::Tool::matching`]), and the session applies one as one change.
+/// option's values for a photo ([`crate::ProcessingTool::preset`]) and says which option
+/// the values hold ([`crate::ProcessingTool::matching`]), and the session applies one as
+/// one change.
 #[derive(Debug)]
 pub struct PresetRow {
     /// snake_case ASCII and permanent, as a control's, and unique among the tool's
@@ -331,9 +341,9 @@ pub struct PresetRow {
 /// coordinates than controls where the tool's model drops a scale of them, as White
 /// balance's temperature and tint drop its three coefficients' (decision 27), `unview`
 /// then the inverse up to that scale. Nothing is stored under it: the tool gives the
-/// coordinates for the controls' values ([`crate::Tool::view`]) and the values for
-/// coordinates ([`crate::Tool::unview`]), and the session writes the controls when a
-/// coordinate is set, holding the view's other coordinates through the gesture.
+/// coordinates for the controls' values ([`crate::ProcessingTool::view`]) and the values
+/// for coordinates ([`crate::ProcessingTool::unview`]), and the session writes the controls
+/// when a coordinate is set, holding the view's other coordinates through the gesture.
 #[derive(Debug)]
 pub struct View {
     /// snake_case ASCII and permanent, unique among the tool's views.
@@ -341,7 +351,7 @@ pub struct View {
     /// The stored controls it covers, each a number of the tool, each once.
     pub controls: &'static [&'static str],
     /// As many as the controls it covers, or fewer for a model of them, at least one, in
-    /// the order [`crate::Tool::view`] gives them.
+    /// the order [`crate::ProcessingTool::view`] gives them.
     pub coordinates: &'static [Coordinate],
 }
 
@@ -545,10 +555,10 @@ pub enum Row {
         widget: Widget,
         controls: &'static [&'static str],
     },
-    /// A preset row of [`Definition::presets`], by its id. It shows no control of its
-    /// own: each of its options writes several. It is a list: segments cannot draw an
-    /// option the photo cannot have, nor Custom, yet, so [`Definition::check`] refuses
-    /// them.
+    /// A preset row of [`ProcessingDefinition::preset_rows`], by its id. It shows no
+    /// control of its own: each of its options writes several. It is a list: segments
+    /// cannot draw an option the photo cannot have, nor Custom, yet, so
+    /// [`ProcessingDefinition::check`] refuses them.
     Preset {
         preset: &'static str,
         style: ChoiceStyle,
@@ -569,10 +579,10 @@ pub enum Row {
         id: &'static str,
     },
     /// darktable's picker buttons packed in a box, one line: a label at its start, if any,
-    /// by its id, and the buttons of pickers of [`Definition::pickers`] at its end, as
-    /// AgX's Auto tune levels and RGB levels' black, grey and white. It is no control.
-    /// The label is a group label's: its words are [`crate::messages::group`]'s, and its
-    /// id is unique among the tool's group labels.
+    /// by its id, and the buttons of pickers of [`ProcessingDefinition::pickers`] at its
+    /// end, as AgX's Auto tune levels and RGB levels' black, grey and white. It is no
+    /// control. The label is a group label's: its words are [`crate::messages::group`]'s,
+    /// and its id is unique among the tool's group labels.
     Pickers {
         label: Option<&'static str>,
         pickers: &'static [&'static str],
@@ -591,8 +601,8 @@ pub enum Row {
     },
     /// One control's row of darktable's buttons, its label the control's, double-clicked
     /// to reset it, as darktable's reset label, with the buttons inline after it: actions
-    /// that write the control from its value ([`crate::Tool::action`]), never stored
-    /// themselves, as orientation's rotate and flip. A click is one change, a
+    /// that write the control from its value ([`crate::ProcessingTool::action`]), never
+    /// stored themselves, as orientation's rotate and flip. A click is one change, a
     /// `SetControl` of each control the action writes; the control shows only here.
     Buttons {
         control: &'static str,
@@ -801,9 +811,9 @@ impl Slider {
 /// A number control's range for the tool's values (decision 30), as darktable's slider
 /// has them: what a value may hold, `min..=max`; what the track spans at rest, `soft`,
 /// inside it; and what a key moves, `step`. Most are the definition's
-/// ([`Definition::range`]); where darktable's `gui_changed` moves a slider's range with
-/// other controls, as AgX's pivot spans black to white relative exposure, the tool gives
-/// it ([`crate::Tool::range`]).
+/// ([`ProcessingDefinition::range`]); where darktable's `gui_changed` moves a slider's
+/// range with other controls, as AgX's pivot spans black to white relative exposure, the
+/// tool gives it ([`crate::ProcessingTool::range`]).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Range {
     pub min: f32,
@@ -925,7 +935,7 @@ pub enum Track {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Quad {
     /// darktable's picker on a slider (`dt_color_picker_new` on a bauhaus widget): turns
-    /// the picker of [`Definition::pickers`] it names on and off.
+    /// the picker of [`ProcessingDefinition::pickers`] it names on and off.
     Picker(&'static str),
     /// Draws a line on the photo, as a horizon is levelled.
     Line,
@@ -947,8 +957,8 @@ pub enum Widget {
     ColourWheels,
     /// darktable's tone equalizer graph: its controls are bands in EV, numbers 1 EV apart
     /// up to +0 EV, the darkest first; it draws the tool's curve through them
-    /// ([`crate::Tool::curve`] of the first), and a drag reaches as far as the curve is
-    /// wide ([`crate::Tool::curve_width`]).
+    /// ([`crate::ProcessingTool::curve`] of the first), and a drag reaches as far as the
+    /// curve is wide ([`crate::ProcessingTool::curve_width`]).
     Equalizer,
     HueCurve,
     Swatches,
@@ -1132,13 +1142,13 @@ pub(crate) fn is_id(id: &str) -> bool {
         && !id.ends_with('_')
 }
 
-impl Definition {
+impl ProcessingDefinition {
     pub fn control(&self, id: &str) -> Option<&Control> {
         self.controls.iter().find(|control| control.id == id)
     }
 
     pub fn preset(&self, id: &str) -> Option<&PresetRow> {
-        self.presets.iter().find(|preset| preset.id == id)
+        self.preset_rows.iter().find(|preset| preset.id == id)
     }
 
     pub fn view(&self, id: &str) -> Option<&'static View> {
@@ -1216,10 +1226,10 @@ impl Definition {
     /// Every row, as [`Self::rows`], with where it shows: its tab, its group, its modes.
     fn placed(&self) -> Vec<Placed<'_>> {
         let mut placed = Vec::new();
-        let tabs = self.tabs.iter().enumerate();
-        let all = std::iter::once((None, self.before))
+        let tabs = self.tool.tabs.iter().enumerate();
+        let all = std::iter::once((None, self.tool.before))
             .chain(tabs.map(|(i, tab)| (Some(i), tab.rows)))
-            .chain(std::iter::once((None, self.after)));
+            .chain(std::iter::once((None, self.tool.after)));
         for (tab, rows) in all {
             let at = Where {
                 tab,
@@ -1255,8 +1265,8 @@ impl Definition {
     /// item names one of its actions, once in its place, and no place holds more of
     /// them than it takes ([`check_menus`]).
     pub fn check(&self) -> Result<(), DefinitionError> {
-        if !is_id(self.id) {
-            return Err(DefinitionError::Id(self.id));
+        if !is_id(self.tool.id) {
+            return Err(DefinitionError::Id(self.tool.id));
         }
         if self.version == 0 {
             return Err(DefinitionError::Version);
@@ -1271,7 +1281,7 @@ impl Definition {
             }
             control.check_kind()?;
         }
-        for preset in self.presets {
+        for preset in self.preset_rows {
             if !is_id(preset.id) {
                 return Err(DefinitionError::Id(preset.id));
             }
@@ -1304,9 +1314,9 @@ impl Definition {
                 }
             }
         }
-        let titled = self.tabs.iter().filter(|tab| tab.id.is_some()).count();
-        let tab_ids: BTreeSet<_> = self.tabs.iter().filter_map(|tab| tab.id).collect();
-        let tabs_hold = match self.tabs.len() {
+        let titled = self.tool.tabs.iter().filter(|tab| tab.id.is_some()).count();
+        let tab_ids: BTreeSet<_> = self.tool.tabs.iter().filter_map(|tab| tab.id).collect();
+        let tabs_hold = match self.tool.tabs.len() {
             0 => false,
             1 => true,
             n => titled == n && tab_ids.len() == n,
@@ -1582,7 +1592,7 @@ impl Definition {
                     .any(|coordinate| !rows_of(coordinate.id).is_empty())
             };
             let preset_shown = || {
-                self.presets
+                self.preset_rows
                     .iter()
                     .filter(|preset| preset.controls.contains(&control.id))
                     .any(|preset| {
@@ -1607,7 +1617,7 @@ impl Definition {
                 });
             }
         }
-        for preset in self.presets {
+        for preset in self.preset_rows {
             let rows = placed
                 .iter()
                 .filter(|placed| match placed.row {
@@ -1644,14 +1654,14 @@ impl Definition {
                 });
             }
         }
-        for item in self.menus {
+        for item in self.tool.menus {
             let entry = item.entry.actions();
             if let Some(action) = entry.iter().find(|action| !actions.contains(*action)) {
                 return Err(DefinitionError::UnknownMenuAction(action));
             }
             check_section(item)?;
         }
-        check_menus(self.menus)
+        check_menus(self.tool.menus)
     }
 
     /// Whether a picker's writes are controls of the tool and the settings it reads
@@ -1917,7 +1927,7 @@ impl Control {
         }
     }
 
-    /// Whether the kind holds together, for [`Definition::check`].
+    /// Whether the kind holds together, for [`ProcessingDefinition::check`].
     fn check_kind(&self) -> Result<(), DefinitionError> {
         let id = self.id;
         match self.kind {
@@ -2166,23 +2176,25 @@ mod tests {
         },
     ];
 
-    static DEFINITION: Definition = Definition {
-        id: "look",
+    static DEFINITION: ProcessingDefinition = ProcessingDefinition {
+        tool: ToolDefinition {
+            id: "look",
+            tabs: &[Tab {
+                id: None,
+                rows: ROWS,
+            }],
+            before: &[],
+            after: &[],
+            menus: &[],
+        },
         version: 1,
         layers: true,
         auto: false,
         switched: false,
         controls: CONTROLS,
-        tabs: &[Tab {
-            id: None,
-            rows: ROWS,
-        }],
-        before: &[],
-        after: &[],
-        presets: &[],
+        preset_rows: &[],
         views: &[],
         pickers: &[],
-        menus: &[],
         facts: None,
     };
 
@@ -2296,36 +2308,41 @@ mod tests {
         },
     ];
 
-    static PAGE: Definition = Definition {
-        id: "page",
+    static PAGE: ProcessingDefinition = ProcessingDefinition {
+        tool: ToolDefinition {
+            id: "page",
+            tabs: PAGE_TABS,
+            before: &[Row::Slider(Slider::new("amount"))],
+            after: &[Row::Toggle { control: "mask" }],
+            menus: &[],
+        },
         version: 1,
         layers: true,
         auto: false,
         switched: false,
         controls: PAGE_CONTROLS,
-        tabs: PAGE_TABS,
-        before: &[Row::Slider(Slider::new("amount"))],
-        after: &[Row::Toggle { control: "mask" }],
-        presets: &[],
+        preset_rows: &[],
         views: &[],
         pickers: &[],
-        menus: &[],
         facts: None,
     };
 
     /// [`PAGE`] with its first tab's rows in place of its own.
-    fn page(rows: &'static [Row]) -> Definition {
-        Definition {
-            tabs: Box::leak(Box::new([
-                Tab {
-                    id: Some("main"),
-                    rows,
-                },
-                Tab {
-                    id: Some("fine"),
-                    rows: &[FINE_TUNING],
-                },
-            ])),
+    fn page(rows: &'static [Row]) -> ProcessingDefinition {
+        ProcessingDefinition {
+            tool: ToolDefinition {
+                tabs: Box::leak(Box::new([
+                    Tab {
+                        id: Some("main"),
+                        rows,
+                    },
+                    Tab {
+                        id: Some("fine"),
+                        rows: &[FINE_TUNING],
+                    },
+                ])),
+                ..PAGE.tool
+            },
             ..PAGE
         }
     }
@@ -2405,8 +2422,11 @@ mod tests {
             Row::Toggle { control: "mask" },
             Row::Slider(Slider::new("detail")),
         ];
-        let under = Definition {
-            after: UNDER,
+        let under = ProcessingDefinition {
+            tool: ToolDefinition {
+                after: UNDER,
+                ..PAGE.tool
+            },
             ..PAGE
         };
         assert_eq!(
@@ -2463,18 +2483,21 @@ mod tests {
         // Contrast on the Fine tab, following the Main tab's mode, as darktable's tone
         // equalizer's contrast compensation follows its filter.
         let two_tabs = |main: &'static [Row], fine: &'static [Row], after: &'static [Row]| {
-            Definition {
-                tabs: Box::leak(Box::new([
-                    Tab {
-                        id: Some("main"),
-                        rows: main,
-                    },
-                    Tab {
-                        id: Some("fine"),
-                        rows: fine,
-                    },
-                ])),
-                after,
+            ProcessingDefinition {
+                tool: ToolDefinition {
+                    tabs: Box::leak(Box::new([
+                        Tab {
+                            id: Some("main"),
+                            rows: main,
+                        },
+                        Tab {
+                            id: Some("fine"),
+                            rows: fine,
+                        },
+                    ])),
+                    after,
+                    ..PAGE.tool
+                },
                 ..PAGE
             }
             .check()
@@ -2538,17 +2561,20 @@ mod tests {
                 rows: CONTRAST,
             },
         ];
-        let outside = Definition {
-            tabs: Box::leak(Box::new([
-                Tab {
-                    id: Some("main"),
-                    rows: with_mode(&[]),
-                },
-                Tab {
-                    id: Some("fine"),
-                    rows: OUTSIDE,
-                },
-            ])),
+        let outside = ProcessingDefinition {
+            tool: ToolDefinition {
+                tabs: Box::leak(Box::new([
+                    Tab {
+                        id: Some("main"),
+                        rows: with_mode(&[]),
+                    },
+                    Tab {
+                        id: Some("fine"),
+                        rows: OUTSIDE,
+                    },
+                ])),
+                ..PAGE.tool
+            },
             ..PAGE
         };
         assert_eq!(outside.check(), Err(DefinitionError::Hidden("smooth")));
@@ -2573,8 +2599,11 @@ mod tests {
                     rows: following,
                 },
             ];
-            Definition {
-                after: &[],
+            ProcessingDefinition {
+                tool: ToolDefinition {
+                    after: &[],
+                    ..page(with_mode(&rows)).tool
+                },
                 ..page(with_mode(&rows))
             }
             .check()
@@ -2820,7 +2849,7 @@ mod tests {
 
     /// [`page`] with a row of buttons and action rows, five actions in all, adding `menus`
     /// to context menus.
-    fn with_menus(menus: &[MenuItem]) -> Definition {
+    fn with_menus(menus: &[MenuItem]) -> ProcessingDefinition {
         let rows = [
             Row::Buttons {
                 control: "contrast",
@@ -2836,8 +2865,11 @@ mod tests {
             Row::Action { id: "pick" },
             Row::Action { id: "clear" },
         ];
-        Definition {
-            menus: Box::leak(menus.to_vec().into_boxed_slice()),
+        ProcessingDefinition {
+            tool: ToolDefinition {
+                menus: Box::leak(menus.to_vec().into_boxed_slice()),
+                ..page(with_mode(&rows)).tool
+            },
             ..page(with_mode(&rows))
         }
     }
@@ -3042,7 +3074,7 @@ mod tests {
     fn picking(pickers: &[Picker], rows: &[Row]) -> Result<(), DefinitionError> {
         let mut all = vec![Row::Setting(CHART)];
         all.extend(rows.iter().cloned());
-        Definition {
+        ProcessingDefinition {
             pickers: Box::leak(pickers.into()),
             ..page(with_mode(&all))
         }
@@ -3365,12 +3397,15 @@ mod tests {
             preset: "look",
             style: ChoiceStyle::List,
         };
-        let definition = Definition {
-            before: Box::leak(Box::new([
-                Row::Setting(CHART),
-                when_chart(&["passport"], &[look]),
-            ])),
-            presets: &[PresetRow {
+        let definition = ProcessingDefinition {
+            tool: ToolDefinition {
+                before: Box::leak(Box::new([
+                    Row::Setting(CHART),
+                    when_chart(&["passport"], &[look]),
+                ])),
+                ..PAGE.tool
+            },
+            preset_rows: &[PresetRow {
                 id: "look",
                 options: &["soft"],
                 controls: &["amount"],
@@ -3391,9 +3426,12 @@ mod tests {
             style: ChoiceStyle::List,
         };
         let with = |presets: &'static [PresetRow], before: &'static [Row]| {
-            Definition {
-                before,
-                presets,
+            ProcessingDefinition {
+                tool: ToolDefinition {
+                    before,
+                    ..PAGE.tool
+                },
+                preset_rows: presets,
                 ..PAGE
             }
             .check()
@@ -3506,9 +3544,12 @@ mod tests {
 
     /// [`PAGE`] with these views and these rows before every tab's.
     fn viewed(views: Vec<View>, before: &[Row]) -> Result<(), DefinitionError> {
-        Definition {
+        ProcessingDefinition {
+            tool: ToolDefinition {
+                before: Box::leak(before.to_vec().into_boxed_slice()),
+                ..PAGE.tool
+            },
             views: Box::leak(views.into_boxed_slice()),
-            before: Box::leak(before.to_vec().into_boxed_slice()),
             ..PAGE
         }
         .check()
@@ -3591,12 +3632,12 @@ mod tests {
         );
         // Unique among the controls, the preset rows and the other coordinates.
         let with = |coordinates: [Coordinate; 2]| {
-            Definition {
+            ProcessingDefinition {
                 views: Box::leak(Box::new([View {
                     coordinates: Box::leak(Box::new(coordinates)),
                     ..TONE
                 }])),
-                presets: &[PresetRow {
+                preset_rows: &[PresetRow {
                     id: "look",
                     options: &["soft"],
                     controls: &["amount"],
@@ -3715,7 +3756,7 @@ mod tests {
                     _ => Control { ..*control },
                 })
                 .collect();
-            Definition {
+            ProcessingDefinition {
                 controls: Box::leak(controls.into_boxed_slice()),
                 ..PAGE
             }
@@ -3804,20 +3845,22 @@ mod tests {
         static WRONG: &[Row] = &[Row::Toggle {
             control: "exposure",
         }];
-        let with = |rows: &'static [Row]| Definition {
-            id: "look",
+        let with = |rows: &'static [Row]| ProcessingDefinition {
+            tool: ToolDefinition {
+                id: "look",
+                tabs: Box::leak(Box::new([Tab { id: None, rows }])),
+                before: &[],
+                after: &[],
+                menus: &[],
+            },
             version: 1,
             layers: true,
             auto: false,
             switched: false,
             controls: &CONTROLS[..1],
-            tabs: Box::leak(Box::new([Tab { id: None, rows }])),
-            before: &[],
-            after: &[],
-            presets: &[],
+            preset_rows: &[],
             views: &[],
             pickers: &[],
-            menus: &[],
             facts: None,
         };
         assert_eq!(
@@ -3874,20 +3917,22 @@ mod tests {
                 controls: &["mode"],
             },
         ];
-        let with = |controls: &'static [Control], rows: &'static [Row]| Definition {
-            id: "look",
+        let with = |controls: &'static [Control], rows: &'static [Row]| ProcessingDefinition {
+            tool: ToolDefinition {
+                id: "look",
+                tabs: Box::leak(Box::new([Tab { id: None, rows }])),
+                before: &[],
+                after: &[],
+                menus: &[],
+            },
             version: 1,
             layers: true,
             auto: false,
             switched: false,
             controls,
-            tabs: Box::leak(Box::new([Tab { id: None, rows }])),
-            before: &[],
-            after: &[],
-            presets: &[],
+            preset_rows: &[],
             views: &[],
             pickers: &[],
-            menus: &[],
             facts: None,
         };
         assert_eq!(with(&CONTROLS[..1], VIEWED).check(), Ok(()));

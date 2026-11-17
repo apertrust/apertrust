@@ -72,7 +72,7 @@ use std::time::{Duration, Instant};
 
 use apertrust_library::clock::{Clock, MachineId};
 use apertrust_plugin::{ImageContext, Operation};
-use apertrust_tools::{Tool, ToolValues};
+use apertrust_tools::{ProcessingTool, ToolValues};
 
 use super::{Command, Effect, Engine, Event, Open, SessionError, on_edit};
 use crate::edit::Edit;
@@ -856,7 +856,7 @@ impl PhotoHistory {
     pub(super) fn fact(
         &mut self,
         through: u64,
-        tools: &[&'static dyn Tool],
+        tools: &[&'static dyn ProcessingTool],
         operations: &'static [&'static dyn Operation],
         image: &ImageContext,
     ) -> History {
@@ -1320,7 +1320,7 @@ impl Engine {
 /// Whether the only change of `open`'s edit not yet a step is the clamp a move of the end or
 /// the photo's open made of the log's fold, which never becomes a step of its own: else an
 /// Undo would take back that clamp's step and land where it began, never past it.
-pub(super) fn clamp_only(open: &Open, tools: &[&dyn Tool]) -> bool {
+pub(super) fn clamp_only(open: &Open, tools: &[&dyn ProcessingTool]) -> bool {
     let mut clamped = open.history.stepped().clone();
     clamped.clamp_read(tools, &open.image);
     clamped == open.edit
@@ -1328,7 +1328,7 @@ pub(super) fn clamp_only(open: &Open, tools: &[&dyn Tool]) -> bool {
 
 /// The edit a move of the end makes a step of first, as a change not yet a step: `open`'s,
 /// or the log's fold where its only change is a clamp ([`clamp_only`]).
-fn pending(open: &Open, tools: &[&dyn Tool]) -> Edit {
+fn pending(open: &Open, tools: &[&dyn ProcessingTool]) -> Edit {
     if clamp_only(open, tools) {
         open.history.stepped().clone()
     } else {
@@ -1341,7 +1341,7 @@ fn pending(open: &Open, tools: &[&dyn Tool]) -> Edit {
 /// rendered where it differs, and saved as a completed change, the end with it even where
 /// the edit is as it was. With nothing moved, `None`, a change made a step first saves
 /// alike.
-fn moved_to(open: &mut Open, moved: Option<Edit>, tools: &[&dyn Tool]) -> Effect {
+fn moved_to(open: &mut Open, moved: Option<Edit>, tools: &[&dyn ProcessingTool]) -> Effect {
     let Some(mut edit) = moved else {
         return Effect {
             save: true,

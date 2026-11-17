@@ -15,8 +15,8 @@ Every tool in the side panel has one header, one page and one ⋯, and is one of
 | **Processing tool** | Edits the photo through the operations it binds; its controls are what the edit stores | processing module (iop) | Exposure, AgX, Colour calibration |
 | **Utility tool**, "utility" for short | Edits nothing of its own, with no controls and no operation; it holds settings, view state or the photo's metadata | utility module (lib) | Browse, Export, Scopes, History |
 
-- **Built:** a processing tool is a `Definition` with the trait `Tool` in `apertrust-tools`, drawn by the app's renderer with no code of its own; a utility is drawn by its own app module, Scopes and History listed in `utility::UTILITIES`.
-- **Planned** (decision 93; [gui.md](../gui.md#one-tool-model)): both kinds embed one `ToolDefinition`, the parent, in `ProcessingDefinition` and `UtilityDefinition`; a utility's page uses the same rows, never one that edits, its own widgets as custom rows, so the app draws every tool's header, page and ⋯ alike.
+- **Built:** a processing tool is a `ProcessingDefinition` with the trait `ProcessingTool` in `apertrust-tools`, drawn by the app's renderer with no code of its own; a utility is drawn by its own app module, Scopes and History listed in `utility::UTILITIES` as `UtilityDefinition`s; both embed the `ToolDefinition` every tool shares (decision 93).
+- **Planned** (decision 93; [gui.md](../gui.md#one-tool-model)): a utility's page uses the same rows, never one that edits, its own widgets as custom rows, so the app draws every tool's header, page and ⋯ alike.
 - "Section" names only the side panel's block a tool is shown in, a header with its body.
 
 ## The tools by tab
@@ -160,7 +160,7 @@ Port specs, tool pages and code cite these by number.
 3. **Controls are darktable's, every one it shows** (decision 29).
    - In darktable's order, under its labels and ranges, ported or not; a control not ported is drawn disabled.
    - A fixed change of unit is allowed: a percentage for a factor, degrees for radians (decision 30).
-   - Sliders are darktable's, soft ranges included (decision 30), and a range darktable moves with other controls moves with them (`Tool::range`, decision 30).
+   - Sliders are darktable's, soft ranges included (decision 30), and a range darktable moves with other controls moves with them (`ProcessingTool::range`, decision 30).
    - No control sets several parameters.
 4. **A tool that is off is untouched** (decision 32).
    - A tool whose operation every photo runs starts at the photo as first shown, the operation's defaults for it, and is untouched there.
@@ -170,31 +170,31 @@ Port specs, tool pages and code cite these by number.
    - darktable's section labels are group labels.
    - Each of darktable's collapsible sections is a **collapsible group**, closed at first, its open state kept in settings, never in the edit. A group never holds another.
    - **Every darktable tab is a content tab**, in darktable's order, masking, masks, options and advanced included. Rows darktable shows under every tab show whichever tab is chosen.
-   - **Rows follow darktable's conditions.** A row darktable shows only in one mode is hidden otherwise. A control that cannot act in the current state is drawn disabled, never hidden (decision 30), but for Exposure's two camera rows, hidden where the photo gives them nothing to do (`Tool::visible`, decision 88); hiding any other row needs a decision of its own. One parameter shown under two labels by mode has one row per mode.
+   - **Rows follow darktable's conditions.** A row darktable shows only in one mode is hidden otherwise. A control that cannot act in the current state is drawn disabled, never hidden (decision 30), but for Exposure's two camera rows, hidden where the photo gives them nothing to do (`ProcessingTool::visible`, decision 88); hiding any other row needs a decision of its own. One parameter shown under two labels by mode has one row per mode.
    - **Exposure is the one exception** (decision 88): its page is redesigned. A Manual | Automatic switch replaces the Mode list, and Picker target with a reference replaces Area exposure mapping and measure mode; it adds Last pick with its warnings and labels with the camera's value, and drops Auto, while its controls, bindings and processing stay darktable's ([exposure.md](exposure.md#the-page-as-redesigned)).
 6. **Lossless views** (decision 2). Where darktable shows the same stored values twice, the second is a second row, an exact, invertible change of coordinates the tool gives ([below](#lossless-views)). Nothing is stored twice.
 7. **Presets are darktable's,** from `init_presets`, in the menu of the header's presets button.
    - Applying one is one change and one history step.
    - darktable's auto-applied workflow presets are Apertrust's defaults already.
    - A preset that sets a fixed parameter or a mode not ported is left out, and the tool's page says so.
-8. **A choice lists darktable's options for the photo** (decisions 29 and 30; `Tool::options`).
+8. **A choice lists darktable's options for the photo** (decisions 29 and 30; `ProcessingTool::options`).
    - The definition holds every option darktable lists on some photo, each with a permanent id; a photo lists those darktable lists for it.
    - An option not ported is drawn disabled, and choosing it is refused. So is an option the photo does not list.
    - An edit from another photo that holds one keeps it, shown last, chosen and disabled, "Not available for this photo".
    - Options darktable lists on no photo, kept only for old darktable edits, are left out until the import of darktable's edits needs them (decision 51, planned).
 9. **Left out:** every module darktable marks deprecated, and modules that do another's job: colour zones (the colour equalizer's), monochrome (colour calibration's grey), base curve and the other display-referred legacy tone tools. Tone mappers are the exception: each is a tool of its own ([Tone mappers](#tone-mappers)).
-10. **Quads, pickers and wands** are darktable's (decision 29): a picker on a row, a showmask view mode, an Auto quad that computes one control. Each is an action that writes controls, never stored. A picker is declared in `Definition::pickers` with darktable's flags and applied by `Tool::pick` ([pickers.md](../pickers.md), decision 79). The tool's Auto has no header button. Readouts and read-only graphs are drawn as darktable shows them.
+10. **Quads, pickers and wands** are darktable's (decision 29): a picker on a row, a showmask view mode, an Auto quad that computes one control. Each is an action that writes controls, never stored. A picker is declared in `ProcessingDefinition::pickers` with darktable's flags and applied by `ProcessingTool::pick` ([pickers.md](../pickers.md), decision 79). The tool's Auto has no header button. Readouts and read-only graphs are drawn as darktable shows them.
 11. **Layers** replace darktable's instances and per-module masks (decision 34; [layers.md](../layers.md)). A tool works on layers unless the tables above say background only.
 12. **darktable's interface settings** (decision 29).
     - darktable's own settings for a tool, kept in darktablerc and never in an edit, are rows of the tool (`Row::Setting`), kept in `settings.toml` under `[tools.<module>]` once what uses them is built (decision 43).
     - A control darktable shows only under a preference that is off by default, or only for an edit made with an older algorithm, is not shown; its parameter stays at darktable's default or current value.
-13. **Follow writes** (decision 27). Where darktable's GUI writes other parameters with a control, to keep one quantity consistent (colour calibration's illuminant writing `x`, `y` and the temperature; White balance's coefficients writing `preset`), the tool gives those writes (`Tool::follow`) and the session applies them in the same change.
-    - A preset row's option takes none: it writes every control itself (`Tool::preset`).
+13. **Follow writes** (decision 27). Where darktable's GUI writes other parameters with a control, to keep one quantity consistent (colour calibration's illuminant writing `x`, `y` and the temperature; White balance's coefficients writing `preset`), the tool gives those writes (`ProcessingTool::follow`) and the session applies them in the same change.
+    - A preset row's option takes none: it writes every control itself (`ProcessingTool::preset`).
     - A range that follows other controls clamps a value it leaves outside in the same change (decision 30).
     - darktable's session memory, values its GUI keeps but no edit stores, is not mirrored.
 14. **Menus and the toolbar** (decisions 91 and 92; [gui.md](../gui.md#context-menus)). A tool takes no right-click: its header, body and controls open no context menu, a control keeping its own gesture (a slider's fine control, a picker button's area).
     - Its own menu is its header's ⋯, its presets the header's presets button.
-    - It may add items to the photo's and a thumbnail's right-click menus, at most two each, and to its own ⋯, at most four, once ⋯ opens through the menu builder, declared in `Definition::menus`, each one of its own actions (`Row::Action`, a button of `Row::Buttons`), or for a utility a registry action it names, as History's `reset`, or a submenu of up to eight of them, and placed by its `section` (from `EDIT` up to, not including, `LAYOUT`, and in `EDIT` from order 200, after Reset, History's Reset itself alone at `(EDIT, 100)`) and `order`, as the app's own items are. The registry holds each of a processing tool's actions as `tool-<tool>-<action>`, generated as the app starts; a utility names a registry action that already exists. Orientation's Orientation ▸ is the first. A tool with nothing to add declares nothing, and a utility declares its items in `utility::UTILITIES` (`Utility::menus`), as History's Reset; planned, every tool's in `ToolDefinition::menus` (decision 93).
+    - It may add items to the photo's and a thumbnail's right-click menus, at most two each, and to its own ⋯, at most four, once ⋯ opens through the menu builder, declared in `ToolDefinition::menus`, each one of its own actions (`Row::Action`, a button of `Row::Buttons`), or for a utility a registry action it names, as History's `reset`, or a submenu of up to eight of them, and placed by its `section` (from `EDIT` up to, not including, `LAYOUT`, and in `EDIT` from order 200, after Reset, History's Reset itself alone at `(EDIT, 100)`) and `order`, as the app's own items are. The registry holds each of a processing tool's actions as `tool-<tool>-<action>`, generated as the app starts; a utility names a registry action that already exists. Orientation's Orientation ▸ is the first. A tool with nothing to add declares nothing, and a utility declares its items in `utility::UTILITIES`, in the same `ToolDefinition::menus`, as History's Reset (decision 93).
     - Every item it adds is reachable without a right-click, and each one in the photo's or a thumbnail's menu is listed on the tool's page.
     - Planned: it may offer up to two of its actions for the toolbar (decision 92; [gui.md](../gui.md#the-toolbar)), in `ToolDefinition::toolbar` (decision 93), a utility's as a processing tool's, with an icon of `apertrust-ui`'s by name, a `Row::Buttons` action taking its button's; offered, an action is on the toolbar only where a person places it.
 
@@ -212,7 +212,7 @@ stateDiagram-v2
 
 Off, it renders as no edit. On, every control it was not given takes darktable's default.
 
-Built for the Tone equalizer, Colour balance RGB, RGB primaries, Haze removal, Vignetting, Soften and Grain, each at version 2 (`Definition::switched`). A version 1 edit migrates on where it rendered something, its values as they were, and off, its values dropped, where it rendered nothing. The other tools marked switched in the tables are switched as they are built.
+Built for the Tone equalizer, Colour balance RGB, RGB primaries, Haze removal, Vignetting, Soften and Grain, each at version 2 (`ProcessingDefinition::switched`). A version 1 edit migrates on where it rendered something, its values as they were, and off, its values dropped, where it rendered nothing. The other tools marked switched in the tables are switched as they are built.
 
 ### Fixed parameters
 
@@ -267,7 +267,7 @@ flowchart LR
     C -- "unview" --> S
 ```
 
-- The tool gives it, as pure methods of `Tool`: the coordinates from the stored values (`view`) and back (`unview`).
+- The tool gives it, as pure methods of `ProcessingTool`: the coordinates from the stored values (`view`) and back (`unview`).
 - A coordinate is addressed like a control, and the session reports every view's coordinates with the values. Nothing is stored under a coordinate's id.
 - Marks and reset belong to the stored controls. Once every coordinate is back at its default, the stored values are reset exactly.
 - A view with fewer coordinates than controls (temperature and tint over three coefficients) writes the controls as darktable's GUI does, normalised. A view may read the camera, through the photo's image context.
@@ -315,7 +315,7 @@ A letter per tool and a number: A for AgX, D for Demosaic, O for Output colour p
 
 A first-pass tool's sliders are darktable's (rule 3, decision 30). Each tool's page records them, audited against darktable's params and `gui_init`, and a test in the tool's source holds its definition to that table through `testing::slider_differences`. It compares every slider row and number setting with darktable's (`testing::DarktableSlider`: the hard range, the soft range, the factor and offset it shows by, its digits). What is compared, in the units shown:
 
-- **The range** a value may hold, the control's: darktable's hard range, the params' `$MIN` and `$MAX`, times the factor plus the offset. A typed value, a script or a preset may reach it. Where darktable's `gui_changed` moves it with other controls, as AgX's pivot's spans black to white relative exposure, the range, the track and the step are compared for given values through `Tool::range`, at the tool's defaults and, in the tool's own test, at others; the definition's range is then the widest any values give (decision 30).
+- **The range** a value may hold, the control's: darktable's hard range, the params' `$MIN` and `$MAX`, times the factor plus the offset. A typed value, a script or a preset may reach it. Where darktable's `gui_changed` moves it with other controls, as AgX's pivot's spans black to white relative exposure, the range, the track and the step are compared for given values through `ProcessingTool::range`, at the tool's defaults and, in the tool's own test, at others; the definition's range is then the widest any values give (decision 30).
 - **The track's span at rest:** darktable's soft range (`dt_bauhaus_slider_set_soft_range`), `Slider::soft`, else the range. The track widens to show a value beyond it, and keeps that span until the row is reset, as darktable's `dt_bauhaus_slider_set` widens its visible range; a drag and the keys stay inside the span shown (`docs/gui.md`, How the rows are laid out).
 - **The factor and offset:** `dt_bauhaus_slider_set_factor` and `_offset`, or the factor of 100 that `dt_bauhaus_slider_set_format(…, "%")` gives a slider whose hard maximum is within ±10, taking two of its digits. A tool stores the value as shown, and its binding converts back.
 - **The decimals:** darktable's digits as `gui_init` leaves them; `dt_bauhaus_slider_from_params` gives a float `max(2, −⌊log₁₀(top / 100) + 0.1⌋)`, top the smaller of the hard range's width and its larger end's size.

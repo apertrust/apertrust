@@ -23,8 +23,8 @@
 //!
 //! Shared by the operation's setup (`apertrust-op-toneequal`), whose kernel sums the
 //! Gaussians with the weights fitted here, and by the Tone equalizer tool's band graph
-//! (`Tool::curve`, decision 31), which draws the curve the kernel renders (decision
-//! 65). It runs on the CPU, to set the kernel up and to draw, never on a pixel.
+//! (`ProcessingTool::curve`, decision 31), which draws the curve the kernel renders
+//! (decision 65). It runs on the CPU, to set the kernel up and to draw, never on a pixel.
 
 /// The nine bands' centres, in EV of the mask: darktable `centers_params`.
 pub const BAND_CENTRES: [f32; 9] = [-8.0, -7.0, -6.0, -5.0, -4.0, -3.0, -2.0, -1.0, 0.0];

@@ -23,11 +23,11 @@ use apertrust_engine::edit::{self, Edit};
 use apertrust_engine::sidecar;
 use apertrust_operations::OPERATIONS;
 use apertrust_plugin::{ImageContext, ParamValues};
-use apertrust_tools::{TOOLS, Tool, check};
+use apertrust_tools::{ProcessingTool, TOOLS, check};
 
 /// Edits that leave the switched `tool` off: none, and every control kept at its
 /// default, which never turns it on.
-pub fn off(tool: &dyn Tool) -> Vec<Edit> {
+pub fn off(tool: &dyn ProcessingTool) -> Vec<Edit> {
     let mut kept = Edit::default();
     for control in tool.definition().controls {
         kept.keep(tool, control.id, true).unwrap();
@@ -38,7 +38,7 @@ pub fn off(tool: &dyn Tool) -> Vec<Edit> {
 
 /// The tool on at darktable's defaults: its first control written at its default, as
 /// a click that leaves a value where it was turns darktable's module on.
-pub fn on_at_defaults(tool: &dyn Tool, image: &ImageContext) -> Edit {
+pub fn on_at_defaults(tool: &dyn ProcessingTool, image: &ImageContext) -> Edit {
     let control = &tool.definition().controls[0];
     let mut edit = Edit::default();
     edit.set_control(tool, control.id, control.default(), image)
@@ -62,7 +62,7 @@ pub fn bound(edit: &Edit, operation: &str, image: &ImageContext) -> Option<Param
 /// explicit, bind its operations' defaults for each photo (`check::switched_defaults`),
 /// and on at its defaults it plans `operation` with no parameter set, at the operation's
 /// own defaults, darktable's new instance.
-pub fn on_at_defaults_holds(tool: &dyn Tool, operation: &str) {
+pub fn on_at_defaults_holds(tool: &dyn ProcessingTool, operation: &str) {
     for image in [crate::common::photo(), ImageContext::full(8, 8)] {
         let problems = check::switched_defaults(tool, OPERATIONS, &image);
         assert!(problems.is_empty(), "{problems:?}");

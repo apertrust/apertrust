@@ -750,7 +750,7 @@ enum Kept {
 /// Each tool's reference (`Row::Reference`): its tool's id, its L's setting and its photo's.
 fn references() -> impl Iterator<Item = (&'static str, &'static str, &'static str)> {
     TOOLS.iter().flat_map(|tool| {
-        let id = tool.definition().id;
+        let id = tool.definition().tool.id;
         tool.definition().rows().filter_map(move |row| match row {
             Row::Reference {
                 lightness, photo, ..
@@ -763,7 +763,7 @@ fn references() -> impl Iterator<Item = (&'static str, &'static str, &'static st
 /// Each kept tool setting: its tool's id, its id, how it is kept and its declaration.
 fn kept() -> impl Iterator<Item = (&'static str, &'static str, Kept, &'static dyn Declared)> {
     TOOLS.iter().flat_map(|tool| {
-        let id = tool.definition().id;
+        let id = tool.definition().tool.id;
         let declared = move |setting: &'static str, kind: Kept| {
             apertrust_tools::settings::setting(id, setting).map(|d| (id, setting, kind, d))
         };

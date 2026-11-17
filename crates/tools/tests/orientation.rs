@@ -31,7 +31,7 @@ use apertrust_engine::edit::Edit;
 use apertrust_engine::pipeline::{Instance, Pipe};
 use apertrust_operations::OPERATIONS;
 use apertrust_tools::orientation::{ORIENTATIONS, Orientation};
-use apertrust_tools::{Base, ControlValue, Tool, ToolValues};
+use apertrust_tools::{Base, ControlValue, ProcessingTool, ToolValues};
 
 use common::{BEFORE_THE_WORKING_SPACE, Bench, exact, id, small_raw, sweep};
 
