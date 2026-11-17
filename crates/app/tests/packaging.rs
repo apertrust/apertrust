@@ -18,7 +18,8 @@
 //! hold every extension rawler decodes and no other, so a rawler update that adds one
 //! fails here until the packages open it too, the Windows installer's template in Open
 //! With alone; Apertrust's own type, the edit (`.apxmp`), is Apertrust's on macOS and
-//! Windows, and never Apertrust Nightly's; the app's id is the same everywhere,
+//! Windows, and never Apertrust Nightly's, and on Linux a MIME type both desktop entries
+//! open; the app's id is the same everywhere,
 //! Apertrust's and, as `packaging/nightly-identity.txt` makes the files for
 //! `tools/package.sh --nightly`, Apertrust Nightly's; the `.deb` and the `.rpm` need the
 //! same libraries; and the plist the binary embeds agrees with the bundle's
@@ -35,6 +36,8 @@ const EDIT_TYPE: &str = "org.apertrust.edit";
 /// The edit's ProgID on Windows, Apertrust's, and Apertrust Nightly's.
 const EDIT_PROGID: &str = "Apertrust.Edit";
 const NIGHTLY_EDIT_PROGID: &str = "Apertrust.Nightly.Edit";
+/// The edit's MIME type on Linux, which the MIME package declares.
+const EDIT_MIME: &str = "application/x-apertrust-edit";
 
 /// Each extension's type on macOS: the system's where it declares one (as `mdls` reports
 /// for a file of that name), else the one `Info.plist` imports; and on Linux its MIME
@@ -290,8 +293,8 @@ fn linux_opens_every_decoded_extension() {
         .find_map(|line| line.strip_prefix("MimeType="))
         .expect("a MimeType line");
     let listed: BTreeSet<&str> = line.split(';').filter(|t| !t.is_empty()).collect();
-    let wanted: BTreeSet<&str> = TYPES.iter().map(|t| t.2).collect();
-    assert_eq!(listed, wanted);
+    let wanted: BTreeSet<&str> = TYPES.iter().map(|t| t.2).chain([EDIT_MIME]).collect();
+    assert_eq!(listed, wanted, "every raw's type and the edit's");
 
     let mime = read("packaging/linux/org.apertrust.Apertrust.mime.xml");
     let declared: BTreeSet<(&str, &str)> = between(&mime, "<mime-type type=\"", "</mime-type>")
@@ -302,8 +305,26 @@ fn linux_opens_every_decoded_extension() {
             (kind, glob[0])
         })
         .collect();
-    let ours: BTreeSet<(&str, &str)> = TYPES.iter().filter(|t| t.3).map(|t| (t.2, t.0)).collect();
-    assert_eq!(declared, ours, "the MIME types shared-mime-info lacks");
+    let ours: BTreeSet<(&str, &str)> = TYPES
+        .iter()
+        .filter(|t| t.3)
+        .map(|t| (t.2, t.0))
+        .chain([(EDIT_MIME, "apxmp")])
+        .collect();
+    assert_eq!(
+        declared, ours,
+        "the MIME types shared-mime-info lacks, and the edit's"
+    );
+    let edit = between(
+        &mime,
+        &format!("<mime-type type=\"{EDIT_MIME}\">"),
+        "</mime-type>",
+    );
+    assert!(
+        edit[0].contains("<sub-class-of type=\"application/xml\"/>"),
+        "the edit is an XML file: {}",
+        edit[0]
+    );
 }
 
 /// Open With and a double-click open the photo alone, as a terminal's `apertrust FILE`
