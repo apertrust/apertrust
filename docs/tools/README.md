@@ -160,7 +160,7 @@ Port specs, tool pages and code cite these by number.
    - **Rows follow darktable's conditions.** A row darktable shows only in one mode is hidden otherwise. A control that cannot act in the current state is drawn disabled, never hidden (decision 30), but for Exposure's two camera rows, hidden where the photo gives them nothing to do (`Tool::visible`, decision 88); hiding any other row needs a decision of its own. One parameter shown under two labels by mode has one row per mode.
    - **Exposure is the one exception** (decision 88): its page is redesigned. A Manual | Automatic switch replaces the Mode list, and Picker target with a reference replaces Area exposure mapping and measure mode; it adds Last pick with its warnings and labels with the camera's value, and drops Auto, while its controls, bindings and processing stay darktable's ([exposure.md](exposure.md#the-page-as-redesigned)).
 6. **Lossless views** (decision 2). Where darktable shows the same stored values twice, the second is a second row, an exact, invertible change of coordinates the tool gives ([below](#lossless-views)). Nothing is stored twice.
-7. **Presets are darktable's,** from `init_presets`, in the header's presets menu.
+7. **Presets are darktable's,** from `init_presets`, in the menu of the header's presets button.
    - Applying one is one change and one history step.
    - darktable's auto-applied workflow presets are Apertrust's defaults already.
    - A preset that sets a fixed parameter or a mode not ported is left out, and the tool's page says so.
@@ -179,6 +179,10 @@ Port specs, tool pages and code cite these by number.
     - A preset row's option takes none: it writes every control itself (`Tool::preset`).
     - A range that follows other controls clamps a value it leaves outside in the same change (decision 30).
     - darktable's session memory, values its GUI keeps but no edit stores, is not mirrored.
+14. **Menus** (decision 91; [gui.md](../gui.md#context-menus)). A tool takes no right-click: its header, body and controls open no context menu, a control keeping its own gesture (a slider's fine control, a picker button's area).
+    - Its own menu is its header's ⋯, its presets the header's presets button.
+    - Planned: it may add items to the photo's and a thumbnail's right-click menus, at most two each, and to its own ⋯, at most four, declared in `Definition::menus`, each naming one of its own actions (`Row::Action`, a button of `Row::Buttons`) and placed by its `section` (from `EDIT` to below `LAYOUT`, after Reset) and `order`, as the app's own items are, which the registry holds as `tool-<tool>-<action>`. A tool with nothing to add declares nothing, and a utility declares its items in `utility::UTILITIES` (`Utility::menus`, planned too).
+    - Every item it adds is reachable without a right-click, and each one in the photo's or a thumbnail's menu is listed on the tool's page.
 
 ### Switched tools
 
