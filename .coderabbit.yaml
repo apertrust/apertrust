@@ -6,6 +6,11 @@ language: en-GB
 reviews:
   profile: chill
 
+  # Changes requested while its comments are open, approval once they are resolved and
+  # the latest commit is reviewed: the pull request's one required approval.
+  auto_approvals:
+    enabled: true
+
   auto_review:
     # Every pull request, a stacked one based on another's branch too.
     base_branches:
