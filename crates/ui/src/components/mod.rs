@@ -216,18 +216,35 @@ pub fn context_menu(
 
 /// Whether `response` was right-clicked this frame, or on the Mac clicked with Control
 /// held, which asks for its menu as a right-click does (decision 91): that click is then
-/// no click, so its caller takes no primary action for it.
+/// no click, so its caller takes no primary action for it. Control is read from the
+/// button's coming up over `response`, which a release of Control later in the same frame
+/// does not undo.
 pub fn context_click(ctx: &egui::Context, response: &Response) -> bool {
     let mac = ctx.os() == egui::os::OperatingSystem::Mac;
-    let control = || ctx.input(|i| i.modifiers.ctrl);
+    let control = || {
+        ctx.input(|i| {
+            i.events.iter().any(|event| {
+                matches!(event, egui::Event::PointerButton {
+                    pos,
+                    button: egui::PointerButton::Primary,
+                    pressed: false,
+                    modifiers,
+                } if modifiers.ctrl && response.interact_rect.contains(*pos))
+            })
+        })
+    };
     response.secondary_clicked() || (mac && response.clicked() && control())
 }
 
 /// Whether `response`'s element asked for its menu this frame other than by the pointer
 /// (decision 91): AccessKit's ShowContextMenu for it, or the menu key or Shift+F10 while it
-/// has the focus, each taken out of the frame's input.
+/// has the focus, each taken out of the frame's input. It tells screen readers the element
+/// has a menu, so they offer ShowContextMenu for it.
 pub fn menu_asked(ctx: &egui::Context, response: &Response) -> bool {
     let focused = response.has_focus();
+    ctx.accesskit_node_builder(response.id, |node| {
+        node.add_action(egui::accesskit::Action::ShowContextMenu);
+    });
     ctx.input_mut(|i| {
         let mut asked = false;
         i.consume_accesskit_action_requests(response.id, |request| {

@@ -647,7 +647,13 @@ fn screen_readers_ask_for_a_cell_s_menu() {
     harness.run();
     let cell = harness.get_by_label("IMG_0004.ARW");
     let under = cell.rect().left_bottom();
-    let (target_node, target_tree) = cell.accesskit_node().locate();
+    let node = cell.accesskit_node();
+    let show = egui::accesskit::Action::ShowContextMenu;
+    assert!(
+        node.data().supports_action(show),
+        "the cell offers its menu"
+    );
+    let (target_node, target_tree) = node.locate();
     harness.event(egui::Event::AccessKitActionRequest(
         egui::accesskit::ActionRequest {
             target_node,
@@ -690,6 +696,42 @@ fn a_control_click_on_a_cell_opens_its_menu_on_the_mac_alone() {
             assert_eq!(grid.actions, [GridPanelAction::ToggleSelected(2)]);
         }
     }
+}
+
+/// Decision 91: a Control-click on the Mac asks for the menu even when Control is let go
+/// in the frame the button comes up, after it: the click's own modifiers count.
+#[test]
+fn a_control_click_counts_control_as_the_button_came_up() {
+    let mut harness = grid_on(12, egui::os::OperatingSystem::Mac);
+    harness.run();
+    let at = harness.get_by_label("IMG_0002.ARW").rect().center();
+    let ctrl = egui::Modifiers {
+        ctrl: true,
+        ..egui::Modifiers::NONE
+    };
+    let button = |pressed| egui::Event::PointerButton {
+        pos: at,
+        button: egui::PointerButton::Primary,
+        pressed,
+        modifiers: ctrl,
+    };
+    harness.input_mut().events.extend([
+        egui::Event::PointerMoved(at),
+        egui::Event::ModifiersChanged(ctrl),
+        button(true),
+    ]);
+    harness.step();
+    // The button comes up, then Control, in one frame.
+    harness.input_mut().events.extend([
+        button(false),
+        egui::Event::ModifiersChanged(egui::Modifiers::NONE),
+    ]);
+    harness.step();
+    harness.run();
+    let grid = harness.state();
+    assert_eq!(grid.menus.len(), 1);
+    assert_eq!((grid.menus[0].photo, grid.menus[0].at), (2, at));
+    assert!(grid.actions.is_empty(), "{:?}", grid.actions);
 }
 
 /// A window with the grid panel as a column at `position`, `columns` wide as its edge
