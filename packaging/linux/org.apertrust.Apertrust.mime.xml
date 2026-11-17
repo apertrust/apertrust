@@ -2,8 +2,9 @@
 <!--
 	Installed as share/mime/packages/org.apertrust.Apertrust.xml: the raw formats rawler
 	decodes that shared-mime-info does not name, each a kind of image/x-dcraw as its raw
-	types are. The others are shared-mime-info's own, which the desktop file lists too
-	(crates/app/tests/packaging.rs holds both to apertrust_raw::extensions()).
+	types are, and Apertrust's own type, the edit (.apxmp), an XML file. The others are
+	shared-mime-info's own, which the desktop file lists too (crates/app/tests/packaging.rs
+	holds the raws' to apertrust_raw::extensions(), and the edit's to its own).
 -->
 <mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
 	<mime-type type="image/x-apple-qtk">
@@ -35,5 +36,11 @@
 		<sub-class-of type="image/x-dcraw"/>
 		<generic-icon name="image-x-generic"/>
 		<glob pattern="*.ori"/>
+	</mime-type>
+	<mime-type type="application/x-apertrust-edit">
+		<comment>Apertrust edit</comment>
+		<sub-class-of type="application/xml"/>
+		<generic-icon name="text-x-generic"/>
+		<glob pattern="*.apxmp"/>
 	</mime-type>
 </mime-info>
