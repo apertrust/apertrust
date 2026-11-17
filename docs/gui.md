@@ -3205,7 +3205,7 @@ Every tool, a processing tool or a utility, has one header, one page and one ⋯
 | Processing tool | `ProcessingDefinition` (today's `Definition`), embedding it, with controls, version, switched, layers, Auto, preset rows (`preset_rows`), views, pickers and facts | `ProcessingTool` (today's `Tool`), run by the engine's session | `dt_iop_module_so_t`, `iop_api.h`'s non-GUI half |
 | Utility | `UtilityDefinition` (today's `Utility`), embedding it, with `measures` | `UtilityTool`, in the app: `body`, its widgets drawn each frame, and `reset`, provided as no-ops but `body` | `dt_lib_module_t`, `lib_api.h` |
 
-- **One header, page drawer and ⋯** in the app take `&ToolDefinition` and build `apertrust-ui`'s `Section`, which keeps no tool types (decision 36): ↺ where the tool has a reset, presets where it has presets, ⋯ holding its declared items at `Place::Options` before the layout's ([Context menus](#context-menus)), an item naming an alternate action where it has one, as Truncate History is Compress History's. ↺ is a processing tool's `ResetTool`, a registry action (History's `reset`), the utility's own `UtilityTool::reset` (Export's Default settings), or absent (Scopes, Browse).
+- **One header, page drawer and ⋯** in the app take `&ToolDefinition` and build `apertrust-ui`'s `Section`, which keeps no tool types (decision 36): ↺ where the tool has a reset, presets where it has presets, ⋯ holding its declared items at `Place::Options` before the layout's ([Context menus](#context-menus)); History's Truncate History is an item of its own there, no longer Compress History's alternate. ↺ is a processing tool's `ResetTool`, a registry action (History's `reset`), the utility's own `UtilityTool::reset` (Export's Default settings), or absent (Scopes, Browse).
 - **One `Context` for every utility:** the mirror, the settings, the words and the frame's command list. History's steps, Browse's folder, Scopes' measurements and Export's jobs are the mirror's; Export's choices are settings.
 - **A utility's page uses the same rows.** `UtilityDefinition::check` refuses a row that edits: one naming a control, a preset row, a picker's rows and a computed value. Settings, labels, groups, `Row::WhenSetting`, actions and buttons, and custom rows naming no control, remain.
 - **Variation goes into custom widgets,** each a `Widget` drawn through one `match` in the app, its egui code in its utility's module, taking that utility's state and returning its actions.
@@ -3216,7 +3216,7 @@ Every tool, a processing tool or a utility, has one header, one page and one ⋯
 | Processing tools | As now; the tone equalizer's graph a custom row |
 | Export | Groups of setting rows, format-specific rows shown for their formats, the path line a custom row, presets in the header ([The Export tool](#the-export-tool)) |
 | Scopes | A setting row for which scope, drawn as its buttons over the graph are today, the graph a custom row |
-| History | The steps a custom row; ↺ the `reset` action; ⋯ holding Compress History (Truncate History its alternate while Option is held), Create a Style… and Discard History… as declared items |
+| History | The steps a custom row; ↺ the `reset` action; ⋯ holding Compress History, Truncate History, Create a Style… and Discard History… as declared items |
 | Browse | The recents line a custom row; a Folders group holding the tree as a custom row |
 
 - **Each utility keeps its look** on the page model: its custom widgets draw what its module draws today, and a change of look is a design question of its own.

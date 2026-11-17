@@ -87,7 +87,7 @@ pub trait UtilityTool {
 
 - **The app draws every tool's header, page, ⋯ menu, open state and layout from `&ToolDefinition`,** so ↺, presets and ⋯ behave alike in every tool. This departs from darktable, which builds the header twice (`dt_iop_gui_set_expander`, `dt_lib_gui_get_expander`).
 - **`apertrust-ui` keeps no tool types** ([0036](0036-the-design-system.md)): the app turns a `ToolDefinition` into the design system's `Section` and rows.
-- **The header's buttons follow the declaration:** ↺ where `reset` is not none, presets where `presets` is true, ⋯ always, holding the tool's declared `MenuItem`s at `Place::Options` before the layout's items (decision 91). History's Compress History, Create a Style… and Discard History… become such declared items, as built today in its ⋯ (`history::options`). Truncate History stays Compress History's alternate, shown in its place while Option (Alt) is held: a declared item may name an alternate action, which the popup service's alternate item draws (`popup::Item::alternate`).
+- **The header's buttons follow the declaration:** ↺ where `reset` is not none, presets where `presets` is true, ⋯ always, holding the tool's declared `MenuItem`s at `Place::Options` before the layout's items (decision 91). History's Compress History, Truncate History, Create a Style… and Discard History… become such declared items, four, ⋯'s most. Truncate History, built as Compress History's alternate while Option (Alt) is held (`history::options`), becomes an item of its own, so a declared item stays one action and `MenuEntry` needs no alternate.
 
 ### A utility's page
 
@@ -102,7 +102,7 @@ pub trait UtilityTool {
 | Tone equalizer | As now, its graph a custom row |
 | Export | Groups of setting rows (Storage options, Format options and the rest of [0090](0090-export-as-a-photos-tab-tool.md)), format-specific rows shown only for their formats (`Row::WhenSetting`), the path line a custom row, presets in the header |
 | Scopes | A setting row for which scope, drawn as its buttons over the graph are today, the graph a custom row |
-| History | The steps a custom row; ↺ the `reset` action; ⋯ holding Compress History (Truncate History its alternate), Create a Style… and Discard History… as declared items |
+| History | The steps a custom row; ↺ the `reset` action; ⋯ holding Compress History, Truncate History, Create a Style… and Discard History… as declared items |
 | Browse | The recents line a custom row; a Folders group holding the tree as a custom row |
 
 ### darktable's `lib_api.h`, and where each part goes
@@ -126,7 +126,7 @@ Each step is one pull request, reviewed before the next.
 1. **93.1, the renames and the parent,** mechanical, with no behaviour change: `Definition` to `ProcessingDefinition`, `Utility` to `UtilityDefinition`, the trait `Tool` to `ProcessingTool` (about 250 uses), `Definition::presets` to `preset_rows`, and the shared fields into `ToolDefinition`, `Utility::menus` among them. The docs' names follow in the same pull request.
 2. **93.2, `UtilityTool` in the app,** with History, Scopes and Browse implementing it, Browse joining `UTILITIES`, `main.rs` calling them through the trait.
 3. **93.3, one header and ⋯** for every tool in `TOOLS` and `UTILITIES`, from `&ToolDefinition`; Export's comes with step 93.5, when it joins `UTILITIES`.
-4. **93.4, the utilities on the page model:** Scopes, the smallest, first, then History, then Browse.
+4. **93.4, the utilities on the page model:** Scopes, the smallest, first, then History, its ⋯ as declared items with Truncate History an item of its own, then Browse.
 5. **93.5, Export's page as setting rows,** with its presets: Export implements `UtilityTool` and joins `UTILITIES`, its section drawn by `export.rs` until then.
 
 ## Options considered
@@ -137,7 +137,7 @@ Each step is one pull request, reviewed before the next.
 - **A shared header only,** each utility's page still written by hand: the header would agree, but setting rows, their presets and a check on what a utility may show would not be shared, and Export's and Import's rows would stay two codes.
 - **The header built per kind, as darktable's two expanders:** two codes to keep alike for one block that looks the same.
 - **`apertrust-tools` depending on `apertrust-export`,** so Export's rows name typed settings: it couples the tool layer to one utility's crate and its writers; keys as strings with a test against the schema keep the boundary and fail as early.
-- **Truncate History as an item of its own in History's ⋯:** simpler to declare, but a change to a built menu the model does not need.
+- **Truncate History kept as Compress History's alternate,** shown while Option is held: a declared item would need to name a second action, a field of `MenuEntry` for one item, and the alternate is hidden from anyone who doesn't know to hold Option.
 - **Keeping "section" for utilities,** or "utility" as a level beside tools: two names for what the side panel shows, moves and floats alike, rejected already in [0004](0004-tools-for-people-operations-for-algorithms.md).
 
 ## Consequences
