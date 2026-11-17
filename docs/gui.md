@@ -233,7 +233,7 @@ An interface for photo editing must not be too contrasty, so:
 - **Icons sit a step darker than text.** An icon in a button is drawn in `text_secondary` at rest.
   - An icon-only button (`IconButton`) draws it in `text_strong` under the pointer and while on, and in `accent_text` while held down ([below](#checkboxes-text-buttons-and-icon-buttons), decision 81).
   - Other icons in controls, a section's chevron and the central bar's and the scopes' own buttons, are drawn in `text` while the pointer is over them, they are pressed, a key has focused them or their menu is open (`icon_colour` and `icon_lit` in `components/mod.rs`).
-  - In a button with a word, the top panel's Import…, Export… and Reset, only the icon is `text_secondary`; the word keeps `text`.
+  - In a button with a word, the top panel's Import…, Export… and Reset, and from Phase 3 every toolbar item while Toolbar Labels is on ([The top panel](#the-top-panel), decision 92), only the icon is `text_secondary`; the word keeps `text`.
   - An icon button that is on shows its filled icon in `text_strong`, a disabled icon `text_disabled`, and the warning sign and the accent stay as they are.
   - Data marks (stars, Reject, colour labels, a cell's marks), the side panel's tab icons (already secondary at rest), the window's caption buttons and the kept marker are not part of this.
 - **Headings are Medium, not SemiBold:** dialog titles (About and its pages, Settings, the Import sheet), `group_label`'s 11-point capitals, the jobs window's row titles and tool and section titles. SemiBold is kept where it marks a choice: the chosen tab, a dropdown filter's matches, the active photo's name.
@@ -303,7 +303,7 @@ One model for the three controls, as the wireframe's "Controls · checkboxes, te
 
 - **The checkbox** (`Checkbox`, in `ToggleRow` and Linux's alert): a 14-point box at the start, `radius_small`, a 1-point edge, its label after it, both the target. A ticked box is neutral, never amber, its tick 1.5 points.
 - **Text buttons** (`Button`): 22 points high (`sizes.control`), 8 points at each end, `radius`, body text; at least a given width with its words at its start (`Button::width`), and the keys that do the same at its end in `text_secondary` (`Button::keys`), as the central panel's Open Folder… and Open… under a folder that failed. Default, a plate, for dialogs' rows, the jobs and log windows, the log's newer-lines button, About, the central panel's cards, a tool's action row (`ActionRow`); primary (`Button::primary`), amber with `text_on_accent`, one in a dialog: Export's Export and an alert's default. A destructive button's words are `text`, as any button's: its words say what it does.
-- **Quiet buttons** (`ToolButton`): a plate only while touched, on the bars alone, the top panel's Import…, Export… and Reset, so a row of them is no wall of boxes.
+- **Quiet buttons** (`ToolButton`): a plate only while touched, on the bars alone, the top panel's Import…, Export… and Reset, and from Phase 3 the toolbar's labelled items (decision 92), so a row of them is no wall of boxes.
 - **Icon buttons** (`IconButton`) draw no plate in any state; the icon says it all (decision 81, the wireframe's "Controls · icon-only buttons: no plates, the filled icon for On" board).
   - At rest the outline icon in `text_secondary`; under the pointer the same icon in `text_strong`, high contrast adding its 1-point `button_edge` outline round the button, kept while it is held down; held down, the icon in `accent_text`, feedback only, never a state; focused by a key, the focus ring; disabled, `text_disabled`.
   - On, a toggle that is on, a quad's picker in use and a button whose menu is open, shows the icon's filled form in `text_strong` (`Icon::filled`): the central bar's toggles, the grid bar's Labels, the pipette and the quads' line. An icon of lines and dots alone has no shape to fill and shows On by `text_strong` alone, as under the pointer: ⋯, ⋮, », ☰, ＋ and Sort, each a button whose menu hanging from it shows that it is open, and which tells screen readers so (`pull_down`). Every toggle has a filled form.
@@ -395,19 +395,19 @@ What the menus hold is [the menu bar](#the-menu-bar)'s. Built: the frames of the
 | Platform | Frame | The top panel's caption parts | Empty areas of the top panel |
 | --- | --- | --- | --- |
 | macOS | A full-size content view, a transparent title bar, the title hidden | The traffic lights, AppKit's own buttons, centred vertically in the 44-point top panel; the top panel starts after them | A drag moves the window; a double-click does what the system's setting says (`AppleActionOnDoubleClick`: zoom, minimise or nothing) |
-| Windows | Decorations off, winit's undecorated shadow and Windows 11's rounded corners | Minimise, maximise or restore, and close at the end, drawn by the app | A drag starts the system's move, with Aero Snap at the screen's edges; a double-click maximises or restores; a right-click opens the system menu |
-| Linux, X11 and Wayland, every desktop | Decorations off: neither GNOME, KDE nor an X11 window manager draws a title bar | As on Windows: minimise, maximise and close at the end, until the desktop's own layout is read from the settings portal | A drag hands the move to the window manager or compositor, its edge tiling included; a double-click maximises or restores; a right-click opens the compositor's window menu on Wayland, nothing yet on X11 |
+| Windows | Decorations off, winit's undecorated shadow and Windows 11's rounded corners | Minimise, maximise or restore, and close at the end, drawn by the app | A drag starts the system's move, with Aero Snap at the screen's edges; a double-click maximises or restores; a right-click opens the system menu, and from Phase 3 the toolbar menu, the system menu then on Alt+Space alone (decision 92) |
+| Linux, X11 and Wayland, every desktop | Decorations off: neither GNOME, KDE nor an X11 window manager draws a title bar | As on Windows: minimise, maximise and close at the end, until the desktop's own layout is read from the settings portal | A drag hands the move to the window manager or compositor, its edge tiling included; a double-click maximises or restores; a right-click opens the compositor's window menu on Wayland, nothing yet on X11, and from Phase 3 the toolbar menu, the compositor's menu then on its own key (Alt+Space on GNOME; decision 92) |
 
 #### Every platform
 
-- **`TopPanel` stays platform-free.** It is told its leading inset, whether to draw caption buttons and whether the window is maximised. It reports a drag starting, a double-click or a right-click on its empty areas, and the caption buttons' clicks, which the app turns into viewport commands (`StartDrag`, `Maximized`, `Minimized`, `Close`, and winit's `show_window_menu` through the window eframe hands over). On Windows it will also report the rectangles the hit map needs.
+- **`TopPanel` stays platform-free.** It is told its leading inset, whether to draw caption buttons and whether the window is maximised. It reports a drag starting, a double-click or a right-click on its empty areas (from Phase 3 a right-click anywhere on it, with what is under it, for the toolbar menu; decision 92), and the caption buttons' clicks, which the app turns into viewport commands (`StartDrag`, `Maximized`, `Minimized`, `Close`, and winit's `show_window_menu` through the window eframe hands over). On Windows it will also report the rectangles the hit map needs.
 - **The window never moves by its background** (`with_movable_by_background(false)`), so dragging a slider never moves it.
 - **A move starts when a drag does,** not on the press, so a double-click on the top panel stays a double-click. The drag must go egui's click distance, 6 points, or the press be held 0.8 s; the window then trails the pointer by that much (a 40-point drag moved it 31 to 32 points on the M4).
 - **What counts as empty** is read from the pointer, not from a widget under the bar, which would take from each control egui's 5-point margin, within which a near press goes to the closest control. The top panel's controls with that margin, disabled ones included, are not empty areas: a drag or a double-click on a greyed-out Undo does nothing. Its title and the status slots at its end, while they show nothing or Saving…, are empty areas; the save warning and the jobs spinner are not, and nothing under a popup over the bar is. Each new press may move the window again, since the system's window drag can swallow the last release.
 - **The window keeps its title,** hidden in the Mac's frame, for Mission Control, the Window menu, the taskbar and screen readers. With a user data folder other than the default, it ends with the folder's name, "Apertrust — work" (decision 89, planned; [Instances and windows](#instances-and-windows)).
 - **Scale.** Everything the frame draws is in points, so it follows a monitor's scale; on Windows winit applies the system's suggested rectangle on `WM_DPICHANGED`.
 - **The minimum window size** is 500 by 600 points on every platform, so Windows 11's half and third snap zones take the window (Microsoft asks for 500 effective pixels or less), and macOS's and the Linux desktops' tiling gain too. The quarter zones need a height of about 520 on a 1080-pixel screen, which 600 keeps out.
-  - Below 960 points the shell gives way: the top panel drops its words, the ☰ of Windows and Linux never folding (decision 39), in the order [the top panel](#the-top-panel) gives, down to Undo, Redo and ⋯.
+  - Below 960 points the shell gives way: the top panel drops its words, the ☰ of Windows and Linux never folding while shown (decisions 39 and 92), in the order [the top panel](#the-top-panel) gives, down to Undo, Redo and ⋯ (» with the toolbar).
   - How the side panel narrows, hides or lies over the photo in a narrow window is an open design item.
   - The minimum is lowered in code (`WINDOW_MIN`) only once the shell gives way, so no window ever shows a broken layout.
 
@@ -515,7 +515,7 @@ Through muda: built once the window exists, on the main thread, and handed to Ap
 
 One menu button, ☰, at the very start of the top panel, before the mark (decision 39), with the look and keys [the menu bar](#the-menu-bar) gives it. The Mac has no ☰: its menus are the native menu bar's.
 
-- **The button:** an icon button like the top panel's others, 30 points square, which never folds, so the menus cost neither height nor a line of their own. `TopPanel` draws it and reports `Menu`, as it reports its caption buttons.
+- **The button:** an icon button like the top panel's others, 30 points square, which never folds while shown, so the menus cost neither height nor a line of their own. From Phase 3 a person may hide it from the toolbar (decision 92, [The top panel](#the-top-panel)): F10, Alt alone on Windows and Alt with an access key still open the menu, hung from the toolbar's start, and View › Panels and the toolbar menu offer Show Menu Button. `TopPanel` draws it and reports `Menu`, as it reports its caption buttons.
 - **The menu:** one, drawn in the theme, listing the top-level menus of `MENUS` (File, Edit, Photo, Layer from Phase 4, View, Help) as submenus, with items, a shortcut column, check marks, separators, submenus and disabled items. AccessKit's menu roles, so Narrator and Orca read them as menus.
   - It is a pull-down from a button through [the popup service](#popups) (decision 40), drawn on Windows and Linux as every popup is there, so one drawn menu serves it and every other pull-down; there is no `MenuBar` component.
   - The popup service knows nothing of actions: the app turns `MENUS` into a request of entries with string ids and gets back the id chosen.
@@ -765,6 +765,9 @@ Phase 4: the menu appears with Layers, and its keys are set with their design. I
 | Side Panel | `side-panel` | — | New, Phase 3, proposed. No item hides the grid panel |
 | Tab Names | `panel-tab-names` | — | Built in the tab bar's ⋮; the action is new |
 | Customise Tabs… | `customise-tabs` | — | New, drawn disabled until step 7 builds it |
+| Show Menu Button, while the ☰ is hidden, on Windows and Linux | `show-menu-button` | — | New, Phase 3 (decision 92); also in the toolbar menu, and F10 reaches it with the ☰ hidden |
+| Toolbar Labels, checked while on | `toolbar-labels` | — | New, Phase 3 (decision 92); also in the toolbar menu and Settings › General |
+| Customise Toolbar… | `customise-toolbar` | — | New, Phase 3, drawn disabled, "Customise Toolbar comes in a later version", until its window is built (decision 92) |
 | Dock All Floating Panels | `dock-all` | — | New, with the floating panels in the UX pass (decision 83); also in the side panel's ⋮ |
 | Side Panel on the Right, Side Panel on the Left | `panel-right`, `panel-left` | — | New, Phase 3 |
 | Interface Size → Larger, Smaller, Normal Size | `scale-up`, `scale-down`, `scale-reset` | None by default; Settings sets the size too | Built; its keys go |
@@ -776,7 +779,7 @@ Phase 4: the menu appears with Layers, and its keys are set with their design. I
 - **The photo's zoom** has the keys macOS and commercial raw editors give a document's zoom, and Zoom to 100%, the view where the screen is the export (principle 2), has the single key Z. Both act at the point under the pointer when the pointer is over the photo. In Photo they zoom the photo, every cell together when several are shown.
 - **The layouts** join the menu with the Map and its central-bar toggle, once there are two: a choice of one is no choice. Map, chosen again, goes back to Photo, as its toggle and Shift+M do and as Zoom to 100% goes back to Fit. Choosing one changes only the central panel (decision 37).
 - **Browse** chooses the first tab holding Browse, as L does, wherever the workspace puts it. L is darktable's key for its lighttable, whose part Browse plays.
-- **Workspace** switches the side panel's tabs and nothing else; the same list is in the side panel's ⋮.
+- **Workspace** switches the side panel's tabs and the toolbar's items (decision 92, planned), nothing else; the same list is in the side panel's ⋮.
 - **Slideshow** plays the selected photos when several are selected, else the folder or album from the active photo.
 - **Clipping Warnings** is one item and one key, J, for both of the photo's clipping overlays: checked while both are on; choosing it turns both on, or both off when both are on. The scopes' corner toggles set each alone. One state, three places.
 - **Side Panel Tab** lists every tab, those under » too; only the first five have keys.
@@ -852,7 +855,7 @@ The menus open from one menu button, ☰, at the very start of the top panel, be
 | Access keys | None | On the top-level menus in the ☰'s menu, underlined while Alt is held | The same as Windows |
 | Keys spelt | By macOS, with its glyphs: ⌘⇧Z | As the tooltips spell them | As the tooltips spell them |
 
-- **A narrow top panel:** the ☰ never folds, and the menus need no room of their own, so the top panel gives way only by its actions and words ([the top panel](#the-top-panel)); every action hidden under ⋯ is also in the menus. This matters since the window's minimum width is 500 points, for Windows' snap zones (decision 39; how the side panel gives way in a narrow window is an open design item, [Open questions](#open-questions)).
+- **A narrow top panel:** the ☰ never folds while shown, and the menus need no room of their own, so the top panel gives way only by its actions and words ([the top panel](#the-top-panel)); every app action hidden under ⋯ (» with the toolbar, decision 92) is also in the menus; a tool's action folded into » is always in its tool, and in a menu where the tool declares one (decision 91). This matters since the window's minimum width is 500 points, for Windows' snap zones (decision 39; how the side panel gives way in a narrow window is an open design item, [Open questions](#open-questions)).
 - **Inside an open menu,** typing a letter moves to the next item whose name starts with it, and Enter runs it, as menus without item access keys do on Windows; screen readers announce the item.
 
 **What the platforms provide.** macOS performs Services, Hide, Hide Others, Show All, Minimise, Zoom, its tiling items, Bring All to Front, the window list and the Help search, and adds AutoFill, Start Dictation… and Emoji & Symbols to Edit; these stay, Dictation included. It can also add full-screen and tab-bar items of its own to View: the menu has its own full-screen item, and Apertrust's windows have no tabs, so neither may appear (decision 39's checks). Windows keeps the window menu, Alt+Space, outside the menus. On Linux Apertrust draws everything.
@@ -1099,7 +1102,7 @@ Planned (decision 91). A right-click menu opens only in a named place, and tools
 | A History step | No | Go to Step, Show Tool, Compress up to Here, Truncate after Here | Later |
 | The jobs window's rows | No | Cancel, Show in Folder, Copy Error | Later |
 | A layer, the scopes, a tab's icon | No | — | With them |
-| The top panel's empty areas | Never | The system's window menu ([The window frame and menus](#the-window-frame-and-menus)) | — |
+| The top panel, an item or its empty areas (`TopPanel`) | No | The toolbar menu: Hide "Undo", Show Menu Button, Toolbar Labels, Customise Toolbar… ([The top panel](#the-top-panel), decision 92) | Phase 3 |
 
 A place opens to tools' items only by a decision of its own.
 
@@ -2348,7 +2351,7 @@ The model's words:
 
 - **one view** for the model;
 - **layout** for what the central panel shows: Photo and later Map;
-- **workspace** for a named, saved set of the side panel's tabs, built in or the user's own, switched only when the person asks ([Workspaces](#workspaces));
+- **workspace** for a named, saved set of the side panel's tabs and the toolbar's items, built in or the user's own, switched only when the person asks ([Workspaces](#workspaces));
 - **Folder**, **Album**, **Smart album** and **Group** for what Browse shows.
 
 ### The regions
@@ -2472,9 +2475,9 @@ With several photos selected, the rating, reject and label keys, Apply Edit and 
 
 ### Workspaces
 
-A workspace is a named, saved set of the side panel's tabs, built in or the user's own. It is switched only when the person asks, and never with the central panel's layout.
+A workspace is a named, saved set of the side panel's tabs and the toolbar's items (decision 92, planned), built in or the user's own. It is switched only when the person asks, and never with the central panel's layout.
 
-- **What one holds:** its tabs in order, each with its id, name and icon, its sections in order and which of them are pinned; the sections that float, and the tab each left (decision 83); and the side the panel sits on. Not the panel's width nor a floating panel's place and width, which suit a screen rather than a task; not the central panel's layout, the theme or the keys; never a photo or an edit.
+- **What one holds:** its tabs in order, each with its id, name and icon, its sections in order and which of them are pinned; the sections that float, and the tab each left (decision 83); the side the panel sits on; and the toolbar's items, from Phase 3 (decision 92, [The top panel](#the-top-panel)). Not the panel's width nor a floating panel's place and width, which suit a screen rather than a task; not the central panel's layout, the theme or the keys; never a photo or an edit.
 - **Built in.** Each may leave tools out: Customise tabs lists what a workspace leaves out, and every side-panel tool stays in at least one workspace, Edit holding them all, and Export stays in every workspace, so Ctrl+E always has a place to reveal it (decision 90). Import tools belong to the Import sheet and are in no workspace (decision 86).
   - **Edit,** the default: Photos, Adjust, Detail, Geometry, Effects, Raw and History, the tools grouped by editing stage between Apertrust's own two (decision 38; [The tabs](#the-tabs-by-editing-stage)), with Scopes and Layers pinned in the editing tabs. It opens on Adjust.
   - **darktable,** from Phase 3, for people coming from darktable (decision 38): Photos, Base, Colour, Correct, Effect and History, darktable's scene-referred groups with darktable's lists and order, Scopes and Layers pinned in the four groups. It opens on Base.
@@ -2482,7 +2485,7 @@ A workspace is a named, saved set of the side panel's tabs, built in or the user
   - **Map,** with the map: the Photos tab first, holding the Location section; then the rest.
 - **Changing and saving.** Dragging a section's header, its ⋯ menu's items, Customise tabs, renaming a tab, moving, pinning or floating a section change the current workspace, kept at once, as every setting is; so does editing the settings file, where the built-in workspaces can always be changed ([What the file looks like](#what-the-file-looks-like)). None of it is an edit: no step in the history, never undone by Undo (decision 83). View › Workspace › Save as Workspace… keeps a copy of the current one under a new name, as the user's own. Rename Workspace… and Delete Workspace… act on the user's own; Reset Workspace takes a built-in one back to how it shipped.
 - **Switching:** View › Workspace →, listing them with the current one checked; the side panel's ⋮ holds the same list. No default keys: the first nine by position are actions a user may give keys, as the side panel's tabs are by position.
-  - A switch changes only the side panel: the central panel, the selection and what every key acts on stay. The tab shown is the one last shown in that workspace; a section's open or closed state is the same in every workspace.
+  - A switch changes only the side panel and the toolbar (decision 92, planned): the central panel, the selection and what every key acts on stay. The tab shown is the one last shown in that workspace; a section's open or closed state is the same in every workspace.
   - Nothing switches it but the person: no layout, photo or tab changes the workspace.
 - **Kept** in settings ([Settings and workspace](#settings-and-workspace)): the current workspace by id; what the user changed in a built-in one; the user's own whole; in each, the tab last shown.
 - **What a script sees:** nothing; workspaces are interface state.
@@ -2512,6 +2515,8 @@ Import and Print are full-window sheets and the slideshow an action (decisions 3
 
 `TopPanel` in `apertrust-ui`, drawn on the [UI wireframe](https://claude.ai/artifact/V4r2xReSqn344AQstUgeiK)'s board for the top panel, whose tweaks show both platforms, both themes and the narrow widths. Built: the order, the groups and the narrowing's steps; the mark at its start, which never folds, and before it the ☰ where the app asks for it (`menu_button`, drawn on Linux), which never folds either.
 
+**A toolbar a person customises** (decision 92, planned for Phase 3). The order below becomes the default of one list of item ids kept for each workspace, `[workspaces.<id>] toolbar`. Everything but the caption buttons and the Mac's traffic lights may be moved or hidden: the ☰, the mark, the save state, the jobs, an assistant's connection and every action ([The toolbar](#the-toolbar)).
+
 - **Order.**
   - macOS: the traffic lights and the mark; Import…, Export…, Cull, Reset, Undo, Redo; Copy edit and Apply edit, as icons; the empty strip that moves the window; the jobs spinner ([The jobs window](#the-jobs-window), decision 57), an assistant's connection and the save state ([The edit, saved](#the-edit-saved)).
   - Windows and Linux: the menu button, ☰, and the mark, with no menu titles (decision 39); the same actions; the empty strip and the same end; minimise, maximise or restore, close.
@@ -2519,20 +2524,20 @@ Import and Print are full-window sheets and the slideshow an action (decisions 3
   - **Fixed slots.** The jobs spinner and the save state each keep a slot of fixed width, the width of its widest form at the current fold step (the save state's: Saving… or the warning with its word, folded "…" or the sign alone; the spinner's: one button), in that order, reserved whether it shows anything or not. So the spinner coming or going, or the save state changing between nothing, Saving… and Not saved, moves neither the other nor anything else in the panel. While a slot shows nothing it is part of the strip that moves the window.
   - Slideshow and Copy or Apply Parts are not in the top panel: they are in View › Slideshow and Edit › Copy or Apply Parts…. Cull arrives with culling in Phase 3, where what it opens is still to be designed; until then it is drawn on the wireframe only.
 - **No layout switcher:** the central bar's Map toggle switches the central panel between Photo and the map ([The central bar](#the-central-bar)).
-- **No Settings button:** Settings is in the app menu on the Mac and on Ctrl+, (⌘,); on Windows and Linux also last in Edit in the ☰'s menu ([the menu bar](#the-menu-bar)).
+- **No Settings button** in the default: Settings is in the app menu on the Mac and on Ctrl+, (⌘,); on Windows and Linux also last in Edit in the ☰'s menu ([the menu bar](#the-menu-bar)). Settings… is offered for the toolbar (decision 92).
 - **Groups** are told apart by space, never a separator line: `spacing.xl`, 16 points, between Redo and Copy edit and, on Windows and Linux, before the caption buttons, against the usual gap between buttons. The ☰ and the mark stand at the usual gap between buttons, as the mark and Import do.
 - **The mark**, in a 20-point square: the app icon's own mark, the Slider A, in its simplified drawing, alone and in one colour (`crates/ui/assets/icons/mark.svg`, drawn by resvg like the icons and tinted `text_secondary`).
   - Amber marks what is chosen (the tab underline, the active photo's outline, the active curve point), and the top panel is part of the photo's surround, so the mark stays neutral, its marker in the A's colour; the cut round the marker still shows it without colour. It takes `text_secondary` rather than `text`, so it is not read as the first of the actions.
   - A click on it opens About ([Help](#help)). It is not drawn as a button: no hover and no tooltip, the mark alone at 20 points in a 30-point square, the other icon buttons' size. Screen readers hear a button named About Apertrust, and a key can focus and press it, with the focus ring. Being a control, it is not part of the area that moves the window.
   - No name beside it: the Mac's app menu, the window's title and About carry the name. The colour mark, the app icon and the full logo are for where the logo stands alone, away from the photo.
-- **Keys and screen readers.** F6 into the top panel lands on its first control: the mark on the Mac, the ☰ on Windows and Linux. The ☰ is in the Tab order like the other buttons, also opens on F10, and with a top-level menu expanded on Alt and that menu's access key (decision 39). The caption buttons are last. Map's key, Shift+M, goes with the central bar's Map toggle ([The central bar](#the-central-bar)); Photo has none.
+- **Keys and screen readers.** F6 into the top panel lands on its first control: the mark on the Mac, the ☰ on Windows and Linux; with the toolbar, whatever item is first, and with nothing focusable F6 skips the region. The ☰ is in the Tab order like the other buttons, also opens on F10, and with a top-level menu expanded on Alt and that menu's access key (decision 39). The caption buttons are last. Map's key, Shift+M, goes with the central bar's Map toggle ([The central bar](#the-central-bar)); Photo has none.
 - **What a script sees:** nothing new: the actions send the commands their buttons send.
 - **A card coming in** (planned, step 20c; decision 85): while a card with photos not imported is in, Import… gains a dot, `accent`, 6 points, at its icon's top end, and keeps it when the words fold; its tooltip names the card and its new photos ("EOS_DIGITAL: 214 new photos"), and screen readers hear it once, politely. Import then opens with the card chosen. Settings › Import's When a card is connected can make Import open by itself instead ([The Import sheet](#the-import-sheet)). Browse's Import… carries the same dot and tooltip (decision 90).
 - **When.** Built: the mark as About's button, the order and the narrowing's steps; the traffic lights' inset on the Mac ([The frame](#the-frame)); the ☰ and its menu and the caption buttons on Windows and Linux.
 
 #### Narrowing
 
-The top panel measures its parts at the current scale and language each frame and gives way one step at a time, undoing a step only with 16 points to spare so a resize never flickers:
+As built, before the toolbar, whose overflow takes its place in Phase 3 ([The toolbar](#the-toolbar), decision 92), its words then off by default: the top panel measures its parts at the current scale and language each frame and gives way one step at a time, undoing a step only with 16 points to spare so a resize never flickers:
 
 1. the actions' words go: Import, Export, Cull and Reset become icons, like the rest;
 2. every action but Undo and Redo moves into ⋯ More actions, which lists them with their keys;
@@ -2552,6 +2557,87 @@ Where each step starts is measured by a test in every language. The status slots
 Linux needs 38 points more for the ☰, its 30 points and the 8-point gap after it. The narrowing test checks at every width, in every language, that 24 points of empty panel are left, the ☰ included.
 
 Never folded: the ☰ on Windows and Linux, the mark, the save warning's sign, an assistant's connection, the caption buttons, and 24 points of empty panel to move the window by.
+
+#### The toolbar
+
+Planned (decision 92): Phase 3 builds the toolbar, its menu, tools' items, the overflow and labels; the Customise Toolbar window comes much later.
+
+**The list.** One ordered list of item ids per workspace. The caption buttons and the traffic lights are not in it; the toolbar fills the room between its start inset and its end.
+
+| Platform | The default, today's order |
+| --- | --- |
+| macOS | (the traffic lights) `mark`, `import`, `export`, `cull` (Phase 3), `reset`, `undo`, `redo`, `space`, `copy-edit`, `apply-edit`, `flexible-space`, `jobs`, `assistant` (Phase 6), `save-state` |
+| Windows, Linux | `menu-button`, then the same, then 16 points (`spacing.xl`) before minimise, maximise and close |
+
+- One list for every platform: the Mac never shows `menu-button` and never takes it out of the list.
+- **What can be placed:**
+  - the parts `menu-button` (Windows and Linux), `mark`, `jobs`, `save-state` and `assistant`, one each;
+  - the app's actions that are pressed or toggled and have an icon, one each: Import…, Export…, Export Again, Cull, Reset, Undo, Redo, Copy edit, Apply edit, Copy or Apply Parts…, Open…, Open Folder…, Before and After, Clipping Warnings, Zoom to 100%, Zoom to Fit, Full Screen, Jobs, Browse, Show in Folder, Next Photo, Previous Photo and Settings…; Before and After, Clipping Warnings, Zoom to 100% and Settings… are not in the default;
+  - tools' actions, `tool-<tool>-<action>` ([Context menus](#context-menus)), that a tool offers in `Definition::toolbar` (`ToolbarItem { action, icon }`, at most two a tool) or a utility in `Utility::toolbar`; the icon one of `apertrust-ui`'s by name, a `Row::Buttons` action taking its button's; Orientation's Rotate 90° anticlockwise and clockwise first;
+  - `space`, 16 points, and `flexible-space`, sharing what is left, any number; the overflow removes fixed spaces as it narrows.
+- **Never placeable:** hold actions (H), focus moves (F6), a set's members (the backgrounds, the workspaces), the platform's own items. Groups are told apart by space, never a line.
+- **Moving the window:** flexible spaces, the parts of a fixed space outside egui's 5-point margin round a control, and a status slot showing nothing are empty areas. On Windows the hit map's `HTCAPTION` rectangles come from the toolbar's layout, the items are `HTCLIENT`, and `HTMAXBUTTON` stays over the maximise button.
+
+**Guards:** a status part can be hidden only in its quiet states.
+
+| Hidden | What still holds |
+| --- | --- |
+| The ☰ | F10, Alt alone on Windows and Alt with an access key open the menus, hung from the toolbar's start; View › Panels and the toolbar menu gain Show Menu Button, so the keys restore it |
+| The save state | A failed write still shows its warning and Not saved at the toolbar's end; the message over the photo, the live region and the quit alert unchanged |
+| The jobs | The spinner shows while a failed job is left; View › Jobs and Ctrl+Shift+J still work |
+| The assistant | It shows whenever an assistant is connected |
+| The mark | About stays in Help on Windows and Linux and in the app menu on the Mac |
+| Everything | The toolbar is all empty area and still moves the window |
+
+**The toolbar menu,** `Place::TopPanel`, the app's alone ([Context menus](#context-menus)): a right-click anywhere on the toolbar, on an item or on empty space, on every platform, or Shift+F10 or the Menu key on a focused item, opens it. It holds Hide "Undo" (on an item); Show Menu Button (while the ☰ is hidden); a separator; Toolbar Labels, checked while on; Customise Toolbar…, drawn disabled with "Customise Toolbar comes in a later version" until its window is built. The system's window menu stays on the system's own key, Alt+Space on Windows and GNOME; X11 has none.
+
+Every item of the toolbar menu is reachable from the keys whatever the toolbar shows: Hide "Undo" from Shift+F10 or the Menu key on that focused item, the others in View › Panels, which F10 opens while the ☰ is hidden. A toolbar with nothing focusable, which F6 skips, has nothing in its menu that only it reaches.
+
+**Customising.** The settings file is the full way until the Customise Toolbar window, a dedicated window of the dialog host built much later, from the toolbar menu and View › Panels; there is no palette inside the main window.
+
+```toml
+[workspaces.edit]
+toolbar = ["menu-button", "mark", "import", "export", "reset", "undo", "redo", "space",
+           "copy-edit", "apply-edit", "flexible-space", "jobs", "save-state"]
+
+[top_panel]
+labels = false
+```
+
+- `toolbar` is written only once it changes; an id this build does not know, a tool or action removed or a newer build's, is skipped and kept; Save as Workspace copies the list and Reset Workspace puts the default back.
+- A test fails if a part's id is a registry action's id (`menu-button` is not the `menu` action, nor `mark` `about`).
+
+**The overflow,** measured every frame at the current scale and language, a step undone only once 16 points are spare:
+
+1. the labels fold, all at once;
+2. the fixed spaces narrow to 8 points, then go one at a time from the end, so any number of them fits;
+3. the actions move into » (`top-panel-more`, 30 points) one at a time, in reverse reading order, tools' items before the app's, Undo and Redo last; » stands just before the first flexible space, or with none at the toolbar's end, after the last item and before the caption buttons;
+4. the status words fold to their signs;
+5. Undo and Redo go into ».
+
+» lists its items in the toolbar's order with their keys, check marks and disabled states; it replaces ⋯ More actions and matches the side panel's ». Never folded: the parts placed, », the caption buttons and 24 points of empty area; when even those do not fit, at a large interface size, the window's minimum width grows to their width, so the bar never overlaps and keeps its 24 points to move the window. A test checks at 500 points, in every language, both platforms' defaults and a list with every part placed.
+
+**Labels.** Icons by default. Toolbar Labels (`top_panel.labels`, off, app-wide) is in View › Panels, the toolbar menu and Settings › General.
+
+- A labelled item: 8 points, the 16-point icon in `text_secondary`, 6 points, the word in the body's 13 points in `text`, 8 points.
+- The word is the action's message's `.toolbar` attribute, else the message; a test fails on one over 96 points. Ukrainian's Copy edit and Apply edit need a `.toolbar` form.
+- Measured in IBM Plex Sans at 13 points, English, Ukrainian and Polish: Import… 51, 53, 62; Export… 49, 60, 66; Reset 33, 51, 44; Undo 31, 63, 33; Redo 30, 66, 40; Copy edit 55, 118, 78; Apply edit 59, 129, 91; the group 631, 862 and 736 points, 266 as icons. So the labels fold below about 810 points on the Mac in English, 1045 in Ukrainian and 920 in Polish, 114 more on Windows and Linux.
+- Tooltips give the words and the first key always ("Undo Exposure · Ctrl+Z"); a tool's item is prefixed by its tool, "Orientation: Rotate 90° clockwise".
+
+**States:**
+
+| State | How it looks and acts |
+| --- | --- |
+| Rest, under the pointer, pressed, focused | An `IconButton` (decision 81), the focus ring after keys |
+| Disabled: no photo, a sheet or dialog open, not live, view-only | `text_disabled`, the tooltip saying why; not an empty area |
+| Not built yet | Disabled, "To come" |
+| On (Before and After, Clipping Warnings) | The filled icon in `text_strong`; an AccessKit toggle, pressed |
+| A tool's item, the tool off | Enabled; pressing it turns the tool on |
+| A tool the workspace leaves out | Enabled; it runs as its button would |
+| A background-only tool while a layer is edited (Phase 4) | Enabled; it acts on the background, and the tooltip says so |
+| A tool or action gone in a later build | Not drawn; its id kept in the file |
+
+**Several windows** (decision 89): each draws its current workspace's toolbar with its own enabled states; a change is a setting sent to every window showing that workspace; the Mac's View menu acts on the key window; `jobs` shows the instance's jobs and `save-state` its window's edit. Scripts see nothing new.
 
 ### The side panel
 
@@ -3912,7 +3998,7 @@ The schema is one file in TOML, `data/settings.schema.toml` (decisions 43 and 45
 
 | Page | Group | Rows |
 | --- | --- | --- |
-| General | Interface | Theme (Dark, Grey, Light or High contrast), Language, Interface size (`scale`, in per cent), Slider marker (`sliders.marker`, Triangle, Circle or Square, a dropdown of their names until it can show their pictures; decision 75) |
+| General | Interface | Theme (Dark, Grey, Light or High contrast), Language, Interface size (`scale`, in per cent), Slider marker (`sliders.marker`, Triangle, Circle or Square, a dropdown of their names until it can show their pictures; decision 75); Toolbar Labels (`top_panel.labels`, off) from Phase 3 (decision 92) |
 | General | Start | Reopen what was open last (`library.reopen_last`, on), its help in its tooltip ([The start window](#the-start-window)) |
 | General | Confirmations | Ask before overwriting an exported file (`export.ask_before_overwrite`), Ask before discarding a photo’s history (`history.ask_before_discard`) |
 | General | Diagnostics | Keep a log of this session (`log.keep`, off), Log (`log.domains`, a list of the `-d` domains and Verbose, all but Memory and Verbose ticked); each with its help in its tooltip ([The log window](#the-log-window)) |
@@ -3992,7 +4078,7 @@ layout = "map"              # from Phase 3, once the Map exists
 show_selected = false       # from Phase 3
 ```
 
-- **Workspaces** live under `[workspaces.<id>]`: a built-in one holds only what the user changed in it; a user's own adds its name and its tabs, each with its id, name, icon, sections and pinned sections.
+- **Workspaces** live under `[workspaces.<id>]`: a built-in one holds only what the user changed in it, the toolbar's `toolbar` list among them (decision 92, planned), with Toolbar Labels app-wide as `[top_panel] labels`; a user's own adds its name and its tabs, each with its id, name, icon, sections and pinned sections.
 - **The layout** (decision 83, planned): in each workspace, `pinned.<tab>` and `order.<tab>`, a tab's pinned and scrolling sections top first, written together once either changes, so a tab nobody changed follows each build's defaults; `floating.<section>`, the tab a floating section left, its id staying in that tab's lists; `hidden`, the sections a workspace leaves out, written by Customise tabs, never a tool in Edit; `seen`, every section known when the tabs' lists were last written, written with them as what it held and every section the build has, every tab with kept lists and every tab showing a section it did not name written then as shown, unknown ids left in place, so an older build writing such a tab keeps the section in it. App-wide, `[side_panel.floating.<section>]`: `corner` (`top-beside`, `top-away`, `bottom-beside` or `bottom-away`, the central panel's corner it keeps its distance from, beside the side panel or away from it), `x` and `y`, that distance, and `width`, in points; a place a smaller window cannot show is shown pushed inside, never written. Where only one of a tab's two lists is kept, the other is its default less the ids the kept one holds; an id in both stays pinned, one twice in a list keeps its first place, and one `hidden` names is in no list. An id this build does not know is skipped and kept; a section neither `seen` nor `hidden` names is new and goes into each tab whose default list holds it and that does not show it already, after its nearest preceding default neighbour there, else before its nearest following one, else first, so a changed tab gains it whatever the other tabs show, and a section moved out of a tab never comes back to it; with no `seen`, the sections the kept lists, `floating` and `hidden` name are the ones seen; and a section no tab holds then, new or seen, that `hidden` does not name goes into each tab whose default list holds it, placed as a new section is, as one Customise tabs takes out of `hidden` or one a hand-written file leaves out, or, with none of its default tabs left in the workspace, at the end of the scrolling list of its first tab that holds tools, so every tool stays in a tab of Edit. Reset Tab removes the tab's two lists, takes the sections it brings back out of the other tabs whose defaults lack them, and puts a section it takes out that no other tab holds at its default place, as a new section goes ([the ways back](#moving-pinning-and-floating-sections)).
 - **The tab** is kept by id (`adjust`), each workspace its own, so a tab that moves keeps it. **Sections** are kept by id, the same in every workspace, only those the user opened or closed, the others as their section starts. **Tab names** are the side panel's, the same in every workspace.
 - **The side panel's width** is in points, the same in every layout and workspace, under `[side_panel]` as `width`, kept only once dragged. A value outside 240 to 600 is read as the nearer end, with a warning, and left in the file until the user drags the edge; the width shown in a narrower window is never written.
@@ -4109,6 +4195,7 @@ Phase 3 adds, for the interface:
   - 2, moving by drag within a tab, pinning by drag included;
   - 3, the ⋯ menu's items, the keys and the screen readers' actions, but for floating's;
   - 4, another tab: drops on a tab, the spring-loaded tab, Move to Tab ›, any section in any tab;
+- the toolbar (decision 92; [The top panel](#the-top-panel)): the top panel drawn from the workspace's list in place of its fixed parts, with spaces, the guards, » and labels, the toolbar menu, and tools' items (`Definition::toolbar`), Orientation's rotations first; the Customise Toolbar window much later;
 - Export, built as a native modal dialog (decision 41) on the session's export job (decision 56), then as the Export tool (decision 90) in [its cards' order](#the-build-in-cards): built on the Mac and on Windows and Linux, the width spike, the setting rows, the tool, presets and metadata left;
 - the system's alerts: built on the Mac with Export's overwrite question and the quit alert; Delete Workspace… and the other platforms left.
 
@@ -4161,6 +4248,7 @@ The decisions this design rests on, by area; each decision record has the option
 | Settings | One settings schema in TOML, each setting declared once, each owner's crate generating typed statics from it, which the file, the Settings dialog and the CLI read; the dialog's nine pages, General, Import, Photos, Editing, Processing, Storage, Shortcuts, Presets and AI, its rows drawn from the schema and Shortcuts, Storage, Presets and AI built by hand; the generator, the machinery and the user data and cache folders in `apertrust-base`, with the log; a user data folder of one's own by `--user-data-dir` or `APERTRUST_USER_DATA_DIR`, separating settings only; the library in another place, next to the images; an edit a newer Apertrust wrote never overwritten (decision 43) |
 | Window frame | The top panel from the window's top edge on every platform: the Mac's traffic lights in it, caption buttons drawn by the app on Windows and Linux, Windows' snap layouts flyout through native hit testing; the system's title bar as a setting there, off by default; a minimum width of 500 points (decision 39) |
 | Context menus | Only in named places, the photo, a thumbnail and a tool's ⋯ open to tools' items; each item a registry action, a tool's own generated as `tool-<tool>-<action>`, declared as data (`Definition::menus`, `Utility::menus`), at most two a tool on the photo and a thumbnail; the app building every menu, its items and the tools' sorted by `(section, order)`, a submenu the app's alone and read from the menu bar's; no right-click on a tool; every item reachable without one (decision 91, planned; [Context menus](#context-menus)) |
+| Toolbar | The top panel a toolbar a person customises, everything but the caption buttons and the traffic lights; one list of item ids per workspace, tools' actions offered in `Definition::toolbar`; icons by default, Toolbar Labels app-wide; a right-click anywhere on it opening the toolbar menu; the settings file until a Customise Toolbar window (decision 92, planned; [The top panel](#the-top-panel)) |
 | Popups | Native `NSMenu`s on the Mac for plain lists and context menus, from `apertrust-display`; drawn for what previews or holds controls, and on Windows and Linux; one popup service; the drawn ones on egui `Area`s, owning their plain keys while open through an egui plugin, drawn by `popup::show` once a frame (decision 40) |
 | Dialogs and alerts | Every dialog a native window of its own, modal to the window it rises from, hosted by the app beside eframe's window with its own egui context, AccessKit adapter and surface on the engine's device; made modal as each platform does it (on the Mac a sheet, and Settings alone modeless, a native window of its own; an owned window with its owner disabled on Windows; transient-for and the modal state on X11; a parent on Wayland, with modality kept by the app); confirmations the system's alerts through one alert service, `NSAlert` and the task dialog, Linux's Apertrust's own in a dialog window; About and a future splash screen Apertrust's own over the window (decision 41) |
 | Sheets | Import as a full-window sheet inside the main window, drawn the same on every platform: the sheet bar with the presets row over the column, a grid of the grid panel's cells checked to go, a column of tools on the side panel's side, 440 points by default, each with the tool panel's header, ↺ and ⋯ for Move Up and Move Down, every row a setting row; whole-sheet presets; a footer with a two-line summary, Keep open, Close and the primary button, which Return presses; a tool in one place (decision 86, planned; [Sheets](#sheets)) |

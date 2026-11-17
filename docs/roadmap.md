@@ -280,6 +280,7 @@ The library's steps 10 to 20 and 15b, [listed below](#the-librarys-steps) (decis
   - [ ] Moving a section by dragging its header within its tab; dropping it in the pinned area pins it, dragging it out unpins it.
   - [ ] The section's ⋯ menu (Move Up, Move Down, Move to Pinned Area or Scrolling Area, Move to Tab), Alt+↑ and Alt+↓, and screen readers' actions and announcements.
   - [ ] Moving a section to another tab, by a drop on its icon or into it; any section in any tab.
+- [ ] With them, the toolbar (decision 92; [gui.md](gui.md#the-toolbar)): the top panel drawn from each workspace's list of items, kept in the settings file, with spaces, the guards for the ☰, the save state, the jobs, an assistant and the mark, actions folding into » as it narrows, and Toolbar Labels; the toolbar menu on a right-click anywhere on it, the system's window menu on its own key; tools' items from `Definition::toolbar`, Orientation's rotations first.
 - [ ] Changes made outside Apertrust noticed; nothing overwritten without reading it first.
 - [ ] Virtual copies.
 - [ ] Two computers editing the same photo: both versions kept, never one lost.
@@ -354,6 +355,7 @@ Goal: reach and polish.
 - [ ] A slideshow.
 - [ ] Tethering and import from a camera.
 - [ ] More export formats as encoders allow.
+- [ ] The Customise Toolbar window, a dedicated window for arranging the toolbar, its menu item drawn disabled until then (decision 92).
 - [ ] Scripting.
 
 ## The library's steps

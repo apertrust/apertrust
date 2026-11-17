@@ -30,6 +30,7 @@ Apertrust never reorders the processing (principles, What we will not build; [00
   | `order.<tab>` | The tab's other sections, top first | With `pinned.<tab>`, once either changes |
   | `floating.<section>` | That the section floats, and the tab it left | When it floats; removed when it docks |
   | `hidden` | The sections the workspace leaves out, never a tool in Edit nor Export in any workspace ([0090](0090-export-as-a-photos-tab-tool.md)) | By Customise tabs, from Phase 3 |
+  | `toolbar` | The top panel's items in order ([0092](0092-the-toolbar.md)) | Once it changes, from Phase 3 |
   | `seen` | Every section known when the tabs' lists were last written, so a new one is told from a moved one | With any tab's `pinned` and `order`, every tab with kept lists, and every tab showing a section it did not name, written then as shown |
 
   ```toml
