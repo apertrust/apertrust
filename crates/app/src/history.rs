@@ -869,7 +869,8 @@ pub fn declared() -> &'static UtilityDefinition {
     apertrust_tools::utility::utility(ID).expect("History is built in")
 }
 
-/// History as a utility tool (decision 93): its page, the steps, drawn from the mirror's
+/// History as a utility tool (decision 93): its page, the steps as one custom row
+/// (`Widget::History`), drawn by the page drawer through its body from the mirror's
 /// history, the open photo's, disabled where there is none. A step is gone to only while
 /// the photo takes edits, live and not open for viewing only, its `GoTo` sent with the
 /// frame's commands; the eye, view state alone, is held on any photo, the tools the session
@@ -909,27 +910,28 @@ impl UtilityTool for HistoryTool {
 }
 
 /// Draws the History tab: History's header, every tool's from its declaration, as `head`
-/// has it, staying at the top of the tab while `page`, the list, scrolls under it, drawn
-/// while the section is open. ↺ runs Reset Edit, drawn disabled unless `resettable`, and
-/// ⋯ holds its declared items, opening while `head` says, while there is a history.
-/// Returns what the header and the page asked for.
-pub fn tab<A>(
+/// has it, staying at the top of the tab while `page`, the page drawer's rows of its page,
+/// its list, scrolls under it, drawn while the section is open. ↺ runs Reset Edit, drawn
+/// disabled unless `resettable`, and ⋯ holds its declared items, opening while `head`
+/// says, while there is a history. Returns what the header and the page asked for, the
+/// page nothing while closed.
+pub fn tab<R: Default>(
     ui: &mut egui::Ui,
     head: Head,
     resettable: bool,
-    page: impl FnOnce(&mut egui::Ui) -> Vec<A>,
-) -> (Vec<Pressed>, Vec<A>) {
+    page: impl FnOnce(&mut egui::Ui) -> R,
+) -> (Vec<Pressed>, R) {
     let open = head.open;
     let definition = &declared().tool;
-    let (mut pressed, mut actions) = (Vec::new(), Vec::new());
+    let (mut pressed, mut asked) = (Vec::new(), R::default());
     PanelBody::new()
         .header(|ui| pressed = crate::utility::header(ui, definition, head, resettable))
         .show(ui, |ui| {
             if open {
-                actions = section_body(ui, page);
+                asked = section_body(ui, page);
             }
         });
-    (pressed, actions)
+    (pressed, asked)
 }
 
 /// Draws the section's list, a tree, and returns what a click or a key asked for.

@@ -2684,8 +2684,8 @@ pub(crate) mod tests {
                         open: true,
                         ..crate::tools::Head::default()
                     };
-                    let (_, asked) = crate::history::tab(ui, head, false, |ui| {
-                        crate::utility::page(ui, &mut tool, &mut cx)
+                    let (_, (_, asked)) = crate::history::tab(ui, head, false, |ui| {
+                        crate::utility::rows(ui, &mut tool, &mut cx)
                     });
                     scene.actions.extend(asked);
                 },
