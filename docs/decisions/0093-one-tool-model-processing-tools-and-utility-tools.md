@@ -69,7 +69,7 @@ pub trait ProcessingTool: Send + Sync {
 /// A utility tool's behaviour: lib_api.h's GUI half.
 pub trait UtilityTool {
     fn definition(&self) -> &'static UtilityDefinition;
-    fn body(&mut self, ui: &mut egui::Ui, cx: &mut Context) -> Vec<Action>;  // its widgets
+    fn body(&mut self, widget: Widget, ui: &mut egui::Ui, cx: &mut Context) -> Vec<Action>;  // one of its custom rows
     fn reset(&mut self, cx: &mut Context) {}
     // later: overlay and pointer, for a utility that draws over the photo
 }
@@ -92,7 +92,7 @@ pub trait UtilityTool {
 ### A utility's page
 
 - **A utility uses the same `Row`s** as a processing tool. `UtilityDefinition::check` refuses every row that edits: a row naming a control (a slider, a choice, a toggle, `Row::When`, a control's row of buttons, `Row::Buttons`, a custom row naming controls), a preset row, a picker's rows (`Row::Pickers`, `Row::Patches`, `Row::Reference`, `Row::LastPick`) and a computed value. A utility's rows are settings, labels, groups, `Row::WhenSetting`, actions and buttons, each running a registry action, and custom rows naming no control.
-- **All variation goes into custom widgets.** `Row::Custom { widget }`, as the tone equalizer's graph is today, also covers History's steps, Browse's recents and folder tree, the scope graph and Export's path line, each a `Widget` of the closed registry. The app draws each through one `match` on `Widget`; each widget's egui code stays in its utility's app module, takes that utility's state and returns its own actions, through `UtilityTool::body`.
+- **All variation goes into custom widgets.** `Row::Custom { widget }`, as the tone equalizer's graph is today, also covers History's steps, Browse's recents and folder tree, the scope graph and Export's path line, each a `Widget` of the closed registry. The page drawer draws every other row itself and, reaching a utility's custom row, calls that utility's `UtilityTool::body` with the row's `Widget`, once per custom row: Browse's `body` is called for its recents line and again for its folder tree. Each utility matches its own widgets in `body`, whose egui code stays in its app module, takes that utility's state and returns its own actions. A processing tool's custom rows, as the tone equalizer's graph, stay drawn by the app's own `match` on `Widget`, as today.
 - **A utility's presets are presets of its setting rows,** as darktable's `get_params` and `set_params` are presets of a utility module's state, with no binary blob. Export's are the first ([0090](0090-export-as-a-photos-tab-tool.md)).
 - **A setting row may name its key in full.** Export's rows name `export.*` settings by their keys as strings, and the app binds them to `apertrust-export`'s settings; a test fails on a key that is not in the settings schema. `apertrust-tools` does not depend on `apertrust-export`, as it depends on no operation crate, and `apertrust-export` stays its own crate ([0056](0056-export-as-an-engine-job.md)).
 
@@ -111,7 +111,7 @@ pub trait UtilityTool {
 | --- | --- | --- |
 | `name`, `description`, `expandable`, `has_preset_label` | Identity and header | `ToolDefinition` |
 | `views`, `container`, `position` | Where it sits | The workspace's layout ([0083](0083-the-side-panels-layout-dragged-and-floating.md)) |
-| `gui_init`, `gui_cleanup`, `gui_update` | Builds its widgets | `UtilityTool::body`, drawn each frame |
+| `gui_init`, `gui_cleanup`, `gui_update` | Builds its widgets | `UtilityTool::body`, each custom row drawn each frame |
 | `gui_reset` | The header's ↺ | `ToolDefinition::reset`, `UtilityTool::reset` |
 | `get_params`, `set_params`, `legacy_params`, `init_presets`, `manage_presets`, `preset_autoapply` | Presets of its state | Presets of its setting rows |
 | `set_preferences` | Items in its presets menu | Its ⋯ items ([0091](0091-context-menus-places-and-tools-items-as-actions.md)) |
