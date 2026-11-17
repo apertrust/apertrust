@@ -4302,7 +4302,7 @@ Phase 3 adds, for the interface:
   - 3, the ⋯ menu's items, the keys and the screen readers' actions, but for floating's;
   - 4, another tab: drops on a tab, the spring-loaded tab, Move to Tab ›, any section in any tab;
 - the toolbar (decision 92; [The top panel](#the-top-panel)): the top panel drawn from the workspace's list in place of its fixed parts, with spaces, the guards, » and labels, the toolbar menu, and tools' items (`ToolDefinition::toolbar`, decision 93), Orientation's rotations first; the Customise Toolbar window much later;
-- Export, built as a section of the Photos tab on the session's export job (decision 56), then grown into the Export tool (decision 90) in [its steps' order](#the-build-in-steps): built on the Mac and on Windows and Linux, the width spike, the setting rows, the tool, presets and metadata left;
+- Export, built as a section of the Photos tab on the session's export job (decision 56), then grown into the Export tool (decision 90) in [its steps' order](#the-build-in-steps): built on the Mac and on Windows and Linux, the width spike, the tool and metadata left, its setting rows and presets in decision 93's step 93.5, Phase 2's;
 - the system's alerts: built on the Mac with Export's overwrite question and the quit alert; Delete Workspace… and the other platforms left.
 
 The UX pass after Phase 3 adds the layout's part 5, floating panels inside the window, with Float, Dock, Position, Dock All Floating Panels and their keys and actions (decision 83).
