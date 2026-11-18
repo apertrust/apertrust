@@ -29,7 +29,15 @@ tools/build-kernels.sh --check
 tools/build-api-docs.sh
 ```
 
-[pre-commit](https://pre-commit.com) runs the same checks from `.pre-commit-config.yaml` when you ask it to, each only when a file it reads changed:
+[pre-commit](https://pre-commit.com) runs the same checks from `.pre-commit-config.yaml` when you ask it to, each only when a file it reads changed. It is a Python program; install it once, with whichever you have:
+
+```sh
+pipx install pre-commit            # or: uv tool install pre-commit
+brew install pre-commit            # macOS, Homebrew
+sudo apt install pre-commit        # Debian, Ubuntu; other distributions package it too
+```
+
+Then, in the checkout:
 
 ```sh
 pre-commit run                                         # the quick checks, on the staged files
