@@ -677,18 +677,16 @@ fn damaged(storage: &mut dyn Storage, registry: &[&'static dyn Declared], why: S
 }
 
 /// A file's version, the file's own and not a setting, and a warning when it has none
-/// that can be read, as this build's then.
+/// that can be read, as the first then, so every migration runs on it: a key a migration
+/// moves is moved, and one already at its new place is left as it is.
 fn version(table: &Table) -> (i64, Option<String>) {
     match table.get("version") {
         Some(Value::Integer(version)) if *version >= 1 => (*version, None),
         Some(other) => {
-            let why = format!("version {other} is no version; read as version {VERSION}");
-            (VERSION, Some(why))
+            let why = format!("version {other} is no version; read as version 1");
+            (1, Some(why))
         }
-        None => {
-            let why = format!("version missing; read as version {VERSION}");
-            (VERSION, Some(why))
-        }
+        None => (1, Some("version missing; read as version 1".to_owned())),
     }
 }
 
@@ -2221,17 +2219,22 @@ size = [1280, 800]
     }
 
     #[test]
-    fn a_version_that_cannot_be_read_is_read_as_this_build_s() {
+    fn a_version_that_cannot_be_read_is_read_as_the_first() {
         for (name, text, warning) in [
             (
                 "version-missing",
                 "theme = \"light\"\n",
-                "version missing; read as version 2",
+                "version missing; read as version 1",
             ),
             (
                 "version-text",
                 "version = \"one\"\ntheme = \"light\"\n",
-                "version \"one\" is no version; read as version 2",
+                "version \"one\" is no version; read as version 1",
+            ),
+            (
+                "version-zero",
+                "version = 0\ntheme = \"light\"\n",
+                "version 0 is no version; read as version 1",
             ),
         ] {
             let folder = Folder::holding(name, text);

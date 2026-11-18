@@ -47,30 +47,46 @@ const ACTIONS: [(&str, &str); 4] = [
 /// Browse's entries in `edit.sections` and `edit.groups`, which become Collections'.
 fn parts_named_by_role(table: &mut Table) {
     for (old, new) in TABLES {
-        let keys: Vec<String> = match table.get(old).and_then(Value::as_table) {
-            Some(entries) => entries.keys().cloned().collect(),
-            None => continue,
-        };
-        for key in &keys {
-            rename(table, &[old, key], &[new, key]);
-        }
-        if table
-            .get(old)
-            .and_then(Value::as_table)
-            .is_some_and(Table::is_empty)
-        {
-            table.remove(old);
-        }
+        move_entries(table, &[old], &[new]);
     }
     for (old, new) in ACTIONS {
         rename(table, &["keys", old], &["keys", new]);
     }
-    for within in ["sections", "groups"] {
-        rename(
-            table,
-            &["edit", within, "browse"],
-            &["edit", within, "collections"],
+    rename(
+        table,
+        &["edit", "sections", "browse"],
+        &["edit", "sections", "collections"],
+    );
+    move_entries(
+        table,
+        &["edit", "groups", "browse"],
+        &["edit", "groups", "collections"],
+    );
+}
+
+/// Moves each entry of the table at the dotted path `from` into the table at `to`, one by
+/// one as [`rename`] moves a value, so an entry already at `to` wins and the others join
+/// it; `from` goes once it is empty. Nothing moves where `from` is no table.
+fn move_entries(table: &mut Table, from: &[&str], to: &[&str]) {
+    let keys: Vec<String> = match table_at(table, from) {
+        Some(entries) => entries.keys().cloned().collect(),
+        None => return,
+    };
+    for key in &keys {
+        let (old, new) = (
+            [from, &[key.as_str()]].concat(),
+            [to, &[key.as_str()]].concat(),
         );
+        rename(table, &old, &new);
+    }
+    if let Some((last, parents)) = from.split_last()
+        && let Some(parent) = table_at(table, parents)
+        && parent
+            .get(*last)
+            .and_then(Value::as_table)
+            .is_some_and(Table::is_empty)
+    {
+        parent.remove(*last);
     }
 }
 
@@ -186,6 +202,19 @@ mod tests {
                 .unwrap()
                 .contains_key("browse")
         );
+    }
+
+    #[test]
+    fn browse_s_groups_join_collections_s_each_new_one_winning() {
+        let table = migrated(
+            "[edit.groups.browse]\nfolders = false\nalbums = true\n\
+             [edit.groups.collections]\nalbums = false\nrecents = true\n",
+        );
+        let expected: Table = "[edit.groups.collections]\nfolders = false\nalbums = false\n\
+             recents = true\n"
+            .parse()
+            .expect("TOML");
+        assert_eq!(table["edit"], expected["edit"]);
     }
 
     #[test]

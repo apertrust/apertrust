@@ -111,7 +111,8 @@ pub use stored::{Declared, Stored};
 /// has no value until its owner keeps one.
 #[derive(Clone, Copy, Debug)]
 pub struct Setting<T: 'static> {
-    /// The dotted path of its key in `settings.toml`, permanent: `tools_panel.width`.
+    /// The dotted path of its key in `settings.toml`, stable within a file version, a key
+    /// that moves needing a versioned migration: `tools_panel.width`.
     pub id: &'static str,
     pub owner: Owner,
     pub kind: Kind,

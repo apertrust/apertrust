@@ -21,7 +21,7 @@
 //! beside their photos (decision 48), and never the last photo.
 //!
 //! ```toml
-//! version = 1
+//! version = 2
 //! theme = "light"
 //! locale = "uk"
 //! scale = 1.2
@@ -1296,11 +1296,13 @@ pub mod testing {
 mod tests {
     use apertrust_base::settings::DELAY;
     use apertrust_ui::components::{Scale, Scope, SortKey};
+    use eframe::egui::os::OperatingSystem;
     use toml::{Table, Value};
 
     use super::testing::Folder;
     use super::*;
     use crate::PANEL_WIDTHS;
+    use crate::actions::{ActionId, Keymap, Shortcut};
 
     /// Settings with every field off its default.
     fn everything() -> Settings {
@@ -1900,6 +1902,53 @@ proof_margin = 0.3
         assert_eq!(
             read.edit.sections,
             BTreeMap::from([("collections".to_owned(), true)])
+        );
+    }
+
+    /// A file with no version, read as version 1, is migrated: its old keys keep their
+    /// values through a write of another setting and a reading again.
+    #[test]
+    fn a_file_with_no_version_is_migrated_as_version_1() {
+        let text = "[side_panel]\nwidth = 480\n\
+            [keys]\ngrid-position-right = [\"Ctrl+Alt+Shift+F8\"]\n";
+        let (read, warnings) = read(text);
+        assert_eq!(warnings, ["version"]);
+        assert_eq!(read.panel_width, Some(480.0));
+        let wanted = Shortcut::parse("Ctrl+Alt+Shift+F8").expect("a key");
+        let (keymap, refused) = Keymap::load(OperatingSystem::Mac, &read.keys);
+        assert!(refused.is_empty(), "{refused:?}");
+        assert_eq!(keymap.keys(ActionId::BROWSER_POSITION[1]), [wanted]);
+
+        let folder = Folder::new("no-version");
+        std::fs::write(folder.settings(), text).expect("written");
+        let (_, settings) = Keeper::open(folder.storage());
+        let changed = Settings {
+            scale: 1.5,
+            ..settings
+        };
+        change(&folder, &changed);
+        assert!(folder.text().contains("version = 2"), "{}", folder.text());
+        let (_, again) = Keeper::open(folder.storage());
+        assert_eq!(again, changed);
+        assert_eq!(again.panel_width, Some(480.0));
+        assert_eq!(again.keys["browser-position-right"], ["Ctrl+Alt+Shift+F8"]);
+    }
+
+    /// Browse's groups and Collections' both set, as only a hand edit makes, join: each of
+    /// Browse's kept where Collections' lacks it.
+    #[test]
+    fn browse_s_groups_join_collections_s() {
+        let text = "version = 1\n\
+            [edit.groups.browse]\nfolders = false\n\
+            [edit.groups.collections]\nalbums = true\n";
+        let (read, warnings) = read(text);
+        assert!(warnings.is_empty(), "{warnings:?}");
+        assert_eq!(
+            read.edit.groups,
+            BTreeMap::from([(
+                "collections".to_owned(),
+                BTreeMap::from([("albums".to_owned(), true), ("folders".to_owned(), false)])
+            )])
         );
     }
 
