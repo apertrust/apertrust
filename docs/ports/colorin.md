@@ -62,7 +62,7 @@ None; per pixel.
 - **The standard matrix on a DNG with its own:** the image context holds one camera matrix, the DNG's, so `standard_matrix` there renders the DNG's matrix, where darktable renders its camera table's, or linear Rec709 where its table lacks the camera. Only an edit from another photo can hold it, since a DNG with its own matrix defaults to `embedded_matrix`.
 - **A raw with no colour filters and no embedded matrix** defaults to linear Rec2020, where darktable's `reload_defaults` gives a monochrome image linear Rec709 (one with an embedded matrix defaults to `embedded_matrix` on both sides). No such raw renders yet: the pipeline refuses a raw without colour filters as it opens. Both have D65 as white, so a grey image renders alike.
 - **No Lab between colorin and the working space.**
-- **Only the camera matrix and linear Rec2020 and Rec709 inputs;** ICC files, gamut clipping and blue mapping are not ported.
+- **Only the camera matrix and linear Rec2020 and Rec709 inputs;** ICC files, gamut clipping and blue mapping are not ported. The enhanced, vendor and alternate matrices, from darktable's own camera tables (`dt_profiled_colormatrices` and the like), which Apertrust lacks, are refused as not ported, never rendered with the camera's matrix under their names.
 - **No derivatives:** colorin has no continuous parameters to optimise.
 
 ## Test plan

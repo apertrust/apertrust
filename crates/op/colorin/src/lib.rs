@@ -129,8 +129,9 @@ fn input_profile(name: &str, image: &ImageContext) -> Result<Mat3d, NotPorted> {
     match name {
         // darktable's standard matrix is its own camera table's, where Apertrust has
         // rawler's (decision 23); a DNG's embedded one is the file's, derived as darktable
-        // derives it (the engine's image context).
-        "standard_matrix" | "embedded_matrix" | "enhanced_matrix" => {
+        // derives it (the engine's image context). The enhanced, vendor and alternate
+        // matrices are darktable's own tables', which Apertrust lacks: not ported.
+        "standard_matrix" | "embedded_matrix" => {
             let matrix = image
                 .camera
                 .as_ref()
@@ -399,6 +400,10 @@ mod tests {
         let (image, input) = raw(false);
         for (name, value) in [
             ("type", Value::Choice(profile("srgb"))),
+            // darktable's own tables' matrices, never the camera's under their names.
+            ("type", Value::Choice(profile("enhanced_matrix"))),
+            ("type", Value::Choice(profile("vendor_matrix"))),
+            ("type", Value::Choice(profile("alternate_matrix"))),
             ("normalize", Value::Choice(1)),
             ("blue_mapping", Value::Bool(true)),
             ("type_work", Value::Choice(profile("prophoto_rgb"))),
