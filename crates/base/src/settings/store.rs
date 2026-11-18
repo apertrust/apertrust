@@ -249,6 +249,13 @@ impl Store {
         Some(owned(setting, value).clone())
     }
 
+    /// `setting`'s value as the file keeps it, whatever `--conf` gives for this run: for a
+    /// key read once to move it elsewhere, so a value given for one run never moves.
+    pub fn kept_in_file<T: Stored>(&self, setting: &Setting<T>) -> Option<T::Owned> {
+        let value = self.entry(setting).value.as_deref()?;
+        Some(owned(setting, value).clone())
+    }
+
     /// Keeps `value` for `setting`, written once the settings have stood still.
     ///
     /// A set that leaves the value as it is changes nothing: one equal to the value kept,
@@ -2070,6 +2077,18 @@ size = [1280, 800]
         drop(store);
         let read = folder.open();
         assert_eq!((read.get(&SCALE), read.kept(&WIDTH)), (2.0, None));
+    }
+
+    /// A key read once to move it elsewhere reads the file's own value, never `--conf`'s
+    /// for the run, nor a default.
+    #[test]
+    fn kept_in_file_is_the_file_s_value_whatever_conf_gives() {
+        let folder = Folder::holding("kept-in-file", "version = 1\nscale = 2\n");
+        let overrides = conf(&["scale=1.5", "theme=light"]).expect("read");
+        let store = folder.open().with_overrides(&overrides);
+        assert_eq!(store.kept(&SCALE), Some(1.5));
+        assert_eq!(store.kept_in_file(&SCALE), Some(2.0));
+        assert_eq!(store.kept_in_file(&THEME), None);
     }
 
     /// `--conf`'s values are never written: a set or a reset of one is refused, the file

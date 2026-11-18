@@ -469,3 +469,41 @@ fn the_old_tab_moves_once() {
     read.move_tab("default", || panic!("read again once moved"));
     assert_eq!(read.tab("default"), Some("geometry"));
 }
+
+/// A file damaged after the start, met by a later write, keeps the tabs the last write
+/// left, as it keeps its entries, those this process read at the start too.
+#[test]
+fn damage_met_by_a_later_write_keeps_the_last_write_s_tabs() {
+    let (_dir, file) = state("damaged-tabs");
+    std::fs::write(&file, "version = 1\n[tab]\nportraits = \"skin\"\n").expect("written");
+    let (mut recents, _) = Recents::open(file.clone(), none);
+    recents.set_tab("default", "raw");
+    recents.flush();
+    std::fs::write(&file, "not = [toml").expect("written");
+    recents.opened_at(OpenKind::Folder, folder("a"), 100);
+    recents.flush();
+    let (read, _) = Recents::open(file, none);
+    assert_eq!(paths(&read), [folder("a")]);
+    assert_eq!(read.tab("default"), Some("raw"));
+    assert_eq!(read.tab("portraits"), Some("skin"));
+}
+
+/// The old tab's move never replaces a tab another process wrote for the workspace after
+/// this one read the file; a tab the user chooses does.
+#[test]
+fn the_old_tab_s_move_keeps_another_process_s_tab() {
+    let (_dir, file) = state("old-tab-race");
+    let (mut recents, _) = Recents::open(file.clone(), none);
+    recents.flush();
+    let outside = text(&file) + "\n[tab]\ndefault = \"effects\"\n";
+    std::fs::write(&file, outside).expect("written");
+    recents.move_tab("default", || Some("geometry".to_owned()));
+    recents.flush();
+    assert_eq!(
+        Recents::open(file.clone(), none).0.tab("default"),
+        Some("effects")
+    );
+    recents.set_tab("default", "raw");
+    recents.flush();
+    assert_eq!(Recents::open(file, none).0.tab("default"), Some("raw"));
+}

@@ -2339,6 +2339,7 @@ impl Shell {
             opened: false,
             recents,
             tabs: self.workspace.enabled(),
+            collections: self.workspace.holding(library::ID).is_some(),
             scale: ctx.zoom_factor(),
             dialog: self.about.is_open(),
             // About is modal over the window; the open dialog and the host's dialogs are the
@@ -15990,6 +15991,33 @@ mod tests {
         harness.state_mut().shell.panel_tab = ADJUST;
         type_l(&mut harness, "l");
         assert_eq!(harness.state().pressed, vec![ActionId::SHOW_COLLECTIONS; 2]);
+    }
+
+    /// A workspace with Collections in no tab shown leaves View › Collections and L
+    /// unavailable, rather than doing nothing (decision 96; step 3 reveals it in the Hidden
+    /// tab).
+    #[test]
+    fn view_collections_is_unavailable_where_no_tab_holds_collections() {
+        let folder = settings::testing::Folder::new("no-collections");
+        // Every tool seen, so none is placed as new: Collections is in no tab.
+        let seen: Vec<String> = layout::known()
+            .iter()
+            .map(|id| format!("\"{id}\""))
+            .collect();
+        let seen = seen.join(", ");
+        let text =
+            format!("seen = [{seen}]\n[[tabs]]\nid = \"skin\"\n[order]\nskin = [\"exposure\"]\n");
+        std::fs::write(folder.0.join("own.toml"), text).unwrap();
+        let (workspace, _) = layout::Workspace::open(Some(&folder.0), "own");
+        assert_eq!(workspace.holding(library::ID), None);
+        let ctx = egui::Context::default();
+        let mut shell = Shell::new(&Settings::default(), Locale::EnGb, OperatingSystem::Nix);
+        let collections = actions::action(ActionId::SHOW_COLLECTIONS).unwrap();
+        assert!(collections.enabled(&shell.state(&ctx, false, false)));
+        shell.open_workspace(workspace);
+        let state = shell.state(&ctx, false, false);
+        assert!(!state.collections);
+        assert!(!collections.enabled(&state));
     }
 
     #[test]

@@ -337,6 +337,9 @@ pub struct State {
     /// behind it yet cannot, so its key is unavailable (decision 38), and nor can one the
     /// workspace does not show.
     pub tabs: [bool; 12],
+    /// Whether a tab shown holds Collections, which View › Collections and L choose; with
+    /// none, they are unavailable (decision 96).
+    pub collections: bool,
     /// The interface's scale: egui's zoom factor.
     pub scale: f32,
     /// A modal dialog is open, or a dialog's window has the focus: the view's keys rest,
@@ -846,7 +849,7 @@ pub static ACTIONS: [Action; 82] = [
         keys: &[plain(Key::L)],
         scope: Scope::App,
         trigger: Trigger::Press,
-        available: on_main_window,
+        available: |s| on_main_window(s) && s.collections,
         emits: Emit::Intent(Intent::ShowCollections),
     },
     Action {
@@ -2174,6 +2177,7 @@ pub(crate) mod tests {
             opened: true,
             recents: [Some(true); crate::recents::MOST],
             tabs: first_tabs(7),
+            collections: true,
             scale: 1.5,
             dialog: false,
             modal: false,

@@ -455,6 +455,29 @@ fn a_damaged_file_is_set_aside_and_the_defaults_apply() {
     }
 }
 
+/// A damaged file never replaces an earlier one set aside: the next free numbered name
+/// takes it.
+#[test]
+fn an_earlier_backup_is_kept() {
+    let folder = Folder::new("workspace-backups");
+    let file = folder.0.join("default.toml");
+    for (i, text) in ["first [", "second [", "third ["].into_iter().enumerate() {
+        std::fs::write(&file, text).unwrap();
+        let (_, warnings) = Workspace::open(Some(&folder.0), DEFAULT);
+        let name = [
+            "default.toml.bak",
+            "default.toml.1.bak",
+            "default.toml.2.bak",
+        ][i];
+        assert!(warnings[0].contains(name), "{warnings:?}");
+    }
+    let kept = |name: &str| std::fs::read_to_string(folder.0.join(name)).unwrap();
+    assert_eq!(kept("default.toml.bak"), "first [");
+    assert_eq!(kept("default.toml.1.bak"), "second [");
+    assert_eq!(kept("default.toml.2.bak"), "third [");
+    assert!(!file.exists());
+}
+
 /// A file listing no tab is refused, with a warning, and left as it is: the built-in's
 /// defaults apply, and a person's own does not open, the Default workspace shown.
 #[test]

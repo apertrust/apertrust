@@ -1139,9 +1139,10 @@ impl Keeper {
 
     /// The Tools panel's tab an earlier build kept in settings, `edit.tab`: read only for
     /// its move into `state.toml`, where it holds no tab for the Default workspace
-    /// (`Recents::move_tab`), and never written.
+    /// (`Recents::move_tab`), and never written: the file's own, never a `--conf` value for
+    /// one run.
     pub fn old_tab(&self) -> Option<String> {
-        self.store.kept(&EDIT_TAB)
+        self.store.kept_in_file(&EDIT_TAB)
     }
 
     /// Whether the start reopens what was open last, `library.reopen_last`, read once as
@@ -1454,6 +1455,13 @@ mod tests {
                 .contains("recent_folders = [\"/photos/b\", \"/photos/a\"]")
         );
         assert!(folder.text().contains("tab = \"raw\""));
+        // A `--conf` value for one run never moves.
+        let overrides = overrides(&["edit.tab=geometry".to_owned()]).expect("read");
+        let (keeper, _) = Keeper::open_with(folder.storage(), &overrides);
+        assert_eq!(keeper.old_tab().as_deref(), Some("raw"));
+        let empty = Folder::new("old-tab-conf");
+        let (keeper, _) = Keeper::open_with(empty.storage(), &overrides);
+        assert_eq!(keeper.old_tab(), None);
     }
 
     /// The settings `text` holds, with what the store and the app warned of, each by the

@@ -486,9 +486,21 @@ fn beside(path: &Path, suffix: &str) -> PathBuf {
     PathBuf::from(name)
 }
 
+/// Where a damaged `file` is set aside: `<id>.toml.bak`, or where that is there already,
+/// an earlier one kept, the first of `<id>.toml.1.bak`, `<id>.toml.2.bak` and on that is not.
+fn aside(file: &Path) -> PathBuf {
+    let first = beside(file, ".bak");
+    let mut numbered = (1..).map(|n| beside(file, &format!(".{n}.bak")));
+    let free = |path: &PathBuf| !path.exists();
+    std::iter::once(first)
+        .chain(&mut numbered)
+        .find(free)
+        .expect("an unused name")
+}
+
 /// The workspace `file` holds, with the warnings its reading gave: None where there is no
-/// file, it cannot be read, it is damaged, set aside as `<id>.toml.bak`, or it lists no
-/// tab, left as it is.
+/// file, it cannot be read, it is damaged, set aside as `<id>.toml.bak` or, keeping an
+/// earlier one, a numbered name ([`aside`]), or it lists no tab, left as it is.
 pub fn read(file: &Path) -> (Option<Layout>, Vec<String>) {
     let text = match std::fs::read(file) {
         Ok(bytes) => String::from_utf8(bytes).map_err(|_| Refused::Damaged("not UTF-8".into())),
@@ -506,7 +518,7 @@ pub fn read(file: &Path) -> (Option<Layout>, Vec<String>) {
             (Some(layout), warnings)
         }
         Err(Refused::Damaged(why)) => {
-            let aside = beside(file, ".bak");
+            let aside = aside(file);
             let moved = match std::fs::rename(file, &aside) {
                 Ok(()) => format!("set aside as {}", aside.display()),
                 Err(e) => format!("could not be set aside: {}", e.kind()),

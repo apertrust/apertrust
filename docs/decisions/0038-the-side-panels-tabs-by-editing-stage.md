@@ -10,7 +10,7 @@ The first pass mirrors darktable's modules ([0002](0002-rewrite-darktable-first-
 
 ## Decision
 
-**The Default workspace's tabs are Photos, Adjust, Detail, Geometry, Effects, Raw and History, grouped by editing stage so that a normal edit stays in one tab.** A built-in darktable workspace keeps darktable's scene-referred groups for people coming from darktable (planned, [0096](0096-workspaces-as-files-hidden-tools-and-finding-a-tool.md)'s step 2). Edit stays the default. Both are workspaces as 0096 has them, these lists their defaults.
+**The Default workspace's tabs are Photos, Adjust, Detail, Geometry, Effects, Raw and History, grouped by editing stage so that a normal edit stays in one tab.** A built-in darktable workspace keeps darktable's scene-referred groups for people coming from darktable (planned, [0096](0096-workspaces-as-files-hidden-tools-and-finding-a-tool.md)'s step 2). The Default workspace is the one shown where settings name none. Both are workspaces as 0096 has them, these lists their defaults.
 
 ### The Default workspace's tabs
 

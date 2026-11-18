@@ -1537,6 +1537,7 @@ mod tests {
             opened: true,
             recents: [Some(true); crate::recents::MOST],
             tabs: actions::first_tabs(5),
+            collections: true,
             scale: 1.5,
             dialog: false,
             modal: false,

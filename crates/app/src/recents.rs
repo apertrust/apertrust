@@ -46,7 +46,8 @@
 //!   is read as none and left in the file until replaced.
 //! - A damaged `state.toml`, one that is not TOML or not UTF-8, is set aside as
 //!   `state.toml.bak` with a warning naming no path in it: read at the start, the list
-//!   starts empty; met by a later write, what the last write left is written. One a newer
+//!   starts empty; met by a later write, what the last write left is written, the list
+//!   and the tabs. One a newer
 //!   Apertrust wrote is read as empty and never written.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -239,6 +240,9 @@ enum Change {
     Last(Option<Last>),
     /// The tab last shown in a workspace, by their ids.
     Tab(String, String),
+    /// The tab an earlier build kept in settings, moved as a workspace's: written only
+    /// where the file holds none for it as it is merged, so another process's tab stays.
+    FirstTab(String, String),
 }
 
 /// Applies `change` to `items`, newest first, keeping at most [`MOST`]. An entry opened
@@ -271,7 +275,7 @@ fn apply(items: &mut Vec<Item>, change: &Change) {
             }
         }
         Change::Cleared => items.retain(|item| matches!(item, Item::Unknown(_))),
-        Change::Kept | Change::Last(_) | Change::Tab(..) => {}
+        Change::Kept | Change::Last(_) | Change::Tab(..) | Change::FirstTab(..) => {}
     }
     // Newest first; the sort is stable, so an entry opened in the same second as another
     // stays where it was put.
@@ -397,10 +401,18 @@ fn beside(path: &Path, suffix: &str) -> PathBuf {
     PathBuf::from(name)
 }
 
+/// What a write left in the file: the list and the tab last shown in each workspace.
+#[derive(Clone, Debug, Default)]
+struct Written {
+    items: Vec<Item>,
+    tabs: BTreeMap<String, String>,
+}
+
 /// Merges `changes` into `file` as it is now and writes it through the safe write, its
 /// other keys kept. A damaged file, set aside, gives way to `last`, what the last write
-/// left; one that may not be written is an error. Returns the list written.
-fn merge(file: &Path, changes: &[Change], last: &[Item]) -> io::Result<Vec<Item>> {
+/// left, its list and its tabs; one that may not be written is an error. Returns what it
+/// wrote.
+fn merge(file: &Path, changes: &[Change], last: &Written) -> io::Result<Written> {
     let read = read(file);
     for warning in &read.warnings {
         tracing::warn!(target: "settings", "{}: {warning}", file.display());
@@ -409,7 +421,15 @@ fn merge(file: &Path, changes: &[Change], last: &[Item]) -> io::Result<Vec<Item>
         return Err(io::Error::other("it may not be written"));
     }
     let (mut table, mut items) = if read.damaged {
-        (Table::new(), last.to_vec())
+        let mut table = Table::new();
+        if !last.tabs.is_empty() {
+            let tabs = last
+                .tabs
+                .iter()
+                .map(|(w, t)| (w.clone(), Value::from(t.clone())));
+            table.insert(TAB.into(), Value::Table(tabs.collect()));
+        }
+        (table, last.items.clone())
     } else {
         (read.table, read.items.unwrap_or_default())
     };
@@ -422,14 +442,17 @@ fn merge(file: &Path, changes: &[Change], last: &[Item]) -> io::Result<Vec<Item>
             Change::Last(None) => {
                 table.remove(LAST);
             }
-            Change::Tab(workspace, tab) => {
+            Change::Tab(workspace, tab) | Change::FirstTab(workspace, tab) => {
                 let tabs = table
                     .entry(TAB)
                     .or_insert_with(|| Value::Table(Table::new()));
                 if !tabs.is_table() {
                     *tabs = Value::Table(Table::new());
                 }
-                if let Value::Table(tabs) = tabs {
+                let first = matches!(change, Change::FirstTab(..));
+                if let Value::Table(tabs) = tabs
+                    && !(first && tabs.get(workspace).is_some_and(Value::is_str))
+                {
                     tabs.insert(workspace.clone(), tab.clone().into());
                 }
             }
@@ -444,7 +467,10 @@ fn merge(file: &Path, changes: &[Change], last: &[Item]) -> io::Result<Vec<Item>
         std::fs::create_dir_all(folder)?;
     }
     apertrust_base::fs::write(file, text.as_bytes())?;
-    Ok(items)
+    Ok(Written {
+        items,
+        tabs: tabs(&table),
+    })
 }
 
 /// What the writer thread is asked.
@@ -463,7 +489,7 @@ struct Writer {
 
 impl Writer {
     /// A writer of `file`, whose last write left `last`.
-    fn start(file: PathBuf, last: Vec<Item>) -> Option<Writer> {
+    fn start(file: PathBuf, last: Written) -> Option<Writer> {
         let (asks, asked) = mpsc::channel::<Ask>();
         let thread = std::thread::Builder::new()
             .name("recents writer".into())
@@ -584,7 +610,11 @@ impl Recents {
         recents.last = last;
         recents.tabs = tabs;
         if writable || retryable {
-            recents.writer = Writer::start(file, items.clone().unwrap_or_default());
+            let last = Written {
+                items: items.clone().unwrap_or_default(),
+                tabs: recents.tabs.clone(),
+            };
+            recents.writer = Writer::start(file, last);
         }
         match items {
             Some(items) => recents.items = items,
@@ -686,13 +716,16 @@ impl Recents {
 
     /// Where the file holds no tab for `workspace`, takes `old`'s, the tab an earlier build
     /// kept in settings (`edit.tab`), read only for this move, and writes it at once, so it
-    /// moves once; none moves nothing.
+    /// moves once; none moves nothing. The write keeps a tab another process wrote for the
+    /// workspace meanwhile, where the user's choice ([`Recents::set_tab`]) replaces it.
     pub fn move_tab(&mut self, workspace: &str, old: impl FnOnce() -> Option<String>) {
         if self.tab(workspace).is_some() {
             return;
         }
         if let Some(old) = old() {
-            self.set_tab(workspace, &old);
+            self.tabs.insert(workspace.to_owned(), old.clone());
+            self.changes
+                .push(Change::FirstTab(workspace.to_owned(), old));
             self.save();
         }
     }
