@@ -22,7 +22,7 @@
 //! Built so far: opening a folder ([`open`]), which reports the folder, its subfolders and
 //! its photos, each with what its sidecar says, then their capture times, closing it,
 //! walking the whole tree under the folder opened for each folder's raw count and
-//! subfolders ([`walk`]), listing a subfolder's own subfolders for Browse's tree
+//! subfolders ([`walk`]), listing a subfolder's own subfolders for Collections' tree
 //! ([`subfolders`]), and its photos' thumbnails, or those of photos opened alone
 //! ([`thumbnail`]), the camera's embedded pictures until Apertrust renders its own. The
 //! session runs [`open`] and [`thumbnail`] as jobs' bodies and hands each an observer,
@@ -77,10 +77,10 @@ pub enum LibraryCommand {
     /// the latest open or close. Only each photo's own file is read, never its folder. A
     /// new open or a close drops those not yet sent.
     PhotoThumbnails { paths: Vec<PathBuf>, size: u32 },
-    /// Lists the subfolders of `folder`, one inside the tree of the folder opened, as Browse
-    /// opens it: the tree's root is the first folder opened, kept while each later open lies
-    /// inside it ([`inside`]). Answered by [`LibraryEvent::SubfoldersOf`]. A new open or a
-    /// close drops it.
+    /// Lists the subfolders of `folder`, one inside the tree of the folder opened, as
+    /// Collections opens it: the tree's root is the first folder opened, kept while each
+    /// later open lies inside it ([`inside`]). Answered by [`LibraryEvent::SubfoldersOf`].
+    /// A new open or a close drops it.
     Subfolders { folder: PathBuf },
     /// From which size a photo with no edit shows a render of its raw rather than the
     /// camera's embedded picture, the engine's setting `library.raw_thumbnails_from`, for
@@ -1419,7 +1419,7 @@ mod tests {
             phase_one: false,
         };
         assert!(RawThumbnails::Auto.shows_render((10_000, 8_000), &large));
-        // The central panel is WQXGA's level, 2560 by 1600.
+        // The Viewer is WQXGA's level, 2560 by 1600.
         assert!(!RawThumbnails::Wqxga.shows_render(central, &facts(Some((6000, 4000)))));
         assert!(RawThumbnails::Wqxga.shows_render(central, &facts(Some((1620, 1080)))));
         assert!(RawThumbnails::P1080.renders_at(central));

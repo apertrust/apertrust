@@ -348,8 +348,8 @@ fn the_plain_words_are_the_designed_ones_for_the_tools_shown() {
 }
 
 /// The utilities whose headers say nothing yet, their sentences a design question of their
-/// own: Browse and Export, which joined [`UTILITIES`] with no tooltip, as each is drawn
-/// (decision 93).
+/// own: Collections and Export, which joined [`UTILITIES`] with no tooltip, as each is
+/// drawn (decision 93).
 const SAYS_NOTHING: [&str; 2] = ["browse", "export"];
 
 #[test]

@@ -91,18 +91,18 @@
 //!
 //! A setting the user never changed is not written, so a missing one is its default.
 //! The language is kept only once the user chooses one; until then it follows the
-//! system's. The side panel's width is in points, as the user dragged it, within the
+//! system's. The Tools panel's width is in points, as the user dragged it, within the
 //! widths it can be dragged to; until then it is the theme's. A tool's collapsible
 //! groups are kept by the tool's id and the group's, only those the user opened or
 //! closed, the others starting closed (decision 29). The scopes' view is kept by part:
 //! the graph, the scale (`linear` or `logarithmic`), the channels shown and whether each
-//! clipping overlay is on, each once the user changes it. So is the grid panel's: the
+//! clipping overlay is on, each once the user changes it. So is the Browser's: the
 //! sort's key and direction, the thumbnails' size, where it is, the rows it shows at the
 //! bottom and the columns at a side, each a whole number, whether the thumbnails show
-//! their captions and whether each fills its square (`docs/gui.md`, The grid panel and The
-//! grid bar). Keys are kept only where they
+//! their captions and whether each fills its square (`docs/gui.md`, The Browser and The
+//! browser bar). Keys are kept only where they
 //! differ from the defaults, in the form `Shortcut::text` writes (`actions`), the same on
-//! every platform. The central panel's two margins have no page in the Settings dialog:
+//! every platform. The Viewer's two margins have no page in the Settings dialog:
 //! the margin round the photo and its caption, in points, and the one Proof margin takes,
 //! a fraction of the slot's smaller side (`docs/gui.md`, The photo frame). The window's
 //! position is in physical pixels, with the display's scale
@@ -145,7 +145,7 @@ use apertrust_engine::session::ControlValue;
 use apertrust_engine::settings as engine;
 use apertrust_tools::{ControlKind, Row, SettingRow, TOOLS};
 use apertrust_ui::components::{
-    Channel, GridBarAction, GridPosition, Marker, ScopeView, Sort, ThumbnailSize,
+    BrowserBarAction, BrowserPosition, Channel, Marker, ScopeView, Sort, ThumbnailSize,
 };
 use apertrust_ui::{Builtin, Locale};
 
@@ -172,7 +172,7 @@ pub mod registry {
         /// The theme's width, the default theme's here; the shell takes the width of the
         /// theme in use (`Shell::panel_edge`).
         pub fn side_panel_width() -> f32 {
-            Theme::builtin(super::THEME.default()).sizes.side_panel
+            Theme::builtin(super::THEME.default()).sizes.tools_panel
         }
 
         /// The default theme's own surround; the shell keeps the theme in use's while
@@ -202,18 +202,18 @@ pub struct Settings {
     pub jobs_window: Option<Position>,
     /// The log kept in memory, and its window's place and folder.
     pub log: Log,
-    /// Whether the side panel's tabs show their names.
+    /// Whether the Tools panel's tabs show their names.
     pub tab_names: bool,
-    /// The side panel's width in points, within `PANEL_WIDTHS`, as the user dragged it;
+    /// The Tools panel's width in points, within `PANEL_WIDTHS`, as the user dragged it;
     /// None for the theme's.
     pub panel_width: Option<f32>,
-    /// The margins round the central panel's photo and caption.
-    pub central_panel: CentralPanel,
+    /// The margins round the Viewer's photo and caption.
+    pub viewer: Viewer,
     /// Edit's own state.
     pub edit: ViewState,
     /// What the Scopes section shows, and which clipping overlays the photo shows.
     pub scopes: ScopeView,
-    /// How the grid panel shows the folder's photos.
+    /// How the Browser shows the folder's photos.
     pub grid: Grid,
     /// The keys that differ from the defaults, by action id, in `Shortcut::text`'s form,
     /// with what the keymap could not use as it was read; an empty list leaves an action
@@ -232,7 +232,7 @@ pub struct Settings {
 }
 
 impl Default for Settings {
-    /// The schema's defaults. What it computes, the language and the side panel's width,
+    /// The schema's defaults. What it computes, the language and the Tools panel's width,
     /// and what is kept only once the window or the user sets it, the window's size and
     /// place and Edit's tab, start unkept, as do the tables of sections, groups and keys.
     fn default() -> Self {
@@ -252,7 +252,7 @@ impl Default for Settings {
             log: Log::default(),
             tab_names: SIDE_PANEL_TAB_NAMES.default(),
             panel_width: None,
-            central_panel: CentralPanel::default(),
+            viewer: Viewer::default(),
             edit: ViewState::default(),
             scopes: ScopeView {
                 scope: SCOPES_GRAPH.default(),
@@ -273,7 +273,7 @@ impl Default for Settings {
 
 impl Settings {
     /// The settings as `store` holds them: what is kept only once set (the language, the
-    /// window's size and place, the side panel's width, Edit's tab) as kept, the rest as
+    /// window's size and place, the Tools panel's width, Edit's tab) as kept, the rest as
     /// their values, kept or their defaults.
     fn read(store: &Store) -> Settings {
         let position = |pixels: Option<[f32; 2]>, scale_factor| {
@@ -317,7 +317,7 @@ impl Settings {
             },
             tab_names: store.get(&SIDE_PANEL_TAB_NAMES),
             panel_width: store.kept(&SIDE_PANEL_WIDTH),
-            central_panel: CentralPanel {
+            viewer: Viewer {
                 margin: store.get(&CENTRAL_PANEL_MARGIN),
                 proof_margin: store.get(&CENTRAL_PANEL_PROOF_MARGIN),
                 background: store.kept(&CENTRAL_PANEL_BACKGROUND),
@@ -423,14 +423,14 @@ impl Settings {
         if s.panel_width != was.panel_width {
             keep(store, &SIDE_PANEL_WIDTH, s.panel_width);
         }
-        if s.central_panel.margin != was.central_panel.margin {
-            store.set(&CENTRAL_PANEL_MARGIN, s.central_panel.margin);
+        if s.viewer.margin != was.viewer.margin {
+            store.set(&CENTRAL_PANEL_MARGIN, s.viewer.margin);
         }
-        if s.central_panel.proof_margin != was.central_panel.proof_margin {
-            store.set(&CENTRAL_PANEL_PROOF_MARGIN, s.central_panel.proof_margin);
+        if s.viewer.proof_margin != was.viewer.proof_margin {
+            store.set(&CENTRAL_PANEL_PROOF_MARGIN, s.viewer.proof_margin);
         }
-        if s.central_panel.background != was.central_panel.background {
-            keep(store, &CENTRAL_PANEL_BACKGROUND, s.central_panel.background);
+        if s.viewer.background != was.viewer.background {
+            keep(store, &CENTRAL_PANEL_BACKGROUND, s.viewer.background);
         }
         if s.edit.tab != was.edit.tab {
             keep(store, &EDIT_TAB, s.edit.tab.clone());
@@ -863,11 +863,11 @@ fn warnings(store: &Store) -> Vec<(&str, String)> {
     .collect()
 }
 
-/// The margins round the central panel's photo and its caption, and the background behind
+/// The margins round the Viewer's photo and its caption, and the background behind
 /// them (`[central_panel]`, which no page of the Settings dialog shows; `docs/gui.md`, The
 /// photo frame).
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct CentralPanel {
+pub struct Viewer {
     /// The default margin, in points.
     pub margin: f32,
     /// The margin while Proof margin is on, as a fraction of the slot's smaller side.
@@ -904,9 +904,9 @@ impl Default for Log {
     }
 }
 
-impl Default for CentralPanel {
+impl Default for Viewer {
     fn default() -> Self {
-        CentralPanel {
+        Viewer {
             margin: CENTRAL_PANEL_MARGIN.default(),
             proof_margin: CENTRAL_PANEL_PROOF_MARGIN.default(),
             background: None,
@@ -914,8 +914,8 @@ impl Default for CentralPanel {
     }
 }
 
-/// How the grid panel shows the folder's photos (`[grid_panel]`, `docs/gui.md`, The grid
-/// panel and The grid bar).
+/// How the Browser shows the folder's photos (`[grid_panel]`, `docs/gui.md`, The
+/// Browser and The browser bar).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Grid {
     /// The order the photos are shown in.
@@ -925,10 +925,10 @@ pub struct Grid {
     /// The rows it shows at the bottom, as its edge was dragged.
     pub rows: usize,
     /// Where it is in the window.
-    pub position: GridPosition,
+    pub position: BrowserPosition,
     /// The columns it shows at the left or right, as its edge was dragged.
     pub columns: usize,
-    /// Whether the thumbnails show their captions: the grid bar's Labels.
+    /// Whether the thumbnails show their captions: the browser bar's Labels.
     pub labels: bool,
     /// Whether each thumbnail fills its square, cut at its longer sides.
     pub square_thumbnails: bool,
@@ -936,13 +936,13 @@ pub struct Grid {
 
 impl Grid {
     /// Whether `chosen` is what it holds, which the menus show checked.
-    pub fn holds(&self, chosen: GridBarAction) -> bool {
+    pub fn holds(&self, chosen: BrowserBarAction) -> bool {
         match chosen {
-            GridBarAction::Sort(key) => self.sort.key == key,
-            GridBarAction::Descending(descending) => self.sort.descending == descending,
-            GridBarAction::Size(size) => self.thumbnails == size,
-            GridBarAction::Position(position) => self.position == position,
-            GridBarAction::Labels => self.labels,
+            BrowserBarAction::Sort(key) => self.sort.key == key,
+            BrowserBarAction::Descending(descending) => self.sort.descending == descending,
+            BrowserBarAction::Size(size) => self.thumbnails == size,
+            BrowserBarAction::Position(position) => self.position == position,
+            BrowserBarAction::Labels => self.labels,
         }
     }
 
@@ -965,13 +965,13 @@ impl Grid {
     }
 
     /// Takes `chosen` in: Labels turns the captions on or off.
-    pub fn apply(&mut self, chosen: GridBarAction) {
+    pub fn apply(&mut self, chosen: BrowserBarAction) {
         match chosen {
-            GridBarAction::Sort(key) => self.sort.key = key,
-            GridBarAction::Descending(descending) => self.sort.descending = descending,
-            GridBarAction::Size(size) => self.thumbnails = size,
-            GridBarAction::Position(position) => self.position = position,
-            GridBarAction::Labels => self.labels = !self.labels,
+            BrowserBarAction::Sort(key) => self.sort.key = key,
+            BrowserBarAction::Descending(descending) => self.sort.descending = descending,
+            BrowserBarAction::Size(size) => self.thumbnails = size,
+            BrowserBarAction::Position(position) => self.position = position,
+            BrowserBarAction::Labels => self.labels = !self.labels,
         }
     }
 }
@@ -1015,7 +1015,7 @@ pub struct Position {
 /// A view's own state.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct ViewState {
-    /// The side panel's tab, by id.
+    /// The Tools panel's tab, by id.
     pub tab: Option<String>,
     /// The sections the user opened or closed, by id; the others start as their section
     /// does.
@@ -1340,7 +1340,7 @@ mod tests {
             },
             tab_names: false,
             panel_width: Some(480.0),
-            central_panel: CentralPanel {
+            viewer: Viewer {
                 margin: 16.0,
                 proof_margin: 0.25,
                 background: Some(apertrust_ui::Background::Medium),
@@ -1373,7 +1373,7 @@ mod tests {
                 },
                 thumbnails: ThumbnailSize::Large,
                 rows: 3,
-                position: GridPosition::Right,
+                position: BrowserPosition::Right,
                 columns: 2,
                 labels: false,
                 square_thumbnails: true,
@@ -1494,7 +1494,7 @@ mod tests {
                 },
                 tab_names: true,
                 panel_width: None,
-                central_panel: CentralPanel {
+                viewer: Viewer {
                     margin: 10.0,
                     proof_margin: 0.12,
                     background: None,
@@ -1512,7 +1512,7 @@ mod tests {
                     },
                     thumbnails: ThumbnailSize::Medium,
                     rows: 1,
-                    position: GridPosition::Left,
+                    position: BrowserPosition::Left,
                     columns: 1,
                     labels: true,
                     square_thumbnails: false,
@@ -1538,7 +1538,7 @@ mod tests {
         assert_eq!(SIDE_PANEL_WIDTH.default(), 320.0);
         assert_eq!(
             SIDE_PANEL_WIDTH.default(),
-            Theme::builtin(Builtin::Dark).sizes.side_panel
+            Theme::builtin(Builtin::Dark).sizes.tools_panel
         );
         // The tab the shell shows when none is kept, or the one kept is no tab.
         assert_eq!(Some(EDIT_TAB.default()), crate::tab_id(crate::ADJUST));
@@ -1746,7 +1746,7 @@ size = [1280, 800]
         // Back to the defaults: what may be missing goes, and so do the tables emptied.
         change(&folder, &Settings::default());
         let text = folder.text();
-        // The windows' positions go; the grid panel's, a choice, stays at its default.
+        // The windows' positions go; the Browser's, a choice, stays at its default.
         for gone in ["locale", "position = [", "width = 480", "[edit", "[keys"] {
             assert!(!text.contains(gone), "{gone}: {text}");
         }
@@ -1963,7 +1963,7 @@ size = [1280, 800]
         assert_eq!(names, ["theme"]);
     }
 
-    /// The language is kept once the user chooses one, even the system's, and the side
+    /// The language is kept once the user chooses one, even the system's, and the Tools
     /// panel's width once dragged, even to the theme's: computed defaults are no values.
     #[test]
     fn a_choice_equal_to_a_computed_default_is_kept() {
@@ -2037,19 +2037,16 @@ size = [1280, 800]
         overrides(&given)
     }
 
-    /// The central panel's margins are 10 points and 0.2 of the slot's smaller side, as
+    /// The Viewer's margins are 10 points and 0.2 of the slot's smaller side, as
     /// darktable's darkroom has them (Proof margin's 40% less); the file or `--conf` sets
     /// either, a number outside its range read as its nearer end, and neither is on a page
     /// of the Settings dialog.
     #[test]
-    fn the_central_panel_s_margins_have_their_defaults_and_follow_the_file_and_conf() {
+    fn the_viewer_s_margins_have_their_defaults_and_follow_the_file_and_conf() {
         let (_, settings) = Keeper::nowhere();
-        assert_eq!(settings.central_panel, CentralPanel::default());
+        assert_eq!(settings.viewer, Viewer::default());
         assert_eq!(
-            (
-                settings.central_panel.margin,
-                settings.central_panel.proof_margin
-            ),
+            (settings.viewer.margin, settings.viewer.proof_margin),
             (10.0, 0.12)
         );
 
@@ -2058,8 +2055,8 @@ size = [1280, 800]
         std::fs::write(folder.settings(), text).expect("written");
         let (_, settings) = Keeper::open(folder.storage());
         assert_eq!(
-            settings.central_panel,
-            CentralPanel {
+            settings.viewer,
+            Viewer {
                 margin: 24.0,
                 proof_margin: 0.3,
                 background: None
@@ -2071,8 +2068,8 @@ size = [1280, 800]
             conf(&["central_panel.margin=16", "central_panel.proof_margin=0.9"]).expect("read");
         let (keeper, settings) = Keeper::open_with(folder.storage(), &overrides);
         assert_eq!(
-            settings.central_panel,
-            CentralPanel {
+            settings.viewer,
+            Viewer {
                 margin: 16.0,
                 proof_margin: 0.4,
                 background: None
@@ -2085,8 +2082,8 @@ size = [1280, 800]
         let none = Folder::new("margins-conf");
         let overrides = conf(&["central_panel.margin=0"]).expect("read");
         let (_, settings) = Keeper::open_with(none.storage(), &overrides);
-        assert_eq!(settings.central_panel.margin, 0.0);
-        assert_eq!(settings.central_panel.proof_margin, 0.12);
+        assert_eq!(settings.viewer.margin, 0.0);
+        assert_eq!(settings.viewer.proof_margin, 0.12);
         assert!(conf(&["central_panel.margin=wide"]).is_err());
     }
 
@@ -2272,20 +2269,17 @@ size = [1280, 800]
         use apertrust_ui::Background;
         assert_eq!(CENTRAL_PANEL_BACKGROUND.default(), Background::Dark);
         let (_, settings) = Keeper::nowhere();
-        assert_eq!(settings.central_panel.background, None);
+        assert_eq!(settings.viewer.background, None);
 
         let folder = Folder::new("background-file");
         let text = "version = 1\n[central_panel]\nbackground = \"very-dark\"\n";
         std::fs::write(folder.settings(), text).expect("written");
         let (_, settings) = Keeper::open(folder.storage());
-        assert_eq!(
-            settings.central_panel.background,
-            Some(Background::VeryDark)
-        );
+        assert_eq!(settings.viewer.background, Some(Background::VeryDark));
 
         let overrides = conf(&["central_panel.background=white"]).expect("read");
         let (_, settings) = Keeper::open_with(folder.storage(), &overrides);
-        assert_eq!(settings.central_panel.background, Some(Background::White));
+        assert_eq!(settings.viewer.background, Some(Background::White));
         assert!(conf(&["central_panel.background=grey"]).is_err());
     }
 

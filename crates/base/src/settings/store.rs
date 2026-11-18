@@ -1257,7 +1257,7 @@ mod tests {
         Is(None),
     );
     static MAXIMIZED: Setting<bool> = setting("window.maximized", Kind::Boolean, Is(false));
-    /// Computed, as the side panel's width is.
+    /// Computed, as the Tools panel's width is.
     static WIDTH: Setting<f32> = setting(
         "side_panel.width",
         number(Some(240.0), Some(600.0), None, Some(0)),

@@ -1963,9 +1963,9 @@ struct Engine {
     /// The jobs listing subfolders inside that folder's tree, which the next open or a close
     /// cancels.
     subfolders: Vec<JobId>,
-    /// The root of the tree whose subfolders are listed: the first folder opened, kept while
-    /// each later open lies inside it, as Browse shows a folder inside its tree, so the
-    /// siblings of the folder last opened can be listed; a close forgets it.
+    /// The root of the tree whose subfolders are listed: the first folder opened, kept
+    /// while each later open lies inside it, as Collections shows a folder inside its tree,
+    /// so the siblings of the folder last opened can be listed; a close forgets it.
     tree: Option<PathBuf>,
     /// The job walking that tree for each folder's raw count ([`library::walk`]), which a
     /// new root or a close cancels, and an open inside the tree leaves running.

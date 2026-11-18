@@ -34,7 +34,7 @@
 //!   opens opens a later frame ([`Drops`]). As with the recents' check, a share that hangs
 //!   keeps that thread until it answers; a later drop starts a thread of its own and is
 //!   the one taken, the hung one's answer, when it comes, going nowhere.
-//! - While something is dragged over the window, the photo and the grid panel, where it
+//! - While something is dragged over the window, the photo and the Browser, where it
 //!   opens, are outlined ([`show_target`]).
 //!
 //! The paths come from egui's input, which egui-winit fills from winit's dropped and

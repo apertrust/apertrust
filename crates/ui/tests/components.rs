@@ -30,7 +30,7 @@ use egui::{Color32, ImeEvent, Key, Modifiers, pos2};
 use egui_kittest::Harness;
 use egui_kittest::kittest::{NodeT as _, Queryable as _};
 
-/// The side panel's content at its narrowest: 240 points, less its margins.
+/// The Tools panel's content at its narrowest: 240 points, less its margins.
 fn narrowest_content(t: &Theme) -> f32 {
     240.0 - 2.0 * t.spacing.l
 }
@@ -1510,8 +1510,8 @@ fn enter_on_the_track_opens_the_value_field_ready_to_type() {
     );
 }
 
-/// Two slider rows as a section stacks them, with no spacing between them, at the side
-/// panel's narrowest content, the first with a picker.
+/// Two slider rows as a section stacks them, with no spacing between them, at the
+/// Tools panel's narrowest content, the first with a picker.
 fn two_rows() -> Harness<'static> {
     let content = narrowest_content(&Theme::default());
     Harness::builder()
@@ -1637,7 +1637,7 @@ fn value_text<State>(harness: &Harness<'_, State>, field: egui::Rect) -> (egui::
 }
 
 /// The tone equalizer's Edges refinement/feathering at its top, darktable's widest value,
-/// at the side panel's narrowest, its label long: `value`, with two decimals.
+/// at the Tools panel's narrowest, its label long: `value`, with two decimals.
 fn feathering(value: f64) -> Harness<'static, f64> {
     let content = narrowest_content(&Theme::default());
     Harness::builder()
@@ -2212,7 +2212,7 @@ fn a_segmented_control_reports_the_chosen_option() {
     assert_eq!(chosen, Some(1));
 }
 
-/// Exposure's Mode as a tool draws it, in a window as wide as the side panel: `held` the
+/// Exposure's Mode as a tool draws it, in a window as wide as the Tools panel: `held` the
 /// option chosen and Automatic disabled with its reason, as on an image that is not a raw
 /// (decision 88); what it last reported in the state.
 fn mode_switch(held: usize) -> Harness<'static, (usize, Option<usize>)> {
@@ -2335,8 +2335,8 @@ fn a_segmented_control_disabled_whole_dims_every_option() {
     assert_eq!(chosen, None);
 }
 
-/// Colour calibration's illuminants, the third too long to share a line at the side
-/// panel's narrowest.
+/// Colour calibration's illuminants, the third too long to share a line at the
+/// Tools panel's narrowest.
 const ILLUMINANTS: [&str; 4] = [
     "Daylight",
     "Black body",
@@ -2600,11 +2600,11 @@ fn a_dropdown_row_too_narrow_for_its_widest_option_shares_its_one_line() {
     assert!(option.1.right() <= drawn_box(&cut).right(), "{option:?}");
 }
 
-/// darktable's rule for a combo box too narrow for its label and its value, at the side
+/// darktable's rule for a combo box too narrow for its label and its value, at the Tools
 /// panel's narrowest content, 216 points: one line, the label and the box sharing what the
 /// gap leaves in proportion to their widths, each cut at its end.
 #[test]
-fn a_long_label_and_long_options_share_one_line_at_the_narrowest_side_panel() {
+fn a_long_label_and_long_options_share_one_line_at_the_narrowest_tools_panel() {
     const LABEL: &str = "Chromatic adaptation transform for the illuminant";
     const OPTIONS: [&str; 2] = [
         "Linear Bradford (ICC v4), as darktable writes it",
@@ -2885,7 +2885,7 @@ fn slider_over_choice(width: f32) -> Harness<'static> {
 
 /// darktable's combobox puts its value where its sliders put theirs (decision 42): the
 /// chevron's stroke ends where the value at rest does, 5 points from the row's end, at the
-/// side panel's 320 points and at its narrowest, where the option is cut.
+/// Tools panel's 320 points and at its narrowest, where the option is cut.
 #[test]
 fn a_blended_chevron_ends_where_a_slider_s_value_at_rest_ends() {
     let t = Theme::default();
@@ -3542,11 +3542,11 @@ fn a_dot_shows_while_a_group_with_controls_set_is_closed() {
     assert_eq!(dots(&harness, "Look"), 0);
 }
 
-/// "Manual vignette correction" as the pseudo-locale writes it, at the side panel's
+/// "Manual vignette correction" as the pseudo-locale writes it, at the Tools panel's
 /// narrowest content width, 216 points: closed, with the dot and without, the title is cut
 /// with … where the shortest hairline starts, and screen readers still hear it whole.
 #[test]
-fn a_long_title_is_cut_before_the_shortest_hairline_at_the_narrowest_side_panel() {
+fn a_long_title_is_cut_before_the_shortest_hairline_at_the_narrowest_tools_panel() {
     const TITLE: &str = "[Máñüáĺ víğñéťťé çöŕŕéçťíöñ~~~~~~~~~~~]";
     let t = Theme::builtin(Builtin::Dark);
     let content = narrowest_content(&t);

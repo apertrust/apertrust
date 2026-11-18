@@ -15,9 +15,9 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 //! The Export tool (`docs/gui.md`, The Export tool; decision 56): darktable's export module
-//! row for row, a utility section of the Photos tab's side panel, after Browse. It is a
-//! function of `&mut Ui`, so the app draws it in the panel and the interaction tests draw it
-//! in a harness.
+//! row for row, a utility section of the Photos tab's Tools panel, after Collections. It is
+//! a function of `&mut Ui`, so the app draws it in the panel and the interaction tests draw
+//! it in a harness.
 //!
 //! **Its groups** are Storage options and Format options, plain titled groups always
 //! shown; Global options, collapsible and open at first; and Metadata and Multi-preset
@@ -26,7 +26,7 @@
 //! conflict, JPEG and PNG, Set size's four modes, Allow upscaling, High quality resampling,
 //! and Profile with Image settings and sRGB. Every other row is drawn, disabled, saying it
 //! is to come: the other storages and formats, Store masks, Intent and Style. The rows are
-//! the side panel's controls laid out as a tool's: Blended choices, toggles and sliders,
+//! the Tools panel's controls laid out as a tool's: Blended choices, toggles and sliders,
 //! one-line rows stacked with no spacing between them, a row whose label and fields do not
 //! fit the panel's width putting its label above them. The header is every tool's
 //! (decision 93), drawn from its declaration in `UTILITIES`: ↺, which applies Default

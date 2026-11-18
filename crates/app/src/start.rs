@@ -101,9 +101,9 @@ impl List {
 }
 
 impl Asked {
-    /// What it asks as Browse would ask it, which the app carries out as Browse's: a recent
-    /// opened as a way in, Open Folder…'s dialog, Locate… and Remove from the List; None for
-    /// what is the window's own.
+    /// What it asks as Collections would ask it, which the app carries out as Collections':
+    /// a recent opened as a way in, Open Folder…'s dialog, Locate… and Remove from the
+    /// List; None for what is the window's own.
     pub fn library(&self) -> Option<crate::library::Action> {
         use crate::library::Action;
         match self {

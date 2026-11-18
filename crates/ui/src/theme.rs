@@ -84,7 +84,7 @@ impl Choice for Builtin {
     ];
 }
 
-/// The central panel's backgrounds: six neutral greys from black to white, the same in
+/// The Viewer's backgrounds: six neutral greys from black to white, the same in
 /// every theme (`docs/gui.md`, The background). Black, Very dark, Dark and Medium are
 /// within ISO 12646's limit for judging colour, at most a fifth of white's luminance.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -166,12 +166,12 @@ pub struct Theme {
 #[derive(Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Colors {
-    /// The top panel, the central bar and the grid panel. The same as the panel in the
+    /// The Toolbar, the viewer bar and the Browser. The same as the panel in the
     /// dark, light and high-contrast themes, so regions part by separators, not by tone; a
     /// step darker in the grey theme.
     #[serde(with = "hex")]
     pub surface: Color32,
-    /// The side panel and its sections.
+    /// The Tools panel and its sections.
     #[serde(with = "hex")]
     pub panel: Color32,
     /// Menus and popovers, a step above the ground; dialog windows sit on `panel`.
@@ -339,7 +339,7 @@ pub struct Colors {
     /// The thumb while dragged: another step up.
     #[serde(with = "hex")]
     pub scroll_thumb_active: Color32,
-    /// Text naming a colour channel's value: the central bar's red, green and blue under
+    /// Text naming a colour channel's value: the viewer bar's red, green and blue under
     /// the cursor. Readable on the bars, so lighter than the scopes' channel colours in
     /// dark.
     #[serde(with = "hex")]
@@ -379,7 +379,7 @@ pub struct Colors {
     /// label's text (`darkroom.c:437-438`).
     #[serde(with = "hex")]
     pub overlay_halo: Color32,
-    /// The ring round a selected photo's cell in the grid panel, and round the active one
+    /// The ring round a selected photo's cell in the Browser, and round the active one
     /// in a thicker line: the icons' grey (`text_secondary`), never the accent, so the cell's
     /// own colours are not judged against it; the high-contrast theme's brighter.
     #[serde(with = "hex")]
@@ -463,8 +463,9 @@ pub struct Sizes {
     /// The width of a section header's buttons, each around an icon as wide: 14 points,
     /// a control high.
     pub section_button: f32,
-    /// The top panel's height; theme files keep its old name.
-    pub top_bar: f32,
+    /// The Toolbar's height; theme files name it `top_bar`.
+    #[serde(rename = "top_bar")]
+    pub toolbar: f32,
     /// A slider row's height, its padding included, and the strip the track runs in,
     /// under a top line a field high (`docs/gui.md`, How the rows are laid out).
     pub slider_row: f32,
@@ -478,9 +479,11 @@ pub struct Sizes {
     pub switch_width: f32,
     pub switch_height: f32,
     pub switch_knob: f32,
-    pub side_panel: f32,
+    /// The Tools panel's usual width; theme files name it `side_panel`.
+    #[serde(rename = "side_panel")]
+    pub tools_panel: f32,
     /// The height a list scrolls in inside a section, so the section keeps its height
-    /// whatever the list holds: ten one-line rows (`panel_line`). Browse's groups.
+    /// whatever the list holds: ten one-line rows (`panel_line`). Collections' groups.
     pub section_list: f32,
 }
 
@@ -505,8 +508,8 @@ pub struct Shape {
     /// The faint edge of a menu, drawn popup or tooltip: a half point, a full one in the
     /// high-contrast theme.
     pub popup_hairline: f32,
-    /// The border between the window's panels (the top panel, the side panel, the central
-    /// bar, the grid panel), in `separator`'s colour: 2 points. Lines inside a panel stay
+    /// The border between the window's panels (the Toolbar, the Tools panel, the viewer
+    /// bar, the Browser), in `separator`'s colour: 2 points. Lines inside a panel stay
     /// `hairline`.
     pub separator_width: f32,
     /// A slider's track, and the moved part drawn on it.
@@ -539,7 +542,7 @@ pub struct OverlaySizes {
 #[derive(Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AboutSizes {
-    /// The widest it is beside the side panel, about 55 characters a line: 340.
+    /// The widest it is beside the Tools panel, about 55 characters a line: 340.
     pub width: f32,
     /// The widest it is under the header, in a narrow window: 304.
     pub narrow_width: f32,

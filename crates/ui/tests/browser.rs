@@ -14,12 +14,12 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! The grid panel's grid bar, driven through AccessKit and photographed (`docs/gui.md`,
-//! The grid bar).
+//! The Browser's browser bar, driven through AccessKit and photographed (`docs/gui.md`,
+//! The browser bar).
 
 use apertrust_ui::components::{
-    CellMenu, GridBarAction, GridEdge, GridEdgeAction, GridPanel, GridPanelAction, GridPosition,
-    Sort, SortKey, Thumb, ThumbnailSize, grid_panel_height, grid_panel_width,
+    Browser, BrowserAction, BrowserBarAction, BrowserEdge, BrowserEdgeAction, BrowserPosition,
+    CellMenu, Sort, SortKey, Thumb, ThumbnailSize, browser_height, browser_width,
 };
 use apertrust_ui::{Icon, Theme};
 use egui::accesskit::{HasPopup, Role, Toggled};
@@ -30,34 +30,35 @@ fn install(ctx: &egui::Context) {
     apertrust_ui::install(ctx, Theme::default());
 }
 
-/// What the panel is told, and what its grid bar reported.
-struct Grid {
+/// What the panel is told, and what its browser bar reported.
+struct BrowserState {
     count: usize,
     sort: Sort,
     size: ThumbnailSize,
     labels: bool,
-    chosen: Vec<GridBarAction>,
+    chosen: Vec<BrowserBarAction>,
     /// The cells' menus asked for.
     menus: Vec<CellMenu>,
     /// What was done to the photos.
-    actions: Vec<GridPanelAction>,
+    actions: Vec<BrowserAction>,
 }
 
 /// The panel with `count` photos, as the app keeps it: each choice taken in at once.
-fn grid(count: usize) -> Harness<'static, Grid> {
-    grid_on(count, egui::os::OperatingSystem::Nix)
+fn browser(count: usize) -> Harness<'static, BrowserState> {
+    browser_on(count, egui::os::OperatingSystem::Nix)
 }
 
-/// [`grid`] on `os`.
-fn grid_on(count: usize, os: egui::os::OperatingSystem) -> Harness<'static, Grid> {
+/// [`browser`] on `os`.
+fn browser_on(count: usize, os: egui::os::OperatingSystem) -> Harness<'static, BrowserState> {
     Harness::builder()
         .with_size(egui::vec2(900.0, 360.0))
         .with_os(os)
         .with_context_setup(install)
         .build_ui_state(
-            |ui, grid: &mut Grid| {
-                let names: Vec<String> =
-                    (0..grid.count).map(|i| format!("IMG_{i:04}.ARW")).collect();
+            |ui, browser: &mut BrowserState| {
+                let names: Vec<String> = (0..browser.count)
+                    .map(|i| format!("IMG_{i:04}.ARW"))
+                    .collect();
                 let thumb = |i: usize| Thumb {
                     name: &names[i],
                     edited: false,
@@ -66,25 +67,27 @@ fn grid_on(count: usize, os: egui::os::OperatingSystem) -> Harness<'static, Grid
                     picture: None,
                     rating: None,
                 };
-                let output = GridPanel::new(grid.count, Some(0), thumb)
-                    .sort(grid.sort)
-                    .size(grid.size)
-                    .labels(grid.labels)
+                let output = Browser::new(browser.count, Some(0), thumb)
+                    .sort(browser.sort)
+                    .size(browser.size)
+                    .labels(browser.labels)
                     .show(ui);
                 if let Some(chosen) = output.bar {
                     match chosen {
-                        GridBarAction::Sort(key) => grid.sort.key = key,
-                        GridBarAction::Descending(descending) => grid.sort.descending = descending,
-                        GridBarAction::Size(size) => grid.size = size,
-                        GridBarAction::Position(_) => {}
-                        GridBarAction::Labels => grid.labels = !grid.labels,
+                        BrowserBarAction::Sort(key) => browser.sort.key = key,
+                        BrowserBarAction::Descending(descending) => {
+                            browser.sort.descending = descending
+                        }
+                        BrowserBarAction::Size(size) => browser.size = size,
+                        BrowserBarAction::Position(_) => {}
+                        BrowserBarAction::Labels => browser.labels = !browser.labels,
                     }
-                    grid.chosen.push(chosen);
+                    browser.chosen.push(chosen);
                 }
-                grid.menus.extend(output.menu);
-                grid.actions.extend(output.action);
+                browser.menus.extend(output.menu);
+                browser.actions.extend(output.action);
             },
-            Grid {
+            BrowserState {
                 count,
                 sort: Sort {
                     key: SortKey::CaptureTime,
@@ -100,15 +103,15 @@ fn grid_on(count: usize, os: egui::os::OperatingSystem) -> Harness<'static, Grid
 }
 
 /// A menu line's whether it can be chosen and whether it is checked.
-fn line(harness: &Harness<'_, Grid>, name: &str) -> (bool, Option<Toggled>) {
+fn line(harness: &Harness<'_, BrowserState>, name: &str) -> (bool, Option<Toggled>) {
     let node = harness.get_by_role_and_label(Role::MenuItemCheckBox, name);
     let node = node.accesskit_node();
     (!node.is_disabled(), node.toggled())
 }
 
 #[test]
-fn the_grid_bar_is_a_toolbar_of_sort_and_zoom_named_for_screen_readers() {
-    let mut harness = grid(12);
+fn the_browser_bar_is_a_toolbar_of_sort_and_zoom_named_for_screen_readers() {
+    let mut harness = browser(12);
     harness.run();
     let bar = harness.get_by_role_and_label(Role::Toolbar, "Grid bar");
     let buttons: Vec<String> = bar
@@ -156,14 +159,14 @@ fn the_grid_bar_is_a_toolbar_of_sort_and_zoom_named_for_screen_readers() {
 
 #[test]
 fn labels_shows_the_captions_and_counts_them_in_the_cells_and_the_panel() {
-    let mut harness = grid(12);
+    let mut harness = browser(12);
     harness.run();
     let labels = harness.get_by_role_and_label(Role::Button, "Labels");
     assert_eq!(labels.accesskit_node().toggled(), Some(Toggled::True));
     // A Medium cell is its square and a 40-point caption, the panel as tall as its row.
     let cell = harness.get_by_label("IMG_0000.ARW").rect();
     assert_eq!(cell.size(), egui::vec2(120.0, 160.0));
-    let list = |harness: &Harness<'_, Grid>| {
+    let list = |harness: &Harness<'_, BrowserState>| {
         harness
             .get_by_role_and_label(Role::List, "Grid panel")
             .rect()
@@ -171,11 +174,11 @@ fn labels_shows_the_captions_and_counts_them_in_the_cells_and_the_panel() {
     let ctx = harness.ctx.clone();
     assert_eq!(
         list(&harness).height(),
-        grid_panel_height(&ctx, ThumbnailSize::Medium, true, 1)
+        browser_height(&ctx, ThumbnailSize::Medium, true, 1)
     );
     assert_eq!(
-        grid_panel_height(&ctx, ThumbnailSize::Medium, true, 2)
-            - grid_panel_height(&ctx, ThumbnailSize::Medium, true, 1),
+        browser_height(&ctx, ThumbnailSize::Medium, true, 2)
+            - browser_height(&ctx, ThumbnailSize::Medium, true, 1),
         120.0 + 40.0 + 8.0
     );
     // Pressed, it reports itself; the caller turns the captions off, and the cells and the
@@ -184,7 +187,7 @@ fn labels_shows_the_captions_and_counts_them_in_the_cells_and_the_panel() {
         .get_by_role_and_label(Role::Button, "Labels")
         .click();
     harness.run();
-    assert_eq!(harness.state().chosen, [GridBarAction::Labels]);
+    assert_eq!(harness.state().chosen, [BrowserBarAction::Labels]);
     assert!(!harness.state().labels);
     let labels = harness.get_by_role_and_label(Role::Button, "Labels");
     assert_eq!(labels.accesskit_node().toggled(), Some(Toggled::False));
@@ -194,11 +197,11 @@ fn labels_shows_the_captions_and_counts_them_in_the_cells_and_the_panel() {
     );
     assert_eq!(
         list(&harness).height(),
-        grid_panel_height(&ctx, ThumbnailSize::Medium, false, 1)
+        browser_height(&ctx, ThumbnailSize::Medium, false, 1)
     );
     assert_eq!(
-        grid_panel_height(&ctx, ThumbnailSize::Medium, true, 1)
-            - grid_panel_height(&ctx, ThumbnailSize::Medium, false, 1),
+        browser_height(&ctx, ThumbnailSize::Medium, true, 1)
+            - browser_height(&ctx, ThumbnailSize::Medium, false, 1),
         40.0
     );
     // A Small cell's caption is the name alone, 20 points.
@@ -206,8 +209,8 @@ fn labels_shows_the_captions_and_counts_them_in_the_cells_and_the_panel() {
 }
 
 #[test]
-fn with_no_photos_the_grid_bar_s_buttons_are_disabled() {
-    let mut harness = grid(0);
+fn with_no_photos_the_browser_bar_s_buttons_are_disabled() {
+    let mut harness = browser(0);
     harness.run();
     for name in ["Sort", "Labels", "Thumbnail size"] {
         let button = harness.get_by_role_and_label(Role::Button, name);
@@ -217,7 +220,7 @@ fn with_no_photos_the_grid_bar_s_buttons_are_disabled() {
 
 #[test]
 fn sort_s_menu_checks_the_key_and_the_direction_and_reports_a_choice() {
-    let mut harness = grid(12);
+    let mut harness = browser(12);
     harness.run();
     harness.get_by_role_and_label(Role::Button, "Sort").click();
     harness.run();
@@ -234,7 +237,7 @@ fn sort_s_menu_checks_the_key_and_the_direction_and_reports_a_choice() {
     harness.run();
     assert_eq!(
         harness.state().chosen,
-        [GridBarAction::Sort(SortKey::FileName)]
+        [BrowserBarAction::Sort(SortKey::FileName)]
     );
     // The direction, chosen the same way, turns the icon and the value.
     harness.get_by_role_and_label(Role::Button, "Sort").click();
@@ -246,7 +249,7 @@ fn sort_s_menu_checks_the_key_and_the_direction_and_reports_a_choice() {
     harness.run();
     assert_eq!(
         harness.state().chosen.last(),
-        Some(&GridBarAction::Descending(true))
+        Some(&BrowserBarAction::Descending(true))
     );
     let sort = harness.get_by_role_and_label(Role::Button, "Sort");
     assert_eq!(
@@ -257,7 +260,7 @@ fn sort_s_menu_checks_the_key_and_the_direction_and_reports_a_choice() {
 
 #[test]
 fn zoom_s_menu_checks_the_size_and_a_choice_sizes_the_cells_and_the_panel() {
-    let mut harness = grid(12);
+    let mut harness = browser(12);
     harness.run();
     assert_eq!(harness.get_by_label("IMG_0000.ARW").rect().width(), 120.0);
     harness
@@ -279,13 +282,13 @@ fn zoom_s_menu_checks_the_size_and_a_choice_sizes_the_cells_and_the_panel() {
     harness.run();
     assert_eq!(
         harness.state().chosen,
-        [GridBarAction::Size(ThumbnailSize::Large)]
+        [BrowserBarAction::Size(ThumbnailSize::Large)]
     );
     assert_eq!(harness.get_by_label("IMG_0000.ARW").rect().width(), 176.0);
     let list = harness
         .get_by_role_and_label(Role::List, "Grid panel")
         .rect();
-    let height = grid_panel_height(&harness.ctx, ThumbnailSize::Large, true, 1);
+    let height = browser_height(&harness.ctx, ThumbnailSize::Large, true, 1);
     assert_eq!(list.height(), height);
     assert_eq!(
         harness
@@ -298,11 +301,11 @@ fn zoom_s_menu_checks_the_size_and_a_choice_sizes_the_cells_and_the_panel() {
 }
 
 #[test]
-fn the_grid_bar_is_photographed() {
+fn the_browser_bar_is_photographed() {
     let mut harness = Harness::builder()
         .with_size(egui::vec2(
             640.0,
-            grid_panel_height(&egui::Context::default(), ThumbnailSize::Small, true, 1) + 40.0,
+            browser_height(&egui::Context::default(), ThumbnailSize::Small, true, 1) + 40.0,
         ))
         .with_context_setup(install)
         .build_ui(|ui| {
@@ -315,7 +318,7 @@ fn the_grid_bar_is_photographed() {
                 picture: None,
                 rating: None,
             };
-            GridPanel::new(names.len(), Some(1), thumb)
+            Browser::new(names.len(), Some(1), thumb)
                 .sort(Sort {
                     key: SortKey::FileName,
                     descending: true,
@@ -327,13 +330,13 @@ fn the_grid_bar_is_photographed() {
     harness.snapshot("grid-bar");
 }
 
-/// A window with the grid panel along its bottom as the app lays it out: its rows the
+/// A window with the Browser along its bottom as the app lays it out: its rows the
 /// edge's, the edge shown last, and what the edge reported.
 struct Bottom {
     rows: usize,
     most: usize,
     count: usize,
-    actions: Vec<GridEdgeAction>,
+    actions: Vec<BrowserEdgeAction>,
     opened: Vec<usize>,
 }
 
@@ -346,13 +349,13 @@ fn bottom(rows: usize, most: usize, count: usize) -> Harness<'static, Bottom> {
         .build_ui_state(
             |ui, state: &mut Bottom| {
                 let ctx = ui.ctx().clone();
-                let edge = GridEdge::new(state.rows, state.most, ThumbnailSize::Small);
+                let edge = BrowserEdge::new(state.rows, state.most, ThumbnailSize::Small);
                 let lines = edge.lines(&ctx);
                 let names: Vec<String> = (0..state.count)
                     .map(|i| format!("IMG_{i:04}.ARW"))
                     .collect();
                 let panel = egui::Panel::bottom("grid panel")
-                    .exact_size(grid_panel_height(&ctx, ThumbnailSize::Small, true, lines))
+                    .exact_size(browser_height(&ctx, ThumbnailSize::Small, true, lines))
                     .resizable(false)
                     .show_separator_line(false)
                     .frame(egui::Frame::NONE)
@@ -365,19 +368,19 @@ fn bottom(rows: usize, most: usize, count: usize) -> Harness<'static, Bottom> {
                             picture: None,
                             rating: None,
                         };
-                        GridPanel::new(state.count, None, thumb)
+                        Browser::new(state.count, None, thumb)
                             .size(ThumbnailSize::Small)
                             .lines(lines)
                             .show(ui)
                     });
-                if let Some(GridPanelAction::Open(i)) = panel.inner.action {
+                if let Some(BrowserAction::Open(i)) = panel.inner.action {
                     state.opened.push(i);
                 }
                 egui::CentralPanel::default().show(ui, |_| {});
                 if let Some(action) = edge.show(ui, panel.response.rect) {
                     state.rows = match action {
-                        GridEdgeAction::Resize(rows) => rows,
-                        GridEdgeAction::Reset => 1,
+                        BrowserEdgeAction::Resize(rows) => rows,
+                        BrowserEdgeAction::Reset => 1,
                     };
                     state.actions.push(action);
                 }
@@ -417,7 +420,7 @@ const PITCH: f32 = 84.0 + 8.0;
 const ROW: f32 = 84.0 + 20.0 + 8.0;
 
 #[test]
-fn dragging_the_grid_panel_s_edge_adds_and_takes_whole_rows() {
+fn dragging_the_browser_s_edge_adds_and_takes_whole_rows() {
     let mut harness = bottom(1, 4, 30);
     harness.run();
     let top = splitter(&harness).rect().center().y;
@@ -493,7 +496,7 @@ fn a_double_click_on_the_edge_goes_back_to_one_row_and_screen_readers_step_it() 
         harness.step();
     }
     harness.run();
-    assert_eq!(harness.state().actions, [GridEdgeAction::Reset]);
+    assert_eq!(harness.state().actions, [BrowserEdgeAction::Reset]);
     assert_eq!(harness.state().rows, 1);
     let node = splitter(&harness);
     assert_eq!(node.accesskit_node().max_numeric_value(), Some(4.0));
@@ -567,8 +570,8 @@ fn right_click<T>(harness: &mut Harness<'_, T>, pos: egui::Pos2) {
 }
 
 #[test]
-fn a_right_click_on_the_grid_bar_opens_its_position_menu() {
-    let mut harness = grid(12);
+fn a_right_click_on_the_browser_bar_opens_its_position_menu() {
+    let mut harness = browser(12);
     harness.run();
     let bar = harness
         .get_by_role_and_label(Role::Toolbar, "Grid bar")
@@ -588,10 +591,10 @@ fn a_right_click_on_the_grid_bar_opens_its_position_menu() {
     harness.run();
     assert_eq!(
         harness.state().chosen,
-        [GridBarAction::Position(GridPosition::Left)]
+        [BrowserBarAction::Position(BrowserPosition::Left)]
     );
     // It opens with no photos too.
-    let mut harness = grid(0);
+    let mut harness = browser(0);
     harness.run();
     let bar = harness
         .get_by_role_and_label(Role::Toolbar, "Grid bar")
@@ -610,7 +613,7 @@ fn a_right_click_on_the_grid_bar_opens_its_position_menu() {
 /// focus goes back to; the app builds the menu.
 #[test]
 fn a_cell_s_right_click_and_menu_keys_ask_for_its_photo_s_menu() {
-    let mut harness = grid(12);
+    let mut harness = browser(12);
     harness.run();
     let cell = harness.get_by_label("IMG_0002.ARW").rect();
     right_click(&mut harness, cell.center());
@@ -643,7 +646,7 @@ fn a_cell_s_right_click_and_menu_keys_ask_for_its_photo_s_menu() {
 /// as its keys do.
 #[test]
 fn screen_readers_ask_for_a_cell_s_menu() {
-    let mut harness = grid(12);
+    let mut harness = browser(12);
     harness.run();
     let cell = harness.get_by_label("IMG_0004.ARW");
     let under = cell.rect().left_bottom();
@@ -675,7 +678,7 @@ fn screen_readers_ask_for_a_cell_s_menu() {
 fn a_control_click_on_a_cell_opens_its_menu_on_the_mac_alone() {
     use egui::os::OperatingSystem;
     for os in [OperatingSystem::Mac, OperatingSystem::Nix] {
-        let mut harness = grid_on(12, os);
+        let mut harness = browser_on(12, os);
         harness.run();
         let at = harness.get_by_label("IMG_0002.ARW").rect().center();
         // Control, which is Ctrl, the command key, off the Mac.
@@ -686,14 +689,14 @@ fn a_control_click_on_a_cell_opens_its_menu_on_the_mac_alone() {
         };
         harness.get_by_label("IMG_0002.ARW").click_modifiers(ctrl);
         harness.run();
-        let grid = harness.state();
+        let browser = harness.state();
         if os == OperatingSystem::Mac {
-            assert_eq!(grid.menus.len(), 1, "{os:?}");
-            assert_eq!((grid.menus[0].photo, grid.menus[0].at), (2, at));
-            assert!(grid.actions.is_empty(), "{os:?}: {:?}", grid.actions);
+            assert_eq!(browser.menus.len(), 1, "{os:?}");
+            assert_eq!((browser.menus[0].photo, browser.menus[0].at), (2, at));
+            assert!(browser.actions.is_empty(), "{os:?}: {:?}", browser.actions);
         } else {
-            assert!(grid.menus.is_empty(), "{os:?}");
-            assert_eq!(grid.actions, [GridPanelAction::ToggleSelected(2)]);
+            assert!(browser.menus.is_empty(), "{os:?}");
+            assert_eq!(browser.actions, [BrowserAction::ToggleSelected(2)]);
         }
     }
 }
@@ -702,7 +705,7 @@ fn a_control_click_on_a_cell_opens_its_menu_on_the_mac_alone() {
 /// in the frame the button comes up, after it: the click's own modifiers count.
 #[test]
 fn a_control_click_counts_control_as_the_button_came_up() {
-    let mut harness = grid_on(12, egui::os::OperatingSystem::Mac);
+    let mut harness = browser_on(12, egui::os::OperatingSystem::Mac);
     harness.run();
     let at = harness.get_by_label("IMG_0002.ARW").rect().center();
     let ctrl = egui::Modifiers {
@@ -728,23 +731,23 @@ fn a_control_click_counts_control_as_the_button_came_up() {
     ]);
     harness.step();
     harness.run();
-    let grid = harness.state();
-    assert_eq!(grid.menus.len(), 1);
-    assert_eq!((grid.menus[0].photo, grid.menus[0].at), (2, at));
-    assert!(grid.actions.is_empty(), "{:?}", grid.actions);
+    let browser = harness.state();
+    assert_eq!(browser.menus.len(), 1);
+    assert_eq!((browser.menus[0].photo, browser.menus[0].at), (2, at));
+    assert!(browser.actions.is_empty(), "{:?}", browser.actions);
 }
 
-/// A window with the grid panel as a column at `position`, `columns` wide as its edge
+/// A window with the Browser as a column at `position`, `columns` wide as its edge
 /// leaves it, beside the photo, and what the edge reported and the panel opened.
 struct Column {
-    position: GridPosition,
+    position: BrowserPosition,
     columns: usize,
     count: usize,
-    actions: Vec<GridEdgeAction>,
+    actions: Vec<BrowserEdgeAction>,
     opened: Vec<usize>,
 }
 
-fn column(position: GridPosition, columns: usize, count: usize) -> Harness<'static, Column> {
+fn column(position: BrowserPosition, columns: usize, count: usize) -> Harness<'static, Column> {
     Harness::builder()
         .with_size(egui::vec2(1000.0, 600.0))
         .with_step_dt(1.0 / 60.0)
@@ -753,17 +756,17 @@ fn column(position: GridPosition, columns: usize, count: usize) -> Harness<'stat
             |ui, state: &mut Column| {
                 let ctx = ui.ctx().clone();
                 let size = ThumbnailSize::Small;
-                let edge = GridEdge::new(state.columns, 4, size).position(state.position);
+                let edge = BrowserEdge::new(state.columns, 4, size).position(state.position);
                 let lines = edge.lines(&ctx);
                 let names: Vec<String> = (0..state.count)
                     .map(|i| format!("IMG_{i:04}.ARW"))
                     .collect();
                 let side = match state.position {
-                    GridPosition::Left => egui::Panel::left("grid panel"),
+                    BrowserPosition::Left => egui::Panel::left("grid panel"),
                     _ => egui::Panel::right("grid panel"),
                 };
                 let panel = side
-                    .exact_size(grid_panel_width(&ctx, size, lines))
+                    .exact_size(browser_width(&ctx, size, lines))
                     .resizable(false)
                     .show_separator_line(false)
                     .frame(egui::Frame::NONE)
@@ -776,20 +779,20 @@ fn column(position: GridPosition, columns: usize, count: usize) -> Harness<'stat
                             picture: None,
                             rating: None,
                         };
-                        GridPanel::new(state.count, Some(1), thumb)
+                        Browser::new(state.count, Some(1), thumb)
                             .size(size)
                             .lines(lines)
                             .position(state.position)
                             .show(ui)
                     });
-                if let Some(GridPanelAction::Open(i)) = panel.inner.action {
+                if let Some(BrowserAction::Open(i)) = panel.inner.action {
                     state.opened.push(i);
                 }
                 egui::CentralPanel::default().show(ui, |_| {});
                 if let Some(action) = edge.show(ui, panel.response.rect) {
                     state.columns = match action {
-                        GridEdgeAction::Resize(columns) => columns,
-                        GridEdgeAction::Reset => 1,
+                        BrowserEdgeAction::Resize(columns) => columns,
+                        BrowserEdgeAction::Reset => 1,
                     };
                     state.actions.push(action);
                 }
@@ -810,7 +813,7 @@ fn width_splitter<'h>(harness: &'h Harness<'_, Column>) -> egui_kittest::Node<'h
 
 #[test]
 fn at_a_side_the_cells_fill_rows_of_the_columns_and_the_bar_is_on_top() {
-    let mut harness = column(GridPosition::Left, 2, 9);
+    let mut harness = column(BrowserPosition::Left, 2, 9);
     harness.run();
     let at = |harness: &Harness<'_, Column>, name: &str| harness.get_by_label(name).rect().min;
     let first = at(&harness, "IMG_0000.ARW");
@@ -840,7 +843,7 @@ fn at_a_side_the_cells_fill_rows_of_the_columns_and_the_bar_is_on_top() {
     assert!(list.left() <= 8.0);
     assert_eq!(width_splitter(&harness).rect().center().x, list.right());
     // At the right, its edge on its left, next to the window's end.
-    let mut harness = column(GridPosition::Right, 1, 9);
+    let mut harness = column(BrowserPosition::Right, 1, 9);
     harness.run();
     let list = harness
         .get_by_role_and_label(Role::List, "Grid panel")
@@ -852,7 +855,7 @@ fn at_a_side_the_cells_fill_rows_of_the_columns_and_the_bar_is_on_top() {
 #[test]
 fn at_a_side_the_arrows_move_as_the_cells_lie() {
     // Rows of two: 0 and 1, 2 and 3, 4.
-    let mut harness = column(GridPosition::Right, 2, 5);
+    let mut harness = column(BrowserPosition::Right, 2, 5);
     harness.run();
     harness.get_by_label("IMG_0000.ARW").focus();
     harness.run();
@@ -880,7 +883,7 @@ fn at_a_side_the_arrows_move_as_the_cells_lie() {
 
 #[test]
 fn at_a_side_the_edge_resizes_in_columns_towards_the_photo() {
-    for (position, towards) in [(GridPosition::Left, 1.0), (GridPosition::Right, -1.0)] {
+    for (position, towards) in [(BrowserPosition::Left, 1.0), (BrowserPosition::Right, -1.0)] {
         let mut harness = column(position, 1, 30);
         harness.run();
         let from = width_splitter(&harness).rect().center();
@@ -919,11 +922,11 @@ fn at_a_side_the_edge_resizes_in_columns_towards_the_photo() {
 }
 
 #[test]
-fn the_grid_panel_at_the_left_and_the_right_is_photographed() {
+fn the_browser_at_the_left_and_the_right_is_photographed() {
     let mut results = egui_kittest::SnapshotResults::new();
     for (position, name) in [
-        (GridPosition::Left, "grid-panel-left"),
-        (GridPosition::Right, "grid-panel-right"),
+        (BrowserPosition::Left, "grid-panel-left"),
+        (BrowserPosition::Right, "grid-panel-right"),
     ] {
         let mut harness = column(position, 2, 40);
         harness.run();
@@ -970,7 +973,7 @@ fn bar_band(list: egui::Rect, column: bool) -> egui::Rect {
 fn the_scroll_bar_shows_while_the_cells_overflow_and_not_when_they_fit() {
     // A row: 30 Medium cells overflow 900 points, 3 fit.
     for (count, shows) in [(30, true), (3, false)] {
-        let mut harness = grid(count);
+        let mut harness = browser(count);
         harness.run();
         let list = harness
             .get_by_role_and_label(Role::List, "Grid panel")
@@ -980,7 +983,7 @@ fn the_scroll_bar_shows_while_the_cells_overflow_and_not_when_they_fit() {
     }
     // A column of two: 40 Small cells overflow 600 points, 4 fit.
     for (count, shows) in [(40, true), (4, false)] {
-        let mut harness = column(GridPosition::Left, 2, count);
+        let mut harness = column(BrowserPosition::Left, 2, count);
         harness.run();
         let list = harness
             .get_by_role_and_label(Role::List, "Grid panel")
@@ -1006,7 +1009,7 @@ fn wheel<T>(harness: &mut Harness<'_, T>, pos: egui::Pos2, delta: egui::Vec2) {
 
 #[test]
 fn the_wheel_scrolls_the_strip_a_vertical_one_a_row_of_cells_too() {
-    let mut harness = grid(60);
+    let mut harness = browser(60);
     harness.run();
     let at = harness.get_by_label("IMG_0002.ARW").rect().center();
     assert!(harness.query_by_label("IMG_0020.ARW").is_none());
@@ -1019,7 +1022,7 @@ fn the_wheel_scrolls_the_strip_a_vertical_one_a_row_of_cells_too() {
     assert!(harness.query_by_label("IMG_0000.ARW").is_some());
 
     // A column scrolls up and down.
-    let mut harness = column(GridPosition::Right, 2, 60);
+    let mut harness = column(BrowserPosition::Right, 2, 60);
     harness.run();
     let at = harness.get_by_label("IMG_0002.ARW").rect().center();
     wheel(&mut harness, at, egui::vec2(0.0, -1300.0));
@@ -1029,7 +1032,7 @@ fn the_wheel_scrolls_the_strip_a_vertical_one_a_row_of_cells_too() {
 
 #[test]
 fn the_scroll_bar_is_photographed() {
-    let mut harness = grid(30);
+    let mut harness = browser(30);
     harness.run();
     let list = harness
         .get_by_role_and_label(Role::List, "Grid panel")
@@ -1048,8 +1051,8 @@ fn an_empty_panel_says_why_under_its_icon_in_a_row_and_a_column() {
     let message = "No photos available";
     let hint = "Choose a subfolder in Browse.";
     for (position, name) in [
-        (GridPosition::Bottom, "grid-panel-empty"),
-        (GridPosition::Left, "grid-panel-empty-left"),
+        (BrowserPosition::Bottom, "grid-panel-empty"),
+        (BrowserPosition::Left, "grid-panel-empty-left"),
     ] {
         let mut harness = Harness::builder()
             .with_size(egui::vec2(640.0, 300.0))
@@ -1058,19 +1061,19 @@ fn an_empty_panel_says_why_under_its_icon_in_a_row_and_a_column() {
                 let ctx = ui.ctx().clone();
                 let size = ThumbnailSize::Small;
                 let thumb = |_| unreachable!("no photos");
-                let panel = GridPanel::new(0, None, thumb)
+                let panel = Browser::new(0, None, thumb)
                     .size(size)
                     .position(position)
                     .empty(message)
                     .empty_hint(hint);
-                if position == GridPosition::Bottom {
+                if position == BrowserPosition::Bottom {
                     egui::Panel::bottom("grid panel")
-                        .exact_size(grid_panel_height(&ctx, size, true, 1))
+                        .exact_size(browser_height(&ctx, size, true, 1))
                         .frame(egui::Frame::NONE)
                         .show(ui, |ui| panel.show(ui));
                 } else {
                     egui::Panel::left("grid panel")
-                        .exact_size(grid_panel_width(&ctx, size, 1))
+                        .exact_size(browser_width(&ctx, size, 1))
                         .resizable(false)
                         .frame(egui::Frame::NONE)
                         .show(ui, |ui| panel.show(ui));
@@ -1092,7 +1095,7 @@ fn an_empty_panel_says_why_under_its_icon_in_a_row_and_a_column() {
                 })
                 .unwrap_or_else(|| panic!("{words} is drawn, {position:?}"))
         };
-        // The icon: an icon's texture of its size, in the panel but not in its grid bar,
+        // The icon: an icon's texture of its size, in the panel but not in its browser bar,
         // whose buttons are icons too.
         let bar = harness
             .get_by_role_and_label(Role::Toolbar, "Grid bar")

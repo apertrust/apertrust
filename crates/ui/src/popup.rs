@@ -23,10 +23,11 @@
 //! The app draws the open popups once a frame with [`show`], before it reads their
 //! answers; their keys are theirs before the frame begins, whatever has the focus.
 //!
-//! Every popup in the app goes through it, as a plain list with no control inside: the top
-//! panel's ☰ and ⋯ and the side panel's » and ⋮ are pull-downs, `Choice`'s list a dropdown.
+//! Every popup in the app goes through it, as a plain list with no control inside: the
+//! Toolbar's ☰ and ⋯ and the Tools panel's » and ⋮ are pull-downs, `Choice`'s list a
+//! dropdown.
 //!
-//! Built so far: the pull-down, drawn from the theme's tokens, which the top panel's ☰
+//! Built so far: the pull-down, drawn from the theme's tokens, which the Toolbar's ☰
 //! opens on Windows and Linux (decision 39), and the dropdown, `Choice`'s list, drawn with
 //! darktable's type-to-filter (decision 42). A [`Service`] the app installs shows the
 //! requests it takes itself, on the Mac AppKit's menus, and answers them through
@@ -174,7 +175,7 @@ impl From<Submenu> for Entry {
 /// What kind of popup a request is.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Kind {
-    /// A menu from a button, opening under it: the top panel's ☰.
+    /// A menu from a button, opening under it: the Toolbar's ☰.
     PullDown,
     /// A list of options for a value, opening under its control with its end edge on the
     /// control's and at least as wide: `Choice`'s. Its entries are items, the chosen one

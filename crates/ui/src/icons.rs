@@ -71,20 +71,20 @@ pub enum Icon {
     Import,
     Export,
     Settings,
-    /// The central bar: every selected photo side by side.
+    /// The viewer bar: every selected photo side by side.
     PhotosSelected,
-    /// The central bar: the proof margin.
+    /// The viewer bar: the proof margin.
     ProofMargin,
-    /// The central bar: before and after.
+    /// The viewer bar: before and after.
     BeforeAfter,
-    /// The central bar's Guides: a grid over the photo, until it has an icon of its own.
+    /// The viewer bar's Guides: a grid over the photo, until it has an icon of its own.
     Grid,
     /// A new layer.
     Plus,
     ZoomIn,
     ZoomOut,
-    /// The grid bar's Sort, showing the direction: lines narrow to wide under an arrow up,
-    /// and wide to narrow over an arrow down.
+    /// The browser bar's Sort, showing the direction: lines narrow to wide under an arrow
+    /// up, and wide to narrow over an arrow down.
     SortAscending,
     SortDescending,
     /// A small check: a menu item that is checked.
@@ -94,9 +94,9 @@ pub enum Icon {
     Warning,
     /// A lock: a photo open for viewing only, in the caption under it.
     Lock,
-    /// A pencil: a photo with an edit, on its cell in the grid panel.
+    /// A pencil: a photo with an edit, on its cell in the Browser.
     Edited,
-    /// An eye: the grid bar's Labels, which shows the captions under the thumbnails.
+    /// An eye: the browser bar's Labels, which shows the captions under the thumbnails.
     Labels,
     /// An eye: the History tab's eye, held to see the photo without a tool.
     Visible,
@@ -111,8 +111,8 @@ pub enum Icon {
     RotateRight,
     FlipHorizontal,
     FlipVertical,
-    /// The side panel's tabs (decision 38): Edit's Adjust, Detail and Raw; darktable's four
-    /// module groups, base, color, correct and effect, in darktable's shapes and one
+    /// The Tools panel's tabs (decision 38): Edit's Adjust, Detail and Raw; darktable's
+    /// four module groups, base, color, correct and effect, in darktable's shapes and one
     /// colour, for the darktable workspace, Correct and Effect also Edit's Geometry and
     /// Effects; and Apertrust's own.
     Adjust,
@@ -130,9 +130,9 @@ pub enum Icon {
     Project,
     /// A magnifier: Browse…, which finds a library's or a project's file anywhere.
     Search,
-    /// One photo: Browse's top line while a photo is open alone.
+    /// One photo: Collections' top line while a photo is open alone.
     Photo,
-    /// A photo struck through: the grid panel's empty state, a folder with no raws.
+    /// A photo struck through: the Browser's empty state, a folder with no raws.
     PhotoOff,
     /// The scopes' graphs: the histogram, the waveform, the RGB parade, the vectorscope.
     Histogram,
@@ -150,7 +150,7 @@ pub enum Icon {
     Maximise,
     Restore,
     Close,
-    /// The top panel's ☰ on Windows and Linux, which opens the menus.
+    /// The Toolbar's ☰ on Windows and Linux, which opens the menus.
     Menu,
     /// A section header's tooltip's rows (`docs/gui.md`, The header's tooltip): a tag for
     /// Kind, a sun for Works on, columns for a utility's Measures, and darktable's input,
@@ -162,10 +162,10 @@ pub enum Icon {
     Input,
     Process,
     Output,
-    /// The app's mark, the Slider A with its cut, at the top panel's start: filled shapes,
+    /// The app's mark, the Slider A with its cut, at the Toolbar's start: filled shapes,
     /// not lines, the one icon drawn so (`assets/icons/README.md`).
     Mark,
-    /// Filled forms, drawn only to show a state: the chosen side panel tab, an icon
+    /// Filled forms, drawn only to show a state: the chosen Tools panel tab, an icon
     /// button that is on, a rating's points (`Icon::filled`).
     AdjustFilled,
     DetailFilled,

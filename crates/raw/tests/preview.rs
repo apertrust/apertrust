@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! Reads each corpus raw's embedded picture at 256 pixels, as the grid panel's thumbnails do,
+//! Reads each corpus raw's embedded picture at 256 pixels, as the Browser's thumbnails do,
 //! and compares its size with `corpus/previews.txt`, so that updating rawler shows every
 //! picture that changes, appears or goes. A raw rawler decodes is held to its picture: the
 //! picture, turned upright, is portrait where the raw shown upright is.

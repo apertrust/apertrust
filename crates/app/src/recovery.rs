@@ -42,7 +42,7 @@
 //! - **`--safe-mode`** opens Automatic for this run with nothing said, as darktable's
 //!   `--disable-opencl` does for OpenCL, whatever a marker says.
 //!
-//! The notice is drawn in the window, over its top, under the top panel or the start
+//! The notice is drawn in the window, over its top, under the Toolbar or the start
 //! window's strip, on every platform: Windows shows no alert yet (`docs/gui.md`, The
 //! alerts), and the notice asks for nothing, the app running meanwhile.
 
@@ -490,7 +490,7 @@ impl Notice {
         vec![card, api]
     }
 
-    /// Draws it over the window's top, `top` points down, under its top panel or strip, in
+    /// Draws it over the window's top, `top` points down, under its Toolbar or strip, in
     /// `ctx`: its words, announced once as they appear (a polite live region), then, where
     /// Keep was pressed while `--conf` `held` the card or the API, why nothing was kept, in
     /// the warning colour and announced too, then its buttons. Returns the button pressed.

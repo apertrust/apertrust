@@ -95,9 +95,9 @@ pub enum Open {
 }
 
 impl Open {
-    /// What is open: Browse's `root`, where a folder is, `last` the root of what was open
-    /// last; else the photos open `alone`, in the order opened, `active` the one active
-    /// among them, which goes first, so it is active again.
+    /// What is open: Collections' `root`, where a folder is, `last` the root of what was
+    /// open last; else the photos open `alone`, in the order opened, `active` the one
+    /// active among them, which goes first, so it is active again.
     pub fn of(
         root: Option<&Path>,
         alone: &[PathBuf],

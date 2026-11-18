@@ -14,10 +14,10 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! The photo frame (`docs/gui.md`, The photo frame): how the central panel shows a photo
+//! The photo frame (`docs/gui.md`, The photo frame): how the Viewer shows a photo
 //! and its caption, for looking and comparing. Nothing is drawn on the photo.
 //!
-//! **The slot and the block.** The central panel's area under the central bar is the
+//! **The slot and the block.** The Viewer's area under the viewer bar is the
 //! photo's slot. The photo and its caption are one block in it, laid out by [`PhotoFrame`]:
 //!
 //! 1. the slot loses the margin on every side;

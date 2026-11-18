@@ -14,14 +14,14 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! The grid cell and the grid panel's cells (`docs/gui.md`, The grid panel, The cell): the
+//! The grid cell and the Browser's cells (`docs/gui.md`, The Browser, The cell): the
 //! picture fitted or filling its square, the rings round it, the corner marks that always
 //! show, the caption and its first line's clicks, what screen readers hear, and the
 //! panel's keys.
 
 use apertrust_ui::components::{
-    CellAction, CellPicture, CellRating, CellStatus, ColourLabel, ColourLabels, GridCell,
-    GridPanel, GridPanelAction, Thumb,
+    Browser, BrowserAction, CellAction, CellPicture, CellRating, CellStatus, ColourLabel,
+    ColourLabels, GridCell, Thumb,
 };
 use apertrust_ui::{Builtin, Locale, Theme};
 use egui::accesskit::{HasPopup, Role, Toggled};
@@ -617,12 +617,12 @@ fn a_cell_is_a_list_item_named_by_its_file_with_its_marks_in_its_description() {
 }
 
 /// The panel with `count` photos, the one at `active` open, and what it reported.
-fn panel(count: usize, active: Option<usize>) -> Harness<'static, Vec<GridPanelAction>> {
+fn panel(count: usize, active: Option<usize>) -> Harness<'static, Vec<BrowserAction>> {
     Harness::builder()
         .with_size(egui::vec2(700.0, 200.0))
         .with_context_setup(install)
         .build_ui_state(
-            move |ui, actions: &mut Vec<GridPanelAction>| {
+            move |ui, actions: &mut Vec<BrowserAction>| {
                 let names: Vec<String> = (0..count).map(|i| format!("IMG_{i:04}.ARW")).collect();
                 let thumb = |i: usize| Thumb {
                     name: &names[i],
@@ -632,7 +632,7 @@ fn panel(count: usize, active: Option<usize>) -> Harness<'static, Vec<GridPanelA
                     picture: None,
                     rating: None,
                 };
-                if let Some(action) = GridPanel::new(count, active, thumb).show(ui).action {
+                if let Some(action) = Browser::new(count, active, thumb).show(ui).action {
                     actions.push(action);
                 }
             },
@@ -655,7 +655,7 @@ fn the_arrow_keys_move_between_cells_and_enter_opens_the_one_focused() {
     // Enter on the cell reached: two steps right and one left from IMG_0001.
     harness.key_press(Key::Enter);
     harness.run();
-    assert_eq!(*harness.state(), vec![GridPanelAction::Open(2)]);
+    assert_eq!(*harness.state(), vec![BrowserAction::Open(2)]);
 
     // End goes to the last cell, scrolling to it; Home comes back.
     harness.key_press(Key::End);
@@ -663,17 +663,17 @@ fn the_arrow_keys_move_between_cells_and_enter_opens_the_one_focused() {
     harness.run();
     harness.key_press(Key::Enter);
     harness.run();
-    assert_eq!(harness.state().last(), Some(&GridPanelAction::Open(39)));
+    assert_eq!(harness.state().last(), Some(&BrowserAction::Open(39)));
     harness.key_press(Key::Home);
     harness.run();
     harness.run();
     harness.key_press(Key::Enter);
     harness.run();
-    assert_eq!(harness.state().last(), Some(&GridPanelAction::Open(0)));
+    assert_eq!(harness.state().last(), Some(&BrowserAction::Open(0)));
 }
 
 #[test]
-fn the_cells_hang_under_the_grid_panel_s_list_so_a_screen_reader_hears_n_items() {
+fn the_cells_hang_under_the_browser_s_list_so_a_screen_reader_hears_n_items() {
     let mut harness = panel(4, Some(0));
     harness.run();
     let list = harness.get_by_role_and_label(Role::List, "Grid panel");
@@ -719,7 +719,7 @@ fn the_panel_reports_the_photos_whose_cells_it_drew() {
                         picture: None,
                         rating: None,
                     };
-                    *shown = GridPanel::new(count, active, thumb).show(ui).shown;
+                    *shown = Browser::new(count, active, thumb).show(ui).shown;
                 },
                 0..0,
             );
@@ -727,7 +727,8 @@ fn the_panel_reports_the_photos_whose_cells_it_drew() {
         harness.run();
         harness.state().clone()
     };
-    // 700 points, less the grid bar's column, hold four cells of 128 and part of a fifth.
+    // 700 points, less the browser bar's column, hold four cells of 128 and part of a
+    // fifth.
     assert_eq!(shown(40, Some(0)), 0..5);
     // Scrolled to the last, the cells at the end.
     assert_eq!(shown(40, Some(39)).end, 40);
@@ -744,7 +745,7 @@ fn an_empty_panel_says_why_and_a_filled_one_has_no_such_text() {
         .with_context_setup(install)
         .build_ui(|ui| {
             let none = |_: usize| unreachable!("no photo to ask for");
-            GridPanel::new(0, None, none)
+            Browser::new(0, None, none)
                 .empty("No photos available")
                 .show(ui);
         });

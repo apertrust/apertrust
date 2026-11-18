@@ -25,17 +25,17 @@ use egui::emath::GuiRounding as _;
 use egui::{Align2, Color32, FontFamily, FontId, Frame, RichText, Sense, Stroke, Ui, pos2, vec2};
 
 use crate::components::{
-    About, ActionRow, Available, Axis, Button, ButtonState, CellPicture, CellRating, CellStatus,
-    CentralBar, CentralBarAction, Checkbox, Choice, ChoiceAction, ChoiceStyle, Clipped,
-    CollapsibleGroup, ColourLabel, ColourLabels, Curve, CurveAction, Equalizer, EqualizerAction,
-    FileManager, GridCell, GridPanel, GridPanelAction, Histogram, HistogramBins, IconButton, Job,
-    JobFailure, JobMessage, JobPhase, Jobs, Margin, Mark, Marker, MaskHistogram, PanelBody,
-    PanelEdge, PanelEdgeAction, PanelTab, Patch, Patches, PhotoCaption, PhotoFrame, PickerButton,
-    PickerMarks, PickerPlace, Place, Quad, Rail, RailLine, RailNode, ReadoutRow, Reference,
-    ReferenceRow, SaveState, Scale, Scope, ScopeView, Section, SectionAction, Segmented,
-    SliderAction, SliderRow, Swatch, SwatchFill, Swatches, Switch, TabBar, TabBarAction, Thumb,
-    Toggle, ToggleRow, ToolButton, TopPanel, TopPanelAction, Track, VectorscopeBins, WarningRow,
-    WaveformBins, Zoom, group_label,
+    About, ActionRow, Available, Axis, Browser, BrowserAction, Button, ButtonState, CellPicture,
+    CellRating, CellStatus, Checkbox, Choice, ChoiceAction, ChoiceStyle, Clipped, CollapsibleGroup,
+    ColourLabel, ColourLabels, Curve, CurveAction, Equalizer, EqualizerAction, FileManager,
+    GridCell, Histogram, HistogramBins, IconButton, Job, JobFailure, JobMessage, JobPhase, Jobs,
+    Margin, Mark, Marker, MaskHistogram, PanelBody, PanelEdge, PanelEdgeAction, PanelTab, Patch,
+    Patches, PhotoCaption, PhotoFrame, PickerButton, PickerMarks, PickerPlace, Place, Quad, Rail,
+    RailLine, RailNode, ReadoutRow, Reference, ReferenceRow, SaveState, Scale, Scope, ScopeView,
+    Section, SectionAction, Segmented, SliderAction, SliderRow, Swatch, SwatchFill, Swatches,
+    Switch, TabBar, TabBarAction, Thumb, Toggle, ToggleRow, ToolButton, Toolbar, ToolbarAction,
+    Track, VectorscopeBins, ViewerBar, ViewerBarAction, WarningRow, WaveformBins, Zoom,
+    group_label,
 };
 use crate::fonts::{MEDIUM, SEMIBOLD};
 use crate::i18n::{Args, Locale, Translator};
@@ -76,12 +76,12 @@ impl Gallery {
         self
     }
 
-    /// Draws the gallery's side panel alone, `width` points wide, as the snapshot tests
+    /// Draws the gallery's Tools panel alone, `width` points wide, as the snapshot tests
     /// photograph it at its narrowest.
-    pub fn show_side_panel(&mut self, ui: &mut Ui, width: f32) {
+    pub fn show_tools_panel(&mut self, ui: &mut Ui, width: f32) {
         let t = theme::theme(ui.ctx());
         self.demo.panel_width = Some(width);
-        side_panel(ui, &t, &mut self.demo);
+        tools_panel(ui, &t, &mut self.demo);
     }
 
     /// Draws the Slider markers section alone, as the snapshot tests photograph each shape:
@@ -158,7 +158,7 @@ impl Gallery {
         slider_markers(ui, &mut self.demo);
         ui.add_space(t.spacing.l);
         heading(ui, "Side panel");
-        side_panel(ui, &t, &mut self.demo);
+        tools_panel(ui, &t, &mut self.demo);
         ui.add_space(t.spacing.l);
         scopes_in_use(ui, &t, &mut self.demo);
         ui.add_space(t.spacing.l);
@@ -214,7 +214,7 @@ fn button_states(ui: &mut Ui, t: &Theme) {
             ui.horizontal(|ui| {
                 label(ui, name);
                 for state in ButtonState::ALL {
-                    ui.allocate_ui(vec2(COLUMN, t.sizes.top_bar - 14.0), |ui| {
+                    ui.allocate_ui(vec2(COLUMN, t.sizes.toolbar - 14.0), |ui| {
                         ui.set_width(COLUMN);
                         ui.push_id(state, |ui| cell(ui, state));
                     });
@@ -285,7 +285,7 @@ fn button_states(ui: &mut Ui, t: &Theme) {
             ("Picker, on", Icon::Pick, true, ButtonState::Rest),
         ];
         for (name, icon, on, state) in toggles {
-            ui.allocate_ui(vec2(COLUMN, t.sizes.top_bar - 14.0), |ui| {
+            ui.allocate_ui(vec2(COLUMN, t.sizes.toolbar - 14.0), |ui| {
                 ui.set_width(COLUMN);
                 IconButton::new(icon, name)
                     .size(28.0)
@@ -582,7 +582,7 @@ fn pickers(ui: &mut Ui, t: &Theme) {
     ui.push_id("pickers", |ui| {
         ui.horizontal(|ui| {
             for (name, on, state) in states {
-                ui.allocate_ui(vec2(COLUMN, t.sizes.top_bar - 14.0), |ui| {
+                ui.allocate_ui(vec2(COLUMN, t.sizes.toolbar - 14.0), |ui| {
                     ui.set_width(COLUMN);
                     ui.horizontal(|ui| {
                         let full = format!("Exposure: pick from the photo, {name}");
@@ -1182,7 +1182,7 @@ struct Demo {
     bands: Vec<f32>,
     mask: (Vec<f32>, [f32; 2]),
     overflowing: (Vec<f32>, [f32; 2]),
-    /// The side panel: its width (None for the theme's), its tab, whether tabs show names,
+    /// The Tools panel: its width (None for the theme's), its tab, whether tabs show names,
     /// which sections are open, Exposure's tab, and which section is peeking.
     panel_width: Option<f32>,
     panel_tab: usize,
@@ -1197,7 +1197,7 @@ struct Demo {
     scopes: ScopeView,
     in_use: [ScopeView; 5],
     /// The shell: whether the ☰'s menu is to open by itself ([`Gallery::with_menu_open`]),
-    /// the central bar's toggles and scale, and the grid panel.
+    /// the viewer bar's toggles and scale, and the Browser.
     open_menu: bool,
     guides: bool,
     proof: bool,
@@ -1444,11 +1444,11 @@ fn controls(ui: &mut Ui, t: &Theme, demo: &mut Demo) {
     });
     ui.add_space(t.spacing.s);
     // Dropdown rows, Boxed as everywhere but tool panels; then the same rows Blended, as
-    // tool panels draw them, at the side panel's width under a slider row whose value
+    // tool panels draw them, at the Tools panel's width under a slider row whose value
     // their options end with, stacked as a section stacks rows.
     ui.push_id("boxed", |ui| choices(ui, t, demo, ChoiceStyle::Boxed));
     ui.add_space(t.spacing.s);
-    let column = t.sizes.side_panel - 2.0 * t.spacing.l;
+    let column = t.sizes.tools_panel - 2.0 * t.spacing.l;
     ui.push_id("blended", |ui| {
         ui.allocate_ui(vec2(column, t.sizes.row), |ui| {
             ui.spacing_mut().item_spacing.y = 0.0;
@@ -2007,10 +2007,10 @@ fn mask_histogram(overflowing: bool) -> (Vec<f32>, [f32; 2]) {
     (bins, percentiles)
 }
 
-/// The side panel as Edit's Adjust tab shows it (decision 38): Scopes and Layers pinned,
+/// The Tools panel as Edit's Adjust tab shows it (decision 38): Scopes and Layers pinned,
 /// the tools below. Photos, Detail and History, with nothing behind them here, are drawn
 /// disabled. Its edge, here at its end as for a panel at the window's start, resizes it.
-fn side_panel(page: &mut Ui, t: &Theme, demo: &mut Demo) {
+fn tools_panel(page: &mut Ui, t: &Theme, demo: &mut Demo) {
     let ids = [
         (Icon::Folder, "tab-photos", false),
         (Icon::Adjust, "tab-adjust", true),
@@ -2037,7 +2037,7 @@ fn side_panel(page: &mut Ui, t: &Theme, demo: &mut Demo) {
         .collect();
     // The app's widths: down to 240, opening at the theme's 320.
     let widths = 240.0..=page.available_width().clamp(240.0, 600.0);
-    let width = demo.panel_width.unwrap_or(t.sizes.side_panel);
+    let width = demo.panel_width.unwrap_or(t.sizes.tools_panel);
     let name = crate::tr(page.ctx(), "panel-width");
     let edge = PanelEdge::new(&name, width, widths).at_start(true);
     let (rect, _) = page.allocate_exact_size(vec2(edge.width(page.ctx()), 560.0), Sense::hover());
@@ -2416,7 +2416,7 @@ fn sample_menu(anchor: egui::Rect) -> Request {
     Request::pull_down(anchor, "Menu", entries)
 }
 
-/// The jobs spinner's states, as the top panel draws them: turning while jobs run, and with
+/// The jobs spinner's states, as the Toolbar draws them: turning while jobs run, and with
 /// none running the warning sign where one failed, nothing where none did; then the jobs
 /// window's content, newest first, a row in each state the wireframe draws.
 fn jobs_section(ui: &mut Ui, t: &Theme, demo: &mut Demo) {
@@ -2524,8 +2524,8 @@ fn sample_jobs() -> Vec<Job> {
     ]
 }
 
-/// The shell's parts, with sample state: the top panel, the central bar, the caption and
-/// the grid panel.
+/// The shell's parts, with sample state: the Toolbar, the viewer bar, the caption and
+/// the Browser.
 fn shell(ui: &mut Ui, t: &Theme, demo: &mut Demo) {
     let ctx = ui.ctx().clone();
     let available = Available {
@@ -2534,13 +2534,13 @@ fn shell(ui: &mut Ui, t: &Theme, demo: &mut Demo) {
         ..Available::default()
     };
     let jobs = sample_jobs();
-    if let Some(action) = TopPanel::new()
+    if let Some(action) = Toolbar::new()
         .available(available)
         .saved(SaveState::Saved)
         .jobs(Jobs::new(&jobs).file_manager(FileManager::Finder))
         .undo_tip("Undo Exposure: Brightness +8")
-        .shortcut(TopPanelAction::Export, "Ctrl+E")
-        .shortcut(TopPanelAction::Undo, "Ctrl+Z")
+        .shortcut(ToolbarAction::Export, "Ctrl+E")
+        .shortcut(ToolbarAction::Undo, "Ctrl+Z")
         .show(ui)
     {
         demo.last = format!("Top panel: {action:?}");
@@ -2549,20 +2549,20 @@ fn shell(ui: &mut Ui, t: &Theme, demo: &mut Demo) {
     // caption buttons at its end: the window as it is, its menu open at first with View
     // expanded where the snapshots photograph it, then maximised. Without Saved, as with no
     // photo open.
-    let menu = TopPanel::menu_popup();
+    let menu = Toolbar::menu_popup();
     for maximised in [false, true] {
         ui.add_space(t.spacing.s);
-        let action = TopPanel::new()
+        let action = Toolbar::new()
             .available(available)
             .menu_button(true)
             .title_bar(true)
             .caption_buttons(true)
             .maximised(maximised)
-            .shortcut(TopPanelAction::Menu, "F10")
+            .shortcut(ToolbarAction::Menu, "F10")
             .show(ui);
-        let anchor = TopPanel::menu_anchor(&ctx);
+        let anchor = Toolbar::menu_anchor(&ctx);
         let first = !maximised && demo.open_menu;
-        if let Some(anchor) = anchor.filter(|_| first || action == Some(TopPanelAction::Menu)) {
+        if let Some(anchor) = anchor.filter(|_| first || action == Some(ToolbarAction::Menu)) {
             let mut request = sample_menu(anchor);
             if first {
                 request = request.expanded("view");
@@ -2585,7 +2585,7 @@ fn shell(ui: &mut Ui, t: &Theme, demo: &mut Demo) {
     }
     ui.add_space(t.spacing.s);
     let image = crate::tr(&ctx, "layer-image");
-    if let Some(action) = CentralBar::new(&image, demo.zoom)
+    if let Some(action) = ViewerBar::new(&image, demo.zoom)
         .toggles(
             Toggle::new(false, true),
             Toggle::new(demo.proof, true),
@@ -2596,16 +2596,16 @@ fn shell(ui: &mut Ui, t: &Theme, demo: &mut Demo) {
         .values(Some([142, 128, 113]))
         .zoom_enabled(true)
         .zoomable(true)
-        .shortcut(CentralBarAction::Zoom(Zoom::Fit), "Ctrl+0")
-        .shortcut(CentralBarAction::Zoom(Zoom::Percent(100.0)), "Z")
-        .shortcut(CentralBarAction::ZoomIn, "Ctrl+=")
-        .shortcut(CentralBarAction::ZoomOut, "Ctrl+−")
+        .shortcut(ViewerBarAction::Zoom(Zoom::Fit), "Ctrl+0")
+        .shortcut(ViewerBarAction::Zoom(Zoom::Percent(100.0)), "Z")
+        .shortcut(ViewerBarAction::ZoomIn, "Ctrl+=")
+        .shortcut(ViewerBarAction::ZoomOut, "Ctrl+−")
         .show(ui)
     {
         match action {
-            CentralBarAction::Guides => demo.guides = !demo.guides,
-            CentralBarAction::ProofMargin => demo.proof = !demo.proof,
-            CentralBarAction::Zoom(zoom) => demo.zoom = zoom,
+            ViewerBarAction::Guides => demo.guides = !demo.guides,
+            ViewerBarAction::ProofMargin => demo.proof = !demo.proof,
+            ViewerBarAction::Zoom(zoom) => demo.zoom = zoom,
             other => demo.last = format!("Central bar: {other:?}"),
         }
     }
@@ -2643,21 +2643,21 @@ fn shell(ui: &mut Ui, t: &Theme, demo: &mut Demo) {
         picture: None,
         rating: None,
     };
-    let panel = GridPanel::new(names.len(), Some(demo.active), thumb).show(ui);
+    let panel = Browser::new(names.len(), Some(demo.active), thumb).show(ui);
     if let Some(action) = panel.action {
         match action {
-            GridPanelAction::Open(i) => {
+            BrowserAction::Open(i) => {
                 demo.active = i;
                 demo.selected = vec![i];
             }
-            GridPanelAction::ToggleSelected(i) => {
+            BrowserAction::ToggleSelected(i) => {
                 if let Some(k) = demo.selected.iter().position(|&s| s == i) {
                     demo.selected.remove(k);
                 } else {
                     demo.selected.push(i);
                 }
             }
-            GridPanelAction::SelectRange(i) => {
+            BrowserAction::SelectRange(i) => {
                 let (a, b) = (demo.active.min(i), demo.active.max(i));
                 demo.selected = (a..=b).collect();
             }

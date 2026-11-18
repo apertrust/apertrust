@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! The jobs: the spinner in the top panel and the jobs window's content, for each state,
+//! The jobs: the spinner in the Toolbar and the jobs window's content, for each state,
 //! the actions they report, what screen readers hear and how the panel keeps the spinner
 //! in place (`docs/gui.md`, The jobs window; decision 57), driven through AccessKit.
 
@@ -22,7 +22,7 @@ use std::time::SystemTime;
 
 use apertrust_ui::components::{
     ActivityAction, Available, FileManager, Job, JobFailure, JobMessage, JobPhase, Jobs, SaveState,
-    TopPanel, TopPanelAction, kind_icon,
+    Toolbar, ToolbarAction, kind_icon,
 };
 use apertrust_ui::{Icon, Locale, Theme, Translator};
 use egui::accesskit::{Live, Role};
@@ -107,7 +107,7 @@ fn other(id: u64, phase: JobPhase, cancellable: bool) -> Job {
 struct Run {
     jobs: Vec<Job>,
     saved: SaveState<'static>,
-    actions: Vec<TopPanelAction>,
+    actions: Vec<ToolbarAction>,
 }
 
 fn panel_in(locale: Locale, width: f32, jobs: Vec<Job>) -> Harness<'static, Run> {
@@ -121,7 +121,7 @@ fn panel_in(locale: Locale, width: f32, jobs: Vec<Job>) -> Harness<'static, Run>
         .build_ui_state(
             |ui, run: &mut Run| {
                 let jobs = run.jobs.clone();
-                let action = TopPanel::new()
+                let action = Toolbar::new()
                     .available(Available {
                         redo: false,
                         apply: false,
@@ -247,13 +247,13 @@ fn tab_reaches_the_spinner_and_enter_asks_for_the_window() {
     assert!(reached, "Tab never reached the spinner");
     harness.key_press(Key::Enter);
     harness.run();
-    assert_eq!(harness.state().actions, vec![TopPanelAction::Jobs]);
+    assert_eq!(harness.state().actions, vec![ToolbarAction::Jobs]);
     // A click does the same, and a second asks again, to bring the window forward.
     spinner(&harness).click();
     harness.run();
     assert_eq!(
         harness.state().actions,
-        vec![TopPanelAction::Jobs, TopPanelAction::Jobs]
+        vec![ToolbarAction::Jobs, ToolbarAction::Jobs]
     );
 }
 

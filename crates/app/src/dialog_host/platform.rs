@@ -90,7 +90,7 @@ pub fn shadowed(os: OperatingSystem, wayland: bool) -> bool {
 
 /// Whether the host draws a dialog window's frame on `os`: a strip at the window's top with
 /// its close button, in the main window's caption style, and the window's title but an
-/// alert's ([`super::draw`]). On Windows, where the main window's top panel is its title
+/// alert's ([`super::draw`]). On Windows, where the main window's Toolbar is its title
 /// bar, so a dialog's frame matches it, with no icon and no system caption; on Linux,
 /// where GNOME on Wayland draws none and winit's fallback frame shows minimise and maximise
 /// as bare squares. Its window then has no decorations, on X11 too, so the frame is the

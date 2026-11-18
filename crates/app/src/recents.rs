@@ -15,7 +15,8 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 //! The recents (`docs/gui.md`, File › Open Recent; `docs/settings.md`, `state.toml`): the
-//! one list of what was opened, which Open Recent, Browse and the start window all read.
+//! one list of what was opened, which Open Recent, Collections and the start window all
+//! read.
 //!
 //! - [`Recents`] holds the [`Entry`]s, newest first, at most [`MOST`]: one opened goes to
 //!   the top, after the newest even when the clock was set back; [`Recents::remove`] is
@@ -76,8 +77,8 @@ pub enum OpenKind {
 
 impl OpenKind {
     /// What one of this kind called `name` is called where a recent or what is open is
-    /// named by itself, "Folder: 2026-10 Lisbon": Open Recent's items, and Browse's top line
-    /// and its recents, to screen readers too.
+    /// named by itself, "Folder: 2026-10 Lisbon": Open Recent's items, and Collections' top
+    /// line and its recents, to screen readers too.
     pub fn label(self, words: &Translator, name: &str) -> String {
         let id = match self {
             OpenKind::Folder => "open-kind-folder",

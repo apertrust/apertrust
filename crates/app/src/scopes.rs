@@ -15,7 +15,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 //! The Scopes tool (`docs/gui.md`, The scopes; decision 19): a utility tool pinned at the
-//! top of the side panel's editing tabs, showing the design system's `Histogram` with what
+//! top of the Tools panel's editing tabs, showing the design system's `Histogram` with what
 //! the engine counted of the frame shown, its header every tool's (decision 93), with ⋯
 //! alone, drawn disabled while nothing is behind it.
 //!
@@ -25,7 +25,7 @@
 //!   has closed is dropped with it. The clipping toggles are drawn disabled until the app
 //!   draws the overlays on the photo.
 //! - **What it asks:** the session counts only what [`Command::Scopes`] names, so the app
-//!   asks for the totals while the section is in the side panel, open or closed, and for
+//!   asks for the totals while the section is in the Tools panel, open or closed, and for
 //!   the graph shown while it is open ([`wanted`]); a change of graph, or the section
 //!   opening or closing, asks again ([`Scopes::ask`]). The session counts the frame shown
 //!   again for a graph it was not counted for, so a graph chosen shows at once.
@@ -58,7 +58,7 @@ pub enum Change {
 }
 
 /// What the session is to count of each frame: nothing while the section is not in the
-/// side panel (`pinned`); the totals while it is, open or closed; and the graph `view`
+/// Tools panel (`pinned`); the totals while it is, open or closed; and the graph `view`
 /// shows while it is `open`, the waveform's counts for the waveform and the parade.
 pub fn wanted(pinned: bool, open: bool, view: ScopeView) -> Option<Graphs> {
     if !pinned {

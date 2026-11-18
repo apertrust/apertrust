@@ -203,7 +203,8 @@ fn a_missing_folder_is_marked_off_the_caller_s_thread_and_unmarked_once_it_is_ba
     answered(&mut recents);
     assert!(recents.missing(OpenKind::Folder, &gone));
     assert!(!recents.missing(OpenKind::Folder, &dir.0));
-    // Back, as a share reconnected: the next check, on focus or as Browse shows, unmarks it.
+    // Back, as a share reconnected: the next check, on focus or as Collections shows,
+    // unmarks it.
     std::fs::create_dir(&gone).expect("made");
     recents.check();
     answered(&mut recents);

@@ -14,11 +14,11 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! The jobs: the spinner at the top panel's end and the content of the jobs window
+//! The jobs: the spinner at the Toolbar's end and the content of the jobs window
 //! (`docs/gui.md`, The jobs window; decisions 57 and 72).
 //!
 //! - **The spinner** ([`Jobs::spinner`]) is one icon button beside the save state, never
-//!   one per job and with no words, so the top panel never folds it. It turns while a job
+//!   one per job and with no words, so the Toolbar never folds it. It turns while a job
 //!   is queued or running; with none, it shows the warning sign while a failed job is
 //!   left, and nothing otherwise: the finished rows wait in the window. It is named
 //!   "Jobs", with the count in its value ("2 running"), so its name stays the same as jobs
@@ -38,7 +38,7 @@
 //!   egui's memory. The caller names the platform's file manager.
 //! - **Screen readers** find the spinner in the Tab order, and a polite live region says
 //!   when a job starts and when it ends, never as it progresses. The region is in the tree
-//!   whenever the top panel has jobs, empty while there are none.
+//!   whenever the Toolbar has jobs, empty while there are none.
 //! - **Reduced motion:** egui has no setting for it; the theme's motion tokens set its
 //!   `animation_time` to zero then, and the spinner and an indeterminate bar's segment hold
 //!   still when it is zero.
@@ -347,7 +347,7 @@ const STROKE: f32 = 1.5;
 /// (turns a second).
 const SWEEP: f32 = 1.6;
 const TURNS: f64 = 0.9;
-/// The spinner's side, as the top panel's other buttons.
+/// The spinner's side, as the Toolbar's other buttons.
 const BUTTON: f32 = 30.0;
 /// The tile a row's icon sits on, at its start.
 const TILE: f32 = 28.0;
@@ -423,7 +423,7 @@ impl<'a> Jobs<'a> {
     }
 
     /// Draws the spinner at the layout's next place, and keeps the live region in the tree.
-    /// Returns its response, for the caller's own bookkeeping (the top panel keeps it out
+    /// Returns its response, for the caller's own bookkeeping (the Toolbar keeps it out
     /// of the title bar's empty areas), which is `clicked` when the user asks for the
     /// window; None when nothing is queued or running and nothing failed, though the live
     /// region is drawn all the same.

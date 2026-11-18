@@ -151,7 +151,7 @@ pub struct Options {
     /// When to report a listing that is still running; `None` never reports.
     pub deadline: Option<Duration>,
     /// Lists the subfolders alone: no raw or sidecar is listed or measured, and nothing is
-    /// removed, as Browse's tree looks inside a folder ([`subfolders`]).
+    /// removed, as Collections' tree looks inside a folder ([`subfolders`]).
     pub folders_only: bool,
 }
 

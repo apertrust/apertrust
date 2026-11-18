@@ -14,11 +14,11 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! The top panel's ☰ and the drawn menu it opens through the popup service (`docs/gui.md`,
+//! The Toolbar's ☰ and the drawn menu it opens through the popup service (`docs/gui.md`,
 //! The menu bar, The drawn menus; decision 39), driven by the pointer and the keys and
 //! read through AccessKit, as a screen reader reads them.
 
-use apertrust_ui::components::{TopPanel, TopPanelAction};
+use apertrust_ui::components::{Toolbar, ToolbarAction};
 use apertrust_ui::popup::{self, Answer, Entry, Item, Request, Submenu};
 use apertrust_ui::{Locale, Theme};
 use egui::accesskit::{HasPopup, Role, Toggled};
@@ -26,11 +26,11 @@ use egui::{Event, Key, vec2};
 use egui_kittest::Harness;
 use egui_kittest::kittest::{NodeT as _, Queryable as _};
 
-/// The top panel with or without the ☰, opening the menu as the app would, and what came
+/// The Toolbar with or without the ☰, opening the menu as the app would, and what came
 /// back.
 struct App {
     menu_button: bool,
-    actions: Vec<TopPanelAction>,
+    actions: Vec<ToolbarAction>,
     answers: Vec<Answer>,
     /// Open the menu on the next frame, at its top or with this menu expanded, as F10 and
     /// Alt with an access key will.
@@ -132,35 +132,35 @@ fn app_in(locale: Locale, menu_button: bool) -> Harness<'static, App> {
                         .cloned()
                         .collect::<Vec<_>>()
                 }));
-                let action = TopPanel::new()
+                let action = Toolbar::new()
                     .menu_button(app.menu_button)
                     .title_bar(true)
                     .caption_buttons(true)
-                    .shortcut(TopPanelAction::Menu, "F10")
+                    .shortcut(ToolbarAction::Menu, "F10")
                     .show(ui);
                 let ctx = ui.ctx().clone();
                 if let Some(action) = action {
                     app.actions.push(action);
-                    if action == TopPanelAction::Menu {
+                    if action == ToolbarAction::Menu {
                         app.open_at = Some(None);
                     }
                 }
                 if let Some(at) = app.open_at.take()
-                    && let Some(anchor) = TopPanel::menu_anchor(&ctx)
+                    && let Some(anchor) = Toolbar::menu_anchor(&ctx)
                 {
                     let mut request = Request::pull_down(anchor, "Menu", entries());
                     if let Some(id) = at {
                         request = request.expanded(id);
                     }
-                    popup::open(&ctx, TopPanel::menu_popup(), request);
+                    popup::open(&ctx, Toolbar::menu_popup(), request);
                 }
                 if app.show {
                     popup::show(&ctx);
                 }
-                if let Some(answer) = popup::answer(&ctx, TopPanel::menu_popup()) {
+                if let Some(answer) = popup::answer(&ctx, Toolbar::menu_popup()) {
                     app.answers.push(answer);
                 }
-                if let Some(answer) = popup::answer(&ctx, TopPanel::menu_popup()) {
+                if let Some(answer) = popup::answer(&ctx, Toolbar::menu_popup()) {
                     app.twice.push(answer);
                 }
             },
@@ -228,7 +228,7 @@ fn the_menu_button_comes_first_and_reports_menu() {
     assert!(harness.query_by_label("Menu (F10)").is_some());
     harness.get_by_role_and_label(Role::Button, "Menu").click();
     harness.run();
-    assert_eq!(harness.state().actions, vec![TopPanelAction::Menu]);
+    assert_eq!(harness.state().actions, vec![ToolbarAction::Menu]);
 }
 
 #[test]
@@ -286,7 +286,7 @@ fn the_menu_button_takes_down_to_open_it() {
     harness.get_by_role_and_label(Role::Button, "Menu").focus();
     harness.run();
     key(&mut harness, Key::ArrowDown);
-    assert_eq!(harness.state().actions, vec![TopPanelAction::Menu]);
+    assert_eq!(harness.state().actions, vec![ToolbarAction::Menu]);
     assert_eq!(focused(&harness), "File");
 }
 
@@ -612,7 +612,7 @@ fn a_press_outside_closes_the_menus_and_one_on_the_button_too() {
     harness.get_by_role_and_label(Role::Button, "Menu").click();
     harness.run();
     assert!(!menu_open(&harness, "Menu"));
-    assert_eq!(harness.state().actions, vec![TopPanelAction::Menu]);
+    assert_eq!(harness.state().actions, vec![ToolbarAction::Menu]);
     assert_eq!(
         harness.state().answers,
         vec![Answer::Dismissed, Answer::Dismissed]
@@ -818,7 +818,7 @@ fn a_popup_no_frame_draws_takes_no_keys_and_closes() {
     key(&mut harness, Key::ArrowDown);
     assert!(pressed(&harness.state().seen, Key::ArrowDown));
     assert_eq!(harness.state().answers, vec![Answer::Dismissed]);
-    assert!(!popup::is_open(&harness.ctx, TopPanel::menu_popup()));
+    assert!(!popup::is_open(&harness.ctx, Toolbar::menu_popup()));
 }
 
 #[test]

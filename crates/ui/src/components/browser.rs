@@ -14,31 +14,32 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! The grid panel: the open folder's photos as `GridCell`s along the bottom of the window,
-//! or in a column at its left or right, with the grid bar (`docs/gui.md`, The grid panel,
-//! The grid bar): at the bottom a narrow column at the panel's left end, its buttons
+//! The Browser: the open folder's photos as `GridCell`s along the bottom of the window,
+//! or in a column at its left or right, with the browser bar (`docs/gui.md`, The Browser,
+//! The browser bar): at the bottom a narrow column at the panel's left end, its buttons
 //! stacked, and at a side a row across the panel's top. In the order the caller gives;
 //! only the visible cells are drawn, so a folder of thousands costs what a screenful does.
 //!
 //! Each cell draws its thumbnail where the caller gives one, and the panel reports which
-//! photos it drew ([`GridPanelOutput::shown`]), so the caller asks for the thumbnails of
+//! photos it drew ([`BrowserOutput::shown`]), so the caller asks for the thumbnails of
 //! those on screen as it scrolls.
 //!
 //! A click opens a photo; Shift-click selects a range, Ctrl or Cmd-click adds or removes
 //! one. A right-click on a cell, a Control-click on the Mac, or the menu key, Shift+F10 or
 //! AccessKit's ShowContextMenu on the one focused, asks for its photo's menu, which the
-//! caller builds ([`GridPanelOutput::menu`]). With a cell focused, ← and → move the focus to the next or previous photo, Home and
-//! End to the first and last, and Enter or Space opens the one focused; the panel scrolls
-//! to keep it in sight. The active photo's cell is scrolled into view when it changes.
-//! With no photos it is drawn empty and, where the app gives one, says why: a struck-through
-//! photo over the message, and a hint under it where the app gives one too.
+//! caller builds ([`BrowserOutput::menu`]). With a cell focused, ← and → move the focus to
+//! the next or previous photo, Home and End to the first and last, and Enter or Space opens
+//! the one focused; the panel scrolls to keep it in sight. The active photo's cell is
+//! scrolled into view when it changes. With no photos it is drawn empty and, where the app
+//! gives one, says why: a struck-through photo over the message, and a hint under it where
+//! the app gives one too.
 //!
-//! The grid bar holds Sort and Labels at its start and Zoom at its end: Sort and Zoom each
-//! open their menu through the popup service, the one in use checked, and Labels shows or
-//! hides the cells' captions. The panel reports what was chosen ([`GridBarAction`]) and
-//! knows no photos, so the caller sorts them and sizes the cells. A cell's height counts
-//! its caption while labels show, and so do the panel's rows; what the user did on a
-//! caption's first line is reported with its photo ([`GridPanelOutput::cell`]).
+//! The browser bar holds Sort and Labels at its start and Zoom at its end: Sort and Zoom
+//! each open their menu through the popup service, the one in use checked, and Labels shows
+//! or hides the cells' captions. The panel reports what was chosen ([`BrowserBarAction`])
+//! and knows no photos, so the caller sorts them and sizes the cells. A cell's height
+//! counts its caption while labels show, and so do the panel's rows; what the user did on a
+//! caption's first line is reported with its photo ([`BrowserOutput::cell`]).
 
 use std::ops::Range;
 
@@ -49,9 +50,9 @@ use egui::{
     Stroke, Ui, UiBuilder, WidgetInfo, pos2, vec2,
 };
 
-use super::side_panel::{restore, scroll_area};
+use super::tools_panel::{restore, scroll_area};
 use super::{
-    CellAction, CellPicture, CellRating, CellStatus, CentralBar, GridCell, IconButton,
+    CellAction, CellPicture, CellRating, CellStatus, GridCell, IconButton, ViewerBar,
     context_click, menu_asked, pull_down,
 };
 use crate::i18n::Args;
@@ -73,7 +74,7 @@ pub struct Thumb<'a> {
     pub rating: Option<CellRating>,
 }
 
-/// What the grid panel's photos are sorted by (`docs/gui.md`, The grid bar).
+/// What the Browser's photos are sorted by (`docs/gui.md`, The browser bar).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum SortKey {
     /// The camera's time of the shot.
@@ -105,7 +106,7 @@ impl Choice for SortKey {
     ];
 }
 
-/// The grid panel's sort: its key and its direction.
+/// The Browser's sort: its key and its direction.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Sort {
     pub key: SortKey,
@@ -157,46 +158,46 @@ impl Choice for ThumbnailSize {
     ];
 }
 
-/// Where the grid panel is in the window (`docs/gui.md`, Its position).
+/// Where the Browser is in the window (`docs/gui.md`, Its position).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum GridPosition {
-    /// Along the bottom, under the central panel: rows of cells, scrolling sideways.
+pub enum BrowserPosition {
+    /// Along the bottom, under the Viewer: rows of cells, scrolling sideways.
     Bottom,
     /// A column at the window's left: columns of cells, scrolling up and down.
     Left,
-    /// A column between the central panel and the side panel.
+    /// A column between the Viewer and the Tools panel.
     Right,
 }
 
-impl GridPosition {
-    pub const ALL: [GridPosition; 3] = [
-        GridPosition::Left,
-        GridPosition::Right,
-        GridPosition::Bottom,
+impl BrowserPosition {
+    pub const ALL: [BrowserPosition; 3] = [
+        BrowserPosition::Left,
+        BrowserPosition::Right,
+        BrowserPosition::Bottom,
     ];
 
     /// Whether the panel is a column, its strip running up and down.
     pub fn is_column(self) -> bool {
-        self != GridPosition::Bottom
+        self != BrowserPosition::Bottom
     }
 }
 
 /// The position as settings keep it.
-impl Choice for GridPosition {
-    const OPTIONS: &'static [(GridPosition, &'static str)] = &[
-        (GridPosition::Bottom, "bottom"),
-        (GridPosition::Left, "left"),
-        (GridPosition::Right, "right"),
+impl Choice for BrowserPosition {
+    const OPTIONS: &'static [(BrowserPosition, &'static str)] = &[
+        (BrowserPosition::Bottom, "bottom"),
+        (BrowserPosition::Left, "left"),
+        (BrowserPosition::Right, "right"),
     ];
 }
 
 /// What the panel did this frame.
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
-pub struct GridPanelOutput {
+pub struct BrowserOutput {
     /// What the user did to the photos, if anything.
-    pub action: Option<GridPanelAction>,
-    /// What was chosen in the grid bar's menus, if anything.
-    pub bar: Option<GridBarAction>,
+    pub action: Option<BrowserAction>,
+    /// What was chosen in the browser bar's menus, if anything.
+    pub bar: Option<BrowserBarAction>,
     /// The photos whose cells were drawn, in sight or partly: those whose thumbnails are
     /// wanted now. Empty with no photos.
     pub shown: Range<usize>,
@@ -218,9 +219,9 @@ pub struct CellMenu {
     pub cell: Id,
 }
 
-/// What the user did to the grid panel this frame.
+/// What the user did to the Browser this frame.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum GridPanelAction {
+pub enum BrowserAction {
     /// Open the photo and select only it.
     Open(usize),
     /// Select the range from the active photo to this one.
@@ -229,88 +230,88 @@ pub enum GridPanelAction {
     ToggleSelected(usize),
 }
 
-/// What was chosen in the grid bar's menus. Each is an action of the app's registry, which
-/// the View menu's items run too: its id is the action's ([`GridBarAction::id`]).
+/// What was chosen in the browser bar's menus. Each is an action of the app's registry,
+/// which the View menu's items run too: its id is the action's ([`BrowserBarAction::id`]).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum GridBarAction {
+pub enum BrowserBarAction {
     Sort(SortKey),
     /// Descending, or ascending.
     Descending(bool),
     Size(ThumbnailSize),
-    /// From the options menu, a right-click on the grid bar.
-    Position(GridPosition),
+    /// From the options menu, a right-click on the browser bar.
+    Position(BrowserPosition),
     /// Labels: show the cells' captions, or hide them.
     Labels,
 }
 
-impl GridBarAction {
+impl BrowserBarAction {
     /// Every choice, in the menus' order.
-    pub const ALL: [GridBarAction; 14] = [
-        GridBarAction::Sort(SortKey::CaptureTime),
-        GridBarAction::Sort(SortKey::FileName),
-        GridBarAction::Sort(SortKey::Edited),
-        GridBarAction::Sort(SortKey::Rating),
-        GridBarAction::Descending(false),
-        GridBarAction::Descending(true),
-        GridBarAction::Size(ThumbnailSize::Small),
-        GridBarAction::Size(ThumbnailSize::Medium),
-        GridBarAction::Size(ThumbnailSize::Large),
-        GridBarAction::Size(ThumbnailSize::ExtraLarge),
-        GridBarAction::Position(GridPosition::Left),
-        GridBarAction::Position(GridPosition::Right),
-        GridBarAction::Position(GridPosition::Bottom),
-        GridBarAction::Labels,
+    pub const ALL: [BrowserBarAction; 14] = [
+        BrowserBarAction::Sort(SortKey::CaptureTime),
+        BrowserBarAction::Sort(SortKey::FileName),
+        BrowserBarAction::Sort(SortKey::Edited),
+        BrowserBarAction::Sort(SortKey::Rating),
+        BrowserBarAction::Descending(false),
+        BrowserBarAction::Descending(true),
+        BrowserBarAction::Size(ThumbnailSize::Small),
+        BrowserBarAction::Size(ThumbnailSize::Medium),
+        BrowserBarAction::Size(ThumbnailSize::Large),
+        BrowserBarAction::Size(ThumbnailSize::ExtraLarge),
+        BrowserBarAction::Position(BrowserPosition::Left),
+        BrowserBarAction::Position(BrowserPosition::Right),
+        BrowserBarAction::Position(BrowserPosition::Bottom),
+        BrowserBarAction::Labels,
     ];
 
     /// The id of the app's action that does the same, which is its menu item's id, and
     /// `action-<id>` its words.
     pub fn id(self) -> &'static str {
         match self {
-            GridBarAction::Sort(SortKey::CaptureTime) => "sort-capture-time",
-            GridBarAction::Sort(SortKey::FileName) => "sort-file-name",
-            GridBarAction::Sort(SortKey::Edited) => "sort-edited",
-            GridBarAction::Sort(SortKey::Rating) => "sort-rating",
-            GridBarAction::Descending(false) => "sort-ascending",
-            GridBarAction::Descending(true) => "sort-descending",
-            GridBarAction::Size(ThumbnailSize::Small) => "thumbnails-small",
-            GridBarAction::Size(ThumbnailSize::Medium) => "thumbnails-medium",
-            GridBarAction::Size(ThumbnailSize::Large) => "thumbnails-large",
-            GridBarAction::Size(ThumbnailSize::ExtraLarge) => "thumbnails-extra-large",
-            GridBarAction::Position(GridPosition::Left) => "grid-position-left",
-            GridBarAction::Position(GridPosition::Right) => "grid-position-right",
-            GridBarAction::Position(GridPosition::Bottom) => "grid-position-bottom",
-            GridBarAction::Labels => "show-labels",
+            BrowserBarAction::Sort(SortKey::CaptureTime) => "sort-capture-time",
+            BrowserBarAction::Sort(SortKey::FileName) => "sort-file-name",
+            BrowserBarAction::Sort(SortKey::Edited) => "sort-edited",
+            BrowserBarAction::Sort(SortKey::Rating) => "sort-rating",
+            BrowserBarAction::Descending(false) => "sort-ascending",
+            BrowserBarAction::Descending(true) => "sort-descending",
+            BrowserBarAction::Size(ThumbnailSize::Small) => "thumbnails-small",
+            BrowserBarAction::Size(ThumbnailSize::Medium) => "thumbnails-medium",
+            BrowserBarAction::Size(ThumbnailSize::Large) => "thumbnails-large",
+            BrowserBarAction::Size(ThumbnailSize::ExtraLarge) => "thumbnails-extra-large",
+            BrowserBarAction::Position(BrowserPosition::Left) => "grid-position-left",
+            BrowserBarAction::Position(BrowserPosition::Right) => "grid-position-right",
+            BrowserBarAction::Position(BrowserPosition::Bottom) => "grid-position-bottom",
+            BrowserBarAction::Labels => "show-labels",
         }
     }
 
     /// The choice whose id is `id`.
-    pub fn from_id(id: &str) -> Option<GridBarAction> {
-        GridBarAction::ALL
+    pub fn from_id(id: &str) -> Option<BrowserBarAction> {
+        BrowserBarAction::ALL
             .into_iter()
             .find(|action| action.id() == id)
     }
 
     /// Its menu item: its action's words, checked while it is what the panel holds. Rating
     /// is drawn disabled until the ratings come.
-    fn item<'a, F: Fn(usize) -> Thumb<'a>>(self, ui: &Ui, panel: &GridPanel<'a, F>) -> Entry {
+    fn item<'a, F: Fn(usize) -> Thumb<'a>>(self, ui: &Ui, panel: &Browser<'a, F>) -> Entry {
         let on = match self {
-            GridBarAction::Sort(key) => panel.sort.key == key,
-            GridBarAction::Descending(descending) => panel.sort.descending == descending,
-            GridBarAction::Size(chosen) => panel.size == chosen,
-            GridBarAction::Position(chosen) => panel.position == chosen,
-            GridBarAction::Labels => panel.labels,
+            BrowserBarAction::Sort(key) => panel.sort.key == key,
+            BrowserBarAction::Descending(descending) => panel.sort.descending == descending,
+            BrowserBarAction::Size(chosen) => panel.size == chosen,
+            BrowserBarAction::Position(chosen) => panel.position == chosen,
+            BrowserBarAction::Labels => panel.labels,
         };
         let words = tr(ui.ctx(), &format!("action-{}", self.id()));
         Item::new(self.id(), words)
             .checked(on)
-            .enabled(self != GridBarAction::Sort(SortKey::Rating))
+            .enabled(self != BrowserBarAction::Sort(SortKey::Rating))
             .into()
     }
 }
 
 /// The panel along the bottom, or a column at a side, for `count` photos; `thumb(i)` gives
 /// the i-th, asked for only the visible ones.
-pub struct GridPanel<'a, F: Fn(usize) -> Thumb<'a>> {
+pub struct Browser<'a, F: Fn(usize) -> Thumb<'a>> {
     count: usize,
     thumb: F,
     active: Option<usize>,
@@ -319,7 +320,7 @@ pub struct GridPanel<'a, F: Fn(usize) -> Thumb<'a>> {
     sort: Sort,
     size: ThumbnailSize,
     lines: usize,
-    position: GridPosition,
+    position: BrowserPosition,
     labels: bool,
     square: bool,
 }
@@ -332,10 +333,10 @@ pub(super) const GAP: f32 = 8.0;
 /// After the cells: the scroll bar and the room round it.
 const SCROLL_BAR: f32 = 8.0 + 6.0;
 
-impl<'a, F: Fn(usize) -> Thumb<'a>> GridPanel<'a, F> {
+impl<'a, F: Fn(usize) -> Thumb<'a>> Browser<'a, F> {
     /// `active` is the photo being edited, if it is in the panel.
     pub fn new(count: usize, active: Option<usize>, thumb: F) -> Self {
-        GridPanel {
+        Browser {
             count,
             thumb,
             active,
@@ -347,7 +348,7 @@ impl<'a, F: Fn(usize) -> Thumb<'a>> GridPanel<'a, F> {
             },
             size: ThumbnailSize::Medium,
             lines: 1,
-            position: GridPosition::Bottom,
+            position: BrowserPosition::Bottom,
             labels: true,
             square: false,
         }
@@ -366,7 +367,7 @@ impl<'a, F: Fn(usize) -> Thumb<'a>> GridPanel<'a, F> {
         self
     }
 
-    /// The sort the grid bar's Sort shows checked; the caller gives the photos in it.
+    /// The sort the browser bar's Sort shows checked; the caller gives the photos in it.
     pub fn sort(mut self, sort: Sort) -> Self {
         self.sort = sort;
         self
@@ -388,7 +389,7 @@ impl<'a, F: Fn(usize) -> Thumb<'a>> GridPanel<'a, F> {
 
     /// Where it is in the window, which the options menu shows checked; the bottom by
     /// default. At a side it fills the room it is given, as a column.
-    pub fn position(mut self, position: GridPosition) -> Self {
+    pub fn position(mut self, position: BrowserPosition) -> Self {
         self.position = position;
         self
     }
@@ -405,41 +406,41 @@ impl<'a, F: Fn(usize) -> Thumb<'a>> GridPanel<'a, F> {
         self
     }
 
-    pub fn show(self, ui: &mut Ui) -> GridPanelOutput {
+    pub fn show(self, ui: &mut Ui) -> BrowserOutput {
         let t = theme(ui.ctx());
         let column = self.position.is_column();
         let height = if column {
             ui.available_height()
         } else {
-            grid_panel_height(ui.ctx(), self.size, self.labels, self.lines)
+            browser_height(ui.ctx(), self.size, self.labels, self.lines)
         };
         let (strip, response) =
             ui.allocate_exact_size(vec2(ui.available_width(), height), Sense::hover());
         ui.painter().rect_filled(strip, 0.0, t.colors.surface);
-        // The separator on the side towards the central panel, and what lies inside it.
+        // The separator on the side towards the Viewer, and what lies inside it.
         let line = Stroke::new(t.shape.separator_width, t.colors.separator);
         let half = t.shape.separator_width / 2.0;
         let mut inner = strip;
         match self.position {
-            GridPosition::Bottom => {
+            BrowserPosition::Bottom => {
                 ui.painter()
                     .hline(strip.x_range(), strip.top() + half, line);
                 inner.min.y += t.shape.separator_width;
             }
-            GridPosition::Left => {
+            BrowserPosition::Left => {
                 ui.painter()
                     .vline(strip.right() - half, strip.y_range(), line);
                 inner.max.x -= t.shape.separator_width;
             }
-            GridPosition::Right => {
+            BrowserPosition::Right => {
                 ui.painter()
                     .vline(strip.left() + half, strip.y_range(), line);
                 inner.min.x += t.shape.separator_width;
             }
         }
-        // The grid bar: a row across a column's top, a column at a row's left end.
+        // The browser bar: a row across a column's top, a column at a row's left end.
         let header = if column {
-            Rect::from_min_size(inner.min, vec2(inner.width(), CentralBar::height(ui.ctx())))
+            Rect::from_min_size(inner.min, vec2(inner.width(), ViewerBar::height(ui.ctx())))
         } else {
             Rect::from_min_size(inner.min, vec2(BAR_COLUMN, inner.height()))
         };
@@ -451,8 +452,8 @@ impl<'a, F: Fn(usize) -> Thumb<'a>> GridPanel<'a, F> {
         // nearest ancestor that has one when it is made).
         ui.ctx().accesskit_node_builder(response.id, |_| {});
         let list = response.id;
-        // A row runs from the grid bar to the panel's end, inset at both; a column from the
-        // grid bar to the bottom.
+        // A row runs from the browser bar to the panel's end, inset at both; a column from
+        // the browser bar to the bottom.
         let area = if column {
             Rect::from_min_max(pos2(inner.left(), header.bottom()), inner.max)
         } else {
@@ -465,9 +466,9 @@ impl<'a, F: Fn(usize) -> Thumb<'a>> GridPanel<'a, F> {
             if let Some(message) = self.empty {
                 empty(ui, area, message, self.hint);
             }
-            return GridPanelOutput {
+            return BrowserOutput {
                 bar: self.bar(ui, header, bar_id),
-                ..GridPanelOutput::default()
+                ..BrowserOutput::default()
             };
         }
 
@@ -490,7 +491,7 @@ impl<'a, F: Fn(usize) -> Thumb<'a>> GridPanel<'a, F> {
             self.position,
             self.labels,
         );
-        let seen: Option<(Option<usize>, ThumbnailSize, usize, GridPosition, bool)> =
+        let seen: Option<(Option<usize>, ThumbnailSize, usize, BrowserPosition, bool)> =
             ui.data(|d| d.get_temp(seen_id));
         let changed = seen != Some(now);
         ui.data_mut(|d| d.insert_temp(seen_id, now));
@@ -507,7 +508,7 @@ impl<'a, F: Fn(usize) -> Thumb<'a>> GridPanel<'a, F> {
         let mut child = ui.new_child(build);
         // A plain wheel scrolls a row of cells sideways, as it does a column up and down.
         child.style_mut().always_scroll_the_only_direction = true;
-        // The side panel's quiet scroll bar, along the strip's far edge while the cells
+        // The Tools panel's quiet scroll bar, along the strip's far edge while the cells
         // overflow the panel.
         scroll_area(&mut child, &t, |ui| {
             ScrollArea::new([!column, column])
@@ -568,11 +569,11 @@ impl<'a, F: Fn(usize) -> Thumb<'a>> GridPanel<'a, F> {
                             if response.clicked() && !clicked {
                                 let modifiers = ui.input(|input| input.modifiers);
                                 action = Some(if modifiers.shift {
-                                    GridPanelAction::SelectRange(i)
+                                    BrowserAction::SelectRange(i)
                                 } else if modifiers.command {
-                                    GridPanelAction::ToggleSelected(i)
+                                    BrowserAction::ToggleSelected(i)
                                 } else {
-                                    GridPanelAction::Open(i)
+                                    BrowserAction::Open(i)
                                 });
                             }
                         }
@@ -590,9 +591,9 @@ impl<'a, F: Fn(usize) -> Thumb<'a>> GridPanel<'a, F> {
                     })
                 });
         });
-        // After the cells, so Tab reaches them first, then the grid bar's buttons.
+        // After the cells, so Tab reaches them first, then the browser bar's buttons.
         let bar = self.bar(ui, header, bar_id);
-        GridPanelOutput {
+        BrowserOutput {
             action,
             bar,
             shown,
@@ -601,14 +602,14 @@ impl<'a, F: Fn(usize) -> Thumb<'a>> GridPanel<'a, F> {
         }
     }
 
-    /// The grid bar in `header`, its toolbar's id `id`: Sort, Labels and Zoom, drawn
+    /// The browser bar in `header`, its toolbar's id `id`: Sort, Labels and Zoom, drawn
     /// disabled with no photos, and its options menu, Position, on a right-click anywhere
-    /// on it. At a side it is a row across the panel's top, the central bar's separator
+    /// on it. At a side it is a row across the panel's top, the viewer bar's separator
     /// under it, so the two bars' lines meet, Sort and Labels at its left end and Zoom at
     /// its right; at the bottom a column at the panel's left end, the same separator
     /// between it and the cells, Sort and Labels at its top and Zoom at its bottom.
     /// Returns what was chosen in their menus, or Labels pressed.
-    fn bar(&self, ui: &mut Ui, header: Rect, id: Id) -> Option<GridBarAction> {
+    fn bar(&self, ui: &mut Ui, header: Rect, id: Id) -> Option<BrowserBarAction> {
         let t = theme(ui.ctx());
         let ctx = ui.ctx().clone();
         let stacked = !self.position.is_column();
@@ -673,11 +674,11 @@ impl<'a, F: Fn(usize) -> Thumb<'a>> GridPanel<'a, F> {
                         if i == 4 {
                             entries.push(Entry::Separator);
                         }
-                        entries.push(GridBarAction::item(*action, ui, self));
+                        entries.push(BrowserBarAction::item(*action, ui, self));
                     }
                     entries
                 });
-                picked.as_deref().and_then(GridBarAction::from_id)
+                picked.as_deref().and_then(BrowserBarAction::from_id)
             };
             let sort_name = tr(&ctx, "grid-sort");
             let sorted = menu(
@@ -686,7 +687,7 @@ impl<'a, F: Fn(usize) -> Thumb<'a>> GridPanel<'a, F> {
                 &sort_name,
                 &text("grid-sort-tip"),
                 &text("grid-sort-value"),
-                &GridBarAction::ALL[..6],
+                &BrowserBarAction::ALL[..6],
             );
             // Labels after Sort: a toggle, its eye filled while the captions show.
             let labels = IconButton::new(Icon::Labels, &tr(&ctx, "grid-labels"))
@@ -695,7 +696,7 @@ impl<'a, F: Fn(usize) -> Thumb<'a>> GridPanel<'a, F> {
                 .size(BUTTON)
                 .show(ui)
                 .clicked()
-                .then_some(GridBarAction::Labels);
+                .then_some(BrowserBarAction::Labels);
             // Zoom at the bar's far end: the column's bottom, the row's right.
             let room = if stacked {
                 ui.available_height()
@@ -710,22 +711,23 @@ impl<'a, F: Fn(usize) -> Thumb<'a>> GridPanel<'a, F> {
                 &zoom_name,
                 &text("grid-thumbnail-size-tip"),
                 &text("grid-thumbnail-size-value"),
-                &GridBarAction::ALL[6..10],
+                &BrowserBarAction::ALL[6..10],
             );
             let chosen = sorted.or(labels).or(zoomed);
             chosen.or(options)
         }
     }
 
-    /// The grid bar's options menu, hung from the pointer where `toolbar` was right-clicked:
-    /// Position › Left, Right, Bottom, the one in use checked. Returns what was chosen.
-    fn options(&self, ui: &Ui, toolbar: &Response) -> Option<GridBarAction> {
+    /// The browser bar's options menu, hung from the pointer where `toolbar` was
+    /// right-clicked: Position › Left, Right, Bottom, the one in use checked. Returns what
+    /// was chosen.
+    fn options(&self, ui: &Ui, toolbar: &Response) -> Option<BrowserBarAction> {
         let ctx = ui.ctx();
         let id = toolbar.id.with("options");
         if toolbar.secondary_clicked()
             && let Some(at) = toolbar.interact_pointer_pos()
         {
-            let positions = GridBarAction::ALL[10..13]
+            let positions = BrowserBarAction::ALL[10..13]
                 .iter()
                 .map(|action| action.item(ui, self))
                 .collect();
@@ -739,7 +741,7 @@ impl<'a, F: Fn(usize) -> Thumb<'a>> GridPanel<'a, F> {
             popup::show(ctx);
         }
         match popup::answer(ctx, id) {
-            Some(Answer::Chosen(chosen)) => GridBarAction::from_id(&chosen),
+            Some(Answer::Chosen(chosen)) => BrowserBarAction::from_id(&chosen),
             _ => None,
         }
     }
@@ -785,68 +787,63 @@ fn empty(ui: &Ui, area: Rect, message: &str, hint: Option<&str>) {
     }
 }
 
-/// The grid panel's height with `lines` rows of thumbnails of `size`, their captions
-/// counted while `labels` show: the separator, the cells with room for their rings above
-/// and below, and the scroll bar. The grid bar, a column at its left end, fits beside the
-/// cells of one Small row.
-pub fn grid_panel_height(
-    ctx: &egui::Context,
-    size: ThumbnailSize,
-    labels: bool,
-    lines: usize,
-) -> f32 {
+/// The Browser's height with `lines` rows of thumbnails of `size`, their captions counted
+/// while `labels` show: the separator, the cells with room for their rings above and below,
+/// and the scroll bar. The browser bar, a column at its left end, fits beside the cells of
+/// one Small row.
+pub fn browser_height(ctx: &egui::Context, size: ThumbnailSize, labels: bool, lines: usize) -> f32 {
     let t = theme(ctx);
     t.shape.separator_width + lines_across(size.cell(labels).y, lines.max(1)) + SCROLL_BAR
 }
 
-/// The grid panel's width at a side with `lines` columns of thumbnails of `size`: the
+/// The Browser's width at a side with `lines` columns of thumbnails of `size`: the
 /// separator, the cells with room for their rings either side, and the scroll bar.
-pub fn grid_panel_width(ctx: &egui::Context, size: ThumbnailSize, lines: usize) -> f32 {
+pub fn browser_width(ctx: &egui::Context, size: ThumbnailSize, lines: usize) -> f32 {
     theme(ctx).shape.separator_width + lines_across(size.side(), lines.max(1)) + SCROLL_BAR
 }
 
-/// How thick the grid panel is at `position` with `lines` lines of thumbnails of `size`,
+/// How thick the Browser is at `position` with `lines` lines of thumbnails of `size`,
 /// their captions counted while `labels` show: its height at the bottom, its width at a
 /// side.
-pub fn grid_panel_thickness(
+pub fn browser_thickness(
     ctx: &egui::Context,
-    position: GridPosition,
+    position: BrowserPosition,
     size: ThumbnailSize,
     labels: bool,
     lines: usize,
 ) -> f32 {
     if position.is_column() {
-        grid_panel_width(ctx, size, lines)
+        browser_width(ctx, size, lines)
     } else {
-        grid_panel_height(ctx, size, labels, lines)
+        browser_height(ctx, size, labels, lines)
     }
 }
 
 /// The most lines of thumbnails of `size`, their captions counted while `labels` show, the
-/// grid panel at `position` can show in `room` points of its thickness, at least one
+/// Browser at `position` can show in `room` points of its thickness, at least one
 /// (`docs/gui.md`, Its size: at most half the window).
-pub fn grid_panel_lines(
+pub fn browser_lines(
     ctx: &egui::Context,
-    position: GridPosition,
+    position: BrowserPosition,
     size: ThumbnailSize,
     labels: bool,
     room: f32,
 ) -> usize {
     let mut lines = 1;
-    while grid_panel_thickness(ctx, position, size, labels, lines + 1) <= room {
+    while browser_thickness(ctx, position, size, labels, lines + 1) <= room {
         lines += 1;
     }
     lines
 }
 
-/// The grid bar's buttons: the central bar's.
+/// The browser bar's buttons: the viewer bar's.
 const BUTTON: f32 = 28.0;
 
-/// The grid bar's width at the bottom, a column of its buttons with a little room either
+/// The browser bar's width at the bottom, a column of its buttons with a little room either
 /// side.
 const BAR_COLUMN: f32 = BUTTON + 8.0;
 
-/// `value`'s id as settings keep it, which the grid bar's messages select on.
+/// `value`'s id as settings keep it, which the browser bar's messages select on.
 fn id_of<T: Choice + PartialEq>(value: T) -> &'static str {
     T::OPTIONS
         .iter()
@@ -938,7 +935,7 @@ impl Cells {
     }
 
     /// Before the first line along the strip: a row's area is inset at its ends already,
-    /// a column's top under the grid bar is not.
+    /// a column's top under the browser bar is not.
     fn lead(&self) -> f32 {
         if self.column { TOP } else { 0.0 }
     }

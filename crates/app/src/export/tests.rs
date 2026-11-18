@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! The Export tool in a harness that draws it as the Photos tab's side panel does: every
+//! The Export tool in a harness that draws it as the Photos tab's Tools panel does: every
 //! row, the preview's lines as the session's answers arrive, the rows drawn disabled, the
 //! rows reflowed to the panel's width, and the tool photographed at the panel's widths and
 //! in the languages.
@@ -29,7 +29,7 @@ use egui_kittest::kittest::{NodeT as _, Queryable as _};
 
 use super::*;
 
-/// The side panel's width by default, in points, and the widest it can be dragged to.
+/// The Tools panel's width by default, in points, and the widest it can be dragged to.
 const PANEL: f32 = 320.0;
 const WIDEST: f32 = 600.0;
 /// The narrowest it can be dragged to.
@@ -85,7 +85,7 @@ fn tool_of(export: Export, which: Builtin, locale: Locale, width: f32) -> Harnes
                 let panel = theme(ui.ctx()).colors.panel;
                 ui.painter()
                     .rect_filled(ui.ctx().content_rect(), 0.0, panel);
-                // As the side panel does before it draws the Photos tab.
+                // As the Tools panel does before it draws the Photos tab.
                 bench
                     .content
                     .retire(&bench.previews, bench.opened.as_deref());

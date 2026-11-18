@@ -394,7 +394,7 @@ group = "thumbnails"
 [grid_panel.position]
 owner = "app"
 kind = "choice"
-type = "apertrust_ui::components::GridPosition"
+type = "apertrust_ui::components::BrowserPosition"
 default = "left"
 applies = "at-once"
 

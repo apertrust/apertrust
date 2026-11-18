@@ -27,7 +27,7 @@ use egui::pos2;
 use egui_kittest::Harness;
 use egui_kittest::kittest::{NodeT as _, Queryable as _};
 
-/// A 320-point side panel's content, less its margins.
+/// A 320-point Tools panel's content, less its margins.
 const WIDTH: f32 = 296.0;
 
 fn markers(which: Builtin, marker: Marker) -> Harness<'static, Gallery> {
