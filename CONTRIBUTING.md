@@ -29,6 +29,19 @@ tools/build-kernels.sh --check
 tools/build-api-docs.sh
 ```
 
+[pre-commit](https://pre-commit.com) runs the same checks from `.pre-commit-config.yaml` when you ask it to, each only when a file it reads changed:
+
+```sh
+pre-commit run                                         # the quick checks, on the staged files
+pre-commit run --all-files                             # the quick checks, on every file
+pre-commit run --hook-stage manual --all-files         # every check, the long ones too
+pre-commit run cargo-test --hook-stage manual --all-files   # one long check
+```
+
+- **The quick checks:** the formatting; pre-commit's general file checks (large files, merge conflicts, private keys, the syntax of TOML, YAML, JSON and XML, line endings, trailing whitespace and more); shellcheck on the scripts, actionlint on the workflows, typos on the spelling (`typos.toml` holds the words it accepts) and cargo-deny once a manifest changes; and the repository checks. Each is given only the files it looks at. Those that fix what they find, as rustfmt does, fail once: stage their changes and run again. The kernels' check compiles every kernel, so it takes longer, but runs only when a Slang or generated file changed.
+- **The tools:** pre-commit installs the ones it runs, at the versions the config pins, on its first run, which takes a few minutes. Rust, clippy and rustfmt are rustup's, from `rust-toolchain.toml`.
+- **The long checks:** clippy (`clippy`), the API docs (`api-docs`) and the tests (`cargo-test`) build the workspace and take minutes, so they run in the manual stage alone. They skip a change to documentation alone, as CI does.
+- **As git hooks, if you want them:** nothing runs unless you ask. `pre-commit install` runs the quick checks before each commit; the long ones never run as a hook.
 - **A kernel:** `tools/build-kernels.sh --check` needs the pinned Slang compiler, which `tools/fetch-slang.sh` downloads.
 - **Windows and macOS:** a pull request runs the tests on Linux and macOS, and clippy on Windows and macOS, which compiles their code and tests. Windows' tests are off for now, since they take hours there. A file that gains a `cfg(windows)`, `cfg(unix)` or `cfg(target_os = …)` goes into that list; `tools/check-windows-paths.sh` says which are missing.
 - **Required checks:** a pull request merges when `ci-passed`, which CI's other jobs feed, and `signoff`, the sign-off check, pass. A pull request that changes only documentation skips the code's checks, and `ci-passed` still passes.

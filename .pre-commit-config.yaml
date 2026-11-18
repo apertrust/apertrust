@@ -1,0 +1,150 @@
+# CONTRIBUTING.md's checks and pre-commit's general file checks, for pre-commit
+# (https://pre-commit.com), run when asked:
+#   pre-commit run                                  the quick checks, on the staged files
+#   pre-commit run --all-files                      the quick checks, on every file
+#   pre-commit run --hook-stage manual --all-files  every check, the long ones too
+# The quick checks run in every stage, so they also run as git hooks for whoever installs
+# them (`pre-commit install`); pre-commit-hooks keeps its fixers and executable checks to
+# the commit, push and manual stages, off the commit message. The long ones, which take
+# minutes, run in the manual stage alone.
+#
+# Each check runs only when a file it reads is among those given, and a check that works
+# file by file is given those files alone. The long checks build the workspace, so they
+# take no files. They skip what CI skips: documentation alone, as
+# .github/docs-only-paths.txt matches it. `docs-only` below mirrors that list; change both
+# together.
+
+repos:
+  # pre-commit's own checks of the configuration.
+  - repo: meta
+    hooks:
+      - id: check-hooks-apply
+      - id: check-useless-excludes
+
+  # pre-commit's general file checks, pinned by commit; `pre-commit autoupdate --freeze`
+  # moves it.
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: 3e8a8703264a2f4a69428a0aa4dcb512790b2c8c # frozen: v6.0.0
+    hooks:
+      # Raws and models are never committed (AGENTS.md); the interface's snapshots reach
+      # 1.1 MB.
+      - id: check-added-large-files
+        args: [--maxkb=2048]
+      - id: check-ast
+      - id: check-case-conflict
+      - id: check-executables-have-shebangs
+      - id: check-illegal-windows-names
+      - id: check-json
+      - id: check-merge-conflict
+      - id: check-shebang-scripts-are-executable
+      - id: check-toml
+      - id: check-vcs-permalinks
+      - id: check-xml
+      - id: check-yaml
+      - id: debug-statements
+      - id: detect-private-key
+      - id: forbid-submodules
+      # The fixers leave alone what must stay byte for byte: the generated WGSL, as
+      # tools/build-kernels.sh writes it; the fonts' licence, shipped unchanged with its
+      # CR LF (.gitattributes); the library's fixtures, darktable's sidecars among them;
+      # and the Windows edit icons, drawn on one line with no newline at its end.
+      - id: end-of-file-fixer
+        exclude: &verbatim ^(crates/.+/generated/[^/]+\.wgsl|crates/ui/assets/fonts/OFL\.txt|crates/library/tests/fixtures/.+|crates/app/assets/icons/svg/apertrust-apxmp-windows(-small)?\.svg)$
+      - id: fix-byte-order-marker
+        exclude: *verbatim
+      # LF everywhere, as .gitattributes checks text out.
+      - id: mixed-line-ending
+        args: [--fix=lf]
+        exclude: *verbatim
+      - id: trailing-whitespace
+        args: [--markdown-linebreak-ext=md]
+        exclude: *verbatim
+
+  # The shell scripts.
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: 745eface02aef23e168a8afb6b5737818efbea95 # frozen: v0.11.0.1
+    hooks:
+      # Warnings and errors; its style and information notes are left out.
+      - id: shellcheck
+        args: [--severity=warning]
+
+  # The GitHub workflows.
+  - repo: https://github.com/rhysd/actionlint
+    rev: 914e7df21a07ef503a81201c76d2b11c789d3fca # frozen: v1.7.12
+    hooks:
+      - id: actionlint
+
+  # Spelling, in the code and the documents, as typos.toml sets it.
+  - repo: https://github.com/crate-ci/typos
+    rev: 276087d9a4f06398b3e04825487805e2d7375888 # frozen: v1.52.2
+    hooks:
+      # It reports, never writes: its corrections would rename files and change
+      # identifiers, hashes and translations. `typos --write-changes` applies them.
+      - id: typos
+        args: [--force-exclude]
+
+  # The dependencies' licences, advisories and sources, as deny.toml sets them.
+  - repo: https://github.com/EmbarkStudios/cargo-deny
+    rev: bca0dde53651ee946720e4540b5ce2610bec8f06 # frozen: 0.20.2
+    hooks:
+      - id: cargo-deny
+
+  # Apertrust's checks.
+  - repo: local
+    hooks:
+      # The quick checks.
+
+      # `cargo fmt --all`, file by file; the edition is the workspace's. One rustfmt at a
+      # time: before the pinned toolchain is installed, rustup would install it in each.
+      - id: rustfmt
+        name: rustfmt
+        entry: rustfmt --edition 2024
+        language: system
+        types: [rust]
+        require_serial: true
+      - id: license-headers
+        name: Licence headers
+        entry: tools/check-license-headers.sh
+        language: system
+        files: \.(rs|wgsl|slang|sh)$
+      - id: ui-strings
+        name: Interface strings
+        entry: tools/check-ui-strings.sh
+        language: system
+        files: ^crates/(ui|app)/src/.*\.rs$
+      - id: windows-paths
+        name: Windows paths
+        entry: tools/check-windows-paths.sh
+        language: system
+        files: (\.(rs|toml)|^\.github/windows-paths\.txt)$
+      # Every kernel, since each imports the shared Slang libraries. Its first run downloads
+      # the pinned slangc (tools/fetch-slang.sh).
+      - id: kernels
+        name: Generated WGSL
+        entry: tools/build-kernels.sh --check
+        language: system
+        files: (\.slang|/generated/[^/]+\.wgsl|^tools/(build-kernels|fetch-slang)\.sh)$
+        pass_filenames: false
+
+      # The long checks, in the manual stage.
+      - id: clippy
+        name: cargo clippy
+        entry: cargo clippy --workspace --all-targets -- -D warnings
+        language: system
+        exclude: &docs-only ^(docs/.*|(?!CREDITS\.md$)[^/]+\.md|\.github/ISSUE_TEMPLATE/.*|\.github/pull_request_template\.md)$
+        pass_filenames: false
+        stages: [manual]
+      - id: api-docs
+        name: API docs
+        entry: tools/build-api-docs.sh
+        language: system
+        exclude: *docs-only
+        pass_filenames: false
+        stages: [manual]
+      - id: cargo-test
+        name: cargo test
+        entry: cargo test --workspace
+        language: system
+        exclude: *docs-only
+        pass_filenames: false
+        stages: [manual]
