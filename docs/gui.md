@@ -1663,7 +1663,7 @@ sequenceDiagram
 
 ### Its place and what it acts on
 
-- **The Photos tab's last section,** id `export`, after Collections, Filters, Keywords, Metadata and Styles (decision 73). A person moves, pins and floats it as any section (decision 83), but **every workspace keeps it, never hidden:** the visual editor, a drag and Move to Tab may move it, none takes it out of a workspace's last tab holding it, and ⋯ › Hide is disabled for it; a workspace's file that leaves it out, `export` in its `hidden` included, gets it back at the end of the Photos tab, or of the first tab where the workspace has no Photos tab (decision 96). So Ctrl+E always has a place to reveal it.
+- **The Photos tab's last section,** id `export`, after Collections, Filters, Keywords, Metadata and Styles (decision 73). A person moves, pins and floats it as any section (decision 83), but **every workspace keeps it, never hidden:** the visual editor, a drag and Move to Tab may move it to another tab, where it then is, but none leaves it in no tab: ⋯ › Hide is disabled for it, and the editor removes no tab while it is Export's only one; a workspace's file that leaves it out, `export` in its `hidden` included, gets it back at the end of the Photos tab, or of the first tab where the workspace has no Photos tab (decision 96). So Ctrl+E always has a place to reveal it.
 - **A utility:** no on switch, no kept markers, no history step; a change is a setting written at once, Cmd+Z in a field undoing typing only.
 - **It exports the window's selection, else the active photo;** the active photo alone until Phase 3 can select several. A view-only photo, whose edit a newer Apertrust wrote or whose history cannot be read, is left out and counted in a warning.
 - **No per-photo marks** on the Browser: the warning gives the counts. Marks are revisited in the usability pass after Phase 3.
@@ -2596,11 +2596,11 @@ A workspace is its tabs, each tab's tools, the tools it hides and the toolbar's 
   ```
 
   - `version` is the format's own, apart from `settings.toml`'s; a newer one is read for what the build knows and never overwritten, and one that is not TOML is set aside as `<id>.toml.bak`.
-  - A tab id a build knows (Edit's, darktable's, `photos`, `history`) takes its title from Fluent (`tab-<id>`) and its icon from code, so its words follow the language; a person's own tab has the title written, the same in every language, and one of `apertrust-ui`'s icons by name, Lucide's `square` where it names none or one unknown. At most 12 tabs show, the Hidden tab included; `hidden` is the Hidden tab's id, reserved.
+  - A tab id a build knows (Edit's, darktable's, `photos`, `history`) takes its title from Fluent (`tab-<id>`) and its icon from code, so its words follow the language; a person's own tab has the title written, the same in every language, and one of `apertrust-ui`'s icons by name, Lucide's `square` where it names none or one unknown. At most 12 of the file's tabs show; the Hidden tab, when shown, comes after them, chosen by `panel-tab-hidden`; `hidden` is its id, reserved.
   - `[pinned]` and `[order]` hold each tab's tools by tab id; `hidden` the tools in no tab; `seen` every tool the build that wrote the file knew.
   - **Written whole,** through the safe write, once the layout has stood still for a second and on exit; a write reads the file again first, applying the change to it as it is on disk, so a hand edit made meanwhile stays. Ids this build does not know keep their places. A file added while the app runs is read at the next start.
 - **A built-in's file** is written whole the first time a person changes it; until then the built-in follows each build's defaults. **Reset Workspace** deletes the file, so the one shipped applies again. A person's own workspace is made by writing a file; the visual editor makes one in Phase 3.
-- **A new build's new tool,** one `seen` does not name, goes into each tab whose id is one of its default tabs (the workspace's own for a built-in, Edit's then darktable's for a person's own), after its nearest preceding default neighbour there; with none, it is hidden. A tool `seen` names that is in no tab is hidden. Export is never hidden.
+- **A new build's new tool,** one neither `seen` nor `hidden` names, goes into each tab whose id is one of its default tabs (the workspace's own for a built-in, Edit's then darktable's for a person's own), after its nearest preceding default neighbour there; with none, it is hidden. A tool `seen` names that is in no tab is hidden. Export is never hidden.
 - **Switching:** View › Workspace ▸ and the tab bar's menu's Workspace ▸ list Edit, darktable, then a person's own by name, the current one checked; each is the action `workspace-<id>`, made as the app starts from the workspaces it reads, with no default keys.
   - A switch changes only the Tools panel and, from Phase 3, the toolbar (decision 92): the Viewer, the selection and what every key acts on stay. The tab shown is the one last shown in that workspace; a section's open or closed state is the same in every workspace.
   - Nothing switches it but the person: no layout, photo or tab changes the workspace.
@@ -2714,9 +2714,14 @@ Every item of the toolbar menu is reachable from the keys whatever the toolbar s
 **Customising.** The workspace's file is the full way until the Customise Toolbar window, a dedicated window of the dialog host built much later, from the toolbar menu and View › Panels; there is no palette inside the main window. The labels are app-wide, in `settings.toml`.
 
 ```toml
-# workspaces/edit.toml
+# workspaces/edit.toml: the toolbar is one key of the workspace's whole file, beside its tabs
+version = 1
 toolbar = ["menu-button", "mark", "import", "export", "reset", "undo", "redo", "space",
            "copy-edit", "apply-edit", "flexible-space", "jobs", "save-state"]
+
+[[tabs]]
+id = "photos"
+# … the rest of its tabs, then [pinned] and [order] (decision 96)
 
 # settings.toml
 [toolbar]
@@ -2763,7 +2768,7 @@ labels = false
 The Tools panel is resizable in width, and its scroll bar is quiet. Both are built.
 
 - **The tabs** are the current workspace's ([Workspaces](#workspaces)) and stay the same whatever the Viewer shows, so no tab appears or goes with the layout. In Edit the Photos tab is first (decision 37), then the editing tabs, Adjust, Detail, Geometry, Effects and Raw, and History last (decision 38; [below](#the-tabs-by-editing-stage)).
-  - Ctrl+1 to Ctrl+5 choose the first five by position, and L the first tab holding Collections (pressed again, nothing). A workspace shows at most 12 tabs, the Hidden tab included, `panel-tab-1` to `panel-tab-12` choosing them by position (decision 96).
+  - Ctrl+1 to Ctrl+5 choose the first five by position, and L the first tab holding Collections (pressed again, nothing). A workspace shows at most 12 tabs of its file, `panel-tab-1` to `panel-tab-12` choosing them by position, and after them the Hidden tab when it is shown, chosen by `panel-tab-hidden` (decision 96).
   - The sixth and seventh, Raw and History in Edit, have no default key, since Ctrl+6 is Ctrl+− on French AZERTY keyboards, which would zoom out.
   - Each tab is a tile 58 by 52 points with its name and 36 by 32 without, its icon 22 points in both; without names the tab bar is as deep as the viewer bar beside it, 36 points.
   - With names, at 320 points three of the seven fold into », Effects, Raw and History, more at 240; without names all seven fit at 320, and Effects, Raw and History fold at 240. The chosen tab always shows.
@@ -2928,13 +2933,13 @@ Planned (decision 96, Phase 2's step 5): `Place::TabBar`, the app's own place ([
 1. Find Tool…, Show Hidden Tools, Workspace ▸ ([Workspaces](#workspaces));
 2. Reset Tab, Reset Workspace, Processing Order ([Moving, pinning and floating sections](#moving-pinning-and-floating-sections)).
 
-Opened on a tab's icon, Reset Tab and Processing Order act on that tab, elsewhere on the tab shown; both are disabled on the Hidden tab and on a tab of the person's own, which has no defaults. Reset Workspace deletes a built-in workspace's file and is disabled for one with no file and for a person's own. Find Tool… is drawn disabled until search is built. The Tools panel's ⋮ holds the same items, so none needs a right-click, then its own: Show Tab Names, Customise Tabs…, drawn disabled until Phase 3's visual editor, and Dock All Floating Panels (Phase 3).
+Opened on a tab's icon, Reset Tab and Processing Order act on that tab, elsewhere on the tab shown; both are disabled on the Hidden tab, and Reset Tab on a tab of the person's own, which has no defaults; Processing Order, which only sorts a tab's processing tools, works there. Reset Workspace deletes a built-in workspace's file and is disabled for one with no file and for a person's own. Find Tool… is drawn disabled until search is built. The Tools panel's ⋮ holds the same items, so none needs a right-click, then its own: Show Tab Names, Customise Tabs…, drawn disabled until Phase 3's visual editor, and Dock All Floating Panels (Phase 3).
 
 #### Moving, pinning and floating sections
 
 Planned (decisions 83 and 96): ⋯'s items with Phase 2's step 4, Reset Tab, Reset Workspace and Processing Order with step 5, the drag with step 7, the floating panels in Phase 3 ([Workspaces](#workspaces)). Every section, a tool or a utility, moves within its tab, to the pinned area, to another tab or over the photo, by one gesture, dragging its header, and by its ⋯ menu, keys and screen readers' actions. Where it is released decides what happens.
 
-**Display order only.** A move changes the workspace's layout in settings, never the edit, its history or the render: no session command carries it, and the engine plans by each operation's slot whatever order it is given. Each tab starts in its default order, Edit's the editing order (decision 38). This departs from darktable, whose drag of a processing module's header changes the pipeline order (`src/develop/imageop.c` at the reference release); its utility modules' drag (`src/libs/lib.c`) is the same as Apertrust's. So that the departure is never misread:
+**Display order only.** A move changes the workspace's layout in its file (decision 96), never the edit, its history or the render: no session command carries it, and the engine plans by each operation's slot whatever order it is given. Each tab starts in its default order, Edit's the editing order (decision 38). This departs from darktable, whose drag of a processing module's header changes the pipeline order (`src/develop/imageop.c` at the reference release); its utility modules' drag (`src/libs/lib.c`) is the same as Apertrust's. So that the departure is never misread:
 
 - a processing tool's drag says, under the lifted header, "Moves it in this tab only. Processing order stays fixed.";
 - Ctrl+Shift with the drag, darktable's gesture, does what a plain drag does;
@@ -2950,7 +2955,7 @@ stateDiagram-v2
     Dragging --> Rest: Esc, right-click, focus lost, a dialog (nothing changes)
     Dragging --> Rest: released where nothing changes
     Dragging --> Moved: released over a target
-    Moved --> Rest: settings written, the focus on the moved header
+    Moved --> Rest: the workspace's file written, the focus on the moved header
 ```
 
 **The gesture.**
@@ -2972,7 +2977,7 @@ stateDiagram-v2
 | The Viewer | Floats it there |
 | Its own place or a gap beside it, the current tab, a tab already holding it ("Already in Effects"), a disabled tab, », ⋮, the tab bar's empty end, a gap in the Hidden tab | Nothing: such a tab's icon takes no drop and does not open under the drag; nothing in the Hidden tab is reordered or pinned |
 
-**After a drop** the list reflows once; the section keeps its open state, content tab and groups; its header shows the hover band for 600 ms and keeps the focus, without a ring; the layout is written to settings at once. A section's controls keep their state through a move, each section drawn under a scope id of its own (`UiBuilder::scope_id`).
+**After a drop** the list reflows once; the section keeps its open state, content tab and groups; its header shows the hover band for 600 ms and keeps the focus, without a ring; the layout is written to the workspace's file at once. A section's controls keep their state through a move, each section drawn under a scope id of its own (`UiBuilder::scope_id`).
 
 **Another tab.** Dropped on a tab's icon, a processing tool lands at its pipeline place among that tab's processing tools, by its nearest neighbour there; a utility at the top of the scrolling list; unpinned, unless the spring-loaded tab lets the person drop it exactly. A move never copies: the section leaves the tab it was dragged from and lands in another, so a tool whose only tab that was can move as any section can; a hidden one dragged from the Hidden tab or search's list leaves `hidden`. A section in several tabs, such as Scopes, leaves only the tab it was dragged from; Move to Tab › lists a tab already holding it disabled. Moved to another tab, the focus goes to that tab's icon.
 
@@ -2985,7 +2990,7 @@ stateDiagram-v2
 | Pin, or Unpin | To the end of the pinned list, or the top of the scrolling list | — |
 | Move Up, Move Down | One place in its list, the pinned or the scrolling one | First, or last, in it |
 | Move to Tab › each tab by name | As a drop on its icon | The tab it is in, one already holding it, a disabled tab with its "to come" tip |
-| Hide | Out of every tab of the workspace, into the Hidden tab (decision 96) | Export, "Export stays in every workspace" |
+| Hide | Out of every tab of the workspace, into the Hidden tab (decision 96) | Export, "Export stays in every workspace"; a floating section, until it docks (decision 83) |
 | Show in Tab › each tab by name, for a hidden tool, in place of the four above | Moves it there, out of the Hidden tab | A disabled tab |
 | Float, or Dock | Floats it near the Tools panel's top, or returns it to the place it left | — |
 | Position › Top Left, Top Right, Bottom Left, Bottom Right (a floating panel) | Moves the panel to that corner | — |
@@ -2997,13 +3002,13 @@ A section's header takes no right-click, a tool's or a utility's, nor Shift+F10 
 **Floating panels,** inside the app's window, never windows of their own:
 
 - **What it is:** the same section, drawn by the same function and sending the same changes, on an `egui::Area` over the Viewer, below the viewer bar and never over the Tools panel, the Toolbar or the Browser; on `raised` with the popup shadow and a 1-point `border`, solid, never translucent. Popups, tooltips and dialogs stay over it, and a press on it brings it to the front. The photo takes no click under it, and nothing that reads the pointer over the photo reads it there.
-- **It belongs to no tab:** it shows whatever tab is chosen, and no tab shows anything for it; its id stays in its tabs' lists in settings, hidden while it floats, so the place it left, pinned or not, survives a restart. The layout remembers the place it left, its tab and its place in that tab's lists.
+- **It belongs to no tab:** it shows whatever tab is chosen, and no tab shows anything for it; its id stays in its tabs' lists in the workspace's file, hidden while it floats, so the place it left, pinned or not, survives a restart. The layout remembers the place it left, its tab and its place in that tab's lists.
 - **Its header** is the section's, with its buttons, and at its end × named for the tab it left, "Return to Adjust". × docks it, as ⋯ › Dock and Dock All Floating Panels do: back to the place it left, or to its default place where that tab no longer holds it (with none of its default tabs left, the end of the first tab that holds tools).
 - **Moving and docking:** dragging its header moves it over the Viewer, its edges snapping within 8 points to the Viewer's and to other floating panels' edges; dragged over the Tools panel, it shows the insertion line, and released there it docks at that gap, in any tab, which also moves it from the tab it left to that one. Released on a tab's icon, it docks there as a drop on the icon does. Into a tab that already holds it, as Scopes may, it docks at the gap, its place there moved to it, and the tab it left keeps it.
 - **Its size:** at first the Tools panel's width as it floats; a `PanelEdge` on each side edge, with the edge's keys, from 240 to 600 points; its height its content's, up to the Viewer's less 16 points, its body scrolling beyond with the quiet scroll bar.
 - **The window and the panels:** each keeps its distance from its corner of the Viewer, beside the Tools panel or away from it, as the window, the Tools panel or the Browser change size, pushed inside where an edge would cut it; where the Viewer has not 160 points of photo beside it or 200 points of height, it shows docked at the place it left until there is room again, nothing written. Under a sheet or the slideshow it is hidden and comes back as it was; with no photo it follows its section's rule, as docked: a tool's controls disabled, Collections and the Photos tab's other sections working as ever.
 - **Focus:** F6 visits the region Floating panels after the Tools panel, and Tab goes through them front to back. H held over it peeks as in the Tools panel.
-- **Kept:** which sections float, in the workspace; each one's place and width, app-wide, so it comes back as it was; its open state, the section's one open state everywhere.
+- **Kept:** which sections float, in the workspace's file; each one's place and width, app-wide in `settings.toml`, so it comes back as it was; its open state, the section's one open state everywhere.
 
 **The ways back:** Esc during a drag; the opposite move; ⋮ › Processing Order; ⋮ › Reset Tab, the tab's layout as it shipped: a section it brings back leaves any other tab whose defaults lack it, so a move out of the tab is undone while Scopes, shipped in several tabs, stay in each; a section it takes out goes to its default place where no other tab holds it; floating sections stay floating, one whose tab no longer holds it docking later at its default place; Dock All Floating Panels, in ⋮ and View › Panels; Reset Workspace, deleting the workspace's file. Reset Tab also takes the tools it brings back out of the Hidden tab, and a tool it takes out that no other tab holds goes to its default tabs the workspace has, else it is hidden (decision 96).
 
@@ -4436,7 +4441,7 @@ The decisions this design rests on, by area; each decision record has the option
 | Settings | One settings schema in TOML, each setting declared once, each owner's crate generating typed statics from it, which the file, the Settings dialog and the CLI read; the dialog's nine pages, General, Import, Photos, Editing, Processing, Storage, Shortcuts, Presets and AI, its rows drawn from the schema and Shortcuts, Storage, Presets and AI built by hand; the generator, the machinery and the user data and cache folders in `apertrust-base`, with the log; a user data folder of one's own by `--user-data-dir` or `APERTRUST_USER_DATA_DIR`, separating settings only; the library in another place, next to the images; an edit a newer Apertrust wrote never overwritten (decision 43) |
 | Window frame | The Toolbar from the window's top edge on every platform: the Mac's traffic lights in it, caption buttons drawn by the app on Windows and Linux, Windows' snap layouts flyout through native hit testing; the system's title bar as a setting there, off by default; a minimum width of 500 points (decision 39) |
 | Context menus | Only in named places, the photo, a thumbnail and a tool's ⋯ open to tools' items, the only places `apertrust-tools`' `Place` has, the surround and the rest the app's own; each item a registry action, a tool's own generated as `tool-<tool>-<action>`, declared as data (`MenuItem`: `ToolDefinition::menus`, the app's `APP_ITEMS`), at most two a tool on the photo and a thumbnail, a submenu of up to eight of its own actions one of them; the app building every menu, its items and the tools' sorted by `(section, order)`; no right-click on a tool; every item reachable without one; the first slice built, History's Reset and Orientation ▸ its items (decision 91; [Context menus](#context-menus)) |
-| Toolbar | One a person customises, everything but the caption buttons and the traffic lights; one list of item ids per workspace, tools' actions offered in `ToolDefinition::toolbar` (decision 93); icons by default, Toolbar Labels app-wide; a right-click anywhere on it opening the toolbar menu; the settings file until a Customise Toolbar window (decision 92, planned; [The Toolbar](#the-toolbar)) |
+| Toolbar | One a person customises, everything but the caption buttons and the traffic lights; one list of item ids per workspace, tools' actions offered in `ToolDefinition::toolbar` (decision 93); icons by default, Toolbar Labels app-wide; a right-click anywhere on it opening the toolbar menu; the workspace's file until a Customise Toolbar window (decisions 92 and 96, planned; [The Toolbar](#the-toolbar)) |
 | Touch | One interface in two modes, Standard and Touch, Touch changing sizes, spacing and gestures, with two layout adaptations presenting the same parts (the portrait bottom sheet, Photos' Select mode); Interface in Settings › General and View › Touch Mode, Standard on the desktop, Touch on Android; no literal sizes, nothing only on hover, right-click, double-click or a modifier, sliders and pickers only through their components (decision 94) |
 | Popups | Native `NSMenu`s on the Mac for plain lists and context menus, from `apertrust-display`; drawn for what previews or holds controls, and on Windows and Linux; one popup service; the drawn ones on egui `Area`s, owning their plain keys while open through an egui plugin, drawn by `popup::show` once a frame (decision 40) |
 | Dialogs and alerts | Every dialog a native window of its own, modal to the window it rises from, hosted by the app beside eframe's window with its own egui context, AccessKit adapter and surface on the engine's device; made modal as each platform does it (on the Mac a sheet, and Settings alone modeless, a native window of its own; an owned window with its owner disabled on Windows; transient-for and the modal state on X11; a parent on Wayland, with modality kept by the app); confirmations the system's alerts through one alert service, `NSAlert` and the task dialog, Linux's Apertrust's own in a dialog window; About and a future splash screen Apertrust's own over the window (decision 41) |
