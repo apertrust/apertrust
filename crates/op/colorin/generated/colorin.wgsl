@@ -36,7 +36,9 @@ struct PassHeader_std140_0
 struct ColorinParams_std140_0
 {
     @align(16) rows_0 : array<vec4<f32>, i32(3)>,
+    @align(16) clipped_0 : array<vec4<f32>, i32(3)>,
     @align(16) correction_0 : vec4<f32>,
+    @align(16) mode_0 : vec4<u32>,
 };
 
 struct Params_std140_0
@@ -50,33 +52,80 @@ struct Params_std140_0
 
 @binding(1) @group(0) var<storage, read_write> output_0 : array<vec4<f32>>;
 
-fn colorin_1( _S1 : vec3<f32>) -> vec3<f32>
+fn blue_mapping_0( rgb_0 : vec3<f32>) -> vec3<f32>
 {
-    var camera_0 : vec3<f32> = _S1 * params_0.colorin_0.correction_0.xyz;
-    return vec3<f32>(dot(params_0.colorin_0.rows_0[i32(0)].xyz, camera_0), dot(params_0.colorin_0.rows_0[i32(1)].xyz, camera_0), dot(params_0.colorin_0.rows_0[i32(2)].xyz, camera_0));
+    var _S1 : vec3<f32> = rgb_0;
+    var sum_0 : f32 = rgb_0.x + rgb_0.y + rgb_0.z;
+    if((sum_0 > 0.0f))
+    {
+        var z_0 : f32 = _S1.z / sum_0;
+        if((z_0 > 0.5f))
+        {
+            var _S2 : f32 = (z_0 - 0.5f) / 0.5f * min(1.0f, sum_0 / 0.5f) * 0.10999999940395355f;
+            _S1[i32(1)] = _S1[i32(1)] + _S2;
+            _S1[i32(2)] = _S1[i32(2)] - _S2;
+        }
+    }
+    return _S1;
+}
+
+fn apply_0( _S3 : vec3<f32>) -> vec3<f32>
+{
+    return vec3<f32>(dot(params_0.colorin_0.rows_0[i32(0)].xyz, _S3), dot(params_0.colorin_0.rows_0[i32(1)].xyz, _S3), dot(params_0.colorin_0.rows_0[i32(2)].xyz, _S3));
+}
+
+fn apply_1( _S4 : vec3<f32>) -> vec3<f32>
+{
+    return vec3<f32>(dot(params_0.colorin_0.clipped_0[i32(0)].xyz, _S4), dot(params_0.colorin_0.clipped_0[i32(1)].xyz, _S4), dot(params_0.colorin_0.clipped_0[i32(2)].xyz, _S4));
+}
+
+fn colorin_1( _S5 : vec3<f32>) -> vec3<f32>
+{
+    var camera_0 : vec3<f32> = _S5 * params_0.colorin_0.correction_0.xyz;
+    var _S6 : vec4<u32> = params_0.colorin_0.mode_0;
+    var camera_1 : vec3<f32>;
+    if((params_0.colorin_0.mode_0.y) != u32(0))
+    {
+        camera_1 = blue_mapping_0(camera_0);
+    }
+    else
+    {
+        camera_1 = camera_0;
+    }
+    var _S7 : vec3<f32> = apply_0(camera_1);
+    var working_0 : vec3<f32>;
+    if((_S6.x) != u32(0))
+    {
+        working_0 = apply_1(clamp(_S7, vec3<f32>(0.0f), vec3<f32>(1.0f)));
+    }
+    else
+    {
+        working_0 = _S7;
+    }
+    return working_0;
 }
 
 @compute
 @workgroup_size(16, 16, 1)
 fn main(@builtin(global_invocation_id) id_0 : vec3<u32>)
 {
-    var _S2 : u32 = id_0.x;
-    var _S3 : bool;
-    if((_S2 >= (params_0.pass_0.width_0)))
+    var _S8 : u32 = id_0.x;
+    var _S9 : bool;
+    if((_S8 >= (params_0.pass_0.width_0)))
     {
-        _S3 = true;
+        _S9 = true;
     }
     else
     {
-        _S3 = ((id_0.y) >= (params_0.pass_0.height_0));
+        _S9 = ((id_0.y) >= (params_0.pass_0.height_0));
     }
-    if(_S3)
+    if(_S9)
     {
         return;
     }
-    var i_0 : u32 = id_0.y * params_0.pass_0.width_0 + _S2;
+    var i_0 : u32 = id_0.y * params_0.pass_0.width_0 + _S8;
     var pixel_0 : vec4<f32> = input_0[i_0];
-    var rgb_0 : vec3<f32> = pixel_0.xyz;
+    var rgb_1 : vec3<f32> = pixel_0.xyz;
     var k_0 : u32 = u32(0);
     loop
     {
@@ -87,12 +136,12 @@ fn main(@builtin(global_invocation_id) id_0 : vec3<u32>)
         {
             break;
         }
-        var _S4 : vec3<f32> = colorin_1(rgb_0);
-        var _S5 : u32 = k_0 + u32(1);
-        rgb_0 = _S4;
-        k_0 = _S5;
+        var _S10 : vec3<f32> = colorin_1(rgb_1);
+        var _S11 : u32 = k_0 + u32(1);
+        rgb_1 = _S10;
+        k_0 = _S11;
     }
-    output_0[i_0] = vec4<f32>(rgb_0, pixel_0.w);
+    output_0[i_0] = vec4<f32>(rgb_1, pixel_0.w);
     return;
 }
 

@@ -30,6 +30,10 @@ apertrust-raw.workspace = true
 apertrust-tools.workspace = true
 tracing.workspace = true
 
+[dev-dependencies]
+# Its `testing::image`, the small Bayer raw the colorin GPU tests start from.
+apertrust-tools = { workspace = true, features = ["testing"] }
+
 [build-dependencies]
 # The version and the banner's versions, read in this binary's own build (decision 44).
 apertrust-base = { workspace = true, features = ["build"] }

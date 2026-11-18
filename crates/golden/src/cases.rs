@@ -1039,7 +1039,46 @@ pub const CASES: &[Case] = &[
         unmask_like: None,
         tolerance: FLIP,
     },
+    // colorin's gamut clipping, one case per clipping profile, and its blue mapping:
+    // test 0001-exposure, edited, its colorin entry written as params version 7 with the
+    // standard matrix as input and the option under test; its +1 EV exposure, before
+    // colorin, puts the chart's light patches above 1, so the clamp's upper bound is
+    // reached too. darktable cannot switch colorin off, so each case's input renders it
+    // at linear Rec2020 in, with neither option, an identity (`xmp::switch_off`). Its
+    // temperature is params version 3, which darktable gives no late correction.
+    colorin("colorin-srgb", include_str!("../cases/colorin-srgb.xmp")),
+    colorin(
+        "colorin-adobe-rgb",
+        include_str!("../cases/colorin-adobe-rgb.xmp"),
+    ),
+    colorin(
+        "colorin-rec709",
+        include_str!("../cases/colorin-rec709.xmp"),
+    ),
+    colorin(
+        "colorin-rec2020",
+        include_str!("../cases/colorin-rec2020.xmp"),
+    ),
+    // Blue mapping without gamut clipping.
+    colorin(
+        "colorin-blue-mapping",
+        include_str!("../cases/colorin-blue-mapping.xmp"),
+    ),
 ];
+
+/// A colorin case on darktable's 40D chart, its option set in `xmp`, at darktable's
+/// tolerance.
+const fn colorin(name: &'static str, xmp: &'static str) -> Case {
+    Case {
+        name,
+        operation: "colorin",
+        image: "mire1.cr2",
+        xmp,
+        disable: &[],
+        unmask_like: None,
+        tolerance: Tolerance::DARKTABLE,
+    }
+}
 
 /// The tone equalizer's tolerance, for smoothing up to 1.5: its maths is darktable's but
 /// for the band fit in f64 and the curve evaluated rather than read from a table, which
