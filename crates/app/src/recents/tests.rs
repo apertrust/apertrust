@@ -430,3 +430,42 @@ fn a_folder_s_label_and_its_kind_s_name_in_each_language() {
         assert_eq!(OpenKind::Folder.name(&words), kind, "{locale:?}");
     }
 }
+
+/// The tab last shown in each workspace is kept by workspace id beside the list, merged
+/// into the file as it then is, so a tab another process set for another workspace stays.
+#[test]
+fn the_tab_last_shown_is_kept_by_workspace() {
+    let (_dir, file) = state("tabs");
+    let (mut recents, _) = Recents::open(file.clone(), none);
+    assert_eq!(recents.tab("default"), None);
+    recents.set_tab("default", "effects");
+    recents.flush();
+    // Meanwhile, outside this process: another workspace's tab, and a value it cannot read.
+    let outside = text(&file).replace("[tab]\n", "[tab]\nportraits = \"skin\"\nodd = 4\n");
+    std::fs::write(&file, outside).expect("written");
+    recents.set_tab("default", "raw");
+    recents.flush();
+    let (read, warnings) = Recents::open(file.clone(), none);
+    assert!(warnings.is_empty(), "{warnings:?}");
+    assert_eq!(read.tab("default"), Some("raw"));
+    assert_eq!(read.tab("portraits"), Some("skin"));
+    assert_eq!(read.tab("odd"), None);
+    assert!(text(&file).contains("odd = 4"));
+}
+
+/// The old settings' tab moves once, where the file holds none for the workspace, written
+/// at once; a tab the file holds wins, and no old tab moves nothing.
+#[test]
+fn the_old_tab_moves_once() {
+    let (_dir, file) = state("old-tab");
+    let (mut recents, _) = Recents::open(file.clone(), none);
+    recents.move_tab("default", || None);
+    recents.flush();
+    assert!(!text(&file).contains("[tab]"));
+    recents.move_tab("default", || Some("geometry".to_owned()));
+    drop(recents);
+    let (mut read, _) = Recents::open(file.clone(), none);
+    assert_eq!(read.tab("default"), Some("geometry"));
+    read.move_tab("default", || panic!("read again once moved"));
+    assert_eq!(read.tab("default"), Some("geometry"));
+}

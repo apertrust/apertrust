@@ -141,7 +141,7 @@ Goal: open, edit, save and reopen a photo with the first pass's tools. Migration
 
 **Workspaces** (decision 96; [gui.md](gui.md#workspaces)): a workspace its tabs, each tab's tools, the tools it hides and its toolbar, in a file of its own; a tool in no tab hidden, still reachable; Find Tool…. Seven steps, each one pull request usable on its own, reviewed before the next:
 
-- [ ] 1. The workspace model: `workspaces/<id>.toml` (tabs with id, title and icon; pinned and order per tab; hidden; seen; version), Edit built in and the default, a person's own workspaces defined by writing a file; `settings.toml`'s `workspace`; the tab last shown in `state.toml`.
+- [x] 1. The workspace model: `workspaces/<id>.toml` (tabs with id, title and icon; pinned and order per tab; hidden; seen; version), Default built in, its file `data/workspaces/default.toml`, a person's own workspaces defined by writing a file; `settings.toml`'s `workspace`; the tab last shown in `state.toml`.
 - [ ] 2. Switching: View › Workspace, and the darktable workspace built in (darktable's groups, decision 38).
 - [ ] 3. Hidden tools: a tool in no tab, the Hidden tab with Show Hidden Tools, Show Hidden Tools in the Tools panel's ⋮ so every hidden tool can be reached, the dot on ⋮ while a hidden tool changes the photo.
 - [ ] 4. ⋯'s layout items: Pin or Unpin, Move Up and Move Down, Move to Tab ▸, Hide, and Show in Tab ▸ for a hidden tool (`section-show`), so a hidden tool comes back before dragging exists; their keys and screen readers' actions (decision 83's).
@@ -156,11 +156,11 @@ Goal: open, edit, save and reopen a photo with the first pass's tools. Migration
 - [x] A tool panel drawn from each tool's definition (decisions 29 and 42): darktable's page, its tabs and collapsible groups, sliders that show values as darktable writes them, choices that list only what the photo allows.
 - [x] Edits save themselves after each change.
 - [x] Sixteen migrated tools, listed [below](#the-migrated-tools), each darktable's module with its parameters as controls (decision 2, [tools/README.md](tools/README.md)): White balance and Colour calibration with its CAT tab (decision 27); the Tone equalizer, its mask keyed apart from its band curve, with two rounds of export tiles (decision 15); Colour balance RGB, run only while used (decision 32).
-- [x] Edit's tabs by editing stage (decision 38; [gui.md](gui.md#the-tabs-by-editing-stage)): Photos, Adjust, Detail, Geometry, Effects, Raw and History, opening on Adjust.
-  - [x] The app's `TABS` and `TAB_TOOLS` with each tab's list in editing order, Raw's in processing order, and `panel-tab-7`; Scopes pinned over the five editing tabs.
-  - [x] The tab ids `adjust`, `detail`, `geometry`, `effects` and `raw`, darktable's old ids read as unknown in Edit, and the labels in British and American English, Ukrainian and Polish.
+- [x] The Default workspace's tabs by editing stage (decision 38; [gui.md](gui.md#the-tabs-by-editing-stage)): Photos, Adjust, Detail, Geometry, Effects, Raw and History, opening on Adjust.
+  - [x] Each tab's list in editing order, Raw's in processing order, now `data/workspaces/default.toml` (decision 96), and `panel-tab-7`; Scopes pinned over the five editing tabs.
+  - [x] The tab ids `adjust`, `detail`, `geometry`, `effects` and `raw`, darktable's old ids read as unknown in the Default workspace, and the labels in British and American English, Ukrainian and Polish.
   - [x] Five tab icons, one colour in Lucide's style with their filled forms, drawn on the wireframe first.
-  - [x] The test that held each tab's list to `OPERATIONS` reversed replaced by one holding Edit's lists to decision 38's, each tool in exactly one tab; darktable's groups kept as the darktable workspace's lists, with that test, for the darktable workspace ([Workspaces](#the-window-and-the-shell), step 2).
+  - [x] The test that held each tab's list to `OPERATIONS` reversed replaced by one holding the Default workspace's lists to decision 38's, each tool in exactly one tab; darktable's groups kept as the darktable workspace's lists, with that test, for the darktable workspace ([Workspaces](#the-window-and-the-shell), step 2).
 - [ ] Phase 2's tools are darktable's: raw black/white point, white balance, highlight reconstruction, demosaic, denoise (profiled), rotate and perspective, orientation, input colour profile, exposure, tone equalizer, colour calibration, RGB primaries, colour equalizer, colour balance RGB, AgX and output colour profile. Of these, left:
   - [ ] Input colour profile and Colour equalizer as tools (their processing is ported).
   - [ ] Rotate and perspective, ported.

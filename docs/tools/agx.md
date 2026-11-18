@@ -4,11 +4,11 @@ Tool `agx`, version 1. It works on the background only until layers come; with t
 
 Its header's tooltip says what it is for (`tool-agx-description`, [gui.md](../gui.md#the-headers-tooltip)): "Fits the light the camera caught into what a screen or a print can show, with natural highlights and colours. The default tone mapper, inspired by Blender’s AgX."
 
-It is darktable's AgX in the first pass (decision 2), the tone mapper of Edit's Adjust tab. It has darktable's page: the Settings and Primaries tabs, the controls in `gui_init`'s order under darktable's labels in British spelling, and darktable's three collapsible sections as collapsible groups. Each row shows where darktable's `gui_changed` shows it (decision 29).
+It is darktable's AgX in the first pass (decision 2), the tone mapper of the Default workspace's Adjust tab. It has darktable's page: the Settings and Primaries tabs, the controls in `gui_init`'s order under darktable's labels in British spelling, and darktable's three collapsible sections as collapsible groups. Each row shows where darktable's `gui_changed` shows it (decision 29).
 
 It drives one operation, `agx` ([../ports/agx.md](../ports/agx.md)), which every photo runs, and owns all 35 of its parameters, each with its control. Its defaults are the operation's, darktable's scene-referred defaults ([README.md](README.md), rule 4), so an untouched tool sets nothing.
 
-**Status:** built, in `crates/tools/src/agx.rs`. The app draws it from its definition (`docs/gui.md`, Tool panels from definitions). Its tab is Edit's Adjust, after Exposure and before the Tone equalizer, in [README.md](README.md)'s order (decision 38).
+**Status:** built, in `crates/tools/src/agx.rs`. The app draws it from its definition (`docs/gui.md`, Tool panels from definitions). Its tab is the Default workspace's Adjust, after Exposure and before the Tone equalizer, in [README.md](README.md)'s order (decision 38).
 
 - Its rows are tests in `crates/tools/tests/agx.rs` and the tool's source, and the panel's in `crates/app/src/tools.rs`; [Results](#results) gives what they measured.
 - A choice marked proposed is open; the [design choices](#design-choices) are settled.
@@ -209,4 +209,4 @@ darktable's optional curve tab and its preference to show Look always open are p
 - **Show curve:** a collapsible group with no rows, which `ProcessingDefinition::check` takes, drawn disabled and closed with a titled tab's "to come" tooltip until a read-only graph row exists (`CollapsibleGroup::disabled`).
 - **A4's bound:** bit for bit wherever the binding's `value / factor` reaches darktable's parameter from some value of the control. One f32 step for the three it reaches from none, each proved so and each reached by darktable's slider path, with the frame they render measured. Bindings that round as darktable's slider does are planned before the end of Phase 3 ([Invariants](#invariants)).
 - **Rows:** A0 to A7. No first step, since every photo runs AgX; a row for the pivot's coordinates, one for what is not ported and one for the pivot's range following the input range.
-- **In `TOOLS`:** after Raw black/white point, Highlight reconstruction and Demosaic, and before Output colour profile. Edit's Adjust tab lists it after Exposure (decision 38, `TAB_TOOLS`).
+- **In `TOOLS`:** after Raw black/white point, Highlight reconstruction and Demosaic, and before Output colour profile. The Default workspace's Adjust tab lists it after Exposure (decision 38, `TAB_TOOLS`).

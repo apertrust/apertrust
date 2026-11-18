@@ -1452,8 +1452,10 @@ mod tests {
     /// menu bar, Rules): the Edit view's, since the layouts' items join only once there are
     /// two layouts; F6's, which move the focus as Tab does; and H's peek, held, while a menu
     /// item is a press; the ☰'s menu's own, which opens the menu it would be in; and
-    /// Restart, Settings' Restart now's for now (decision 82).
-    const LEFT_OUT: [ActionId; 9] = [
+    /// Restart, Settings' Restart now's for now (decision 82); and the eighth to the
+    /// twelfth tab's, which only a workspace of more tabs than the Default's has, until Tools
+    /// Panel Tab lists the tabs a workspace shows (decision 96).
+    const LEFT_OUT: [ActionId; 14] = [
         ActionId::EDIT_VIEW,
         ActionId::NEXT_REGION,
         ActionId::PREVIOUS_REGION,
@@ -1464,6 +1466,11 @@ mod tests {
         ActionId::COMPRESS_HISTORY,
         ActionId::TRUNCATE_HISTORY,
         ActionId::CREATE_STYLE,
+        ActionId::PANEL_TABS[7],
+        ActionId::PANEL_TABS[8],
+        ActionId::PANEL_TABS[9],
+        ActionId::PANEL_TABS[10],
+        ActionId::PANEL_TABS[11],
     ];
 
     /// The actions only the Mac's menus hold: Close Window, since Windows and Linux close
@@ -1529,7 +1536,7 @@ mod tests {
             photos: 2,
             opened: true,
             recents: [Some(true); crate::recents::MOST],
-            tabs: &[true; 5],
+            tabs: actions::first_tabs(5),
             scale: 1.5,
             dialog: false,
             modal: false,

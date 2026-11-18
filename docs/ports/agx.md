@@ -7,7 +7,7 @@ Status: ported.
 - **Code:** the kernel is `slang/agx.slang` in `crates/op/agx`, its setup `src/setup.rs`, with shared helpers in `apertrust-color` (`src/lib.rs` and `slang/color.slang`).
 - **Coverage:** every setting of params version 7 except base primaries "export profile", which returns `NotPorted`.
 - **Checks:** all four golden cases pass, and the gradient check passes on every case and on the synthetic sweep (Gradients). Checked on one GPU so far.
-- **Tool:** AgX, darktable's page, in Edit's Adjust tab (decision 38), owning every parameter ([../tools/agx.md](../tools/agx.md)). A tool set to each golden case's values binds its parameters bit for bit but three of `agx`'s, one f32 step off.
+- **Tool:** AgX, darktable's page, in the Default workspace's Adjust tab (decision 38), owning every parameter ([../tools/agx.md](../tools/agx.md)). A tool set to each golden case's values binds its parameters bit for bit but three of `agx`'s, one f32 step off.
 
 Golden result, Apple M4:
 
@@ -26,7 +26,7 @@ AgX is the tone mapper: it turns scene-referred light, unbounded and with mid-gr
 
 It encodes each RGB channel in log2 around mid-grey and maps it through a sigmoid-like curve with a linear section around a pivot. It does so in a "rendering" RGB space whose primaries are inset towards white and rotated, so the per-channel curve desaturates bright colours. After the curve, a second set of primaries restores purity and undoes the rotation, and the input's hue can be partly restored.
 
-In Apertrust it is the background's tone mapper, run once (architecture decision 33), and in the first pass (decision 2) a tool of its own, AgX, the tone mapper in Edit's Adjust tab, one tone mapper per edit.
+In Apertrust it is the background's tone mapper, run once (architecture decision 33), and in the first pass (decision 2) a tool of its own, AgX, the tone mapper in the Default workspace's Adjust tab, one tone mapper per edit.
 
 ## Pipeline
 

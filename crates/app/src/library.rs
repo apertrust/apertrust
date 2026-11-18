@@ -1056,7 +1056,7 @@ pub fn empty_state(ui: &mut egui::Ui, slot: Rect, what: Empty<'_>, keys: &Keys) 
 mod tests {
     use super::*;
 
-    /// Collections drawn as the Photos tab draws it (`photos_body`): its header every
+    /// Collections drawn as the Photos tab draws it (`photos_tool`): its header every
     /// tool's, with its own ⋯ items, its page through its `UtilityTool`. Returns what it
     /// asked for.
     fn drawn(ui: &mut egui::Ui, collections: &mut Collections<'_>) -> Vec<Action> {

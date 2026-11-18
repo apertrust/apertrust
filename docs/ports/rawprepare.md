@@ -25,7 +25,7 @@ The first operation of the raw stage. It cuts the sensor's readout down to the d
 
 It scales each photosite so the sensor's black is 0 and its white point 1: `(raw - black) / (white - black)`. There is a black level for each of the four positions of the 2×2 pattern of row and column parities on the sensor.
 
-Everything after it, white balance, highlight reconstruction and demosaic, assumes that scale. In the first pass its levels are the Raw black/white point tool's, in Edit's Raw tab (decision 38).
+Everything after it, white balance, highlight reconstruction and demosaic, assumes that scale. In the first pass its levels are the Raw black/white point tool's, in the Default workspace's Raw tab (decision 38).
 
 ## Pipeline
 

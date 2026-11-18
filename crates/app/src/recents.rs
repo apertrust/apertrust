@@ -40,12 +40,16 @@
 //!   folder chosen in its tree and the photo active as the app ended, never a photo opened
 //!   alone; File › Close takes it out ([`Recents::set_last`]). A write merges it as it does the list, the newest winning;
 //!   one this build cannot read is read as none and left in the file until replaced.
+//! - **The tab last shown in each workspace** is kept beside them, as `[tab]` keyed by
+//!   workspace id (decision 96), set only when the person chooses a tab
+//!   ([`Recents::set_tab`]) and merged as what was open last is; one this build cannot read
+//!   is read as none and left in the file until replaced.
 //! - A damaged `state.toml`, one that is not TOML or not UTF-8, is set aside as
 //!   `state.toml.bak` with a warning naming no path in it: read at the start, the list
 //!   starts empty; met by a later write, what the last write left is written. One a newer
 //!   Apertrust wrote is read as empty and never written.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -66,6 +70,9 @@ const KEY: &str = "recent";
 
 /// The key of what was open last.
 const LAST: &str = "last";
+
+/// The key of the tab last shown in each workspace.
+const TAB: &str = "tab";
 
 /// What an entry is, an open kind: what a window holds, which one photo opened alone is
 /// not. Libraries and projects join folders in Phase 5, each with its label in
@@ -230,6 +237,8 @@ enum Change {
     Kept,
     /// What was open last, or none.
     Last(Option<Last>),
+    /// The tab last shown in a workspace, by their ids.
+    Tab(String, String),
 }
 
 /// Applies `change` to `items`, newest first, keeping at most [`MOST`]. An entry opened
@@ -262,7 +271,7 @@ fn apply(items: &mut Vec<Item>, change: &Change) {
             }
         }
         Change::Cleared => items.retain(|item| matches!(item, Item::Unknown(_))),
-        Change::Kept | Change::Last(_) => {}
+        Change::Kept | Change::Last(_) | Change::Tab(..) => {}
     }
     // Newest first; the sort is stable, so an entry opened in the same second as another
     // stays where it was put.
@@ -278,6 +287,8 @@ struct Read {
     items: Option<Vec<Item>>,
     /// What was open last, where the file holds one this build reads.
     last: Option<Last>,
+    /// The tab last shown in each workspace, those this build reads.
+    tabs: BTreeMap<String, String>,
     /// Whether it was damaged, and set aside.
     damaged: bool,
     /// Whether it may be written: not one a newer Apertrust wrote, nor one that could not
@@ -362,8 +373,21 @@ fn read(file: &Path) -> Read {
         read.items = Some(items);
     }
     read.last = table.get(LAST).and_then(Last::read);
+    read.tabs = tabs(&table);
     read.table = table;
     read
+}
+
+/// The tab last shown in each workspace that `table` holds, each a text.
+fn tabs(table: &Table) -> BTreeMap<String, String> {
+    let tabs = table
+        .get(TAB)
+        .and_then(Value::as_table)
+        .into_iter()
+        .flatten();
+    let text =
+        |(workspace, tab): (&String, &Value)| Some((workspace.clone(), tab.as_str()?.to_owned()));
+    tabs.filter_map(text).collect()
 }
 
 /// `path` with `suffix` after its whole name.
@@ -391,11 +415,25 @@ fn merge(file: &Path, changes: &[Change], last: &[Item]) -> io::Result<Vec<Item>
     };
     for change in changes {
         apply(&mut items, change);
-        if let Change::Last(last) = change {
-            match last {
-                Some(last) => table.insert(LAST.into(), last.value()),
-                None => table.remove(LAST),
-            };
+        match change {
+            Change::Last(Some(last)) => {
+                table.insert(LAST.into(), last.value());
+            }
+            Change::Last(None) => {
+                table.remove(LAST);
+            }
+            Change::Tab(workspace, tab) => {
+                let tabs = table
+                    .entry(TAB)
+                    .or_insert_with(|| Value::Table(Table::new()));
+                if !tabs.is_table() {
+                    *tabs = Value::Table(Table::new());
+                }
+                if let Value::Table(tabs) = tabs {
+                    tabs.insert(workspace.clone(), tab.clone().into());
+                }
+            }
+            _ => {}
         }
     }
     table.insert("version".into(), VERSION.into());
@@ -496,6 +534,8 @@ pub struct Recents {
     items: Vec<Item>,
     /// What was open last.
     last: Option<Last>,
+    /// The tab last shown in each workspace, by their ids.
+    tabs: BTreeMap<String, String>,
     /// What changed since the last [`save`](Recents::save).
     changes: Vec<Change>,
     /// The entries a check found missing.
@@ -516,6 +556,7 @@ impl Recents {
         Recents {
             items: Vec::new(),
             last: None,
+            tabs: BTreeMap::new(),
             changes: Vec::new(),
             missing: HashSet::new(),
             asking: HashMap::new(),
@@ -533,6 +574,7 @@ impl Recents {
         let Read {
             items,
             last,
+            tabs,
             writable,
             retryable,
             warnings,
@@ -540,6 +582,7 @@ impl Recents {
         } = read(&file);
         let mut recents = Recents::nowhere();
         recents.last = last;
+        recents.tabs = tabs;
         if writable || retryable {
             recents.writer = Writer::start(file, items.clone().unwrap_or_default());
         }
@@ -622,6 +665,35 @@ impl Recents {
         if self.last != last {
             self.last.clone_from(&last);
             self.changes.push(Change::Last(last));
+        }
+    }
+
+    /// The tab last shown in the workspace `workspace`, by its id, as the file held it at
+    /// the start or as last set.
+    pub fn tab(&self, workspace: &str) -> Option<&str> {
+        self.tabs.get(workspace).map(String::as_str)
+    }
+
+    /// The tab last shown in `workspace` is now `tab`: written with the list's next save,
+    /// and not at all where it is the same.
+    pub fn set_tab(&mut self, workspace: &str, tab: &str) {
+        if self.tab(workspace) != Some(tab) {
+            self.tabs.insert(workspace.to_owned(), tab.to_owned());
+            let change = Change::Tab(workspace.to_owned(), tab.to_owned());
+            self.changes.push(change);
+        }
+    }
+
+    /// Where the file holds no tab for `workspace`, takes `old`'s, the tab an earlier build
+    /// kept in settings (`edit.tab`), read only for this move, and writes it at once, so it
+    /// moves once; none moves nothing.
+    pub fn move_tab(&mut self, workspace: &str, old: impl FnOnce() -> Option<String>) {
+        if self.tab(workspace).is_some() {
+            return;
+        }
+        if let Some(old) = old() {
+            self.set_tab(workspace, &old);
+            self.save();
         }
     }
 

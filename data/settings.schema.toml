@@ -225,6 +225,15 @@ kind = "text"
 optional = true
 applies = "at-once"
 
+# The workspace the Tools panel shows, by its id (decision 96): Default, built in, or one
+# of the person's own, a file in the user data folder's workspaces/. Text, not a choice: a
+# person's own are files. An id with no workspace shows Default, with a warning, and stays.
+[workspace]
+owner = "app"
+kind = "text"
+default = "default"
+applies = "at-once"
+
 # Whether the Tools panel's tabs show their names.
 [tools_panel.tab_names]
 owner = "app"
@@ -282,8 +291,9 @@ type = "apertrust_ui::Background"
 default = "computed"
 applies = "at-once"
 
-# Edit's Tools panel tab, by its id. Text, not a choice: Customise tabs will make tabs of
-# the user's own. An id that is no tab, or a tab that cannot be chosen yet, shows Adjust.
+# Edit's Tools panel tab, by its id, as earlier builds kept it: read only where state.toml
+# holds no tab for the Default workspace, for its move there (decision 96), then left as
+# it is; never written.
 [edit.tab]
 owner = "app"
 kind = "text"

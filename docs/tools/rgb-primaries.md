@@ -8,7 +8,7 @@ It is darktable's rgb primaries in the first pass (decision 2). darktable's page
 
 It drives one operation, `primaries` ([../ports/primaries.md](../ports/primaries.md)), which an unedited photo does not run. The operation is planned while the tool is on, as in darktable, where rgb primaries is off until the user turns it on (decision 32). The tool owns all eight of the operation's parameters; none is fixed.
 
-**Status:** built, in `crates/tools/src/rgb_primaries.rs`. The app draws it from its definition (`docs/gui.md`, Tool panels from definitions). Its tab is Edit's Adjust, last, after Colour equalizer (decision 38).
+**Status:** built, in `crates/tools/src/rgb_primaries.rs`. The app draws it from its definition (`docs/gui.md`, Tool panels from definitions). Its tab is the Default workspace's Adjust, last, after Colour equalizer (decision 38).
 
 - In [README.md](README.md)'s order (decision 38) the colour equalizer, whose tool is not built yet, comes between Colour balance RGB and it.
 - Its rows are tests in `crates/tools/tests/rgb_primaries.rs`; [Results](#results) gives what they measured.

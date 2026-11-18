@@ -4,11 +4,11 @@ Tool `highlights`, version 1. It works on the background only, as the whole raw 
 
 Its header's tooltip says what it is for (`tool-highlights-description`, [gui.md](../gui.md#the-headers-tooltip)): "Keeps clipped highlights from turning magenta and tries to recover their colour. Reach for it when the brightest areas look flat or tinted."
 
-It is darktable's highlight reconstruction in the first pass (decision 2). darktable's page has no tabs, sections or presets of its own: every control is in `gui_init`'s order under darktable's labels, each shown for the methods darktable shows it for (decision 29). Its tab is Edit's Raw, after Raw black/white point and before Demosaic, in processing order (decision 38; [README.md](README.md), Raw).
+It is darktable's highlight reconstruction in the first pass (decision 2). darktable's page has no tabs, sections or presets of its own: every control is in `gui_init`'s order under darktable's labels, each shown for the methods darktable shows it for (decision 29). Its tab is the Default workspace's Raw, after Raw black/white point and before Demosaic, in processing order (decision 38; [README.md](README.md), Raw).
 
 It drives one operation, `highlights` (raw 4, [../ports/highlights.md](../ports/highlights.md)), which every raw runs, with inpaint opposed its one method ported. So it adds no operation: it has no first step, and at its defaults it sets nothing and leaves the plan as it was. It owns every parameter of the operation, the method and the clipping threshold. A change runs demosaic again, as every raw-stage control does (decision 12; [../engine.md](../engine.md), Where the viewport's scale applies).
 
-**Status:** built, in `crates/tools/src/highlight_reconstruction.rs`, in `TOOLS` after Raw black/white point. The app draws it from its definition (`docs/gui.md`, Tool panels from definitions) in Edit's Raw tab (decision 38).
+**Status:** built, in `crates/tools/src/highlight_reconstruction.rs`, in `TOOLS` after Raw black/white point. The app draws it from its definition (`docs/gui.md`, Tool panels from definitions) in the Default workspace's Raw tab (decision 38).
 
 - Its rows are tests in `crates/tools/tests/highlight_reconstruction.rs`; [Results](#results) gives what they measured.
 - Every row is exact or darktable's own match, so none has a proposed tolerance.
