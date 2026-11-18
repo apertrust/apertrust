@@ -101,7 +101,7 @@ Held by the operations and unit-tested: a tool at most once in a tab, `pinned` a
 
 - **The Hidden tab** is computed, not kept: the workspace's hidden tools, processing tools in pipeline order, first at the top, as the Default workspace's Raw lists them, then utilities in its order. Its id is `hidden`, its title Hidden (`tab-hidden`), its icon Lucide's `eye-off` with its filled form. Nothing in it is pinned or reordered.
 - **Show Hidden Tools,** a checked item, `tools-panel-show-hidden`, app-wide in `settings.toml` (`tools_panel.show_hidden`, off), shows it last in the tabs and chooses it; unchecked, it goes, and the tab shown before it is shown again. Shown with nothing hidden, it says "No hidden tools in this workspace." It is chosen by a click, by `panel-tab-hidden` and from Tools Panel Tab's list, after the twelve tabs a file may show, so it never pushes one out.
-- **A tool is moved out** to a tab by ⋯ › Show in Tab ▸ or a drop on a tab's icon, which takes it out of `hidden`. A drop on the Hidden tab's icon, or ⋯ › Hide, hides a tool.
+- **A tool is moved out** to a tab by ⋯ › Show Tool in Tab ▸ or a drop on a tab's icon, which takes it out of `hidden`. A drop on the Hidden tab's icon, or ⋯ › Remove Tool, hides a tool.
 - **The dot.** While a hidden processing tool changes the photo and the Hidden tab is not shown, a dot, `accent` and 6 points as the Toolbar's Import… carries ([0085](0085-import-in-folder-mode.md)), sits at the top end of the Tools panel's ⋮. A tool changes the photo when it is on, for a tool darktable leaves off (decision 32), or any of its controls is off the value the photo's default steps give it, for one every photo runs; utilities never do. The ⋮ button's tooltip, and Show Hidden Tools' tip in its menu, say "Hidden tools change this photo: Exposure, Vignetting"; screen readers hear it as ⋮'s description, and once, politely, as it appears. Choosing Show Hidden Tools shows the Hidden tab and chooses it.
 - **What reveals a tool reveals a hidden one** in the Hidden tab, shown for the moment while Show Hidden Tools is off: View › Collections (L) where Collections is hidden, History's Shift-click on a hidden tool's step. Ctrl+E has Export, never hidden.
 
@@ -110,7 +110,7 @@ Held by the operations and unit-tested: a tool at most once in a tab, `pinned` a
 - **Find Tool… is a capability, not a tool:** a registry action, `find-tool`, on Ctrl+Shift+F (Cmd+Shift+F on a Mac), and a temporary state of the Tools panel. It has no `ToolDefinition` and no section, is never in a tab and is never hidden. It opens from its key, the tab bar's menu and the Tools panel's ⋮.
 - **Opening:** the tab bar's row becomes the search field, in the same place and at the tab bar's height, with tab names or without (56 points with them, 36 without), the focus in it, a search icon at its start and ✕ at its end; the tabs are gone while it shows, so their keys and Tools Panel Tab's items do nothing. The tab shown's sections, the pinned ones too, give way to the results.
 - **An empty field** shows no list: a hint, centred in `text_secondary`, "Type a tool's name."
-- **The results** are the tools' own sections, closed, their headers as everywhere (↺, presets, ⋯). After the title, in `text_secondary`, where it lives: its tab's name, or `eye-off` and Hidden. Opening one gives the real tool, usable there, sending what it sends in a tab; a hidden one's ⋯ holds Show in Tab ▸. Every tool of the Tools panel can be found, hidden ones included, each once, a tool in several tabs (Scopes) named by the first; never an import tool.
+- **The results** are the tools' own sections, closed, their headers as everywhere (↺, presets, ⋯). After the title, in `text_secondary`, where it lives: its tab's name, or `eye-off` and Hidden. Opening one gives the real tool, usable there, sending what it sends in a tab; a hidden one's ⋯ holds Show Tool in Tab ▸. Every tool of the Tools panel can be found, hidden ones included, each once, a tool in several tabs (Scopes) named by the first; never an import tool.
 - **Matching,** case- and accent-insensitive, and the order, best first:
   1. tools whose name in the interface's language starts with the text;
   2. tools whose name has a word starting with it;
@@ -134,20 +134,33 @@ Held by the operations and unit-tested: a tool at most once in a tab, `pinned` a
 
 ### ⋯ on a tool
 
-The layout's items, last in ⋯ in `LAYOUT` (91), for a tool and a utility alike:
+The layout's items, last in ⋯ in `LAYOUT` (91), for a tool and a utility alike. Their words carry "Tool", so each reads on its own in the keymap and a list of shortcuts.
 
 | Item | Does | Disabled when |
 | --- | --- | --- |
-| Pin, or Unpin | To the end of the tab's pinned list, or the top of its scrolling list | — |
-| Move Up, Move Down | One place in its list | First, or last, in it |
-| Move to Tab ▸ each tab by name | As a drop on its icon (83) | The tab it is in, one already holding it, a disabled tab |
-| Hide | Takes it out of every tab of the workspace into `hidden` | Export, with "Export stays in every workspace"; a floating section, until it docks (83) |
-| Show in Tab ▸ each tab by name, for a hidden tool, in place of the others | Moves it there, out of `hidden` | A disabled tab |
+| Pin Tool, or Unpin Tool | To the end of the tab's pinned list, or the top of its scrolling list | — |
+| Move Tool to Tab ▸ each tab by name | As a drop on its icon (83) | The tab it is in, one already holding it, a disabled tab |
+| Remove Tool | Takes it out of every tab of the workspace into `hidden`, so it is hidden: its edit stays and it is still processed | Export, with "Export stays in every workspace"; a floating section, until it docks (83) |
+| Show Tool in Tab ▸ each tab by name, for a hidden tool, alone in place of the three above | Moves it there, out of `hidden` | A disabled tab |
 | Float, or Dock (planned, Phase 3) | Floats it near the Tools panel's top, or returns it to the place it left (83) | — |
 | Position ▸ Top Left, Top Right, Bottom Left, Bottom Right, on a floating panel (planned, Phase 3) | Moves the panel to that corner (83) | — |
 
-- **Keys:** on a focused header Alt+↑ and Alt+↓ (Option on a Mac), 83's. Registry actions with no default keys, each on the tool whose header has the focus: `section-move-up`, `section-move-down`, `section-pin` (Pin or Unpin), `section-move-to-tab-1` to `-12`, `section-hide` and `section-show`, which moves a hidden tool to its first default tab the workspace has, else the first tab that holds tools.
-- **Screen readers:** the header gains the custom actions Move up, Move down, Pin or Unpin, and Hide or Show; a polite live region says what happened ("Exposure moved to 3 of 12 in Adjust", "Exposure pinned in Adjust", "Vignetting hidden", "Vignetting shown in Effects"), in every language's messages.
+- **Remove Tool** takes the tool out of the workspace's tabs, never out of the edit. Its tooltip says so: "Takes Exposure out of this workspace's tabs. Its edit stays; Show Hidden Tools shows it." Show Tool in Tab ▸, or a drag from the Hidden tab to a tab's icon (step 7), brings it back. Taking a tool out of the edit is deleting an instance, which is layers' ([0034](0034-layers-masked-tool-instances-in-a-fixed-order.md)), not this menu's.
+- **A hidden tool** has nothing in a tab to pin, move or remove, so its ⋯'s layout items are Show Tool in Tab ▸ alone.
+- **Reordering within a tab is not in ⋯.** It is done by dragging the header (step 7), by Alt+↑ and Alt+↓ on a focused header, and by screen readers' Move Tool Up and Move Tool Down (83). WCAG 2.2's 2.5.7, Dragging Movements, asks for a single-pointer alternative to a drag; for reordering within a tab Apertrust offers the keys and the assistive actions instead. This is deliberate: reordering within a tab is a convenience, and Move Tool to Tab ▸ covers moving between tabs. Moving between tabs, pinning and hiding each keep a menu route.
+- **Keys:** on a focused header Alt+↑ and Alt+↓ (Option on a Mac), 83's. The registry's actions, with no default keys, each on the tool whose header has the focus; their ids are 83's, each `section-` and so never one of the generated `tool-<tool>-<action>`, and their words are the same in ⋯, the keymap and screen readers' actions:
+
+  | Id | Words | Acts |
+  | --- | --- | --- |
+  | `section-pin` | Pin Tool, or Unpin Tool | Pins or unpins it in its tab |
+  | `section-move-up`, `section-move-down` | Move Tool Up, Move Tool Down | One place in its list, as Alt+↑ and Alt+↓; in no menu |
+  | `section-move-to-tab-1` to `-12` | In ⋯ each tab's name under Move Tool to Tab ▸, or Show Tool in Tab ▸ for a hidden tool; in the keymap Move Tool to Tab 1 to 12 | Moves it to that tab, out of `hidden` for a hidden tool |
+  | `section-hide` | Remove Tool | Takes it out of every tab into `hidden` |
+  | `section-show` | Show Tool in Tab | Moves a hidden tool to its first default tab the workspace has, else the first tab that holds tools; for keys and screen readers |
+  | `section-float`, `section-dock` (Phase 3) | Float, Dock | 83's |
+
+  `section-hide` keeps its id: it names what the action does to the workspace's file, its `hidden`, and "remove" in an id would read as deleting an instance, which layers will need.
+- **Screen readers:** the header gains the custom actions Move Tool Up, Move Tool Down, Pin Tool or Unpin Tool, and Remove Tool or Show Tool in Tab; a polite live region says what happened ("Exposure moved to 3 of 12 in Adjust", "Exposure pinned in Adjust", "Vignetting hidden", "Vignetting shown in Effects"), in every language's messages.
 - **Layout moves are not edits:** no step in the history, never undone by Undo (83); none reaches the session.
 
 ### Switching
@@ -166,7 +179,7 @@ Phase 2, in this order, each step one pull request usable on its own:
 1. **The workspace model** (built): `workspaces/<id>.toml` as above (tabs with id, title and icon; pinned and order per tab; hidden; seen; version), Default built in, its file `data/workspaces/default.toml`, a person's own workspaces defined by writing a file; `settings.toml`'s `workspace`; the tab last shown in `state.toml`. The workspace's file is read, never written: nothing in this step changes a layout.
 2. **Switching** (built): View › Workspace, and Essentials built in, `data/workspaces/essentials.toml`. The workspaces are read once as the app starts, each `workspace-<id>` made then; a switch works out the layout from what was read, with no file read. Until step 3, a tool a workspace leaves out of every tab, Essentials' or a person's own, is reached only by switching to a workspace that shows it, Default's shipped lists placing every tool though a person's changed `default.toml` may hide it too, or by editing the file.
 3. **Hidden tools:** a tool in no tab, the Hidden tab with Show Hidden Tools, Show Hidden Tools in the Tools panel's ⋮ so every hidden tool can be reached from this step on, the dot on ⋮ while a hidden tool changes the photo.
-4. **⋯'s layout items:** Pin or Unpin, Move Up and Move Down, Move to Tab ▸, Hide, and Show in Tab ▸ for a hidden tool (`section-show`), so a hidden tool comes back before dragging exists; their keys and screen readers' actions (83's); and writing the workspace's file, as below, this the first step that changes a layout.
+4. **⋯'s layout items:** Pin Tool or Unpin Tool, Move Tool to Tab ▸ and Remove Tool, and for a hidden tool Show Tool in Tab ▸ alone, so a hidden tool comes back before dragging exists; Alt+↑ and Alt+↓ on a focused header, the registry's `section-*` actions and screen readers' actions (83's), Move Tool Up and Move Tool Down among them, in no menu; and writing the workspace's file, as below, this the first step that changes a layout.
 5. **The tab bar's menu,** on a right-click and in ⋮ beside step 3's Show Hidden Tools: Find Tool…, Show Hidden Tools, Workspace ▸ (the app's own submenu, as Background ▸ is, listing every workspace as View › Workspace does; decision 91's limit of eight is for a tool's declared submenus), Reset Tab, Reset Workspace (deleting the workspace's file), Processing Order; Find Tool… drawn disabled until step 6. Workspace ▸ is in ⋮ already, built ahead of this step; the step adds it to the right-click menu.
 6. **Search:** Find Tool… (Ctrl+Shift+F), the field in the tabs' place, the tabs disabled, the list empty until typing, hidden tools found too, Esc back to the tab.
 7. **Dragging a header,** as 83 designs it: reorder, pin by a drop in the pinned area, move to another tab through its icon.
@@ -206,6 +219,13 @@ Phase 3:
 - **Find Tool… on Ctrl+F,** Search Photos… taking another key: Ctrl+F is the key everyone knows for finding, and searching photos is the more important search, so it keeps Ctrl+F.
 - **A Tools panel scope for Ctrl+F,** finding a tool with the focus in the panel and photos elsewhere: one key meaning two things by where the focus is, against one scope for the view (37).
 
+**⋯'s layout items:**
+
+- **Move Up and Move Down in ⋯:** a menu opened again for every place a tool moves, for what a drag, Alt+↑ and Alt+↓ and screen readers' actions already do; ⋯ keeps the moves that change where a tool is, its tab, its pinning and whether it is shown. Their absence costs WCAG 2.2's 2.5.7 for reordering within a tab, accepted above.
+- **Only Pin Tool or Unpin Tool in ⋯, the rest by dragging:** moving a tool to another tab and hiding it would need a drag, out of reach of the keyboard and screen readers and of a person who has not found the drag, and a hidden tool could not come back before step 7.
+- **Remove Tool resetting the tool and turning it off:** a layout item that changes the photo, against display order only (83), and an edit lost to tidying a tab. Reset is already ⋯'s first item, and taking a tool out of the edit is deleting an instance, layers' ([0034](0034-layers-masked-tool-instances-in-a-fixed-order.md)).
+- **`section-remove` for Remove Tool's id:** "remove" in an id reads as deleting an instance; `section-hide` names what it does to the file.
+
 **Customise tabs:**
 
 - **The dialog on fixed lists in Phase 2,** then reworked in Phase 3 (83): built twice, for what the file, ⋯ and the drag already do in Phase 2.
@@ -219,4 +239,4 @@ Phase 3:
 - `data/settings.schema.toml`: `workspace`, `tools_panel.show_hidden`, `edit.tab` read only for its move; `state.toml`'s `[tab]`.
 - Fluent: `tab-hidden`, `workspace-default`, `workspace-essentials`, Find Tool's and the layout items' words, each tool's `.search` with darktable's names and aliases.
 - The Colour picker, hidden by default ([0079](0079-colour-pickers-one-api-for-tools-and-the-colour-picker.md)), is a tool in no tab of the Default workspace: in the Hidden tab and found by search until its tab is decided.
-- The agent kit's `ui-conventions` and `desktop-architecture` skills: a tool's ⋯ with Hide, the Hidden tab, the workspace's file.
+- The agent kit's `ui-conventions` and `desktop-architecture` skills: a tool's ⋯ with Pin Tool, Move Tool to Tab ▸ and Remove Tool, the Hidden tab, the workspace's file.
