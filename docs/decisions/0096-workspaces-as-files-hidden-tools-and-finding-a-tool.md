@@ -163,10 +163,10 @@ View › Workspace ▸ and the tab bar's menu's Workspace ▸. A switch changes 
 Phase 2, in this order, each step one pull request usable on its own:
 
 1. **The workspace model:** `workspaces/<id>.toml` as above (tabs with id, title and icon; pinned and order per tab; hidden; seen; version), Edit built in and the default, a person's own workspaces defined by writing a file; `settings.toml`'s `workspace`; the tab last shown in `state.toml`.
-2. **Switching:** View › Workspace, and the darktable workspace built in (darktable's groups, 38).
+2. **Switching:** View › Workspace, and the darktable workspace built in (darktable's groups, 38). Until step 3, a tool a person's own workspace file leaves out of every tab is reached only by editing the file; the built-in workspaces place every tool, so none is hidden in them before then.
 3. **Hidden tools:** a tool in no tab, the Hidden tab with Show Hidden Tools, Show Hidden Tools in the Tools panel's ⋮ so every hidden tool can be reached from this step on, the dot on ⋮ while a hidden tool changes the photo.
 4. **⋯'s layout items:** Pin or Unpin, Move Up and Move Down, Move to Tab ▸, Hide, and Show in Tab ▸ for a hidden tool (`section-show`), so a hidden tool comes back before dragging exists; their keys and screen readers' actions (83's).
-5. **The tab bar's menu,** on a right-click and in ⋮ beside step 3's Show Hidden Tools: Find Tool…, Show Hidden Tools, Workspace ▸, Reset Tab, Reset Workspace (deleting the workspace's file), Processing Order; Find Tool… drawn disabled until step 6.
+5. **The tab bar's menu,** on a right-click and in ⋮ beside step 3's Show Hidden Tools: Find Tool…, Show Hidden Tools, Workspace ▸ (the app's own submenu, as Background ▸ is, listing every workspace as View › Workspace does; decision 91's limit of eight is for a tool's declared submenus), Reset Tab, Reset Workspace (deleting the workspace's file), Processing Order; Find Tool… drawn disabled until step 6.
 6. **Search:** Find Tool… (Ctrl+Shift+F), the field in the tabs' place, the tabs disabled, the list empty until typing, hidden tools found too, Esc back to the tab.
 7. **Dragging a header,** as 83 designs it: reorder, pin by a drop in the pinned area, move to another tab through its icon.
 
