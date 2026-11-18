@@ -107,15 +107,15 @@ Held by the operations and unit-tested: a tool at most once in a tab, `pinned` a
 ### Finding a tool
 
 - **Find Tool… is a capability, not a tool:** a registry action, `find-tool`, on Ctrl+Shift+F (Cmd+Shift+F on a Mac), and a temporary state of the Tools panel. It has no `ToolDefinition` and no section, is never in a tab and is never hidden. It opens from its key, the tab bar's menu and the Tools panel's ⋮.
-- **Opening:** the tab bar's row becomes the search field, at the same height and place, the focus in it, a search icon at its start and ✕ at its end; the tabs are gone while it shows, so their keys and Tools Panel Tab's items do nothing. The tab shown's sections, the pinned ones too, give way to the results.
-- **An empty field** shows no list: a hint, centred in `text_secondary`, "Type a tool's name. darktable's names work too."
+- **Opening:** the tab bar's row becomes the search field, in the same place and at the tab bar's height, with tab names or without (56 points with them, 36 without), the focus in it, a search icon at its start and ✕ at its end; the tabs are gone while it shows, so their keys and Tools Panel Tab's items do nothing. The tab shown's sections, the pinned ones too, give way to the results.
+- **An empty field** shows no list: a hint, centred in `text_secondary`, "Type a tool's name."
 - **The results** are the tools' own sections, closed, their headers as everywhere (↺, presets, ⋯). After the title, in `text_secondary`, where it lives: its tab's name, or `eye-off` and Hidden. Opening one gives the real tool, usable there, sending what it sends in a tab; a hidden one's ⋯ holds Show in Tab ▸. Every tool of the Tools panel can be found, hidden ones included, each once, a tool in several tabs (Scopes) named by the first; never an import tool.
 - **Matching,** case- and accent-insensitive, and the order, best first:
   1. tools whose name in the interface's language starts with the text;
   2. tools whose name has a word starting with it;
   3. tools matched by their British English name, their darktable module's name or one of darktable's aliases for it, as darktable's search matches them (`dt_iop_get_localized_name`, `dt_iop_get_localized_aliases`), each tool's `.search` attribute in Fluent from darktable's own strings and translations.
 
-  Within each group, processing tools in pipeline order, then utilities. The part of a name that matched is drawn in `accent_text`.
+  Within each group, processing tools in pipeline order, then utilities. Nothing in a result is highlighted, since a synonym, not the name, may be what matched.
 - **Nothing matches:** the hint's place says "No tool matches "…"." with the text typed.
 - **Keys:** typing filters at once; ↓ from the field goes to the first result's header, ↑ and ↓ move between the results' headers; Return opens or closes the focused result, and Return in the field opens the first. Esc closes search at once and brings back the tab shown before, with its sections as they were; Esc in an open list or a value field inside a result closes only that. Ctrl+Shift+F again, or ✕, closes it too. Search stays open while a tool found there is used, so a change made there needs no step back.
 - **A hidden tool used from search stays hidden;** the dot says whether it changes the photo.
