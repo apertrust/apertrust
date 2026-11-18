@@ -378,6 +378,9 @@ pub struct State {
     /// Whether `--conf` sets `workspace` for this run: no workspace can be chosen then, as
     /// the settings store refuses the setting's change (decision 43).
     pub workspace_given: bool,
+    /// Whether `--conf` sets `tools_panel.show_hidden` for this run: Show Hidden Tools
+    /// cannot be turned on or off then, as the settings store refuses the change.
+    pub show_hidden_given: bool,
     /// How the Browser shows the folder, whose items are shown checked.
     pub browser: crate::settings::BrowserSettings,
     /// Whether the Browser shows photos: its browser bar's items rest without any.
@@ -1007,7 +1010,7 @@ pub static ACTIONS: [Action; 84] = [
         keys: &[],
         scope: Scope::App,
         trigger: Trigger::Press,
-        available: on_main_window,
+        available: |s| on_main_window(s) && !s.show_hidden_given,
         emits: Emit::Intent(Intent::ShowHiddenTools),
     },
     // Ctrl+= first: on most keyboards + needs Shift, and Ctrl++ matches with it held.
@@ -2298,6 +2301,7 @@ pub(crate) mod tests {
             panel_tab: 0,
             workspace: workspace(crate::layout::DEFAULT),
             workspace_given: false,
+            show_hidden_given: false,
             browser: crate::settings::BrowserSettings::default(),
             shown: true,
             background: Some(Background::Dark),

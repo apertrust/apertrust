@@ -1601,6 +1601,9 @@ struct Shell {
     /// Whether `--conf` sets `workspace` for this run, so View › Workspace's items are
     /// disabled, saying why, as the settings store refuses the change (decision 43).
     workspace_given: bool,
+    /// Whether `--conf` sets `tools_panel.show_hidden` for this run, so Show Hidden Tools
+    /// is disabled, saying why, as the settings store refuses the change (decision 43).
+    show_hidden_given: bool,
     /// The tab shown, by its place among the workspace's; while the Hidden tab is chosen,
     /// the tab shown before it, shown again as it goes.
     panel_tab: usize,
@@ -1750,6 +1753,7 @@ impl Shell {
             workspace,
             kept_workspace: settings.workspace.clone(),
             workspace_given: false,
+            show_hidden_given: false,
             panel_tab,
             hidden_chosen: false,
             show_hidden: settings.show_hidden,
@@ -2425,6 +2429,7 @@ impl Shell {
             panel_tab: self.panel_tab,
             workspace: actions::workspace(&self.workspace.id),
             workspace_given: self.workspace_given,
+            show_hidden_given: self.show_hidden_given,
             browser: self.browser,
             // The app's, from the folder it shows ([`App::shell_state`]).
             shown: false,
@@ -2647,9 +2652,13 @@ impl Shell {
             _ => self.panel_tab,
         };
         let says = (!changing.is_empty()).then(|| hidden_change(&ctx, changing));
-        // Show Hidden Tools, then Workspace ▸, as View › Workspace lists it.
+        // Where `--conf` sets Show Hidden Tools for this run, its item says so, as a
+        // Settings row does, in place of the dot's words. Then Workspace ▸, as View ›
+        // Workspace lists it.
+        let given = self.show_hidden_given.then(|| utility::overridden(&words));
+        let tip = given.as_deref().or(says.as_deref());
         let workspaces = self.workspace_items(&ctx);
-        let items = menus::tools_panel(&ctx, &self.keymap, state, says.as_deref(), &workspaces);
+        let items = menus::tools_panel(&ctx, &self.keymap, state, tip, &workspaces);
         match TabBar::new(&tabs, chosen, self.tab_names)
             .customise(false)
             .items(items)
@@ -2729,10 +2738,11 @@ impl Shell {
             Intent::ShowHiddenTools => self.toggle_show_hidden(),
             Intent::Workspace(id) => self.switch_workspace(id),
             // Pressed again, it is chosen already, and nothing changes. Hidden, it is
-            // revealed in the Hidden tab (decision 96).
+            // revealed in the Hidden tab, opened and scrolled to, as any tool is (decision
+            // 96).
             Intent::ShowCollections => match self.workspace.holding(library::ID) {
                 Some(tab) => self.choose_tab(tab),
-                None => self.choose_hidden(),
+                None => self.reveal(library::ID),
             },
             Intent::ScaleUp | Intent::ScaleDown => {
                 let up = intent == Intent::ScaleUp;
@@ -3010,6 +3020,7 @@ impl App {
             recents,
             workspaces,
             workspace_given: keeper.overridden(&settings::registry::WORKSPACE),
+            show_hidden_given: keeper.overridden(&settings::registry::TOOLS_PANEL_SHOW_HIDDEN),
             ..Shell::new(&settings, system_locale(), cc.egui_ctx.os())
         };
         // On the tab last shown in it, which the recents' `state.toml` keeps.
@@ -6778,7 +6789,19 @@ fn panel_body(
                 changes.extend(drawn.changes);
                 history_asked.extend(drawn.actions);
             }
-            library::ID | export::ID => others(ui, id, cx),
+            library::ID | export::ID => {
+                let top = ui.cursor().top();
+                others(ui, id, cx);
+                // Collections revealed in the Hidden tab, its header at the top; Export
+                // scrolls itself ([`photos_tool`]).
+                if id == library::ID && shell.revealing() && shell.reveal == Some(id) {
+                    let drawn = egui::Rect::from_x_y_ranges(
+                        ui.max_rect().x_range(),
+                        top..=ui.cursor().top(),
+                    );
+                    ui.scroll_to_rect(drawn, Some(egui::Align::TOP));
+                }
+            }
             _ => {
                 let tool = tools.iter().find(|tool| tool.definition().tool.id == id);
                 let state_of = values.tools.iter().find(|state| state.tool == id);
@@ -10372,6 +10395,40 @@ mod tests {
         harness.get_by_label("Essentials").click();
         harness.run();
         assert_eq!(harness.state().shell.workspace.id, layout::ESSENTIALS);
+    }
+
+    /// Where `--conf` sets `tools_panel.show_hidden` for the run, Show Hidden Tools cannot
+    /// change it, as the settings store refuses the change: ⋮'s item is disabled, saying
+    /// why, as a Settings row does, and running it changes nothing (decision 43).
+    #[test]
+    fn show_hidden_tools_given_by_conf_cannot_be_turned_off() {
+        let folder = settings::testing::Folder::new("show-hidden-given");
+        let given = settings::overrides(&["tools_panel.show_hidden=true".to_owned()]).unwrap();
+        let (keeper, settings) = Keeper::open_with(folder.storage(), &given);
+        let mut harness = tools_panel(&folder);
+        harness.state_mut().shell = Shell {
+            show_hidden_given: keeper.overridden(&settings::registry::TOOLS_PANEL_SHOW_HIDDEN),
+            ..Shell::new(&settings, Locale::EnGb, OperatingSystem::Mac)
+        };
+        harness.run();
+        let ctx = egui::Context::default();
+        let state = harness.state().shell.state(&ctx, false, false);
+        assert!(state.show_hidden && state.show_hidden_given);
+        let show = actions::action(ActionId::SHOW_HIDDEN_TOOLS).unwrap();
+        assert!(!show.enabled(&state));
+        harness
+            .state_mut()
+            .shell
+            .run(ActionId::SHOW_HIDDEN_TOOLS, &state, &ctx, &[]);
+        assert!(harness.state().shell.show_hidden);
+        harness.get_by_role_and_label(Role::Tab, "Hidden");
+        harness.get_by_label("Tab options").click();
+        harness.run();
+        let item = harness.get_by_label("Show hidden tools");
+        assert!(item.accesskit_node().is_disabled());
+        item.hover();
+        harness.run();
+        harness.get_by_label("Set by --conf for this run");
     }
 
     /// The Default workspace's Hidden tab, shown, says it holds nothing.
@@ -16646,9 +16703,14 @@ mod tests {
         assert_eq!(state.hidden_tab, None);
         let collections = actions::action(ActionId::SHOW_COLLECTIONS).unwrap();
         assert!(collections.enabled(&state));
+        // Closed, it is opened, and scrolled to as the Hidden tab shows, as any reveal.
+        shell.set_section_open(library::ID, false);
         shell.run(ActionId::SHOW_COLLECTIONS, &state, &ctx, &[]);
         assert_eq!(shell.shown_tab().map(|tab| tab.id.as_str()), Some("hidden"));
         assert!(shell.shown_tab().unwrap().holds(library::ID));
+        assert!(shell.collections_open().collections);
+        assert_eq!(shell.reveal, Some(library::ID));
+        assert!(shell.revealing());
         let state = shell.state(&ctx, false, false);
         assert_eq!(state.hidden_tab, Some(true));
         assert!(!state.show_hidden);
