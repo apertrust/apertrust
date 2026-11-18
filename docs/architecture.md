@@ -256,7 +256,7 @@ Details: [session-protocol.md, Web, tablets and remote access](session-protocol.
 
 **The library's words** are decision 46's ([library.md](library.md#words)):
 
-- The interface says Folder, Library, Project, Album, Smart album, Capture, Selects, Output, Trash, Virtual copy and Snapshot, and Collections for the tool that chooses among them (decision 95).
+- The interface says Folder, Library, Project, Album, Smart album, Capture, Selects, Output, Trash, Virtual copy and Snapshot, and Collections for the tool that chooses which folder, album or smart album the Browser shows (decision 95).
 - The code and docs add **folder roles**, **root** and **collection**, for any set of photos Collections chooses.
 - Never: film roll; catalogue; workspace for a library; session for a library or project ("session" is the engine's); Shoot or layout for the roles; version for a virtual copy.
 

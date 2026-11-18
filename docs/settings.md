@@ -87,7 +87,7 @@ A setting holds:
 **The migrations,** `MIGRATIONS` in `crates/base/src/settings/migrations.rs`, each from one version to the next, run on the file's table before it is read and before each write merges into it. The file is version 2. The one migration so far, from version 1, came with the window's parts named by their role (decision 95):
 
 - **It moves** each key of `[side_panel]`, `[central_panel]` and `[grid_panel]` to `[tools_panel]`, `[viewer]` and `[browser]`; the action ids `show-browse` and `grid-position-left`, `-right` and `-bottom` in `[keys]` to `show-collections` and `browser-position-left`, `-right` and `-bottom`; and Browse's entries in `edit.sections` and `edit.groups`, `browse`, to `collections`.
-- **Where both are present,** as only a hand edit makes them in a version-1 file, the new key wins and the old is dropped, with a line under `-d settings` naming it. An old key whose new place holds something other than a table stays where it is.
+- **Where both are present,** as only a hand edit makes them in a version-1 file, the new key wins and the old is dropped, with a line under `-d settings` naming it. An old key whose new place holds something other than a table, again only a hand edit's doing, stays where it is: the file is still written as version 2, so the key is kept but never moved or read again, and `-d settings` names it.
 - **Nothing is lost:** a version-1 file is read migrated at every start, and written as version 2, holding the new keys alone, at its next write.
 - **`--conf` takes the new keys only;** an old one stops the start, as any key no setting has does. An older build reads a version-2 file for what it knows and never overwrites it, so it shows these settings at their defaults.
 
