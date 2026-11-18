@@ -1079,6 +1079,9 @@ mod tests {
                 args.set("unit", "cm");
                 args.set("dpi", 300);
                 args.set("option", "Create unique filename");
+                // Where a moved tool went: its place among its tab's tools (decision 96).
+                args.set("at", 3);
+                args.set("of", 12);
                 let mut errors = Vec::new();
                 bundle.format_pattern(pattern, Some(&args), &mut errors);
                 assert!(errors.is_empty(), "{} {id}: {errors:?}", locale.id());

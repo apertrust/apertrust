@@ -79,6 +79,8 @@ pub struct TabBar<'a> {
     customise: bool,
     items: Vec<Entry>,
     dot: Option<&'a str>,
+    /// The tab to give the focus this frame, where it shows.
+    focus: Option<usize>,
 }
 
 /// The ids of ⋮'s own items, which no item of the app's takes.
@@ -100,7 +102,16 @@ impl<'a> TabBar<'a> {
             customise: true,
             items: Vec::new(),
             dot: None,
+            focus: None,
         }
+    }
+
+    /// Gives the tab at `tab` the focus this frame, as a section moved there takes it
+    /// (decision 83): its icon, or », the control drawn, where it is folded under »; ⋮
+    /// where it is drawn disabled, as a tab emptied of its tools is.
+    pub fn focus(mut self, tab: Option<usize>) -> Self {
+        self.focus = tab;
+        self
     }
 
     /// Whether Customise tabs… can run; it is shown disabled when not.
@@ -180,6 +191,9 @@ impl<'a> TabBar<'a> {
                 Sense::hover()
             };
             let response = ui.interact(rect, list.id.with(i), sense);
+            if self.focus == Some(i) {
+                response.request_focus();
+            }
             let on = i == self.selected;
             let colour = if !tab.enabled {
                 t.colors.text_disabled
@@ -258,6 +272,10 @@ impl<'a> TabBar<'a> {
             );
             let name = tr(ui.ctx(), "panel-more-tabs");
             let more = button_at(ui, more_rect, Icon::More, &name);
+            // A tab given the focus but folded under » gives it to », the control drawn.
+            if self.focus.is_some_and(|tab| hidden.contains(&tab)) {
+                more.request_focus();
+            }
             let chosen = pull_down(ui, &more, &name, || {
                 hidden
                     .iter()
@@ -291,6 +309,14 @@ impl<'a> TabBar<'a> {
                 },
             )
             .inner;
+        // A tab given the focus that cannot take it, drawn disabled, gives it to ⋮.
+        let tabs = self.tabs;
+        if self
+            .focus
+            .is_some_and(|tab| !tabs.get(tab).is_some_and(|tab| tab.enabled))
+        {
+            options.request_focus();
+        }
         if let Some(says) = self.dot {
             ui.ctx()
                 .accesskit_node_builder(options.id, |node| node.set_description(says));

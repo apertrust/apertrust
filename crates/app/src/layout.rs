@@ -39,9 +39,13 @@
 //!   `<id>.toml.bak`, one listing no tab refused, both with a warning, the built-in's
 //!   defaults then applying, or a person's own not listed; a newer version's is read for
 //!   what this build knows and never overwritten.
-//! - **Writing** a workspace's file is not built: it comes with decision 96's step 4, the
-//!   first step that changes a layout; until then nothing writes one, and a person changes
-//!   a workspace only by editing its file, read at the next start.
+//! - **The moves,** [`Move`] (decision 96, step 4): a tool one place up or down in its
+//!   list, pinned or unpinned, moved to another tab, hidden or shown in a tab, display
+//!   order only, applied to the layout as its file will be written ([`Layout::settled`],
+//!   [`Layout::apply`], [`Workspace::apply`]), never per frame.
+//! - **Writing** a workspace's file, [`files`]: the moves written whole through the safe
+//!   write once the layout has stood still for a second, at once on a switch and on exit,
+//!   each write applying them to the file as it is on disk then.
 
 use std::collections::{BTreeMap, HashSet};
 use std::io;
@@ -49,6 +53,10 @@ use std::path::{Path, PathBuf};
 
 use apertrust_ui::Icon;
 use toml::{Table, Value};
+
+pub mod files;
+
+pub use files::Files;
 
 /// The file format's version: what this build reads, and the newest it reads.
 pub const VERSION: i64 = 1;
@@ -142,10 +150,12 @@ impl Layout {
     /// a newer version's is read for what this build knows. Refused where it is not TOML or
     /// lists no tab.
     pub fn parse(text: &str) -> Result<(Layout, Vec<String>), Refused> {
-        // What the error says, never `Display`'s quote of the line.
-        let table: Table = text
-            .parse()
-            .map_err(|e: toml::de::Error| Refused::Damaged(e.message().replace('\n', " ")))?;
+        Layout::from_table(&table_of(text).map_err(Refused::Damaged)?)
+    }
+
+    /// The workspace `table` holds, as [`Layout::parse`] reads it; refused where it lists
+    /// no tab.
+    pub fn from_table(table: &Table) -> Result<(Layout, Vec<String>), Refused> {
         let mut warnings = Vec::new();
         let version = match table.get("version") {
             None => VERSION,
@@ -229,12 +239,27 @@ impl Layout {
     }
 
     /// The built-in workspace `id`'s defaults, its bundled file, or None where no
-    /// workspace of that id is built in.
+    /// workspace of that id is built in. Each file is read once, the first time it is asked
+    /// for, as a move asks for it again.
     pub fn defaults(id: &str) -> Option<Layout> {
-        let (_, text) = BUILT_IN.iter().find(|(built, _)| *built == id)?;
-        let (layout, _) = Layout::parse(text).expect("a bundled workspace reads");
-        Some(layout)
+        static READ: std::sync::OnceLock<Vec<(&str, Layout)>> = std::sync::OnceLock::new();
+        let read = READ.get_or_init(|| {
+            let read = BUILT_IN.iter().map(|(built, text)| {
+                let (layout, _) = Layout::parse(text).expect("a bundled workspace reads");
+                (*built, layout)
+            });
+            read.collect()
+        });
+        let (_, layout) = read.iter().find(|(built, _)| *built == id)?;
+        Some(layout.clone())
     }
+}
+
+/// The table `text` holds, or why it is not TOML.
+fn table_of(text: &str) -> Result<Table, String> {
+    // What the error says, never `Display`'s quote of the line.
+    text.parse()
+        .map_err(|e: toml::de::Error| e.message().replace('\n', " "))
 }
 
 /// The tool ids `value` lists, in order, each a text; `key` names it in a warning.
@@ -521,6 +546,336 @@ pub fn resolve(
     (shown, warnings)
 }
 
+/// A change a person makes to a workspace's layout (decisions 83 and 96): display order
+/// only, never the edit, and never a tab added or taken away. It names its tool and tabs by
+/// id, so a write applies it to the file as it is on disk then, a hand edit made meanwhile
+/// kept ([`files`]).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Move {
+    /// One place up in its list in the tab `tab`, pinned or not: nothing at the top.
+    Up { tool: &'static str, tab: String },
+    /// One place down in its list: nothing at the end.
+    Down { tool: &'static str, tab: String },
+    /// To the end of the tab's pinned list.
+    Pin { tool: &'static str, tab: String },
+    /// To the top of the tab's scrolling list.
+    Unpin { tool: &'static str, tab: String },
+    /// Out of the tab `from`, or out of `hidden` where none, into the tab `to`, unpinned, as
+    /// a drop on its icon puts it ([`landing`]); nothing where `to` holds it already.
+    ToTab {
+        tool: &'static str,
+        from: Option<String>,
+        to: String,
+    },
+    /// Out of every tab into `hidden`, its edit staying and still processed; never Export.
+    Hide { tool: &'static str },
+}
+
+impl Move {
+    /// The tool it moves.
+    pub fn tool(&self) -> &'static str {
+        match self {
+            Move::Up { tool, .. }
+            | Move::Down { tool, .. }
+            | Move::Pin { tool, .. }
+            | Move::Unpin { tool, .. }
+            | Move::ToTab { tool, .. }
+            | Move::Hide { tool } => tool,
+        }
+    }
+}
+
+/// `now`'s tools as a list of the file, the ids of `file` not `known` each kept after the
+/// tool it followed there, or first where it followed none that `now` holds.
+fn keeping(file: &[String], now: &[&'static str], known: &[&'static str]) -> Vec<String> {
+    let mut after: Vec<(Option<&str>, &str)> = Vec::new();
+    let mut last = None;
+    for id in file {
+        if !known.contains(&id.as_str()) {
+            after.push((last, id));
+        } else if now.contains(&id.as_str()) {
+            last = Some(id.as_str());
+        }
+    }
+    let kept = |anchor: Option<&str>| -> Vec<String> {
+        let ids = after.iter().filter(|(a, _)| *a == anchor);
+        ids.map(|(_, id)| (*id).to_owned()).collect()
+    };
+    let mut list = kept(None);
+    for tool in now {
+        list.push((*tool).to_owned());
+        list.extend(kept(Some(tool)));
+    }
+    list
+}
+
+/// Where `tool` lands in the scrolling list `list` of a tab, as a drop on the tab's icon
+/// puts it (decision 83): a processing tool after the processing tool there nearest before
+/// it in the pipeline and the ids not `known` that follow that one, else before the one
+/// nearest after it, else last; a utility at the top. Never after Export, the Photos tab's
+/// last (decision 90). Only the tools `known` count.
+fn landing(list: &[String], tool: &str, known: &[&'static str]) -> usize {
+    let (utility, place) = hidden_order(tool);
+    if utility {
+        return 0;
+    }
+    let places = list.iter().enumerate().filter_map(|(i, id)| {
+        let (utility, place) = hidden_order(id);
+        (known.contains(&id.as_str()) && !utility).then_some((i, place))
+    });
+    let before = (places.clone().filter(|(_, p)| *p < place)).max_by_key(|(_, p)| *p);
+    let after = places.filter(|(_, p)| *p > place).min_by_key(|(_, p)| *p);
+    // After the tool before it and the ids this build does not know that follow it, which
+    // stay with it ([`keeping`]).
+    let past_unknown = |i: usize| {
+        let unknown = list[i + 1..]
+            .iter()
+            .take_while(|id| !known.contains(&id.as_str()));
+        i + 1 + unknown.count()
+    };
+    let at = match (before, after) {
+        (Some((i, _)), _) => past_unknown(i),
+        (None, Some((i, _))) => i,
+        (None, None) => list.len(),
+    };
+    let export = list.iter().position(|id| id == EXPORT);
+    export.map_or(at, |export| at.min(export))
+}
+
+impl Layout {
+    /// This layout with `shown`, the layout it shows, written into it, as a write keeps it
+    /// (decision 96): each tab shown's lists as `shown` has them, an id not `known` kept
+    /// after the tool it followed ([`keeping`]); the tools hidden in `hidden`, but those
+    /// only a tab past the twelfth holds, an id not `known` kept there; and every tool
+    /// `known` in `seen`, so none is new to it after. Tabs past the twelfth, lists for a tab
+    /// id it lacks and its `version` stay as they are, so a newer build's file is still
+    /// known as one ([`Workspace::newer`]); a write sets the version ([`Layout::write_into`]).
+    pub fn settled(&self, shown: &Shown, known: &[&'static str]) -> Layout {
+        let mut layout = self.clone();
+        let settle = |lists: &mut BTreeMap<String, Vec<String>>, tab: &Tab, pinned: bool| {
+            let file = lists.get(&tab.id).map_or(&[][..], Vec::as_slice);
+            let now = if pinned { &tab.pinned } else { &tab.order };
+            let list = keeping(file, now, known);
+            if list.is_empty() {
+                lists.remove(&tab.id);
+            } else {
+                lists.insert(tab.id.clone(), list);
+            }
+        };
+        for tab in &shown.tabs {
+            settle(&mut layout.pinned, tab, true);
+            settle(&mut layout.order, tab, false);
+        }
+        let hides = |id: &str| shown.hidden.contains(&id) && !shown.beyond.contains(&id);
+        let mut hidden: Vec<String> = Vec::new();
+        let kept = self.hidden.iter().map(String::as_str);
+        let now = shown.hidden.iter().copied().filter(|id| hides(id));
+        for id in kept
+            .filter(|id| !known.contains(id) || hides(id))
+            .chain(now)
+        {
+            if !hidden.iter().any(|h| h == id) {
+                hidden.push(id.to_owned());
+            }
+        }
+        layout.hidden = hidden;
+        for tool in known {
+            if !layout.seen.iter().any(|seen| seen == tool) {
+                layout.seen.push((*tool).to_owned());
+            }
+        }
+        layout
+    }
+
+    /// The ids of the tabs it shows, as [`resolve`] works them out: each once, the first
+    /// place kept, never the Hidden tab's, the first twelve.
+    fn shown_tab_ids(&self) -> Vec<&str> {
+        let mut ids: Vec<&str> = Vec::new();
+        for tab in self.tabs.iter().filter(|tab| tab.id != HIDDEN) {
+            if !ids.contains(&tab.id.as_str()) {
+                ids.push(&tab.id);
+            }
+        }
+        ids.truncate(MOST_TABS);
+        ids
+    }
+
+    /// The tab `tab`'s list holding `tool`, pinned (true) or not, and its place there.
+    fn find(&self, tab: &str, tool: &str) -> Option<(bool, usize)> {
+        let at = |lists: &BTreeMap<String, Vec<String>>| {
+            lists.get(tab)?.iter().position(|id| id == tool)
+        };
+        at(&self.pinned)
+            .map(|i| (true, i))
+            .or_else(|| at(&self.order).map(|i| (false, i)))
+    }
+
+    /// The tab `tab`'s pinned list, or its scrolling list, made where it has none.
+    fn list(&mut self, pinned: bool, tab: &str) -> &mut Vec<String> {
+        let lists = if pinned {
+            &mut self.pinned
+        } else {
+            &mut self.order
+        };
+        lists.entry(tab.to_owned()).or_default()
+    }
+
+    /// Takes `tool` out of the tab `tab`'s lists, or where none out of every tab's the
+    /// workspace lists, those past the twelfth included; a list for a tab id it lacks stays
+    /// as it is (decision 96).
+    fn take_out(&mut self, tab: Option<&str>, tool: &str) -> bool {
+        let declared: Vec<String> = self.tabs.iter().map(|tab| tab.id.clone()).collect();
+        let touches = |id: &str| match tab {
+            Some(tab) => tab == id,
+            None => declared.iter().any(|declared| declared == id),
+        };
+        let mut taken = false;
+        for lists in [&mut self.pinned, &mut self.order] {
+            // The lists this emptied go; one empty before stays as the file has it.
+            let mut emptied = Vec::new();
+            for (id, list) in lists.iter_mut().filter(|(id, _)| touches(id)) {
+                let before = list.len();
+                list.retain(|id| id != tool);
+                if list.len() != before {
+                    taken = true;
+                    if list.is_empty() {
+                        emptied.push(id.clone());
+                    }
+                }
+            }
+            for id in emptied {
+                lists.remove(&id);
+            }
+        }
+        taken
+    }
+
+    /// Applies `change` to this layout, settled ([`Layout::settled`]), the tools `known`
+    /// those whose places count: whether anything moved. A move at an end, a pin of a
+    /// pinned tool, a move to a tab that holds the tool already and Export hidden change
+    /// nothing.
+    pub fn apply(&mut self, change: &Move, known: &[&'static str]) -> bool {
+        // A tab the file no longer shows, a hand edit having taken it away since, is no
+        // move's source or destination: its lists stay as they are.
+        let shown_ids: Vec<String> = (self.shown_tab_ids().into_iter())
+            .map(str::to_owned)
+            .collect();
+        let shown = |tab: &str| shown_ids.iter().any(|id| id == tab);
+        match change {
+            Move::Up { tab, .. }
+            | Move::Down { tab, .. }
+            | Move::Pin { tab, .. }
+            | Move::Unpin { tab, .. }
+                if !shown(tab) =>
+            {
+                false
+            }
+            Move::Up { tool, tab } | Move::Down { tool, tab } => {
+                let Some((pinned, _)) = self.find(tab, tool) else {
+                    return false;
+                };
+                let list = self.list(pinned, tab);
+                // The known tools swap; an id this build does not know stays after the
+                // tool it followed ([`keeping`]).
+                let tools: Vec<&'static str> = (list.iter())
+                    .filter_map(|id| known.iter().copied().find(|k| *k == id))
+                    .collect();
+                let Some(at) = tools.iter().position(|t| t == tool) else {
+                    return false;
+                };
+                let other = match change {
+                    Move::Up { .. } => at.checked_sub(1),
+                    _ => Some(at + 1).filter(|n| *n < tools.len()),
+                };
+                let Some(other) = other else {
+                    return false;
+                };
+                let mut moved = tools;
+                moved.swap(at, other);
+                *list = keeping(list, &moved, known);
+                true
+            }
+            Move::Pin { tool, tab } | Move::Unpin { tool, tab } => {
+                let pin = matches!(change, Move::Pin { .. });
+                if self.find(tab, tool).is_none_or(|(pinned, _)| pinned == pin) {
+                    return false;
+                }
+                self.list(!pin, tab).retain(|id| id != tool);
+                let list = self.list(pin, tab);
+                let at = if pin { list.len() } else { 0 };
+                list.insert(at, (*tool).to_owned());
+                // The list it left, where the move emptied it; every other stays.
+                let left = if pin {
+                    &mut self.order
+                } else {
+                    &mut self.pinned
+                };
+                if left.get(tab).is_some_and(Vec::is_empty) {
+                    left.remove(tab);
+                }
+                true
+            }
+            Move::ToTab { tool, from, to } => {
+                // A tab a hand edit has taken away since, or one past the twelfth, takes
+                // nothing, and the tool stays where it is.
+                if !shown(to) || self.find(to, tool).is_some() {
+                    return false;
+                }
+                // Replayed on a file a hand edit changed: where the tool is no longer in the
+                // tab it moved from but in another tab shown, the move is a conflict and is
+                // skipped, or it would sit in two tabs. One the edit hid, or left in no tab
+                // shown, is moved, placed once; a list for a tab the file no longer shows is
+                // never looked at or changed.
+                let from = from.as_deref().filter(|from| shown(from));
+                let at_source = from.is_some_and(|from| self.find(from, tool).is_some());
+                let elsewhere = shown_ids.iter().any(|id| self.find(id, tool).is_some());
+                if !at_source && elsewhere {
+                    return false;
+                }
+                if let Some(from) = from {
+                    _ = self.take_out(Some(from), tool);
+                }
+                // Out of `hidden` either way: a hand edit may have hidden it since.
+                self.hidden.retain(|id| id != tool);
+                let list = self.list(false, to);
+                let at = landing(list, tool, known);
+                list.insert(at, (*tool).to_owned());
+                true
+            }
+            Move::Hide { tool } => {
+                if *tool == EXPORT {
+                    return false;
+                }
+                let mut moved = self.take_out(None, tool);
+                if !self.hidden.iter().any(|id| id == tool) {
+                    self.hidden.push((*tool).to_owned());
+                    moved = true;
+                }
+                moved
+            }
+        }
+    }
+
+    /// Writes what a move changes into `table`, a workspace's file as read, the rest of it
+    /// kept as it is: `version`, `hidden`, `seen`, `[pinned]` and `[order]` (decision 96).
+    pub fn write_into(&self, table: &mut Table) {
+        let ids = |ids: &[String]| Value::Array(ids.iter().map(|id| id.as_str().into()).collect());
+        let lists = |lists: &BTreeMap<String, Vec<String>>| {
+            let lists = lists.iter().map(|(tab, list)| (tab.clone(), ids(list)));
+            Value::Table(lists.collect())
+        };
+        table.insert("version".into(), VERSION.into());
+        table.insert("hidden".into(), ids(&self.hidden));
+        table.insert("seen".into(), ids(&self.seen));
+        if self.pinned.is_empty() {
+            table.remove("pinned");
+        } else {
+            table.insert("pinned".into(), lists(&self.pinned));
+        }
+        table.insert("order".into(), lists(&self.order));
+    }
+}
+
 /// Whether `id` can name a workspace, and its file: lower-case letters, digits and
 /// hyphens.
 pub fn valid_id(id: &str) -> bool {
@@ -616,6 +971,9 @@ pub struct Listed {
     /// Its file as read, or a built-in's defaults where it has none.
     pub layout: Layout,
     pub builtin: bool,
+    /// Whether its file is a newer build's, as read or as a write found it since
+    /// ([`Workspaces::mark_newer`]).
+    pub newer: bool,
 }
 
 impl Listed {
@@ -633,8 +991,7 @@ impl Listed {
     /// Default's, so a tool new in Adjust joins any workspace with a tab `adjust` (decision
     /// 96, The layout shown, step 3).
     fn defaults(&self) -> Layout {
-        let id = if self.builtin { &self.id } else { DEFAULT };
-        Layout::defaults(id).expect("built in")
+        defaults_of(&self.id, self.builtin)
     }
 }
 
@@ -654,6 +1011,7 @@ impl Workspaces {
             id: id.to_owned(),
             layout: Layout::defaults(id).expect("built in"),
             builtin: true,
+            newer: false,
         });
         Workspaces {
             listed: listed.collect(),
@@ -670,6 +1028,7 @@ impl Workspaces {
         let mut workspaces = Workspaces::builtin();
         for listed in &mut workspaces.listed {
             if let Some(layout) = read_in(folder, &listed.id, &mut warnings) {
+                listed.newer = layout.version > VERSION;
                 listed.layout = layout;
             }
         }
@@ -678,6 +1037,7 @@ impl Workspaces {
             if let Some(layout) = read_in(folder, &id, &mut warnings) {
                 own.push(Listed {
                     id,
+                    newer: layout.version > VERSION,
                     layout,
                     builtin: false,
                 });
@@ -710,22 +1070,69 @@ impl Workspaces {
         let (shown, resolved) = resolve(&listed.layout, &[&defaults], &known());
         let where_ = format!("workspace {}", listed.id);
         warnings.extend(resolved.into_iter().map(|w| format!("{where_}: {w}")));
-        let hidden_tab = Tab {
-            id: HIDDEN.to_owned(),
-            title: Title::Message(format!("tab-{HIDDEN}")),
-            icon: HIDDEN_ICON,
-            pinned: Vec::new(),
-            order: shown.hidden.clone(),
-        };
         let workspace = Workspace {
             id: listed.id.clone(),
             layout: listed.layout.clone(),
-            newer: listed.layout.version > VERSION,
+            builtin: listed.builtin,
+            newer: listed.newer,
+            hidden_tab: hidden_tab(&shown),
             shown,
-            hidden_tab,
         };
         (workspace, warnings)
     }
+
+    /// Keeps `workspace`'s layout as a move left it, so switching back to it shows it so.
+    pub fn keep(&mut self, workspace: &Workspace) {
+        let listed = self.listed.iter_mut().find(|l| l.id == workspace.id);
+        if let Some(listed) = listed {
+            listed.layout = workspace.layout.clone();
+        }
+    }
+
+    /// Marks the workspace `id`'s file a newer build's, as a write found it after it was
+    /// read, so it is never written and its first move says so.
+    pub fn mark_newer(&mut self, id: &str) {
+        let listed = self.listed.iter_mut().find(|l| l.id == id);
+        if let Some(listed) = listed {
+            listed.newer = true;
+        }
+    }
+}
+
+/// The Hidden tab of the layout `shown`: its hidden tools, as [`Shown::hidden`] lists them,
+/// none pinned.
+fn hidden_tab(shown: &Shown) -> Tab {
+    Tab {
+        id: HIDDEN.to_owned(),
+        title: Title::Message(format!("tab-{HIDDEN}")),
+        icon: HIDDEN_ICON,
+        pinned: Vec::new(),
+        order: shown.hidden.clone(),
+    }
+}
+
+/// The defaults that place a workspace's new tools: a built-in's own, and for a person's
+/// own Default's (decision 96, The layout shown, step 3).
+fn defaults_of(id: &str, builtin: bool) -> Layout {
+    let id = if builtin { id } else { DEFAULT };
+    Layout::defaults(id).expect("built in")
+}
+
+/// Where a tool is in a tab shown ([`Workspace::place`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Place {
+    /// The tab's place among those shown.
+    pub tab: usize,
+    /// Whether it is pinned there.
+    pub pinned: bool,
+    /// Whether a tool of its list is above it, and below it: Move Tool Up and Move Tool
+    /// Down can run.
+    pub up: bool,
+    pub down: bool,
+    /// Its place among the tab's tools, pinned first, from 1, and how many the tab holds,
+    /// as screen readers hear where it went ("3 of 12").
+    pub at: usize,
+    pub of: usize,
 }
 
 /// The workspace the Tools panel shows: its id, the layout as read, and the layout shown.
@@ -733,8 +1140,11 @@ impl Workspaces {
 pub struct Workspace {
     /// Its id: the one asked for, or Default's where that has no workspace.
     pub id: String,
-    /// Its file as read, or the built-in's defaults where it has none.
+    /// Its file as read, or the built-in's defaults where it has none, and as each move has
+    /// left it since ([`Workspace::apply`]).
     pub layout: Layout,
+    /// Whether it is built in, Default or Essentials.
+    pub builtin: bool,
     /// Whether its file is a newer build's, which this build never overwrites.
     pub newer: bool,
     pub shown: Shown,
@@ -799,6 +1209,83 @@ impl Workspace {
             *enabled = tab.enabled();
         }
         enabled
+    }
+
+    /// Whether each tab shown, by position, takes a tool moved there: every tab but one
+    /// still to come, a built-in tab whose defaults hold no tool this build has but Scopes,
+    /// as decision 38's Detail. A tab the person emptied, which cannot be chosen until it
+    /// holds a tool again ([`Tab::enabled`]), takes one.
+    pub fn receiving(&self) -> [bool; MOST_TABS] {
+        let defaults = defaults_of(&self.id, self.builtin);
+        let known = known();
+        let to_come = |tab: &Tab| {
+            let lists = [&defaults.pinned, &defaults.order];
+            let listed: Vec<&Vec<String>> = lists.iter().filter_map(|l| l.get(&tab.id)).collect();
+            let built = |t: &&String| *t != SCOPES && known.contains(&t.as_str());
+            !listed.is_empty() && !listed.into_iter().flatten().any(|t| built(&t))
+        };
+        let mut receiving = [false; MOST_TABS];
+        for (receives, tab) in receiving.iter_mut().zip(&self.shown.tabs) {
+            *receives = tab.enabled() || !to_come(tab);
+        }
+        receiving
+    }
+
+    /// Where `tool` is in the tab shown at `tab`, if that tab holds it.
+    pub fn place(&self, tool: &str, tab: usize) -> Option<Place> {
+        let shown = self.shown.tabs.get(tab)?;
+        let (pinned, at, list, before) = match shown.pinned.iter().position(|t| *t == tool) {
+            Some(at) => (true, at, &shown.pinned, 0),
+            None => {
+                let at = shown.order.iter().position(|t| *t == tool)?;
+                (false, at, &shown.order, shown.pinned.len())
+            }
+        };
+        Some(Place {
+            tab,
+            pinned,
+            up: at > 0,
+            down: at + 1 < list.len(),
+            at: before + at + 1,
+            of: shown.pinned.len() + shown.order.len(),
+        })
+    }
+
+    /// The tab `section-show` moves the hidden `tool` to (decision 96): the first of its
+    /// default tabs among the tabs shown that takes a tool ([`Workspace::receiving`]), else
+    /// the first tab shown that can be chosen, else the first that takes one; none where
+    /// no tab takes one.
+    pub fn show_in(&self, tool: &str) -> Option<usize> {
+        let defaults = defaults_of(&self.id, self.builtin);
+        let receiving = self.receiving();
+        let holds = |lists: &BTreeMap<String, Vec<String>>, tab: &str| {
+            lists.get(tab).is_some_and(|l| l.iter().any(|t| t == tool))
+        };
+        let default = defaults.tabs.iter().find_map(|tab| {
+            let held = holds(&defaults.pinned, &tab.id) || holds(&defaults.order, &tab.id);
+            let at = self.position(&tab.id).filter(|_| held)?;
+            receiving[at].then_some(at)
+        });
+        let tabs = &self.shown.tabs;
+        default
+            .or_else(|| tabs.iter().position(Tab::enabled))
+            .or_else(|| (0..tabs.len()).find(|at| receiving[*at]))
+    }
+
+    /// Applies `change` to the layout, as its file will be written ([`Layout::settled`],
+    /// [`Layout::apply`]), and works out the layout shown again: whether anything moved.
+    pub fn apply(&mut self, change: &Move) -> bool {
+        let known = known();
+        let mut layout = self.layout.settled(&self.shown, &known);
+        if !layout.apply(change, &known) {
+            return false;
+        }
+        let defaults = defaults_of(&self.id, self.builtin);
+        let (shown, _) = resolve(&layout, &[&defaults], &known);
+        self.hidden_tab = hidden_tab(&shown);
+        self.shown = shown;
+        self.layout = layout;
+        true
     }
 
     /// The tab it opens on where none was last shown: the first holding a processing tool,

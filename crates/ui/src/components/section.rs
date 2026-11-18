@@ -60,6 +60,10 @@ pub enum SectionAction {
     Options,
     /// Another of the section's tabs.
     Tab(usize),
+    /// Alt+↑ or Alt+↓ (Option on a Mac) on its focused header, where it can move
+    /// ([`Section::movable`]): one place up or down in its list, the app's to carry out.
+    MoveUp,
+    MoveDown,
 }
 
 /// What the section reports: the user's actions, and whether the photo should show
@@ -74,6 +78,11 @@ pub struct SectionOutput {
     /// The options button where it opens a menu or is a utility's, by which its menu's
     /// popup is known (`popup::button_menu`), so its caller can close it.
     pub options: Option<egui::Id>,
+    /// The header's toggle, its chevron and title, by which its caller gives screen readers
+    /// what else it can do to the section (AccessKit's custom actions).
+    pub header: Option<egui::Id>,
+    /// Whether the header has the focus.
+    pub focused: bool,
 }
 
 pub struct Section<'a> {
@@ -99,6 +108,8 @@ pub struct Section<'a> {
     not_applied: bool,
     /// What its header's tooltip says, where the section has it.
     about: Option<About>,
+    /// Whether Alt+↑ and Alt+↓ on its focused header move it.
+    movable: bool,
 }
 
 impl Section<'_> {
@@ -131,7 +142,17 @@ impl<'a> Section<'a> {
             peek: false,
             not_applied: false,
             about: None,
+            movable: false,
         }
+    }
+
+    /// Whether the section can move in its list, as one in a tab of the Tools panel can
+    /// (decision 83): Alt+↑ and Alt+↓ (Option on a Mac) on its focused header are then its
+    /// own keys, reported as [`SectionAction::MoveUp`] and [`SectionAction::MoveDown`],
+    /// repeating while held. Where it is at an end, the app does nothing.
+    pub fn movable(mut self, movable: bool) -> Self {
+        self.movable = movable;
+        self
     }
 
     /// A tool that edits the photo: reset, presets and options, its options drawn disabled
@@ -400,6 +421,37 @@ impl<'a> Section<'a> {
         }
 
         let focused = toggle.has_focus();
+        // Its own keys while focused, which the registry leaves to it (a control's arrows):
+        // Alt alone, Option on a Mac, since Alt+Shift is a floating panel's (decision 83);
+        // each press in the order it came, repeats too.
+        if self.movable && focused {
+            let moves = ui.input_mut(|i| {
+                let mut moves = Vec::new();
+                i.events.retain(|event| {
+                    let egui::Event::Key {
+                        key,
+                        pressed: true,
+                        modifiers: m,
+                        ..
+                    } = event
+                    else {
+                        return true;
+                    };
+                    let action = match key {
+                        egui::Key::ArrowUp => SectionAction::MoveUp,
+                        egui::Key::ArrowDown => SectionAction::MoveDown,
+                        _ => return true,
+                    };
+                    let alt_alone = m.alt && !(m.shift || m.ctrl || m.command || m.mac_cmd);
+                    if alt_alone {
+                        moves.push(action);
+                    }
+                    !alt_alone
+                });
+                moves
+            });
+            output.actions.extend(moves);
+        }
         if let Some(about) = &self.about {
             // Its own tooltip, beside the panel, and its words for screen readers; the
             // pointer's claim over the focus's, as only one shows at a time.
@@ -506,6 +558,8 @@ impl<'a> Section<'a> {
         ));
         output.chosen = chosen;
         output.options = options_id;
+        output.header = Some(id);
+        output.focused = focused;
         output.peeking = self.peek && (hovered || focused);
         if output.peeking {
             ui.painter().rect_filled(

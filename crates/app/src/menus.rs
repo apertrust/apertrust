@@ -1564,7 +1564,7 @@ mod tests {
     /// Restart, Settings' Restart now's for now (decision 82); and the eighth to the
     /// twelfth tab's, which only a workspace of more tabs than the Default's has, until Tools
     /// Panel Tab lists the tabs a workspace shows (decision 96).
-    const LEFT_OUT: [ActionId; 15] = [
+    const LEFT_OUT: [ActionId; 32] = [
         ActionId::EDIT_VIEW,
         ActionId::NEXT_REGION,
         ActionId::PREVIOUS_REGION,
@@ -1582,6 +1582,25 @@ mod tests {
         ActionId::PANEL_TABS[11],
         // The Tools panel's ⋮ holds it, and the tab bar's menu will (decision 96).
         ActionId::SHOW_HIDDEN_TOOLS,
+        // A section's layout, in its ⋯ and on its header's keys and screen readers'
+        // actions, acting on that section (decisions 83 and 96).
+        ActionId::SECTION_PIN,
+        ActionId::SECTION_MOVE_UP,
+        ActionId::SECTION_MOVE_DOWN,
+        ActionId::SECTION_MOVE_TO_TAB[0],
+        ActionId::SECTION_MOVE_TO_TAB[1],
+        ActionId::SECTION_MOVE_TO_TAB[2],
+        ActionId::SECTION_MOVE_TO_TAB[3],
+        ActionId::SECTION_MOVE_TO_TAB[4],
+        ActionId::SECTION_MOVE_TO_TAB[5],
+        ActionId::SECTION_MOVE_TO_TAB[6],
+        ActionId::SECTION_MOVE_TO_TAB[7],
+        ActionId::SECTION_MOVE_TO_TAB[8],
+        ActionId::SECTION_MOVE_TO_TAB[9],
+        ActionId::SECTION_MOVE_TO_TAB[10],
+        ActionId::SECTION_MOVE_TO_TAB[11],
+        ActionId::SECTION_HIDE,
+        ActionId::SECTION_SHOW,
     ];
 
     /// The actions only the Mac's menus hold: Close Window, since Windows and Linux close
@@ -1663,6 +1682,7 @@ mod tests {
             workspace: actions::workspace(crate::layout::DEFAULT),
             workspace_given: false,
             show_hidden_given: false,
+            section: None,
             browser: crate::settings::BrowserSettings::default(),
             shown: true,
             background: Some(apertrust_ui::Background::Dark),

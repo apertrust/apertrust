@@ -111,22 +111,41 @@ pub enum Written {
 /// from temporary creation onwards. Special mode bits, ownership and ACLs are not copied.
 /// New files and replacements of links use the ordinary umask-filtered creation mode.
 pub fn write(path: &Path, bytes: &[u8]) -> io::Result<Written> {
-    write_metadata(path, bytes).map(|(written, _)| written)
+    let (written, _) = write_file(path, bytes)?;
+    Ok(written)
 }
 
 /// [`write`](fn@write), with the metadata of the file it wrote, read from the file itself
 /// once it is renamed into place, so another program's file at `path` after it is never
-/// taken for it; `None` where the file held the bytes already ([`Written::Unchanged`]).
+/// taken for it; `None` where the file held the bytes already ([`Written::Unchanged`]), or
+/// where it is written but its metadata could not be read, with a warning: once the file
+/// is in place nothing turns into an error, which would say the old file is as it was.
 pub fn write_metadata(path: &Path, bytes: &[u8]) -> io::Result<(Written, Option<fs::Metadata>)> {
-    let (written, file) = write_with(
+    let (written, file) = write_file(path, bytes)?;
+    let metadata = file.and_then(|file| written_metadata(path, file.metadata()));
+    Ok((written, metadata))
+}
+
+/// [`write_with`] as [`write`](fn@write) does it: the bytes written whole, the rename
+/// tried again as the platform needs.
+fn write_file(path: &Path, bytes: &[u8]) -> io::Result<(Written, Option<File>)> {
+    write_with(
         path,
         bytes,
         Retry::platform(),
         |file, bytes| file.write_all(bytes),
         |temp, path| temp.persist(path),
-    )?;
-    let metadata = file.map(|file| file.metadata()).transpose()?;
-    Ok((written, metadata))
+    )
+}
+
+/// The metadata `read` of the file just renamed into place at `path`, or none, with a
+/// warning, where it could not be read: the file is written all the same.
+fn written_metadata(path: &Path, read: io::Result<fs::Metadata>) -> Option<fs::Metadata> {
+    read.inspect_err(|e| {
+        let path = path.display();
+        tracing::warn!("{path}: written, its metadata not read: {e}");
+    })
+    .ok()
 }
 
 /// [`write()`] with its two steps given, so that a test can fail the one and refuse the
@@ -232,6 +251,20 @@ mod tests {
                 file,
             })
         }
+    }
+
+    /// Once the file is in place, metadata that cannot be read is no error: the write
+    /// stands, its metadata none, so a caller never writes it again as if it had failed.
+    #[test]
+    fn metadata_not_read_after_the_rename_is_no_error() {
+        let folder = tempfile::tempdir().expect("a folder");
+        let path = folder.path().join("default.toml");
+        let failed = io::Error::other("the metadata could not be read");
+        assert!(written_metadata(&path, Err(failed)).is_none());
+        let (written, metadata) = write_metadata(&path, b"one").unwrap();
+        assert_eq!(written, Written::Replaced);
+        assert_eq!(metadata.map(|m| m.len()), Some(3));
+        assert_eq!(fs::read(&path).unwrap(), b"one");
     }
 
     #[test]
