@@ -463,8 +463,8 @@ pub struct Sizes {
     /// The width of a section header's buttons, each around an icon as wide: 14 points,
     /// a control high.
     pub section_button: f32,
-    /// The Toolbar's height; theme files name it `top_bar`.
-    #[serde(rename = "top_bar")]
+    /// The Toolbar's height; a theme file may still name it `top_bar` ([`OLD_SIZES`]).
+    #[serde(alias = "top_bar")]
     pub toolbar: f32,
     /// A slider row's height, its padding included, and the strip the track runs in,
     /// under a top line a field high (`docs/gui.md`, How the rows are laid out).
@@ -479,8 +479,9 @@ pub struct Sizes {
     pub switch_width: f32,
     pub switch_height: f32,
     pub switch_knob: f32,
-    /// The Tools panel's usual width; theme files name it `side_panel`.
-    #[serde(rename = "side_panel")]
+    /// The Tools panel's usual width; a theme file may still name it `side_panel`
+    /// ([`OLD_SIZES`]).
+    #[serde(alias = "side_panel")]
     pub tools_panel: f32,
     /// The height a list scrolls in inside a section, so the section keeps its height
     /// whatever the list holds: ten one-line rows (`panel_line`). Collections' groups.
@@ -665,6 +666,26 @@ const TEXT_AAA: f32 = 7.0;
 /// Settings' pages, `sunken`.
 const BANDS: f32 = 1.08;
 
+/// The sizes named after the window's parts' old names, which a theme file may still say,
+/// and their names now (decision 95).
+pub const OLD_SIZES: [(&str, &str); 2] = [("top_bar", "toolbar"), ("side_panel", "tools_panel")];
+
+/// Names each of a theme file's sizes still under its old name ([`OLD_SIZES`]) as it is
+/// named now, so an override of a built-in theme's replaces its value rather than standing
+/// beside it. A file that says both keeps both, which reading refuses as a duplicate field.
+fn new_sizes(table: &mut toml::Table) {
+    let Some(sizes) = table.get_mut("sizes").and_then(toml::Value::as_table_mut) else {
+        return;
+    };
+    for (old, new) in OLD_SIZES {
+        if !sizes.contains_key(new)
+            && let Some(value) = sizes.remove(old)
+        {
+            sizes.insert(new.to_owned(), value);
+        }
+    }
+}
+
 impl Theme {
     /// A built-in theme. They are compiled in and tested, so this cannot fail.
     pub fn builtin(which: Builtin) -> Theme {
@@ -680,6 +701,7 @@ impl Theme {
     /// overrides some of its tokens.
     pub fn from_toml(text: &str) -> Result<Theme, ThemeError> {
         let mut table: toml::Table = text.parse()?;
+        new_sizes(&mut table);
         let Some(base) = table.remove("extends") else {
             return Ok(table.try_into()?);
         };
@@ -1257,6 +1279,35 @@ mod hex {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A theme file that still names the Toolbar's and the Tools panel's sizes as before
+    /// (decision 95) reads to the same sizes, whole or over a built-in theme.
+    #[test]
+    fn a_theme_file_with_the_old_size_names_reads_as_one_with_the_new() {
+        let now = Builtin::Dark.source();
+        let before = now
+            .replace("\ntoolbar = ", "\ntop_bar = ")
+            .replace("\ntools_panel = ", "\nside_panel = ");
+        assert_ne!(before, now);
+        assert_eq!(
+            Theme::from_toml(&before).unwrap(),
+            Theme::from_toml(now).unwrap()
+        );
+        let over = |names: (&str, &str)| {
+            let text = format!(
+                "extends = 'dark'\n[sizes]\n{} = 50.0\n{} = 400.0\n",
+                names.0, names.1
+            );
+            Theme::from_toml(&text).unwrap().sizes
+        };
+        let sizes = over(("top_bar", "side_panel"));
+        assert_eq!((sizes.toolbar, sizes.tools_panel), (50.0, 400.0));
+        assert_eq!(sizes, over(("toolbar", "tools_panel")));
+        // Both names in one file: serde refuses the second as a duplicate field.
+        let both = now.replace("\ntoolbar = 44.0", "\ntoolbar = 44.0\ntop_bar = 50.0");
+        let error = Theme::from_toml(&both).unwrap_err().to_string();
+        assert!(error.contains("duplicate field `toolbar`"), "{error}");
+    }
 
     #[test]
     fn high_contrast_overrides_keep_the_body_text_promise() {
