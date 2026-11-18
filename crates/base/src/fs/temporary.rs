@@ -59,6 +59,16 @@ fn shortened(name: &str) -> &str {
 /// nothing. A file made in the usual way has the permissions the process's umask gives it,
 /// not `tempfile`'s 0600.
 pub fn create(folder: &Path, name: &str) -> io::Result<NamedTempFile> {
+    create_with_permissions(folder, name, None)
+}
+
+/// Creates with the destination's access permissions from the outset, before any bytes
+/// can be written. `None` keeps the ordinary new-file policy.
+pub(super) fn create_with_permissions(
+    folder: &Path,
+    name: &str,
+    permissions: Option<fs::Permissions>,
+) -> io::Result<NamedTempFile> {
     let mut builder = tempfile::Builder::new();
     let prefix = format!("{PREFIX}{}.", shortened(name));
     builder.prefix(&prefix).suffix(SUFFIX).rand_bytes(RANDOM);
@@ -66,6 +76,9 @@ pub fn create(folder: &Path, name: &str) -> io::Result<NamedTempFile> {
     {
         use std::os::unix::fs::PermissionsExt;
         builder.permissions(fs::Permissions::from_mode(0o666));
+    }
+    if let Some(permissions) = permissions {
+        builder.permissions(permissions);
     }
     // Its path, which the rename hands Windows as it is, reaches any length.
     builder.tempfile_in(super::long_path(folder))
