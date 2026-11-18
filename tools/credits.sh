@@ -34,7 +34,7 @@ list=$(
         --no-dedupe --prefix none --format '{p}|{l}' |
         sed -e 's/ (proc-macro)//' |
         grep -v ' (/' |
-        sort -u |
+        LC_ALL=C sort -u |
         awk -F'|' '$1 != "" { split($1, p, " v"); printf "- %s %s: %s\n", p[1], p[2], $2 }'
 )
 
