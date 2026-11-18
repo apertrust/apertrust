@@ -157,7 +157,7 @@ fn the_tools_panel_at_its_narrowest_in_the_pseudo_locale() {
     );
     harness.hover_at(edge.rect().center());
     harness.run();
-    harness.snapshot("side-panel-narrowest-pseudo");
+    harness.snapshot("tools-panel-narrowest-pseudo");
 }
 
 #[test]

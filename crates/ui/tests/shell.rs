@@ -605,7 +605,7 @@ fn the_save_warning_and_saving() {
             });
         });
     harness.run();
-    harness.snapshot("top-panel-save-state");
+    harness.snapshot("toolbar-save-state");
 }
 
 #[test]
@@ -1356,10 +1356,10 @@ fn photograph_the_zoom(which: Builtin, name: &str) {
     let mut harness = viewer_bar_in(Theme::builtin(which), size, true);
     harness.state_mut().zoom = Zoom::Percent(100.0);
     harness.run();
-    harness.snapshot(format!("central-bar-zoom-{name}"));
+    harness.snapshot(format!("viewer-bar-zoom-{name}"));
     harness.get_by_role_and_label(Role::Button, "Zoom").click();
     harness.run();
-    harness.snapshot(format!("central-bar-zoom-menu-{name}"));
+    harness.snapshot(format!("viewer-bar-zoom-menu-{name}"));
 }
 
 #[test]

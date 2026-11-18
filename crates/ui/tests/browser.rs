@@ -321,7 +321,7 @@ fn the_browser_bar_is_photographed() {
                 .show(ui);
         });
     harness.run();
-    harness.snapshot("grid-bar");
+    harness.snapshot("browser-bar");
 }
 
 /// A window with the Browser along its bottom as the app lays it out: its rows the
@@ -915,8 +915,8 @@ fn at_a_side_the_edge_resizes_in_columns_towards_the_photo() {
 fn the_browser_at_the_left_and_the_right_is_photographed() {
     let mut results = egui_kittest::SnapshotResults::new();
     for (position, name) in [
-        (BrowserPosition::Left, "grid-panel-left"),
-        (BrowserPosition::Right, "grid-panel-right"),
+        (BrowserPosition::Left, "browser-left"),
+        (BrowserPosition::Right, "browser-right"),
     ] {
         let mut harness = column(position, 2, 40);
         harness.run();
@@ -1024,7 +1024,7 @@ fn the_scroll_bar_is_photographed() {
     // Under the pointer, the thumb a step brighter.
     harness.hover_at(egui::pos2(list.left() + 60.0, list.bottom() - 8.0));
     harness.run();
-    harness.snapshot("grid-panel-scroll-bar");
+    harness.snapshot("browser-scroll-bar");
 }
 
 /// With no photos, the panel shows the struck-through photo, the message under it and the
@@ -1035,8 +1035,8 @@ fn an_empty_panel_says_why_under_its_icon_in_a_row_and_a_column() {
     let message = "No photos available";
     let hint = "Choose a subfolder in Collections.";
     for (position, name) in [
-        (BrowserPosition::Bottom, "grid-panel-empty"),
-        (BrowserPosition::Left, "grid-panel-empty-left"),
+        (BrowserPosition::Bottom, "browser-empty"),
+        (BrowserPosition::Left, "browser-empty-left"),
     ] {
         let mut harness = Harness::builder()
             .with_size(egui::vec2(640.0, 300.0))
