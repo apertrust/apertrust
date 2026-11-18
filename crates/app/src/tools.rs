@@ -182,7 +182,7 @@ pub struct Head {
     pub peek: bool,
     /// ⋯'s entries: the items the tool declares at `Place::Options`, as
     /// [`crate::menus::options`] builds them, then, until they are declared, Collections'
-    /// own.
+    /// own; then the layout's ([`Head::with_layout`]).
     pub options: Vec<popup::Entry>,
     /// Whether ⋯ opens while it holds anything: History's only while the photo has a
     /// history.
@@ -195,6 +195,19 @@ pub struct Head {
     /// a tab, and screen readers' actions on the header are the layout's ([`pressed`]).
     /// None for a section that does not move.
     pub layout: Option<Placing>,
+}
+
+impl Head {
+    /// This header placed in the layout as `layout` says, `Shell::layout_head`'s: where it
+    /// is, and ⋯'s layout items after its own, a line between them.
+    pub fn with_layout(mut self, layout: Head) -> Head {
+        if !self.options.is_empty() && !layout.options.is_empty() {
+            self.options.push(popup::Entry::Separator);
+        }
+        self.options.extend(layout.options);
+        self.layout = layout.layout;
+        self
+    }
 }
 
 /// What a tool's header asked for this frame (decision 93).

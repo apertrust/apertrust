@@ -1014,6 +1014,12 @@ menu-help = &Help
 # Submenus of View.
 menu-tools-panel-tab = Tools Panel Tab
 menu-workspace = Workspace
+# A tool's ⋯, its layout items (decisions 83 and 96): its tabs by name under each.
+menu-section-move-to-tab = Move Tool to Tab
+menu-section-show-in-tab = Show Tool in Tab
+# Remove Tool's tooltip; $tool is the tool's name. Export's is drawn disabled, saying why.
+section-hide-tip = Takes { $tool } out of this workspace's tabs. Its edit stays; Show Hidden Tools shows it.
+section-hide-export = Export stays in every workspace
 menu-interface-size = Interface Size
 menu-sort-by = Sort By
 menu-thumbnail-size = Thumbnail Size

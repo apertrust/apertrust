@@ -663,8 +663,8 @@ pub fn context(
 /// declares at `Place::Options`, each its registry action's, built as [`context`] builds
 /// every menu, enabled from `state`, an item that cannot run drawn disabled with its tip,
 /// each saying in its tip what it does where the registry words it
-/// ([`actions::options_tip`]). The layout's items join them, last, once built. None for a
-/// tool that declares none.
+/// ([`actions::options_tip`]). None for a tool that declares none; the shell adds the
+/// layout's items after them ([`layout_items`]).
 pub fn options(
     ctx: &egui::Context,
     tool: &'static str,
@@ -681,6 +681,73 @@ pub fn options(
         Rect::NOTHING,
     )
     .entries
+}
+
+/// A tab shown, as ⋯'s Move Tool to Tab ▸ and Show Tool in Tab ▸ list it: its name in the
+/// interface's language, and whether it takes a tool, every tab but one still to come
+/// (`layout::Workspace::receiving`).
+pub struct TabItem {
+    pub name: String,
+    pub enabled: bool,
+}
+
+/// The layout's items in `tool`'s ⋯ (decisions 83 and 96), last, after its own: where
+/// `state.section` says it is in a tab, Pin Tool, or Unpin Tool where it is pinned, Move
+/// Tool to Tab ▸ with each of `tabs` by name and Remove Tool; where it is hidden, Show Tool
+/// in Tab ▸ alone. Each item is its registry action's, enabled as it can run: a tab is
+/// disabled where it holds the tool or takes none, the latter saying it comes in a
+/// later version; Remove Tool says what it does, and for Export, which every workspace
+/// keeps, why it cannot. None where the tool has no place in the workspace.
+pub fn layout_items(
+    ctx: &egui::Context,
+    tool: &str,
+    keymap: &Keymap,
+    state: &State,
+    tabs: &[TabItem],
+) -> Vec<popup::Entry> {
+    let Some(placing) = state.section else {
+        return Vec::new();
+    };
+    let (os, tr) = (ctx.os(), translator(ctx));
+    let steps = Steps::default();
+    let item = |id: ActionId| action_item(id, keymap, state, &steps, os, &tr);
+    let to_tab = |(i, tab): (usize, &TabItem)| {
+        let mut item = item(*ActionId::SECTION_MOVE_TO_TAB.get(i)?)?;
+        item.text = tab.name.clone();
+        if !tab.enabled {
+            let mut args = Args::new();
+            args.set("tab", tab.name.as_str());
+            item = item.tip(tr.text_with("panel-tab-later", Some(&args)));
+        }
+        Some(popup::Entry::from(item))
+    };
+    let tabs: Vec<popup::Entry> = tabs.iter().enumerate().filter_map(to_tab).collect();
+    let title = if placing.hidden {
+        "menu-section-show-in-tab"
+    } else {
+        "menu-section-move-to-tab"
+    };
+    let submenu = popup::Submenu::new(title, tr.text(title), tabs).into();
+    if placing.hidden {
+        return vec![submenu];
+    }
+    let mut entries = Vec::new();
+    if let Some(mut pin) = item(ActionId::SECTION_PIN) {
+        pin.text = tr.text(actions::section_words(ActionId::SECTION_PIN, placing));
+        entries.push(pin.into());
+    }
+    entries.push(submenu);
+    if let Some(hide) = item(ActionId::SECTION_HIDE) {
+        let tip = if placing.removable {
+            let mut args = Args::new();
+            args.set("tool", crate::tools::title(&tr, tool));
+            tr.text_with("section-hide-tip", Some(&args))
+        } else {
+            tr.text("section-hide-export")
+        };
+        entries.push(hide.tip(tip).into());
+    }
+    entries
 }
 
 /// The app's items first in the Tools panel's ⋮ (decision 96), before the tab bar's own:
