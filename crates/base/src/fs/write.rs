@@ -107,6 +107,9 @@ pub enum Written {
 /// - on an error the temporary file is removed, and the old file is as it was.
 ///
 /// A link at `path` is replaced by the file, not written through. The folder must exist.
+/// On Unix, replacing a regular file preserves its observed read, write and execute bits
+/// from temporary creation onwards. Special mode bits, ownership and ACLs are not copied.
+/// New files and replacements of links use the ordinary umask-filtered creation mode.
 pub fn write(path: &Path, bytes: &[u8]) -> io::Result<Written> {
     write_metadata(path, bytes).map(|(written, _)| written)
 }
@@ -145,13 +148,38 @@ fn write_with(
         Some(parent) if !parent.as_os_str().is_empty() => parent,
         _ => Path::new("."),
     };
-    // Dropped on any error below, which removes it.
-    let mut temp = temporary::create(folder, &name.to_string_lossy())?;
+    #[cfg(unix)]
+    let permissions = replacement_permissions(path)?;
+    #[cfg(not(unix))]
+    let permissions = None;
+    // Dropped on any error below, which removes it. Restrict creation itself: a reader
+    // must not be able to open a permissive temporary before it receives private bytes.
+    let mut temp =
+        temporary::create_with_permissions(folder, &name.to_string_lossy(), permissions.clone())?;
+    if let Some(permissions) = permissions {
+        // Creation applies umask; restore the destination's exact access bits before
+        // writing, including when the current umask is more restrictive than before.
+        temp.as_file().set_permissions(permissions)?;
+    }
     put(temp.as_file_mut(), bytes)?;
     temp.as_file_mut().flush()?;
     temp.as_file().sync_all()?;
     let file = persist_retrying(temp, path, retry, rename).map_err(|failed| failed.error)?;
     Ok((Written::Replaced, Some(file)))
+}
+
+#[cfg(unix)]
+fn replacement_permissions(path: &Path) -> io::Result<Option<fs::Permissions>> {
+    use std::os::unix::fs::PermissionsExt;
+
+    match fs::symlink_metadata(path) {
+        Ok(meta) if meta.is_file() => Ok(Some(fs::Permissions::from_mode(
+            meta.permissions().mode() & 0o777,
+        ))),
+        Ok(_) => Ok(None),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error),
+    }
 }
 
 /// Whether the file at `path` is there and holds exactly `bytes`.
@@ -218,6 +246,94 @@ mod tests {
         assert_eq!(fs::read(&path).unwrap(), b"");
         // Only the file: no temporary stays.
         assert_eq!(names(folder.path()), ["IMG.ARW.apxmp"]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn replacements_preserve_permissions_under_different_umasks() {
+        for mask in ["022", "077"] {
+            let output = std::process::Command::new("/bin/sh")
+                .args(["-c", "umask \"$1\"; exec \"$2\" --exact fs::write::tests::permission_cases_in_child --nocapture", "permission-test", mask])
+                .arg(std::env::current_exe().unwrap())
+                .env("APERTRUST_PERMISSION_TEST_MASK", mask)
+                .output()
+                .unwrap();
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            assert!(stdout.contains("running 1 test"), "{stdout}");
+            assert!(
+                output.status.success(),
+                "umask {mask}: {stdout}\n{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn permission_cases_in_child() {
+        use std::os::unix::fs::{PermissionsExt, symlink};
+        let Ok(mask) = std::env::var("APERTRUST_PERMISSION_TEST_MASK") else {
+            return;
+        };
+        let mask = u32::from_str_radix(&mask, 8).unwrap();
+        let folder = tempfile::tempdir().unwrap();
+        let path = folder.path().join("edit");
+        let mode = |path: &Path| fs::metadata(path).unwrap().permissions().mode() & 0o777;
+        write(&path, b"created").unwrap();
+        assert_eq!(mode(&path), 0o666 & !mask);
+        for permissions in [0o600, 0o640, 0o440] {
+            let temp = temporary::create_with_permissions(
+                folder.path(),
+                "creation-check",
+                Some(fs::Permissions::from_mode(permissions)),
+            )
+            .unwrap();
+            assert_eq!(mode(temp.path()), permissions & !mask);
+            drop(temp);
+            fs::set_permissions(&path, fs::Permissions::from_mode(permissions)).unwrap();
+            assert_eq!(write(&path, b"replaced").unwrap(), Written::Replaced);
+            assert_eq!(mode(&path), permissions);
+            assert_eq!(fs::read(&path).unwrap(), b"replaced");
+            assert_eq!(write(&path, b"replaced").unwrap(), Written::Unchanged);
+            assert_eq!(mode(&path), permissions);
+            // Change the content on the next iteration even if the mode is read-only.
+            fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
+            fs::write(&path, b"before").unwrap();
+        }
+        let before = fs::read(&path).unwrap();
+        let failed = write_with(
+            &path,
+            b"after",
+            Retry::NONE,
+            |file, _| {
+                assert_eq!(file.metadata()?.permissions().mode() & 0o777, 0o600);
+                file.write_all(b"partial")?;
+                Err(io::ErrorKind::StorageFull.into())
+            },
+            |temp, path| temp.persist(path),
+        );
+        assert!(failed.is_err());
+        assert_eq!(fs::read(&path).unwrap(), before);
+        assert_eq!(mode(&path), 0o600);
+        assert!(
+            plain(
+                &path,
+                b"after",
+                Retry::NONE,
+                refused(io::ErrorKind::PermissionDenied)
+            )
+            .is_err()
+        );
+        assert_eq!(mode(&path), 0o600);
+        assert_eq!(fs::read(&path).unwrap(), before);
+        assert_eq!(names(folder.path()), ["edit"]);
+        let link = folder.path().join("link");
+        symlink(&path, &link).unwrap();
+        write(&link, b"new link contents").unwrap();
+        assert!(fs::symlink_metadata(&link).unwrap().is_file());
+        assert_eq!(mode(&link), 0o666 & !mask);
+        assert_eq!(mode(&path), 0o600);
+        assert_eq!(fs::read(&path).unwrap(), before);
     }
 
     #[cfg(unix)]

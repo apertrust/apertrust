@@ -1166,6 +1166,7 @@ What every program sets up as it starts, and nothing about images, colour, the G
 
 - `fs::write(path, bytes)` replaces a file whole through a hidden temporary beside it (`fs::create`, named `.~NAME.XXXXXX.tmp`, `NAME` cut so the name fits 255 bytes): written, flushed, synced and renamed.
 - When the file already holds the bytes, nothing is written and the file is untouched. On an error nothing is left behind and the old file is as it was.
+- On Unix, replacing a regular file preserves its observed read, write and execute permission bits, with the temporary restricted from creation before any data is written. Special mode bits, ownership and ACLs are not copied. New files and replacements of symlinks keep the ordinary umask-filtered creation mode; a symlink's target is untouched.
 - `fs::persist_retrying` and `Retry`: a rename Windows refuses (sharing violation, access denied) is tried again for about a second (ten times 100 ms). `apertrust-export`'s `disk` uses it for its own renames.
 - `fs::is_temporary_name` and `fs::remove_if_stale`: a temporary is told by its name alone, and removed when it is a plain file more than a day old. The library's listing calls it for the folder it lists.
 - The settings store's `FileStorage` keeps its own write: its permissions, visible `.{pid}-{n}.tmp` names and one-minute tidy differ.
