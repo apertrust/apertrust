@@ -110,8 +110,8 @@ pub trait UtilityTool {
         None
     }
 
-    /// The fix of the note under `row` was pressed.
-    fn fix(&mut self, _row: &Row) {}
+    /// The fix of the note under `row` was pressed, the note in `words`.
+    fn fix(&mut self, _row: &Row, _words: &Translator) {}
 
     /// How many settings its custom row `widget` shows off their defaults, which a
     /// collapsible group holding it counts in its "N set".
@@ -312,7 +312,7 @@ impl<T: UtilityTool> Rows for Page<'_, '_, T> {
     }
 
     fn fixed(&self, row: &Row) {
-        self.drawn.borrow_mut().0.fix(row);
+        self.drawn.borrow_mut().0.fix(row, self.words);
     }
 }
 
@@ -635,7 +635,7 @@ mod tests {
             })
         }
 
-        fn fix(&mut self, _: &Row) {
+        fn fix(&mut self, _: &Row, _: &Translator) {
             self.fixed = true;
         }
 

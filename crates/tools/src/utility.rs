@@ -22,6 +22,8 @@
 //! and the items it adds to context menus and its ⋯ (decision 91). The app draws each
 //! one's page through its `UtilityTool`, its widgets the page's custom rows (decision 93).
 
+pub mod export;
+
 use std::collections::BTreeSet;
 
 use crate::about::WorksOn;
@@ -239,12 +241,11 @@ const fn option(section: Section, order: u32, action: &'static str) -> MenuItem 
 /// The utilities built: Scopes, which measures the finished picture; History, whose ↺ is
 /// Reset Edit, which it adds to the photo's and a thumbnail's menus, and whose ⋯ holds
 /// Compress History, Truncate History and Create a Style…, then Discard History… apart, as
-/// the destructive one; Browse, the Photos tab's first; and Export, its last, whose ↺ is
-/// its own Default settings and whose presets button is drawn disabled until its presets
-/// come. Their pages are their own widgets as custom rows, which keep what each drew before
-/// (decision 93): Scopes' the graph with its buttons, History's its steps, Browse's its
-/// recents line and its Folders, and Export's its groups and its end, until its rows are
-/// setting rows (step 93.6).
+/// the destructive one; Browse, the Photos tab's first; and Export, its last
+/// ([`export::EXPORT`]). The pages of the first three are their own widgets as custom rows,
+/// which keep what each drew before (decision 93): Scopes' the graph with its buttons,
+/// History's its steps, Browse's its recents line and its Folders; Export's are setting
+/// rows in groups, with custom rows of its own.
 pub const UTILITIES: &[UtilityDefinition] = &[
     UtilityDefinition {
         tool: ToolDefinition {
@@ -331,44 +332,7 @@ pub const UTILITIES: &[UtilityDefinition] = &[
         titles: &[],
         open: &[],
     },
-    UtilityDefinition {
-        tool: ToolDefinition {
-            id: "export",
-            tabs: &[Tab {
-                id: None,
-                rows: &[
-                    Row::Custom {
-                        widget: Widget::ExportStorage,
-                        controls: &[],
-                    },
-                    Row::Custom {
-                        widget: Widget::ExportFormat,
-                        controls: &[],
-                    },
-                    Row::Custom {
-                        widget: Widget::ExportGlobal,
-                        controls: &[],
-                    },
-                    Row::Custom {
-                        widget: Widget::ExportLater,
-                        controls: &[],
-                    },
-                    Row::Custom {
-                        widget: Widget::ExportEnd,
-                        controls: &[],
-                    },
-                ],
-            }],
-            before: &[],
-            after: &[],
-            reset: Reset::Own,
-            presets: true,
-            menus: &[],
-        },
-        measures: None,
-        titles: &[],
-        open: &[],
-    },
+    export::EXPORT,
 ];
 
 /// The utility `id`, if it is one.
