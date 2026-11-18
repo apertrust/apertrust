@@ -446,7 +446,7 @@ impl<'a, F: Fn(usize) -> Thumb<'a>> Browser<'a, F> {
         };
         let bar_id = response.id.with("bar");
 
-        let name = tr(ui.ctx(), "grid-panel");
+        let name = tr(ui.ctx(), "browser");
         response.widget_info(|| WidgetInfo::labeled(Role::List, true, &name));
         // The node exists before its cells, so they hang under it (egui parents a node to the
         // nearest ancestor that has one when it is made).
@@ -512,7 +512,7 @@ impl<'a, F: Fn(usize) -> Thumb<'a>> Browser<'a, F> {
         // overflow the panel.
         scroll_area(&mut child, &t, |ui| {
             ScrollArea::new([!column, column])
-                .id_salt(("grid panel", column))
+                .id_salt(("browser", column))
                 .auto_shrink([false, !column])
                 .show_viewport(ui, |ui, viewport| {
                     restore(ui, |ui| {
@@ -624,7 +624,7 @@ impl<'a, F: Fn(usize) -> Thumb<'a>> Browser<'a, F> {
         }
         // Clicks, for the options menu, but no Tab stop of its own.
         let toolbar = ui.interact(header, id, Sense::CLICK);
-        let name = tr(&ctx, "grid-bar");
+        let name = tr(&ctx, "browser-bar");
         toolbar.widget_info(|| WidgetInfo::labeled(Role::Toolbar, true, &name));
         ctx.accesskit_node_builder(toolbar.id, |_| {});
         let options = self.options(ui, &toolbar);
@@ -732,9 +732,9 @@ impl<'a, F: Fn(usize) -> Thumb<'a>> Browser<'a, F> {
                 .map(|action| action.item(ui, self))
                 .collect();
             let entries =
-                vec![Submenu::new("position", tr(ctx, "grid-position"), positions).into()];
+                vec![Submenu::new("position", tr(ctx, "browser-position"), positions).into()];
             let anchor = Rect::from_min_size(at, vec2(0.0, 0.0));
-            let request = Request::pull_down(anchor, tr(ctx, "grid-bar-options"), entries);
+            let request = Request::pull_down(anchor, tr(ctx, "browser-bar-options"), entries);
             popup::open(ctx, id, request);
         }
         if popup::is_open(ctx, id) {

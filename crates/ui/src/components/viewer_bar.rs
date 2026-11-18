@@ -222,7 +222,7 @@ impl<'a> ViewerBar<'a> {
             vec2(ui.available_width(), Self::height(&ctx)),
             Sense::hover(),
         );
-        let bar_name = tr(&ctx, "central-bar");
+        let bar_name = tr(&ctx, "viewer-bar");
         response.widget_info(|| WidgetInfo::labeled(Role::Toolbar, true, &bar_name));
         ui.painter().rect_filled(bar, 0.0, t.colors.surface);
         ui.painter().hline(

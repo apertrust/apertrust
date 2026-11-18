@@ -332,7 +332,7 @@ fn a_narrowing_toolbar_always_leaves_room_to_move_the_window() {
     for locale in Locale::ALL {
         let words = Translator::new(locale);
         let parts = [
-            "top-panel-more",
+            "toolbar-more",
             "action-import",
             "action-export",
             "action-reset",
@@ -1447,7 +1447,7 @@ fn panel(width: f32, at_start: bool) -> Harness<'static, Panel> {
         .with_context_setup(install)
         .build_ui_state(
             |ui, state: &mut Panel| {
-                let edge = PanelEdge::new("Side panel width", state.width, 320.0..=600.0)
+                let edge = PanelEdge::new("Tools panel width", state.width, 320.0..=600.0)
                     .at_start(state.at_start);
                 let side = if state.at_start {
                     egui::Panel::left("panel")
@@ -1478,7 +1478,7 @@ fn panel(width: f32, at_start: bool) -> Harness<'static, Panel> {
 /// Where the edge is: the middle of the splitter screen readers find.
 fn edge(harness: &Harness<'_, Panel>) -> Pos2 {
     harness
-        .get_by_role_and_label(Role::Splitter, "Side panel width")
+        .get_by_role_and_label(Role::Splitter, "Tools panel width")
         .rect()
         .center()
 }
@@ -1534,7 +1534,7 @@ fn dragging_the_panel_edge_resizes_the_panel_within_its_widths() {
     // Screen readers hear the width as dragged, not as it was.
     assert_eq!(
         harness
-            .get_by_role_and_label(Role::Splitter, "Side panel width")
+            .get_by_role_and_label(Role::Splitter, "Tools panel width")
             .accesskit_node()
             .numeric_value(),
         Some(390.0)
@@ -1545,7 +1545,7 @@ fn dragging_the_panel_edge_resizes_the_panel_within_its_widths() {
     // A drag leaves the focus where it was.
     assert!(
         !harness
-            .get_by_role_and_label(Role::Splitter, "Side panel width")
+            .get_by_role_and_label(Role::Splitter, "Tools panel width")
             .is_focused()
     );
 
@@ -1565,7 +1565,7 @@ fn a_double_click_on_the_panel_edge_resets_the_panel() {
     let end = edge(&harness).x + 520.0;
     for _ in 0..2 {
         harness
-            .get_by_role_and_label(Role::Splitter, "Side panel width")
+            .get_by_role_and_label(Role::Splitter, "Tools panel width")
             .click();
         // Each queued event runs in a frame of its own; the last is the release.
         harness.step();
@@ -1589,7 +1589,7 @@ fn the_panel_edge_shows_the_resize_cursor_and_steps_for_screen_readers() {
         harness.output().platform_output.cursor_icon,
         CursorIcon::ResizeColumn
     );
-    let splitter = harness.get_by_role_and_label(Role::Splitter, "Side panel width");
+    let splitter = harness.get_by_role_and_label(Role::Splitter, "Tools panel width");
     assert_eq!(
         splitter.accesskit_node().numeric_value(),
         Some(f64::from(OWN))
@@ -1600,7 +1600,7 @@ fn the_panel_edge_shows_the_resize_cursor_and_steps_for_screen_readers() {
     // At its widest it can only be stepped narrower.
     harness.state_mut().width = 600.0;
     harness.run();
-    let splitter = harness.get_by_role_and_label(Role::Splitter, "Side panel width");
+    let splitter = harness.get_by_role_and_label(Role::Splitter, "Tools panel width");
     assert!(
         !splitter
             .accesskit_node()
@@ -1624,7 +1624,7 @@ fn the_focused_panel_edge_moves_with_the_arrows_and_takes_the_ends_and_reset_key
         let mut harness = panel(OWN, at_start);
         harness.run();
         harness
-            .get_by_role_and_label(Role::Splitter, "Side panel width")
+            .get_by_role_and_label(Role::Splitter, "Tools panel width")
             .focus();
         harness.run();
         let width = |harness: &Harness<'_, Panel>| harness.state().width;
@@ -1654,7 +1654,7 @@ fn the_focused_panel_edge_moves_with_the_arrows_and_takes_the_ends_and_reset_key
         // The arrows stay with the edge rather than moving the focus.
         assert!(
             harness
-                .get_by_role_and_label(Role::Splitter, "Side panel width")
+                .get_by_role_and_label(Role::Splitter, "Tools panel width")
                 .is_focused()
         );
     }

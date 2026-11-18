@@ -158,7 +158,7 @@ impl ActionId {
     ];
     /// The browser bar's Labels and View › Show Labels: the thumbnails' captions.
     pub const SHOW_LABELS: ActionId = ActionId("show-labels");
-    /// The browser bar's options menu and View › Grid Panel Position: left, right, bottom.
+    /// The browser bar's options menu and View › Browser Position: left, right, bottom.
     pub const BROWSER_POSITION: [ActionId; 3] = [
         ActionId("grid-position-left"),
         ActionId("grid-position-right"),
@@ -828,7 +828,7 @@ pub static ACTIONS: [Action; 77] = [
     },
     Action {
         id: ActionId::SHOW_COLLECTIONS,
-        message: "action-show-browse",
+        message: "action-show-collections",
         keys: &[plain(Key::L)],
         scope: Scope::App,
         trigger: Trigger::Press,
@@ -951,7 +951,7 @@ pub static ACTIONS: [Action; 77] = [
     // 39). Its name is the ☰'s, and the menu it opens never holds it.
     Action {
         id: ActionId::MENU,
-        message: "top-panel-menu",
+        message: "toolbar-menu",
         keys: &[plain(Key::F10).only(Platforms::NotMac)],
         scope: Scope::App,
         trigger: Trigger::Press,

@@ -235,7 +235,7 @@ impl<'a> Toolbar<'a> {
 
     /// The popup the ☰'s menu opens as ([`popup::open`]).
     pub fn menu_popup() -> Id {
-        Id::unique("apertrust-ui top panel menu")
+        Id::unique("apertrust-ui toolbar menu")
     }
 
     /// The ☰'s rectangle as last drawn, for the menu to hang from; None before a Toolbar
@@ -313,7 +313,7 @@ impl<'a> Toolbar<'a> {
         let ctx = ui.ctx().clone();
         let (bar, response) =
             ui.allocate_exact_size(vec2(ui.available_width(), t.sizes.toolbar), Sense::hover());
-        let toolbar_name = tr(&ctx, "top-panel");
+        let toolbar_name = tr(&ctx, "toolbar");
         response.widget_info(|| WidgetInfo::labeled(Role::Toolbar, true, &toolbar_name));
         ui.painter().rect_filled(bar, 0.0, t.colors.surface);
         ui.painter().hline(
@@ -476,13 +476,13 @@ impl<'a> Toolbar<'a> {
                     }
                 }
                 if common.iter().any(|c| fold.hides(c.action)) {
-                    let more = IconButton::new(Icon::Options, &tr(&ctx, "top-panel-more"))
+                    let more = IconButton::new(Icon::Options, &tr(&ctx, "toolbar-more"))
                         .size(BUTTON)
                         .show(ui);
                     pressed(more.clone());
                     // Each with its keys, and disabled where it can't run. Screen readers
                     // hear its name, and the keys as its shortcut, as on every control.
-                    let name = tr(&ctx, "top-panel-more");
+                    let name = tr(&ctx, "toolbar-more");
                     let chosen = pull_down(ui, &more, &name, || {
                         common
                             .iter()
@@ -733,7 +733,7 @@ enum MenuPress {
 }
 
 fn menu_anchor_id() -> Id {
-    Id::unique("apertrust-ui top panel menu anchor")
+    Id::unique("apertrust-ui toolbar menu anchor")
 }
 
 /// The ☰, with `keys` in its tooltip: a button that opens a menu, drawn on while the menu
@@ -745,7 +745,7 @@ fn menu_button(ui: &mut Ui, keys: Option<&str>) -> (egui::Response, Option<MenuP
     let room = ui.available_rect_before_wrap();
     let centre = pos2(room.left() + BUTTON / 2.0, room.center().y);
     let open = popup::anchor(&ctx, Toolbar::menu_popup()).is_some_and(|a| a.contains(centre));
-    let name = tr(&ctx, "top-panel-menu");
+    let name = tr(&ctx, "toolbar-menu");
     let mut button = icon_button(Icon::Menu, &name, keys).size(BUTTON);
     if open {
         button = button.toggled(true);

@@ -106,7 +106,7 @@ impl<'a> TabBar<'a> {
         let (bar, list) =
             ui.allocate_exact_size(vec2(ui.available_width(), tile_h + pad), Sense::hover());
         // Looked up first: widget_info runs while egui holds the context.
-        let list_name = tr(ui.ctx(), "panel-tabs");
+        let list_name = tr(ui.ctx(), "tools-panel-tabs");
         list.widget_info(|| WidgetInfo::labeled(Role::TabList, true, &list_name));
         // A recessed strip above the sections.
         ui.painter().rect_filled(bar, 0.0, t.colors.sunken);
@@ -374,7 +374,7 @@ pub struct PanelEdge<'a> {
 
 impl<'a> PanelEdge<'a> {
     /// The edge of a panel at the end of the window, `width` points wide, drawn within
-    /// `widths`; `name` is what screen readers call it ("Side panel width"), translated.
+    /// `widths`; `name` is what screen readers call it ("Tools panel width"), translated.
     pub fn new(name: &'a str, width: f32, widths: RangeInclusive<f32>) -> Self {
         let edge = PanelEdge {
             id: Id::unique(("apertrust-ui panel edge", name)),

@@ -545,7 +545,7 @@ fn fold(harness: &Harness<'_, Run>) -> (bool, bool, bool) {
 #[test]
 fn the_spinner_has_no_words_so_it_never_folds_and_leaves_room_to_move_the_window() {
     let parts = [
-        "top-panel-more",
+        "toolbar-more",
         "action-import",
         "action-export",
         "action-reset",

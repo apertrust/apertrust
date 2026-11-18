@@ -53,7 +53,7 @@ pub enum BrowserEdgeAction {
 ///   the Viewer adds a line and the other takes one away (↑ and ↓ at the bottom),
 ///   Home and End take the panel to its fewest and most, and Delete (or Backspace, the
 ///   Mac's Delete) goes back to one.
-/// - **Screen readers** find a splitter, "Grid panel height" at the bottom and "Grid panel
+/// - **Screen readers** find a splitter, "Browser height" at the bottom and "Browser
 ///   width" at a side, whose value is the number of lines ("2 rows", "3 columns"), as
 ///   dragged this frame, which they step by one.
 ///
@@ -76,7 +76,7 @@ impl BrowserEdge {
     /// `size`, with their captions, showing at most `most`.
     pub fn new(lines: usize, most: usize, size: ThumbnailSize) -> Self {
         BrowserEdge {
-            id: Id::unique("apertrust-ui grid edge"),
+            id: Id::unique("apertrust-ui browser edge"),
             lines,
             most: most.max(1),
             size,
@@ -214,9 +214,9 @@ impl BrowserEdge {
         // For screen readers: a splitter between the photo and the panel, its value the
         // lines as this frame leaves them.
         let (name, unit) = if column {
-            ("grid-panel-width", "grid-columns")
+            ("browser-width", "grid-columns")
         } else {
-            ("grid-panel-height", "grid-rows")
+            ("browser-height", "grid-rows")
         };
         let name = tr(ui.ctx(), name);
         let mut args = Args::new();

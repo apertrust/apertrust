@@ -4,7 +4,7 @@
 
 app-name = Apertrust
 
-## The top panel's common actions
+## The Toolbar's common actions
 
 action-import = Import…
 action-export = Export…
@@ -20,10 +20,10 @@ action-copy-edit = Copy edit
 action-apply-edit = Apply edit
 action-copy-apply-parts = Copy or apply parts
 action-settings = Settings
-# Heard once the edit is saved again after a failed write (the top panel's save state).
+# Heard once the edit is saved again after a failed write (the Toolbar's save state).
 status-saved = Saved
 
-## The side panel's tabs
+## The Tools panel's tabs
 
 # Edit's tabs: the tools by editing stage, Adjust, Detail, Geometry, Effects and Raw,
 # between Apertrust's own Photos and History (decision 38).
@@ -43,12 +43,12 @@ tab-history = History
 tab-metadata = Metadata
 # The tooltip of a tab drawn disabled because nothing is behind it yet; $tab is its name.
 panel-tab-later = { $tab }: coming in a later version
-panel-tabs = Side panel tabs
+tools-panel-tabs = Tools panel tabs
 panel-more-tabs = More tabs
 panel-tab-options = Tab options
 panel-show-tab-names = Show tab names
 panel-customise-tabs = Customise tabs…
-panel-width = Side panel width
+tools-panel-width = Tools panel width
 
 ## A section's header buttons; $section is the section's title
 
@@ -153,14 +153,14 @@ unit-kelvin-value = { $value } K
 unit-pixels-value = { $value } px
 unit-iso-value = { $value } ISO
 
-## The top panel
+## The Toolbar
 
-top-panel = Top panel
-# ☰ at the top panel's start on Windows and Linux, which opens the menus.
-top-panel-menu = Menu
-# ⋯, holding the common actions a narrow top panel has no room for.
-top-panel-more = More actions
-# The save state at the top panel's end, which shows only when a save goes wrong:
+toolbar = Toolbar
+# ☰ at the Toolbar's start on Windows and Linux, which opens the menus.
+toolbar-menu = Menu
+# ⋯, holding the common actions a narrow Toolbar has no room for.
+toolbar-more = More actions
+# The save state at the Toolbar's end, which shows only when a save goes wrong:
 # Saving… while a write is still unconfirmed about two seconds after it started, as on a
 # slow network folder.
 status-saving = Saving…
@@ -172,13 +172,13 @@ status-not-saved-reason = Not saved: { $error }
 # In the caption, while the photo open is open for viewing only: a newer Apertrust
 # wrote its edit, which this one never saves.
 status-view-only = View only
-# The window's caption buttons at the end of the top panel, where the app draws them.
+# The window's caption buttons at the end of the Toolbar, where the app draws them.
 window-minimise = Minimise
 window-maximise = Maximise
 window-restore = Restore
 window-close = Close
 
-## The jobs: the spinner at the top panel's end and the window it opens. A row's lines and
+## The jobs: the spinner at the Toolbar's end and the window it opens. A row's lines and
 ## buttons are the activity's words below. $running, $waiting and $failed count jobs, $value
 ## is the spinner's value and $message a job's own message. The spinner's value avoids
 ## plural forms: "2 running".
@@ -331,9 +331,9 @@ activity-try-again = Try again
 activity-try-again-tip = Export the photos that failed again, with the same settings
 activity-dismiss = Dismiss
 
-## The central bar, over the photo
+## The viewer bar, over the photo
 
-central-bar = Central bar
+viewer-bar = Viewer bar
 photo-show-selected = Show all selected photos
 photo-proof-margin = Proof margin
 photo-before-after = Before and after
@@ -361,11 +361,11 @@ photo-zoom-tip-exact = At 100% the screen shows exactly what the export will be.
 photo-zoom-later = Zoom comes with the 100% view
 layer-image = Image
 
-## The central panel
+## The Viewer
 
 # While the photo decodes and its first frame renders; $name is its file name.
 photo-opening = Opening { $name }…
-# The central bar, quietly, while a photo opening is still not live a second after the
+# The viewer bar, quietly, while a photo opening is still not live a second after the
 # click (decision 77).
 photo-rendering = Rendering…
 # The tooltip of every control while the photo opens, read-only until it is live; $name
@@ -415,9 +415,9 @@ open-title = Open
 # The file types it shows: the raws Apertrust can open.
 open-filter = Raw photos
 
-## The grid panel and its cells
+## The Browser and its cells
 
-grid-panel = Grid panel
+browser = Browser
 # A cell's mark and its tooltip, for a photo whose edit exists. A cell is named by its
 # file name; its marks follow in its description.
 grid-cell-edited = Edited
@@ -452,27 +452,27 @@ colour-label-yellow = Yellow
 colour-label-green = Green
 colour-label-blue = Blue
 colour-label-purple = Purple
-# The grid panel's edge towards the photo, which resizes it, for screen readers, and its
+# The Browser's edge towards the photo, which resizes it, for screen readers, and its
 # value: how many rows of thumbnails it shows.
-grid-panel-height = Grid panel height
+browser-height = Browser height
 grid-rows =
     { $count ->
         [one] { $count } row
        *[other] { $count } rows
     }
-# At the left or right, the grid panel's edge resizes it in columns.
-grid-panel-width = Grid panel width
+# At the left or right, the Browser's edge resizes it in columns.
+browser-width = Browser width
 grid-columns =
     { $count ->
         [one] { $count } column
        *[other] { $count } columns
     }
-# The grid bar's options menu, a right-click on it, for screen readers, and its submenu of
-# where the grid panel goes.
-grid-bar-options = Grid panel options
-grid-position = Position
-# The grid bar, the header along the grid panel's top, as screen readers name it.
-grid-bar = Grid bar
+# The browser bar's options menu, a right-click on it, for screen readers, and its submenu of
+# where the Browser goes.
+browser-bar-options = Browser options
+browser-position = Position
+# The browser bar, the header along the Browser's top, as screen readers name it.
+browser-bar = Browser bar
 # Its Sort button, its value for screen readers and its tooltip: the order, by $key
 # (capture-time, file-name, edited or rating) and $descending (yes or no).
 grid-sort = Sort
@@ -517,49 +517,49 @@ grid-labels = Labels
 
 ## Open kinds: what a window holds, named wherever a recent or what is open is
 
-# One of a kind by its name: Open Recent's items, and Browse's top line and its recents.
+# One of a kind by its name: Open Recent's items, and Collections' top line and its recents.
 # Libraries' and projects' join it here, open-kind-library and open-kind-project, with the
 # library, as start-kind-library and start-kind-project join the start window's.
 open-kind-folder = Folder: { $name }
 
-## Folder mode: File › Open Folder…, the Photos tab's Browse and the empty states
+## Folder mode: File › Open Folder…, the Photos tab's Collections and the empty states
 
 action-open-folder = Open Folder…
 # The title of the platform's folder dialog, where it shows one.
 open-folder-title = Open Folder
-# The Photos tab's first section, which chooses what the grid panel shows, and its group
+# The Photos tab's first section, which chooses what the Browser shows, and its group
 # of folders. Albums and Smart albums join it with the library.
-section-browse = Browse
-browse-folders = Folders
+section-browse = Collections
+collections-folders = Folders
 section-export = Export
 # The top line's box: what screen readers call it, and its words for none, which the
-# central panel says too with nothing open; a folder's are its open kind's.
-browse-open-name = What is open
-browse-no-folder = No folder open
+# Viewer says too with nothing open; a folder's are its open kind's.
+collections-open-name = What is open
+collections-no-folder = No folder open
 # The box's list, the recents: with none; a missing one, marked, its label its open kind's
 # ("Folder: 2026-10 Lisbon"), and what it offers.
-browse-recents-none = No recent folders
-browse-recent-missing = { $label }, not found
-browse-try-again = Try Again
-browse-locate = Locate…
-browse-remove = Remove from the List
+collections-recents-none = No recent folders
+collections-recent-missing = { $label }, not found
+collections-try-again = Try Again
+collections-locate = Locate…
+collections-remove = Remove from the List
 # The title of the platform's folder dialog Locate… opens.
-browse-locate-title = Locate Folder
+collections-locate-title = Locate Folder
 # ＋ beside the box, and its items that come with the library.
-browse-plus = New or open
+collections-plus = New or open
 action-new-library = New Library…
 action-new-project = New Project…
 # The tree: a folder row's right-click menu, whose Show in Folder is named as the platform's
 # file manager is, and whose Open chooses the folder.
-browse-folder-menu = { $name } menu
-browse-open-row = Open
-# A photo opened alone: Folders' one row and Browse's option, which open its folder in
+collections-folder-menu = { $name } menu
+collections-open-row = Open
+# A photo opened alone: Folders' one row and Collections' option, which open its folder in
 # folder mode, the photo active.
-browse-open-this-folder = Open This Folder
+collections-open-this-folder = Open This Folder
 # Under a folder in the tree whose subfolders are being listed.
-browse-reading = Reading…
+collections-reading = Reading…
 # Under a folder in the tree whose subfolders could not be listed; the reason is in its tooltip.
-browse-unreadable = Could not be read. Try Again
+collections-unreadable = Could not be read. Try Again
 # The top line while the open folder is read.
 folders-reading = Reading { $name }…
 # The tooltip of a recent folder that could not be opened when it was tried.
@@ -568,8 +568,8 @@ folders-recent-missing = This folder could not be opened. { $reason }
 folders-recent-gone = This folder is no longer there.
 folder-reading = Reading { $folder }…
 folder-empty = No photos available
-# Under it in the grid panel, where the folder has subfolders.
-folder-empty-hint = Choose a subfolder in Browse.
+# Under it in the Browser, where the folder has subfolders.
+folder-empty-hint = Choose a subfolder in Collections.
 folder-failed = Could not open { $folder }: { $reason }
 folder-cancelled = Reading { $folder } was cancelled
 # A folder is open with photos, and none is.
@@ -651,7 +651,7 @@ settings-group-interface = Interface
 settings-group-start = Start
 settings-group-confirmations = Confirmations
 settings-group-thumbnails = Thumbnails
-settings-group-side-panel = Side panel
+settings-group-side-panel = Tools panel
 settings-group-hardware-acceleration = Hardware acceleration
 settings-group-diagnostics = Diagnostics
 settings-group-cache = Cache
@@ -856,7 +856,7 @@ log-save-title = Save the Log
 
 ## About Apertrust
 
-# The action, the top panel's mark that runs it, and the dialog's name for screen readers.
+# The action, the Toolbar's mark that runs it, and the dialog's name for screen readers.
 action-about = About { app-name }
 # $version is the build's version, as 0.1.0+197~g9201df0.
 about-version = Version { $version }
@@ -872,20 +872,20 @@ about-back = Back
 # File › Open…: raws, their folder opened with the first in place of the photo open.
 action-open = Open…
 action-view-edit = Switch to Edit
-# View › Browse: the first tab holding Browse.
-action-show-browse = Browse
-# The side panel's tabs by position, whatever they hold.
-action-panel-tab-1 = Side-panel tab 1
-action-panel-tab-2 = Side-panel tab 2
-action-panel-tab-3 = Side-panel tab 3
-action-panel-tab-4 = Side-panel tab 4
-action-panel-tab-5 = Side-panel tab 5
-action-panel-tab-6 = Side-panel tab 6
-action-panel-tab-7 = Side-panel tab 7
+# View › Collections: the first tab holding Collections.
+action-show-collections = Collections
+# The Tools panel's tabs by position, whatever they hold.
+action-panel-tab-1 = Tools panel tab 1
+action-panel-tab-2 = Tools panel tab 2
+action-panel-tab-3 = Tools panel tab 3
+action-panel-tab-4 = Tools panel tab 4
+action-panel-tab-5 = Tools panel tab 5
+action-panel-tab-6 = Tools panel tab 6
+action-panel-tab-7 = Tools panel tab 7
 action-scale-up = Larger interface
 action-scale-down = Smaller interface
 action-scale-reset = Normal interface size
-# F6 moves the focus between the top panel, the central bar, the side panel and the grid panel.
+# F6 moves the focus between the Toolbar, the viewer bar, the Tools panel and the Browser.
 action-next-region = Next pane
 action-previous-region = Previous pane
 action-full-screen = Full screen
@@ -916,7 +916,7 @@ action-zoom-in = Zoom in
 action-zoom-out = Zoom out
 action-zoom-fit = Zoom to fit
 action-zoom-100 = Zoom to 100%
-# The grid bar's menus, and View › Sort By and Thumbnail Size: the sort's key and
+# The browser bar's menus, and View › Sort By and Thumbnail Size: the sort's key and
 # direction, and the thumbnails' size.
 action-sort-capture-time = Capture time
 action-sort-file-name = File name
@@ -928,11 +928,11 @@ action-thumbnails-small = Small
 action-thumbnails-medium = Medium
 action-thumbnails-large = Large
 action-thumbnails-extra-large = Extra large
-# Where the grid panel goes: the grid bar's options menu and View › Grid Panel Position.
+# Where the Browser goes: the browser bar's options menu and View › Browser Position.
 action-grid-position-left = Left
 action-grid-position-right = Right
 action-grid-position-bottom = Bottom
-# View › Show Labels and the grid bar's Labels: the captions under the thumbnails.
+# View › Show Labels and the browser bar's Labels: the captions under the thumbnails.
 action-show-labels = Show labels
 action-background-black = Black
 action-background-very-dark = Very dark
@@ -958,12 +958,12 @@ menu-view = &View
 menu-window = &Window
 menu-help = &Help
 # Submenus of View.
-menu-panel-tab = Side Panel Tab
+menu-tools-panel-tab = Tools Panel Tab
 menu-interface-size = Interface Size
 menu-sort-by = Sort By
 menu-thumbnail-size = Thumbnail Size
 menu-background = Background
-menu-grid-position = Grid Panel Position
+menu-browser-position = Browser Position
 # A submenu of File, and its item for a recent whose name another shares: with the
 # name of the folder it is in.
 menu-open-recent = Open Recent
@@ -1018,7 +1018,7 @@ history-discard-no-alert = Discard History asks first, and that question can’t
 # The same on an edit part of whose history can't be read, which always asks first.
 history-discard-no-alert-unreadable = Discarding this history asks first, since nothing can bring back what can’t be read, and that question can’t be shown here yet.
 
-## The History section in the side panel's History tab (docs/history.md)
+## The History section in the Tools panel's History tab (docs/history.md)
 
 section-history = History
 # Its header's reset button, which puts the whole edit back as one step, as Reset Edit.
@@ -1139,7 +1139,7 @@ equalizer-overflows-both = The mask's shadows go past the −8 EV band, and its 
 
 ## The scopes; $shadows and $highlights are shares of the photo's pixels, in percent
 
-# The section that holds them, pinned at the top of the side panel's editing tabs.
+# The section that holds them, pinned at the top of the Tools panel's editing tabs.
 section-scopes = Scopes
 scope-histogram = Histogram
 scope-waveform = Waveform
@@ -1188,7 +1188,7 @@ picker-tip-area-quad =
 ## else its own; $command is the pointer's modifier as shortcuts spell it, $what the
 ## picker's own sentence
 
-# The central bar's start while a picker is on.
+# The viewer bar's start while a picker is on.
 picker-bar-name = { $tool } · { $picker }
 # How to use a picker measuring an area.
 picker-bar-area = Drag an area on the photo. { $command }-click switches to a point. Esc ends.
@@ -1426,7 +1426,7 @@ alert-quit-message =
             }
     }
 alert-quit-button = Quit
-# The top panel's save warning pressed: why the edit isn't saved, and Try Again, which
+# The Toolbar's save warning pressed: why the edit isn't saved, and Try Again, which
 # writes it again. $name is the photo's file name, $error why, in the system's words.
 alert-save-title = The edit isn’t saved
 alert-save-message = The edit of { $name } couldn’t be written beside it: { $error }

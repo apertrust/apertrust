@@ -170,7 +170,7 @@ const fn item(id: ActionId) -> Entry {
 }
 
 static PANEL_TAB: Menu = Menu {
-    title: "menu-panel-tab",
+    title: "menu-tools-panel-tab",
     role: Role::Plain,
     on: Platforms::All,
     groups: &[&[
@@ -250,7 +250,7 @@ pub static BACKGROUND: Menu = Menu {
 };
 
 static BROWSER_POSITION: Menu = Menu {
-    title: "menu-grid-position",
+    title: "menu-browser-position",
     role: Role::Plain,
     on: Platforms::All,
     groups: &[&[
@@ -554,7 +554,7 @@ pub fn request(
     let entries = menus(os)
         .map(|menu| drawn(menu, os, keymap, state, recents, steps, &tr).into())
         .collect();
-    popup::Request::pull_down(anchor, tr.text("top-panel-menu"), entries)
+    popup::Request::pull_down(anchor, tr.text("toolbar-menu"), entries)
 }
 
 /// Where a context menu opens (decision 91; `docs/gui.md`, Context menus): a place tools

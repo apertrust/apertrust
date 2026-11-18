@@ -580,8 +580,8 @@ fn row(
     let text_left = rect.left() + t.spacing.l + ICON_COLUMN + t.spacing.m;
     let mut end = rect.right() - t.spacing.l;
     if gone.is_some() {
-        let locate = words.text("browse-locate");
-        let remove = words.text("browse-remove");
+        let locate = words.text("collections-locate");
+        let remove = words.text("collections-remove");
         let body = egui::FontId::proportional(t.text.body);
         let width = |text: &str| {
             let galley = painter.layout_no_wrap(text.to_owned(), body.clone(), quiet);

@@ -280,7 +280,7 @@ impl UtilityTool for Collections<'_> {
     type Action = Action;
 
     fn definition(&self) -> &'static UtilityDefinition {
-        apertrust_tools::utility::utility(ID).expect("Browse is built in")
+        apertrust_tools::utility::utility(ID).expect("Collections is built in")
     }
 
     fn body(&mut self, widget: Widget, ui: &mut egui::Ui, cx: &mut Context<'_>) -> Vec<Action> {
@@ -296,8 +296,8 @@ impl UtilityTool for Collections<'_> {
             // Its groups scroll under the top line, Collections keeping its height.
             Widget::CollectionsGroups => {
                 ui.spacing_mut().item_spacing.y = 0.0;
-                section_list(ui, "browse groups", |ui| {
-                    let group = cx.words.text("browse-folders");
+                section_list(ui, "collections groups", |ui| {
+                    let group = cx.words.text("collections-folders");
                     let toggled = CollapsibleGroup::new(&group, self.open.folders)
                         .show(ui, |ui| tree(ui, self, &mut actions));
                     if toggled {
@@ -334,7 +334,7 @@ fn options(ui: &egui::Ui, collections: &Collections<'_>) -> Vec<Entry> {
         .enabled(open || alone.is_some());
     let mut options = vec![Entry::Item(reveal)];
     if alone.is_some() {
-        let this = Item::new(OPEN_THIS_FOLDER, words.text("browse-open-this-folder"));
+        let this = Item::new(OPEN_THIS_FOLDER, words.text("collections-open-this-folder"));
         options.insert(0, Entry::Item(this));
     }
     options
@@ -391,7 +391,7 @@ fn open_line(
         args.set("name", name);
         match (collections.root, collections.folder) {
             (_, Folder::Alone { .. }) => name.to_owned(),
-            (None, _) => words.text("browse-no-folder"),
+            (None, _) => words.text("collections-no-folder"),
             (Some(_), _) if reading => words.text_with("folders-reading", Some(&args)),
             // Folder mode's form: what is open is a folder.
             (Some(_), _) => OpenKind::Folder.label(&words, name),
@@ -424,7 +424,7 @@ fn top_line(ui: &mut egui::Ui, collections: &Collections<'_>, actions: &mut Vec<
     let line = vec2(ui.available_width(), t.sizes.panel_line);
     ui.allocate_ui_with_layout(line, Layout::left_to_right(Align::Center), |ui| {
         ui.spacing_mut().item_spacing.x = t.spacing.xs;
-        let plus_name = words.text("browse-plus");
+        let plus_name = words.text("collections-plus");
         let plus = IconButton::new(Icon::Plus, &plus_name);
         let plus_side = plus.side(ui);
         let width = (ui.available_width() - plus_side - t.spacing.xs).max(0.0);
@@ -436,7 +436,7 @@ fn top_line(ui: &mut egui::Ui, collections: &Collections<'_>, actions: &mut Vec<
             &egui::FontId::default(),
             f32::INFINITY,
         );
-        let name = words.text("browse-open-name");
+        let name = words.text("collections-open-name");
         let icon = match collections.folder {
             Folder::Alone { .. } => Icon::Photo,
             _ => Icon::Folder,
@@ -519,7 +519,7 @@ fn recents_menu(ctx: &egui::Context, collections: &Collections<'_>) -> (Vec<Entr
     let clear = Item::new(CLEAR_RECENTS, words.text("action-clear-recent"))
         .enabled(!collections.recent.is_empty());
     if collections.recent.is_empty() {
-        let none = Item::new("none", words.text("browse-recents-none")).enabled(false);
+        let none = Item::new("none", words.text("collections-recents-none")).enabled(false);
         let entries = vec![Entry::Item(none), Entry::Separator, Entry::Item(clear)];
         return (entries, Vec::new());
     }
@@ -537,22 +537,22 @@ fn recents_menu(ctx: &egui::Context, collections: &Collections<'_>) -> (Vec<Entr
             };
             let mut args = Args::new();
             args.set("label", label.as_str());
-            let text = words.text_with("browse-recent-missing", Some(&args));
+            let text = words.text_with("collections-recent-missing", Some(&args));
             let reason = Item::new(format!("why:{i}"), missing_words(ctx, why))
                 .enabled(false)
                 .tip(tip);
             let mut entries = vec![Entry::Item(reason), Entry::Separator];
             if matches!(why, Missing::Failed(_)) {
-                let again = Item::new(format!("open:{i}"), words.text("browse-try-again"));
+                let again = Item::new(format!("open:{i}"), words.text("collections-try-again"));
                 entries.push(Entry::Item(again));
             }
             entries.push(Entry::Item(Item::new(
                 format!("locate:{i}"),
-                words.text("browse-locate"),
+                words.text("collections-locate"),
             )));
             entries.push(Entry::Item(Item::new(
                 format!("remove:{i}"),
-                words.text("browse-remove"),
+                words.text("collections-remove"),
             )));
             Entry::Submenu(Submenu::new(format!("missing:{i}"), text, entries))
         })
@@ -716,14 +716,14 @@ fn row_menu(ui: &egui::Ui, response: &egui::Response, name: &str, path: &Path) -
     let words = translator(ui.ctx());
     let mut args = Args::new();
     args.set("name", name);
-    let menu = words.text_with("browse-folder-menu", Some(&args));
+    let menu = words.text_with("collections-folder-menu", Some(&args));
     let chosen = context_menu(ui, response, &menu, || {
         vec![
             Entry::Item(Item::new(
                 "show",
                 words.text(jobs::FILE_MANAGER.show_message()),
             )),
-            Entry::Item(Item::new("open", words.text("browse-open-row"))),
+            Entry::Item(Item::new("open", words.text("collections-open-row"))),
         ]
     })?;
     match chosen.as_str() {
@@ -742,7 +742,7 @@ fn tree(ui: &mut egui::Ui, collections: &Collections<'_>, actions: &mut Vec<Acti
     let words = translator(ui.ctx());
     // A photo alone has no tree: its folder is offered instead.
     if let Some((_, folder)) = alone(collections.folder) {
-        let this = words.text("browse-open-this-folder");
+        let this = words.text("collections-open-this-folder");
         let shown = export::shown(folder, collections.home);
         let response = open_this_row(ui, &this, &shown).on_hover_text(shown);
         if response.clicked() {
@@ -754,7 +754,7 @@ fn tree(ui: &mut egui::Ui, collections: &Collections<'_>, actions: &mut Vec<Acti
     let Some(root) = collections.root else {
         return;
     };
-    let folders = words.text("browse-folders");
+    let folders = words.text("collections-folders");
     let top = Branch {
         path: root,
         name: &name(root),
@@ -762,7 +762,7 @@ fn tree(ui: &mut egui::Ui, collections: &Collections<'_>, actions: &mut Vec<Acti
     };
     ui.scope_builder(
         UiBuilder::new()
-            .id_salt("browse tree")
+            .id_salt("collections tree")
             .accessibility_role(egui::Role::Tree)
             .accessibility_label(&folders),
         |ui| top.show(ui, collections, actions),
@@ -876,7 +876,7 @@ fn retry_row(ui: &mut egui::Ui, level: usize, why: &str) -> bool {
     if response.gained_focus() {
         response.scroll_to_me(None);
     }
-    let words = translator(ui.ctx()).text("browse-unreadable");
+    let words = translator(ui.ctx()).text("collections-unreadable");
     if ui.is_rect_visible(rect) {
         let painter = ui.painter();
         let band = rect.expand2(vec2(t.spacing.xs, 0.0));
@@ -903,7 +903,7 @@ fn reading_row(ui: &mut egui::Ui, level: usize) {
     let t = theme(ui.ctx());
     let size = vec2(ui.available_width(), t.sizes.panel_line);
     let (rect, response) = ui.allocate_exact_size(size, Sense::hover());
-    let words = translator(ui.ctx()).text("browse-reading");
+    let words = translator(ui.ctx()).text("collections-reading");
     if ui.is_rect_visible(rect) {
         let indent = (level.saturating_sub(1)) as f32 * LEVEL_INDENT;
         let x = rect.left() + indent + Icon::ChevronEnd.size() + t.spacing.xs;
@@ -975,7 +975,7 @@ pub fn empty_state(ui: &mut egui::Ui, slot: Rect, what: Empty<'_>, keys: &Keys) 
     let words = translator(ui.ctx());
     let ctx = ui.ctx().clone();
     let heading = match what {
-        Empty::Start => words.text("browse-no-folder"),
+        Empty::Start => words.text("collections-no-folder"),
         Empty::Reading(path) => with_folder(&ctx, "folder-reading", &name(path)),
         Empty::Failed(path, reason) => {
             let shown = path.display().to_string();
@@ -1668,7 +1668,7 @@ mod tests {
         // ⋯'s Show in Finder shows the root, which the top line names.
         harness.state_mut().clear();
         harness
-            .get_by_role_and_label(Role::Button, "Browse options")
+            .get_by_role_and_label(Role::Button, "Collections options")
             .click();
         harness.run();
         let show = translator(&harness.ctx).text(jobs::FILE_MANAGER.show_message());
@@ -2013,7 +2013,7 @@ mod tests {
         let mut harness = wedding_collections();
         harness.run();
         harness
-            .get_by_role_and_label(Role::Button, "Browse options")
+            .get_by_role_and_label(Role::Button, "Collections options")
             .click();
         harness.run();
         let words = translator(&harness.ctx);
@@ -2120,7 +2120,7 @@ mod tests {
         ] {
             harness.state_mut().clear();
             harness
-                .get_by_role_and_label(Role::Button, "Browse options")
+                .get_by_role_and_label(Role::Button, "Collections options")
                 .click();
             harness.run();
             harness.get_by_role_and_label(Role::MenuItem, item).click();
@@ -2178,7 +2178,7 @@ mod tests {
         );
         assert!(harness.query_by_role(Role::Tree).is_none());
         harness
-            .get_by_role_and_label(Role::Button, "Browse")
+            .get_by_role_and_label(Role::Button, "Collections")
             .click();
         harness.run();
         harness
@@ -2322,11 +2322,7 @@ mod tests {
         chosen.run();
         // A line alone: nothing more to read, and no card drawn under it.
         chosen.get_by_label("No photo selected");
-        assert!(
-            chosen
-                .query_by_label("Choose one in the grid panel")
-                .is_none()
-        );
+        assert!(chosen.query_by_label("Choose one in the Browser").is_none());
         let raised = theme(&chosen.ctx).colors.raised;
         let filled = |shape: &egui::epaint::ClippedShape| matches!(&shape.shape, egui::Shape::Rect(rect) if rect.fill == raised);
         assert!(!chosen.output().shapes.iter().any(filled));
@@ -2372,7 +2368,7 @@ mod tests {
             Empty::of(&Folder::Open(parent))
                 .browser_hint(&ctx)
                 .as_deref(),
-            Some("Choose a subfolder in Browse.")
+            Some("Choose a subfolder in Collections.")
         );
     }
 

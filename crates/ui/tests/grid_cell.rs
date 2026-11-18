@@ -676,7 +676,7 @@ fn the_arrow_keys_move_between_cells_and_enter_opens_the_one_focused() {
 fn the_cells_hang_under_the_browser_s_list_so_a_screen_reader_hears_n_items() {
     let mut harness = panel(4, Some(0));
     harness.run();
-    let list = harness.get_by_role_and_label(Role::List, "Grid panel");
+    let list = harness.get_by_role_and_label(Role::List, "Browser");
     // Under the list, through the layout's own containers, which a reader skips.
     assert_eq!(list.query_all_by_role(Role::ListItem).count(), 4);
     // And no cell hangs anywhere else.
@@ -755,7 +755,7 @@ fn an_empty_panel_says_why_and_a_filled_one_has_no_such_text() {
             .iter()
             .any(|text| text == "No photos available")
     );
-    harness.get_by_role_and_label(Role::List, "Grid panel");
+    harness.get_by_role_and_label(Role::List, "Browser");
 }
 
 fn painted_text(harness: &Harness<'_, ()>) -> Vec<String> {

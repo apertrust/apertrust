@@ -147,7 +147,7 @@ fn the_tools_panel_at_its_narrowest_in_the_pseudo_locale() {
         });
     harness.run();
     let words = Translator::new(Locale::Pseudo);
-    let name = words.text("panel-width");
+    let name = words.text("tools-panel-width");
     let edge = harness.get_by_role_and_label(Role::Splitter, &name);
     assert_eq!(edge.accesskit_node().numeric_value(), Some(240.0));
     assert!(

@@ -1141,7 +1141,7 @@ const TABS_ENABLED: [bool; TABS.len()] = {
     enabled
 };
 
-// Each tab has its action, which its click, its key and Side Panel Tab's item run: a tab
+// Each tab has its action, which its click, its key and Tools Panel Tab's item run: a tab
 // with none could not be chosen.
 const _: () = assert!(ActionId::PANEL_TABS.len() == TABS.len());
 
@@ -2294,7 +2294,7 @@ impl Shell {
 
     /// The Tools panel's edge, for the panel at the end of a window `window` points wide:
     /// at the width the user dragged it to, or the theme's, within [`panel_widths`]; `name`
-    /// is `panel-width`'s message, for screen readers.
+    /// is `tools-panel-width`'s message, for screen readers.
     fn panel_edge<'a>(&self, ctx: &egui::Context, window: f32, name: &'a str) -> PanelEdge<'a> {
         let width = self.panel_width.unwrap_or(theme(ctx).sizes.tools_panel);
         PanelEdge::new(name, width, panel_widths(window))
@@ -2326,9 +2326,9 @@ impl Shell {
         let edge = self.browser_edge(ctx, ctx.content_rect().size());
         let lines = edge.lines(ctx);
         let panel = match grid.position {
-            BrowserPosition::Bottom => egui::Panel::bottom("grid panel"),
-            BrowserPosition::Left => egui::Panel::left("grid panel"),
-            BrowserPosition::Right => egui::Panel::right("grid panel"),
+            BrowserPosition::Bottom => egui::Panel::bottom("browser"),
+            BrowserPosition::Left => egui::Panel::left("browser"),
+            BrowserPosition::Right => egui::Panel::right("browser"),
         }
         .exact_size(browser_thickness(
             ctx,
@@ -2928,7 +2928,7 @@ impl App {
         }
         // Only the Toolbar's empty areas move the window, never its buttons.
         if OWN_TITLE_BAR && let Err(e) = apertrust_display::content_never_moves_window(cc) {
-            tracing::warn!(target: "gpu", "window moves not kept to the top panel: {e}");
+            tracing::warn!(target: "gpu", "window moves not kept to the Toolbar: {e}");
         }
         // Now the window exists, in the language `prepare` set.
         let menus = menus::NativeMenus::install(&cc.egui_ctx);
@@ -5288,7 +5288,7 @@ impl eframe::App for App {
         let mut run = keys.pressed;
         // The Tools panel runs the window's height under the Toolbar; the Browser runs
         // under the photo only.
-        let toolbar = egui::Panel::top("top panel")
+        let toolbar = egui::Panel::top("toolbar")
             .exact_size(t.sizes.toolbar)
             .resizable(false)
             .show_separator_line(false)
@@ -5327,13 +5327,13 @@ impl eframe::App for App {
         }
         // The Tools panel is as wide as its edge was dragged, a drag in progress included.
         // While the edge moves, the photo's size is held as it is while the window resizes.
-        let edge_name = tr(&ctx, "panel-width");
+        let edge_name = tr(&ctx, "tools-panel-width");
         let edge = self
             .shell
             .panel_edge(&ctx, ui.available_width(), &edge_name);
         let panel_width = edge.width(&ctx);
         let panel_resized = std::mem::replace(&mut self.panel_width, panel_width) != panel_width;
-        let tools_panel = egui::Panel::right("side panel")
+        let tools_panel = egui::Panel::right("tools panel")
             .exact_size(panel_width)
             .resizable(false)
             .frame(egui::Frame::NONE.fill(t.colors.panel))
@@ -6509,7 +6509,7 @@ fn photos_body(
 /// for beyond its toggle.
 #[expect(
     clippy::too_many_arguments,
-    reason = "the app's own state for the side panel, each part apart"
+    reason = "the app's own state for the Tools panel, each part apart"
 )]
 fn panel_body(
     ui: &mut egui::Ui,
@@ -10849,7 +10849,7 @@ mod tests {
             .build_ui_state(
                 |ui, window: &mut Window| {
                     let ctx = ui.ctx().clone();
-                    let side = egui::Panel::right("side panel")
+                    let side = egui::Panel::right("tools panel")
                         .exact_size(320.0)
                         .resizable(false)
                         .show(ui, |_| {});
@@ -10899,16 +10899,14 @@ mod tests {
     }
 
     fn browser_list(harness: &Harness<'_, Window>) -> egui::Rect {
-        harness
-            .get_by_role_and_label(Role::List, "Grid panel")
-            .rect()
+        harness.get_by_role_and_label(Role::List, "Browser").rect()
     }
 
     /// Right-clicks the browser bar's empty part, its middle between Sort at its start and
     /// Zoom at its far end, and chooses Position's `place`.
     fn move_browser(harness: &mut Harness<'_, Window>, place: &str) {
         let bar = harness
-            .get_by_role_and_label(Role::Toolbar, "Grid bar")
+            .get_by_role_and_label(Role::Toolbar, "Browser bar")
             .rect();
         let at = bar.center();
         harness.hover_at(at);
@@ -10953,7 +10951,7 @@ mod tests {
         assert_eq!(list.bottom(), 900.0 - 8.0);
         let height = |harness: &Harness<'_, Window>| {
             harness
-                .get_by_role_and_label(Role::Splitter, "Grid panel height")
+                .get_by_role_and_label(Role::Splitter, "Browser height")
                 .accesskit_node()
                 .numeric_value()
         };
@@ -10966,7 +10964,7 @@ mod tests {
         assert_eq!(list.top(), 8.0);
         let width = |harness: &Harness<'_, Window>| {
             harness
-                .get_by_role_and_label(Role::Splitter, "Grid panel width")
+                .get_by_role_and_label(Role::Splitter, "Browser width")
                 .accesskit_node()
                 .numeric_value()
         };
@@ -11739,7 +11737,7 @@ mod tests {
         let folders = kept.groups.get("browse").and_then(|g| g.get("folders"));
         assert_eq!(folders, Some(&false));
         harness
-            .get_by_role_and_label(Role::Button, "Browse")
+            .get_by_role_and_label(Role::Button, "Collections")
             .click();
         harness.run();
         let kept = harness.state().to_settings(&ctx).edit;
@@ -11991,9 +11989,9 @@ mod tests {
                     };
                     let keys = actions::read(&ctx, &shell.keymap, &state);
                     panels.pressed.extend(keys.pressed);
-                    let name = tr(&ctx, "panel-width");
+                    let name = tr(&ctx, "tools-panel-width");
                     let edge = shell.panel_edge(&ctx, ui.available_width(), &name);
-                    let panel = egui::Panel::right("side panel")
+                    let panel = egui::Panel::right("tools panel")
                         .exact_size(edge.width(&ctx))
                         .resizable(false)
                         .show(ui, |ui| shell.tab_bar(ui));
@@ -12011,7 +12009,7 @@ mod tests {
 
     /// The Tools panel's edge, as screen readers find it: its value is the panel's width.
     fn panel_edge<'h>(harness: &'h Harness<'_, Panels>) -> egui_kittest::Node<'h> {
-        harness.get_by_role_and_label(Role::Splitter, "Side panel width")
+        harness.get_by_role_and_label(Role::Splitter, "Tools panel width")
     }
 
     fn shown_width(harness: &Harness<'_, Panels>) -> Option<f64> {
@@ -12398,7 +12396,7 @@ mod tests {
                         Some(FromToolbar::Window(gesture)) => window = Some(gesture),
                         Some(FromToolbar::Jobs | FromToolbar::NotSaved) | None => {}
                     }
-                    let name = tr(&ctx, "panel-width");
+                    let name = tr(&ctx, "tools-panel-width");
                     let edge = bench.shell.panel_edge(&ctx, ui.available_width(), &name);
                     let width = edge.width(&ctx);
                     let side = ui.scope(|ui| {
@@ -12625,7 +12623,7 @@ mod tests {
     fn empty_point(harness: &Harness<'_, Bench>) -> egui::Pos2 {
         let apply = harness.get_by_label("Apply edit").rect();
         let bar = harness
-            .get_by_role_and_label(Role::Toolbar, "Top panel")
+            .get_by_role_and_label(Role::Toolbar, "Toolbar")
             .rect();
         egui::pos2((apply.right() + bar.right()) / 2.0, apply.center().y)
     }
@@ -15917,7 +15915,7 @@ mod tests {
         // From the ☰'s menu too, View › Collections, with its key.
         harness.state_mut().shell.panel_tab = 3;
         alt(&mut harness, Key::V, Some("v"));
-        let item = harness.get_by_role_and_label(Role::MenuItem, "Browse");
+        let item = harness.get_by_role_and_label(Role::MenuItem, "Collections");
         assert_eq!(item.accesskit_node().data().keyboard_shortcut(), Some("L"));
         item.click();
         harness.run();
@@ -15949,7 +15947,9 @@ mod tests {
             // view.
             let header = harness.get_by_role_and_label(Role::Button, "Export").rect();
             let tabs = harness.get_by_role_and_label(Role::Tab, "Photos").rect();
-            let collections = harness.get_by_role_and_label(Role::Button, "Browse").rect();
+            let collections = harness
+                .get_by_role_and_label(Role::Button, "Collections")
+                .rect();
             assert!(
                 header.top() < tabs.bottom() + 40.0,
                 "{os:?} {header:?} {tabs:?}"
@@ -16003,7 +16003,9 @@ mod tests {
         harness.state_mut().shell.panel_tab = PHOTOS;
         harness.state_mut().shell.set_section_open(export::ID, true);
         harness.run_steps(4);
-        let collections = harness.get_by_role_and_label(Role::Button, "Browse").rect();
+        let collections = harness
+            .get_by_role_and_label(Role::Button, "Collections")
+            .rect();
         let export = harness.get_by_role_and_label(Role::Button, "Export").rect();
         assert!(
             collections.top() < export.top(),
@@ -16997,14 +16999,14 @@ mod tests {
         }
         harness.key_press(Key::ArrowRight);
         harness.run();
-        assert!(menu_open(&harness, "Side Panel Tab"));
+        assert!(menu_open(&harness, "Tools Panel Tab"));
         let tab = |harness: &Harness<'_, Bench>, n| {
-            menu_line(harness, check, &format!("Side-panel tab {n}")).2
+            menu_line(harness, check, &format!("Tools panel tab {n}")).2
         };
         assert_eq!(tab(&harness, ADJUST + 1), Some(Toggled::True));
         assert_eq!(tab(&harness, 1), Some(Toggled::False));
         // The Photos tab is the first, built.
-        let photos = menu_line(&harness, check, "Side-panel tab 1");
+        let photos = menu_line(&harness, check, "Tools panel tab 1");
         assert!(photos.0);
         // Reset is disabled while the photo is as it opened.
         harness.key_press(Key::Escape);

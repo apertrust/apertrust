@@ -157,7 +157,7 @@ impl Gallery {
         heading(ui, "Slider markers");
         slider_markers(ui, &mut self.demo);
         ui.add_space(t.spacing.l);
-        heading(ui, "Side panel");
+        heading(ui, "Tools panel");
         tools_panel(ui, &t, &mut self.demo);
         ui.add_space(t.spacing.l);
         scopes_in_use(ui, &t, &mut self.demo);
@@ -2038,7 +2038,7 @@ fn tools_panel(page: &mut Ui, t: &Theme, demo: &mut Demo) {
     // The app's widths: down to 240, opening at the theme's 320.
     let widths = 240.0..=page.available_width().clamp(240.0, 600.0);
     let width = demo.panel_width.unwrap_or(t.sizes.tools_panel);
-    let name = crate::tr(page.ctx(), "panel-width");
+    let name = crate::tr(page.ctx(), "tools-panel-width");
     let edge = PanelEdge::new(&name, width, widths).at_start(true);
     let (rect, _) = page.allocate_exact_size(vec2(edge.width(page.ctx()), 560.0), Sense::hover());
     page.painter().rect_filled(rect, 0.0, t.colors.panel);
@@ -2543,7 +2543,7 @@ fn shell(ui: &mut Ui, t: &Theme, demo: &mut Demo) {
         .shortcut(ToolbarAction::Undo, "Ctrl+Z")
         .show(ui)
     {
-        demo.last = format!("Top panel: {action:?}");
+        demo.last = format!("Toolbar: {action:?}");
     }
     // As the title bar on Windows and Linux, with the ☰ at its start and the window's
     // caption buttons at its end: the window as it is, its menu open at first with View
@@ -2570,7 +2570,7 @@ fn shell(ui: &mut Ui, t: &Theme, demo: &mut Demo) {
             }
             popup::open(&ctx, menu, request);
         } else if let Some(action) = action {
-            demo.last = format!("Top panel: {action:?}");
+            demo.last = format!("Toolbar: {action:?}");
         }
         if !maximised {
             // Room for the menu, so it covers nothing else.
@@ -2606,7 +2606,7 @@ fn shell(ui: &mut Ui, t: &Theme, demo: &mut Demo) {
             ViewerBarAction::Guides => demo.guides = !demo.guides,
             ViewerBarAction::ProofMargin => demo.proof = !demo.proof,
             ViewerBarAction::Zoom(zoom) => demo.zoom = zoom,
-            other => demo.last = format!("Central bar: {other:?}"),
+            other => demo.last = format!("Viewer bar: {other:?}"),
         }
     }
     // The photo frame in its slot: a 3:2 photo fitted under the margin, or under Proof

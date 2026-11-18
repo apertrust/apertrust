@@ -113,7 +113,7 @@ fn line(harness: &Harness<'_, BrowserState>, name: &str) -> (bool, Option<Toggle
 fn the_browser_bar_is_a_toolbar_of_sort_and_zoom_named_for_screen_readers() {
     let mut harness = browser(12);
     harness.run();
-    let bar = harness.get_by_role_and_label(Role::Toolbar, "Grid bar");
+    let bar = harness.get_by_role_and_label(Role::Toolbar, "Browser bar");
     let buttons: Vec<String> = bar
         .query_all_by_role(Role::Button)
         .map(|b| b.accesskit_node().label().unwrap_or_default())
@@ -137,9 +137,7 @@ fn the_browser_bar_is_a_toolbar_of_sort_and_zoom_named_for_screen_readers() {
     // At the bottom the bar is a column at the panel's left end, as tall as the panel, the
     // cells after it and its buttons stacked.
     let cell = harness.get_by_label("IMG_0000.ARW").rect();
-    let list = harness
-        .get_by_role_and_label(Role::List, "Grid panel")
-        .rect();
+    let list = harness.get_by_role_and_label(Role::List, "Browser").rect();
     assert!(bar.right() <= cell.left());
     assert_eq!(bar.left(), list.left());
     assert_eq!(bar.bottom(), list.bottom());
@@ -167,9 +165,7 @@ fn labels_shows_the_captions_and_counts_them_in_the_cells_and_the_panel() {
     let cell = harness.get_by_label("IMG_0000.ARW").rect();
     assert_eq!(cell.size(), egui::vec2(120.0, 160.0));
     let list = |harness: &Harness<'_, BrowserState>| {
-        harness
-            .get_by_role_and_label(Role::List, "Grid panel")
-            .rect()
+        harness.get_by_role_and_label(Role::List, "Browser").rect()
     };
     let ctx = harness.ctx.clone();
     assert_eq!(
@@ -285,9 +281,7 @@ fn zoom_s_menu_checks_the_size_and_a_choice_sizes_the_cells_and_the_panel() {
         [BrowserBarAction::Size(ThumbnailSize::Large)]
     );
     assert_eq!(harness.get_by_label("IMG_0000.ARW").rect().width(), 176.0);
-    let list = harness
-        .get_by_role_and_label(Role::List, "Grid panel")
-        .rect();
+    let list = harness.get_by_role_and_label(Role::List, "Browser").rect();
     let height = browser_height(&harness.ctx, ThumbnailSize::Large, true, 1);
     assert_eq!(list.height(), height);
     assert_eq!(
@@ -354,7 +348,7 @@ fn bottom(rows: usize, most: usize, count: usize) -> Harness<'static, Bottom> {
                 let names: Vec<String> = (0..state.count)
                     .map(|i| format!("IMG_{i:04}.ARW"))
                     .collect();
-                let panel = egui::Panel::bottom("grid panel")
+                let panel = egui::Panel::bottom("browser")
                     .exact_size(browser_height(&ctx, ThumbnailSize::Small, true, lines))
                     .resizable(false)
                     .show_separator_line(false)
@@ -396,7 +390,7 @@ fn bottom(rows: usize, most: usize, count: usize) -> Harness<'static, Bottom> {
 }
 
 fn splitter<'h>(harness: &'h Harness<'_, Bottom>) -> egui_kittest::Node<'h> {
-    harness.get_by_role_and_label(Role::Splitter, "Grid panel height")
+    harness.get_by_role_and_label(Role::Splitter, "Browser height")
 }
 
 /// Drags the edge `by` points down the window, in frames of their own.
@@ -574,11 +568,11 @@ fn a_right_click_on_the_browser_bar_opens_its_position_menu() {
     let mut harness = browser(12);
     harness.run();
     let bar = harness
-        .get_by_role_and_label(Role::Toolbar, "Grid bar")
+        .get_by_role_and_label(Role::Toolbar, "Browser bar")
         .rect();
     // The bar's empty middle, between Sort at its top and Zoom at its bottom.
     right_click(&mut harness, bar.center());
-    let menu = harness.get_by_role_and_label(Role::Menu, "Grid panel options");
+    let menu = harness.get_by_role_and_label(Role::Menu, "Browser options");
     assert!(menu.query_by_label("Position").is_some());
     harness.get_by_label("Position").click();
     harness.run();
@@ -597,13 +591,13 @@ fn a_right_click_on_the_browser_bar_opens_its_position_menu() {
     let mut harness = browser(0);
     harness.run();
     let bar = harness
-        .get_by_role_and_label(Role::Toolbar, "Grid bar")
+        .get_by_role_and_label(Role::Toolbar, "Browser bar")
         .rect();
     // The bar's empty middle, between Sort at its top and Zoom at its bottom.
     right_click(&mut harness, bar.center());
     assert!(
         harness
-            .query_by_role_and_label(Role::Menu, "Grid panel options")
+            .query_by_role_and_label(Role::Menu, "Browser options")
             .is_some()
     );
 }
@@ -762,8 +756,8 @@ fn column(position: BrowserPosition, columns: usize, count: usize) -> Harness<'s
                     .map(|i| format!("IMG_{i:04}.ARW"))
                     .collect();
                 let side = match state.position {
-                    BrowserPosition::Left => egui::Panel::left("grid panel"),
-                    _ => egui::Panel::right("grid panel"),
+                    BrowserPosition::Left => egui::Panel::left("browser"),
+                    _ => egui::Panel::right("browser"),
                 };
                 let panel = side
                     .exact_size(browser_width(&ctx, size, lines))
@@ -808,7 +802,7 @@ fn column(position: BrowserPosition, columns: usize, count: usize) -> Harness<'s
 }
 
 fn width_splitter<'h>(harness: &'h Harness<'_, Column>) -> egui_kittest::Node<'h> {
-    harness.get_by_role_and_label(Role::Splitter, "Grid panel width")
+    harness.get_by_role_and_label(Role::Splitter, "Browser width")
 }
 
 #[test]
@@ -820,7 +814,7 @@ fn at_a_side_the_cells_fill_rows_of_the_columns_and_the_bar_is_on_top() {
     assert_eq!(at(&harness, "IMG_0001.ARW"), first + egui::vec2(PITCH, 0.0));
     assert_eq!(at(&harness, "IMG_0002.ARW"), first + egui::vec2(0.0, ROW));
     let bar = harness
-        .get_by_role_and_label(Role::Toolbar, "Grid bar")
+        .get_by_role_and_label(Role::Toolbar, "Browser bar")
         .rect();
     assert!(bar.bottom() <= first.y);
     // At a side the bar is a row across the panel's top, its buttons side by side.
@@ -837,17 +831,13 @@ fn at_a_side_the_cells_fill_rows_of_the_columns_and_the_bar_is_on_top() {
     assert!(zoom.left() - labels.right() > 40.0);
     assert_eq!(zoom.right(), bar.right() - 8.0);
     // At the window's left, its edge on its right.
-    let list = harness
-        .get_by_role_and_label(Role::List, "Grid panel")
-        .rect();
+    let list = harness.get_by_role_and_label(Role::List, "Browser").rect();
     assert!(list.left() <= 8.0);
     assert_eq!(width_splitter(&harness).rect().center().x, list.right());
     // At the right, its edge on its left, next to the window's end.
     let mut harness = column(BrowserPosition::Right, 1, 9);
     harness.run();
-    let list = harness
-        .get_by_role_and_label(Role::List, "Grid panel")
-        .rect();
+    let list = harness.get_by_role_and_label(Role::List, "Browser").rect();
     assert!(list.right() >= 1000.0 - 8.0);
     assert_eq!(width_splitter(&harness).rect().center().x, list.left());
 }
@@ -975,9 +965,7 @@ fn the_scroll_bar_shows_while_the_cells_overflow_and_not_when_they_fit() {
     for (count, shows) in [(30, true), (3, false)] {
         let mut harness = browser(count);
         harness.run();
-        let list = harness
-            .get_by_role_and_label(Role::List, "Grid panel")
-            .rect();
+        let list = harness.get_by_role_and_label(Role::List, "Browser").rect();
         let found = thumb_pixels(&mut harness, bar_band(list, false));
         assert_eq!(found > 100, shows, "{count} photos: {found} pixels");
     }
@@ -985,9 +973,7 @@ fn the_scroll_bar_shows_while_the_cells_overflow_and_not_when_they_fit() {
     for (count, shows) in [(40, true), (4, false)] {
         let mut harness = column(BrowserPosition::Left, 2, count);
         harness.run();
-        let list = harness
-            .get_by_role_and_label(Role::List, "Grid panel")
-            .rect();
+        let list = harness.get_by_role_and_label(Role::List, "Browser").rect();
         let found = thumb_pixels(&mut harness, bar_band(list, true));
         assert_eq!(found > 100, shows, "{count} photos: {found} pixels");
     }
@@ -1034,9 +1020,7 @@ fn the_wheel_scrolls_the_strip_a_vertical_one_a_row_of_cells_too() {
 fn the_scroll_bar_is_photographed() {
     let mut harness = browser(30);
     harness.run();
-    let list = harness
-        .get_by_role_and_label(Role::List, "Grid panel")
-        .rect();
+    let list = harness.get_by_role_and_label(Role::List, "Browser").rect();
     // Under the pointer, the thumb a step brighter.
     harness.hover_at(egui::pos2(list.left() + 60.0, list.bottom() - 8.0));
     harness.run();
@@ -1049,7 +1033,7 @@ fn the_scroll_bar_is_photographed() {
 fn an_empty_panel_says_why_under_its_icon_in_a_row_and_a_column() {
     let mut results = egui_kittest::SnapshotResults::new();
     let message = "No photos available";
-    let hint = "Choose a subfolder in Browse.";
+    let hint = "Choose a subfolder in Collections.";
     for (position, name) in [
         (BrowserPosition::Bottom, "grid-panel-empty"),
         (BrowserPosition::Left, "grid-panel-empty-left"),
@@ -1067,12 +1051,12 @@ fn an_empty_panel_says_why_under_its_icon_in_a_row_and_a_column() {
                     .empty(message)
                     .empty_hint(hint);
                 if position == BrowserPosition::Bottom {
-                    egui::Panel::bottom("grid panel")
+                    egui::Panel::bottom("browser")
                         .exact_size(browser_height(&ctx, size, true, 1))
                         .frame(egui::Frame::NONE)
                         .show(ui, |ui| panel.show(ui));
                 } else {
-                    egui::Panel::left("grid panel")
+                    egui::Panel::left("browser")
                         .exact_size(browser_width(&ctx, size, 1))
                         .resizable(false)
                         .frame(egui::Frame::NONE)
@@ -1080,9 +1064,7 @@ fn an_empty_panel_says_why_under_its_icon_in_a_row_and_a_column() {
                 }
             });
         harness.run();
-        let list = harness
-            .get_by_role_and_label(Role::List, "Grid panel")
-            .rect();
+        let list = harness.get_by_role_and_label(Role::List, "Browser").rect();
         let shapes = &harness.output().shapes;
         let text = |words: &str| {
             shapes
@@ -1098,7 +1080,7 @@ fn an_empty_panel_says_why_under_its_icon_in_a_row_and_a_column() {
         // The icon: an icon's texture of its size, in the panel but not in its browser bar,
         // whose buttons are icons too.
         let bar = harness
-            .get_by_role_and_label(Role::Toolbar, "Grid bar")
+            .get_by_role_and_label(Role::Toolbar, "Browser bar")
             .rect();
         let side = Icon::PhotoOff.size();
         let icons: Vec<egui::Rect> = shapes

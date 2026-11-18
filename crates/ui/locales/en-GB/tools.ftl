@@ -388,7 +388,7 @@ tool-temperature-control-various-label = Emerald
 tool-temperature-control-various-full = Emerald coefficient
 tool-temperature-control-various-promise = What a four-colour sensor's emerald photosites are multiplied by.
 # The picker, darktable's "from image area", which Settings' From image area turns on: its
-# name in the central bar, and darktable's tooltip.
+# name in the viewer bar, and darktable's tooltip.
 tool-temperature-picker-spot-label = From image area
 tool-temperature-picker-spot-full = White balance from an image area
 tool-temperature-picker-spot-promise = Set white balance to detected from area
