@@ -2155,10 +2155,7 @@ impl Shell {
         args.set("tool", tools::title(&words, tool));
         let at = |id: &str| self.workspace.position(id);
         let tab = |id: &str| match at(id).and_then(|at| self.workspace.tab(at)) {
-            Some(tab) => match &tab.title {
-                layout::Title::Message(message) => words.text(message),
-                layout::Title::Own(title) => title.clone(),
-            },
+            Some(tab) => tab_name(ctx, tab),
             None => id.to_owned(),
         };
         let message = match change {
@@ -2500,7 +2497,8 @@ impl Shell {
 
     /// What `definition`'s header is given by the shell (decision 93): its section open as
     /// kept, or `default`, peeking while `peek` holds, and ⋯ holding its declared items as
-    /// the menu builder lists them, with the keymap's keys, enabled as `state` says.
+    /// the menu builder lists them, then the layout's ([`Shell::layout_head`]), with the
+    /// keymap's keys, enabled as `state` says.
     fn head(
         &self,
         ctx: &egui::Context,
@@ -2509,13 +2507,37 @@ impl Shell {
         peek: bool,
         default: bool,
     ) -> tools::Head {
-        tools::Head {
+        let head = tools::Head {
             open: self.section_open(definition.id, default),
             peek,
             options: menus::options(ctx, definition.id, &self.keymap, state),
             enabled: true,
             photo: None,
-            layout: self.placing(definition.id).filter(|_| !state.modal),
+            layout: None,
+        };
+        head.with_layout(self.layout_head(ctx, definition.id, state))
+    }
+
+    /// What the workspace's layout gives `tool`'s header (decisions 83 and 96): where it is,
+    /// and ⋯'s layout items, enabled as `state` says, for ⋯ to end with
+    /// ([`menus::layout_items`]); nothing while a modal dialog is open, so screen readers
+    /// are offered no move either.
+    fn layout_head(&self, ctx: &egui::Context, tool: &'static str, state: &State) -> tools::Head {
+        let state = State {
+            section: self.placing(tool).filter(|_| !state.modal),
+            ..*state
+        };
+        let receiving = self.workspace.receiving();
+        let tabs: Vec<menus::TabItem> = (self.workspace.tabs().iter().zip(receiving))
+            .map(|(tab, receives)| menus::TabItem {
+                name: tab_name(ctx, tab),
+                enabled: receives,
+            })
+            .collect();
+        tools::Head {
+            options: menus::layout_items(ctx, tool, &self.keymap, &state, &tabs),
+            layout: state.section,
+            ..tools::Head::default()
         }
     }
 
@@ -4608,7 +4630,7 @@ impl App {
             .shell
             .head(ui.ctx(), declared, &state, false, export::OPEN);
         let mut photos_shown = PhotosShown {
-            collections: self.shell.placing(library::ID).filter(|_| !state.modal),
+            collections: (self.shell).layout_head(ui.ctx(), library::ID, &state),
             export: exporting.then(|| ExportShown {
                 head: tools::Head {
                     photo: self.mirror.photo.open(),
@@ -6919,8 +6941,8 @@ fn edit_tab(
         let definition = &history::declared().tool;
         let head = shell.head(ui.ctx(), definition, state, peek, history::OPEN);
         let head = tools::Head {
-            // ⋯ opens while there is a history.
-            enabled: mirror.history.is_some(),
+            // ⋯ opens while there is a history, or the layout's items are in it.
+            enabled: mirror.history.is_some() || head.layout.is_some(),
             photo: mirror.photo.open(),
             ..head
         };
@@ -6977,6 +6999,15 @@ fn edit_tab(
     tab
 }
 
+/// The name `tab` shows, in the interface's language: a tab a build knows by its message,
+/// one of a person's own as its file writes it.
+fn tab_name(ctx: &egui::Context, tab: &layout::Tab) -> String {
+    match &tab.title {
+        layout::Title::Message(message) => tr(ctx, message),
+        layout::Title::Own(title) => title.clone(),
+    }
+}
+
 /// What the dot on the Tools panel's ⋮ says while the hidden processing tools `changing`
 /// change the photo, in the interface's language: "Hidden tools change this photo:
 /// Exposure, Vignetting" (decision 96).
@@ -7018,8 +7049,9 @@ struct ExportShown {
 /// it is drawn.
 #[derive(Debug, Default)]
 struct PhotosShown {
-    /// Where Collections is in the layout (`tools::Head::layout`).
-    collections: Option<actions::Placing>,
+    /// What the layout gives Collections' header, where it is and ⋯'s layout items
+    /// (`Shell::layout_head`), the rest of its header its own.
+    collections: tools::Head,
     export: Option<ExportShown>,
 }
 
@@ -7081,11 +7113,12 @@ fn photos_tool(
     if id == library::ID {
         // The active photo's open, so a ⋯ choice made before another photo opened is
         // dropped, never run on the new photo's folder.
+        let layout = std::mem::take(&mut shown.collections);
         let head = tools::Head {
             photo: cx.mirror.photo.open(),
-            layout: shown.collections,
             ..library::head(ui, collections)
-        };
+        }
+        .with_layout(layout);
         let section = utility::section(ui, collections, cx, head, false);
         for pressed in &section.pressed {
             match pressed {
@@ -7175,11 +7208,12 @@ fn panel_body(
                 // Sharing its tab, its end never scrolls the tab ([`history::HistoryTool`]).
                 let mut history = history::HistoryTool { alone: false };
                 let definition = &history::declared().tool;
+                let head = shell.head(&ctx, definition, state, peek, history::OPEN);
                 let head = tools::Head {
-                    // ⋯ opens while there is a history.
-                    enabled: mirror.history.is_some(),
+                    // ⋯ opens while there is a history, or the layout's items are in it.
+                    enabled: mirror.history.is_some() || head.layout.is_some(),
                     photo: mirror.photo.open(),
-                    ..shell.head(&ctx, definition, state, peek, history::OPEN)
+                    ..head
                 };
                 let resettable = utility::resettable(definition, state);
                 let drawn = utility::section(ui, &mut history, cx, head, resettable);
@@ -11626,6 +11660,198 @@ mod tests {
         assert!(written.hidden.iter().any(|tool| tool == "vignette"));
     }
 
+    /// `tool`'s ⋯ opened, `title` its header's title.
+    fn open_options(harness: &mut Harness<'_, Editing>, title: &str) {
+        let options = format!("{title} options");
+        harness
+            .get_by_role_and_label(Role::Button, &options)
+            .click();
+        harness.run();
+    }
+
+    /// Whether the menu item `words` is enabled.
+    fn menu_item(harness: &Harness<'_, Editing>, words: &str) -> bool {
+        let item = harness.get_by_role_and_label(Role::MenuItem, words);
+        !item.accesskit_node().is_disabled()
+    }
+
+    /// ⋯ of a tool in a tab ends with Pin Tool, Move Tool to Tab ▸ listing every tab shown,
+    /// the one it is in and one that cannot be chosen disabled, and Remove Tool, saying what
+    /// it does; a choice there moves the tool, as its action does (decisions 83 and 96).
+    #[test]
+    fn a_tool_s_options_end_with_the_layout_s_items() {
+        let folder = settings::testing::Folder::new("layout-options");
+        let mut harness = effects_tab(&folder);
+        open_options(&mut harness, "Vignetting");
+        assert!(menu_item(&harness, "Pin Tool"));
+        assert!(menu_item(&harness, "Remove Tool"));
+        let top = |h: &Harness<'_, Editing>, label: &str| h.get_by_label(label).rect().top();
+        assert!(top(&harness, "Pin Tool") < top(&harness, "Move Tool to Tab"));
+        assert!(top(&harness, "Move Tool to Tab") < top(&harness, "Remove Tool"));
+        harness.get_by_label("Remove Tool").hover();
+        harness.run();
+        harness.get_by_label(
+            "Takes Vignetting out of this workspace's tabs. Its edit stays; Show Hidden Tools \
+             shows it.",
+        );
+        harness.get_by_label("Move Tool to Tab").click();
+        harness.run();
+        for (tab, enabled) in [
+            ("Photos", true),
+            ("Adjust", true),
+            ("Detail", false),
+            ("Geometry", true),
+            ("Effects", false),
+            ("Raw", true),
+            ("History", true),
+        ] {
+            assert_eq!(menu_item(&harness, tab), enabled, "{tab}");
+        }
+        harness.get_by_role_and_label(Role::MenuItem, "Raw").click();
+        harness.run();
+        let shell = &harness.state().shell;
+        let raw = shell.workspace.position("raw").unwrap();
+        assert!(shell.workspace.tab(raw).unwrap().holds("vignette"));
+        assert_eq!(shell.announced, "Vignetting moved to Raw");
+        assert!(harness.state().sent.is_empty());
+        // Pinned, Pin Tool is Unpin Tool.
+        open_options(&mut harness, "Grain");
+        harness
+            .get_by_role_and_label(Role::MenuItem, "Pin Tool")
+            .click();
+        harness.run();
+        open_options(&mut harness, "Grain");
+        assert!(menu_item(&harness, "Unpin Tool"));
+    }
+
+    /// A tab the person emptied is listed under Move Tool to Tab ▸ enabled, as it takes a
+    /// tool back; one still to come, Detail, disabled, saying so.
+    #[test]
+    fn an_emptied_tab_is_offered_in_move_tool_to_tab() {
+        let folder = settings::testing::Folder::new("layout-emptied-tab");
+        let mut shell = essentials(&folder, false);
+        shell.open_workspace(layout::Workspace::builtin_default());
+        let ctx = egui::Context::default();
+        let state = shell.state(&ctx, false, false);
+        let effects = shell.workspace.position("effects").unwrap();
+        for tool in shell.workspace.tab(effects).unwrap().order.clone() {
+            shell.run_on_section(tool, ActionId::SECTION_HIDE, &state, &ctx);
+        }
+        let head = shell.layout_head(&ctx, "exposure", &state);
+        let tabs = head.options.iter().find_map(|entry| match entry {
+            popup::Entry::Submenu(submenu) if submenu.text == "Move Tool to Tab" => {
+                Some(submenu.entries.clone())
+            }
+            _ => None,
+        });
+        let item = |tabs: &[popup::Entry], name: &str| {
+            let found = tabs.iter().find_map(|entry| match entry {
+                popup::Entry::Item(item) if item.text == name => Some(item.clone()),
+                _ => None,
+            });
+            found.expect("listed")
+        };
+        let tabs = tabs.expect("Move Tool to Tab");
+        assert!(item(&tabs, "Effects").enabled);
+        let detail = item(&tabs, "Detail");
+        assert!(!detail.enabled);
+        assert_eq!(
+            detail.tip.as_deref(),
+            Some("Detail: coming in a later version")
+        );
+    }
+
+    /// Export's Remove Tool is disabled, saying it stays in every workspace (decision 90).
+    #[test]
+    fn export_s_remove_tool_is_disabled() {
+        let folder = settings::testing::Folder::new("layout-export");
+        let mut shell = essentials(&folder, false);
+        let ctx = egui::Context::default();
+        let state = shell.state(&ctx, false, false);
+        let head = shell.layout_head(&ctx, export::ID, &state);
+        let words: Vec<(String, bool, Option<String>)> = (head.options.iter())
+            .filter_map(|entry| match entry {
+                popup::Entry::Item(item) => {
+                    Some((item.text.clone(), item.enabled, item.tip.clone()))
+                }
+                _ => None,
+            })
+            .collect();
+        let remove = words.iter().find(|(w, _, _)| w == "Remove Tool").unwrap();
+        assert!(!remove.1);
+        assert_eq!(remove.2.as_deref(), Some("Export stays in every workspace"));
+        // Nothing moves it out of every tab.
+        shell.run_on_section(export::ID, ActionId::SECTION_HIDE, &state, &ctx);
+        assert!(!shell.workspace.hides(export::ID));
+    }
+
+    /// A hidden tool's ⋯ holds Show Tool in Tab ▸ alone, listing the tabs shown, which brings
+    /// it back (decision 96).
+    #[test]
+    fn a_hidden_tool_s_options_hold_show_tool_in_tab_alone() {
+        let folder = settings::testing::Folder::new("layout-hidden-options");
+        let mut harness = effects_tab(&folder);
+        let ctx = egui::Context::default();
+        let state = harness.state().shell.state(&ctx, false, false);
+        let shell = &mut harness.state_mut().shell;
+        shell.run_on_section("vignette", ActionId::SECTION_HIDE, &state, &ctx);
+        shell.choose_hidden();
+        harness.run();
+        open_options(&mut harness, "Vignetting");
+        assert!(harness.query_by_label("Pin Tool").is_none());
+        assert!(harness.query_by_label("Remove Tool").is_none());
+        assert!(harness.query_by_label("Move Tool to Tab").is_none());
+        harness.get_by_label("Show Tool in Tab").click();
+        harness.run();
+        assert!(menu_item(&harness, "Effects"));
+        assert!(!menu_item(&harness, "Detail"));
+        harness
+            .get_by_role_and_label(Role::MenuItem, "Effects")
+            .click();
+        harness.run();
+        assert!(!harness.state().shell.workspace.hides("vignette"));
+        assert_eq!(
+            harness.state().shell.announced,
+            "Vignetting shown in Effects"
+        );
+    }
+
+    /// ⋯ with the layout's items, of a tool in a tab with Move Tool to Tab ▸ open and of a
+    /// hidden tool with Show Tool in Tab ▸ open, in the dark and light themes, at the Tools
+    /// panel's 320 points.
+    #[test]
+    fn the_layout_s_items_are_photographed() {
+        let mut results = egui_kittest::SnapshotResults::new();
+        for (which, name) in [(Builtin::Dark, "dark"), (Builtin::Light, "light")] {
+            for hidden in [false, true] {
+                let folder = settings::testing::Folder::new("layout-snapshot");
+                let size = egui::vec2(320.0, 420.0);
+                let mut harness = tools_panel_in(&folder, size, Theme::builtin(which));
+                let shell = &mut harness.state_mut().shell;
+                let effects = shell.workspace.position("effects").unwrap();
+                shell.choose_tab(effects);
+                if hidden {
+                    let ctx = egui::Context::default();
+                    let state = shell.state(&ctx, false, false);
+                    shell.run_on_section("vignette", ActionId::SECTION_HIDE, &state, &ctx);
+                    shell.choose_hidden();
+                }
+                harness.run();
+                open_options(&mut harness, "Vignetting");
+                let submenu = if hidden {
+                    "Show Tool in Tab"
+                } else {
+                    "Move Tool to Tab"
+                };
+                harness.get_by_label(submenu).click();
+                harness.run();
+                let what = if hidden { "hidden" } else { "tab" };
+                harness.snapshot(format!("tool-options-layout-{what}-{name}"));
+                results.extend(harness.take_snapshot_results());
+            }
+        }
+    }
+
     /// Every tool's values as the session reports them for a photo, every control live,
     /// Exposure's at `exposure`, after `through` commands.
     fn photo_values(exposure: f32, through: u64) -> Values {
@@ -14329,7 +14555,7 @@ mod tests {
                             };
                             let export = &mut bench.export;
                             let mut shown = PhotosShown {
-                                collections: None,
+                                collections: tools::Head::default(),
                                 export: Some(shown),
                             };
                             let mut drawn = PhotosDrawn::default();
