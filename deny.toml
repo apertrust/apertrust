@@ -34,9 +34,9 @@ allow = [
     # documentation must say it is based in part on the group's work, as CREDITS.md does.
     "IJG",
     "ISC",
-    # rawler, which still uses the deprecated identifier for LGPL-2.1-only. LGPL 2.1
-    # section 3 lets its code be used under the GPL, version 2 or later.
-    "LGPL-2.1",
+    # rawler, clarified below. LGPL 2.1 section 3 lets its code be used under the GPL,
+    # version 2 or later.
+    "LGPL-2.1-only",
     "LGPL-2.1-or-later",
     "LGPL-3.0-or-later",
     "MIT",
@@ -46,6 +46,15 @@ allow = [
     "Zlib",
 ]
 confidence-threshold = 0.9
+# The list is every licence accepted, not only those in use now.
+unused-allowed-license = "allow"
+
+# rawler still uses the deprecated identifier for LGPL-2.1-only; its licence file is
+# LGPL 2.1's text.
+[[licenses.clarify]]
+crate = "rawler"
+expression = "LGPL-2.1-only"
+license-files = [{ path = "LICENSE", hash = 0xb0aff759 }]
 
 [licenses.private]
 # Workspace crates are unpublished and share the project licence.
