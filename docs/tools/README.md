@@ -127,7 +127,7 @@ A built-in workspace beside Default (decision 96), `data/workspaces/essentials.t
 | Adjust | Scopes, pinned; White balance, Exposure, AgX, Tone equalizer, Colour balance RGB, Orientation |
 | History | History |
 
-Every other tool is in no tab, so hidden: a workspace decides only what is shown, and a hidden tool is still processed. Planned with step 4: a tool's ⋯ › Remove Tool hides it the same way, its edit staying, and Show Tool in Tab ▸ brings it back (decision 96).
+Every other tool is in no tab, so hidden: a workspace decides only what is shown, and a hidden tool is still processed. Planned with step 4: a tool's ⋯ › Remove Tool hides it the same way, its edit staying, and Show Tool in Tab ▸ brings it back; Remove Tool is disabled for Export, which every workspace keeps, and for a floating tool until it docks (decision 96).
 
 ### Photos, History and shared sections
 
