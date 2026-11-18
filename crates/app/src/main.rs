@@ -6448,7 +6448,13 @@ fn edit_tab(
 /// Whether `tab` holds History alone, which draws its header at the tab's top
 /// ([`history::tab`]), as the Default workspace's History tab does.
 fn history_alone(tab: &layout::Tab) -> bool {
-    tab.pinned.is_empty() && tab.order == [history::ID]
+    only_history(&tab.pinned, &tab.order)
+}
+
+/// Whether a tab's two lists hold History and nothing else, pinned or not.
+fn only_history(pinned: &[&str], order: &[&str]) -> bool {
+    let mut tools = pinned.iter().chain(order);
+    tools.next().is_some_and(|id| *id == history::ID) && tools.next().is_none()
 }
 
 /// How the Photos tab shows the Export tool: its header, the shell's, what the tool is
@@ -6902,6 +6908,16 @@ mod tests {
             .tab(tab)
             .map(|t| t.tools().collect())
             .unwrap_or_default()
+    }
+
+    /// History is alone in a tab holding it and nothing else, pinned or in the order.
+    #[test]
+    fn history_is_alone_pinned_or_not() {
+        assert!(only_history(&[], &[history::ID]));
+        assert!(only_history(&[history::ID], &[]));
+        assert!(!only_history(&[history::ID], &["export"]));
+        assert!(!only_history(&["scopes"], &[history::ID]));
+        assert!(!only_history(&[], &[]));
     }
 
     #[test]

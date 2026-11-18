@@ -4752,17 +4752,27 @@ pub(crate) mod tests {
                 let original = item(harness, "Original").rect();
                 (original.top() >= top && original.bottom() <= foot, original)
             };
-            let (seen, original) = in_sight(&harness);
+            let first_row =
+                |harness: &Harness<'_, Scene>| item(harness, "Step 30: Exposure").rect().top();
+            let first = first_row(&harness);
+            let (seen, before) = in_sight(&harness);
             assert!(
-                !seen && original.top() >= foot,
-                "Original starts below: {original:?}"
+                !seen && before.top() >= foot,
+                "Original starts below: {before:?}"
             );
             // The end moves to Original, at the list's foot.
             harness.state_mut().alone = alone;
             harness.state_mut().history = Some(History { end: 0, ..long });
             harness.run();
-            let (seen, original) = in_sight(&harness);
-            assert_eq!(seen, alone, "alone {alone}: {original:?}");
+            let (seen, after) = in_sight(&harness);
+            if alone {
+                assert!(seen, "alone: Original scrolled into sight, {after:?}");
+            } else {
+                // Sharing its tab, History never scrolls it: the list's first row, which
+                // nothing above it moves, stays where it was. (Original itself moves down
+                // as the undone steps' note opens above it.)
+                assert_eq!(first_row(&harness), first, "shared: the tab scrolled");
+            }
         }
     }
 
