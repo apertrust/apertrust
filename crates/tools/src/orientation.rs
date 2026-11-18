@@ -121,6 +121,7 @@ static DEFINITION: ProcessingDefinition = ProcessingDefinition {
         // (decision 91).
         reset: Reset::Tool,
         presets: true,
+        open_at_first: false,
         menus: &[MenuItem {
             place: Place::Photo,
             section: Section::VIEW,

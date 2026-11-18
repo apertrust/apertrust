@@ -245,7 +245,8 @@ const fn option(section: Section, order: u32, action: &'static str) -> MenuItem 
 /// ([`export::EXPORT`]). The pages of the first three are their own widgets as custom rows,
 /// which keep what each drew before (decision 93): Scopes' the graph with its buttons,
 /// History's its steps, Collections' its recents line and its Folders; Export's are setting
-/// rows in groups, with custom rows of its own.
+/// rows in groups, with custom rows of its own. The first three are open at first, Export
+/// closed, as every processing tool is ([`ToolDefinition::open_at_first`]).
 pub const UTILITIES: &[UtilityDefinition] = &[
     UtilityDefinition {
         tool: ToolDefinition {
@@ -261,6 +262,7 @@ pub const UTILITIES: &[UtilityDefinition] = &[
             after: &[],
             reset: Reset::None,
             presets: false,
+            open_at_first: true,
             menus: &[],
         },
         measures: Some(WorksOn::Display),
@@ -281,6 +283,7 @@ pub const UTILITIES: &[UtilityDefinition] = &[
             after: &[],
             reset: Reset::Action("reset"),
             presets: false,
+            open_at_first: true,
             menus: &[
                 // Reset in the photo's and a thumbnail's menus (decision 91).
                 MenuItem {
@@ -326,6 +329,7 @@ pub const UTILITIES: &[UtilityDefinition] = &[
             after: &[],
             reset: Reset::None,
             presets: false,
+            open_at_first: true,
             menus: &[],
         },
         measures: None,
@@ -379,6 +383,7 @@ mod tests {
                 after: &[],
                 reset: Reset::None,
                 presets: false,
+                open_at_first: false,
                 menus: &[],
             },
             measures: None,
@@ -422,6 +427,28 @@ mod tests {
         for utility in UTILITIES {
             assert_eq!(utility.check(), Ok(()), "{}", utility.tool.id);
         }
+    }
+
+    /// Every processing tool is closed at first; of the utilities, Collections, Scopes and
+    /// History are open and Export closed (decision 93), until the person opens or closes
+    /// one.
+    #[test]
+    fn processing_tools_start_closed_and_the_utilities_as_declared() {
+        for tool in crate::TOOLS {
+            let tool = &tool.definition().tool;
+            assert!(!tool.open_at_first, "{}", tool.id);
+        }
+        let open: Vec<(&str, bool)> = UTILITIES
+            .iter()
+            .map(|utility| (utility.tool.id, utility.tool.open_at_first))
+            .collect();
+        let expected = [
+            ("scopes", true),
+            ("history", true),
+            ("collections", true),
+            ("export", false),
+        ];
+        assert_eq!(open, expected);
     }
 
     /// Settings, labels, groups, rows following a setting shown beside them, and custom

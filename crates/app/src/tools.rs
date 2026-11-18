@@ -515,16 +515,14 @@ impl Pickers<'static> {
     };
 }
 
-/// Whether a tool's section is open when settings have not kept it otherwise.
-pub const OPEN: bool = true;
-
 /// Whether a collapsible group is open when settings have not kept it otherwise: closed,
 /// as darktable's start (decision 29).
 pub const GROUP_OPEN: bool = false;
 
 /// The tab each tool's section shows, the first by default (`docs/gui.md`, A frame).
 /// Whether a section is open is the shell's, which settings keep (`Shell::section_open`,
-/// by the tool's id); the tab lasts for the run.
+/// by the tool's id), else as the tool declares it at first
+/// ([`apertrust_tools::ToolDefinition::open_at_first`]); the tab lasts for the run.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Panels {
     tabs: BTreeMap<&'static str, usize>,
@@ -3258,7 +3256,9 @@ mod tests {
                 Panel {
                     tool,
                     state,
-                    open: OPEN,
+                    // Opened, as the person would, to show its page: every processing
+                    // tool is closed at first (`ToolDefinition::open_at_first`).
+                    open: true,
                     panels: Panels::default(),
                     groups: BTreeMap::new(),
                     changes: Vec::new(),
@@ -5047,6 +5047,7 @@ mod tests {
             after: &[Row::Toggle { control: "mask" }],
             reset: Reset::Tool,
             presets: true,
+            open_at_first: false,
             menus: &[],
         },
         version: 1,

@@ -350,6 +350,7 @@ pub const EXPORT: UtilityDefinition = UtilityDefinition {
         after: &[],
         reset: Reset::Own,
         presets: true,
+        open_at_first: false,
         menus: &[],
     },
     measures: None,

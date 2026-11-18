@@ -36,7 +36,7 @@ use apertrust_plugin::{ImageContext, Value};
 
 use crate::about::{Fact, Facts, Purpose};
 use crate::definition::{
-    Control, ControlKind, ProcessingDefinition, Reset, Row, Slider, Tab, ToolDefinition, Unit,
+    Control, ControlKind, ProcessingDefinition, Row, Slider, Tab, ToolDefinition, Unit,
 };
 use crate::{Base, Owned, ProcessingTool, Setting, ToolValues, switched_from};
 
@@ -85,9 +85,9 @@ static CONTROLS: [Control; 4] = [
 ];
 
 static DEFINITION: ProcessingDefinition = ProcessingDefinition {
-    tool: ToolDefinition {
-        id: "soften",
-        tabs: &[Tab {
+    tool: ToolDefinition::processing(
+        "soften",
+        &[Tab {
             id: None,
             // Two decimals each, as `dt_bauhaus_slider_from_params` gives these ranges:
             // "50.00%", "+0.33 EV".
@@ -98,12 +98,7 @@ static DEFINITION: ProcessingDefinition = ProcessingDefinition {
                 Row::Slider(Slider::new("amount")),
             ],
         }],
-        before: &[],
-        after: &[],
-        reset: Reset::Tool,
-        presets: true,
-        menus: &[],
-    },
+    ),
     version: 2,
     layers: true,
     auto: false,

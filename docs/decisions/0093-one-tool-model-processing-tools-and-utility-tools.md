@@ -38,9 +38,11 @@ pub struct ToolDefinition {
     pub after: &'static [Row],
     pub reset: Reset,                     // the header's ↺
     pub presets: bool,                    // the header's presets button
+    pub open_at_first: bool,              // its section open until the person chooses
     pub menus: &'static [MenuItem],       // context menus and ⋯ (decision 91)
     pub toolbar: &'static [ToolbarItem],  // decision 92
 }
+// ToolDefinition::processing(id, tabs): a processing tool's defaults, closed at first among them
 
 /// A processing tool's declaration.
 pub struct ProcessingDefinition {
@@ -72,6 +74,7 @@ pub trait UtilityTool {
 
 - **The parent is data both kinds embed,** as darktable's `dt_action_t` is; behaviour is an API for each kind. The fields every tool shares move into `ToolDefinition`; what editing needs stays in `ProcessingDefinition`; a utility adds only `measures`.
 - **`reset`** says what the header's ↺ does: a processing tool's own reset (`ResetTool`); a registry action, as History's `reset`, which Edit › Reset runs too; the utility's own `UtilityTool::reset`, as Export's Default settings; or none, as Scopes and Collections.
+- **`open_at_first`** says whether its section is open before the person opens or closes it: every processing tool is closed at first, as darktable's processing modules start collapsed; of the utilities, Collections, the way to the photos, Scopes and History are open, and Export closed, Export… and Ctrl+E opening it. A state the person chose, kept app-wide by the tool's id in `settings.toml`'s `[edit.sections]`, always wins over it. Every header reads it through the shell, so no module of the app holds a default of its own.
 - **`presets`** is the header's presets button. A processing tool's preset rows ([0031](0031-views-and-curves-of-the-same-stored-values.md)) are `ProcessingDefinition::preset_rows`, so the two never share a name.
 - **A tool's place** ([0086](0086-import-as-a-full-window-sheet.md), planned), the Tools panel or Import, is a field of `ToolDefinition` when it is built, since every tool has one.
 - **`ProcessingTool` stays in `apertrust-tools`,** run by the engine's session, with no egui ([0028](0028-tools-bound-to-operations.md)). **`UtilityTool` lives in the app,** since a utility's behaviour is its widgets: `apertrust-tools` keeps no egui, and the engine never sees a utility.
@@ -137,6 +140,7 @@ Each step is reviewed before the next.
 ## Options considered
 
 - **Two models, as today:** each utility draws its own header and page, so ↺, presets and ⋯ drift apart, Collections is in no list, and Export's setting rows, presets and the Import sheet's tools, all settings, would each be drawn by code of their own.
+- **Each app module's own default for its section's open state,** a constant beside each utility and one for every processing tool: the defaults drift apart from the declaration that names the tool, and a client other than the app could not read them.
 - **One flat definition for both,** a utility leaving the editing fields empty: a utility would carry a version, layers, Auto, switched, controls and pickers that mean nothing for it, each needing a check that it is empty; darktable keeps the two apart.
 - **One trait for both kinds,** in `apertrust-tools`: a utility's behaviour is its widgets, which needs egui there, against [0028](0028-tools-bound-to-operations.md); the processing half is what the engine runs, which a utility never is.
 - **A shared header only,** each utility's page still written by hand: the header would agree, but setting rows, their presets and a check on what a utility may show would not be shared, and Export's and Import's rows would stay two codes.
@@ -152,6 +156,7 @@ Each step is reviewed before the next.
 
 - **[0004](0004-tools-for-people-operations-for-algorithms.md)** names the parent and its two kinds; **[0028](0028-tools-bound-to-operations.md)** describes `ProcessingDefinition` and `ProcessingTool` over the shared parent; **[0086](0086-import-as-a-full-window-sheet.md)** puts a tool's place in `ToolDefinition`; **[0090](0090-export-as-a-photos-tab-tool.md)** declares Export's page as a utility's setting rows and custom rows; **[0091](0091-context-menus-places-and-tools-items-as-actions.md)** and **[0092](0092-the-toolbar.md)** declare every tool's items in `ToolDefinition::menus` and `ToolDefinition::toolbar`.
 - `apertrust-tools` holds `ToolDefinition`, `ProcessingDefinition`, `UtilityDefinition`, `ProcessingTool`, `UTILITIES` with every utility and `UtilityDefinition::check`; `Widget` gains the utilities' widgets. The app holds `UtilityTool`, its `Context`, the one header and page drawer, and each utility's widgets in its module. No crate is added, and no dependency changes.
-- Nothing a person sees changes but one item, and no setting, no Fluent id, no session command and nothing in the sidecar: each utility keeps its look on the page model, its custom widgets drawing what its module draws today. The one is History's ⋯, where Truncate History is an item of its own from step 93.3, with the words it had. A change of a utility's look is a design question of its own. The engine and its session are untouched but for the trait's name.
+- Nothing a person sees changes but two things, and no setting, no Fluent id, no session command and nothing in the sidecar: each utility keeps its look on the page model, its custom widgets drawing what its module draws today. The first is History's ⋯, where Truncate History is an item of its own from step 93.3, with the words it had; the second, every processing tool closed at first (`open_at_first`, below). A change of a utility's look is a design question of its own. The engine and its session are untouched but for the trait's name.
+- `open_at_first` is the one default of a section's open state: a person who has never opened or closed a processing tool sees each closed, and any state kept in `[edit.sections]` stays as it was. Tests hold each tool's declared default, every processing tool closed and the four utilities as listed, and a kept state winning over it both ways.
 - Every step is built: the new names, step 93.1, `UtilityTool` with the one header and ⋯, steps 93.2 and 93.3, the utilities on the page model, step 93.4, Export on the tool model, step 93.5, and Export's page as setting rows, step 93.6. A utility's presets are planned with the presets API every tool shares. [gui.md](../gui.md#one-tool-model) describes the model, [the roadmap](../roadmap.md) holds the steps.
 - The agent kit's `tool-bindings`, `ui-conventions` and `desktop-architecture` skills are to state the terms and the model.
