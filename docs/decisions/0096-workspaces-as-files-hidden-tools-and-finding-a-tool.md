@@ -156,7 +156,7 @@ The layout's items, last in ⋯ in `LAYOUT` (91), for a tool and a utility alike
   | `section-move-up`, `section-move-down` | Move Tool Up, Move Tool Down | One place in its list, as Alt+↑ and Alt+↓; in no menu |
   | `section-move-to-tab-1` to `-12` | In ⋯ each tab's name under Move Tool to Tab ▸, or Show Tool in Tab ▸ for a hidden tool; in the keymap Move Tool to Tab 1 to 12 | Moves it to that tab, out of `hidden` for a hidden tool |
   | `section-hide` | Remove Tool | Takes it out of every tab into `hidden` |
-  | `section-show` | Show Tool in Tab | Moves a hidden tool to its first default tab the workspace has, else the first tab that holds tools; for keys and screen readers |
+  | `section-show` | Show Tool in Tab | Moves a hidden tool to its first default tab among the tabs shown, else the first tab shown that holds tools, never a tab past the twelfth; for keys and screen readers |
   | `section-float`, `section-dock` (Phase 3) | Float, Dock | 83's |
 
   `section-hide` keeps its id: it names what the action does to the workspace's file, its `hidden`, and "remove" in an id would read as deleting an instance, which layers will need.
