@@ -1488,6 +1488,11 @@ mod tests {
             "{}",
             folder.text()
         );
+        assert!(
+            folder.text().contains("square_thumbnails = true"),
+            "the other setting reached the file: {}",
+            folder.text()
+        );
     }
 
     /// A change shows darktable's dot, and a double-click on the label, or Reset in its

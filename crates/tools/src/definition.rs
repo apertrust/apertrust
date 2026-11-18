@@ -234,7 +234,8 @@ pub struct Picker {
 pub enum Place {
     /// The photo in the Viewer.
     Photo,
-    /// A thumbnail: a cell of the Browser, or of Photo while several photos show.
+    /// A thumbnail: a cell of the Browser, or a thumbnail in the Viewer's Photo layout while it
+    /// shows several photos.
     Thumbnail,
     /// The tool's own options, ⋯, in its own section only.
     Options,
