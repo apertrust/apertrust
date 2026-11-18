@@ -105,8 +105,8 @@ use apertrust_ui::components::{
     ActivityAction, Available, Browser, BrowserAction, BrowserEdge, BrowserEdgeAction,
     BrowserPosition, CellMenu, CellRating, Jobs, Margin, Marker, PanelBody, PanelEdge,
     PanelEdgeAction, PanelTab, PhotoCaption, PhotoFrame, PickerAction, Placed, SaveState,
-    ScopeView, TabBar, TabBarAction, Thumb, Toggle, Toolbar, ToolbarAction, ViewerBar,
-    ViewerBarAction, Zoom, browser_lines, browser_thickness,
+    ScopeView, TabBar, TabBarAction, TabBarWorkspace, Thumb, Toggle, Toolbar, ToolbarAction,
+    ViewerBar, ViewerBarAction, Zoom, browser_lines, browser_thickness,
 };
 use apertrust_ui::{
     Background, Builtin, Locale, Theme, Translator, components, popup, theme, tr, translator,
@@ -2558,11 +2558,25 @@ impl Shell {
                 enabled: tab.enabled(),
             })
             .collect();
+        // ⋮'s Workspace ▸, as View › Workspace: each item runs its workspace's action.
+        let items = self.workspace_items(&ctx);
+        let shown_action = actions::workspace(&self.workspace.id);
+        let workspaces: Vec<TabBarWorkspace> = items
+            .iter()
+            .map(|item| TabBarWorkspace {
+                name: &item.words,
+                checked: item.id == shown_action,
+                enabled: !self.workspace_given,
+                tip: item.tip.as_deref(),
+            })
+            .collect();
         match TabBar::new(&tabs, self.panel_tab, self.tab_names)
             .customise(false)
+            .workspaces(&workspaces)
             .show(ui)
         {
             Some(TabBarAction::Select(i)) => ActionId::PANEL_TABS.get(i).copied(),
+            Some(TabBarAction::Workspace(i)) => items.get(i).map(|item| item.id),
             Some(TabBarAction::ShowNames(on)) => {
                 self.tab_names = on;
                 None

@@ -39,7 +39,7 @@ use egui::{
 
 use super::{IconButton, focus_ring, pull_down, report_shortcut};
 use crate::i18n::Args;
-use crate::popup::Item;
+use crate::popup::{Entry, Item, Submenu};
 use crate::{Icon, theme, tr, translator};
 
 /// One of the Tools panel's tabs.
@@ -57,12 +57,23 @@ pub struct PanelTab<'a> {
     pub enabled: bool,
 }
 
+/// One workspace ⋮'s Workspace ▸ lists: its words, whether it is the one shown, and, where
+/// it cannot be chosen, why (decision 96).
+pub struct TabBarWorkspace<'a> {
+    pub name: &'a str,
+    pub checked: bool,
+    pub enabled: bool,
+    pub tip: Option<&'a str>,
+}
+
 /// What the user did to the tab bar this frame.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TabBarAction {
     Select(usize),
     ShowNames(bool),
     Customise,
+    /// The workspace at this index of those handed in ([`TabBar::workspaces`]).
+    Workspace(usize),
 }
 
 pub struct TabBar<'a> {
@@ -70,6 +81,7 @@ pub struct TabBar<'a> {
     selected: usize,
     names: bool,
     customise: bool,
+    workspaces: &'a [TabBarWorkspace<'a>],
 }
 
 const GAP: f32 = 2.0;
@@ -85,7 +97,15 @@ impl<'a> TabBar<'a> {
             selected,
             names,
             customise: true,
+            workspaces: &[],
         }
+    }
+
+    /// The workspaces ⋮ lists under Workspace ▸, first, as View › Workspace does; with
+    /// none, ⋮ has no Workspace ▸.
+    pub fn workspaces(mut self, workspaces: &'a [TabBarWorkspace<'a>]) -> Self {
+        self.workspaces = workspaces;
+        self
     }
 
     /// Whether Customise tabs… can run; it is shown disabled when not.
@@ -249,19 +269,46 @@ impl<'a> TabBar<'a> {
         let name = tr(ui.ctx(), "panel-tab-options");
         let options = button_at(ui, options_rect, Icon::OptionsVertical, &name);
         let chosen = pull_down(ui, &options, &name, || {
-            vec![
+            let mut entries: Vec<Entry> = Vec::new();
+            if !self.workspaces.is_empty() {
+                let items = self.workspaces.iter().enumerate().map(|(i, workspace)| {
+                    let item = Item::new(format!("workspace-{i}"), workspace.name)
+                        .checked(workspace.checked)
+                        .enabled(workspace.enabled);
+                    match workspace.tip {
+                        Some(tip) => item.tip(tip),
+                        None => item,
+                    }
+                    .into()
+                });
+                let title = tr(ui.ctx(), "menu-workspace");
+                entries.push(Submenu::new("workspace", title, items.collect()).into());
+                entries.push(Entry::Separator);
+            }
+            entries.push(
                 Item::new("names", tr(ui.ctx(), "panel-show-tab-names"))
                     .checked(self.names)
                     .into(),
+            );
+            entries.push(
                 Item::new("customise", tr(ui.ctx(), "panel-customise-tabs"))
                     .enabled(self.customise)
                     .into(),
-            ]
+            );
+            entries
         });
         match chosen.as_deref() {
             Some("names") => action = Some(TabBarAction::ShowNames(!self.names)),
             Some("customise") => action = Some(TabBarAction::Customise),
-            _ => {}
+            Some(other) => {
+                let index = other
+                    .strip_prefix("workspace-")
+                    .and_then(|i| i.parse().ok());
+                if let Some(i) = index {
+                    action = Some(TabBarAction::Workspace(i));
+                }
+            }
+            None => {}
         }
         action
     }

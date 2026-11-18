@@ -1040,7 +1040,7 @@ Native popup menus on the Mac for plain lists and context menus; drawn everywher
 - Every popup in the app goes through the service, as a plain list with no checkbox or other control inside, so that each can be drawn natively on the Mac:
   - ⋯ lists the folded actions with their keys, disabled where they cannot run;
   - » lists the tabs that do not fit, one that cannot be chosen disabled with its "to come" tip;
-  - ⋮ holds Show tab names, an item with a check mark, and Customise tabs…, drawn disabled until the visual editor; planned, the tab bar's menu's items join it before them, Find Tool…, Show Hidden Tools, Workspace ▸, Reset Tab, Reset Workspace and Processing Order (decision 96), and Dock All Floating Panels in Phase 3 (decision 83).
+  - ⋮ holds Workspace ▸ first, View › Workspace's list (`TabBar::workspaces`, `TabBarWorkspace`: the one shown checked, each running its `workspace-<id>`, disabled while `--conf` sets `workspace`), a line, then Show tab names, an item with a check mark, and Customise tabs…, drawn disabled until the visual editor; planned, the tab bar's menu's other items join it before them, Find Tool…, Show Hidden Tools, Reset Tab, Reset Workspace and Processing Order (decision 96), and Dock All Floating Panels in Phase 3 (decision 83).
 
   Each is opened by its button, or ↓ on it, and closed by a second press or Esc, with the focus back on the button, which stays lit while its menu is open (`components::pull_down`, `popup::button_menu`).
 - On the Mac, the native service, which shows every one of them, ⋯, », ⋮ and `Choice`'s list, as AppKit's menu, in the main window and in a dialog's (below). Windows and Linux keep the drawn ones.
