@@ -41,10 +41,10 @@ Import… chooses photos on a card or in a folder that is not open, and holds se
 ### Where a tool belongs
 
 - **Every tool has one place,** declared in its `ToolDefinition`, the parent every tool's definition embeds, a utility's as a processing tool's ([0093](0093-one-tool-model-processing-tools-and-utility-tools.md)): the Tools panel (the processing tools and the utilities, Export among them, [0090](0090-export-as-a-photos-tab-tool.md)) or Import (the import tools, utilities whose rows are setting rows, notes and actions).
-- **Import tools never appear in the Tools panel.** Its dispatcher, the workspaces, built in or the person's, Customise tabs, a header's drag, ⋯'s Move to Tab and a drop on a tab's icon take only the Tools panel's tools; a layout read from settings that names a tool of another place skips it, as [0083](0083-the-side-panels-layout-dragged-and-floating.md) skips an id the build does not know, and never places it as a new section.
+- **Import tools never appear in the Tools panel.** Its dispatcher, the workspaces, built in or the person's, the visual editor, a header's drag, ⋯'s Move to Tab, a drop on a tab's icon, the Hidden tab and Find Tool… take only the Tools panel's tools; a workspace's file that names a tool of another place skips it, as [0083](0083-the-side-panels-layout-dragged-and-floating.md) skips an id the build does not know, and never places it as a new section ([0096](0096-workspaces-as-files-hidden-tools-and-finding-a-tool.md)).
 - **The Tools panel's tools never appear in the sheet,** and its column draws only import tools.
 - **Ids are unique across the places,** so Import's Metadata and the Tools panel's Metadata are two tools, their tooltips saying which.
-- **A test** walks every tool and checks that each built-in workspace, Customise tabs' list and the sheet's default order hold only tools of their place, and that every layout operation given an import tool leaves the Tools panel unchanged.
+- **A test** walks every tool and checks that each built-in workspace, the Hidden tab, search's list and the sheet's default order hold only tools of their place, and that every layout operation given an import tool leaves the Tools panel unchanged.
 
 ### Presets: whole-sheet only
 

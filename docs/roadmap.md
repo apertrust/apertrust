@@ -139,6 +139,16 @@ Goal: open, edit, save and reopen a photo with the first pass's tools. Migration
 - [x] The rename, in one pull request of commits by layer, with no change of behaviour or look beyond the words: the code's identifiers; the words and their Fluent ids in British and American English, Ukrainian and Polish, View › Browse becoming View › Collections (L); the settings keys, action ids and Browse's id, with `settings.toml`'s version 2 migrating them and its test that an old file keeps every value; the themes' two sizes, the theme loader still reading their old names; then the docs, the decision records that name the parts among them, gui.md, library.md, settings.md, crates.md and the tool docs with their anchors.
 - [ ] The UI wireframe's boards, and the agent kit's `ui-conventions` and `desktop-architecture` skills, with the new names: planned, once the rename lands.
 
+**Workspaces** (decision 96; [gui.md](gui.md#workspaces)): a workspace its tabs, each tab's tools, the tools it hides and its toolbar, in a file of its own; a tool in no tab hidden, still reachable; Find Tool…. Seven steps, each one pull request usable on its own, reviewed before the next:
+
+- [ ] 1. The workspace model: `workspaces/<id>.toml` (tabs with id, title and icon; pinned and order per tab; hidden; seen; version), Edit built in and the default, a person's own workspaces defined by writing a file; `settings.toml`'s `workspace`; the tab last shown in `state.toml`.
+- [ ] 2. Switching: View › Workspace, and the darktable workspace built in (darktable's groups, decision 38).
+- [ ] 3. Hidden tools: a tool in no tab, the Hidden tab with Show Hidden Tools, Show Hidden Tools in the Tools panel's ⋮ so every hidden tool can be reached, the dot on ⋮ while a hidden tool changes the photo.
+- [ ] 4. ⋯'s layout items: Pin or Unpin, Move Up and Move Down, Move to Tab ▸, Hide, and Show in Tab ▸ for a hidden tool (`section-show`), so a hidden tool comes back before dragging exists; their keys and screen readers' actions (decision 83's).
+- [ ] 5. The tab bar's menu, on a right-click and in ⋮ beside step 3's Show Hidden Tools: Find Tool…, Show Hidden Tools, Workspace ▸, Reset Tab, Reset Workspace (deleting the workspace's file), Processing Order; Find Tool… drawn disabled until step 6.
+- [ ] 6. Search: Find Tool… (Ctrl+Shift+F), the field in the tabs' place, the tabs disabled, the list empty until typing, hidden tools found too, Esc back to the tab.
+- [ ] 7. Dragging a header, as decision 83 designs it: reorder, pin by a drop in the pinned area, move to another tab through its icon.
+
 ### Editing
 
 - [x] The viewport with app-managed colour.
@@ -150,7 +160,7 @@ Goal: open, edit, save and reopen a photo with the first pass's tools. Migration
   - [x] The app's `TABS` and `TAB_TOOLS` with each tab's list in editing order, Raw's in processing order, and `panel-tab-7`; Scopes pinned over the five editing tabs.
   - [x] The tab ids `adjust`, `detail`, `geometry`, `effects` and `raw`, darktable's old ids read as unknown in Edit, and the labels in British and American English, Ukrainian and Polish.
   - [x] Five tab icons, one colour in Lucide's style with their filled forms, drawn on the wireframe first.
-  - [x] The test that held each tab's list to `OPERATIONS` reversed replaced by one holding Edit's lists to decision 38's, each tool in exactly one tab; darktable's groups kept as the darktable workspace's lists, with that test, for named workspaces (Phase 3).
+  - [x] The test that held each tab's list to `OPERATIONS` reversed replaced by one holding Edit's lists to decision 38's, each tool in exactly one tab; darktable's groups kept as the darktable workspace's lists, with that test, for the darktable workspace ([Workspaces](#the-window-and-the-shell), step 2).
 - [ ] Phase 2's tools are darktable's: raw black/white point, white balance, highlight reconstruction, demosaic, denoise (profiled), rotate and perspective, orientation, input colour profile, exposure, tone equalizer, colour calibration, RGB primaries, colour equalizer, colour balance RGB, AgX and output colour profile. Of these, left:
   - [ ] Input colour profile and Colour equalizer as tools (their processing is ported).
   - [ ] Rotate and perspective, ported.
@@ -290,14 +300,10 @@ The library's steps 10 to 20 and 15b, [listed below](#the-librarys-steps) (decis
 - [ ] Filters over the open folder, by rating, label, date, camera, keywords and the rest (decision 73).
 - [ ] Culling in the Photo layout with the Browser and the caption's ratings, with no Grid layout; the selected photos side by side, up to 11 and a 12th cell for the rest (decision 37).
 - [ ] Rating, Apply edit and Export on every selected photo, with one undo.
-- [ ] Named workspaces and the Photos workspace for culling, switched from View › Workspace (decision 37; [gui.md](gui.md#workspaces)), and the darktable workspace, darktable's scene-referred groups for people coming from darktable (decision 38).
-- [ ] With them, the Tools panel's layout (decision 83; [gui.md](gui.md#moving-pinning-and-floating-sections)), display order only, never the processing order:
-  - [ ] The Edit workspace's settings keys, `[workspaces.edit]` and `[tools_panel]`, the old `[edit]` read into them.
-  - [ ] The layout model in settings, which a person can edit in the file: each tab's pinned and scrolling sections, decision 38's lists the defaults; Processing Order and Reset Tab in the Tools panel's ⋮; Customise tabs reworked onto it.
-  - [ ] Moving a section by dragging its header within its tab; dropping it in the pinned area pins it, dragging it out unpins it.
-  - [ ] The section's ⋯ menu (Move Up, Move Down, Move to Pinned Area or Scrolling Area, Move to Tab), Alt+↑ and Alt+↓, and screen readers' actions and announcements.
-  - [ ] Moving a section to another tab, by a drop on its icon or into it; any section in any tab.
-- [ ] With them, the toolbar (decision 92; [gui.md](gui.md#customising-the-toolbar)): the Toolbar drawn from each workspace's list of items, kept in the settings file, with spaces, the guards for the ☰, the save state, the jobs, an assistant and the mark, actions folding into » as it narrows, and Toolbar Labels; the toolbar menu on a right-click anywhere on it, the system's window menu on its own key; tools' items from `ToolDefinition::toolbar` (decision 93), Orientation's rotations first.
+- [ ] The Photos workspace for culling (decisions 37 and 96; [gui.md](gui.md#workspaces)).
+- [ ] A visual editor for workspaces (decision 96): adding, naming and removing tabs, hiding and showing tools, a new workspace, with Save as, Rename and Delete Workspace; it replaces the Customise tabs dialog, which is not built on fixed lists.
+- [ ] Floating panels inside the window, belonging to no tab, docked by a drop into any tab or back where they left by × or Dock; the ⋯ menu's Float, Dock and Position, Dock All Floating Panels, and their keys and screen readers' actions (decisions 83 and 96; [gui.md](gui.md#moving-pinning-and-floating-sections)).
+- [ ] Each workspace's own toolbar (decision 92; [gui.md](gui.md#customising-the-toolbar)): the Toolbar drawn from each workspace's list of items, kept in the workspace's file (decision 96), with spaces, the guards for the ☰, the save state, the jobs, an assistant and the mark, actions folding into » as it narrows, and Toolbar Labels; the toolbar menu on a right-click anywhere on it, the system's window menu on its own key; tools' items from `ToolDefinition::toolbar` (decision 93), Orientation's rotations first.
 - [ ] Changes made outside Apertrust noticed; nothing overwritten without reading it first.
 - [ ] Virtual copies.
 - [ ] Two computers editing the same photo: both versions kept, never one lost.
@@ -316,7 +322,6 @@ Goal: controls people find and predict, the first step on Apertrust's own way: u
 - [ ] Usability tests with photographers coming from darktable and from commercial raw editors.
 - [ ] Fixes to the interface from what the tests find (decision 1). From then on Apertrust evolves on its own (decision 2).
 - [ ] Import's later parts (decision 85): Verify the copies, Eject the card, Backup to, Adjustments with styles, and Filters' Date taken.
-- [ ] Floating panels inside the window, belonging to no tab, docked by a drop into any tab or back where they left by × or Dock; the ⋯ menu's Float, Dock and Position, Dock All Floating Panels, and their keys and screen readers' actions (decision 83; [gui.md](gui.md#moving-pinning-and-floating-sections)).
 
 ## Mobile, after Phase 3
 

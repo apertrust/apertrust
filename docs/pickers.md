@@ -565,7 +565,7 @@ Each press is a completed change, so a held arrow's repeats merge into one step,
 
 ## The Colour picker
 
-darktable's color picker utility (`src/libs/colorpicker.c`, in the darkroom's left panel with its history and snapshots, position 800), as the wireframe's Pickers frame has it: a section of the Tools panel, hidden by default, its place to be decided, closed when shown and kept open or closed with the other sections (decision 38). Its rows, darktable's (`:696-865`) in the frame's order and words, top to bottom:
+darktable's color picker utility (`src/libs/colorpicker.c`, in the darkroom's left panel with its history and snapshots, position 800), as the wireframe's Pickers frame has it: a section of the Tools panel, hidden by default, in no tab of Edit, so in the Hidden tab and found by Find Tool… (decision 96), its tab to be decided, closed when shown and kept open or closed with the other sections (decision 38). Its rows, darktable's (`:696-865`) in the frame's order and words, top to bottom:
 
 1. **The header,** the section's, with the picker button in it: darktable's picker button, its kind chosen as darktable's is, a click for a point, right-click or Ctrl-click (Cmd-click on the Mac) for an area (`:775-779`), its tooltip darktable's: "Turn on colour picker / Ctrl+click or right-click to select an area / Ctrl+click on the photo to switch between point and area".
 2. **One row of two choices:** the statistic, Mean, Min or Max, then the colour mode, darktable's eight: RGB, RGB %, Lab, LCh, HSL, HSV, Hex and None (`:754-773`).

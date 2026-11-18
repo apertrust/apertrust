@@ -221,7 +221,7 @@ A theme is a full set of token values, stored as TOML in `crates/ui/themes`.
 - **Switching is live.** The app replaces the theme stored in egui's context and maps it onto egui's `Style` for the few egui widgets used directly (text fields, scroll bars, menus). No restart.
 - **What a theme changes:** the colours; type sizes; density (compact or comfortable spacing); radii and strokes; the photo surround's lightness; overlay colours, which users with colour vision deficiency can choose; motion.
 - **What it doesn't:**
-  - the Tools panel's tabs and sections, which are the user's workspaces, kept in settings;
+  - the Tools panel's tabs and sections, which are the user's workspaces, each kept in a file of its own (decision 96);
   - the components' shapes; the slider's marker is the user's own setting, not a theme's (decision 75);
   - the typeface (decision 36);
   - colours that are data.
@@ -801,23 +801,23 @@ Phase 4: the menu appears with Layers, and its keys are set with their design. I
 | — | | | |
 | Slideshow | `slideshow` | — | New, with the slideshow; no phase yet (decision 37) |
 | — | | | |
-| Search Photos… | `grid-search` | Ctrl+F | Planned: in the menu bar alone, with no button on the browser bar |
+| Search Photos… | `grid-search` | Ctrl+F, kept for it and unassigned until it is built; Find Tool… has Ctrl+Shift+F (decision 96) | Planned: in the menu bar alone, with no button on the browser bar |
 | Sort By → Capture Time, File Name, Edited, Rating, the one in use checked; —; Ascending, Descending, one checked | `sort-capture-time`, `sort-file-name`, `sort-edited`, `sort-rating`, `sort-ascending`, `sort-descending` | — | New, Phase 2, with the browser bar; Rating in Phase 3 |
 | Thumbnail Size → Small, Medium, Large, Extra Large, the one in use checked | `thumbnails-small`, `thumbnails-medium`, `thumbnails-large`, `thumbnails-extra-large` | — | New, Phase 2, with the browser bar |
 | Show Labels, checked while the thumbnails show their captions | `show-labels` | — | Built, with the browser bar's Labels |
 | Browser Position → Left, Right, Bottom, the one in use checked | `browser-position-left`, `browser-position-right`, `browser-position-bottom` | — | New, Phase 2, with the browser bar's options menu |
 | — | | | |
 | Collections | `show-collections` | L | Built: chooses the Photos tab, the first holding Collections until workspaces change the tabs; pressed again, nothing (decisions 37 and 73) |
-| Tools Panel Tab → each tab by its name, the one shown checked | `panel-tab-1` to `panel-tab-7` | Ctrl+1 to Ctrl+5; in Edit the sixth and seventh, Raw and History, none | Built (decision 38) |
-| Workspace → each workspace by its name, the current one checked; —; Save as Workspace…, Rename Workspace…, Delete Workspace…, Reset Workspace | `workspace-1` to `workspace-9`, `save-workspace`, `rename-workspace`, `delete-workspace`, `reset-workspace` | — | New, Phase 3 ([Workspaces](#workspaces)) |
+| Tools Panel Tab → each tab by its name, the one shown checked | `panel-tab-1` to `panel-tab-7`; planned, up to `panel-tab-12`, and `panel-tab-hidden` for the Hidden tab (decision 96) | Ctrl+1 to Ctrl+5; in Edit the sixth and seventh, Raw and History, none | Built (decision 38) |
+| Workspace → each workspace by its name, the current one checked; —; Reset Workspace; with the visual editor, Save as Workspace…, Rename Workspace…, Delete Workspace… | `workspace-<id>`, made from the workspaces read, `reset-workspace`; `save-workspace`, `rename-workspace`, `delete-workspace` | — | New, Phase 2's step 2, Reset Workspace step 5; the other three Phase 3 ([Workspaces](#workspaces), decision 96) |
 | Panels → | | | |
 | Tools | `tools-panel` | — | New, Phase 3, proposed. No item hides the Browser |
 | Tab Names | `panel-tab-names` | — | Built in the tab bar's ⋮; the action is new |
-| Customise Tabs… | `customise-tabs` | — | New, drawn disabled until step 7 builds it |
+| Customise Tabs… | `customise-tabs` | — | New, drawn disabled until Phase 3's visual editor for workspaces, which it opens (decision 96) |
 | Show Menu Button, while the ☰ is hidden, on Windows and Linux | `show-menu-button` | — | New, Phase 3 (decision 92); also in the toolbar menu, and F10 reaches it with the ☰ hidden |
 | Toolbar Labels, checked while on | `toolbar-labels` | — | New, Phase 3 (decision 92); also in the toolbar menu and Settings › General |
 | Customise Toolbar… | `customise-toolbar` | — | New, Phase 3, drawn disabled, "Customise Toolbar comes in a later version", until its window is built (decision 92) |
-| Dock All Floating Panels | `dock-all` | — | New, with the floating panels in the UX pass (decision 83); also in the Tools panel's ⋮ |
+| Dock All Floating Panels | `dock-all` | — | New, with the floating panels in Phase 3 (decisions 83 and 96); also in the Tools panel's ⋮ |
 | Tools Panel on the Right, Tools Panel on the Left | `panel-right`, `panel-left` | — | New, Phase 3 |
 | Interface Size → Larger, Smaller, Normal Size | `scale-up`, `scale-down`, `scale-reset` | None by default; Settings sets the size too | Built; its keys go |
 | Touch Mode, checked while on | `touch-mode` | — | New, with Touch mode in the mobile phase (decision 94); Settings › General sets it too |
@@ -829,7 +829,7 @@ Phase 4: the menu appears with Layers, and its keys are set with their design. I
 - **The photo's zoom** has the keys macOS and commercial raw editors give a document's zoom, and Zoom to 100%, the view where the screen is the export (principle 2), has the single key Z. Both act at the point under the pointer when the pointer is over the photo. In Photo they zoom the photo, every cell together when several are shown.
 - **The layouts** join the menu with the Map and its toggle on the viewer bar, once there are two: a choice of one is no choice. Map, chosen again, goes back to Photo, as its toggle and Shift+M do and as Zoom to 100% goes back to Fit. Choosing one changes only the Viewer (decision 37).
 - **Collections** chooses the first tab holding Collections, as L does, wherever the workspace puts it. L is darktable's key for its lighttable, whose part Collections plays.
-- **Workspace** switches the Tools panel's tabs and the toolbar's items (decision 92, planned), nothing else; the same list is in the Tools panel's ⋮.
+- **Workspace** switches the Tools panel's tabs and the toolbar's items (decisions 92 and 96, planned), nothing else; the same list is in the tab bar's menu and the Tools panel's ⋮.
 - **Slideshow** plays the selected photos when several are selected, else the folder or album from the active photo.
 - **Clipping Warnings** is one item and one key, J, for both of the photo's clipping overlays: checked while both are on; choosing it turns both on, or both off when both are on. The scopes' corner toggles set each alone. One state, three places.
 - **Tools Panel Tab** lists every tab, those under » too; only the first five have keys.
@@ -1018,11 +1018,12 @@ Keep each slice to what exists.
 | --- | --- |
 | Built on the Mac, with its native bar | The app menu; About; Settings; Quit; Close Window; Open… (`open`, Ctrl+O, first in File: raws, opened alone together with the first active, closing the folder); Open Folder…; Export… and Export Again; Reset Edit; Collections; Tools Panel Tab; Interface Size; Jobs; Full Screen; the Window menu; Help's search. Drawn disabled: Import, Copy Edit, Apply Edit, Copy or Apply Parts, Next Photo and Previous Photo, and View's zoom items |
 | Built on Windows and Linux | The ☰ and its drawn menu, holding what the Mac's menus hold but the Mac's own items and its Window menu, with check marks on Full Screen and the Tools panel's tabs; the `menu` action, F10 |
-| Still in step 7 | Cut, Copy, Paste and Select All for value fields; Guides; Proof Margin; Panels › Tab Names; Customise Tabs; new actions `cut`, `copy`, `paste`, `select-all`, `guides`, `proof-margin`, `panel-tab-names` and `customise-tabs`, with the platforms' keys kept from actions; Keyboard Shortcuts; Windows' Alt pressed and released alone |
+| Still in step 7 | Cut, Copy, Paste and Select All for value fields; Guides; Proof Margin; Panels › Tab Names; Customise Tabs, drawn disabled until Phase 3's visual editor (decision 96); new actions `cut`, `copy`, `paste`, `select-all`, `guides`, `proof-margin`, `panel-tab-names` and `customise-tabs`, with the platforms' keys kept from actions; Keyboard Shortcuts; Windows' Alt pressed and released alone |
 | Built in step 9c | Open Recent with Clear Menu, and Close, on the Mac's bar and in the ☰ |
 | Built in the library's step 9.4 | Undo and Redo, naming the step, on the Mac's bar and in the ☰ |
 | Later in Phase 2 | Show in Folder, with folder mode; Search Photos, Sort By and Thumbnail Size, with the browser bar (step 9); Next and Previous Photo, with the Browser; the zoom items, with the scale's zoom; Clipping Warnings, with the overlays (step 8) |
-| Phase 3 | Workspace; Sort By › Rating; Export on Windows and Linux; Copy Edit, Apply Edit, Copy or Apply Parts; Save Edit as Style; Select All for photos and Select None; Before and After; Show All Selected; Rotate and Flip; Panels › Tools Panel and the side; Rotate and perspective's Auto; Rating and Colour Label, with the caption's controls; Import, a sheet, by copy in folder mode, with step 20a (decisions 46 and 85) |
+| Phase 2, decision 96's steps | Workspace with its workspaces (step 2) and Reset Workspace (step 5) |
+| Phase 3 | Save as, Rename and Delete Workspace, with the visual editor for workspaces; Sort By › Rating; Export on Windows and Linux; Copy Edit, Apply Edit, Copy or Apply Parts; Save Edit as Style; Select All for photos and Select None; Before and After; Show All Selected; Rotate and Flip; Panels › Tools Panel and the side; Rotate and perspective's Auto; Rating and Colour Label, with the caption's controls; Import, a sheet, by copy in folder mode, with step 20a (decisions 46 and 85) |
 | Phase 4 | The Layer menu |
 | Phase 5 | New Library, Add Folder, Import library, then New Project and Export as Project, with the library and the project (decision 46); Open… opening a library's or a project's file |
 | Phase 6 | Match a Photo; an assistant's connection, placed with its design |
@@ -1039,7 +1040,7 @@ Native popup menus on the Mac for plain lists and context menus; drawn everywher
 - Every popup in the app goes through the service, as a plain list with no checkbox or other control inside, so that each can be drawn natively on the Mac:
   - ⋯ lists the folded actions with their keys, disabled where they cannot run;
   - » lists the tabs that do not fit, one that cannot be chosen disabled with its "to come" tip;
-  - ⋮ holds Show tab names, an item with a check mark, and Customise tabs…; Processing Order, Reset Tab and Dock All Floating Panels join it with the Tools panel's layout (decision 83, planned).
+  - ⋮ holds Show tab names, an item with a check mark, and Customise tabs…, drawn disabled until the visual editor; planned, the tab bar's menu's items join it before them, Find Tool…, Show Hidden Tools, Workspace ▸, Reset Tab, Reset Workspace and Processing Order (decision 96), and Dock All Floating Panels in Phase 3 (decision 83).
 
   Each is opened by its button, or ↓ on it, and closed by a second press or Esc, with the focus back on the button, which stays lit while its menu is open (`components::pull_down`, `popup::button_menu`).
 - On the Mac, the native service, which shows every one of them, ⋯, », ⋮ and `Choice`'s list, as AppKit's menu, in the main window and in a dialog's (below). Windows and Linux keep the drawn ones.
@@ -1057,7 +1058,7 @@ Context menus are built as a pull-down at the pointer, or under the control from
 | Tooltips | Drawn | Drawn |
 
 - **The ☰'s menu** on Windows and Linux is a pull-down from a button too, its items the menus as submenus, drawn as every popup is there (decision 39). The Mac has no ☰, its menus being the native menu bar's.
-- **Customise tabs is a dialog,** not a popup: its menu item ends in "…", since it asks for more before it acts, so it is a native modal window (decision 41).
+- **Customise tabs, Phase 3's visual editor for workspaces (decision 96), is a dialog,** not a popup: its menu item ends in "…", since it asks for more before it acts, so it is a native modal window (decision 41).
 - **Inside a dialog's window** popups work as in the main window: a drawn one stays inside the dialog's window, so a long list there scrolls; on the Mac a native one opens over it.
 - **A native popup is a plain list:** items of text, enabled or not, a check mark when one is on or chosen, an action's shortcut from the keymap, separators and submenus. Anything else is drawn.
 - **Hover previews stay drawn,** on the Mac too: the quality bar's "preview on hover" needs the photo to repaint while the pointer moves over the items, and the item under the pointer reported, which a native menu does not give winit.
@@ -1144,14 +1145,15 @@ Decision 91; its first slice is built. A right-click menu opens only in a named 
 | --- | --- | --- | --- |
 | The photo | Yes, at most two a tool; History's Reset first, Orientation ▸ | Export…; Background ▸ ([The background](#the-background)) | Built |
 | A thumbnail, in the Browser or a cell in Photo | Yes, at most two a tool; History's Reset first | Export…; Show in Folder once built | Built |
-| A tool's ⋯ (`Options`), its own section only | Yes, at most four | Reset, Copy Settings and Paste Settings (with Copy and Apply Parts, Phase 3) in `EDIT`; the layout's items ([Moving, pinning and floating sections](#moving-pinning-and-floating-sections)) in `LAYOUT`, last | With the layout's ⋯ |
+| A tool's ⋯ (`Options`), its own section only | Yes, at most four | Reset, Copy Settings and Paste Settings (with Copy and Apply Parts, Phase 3) in `EDIT`; the layout's items, Pin or Unpin, Move Up, Move Down, Move to Tab ▸ and Hide, or Show in Tab ▸ for a hidden tool ([Moving, pinning and floating sections](#moving-pinning-and-floating-sections)), in `LAYOUT`, last | The layout's items with decision 96's step 4 |
 | The surround (`Surround`) | No | View › Background's items | Built |
 | The browser bar | No | Position ▸ | Built |
 | Collections' folder rows | No | Show in Folder, Open | Built |
 | The Browser's empty area | No | The browser bar's options, Select All, Select None | Later |
 | A History step | No | Go to Step, Show Tool, Compress up to Here, Truncate after Here | Later |
 | The jobs window's rows | No | Cancel, Show in Folder, Copy Error | Later |
-| A layer, the scopes, a tab's icon | No | — | With them |
+| The Tools panel's tab bar (`TabBar`), a tab's icon or its empty end | No | Find Tool…, Show Hidden Tools, Workspace ▸, —, Reset Tab, Reset Workspace, Processing Order; the same items in the Tools panel's ⋮ ([The tab bar's menu](#the-tab-bars-menu)) | Decision 96's step 5 |
+| A layer, the scopes | No | — | With them |
 | The Toolbar, an item or its empty areas (`Toolbar`) | No | The toolbar menu: Hide "Undo", Show Menu Button, Toolbar Labels, Customise Toolbar… ([The Toolbar](#the-toolbar), decision 92) | Phase 3 |
 
 A place opens to tools' items only by a decision of its own, which adds it to `apertrust-tools`' `Place`.
@@ -1210,7 +1212,7 @@ A place opens to tools' items only by a decision of its own, which adds it to `a
 - The photo's and a thumbnail's menus act on the photo asked for as they opened: when another photo becomes the one asked for, by a drop, Open… or an open asked for earlier, the menu is dismissed, taking no answer.
 - The Mac's native menu is modal: nothing changes while it is open, and it keeps what it opened with.
 
-**Every item is reachable without a right-click:** in the menu bar, in its tool's section or ⋯, or by its keys. A right-click menu is a shortcut. A tool's action has its button by construction, and a test holds each utility's item to a menu bar item.
+**Every item is reachable without a right-click:** in the menu bar, in its tool's section or ⋯, in the Tools panel's ⋮ for the tab bar's (decision 96), or by its keys. A right-click menu is a shortcut. A tool's action has its button by construction, and a test holds each utility's item to a menu bar item.
 
 **Built, the first slice:** in `apertrust-tools`, `Place`, `Section`, `MenuItem`, `MenuEntry`, `ToolDefinition::menus` and their checks, `UTILITIES` in `utility`; in the app, the generated tool actions, `menus::Place` with `Surround`, `Target`, `menus::APP_ITEMS` and `menus::context(place, target)`, the photo's menu and a thumbnail's with the two behaviours while one is open; History's Reset in both, and Orientation ▸ on the photo, so the photo's reads Reset, —, Export…, —, Background ▸, Orientation ▸ and a thumbnail's Reset, —, Export…. Discard History… is in no context menu. Pickers as items wait for the open question ([Open questions](#open-questions)). ⋯ is built through the builder with each tool's declared items (`menus::options`, decision 93), History's four; the app's items and the layout's join it later.
 
@@ -1440,7 +1442,7 @@ flowchart LR
 Spike D1 tried one native modal test dialog through the host, on every platform. The host, the Mac's sheets and alerts, Wayland's modality and Linux's drawn alerts are built on its result. What is left, in order:
 
 1. **Windows' modality.** Settings is in the host, a modal window owned by the main window (`with_owner_window`), the app taking the main window's input; left: the owner disabled while it is open (winit's `set_enable`), enabled again before it goes.
-2. **Customise tabs** in the host, with step 7, as the wireframe draws it.
+2. **Customise tabs,** the visual editor for workspaces, in the host, in Phase 3 (decision 96).
 3. **The alerts on Windows:** the task dialog with its manifest. Until then the host shows no alert there (`platform::shows_alerts`): Export lists On conflict's Overwrite disabled, saying why, and rests while it is chosen; Discard History… is disabled wherever it would ask, saying why (`alerts::discard_runs`).
 
 X11 keeps the dialog window type and the app's input blocking. Its `WM_TRANSIENT_FOR` and `_NET_WM_STATE_MODAL` are later work, when a concrete compatibility problem calls for them.
@@ -1520,7 +1522,7 @@ Each tool is a section with the tool panel's header and rows ([How the rows are 
   - **↺** sets every setting the tool owns to darktable's default, those of a storage or a format not shown included, written at once; drawn at rest when they are all at their defaults.
   - **⋯** holds only Move Up and Move Down, opened from its button alone, the header taking no right-click ([Context menus](#context-menus), decision 91). It is drawn disabled until reordering is built, its tooltip saying so. A tool has no presets of its own ([Presets](#presets-whole-sheet-only)).
 - **Reordering only:** dragging a header, ⋯'s Move Up and Move Down, and Alt+↑ and Alt+↓ on a focused header, decision 83's operations and announcements on a list of the sheet's own (`import.order`, owner `app`), the default order the sheet's. No pinning, no floating and no other tab. Until reordering is built the order is the default.
-- **A tool belongs to one place** (decisions 86 and 90): the Tools panel's tools and utilities, Export among them, or Import's import tools, declared with each tool. Import tools never appear in the Tools panel: no workspace, Customise tabs, drag, Move to Tab or drop on a tab's icon can put one there, and a layout naming one skips it ([Workspaces](#workspaces), [Moving, pinning and floating sections](#moving-pinning-and-floating-sections)). None of the Tools panel's tools appears in the sheet. The two Metadata tools, the Tools panel's and Import's, are two tools, their ids apart and their titles' tooltips saying which. A test walks every tool and checks each list holds only its place's.
+- **A tool belongs to one place** (decisions 86 and 90): the Tools panel's tools and utilities, Export among them, or Import's import tools, declared with each tool. Import tools never appear in the Tools panel: no workspace, visual editor, drag, Move to Tab or drop on a tab's icon can put one there, neither the Hidden tab nor Find Tool… lists one, and a workspace's file naming one skips it ([Workspaces](#workspaces), [Moving, pinning and floating sections](#moving-pinning-and-floating-sections)). None of the Tools panel's tools appears in the sheet. The two Metadata tools, the Tools panel's and Import's, are two tools, their ids apart and their titles' tooltips saying which. A test walks every tool and checks each list holds only its place's.
 - **A tool's states:**
 
 | State | Shows |
@@ -1661,7 +1663,7 @@ sequenceDiagram
 
 ### Its place and what it acts on
 
-- **The Photos tab's last section,** id `export`, after Collections, Filters, Keywords, Metadata and Styles (decision 73). A person moves, pins and floats it as any section (decision 83), but **every workspace keeps it:** Customise tabs, a drag and Move to Tab may move it, and none takes it out of a workspace's last tab holding it; a workspace the settings file leaves without it, `export` in its `hidden` included, gets it back as a section no tab holds is placed. So Ctrl+E always has a place to reveal it.
+- **The Photos tab's last section,** id `export`, after Collections, Filters, Keywords, Metadata and Styles (decision 73). A person moves, pins and floats it as any section (decision 83), but **every workspace keeps it, never hidden:** the visual editor, a drag and Move to Tab may move it to another tab, where it then is, but none leaves it in no tab: ⋯ › Hide is disabled for it, and the editor removes no tab while it is Export's only one; a workspace's file that leaves it out, `export` in its `hidden` included, gets it back at the end of the Photos tab where the Photos tab is among the tabs shown, else of the first tab shown that holds tools, else of the first tab (decision 96). So Ctrl+E always has a place to reveal it.
 - **A utility:** no on switch, no kept markers, no history step; a change is a setting written at once, Cmd+Z in a field undoing typing only.
 - **It exports the window's selection, else the active photo;** the active photo alone until Phase 3 can select several. A view-only photo, whose edit a newer Apertrust wrote or whose history cannot be read, is left out and counted in a warning.
 - **No per-photo marks** on the Browser: the warning gives the counts. Marks are revisited in the usability pass after Phase 3.
@@ -2436,7 +2438,7 @@ The model's words:
 
 - **one view** for the model;
 - **layout** for what the Viewer shows: Photo and later Map;
-- **workspace** for a named, saved set of the Tools panel's tabs and the toolbar's items, built in or the user's own, switched only when the person asks ([Workspaces](#workspaces));
+- **workspace** for a named set of the Tools panel's tabs with their tools, the tools it hides and the toolbar's items, each kept in a file of its own, built in or the user's own, switched only when the person asks ([Workspaces](#workspaces), decision 96);
 - **Folder**, **Album**, **Smart album** and **Group** for what Collections shows.
 
 ### The regions
@@ -2454,7 +2456,7 @@ The model's words:
 - **Over the view** ([below](#dialogs-sheets-and-the-slideshow)): Settings and Customise tabs are dialogs, each a native window of its own (decision 41, [Dialogs and alerts](#dialogs-and-alerts)). About is Apertrust's own modal over the window. Import and Print are full-window sheets ([Sheets](#sheets)), and the slideshow plays full screen. Each is modal, and the view's keys rest under it ([Keyboard and actions](#keyboard-and-actions)). Export is not over the view but a tool of the Photos tab ([The Export tool](#the-export-tool)), modal to nothing.
 - **Everything in the Tools panel is a tool** (decisions 4 and 93): a processing tool, such as Exposure, or a utility tool, "utility" for short, such as the Photos tab's Collections, Scopes or History. A **section** is the Tools panel's block a tool is shown in, its header with its body.
   - Every section has its tool's id, a title message, header actions and a body.
-  - The Tools panel lays out two lists of section ids per tab, its pinned sections and the rest, and a workspace is a named set of those lists with the sections that float over the Viewer (decision 83). Dragging a section's header, its ⋯ menu, keys, the settings file and Customise tabs all edit the current workspace's, so any section can sit in any tab, pinned or not, or float ([Moving, pinning and floating sections](#moving-pinning-and-floating-sections)). The order is display order only, never the processing order.
+  - The Tools panel lays out two lists of section ids per tab, its pinned sections and the rest, and a workspace is its tabs with those lists, the tools it hides and the sections that float over the Viewer, kept in its own file (decisions 83 and 96). Dragging a section's header, its ⋯ menu, keys, the workspace's file and Phase 3's visual editor all edit the current workspace's, so any section can sit in any tab, pinned or not, be hidden, or float ([Moving, pinning and floating sections](#moving-pinning-and-floating-sections)). The order is display order only, never the processing order.
 - **A processing tool's section is generated** from its definition (decision 4, `ui-conventions`). Every tool's header, ⋯ and page are drawn from its `ToolDefinition`, the page by one page drawer, a utility's own widgets custom rows its app module draws, Export's settings setting rows naming their keys in full ([One tool model](#one-tool-model), decision 93).
 - **Keys** have one scope for the view, so a key means the same in every layout; a key that means nothing in a layout is unavailable there (H outside Photo).
 
@@ -2560,21 +2562,52 @@ With several photos selected, the rating, reject and label keys, Apply Edit and 
 
 ### Workspaces
 
-A workspace is a named, saved set of the Tools panel's tabs and the toolbar's items (decision 92, planned), built in or the user's own. It is switched only when the person asks, and never with the Viewer's layout.
+A workspace is its tabs, each tab's tools, the tools it hides and the toolbar's items, built in or the person's own, each kept in a file of its own (decision 96, planned). It is switched only when the person asks, and never with the Viewer's layout.
 
-- **What one holds:** its tabs in order, each with its id, name and icon, its sections in order and which of them are pinned; the sections that float, and the tab each left (decision 83); the side the panel sits on; and the toolbar's items, from Phase 3 (decision 92, [The Toolbar](#the-toolbar)). Not the panel's width nor a floating panel's place and width, which suit a screen rather than a task; not the Viewer's layout, the theme or the keys; never a photo or an edit.
-- **Built in.** Each may leave tools out: Customise tabs lists what a workspace leaves out, and every tool of the Tools panel stays in at least one workspace, Edit holding them all, and Export stays in every workspace, so Ctrl+E always has a place to reveal it (decision 90). Import tools belong to the Import sheet and are in no workspace (decision 86).
+- **What one holds:** its tabs in order, each with its id, title and icon; each tab's pinned tools and the rest, in order; the tools it hides, shown only in the Hidden tab ([Hidden tools](#hidden-tools)); the sections that float, and the tab each left (decision 83, Phase 3); and the toolbar's items (decision 92, Phase 3, [The Toolbar](#the-toolbar)). Not the Tools panel's width nor a floating panel's place and width, which suit a screen rather than a task; not a section's open state, the Viewer's layout, the theme or the keys; never a photo or an edit.
+- **Built in,** defined in code (`Layout::defaults()`), with no file until a person first changes one:
   - **Edit,** the default: Photos, Adjust, Detail, Geometry, Effects, Raw and History, the tools grouped by editing stage between Apertrust's own two (decision 38; [The tabs](#the-tabs-by-editing-stage)), with Scopes and Layers pinned in the editing tabs. It opens on Adjust.
-  - **darktable,** from Phase 3, for people coming from darktable (decision 38): Photos, Base, Colour, Correct, Effect and History, darktable's scene-referred groups with darktable's lists and order, Scopes and Layers pinned in the four groups. It opens on Base.
-  - **Photos,** from Phase 3, for culling and sorting (the wireframe's "Photo · culling · Photos workspace" frame): the Photos tab first, holding Collections and the photo's camera data with Scopes pinned, and opening there; Adjust next, for White balance and Exposure; then the rest.
+  - **darktable,** for people coming from darktable (decision 38): Photos, Base, Colour, Correct, Effect and History, darktable's scene-referred groups with darktable's lists and order, Scopes and Layers pinned in the four groups. It opens on Base.
+  - **Photos,** in Phase 3, for culling and sorting (the wireframe's "Photo · culling · Photos workspace" frame): the Photos tab first, holding Collections and the photo's camera data with Scopes pinned, and opening there; Adjust next, for White balance and Exposure; then the rest.
   - **Map,** with the map: the Photos tab first, holding the Location section; then the rest.
-- **Changing and saving.** Dragging a section's header, its ⋯ menu's items, Customise tabs, renaming a tab, moving, pinning or floating a section change the current workspace, kept at once, as every setting is; so does editing the settings file, where the built-in workspaces can always be changed ([What the file looks like](#what-the-file-looks-like)). None of it is an edit: no step in the history, never undone by Undo (decision 83). View › Workspace › Save as Workspace… keeps a copy of the current one under a new name, as the user's own. Rename Workspace… and Delete Workspace… act on the user's own; Reset Workspace takes a built-in one back to how it shipped.
-- **Switching:** View › Workspace →, listing them with the current one checked; the Tools panel's ⋮ holds the same list. No default keys: the first nine by position are actions a user may give keys, as the Tools panel's tabs are by position.
-  - A switch changes only the Tools panel and the toolbar (decision 92, planned): the Viewer, the selection and what every key acts on stay. The tab shown is the one last shown in that workspace; a section's open or closed state is the same in every workspace.
+- **The file,** `<user data>/workspaces/<id>.toml`, one format for a built-in's and a person's own, its id the file's name:
+
+  ```toml
+  version = 1
+  name = "Portraits"                  # a person's own; a built-in's is its message
+  hidden = ["vignette", "grain"]
+  seen = ["collections", "export", "scopes", "history", "temperature", "exposure", "…"]
+  toolbar = ["mark", "import", "export", "undo", "redo"]   # Phase 3
+
+  [[tabs]]
+  id = "photos"
+
+  [[tabs]]
+  id = "skin"
+  title = "Skin"
+  icon = "adjust"
+
+  [pinned]
+  skin = ["scopes"]
+
+  [order]
+  photos = ["collections", "export"]
+  skin = ["temperature", "exposure", "colorbalancergb"]
+  ```
+
+  - `version` is the format's own, apart from `settings.toml`'s; a newer one is read for what the build knows and never overwritten, and one that is not TOML is set aside as `<id>.toml.bak`.
+  - A tab id a build knows (Edit's, darktable's, `photos`, `history`) takes its title from Fluent (`tab-<id>`) and its icon from code, so its words follow the language; a person's own tab has the title written, the same in every language, and one of `apertrust-ui`'s icons by name, Lucide's `square` where it names none or one unknown. At most 12 of the file's tabs show; the Hidden tab, when shown, comes after them, chosen by `panel-tab-hidden`; `hidden` is its id, reserved. Export, where no tab shown holds it, goes to the end of the Photos tab where that is among the tabs shown, else of the first tab shown that holds tools, else of the first tab. A tab past the twelfth counts as absent: the tools only it holds show in the Hidden tab, unwritten into `hidden`, and no new tool is placed there.
+  - `[pinned]` and `[order]` hold each tab's tools by tab id; `hidden` the tools in no tab; `seen` every tool the build that wrote the file knew.
+  - **Written whole,** through the safe write, once the layout has stood still for a second after any change, a drop included, and at once when another workspace is chosen and on exit; a write reads the file again first, applying the change to it as it is on disk, so a hand edit made meanwhile stays. Ids this build does not know keep their places. A file a person adds by hand while the app runs is read at the next start; a workspace the visual editor makes (Phase 3) is registered at once, its `workspace-<id>` made then, so it can be chosen without a restart.
+- **A built-in's file** is written whole the first time a person changes it; until then the built-in follows each build's defaults. **Reset Workspace** deletes the file, so the one shipped applies again. A person's own workspace is made by writing a file; the visual editor makes one in Phase 3.
+- **A new build's new tool,** one that neither `seen`, `hidden` nor any tab's lists name, goes into each tab whose id is one of its default tabs (the workspace's own for a built-in, Edit's then darktable's for a person's own), after its nearest preceding default neighbour there; with none, it is hidden. A tool `seen` names that is in no tab is hidden. Export is never hidden.
+- **Switching:** View › Workspace ▸ and the tab bar's menu's Workspace ▸ list Edit, darktable, then a person's own by name, the current one checked; each is the action `workspace-<id>`, made as the app starts from the workspaces it reads, with no default keys.
+  - A switch changes only the Tools panel and, from Phase 3, the toolbar (decision 92): the Viewer, the selection and what every key acts on stay. The tab shown is the one last shown in that workspace; a section's open or closed state is the same in every workspace.
   - Nothing switches it but the person: no layout, photo or tab changes the workspace.
-- **Kept** in settings ([Settings and workspace](#settings-and-workspace)): the current workspace by id; what the user changed in a built-in one; the user's own whole; in each, the tab last shown.
+- **Changing:** dragging a section's header, its ⋯ menu's items, the keys, the workspace's file, and in Phase 3 the visual editor, change the current workspace, kept at once. None of it is an edit: no step in the history, never undone by Undo (decision 83).
+- **Kept elsewhere:** `settings.toml` keeps the current workspace by id, `workspace`, and Show Hidden Tools, `tools_panel.show_hidden`; `state.toml` keeps the tab last shown in each workspace, `[tab]` ([What the file looks like](#what-the-file-looks-like)).
 - **What a script sees:** nothing; workspaces are interface state.
-- **When:** Phase 2 has a single workspace, Edit, the Photos tab first in it (decision 37), with no list, which Customise tabs edits (step 7). The layout, its sections moved, pinned and floated by the gestures and the file, comes with named workspaces in Phase 3, Customise tabs moving onto it then, and the floating panels in the UX pass after it (decision 83). Named workspaces, their list and saving arrive in Phase 3, with the darktable and Photos workspaces; Map's with the map.
+- **When** (decision 96), each step one pull request usable on its own: in Phase 2, (1) the workspace model and its files, Edit built in, a person's own by a file, `workspace` and the tab in `state.toml`; (2) switching, with the darktable workspace; (3) hidden tools, the Hidden tab and the dot; (4) ⋯'s layout items, Hide and Show in Tab ▸ among them; (5) the tab bar's menu, Reset Workspace among it; (6) Find Tool…; (7) dragging a header. In Phase 3, the floating panels, the visual editor for workspaces (adding, naming and removing tabs, hiding and showing tools, a new workspace, Save as, Rename and Delete Workspace), the Photos workspace and each workspace's toolbar. Map's with the map.
 
 ### Dialogs, sheets and the slideshow
 
@@ -2600,7 +2633,7 @@ Import and Print are full-window sheets and the slideshow an action (decisions 3
 
 `Toolbar` in `apertrust-ui`, drawn on the [UI wireframe](https://claude.ai/artifact/V4r2xReSqn344AQstUgeiK)'s board for the Toolbar, whose tweaks show both platforms, both themes and the narrow widths. Built: the order, the groups and the narrowing's steps; the mark at its start, which never folds, and before it the ☰ where the app asks for it (`menu_button`, drawn on Windows and Linux), which never folds either.
 
-**A toolbar a person customises** (decision 92, planned for Phase 3). The order below becomes the default of one list of item ids kept for each workspace, `[workspaces.<id>] toolbar`. Everything but the caption buttons and the Mac's traffic lights may be moved or hidden: the ☰, the mark, the save state, the jobs, an assistant's connection and every action ([Customising the Toolbar](#customising-the-toolbar)).
+**A toolbar a person customises** (decision 92, planned for Phase 3). The order below becomes the default of one list of item ids kept for each workspace, `toolbar` in its file (decision 96). Everything but the caption buttons and the Mac's traffic lights may be moved or hidden: the ☰, the mark, the save state, the jobs, an assistant's connection and every action ([Customising the Toolbar](#customising-the-toolbar)).
 
 - **Order.**
   - macOS: the traffic lights and the mark; Import…, Export…, Cull, Reset, Undo, Redo; Copy edit and Apply edit, as icons; the empty strip that moves the window; the jobs spinner ([The jobs window](#the-jobs-window), decision 57), an assistant's connection and the save state ([The edit, saved](#the-edit-saved)).
@@ -2678,18 +2711,24 @@ Planned (decision 92): Phase 3 builds the toolbar, its menu, tools' items, the o
 
 Every item of the toolbar menu is reachable from the keys whatever the toolbar shows: Hide "Undo" from Shift+F10 or the Menu key on that focused item, the others in View › Panels, which F10 opens while the ☰ is hidden. A toolbar with nothing focusable, which F6 skips, has nothing in its menu that only it reaches.
 
-**Customising.** The settings file is the full way until the Customise Toolbar window, a dedicated window of the dialog host built much later, from the toolbar menu and View › Panels; there is no palette inside the main window.
+**Customising.** The workspace's file is the full way until the Customise Toolbar window, a dedicated window of the dialog host built much later, from the toolbar menu and View › Panels; there is no palette inside the main window. The labels are app-wide, in `settings.toml`.
 
 ```toml
-[workspaces.edit]
+# workspaces/edit.toml: the toolbar is one key of the workspace's whole file, beside its tabs
+version = 1
 toolbar = ["menu-button", "mark", "import", "export", "reset", "undo", "redo", "space",
            "copy-edit", "apply-edit", "flexible-space", "jobs", "save-state"]
 
+[[tabs]]
+id = "photos"
+# … the rest of its tabs, then [pinned] and [order] (decision 96)
+
+# settings.toml
 [toolbar]
 labels = false
 ```
 
-- `toolbar` is written only once it changes; an id this build does not know, a tool or action removed or a newer build's, is skipped and kept; Save as Workspace copies the list and Reset Workspace puts the default back.
+- A built-in workspace with no file follows each build's default toolbar; once its file is written, whole, `toolbar` is the list as it was then. An id this build does not know, a tool or action removed or a newer build's, is skipped and kept; a new workspace from the visual editor copies the list, and Reset Workspace, deleting a built-in's file, puts the default back.
 - A test fails if a part's id is a registry action's id (`menu-button` is not the `menu` action, nor `mark` `about`).
 
 **The overflow,** measured every frame at the current scale and language, a step undone only once 16 points are spare:
@@ -2718,7 +2757,7 @@ labels = false
 | Not built yet | Disabled, "To come" |
 | On (Before and After, Clipping Warnings) | The filled icon in `text_strong`; an AccessKit toggle, pressed |
 | A tool's item, the tool off | Enabled; pressing it turns the tool on |
-| A tool the workspace leaves out | Enabled; it runs as its button would |
+| A tool the workspace hides (decision 96) | Enabled; it runs as its button would |
 | A background-only tool while a layer is edited (Phase 4) | Enabled; it acts on the background, and the tooltip says so |
 | A tool or action gone in a later build | Not drawn; its id kept in the file |
 
@@ -2729,7 +2768,7 @@ labels = false
 The Tools panel is resizable in width, and its scroll bar is quiet. Both are built.
 
 - **The tabs** are the current workspace's ([Workspaces](#workspaces)) and stay the same whatever the Viewer shows, so no tab appears or goes with the layout. In Edit the Photos tab is first (decision 37), then the editing tabs, Adjust, Detail, Geometry, Effects and Raw, and History last (decision 38; [below](#the-tabs-by-editing-stage)).
-  - Ctrl+1 to Ctrl+5 choose the first five by position, and L the first tab holding Collections (pressed again, nothing).
+  - Ctrl+1 to Ctrl+5 choose the first five by position, and L the first tab holding Collections (pressed again, nothing). A workspace shows at most 12 tabs of its file, `panel-tab-1` to `panel-tab-12` choosing them by position, and after them the Hidden tab when it is shown, chosen by `panel-tab-hidden` (decision 96).
   - The sixth and seventh, Raw and History in Edit, have no default key, since Ctrl+6 is Ctrl+− on French AZERTY keyboards, which would zoom out.
   - Each tab is a tile 58 by 52 points with its name and 36 by 32 without, its icon 22 points in both; without names the tab bar is as deep as the viewer bar beside it, 36 points.
   - With names, at 320 points three of the seven fold into », Effects, Raw and History, more at 240; without names all seven fit at 320, and Effects, Raw and History fold at 240. The chosen tab always shows.
@@ -2818,9 +2857,9 @@ Decided with the library (decisions 46, 52 and 53; [library.md](library.md#in-th
 
 #### The tabs, by editing stage
 
-The Edit workspace's tabs group the tools by editing stage, so that a normal edit stays in one tab, each tab listing its tools in the order a person reaches for them (decision 38). darktable's scene-referred groups follow the kind of processing instead, so an edit crosses every one of them, and list their tools in pipeline order with the last at the top; they are kept as the darktable workspace, for people coming from darktable. The lists are the workspaces' defaults: a person can reorder, pin, move and float sections, on screen only (decision 83, [below](#moving-pinning-and-floating-sections)). Neither has darktable's quick access panel or active-modules tab.
+The Edit workspace's tabs group the tools by editing stage, so that a normal edit stays in one tab, each tab listing its tools in the order a person reaches for them (decision 38). darktable's scene-referred groups follow the kind of processing instead, so an edit crosses every one of them, and list their tools in pipeline order with the last at the top; they are kept as the darktable workspace, for people coming from darktable. The lists are the workspaces' defaults: a person can reorder, pin, move, hide and float sections, on screen only (decisions 83 and 96, [below](#moving-pinning-and-floating-sections)). Neither has darktable's quick access panel or active-modules tab; Find Tool… is darktable's module search ([below](#finding-a-tool)).
 
-Built: Edit's tabs by editing stage with their labels and icons, each built tool in its tab and place, Detail drawn disabled until its first tool, History with its History section, Adjust first shown and the old ids read as unknown. darktable's groups are kept as the darktable workspace's lists (`DARKTABLE_GROUPS`), not shown in Edit; the workspace comes with named workspaces in Phase 3.
+Built: Edit's tabs by editing stage with their labels and icons, each built tool in its tab and place, Detail drawn disabled until its first tool, History with its History section, Adjust first shown and the old ids read as unknown. darktable's groups are kept as the darktable workspace's lists (`DARKTABLE_GROUPS`), not shown in Edit; the workspace is built in with decision 96's step 2.
 
 - **The bar,** in the Edit workspace: Photos, Adjust, Detail, Geometry, Effects, Raw, History.
   - Photos is first (decision 37) and History last, since darktable keeps the history stack in the darkroom's left panel, so Ctrl+1 to Ctrl+5 reach Photos to Effects.
@@ -2836,7 +2875,7 @@ Built: Edit's tabs by editing stage with their labels and icons, each built tool
   - Effects: Vignetting, Grain, Soften, Bloom;
   - Raw, in processing order: Raw black/white point, Highlight reconstruction, Demosaic, Input colour profile, Output colour profile.
 
-  [tools/README.md](tools/README.md) keeps the lists, and its sections follow them. darktable's module search can come as work of its own.
+  [tools/README.md](tools/README.md) keeps the lists, and its sections follow them.
 - **History** is built: a click and Tools Panel Tab's item choose it (`panel-tab-7`), and a tab kept as `history` opens it; it has no default key. It holds the History section, with no Scopes, Snapshots to come over it ([The Tools panel](#the-tools-panel); [history.md](history.md#in-the-app)). A tab with nothing behind it yet is drawn disabled, as a titled content tab without rows is (decision 29), its tooltip saying it is to come (`panel-tab-later`), its key unavailable: Detail, until its first tool.
 - **The Photos tab** is built, with Collections and its Folders alone ([The Tools panel](#the-tools-panel)): Ctrl+1, View › Collections (L) and a click choose it, and a tab kept as `photos` opens it. `library`, which earlier builds kept for it, is an unknown id. A tab kept in settings that is drawn disabled opens the workspace's first editing tab with a warning, its id kept.
 - **The tab first shown** in the Edit workspace is Adjust, which holds the tools every edit starts with.
@@ -2845,7 +2884,7 @@ Built: Edit's tabs by editing stage with their labels and icons, each built tool
 
 ##### The darktable workspace
 
-Planned, with named workspaces in Phase 3 (decision 38): a built-in workspace beside Edit, id `darktable`, named "darktable" in every language, chosen from View › Workspace. Its lists, those Edit showed before its tabs by editing stage, are kept in the app for the built tools (`DARKTABLE_GROUPS`), with the test holding them to `OPERATIONS` reversed.
+Planned (decisions 38 and 96, Phase 2's step 2): a built-in workspace beside Edit, id `darktable`, named "darktable" in every language, chosen from View › Workspace. Its lists, those Edit showed before its tabs by editing stage, are kept in the app for the built tools (`DARKTABLE_GROUPS`), with the test holding them to `OPERATIONS` reversed.
 
 - **The bar:** Photos, Base, Colour, Correct, Effect, History. darktable's bar (`src/libs/modulegroups.c`) is the quick access panel, the active modules, then the preset's groups, base, color, correct and effect, icon-only buttons whose tooltips name them; Apertrust puts its Photos tab first and its History last, so Ctrl+1 to Ctrl+5 reach Photos and the four groups. It opens on Base, where darktable opens its darkroom on `plugins/darkroom/groups`, 2 by default, which named its basic group while the groups were fixed (darktable 3.2) and lands on its second group, color, since presets define them.
 - **The labels** are darktable's words in British English and sentence case: Base, Colour, Correct, Effect (darktable's base, color, correct, effect).
@@ -2864,13 +2903,48 @@ Planned, with named workspaces in Phase 3 (decision 38): a built-in workspace be
   - Correct: Sharpen, Retouch (retouch layers, Phase 4), Haze removal, Chromatic aberrations, Lens correction, Denoise (profiled);
   - Effect: Vignetting, Soften, Grain, Bloom, Diffuse or sharpen.
 - **Scopes** are pinned by default in the four groups' tabs, as darktable's histogram sits over its groups; Layers join them once they come (Phase 4).
-- **An unknown tab id** in its settings opens Base with a warning, as Edit's open Adjust.
+- **An unknown tab id** kept for it opens Base with a warning, as Edit's open Adjust.
+
+#### Hidden tools
+
+Planned (decision 96, Phase 2's step 3). A tool a workspace puts in no tab is **hidden**: out of every tab, still the person's to use.
+
+- **The Hidden tab,** computed, never kept: the workspace's hidden tools, processing tools in pipeline order, first at the top, as Edit's Raw lists them, then utilities in Edit's order. Its id is `hidden`, its title Hidden (`tab-hidden`), its icon Lucide's `eye-off`, with its filled form for the chosen tab. Nothing in it is pinned or reordered, and it has no Reset Tab or Processing Order.
+- **Show Hidden Tools,** a checked item in the tab bar's menu and ⋮ (`tools-panel-show-hidden`), app-wide in `settings.toml` (`tools_panel.show_hidden`, off): checked, the Hidden tab shows last in the tabs and is chosen; unchecked, it goes, and the tab shown before it is shown again. With nothing hidden it says "No hidden tools in this workspace."
+- **Hiding and showing:** ⋯ › Hide, `section-hide`, or a drop on the Hidden tab's icon hides a tool from every tab of the workspace; ⋯ › Show in Tab ▸, `section-show` or a drop on a tab's icon moves a hidden one to a tab. Export is never hidden: its Hide is disabled, saying "Export stays in every workspace".
+- **The dot.** While a hidden processing tool changes the photo and the Hidden tab is not shown, a dot, `accent` and 6 points as on the Toolbar's Import… ([The Toolbar](#the-toolbar)), sits at the top end of ⋮. A tool changes the photo when it is on, for a tool darktable leaves off (decision 32), or a control of it is off the value the photo's default steps give it, for one every photo runs; utilities never do. ⋮'s tooltip and Show Hidden Tools' tip say "Hidden tools change this photo: Exposure, Vignetting"; screen readers hear it as ⋮'s description, and once, politely, as it appears.
+- **Revealing:** what reveals a tool reveals a hidden one in the Hidden tab, shown for the moment while Show Hidden Tools is off: View › Collections (L) where Collections is hidden, History's Shift-click on a hidden tool's step.
+
+#### Finding a tool
+
+Planned (decision 96, Phase 2's step 6), darktable's module search (`src/libs/modulegroups.c`).
+
+- **A capability, not a tool:** Find Tool… is a registry action, `find-tool`, on Ctrl+Shift+F (Cmd+Shift+F on a Mac), which nothing else uses, and a temporary state of the Tools panel, with no `ToolDefinition` and no section, never in a tab and never hidden. It opens from its key, the tab bar's menu and ⋮.
+- **Opening:** the tab bar's row becomes the search field, in the same place and at the tab bar's height, with tab names or without (56 points with them, 36 without), the focus in it, the search icon at its start and ✕ at its end; while it shows the tabs give way, their keys and Tools Panel Tab's items doing nothing. The tab shown's sections, the pinned ones too, give way to the results.
+- **Its design** is the [UI wireframe](https://claude.ai/artifact/V4r2xReSqn344AQstUgeiK)'s "Find Tool…" board: the tab bar's menu, the empty field, results, a result opened, a hidden tool's ⋯ and no match.
+- **An empty field** shows no list: a hint centred in `text_secondary`, "Type a tool's name."
+- **The results** are the tools' own sections, closed, their headers as everywhere (↺, presets, ⋯), and after the title, in `text_secondary`, where each lives: its tab's name, or `eye-off` and Hidden. Opening one gives the real tool, usable there; a hidden one's ⋯ has Show in Tab ▸. Every tool of the Tools panel can be found, hidden ones included, each once, a tool in several tabs (Scopes) named by its first; never an import tool.
+- **Matching and order,** case- and accent-insensitive: first the tools whose name in the interface's language starts with the text, then those whose name has a word starting with it, then those matched by their British English name, their darktable module's name or one of darktable's aliases for it (`dt_iop_get_localized_name`, `dt_iop_get_localized_aliases`; each tool's `.search` attribute in Fluent, from darktable's strings and translations). Ties go in processing order, utilities last. Nothing in a result is highlighted, since a synonym, not the name, may be what matched; the interface calls them other words for a tool and never names darktable.
+- **Nothing matches:** "No tool matches "…"." with the text typed, where the hint was.
+- **Keys:** typing filters at once; ↓ from the field goes to the first result's header, ↑ and ↓ between the results' headers; Return opens or closes the focused result, Return in the field opens the first. Esc closes search at once and brings back the tab shown before, its sections as they were; Esc in an open list or a value field inside a result closes only that. Ctrl+Shift+F again, or ✕, closes it too. Search stays open while a tool found there is used.
+- **A hidden tool used from search stays hidden;** the dot says whether it changes the photo.
+- **A floating tool** (Phase 3) is listed as its header alone, marked Floating; choosing it brings its floating panel to the front, so no section is drawn twice.
+- **Screen readers:** the field is a search box named "Find a tool"; after each keystroke a polite live region says how many tools match ("3 tools"); each result's description says where it lives, "in Adjust" or "hidden".
+
+#### The tab bar's menu
+
+Planned (decision 96, Phase 2's step 5): `Place::TabBar`, the app's own place ([Context menus](#context-menus)). A right-click anywhere on the tab bar, a tab's icon or its empty end, or Shift+F10 and the Menu key on a focused tab, opens it:
+
+1. Find Tool…, Show Hidden Tools, Workspace ▸ ([Workspaces](#workspaces));
+2. Reset Tab, Reset Workspace, Processing Order ([Moving, pinning and floating sections](#moving-pinning-and-floating-sections)).
+
+Opened on a tab's icon, Reset Tab and Processing Order act on that tab, elsewhere on the tab shown; both are disabled on the Hidden tab, and Reset Tab on a tab of the person's own, which has no defaults; Processing Order, which only sorts a tab's processing tools, works there. Reset Workspace deletes a built-in workspace's file and is disabled for one with no file and for a person's own. Find Tool… is drawn disabled until search is built. The Tools panel's ⋮ holds the same items, so none needs a right-click, then its own: Show Tab Names, Customise Tabs…, drawn disabled until Phase 3's visual editor, and Dock All Floating Panels (Phase 3).
 
 #### Moving, pinning and floating sections
 
-Planned (decision 83): built in Phase 3 with named workspaces, the floating panels in the UX pass after it ([Build order](#build-order)). Every section, a tool or a utility, moves within its tab, to the pinned area, to another tab or over the photo, by one gesture, dragging its header, and by its ⋯ menu, keys and screen readers' actions. Where it is released decides what happens.
+Planned (decisions 83 and 96): ⋯'s items with Phase 2's step 4, Reset Tab, Reset Workspace and Processing Order with step 5, the drag with step 7, the floating panels in Phase 3 ([Workspaces](#workspaces)). Every section, a tool or a utility, moves within its tab, to the pinned area, to another tab or over the photo, by one gesture, dragging its header, and by its ⋯ menu, keys and screen readers' actions. Where it is released decides what happens.
 
-**Display order only.** A move changes the workspace's layout in settings, never the edit, its history or the render: no session command carries it, and the engine plans by each operation's slot whatever order it is given. Each tab starts in its default order, Edit's the editing order (decision 38). This departs from darktable, whose drag of a processing module's header changes the pipeline order (`src/develop/imageop.c` at the reference release); its utility modules' drag (`src/libs/lib.c`) is the same as Apertrust's. So that the departure is never misread:
+**Display order only.** A move changes the workspace's layout in its file (decision 96), never the edit, its history or the render: no session command carries it, and the engine plans by each operation's slot whatever order it is given. Each tab starts in its default order, Edit's the editing order (decision 38). This departs from darktable, whose drag of a processing module's header changes the pipeline order (`src/develop/imageop.c` at the reference release); its utility modules' drag (`src/libs/lib.c`) is the same as Apertrust's. So that the departure is never misread:
 
 - a processing tool's drag says, under the lifted header, "Moves it in this tab only. Processing order stays fixed.";
 - Ctrl+Shift with the drag, darktable's gesture, does what a plain drag does;
@@ -2886,7 +2960,7 @@ stateDiagram-v2
     Dragging --> Rest: Esc, right-click, focus lost, a dialog (nothing changes)
     Dragging --> Rest: released where nothing changes
     Dragging --> Moved: released over a target
-    Moved --> Rest: settings written, the focus on the moved header
+    Moved --> Rest: the workspace's file written a second later, the focus on the moved header
 ```
 
 **The gesture.**
@@ -2904,41 +2978,44 @@ stateDiagram-v2
 | A gap in the pinned area, or the upper half of the band under it | Moves it there and pins it in this tab |
 | The lower half of the band | Moves it to the top of the scrolling list, unpinned |
 | Another tab's icon | Moves it to that tab, the tab shown unchanged; held 0.6 s, that tab opens under the drag |
+| The Hidden tab's icon | Hides it, as ⋯ › Hide does; Export takes no such drop (decision 96) |
 | The Viewer | Floats it there |
-| Its own place or a gap beside it, the current tab, a tab already holding it ("Already in Effects"), a disabled tab, », ⋮, the tab bar's empty end | Nothing: such a tab's icon takes no drop and does not open under the drag |
+| Its own place or a gap beside it, the current tab, a tab already holding it ("Already in Effects"), a disabled tab, », ⋮, the tab bar's empty end, a gap in the Hidden tab | Nothing: such a tab's icon takes no drop and does not open under the drag; nothing in the Hidden tab is reordered or pinned |
 
-**After a drop** the list reflows once; the section keeps its open state, content tab and groups; its header shows the hover band for 600 ms and keeps the focus, without a ring; the layout is written to settings at once. A section's controls keep their state through a move, each section drawn under a scope id of its own (`UiBuilder::scope_id`).
+**After a drop** the list reflows once; the section keeps its open state, content tab and groups; its header shows the hover band for 600 ms and keeps the focus, without a ring; the layout is written to the workspace's file once it has stood still for a second, as every layout change is (decision 96). A section's controls keep their state through a move, each section drawn under a scope id of its own (`UiBuilder::scope_id`).
 
-**Another tab.** Dropped on a tab's icon, a processing tool lands at its pipeline place among that tab's processing tools, by its nearest neighbour there; a utility at the top of the scrolling list; unpinned, unless the spring-loaded tab lets the person drop it exactly. A move never copies: the section leaves the tab it was dragged from and lands in another, so a tool whose only tab that was can move as any section can, and every tool stays in a tab of Edit. A section in several tabs, such as Scopes, leaves only the tab it was dragged from; Move to Tab › lists a tab already holding it disabled. Moved to another tab, the focus goes to that tab's icon.
+**Another tab.** Dropped on a tab's icon, a processing tool lands at its pipeline place among that tab's processing tools, by its nearest neighbour there; a utility at the top of the scrolling list; unpinned, unless the spring-loaded tab lets the person drop it exactly. A move never copies: the section leaves the tab it was dragged from and lands in another, so a tool whose only tab that was can move as any section can; a hidden one dragged from the Hidden tab or search's list leaves `hidden`. A section in several tabs, such as Scopes, leaves only the tab it was dragged from; Move to Tab › lists a tab already holding it disabled. Moved to another tab, the focus goes to that tab's icon.
 
-**Any section in any tab.** The Tools panel draws each tab's sections by id through one dispatcher: a tool, Collections, Scopes, History, later the rest. History's header stays at its tab's top only while it is alone there; with company, its list is a fixed-height `section_list`, as Collections' groups are. View › Collections (L) chooses the first tab holding Collections, or brings it to the front where it floats; History's Shift-click on a step does the same for its tool. Scopes are counted whenever they are shown and open, in a tab or floating. A tab everything has left says "Nothing in this tab. Drag a section's header here, or use Customise Tabs…".
+**Any section in any tab.** The Tools panel draws each tab's sections by id through one dispatcher: a tool, Collections, Scopes, History, later the rest. History's header stays at its tab's top only while it is alone there; with company, its list is a fixed-height `section_list`, as Collections' groups are. View › Collections (L) chooses the first tab holding Collections, or brings it to the front where it floats; History's Shift-click on a step does the same for its tool. Scopes are counted whenever they are shown and open, in a tab or floating. A tab everything has left says "Nothing in this tab. Drag a section's header here, or use Move to Tab in a tool's ⋯."
 
 **The ⋯ menu,** for a tool and a utility alike, through the popup service, native on the Mac (decision 40):
 
 | Item | Does | Disabled when |
 | --- | --- | --- |
+| Pin, or Unpin | To the end of the pinned list, or the top of the scrolling list | — |
 | Move Up, Move Down | One place in its list, the pinned or the scrolling one | First, or last, in it |
-| Move to Pinned Area, or Move to Scrolling Area | To the end of the pinned list, or the top of the scrolling list | — |
 | Move to Tab › each tab by name | As a drop on its icon | The tab it is in, one already holding it, a disabled tab with its "to come" tip |
+| Hide | Out of every tab of the workspace, into the Hidden tab (decision 96) | Export, "Export stays in every workspace"; a floating section, until it docks (decision 83) |
+| Show in Tab › each tab by name, for a hidden tool, in place of the four above | Moves it there, out of the Hidden tab | A disabled tab |
 | Float, or Dock | Floats it near the Tools panel's top, or returns it to the place it left | — |
 | Position › Top Left, Top Right, Bottom Left, Bottom Right (a floating panel) | Moves the panel to that corner | — |
 
 A section's header takes no right-click, a tool's or a utility's, nor Shift+F10 or the Menu key ([Context menus](#context-menus), decision 91): a tool's presets come from its header's presets button, and ⋯ opens from its own button, which Tab reaches. A tool's own items join ⋯ between the app's editing items and these layout items.
 
-**Keys and screen readers.** On a focused header, Alt+↑ and Alt+↓ (Option on a Mac) move it up and down, repeating while held; on a floating panel's header Alt+Shift with the arrows move the panel 10 points. The registry's actions, with no default keys: `section-move-up`, `section-move-down`, `section-pin`, `section-move-to-tab-1` to `-7`, `section-float` and `section-dock`, each acting on the section whose header has the focus and unavailable otherwise; and `dock-all`, available while a section floats, and `tab-processing-order`, acting on the tab shown and unavailable in one with no processing tools, neither needing a header's focus. To AccessKit the header stays a Button with its expanded state and gains the custom actions Move up, Move down, Pin, Float and Dock; a polite live region says "Exposure moved to 3 of 12 in Adjust", "Exposure pinned in Adjust", "Exposure moved to Raw", "Exposure floating" and "Exposure docked in Base".
+**Keys and screen readers.** On a focused header, Alt+↑ and Alt+↓ (Option on a Mac) move it up and down, repeating while held; on a floating panel's header Alt+Shift with the arrows move the panel 10 points. The registry's actions, with no default keys: `section-move-up`, `section-move-down`, `section-pin` (Pin or Unpin), `section-move-to-tab-1` to `-12`, `section-hide`, `section-show` (to its first default tab the workspace has, else the first tab holding tools), `section-float` and `section-dock`, each acting on the section whose header has the focus and unavailable otherwise; and `dock-all`, available while a section floats, and `tab-processing-order`, acting on the tab shown and unavailable in one with no processing tools, neither needing a header's focus. To AccessKit the header stays a Button with its expanded state and gains the custom actions Move up, Move down, Pin or Unpin, Hide or Show, Float and Dock; a polite live region says "Exposure moved to 3 of 12 in Adjust", "Exposure pinned in Adjust", "Exposure moved to Raw", "Vignetting hidden", "Vignetting shown in Effects", "Exposure floating" and "Exposure docked in Base".
 
 **Floating panels,** inside the app's window, never windows of their own:
 
 - **What it is:** the same section, drawn by the same function and sending the same changes, on an `egui::Area` over the Viewer, below the viewer bar and never over the Tools panel, the Toolbar or the Browser; on `raised` with the popup shadow and a 1-point `border`, solid, never translucent. Popups, tooltips and dialogs stay over it, and a press on it brings it to the front. The photo takes no click under it, and nothing that reads the pointer over the photo reads it there.
-- **It belongs to no tab:** it shows whatever tab is chosen, and no tab shows anything for it; its id stays in its tabs' lists in settings, hidden while it floats, so the place it left, pinned or not, survives a restart. The layout remembers the place it left, its tab and its place in that tab's lists.
+- **It belongs to no tab:** it shows whatever tab is chosen, and no tab shows anything for it; its id stays in its tabs' lists in the workspace's file, hidden while it floats, so the place it left, pinned or not, survives a restart. The layout remembers the place it left, its tab and its place in that tab's lists.
 - **Its header** is the section's, with its buttons, and at its end × named for the tab it left, "Return to Adjust". × docks it, as ⋯ › Dock and Dock All Floating Panels do: back to the place it left, or to its default place where that tab no longer holds it (with none of its default tabs left, the end of the first tab that holds tools).
 - **Moving and docking:** dragging its header moves it over the Viewer, its edges snapping within 8 points to the Viewer's and to other floating panels' edges; dragged over the Tools panel, it shows the insertion line, and released there it docks at that gap, in any tab, which also moves it from the tab it left to that one. Released on a tab's icon, it docks there as a drop on the icon does. Into a tab that already holds it, as Scopes may, it docks at the gap, its place there moved to it, and the tab it left keeps it.
 - **Its size:** at first the Tools panel's width as it floats; a `PanelEdge` on each side edge, with the edge's keys, from 240 to 600 points; its height its content's, up to the Viewer's less 16 points, its body scrolling beyond with the quiet scroll bar.
 - **The window and the panels:** each keeps its distance from its corner of the Viewer, beside the Tools panel or away from it, as the window, the Tools panel or the Browser change size, pushed inside where an edge would cut it; where the Viewer has not 160 points of photo beside it or 200 points of height, it shows docked at the place it left until there is room again, nothing written. Under a sheet or the slideshow it is hidden and comes back as it was; with no photo it follows its section's rule, as docked: a tool's controls disabled, Collections and the Photos tab's other sections working as ever.
 - **Focus:** F6 visits the region Floating panels after the Tools panel, and Tab goes through them front to back. H held over it peeks as in the Tools panel.
-- **Kept:** which sections float, in the workspace; each one's place and width, app-wide, so it comes back as it was; its open state, the section's one open state everywhere.
+- **Kept:** which sections float, in the workspace's file; each one's place and width, app-wide in `settings.toml`, so it comes back as it was; its open state, the section's one open state everywhere.
 
-**The ways back:** Esc during a drag; the opposite move; ⋮ › Processing Order; ⋮ › Reset Tab, the tab's layout as it shipped: a section it brings back leaves any other tab whose defaults lack it, so a move out of the tab is undone while Scopes, shipped in several tabs, stay in each; a section it takes out goes to its default place where no other tab holds it; floating sections stay floating, one whose tab no longer holds it docking later at its default place; Dock All Floating Panels, in ⋮ and View › Panels; from Phase 3, Reset Workspace.
+**The ways back:** Esc during a drag; the opposite move; ⋮ › Processing Order; ⋮ › Reset Tab, the tab's layout as it shipped: a section it brings back leaves any other tab whose defaults lack it, so a move out of the tab is undone while Scopes, shipped in several tabs, stay in each; a section it takes out goes to its default place where no other tab holds it; floating sections stay floating, one whose tab no longer holds it docking later at its default place; Dock All Floating Panels, in ⋮ and View › Panels; Reset Workspace, deleting a built-in workspace's file. Reset Tab also takes the tools it brings back out of the Hidden tab, and a tool it takes out that no other tab holds goes to its default tabs the workspace has, else it is hidden, but a floating one, which stays floating (decision 96).
 
 ### The photo frame
 
@@ -3533,7 +3610,7 @@ Over a section's header, its chevron, title and empty space, never its buttons, 
   - `Picker`, a picker's button pressed, which it sends as `Command::Picker` and shows at once, the picker on or off ([pickers.md](pickers.md#the-picker-button));
   - `Toggle`, `Tab` and `Group`, which change the app's own state after the section is drawn.
 - **Values are what the row shows:** a definition's 0.01 is f32's 0.0099999998, so the renderer widens each f32 to the decimal it was written as before the slider steps and clamps in f64, and a key step lands on +2.00, not on +1.9999999. A value is then rounded to the row's decimals before it is sent, so nothing finer than the row shows is ever set: a Contrast of 0.1 would run colour balance rgb while its row read "0". A key's move is never less than that last decimal (darktable's `min_visible`), so Alt's tenth of a step still moves where the step is the last decimal, as on Global offset chroma.
-- **Which tools a tab shows** is a list per tab in the app (`TAB_TOOLS`), in [tools/README.md](tools/README.md)'s order (decision 38; [The tabs](#the-tabs-by-editing-stage)), until Customise tabs edits it (step 7). From Phase 3 they are the Edit workspace's defaults, from which, with what settings keep, the layout shown is worked out (decision 83).
+- **Which tools a tab shows** is a list per tab in the app (`TAB_TOOLS`), in [tools/README.md](tools/README.md)'s order (decision 38; [The tabs](#the-tabs-by-editing-stage)). With decision 96's step 1 they are the Edit workspace's defaults, from which, with the workspace's file, the layout shown is worked out (decisions 83 and 96).
   - **Built:** Edit's tabs by editing stage, each list in editing order, Raw's in processing order; a test holds the lists as decision 38 records them, for the tools built, and each tool in exactly one of Edit's tabs:
     - Adjust: White balance, Colour calibration, Exposure, AgX (the edit's tone mapper), the Tone equalizer, Haze removal, the Tone curve (RGB curve's place), Colour balance RGB and RGB primaries;
     - Detail: nothing yet, so it is drawn disabled;
@@ -4005,7 +4082,7 @@ Ctrl means Cmd on macOS.
 | App | Undo, Redo | Ctrl+Z; Ctrl+Shift+Z, and Ctrl+Y on Windows and Linux | Built: the photo's history, a focused text field keeping them for its own |
 | App | Copy edit, Apply edit | Ctrl+Shift+C, Ctrl+Shift+V | Not built; Copy or apply parts has no key. Apply edit acts on every selected photo |
 | App | Reset | None, as darktable's discard history has no default key | Its button; the active photo only |
-| App | Tools panel tabs 1 to 7 | Ctrl+1 to Ctrl+5 | By position, whatever the tabs hold (`panel-tab-1` to `panel-tab-7`, one for each tab, decision 38). With the Photos tab first, the sixth and seventh, Raw and History in Edit, have no default key: Ctrl+6 is Ctrl+− on French AZERTY keyboards, whose 6 key types −; the settings file's `keys` table can give each one |
+| App | Tools panel tabs 1 to 7, planned up to 12 with the Hidden tab's (decision 96) | Ctrl+1 to Ctrl+5 | By position, whatever the tabs hold (`panel-tab-1` to `panel-tab-7`, one for each tab, decision 38; planned, `panel-tab-12` and `panel-tab-hidden`). With the Photos tab first, the sixth and seventh, Raw and History in Edit, have no default key: Ctrl+6 is Ctrl+− on French AZERTY keyboards, whose 6 key types −; the settings file's `keys` table can give each one |
 | App | Interface scale | None by default: View › Interface Size and Settings set it, and a user may give it keys | egui's zoom factor, from 50% to 300% in steps of 10%. egui's own zoom keys are off, so the registry owns them. `actions.rs` still gives it Ctrl+=, Ctrl+− and Ctrl+0 until the photo's zoom is built, when they move to it |
 | App | Next and previous pane | F6, Shift+F6 | Between the regions, as above |
 | App | Jobs | Ctrl+Shift+J | Opens the jobs window, or brings it to the front; never disabled, as the window opens beside any dialog |
@@ -4022,7 +4099,8 @@ Ctrl means Cmd on macOS.
 | View | Extend the selection | Shift with the arrows, in the Browser | Phase 3, with selecting several photos |
 | View | Zoom the photo in and out, and to Fit | Ctrl+= (or Ctrl++), Ctrl+−; Ctrl+0 fits | Declared with no key, not yet available: the scale's zoom comes with the viewport's 100% view, and the keys with it; at the point under the pointer when it is over the photo. Every cell together with several shown |
 | View | Zoom the photo to 100%, and back to Fit | Z | Declared with Z, not yet available, as above; in Photo only |
-| View | Search the Browser by file name | Ctrl+F, from a value field too, which does not keep it | Planned: View › Search Photos… alone ([The browser bar](#the-browser-bar)) |
+| View | Find a tool (`find-tool`), the Tools panel's search | Ctrl+Shift+F, from a value field too, which does not keep it | Planned, decision 96's step 6: in the tab bar's menu and ⋮ ([Finding a tool](#finding-a-tool)) |
+| View | Search the Browser by file name | Ctrl+F, from a value field too, which does not keep it; unassigned until it is built (decision 96) | Planned: View › Search Photos… alone ([The browser bar](#the-browser-bar)) |
 | View | The Browser's sort and its direction; the thumbnails' size; their captions; the panel's position | None by default: the browser bar's Sort, Labels and Zoom, its options menu and View's items; Ctrl+= and Ctrl+− stay the photo's | Phase 2, with the browser bar; Sort by Rating in Phase 3 |
 | View | Select every photo, or none | Ctrl+A, Ctrl+Shift+A | Phase 3; Ctrl+A is a focused field's own |
 | View | Previous Selection | Ctrl+Shift+D (decision 90) | Phase 3, with selecting several photos. darktable gives this key to "duplicate virgin", New Virtual Copy from Original here, which gets another key when virtual copies are designed |
@@ -4058,7 +4136,7 @@ It is versioned (`version = 2`) and migrated as `.apxmp` is, version 1 to 2 movi
 - the keys that differ from the defaults;
 - whether the Tools panel's tabs show their names, and its width once the user drags its edge ([The Tools panel](#the-tools-panel));
 - the Browser's position and its rows and columns, and the browser bar's sort and thumbnail size, each once the user changes it ([The Browser](#the-browser), [The browser bar](#the-browser-bar));
-- the workspaces ([Workspaces](#workspaces)): in each, the tab last shown; once Customise tabs edits them (step 7), what the user changed in a built-in one; from Phase 3, the current one by id and the user's own whole, and in each its layout, each tab's pinned and scrolling sections and the sections that float (decision 83);
+- the current workspace by id, `workspace`, and Show Hidden Tools (decision 96, planned); the workspaces themselves are files of their own, and the tab last shown in each goes to `state.toml` ([Workspaces](#workspaces)); today Edit's tab, `[edit] tab`;
 - each floating panel's place and width, the same in every workspace (decision 83, with the floating panels);
 - the sections the user opened or closed, the same in every workspace, and the collapsible groups, by tool and group (decision 29);
 - the Scopes section's view (the graph, the scale, the channels shown and the clipping toggles), in a top-level `[scopes]` table, one key per part, each once the user changes it, the same in every workspace;
@@ -4157,14 +4235,15 @@ Import, Shortcuts, Presets and AI are dimmed until they hold something. Planned 
 With the parts one view adds:
 
 ```toml
-workspace = "cull"          # from Phase 3
+workspace = "portraits"     # the current workspace's id, decision 96, planned
 
 [tools_panel]
 tab_names = false
+show_hidden = true          # Show Hidden Tools, decision 96, planned
 width = 480
 
 [edit]
-tab = "adjust"
+tab = "adjust"              # read only for its move into state.toml, decision 96, planned
 
 [edit.sections]
 exposure = false
@@ -4185,18 +4264,6 @@ x = 24
 y = 48
 width = 320
 
-[workspaces.edit.pinned]       # decision 83, planned
-adjust = ["scopes"]
-
-[workspaces.edit.order]
-adjust = ["exposure", "temperature", "channelmixerrgb", "agx", "toneequal", "hazeremoval", "tone_curve", "colorbalancergb", "primaries"]
-
-[workspaces.edit.floating]
-scopes = "adjust"
-
-[workspaces.photos]            # from Phase 3
-tab = "photos"
-
 [viewer]
 margin = 16                 # points; no page in Settings
 proof_margin = 0.25         # of the slot's smaller side; no page in Settings
@@ -4205,15 +4272,12 @@ layout = "map"              # from Phase 3, once the Map exists
 show_selected = false       # from Phase 3
 ```
 
-- **Workspaces** live under `[workspaces.<id>]`: a built-in one holds only what the user changed in it, the toolbar's `toolbar` list among them (decision 92, planned), with Toolbar Labels app-wide as `[toolbar] labels`; a user's own adds its name and its tabs, each with its id, name, icon, sections and pinned sections.
-- **The layout** (decision 83, planned): in each workspace, `pinned.<tab>` and `order.<tab>`, a tab's pinned and scrolling sections top first, written together once either changes, so a tab nobody changed follows each build's defaults; `floating.<section>`, the tab a floating section left, its id staying in that tab's lists; `hidden`, the sections a workspace leaves out, written by Customise tabs, never a tool in Edit; `seen`, every section known when the tabs' lists were last written, written with them as what it held and every section the build has, every tab with kept lists and every tab showing a section it did not name written then as shown, unknown ids left in place, so an older build writing such a tab keeps the section in it. App-wide, `[tools_panel.floating.<section>]`: `corner` (`top-beside`, `top-away`, `bottom-beside` or `bottom-away`, the Viewer's corner it keeps its distance from, beside the Tools panel or away from it), `x` and `y`, that distance, and `width`, in points; a place a smaller window cannot show is shown pushed inside, never written. Where only one of a tab's two lists is kept, the other is its default less the ids the kept one holds; an id in both stays pinned, one twice in a list keeps its first place, and one `hidden` names is in no list. An id this build does not know is skipped and kept; a section neither `seen` nor `hidden` names is new and goes into each tab whose default list holds it and that does not show it already, after its nearest preceding default neighbour there, else before its nearest following one, else first, so a changed tab gains it whatever the other tabs show, and a section moved out of a tab never comes back to it; with no `seen`, the sections the kept lists, `floating` and `hidden` name are the ones seen; and a section no tab holds then, new or seen, that `hidden` does not name goes into each tab whose default list holds it, placed as a new section is, as one Customise tabs takes out of `hidden` or one a hand-written file leaves out, or, with none of its default tabs left in the workspace, at the end of the scrolling list of its first tab that holds tools, so every tool stays in a tab of Edit. Reset Tab removes the tab's two lists, takes the sections it brings back out of the other tabs whose defaults lack them, and puts a section it takes out that no other tab holds at its default place, as a new section goes ([the ways back](#moving-pinning-and-floating-sections)).
-- **The tab** is kept by id (`adjust`), each workspace its own, so a tab that moves keeps it. **Sections** are kept by id, the same in every workspace, only those the user opened or closed, the others as their section starts. **Tab names** are the Tools panel's, the same in every workspace.
+- **Workspaces** are not in `settings.toml`: each is its own file, `<user data>/workspaces/<id>.toml`, with its own version, holding its tabs, each tab's pinned and other tools, the tools it hides, `seen`, the sections that float and the toolbar's items (decision 96, planned; [Workspaces](#workspaces)). `settings.toml` keeps only `workspace`, the current one's id, `edit` by default, an id with no workspace opening Edit with a warning and kept until another is chosen, and `tools_panel.show_hidden`. Toolbar Labels stays app-wide as `[toolbar] labels` (decision 92).
+- **The floating panels' places,** app-wide (decision 83, planned), `[tools_panel.floating.<section>]`: `corner` (`top-beside`, `top-away`, `bottom-beside` or `bottom-away`, the Viewer's corner it keeps its distance from, beside the Tools panel or away from it), `x` and `y`, that distance, and `width`, in points; a place a smaller window cannot show is shown pushed inside, never written.
+- **The tab** is kept by id (`adjust`), each workspace its own, so a tab that moves keeps it: today `[edit] tab`; planned, `state.toml`'s `[tab]`, keyed by workspace id (`edit = "adjust"`), beside the recents, since it is state that changes with every tab chosen ([settings.md](settings.md#the-settings-schema), `state.toml`). `edit.tab` then stays in the schema, read only where `state.toml` holds no tab for Edit, for its move there, never written, as `library.recent_folders` moved; neither file's version rises. **Sections** are kept by id, the same in every workspace, only those the user opened or closed, the others as their section starts. **Tab names** and **Show Hidden Tools** are the Tools panel's, the same in every workspace.
 - **The Tools panel's width** is in points, the same in every layout and workspace, under `[tools_panel]` as `width`, kept only once dragged. A value outside 240 to 600 is read as the nearer end, with a warning, and left in the file until the user drags the edge; the width shown in a narrower window is never written.
 - **The Browser's size** is in whole lines under `[browser]`, `rows` at the bottom and `columns` at the sides, beside `position`, `sort`, `descending` and `thumbnails`, the same in every layout and workspace, each kept only once changed; a value out of range is read as the nearer end; the lines a smaller window shows are never written.
-- **`[edit]`** holds Edit's tab, sections and collapsible groups (`tab`, `[edit.sections]` and `[edit.groups.<tool>]`, decision 29). Version 2 keeps them there, its migration renaming their `browse` entries `collections` ([settings.md](settings.md#the-settings-schema), The migrations).
-- **Planned with the layout** (decision 83): the tab moves to the Edit workspace's, `[workspaces.edit]`'s `tab`, and the sections and the groups to `[tools_panel.sections]` and `[tools_panel.groups.<tool>]`.
-  - A file with `[edit]` is read into those where they are missing, and the first write of any of them removes `[edit]`, so none is written without the others and the move drops no group.
-  - The version rises with the move, its migration moving `[edit]`'s tables, as settings.md's rule for a key that moves has it: an older build then reads the file without writing it, never writing `[edit]` back beside the new tables.
+- **`[edit]`** holds the sections' open state and the collapsible groups (`[edit.sections]` and `[edit.groups.<tool>]`, decision 29), the same in every workspace, and today Edit's tab. Version 2 keeps them there, its migration renaming their `browse` entries `collections` ([settings.md](settings.md#the-settings-schema), The migrations). They stay there: no move to other keys is planned (decision 96).
 
 ### Reading and writing
 
@@ -4255,7 +4319,7 @@ show_selected = false       # from Phase 3
   - the popup (planned) a SpinButton with a description of its keys and a polite live region for each step, the focus back on the slider when it closes;
   - an exact value by keyboard: Tab to the slider, type "6.5", Enter; the popup without a mouse: Enter, Shift+F10, the Menu key or ShowContextMenu.
 - **A colour picker** ([pickers.md](pickers.md#accessibility)): its button a toggle button described by its tooltip; while it is on, its point or area on the photo a group named "Picker area, Exposure", its value the region in percent of the photo, Increment and Decrement moving it along x and the custom actions Move up and Move down along y, the keys its own while it has the focus; and a polite live region reading out what a pick changed once it has rested half a second.
-- **A section's place** (decision 83, planned): every drag has a menu item and a key; the header, a Button, has the custom actions Move up, Move down, Pin, Float and Dock; after a move a polite live region says where it went ("Exposure moved to 3 of 12 in Adjust"); each floating panel is a pane named by its section, in the region Floating panels.
+- **A section's place** (decisions 83 and 96, planned): every drag has a menu item and a key; the header, a Button, has the custom actions Move up, Move down, Pin or Unpin, Hide or Show, Float and Dock; after a move a polite live region says where it went ("Exposure moved to 3 of 12 in Adjust", "Vignetting hidden"); each floating panel is a pane named by its section, in the region Floating panels. Find Tool's field is a search box named "Find tool", the count of tools found said politely; the dot on ⋮ is its description.
 - **Keyboard** as above, with a visible focus ring from the theme. The ring shows after a key or a screen reader's request moves focus, not after a click or a drag, as web browsers' `:focus-visible` does (`apertrust-ui`'s `FocusVisible`): a slider being dragged has focus, and a ring around it only distracts.
 - **Scale:** the system's scale times the user's (egui's zoom factor, set in View › Interface Size and in Settings, with no default keys, since Ctrl+= and Ctrl+− are the photo's zoom); every size is a token in points.
 - **Colour:**
@@ -4269,7 +4333,7 @@ show_selected = false       # from Phase 3
 
 - **Unit tests** for:
   - formatting and parsing;
-  - the models the shell draws from: the layouts' cells, the selection's rules and the workspaces, the Tools panel's layout among them (the defaults equal to decision 38's lists, a kept list shown as kept, a new section placed by its neighbour in a changed tab while an unchanged one shows it, a section moved out of a tab kept out, a section a newer build placed kept in each of its tabs after an older build writes one of them, unknown ids kept, no section twice in one tab, a section drawn once a frame though it sits in several tabs, as Scopes do; decision 83);
+  - the models the shell draws from: the layouts' cells, the selection's rules and the workspaces, the Tools panel's layout among them (the defaults equal to decision 38's lists, a workspace's file read and written whole, a new tool placed by its neighbour in its default tab or hidden where the workspace lacks it, a tool in no tab hidden, Export never hidden, unknown ids kept in place, no section twice in one tab, a section drawn once a frame though it sits in several tabs, as Scopes do, the search's matches; decisions 83 and 96);
   - the actions registry (no default shortcut used twice in one scope);
   - settings migrations;
   - the mirror, fed event sequences (`crates/app/src/mirror.rs`).
@@ -4298,9 +4362,9 @@ Phase 2's interface, each step usable on its own. Steps 1 to 5 are built; steps 
 4. The section frame and the Tools panel: icon tabs, pinned and scrolling sections.
 5. The shell: Toolbar, viewer bar, the viewport's paint callback, Browser. No Map toggle on the viewer bar, since Photo is the only layout until the Map (decision 37), and no switcher in the Toolbar.
 6. The tool renderer, from `apertrust-tools` definitions (decision 28), and the first pass's tools for the ported operations, darktable's (decision 2; `docs/roadmap.md`, Phase 2), the Tools panel's tabs by editing stage (decision 38). Built: the renderer, every tool listed in [the renderer](#the-renderer), and the tabs by editing stage. Left: RGB levels and RGB curve, then the rest.
-7. The actions registry, the keyboard map, settings, Customise tabs on the Edit workspace, the window frame, the popup service and the menu bar ([the window frame and menus](#the-window-frame-and-menus); [what arrives when](#what-arrives-when)).
+7. The actions registry, the keyboard map, settings, the window frame, the popup service and the menu bar ([the window frame and menus](#the-window-frame-and-menus); [what arrives when](#what-arrives-when)).
    - Built: the registry and the keyboard map; the Mac's frame and native menu bar; Linux's frame and its ☰ with the drawn menu, on the popup service's first piece (decisions 39 and 40); the popup service's native lists on the Mac; the settings file on the settings schema (decision 43), in its build plan's order: `apertrust-base` with the schema and its generator, the store, the user data folder, the engine's first settings with the CLI reading them, `--conf`, and an edit a newer Apertrust wrote opened for viewing only; the dialog host with Settings in it, on every platform (decision 41), its pages of rows drawn from the registry; context menus' first slice ([Context menus](#context-menus), decision 91): `Place`, `Section`, `MenuItem`, `MenuEntry` with tools' submenus, `ToolDefinition::menus`, the generated `tool-<tool>-<action>` actions, `Target` and `menus::context(place, target)`, the photo's menu and a thumbnail's, with History's Reset in both, and on the photo Background ▸ and Orientation ▸.
-   - Left: Windows' Alt pressed and released alone, then its native hit testing; Settings' hand-built pages, Shortcuts first, with rebinding keys; Linux's and Windows' native modality ([Dialogs and alerts](#still-to-build)); Customise tabs in the host, editing the Edit workspace's fixed tab lists; Phase 3 reworks it onto the Tools panel's layout model (decision 83).
+   - Left: Windows' Alt pressed and released alone, then its native hit testing; Settings' hand-built pages, Shortcuts first, with rebinding keys; Linux's and Windows' native modality ([Dialogs and alerts](#still-to-build)). The Customise tabs dialog on fixed lists is not built: Phase 3's visual editor for workspaces takes its place (decision 96).
 8. Scopes, from the engine's reductions. Built: the widget ([the scopes](#the-scopes)), the engine's counts for the histogram, the waveform, the vectorscope and the totals, sent as session events (engine.md, Scopes; decision 19), and the app's Scopes section, pinned in the editing tabs and drawing all four. Left: the photo's clipping overlays.
 9. Folder mode in one view (decision 37): the Photos tab first, with Collections' Folders; the Browser showing the folder, with the engine's thumbnails and its browser bar, never hidden, in one line or several, resized from its edge, at the bottom, left or right ([The Browser](#the-browser)); File › Open…, Open Folder… and Open Recent; the Viewer's empty states ([The Viewer's layouts](#the-viewers-layouts)). The library's side is its own build plan (decision 46; architecture, Implementation plan, The library's cards).
    - Built: File › Open Folder… and Open…, drag and drop onto the window, Open With and a double-click (macOS's open-documents event, and the registrations' command line), every photo opened, by any route, opening alone, several together, with Open This Folder (step 9d), View › Collections, the Photos tab with Collections, its top line listing the recents, ＋, ⋯ and its Folders as the tree of the folder opened, its root fixed, a click choosing the active folder ([The Tools panel](#the-tools-panel)), the Browser's cells with the camera's embedded pictures, its browser bar's Sort and Zoom, its edge in whole rows or columns and its position, and the Viewer's empty states.
@@ -4310,6 +4374,16 @@ Phase 2's interface, each step usable on its own. Steps 1 to 5 are built; steps 
 
 Decision 42's slider values and choice rows are Phase 2's, built beside steps 7 to 9 in [their cards' order](#slider-values-the-build-in-cards).
 
+Decision 96's workspaces are Phase 2's too, in its seven steps, each one pull request usable on its own ([Workspaces](#workspaces); [the roadmap](roadmap.md#the-window-and-the-shell)):
+
+1. the workspace model: `workspaces/<id>.toml` (tabs with id, title and icon; pinned and order per tab; hidden; seen; version), Edit built in and the default, a person's own workspaces defined by writing a file; `settings.toml`'s `workspace`; the tab last shown in `state.toml`;
+2. switching: View › Workspace, and the darktable workspace built in (decision 38);
+3. hidden tools: a tool in no tab, the Hidden tab with Show Hidden Tools, Show Hidden Tools in the Tools panel's ⋮ so every hidden tool can be reached from this step on, the dot on ⋮ while a hidden tool changes the photo;
+4. ⋯'s layout items: Pin or Unpin, Move Up and Move Down, Move to Tab ▸, Hide, and Show in Tab ▸ for a hidden tool (`section-show`), so a hidden tool comes back before dragging exists; their keys and screen readers' actions (decision 83);
+5. the tab bar's menu, on a right-click and in ⋮ beside step 3's Show Hidden Tools: Find Tool…, Show Hidden Tools, Workspace ▸, Reset Tab, Reset Workspace (deleting the workspace's file), Processing Order; Find Tool… drawn disabled until step 6;
+6. search: Find Tool… (Ctrl+Shift+F), the field in the tabs' place, the tabs disabled, the list empty until typing, hidden tools found too, Esc back to the tab;
+7. dragging a header, as decision 83 designs it: reorder, pin by a drop in the pinned area, move to another tab through its icon.
+
 Decision 93's one tool model is Phase 2's too, in its steps 93.1 to 93.6, all built ([One tool model](#one-tool-model); [the roadmap](roadmap.md#the-window-and-the-shell)), the last Export's page as setting rows, before Import's sheet shares them.
 
 Phase 3 adds, for the interface:
@@ -4317,18 +4391,12 @@ Phase 3 adds, for the interface:
 - selecting several photos, Photo's cells and the batch actions;
 - virtual copies in the Browser, History's Snapshots, photo groups and Import… by copy, in folder mode (decisions 46 and 85, [The Import sheet](#the-import-sheet));
 - ratings, the reject and labels from the caption, so culling is Photo with the Browser and the caption's ratings, with no Grid;
-- named workspaces and the Photos workspace;
-- with them, the Tools panel's layout (decision 83; [Moving, pinning and floating sections](#moving-pinning-and-floating-sections)), each part one pull request, and Customise tabs reworked onto its model once part 1 is built:
-  - 0, the Edit workspace's settings keys as [What the file looks like](#what-the-file-looks-like) has them, `[edit]` read into them;
-  - 1, the layout model and its settings, Processing Order and Reset Tab, the four group tabs drawn from the layout shown;
-  - 2, moving by drag within a tab, pinning by drag included;
-  - 3, the ⋯ menu's items, the keys and the screen readers' actions, but for floating's;
-  - 4, another tab: drops on a tab, the spring-loaded tab, Move to Tab ›, any section in any tab;
-- the toolbar (decision 92; [The Toolbar](#the-toolbar)): the Toolbar drawn from the workspace's list in place of its fixed parts, with spaces, the guards, » and labels, the toolbar menu, and tools' items (`ToolDefinition::toolbar`, decision 93), Orientation's rotations first; the Customise Toolbar window much later;
+- the Photos workspace, for culling (decisions 37 and 96);
+- a visual editor for workspaces, opened by Customise Tabs…: adding, naming and removing tabs, hiding and showing tools, a new workspace, Save as, Rename and Delete Workspace (decision 96);
+- floating panels inside the window, with Float, Dock, Position, Dock All Floating Panels and their keys and actions (decision 83);
+- the toolbar (decision 92; [The Toolbar](#the-toolbar)): the Toolbar drawn from the workspace's list, kept in its file, in place of its fixed parts, with spaces, the guards, » and labels, the toolbar menu, and tools' items (`ToolDefinition::toolbar`, decision 93), Orientation's rotations first; the Customise Toolbar window much later;
 - Export, built as a section of the Photos tab on the session's export job (decision 56), then grown into the Export tool (decision 90) in [its steps' order](#the-build-in-steps): built on the Mac and on Windows and Linux, its setting rows built in decision 93's step 93.6; left: its keys and the preview's in-view rule, its presets with the presets API every tool shares, metadata, and the width spike;
 - the system's alerts: built on the Mac with Export's overwrite question and the quit alert; Delete Workspace… and the other platforms left.
-
-The UX pass after Phase 3 adds the layout's part 5, floating panels inside the window, with Float, Dock, Position, Dock All Floating Panels and their keys and actions (decision 83).
 
 ## Product choices
 
@@ -4378,7 +4446,7 @@ The decisions this design rests on, by area; each decision record has the option
 | Settings | One settings schema in TOML, each setting declared once, each owner's crate generating typed statics from it, which the file, the Settings dialog and the CLI read; the dialog's nine pages, General, Import, Photos, Editing, Processing, Storage, Shortcuts, Presets and AI, its rows drawn from the schema and Shortcuts, Storage, Presets and AI built by hand; the generator, the machinery and the user data and cache folders in `apertrust-base`, with the log; a user data folder of one's own by `--user-data-dir` or `APERTRUST_USER_DATA_DIR`, separating settings only; the library in another place, next to the images; an edit a newer Apertrust wrote never overwritten (decision 43) |
 | Window frame | The Toolbar from the window's top edge on every platform: the Mac's traffic lights in it, caption buttons drawn by the app on Windows and Linux, Windows' snap layouts flyout through native hit testing; the system's title bar as a setting there, off by default; a minimum width of 500 points (decision 39) |
 | Context menus | Only in named places, the photo, a thumbnail and a tool's ⋯ open to tools' items, the only places `apertrust-tools`' `Place` has, the surround and the rest the app's own; each item a registry action, a tool's own generated as `tool-<tool>-<action>`, declared as data (`MenuItem`: `ToolDefinition::menus`, the app's `APP_ITEMS`), at most two a tool on the photo and a thumbnail, a submenu of up to eight of its own actions one of them; the app building every menu, its items and the tools' sorted by `(section, order)`; no right-click on a tool; every item reachable without one; the first slice built, History's Reset and Orientation ▸ its items (decision 91; [Context menus](#context-menus)) |
-| Toolbar | One a person customises, everything but the caption buttons and the traffic lights; one list of item ids per workspace, tools' actions offered in `ToolDefinition::toolbar` (decision 93); icons by default, Toolbar Labels app-wide; a right-click anywhere on it opening the toolbar menu; the settings file until a Customise Toolbar window (decision 92, planned; [The Toolbar](#the-toolbar)) |
+| Toolbar | One a person customises, everything but the caption buttons and the traffic lights; one list of item ids per workspace, tools' actions offered in `ToolDefinition::toolbar` (decision 93); icons by default, Toolbar Labels app-wide; a right-click anywhere on it opening the toolbar menu; the workspace's file until a Customise Toolbar window (decisions 92 and 96, planned; [The Toolbar](#the-toolbar)) |
 | Touch | One interface in two modes, Standard and Touch, Touch changing sizes, spacing and gestures, with two layout adaptations presenting the same parts (the portrait bottom sheet, Photos' Select mode); Interface in Settings › General and View › Touch Mode, Standard on the desktop, Touch on Android; no literal sizes, nothing only on hover, right-click, double-click or a modifier, sliders and pickers only through their components (decision 94) |
 | Popups | Native `NSMenu`s on the Mac for plain lists and context menus, from `apertrust-display`; drawn for what previews or holds controls, and on Windows and Linux; one popup service; the drawn ones on egui `Area`s, owning their plain keys while open through an egui plugin, drawn by `popup::show` once a frame (decision 40) |
 | Dialogs and alerts | Every dialog a native window of its own, modal to the window it rises from, hosted by the app beside eframe's window with its own egui context, AccessKit adapter and surface on the engine's device; made modal as each platform does it (on the Mac a sheet, and Settings alone modeless, a native window of its own; an owned window with its owner disabled on Windows; transient-for and the modal state on X11; a parent on Wayland, with modality kept by the app); confirmations the system's alerts through one alert service, `NSAlert` and the task dialog, Linux's Apertrust's own in a dialog window; About and a future splash screen Apertrust's own over the window (decision 41) |
@@ -4390,7 +4458,8 @@ The decisions this design rests on, by area; each decision record has the option
 | Accessibility | AccessKit on, every component reporting its role, label and value (decision 36) |
 | UI tests | Interaction tests with `egui_kittest` through AccessKit; gallery snapshots per theme and in the pseudo-locale (decision 36) |
 | Slider values and choices | darktable's: the value read-only at rest with its unit and sign, a click or a digit making it a field that takes a number, for now (darktable's expressions waiting until there is a need), darktable's popup for fine control on Enter, a right-click, Shift+F10 or the Menu key, drawn on every platform, a cancel put back by the session with no history step; choice rows Blended, darktable's combobox, in tool panels, the Export tool, the Import sheet's tools and the Export tool, and Boxed elsewhere, the drawn dropdown filtering as darktable's (decisions 42, 86 and 90; [Slider values and choices](#slider-values-and-choices)) |
-| The Tools panel's layout | Each tab's pinned and scrolling sections and which float, the workspace's, in settings; changed by dragging a header, its ⋯, keys and the file; display order only, never the processing order; floating panels inside the window, belonging to no tab (decision 83; [Moving, pinning and floating sections](#moving-pinning-and-floating-sections)) |
+| Workspaces | A workspace its tabs with id, title and icon, each tab's tools, the tools it hides and its toolbar, each in `<user data>/workspaces/<id>.toml` with its own version; Edit and the darktable workspace built in, written whole once changed, Reset Workspace deleting the file; a person's own by a file; a new tool in its default tab, else hidden; the Hidden tab, Show Hidden Tools and the dot; Find Tool…; the tab bar's menu (decision 96, planned; [Workspaces](#workspaces)) |
+| The Tools panel's layout | Each tab's pinned and scrolling sections and which float, the workspace's, in its file; changed by dragging a header, its ⋯, keys and the file; display order only, never the processing order; floating panels inside the window, belonging to no tab (decision 83; [Moving, pinning and floating sections](#moving-pinning-and-floating-sections)) |
 | The view | One view: the Photos tab choosing the photos; the Viewer's layouts, Photo and later Map, switched only when asked, with no Grid; one set of tabs, kept as workspaces; the rating keys, Apply Edit and Export on every selected photo, the sliders and Reset on the active one; Export a tool of the Photos tab, Import and Print sheets, the slideshow an action (decisions 37 and 90; [The shell](#the-shell)) |
 | Instances and windows | One process per user data folder, a second start handing its paths to it and exiting, one with flags for one run refused; several main windows, one per place, a place never open twice; opens from outside in a new window, or the key window by a setting; closing a place giving the start window, the last window's close button keeping the Mac's app running and quitting on Windows and Linux; another user data folder another instance of the same application; one engine thread per device for every window's session; the main windows in the app's own host after a spike (decision 89, planned; [Instances and windows](#instances-and-windows)) |
 
@@ -4406,5 +4475,6 @@ What is still undecided in the interface. Each says what the app does meanwhile.
 - **Retouch in the Detail tab** (decision 38): darktable's retouch comes as retouch layers, listed in the Layers section (decision 74; [layers.md](layers.md#retouch-layers)), and Detail lists Retouch too; what its entry there is, a section that adds a heal or clone layer or a view of those layers, is designed with layers. Meanwhile Detail has no Retouch, since nothing of it is built.
 - **An item that picks at the pointer** (decision 91), such as "Set Exposure from Here" in the photo's menu: it needs a pick at one point that starts, reads and ends as one completed change, which the picker commands (decision 79) may not express. Settled when a tool first adds one; meanwhile a picker is no menu item, and pickers start from their buttons.
 - **A tool's action on a photo it cannot change** (decision 91): a processing tool's generated `tool-<tool>-<action>` is available while the photo takes edits, a utility's registry actions having their own availability (decision 93), live and not open for viewing only, and does not ask whether its own control can take a change on that photo, as its row in the panel may. Every built tool's buttons apply to every photo, so nothing differs yet. Settled when a tool's action first cannot run on a photo that takes edits, by an availability the tool declares or the app derives from its definition; meanwhile an item is shown wherever the photo takes edits.
+- [x] **Ctrl+F for Find Tool… and Search Photos…:** settled by decision 96, Ctrl+F kept for View › Search Photos…, the more important search, unassigned until it is built, and Find Tool… on Ctrl+Shift+F ([Finding a tool](#finding-a-tool), [View](#view)).
 - **Native popups' repaint** (decision 40): whether the window repaints while a native popup is open waits for a spike on the M4.
 - **A small Import tool** (decision 90): a section of the Tools panel holding import's defaults, the metadata, rating and labels stamped at import and its presets, may earn its place beside Collections' Import…. Meanwhile there is none: Import's settings are the sheet's, and Settings › Import shows darktable's four preferences.

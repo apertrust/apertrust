@@ -24,7 +24,8 @@ A tool's section already has its own buttons: reset, presets and options (⋯). 
   - the Browser's empty area: the browser bar's options, with Select All and Select None;
   - a History step: Go to Step, Show Tool, Compress up to Here and Truncate after Here;
   - the jobs window's rows: Cancel, Show in Folder and Copy Error;
-  - a layer (Phase 4), the scopes, a tab's icon.
+  - the Tools panel's tab bar, `Place::TabBar`, on a tab's icon or its empty end: Find Tool…, Show Hidden Tools, Workspace ▸, Reset Tab, Reset Workspace and Processing Order, the same items in the Tools panel's ⋮ (planned, [0096](0096-workspaces-as-files-hidden-tools-and-finding-a-tool.md));
+  - a layer (Phase 4), the scopes.
 - Another place opens to tools' items only by a decision of its own, which adds it to `apertrust-tools`' `Place`.
 - The Toolbar, `Toolbar`, is the app's alone: a right-click anywhere on it, an item or its empty areas, opens the toolbar menu, planned ([0092](0092-the-toolbar.md)), the system's window menu staying on the system's own key ([0039](0039-one-top-bar-native-menus-on-the-mac-one-menu-button-elsewhere.md)).
 
@@ -98,7 +99,7 @@ A tool's section already has its own buttons: reset, presets and options (⋯). 
 - **The photo's and a thumbnail's act on the photo asked for as they opened.** When another photo becomes the one asked for while one is open, by a drop, Open… or an open asked for earlier, the menu is dismissed, taking no answer, so it never acts on a photo other than its own.
 - **The Mac's native menu is modal:** nothing changes while it is open, and it keeps what it opened with until it closes.
 
-**Every item is reachable without a right-click:** in the menu bar, in its tool's section or ⋯, or by its keys. A right-click menu is a shortcut and never the only way. A tool's action has its row or button by construction, and a test holds every utility's item to a menu bar item.
+**Every item is reachable without a right-click:** in the menu bar, in its tool's section or ⋯, in the Tools panel's ⋮ for the tab bar's, or by its keys. A right-click menu is a shortcut and never the only way. A tool's action has its row or button by construction, and a test holds every utility's item to a menu bar item.
 
 **The places' items now:**
 
@@ -106,7 +107,7 @@ A tool's section already has its own buttons: reset, presets and options (⋯). 
 | --- | --- | --- | --- |
 | The photo | Export… (`EXPORT`, 100); Background ▸ (`VIEW`, 100); Show in Finder joining once folder mode can reveal a photo | History's Reset (`EDIT`, 100); Orientation's Orientation ▸ (`VIEW`, 200), its four buttons: rotate 90° anticlockwise, rotate 90° clockwise, flip horizontally and flip vertically | Reset, —, Export…, —, Background ▸, Orientation ▸ |
 | A thumbnail | Export… (`EXPORT`, 100); Show in Folder once built | History's Reset (`EDIT`, 100), hidden while several photos are selected, since it acts on one photo | Reset, —, Export… |
-| ⋯ | Reset, then Copy Settings and Paste Settings with Copy and Apply Parts (Phase 3), in `EDIT`; the layout's items ([0083](0083-the-side-panels-layout-dragged-and-floating.md)) in `LAYOUT` | The tool's own, in a section of its choosing between them; History's are Compress History, Truncate History, Create a Style… and Discard History…, each an item of its own ([0093](0093-one-tool-model-processing-tools-and-utility-tools.md)) | — |
+| ⋯ | Reset, then Copy Settings and Paste Settings with Copy and Apply Parts (Phase 3), in `EDIT`; the layout's items ([0083](0083-the-side-panels-layout-dragged-and-floating.md), [0096](0096-workspaces-as-files-hidden-tools-and-finding-a-tool.md): Pin or Unpin, Move Up, Move Down, Move to Tab ▸, Hide, or Show in Tab ▸ for a hidden tool) in `LAYOUT` | The tool's own, in a section of its choosing between them; History's are Compress History, Truncate History, Create a Style… and Discard History…, each an item of its own ([0093](0093-one-tool-model-processing-tools-and-utility-tools.md)) | — |
 
 Discard History… is in no context menu: it stays in Edit and History's ⋯ ([0078](0078-undo-redo-and-the-edits-history.md)).
 
