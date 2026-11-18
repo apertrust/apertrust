@@ -35,6 +35,15 @@ const WIDEST: f32 = 600.0;
 /// The narrowest it can be dragged to.
 const NARROWEST: f32 = 240.0;
 
+/// What the app made of a frame of the tool: the settings it kept, when they changed, and
+/// whether a press started an export or asked first.
+#[derive(Clone, Debug, Default, PartialEq)]
+struct Seen {
+    values: Option<Values>,
+    start: bool,
+    confirm: bool,
+}
+
 /// The tool as the Photos tab draws it, and what each frame asked of the app.
 struct Bench {
     content: Export,
@@ -42,7 +51,9 @@ struct Bench {
     /// the tool each frame; the bench follows the toggles it reports.
     open: bool,
     shown: Shown,
-    asked: Vec<Asked>,
+    /// The app's settings as the tool's page reads them: Global options open or closed.
+    settings: crate::settings::Settings,
+    asked: Vec<Seen>,
     toggled: usize,
     /// How many times Show jobs was pressed.
     jobs_shown: usize,
@@ -94,11 +105,10 @@ fn tool_of(export: Export, which: Builtin, locale: Locale, width: f32) -> Harnes
                 let shown = bench.shown.clone();
                 // As the Photos tab gives every utility its context.
                 let mirror = crate::mirror::tests::mirror();
-                let settings = crate::settings::Settings::default();
                 let (words, mut commands) = (apertrust_ui::translator(ui.ctx()), Vec::new());
                 let mut cx = crate::utility::Context {
                     mirror: &mirror,
-                    settings: &settings,
+                    settings: &bench.settings,
                     words: &words,
                     commands: &mut commands,
                 };
@@ -106,6 +116,7 @@ fn tool_of(export: Export, which: Builtin, locale: Locale, width: f32) -> Harnes
                     open: bench.open,
                     ..crate::tools::Head::default()
                 };
+                let (mut changes, mut asked) = (Vec::new(), Asked::default());
                 PanelBody::new().show(ui, |ui| {
                     let section = ui.scope(|ui| bench.content.show(ui, head, &shown, &mut cx));
                     bench.bottom = section.response.rect.bottom();
@@ -113,19 +124,50 @@ fn tool_of(export: Export, which: Builtin, locale: Locale, width: f32) -> Harnes
                     bench.toggled += usize::from(drawn.toggle);
                     bench.jobs_shown += usize::from(drawn.show_jobs);
                     bench.open ^= drawn.toggle;
-                    bench.shown.global ^= drawn.toggle_global;
                     bench.shown.summary ^= drawn.toggle_summary;
-                    let asked = drawn.asked;
-                    if asked.values.is_some() || asked.start || asked.confirm {
-                        bench.asked.push(asked);
-                    }
+                    asked = drawn.asked;
+                    changes = drawn.changes;
                 });
+                // As the app carries them out: a setting routed back to the tool, kept as
+                // the settings it changed, and Global options opened or closed; then what
+                // the tool asked, a press deciding from the settings the export takes.
+                for change in changes {
+                    match change {
+                        Change::Setting { setting, value, .. } => {
+                            UtilityTool::set(&mut bench.content, setting, &value);
+                            bench.asked.push(Seen {
+                                values: Some(bench.content.values().clone()),
+                                ..Seen::default()
+                            });
+                            ui.ctx().request_repaint();
+                        }
+                        Change::Group { tool, group } => {
+                            let first = apertrust_tools::utility::opens(tool, group);
+                            let groups = bench.settings.edit.groups.entry(tool.to_owned());
+                            let open = groups.or_default().entry(group.to_owned());
+                            let open = open.or_insert(first);
+                            *open = !*open;
+                        }
+                        _ => {}
+                    }
+                }
+                if asked.changed || asked.pressed {
+                    let press = asked.pressed.then(|| press(bench.content.values()));
+                    if press == Some(Press::Start) {
+                        bench.content.note_started(ui.ctx().input(|i| i.time));
+                    }
+                    bench.asked.push(Seen {
+                        values: asked.changed.then(|| bench.content.values().clone()),
+                        start: press == Some(Press::Start),
+                        confirm: press == Some(Press::Confirm),
+                    });
+                }
             },
             Bench {
                 content: export,
                 open: true,
+                settings: crate::settings::Settings::default(),
                 shown: Shown {
-                    global: GLOBAL_OPEN,
                     summary: SUMMARY_OPEN,
                     photo: Photo::Ready {
                         name: "IMG_2041.ARW".to_owned(),
@@ -851,6 +893,132 @@ fn the_header_s_reset_applies_default_settings_and_rests_while_they_are_in_place
     assert!(!asked.start && !asked.confirm);
 }
 
+/// A number typed into a row and left by a press of ↺ is committed in the frame Default
+/// settings applies, which wins: the reset is what was asked for last.
+#[test]
+fn a_reset_wins_over_a_value_typed_and_left_by_its_click() {
+    let values = Values {
+        jpeg_quality: 80,
+        ..Values::default()
+    };
+    let mut harness = tool(values, Builtin::Dark, Locale::EnGb, PANEL);
+    harness
+        .get_by_role_and_label(Role::Slider, "Quality")
+        .focus();
+    harness.run();
+    harness.key_press(egui::Key::Enter);
+    harness.run();
+    harness.event(egui::Event::Text("65".to_owned()));
+    harness.run();
+    harness
+        .get_by_role_and_label(Role::Button, "Reset export settings")
+        .click();
+    settle(&mut harness);
+    assert_eq!(held(&mut harness), Values::default());
+    // And its ↺ rests.
+    assert!(disabled(&harness, Role::Button, "Reset export settings"));
+}
+
+/// The settings `--conf` gives for this run, a setting row's and a custom row's.
+const GIVEN: [&str; 3] = [
+    "export.disk.on_conflict",
+    "export.disk.path",
+    "export.size.width",
+];
+
+/// The tool over `values`, its settings in [`GIVEN`] given by `--conf`.
+fn given(values: Values) -> Harness<'static, Bench> {
+    let export = home(values).given(GIVEN.map(str::to_owned));
+    tool_of(export, Builtin::Dark, Locale::EnGb, PANEL)
+}
+
+#[test]
+fn default_settings_keeps_each_value_conf_gives_and_resets_the_rest() {
+    let values = Values {
+        on_conflict: OnConflict::Skip,
+        path: "/Users/anna/out/$(FILE_NAME)".to_owned(),
+        width: 1200,
+        format: FileFormat::Png,
+        height: 800,
+        ..Values::default()
+    };
+    let kept = Values {
+        on_conflict: OnConflict::Skip,
+        path: "/Users/anna/out/$(FILE_NAME)".to_owned(),
+        width: 1200,
+        ..Values::default()
+    };
+    let mut harness = given(values);
+    assert!(!disabled(&harness, Role::Button, "Reset export settings"));
+    harness.state_mut().asked.clear();
+    harness
+        .get_by_role_and_label(Role::Button, "Reset export settings")
+        .click();
+    settle(&mut harness);
+    assert_eq!(held(&mut harness), kept);
+    // What it gives is all Default settings can reach: its ↺ rests.
+    assert!(disabled(&harness, Role::Button, "Reset export settings"));
+    // The app keeps what the tool holds, `--conf`'s values with it.
+    let asked = harness.state().asked.last().cloned().expect("asked");
+    assert_eq!(asked.values, Some(kept));
+}
+
+#[test]
+fn a_row_conf_gives_is_drawn_disabled_at_its_value_saying_so() {
+    let values = Values {
+        on_conflict: OnConflict::Skip,
+        path: "/Users/anna/out/$(FILE_NAME)".to_owned(),
+        width: 1200,
+        ..Values::default()
+    };
+    let mut harness = given(values.clone());
+    // A setting row, a custom row's field, and a field of the size line.
+    assert!(disabled(&harness, Role::ComboBox, "On conflict"));
+    assert!(disabled(&harness, Role::TextInput, "Path"));
+    assert!(disabled(&harness, Role::TextInput, "Width, in px"));
+    // The others stay editable.
+    assert!(!disabled(&harness, Role::TextInput, "Height, in px"));
+    assert!(!disabled(&harness, Role::ComboBox, "File format"));
+    // The resolution and the scale say so too, in their modes.
+    for (mode, field) in [
+        (SizeMode::Cm, "Resolution, in dpi"),
+        (SizeMode::Scale, "Scale"),
+    ] {
+        let values = Values {
+            size_mode: mode,
+            ..Values::default()
+        };
+        let keys = ["export.size.dpi", "export.size.scale"].map(str::to_owned);
+        let export = home(values).given(keys);
+        let harness = tool_of(export, Builtin::Dark, Locale::EnGb, PANEL);
+        let node = harness.get_by_role_and_label(Role::TextInput, field);
+        assert!(node.accesskit_node().is_disabled(), "{field}");
+        assert_eq!(
+            node.accesskit_node().description(),
+            Some("Set by --conf for this run".to_owned()),
+            "{field}"
+        );
+    }
+    // Each says why, to screen readers too.
+    for field in ["Path", "Width, in px"] {
+        let field = harness.get_by_role_and_label(Role::TextInput, field);
+        assert_eq!(
+            field.accesskit_node().description(),
+            Some("Set by --conf for this run".to_owned())
+        );
+    }
+    let width = harness.get_by_role_and_label(Role::TextInput, "Width, in px");
+    harness.hover_at(width.rect().center());
+    harness.run_steps(40);
+    assert!(says(&harness, "Set by --conf for this run"));
+    // Typing into them changes nothing.
+    type_into(&mut harness, Role::TextInput, "Path", "x");
+    type_into(&mut harness, Role::TextInput, "Width, in px", "9");
+    harness.key_press(egui::Key::Enter);
+    settle(&mut harness);
+    assert_eq!(held(&mut harness), values);
+}
+
 #[test]
 fn the_header_opens_and_closes_the_tool_and_a_closed_one_draws_no_rows() {
     let mut harness = open();
@@ -1277,6 +1445,108 @@ fn an_unknown_variable_stops_export_and_the_fix_replaces_it() {
 }
 
 #[test]
+fn a_path_conf_gives_keeps_its_problem_but_offers_no_fix_and_takes_none() {
+    let values = Values {
+        path: "$(FILE_FOLDER)/apertrust_exported/$(FILE_NAM)".to_owned(),
+        ..Values::default()
+    };
+    let mut harness = given(values.clone());
+    let mut p = preview();
+    p.problem = Some(PathProblem::Pattern(PatternError::Unknown {
+        name: "FILE_NAM".to_owned(),
+        at: 36..44,
+        suggestion: Some("FILE_NAME"),
+    }));
+    p.names.clear();
+    answer(&mut harness, 1, p);
+    // What stops it is still said, with no fix to press.
+    assert!(says(
+        &harness,
+        "Unknown variable $(FILE_NAM). Did you mean $(FILE_NAME)?"
+    ));
+    assert!(harness.query_by_label("Use $(FILE_NAME)").is_none());
+    // Nor does the fix change the path when asked for.
+    let row = path_row();
+    let words = Translator::new(Locale::EnGb);
+    UtilityTool::fix(harness.state_mut().export(), row, &words);
+    assert_eq!(held(&mut harness), values);
+}
+
+/// The path's custom row on Export's page.
+fn path_row() -> &'static Row {
+    fn find(rows: &'static [Row]) -> Option<&'static Row> {
+        rows.iter().find_map(|row| match row {
+            Row::Custom {
+                widget: Widget::ExportPath,
+                ..
+            } => Some(row),
+            _ => find(row.rows()),
+        })
+    }
+    find(definition().tool.tabs[0].rows).expect("the path's row")
+}
+
+/// What the field `name` shows.
+fn shows(harness: &Harness<'_, Bench>, name: &str) -> Option<String> {
+    let field = harness.get_by_role_and_label(Role::TextInput, name);
+    field
+        .accesskit_node()
+        .value()
+        .map(|value| value.to_string())
+}
+
+#[test]
+fn a_new_resolution_keeps_the_pixels_of_a_side_conf_gives_and_shows_its_new_length() {
+    // 1182 × 591 px at 300 dpi: 10.01 × 5.00 cm; the width `--conf` gives.
+    let values = Values {
+        size_mode: SizeMode::Cm,
+        width: 1182,
+        height: 591,
+        dpi: 300,
+        ..Values::default()
+    };
+    let mut harness = given(values);
+    assert_eq!(shows(&harness, "Width, in cm").as_deref(), Some("10.01"));
+    type_into(&mut harness, Role::TextInput, "Resolution, in dpi", "600");
+    harness.key_press(egui::Key::Enter);
+    settle(&mut harness);
+    let now = held(&mut harness);
+    // The width keeps its pixels, the height its length.
+    assert_eq!((now.dpi, now.width, now.height), (600, 1182, 1182));
+    assert_eq!(shows(&harness, "Width, in cm").as_deref(), Some("5.00"));
+    assert_eq!(shows(&harness, "Height, in cm").as_deref(), Some("5.00"));
+}
+
+#[test]
+fn default_settings_changing_the_resolution_shows_the_lengths_at_the_new_one() {
+    // The mode and the pixels `--conf` gives, the resolution not: 1182 × 591 px at
+    // 600 dpi shows as 5.00 × 2.50 cm, at the default 300 as 10.01 × 5.00 cm.
+    let values = Values {
+        size_mode: SizeMode::Cm,
+        width: 1182,
+        height: 591,
+        dpi: 600,
+        ..Values::default()
+    };
+    let keys = [
+        "export.size.mode",
+        "export.size.width",
+        "export.size.height",
+    ];
+    let export = home(values).given(keys.map(str::to_owned));
+    let mut harness = tool_of(export, Builtin::Dark, Locale::EnGb, PANEL);
+    assert_eq!(shows(&harness, "Width, in cm").as_deref(), Some("5.00"));
+    harness
+        .get_by_role_and_label(Role::Button, "Reset export settings")
+        .click();
+    settle(&mut harness);
+    let now = held(&mut harness);
+    assert_eq!((now.dpi, now.width, now.height), (300, 1182, 591));
+    assert_eq!(shows(&harness, "Width, in cm").as_deref(), Some("10.01"));
+    assert_eq!(shows(&harness, "Height, in cm").as_deref(), Some("5.00"));
+}
+
+#[test]
 fn a_fix_is_not_offered_for_a_path_that_has_changed_since_the_answer() {
     let mut harness = open();
     let mut p = preview();
@@ -1503,7 +1773,10 @@ fn storage_and_format_options_are_plain_groups_and_global_options_folds() {
         .get_by_role_and_label(Role::Button, "Global options")
         .click();
     settle(&mut harness);
-    assert!(!harness.state().shown.global);
+    // Kept as `global` under `export`, as every tool's group is.
+    let kept = harness.state().settings.edit.groups.get(ID);
+    let kept = kept.and_then(|groups| groups.get("global")).copied();
+    assert_eq!(kept, Some(false));
     assert!(!expanded(&harness, "Global options"));
     assert!(harness.query_by_label("Set size").is_none());
     assert!(harness.query_by_label("Allow upscaling").is_none());
@@ -1534,9 +1807,17 @@ fn a_closed_global_options_says_how_many_of_its_settings_are_off_their_defaults(
         .click();
     settle(&mut harness);
     assert_eq!(group(&harness).as_deref(), Some("2 set"));
+    // Set size and Allow upscaling, two setting rows; the size line's own count none.
     let values = held(&mut harness);
-    assert_eq!(values.set_in_global(), 2);
-    assert_eq!(Values::default().set_in_global(), 0);
+    assert_eq!((values.size_mode, values.upscale), (SizeMode::Cm, true));
+    assert_eq!(values.set_in_size(), 0);
+    // A size typed is the size line's, counted with them.
+    let sized = Values {
+        width: 2048,
+        dpi: 240,
+        ..Values::default()
+    };
+    assert_eq!(sized.set_in_size(), 2);
 }
 
 #[test]
@@ -2447,5 +2728,115 @@ fn every_slider_paints_its_fill_between_the_handle_and_the_settings_default() {
             (along - fraction).abs() < 0.06,
             "{format:?}: {along} against {fraction}"
         );
+    }
+}
+
+/// Every setting row of Export's page names a key the export settings declare, of the
+/// row's kind and range, its default the settings' own, and binds to [`Values`] both ways
+/// by id: each option a choice lists is one the settings hold under its id, or one not
+/// built, drawn disabled; but Overwrite, which the settings hold and a platform that cannot
+/// ask draws disabled (decision 93). The rows with no key have no setting yet and are drawn
+/// disabled.
+#[test]
+fn every_setting_row_is_an_export_setting_of_its_kind_bound_both_ways() {
+    use apertrust_base::settings::Kind;
+    use apertrust_export::settings::registry::ALL;
+    fn settings(rows: &'static [Row], into: &mut Vec<&'static SettingRow>) {
+        for row in rows {
+            if let Row::Setting(setting) = row {
+                into.push(setting);
+            }
+            settings(row.rows(), into);
+        }
+    }
+    let mut rows = Vec::new();
+    settings(definition().tool.tabs[0].rows, &mut rows);
+    let words = Translator::new(Locale::EnGb);
+    let export = home(Values::default()).alerts(false);
+    let mut keyed = 0;
+    for row in rows {
+        let Some(key) = row.key else {
+            assert!(["masks", "intent", "style"].contains(&row.id), "{}", row.id);
+            continue;
+        };
+        keyed += 1;
+        let declared = ALL.iter().find(|declared| declared.id() == key);
+        let declared = declared.unwrap_or_else(|| panic!("{key} is no export setting"));
+        match (row.kind, declared.kind()) {
+            (ControlKind::Number { min, max, .. }, Kind::Number(number)) => {
+                assert_eq!((number.min, number.max), (Some(min), Some(max)), "{key}");
+            }
+            (ControlKind::Choice { .. }, Kind::Choice(_))
+            | (ControlKind::Bool { .. }, Kind::Boolean) => {}
+            (kind, declared) => panic!("{key}: {kind:?} is declared {declared:?}"),
+        }
+        let shown = UtilityTool::setting(&home(Values::default()), row);
+        assert_eq!(shown, Some(row.default()), "{key}");
+        let ControlKind::Choice { options, .. } = row.kind else {
+            continue;
+        };
+        let built = Values::options(key);
+        let disabled = UtilityTool::disabled(&export, row, &words).map(|(at, _)| at);
+        for (at, option) in options.iter().enumerate() {
+            let mut tool = home(Values::default());
+            let chosen = ControlValue::Choice(at as u32);
+            UtilityTool::set(&mut tool, key, &chosen);
+            let bound = UtilityTool::setting(&tool, row) == Some(chosen);
+            if bound {
+                // Bound by id: the settings hold the option's own.
+                let kept = tool.values().get(key);
+                assert_eq!(kept, Some(Kept::Choice(stored_id(key, option))), "{key}");
+                assert!(built.contains(&stored_id(key, option)), "{key}: {option}");
+            }
+            let later = disabled.as_ref().is_some_and(|later| later.contains(&at));
+            if (key, *option) == ("export.disk.on_conflict", "overwrite") {
+                // Held by the settings, and drawn disabled where no alert can ask first.
+                assert!(bound && later, "{key}: {option}");
+            } else {
+                assert!(bound != later, "{key}: {option}");
+            }
+        }
+    }
+    assert_eq!(keyed, 10);
+}
+
+/// The options the page names apart from the settings' ids are held under the ids the
+/// settings file has always written, and read back from them.
+#[test]
+fn renamed_options_are_held_under_the_settings_own_ids() {
+    let renamed = [
+        ("export.jpeg.subsample", "yuv444", "444"),
+        ("export.jpeg.subsample", "yuv440", "440"),
+        ("export.jpeg.subsample", "yuv422", "422"),
+        ("export.jpeg.subsample", "yuv420", "420"),
+        ("export.png.bit_depth", "bits_8", "8"),
+        ("export.png.bit_depth", "bits_16", "16"),
+    ];
+    fn keyed(rows: &'static [Row], key: &str) -> Option<&'static SettingRow> {
+        rows.iter().find_map(|row| match row {
+            Row::Setting(found) if found.key == Some(key) => Some(found),
+            _ => keyed(row.rows(), key),
+        })
+    }
+    let rows = definition().tool.tabs[0].rows;
+    let row = |key: &str| keyed(rows, key).unwrap_or_else(|| panic!("{key} has no row"));
+    for (key, option, stored) in renamed {
+        let row = row(key);
+        let ControlKind::Choice { options, .. } = row.kind else {
+            panic!("{key} is no choice");
+        };
+        let at = options.iter().position(|o| *o == option);
+        let chosen = ControlValue::Choice(at.expect(option) as u32);
+        let mut tool = home(Values::default());
+        UtilityTool::set(&mut tool, key, &chosen);
+        assert_eq!(
+            tool.values().get(key),
+            Some(Kept::Choice(stored)),
+            "{option}"
+        );
+        // And back: the settings' id is the row's option.
+        let mut values = Values::default();
+        values.set(key, &Kept::Choice(stored));
+        assert_eq!(UtilityTool::setting(&home(values), row), Some(chosen));
     }
 }

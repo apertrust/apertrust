@@ -1122,14 +1122,15 @@ pub enum Widget {
     /// Browse's Folders: its group, holding the open folder's tree in a list that scrolls
     /// under the top line, so Browse keeps its height (decision 93).
     Folders,
-    /// Export's Storage options: Target storage, the path line and On conflict, until its
-    /// rows are setting rows (decision 93, step 93.6).
+    /// Export's Target storage, File on disk the one that can be chosen until the other
+    /// storages come, with no setting yet (decision 93).
     ExportStorage,
-    /// Export's Format options: File format and the rows of the format chosen.
-    ExportFormat,
-    /// Export's Global options: the collapsible group of the size, the toggles, the profile
-    /// and the rows to come.
-    ExportGlobal,
+    /// Export's path line: the path field on one line with the folder button at its end
+    /// and no visible label, the resolved file name its tooltip.
+    ExportPath,
+    /// Export's size line, `[w] × [h] px` or `[w] × [h] cm @ [dpi] dpi` with no label, or
+    /// the scale's field, for Set size's mode.
+    ExportSize,
     /// Export's groups still to come, Metadata and Multi-preset export, drawn disabled.
     ExportLater,
     /// Export's end: the Summary, the warnings, the Export button and its job's line.
@@ -1147,8 +1148,8 @@ impl Widget {
             | Widget::Recents
             | Widget::Folders
             | Widget::ExportStorage
-            | Widget::ExportFormat
-            | Widget::ExportGlobal
+            | Widget::ExportPath
+            | Widget::ExportSize
             | Widget::ExportLater
             | Widget::ExportEnd => true,
             Widget::Curve
