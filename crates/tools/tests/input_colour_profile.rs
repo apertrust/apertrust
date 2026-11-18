@@ -259,6 +259,49 @@ fn i1_holds(bench: &mut Bench) {
     }
 }
 
+/// I1's Gamut clipping on one pipeline: each clipping profile, set by the tool, is the
+/// one colorin renders, the frame as colorin renders it set directly, sRGB's another
+/// than no edit's; then reset by `ResetControl` and by `ResetTool`: no edit's frame and
+/// keys, exactly.
+fn i1_gamut_clipping_holds(bench: &mut Bench) {
+    let none = bench.edit(&Edit::default(), Frame);
+    let default = INPUT_PROFILES[InputColourProfile.defaults(&bench.image).choice(TYPE) as usize];
+    for (index, &name) in GAMUT_CLIPPING.iter().enumerate().skip(1) {
+        let mut edit = Edit::default();
+        let value = option(&GAMUT_CLIPPING, name);
+        edit.set_control(&InputColourProfile, NORMALIZE, value.clone(), &bench.image)
+            .unwrap();
+        let instances = bench.instances(&edit, Frame);
+        assert_eq!(
+            rendered(&instances, &bench.image),
+            [default, "lin_rec2020", name]
+        );
+        let moved: Rendered = bench.render(&instances);
+        let mut direct = bench.instances(&Edit::default(), Frame);
+        let colorin = direct.iter_mut().find(|i| id(i) == COLORIN).unwrap();
+        colorin.params.set(NORMALIZE, Value::Choice(index as u32));
+        let as_colorin = bench.render(&direct);
+        assert!(
+            exact(&as_colorin, &moved),
+            "I1, gamut clipping {name} as colorin renders it"
+        );
+        if name == "srgb" {
+            assert!(!same_pixels(&none, &moved), "I1, {name} changes the frame");
+        }
+        edit.reset_control(&InputColourProfile, NORMALIZE).unwrap();
+        assert_eq!(edit, Edit::default());
+        assert!(exact(&none, &bench.edit(&edit, Frame)), "I1, {name} reset");
+        edit.set_control(&InputColourProfile, NORMALIZE, value, &bench.image)
+            .unwrap();
+        bench.edit(&edit, Frame);
+        edit.reset_tool(&InputColourProfile);
+        assert!(
+            exact(&none, &bench.edit(&edit, Frame)),
+            "I1, gamut clipping {name} and the tool reset"
+        );
+    }
+}
+
 #[test]
 fn i1_each_input_profile_renders_as_colorin_and_resets_to_no_edit() {
     for pipe in PIPES {
@@ -268,22 +311,33 @@ fn i1_each_input_profile_renders_as_colorin_and_resets_to_no_edit() {
     }
 }
 
+#[test]
+fn i1_each_gamut_clipping_renders_as_colorin_and_resets_to_no_edit() {
+    for pipe in PIPES {
+        for mut bench in small_benches(pipe) {
+            i1_gamut_clipping_holds(&mut bench);
+        }
+    }
+}
+
 /// I1 on the 90D, through the viewport's frame and the export's.
 #[test]
 #[ignore = "needs the raw.pixls.us corpus (APERTRUST_RAW_CORPUS)"]
 fn i1_on_the_corpus() {
     for pipe in [CORPUS_VIEWPORT, Pipe::Export] {
-        i1_holds(&mut corpus_bench(NINETY_D, pipe));
+        let mut bench = corpus_bench(NINETY_D, pipe);
+        i1_holds(&mut bench);
+        i1_gamut_clipping_holds(&mut bench);
     }
 }
 
 // I3: what an edit cannot choose.
 
 /// I3: every option not ported is refused as a command, and the edit stays as it was:
-/// the input profiles but the camera's matrix and the two linear ones, the working
-/// profiles but linear Rec2020, gamut clipping but off. The camera matrix this photo does
-/// not list is refused as not listed. colorin's parameters are the tool's: the three
-/// choices owned, the intent and blue mapping fixed.
+/// the input profiles but the camera's matrix and the two linear ones, and the working
+/// profiles but linear Rec2020; every gamut clipping is ported. The camera matrix this
+/// photo does not list is refused as not listed. colorin's parameters are the tool's: the
+/// three choices owned, the intent and blue mapping fixed.
 #[test]
 fn i3_every_option_not_ported_is_refused() {
     let (_, raw) = small_raw(-0.67);
@@ -305,7 +359,7 @@ fn i3_every_option_not_ported_is_refused() {
                 ][..],
             ),
             (TYPE_WORK, &WORKING_PROFILES[..], &["lin_rec2020"][..]),
-            (NORMALIZE, &GAMUT_CLIPPING[..], &["off"][..]),
+            (NORMALIZE, &GAMUT_CLIPPING[..], &GAMUT_CLIPPING[..]),
         ] {
             for &name in options.iter().filter(|o| !ported.contains(o)) {
                 let refused =

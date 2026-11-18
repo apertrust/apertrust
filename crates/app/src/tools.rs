@@ -6054,10 +6054,11 @@ mod tests {
 
     /// Input colour profile's page as darktable's `gui_init` draws it: Input profile,
     /// Working profile and Gamut clipping, by their full names, with no tab strip, on a
-    /// colour raw at the standard colour matrix. Working profile and Gamut clipping, each
-    /// porting its default alone, are drawn disabled; Input profile's list holds the
-    /// photo's matrix and darktable's fifteen built-in profiles, the thirteen not ported
-    /// disabled, and choosing a linear one sends it.
+    /// colour raw at the standard colour matrix. Working profile, porting its default
+    /// alone, is drawn disabled; Input profile's list holds the photo's matrix and
+    /// darktable's fifteen built-in profiles, the thirteen not ported disabled, and
+    /// choosing a linear one sends it; Gamut clipping's five are all enabled, and choosing
+    /// one sends it.
     #[test]
     fn input_colour_profile_draws_darktable_s_three_lists() {
         let mut harness = panel(&InputColourProfile, untouched(&InputColourProfile));
@@ -6078,7 +6079,7 @@ mod tests {
             [
                 row("Input profile", "Standard colour matrix", false),
                 row("Working profile", "Linear Rec2020 RGB", true),
-                row("Gamut clipping", "Off", true),
+                row("Gamut clipping", "Off", false),
             ]
         );
         harness
@@ -6109,12 +6110,34 @@ mod tests {
             done: true,
         };
         assert_eq!(harness.state().changes, std::slice::from_ref(&chosen));
-        // The disabled rows send nothing.
-        for label in ["Working profile", "Gamut clipping"] {
-            harness.get_by_role_and_label(Role::ComboBox, label).click();
-            harness.run();
+        // The disabled row sends nothing.
+        harness
+            .get_by_role_and_label(Role::ComboBox, "Working profile")
+            .click();
+        harness.run();
+        assert_eq!(harness.state().changes, std::slice::from_ref(&chosen));
+        harness
+            .get_by_role_and_label(Role::ComboBox, "Gamut clipping")
+            .click();
+        harness.run();
+        for option in [
+            "sRGB",
+            "Adobe RGB (compatible)",
+            "Linear Rec709 RGB",
+            "Linear Rec2020 RGB",
+        ] {
+            let node = harness.get_by_label(option);
+            assert!(!node.accesskit_node().is_disabled(), "{option}");
         }
-        assert_eq!(harness.state().changes, [chosen]);
+        harness.get_by_label("Adobe RGB (compatible)").click();
+        harness.run();
+        let clipped = Change::Set {
+            tool: "colorin",
+            control: "normalize",
+            value: ControlValue::Choice(2),
+            done: true,
+        };
+        assert_eq!(harness.state().changes, [chosen, clipped]);
     }
 
     /// Input colour profile's page, then its Input profile list open, in the dark theme.
