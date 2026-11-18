@@ -144,9 +144,9 @@ Goal: open, edit, save and reopen a photo with the first pass's tools. Migration
 - [ ] 1. The workspace model: `workspaces/<id>.toml` (tabs with id, title and icon; pinned and order per tab; hidden; seen; version), Edit built in and the default, a person's own workspaces defined by writing a file; `settings.toml`'s `workspace`; the tab last shown in `state.toml`.
 - [ ] 2. Switching: View › Workspace, and the darktable workspace built in (darktable's groups, decision 38).
 - [ ] 3. Hidden tools: a tool in no tab, the Hidden tab with Show Hidden Tools, the dot on the Tools panel's ⋮ while a hidden tool changes the photo.
-- [ ] 4. ⋯'s layout items: Pin or Unpin, Move Up and Move Down, Move to Tab ▸, Hide; their keys and screen readers' actions (decision 83's).
+- [ ] 4. ⋯'s layout items: Pin or Unpin, Move Up and Move Down, Move to Tab ▸, Hide, and Show in Tab ▸ for a hidden tool (`section-show`), so a hidden tool comes back before dragging exists; their keys and screen readers' actions (decision 83's).
 - [ ] 5. The tab bar's menu, on a right-click and in ⋮: Find Tool…, Show Hidden Tools, Workspace ▸, Reset Tab, Reset Workspace (deleting the workspace's file), Processing Order; Find Tool… drawn disabled until step 6.
-- [ ] 6. Search: Find Tool… (Ctrl+F), the field in the tabs' place, the tabs disabled, the list empty until typing, hidden tools found too, Esc back to the tab.
+- [ ] 6. Search: Find Tool… (Ctrl+Shift+F), the field in the tabs' place, the tabs disabled, the list empty until typing, hidden tools found too, Esc back to the tab.
 - [ ] 7. Dragging a header, as decision 83 designs it: reorder, pin by a drop in the pinned area, move to another tab through its icon.
 
 ### Editing

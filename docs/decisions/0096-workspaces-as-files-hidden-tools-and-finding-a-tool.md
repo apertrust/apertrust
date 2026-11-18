@@ -2,10 +2,10 @@
 
 ## Context
 
-[0038](0038-the-side-panels-tabs-by-editing-stage.md) gives the Edit workspace fixed tabs, and [0083](0083-the-side-panels-layout-dragged-and-floating.md) lets a person reorder, pin and move a tool on screen, keeping each tab's lists under `[workspaces.<id>]` in `settings.toml`. Four things were left open or ruled out:
+[0038](0038-the-side-panels-tabs-by-editing-stage.md) gives the Edit workspace fixed tabs, and [0083](0083-the-side-panels-layout-dragged-and-floating.md) lets a person reorder, pin and move a tool on screen, display order only. Four things that layout needs are settled here:
 
 - **Which tabs a workspace has.** Tabs were the build's: a person could not add one, name it or give it an icon outside a Customise tabs dialog not yet built.
-- **A tool a person never uses.** 83 kept every tool in a tab of Edit, so the only way to take a tool out of sight was the dialog's `hidden`, and never in Edit.
+- **A tool a person never uses.** Every tool in a tab of Edit leaves no way to clear Edit of the tools a person never uses.
 - **Finding a tool.** With more than 60 tools once the migration ends, a person has to know which tab holds one; darktable's module search was left for later (38).
 - **Where workspaces are kept.** A workspace is a set of lists a person may want to copy, share or write by hand, and settings keys are permanent unless migrated ([0095](0095-the-windows-parts-named-by-their-role.md)).
 
@@ -78,7 +78,7 @@ scopes = "skin"
   - `hidden` is reserved, the Hidden tab's id. At most 12 of the file's tabs show, `panel-tab-1` to `panel-tab-12` choosing them by position; a tab past them is not shown, with a warning, and stays in the file. The Hidden tab is not one of them: shown, it comes after them, a thirteenth at most, chosen by its own `panel-tab-hidden`. A workspace whose file lists no tab is refused, with a warning: a built-in's defaults apply, or a person's own is not listed.
 - **`[pinned]` and `[order]`,** keyed by tab id, each a list of tool ids, top first: a tab's pinned tools and the rest (83). A list for a tab id `tabs` lacks is skipped and kept.
 - **`hidden`,** the tools the workspace hides; **`seen`,** every tool the build that wrote the file knew, so a new build's new tool is told from one hidden.
-- **Written whole,** through the safe write, on a thread of its own, once the layout has stood still for a second and on exit, as settings are. The file is read as the app starts; a write first reads it again and, where it changed on disk since, applies the person's change to it as it is then, so a hand edit made meanwhile is kept. A tool id or tab id this build does not know keeps its place. Opening and closing the app writes nothing. A file added while the app runs is read at the next start.
+- **Written whole,** through the safe write, on a thread of its own, once the layout has stood still for a second and on exit, as settings are. The file is read as the app starts; a write first reads it again and, where it changed on disk since, applies the person's change to it as it is then, so a hand edit made meanwhile is kept. A tool id or tab id this build does not know keeps its place. Opening and closing the app writes nothing. A file a person adds by hand while the app runs is read at the next start; a workspace the visual editor makes (Phase 3) is registered at once, its `workspace-<id>` made then, so it can be chosen without a restart.
 
 ### The layout shown
 
@@ -86,11 +86,11 @@ Worked out when the workspace is read and after each change, never per frame (83
 
 1. Each tab takes its `pinned` and `order` lists; an id in both stays pinned, one twice in a list keeps its first place, an id the build does not know or a tool of the Import sheet's ([0086](0086-import-as-a-full-window-sheet.md)) is skipped and kept.
 2. A tool `hidden` names is in no tab, whatever the lists say, but Export.
-3. **A new tool,** one of the Tools panel's that neither `seen` nor `hidden` names, goes into each tab whose id is one of its default tabs, if the workspace has one, placed after its nearest preceding neighbour in that tab's default list (83's rule); else it is hidden. Its default tabs are the workspace's own defaults for a built-in, and for a person's own Edit's, then the darktable workspace's, so a tool new in Adjust joins any workspace with a tab `adjust`. Scopes, new in several tabs, goes into each.
+3. **A new tool,** one of the Tools panel's that neither `seen`, `hidden` nor any tab's lists name, goes into each tab whose id is one of its default tabs, if the workspace has one, placed after its nearest preceding neighbour in that tab's default list (83's rule); else it is hidden. Its default tabs are the workspace's own defaults for a built-in, and for a person's own Edit's, then the darktable workspace's, so a tool new in Adjust joins any workspace with a tab `adjust`. Scopes, new in several tabs, goes into each.
 4. **A tool in no tab** after these steps, that `seen` names, is hidden as if `hidden` named it, and written there at the next write: a hand edit that drops a tool from every list hides it.
-5. **Export** is never hidden: `hidden` naming it is ignored, and in no tab shown, none or only one past the twelfth, it goes to the end of the Photos tab's scrolling list, else of the first tab's, so Ctrl+E always reaches it.
+5. **Export** is never hidden: `hidden` naming it is ignored, and in no tab shown, none or only one past the twelfth, it goes to the end of the Photos tab's scrolling list where the Photos tab is among the tabs shown, else of the first tab's, so Ctrl+E always reaches it.
 
-With no file, a built-in workspace is its defaults. A person's own needs only `tabs` and its lists: a tool it does not name is new and goes by step 3.
+With no file, a built-in workspace is its defaults. A person's own needs only `tabs` and its lists: a tool it names nowhere, in `seen`, `hidden` or a tab's lists, is new and goes by step 3.
 
 ### Invariants
 
@@ -106,13 +106,22 @@ Held by the operations and unit-tested: a tool at most once in a tab, `pinned` a
 
 ### Finding a tool
 
-- **Find Tool…** (`find-tool`, Ctrl+F) opens search, from the tab bar's menu, the Tools panel's ⋮ or its key; again while search is on, it selects the field's text.
-- **While search is on,** a search field takes the tab bar's place, focused, with the search icon at its start and × at its end; the tabs are disabled, so their keys and Tools Panel Tab's items do nothing. The list under it is empty, saying "Type a tool's name", until the person types.
-- **Then it lists the matching tools,** every tool of the Tools panel's, hidden ones included, once each, in the Hidden tab's order: processing tools in pipeline order, then utilities. A tool matches where the text, case-folded, is part of its name in the interface's language or in British English, its darktable module's name, or one of darktable's aliases for it, as darktable's search matches them; the darktable words are each tool's `.search` attribute in Fluent, from darktable's own strings and translations.
-- **Each tool is usable where it is listed,** its whole section, as in a tab. A hidden one's header shows `eye-off` after its title in `text_secondary`, its tooltip "Hidden in this workspace", and its ⋯ holds Show in Tab ▸.
-- **Esc,** in the field or anywhere in the list, or ×, closes search and gives back the tab that was shown. A hidden tool used from search stays hidden; the dot says whether it changes the photo.
-- **Keys and screen readers:** ↓ from the field moves to the first result's header; the field is a search box named "Find tool", and a polite live region says how many tools match ("3 tools").
-- **Ctrl+F** is Find Tool's. View › Search Photos…, planned, lists Ctrl+F too: which key it takes is an open question ([gui.md](../gui.md#open-questions)); until it is built, Ctrl+F finds a tool.
+- **Find Tool… is a capability, not a tool:** a registry action, `find-tool`, on Ctrl+Shift+F (Cmd+Shift+F on a Mac), and a temporary state of the Tools panel. It has no `ToolDefinition` and no section, is never in a tab and is never hidden. It opens from its key, the tab bar's menu and the Tools panel's ⋮.
+- **Opening:** the tab bar's row becomes the search field, at the same height and place, the focus in it, a search icon at its start and ✕ at its end; the tabs are gone while it shows, so their keys and Tools Panel Tab's items do nothing. The tab shown's sections, the pinned ones too, give way to the results.
+- **An empty field** shows no list: a hint, centred in `text_secondary`, "Type a tool's name. darktable's names work too."
+- **The results** are the tools' own sections, closed, their headers as everywhere (↺, presets, ⋯). After the title, in `text_secondary`, where it lives: its tab's name, or `eye-off` and Hidden. Opening one gives the real tool, usable there, sending what it sends in a tab; a hidden one's ⋯ holds Show in Tab ▸. Every tool of the Tools panel can be found, hidden ones included, each once, a tool in several tabs (Scopes) named by the first; never an import tool.
+- **Matching,** case- and accent-insensitive, and the order, best first:
+  1. tools whose name in the interface's language starts with the text;
+  2. tools whose name has a word starting with it;
+  3. tools matched by their British English name, their darktable module's name or one of darktable's aliases for it, as darktable's search matches them (`dt_iop_get_localized_name`, `dt_iop_get_localized_aliases`), each tool's `.search` attribute in Fluent from darktable's own strings and translations.
+
+  Within each group, processing tools in pipeline order, then utilities. The part of a name that matched is drawn in `accent_text`.
+- **Nothing matches:** the hint's place says "No tool matches "…"." with the text typed.
+- **Keys:** typing filters at once; ↓ from the field goes to the first result's header, ↑ and ↓ move between the results' headers; Return opens or closes the focused result, and Return in the field opens the first. Esc closes search at once and brings back the tab shown before, with its sections as they were; Esc in an open list or a value field inside a result closes only that. Ctrl+Shift+F again, or ✕, closes it too. Search stays open while a tool found there is used, so a change made there needs no step back.
+- **A hidden tool used from search stays hidden;** the dot says whether it changes the photo.
+- **A floating tool** (Phase 3) is listed as its header alone, marked Floating; choosing it brings its floating panel to the front, so no section is drawn twice.
+- **Screen readers:** the field is a search box named "Find a tool"; after each keystroke a polite live region says how many tools match ("3 tools"); each result's description says where it lives, "in Adjust" or "hidden".
+- **Ctrl+Shift+F** is Find Tool's, which nothing else uses. Ctrl+F is kept for View › Search Photos…, planned, searching photos being the more important search, and stays unassigned until it is built.
 
 ### The tab bar's menu
 
@@ -156,9 +165,9 @@ Phase 2, in this order, each step one pull request usable on its own:
 1. **The workspace model:** `workspaces/<id>.toml` as above (tabs with id, title and icon; pinned and order per tab; hidden; seen; version), Edit built in and the default, a person's own workspaces defined by writing a file; `settings.toml`'s `workspace`; the tab last shown in `state.toml`.
 2. **Switching:** View › Workspace, and the darktable workspace built in (darktable's groups, 38).
 3. **Hidden tools:** a tool in no tab, the Hidden tab with Show Hidden Tools, the dot on the Tools panel's ⋮ while a hidden tool changes the photo.
-4. **⋯'s layout items:** Pin or Unpin, Move Up and Move Down, Move to Tab ▸, Hide; their keys and screen readers' actions (83's).
+4. **⋯'s layout items:** Pin or Unpin, Move Up and Move Down, Move to Tab ▸, Hide, and Show in Tab ▸ for a hidden tool (`section-show`), so a hidden tool comes back before dragging exists; their keys and screen readers' actions (83's).
 5. **The tab bar's menu,** on a right-click and in ⋮: Find Tool…, Show Hidden Tools, Workspace ▸, Reset Tab, Reset Workspace (deleting the workspace's file), Processing Order; Find Tool… drawn disabled until step 6.
-6. **Search:** Find Tool… (Ctrl+F), the field in the tabs' place, the tabs disabled, the list empty until typing, hidden tools found too, Esc back to the tab.
+6. **Search:** Find Tool… (Ctrl+Shift+F), the field in the tabs' place, the tabs disabled, the list empty until typing, hidden tools found too, Esc back to the tab.
 7. **Dragging a header,** as 83 designs it: reorder, pin by a drop in the pinned area, move to another tab through its icon.
 
 Phase 3:
@@ -191,7 +200,9 @@ Phase 3:
 - **darktable's always-shown search box:** a row of the panel for a task of a moment, beside the tabs it filters.
 - **Results filtering the tab shown:** a tool in another tab or hidden is the one most worth finding.
 - **The tool shown in its tab on Esc,** or the Hidden tab shown when a hidden tool was used: Esc should give back what the person had; the dot says whether a hidden tool changed the photo.
-- **Results by best match:** with about 60 tools a list in one fixed order is short and predictable.
+- **Results in one fixed order,** processing order alone: the tool whose name starts with the text would sit among the rest; names first, then words, then darktable's, puts the likely one at the top.
+- **Find Tool… as a utility with a section of its own:** a tool that edits nothing and shows only other tools, with a place in a tab, a header and a way to be hidden, none of which a search needs.
+- **Find Tool… on Ctrl+F,** Search Photos… taking another key: Ctrl+F is the key everyone knows for finding, and searching photos is the more important search, so it keeps Ctrl+F.
 - **A Tools panel scope for Ctrl+F,** finding a tool with the focus in the panel and photos elsewhere: one key meaning two things by where the focus is, against one scope for the view (37).
 
 **Customise tabs:**
