@@ -421,9 +421,15 @@ fn main() -> eframe::Result {
         }
         None => Recents::nowhere(),
     };
-    // The workspace settings name, its layout worked out once, here (decision 96).
-    let workspaces = folders.as_ref().map(Folders::workspaces);
-    let (workspace, warnings) = layout::Workspace::open(workspaces.as_deref(), &settings.workspace);
+    // The workspaces, read once, here, each with its action made before the keys settings
+    // keep are loaded, and the one settings name, its layout worked out (decision 96).
+    let folder = folders.as_ref().map(Folders::workspaces);
+    let (workspaces, mut warnings) = layout::Workspaces::read(folder.as_deref());
+    for listed in workspaces.listed() {
+        actions::workspace(&listed.id);
+    }
+    let (workspace, opened) = workspaces.open(&settings.workspace);
+    warnings.extend(opened);
     for warning in warnings {
         tracing::warn!(target: "settings", "{warning}");
     }
@@ -568,7 +574,7 @@ fn main() -> eframe::Result {
                     engine_gate,
                     engine,
                     cache,
-                    (recents, workspace),
+                    (recents, workspaces, workspace),
                     storage_folders,
                     app_host,
                     kept,
@@ -1128,48 +1134,6 @@ fn offered(locale: Locale, debug: bool) -> bool {
     locale != Locale::Pseudo || debug
 }
 
-/// darktable's scene-referred module groups by darktable's ids, base, color, correct and
-/// effect: the tabs the darktable workspace will show between Photos and History, chosen
-/// once named workspaces come (decision 38, planned). Each tool in darktable's group,
-/// those darktable puts in none in the group its other layouts give them, and listed as
-/// darktable's right panel lists them, in pipeline order with the last tool at the top
-/// (`docs/tools/README.md`, The darktable workspace).
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "the darktable workspace's tabs, shown once named workspaces come"
-    )
-)]
-const DARKTABLE_GROUPS: [(&str, &[&str]); 4] = [
-    (
-        "base",
-        &[
-            "agx",
-            "tone_curve",
-            "toneequal",
-            "exposure",
-            "flip",
-            "demosaic",
-            "highlights",
-            "temperature",
-            "rawprepare",
-        ],
-    ),
-    (
-        "color",
-        &[
-            "colorout",
-            "colorbalancergb",
-            "primaries",
-            "channelmixerrgb",
-            "colorin",
-        ],
-    ),
-    ("correct", &["hazeremoval"]),
-    ("effect", &["vignette", "soften", "grain"]),
-];
-
 struct App {
     session: Session,
     /// What the session's events have reported (`mirror.rs`, `docs/gui.md`, A frame).
@@ -1626,6 +1590,8 @@ const ZOOM_MENU: [(ViewerBarAction, ActionId); 4] = [
 /// The shell's own state (`docs/gui.md`, A frame), part of it kept in settings.
 struct Shell {
     view: View,
+    /// The workspaces read as the app started, which View › Workspace lists (decision 96).
+    workspaces: layout::Workspaces,
     /// The workspace the Tools panel shows, its layout worked out as it was read
     /// (decision 96).
     workspace: layout::Workspace,
@@ -1768,6 +1734,7 @@ impl Shell {
             .unwrap_or(system);
         Shell {
             view: View::Edit,
+            workspaces: layout::Workspaces::builtin(),
             workspace,
             kept_workspace: settings.workspace.clone(),
             panel_tab,
@@ -1847,6 +1814,39 @@ impl Shell {
         let place = place.filter(|place| enabled[*place]);
         self.panel_tab = place.unwrap_or_else(|| workspace.opening());
         self.workspace = workspace;
+    }
+
+    /// Shows the workspace `id`, chosen by the person (decision 96, Switching): kept in
+    /// settings as `workspace`, its layout worked out from what was read as the app
+    /// started, with no file read now, on the tab last shown in it, else the tab it opens
+    /// on ([`Shell::open_workspace`]). Chosen again, it is shown already, and nothing
+    /// changes. An id of no workspace read shows Default, with a warning.
+    fn switch_workspace(&mut self, id: &str) {
+        if self.workspace.id == id && self.kept_workspace == id {
+            return;
+        }
+        let (workspace, warnings) = self.workspaces.open(id);
+        for warning in warnings {
+            tracing::warn!(target: "settings", "{warning}");
+        }
+        self.kept_workspace = workspace.id.clone();
+        self.open_workspace(workspace);
+    }
+
+    /// View › Workspace's items: each workspace's action with its name in the interface's
+    /// language, a built-in's its message, a person's own as its file names it.
+    fn workspace_items(&self, ctx: &egui::Context) -> Vec<menus::WorkspaceItem> {
+        let tr = translator(ctx);
+        let listed = self.workspaces.listed().iter();
+        listed
+            .map(|listed| menus::WorkspaceItem {
+                id: actions::workspace(&listed.id),
+                words: match listed.name() {
+                    layout::Title::Message(message) => tr.text(&message),
+                    layout::Title::Own(name) => name,
+                },
+            })
+            .collect()
     }
 
     /// The tab shown, with its tools.
@@ -2349,6 +2349,7 @@ impl Shell {
             dialog_window: false,
             full_screen: ctx.input(|i| i.viewport().fullscreen).unwrap_or(false),
             panel_tab: self.panel_tab,
+            workspace: actions::workspace(&self.workspace.id),
             browser: self.browser,
             // The app's, from the folder it shows ([`App::shell_state`]).
             shown: false,
@@ -2377,7 +2378,12 @@ impl Shell {
                     ..*state
                 };
                 shown = Some(paths);
-                menus::request(ctx, &self.keymap, &state, &recents, &self.steps, anchor)
+                let workspaces = self.workspace_items(ctx);
+                let lists = menus::Lists {
+                    recents: &recents,
+                    workspaces: &workspaces,
+                };
+                menus::request(ctx, &self.keymap, &state, lists, &self.steps, anchor)
             });
             let menu = request.access_key(letter)?.to_owned();
             Some(request.clone().expanded(menu))
@@ -2444,7 +2450,12 @@ impl Shell {
                 ..*state
             };
             let steps = &self.steps;
-            let request = menus::request(ctx, &self.keymap, &state, &recents, steps, anchor);
+            let workspaces = self.workspace_items(ctx);
+            let lists = menus::Lists {
+                recents: &recents,
+                workspaces: &workspaces,
+            };
+            let request = menus::request(ctx, &self.keymap, &state, lists, steps, anchor);
             popup::open(ctx, id, request);
         }
     }
@@ -2607,6 +2618,7 @@ impl Shell {
             Intent::Menu => self.menu = true,
             Intent::View(view) => self.view = view,
             Intent::PanelTab(tab) => self.choose_tab(tab),
+            Intent::Workspace(id) => self.switch_workspace(id),
             // Pressed again, it is chosen already, and nothing changes.
             Intent::ShowCollections => {
                 if let Some(tab) = self.workspace.holding(library::ID) {
@@ -2847,9 +2859,10 @@ impl App {
     /// Its session plans within `engine`'s budget, `engine.memory_budget`, and keeps
     /// `cache`, the disk cache, if the app could open one; Settings says whether the
     /// adapter in use is the one `engine` chose. The Tools panel shows `workspace`, on the
-    /// tab the recents' `state.toml` kept for it. Its dialogs are the host's. It keeps the
-    /// session's log in `kept` while settings say so. `launch` says whether it reopens what
-    /// was open last, how it restarts, and what a start that did not finish has it say.
+    /// tab the recents' `state.toml` kept for it, and View › Workspace lists `workspaces`,
+    /// as read. Its dialogs are the host's. It keeps the session's log in `kept` while
+    /// settings say so. `launch` says whether it reopens what was open last, how it
+    /// restarts, and what a start that did not finish has it say.
     #[allow(clippy::too_many_arguments, reason = "what the app is made of, once")]
     fn new(
         cc: &eframe::CreationContext<'_>,
@@ -2860,7 +2873,7 @@ impl App {
         gate: SubmitGate,
         engine: apertrust_engine::settings::Options,
         cache: Option<Arc<Cache>>,
-        (recents, workspace): (Recents, layout::Workspace),
+        (recents, workspaces, workspace): (Recents, layout::Workspaces, layout::Workspace),
         storage_folders: storage::Folders,
         dialogs: dialog_host::Host,
         kept: apertrust_base::log::Kept,
@@ -2884,6 +2897,7 @@ impl App {
                 keeper.overridden(discard),
             ),
             recents,
+            workspaces,
             ..Shell::new(&settings, system_locale(), cc.egui_ctx.os())
         };
         // On the tab last shown in it, which the recents' `state.toml` keeps.
@@ -4874,7 +4888,12 @@ impl App {
         let recents = self.menus.is_some().then(|| self.shell.show_recents(ctx));
         let state = self.state(ctx);
         if let (Some(menus), Some(recents)) = (&mut self.menus, recents) {
-            menus.update(ctx, &self.shell.keymap, &state, &recents, &self.shell.steps);
+            let workspaces = self.shell.workspace_items(ctx);
+            let lists = menus::Lists {
+                recents: &recents,
+                workspaces: &workspaces,
+            };
+            menus.update(ctx, &self.shell.keymap, &state, lists, &self.shell.steps);
         }
         // The Mac's popup menus the frame asked for, shown from the run loop.
         popups::show(ctx, frame);
@@ -11681,6 +11700,113 @@ mod tests {
         assert_eq!(shell.to_settings(&ctx).workspace, "portraits");
     }
 
+    /// View › Workspace's items and the shell's switching (decision 96): the built-in
+    /// workspaces, then a person's own by its file's name, the one shown checked. Choosing
+    /// one shows it on the tab last shown in it, else the tab it opens on, Essentials'
+    /// Adjust, a tab kept that it lacks too; keeps it in settings and its tab in
+    /// `state.toml`, each workspace its own; chosen again, nothing changes.
+    #[test]
+    fn switching_shows_each_workspace_on_its_own_tab_last_shown() {
+        let ctx = egui::Context::default();
+        ctx.set_os(OperatingSystem::Nix);
+        apertrust_ui::set_locale(&ctx, Locale::EnGb);
+        let folder = settings::testing::Folder::new("switching");
+        let files = folder.0.join("workspaces");
+        std::fs::create_dir_all(&files).expect("made");
+        let own = "name = \"Portraits\"\n[[tabs]]\nid = \"photos\"\n\
+                   [[tabs]]\nid = \"skin\"\ntitle = \"Skin\"\n\
+                   [order]\nphotos = [\"collections\", \"export\"]\nskin = [\"exposure\"]\n";
+        std::fs::write(files.join("portraits.toml"), own).expect("written");
+        let (workspaces, warnings) = layout::Workspaces::read(Some(&files));
+        assert!(warnings.is_empty(), "{warnings:?}");
+        for listed in workspaces.listed() {
+            actions::workspace(&listed.id);
+        }
+        let (recents, _) = Recents::open(folder.0.join("state.toml"), Vec::new);
+        let mut shell = Shell {
+            recents,
+            workspaces,
+            ..Shell::new(&Settings::default(), Locale::EnGb, OperatingSystem::Nix)
+        };
+        shell.open_workspace(layout::Workspace::builtin_default());
+        let choose = |shell: &mut Shell, id: &str| {
+            let state = shell.state(&ctx, false, false);
+            shell.run(actions::workspace(id), &state, &ctx, &[]);
+        };
+        shell.choose_tab(5);
+        choose(&mut shell, layout::ESSENTIALS);
+        assert_eq!(shell.workspace.id, layout::ESSENTIALS);
+        let adjust = shell.workspace.position("adjust").expect("Adjust");
+        assert_eq!(shell.panel_tab, adjust);
+        assert_eq!(shell.to_settings(&ctx).workspace, layout::ESSENTIALS);
+        let history = shell.workspace.position("history").expect("History");
+        shell.choose_tab(history);
+        choose(&mut shell, layout::DEFAULT);
+        assert_eq!(
+            (shell.workspace.id.as_str(), shell.panel_tab),
+            ("default", 5)
+        );
+        choose(&mut shell, layout::ESSENTIALS);
+        assert_eq!(shell.panel_tab, history);
+        shell.recents.flush();
+        let kept = std::fs::read_to_string(folder.0.join("state.toml")).expect("written");
+        assert!(kept.contains("default = \"raw\""), "{kept}");
+        assert!(kept.contains("essentials = \"history\""), "{kept}");
+        // Chosen again, nothing changes.
+        choose(&mut shell, layout::ESSENTIALS);
+        assert_eq!(shell.panel_tab, history);
+        // A tab kept that this workspace lacks opens the one it opens on.
+        shell.recents.set_tab(layout::ESSENTIALS, "raw");
+        choose(&mut shell, layout::DEFAULT);
+        choose(&mut shell, layout::ESSENTIALS);
+        assert_eq!(shell.panel_tab, adjust);
+        // A person's own, from its file, listed by its name and checked once shown.
+        choose(&mut shell, "portraits");
+        assert_eq!(shell.workspace.id, "portraits");
+        assert_eq!(
+            shell.workspace.tab(shell.panel_tab).expect("a tab").id,
+            "skin"
+        );
+        assert_eq!(shell.to_settings(&ctx).workspace, "portraits");
+        let state = shell.state(&ctx, false, false);
+        let items = shell.workspace_items(&ctx);
+        let lists = menus::Lists {
+            recents: &[],
+            workspaces: &items,
+        };
+        let anchor = egui::Rect::NOTHING;
+        let menu = menus::request(&ctx, &shell.keymap, &state, lists, &shell.steps, anchor);
+        let workspace = menu
+            .entries
+            .iter()
+            .filter_map(|entry| match entry {
+                popup::Entry::Submenu(menu) => Some(menu),
+                _ => None,
+            })
+            .flat_map(|menu| &menu.entries)
+            .find_map(|entry| match entry {
+                popup::Entry::Submenu(submenu) if submenu.id == "menu-workspace" => Some(submenu),
+                _ => None,
+            })
+            .expect("View › Workspace");
+        let shown: Vec<(&str, &str, Option<bool>)> = workspace
+            .entries
+            .iter()
+            .map(|entry| match entry {
+                popup::Entry::Item(item) => (item.id.as_str(), item.text.as_str(), item.checked),
+                other => panic!("not a workspace: {other:?}"),
+            })
+            .collect();
+        assert_eq!(
+            shown,
+            [
+                ("workspace-default", "Default", Some(false)),
+                ("workspace-essentials", "Essentials", Some(false)),
+                ("workspace-portraits", "Portraits", Some(true)),
+            ]
+        );
+    }
+
     /// A folder opened joins the recents at the top, once; Collections' rows say why one
     /// cannot be opened, its failure this run before the check's finding it gone.
     #[test]
@@ -11969,54 +12095,6 @@ mod tests {
             let shell = start();
             assert_eq!(shell.panel_tab, ADJUST, "{old}");
             assert_eq!(kept_tab(&shell), Some("adjust"));
-        }
-    }
-
-    /// Whether `id` is a built-in tool's, or the Export utility's.
-    fn built(id: &str) -> bool {
-        id == export::ID
-            || apertrust_tools::TOOLS
-                .iter()
-                .any(|tool| tool.definition().tool.id == id)
-    }
-
-    /// The darktable workspace's groups (decision 38, planned) list their tools as
-    /// darktable's right panel does, in pipeline order with the last tool at the top: the
-    /// order of their operations in [`apertrust_operations::OPERATIONS`], reversed. A
-    /// tool's id is its operation's but for the Tone curve's, whose Luma curve is RGB
-    /// curve's (decision 2). Each built tool is in one group, as in one of Edit's tabs.
-    #[test]
-    fn darktable_s_groups_list_their_tools_last_in_the_pipeline_first() {
-        let place = |tool: &str| {
-            let operation = match tool {
-                "tone_curve" => "rgbcurve",
-                other => other,
-            };
-            apertrust_operations::OPERATIONS
-                .iter()
-                .position(|op| op.manifest().id == operation)
-                .unwrap_or_else(|| panic!("{tool} has no operation {operation}"))
-        };
-        for (id, tools) in DARKTABLE_GROUPS {
-            let places: Vec<usize> = tools.iter().map(|tool| place(tool)).collect();
-            assert!(
-                places.windows(2).all(|pair| pair[0] > pair[1]),
-                "{id}: {tools:?} at {places:?}"
-            );
-        }
-        let listed: Vec<&str> = DARKTABLE_GROUPS
-            .iter()
-            .flat_map(|(_, tools)| tools.iter().copied())
-            .collect();
-        for tool in apertrust_tools::TOOLS {
-            let id = tool.definition().tool.id;
-            let groups = listed.iter().filter(|listed| **listed == id).count();
-            assert_eq!(groups, 1, "{id} is in {groups} groups");
-        }
-        // Export stays in the Photos tab the darktable workspace shares (decision 90).
-        assert!(!listed.contains(&export::ID));
-        for id in listed {
-            assert!(built(id), "{id} is in a group but not built in");
         }
     }
 

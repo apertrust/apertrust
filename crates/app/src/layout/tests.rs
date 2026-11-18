@@ -78,6 +78,93 @@ fn default_layout() -> Layout {
     Layout::defaults(DEFAULT).expect("built in")
 }
 
+/// Holds the built-in workspace `layout` to `recorded`, its decision's tabs and their
+/// tools: its tabs in order, each listing the built tools recorded for it in their order
+/// and no other, Scopes pinned in `pinned` alone, each tool recorded in one tab only; a
+/// whole file in the model's format, with no `seen`, nothing hidden, and no name nor any
+/// tab's title, which the interface takes from Fluent.
+fn holds_to(layout: &Layout, recorded: &[(&str, &[&str])], pinned: &[&str]) {
+    assert_eq!(layout.version, VERSION);
+    assert_eq!(layout.name, None, "a built-in's name is Fluent's");
+    assert!(layout.seen.is_empty());
+    assert!(layout.hidden.is_empty());
+    let ids: Vec<&str> = layout.tabs.iter().map(|tab| tab.id.as_str()).collect();
+    let recorded_ids: Vec<&str> = recorded.iter().map(|(id, _)| *id).collect();
+    assert_eq!(ids, recorded_ids);
+    let known = known();
+    for (id, tools) in recorded {
+        let expected: Vec<&str> = tools
+            .iter()
+            .copied()
+            .filter(|t| known.contains(t))
+            .collect();
+        let order: Vec<&str> = layout.order[*id].iter().map(String::as_str).collect();
+        assert_eq!(order, expected, "{id}");
+        let kept = layout.pinned.get(*id).cloned().unwrap_or_default();
+        let scopes = pinned.contains(id).then_some(vec![SCOPES.to_owned()]);
+        assert_eq!(kept, scopes.unwrap_or_default(), "{id}");
+    }
+    let mut placed: Vec<&str> = recorded
+        .iter()
+        .flat_map(|(_, t)| t.iter().copied())
+        .collect();
+    let count = placed.len();
+    placed.sort_unstable();
+    placed.dedup();
+    assert_eq!(placed.len(), count, "a tool placed twice");
+    for tab in &layout.tabs {
+        assert_eq!(
+            tab.title, None,
+            "{}: a built-in tab's title is Fluent's",
+            tab.id
+        );
+    }
+}
+
+/// Holds the built-in workspace `layout` to the build: every tool and icon it names exists,
+/// each tab's title is a message in every language, and the layout it shows holds the
+/// invariants, with no warning. The layout shown.
+fn names_only_what_exists(layout: &Layout) -> Shown {
+    let known = known();
+    for tab in &layout.tabs {
+        let lists = [&layout.pinned, &layout.order];
+        for tool in lists
+            .iter()
+            .flat_map(|l| l.get(&tab.id).into_iter().flatten())
+        {
+            assert!(known.contains(&tool.as_str()), "{}: no tool {tool}", tab.id);
+        }
+        let name = tab
+            .icon
+            .as_deref()
+            .unwrap_or_else(|| panic!("{}: no icon", tab.id));
+        assert!(icon(name).is_some(), "{}: no icon {name}", tab.id);
+        for locale in Locale::ALL {
+            let words = Translator::new(locale);
+            assert!(
+                words.has(&format!("tab-{}", tab.id)),
+                "{locale:?}: {}",
+                tab.id
+            );
+        }
+    }
+    let (shown, warnings) = resolve(layout, &[layout], &known);
+    assert!(warnings.is_empty(), "{warnings:?}");
+    holds_the_invariants(&shown, &known);
+    shown
+}
+
+/// Holds `shown` to placing every tool of the Tools panel, none hidden: Scopes in each tab
+/// of `pinned`, every other tool in one tab.
+fn places_every_tool(shown: &Shown, pinned: &[&str]) {
+    assert!(shown.hidden.is_empty(), "{:?}", shown.hidden);
+    for tool in known() {
+        let tabs = shown.tabs.iter().filter(|tab| tab.holds(tool)).count();
+        let expected = if tool == SCOPES { pinned.len() } else { 1 };
+        assert_eq!(tabs, expected, "{tool} in {tabs} tabs");
+    }
+}
+
 /// Holds `shown` to decision 96's invariants for the tools `known` lists: each tab's tools
 /// once, `pinned` and `order` sharing none; every tool in a tab shown or hidden, never
 /// both; Export in a tab; nothing but `known`'s tools anywhere; at most twelve tabs.
@@ -133,100 +220,150 @@ fn tab<'a>(shown: &'a Shown, id: &str) -> &'a Tab {
     tab.unwrap_or_else(|| panic!("no tab {id}"))
 }
 
-/// The bundled Default workspace is decision 38's: its tabs in order, each listing the
-/// built tools decision 38 gives it in its order and no other, Scopes pinned over the five
-/// editing tabs, each tool placed in one tab only; a whole file in the model's format,
-/// with no `seen`, nothing hidden, and its name, which the interface takes from Fluent.
+/// The bundled Default workspace is decision 38's ([`holds_to`]).
 #[test]
 fn the_default_workspace_is_decision_38_s() {
     let layout = default_layout();
-    assert_eq!(layout.version, VERSION);
-    assert_eq!(layout.name.as_deref(), Some("Default"));
-    assert!(layout.seen.is_empty());
-    assert!(layout.hidden.is_empty());
-    let ids: Vec<&str> = layout.tabs.iter().map(|tab| tab.id.as_str()).collect();
-    assert_eq!(ids, DECISION_38.map(|(id, _)| id));
-    let known = known();
-    for (id, recorded) in DECISION_38 {
-        let expected: Vec<&str> = recorded
-            .iter()
-            .copied()
-            .filter(|t| known.contains(t))
-            .collect();
-        let order: Vec<&str> = layout.order[id].iter().map(String::as_str).collect();
-        assert_eq!(order, expected, "{id}");
-        let pinned = layout.pinned.get(id).cloned().unwrap_or_default();
-        let scopes = SCOPES_PINNED
-            .contains(&id)
-            .then_some(vec![SCOPES.to_owned()]);
-        assert_eq!(pinned, scopes.unwrap_or_default(), "{id}");
-    }
-    let mut placed: Vec<&str> = DECISION_38
-        .iter()
-        .flat_map(|(_, t)| t.iter().copied())
-        .collect();
-    let count = placed.len();
-    placed.sort_unstable();
-    placed.dedup();
-    assert_eq!(placed.len(), count, "a tool placed twice");
-    for tab in &layout.tabs {
-        assert_eq!(
-            tab.title, None,
-            "{}: a built-in tab's title is Fluent's",
-            tab.id
-        );
-    }
+    holds_to(&layout, &DECISION_38, &SCOPES_PINNED);
 }
 
-/// Every tool and icon the bundled file names exists, every tool of the Tools panel is in
-/// one of its tabs, Scopes in each it pins it in and every other once, each tab's title is
-/// a message in every language, and the layout it shows holds the invariants, with no
-/// warning. Detail, with nothing built, is drawn disabled; the others can be chosen.
+/// The bundled Default workspace names only what the build has ([`names_only_what_exists`]).
+/// Detail, with nothing built, is drawn disabled; the others can be chosen.
 #[test]
 fn the_default_workspace_names_only_tools_and_icons_that_exist() {
-    let layout = default_layout();
-    let known = known();
-    for tab in &layout.tabs {
-        let lists = [&layout.pinned, &layout.order];
-        for tool in lists
-            .iter()
-            .flat_map(|l| l.get(&tab.id).into_iter().flatten())
-        {
-            assert!(known.contains(&tool.as_str()), "{}: no tool {tool}", tab.id);
-        }
-        let name = tab
-            .icon
-            .as_deref()
-            .unwrap_or_else(|| panic!("{}: no icon", tab.id));
-        assert!(icon(name).is_some(), "{}: no icon {name}", tab.id);
-        for locale in Locale::ALL {
-            let words = Translator::new(locale);
-            assert!(
-                words.has(&format!("tab-{}", tab.id)),
-                "{locale:?}: {}",
-                tab.id
-            );
-        }
-    }
-    let (shown, warnings) = resolve(&layout, &[&layout], &known);
-    assert!(warnings.is_empty(), "{warnings:?}");
-    holds_the_invariants(&shown, &known);
-    assert!(shown.hidden.is_empty(), "{:?}", shown.hidden);
-    for tool in &known {
-        let tabs = shown.tabs.iter().filter(|tab| tab.holds(tool)).count();
-        let expected = if *tool == SCOPES {
-            SCOPES_PINNED.len()
-        } else {
-            1
-        };
-        assert_eq!(tabs, expected, "{tool} in {tabs} tabs");
-    }
+    let shown = names_only_what_exists(&default_layout());
+    places_every_tool(&shown, &SCOPES_PINNED);
     let enabled: Vec<bool> = shown.tabs.iter().map(Tab::enabled).collect();
     assert_eq!(enabled, [true, true, false, true, true, true, true]);
     assert_eq!(tab(&shown, "photos").order.last(), Some(&EXPORT));
     let titles: Vec<&Title> = shown.tabs.iter().map(|tab| &tab.title).collect();
     assert_eq!(titles[1], &Title::Message("tab-adjust".to_owned()));
     assert_eq!(tab(&shown, "geometry").icon, Icon::Correct);
+}
+
+/// The bundled Essentials workspace (decision 96): Photos, Adjust with Scopes pinned over
+/// the tools most edits need, and History, as a whole file with no name, nothing in `seen`
+/// or `hidden` and no tab's title; it names only what the build has
+/// ([`names_only_what_exists`]), every other tool is in no tab, so hidden, and it opens on
+/// Adjust.
+#[test]
+fn the_essentials_workspace_shows_the_tools_most_edits_need() {
+    const RECORDED: [(&str, &[&str]); 3] = [
+        ("photos", &["collections", "export"]),
+        (
+            "adjust",
+            &[
+                "temperature",
+                "exposure",
+                "agx",
+                "toneequal",
+                "colorbalancergb",
+                "flip",
+            ],
+        ),
+        ("history", &["history"]),
+    ];
+    let layout = Layout::defaults(ESSENTIALS).expect("built in");
+    holds_to(&layout, &RECORDED, &["adjust"]);
+    let shown = names_only_what_exists(&layout);
+    for (id, tools) in RECORDED {
+        let pinned: &[&str] = if id == "adjust" { &[SCOPES] } else { &[] };
+        let tab = tab(&shown, id);
+        assert_eq!(
+            (tab.pinned.as_slice(), tab.order.as_slice()),
+            (pinned, tools)
+        );
+    }
+    let listed: Vec<&str> = RECORDED.iter().flat_map(|(_, t)| t.to_vec()).collect();
+    let hidden: Vec<&str> = (known().into_iter())
+        .filter(|tool| *tool != SCOPES && !listed.contains(tool))
+        .collect();
+    assert_eq!(shown.hidden, hidden);
+    assert!(shown.hidden.contains(&"highlights"));
+    assert!(shown.tabs.iter().all(Tab::enabled));
+    let (workspace, warnings) = Workspaces::builtin().open(ESSENTIALS);
+    assert!(warnings.is_empty(), "{warnings:?}");
+    assert_eq!(workspace.shown, shown);
+    assert_eq!(workspace.opening(), workspace.position("adjust").unwrap());
+}
+
+/// The workspaces are the built-in ones, Default then Essentials, each named by its message
+/// in every language, then a person's own, each `<id>.toml` that reads, by name, its file's
+/// `name` or else its id: a built-in's changed copy takes its place, never listed twice; a
+/// file whose name is no workspace id, or not TOML's, is not listed, a damaged one set
+/// aside and one listing no tab refused, each with a warning.
+#[test]
+fn the_workspaces_are_the_built_in_ones_then_a_person_s_own_by_name() {
+    let (none, warnings) = Workspaces::read(None);
+    assert!(warnings.is_empty());
+    assert_eq!(none, Workspaces::builtin());
+    let folder = Folder::new("workspace-listed");
+    let write = |name: &str, text: &str| std::fs::write(folder.0.join(name), text).unwrap();
+    let tabs = "[[tabs]]\nid = \"photos\"\n";
+    write("portraits.toml", &format!("name = \"Portraits\"\n{tabs}"));
+    write("film.toml", tabs);
+    write(
+        "essentials.toml",
+        &format!("{tabs}[order]\nphotos = [\"export\"]\n"),
+    );
+    write("Bad Name.toml", tabs);
+    write("notes.txt", tabs);
+    write("broken.toml", "[[tabs]\n");
+    write("empty.toml", "name = \"Empty\"\n");
+    let (workspaces, warnings) = Workspaces::read(Some(&folder.0));
+    assert_eq!(warnings.len(), 2, "{warnings:?}");
+    assert!(folder.0.join("broken.toml.bak").exists());
+    let ids: Vec<&str> = workspaces.listed().iter().map(|l| l.id.as_str()).collect();
+    assert_eq!(ids, [DEFAULT, ESSENTIALS, "film", "portraits"]);
+    let names: Vec<Title> = workspaces.listed().iter().map(Listed::name).collect();
+    assert_eq!(
+        names,
+        [
+            Title::Message("workspace-default".to_owned()),
+            Title::Message("workspace-essentials".to_owned()),
+            Title::Own("film".to_owned()),
+            Title::Own("Portraits".to_owned()),
+        ]
+    );
+    for locale in Locale::ALL {
+        let words = Translator::new(locale);
+        for id in builtin_ids() {
+            assert!(words.has(&format!("workspace-{id}")), "{locale:?}: {id}");
+        }
+    }
+    let essentials = &workspaces.listed()[1];
+    assert!(essentials.builtin);
+    assert_ne!(
+        Some(&essentials.layout),
+        Layout::defaults(ESSENTIALS).as_ref()
+    );
+    // Each opens as listed; an id of none, Default, with a warning.
+    let (portraits, warnings) = workspaces.open("portraits");
+    assert!(warnings.is_empty(), "{warnings:?}");
+    assert_eq!(portraits.id, "portraits");
+    let (shown, warnings) = workspaces.open("empty");
+    assert_eq!(shown.id, DEFAULT);
+    assert_eq!(warnings.len(), 1, "{warnings:?}");
+}
+
+/// A person's own workspace's new tools go by the Default workspace's tabs alone: a tab
+/// Default lacks, as darktable's `base`, takes none, its own title its id.
+#[test]
+fn a_person_s_own_new_tools_go_by_default_s_tabs_alone() {
+    let folder = Folder::new("workspace-own-base");
+    let text = "[[tabs]]\nid = \"photos\"\n[[tabs]]\nid = \"base\"\n\
+                [order]\nphotos = [\"collections\", \"export\"]\nbase = [\"exposure\"]\n";
+    std::fs::write(folder.0.join("mine.toml"), text).unwrap();
+    let (workspace, warnings) = Workspace::open(Some(&folder.0), "mine");
+    assert!(warnings.is_empty(), "{warnings:?}");
+    holds_the_invariants(&workspace.shown, &known());
+    let base = tab(&workspace.shown, "base");
+    assert!(base.pinned.is_empty());
+    assert_eq!(base.order, ["exposure"]);
+    assert_eq!(base.title, Title::Own("base".to_owned()));
+    for tool in ["temperature", "agx", "demosaic", "scopes"] {
+        assert!(workspace.shown.hidden.contains(&tool), "{tool}");
+    }
 }
 
 /// With no file, the Default workspace is its defaults, and opens on Adjust, which holds

@@ -33,14 +33,18 @@ tab-detail = Detail
 tab-geometry = Geometry
 tab-effects = Effects
 tab-raw = Raw
-# The darktable workspace's tabs, planned: darktable's four module groups, base, color,
-# correct and effect (decision 38).
+# darktable's four module groups' names, base, color, correct and effect (decision 38): no
+# built-in workspace's tab takes them.
 tab-base = Base
 tab-color = Colour
 tab-correct = Correct
 tab-effect = Effect
 tab-history = History
 tab-metadata = Metadata
+# The built-in workspaces' names in View › Workspace (decision 96); a person's own is
+# named by its file.
+workspace-default = Default
+workspace-essentials = Essentials
 # The tooltip of a tab drawn disabled because nothing is behind it yet; $tab is its name.
 panel-tab-later = { $tab }: coming in a later version
 tools-panel-tabs = Tools panel tabs
@@ -964,6 +968,7 @@ menu-window = &Window
 menu-help = &Help
 # Submenus of View.
 menu-tools-panel-tab = Tools Panel Tab
+menu-workspace = Workspace
 menu-interface-size = Interface Size
 menu-sort-by = Sort By
 menu-thumbnail-size = Thumbnail Size

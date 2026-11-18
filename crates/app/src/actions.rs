@@ -279,6 +279,9 @@ pub enum Intent {
         tool: &'static str,
         action: &'static str,
     },
+    /// View › Workspace's item for the workspace of this id: it shown in the Tools panel,
+    /// on the tab last shown in it, and kept in settings ([`workspace`]; decision 96).
+    Workspace(&'static str),
 }
 
 /// What the actions' availability depends on, as the app is this frame.
@@ -358,6 +361,8 @@ pub struct State {
     pub full_screen: bool,
     /// The Tools panel's tab shown, by position, whose item is shown checked.
     pub panel_tab: usize,
+    /// The workspace shown, by its action ([`workspace`]), whose item is shown checked.
+    pub workspace: ActionId,
     /// How the Browser shows the folder, whose items are shown checked.
     pub browser: crate::settings::BrowserSettings,
     /// Whether the Browser shows photos: its browser bar's items rest without any.
@@ -480,6 +485,7 @@ impl Action {
         match self.emits {
             Emit::Intent(Intent::FullScreen) => Some(state.full_screen),
             Emit::Intent(Intent::PanelTab(tab)) => Some(state.panel_tab == tab),
+            Emit::Intent(Intent::Workspace(_)) => Some(state.workspace == self.id),
             Emit::Intent(Intent::BrowserBar(chosen)) => Some(state.browser.holds(chosen)),
             Emit::Intent(Intent::Background(b)) => Some(state.background == Some(b)),
             _ => None,
@@ -1271,7 +1277,8 @@ pub static ACTIONS: [Action; 82] = [
     ),
 ];
 
-/// The action `id`, if the registry has it: one of [`ACTIONS`] or a tool's ([`tool_actions`]).
+/// The action `id`, if the registry has it: one of [`ACTIONS`], a tool's
+/// ([`tool_actions`]) or a workspace's ([`workspace_actions`]).
 pub fn action(id: ActionId) -> Option<&'static Action> {
     all().find(|a| a.id == id)
 }
@@ -1281,9 +1288,13 @@ pub fn named(id: &str) -> Option<&'static Action> {
     all().find(|a| a.id.0 == id)
 }
 
-/// Every action: [`ACTIONS`], then the tools' own ([`tool_actions`]).
+/// Every action: [`ACTIONS`], then the tools' own ([`tool_actions`]), then the
+/// workspaces' ([`workspace_actions`]).
 pub fn all() -> impl Iterator<Item = &'static Action> {
-    ACTIONS.iter().chain(tool_actions())
+    ACTIONS
+        .iter()
+        .chain(tool_actions())
+        .chain(workspace_actions())
 }
 
 /// The built-in tools' own actions as registry actions (decision 91), made once as the
@@ -1341,6 +1352,65 @@ fn own_actions(definition: &'static ProcessingDefinition) -> Vec<(&'static str, 
 /// only, on the main window, with no modal dialog over it, as its button is enabled.
 fn tool_action_available(state: &State) -> bool {
     state.editable && on_main_window(state) && no_modal_dialog(state)
+}
+
+/// The workspaces' actions made so far ([`workspace`]), the built-in ones first.
+static WORKSPACES: std::sync::Mutex<Vec<&'static Action>> = std::sync::Mutex::new(Vec::new());
+
+/// [`WORKSPACES`], the built-in workspaces' actions made where none are yet.
+fn workspaces_made() -> std::sync::MutexGuard<'static, Vec<&'static Action>> {
+    let mut made = WORKSPACES
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if made.is_empty() {
+        made.extend(crate::layout::builtin_ids().map(made_for));
+    }
+    made
+}
+
+/// The workspaces' actions (decision 96), one for each workspace, `workspace-<id>`: the
+/// built-in ones, Default then Essentials, always, and a person's own once [`workspace`]
+/// has made theirs, as the app does as it starts from the workspaces it reads, before
+/// the keys settings keep are loaded.
+pub fn workspace_actions() -> Vec<&'static Action> {
+    workspaces_made().clone()
+}
+
+/// The action of the workspace `id`, made the first time it is asked for, as the app asks
+/// for each workspace's as it starts, as tools' actions are made (decision 96): the
+/// registry's `workspace-<id>`, no default keys, its words a built-in's message,
+/// `workspace-<id>`, and for a person's own, which View › Workspace names by its file, the
+/// submenu's, `menu-workspace`. It runs on the main window with no modal dialog over it.
+pub fn workspace(id: &str) -> ActionId {
+    let wanted = format!("workspace-{id}");
+    let mut made = workspaces_made();
+    if let Some(action) = made.iter().find(|a| a.id.0 == wanted) {
+        return action.id;
+    }
+    let action = made_for(id);
+    made.push(action);
+    action.id
+}
+
+/// Whether a workspace can be chosen: on the main window, with no modal dialog over it.
+fn workspace_available(state: &State) -> bool {
+    on_main_window(state) && no_modal_dialog(state)
+}
+
+/// The workspace `id`'s action, made for the run.
+fn made_for(id: &str) -> &'static Action {
+    let leak = |text: String| -> &'static str { Box::leak(text.into_boxed_str()) };
+    let action_id = leak(format!("workspace-{id}"));
+    let builtin = crate::layout::builtin_ids().any(|built| built == id);
+    Box::leak(Box::new(Action {
+        id: ActionId(action_id),
+        message: if builtin { action_id } else { "menu-workspace" },
+        keys: &[],
+        scope: Scope::App,
+        trigger: Trigger::Press,
+        available: workspace_available,
+        emits: Emit::Intent(Intent::Workspace(leak(id.to_owned()))),
+    }))
 }
 
 /// Each action's keys: the platform's defaults, with the user's own from settings in
@@ -2184,6 +2254,7 @@ pub(crate) mod tests {
             dialog_window: false,
             full_screen: false,
             panel_tab: 0,
+            workspace: workspace(crate::layout::DEFAULT),
             browser: crate::settings::BrowserSettings::default(),
             shown: true,
             background: Some(Background::Dark),
@@ -2337,6 +2408,45 @@ pub(crate) mod tests {
             }
             assert!(tr.has("key-space"));
         }
+    }
+
+    /// Each workspace has its action, `workspace-<id>` (decision 96): the built-in ones
+    /// always, Default then darktable, named by their messages; a person's own made once,
+    /// the first time it is asked for, as the app asks as it starts. None has a default key;
+    /// each chooses its workspace, checked while it is the one shown, on the main window
+    /// with no modal dialog over it.
+    #[test]
+    fn each_workspace_has_its_action_made_once() {
+        let made: Vec<&str> = workspace_actions().iter().map(|a| a.id.0).collect();
+        assert_eq!(made[..2], ["workspace-default", "workspace-essentials"]);
+        let own = workspace("street");
+        assert_eq!(own, workspace("street"));
+        assert_eq!(own.0, "workspace-street");
+        let mut state = everything();
+        for (id, message) in [
+            ("default", "workspace-default"),
+            ("essentials", "workspace-essentials"),
+            ("street", "menu-workspace"),
+        ] {
+            let action = action(workspace(id)).expect("registered");
+            assert_eq!(action.message, message);
+            assert!(action.keys.is_empty(), "{id}");
+            assert_eq!(action.emits, Emit::Intent(Intent::Workspace(id)));
+            assert_eq!(named(action.id.0).map(|a| a.id), Some(action.id));
+            state.workspace = action.id;
+            assert_eq!(action.checked(&state), Some(true));
+            state.workspace = workspace("elsewhere");
+            assert_eq!(action.checked(&state), Some(false));
+            assert!(action.enabled(&state));
+            state.modal = true;
+            assert!(!action.enabled(&state));
+            state.modal = false;
+        }
+        let ids: Vec<&str> = workspace_actions().iter().map(|a| a.id.0).collect();
+        assert_eq!(
+            ids.iter().filter(|id| **id == "workspace-street").count(),
+            1
+        );
     }
 
     #[test]
@@ -3125,8 +3235,10 @@ pub(crate) mod tests {
         ] {
             assert!(ids.contains(&id), "{id} in {ids:?}");
         }
-        let unique: HashSet<&str> = all().map(|a| a.id.0).collect();
-        assert_eq!(unique.len(), ACTIONS.len() + tool_actions().len());
+        let every: Vec<&str> = all().map(|a| a.id.0).collect();
+        let unique: HashSet<&str> = every.iter().copied().collect();
+        assert_eq!(unique.len(), every.len());
+        assert!(every.len() >= ACTIONS.len() + tool_actions().len());
         let rotate = named("tool-flip-rotate_cw").expect("Rotate 90° clockwise");
         assert_eq!(action(rotate.id).map(|a| a.id), Some(rotate.id));
         assert_eq!(rotate.message, "tool-flip-action-rotate_cw-full");

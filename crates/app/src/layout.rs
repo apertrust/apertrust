@@ -21,16 +21,20 @@
 //!   each an id with a title and an icon, each tab's pinned tools and the rest by tab id
 //!   (`[pinned]`, `[order]`), the tools it hides (`hidden`) and every tool the build that
 //!   wrote it knew (`seen`). A person's own is `<user data>/workspaces/<id>.toml`.
-//! - **Built in:** the Default workspace, `data/workspaces/default.toml`, embedded and read
-//!   as a person's own is ([`Layout::defaults`]); a person's changed copy of it, in the
-//!   user data folder, takes its place.
+//! - **Built in:** the Default workspace, `data/workspaces/default.toml`, and Essentials,
+//!   `data/workspaces/essentials.toml`, embedded and read as a person's own is
+//!   ([`Layout::defaults`]); a person's changed copy of one, in the user data folder, takes
+//!   its place.
+//! - **The workspaces there are,** [`Workspaces`], read once as the app starts: the
+//!   built-in ones, then a person's own, each `<id>.toml` that reads, by name, which View ›
+//!   Workspace lists; switching works out the layout shown from them ([`Workspaces::open`]).
 //! - **The layout shown,** [`Shown`], worked out from the file and the defaults when the
 //!   workspace is read ([`resolve`]), never per frame: each tab's lists, the tools hidden,
 //!   a new build's new tools placed by `seen`, the first twelve tabs, and Export always in
 //!   one of them.
-//! - **Reading,** [`Workspace::open`]: a file that is not TOML is set aside as
+//! - **Reading,** [`Workspaces::read`]: a file that is not TOML is set aside as
 //!   `<id>.toml.bak`, one listing no tab refused, both with a warning, the built-in's
-//!   defaults then applying, or a person's own not opening; a newer version's is read for
+//!   defaults then applying, or a person's own not listed; a newer version's is read for
 //!   what this build knows and never overwritten.
 //! - **Writing** a workspace's file is not built: it comes with decision 96's step 4, the
 //!   first step that changes a layout; until then nothing writes one, and a person changes
@@ -57,12 +61,27 @@ pub const HIDDEN: &str = "hidden";
 /// workspace.
 pub const DEFAULT: &str = "default";
 
+/// The Essentials workspace's id, built in: the tools most edits need, every other hidden
+/// (decision 96).
+pub const ESSENTIALS: &str = "essentials";
+
 /// The built-in workspaces, each by its id with its file's text, embedded from the
-/// repository's `data/workspaces/` (decision 45).
-const BUILT_IN: &[(&str, &str)] = &[(
-    DEFAULT,
-    include_str!("../../../data/workspaces/default.toml"),
-)];
+/// repository's `data/workspaces/` (decision 45), in the order View › Workspace lists them.
+const BUILT_IN: &[(&str, &str)] = &[
+    (
+        DEFAULT,
+        include_str!("../../../data/workspaces/default.toml"),
+    ),
+    (
+        ESSENTIALS,
+        include_str!("../../../data/workspaces/essentials.toml"),
+    ),
+];
+
+/// The built-in workspaces' ids, in the order View › Workspace lists them.
+pub fn builtin_ids() -> impl Iterator<Item = &'static str> {
+    BUILT_IN.iter().map(|(id, _)| *id)
+}
 
 /// The tools that stay in every workspace: Export is never hidden (decision 90).
 const EXPORT: &str = "export";
@@ -228,10 +247,11 @@ fn ids(value: &Value, key: &str, warnings: &mut Vec<String>) -> Vec<String> {
     ids
 }
 
-/// The words a tab shows.
+/// The words a tab, or a workspace's name, shows.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Title {
-    /// A tab a build knows: its message, `tab-<id>`, in the interface's language.
+    /// A tab a build knows, or a built-in workspace: its message, `tab-<id>` or
+    /// `workspace-<id>`, in the interface's language.
     Message(String),
     /// Written in the file, or its id where nothing is: the same in every language.
     Own(String),
@@ -541,6 +561,136 @@ fn read_in(folder: Option<&Path>, id: &str, warnings: &mut Vec<String>) -> Optio
     layout
 }
 
+/// The ids of a person's own workspaces whose files `folder` holds: each `<id>.toml` whose
+/// name is a workspace id and not a built-in's, in no order; none where the folder is not
+/// there, and none with a warning where it cannot be listed.
+fn own_ids(folder: &Path, warnings: &mut Vec<String>) -> Vec<String> {
+    let entries = match std::fs::read_dir(folder) {
+        Ok(entries) => entries,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Vec::new(),
+        Err(e) => {
+            warnings.push(format!("{}: not listed: {e}", folder.display()));
+            return Vec::new();
+        }
+    };
+    let names = entries.filter_map(|entry| entry.ok()?.file_name().into_string().ok());
+    names
+        .filter_map(|name| name.strip_suffix(".toml").map(str::to_owned))
+        .filter(|id| valid_id(id) && !builtin_ids().any(|built| built == id))
+        .collect()
+}
+
+/// One workspace a person can choose (decision 96, Switching).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Listed {
+    pub id: String,
+    /// Its file as read, or a built-in's defaults where it has none.
+    pub layout: Layout,
+    pub builtin: bool,
+}
+
+impl Listed {
+    /// Its name as View › Workspace shows it: a built-in's message, `workspace-<id>`; a
+    /// person's own its file's `name`, else its id, the same in every language.
+    pub fn name(&self) -> Title {
+        match (&self.layout.name, self.builtin) {
+            (_, true) => Title::Message(format!("workspace-{}", self.id)),
+            (Some(name), false) => Title::Own(name.clone()),
+            (None, false) => Title::Own(self.id.clone()),
+        }
+    }
+
+    /// The defaults that place its new tools: a built-in's own, and for a person's own
+    /// Default's, so a tool new in Adjust joins any workspace with a tab `adjust` (decision
+    /// 96, The layout shown, step 3).
+    fn defaults(&self) -> Layout {
+        let id = if self.builtin { &self.id } else { DEFAULT };
+        Layout::defaults(id).expect("built in")
+    }
+}
+
+/// The workspaces there are, read once as the app starts (decision 96): the built-in ones,
+/// Default then Essentials, each from its file in the user data folder where it has one,
+/// else its defaults; then a person's own, those whose file reads, by name. A file added
+/// while the app runs is read at the next start.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Workspaces {
+    listed: Vec<Listed>,
+}
+
+impl Workspaces {
+    /// The built-in workspaces as built, with no file.
+    pub fn builtin() -> Workspaces {
+        let listed = builtin_ids().map(|id| Listed {
+            id: id.to_owned(),
+            layout: Layout::defaults(id).expect("built in"),
+            builtin: true,
+        });
+        Workspaces {
+            listed: listed.collect(),
+        }
+    }
+
+    /// The workspaces whose files `folder`, the user data folder's `workspaces`, holds, with
+    /// the built-in ones, and the warnings their reading gave, each naming its file: a
+    /// damaged file set aside and one listing no tab refused, a built-in's defaults then
+    /// applying and a person's own not listed ([`read`]). With no folder, the built-in
+    /// ones as built.
+    pub fn read(folder: Option<&Path>) -> (Workspaces, Vec<String>) {
+        let mut warnings = Vec::new();
+        let mut workspaces = Workspaces::builtin();
+        for listed in &mut workspaces.listed {
+            if let Some(layout) = read_in(folder, &listed.id, &mut warnings) {
+                listed.layout = layout;
+            }
+        }
+        let mut own: Vec<Listed> = Vec::new();
+        for id in folder.map_or_else(Vec::new, |f| own_ids(f, &mut warnings)) {
+            if let Some(layout) = read_in(folder, &id, &mut warnings) {
+                own.push(Listed {
+                    id,
+                    layout,
+                    builtin: false,
+                });
+            }
+        }
+        let shown = |listed: &Listed| match listed.name() {
+            Title::Message(name) | Title::Own(name) => name.to_lowercase(),
+        };
+        own.sort_by(|a, b| shown(a).cmp(&shown(b)).then_with(|| a.id.cmp(&b.id)));
+        workspaces.listed.extend(own);
+        (workspaces, warnings)
+    }
+
+    /// Every workspace, in View › Workspace's order.
+    pub fn listed(&self) -> &[Listed] {
+        &self.listed
+    }
+
+    /// The workspace `id`, its layout worked out from what was read, with the warnings that
+    /// gave: Default where there is no such workspace, with a warning.
+    pub fn open(&self, id: &str) -> (Workspace, Vec<String>) {
+        let mut warnings = Vec::new();
+        let listed = self.listed.iter().find(|listed| listed.id == id);
+        let listed = listed.unwrap_or_else(|| {
+            warnings.push(format!("workspace {id}: none, {DEFAULT} shown"));
+            let default = self.listed.iter().find(|listed| listed.id == DEFAULT);
+            default.expect("Default is built in")
+        });
+        let defaults = listed.defaults();
+        let (shown, resolved) = resolve(&listed.layout, &[&defaults], &known());
+        let where_ = format!("workspace {}", listed.id);
+        warnings.extend(resolved.into_iter().map(|w| format!("{where_}: {w}")));
+        let workspace = Workspace {
+            id: listed.id.clone(),
+            layout: listed.layout.clone(),
+            newer: listed.layout.version > VERSION,
+            shown,
+        };
+        (workspace, warnings)
+    }
+}
+
 /// The workspace the Tools panel shows: its id, the layout as read, and the layout shown.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Workspace {
@@ -556,56 +706,17 @@ pub struct Workspace {
 impl Workspace {
     /// The Default workspace as built, with no file.
     pub fn builtin_default() -> Workspace {
-        let layout = Layout::defaults(DEFAULT).expect("Default is built in");
-        let (shown, _) = resolve(&layout, &[&layout], &known());
-        Workspace {
-            id: DEFAULT.to_owned(),
-            layout,
-            newer: false,
-            shown,
-        }
+        Workspaces::builtin().open(DEFAULT).0
     }
 
-    /// The workspace `id`, from its file in `folder`, the user data folder's `workspaces`,
-    /// with the warnings its reading gave, each naming its file: a built-in's file where it
-    /// has one, else its defaults; a person's own from its file alone. Where there is no
-    /// such workspace, or no folder, Default, with a warning for an id other than its own.
+    /// The workspace `id` as the app opens it with the user data folder's `workspaces`,
+    /// `folder`: the workspaces read ([`Workspaces::read`]), then the one asked for opened
+    /// ([`Workspaces::open`]), with the warnings of both.
+    #[cfg(test)]
     pub fn open(folder: Option<&Path>, id: &str) -> (Workspace, Vec<String>) {
-        let mut warnings = Vec::new();
-        let defaults = Layout::defaults(id);
-        let layout = if valid_id(id) {
-            read_in(folder, id, &mut warnings)
-        } else {
-            None
-        };
-        let (id, layout, defaults) = match (layout, defaults) {
-            (Some(layout), defaults) => (id.to_owned(), layout, defaults),
-            (None, Some(defaults)) => (id.to_owned(), defaults.clone(), Some(defaults)),
-            (None, None) => {
-                warnings.push(format!("workspace {id}: none, {DEFAULT} shown"));
-                let default = Layout::defaults(DEFAULT).expect("Default is built in");
-                let layout = read_in(folder, DEFAULT, &mut warnings);
-                (
-                    DEFAULT.to_owned(),
-                    layout.unwrap_or_else(|| default.clone()),
-                    Some(default),
-                )
-            }
-        };
-        // A built-in's new tools by its own defaults; a person's own by Default's.
-        let defaults = defaults
-            .or_else(|| Layout::defaults(DEFAULT))
-            .expect("Default is built in");
-        let (shown, resolved) = resolve(&layout, &[&defaults], &known());
-        let where_ = format!("workspace {id}");
-        warnings.extend(resolved.into_iter().map(|w| format!("{where_}: {w}")));
-        let newer = layout.version > VERSION;
-        let workspace = Workspace {
-            id,
-            layout,
-            newer,
-            shown,
-        };
+        let (workspaces, mut warnings) = Workspaces::read(folder);
+        let (workspace, opened) = workspaces.open(id);
+        warnings.extend(opened);
         (workspace, warnings)
     }
 

@@ -25,7 +25,7 @@ Every tool's operation keeps darktable's place, darktable's v5.0 order throughou
 
 The Default workspace's tabs are Photos, Adjust, Detail, Geometry, Effects, Raw and History (decision 38): the tools grouped by editing stage, so that a normal edit stays in one tab, between Apertrust's own Photos and History, with no quick access panel or active-modules tab. Each tab lists its tools top to bottom in editing order, the order a person reaches for them; Raw, the raw stage's tools and the colour profiles, lists them in processing order. The lists are display order only: the processing order stays the pipeline's whatever a tab lists. These lists are the Default workspace's defaults: `data/workspaces/default.toml` holds them for the built tools, and a test holds them to decision 38's lists and each tool the Default workspace places in a tab to exactly one of them, a tool hidden by default in Edit, as the Colour picker will be, excepted. A tab with no tool built yet, Detail for now, is drawn disabled, saying it is to come. Each workspace's tabs, each tab's tools and the tools it hides are kept in the workspace's own file; a person is to reorder, pin, move, hide and float sections on screen, never the processing order, and a tool in no tab of a workspace is hidden, still reached from the Hidden tab and by Find Tool…, which matches a tool's name and darktable's (decisions 83 and 96, planned: Phase 2's steps 1 to 7, floating in Phase 3). A new tool goes into its default tab where the workspace has one, else it is hidden. How the bar looks and behaves is [gui.md](../gui.md)'s (The Tools panel).
 
-darktable's scene-referred groups are kept as the darktable workspace (decision 38, planned with decision 96's step 2; [below](#the-darktable-workspace)); the app keeps their lists for the built tools (`DARKTABLE_GROUPS`), not shown in the Default workspace.
+No built-in workspace keeps darktable's scene-referred groups; a person who wants them writes them as a workspace of their own (decisions 38 and 96). Essentials, a built-in workspace of a few tools, is [below](#the-essentials-workspace).
 
 The tables below are in the Default workspace's order:
 
@@ -117,29 +117,17 @@ The raw stage's tools and the colour profiles, set up rather than edited and rar
 - **Demosaic** keeps capture sharpening, in the raw stage, as darktable has it.
 - **Input colour profile** owns every colorin parameter, the camera profile included.
 
-### The darktable workspace
+### The Essentials workspace
 
-A built-in workspace beside Default, for people coming from darktable (decision 38), planned with decision 96's step 2; id `darktable`, named "darktable". Its tabs are Photos, Base, Colour, Correct, Effect and History: darktable's "workflow: scene-referred" groups under darktable's labels. Each tool sits in darktable's group and is listed as darktable's right panel lists it, in pipeline order with the last tool at the top; a test holds each list to `OPERATIONS` reversed. It opens on Base.
+A built-in workspace beside Default (decision 96), `data/workspaces/essentials.toml`, id `essentials`, chosen from View › Workspace, with the tools most edits need. It opens on Adjust.
 
 | Tab | Tools, top to bottom |
 | --- | --- |
-| Base | Local contrast, the edit's tone mapper, RGB levels, RGB curve, Crop, Tone equalizer, Exposure, Orientation, Rotate and perspective, Demosaic, Highlight reconstruction, White balance, Raw black/white point |
-| Colour | Output colour profile, Colour balance RGB, Colour equalizer, RGB primaries, Colour calibration, Input colour profile |
-| Correct | Sharpen, Retouch (retouch layers, Phase 4), Haze removal, Chromatic aberrations, Lens correction, Denoise (profiled) |
-| Effect | Vignetting, Soften, Grain, Bloom, Diffuse or sharpen |
+| Photos | Collections, Export |
+| Adjust | Scopes, pinned; White balance, Exposure, AgX, Tone equalizer, Colour balance RGB, Orientation |
+| History | History |
 
-darktable's scene-referred preset lists some modules in no group; darktable reaches them through its active-modules tab, which Apertrust does not have. Each joins the tab darktable's other layouts give it, at its place in that tab's order, rather than being hidden. darktable's module search is Find Tool… (decision 96).
-
-| Tool | darktable's other placements | Its tab |
-| --- | --- | --- |
-| Output colour profile | "modules: all": color; `default_group`: color | Colour, first |
-| Soften | "modules: all": effect | Effect, after Vignetting |
-| Bloom | "modules: all": effect | Effect, after Grain |
-| RGB levels | "workflow: display-referred": base; "modules: all": tone | Base, after the tone mapper |
-| RGB curve | "workflow: display-referred": base; "modules: all": tone | Base, after RGB levels |
-| Input colour profile | "modules: all": color | Colour, last |
-| Demosaic | "modules: all": base | Base, after Rotate and perspective |
-| Raw black/white point | "modules: all": base | Base, last |
+Every other tool is in no tab, so hidden: a workspace decides only what is shown, and a hidden tool is still processed.
 
 ### Photos, History and shared sections
 

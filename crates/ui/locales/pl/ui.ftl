@@ -33,6 +33,8 @@ tab-correct = Korekcja
 tab-effect = Efekt
 tab-history = Historia
 tab-metadata = Metadane
+workspace-default = Domyślny
+workspace-essentials = Podstawy
 panel-tab-later = { $tab }: pojawi się w jednej z kolejnych wersji
 tools-panel-tabs = Karty panelu narzędzi
 panel-more-tabs = Więcej kart
@@ -745,6 +747,7 @@ menu-window = &Okno
 # P is Plik's.
 menu-help = Po&moc
 menu-tools-panel-tab = Karta panelu narzędzi
+menu-workspace = Obszar roboczy
 menu-interface-size = Rozmiar interfejsu
 menu-sort-by = Sortuj według
 menu-thumbnail-size = Rozmiar miniatur

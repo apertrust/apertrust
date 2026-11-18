@@ -15,7 +15,7 @@ A workspace is interface state, never the edit's ([0037](0037-one-view-the-photo
 
 ## Decision
 
-**A workspace is its tabs, each tab's tools, the tools it hides and its toolbar, kept in a file of its own.** Default and the darktable workspace are built in, each a file in the repository's `data/workspaces/`; a person adds more by writing a file. A tool may be in no tab of a workspace: it is hidden, and still reachable from the Hidden tab and by Find Tool…. This is darktable's module group presets in Apertrust's shell. Planned: Phase 2's steps 1 to 7 and Phase 3's, below.
+**A workspace is its tabs, each tab's tools, the tools it hides and its toolbar, kept in a file of its own.** Default and Essentials are built in, each a file in the repository's `data/workspaces/`; a person adds more by writing a file. A tool may be in no tab of a workspace: it is hidden, and still reachable from the Hidden tab and by Find Tool…. This is darktable's module group presets in Apertrust's shell. Built: Phase 2's steps 1 and 2; planned: steps 3 to 7 and Phase 3's, below.
 
 ### What a workspace holds
 
@@ -32,13 +32,14 @@ Not the Tools panel's width, a floating panel's place, a section's open state, t
 ### Built in
 
 - **Default,** id `default`, `data/workspaces/default.toml`, the one shown where settings name none: 38's tabs and lists, Photos, Adjust, Detail, Geometry, Effects, Raw and History, Scopes pinned in the five editing tabs. It opens on Adjust.
-- **darktable,** id `darktable`, `data/workspaces/darktable.toml`: 38's darktable workspace, Photos, Base, Colour, Correct, Effect and History, darktable's scene-referred groups in its order, Scopes pinned in the four groups. It opens on Base.
+- **Essentials,** id `essentials`, `data/workspaces/essentials.toml`, for the tools most edits need: Photos (Collections, Export); Adjust, Scopes pinned over White balance, Exposure, AgX, Tone equalizer, Colour balance RGB and Orientation, in that order; History. Every other tool is in no tab, so hidden: a workspace decides only what is shown, and a hidden tool is still processed. It opens on Adjust.
+- **No darktable workspace:** a person who wants darktable's module groups writes them as a workspace of their own (38).
 - **Photos,** for culling, in Phase 3 ([gui.md](../gui.md#workspaces)); **Map** with the map.
 - **A built-in workspace is a data file,** `data/workspaces/<id>.toml`, in the format below, embedded at build time by the app (decision 45), read by the same reader as a person's own (`Layout::defaults`, plain data with no egui) and never from an installed folder. It is the one source of the workspace: nothing of its tabs or tools is in code. It lists no `seen`, its lists being its defaults. In the user data folder it has no file until a person first changes it, when its file is written whole; **Reset Workspace** deletes the file, so the one shipped applies again. A built-in workspace nobody changed follows each build's defaults; once its file exists, a later build's new tools still reach it (below), but its reordered defaults do not until Reset Workspace.
 
 ### The workspace's file
 
-**One file per workspace, `<user data>/workspaces/<id>.toml`,** one format for a built-in's and a person's own; the id is the file's name, lower-case letters, digits and hyphens. `default.toml` and `darktable.toml` are the built-ins' changed copies; any other is a person's own.
+**One file per workspace, `<user data>/workspaces/<id>.toml`,** one format for a built-in's and a person's own; the id is the file's name, lower-case letters, digits and hyphens. `default.toml` and `essentials.toml` are the built-ins' changed copies; any other is a person's own.
 
 ```toml
 version = 1
@@ -71,9 +72,9 @@ scopes = "skin"
 ```
 
 - **`version`,** the file format's own, independent of `settings.toml`'s, migrated as `settings.toml` is: a newer version's file is read for what this build knows and never overwritten; one that is not TOML is set aside as `<id>.toml.bak`, with a warning, and the built-in's defaults apply, or a person's own is not listed.
-- **`name`:** a person's own workspace's name, as written, the same in every language; its id where it has none. A built-in's name is its message, `workspace-default` and `workspace-darktable`: its bundled file's `name`, "Default", is for a reader of the file, never shown, and a changed copy writes none.
+- **`name`:** a person's own workspace's name, as written, the same in every language; its id where it has none. A built-in's name is its message, `workspace-default` and `workspace-essentials`, translated: neither its bundled file nor a changed copy writes a `name`, and one written there is never shown.
 - **`tabs`,** an array of tables in order, each `id`, `title` and `icon`:
-  - a tab id a build knows, a tab of a built-in workspace's (Default's, darktable's, `photos`, `history`), takes its title from Fluent by its id (`tab-<id>`) and its icon from that built-in's file, so its words follow the language; a `title` or `icon` written for it overrides them. A built-in's file writes the id and the icon, never a title.
+  - a tab id a build knows, a tab of a built-in workspace's (Default's and Essentials', `photos`, `history` among them), takes its title from Fluent by its id (`tab-<id>`) and its icon from that built-in's file, so its words follow the language; a `title` or `icon` written for it overrides them. A built-in's file writes the id and the icon, never a title.
   - A person's own tab has the `title` written, the same in every language, and its icon by name, one of `apertrust-ui`'s icons as a toolbar item's is (92); with no title its id shows, and with no icon or an unknown one Lucide's `square`.
   - `hidden` is reserved, the Hidden tab's id. At most 12 of the file's tabs show, `panel-tab-1` to `panel-tab-12` choosing them by position; a tab past them is not shown, with a warning, and stays in the file. Such a tab counts as absent: the tools only it holds are in no tab, so they show in the Hidden tab and Find Tool… reaches them, without being written into `hidden`, and a new tool is never placed there. The Hidden tab is not one of them: shown, it comes after them, a thirteenth at most, chosen by its own `panel-tab-hidden`. A workspace whose file lists no tab is refused, with a warning: a built-in's defaults apply, or a person's own is not listed.
 - **`[pinned]` and `[order]`,** keyed by tab id, each a list of tool ids, top first: a tab's pinned tools and the rest (83). A list for a tab id `tabs` lacks is skipped and kept.
@@ -86,7 +87,7 @@ Worked out when the workspace is read and after each change, never per frame (83
 
 1. Each tab takes its `pinned` and `order` lists; an id in both stays pinned, one twice in a list keeps its first place, an id the build does not know or a tool of the Import sheet's ([0086](0086-import-as-a-full-window-sheet.md)) is skipped and kept.
 2. A tool `hidden` names is in no tab, whatever the lists say, but Export; where a hand-edited file also lists it in `[floating]`, `hidden` wins and the floating record is dropped at the next write.
-3. **A new tool,** one of the Tools panel's that neither `seen`, `hidden` nor any tab's lists name, goes into each tab shown whose id is one of its default tabs, if the workspace has one, placed after its nearest preceding neighbour in that tab's default list (83's rule); else it is hidden. Its default tabs are the workspace's own defaults for a built-in, and for a person's own Default's, then the darktable workspace's, so a tool new in Adjust joins any workspace with a tab `adjust`. Scopes, new in several tabs, goes into each.
+3. **A new tool,** one of the Tools panel's that neither `seen`, `hidden` nor any tab's lists name, goes into each tab shown whose id is one of its default tabs, if the workspace has one, placed after its nearest preceding neighbour in that tab's default list (83's rule); else it is hidden. Its default tabs are the workspace's own defaults for a built-in, and for a person's own Default's, so a tool new in Adjust joins any workspace with a tab `adjust`. Scopes, new in several tabs, goes into each.
 4. **A tool in no tab** after these steps, that `seen` names, is hidden as if `hidden` named it, and written there at the next write: a hand edit that drops a tool from every list hides it. A floating section is never hidden this way: it stays floating, and docks at its default place where the tab it left no longer holds it (83). A tool only a tab past the twelfth holds is shown in the Hidden tab but not written into `hidden`.
 5. **Export** is never hidden: `hidden` naming it is ignored, and in no tab shown, none or only one past the twelfth, it goes to the end of the Photos tab's scrolling list where the Photos tab is among the tabs shown, else of the first tab shown that holds tools, else of the first tab, as the other fallbacks go, so Ctrl+E always reaches it.
 
@@ -127,7 +128,7 @@ Held by the operations and unit-tested: a tool at most once in a tab, `pinned` a
 
 - **`Place::TabBar`,** a place of the app's alone (91): a right-click anywhere on the tab bar, on a tab's icon or its empty end, or Shift+F10 and the Menu key on a focused tab, opens it.
 - **Its items:** Find Tool…, Show Hidden Tools, Workspace ▸; then Reset Tab, Reset Workspace and Processing Order (83). Opened on a tab's icon, Reset Tab and Processing Order act on that tab, elsewhere on the tab shown; both are disabled on the Hidden tab, and Reset Tab on a tab of a person's own, which has no defaults; Processing Order, which only sorts a tab's processing tools, works there.
-- **Workspace ▸** lists every workspace, Default, darktable, then a person's own by name, the current one checked. Each runs `workspace-<id>`, an action made as the app starts from the workspaces it reads, as tools' actions are (91), with no default keys; settings keep a key by that id.
+- **Workspace ▸** lists every workspace, Default, Essentials, then a person's own by name, the current one checked. Each runs `workspace-<id>`, an action made as the app starts from the workspaces it reads, as tools' actions are (91), with no default keys; settings keep a key by that id.
 - **Reset Workspace** deletes the current workspace's file and applies its defaults: a built-in's alone, disabled for a built-in with no file, for a person's own, and for a file a newer build wrote, which this build never overwrites or removes.
 - **The Tools panel's ⋮** holds the same items, so none needs a right-click, then its own: Show Tab Names, Customise Tabs…, drawn disabled until the visual editor (Phase 3), and Dock All Floating Panels (Phase 3).
 
@@ -162,8 +163,8 @@ View › Workspace ▸ and the tab bar's menu's Workspace ▸. A switch changes 
 
 Phase 2, in this order, each step one pull request usable on its own:
 
-1. **The workspace model:** `workspaces/<id>.toml` as above (tabs with id, title and icon; pinned and order per tab; hidden; seen; version), Default built in, its file `data/workspaces/default.toml`, a person's own workspaces defined by writing a file; `settings.toml`'s `workspace`; the tab last shown in `state.toml`. The workspace's file is read, never written: nothing in this step changes a layout.
-2. **Switching:** View › Workspace, and the darktable workspace built in (darktable's groups, 38). Until step 3, a tool a person's own workspace file leaves out of every tab is reached only by editing the file; the built-in workspaces place every tool, so none is hidden in them before then.
+1. **The workspace model** (built): `workspaces/<id>.toml` as above (tabs with id, title and icon; pinned and order per tab; hidden; seen; version), Default built in, its file `data/workspaces/default.toml`, a person's own workspaces defined by writing a file; `settings.toml`'s `workspace`; the tab last shown in `state.toml`. The workspace's file is read, never written: nothing in this step changes a layout.
+2. **Switching** (built): View › Workspace, and Essentials built in, `data/workspaces/essentials.toml`. The workspaces are read once as the app starts, each `workspace-<id>` made then; a switch works out the layout from what was read, with no file read. Until step 3, a tool a workspace leaves out of every tab, Essentials' or a person's own, is reached only by switching to a workspace that shows it, Default placing every tool, or by editing the file.
 3. **Hidden tools:** a tool in no tab, the Hidden tab with Show Hidden Tools, Show Hidden Tools in the Tools panel's ⋮ so every hidden tool can be reached from this step on, the dot on ⋮ while a hidden tool changes the photo.
 4. **⋯'s layout items:** Pin or Unpin, Move Up and Move Down, Move to Tab ▸, Hide, and Show in Tab ▸ for a hidden tool (`section-show`), so a hidden tool comes back before dragging exists; their keys and screen readers' actions (83's); and writing the workspace's file, as below, this the first step that changes a layout.
 5. **The tab bar's menu,** on a right-click and in ⋮ beside step 3's Show Hidden Tools: Find Tool…, Show Hidden Tools, Workspace ▸ (the app's own submenu, as Background ▸ is, listing every workspace as View › Workspace does; decision 91's limit of eight is for a tool's declared submenus), Reset Tab, Reset Workspace (deleting the workspace's file), Processing Order; Find Tool… drawn disabled until step 6.
@@ -212,10 +213,10 @@ Phase 3:
 ## Consequences
 
 - **Decision 83** keeps its layout operations, display order only, its drag, its ⋯ and its floating panels; its storage, `hidden`, new-tool placement, invariants, Customise tabs and plan are this record's. **Decision 38**'s lists are the built-in workspaces' defaults and its "search may come later" is Find Tool…. **Decision 37**'s workspace is this one. **Decision 90**'s Export is never hidden. **Decision 91** gains the app's place `TabBar`. **Decision 92**'s `toolbar` list is kept in the workspace's file.
-- `data/workspaces/`: the built-in workspaces' files, `default.toml` and `darktable.toml`, embedded by the app, each with its line in `data/README.md` and a test holding it to decision 38's lists and to the invariants.
+- `data/workspaces/`: the built-in workspaces' files, `default.toml` and `essentials.toml`, embedded by the app, each with its line in `data/README.md` and a test holding it to its lists, Default's decision 38's, and to the invariants.
 - `crates/app`: `layout.rs` (the model, the file's reading and writing, resolving, the operations), the tabs drawn by id through one dispatcher, `panel-tab-1` to `-12`, `workspace-<id>` and the new actions with their messages in four languages, the Hidden tab, the dot, the search field and list, `Place::TabBar`.
 - `apertrust-ui`: the search field in the tab bar's place, `eye-off` and its filled form, `square`, the dot on an icon button (as the Toolbar's).
 - `data/settings.schema.toml`: `workspace`, `tools_panel.show_hidden`, `edit.tab` read only for its move; `state.toml`'s `[tab]`.
-- Fluent: `tab-hidden`, `workspace-default`, `workspace-darktable`, Find Tool's and the layout items' words, each tool's `.search` with darktable's names and aliases.
+- Fluent: `tab-hidden`, `workspace-default`, `workspace-essentials`, Find Tool's and the layout items' words, each tool's `.search` with darktable's names and aliases.
 - The Colour picker, hidden by default ([0079](0079-colour-pickers-one-api-for-tools-and-the-colour-picker.md)), is a tool in no tab of the Default workspace: in the Hidden tab and found by search until its tab is decided.
 - The agent kit's `ui-conventions` and `desktop-architecture` skills: a tool's ⋯ with Hide, the Hidden tab, the workspace's file.
