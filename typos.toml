@@ -39,13 +39,13 @@ SEQUENSE = "SEQUENSE"
 # A setting misspelled on purpose, and a dropdown's filter typed part way.
 limt = "limt"
 ody = "ody"
-# NSIS's string copy, and a plural of PNG.
+# NSIS's string copy, a plural of PNG, and the flate2 crate.
 StrCpy = "StrCpy"
 PNGs = "PNGs"
-# Indices and matrix entries: the column of y, the entry at (i, k), a diagram's node.
+flate2 = "flate2"
+# Indices and matrix entries: the column of y, the entry at (i, k).
 iy = "iy"
 lik = "lik"
-ba = "ba"
 
 [default.extend-words]
 # JzAzBz's Iz, beside Jz and Cz.
@@ -55,15 +55,11 @@ rin = "rin"
 thr = "thr"
 # Fractions: 1420ths, 65536ths.
 ths = "ths"
-# Mis-partitions.
-mis = "mis"
 # Slugs drop the apostrophe: the library's code, the first pass's picker.
 librarys = "librarys"
 passs = "passs"
 # Leica's M Monochrom.
 monochrom = "monochrom"
-# The flate2 crate.
-flate = "flate"
 # A window with no parent.
 unparented = "unparented"
 # Creative Commons' French title, in a darktable sidecar's licence.

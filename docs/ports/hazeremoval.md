@@ -63,7 +63,7 @@ darktable params version 3, 16 bytes: `strength`, `distance` (f32), `compatibili
 | --- | --- | --- | --- | --- | --- | --- |
 | Strength | `strength` | f32 | −1 to 1 | 0.2 | How much haze to remove; negative adds haze | Haze removal |
 | Distance | `distance` | f32 | 0 to 1 | 0.2 | How far into the scene to remove it: t_min = exp(−distance × depth) | Haze removal |
-| Compatibility mode | `compatibility_mode` | gboolean | | false | darktable's old, mis-partitioning quick select, for edits of params version 1 | fixed: off, a new instance's |
+| Compatibility mode | `compatibility_mode` | gboolean | | false | darktable's old quick select, which partitions wrongly, for edits of params version 1 | fixed: off, a new instance's |
 | Adaptive | `adaptive` | gboolean | | true | Windows scaled with the pipe; off, the full-resolution windows at every scale | fixed: on, a new instance's |
 
 `gui_changed()` sets `compatibility_mode` off and `adaptive` on whenever a slider moves, so they are flags for old edits, never controls.
@@ -316,7 +316,7 @@ One export can take haze removal's first round of tiles at full resolution and t
 
 ## Deliberate differences
 
-1. **Compatibility mode is not ported.** darktable migrates params version 1 to compatibility mode, whose `_partition()` and `_quick_select()` mis-partition (the pivot is assumed to land in the middle), so the selected "quantiles" depend on the pixels' order. A sequential, order-dependent selection cannot run on the GPU without a host round trip, and only edits from before params version 2 use it. Apertrust does not import darktable edits (decision 51), and a new instance in darktable runs the exact selection.
+1. **Compatibility mode is not ported.** darktable migrates params version 1 to compatibility mode, whose `_partition()` and `_quick_select()` partition wrongly (the pivot is assumed to land in the middle), so the selected "quantiles" depend on the pixels' order. A sequential, order-dependent selection cannot run on the GPU without a host round trip, and only edits from before params version 2 use it. Apertrust does not import darktable edits (decision 51), and a new instance in darktable runs the exact selection.
 
    The harness renders test 0026 (version 1) with the exact selection. darktable's own render of test 0026 with compatibility mode differs from its render with it off by a mean ΔE2000 of 0.0218, p95 0.0518, max 0.135, with A0 2% apart (0.5455, 0.5428, 0.5592 against 0.5350, 0.5321, 0.5474, darktable's `-d verbose`). The port's result on the case is that gap.
 2. **Fixed windows (`adaptive` off) are not ported.** darktable migrates versions 1 and 2 to them: w1 = 6 and w2 = 9 at every scale. At scale 1, where the golden cases and every full-size export render, they are the adaptive windows, so the cases see no difference. At smaller scales Apertrust scales the windows (Neighbourhood and scale).
