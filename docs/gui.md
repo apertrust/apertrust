@@ -4213,7 +4213,7 @@ show_selected = false       # from Phase 3
 - **`[edit]`** holds Edit's tab, sections and collapsible groups (`tab`, `[edit.sections]` and `[edit.groups.<tool>]`, decision 29). Version 2 keeps them there, its migration renaming their `browse` entries `collections` ([settings.md](settings.md#the-settings-schema), The migrations).
 - **Planned with the layout** (decision 83): the tab moves to the Edit workspace's, `[workspaces.edit]`'s `tab`, and the sections and the groups to `[tools_panel.sections]` and `[tools_panel.groups.<tool>]`.
   - A file with `[edit]` is read into those where they are missing, and the first write of any of them removes `[edit]`, so none is written without the others and the move drops no group.
-  - The version stays as it is: nothing else changes meaning, and an older build reading the new file only starts its tab, sections and groups afresh, keeping the new tables as keys it does not know.
+  - The version rises with the move, its migration moving `[edit]`'s tables, as settings.md's rule for a key that moves has it: an older build then reads the file without writing it, never writing `[edit]` back beside the new tables.
 
 ### Reading and writing
 

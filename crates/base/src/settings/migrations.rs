@@ -27,11 +27,29 @@ pub const MIGRATIONS: &[Migration] = &[Migration {
     migrate: parts_named_by_role,
 }];
 
-/// The window's parts' tables, old and new (decision 95).
-const TABLES: [(&str, &str); 3] = [
-    ("side_panel", "tools_panel"),
-    ("central_panel", "viewer"),
-    ("grid_panel", "browser"),
+/// The window's parts' tables, old and new, and the settings version 1 kept in each
+/// (decision 95): only these move, so a key no build declared stays where it is.
+const TABLES: [(&str, &str, &[&str]); 3] = [
+    ("side_panel", "tools_panel", &["tab_names", "width"]),
+    (
+        "central_panel",
+        "viewer",
+        &["margin", "proof_margin", "background"],
+    ),
+    (
+        "grid_panel",
+        "browser",
+        &[
+            "sort",
+            "descending",
+            "thumbnails",
+            "labels",
+            "square_thumbnails",
+            "position",
+            "rows",
+            "columns",
+        ],
+    ),
 ];
 
 /// The action ids `[keys]` holds by id, old and new.
@@ -46,8 +64,11 @@ const ACTIONS: [(&str, &str); 4] = [
 /// Tools panel's, the Viewer's and the Browser's tables, each action id in `[keys]`, and
 /// Browse's entries in `edit.sections` and `edit.groups`, which become Collections'.
 fn parts_named_by_role(table: &mut Table) {
-    for (old, new) in TABLES {
-        move_entries(table, &[old], &[new]);
+    for (old, new, keys) in TABLES {
+        for key in keys {
+            rename(table, &[old, key], &[new, key]);
+        }
+        remove_if_empty(table, &[old]);
     }
     for (old, new) in ACTIONS {
         rename(table, &["keys", old], &["keys", new]);
@@ -79,7 +100,12 @@ fn move_entries(table: &mut Table, from: &[&str], to: &[&str]) {
         );
         rename(table, &old, &new);
     }
-    if let Some((last, parents)) = from.split_last()
+    remove_if_empty(table, from);
+}
+
+/// Removes the table at the dotted path `path` where it is empty.
+fn remove_if_empty(table: &mut Table, path: &[&str]) {
+    if let Some((last, parents)) = path.split_last()
         && let Some(parent) = table_at(table, parents)
         && parent
             .get(*last)
@@ -222,6 +248,21 @@ mod tests {
         let table = migrated("viewer = 3\n[central_panel]\nmargin = 24\n");
         assert_eq!(table["central_panel"]["margin"].as_integer(), Some(24));
         assert_eq!(table["viewer"].as_integer(), Some(3));
+    }
+
+    #[test]
+    fn a_key_no_build_declared_stays_in_its_old_table() {
+        let table = migrated(
+            "version = 1\n\
+             [grid_panel]\nrows = 3\nfuture_density = \"compact\"\n\
+             [browser]\nfuture_density = \"roomy\"\n",
+        );
+        let browser = table["browser"].as_table().expect("a table");
+        assert_eq!(browser["rows"].as_integer(), Some(3));
+        assert_eq!(browser["future_density"].as_str(), Some("roomy"));
+        let old = table["grid_panel"].as_table().expect("kept, not empty");
+        assert_eq!(old["future_density"].as_str(), Some("compact"));
+        assert!(!old.contains_key("rows"));
     }
 
     #[test]
