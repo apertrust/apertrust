@@ -24,6 +24,9 @@
 #   tools/check-docs-paths.sh --code REVS    prints the files `git diff REVS` changes that
 #                                            the list does not match: none, docs only
 set -euo pipefail
+# sort and comm in one order, the bytes', whatever the locale: under a UTF-8 one they
+# can disagree, and comm then fails.
+export LC_ALL=C
 
 cd "$(dirname "$0")/.."
 

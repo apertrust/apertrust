@@ -18,9 +18,22 @@
 # Fails if interface code passes an English literal to a label, button, heading or
 # tooltip, instead of a translated message (docs/gui.md, Translation). Test modules are
 # skipped, from their `#[cfg(test)]` on.
+#   tools/check-ui-strings.sh           every interface source (CI's lint)
+#   tools/check-ui-strings.sh FILE...   the interface sources among those given, from the
+#                                       repository's root, as pre-commit passes them
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
+
+# The interface sources: the design system's and the app's.
+scope='^crates/(ui|app)/src/.*\.rs$'
+sources() {
+  if (($#)); then
+    printf '%s\n' "$@"
+  else
+    git ls-files --cached --others --exclude-standard 'crates/ui/src/*.rs' 'crates/app/src/*.rs'
+  fi
+}
 
 # Not checked: the design system's gallery and the viewport spike's section in the app,
 # tools for developers; the tool renderer replaces the spike (docs/gui.md, build order
@@ -33,13 +46,14 @@ pattern='\.(label|button|small_button|heading|small|monospace|strong|weak|select
 
 found=0
 while IFS= read -r file; do
+  [[ "$file" =~ $scope ]] || continue
   [[ "$file" =~ $allowed ]] && continue
   hits=$(awk '/^ *#\[cfg\(test\)\]/ { exit } { print FILENAME ":" FNR ": " $0 }' "$file" | grep -E "$pattern" || true)
   if [[ -n "$hits" ]]; then
     echo "$hits"
     found=1
   fi
-done < <(git ls-files --cached --others --exclude-standard 'crates/ui/src/*.rs' 'crates/app/src/*.rs')
+done < <(sources "$@")
 
 if [[ "$found" -ne 0 ]]; then
   echo "Interface text must be a message id: tr(ctx, \"…\") or Translator::text (crates/ui/locales)."

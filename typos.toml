@@ -1,0 +1,70 @@
+# typos (https://github.com/crate-ci/typos), the spelling check .pre-commit-config.yaml
+# runs. Either English is accepted: identifiers say color, as darktable's do, and prose
+# says colour (docs/gui.md, Translation).
+
+[files]
+extend-exclude = [
+  # Polish, not English.
+  "crates/ui/locales/pl/",
+  # darktable's sidecars, their parameters encoded.
+  "*.xmp",
+  # rawler's output for the raw corpus: makes, models and hashes.
+  "crates/raw/tests/corpus/",
+  # Written by tools: tools/build-kernels.sh from the Slang, tools/credits.sh from
+  # Cargo.lock.
+  "crates/**/generated/",
+  "CREDITS.md",
+]
+
+[default]
+extend-ignore-re = [
+  # darktable's encoded parameters, gz and two digits before the base64.
+  'gz[0-9]{2}[A-Za-z0-9+/]+=*',
+  # Commits.
+  '\b[0-9a-f]{7,40}\b',
+]
+
+# Whole names, exactly as written, so the same letters elsewhere are still checked.
+[default.extend-identifiers]
+# darktable's own: a function, a variable and the unknown variable its tests use.
+dt_util_str_occurence = "dt_util_str_occurence"
+CATEGORYn = "CATEGORYn"
+NONEXISTANT = "NONEXISTANT"
+NONEXISTANT23 = "NONEXISTANT23"
+# The export's variables misspelled on purpose, for "did you mean".
+FILE_NAM = "FILE_NAM"
+FILE_NMAE = "FILE_NMAE"
+YAER = "YAER"
+SEQUENSE = "SEQUENSE"
+# A setting misspelled on purpose, and a dropdown's filter typed part way.
+limt = "limt"
+ody = "ody"
+# NSIS's string copy, and a plural of PNG.
+StrCpy = "StrCpy"
+PNGs = "PNGs"
+# Indices and matrix entries: the column of y, the entry at (i, k), a diagram's node.
+iy = "iy"
+lik = "lik"
+ba = "ba"
+
+[default.extend-words]
+# JzAzBz's Iz, beside Jz and Cz.
+iz = "iz"
+# The lens's input radius, and denoiseprofile's threshold.
+rin = "rin"
+thr = "thr"
+# Fractions: 1420ths, 65536ths.
+ths = "ths"
+# Mis-partitions.
+mis = "mis"
+# Slugs drop the apostrophe: the library's code, the first pass's picker.
+librarys = "librarys"
+passs = "passs"
+# Leica's M Monochrom.
+monochrom = "monochrom"
+# The flate2 crate.
+flate = "flate"
+# A window with no parent.
+unparented = "unparented"
+# Creative Commons' French title, in a darktable sidecar's licence.
+initiales = "initiales"

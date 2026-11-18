@@ -406,7 +406,10 @@ adapter_info() {
   printf -v "${path}_limits" '%s' "$(sed -n 's/.*\[gpu\] limits: //p' "$log" | first_line)"
 }
 
+# The names are read by name, ${!name} in time_apertrust, which shellcheck cannot follow.
+# shellcheck disable=SC2034
 software_chosen="" software_name="" software_label="" software_driver="" software_limits=""
+# shellcheck disable=SC2034
 gpu_chosen="" gpu_name="" gpu_label="" gpu_driver="" gpu_limits=""
 want_software=0
 want_gpu=0
@@ -1138,7 +1141,7 @@ modules_of() {
   local metric=()
   header=(Module)
   for path in "${paths_here[@]}"; do
-    warm=$(ls "$values" | grep "^$raw\.$path\.warmop\." || true)
+    warm=$(compgen -G "$values/$raw.$path.warmop.*" || true)
     if [[ $path == dt-* ]]; then
       header+=("$(path_label "$path")")
       metric+=(op)

@@ -20,9 +20,16 @@
 #
 #   tools/check-windows-paths.sh                  fails if a file with a platform cfg is
 #                                                 not covered by the list (CI's lint)
+#   tools/check-windows-paths.sh FILE...          the same for the files given, from the
+#                                                 repository's root, as pre-commit passes
+#                                                 them; for every file when the list is
+#                                                 among them
 #   tools/check-windows-paths.sh --changed REVS   prints the files `git diff REVS` changes
 #                                                 that the list covers, e.g. main...HEAD
 set -euo pipefail
+# sort and comm in one order, the bytes', whatever the locale: under a UTF-8 one they
+# can disagree, and comm then fails.
+export LC_ALL=C
 
 cd "$(dirname "$0")/.."
 
@@ -44,8 +51,21 @@ fi
 # cfg_attr(unix, …), inside any() or not() too; in Rust sources and Cargo manifests.
 platform='cfg(_attr)?!?\(.*(target_os|target_family|target_vendor|target_env|windows|unix)'
 
+# The files to look at: the Rust sources and manifests among those given, or every one. A
+# change to the list can leave any file out, so with the list among them, every one too.
+targets=('*.rs' '*.toml')
+if (($#)) && ! printf '%s\n' "$@" | grep -qxF "$list"; then
+  targets=()
+  for file in "$@"; do
+    case "$file" in
+      *.rs | *.toml) targets+=("$file") ;;
+    esac
+  done
+  [[ -n "${targets[*]-}" ]] || exit 0
+fi
+
 missing=$(comm -23 \
-  <(git grep -l --untracked -E "$platform" -- '*.rs' '*.toml' | sort) \
+  <(git grep -l --untracked -E "$platform" -- "${targets[@]}" | sort) \
   <(git ls-files --cached --others --exclude-standard -- "${pathspecs[@]}" | sort))
 
 if [[ -n "$missing" ]]; then
