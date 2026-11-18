@@ -111,7 +111,7 @@ The raw stage's tools and the colour profiles, set up rather than edited and rar
 | Raw black/white point | raw black/white point | `rawprepare`, raw 1 | Background only | Built; its levels start at the raw's own, flat field correction not ported | [page](raw-black-white-point.md), [port](../ports/rawprepare.md) |
 | Highlight reconstruction | highlight reconstruction | `highlights`, raw 4 | Background only | Built; inpaint opposed ported, the threshold starting at the photo's own | [page](highlight-reconstruction.md), [port](../ports/highlights.md) |
 | Demosaic | demosaic | `demosaic`, raw 8 | Background only | Built; RCD and Markesteijn 1-pass ported, the method listing the sensor's methods | [page](demosaic.md), [port](../ports/demosaic.md) |
-| Input colour profile | input color profile | `colorin`, camera RGB 28 | Background only | Operation ported, runs on every photo; tool planned (Phase 2) | [port](../ports/colorin.md) |
+| Input colour profile | input color profile | `colorin`, camera RGB 28 | Background only | Built; the photo's own matrix and the linear Rec709 and Rec2020 inputs ported, the working profile linear Rec2020 and no gamut clipping | [page](input-colour-profile.md), [port](../ports/colorin.md) |
 | Output colour profile | output color profile | `colorout`, display 70 | Background only | Built; an edit chooses sRGB only until the display converts from the edit's profile (decision 26) | [page](output-colour-profile.md), [port](../ports/colorout.md) |
 
 - **Demosaic** keeps capture sharpening, in the raw stage, as darktable has it.

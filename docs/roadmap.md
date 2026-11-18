@@ -18,7 +18,7 @@ flowchart LR
     p3 --> mobile["Mobile"]
 ```
 
-**Where things stand.** Phase 0's gate has passed. Phase 1's engine renders 27 of its 29 test raws as darktable does; two wait for a fix in the raw decoder. The desktop app's Phase 2 is well under way: it opens and edits one photo with sixteen migrated tools, and opens a folder. The migration from darktable is planned to be complete at the end of Phase 3.
+**Where things stand.** Phase 0's gate has passed. Phase 1's engine renders 27 of its 29 test raws as darktable does; two wait for a fix in the raw decoder. The desktop app's Phase 2 is well under way: it opens and edits one photo with seventeen migrated tools, and opens a folder. The migration from darktable is planned to be complete at the end of Phase 3.
 
 ## The plan at a glance
 
@@ -155,14 +155,15 @@ Goal: open, edit, save and reopen a photo with the first pass's tools. Migration
 - [x] The tool layer with bindings (`apertrust-tools`, decision 28) and `.apxmp` version 1.
 - [x] A tool panel drawn from each tool's definition (decisions 29 and 42): darktable's page, its tabs and collapsible groups, sliders that show values as darktable writes them, choices that list only what the photo allows.
 - [x] Edits save themselves after each change.
-- [x] Sixteen migrated tools, listed [below](#the-migrated-tools), each darktable's module with its parameters as controls (decision 2, [tools/README.md](tools/README.md)): White balance and Colour calibration with its CAT tab (decision 27); the Tone equalizer, its mask keyed apart from its band curve, with two rounds of export tiles (decision 15); Colour balance RGB, run only while used (decision 32).
+- [x] Seventeen migrated tools, listed [below](#the-migrated-tools), each darktable's module with its parameters as controls (decision 2, [tools/README.md](tools/README.md)): White balance and Colour calibration with its CAT tab (decision 27); the Tone equalizer, its mask keyed apart from its band curve, with two rounds of export tiles (decision 15); Colour balance RGB, run only while used (decision 32).
 - [x] The Default workspace's tabs by editing stage (decision 38; [gui.md](gui.md#the-tabs-by-editing-stage)): Photos, Adjust, Detail, Geometry, Effects, Raw and History, opening on Adjust.
   - [x] Each tab's list in editing order, Raw's in processing order, now `data/workspaces/default.toml` (decision 96), and `panel-tab-7`; Scopes pinned over the five editing tabs.
   - [x] The tab ids `adjust`, `detail`, `geometry`, `effects` and `raw`, darktable's old ids read as unknown in the Default workspace, and the labels in British and American English, Ukrainian and Polish.
   - [x] Five tab icons, one colour in Lucide's style with their filled forms, drawn on the wireframe first.
   - [x] The test that held each tab's list to `OPERATIONS` reversed replaced by one holding the Default workspace's lists to decision 38's, each tool in exactly one tab; darktable's groups kept as the darktable workspace's lists, with that test, for the darktable workspace ([Workspaces](#the-window-and-the-shell), step 2).
 - [ ] Phase 2's tools are darktable's: raw black/white point, white balance, highlight reconstruction, demosaic, denoise (profiled), rotate and perspective, orientation, input colour profile, exposure, tone equalizer, colour calibration, RGB primaries, colour equalizer, colour balance RGB, AgX and output colour profile. Of these, left:
-  - [ ] Input colour profile and Colour equalizer as tools (their processing is ported).
+  - [x] Input colour profile as a tool.
+  - [ ] Colour equalizer as a tool (its processing is ported).
   - [ ] Rotate and perspective, ported.
   - [ ] Denoise (profiled), ported, with darktable's noise profiles.
 - [x] Exposure's page as redesigned, the one exception to darktable's page in the first pass, its edits and renders unchanged (decision 88; [tools/exposure.md](tools/exposure.md#the-page-as-redesigned)), one pull request each:
@@ -498,7 +499,7 @@ What the migration brings over from darktable, one module each. "Processing" is 
 | highlight reconstruction | [x] inpaint opposed | [x] | 1, 2 |
 | demosaic | [x] RCD, Markesteijn 1-pass | [x] | 1, 2 |
 | exposure | [x] | [x] | 1, 2 |
-| input colour profile | [x] | [ ] | 1, 2 |
+| input colour profile | [x] the camera's matrix, linear Rec709 and Rec2020 | [x] | 1, 2 |
 | AgX | [x] | [x] | 1, 2 |
 | output colour profile | [x] sRGB, linear Rec709 and Rec2020 | [x] | 1, 2 |
 | colour calibration | [x] | [x] | 2 |

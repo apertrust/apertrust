@@ -312,6 +312,55 @@ tool-agx-control-blue_outset-promise = Odtworzenie czystości niebieskiego, gł�
 tool-agx-control-blue_unrotation-label = Odwrócenie obrotu niebieskiego
 tool-agx-control-blue_unrotation-full = Odwrócenie obrotu niebieskiego
 tool-agx-control-blue_unrotation-promise = Odwróć przesunięcie koloru w niebieskościach.
+
+## Wejściowy profil koloru (docs/tools/input-colour-profile.md): słowa darktable z pl.po;
+## obietnice dwóch profili i opis to szkice Apertrust.
+
+tool-colorin-title = Wejściowy profil koloru
+tool-colorin-description = Przenosi kolory aparatu do przestrzeni barw, w której pracują wszystkie dalsze narzędzia. Zwykle zostaje własna macierz aparatu.
+tool-colorin-control-type-label = Profil wejściowy
+tool-colorin-control-type-full = Profil wejściowy
+tool-colorin-control-type-promise = Profil koloru, w którym odczytywane są kolory aparatu.
+tool-colorin-control-type-option-embedded_matrix = Osadzona macierz
+tool-colorin-control-type-option-standard_matrix = Standardowa macierz kolorów
+tool-colorin-control-type-option-srgb = sRGB
+tool-colorin-control-type-option-adobe_rgb = Adobe RGB (kompatybilny)
+tool-colorin-control-type-option-lin_rec709 = Liniowy Rec709 RGB
+tool-colorin-control-type-option-rec709 = Rec709 RGB
+tool-colorin-control-type-option-lin_rec2020 = Liniowy Rec2020 RGB
+tool-colorin-control-type-option-pq_rec2020 = PQ Rec2020 RGB
+tool-colorin-control-type-option-hlg_rec2020 = HLG Rec2020 RGB
+tool-colorin-control-type-option-pq_p3 = PQ P3 RGB
+tool-colorin-control-type-option-hlg_p3 = HLG P3 RGB
+tool-colorin-control-type-option-display_p3 = Display P3 RGB
+tool-colorin-control-type-option-prophoto_rgb = Liniowy ProPhoto RGB
+tool-colorin-control-type-option-xyz = Liniowy XYZ
+tool-colorin-control-type-option-lab = Lab
+tool-colorin-control-type-option-infrared = Liniowy podczerwony BGR
+tool-colorin-control-type-option-brg = BRG (do testów)
+tool-colorin-control-type_work-label = Profil roboczy
+tool-colorin-control-type_work-full = Profil roboczy
+tool-colorin-control-type_work-promise = Przestrzeń barw, w której pracują wszystkie narzędzia po tym.
+tool-colorin-control-type_work-option-srgb = sRGB (dobry do Internetu)
+tool-colorin-control-type_work-option-adobe_rgb = Adobe RGB (kompatybilny)
+tool-colorin-control-type_work-option-lin_rec709 = Liniowy Rec709 RGB
+tool-colorin-control-type_work-option-rec709 = Rec709 RGB
+tool-colorin-control-type_work-option-lin_rec2020 = Liniowy Rec2020 RGB
+tool-colorin-control-type_work-option-pq_rec2020 = PQ Rec2020 RGB
+tool-colorin-control-type_work-option-hlg_rec2020 = HLG Rec2020 RGB
+tool-colorin-control-type_work-option-pq_p3 = PQ P3 RGB
+tool-colorin-control-type_work-option-hlg_p3 = HLG P3 RGB
+tool-colorin-control-type_work-option-display_p3 = Display P3 RGB
+tool-colorin-control-type_work-option-prophoto_rgb = Liniowy ProPhoto RGB
+tool-colorin-control-normalize-label = Przycinanie do gamutu
+tool-colorin-control-normalize-full = Przycinanie do gamutu
+tool-colorin-control-normalize-promise = Ogranicz wartości Lab do gamutu przestrzeni barw RGB.
+tool-colorin-control-normalize-option-off = Wyłączony
+tool-colorin-control-normalize-option-srgb = sRGB
+tool-colorin-control-normalize-option-adobe_rgb = Adobe RGB (kompatybilny)
+tool-colorin-control-normalize-option-lin_rec709 = Liniowy Rec709 RGB
+tool-colorin-control-normalize-option-lin_rec2020 = Liniowy Rec2020 RGB
+
 ## Wyjściowy profil koloru (docs/tools/output-colour-profile.md): terminy z polskiego
 ## tłumaczenia darktable.
 
@@ -1045,6 +1094,7 @@ tool-fact-non-linear-rgb-display-referred = nieliniowe, RGB, ekranocentryczny
 tool-fact-non-linear-lab = nieliniowe, Lab
 tool-fact-non-linear-lab-display-referred = nieliniowe, Lab, ekranocentryczny
 tool-fact-linear-or-non-linear-lab-display-referred = liniowe lub nieliniowe, Lab, ekranocentryczny
+tool-fact-linear-or-non-linear-rgb-scene-referred = liniowe lub nieliniowe, RGB, scenocentryczny
 tool-fact-non-linear-rgb-or-lab-display-referred = nieliniowe, RGB lub Lab, ekranocentryczny
 tool-fact-geometric-rgb = geometryczne, RGB
 tool-fact-frequential-rgb = częstotliwościowy, RGB

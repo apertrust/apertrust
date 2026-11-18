@@ -582,7 +582,7 @@ In `src/folder.rs`, `src/library.rs`, `src/dialogs.rs`, `src/dropped.rs` and `sr
 | Detail | None yet: drawn disabled |
 | Geometry | Orientation |
 | Effects | Vignetting, Grain, Soften |
-| Raw | Raw black/white point, Highlight reconstruction, Demosaic, Output colour profile |
+| Raw | Raw black/white point, Highlight reconstruction, Demosaic, Input colour profile, Output colour profile |
 
 - The sections' open state is kept in settings.
 - **The Scopes section** (`src/scopes.rs`) is pinned over the editing tabs' tools, not the Photos tab's nor History's. Its `Histogram` is fed by the session's latest reading (the histogram, the waveform, the RGB parade and the vectorscope, and what clips). It asks the session with `Command::Scopes` for the totals while it shows and for the graph while it is open. Its view and open state are kept in settings.
@@ -1298,6 +1298,7 @@ Tools (decision 28): what the user edits with, bound to operation parameters. No
 | Raw black/white point | `raw_black_white_point` | raw black/white point | rawprepare | R0–R4 |
 | Highlight reconstruction | `highlight_reconstruction` | highlight reconstruction | highlights | K0–K3 |
 | Demosaic | `demosaic` | demosaic | demosaic | D0–D4 (D5 in its source) |
+| Input colour profile | `input_colour_profile` | input color profile | colorin | I0, I1, I3, I5, I6 (I2 and I4 in its source) |
 | AgX | `agx` | AgX | agx | A0–A7 |
 | Output colour profile | `output_colour_profile` | output color profile | colorout | O0, O1, O3–O5 (O2 in its source) |
 | White balance | `white_balance` | white balance | temperature | W0–W9, W15 |
@@ -1313,7 +1314,7 @@ Tools (decision 28): what the user edits with, bound to operation parameters. No
 | Soften | `soften` | soften | soften | S0–S4, S6 |
 | Vignetting | `vignetting` | vignetting | vignette | V0–V4, V6 |
 
-Raw black/white point, Highlight reconstruction, Orientation, Output colour profile, AgX and Grain work on the background only, never on a layer (decision 34). Where a tool's row is the first step (B1, G1, P1, Q1, S1, Z1), it is measured without a bound; V1 is exact.
+Raw black/white point, Highlight reconstruction, Orientation, Input colour profile, Output colour profile, AgX and Grain work on the background only, never on a layer (decision 34). Where a tool's row is the first step (B1, G1, P1, Q1, S1, Z1), it is measured without a bound; V1 is exact.
 
 #### Raw black/white point
 
@@ -1337,6 +1338,14 @@ Raw black/white point, Highlight reconstruction, Orientation, Output colour prof
 - Each control is one `demosaic` parameter. Its defaults are the operation's for the photo (RCD, Markesteijn 1-pass on X-Trans), so an untouched tool sets nothing.
 - Every other method, and capture sharpening, are not ported: drawn disabled and refused.
 - The method lists the sensor's methods as darktable's four comboboxes do (`ProcessingTool::options`, decision 30): Bayer's nine, X-Trans's seven, Bayer4's three, a monochrome sensor's one (unavailable there). Another sensor's method an edit holds is shown last, disabled, and rendered as the photo's own.
+
+#### Input colour profile
+
+- Input profile (`type`), Working profile (`type_work`) and Gamut clipping (`normalize`), darktable's lists in its order, each default the operation's for the photo, so an untouched tool sets nothing.
+- Input profile lists the photo's own matrix first, the embedded matrix on a DNG whose image context holds its own (`Camera::embedded_matrix`), the standard matrix on another raw, then darktable's fifteen built-in input profiles (`ProcessingTool::options`, decision 30). The camera's matrix, linear Rec709 and linear Rec2020 can be chosen; the rest are not ported.
+- Working profile ports linear Rec2020 alone and Gamut clipping Off alone, so both are unavailable, drawn disabled at their defaults. darktable's own camera tables' matrices, embedded ICC profiles and ICC files are not listed.
+- It owns every `colorin` parameter, the intent and blue mapping fixed (rule 12), so `--param` sets none of them.
+- I0 holds an untouched edit to the operations and parameters of the built-in tools without it; I2, each option written by its name, and I4, what each photo lists, are in its source.
 
 #### AgX
 

@@ -33,6 +33,14 @@ tool-agx-control-red_unrotation-promise = Reverse the color shift in reds.
 tool-agx-control-green_unrotation-promise = Reverse the color shift in greens.
 tool-agx-control-blue_unrotation-promise = Reverse the color shift in blues.
 
+## Input color profile
+
+tool-colorin-title = Input color profile
+tool-colorin-control-type-promise = The color profile the camera's colors are read in.
+tool-colorin-control-type-option-standard_matrix = Standard color matrix
+tool-colorin-control-type_work-promise = The color space every tool after this one works in.
+tool-colorin-control-normalize-promise = Confine Lab values to gamut of RGB color space.
+
 ## Output color profile
 
 tool-colorout-title = Output color profile
@@ -177,6 +185,7 @@ tool-agx-picker-pivot_output-promise = Sets the pivot relative to mid-gray from 
 tool-highlights-description = Keeps clipped highlights from turning magenta and tries to recover their color. Reach for it when the brightest areas look flat or tinted.
 tool-demosaic-description = Turns the sensor’s mosaic of red, green and blue into full-color pixels. Usually left as it is: change it when fine detail shows mazes or false color.
 tool-agx-description = Fits the light the camera caught into what a screen or a print can show, with natural highlights and colors. The default tone mapper, inspired by Blender’s AgX.
+tool-colorin-description = Takes the camera’s colors into the color space every later tool works in. Usually left at the camera’s own matrix.
 tool-colorout-description = Converts the finished picture into the colors of the file you export. Usually left at sRGB, which suits screens and the web.
 tool-temperature-description = Balances the camera’s red, green and blue so that white comes out white, and helps demosaic. Usually left as it is: set the color of the light in Color calibration.
 tool-exposure-description = Brightens or darkens the photo as if you had exposed it differently in the camera, keeping its colors. Usually the first tool to reach for.

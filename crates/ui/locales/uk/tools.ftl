@@ -311,6 +311,55 @@ tool-agx-control-blue_outset-promise = Відновити чистоту син�
 tool-agx-control-blue_unrotation-label = Зворотне обертання синього
 tool-agx-control-blue_unrotation-full = Зворотне обертання синього
 tool-agx-control-blue_unrotation-promise = Скасувати колірний зсув у синіх тонах.
+
+## Вхідний колірний профіль (docs/tools/input-colour-profile.md): слова darktable з uk.po;
+## обіцянки двох профілів і опис — чернетки Apertrust.
+
+tool-colorin-title = Вхідний колірний профіль
+tool-colorin-description = Переводить кольори камери в колірний простір, у якому працюють усі наступні інструменти. Зазвичай лишається власна матриця камери.
+tool-colorin-control-type-label = Вхідний профіль
+tool-colorin-control-type-full = Вхідний профіль
+tool-colorin-control-type-promise = Колірний профіль, у якому читаються кольори камери.
+tool-colorin-control-type-option-embedded_matrix = Вбудована матриця
+tool-colorin-control-type-option-standard_matrix = Стандартна матриця кольорів
+tool-colorin-control-type-option-srgb = sRGB
+tool-colorin-control-type-option-adobe_rgb = Adobe RGB (сумісний)
+tool-colorin-control-type-option-lin_rec709 = Лінійний Rec709 RGB
+tool-colorin-control-type-option-rec709 = Rec709 RGB
+tool-colorin-control-type-option-lin_rec2020 = Лінійний Rec2020 RGB
+tool-colorin-control-type-option-pq_rec2020 = PQ Rec2020 RGB
+tool-colorin-control-type-option-hlg_rec2020 = HLG Rec2020 RGB
+tool-colorin-control-type-option-pq_p3 = PQ P3 RGB
+tool-colorin-control-type-option-hlg_p3 = HLG P3 RGB
+tool-colorin-control-type-option-display_p3 = Display P3 RGB
+tool-colorin-control-type-option-prophoto_rgb = Лінійний ProPhoto RGB
+tool-colorin-control-type-option-xyz = Лінійний XYZ
+tool-colorin-control-type-option-lab = Lab
+tool-colorin-control-type-option-infrared = Лінійний інфрачервоний BGR
+tool-colorin-control-type-option-brg = BRG (для тестування)
+tool-colorin-control-type_work-label = Робочий профіль
+tool-colorin-control-type_work-full = Робочий профіль
+tool-colorin-control-type_work-promise = Колірний простір, у якому працюють усі інструменти після цього.
+tool-colorin-control-type_work-option-srgb = sRGB (для веб)
+tool-colorin-control-type_work-option-adobe_rgb = Adobe RGB (сумісний)
+tool-colorin-control-type_work-option-lin_rec709 = Лінійний Rec709 RGB
+tool-colorin-control-type_work-option-rec709 = Rec709 RGB
+tool-colorin-control-type_work-option-lin_rec2020 = Лінійний Rec2020 RGB
+tool-colorin-control-type_work-option-pq_rec2020 = PQ Rec2020 RGB
+tool-colorin-control-type_work-option-hlg_rec2020 = HLG Rec2020 RGB
+tool-colorin-control-type_work-option-pq_p3 = PQ P3 RGB
+tool-colorin-control-type_work-option-hlg_p3 = HLG P3 RGB
+tool-colorin-control-type_work-option-display_p3 = Display P3 RGB
+tool-colorin-control-type_work-option-prophoto_rgb = Лінійний ProPhoto RGB
+tool-colorin-control-normalize-label = Обрізання охоплення
+tool-colorin-control-normalize-full = Обрізання охоплення
+tool-colorin-control-normalize-promise = Обмежити значення Lab до охоплення колірного простору RGB.
+tool-colorin-control-normalize-option-off = Вимкнено
+tool-colorin-control-normalize-option-srgb = sRGB
+tool-colorin-control-normalize-option-adobe_rgb = Adobe RGB (сумісний)
+tool-colorin-control-normalize-option-lin_rec709 = Лінійний Rec709 RGB
+tool-colorin-control-normalize-option-lin_rec2020 = Лінійний Rec2020 RGB
+
 ## Вихідний колірний профіль (docs/tools/output-colour-profile.md): терміни з
 ## українського перекладу darktable.
 
@@ -1043,6 +1092,7 @@ tool-fact-non-linear-rgb-display-referred = нелінійний простір,
 tool-fact-non-linear-lab = нелінійна, Lab
 tool-fact-non-linear-lab-display-referred = нелінійний простір, Lab, на основі відображення
 tool-fact-linear-or-non-linear-lab-display-referred = лінійний або нелінійний простір, Lab, на основі відображення
+tool-fact-linear-or-non-linear-rgb-scene-referred = лінійний або нелінійний простір, RGB, на основі сцен
 tool-fact-non-linear-rgb-or-lab-display-referred = нелінійний простір, RGB або Lab, на основі відображення
 tool-fact-geometric-rgb = геометрична, RGB
 tool-fact-frequential-rgb = частотна, RGB

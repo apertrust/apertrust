@@ -831,9 +831,9 @@ pub enum Move {
 
 /// The modules darktable has on by default with no on/off button (`hide_enable_button`),
 /// which its `_dev_add_default_modules` adds to a new photo's history first
-/// (`src/develop/develop.c:2142-2171`, called at `:2339`): Raw black/white point, Demosaic
-/// and Output colour profile.
-const NO_BUTTON: &[&str] = &["rawprepare", "demosaic", "colorout"];
+/// (`src/develop/develop.c:2142-2171`, called at `:2339`): Raw black/white point, Demosaic,
+/// Input colour profile and Output colour profile.
+const NO_BUTTON: &[&str] = &["rawprepare", "demosaic", "colorin", "colorout"];
 
 /// The modules darktable has on by default with an on/off button, which it adds next:
 /// White balance, Highlight reconstruction and Orientation. The workflow's auto-applied

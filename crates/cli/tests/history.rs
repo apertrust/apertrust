@@ -76,23 +76,23 @@ fn history_lists_and_moves_with_the_cli_s_exit_statuses() {
     let (stdout, stderr, status) = folder.run(&["history"]);
     assert_eq!(status, Some(0), "{stderr}");
     assert!(
-        stdout.starts_with("IMG.ARW: 10 steps, the end at step 10; times in UTC\n"),
+        stdout.starts_with("IMG.ARW: 11 steps, the end at step 11; times in UTC\n"),
         "{stdout}"
     );
     assert!(
-        stdout.contains(">  10  exposure ↑ · \"Brighter\"  "),
+        stdout.contains(">   11  exposure ↑ · \"Brighter\"  "),
         "{stdout}"
     );
     assert!(
-        stdout.contains("\n  1–9  defaults: 9 tools every photo runs\n"),
+        stdout.contains("\n  1–10  defaults: 10 tools every photo runs\n"),
         "{stdout}"
     );
-    assert!(stdout.ends_with("   0  Original\n"), "{stdout}");
+    assert!(stdout.ends_with("     0  Original\n"), "{stdout}");
 
     let (stdout, stderr, status) = folder.run(&["history", "--undo"]);
     assert_eq!(status, Some(0), "{stderr}");
     assert!(
-        stdout.starts_with("Undid step 10: the end at step 9\nWrote "),
+        stdout.starts_with("Undid step 11: the end at step 10\nWrote "),
         "{stdout}"
     );
     // Never over a default step.
@@ -102,10 +102,10 @@ fn history_lists_and_moves_with_the_cli_s_exit_statuses() {
 
     let sidecar = folder.0.join("IMG.ARW.apxmp");
     let before = std::fs::read(&sidecar).unwrap();
-    let (_, stderr, status) = folder.run(&["history", "--go-to", "11"]);
+    let (_, stderr, status) = folder.run(&["history", "--go-to", "12"]);
     assert_eq!(status, Some(1));
     assert!(
-        stderr.contains("no step 11: the history has 10 steps; 0 is Original"),
+        stderr.contains("no step 12: the history has 11 steps; 0 is Original"),
         "{stderr}"
     );
     let (_, stderr, status) = folder.run(&["history", "--undo", "--redo"]);

@@ -324,6 +324,57 @@ tool-agx-control-blue_outset-promise = Restore the purity of blue, mostly in mid
 tool-agx-control-blue_unrotation-label = Blue reverse rotation
 tool-agx-control-blue_unrotation-full = Blue reverse rotation
 tool-agx-control-blue_unrotation-promise = Reverse the colour shift in blues.
+
+## Input colour profile (docs/tools/input-colour-profile.md): darktable's input color
+## profile, its labels and its profiles' names in British English. darktable's tooltips
+## for the two profiles name the folders it loads ICC files from, which Apertrust does
+## not read.
+
+tool-colorin-title = Input colour profile
+tool-colorin-description = Takes the camera’s colours into the colour space every later tool works in. Usually left at the camera’s own matrix.
+tool-colorin-control-type-label = Input profile
+tool-colorin-control-type-full = Input profile
+tool-colorin-control-type-promise = The colour profile the camera's colours are read in.
+tool-colorin-control-type-option-embedded_matrix = Embedded matrix
+tool-colorin-control-type-option-standard_matrix = Standard colour matrix
+tool-colorin-control-type-option-srgb = sRGB
+tool-colorin-control-type-option-adobe_rgb = Adobe RGB (compatible)
+tool-colorin-control-type-option-lin_rec709 = Linear Rec709 RGB
+tool-colorin-control-type-option-rec709 = Rec709 RGB
+tool-colorin-control-type-option-lin_rec2020 = Linear Rec2020 RGB
+tool-colorin-control-type-option-pq_rec2020 = PQ Rec2020 RGB
+tool-colorin-control-type-option-hlg_rec2020 = HLG Rec2020 RGB
+tool-colorin-control-type-option-pq_p3 = PQ P3 RGB
+tool-colorin-control-type-option-hlg_p3 = HLG P3 RGB
+tool-colorin-control-type-option-display_p3 = Display P3 RGB
+tool-colorin-control-type-option-prophoto_rgb = Linear ProPhoto RGB
+tool-colorin-control-type-option-xyz = Linear XYZ
+tool-colorin-control-type-option-lab = Lab
+tool-colorin-control-type-option-infrared = Linear infrared BGR
+tool-colorin-control-type-option-brg = BRG (for testing)
+tool-colorin-control-type_work-label = Working profile
+tool-colorin-control-type_work-full = Working profile
+tool-colorin-control-type_work-promise = The colour space every tool after this one works in.
+tool-colorin-control-type_work-option-srgb = sRGB (web-safe)
+tool-colorin-control-type_work-option-adobe_rgb = Adobe RGB (compatible)
+tool-colorin-control-type_work-option-lin_rec709 = Linear Rec709 RGB
+tool-colorin-control-type_work-option-rec709 = Rec709 RGB
+tool-colorin-control-type_work-option-lin_rec2020 = Linear Rec2020 RGB
+tool-colorin-control-type_work-option-pq_rec2020 = PQ Rec2020 RGB
+tool-colorin-control-type_work-option-hlg_rec2020 = HLG Rec2020 RGB
+tool-colorin-control-type_work-option-pq_p3 = PQ P3 RGB
+tool-colorin-control-type_work-option-hlg_p3 = HLG P3 RGB
+tool-colorin-control-type_work-option-display_p3 = Display P3 RGB
+tool-colorin-control-type_work-option-prophoto_rgb = Linear ProPhoto RGB
+tool-colorin-control-normalize-label = Gamut clipping
+tool-colorin-control-normalize-full = Gamut clipping
+tool-colorin-control-normalize-promise = Confine Lab values to gamut of RGB colour space.
+tool-colorin-control-normalize-option-off = Off
+tool-colorin-control-normalize-option-srgb = sRGB
+tool-colorin-control-normalize-option-adobe_rgb = Adobe RGB (compatible)
+tool-colorin-control-normalize-option-lin_rec709 = Linear Rec709 RGB
+tool-colorin-control-normalize-option-lin_rec2020 = Linear Rec2020 RGB
+
 ## Output colour profile (docs/tools/output-colour-profile.md): darktable's output color
 ## profile, its label and its profiles' names in British English. darktable's tooltip
 ## names the folders it loads ICC files from, which Apertrust does not read yet.
@@ -1100,6 +1151,7 @@ tool-fact-non-linear-rgb-display-referred = non-linear, RGB, display-referred
 tool-fact-non-linear-lab = non-linear, Lab
 tool-fact-non-linear-lab-display-referred = non-linear, Lab, display-referred
 tool-fact-linear-or-non-linear-lab-display-referred = linear or non-linear, Lab, display-referred
+tool-fact-linear-or-non-linear-rgb-scene-referred = linear or non-linear, RGB, scene-referred
 tool-fact-non-linear-rgb-or-lab-display-referred = non-linear, RGB or Lab, display-referred
 tool-fact-geometric-rgb = geometric, RGB
 tool-fact-frequential-rgb = frequential, RGB

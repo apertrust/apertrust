@@ -70,6 +70,16 @@ const DARKTABLE: &[(&str, &str, [&str; 4])] = &[
         ],
     ),
     (
+        "colorin",
+        "colorin.c",
+        [
+            "mandatory",
+            "linear or non-linear, RGB, scene-referred",
+            "defined by profile",
+            "linear, RGB, scene-referred",
+        ],
+    ),
+    (
         "colorout",
         "colorout.c",
         [
@@ -263,6 +273,11 @@ const TRANSLATED: &[(&str, &str, &str)] = &[
         "linear or non-linear, Lab, display-referred",
         "лінійний або нелінійний простір, Lab, на основі відображення",
         "liniowe lub nieliniowe, Lab, ekranocentryczny",
+    ),
+    (
+        "linear or non-linear, RGB, scene-referred",
+        "лінійний або нелінійний простір, RGB, на основі сцен",
+        "liniowe lub nieliniowe, RGB, scenocentryczny",
     ),
     (
         "non-linear, RGB or Lab, display-referred",

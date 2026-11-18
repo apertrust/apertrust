@@ -66,5 +66,5 @@ adjust = [
 detail = []
 geometry = ["flip"]
 effects = ["vignette", "grain", "soften"]
-raw = ["rawprepare", "highlights", "demosaic", "colorout"]
+raw = ["rawprepare", "highlights", "demosaic", "colorin", "colorout"]
 history = ["history"]
