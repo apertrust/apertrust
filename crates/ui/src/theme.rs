@@ -62,10 +62,10 @@ impl Builtin {
 
     fn source(self) -> &'static str {
         match self {
-            Builtin::Dark => include_str!("../themes/dark.toml"),
-            Builtin::Grey => include_str!("../themes/grey.toml"),
-            Builtin::Light => include_str!("../themes/light.toml"),
-            Builtin::HighContrast => include_str!("../themes/high-contrast.toml"),
+            Builtin::Dark => include_str!("../../../data/themes/dark.toml"),
+            Builtin::Grey => include_str!("../../../data/themes/grey.toml"),
+            Builtin::Light => include_str!("../../../data/themes/light.toml"),
+            Builtin::HighContrast => include_str!("../../../data/themes/high-contrast.toml"),
         }
     }
 

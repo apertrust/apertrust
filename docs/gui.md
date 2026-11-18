@@ -201,7 +201,7 @@ Colours that are data are not tokens: a hue track shows real hues, and a scope s
 
 ### Themes
 
-A theme is a full set of token values, stored as TOML in `crates/ui/themes`.
+A theme is a full set of token values, stored as TOML in `data/themes` and embedded by `apertrust-ui`.
 
 - **Four built-in themes are compiled in:** dark (the default), grey, light and high contrast, offered in that order. A user's theme file extends one of them and overrides any of its tokens (`extends = "dark"`).
 - **The default theme is a neutral dark grey.** The wireframe is drawn light so that it is easy to read; its colours show roles, not the theme.
