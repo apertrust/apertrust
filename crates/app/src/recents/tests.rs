@@ -507,3 +507,46 @@ fn the_old_tab_s_move_keeps_another_process_s_tab() {
     recents.flush();
     assert_eq!(Recents::open(file, none).0.tab("default"), Some("raw"));
 }
+
+/// A tab the user chooses is written though the old setting's move gave the same one,
+/// which another process's tab kept out of the file.
+#[test]
+fn a_chosen_tab_is_written_though_the_move_gave_it() {
+    let (_dir, file) = state("old-tab-chosen");
+    let (mut recents, _) = Recents::open(file.clone(), none);
+    recents.flush();
+    let outside = text(&file) + "\n[tab]\ndefault = \"effects\"\n";
+    std::fs::write(&file, outside).expect("written");
+    recents.move_tab("default", || Some("geometry".to_owned()));
+    recents.flush();
+    assert_eq!(recents.tab("default"), Some("geometry"));
+    recents.set_tab("default", "geometry");
+    recents.flush();
+    assert_eq!(Recents::open(file, none).0.tab("default"), Some("geometry"));
+}
+
+/// A merge that finds no file, as the retry after a damaged file was set aside and its
+/// replacement could not be written, starts from what the last write left, its list and
+/// its tabs, not from nothing.
+#[test]
+fn a_missing_file_is_written_from_the_last_write() {
+    let (_dir, file) = state("missing-retry");
+    let last = Written {
+        items: vec![Item::Known(Entry {
+            kind: OpenKind::Folder,
+            path: folder("a"),
+            opened: 100,
+        })],
+        tabs: BTreeMap::from([("default".to_owned(), "raw".to_owned())]),
+    };
+    let entry = Entry {
+        kind: OpenKind::Folder,
+        path: folder("b"),
+        opened: 200,
+    };
+    let written = merge(&file, &[Change::Opened(entry)], &last).expect("written");
+    assert_eq!(written.items.len(), 2);
+    let (read, _) = Recents::open(file, none);
+    assert_eq!(paths(&read), [folder("b"), folder("a")]);
+    assert_eq!(read.tab("default"), Some("raw"));
+}

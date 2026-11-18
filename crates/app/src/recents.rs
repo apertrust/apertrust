@@ -293,6 +293,9 @@ struct Read {
     last: Option<Last>,
     /// The tab last shown in each workspace, those this build reads.
     tabs: BTreeMap<String, String>,
+    /// Whether there was no file: a damaged one set aside before a write that failed
+    /// leaves none, so the retry starts from what the last write left.
+    missing: bool,
     /// Whether it was damaged, and set aside.
     damaged: bool,
     /// Whether it may be written: not one a newer Apertrust wrote, nor one that could not
@@ -312,7 +315,10 @@ fn read(file: &Path) -> Read {
     };
     let text = match std::fs::read(file) {
         Ok(bytes) => String::from_utf8(bytes).map_err(|_| "not UTF-8".to_owned()),
-        Err(e) if e.kind() == io::ErrorKind::NotFound => return read,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => {
+            read.missing = true;
+            return read;
+        }
         Err(e) => {
             read.warnings
                 .push(format!("not read: {e}; nothing written to it"));
@@ -410,8 +416,9 @@ struct Written {
 
 /// Merges `changes` into `file` as it is now and writes it through the safe write, its
 /// other keys kept. A damaged file, set aside, gives way to `last`, what the last write
-/// left, its list and its tabs; one that may not be written is an error. Returns what it
-/// wrote.
+/// left, its list and its tabs, and so does a missing one, as a damaged one set aside
+/// before a write that failed leaves; one that may not be written is an error. Returns
+/// what it wrote.
 fn merge(file: &Path, changes: &[Change], last: &Written) -> io::Result<Written> {
     let read = read(file);
     for warning in &read.warnings {
@@ -420,7 +427,7 @@ fn merge(file: &Path, changes: &[Change], last: &Written) -> io::Result<Written>
     if !read.writable {
         return Err(io::Error::other("it may not be written"));
     }
-    let (mut table, mut items) = if read.damaged {
+    let (mut table, mut items) = if read.damaged || read.missing {
         let mut table = Table::new();
         if !last.tabs.is_empty() {
             let tabs = last
@@ -562,6 +569,9 @@ pub struct Recents {
     last: Option<Last>,
     /// The tab last shown in each workspace, by their ids.
     tabs: BTreeMap<String, String>,
+    /// The workspaces whose tab in `tabs` is the old setting's, moved but not confirmed:
+    /// the file may hold another process's ([`Recents::move_tab`]).
+    moved: HashSet<String>,
     /// What changed since the last [`save`](Recents::save).
     changes: Vec<Change>,
     /// The entries a check found missing.
@@ -583,6 +593,7 @@ impl Recents {
             items: Vec::new(),
             last: None,
             tabs: BTreeMap::new(),
+            moved: HashSet::new(),
             changes: Vec::new(),
             missing: HashSet::new(),
             asking: HashMap::new(),
@@ -705,9 +716,11 @@ impl Recents {
     }
 
     /// The tab last shown in `workspace` is now `tab`: written with the list's next save,
-    /// and not at all where it is the same.
+    /// and not at all where it is the same, but for a tab only the old setting's move gave,
+    /// which the file may not hold.
     pub fn set_tab(&mut self, workspace: &str, tab: &str) {
-        if self.tab(workspace) != Some(tab) {
+        let moved = self.moved.remove(workspace);
+        if moved || self.tab(workspace) != Some(tab) {
             self.tabs.insert(workspace.to_owned(), tab.to_owned());
             let change = Change::Tab(workspace.to_owned(), tab.to_owned());
             self.changes.push(change);
@@ -724,6 +737,7 @@ impl Recents {
         }
         if let Some(old) = old() {
             self.tabs.insert(workspace.to_owned(), old.clone());
+            self.moved.insert(workspace.to_owned());
             self.changes
                 .push(Change::FirstTab(workspace.to_owned(), old));
             self.save();

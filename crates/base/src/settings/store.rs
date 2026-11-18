@@ -249,8 +249,10 @@ impl Store {
         Some(owned(setting, value).clone())
     }
 
-    /// `setting`'s value as the file keeps it, whatever `--conf` gives for this run: for a
-    /// key read once to move it elsewhere, so a value given for one run never moves.
+    /// `setting`'s value as the store holds it apart from `--conf`: as read from the file,
+    /// or as last [`set`](Store::set), written or not, never `--conf`'s for this run nor a
+    /// default. For a key read once, before any set, to move it elsewhere, so a value given
+    /// for one run never moves.
     pub fn kept_in_file<T: Stored>(&self, setting: &Setting<T>) -> Option<T::Owned> {
         let value = self.entry(setting).value.as_deref()?;
         Some(owned(setting, value).clone())
