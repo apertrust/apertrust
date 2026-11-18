@@ -4745,13 +4745,24 @@ pub(crate) mod tests {
                 Some(long.clone()),
             );
             harness.run();
+            // Between History's header and the window's foot, the list's viewport.
+            let header = harness.get_by_role_and_label(AccessRole::Button, "History");
+            let (top, foot) = (header.rect().bottom(), 240.0);
+            let in_sight = |harness: &Harness<'_, Scene>| {
+                let original = item(harness, "Original").rect();
+                (original.top() >= top && original.bottom() <= foot, original)
+            };
+            let (seen, original) = in_sight(&harness);
+            assert!(
+                !seen && original.top() >= foot,
+                "Original starts below: {original:?}"
+            );
             // The end moves to Original, at the list's foot.
             harness.state_mut().alone = alone;
             harness.state_mut().history = Some(History { end: 0, ..long });
             harness.run();
-            let original = item(&harness, "Original").rect();
-            let in_sight = original.bottom() <= 240.0;
-            assert_eq!(in_sight, alone, "alone {alone}: {original:?}");
+            let (seen, original) = in_sight(&harness);
+            assert_eq!(seen, alone, "alone {alone}: {original:?}");
         }
     }
 

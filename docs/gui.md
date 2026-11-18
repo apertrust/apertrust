@@ -832,7 +832,7 @@ Phase 4: the menu appears with Layers, and its keys are set with their design. I
 - **Workspace** switches the Tools panel's tabs and the toolbar's items (decisions 92 and 96, planned), nothing else; the same list is in the tab bar's menu and the Tools panel's ⋮.
 - **Slideshow** plays the selected photos when several are selected, else the folder or album from the active photo.
 - **Clipping Warnings** is one item and one key, J, for both of the photo's clipping overlays: checked while both are on; choosing it turns both on, or both off when both are on. The scopes' corner toggles set each alone. One state, three places.
-- **Tools Panel Tab** lists every tab, those under » too: today its seven items, the Default workspace's tabs, a workspace's eighth to twelfth having their actions alone; only the first five have keys, Ctrl+1 choosing the first tab whatever the workspace, Photos in the Default workspace.
+- **Tools Panel Tab** lists the first seven tabs, those under » too: today the Default workspace's seven, a workspace's eighth to twelfth having their actions alone; only the first five have keys, Ctrl+1 choosing the first tab whatever the workspace, Photos in the Default workspace.
 - **Sort By, Thumbnail Size, Show Labels and Browser Position** run the browser bar's actions ([The browser bar](#the-browser-bar)), and their checks show what the browser bar's menus and its Labels show. **Search Photos** is planned in the menu alone.
 - **The theme and the language** are not in the menus: they are settings, one Ctrl+, away.
 
@@ -2884,7 +2884,7 @@ Built: the Default workspace's tabs by editing stage with their labels and icons
 
 ##### The darktable workspace
 
-Planned (decisions 38 and 96, Phase 2's step 2): a built-in workspace beside Default, id `darktable`, named "darktable" in every language, chosen from View › Workspace. Its lists, those the Default workspace showed before its tabs by editing stage, are kept in the app for the built tools (`DARKTABLE_GROUPS`), with the test holding them to `OPERATIONS` reversed.
+Planned (decisions 38 and 96, Phase 2's step 2): a built-in workspace beside Default, id `darktable`, named "darktable" in every language, chosen from View › Workspace. Its lists, darktable's module groups, are kept in the app for the built tools until step 2 makes them `data/workspaces/darktable.toml` (`DARKTABLE_GROUPS`), with the test holding them to `OPERATIONS` reversed.
 
 - **The bar:** Photos, Base, Colour, Correct, Effect, History. darktable's bar (`src/libs/modulegroups.c`) is the quick access panel, the active modules, then the preset's groups, base, color, correct and effect, icon-only buttons whose tooltips name them; Apertrust puts its Photos tab first and its History last, so Ctrl+1 to Ctrl+5 reach Photos and the four groups. It opens on Base, where darktable opens its darkroom on `plugins/darkroom/groups`, 2 by default, which named its basic group while the groups were fixed (darktable 3.2) and lands on its second group, color, since presets define them.
 - **The labels** are darktable's words in British English and sentence case: Base, Colour, Correct, Effect (darktable's base, color, correct, effect).
@@ -4093,7 +4093,7 @@ Ctrl means Cmd on macOS.
 | App | Restart | None, and in no menu | Quits as Quit does, then starts the app again with what is open; Settings' Restart now and the start notice's Try again run it (decision 82) |
 | App | The menu | F10, Windows and Linux | Opens the ☰'s menu at its top |
 | View | The layouts: Photo, and Map toggled on and off, as its toggle on the viewer bar is | Shift+M toggles Map, pressed again back to Photo; Photo has no key of its own, and E is left free | The Edit view's action, built with E, is to become Photo's, with no key; Shift+M comes with the Map and its toggle |
-| View | Collections (`show-collections`): the first tab holding Collections | L; pressed again, nothing | Built, on the main window; Ctrl+1 and a click choose the tab too |
+| View | Collections (`show-collections`): the first tab holding Collections | L; pressed again, nothing | Built, on the main window; a click chooses the tab too, and Ctrl+1 where Collections is in the first tab, as in the Default workspace |
 | View | See the photo without the section under the pointer | Hold H | In Photo. The section shows that it peeks, a tool's section too; rendering the photo without that tool is not built: H will send the same `Hide` the History tab's eye sends while held |
 | View | Next and previous photo | Space and →, Backspace and ← | With several selected, through the selection; else through the folder or album, the photo reached selected alone. Disabled with one photo |
 | View | Extend the selection | Shift with the arrows, in the Browser | Phase 3, with selecting several photos |
