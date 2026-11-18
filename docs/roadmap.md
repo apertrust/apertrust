@@ -499,7 +499,7 @@ What the migration brings over from darktable, one module each. "Processing" is 
 | highlight reconstruction | [x] inpaint opposed | [x] | 1, 2 |
 | demosaic | [x] RCD, Markesteijn 1-pass | [x] | 1, 2 |
 | exposure | [x] | [x] | 1, 2 |
-| input colour profile | [x] the camera's matrix, linear Rec709 and Rec2020 | [x] | 1, 2 |
+| input colour profile | [x] the camera's matrix, linear Rec709 and Rec2020, gamut clipping (all four profiles), blue mapping | [x] | 1, 2 |
 | AgX | [x] | [x] | 1, 2 |
 | output colour profile | [x] sRGB, linear Rec709 and Rec2020 | [x] | 1, 2 |
 | colour calibration | [x] | [x] | 2 |

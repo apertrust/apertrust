@@ -20,7 +20,7 @@ It drives one operation, `colorin` (camera RGB 28, [../ports/colorin.md](../port
 | --- | --- | --- | --- | --- |
 | Input profile (`type`) | `type` | a list: the photo's own matrix, then darktable's fifteen built-in input profiles (below) | the photo's, colorin's and darktable's `reload_defaults`: the embedded matrix on a DNG whose image context holds its own, the standard colour matrix on another colour raw, linear Rec2020 RGB otherwise | the photo's own matrix, linear Rec709 RGB and linear Rec2020 RGB |
 | Working profile (`type_work`) | `type_work` | a list of darktable's eleven working profiles (below) | linear Rec2020 RGB, darktable's `$DEFAULT` and the operation's | linear Rec2020 RGB alone; unavailable |
-| Gamut clipping (`normalize`) | `normalize` | a list: Off, sRGB, Adobe RGB (compatible), linear Rec709 RGB, linear Rec2020 RGB, `dt_iop_color_normalize_t`'s `$DESCRIPTION`s | Off, darktable's `$DEFAULT` | Off alone; unavailable |
+| Gamut clipping (`normalize`) | `normalize` | a list: Off, sRGB, Adobe RGB (compatible), linear Rec709 RGB, linear Rec2020 RGB, `dt_iop_color_normalize_t`'s `$DESCRIPTION`s | Off, darktable's `$DEFAULT` | all five |
 
 **Input profile** lists the photo's own matrix first, as darktable's `update_profile_list` does:
 
@@ -31,9 +31,9 @@ Then darktable's built-in input profiles, in the order `dt_colorspaces_init` giv
 
 **Working profile** lists darktable's working profiles in their `work_pos` order: sRGB (web-safe), Adobe RGB (compatible), linear Rec709 RGB, Rec709 RGB, linear Rec2020 RGB, PQ Rec2020 RGB, HLG Rec2020 RGB, PQ P3 RGB, HLG P3 RGB, Display P3 RGB and linear ProPhoto RGB. Every operation after colorin assumes linear Rec2020, so it is the only one ported.
 
-**Gamut clipping** is not ported: Off alone.
+**Gamut clipping** lists darktable's five options, every one ported: colorin clamps each channel to 0 to 1 in the chosen profile's linear RGB ([../ports/colorin.md](../ports/colorin.md)).
 
-Working profile and Gamut clipping each have one value an edit can choose, their default, so they change nothing on any photo: each is unavailable (`ProcessingTool::available`, decision 30), its box drawn disabled at it, as Output colour profile's Export profile is.
+Working profile has one value an edit can choose, its default, so it changes nothing on any photo: it is unavailable (`ProcessingTool::available`, decision 30), its box drawn disabled at it, as Output colour profile's Export profile is.
 
 Each option's id is the operation's choice of that name (`apertrust_color::PROFILE_TYPES` for the two profiles, colorin's `normalize` choices for gamut clipping), and the binding writes the operation's choice by its name.
 
@@ -54,10 +54,10 @@ The rows every first-pass table has (decision 22; [README.md](README.md), Rows e
 | Row | Control | Moved to | Measured | Must | Tolerance | Images |
 | --- | --- | --- | --- | --- | --- | --- |
 | I0 | Every control at its default | Untouched, written at the photo's default, or kept | `bind`; the operations and parameters planned; the frame | `bind` returns nothing; the operations and parameters those of the pipeline without the tool; the frame no edit's | Exact | The small Bayer raw and the same as a DNG with its own matrix, through the export and the viewport; every corpus raw |
-| I1 | Input profile, moved and reset | Each profile the photo lists that an edit can choose, then reset by `ResetControl` and by `ResetTool` | The profile colorin renders; the frame | The profile chosen is the one rendered, the frame colorin's with that profile set directly, no edit's for the photo's own matrix and another for each linear one; once reset, no edit's frame and keys | Exact | The small raw and its DNG through the export and the viewport; the 90D through the viewport and the export |
+| I1 | Input profile and Gamut clipping, moved and reset | Each profile the photo lists that an edit can choose, and each clipping profile, then reset by `ResetControl` and by `ResetTool` | The profile colorin renders; the frame | The profile chosen is the one rendered, the frame colorin's with that profile set directly, no edit's for the photo's own matrix and another for each linear one and for sRGB clipping; once reset, no edit's frame and keys | Exact | The small raw and its DNG through the export and the viewport; the 90D through the viewport and the export |
 | I2 | The binding | Each option of each choice | `bind`'s settings | Each option off the photo's default writes colorin's parameter as the operation's choice of its name, and nothing else; the default writes nothing | Exact | CPU, a colour raw's context, a DNG's, a linear DNG's, a raw with no colour filters and an image that is not a raw |
-| I3 | What an edit cannot choose | Each option not ported; the camera matrix the photo does not list; `--param` on each parameter | The edit; the definition | Each refused, the edit unchanged: thirteen input profiles, ten working profiles and four gamut clippings as not ported, the other camera matrix as not listed; the three choices refused at operation level as owned, the intent and blue mapping as fixed | Exact | CPU |
-| I4 | What the photo lists | None | Input profile's options; each control's availability | The embedded matrix on a DNG with its own, a linear one among them, the standard matrix on another raw with a matrix or colour filters, neither on a raw with no colour filters and no matrix or an image that is not a raw, then the fifteen built-in profiles; Input profile available, Working profile and Gamut clipping not, on every photo | Exact | CPU, the contexts of I2 and a linear DNG with its own matrix |
+| I3 | What an edit cannot choose | Each option not ported; the camera matrix the photo does not list; `--param` on each parameter | The edit; the definition | Each refused, the edit unchanged: thirteen input profiles and ten working profiles as not ported (every gamut clipping is accepted, which I1 checks), the other camera matrix as not listed; the three choices refused at operation level as owned, the intent and blue mapping as fixed | Exact | CPU |
+| I4 | What the photo lists | None | Input profile's options; each control's availability | The embedded matrix on a DNG with its own, a linear one among them, the standard matrix on another raw with a matrix or colour filters, neither on a raw with no colour filters and no matrix or an image that is not a raw, then the fifteen built-in profiles; Input profile and Gamut clipping available, Working profile not, on every photo | Exact | CPU, the contexts of I2 and a linear DNG with its own matrix |
 | I5 | The darktable match | None | The definition's lists; the profile the tool shows and the one an unedited photo, and each untouched edit, renders | darktable's lists in its order with its preferences at their defaults; the profile shown is colorin's default for the photo and the one rendered, darktable's on every colour raw, which `apertrust-golden pipeline` holds to darktable-cli's export; on a raw with no colour filters, both linear Rec2020 where darktable chooses linear Rec709, a grey image rendering alike ([Gaps](#gaps), 5) | Exact | CPU; the small raw and its DNG; every corpus raw |
 | I6 | On a layer | | The definition | Background only: never offered on a layer, as colorin takes the whole image into the working space before every layer | Exact | CPU |
 
@@ -70,7 +70,7 @@ Measured on the Apple M4 (Metal) by `crates/tools/tests/input_colour_profile.rs`
 | Row | Result |
 | --- | --- |
 | I0 | Holds, exactly: `bind` sets nothing at the defaults, the operations and parameters are those of the pipeline without the tool, and the frames are byte-identical to no edit on the small raw and its DNG through the export and the viewport. On all 31 corpus raws the pipeline takes, the same operations and parameters as without the tool |
-| I1 | Holds, exactly, on the small raw and its DNG through the export and the viewport, and on the 90D through the viewport and the export |
+| I1 | Holds, exactly, for Input profile and Gamut clipping, on the small raw and its DNG through the export and the viewport, and on the 90D through the viewport and the export |
 | I2 | Holds for every option of the three choices on the five contexts |
 | I3 | Holds, exactly |
 | I4 | Holds on the five contexts |
@@ -79,7 +79,7 @@ Measured on the Apple M4 (Metal) by `crates/tools/tests/input_colour_profile.rs`
 
 ## In the panel
 
-- **No tabs:** Input profile, Working profile and Gamut clipping, as darktable's page has them (`input_colour_profile_draws_darktable_s_three_lists`). Input profile opens on the photo's profiles, the unported ones drawn disabled with "Coming in a later version"; Working profile and Gamut clipping are drawn disabled at their defaults and do not open.
+- **No tabs:** Input profile, Working profile and Gamut clipping, as darktable's page has them (`input_colour_profile_draws_darktable_s_three_lists`). Input profile opens on the photo's profiles, the unported ones drawn disabled with "Coming in a later version"; Working profile is drawn disabled at its default and does not open; Gamut clipping opens on its five options, all enabled.
 - **While closed** the section shows its title and buttons; its presets and options are drawn disabled until something is behind them.
 
 ## Gaps
@@ -89,7 +89,7 @@ What darktable's page has or does that the panel does not yet:
 1. **darktable's own camera tables.** darktable lists the enhanced, vendor and alternate colour matrices for the cameras its tables hold, and the standard colour matrix beside a DNG's embedded one where its camera table holds that camera. Apertrust has neither those tables nor a camera-table matrix for a DNG, so no photo could list them: the definition leaves the three out, colorin refuses them as not ported, and a DNG with its own matrix lists only it.
 2. **Embedded ICC profiles and ICC files.** darktable lists a file's embedded ICC profile, for a JPEG, TIFF or PNG it opens, and the ICC files in its `color/in` and `color/out` folders after the built-in profiles, chosen by `type` file and their `filename`. Apertrust opens raws and reads no ICC file, and colorin has no file name parameters (`docs/ports/colorin.md`, Parameters): they are left out, and the promises say what each control does in place of darktable's tooltips.
 3. **The input profiles colorin does not port:** sRGB, Adobe RGB (compatible), Rec709 RGB, the PQ and HLG profiles, Display P3 RGB, linear ProPhoto RGB, linear XYZ, Lab, linear infrared BGR and BRG (for testing), refused and drawn disabled.
-4. **Working profiles other than linear Rec2020,** and gamut clipping: not ported, refused, and drawn disabled until each is.
+4. **Working profiles other than linear Rec2020:** not ported, refused, and drawn disabled until each is.
 5. **A raw with no colour filters:** darktable's default for a monochrome raw is linear Rec709 RGB; colorin's, and so the tool's, is linear Rec2020 RGB. Both render a grey image alike, the two profiles sharing D65 as white.
 6. **The embedded ICC profile's tooltip,** which darktable writes with the profile's name, version and maker: there is no embedded ICC profile to describe.
 7. **A four-colour raw** (darktable's Bayer4): darktable's default is linear Rec2020 RGB, the image converted to it before colorin, and it lists no standard colour matrix. Apertrust's demosaic does not take such a raw yet, so the tool shows the standard colour matrix there, colorin's default for a colour raw, which nothing renders.

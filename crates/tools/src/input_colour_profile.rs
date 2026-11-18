@@ -33,8 +33,9 @@
 //! `update_profile_list` does: the embedded matrix on a DNG whose image context holds its
 //! own, the standard matrix on another raw with one; then darktable's built-in input
 //! profiles. Of those the operation ports linear Rec709 and linear Rec2020; the rest are
-//! refused as not ported and drawn disabled. Working profile and Gamut clipping each port
-//! one option, their default, so each is unavailable, its box drawn disabled at it.
+//! refused as not ported and drawn disabled. Working profile ports one option, its
+//! default, so it is unavailable, its box drawn disabled at it. Gamut clipping ports all
+//! five of darktable's options.
 //! darktable also lists matrices of its own camera tables, a file's embedded ICC profile
 //! and the ICC files in its `color/in` and `color/out` folders, which Apertrust does not
 //! have: the definition leaves them out (`docs/tools/input-colour-profile.md`, Gaps).
@@ -145,9 +146,6 @@ const WORKING_UNPORTED: [&str; 10] = [
 /// choices.
 pub const GAMUT_CLIPPING: [&str; 5] = ["off", "srgb", "adobe_rgb", "lin_rec709", "lin_rec2020"];
 
-/// Gamut clipping is not ported: only off.
-const GAMUT_UNPORTED: [&str; 4] = ["srgb", "adobe_rgb", "lin_rec709", "lin_rec2020"];
-
 /// darktable's three controls. Input profile's default is the photo's
 /// ([`InputColourProfile::defaults`]); the definition's is the standard matrix, a raw's.
 static CONTROLS: [Control; 3] = [
@@ -176,7 +174,7 @@ static CONTROLS: [Control; 3] = [
         kind: ControlKind::Choice {
             options: &GAMUT_CLIPPING,
             default: 0,
-            unported: &GAMUT_UNPORTED,
+            unported: &[],
         },
         unit: None,
         unported: false,
@@ -290,11 +288,11 @@ impl ProcessingTool for InputColourProfile {
         &FIXED
     }
 
-    /// Working profile and Gamut clipping change nothing on any photo: each ports one
-    /// option, its default. Input profile always lists two linear profiles beside the
-    /// photo's own.
+    /// Working profile changes nothing on any photo: it ports one option, its default.
+    /// Input profile always lists two linear profiles beside the photo's own, and Gamut
+    /// clipping ports every option.
     fn available(&self, control: &str, _: &Controls, _image: &ImageContext) -> bool {
-        control == TYPE
+        control != TYPE_WORK
     }
 
     /// Input profile lists the photo's own matrix, then darktable's built-in profiles, as
@@ -558,7 +556,7 @@ mod tests {
     }
 
     /// Row I3: an edit can choose the camera's matrix and the two linear profiles as
-    /// input, linear Rec2020 to work in and no gamut clipping; every other option is
+    /// input, linear Rec2020 to work in and any gamut clipping; every other option is
     /// refused as not ported.
     #[test]
     fn i3_every_option_not_ported_is_refused() {
@@ -574,7 +572,7 @@ mod tests {
                 ][..],
             ),
             (TYPE_WORK, &WORKING_PROFILES[..], &["lin_rec2020"][..]),
-            (NORMALIZE, &GAMUT_CLIPPING[..], &["off"][..]),
+            (NORMALIZE, &GAMUT_CLIPPING[..], &GAMUT_CLIPPING[..]),
         ] {
             let found = DEFINITION.control(control).unwrap();
             let ok: Vec<&str> = options
@@ -607,10 +605,10 @@ mod tests {
         assert_eq!(listed(&monochrome), builtin);
         assert_eq!(listed(&not_raw), builtin);
         for image in images() {
-            assert!(InputColourProfile.available(TYPE, &Controls::new(), &image));
-            for control in [TYPE_WORK, NORMALIZE] {
-                assert!(!InputColourProfile.available(control, &Controls::new(), &image));
+            for control in [TYPE, NORMALIZE] {
+                assert!(InputColourProfile.available(control, &Controls::new(), &image));
             }
+            assert!(!InputColourProfile.available(TYPE_WORK, &Controls::new(), &image));
         }
     }
 }

@@ -1343,7 +1343,7 @@ Raw black/white point, Highlight reconstruction, Orientation, Input colour profi
 
 - Input profile (`type`), Working profile (`type_work`) and Gamut clipping (`normalize`), darktable's lists in its order, each default the operation's for the photo, so an untouched tool sets nothing.
 - Input profile lists the photo's own matrix first, the embedded matrix on a DNG whose image context holds its own (`Camera::embedded_matrix`), the standard matrix on another raw, then darktable's fifteen built-in input profiles (`ProcessingTool::options`, decision 30). The camera's matrix, linear Rec709 and linear Rec2020 can be chosen; the rest are not ported.
-- Working profile ports linear Rec2020 alone and Gamut clipping Off alone, so both are unavailable, drawn disabled at their defaults. darktable's own camera tables' matrices, embedded ICC profiles and ICC files are not listed.
+- Working profile ports linear Rec2020 alone, so it is unavailable, drawn disabled at its default; Gamut clipping ports all five options. darktable's own camera tables' matrices, embedded ICC profiles and ICC files are not listed.
 - It owns every `colorin` parameter, the intent and blue mapping fixed (rule 12), so `--param` sets none of them.
 - I0 holds an untouched edit to the operations and parameters of the built-in tools without it; I2, each option written by its name, and I4, what each photo lists, are in its source.
 
