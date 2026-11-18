@@ -142,7 +142,7 @@ Goal: open, edit, save and reopen a photo with the first pass's tools. Migration
 **Workspaces** (decision 96; [gui.md](gui.md#workspaces)): a workspace its tabs, each tab's tools, the tools it hides and its toolbar, in a file of its own; a tool in no tab hidden, still reachable; Find Tool…. Seven steps, each one pull request usable on its own, reviewed before the next:
 
 - [x] 1. The workspace model: `workspaces/<id>.toml` (tabs with id, title and icon; pinned and order per tab; hidden; seen; version), Default built in, its file `data/workspaces/default.toml`, a person's own workspaces defined by writing a file; `settings.toml`'s `workspace`; the tab last shown in `state.toml`.
-- [ ] 2. Switching: View › Workspace, and the darktable workspace built in (darktable's groups, decision 38).
+- [x] 2. Switching: View › Workspace, and Essentials built in, `data/workspaces/essentials.toml`: Photos; Adjust with Scopes pinned over White balance, Exposure, AgX, Tone equalizer, Colour balance RGB and Orientation; History; every other tool hidden. No darktable workspace is built in (decision 38).
 - [ ] 3. Hidden tools: a tool in no tab, the Hidden tab with Show Hidden Tools, Show Hidden Tools in the Tools panel's ⋮ so every hidden tool can be reached, the dot on ⋮ while a hidden tool changes the photo.
 - [ ] 4. ⋯'s layout items: Pin or Unpin, Move Up and Move Down, Move to Tab ▸, Hide, and Show in Tab ▸ for a hidden tool (`section-show`), so a hidden tool comes back before dragging exists; their keys and screen readers' actions (decision 83's).
 - [ ] 5. The tab bar's menu, on a right-click and in ⋮ beside step 3's Show Hidden Tools: Find Tool…, Show Hidden Tools, Workspace ▸, Reset Tab, Reset Workspace (deleting the workspace's file), Processing Order; Find Tool… drawn disabled until step 6.
@@ -160,7 +160,7 @@ Goal: open, edit, save and reopen a photo with the first pass's tools. Migration
   - [x] Each tab's list in editing order, Raw's in processing order, now `data/workspaces/default.toml` (decision 96), and `panel-tab-7`; Scopes pinned over the five editing tabs.
   - [x] The tab ids `adjust`, `detail`, `geometry`, `effects` and `raw`, darktable's old ids read as unknown in the Default workspace, and the labels in British and American English, Ukrainian and Polish.
   - [x] Five tab icons, one colour in Lucide's style with their filled forms, drawn on the wireframe first.
-  - [x] The test that held each tab's list to `OPERATIONS` reversed replaced by one holding the Default workspace's lists to decision 38's, each tool in exactly one tab; darktable's groups kept as the darktable workspace's lists, with that test, for the darktable workspace ([Workspaces](#the-window-and-the-shell), step 2).
+  - [x] The test that held each tab's list to `OPERATIONS` reversed replaced by one holding the Default workspace's lists to decision 38's, each tool in exactly one tab.
 - [ ] Phase 2's tools are darktable's: raw black/white point, white balance, highlight reconstruction, demosaic, denoise (profiled), rotate and perspective, orientation, input colour profile, exposure, tone equalizer, colour calibration, RGB primaries, colour equalizer, colour balance RGB, AgX and output colour profile. Of these, left:
   - [x] Input colour profile as a tool.
   - [ ] Colour equalizer as a tool (its processing is ported).

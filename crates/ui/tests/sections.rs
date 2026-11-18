@@ -690,8 +690,8 @@ fn only_the_section_under_the_pointer_peeks() {
     assert_eq!(*harness.state(), [false, false]);
 }
 
-/// Six tabs, as the darktable workspace will have them (decision 38), Photos and History
-/// drawn disabled as tabs with nothing behind them, each with its key.
+/// Six tabs, as a workspace of darktable's four groups has them (decision 38), Photos and
+/// History drawn disabled as tabs with nothing behind them, each with its key.
 fn tab_bar(width: f32) -> Harness<'static, (usize, bool, Vec<TabBarAction>)> {
     Harness::builder()
         .with_size(egui::vec2(width, 240.0))

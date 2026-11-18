@@ -17,8 +17,9 @@
 //! The application menus (`docs/gui.md`, The menus and The menu bar; decision 39).
 //!
 //! One model, [`MENUS`]: menus of groups that lines separate, each entry an action of the
-//! registry by id, a submenu, one of the Mac's own items, or Open Recent's list, whose
-//! items are the recents the app hands in ([`Recent`]). It names actions as the
+//! registry by id, a submenu, one of the Mac's own items, Open Recent's list, whose items
+//! are the recents the app hands in ([`Recent`]), or View › Workspace's, the workspaces it
+//! hands in ([`WorkspaceItem`]; [`Lists`]). It names actions as the
 //! Toolbar's `TOOLBAR` does, so the registry still declares each action once: an item's
 //! words are its action's message, Undo's and Redo's naming the step they would take back
 //! or put back ([`words`]), its key the keymap's first for the platform, and it is enabled
@@ -88,6 +89,10 @@ pub enum Entry {
     /// recent's own. A menu holding it is built afresh on the Mac whenever what it shows
     /// changes.
     Recents,
+    /// View › Workspace's list: an item for each workspace the app hands in, the built-in
+    /// ones then a person's own, each its registry action, `workspace-<id>`, the one shown
+    /// checked, its words the workspace's name. Built afresh on the Mac as Open Recent is.
+    Workspaces,
 }
 
 /// One of Open Recent's entries as its item shows it: its words, the folder's name, and
@@ -99,6 +104,26 @@ pub struct Recent {
     pub words: String,
     pub tip: String,
     pub path: std::path::PathBuf,
+}
+
+/// One of View › Workspace's items as the app hands it in: the workspace's action,
+/// `workspace-<id>` (`actions::workspace`), and its name, a built-in's message in the
+/// interface's language or a person's own workspace's name as its file writes it (decision
+/// 96), with its tip, why it cannot be chosen where something says, which the drawn menu
+/// shows. Whether it is checked is its action's ([`State::workspace`]).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct WorkspaceItem {
+    pub id: ActionId,
+    pub words: String,
+    pub tip: Option<String>,
+}
+
+/// What the app hands in for the menus whose items it lists: Open Recent's recents and View
+/// › Workspace's workspaces.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Lists<'a> {
+    pub recents: &'a [Recent],
+    pub workspaces: &'a [WorkspaceItem],
 }
 
 /// What Undo and Redo would do, as History names the step, in the interface's language:
@@ -182,6 +207,15 @@ static PANEL_TAB: Menu = Menu {
         item(ActionId::PANEL_TABS[5]),
         item(ActionId::PANEL_TABS[6]),
     ]],
+};
+
+/// View › Workspace: every workspace, Default, Essentials, then a person's own by name, the
+/// one shown checked (decision 96); Reset Workspace joins it with the tab bar's menu.
+static WORKSPACE: Menu = Menu {
+    title: "menu-workspace",
+    role: Role::Plain,
+    on: Platforms::All,
+    groups: &[&[Entry::Workspaces]],
 };
 
 /// File › Open Recent: the recents, newest first, then Clear Menu, which alone is there
@@ -348,6 +382,7 @@ pub static MENUS: [Menu; 7] = [
             &[
                 item(ActionId::SHOW_COLLECTIONS),
                 Entry::Submenu(&PANEL_TAB),
+                Entry::Submenu(&WORKSPACE),
                 Entry::Submenu(&INTERFACE_SIZE),
                 Entry::Submenu(&BACKGROUND),
             ],
@@ -386,19 +421,21 @@ fn holds(entry: &Entry, os: OperatingSystem) -> bool {
         Entry::Action(_, on) => on.includes(os),
         Entry::Submenu(menu) => present(menu, os),
         Entry::System(_) => os == OperatingSystem::Mac,
-        Entry::Recents => true,
+        Entry::Recents | Entry::Workspaces => true,
     }
 }
 
-/// Whether `menu` holds Open Recent's list, so its items follow the recents.
-fn lists_recents(menu: &Menu) -> bool {
+/// Whether `menu` holds a list the app hands in, Open Recent's or View › Workspace's, so
+/// its items follow it ([`Lists`]).
+fn lists(menu: &Menu) -> bool {
     menu.groups
         .iter()
         .flat_map(|g| g.iter())
-        .any(|e| matches!(e, Entry::Recents))
+        .any(|e| matches!(e, Entry::Recents | Entry::Workspaces))
 }
 
-/// One item of a menu whose items follow the recents, or a line between two of its groups.
+/// One item of a menu whose items follow a list the app hands in, or a line between two of
+/// its groups.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Listed {
     Item {
@@ -406,24 +443,33 @@ pub enum Listed {
         words: String,
         tip: Option<String>,
         shown: Shown,
+        /// Its check mark, where its action chooses one of a set ([`Action::checked`]).
+        checked: Option<bool>,
     },
     Separator,
 }
 
-/// What `menu`, one that lists the recents, holds on `os` with `recents`, newest first, at
-/// most [`ActionId::OPEN_RECENT`]'s: its actions' items and each recent's ([`shown`]), in
-/// groups that lines separate, a group with nothing to hold left out with its line, so
-/// with no recents Open Recent holds Clear Menu alone. Its submenus and the Mac's own items
-/// are never in it.
+/// What `menu`, one that lists what the app hands in ([`lists`]), holds on `os` with
+/// `lists`: its actions' items, each recent's, newest first, at most
+/// [`ActionId::OPEN_RECENT`]'s, and each workspace's ([`shown`]), in groups that lines
+/// separate, a group with nothing to hold left out with its line, so with no recents Open
+/// Recent holds Clear Menu alone. Its submenus and the Mac's own items are never in it.
 pub fn listed(
     menu: &'static Menu,
     os: OperatingSystem,
     keymap: &Keymap,
     state: &State,
-    recents: &[Recent],
+    lists: Lists<'_>,
     tr: &Translator,
     focus: Focus,
 ) -> Vec<Listed> {
+    let item = |id: ActionId, words: String, tip: Option<String>| Listed::Item {
+        id,
+        words,
+        tip,
+        shown: shown(id, keymap, state, focus),
+        checked: actions::action(id).and_then(|action| action.checked(state)),
+    };
     let mut listed = Vec::new();
     for group in groups(menu, os) {
         let mut items = Vec::new();
@@ -433,21 +479,18 @@ pub fn listed(
                     let Some(action) = actions::action(*id) else {
                         continue;
                     };
-                    items.push(Listed::Item {
-                        id: *id,
-                        words: tr.text(action.message),
-                        tip: None,
-                        shown: shown(*id, keymap, state, focus),
-                    });
+                    items.push(item(*id, tr.text(action.message), None));
                 }
                 Entry::Recents => {
-                    for (id, recent) in ActionId::OPEN_RECENT.iter().zip(recents) {
-                        items.push(Listed::Item {
-                            id: *id,
-                            words: recent.words.clone(),
-                            tip: Some(recent.tip.clone()),
-                            shown: shown(*id, keymap, state, focus),
-                        });
+                    for (id, recent) in ActionId::OPEN_RECENT.iter().zip(lists.recents) {
+                        let tip = Some(recent.tip.clone());
+                        items.push(item(*id, recent.words.clone(), tip));
+                    }
+                }
+                Entry::Workspaces => {
+                    for workspace in lists.workspaces {
+                        let tip = workspace.tip.clone();
+                        items.push(item(workspace.id, workspace.words.clone(), tip));
                     }
                 }
                 Entry::Submenu(_) | Entry::System(_) => {}
@@ -539,20 +582,20 @@ pub fn runs(id: ActionId, repeat: bool) -> bool {
 /// where it is, and the keymap's first key as the platform spells it, whatever has the
 /// focus, since the registry reads every key there and the menu only shows them; and a
 /// check mark where the action turns something on or chooses one of a set. An item's id is
-/// its action's ([`chosen`]). Open Recent lists `recents`, each with its path in its tip;
-/// Undo and Redo name `steps` ([`words`]).
+/// its action's ([`chosen`]). Open Recent lists `lists`' recents, each with its path in its
+/// tip, and View › Workspace its workspaces; Undo and Redo name `steps` ([`words`]).
 pub fn request(
     ctx: &egui::Context,
     keymap: &Keymap,
     state: &State,
-    recents: &[Recent],
+    lists: Lists<'_>,
     steps: &Steps,
     anchor: Rect,
 ) -> popup::Request {
     let tr = translator(ctx);
     let os = ctx.os();
     let entries = menus(os)
-        .map(|menu| drawn(menu, os, keymap, state, recents, steps, &tr).into())
+        .map(|menu| drawn(menu, os, keymap, state, lists, steps, &tr).into())
         .collect();
     popup::Request::pull_down(anchor, tr.text("toolbar-menu"), entries)
 }
@@ -764,7 +807,8 @@ fn built(
 ) -> popup::Request {
     let steps = Steps::default();
     let Place::Open(open) = place else {
-        let entries = drawn(&BACKGROUND, os, keymap, state, &[], &steps, tr).entries;
+        let lists = Lists::default();
+        let entries = drawn(&BACKGROUND, os, keymap, state, lists, &steps, tr).entries;
         return popup::Request::pull_down(anchor, name(place, target, tr), entries);
     };
     let several = *target == Target::Selection && state.photos > 1;
@@ -903,25 +947,26 @@ fn action_item(
     Some(item)
 }
 
-/// `menu` as a submenu of the ☰'s menu, its id its title's message id; one that lists the
-/// recents holds `recents` ([`listed`]), and Undo and Redo name `steps`.
+/// `menu` as a submenu of the ☰'s menu, its id its title's message id; one that lists what
+/// the app hands in holds `lists` ([`listed`]), and Undo and Redo name `steps`.
 fn drawn(
     menu: &'static Menu,
     os: OperatingSystem,
     keymap: &Keymap,
     state: &State,
-    recents: &[Recent],
+    lists: Lists<'_>,
     steps: &Steps,
     tr: &Translator,
 ) -> popup::Submenu {
-    if lists_recents(menu) {
-        let listed = listed(menu, os, keymap, state, recents, tr, Focus::None);
+    if self::lists(menu) {
+        let listed = listed(menu, os, keymap, state, lists, tr, Focus::None);
         let entries = listed.into_iter().map(|listed| match listed {
             Listed::Item {
                 id,
                 words,
                 tip,
                 shown,
+                checked,
             } => {
                 let mut item = popup::Item::new(id.0, words).enabled(shown.enabled);
                 if let Some(key) = shown.key {
@@ -929,6 +974,9 @@ fn drawn(
                 }
                 if let Some(tip) = tip {
                     item = item.tip(tip);
+                }
+                if let Some(on) = checked {
+                    item = item.checked(on);
                 }
                 item.into()
             }
@@ -947,11 +995,11 @@ fn drawn(
                     entries.extend(action_item(*id, keymap, state, steps, os, tr).map(Into::into));
                 }
                 Entry::Submenu(inner) => {
-                    entries.push(drawn(inner, os, keymap, state, recents, steps, tr).into());
+                    entries.push(drawn(inner, os, keymap, state, lists, steps, tr).into());
                 }
-                // The Mac's alone, which `groups` leaves out elsewhere; the recents are in a
-                // menu of their own ([`listed`]).
-                Entry::System(_) | Entry::Recents => {}
+                // The Mac's alone, which `groups` leaves out elsewhere; the lists are in
+                // menus of their own ([`listed`]).
+                Entry::System(_) | Entry::Recents | Entry::Workspaces => {}
             }
         }
     }
@@ -985,7 +1033,7 @@ impl NativeMenus {
         _: &eframe::egui::Context,
         _: &Keymap,
         _: &State,
-        _: &[Recent],
+        _: Lists<'_>,
         _: &Steps,
     ) {
         match *self {}
@@ -1005,7 +1053,7 @@ mod mac {
     };
 
     use super::{
-        Entry, Listed, Recent, Role, Shown, Steps, System, groups, listed, lists_recents, menus,
+        Entry, Listed, Lists, Role, Shown, Steps, System, groups, listed, lists, menus,
         names_a_step, runs, shown, words,
     };
     use crate::actions::{self, ActionId, Focus, Keymap, Shortcut, State};
@@ -1017,8 +1065,8 @@ mod mac {
         bar: muda::Menu,
         /// Each action's item, with what it shows now.
         items: Vec<Placed>,
-        /// The menus whose items follow the recents, Open Recent, each built afresh as what
-        /// it shows changes.
+        /// The menus whose items follow what the app hands in, Open Recent and View ›
+        /// Workspace, each built afresh as what it shows changes.
         listing: Vec<Listing>,
         /// The menus' titles and the system's items, by their message ids.
         titles: Vec<(&'static str, Titled)>,
@@ -1081,29 +1129,50 @@ mod mac {
         }
     }
 
-    /// A menu whose items follow the recents, with what it shows now, none until it is
-    /// first filled.
+    /// A menu whose items follow what the app hands in, with what it shows now, none until
+    /// it is first filled.
     struct Listing {
         menu: &'static super::Menu,
         submenu: Submenu,
         shown: Option<Vec<Listed>>,
+        /// Its check items, each with whether it is checked now: muda toggles one as it is
+        /// chosen, before the app hears of it, so each update puts every check back, as
+        /// [`Placed`]'s are, a choice of the workspace shown changing nothing else.
+        checks: Vec<(CheckMenuItem, bool)>,
     }
 
     impl Listing {
-        /// Puts `listed` in place of its items: the actions' and the recents' items, by
-        /// their actions' ids, and the lines. A key muda cannot set is left out.
-        fn fill(&self, listed: &[Listed]) -> muda::Result<()> {
+        /// Puts `listed` in place of its items: the actions', the recents' and the
+        /// workspaces' items, by their actions' ids, one with a check mark as a check
+        /// item, and the lines. A key muda cannot set is left out.
+        fn fill(&mut self, listed: &[Listed]) -> muda::Result<()> {
             while self.submenu.remove_at(0).is_some() {}
+            self.checks.clear();
             for listed in listed {
                 match listed {
                     Listed::Item {
-                        id, words, shown, ..
+                        id,
+                        words,
+                        shown,
+                        checked,
+                        ..
                     } => {
-                        let item = MenuItem::with_id(id.0, words, shown.enabled, None);
-                        if let Some(key) = shown.key.and_then(key_equivalent) {
-                            item.set_key_accelerator(Some(key))?;
+                        let key = shown.key.and_then(key_equivalent);
+                        let (enabled, id) = (shown.enabled, id.0);
+                        if let Some(checked) = checked {
+                            let item = CheckMenuItem::with_id(id, words, enabled, *checked, None);
+                            if key.is_some() {
+                                item.set_key_accelerator(key)?;
+                            }
+                            self.submenu.append(&item)?;
+                            self.checks.push((item, *checked));
+                        } else {
+                            let item = MenuItem::with_id(id, words, enabled, None);
+                            if key.is_some() {
+                                item.set_key_accelerator(key)?;
+                            }
+                            self.submenu.append(&item)?;
                         }
-                        self.submenu.append(&item)?;
                     }
                     Listed::Separator => {
                         self.submenu.append(&PredefinedMenuItem::separator())?;
@@ -1111,6 +1180,13 @@ mod mac {
                 }
             }
             Ok(())
+        }
+
+        /// Puts each check item's mark back as last filled, whatever a choice of it did.
+        fn recheck(&self) {
+            for (item, checked) in &self.checks {
+                item.set_checked(*checked);
+            }
         }
     }
 
@@ -1172,12 +1248,13 @@ mod mac {
         ) -> muda::Result<Submenu> {
             // muda leaves out the `&` of a top-level menu's access key on the Mac.
             let submenu = Submenu::new(tr.text(menu.title), true);
-            // Filled by each update, as the recents change.
-            if lists_recents(menu) {
+            // Filled by each update, as the lists change.
+            if lists(menu) {
                 self.listing.push(Listing {
                     menu,
                     submenu: submenu.clone(),
                     shown: None,
+                    checks: Vec::new(),
                 });
                 self.titles
                     .push((menu.title, Titled::Menu(submenu.clone())));
@@ -1216,8 +1293,8 @@ mod mac {
                             submenu.append(&item)?;
                             self.titles.push((system.message(), Titled::System(item)));
                         }
-                        // In a menu of their own, filled by each update.
-                        Entry::Recents => {}
+                        // In menus of their own, filled by each update.
+                        Entry::Recents | Entry::Workspaces => {}
                     }
                 }
             }
@@ -1242,14 +1319,14 @@ mod mac {
         /// Brings every item up to date with `keymap`, `state`, the focus and the
         /// language, calling muda only for what changed: a language chosen in Settings
         /// renames every menu, and while a widget has focus no item holds a key it keeps.
-        /// Open Recent lists `recents`, built afresh only when what it shows changes; Undo
-        /// and Redo name `steps`.
+        /// Open Recent and View › Workspace list `lists`, each built afresh only when what
+        /// it shows changes; Undo and Redo name `steps`.
         pub fn update(
             &mut self,
             ctx: &egui::Context,
             keymap: &Keymap,
             state: &State,
-            recents: &[Recent],
+            lists: Lists<'_>,
             steps: &Steps,
         ) {
             let tr = translator(ctx);
@@ -1299,8 +1376,9 @@ mod mac {
             }
             let mac = OperatingSystem::Mac;
             for listing in &mut self.listing {
-                let now = listed(listing.menu, mac, keymap, state, recents, &tr, focus);
+                let now = listed(listing.menu, mac, keymap, state, lists, &tr, focus);
                 if listing.shown.as_ref() == Some(&now) {
+                    listing.recheck();
                     continue;
                 }
                 if let Err(e) = listing.fill(&now)
@@ -1486,6 +1564,10 @@ mod tests {
                 Entry::System(_) => {}
                 // Every place, whatever the recents hold.
                 Entry::Recents => ids.extend(ActionId::OPEN_RECENT),
+                // The built-in workspaces', there whatever files a person writes.
+                Entry::Workspaces => {
+                    ids.extend(crate::layout::builtin_ids().map(actions::workspace));
+                }
             }
         }
     }
@@ -1544,6 +1626,8 @@ mod tests {
             dialog_window: false,
             full_screen: false,
             panel_tab: 0,
+            workspace: actions::workspace(crate::layout::DEFAULT),
+            workspace_given: false,
             browser: crate::settings::BrowserSettings::default(),
             shown: true,
             background: Some(apertrust_ui::Background::Dark),
@@ -1781,7 +1865,11 @@ mod tests {
     fn open_recent(os: OperatingSystem, state: &State, recents: &[Recent]) -> Vec<Listed> {
         let tr = Translator::new(Locale::EnGb);
         let keymap = Keymap::defaults(os);
-        listed(&OPEN_RECENT, os, &keymap, state, recents, &tr, Focus::None)
+        let lists = Lists {
+            recents,
+            workspaces: &[],
+        };
+        listed(&OPEN_RECENT, os, &keymap, state, lists, &tr, Focus::None)
     }
 
     /// Open Recent the same on every platform: each recent's words, newest first, a missing
@@ -1803,6 +1891,7 @@ mod tests {
                 words: words.to_owned(),
                 tip: tip.map(str::to_owned),
                 shown: shown(enabled),
+                checked: None,
             };
             assert_eq!(
                 open_recent(os, &state, &recents),
@@ -1835,6 +1924,97 @@ mod tests {
         }
     }
 
+    /// View › Workspace the same on every platform, after Tools Panel Tab: the workspaces the
+    /// app hands in, each its action, `workspace-<id>`, with its words, the one shown
+    /// checked, as the Mac's bar fills it and the ☰ draws it.
+    #[test]
+    fn view_workspace_lists_the_workspaces_the_one_shown_checked() {
+        let travel = actions::workspace("travel");
+        let mut workspaces = builtin_workspaces();
+        workspaces.push(WorkspaceItem {
+            id: travel,
+            words: "Travel".to_owned(),
+            tip: None,
+        });
+        let mut state = everything();
+        state.workspace = travel;
+        let lists = Lists {
+            recents: &[],
+            workspaces: &workspaces,
+        };
+        let tr = Translator::new(Locale::EnGb);
+        for os in PLATFORMS {
+            let view = menus(os).find(|m| m.title == "menu-view").expect("View");
+            let submenus: Vec<&str> = groups(view, os)
+                .into_iter()
+                .flatten()
+                .filter_map(|entry| match entry {
+                    Entry::Submenu(menu) => Some(menu.title),
+                    _ => None,
+                })
+                .collect();
+            let at = submenus.iter().position(|t| *t == "menu-tools-panel-tab");
+            assert_eq!(submenus.get(at.unwrap() + 1), Some(&"menu-workspace"));
+            let keymap = Keymap::defaults(os);
+            let shown = listed(&WORKSPACE, os, &keymap, &state, lists, &tr, Focus::None);
+            let items: Vec<(&str, &str, bool, Option<bool>)> = shown
+                .iter()
+                .map(|listed| match listed {
+                    Listed::Item {
+                        id,
+                        words,
+                        shown,
+                        checked,
+                        ..
+                    } => (id.0, words.as_str(), shown.enabled, *checked),
+                    Listed::Separator => panic!("a line"),
+                })
+                .collect();
+            assert_eq!(
+                items,
+                [
+                    ("workspace-default", "Default", true, Some(false)),
+                    ("workspace-essentials", "Essentials", true, Some(false)),
+                    ("workspace-travel", "Travel", true, Some(true)),
+                ],
+                "{os:?}"
+            );
+            // Under a modal dialog, none can be chosen.
+            state.modal = true;
+            let shown = listed(&WORKSPACE, os, &keymap, &state, lists, &tr, Focus::None);
+            assert!(shown.iter().all(|listed| matches!(
+                listed,
+                Listed::Item { shown, .. } if !shown.enabled
+            )));
+            state.modal = false;
+        }
+        let ctx = egui::Context::default();
+        ctx.set_os(OperatingSystem::Nix);
+        apertrust_ui::set_locale(&ctx, Locale::EnGb);
+        let keymap = Keymap::defaults(OperatingSystem::Nix);
+        let menu = request(
+            &ctx,
+            &keymap,
+            &state,
+            lists,
+            &Steps::default(),
+            Rect::NOTHING,
+        );
+        let drawn = items(&menu.entries);
+        let travel = drawn
+            .iter()
+            .find(|i| i.id == "workspace-travel")
+            .expect("Travel");
+        assert_eq!(
+            (travel.text.as_str(), travel.checked),
+            ("Travel", Some(true))
+        );
+        assert_eq!(
+            chosen("workspace-travel"),
+            Some(actions::workspace("travel"))
+        );
+    }
+
     /// The ☰'s Open Recent: the recents' words with their paths in the tips, a missing one
     /// disabled, each chosen by its place's action.
     #[test]
@@ -1852,7 +2032,11 @@ mod tests {
         apertrust_ui::set_locale(&ctx, Locale::EnGb);
         let keymap = Keymap::defaults(OperatingSystem::Nix);
         let steps = Steps::default();
-        let menu = request(&ctx, &keymap, &state, &recents, &steps, Rect::NOTHING);
+        let lists = Lists {
+            recents: &recents,
+            workspaces: &[],
+        };
+        let menu = request(&ctx, &keymap, &state, lists, &steps, Rect::NOTHING);
         let file = tops(&menu)[0];
         let submenu = file
             .entries
@@ -2209,10 +2393,25 @@ mod tests {
             &ctx,
             &Keymap::defaults(OperatingSystem::Nix),
             state,
-            &[],
+            Lists {
+                recents: &[],
+                workspaces: &builtin_workspaces(),
+            },
             steps,
             Rect::NOTHING,
         )
+    }
+
+    /// View › Workspace's built-in items as the app hands them in, in British English.
+    fn builtin_workspaces() -> Vec<WorkspaceItem> {
+        let en = Translator::new(Locale::EnGb);
+        crate::layout::builtin_ids()
+            .map(|id| WorkspaceItem {
+                id: actions::workspace(id),
+                words: en.text(&format!("workspace-{id}")),
+                tip: None,
+            })
+            .collect()
     }
 
     /// The submenus at the top of `menu`.
@@ -3026,7 +3225,7 @@ mod tests {
             OperatingSystem::Nix,
             &keymap,
             &state,
-            &[],
+            Lists::default(),
             &Steps::default(),
             &tr,
         );

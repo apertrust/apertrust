@@ -6,7 +6,7 @@ darktable offers several tone mappers (AgX, sigmoid, filmic rgb), each a module,
 
 ## Decision
 
-**Tone mappers are tools of their own, as in darktable:** AgX now, Sigmoid and Filmic RGB as their tools come. They sit in the Adjust tab, after Exposure ([0038](0038-the-side-panels-tabs-by-editing-stage.md)), and in the darktable workspace's Base, where darktable's scene-referred workflow has its tone mapper.
+**Tone mappers are tools of their own, as in darktable:** AgX now, Sigmoid and Filmic RGB as their tools come. They sit in the Adjust tab, after Exposure ([0038](0038-the-side-panels-tabs-by-editing-stage.md)).
 
 **The background has exactly one tone mapper, chosen per edit:**
 

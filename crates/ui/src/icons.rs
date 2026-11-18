@@ -111,10 +111,10 @@ pub enum Icon {
     RotateRight,
     FlipHorizontal,
     FlipVertical,
-    /// The Tools panel's tabs (decision 38): Edit's Adjust, Detail and Raw; darktable's
-    /// four module groups, base, color, correct and effect, in darktable's shapes and one
-    /// colour, for the darktable workspace, Correct and Effect also Edit's Geometry and
-    /// Effects; and Apertrust's own.
+    /// The Tools panel's tabs (decision 38): the Default workspace's Adjust, Detail and Raw;
+    /// darktable's four module groups, base, color, correct and effect, in darktable's
+    /// shapes and one colour, for a workspace's tabs to name, Correct and Effect also the
+    /// Default workspace's Geometry and Effects; and Apertrust's own.
     Adjust,
     Detail,
     Raw,

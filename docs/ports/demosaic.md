@@ -80,7 +80,7 @@ darktable's OpenCL RCD computes the discrimination planes over a wider area than
 
 ## Tool binding notes
 
-The Demosaic tool is darktable's (decision 2; `docs/tools/demosaic.md`), in the Default workspace's Raw tab, after Highlight reconstruction (decision 38; in the darktable workspace, in Base, the group darktable's "modules: all" gives it): the method, the per-method thresholds and LMMSE refine, colour smoothing, match greens and the Capture sharpen toggle, each shown where darktable's `gui_changed` shows it, and capture sharpening's five controls, darktable's collapsible section, a collapsible group shown while the toggle is on (decision 29), in the raw stage where darktable has it (`docs/tools/README.md`). It owns every parameter, its defaults the operation's for the photo, so an untouched tool sets nothing; what is not ported is drawn disabled and refused. A change re-runs demosaic (decision 12).
+The Demosaic tool is darktable's (decision 2; `docs/tools/demosaic.md`), in the Default workspace's Raw tab, after Highlight reconstruction (decision 38): the method, the per-method thresholds and LMMSE refine, colour smoothing, match greens and the Capture sharpen toggle, each shown where darktable's `gui_changed` shows it, and capture sharpening's five controls, darktable's collapsible section, a collapsible group shown while the toggle is on (decision 29), in the raw stage where darktable has it (`docs/tools/README.md`). It owns every parameter, its defaults the operation's for the photo, so an untouched tool sets nothing; what is not ported is drawn disabled and refused. A change re-runs demosaic (decision 12).
 
 ## Gradients
 

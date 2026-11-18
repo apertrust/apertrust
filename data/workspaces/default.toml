@@ -4,12 +4,11 @@
 # changed copy is <user data>/workspaces/default.toml, in the same format.
 #
 # A built-in tab names no title: its title is the message tab-<id>, so its words follow
-# the language. The interface names the workspace by its message, workspace-default;
-# name is for a reader of this file. Bundled, it lists no seen: its lists are its
-# defaults.
+# the language. Nor does the file name the workspace: its name is the message
+# workspace-default, translated; a person's own file names itself with name. Bundled, it
+# lists no seen: its lists are its defaults.
 
 version = 1
-name = "Default"
 hidden = []
 
 [[tabs]]

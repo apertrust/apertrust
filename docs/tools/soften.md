@@ -10,7 +10,6 @@ It drives one operation, `soften` ([../ports/soften.md](../ports/soften.md)), wh
 
 **Status:** built, in `crates/tools/src/soften.rs`. The app draws it from its definition (`docs/gui.md`, Tool panels from definitions). Its tab is the Default workspace's Effects, after Grain and before Bloom (decision 38).
 
-- darktable's preset puts soften in no group; the darktable workspace gives it Effect, its group in darktable's "modules: all" ([README.md](README.md), decision 38).
 - Its rows are tests in `crates/tools/tests/soften.rs`; [Results](#results) gives what they measured.
 - A choice marked proposed is open; the [design choices](#design-choices) are settled.
 - Measures and test images are in [README.md](README.md).

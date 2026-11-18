@@ -12,7 +12,6 @@ darktable's two flags, `compatibility_mode` and `adaptive`, which `gui_changed` 
 
 **Status:** built, in `crates/tools/src/haze_removal.rs`. The app draws it from its definition (`docs/gui.md`, Tool panels from definitions). Its tab is the Default workspace's Adjust (decision 38): as built, after the Tone equalizer and before the Tone curve; Local contrast, before it, and RGB curve, after it, are planned.
 
-- In the planned darktable workspace's Correct group (Phase 3), darktable's order (decision 38), it follows Sharpen and Retouch and comes before Chromatic aberrations, Lens correction and Denoise (profiled), whose tools are planned.
 - Its rows are tests in `crates/tools/tests/haze_removal.rs`; [Results](#results) gives what they measured.
 - A choice marked proposed is open; the [design choices](#design-choices) are settled.
 - Measures and test images are in [README.md](README.md).
