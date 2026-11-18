@@ -31,8 +31,10 @@
 //! - **Reading,** [`Workspace::open`]: a file that is not TOML is set aside as
 //!   `<id>.toml.bak`, one listing no tab refused, both with a warning, the built-in's
 //!   defaults then applying, or a person's own not opening; a newer version's is read for
-//!   what this build knows and never overwritten. Nothing here writes a workspace's file
-//!   yet: no part of the interface changes the layout (decision 96, When).
+//!   what this build knows and never overwritten.
+//! - **Writing** a workspace's file is not built: it comes with decision 96's step 4, the
+//!   first step that changes a layout; until then nothing writes one, and a person changes
+//!   a workspace only by editing its file, read at the next start.
 
 use std::collections::{BTreeMap, HashSet};
 use std::io;

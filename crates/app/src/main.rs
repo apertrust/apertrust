@@ -6383,7 +6383,7 @@ fn edit_tab(
     };
     // History alone in its tab, its header staying at the tab's top.
     if shell.shown_tab().is_some_and(history_alone) {
-        let mut history = history::HistoryTool;
+        let mut history = history::HistoryTool { alone: true };
         let definition = &history::declared().tool;
         let head = shell.head(ui.ctx(), definition, state, peek, history::OPEN);
         let head = tools::Head {
@@ -6608,7 +6608,8 @@ fn panel_body(
                 }
             }
             history::ID => {
-                let mut history = history::HistoryTool;
+                // Sharing its tab, its end never scrolls the tab ([`history::HistoryTool`]).
+                let mut history = history::HistoryTool { alone: false };
                 let definition = &history::declared().tool;
                 let head = tools::Head {
                     // ⋯ opens while there is a history.

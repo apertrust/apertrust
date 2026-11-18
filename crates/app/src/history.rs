@@ -70,7 +70,8 @@
 //!   day headings named, never focused;
 //! - its header, every tool's, from its declaration (decision 93; [`tab`]): ↺, Reset Edit,
 //!   which resets the edit as one step; the header stays at the top of the tab while the
-//!   list scrolls under it, and the end is scrolled into sight whenever it moves;
+//!   list scrolls under it, and the end is scrolled into sight whenever it moves, while
+//!   History is alone in its tab ([`HistoryTool::alone`]);
 //! - its ⋯, the items it declares, registry actions the menu builder lists
 //!   (`menus::options`): Compress History, darktable's compress history stack; Truncate
 //!   History, darktable's Ctrl-click on it, an item of its own; Create a Style…, drawn
@@ -876,7 +877,12 @@ pub fn declared() -> &'static UtilityDefinition {
 /// frame's commands; the eye, view state alone, is held on any photo, the tools the session
 /// reports hidden as the mirror's values have them.
 #[derive(Debug, Default)]
-pub struct HistoryTool;
+pub struct HistoryTool {
+    /// Whether History is alone in its tab, its header at the top ([`tab`]): only then is
+    /// its end scrolled into sight as it moves, so it never scrolls a tab it shares away
+    /// from the tool being edited, or from a section Export… or a History line revealed.
+    pub alone: bool,
+}
 
 impl UtilityTool for HistoryTool {
     type Action = Action;
@@ -896,7 +902,15 @@ impl UtilityTool for HistoryTool {
             .map(|state| state.tool)
             .collect();
         let history = mirror.history.as_ref();
-        let asked = list(ui, history, mirror.tools(), &hidden, takes, today());
+        let asked = list(
+            ui,
+            history,
+            mirror.tools(),
+            &hidden,
+            takes,
+            today(),
+            self.alone,
+        );
         let mut actions = Vec::new();
         for action in asked {
             match action {
@@ -934,7 +948,8 @@ pub fn tab<R: Default>(
     (pressed, asked)
 }
 
-/// Draws the section's list, a tree, and returns what a click or a key asked for.
+/// Draws the section's list, a tree, and returns what a click or a key asked for; the end
+/// scrolled into sight as it moves where it `follows` it ([`HistoryTool::alone`]).
 fn list(
     ui: &mut egui::Ui,
     history: Option<&History>,
@@ -942,6 +957,7 @@ fn list(
     hidden: &[&str],
     editable: bool,
     today: i32,
+    follows: bool,
 ) -> Vec<Action> {
     let words = translator(ui.ctx());
     let listed = kept(ui.ctx(), history, tools, &words, today);
@@ -994,7 +1010,7 @@ fn list(
         base,
         editable,
         hidden,
-        moved,
+        moved: moved && follows,
         index: 0,
         actions: Vec::new(),
         toggled: Vec::new(),
@@ -2991,6 +3007,8 @@ pub(crate) mod tests {
         pressed: Vec<Pressed>,
         /// The Tools panel's width; the theme's where none.
         panel: Option<f32>,
+        /// Whether History is alone in its tab ([`HistoryTool::alone`]).
+        alone: bool,
     }
 
     fn scene(look: Theme, size: egui::Vec2, history: Option<History>) -> Harness<'static, Scene> {
@@ -3040,7 +3058,7 @@ pub(crate) mod tests {
                         ui.spacing_mut().item_spacing.y = 0.0;
                         let (hidden, editable) = (&scene.hidden, scene.editable);
                         (pressed, actions) = tab(ui, head, scene.resettable, |ui| {
-                            list(ui, history, tools, hidden, editable, today())
+                            list(ui, history, tools, hidden, editable, today(), scene.alone)
                         });
                     });
                     scene.actions.extend(actions);
@@ -3056,6 +3074,7 @@ pub(crate) mod tests {
                     actions: Vec::new(),
                     pressed: Vec::new(),
                     panel: None,
+                    alone: true,
                 },
             )
     }
@@ -4696,6 +4715,44 @@ pub(crate) mod tests {
         harness.run();
         harness.snapshot("history-tab-defaults");
         results.extend(harness.take_snapshot_results());
+    }
+
+    /// The end, Original at the list's foot, is scrolled into sight as it moves where
+    /// History is alone in its tab, and never where it shares one, whose scroll belongs to
+    /// the tool being edited or the section Export… revealed.
+    #[test]
+    fn the_end_is_scrolled_into_sight_only_where_history_is_alone() {
+        for alone in [true, false] {
+            let mut long = styled(6);
+            let base = long.steps.clone();
+            long.steps = (0..30)
+                .map(|i| {
+                    let step = &base[i % base.len()];
+                    Arc::new(HistoryStep {
+                        id: StepId(0x1000 + i as u64),
+                        batch: step
+                            .batch
+                            .map(|batch| BatchId(batch.0 + (i / base.len()) as u64)),
+                        clock: Clock::at(wireframe_s_time(), None, MachineId::UNKNOWN),
+                        ..(**step).clone()
+                    })
+                })
+                .collect();
+            long.end = 30;
+            let mut harness = scene(
+                Theme::builtin(Builtin::Dark),
+                egui::vec2(640.0, 240.0),
+                Some(long.clone()),
+            );
+            harness.run();
+            // The end moves to Original, at the list's foot.
+            harness.state_mut().alone = alone;
+            harness.state_mut().history = Some(History { end: 0, ..long });
+            harness.run();
+            let original = item(&harness, "Original").rect();
+            let in_sight = original.bottom() <= 240.0;
+            assert_eq!(in_sight, alone, "alone {alone}: {original:?}");
+        }
     }
 
     /// A history longer than the panel scrolled to its end: History's header stays at the
