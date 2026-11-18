@@ -108,9 +108,6 @@ use crate::utility::{Context, UtilityTool};
 /// The section's id, by which settings keep whether it is open.
 pub const ID: &str = "history";
 
-/// Whether the section is open when settings have not kept it otherwise.
-pub const OPEN: bool = true;
-
 /// What separates the parts of a tooltip's line, as the wireframe writes it.
 const SEPARATOR: &str = " · ";
 

@@ -38,7 +38,7 @@ use apertrust_plugin::{ImageContext, Value};
 
 use crate::about::{Fact, Facts, Purpose};
 use crate::definition::{
-    Control, ControlKind, ProcessingDefinition, Reset, Row, Slider, Tab, ToolDefinition, Unit,
+    Control, ControlKind, ProcessingDefinition, Row, Slider, Tab, ToolDefinition, Unit,
 };
 use crate::{Base, Owned, ProcessingTool, Setting, ToolValues, switched_from};
 
@@ -98,9 +98,9 @@ static CONTROLS: [Control; 3] = [
 ];
 
 static DEFINITION: ProcessingDefinition = ProcessingDefinition {
-    tool: ToolDefinition {
-        id: "grain",
-        tabs: &[Tab {
+    tool: ToolDefinition::processing(
+        "grain",
+        &[Tab {
             id: None,
             rows: &[
                 // darktable's `dt_bauhaus_slider_set_digits(g->scale, 0)`: "1600 ISO".
@@ -111,12 +111,7 @@ static DEFINITION: ProcessingDefinition = ProcessingDefinition {
                 Row::Slider(Slider::new("midtones_bias")),
             ],
         }],
-        before: &[],
-        after: &[],
-        reset: Reset::Tool,
-        presets: true,
-        menus: &[],
-    },
+    ),
     version: 2,
     layers: false,
     auto: false,

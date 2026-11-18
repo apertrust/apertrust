@@ -41,8 +41,7 @@ use apertrust_plugin::{ImageContext, Value};
 
 use crate::about::{Fact, Facts, Purpose};
 use crate::definition::{
-    ChoiceStyle, Control, ControlKind, ProcessingDefinition, Reset, Row, Slider, Tab,
-    ToolDefinition,
+    ChoiceStyle, Control, ControlKind, ProcessingDefinition, Row, Slider, Tab, ToolDefinition,
 };
 use crate::{Base, ControlValue, Controls, Owned, ProcessingTool, Setting, ToolValues};
 
@@ -118,9 +117,9 @@ const fn slider(control: &'static str) -> Row {
 }
 
 static DEFINITION: ProcessingDefinition = ProcessingDefinition {
-    tool: ToolDefinition {
-        id: "rawprepare",
-        tabs: &[Tab {
+    tool: ToolDefinition::processing(
+        "rawprepare",
+        &[Tab {
             id: None,
             rows: &[
                 slider(BLACK[0]),
@@ -134,12 +133,7 @@ static DEFINITION: ProcessingDefinition = ProcessingDefinition {
                 },
             ],
         }],
-        before: &[],
-        after: &[],
-        reset: Reset::Tool,
-        presets: true,
-        menus: &[],
-    },
+    ),
     version: 1,
     layers: false,
     auto: false,

@@ -45,9 +45,6 @@ use crate::utility::{Context, UtilityTool};
 /// The section's id, by which settings keep whether it is open.
 pub const ID: &str = "scopes";
 
-/// Whether the section is open when settings have not kept it otherwise.
-pub const OPEN: bool = true;
-
 /// What the user did to the section this frame.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Change {
@@ -155,6 +152,11 @@ impl Scopes {
     }
 }
 
+/// Scopes' declaration, among the utilities (decision 93).
+pub fn declared() -> &'static UtilityDefinition {
+    apertrust_tools::utility::utility(ID).expect("Scopes is built in")
+}
+
 /// Scopes as a utility tool (decision 93): its page, the graph with its buttons, as the
 /// settings' `scopes` has it, with what the mirror measured of the photo shown, drawn
 /// disabled with no photo, and while one opens until it is live (decision 77).
@@ -165,7 +167,7 @@ impl UtilityTool for ScopesTool {
     type Action = Change;
 
     fn definition(&self) -> &'static UtilityDefinition {
-        apertrust_tools::utility::utility(ID).expect("Scopes is built in")
+        declared()
     }
 
     fn body(&mut self, widget: Widget, ui: &mut egui::Ui, cx: &mut Context<'_>) -> Vec<Change> {

@@ -44,9 +44,6 @@ use crate::{export, jobs};
 /// under which they keep its groups.
 pub const ID: &str = "collections";
 
-/// Whether Collections is open when settings have not kept it otherwise.
-pub const OPEN: bool = true;
-
 /// The Folders group's id inside Collections.
 pub const FOLDERS: &str = "folders";
 
@@ -259,6 +256,11 @@ impl Collections<'_> {
     }
 }
 
+/// Collections' declaration, among the utilities (decision 93).
+pub fn declared() -> &'static UtilityDefinition {
+    apertrust_tools::utility::utility(ID).expect("Collections is built in")
+}
+
 /// Collections as a utility tool (decision 93), the Photos tab's first (decision 73), in
 /// folder mode's form: its page two custom rows, which the page drawer draws through its
 /// body: its top line (`Widget::CollectionsTopLine`), what is open, a box listing the
@@ -280,7 +282,7 @@ impl UtilityTool for Collections<'_> {
     type Action = Action;
 
     fn definition(&self) -> &'static UtilityDefinition {
-        apertrust_tools::utility::utility(ID).expect("Collections is built in")
+        declared()
     }
 
     fn body(&mut self, widget: Widget, ui: &mut egui::Ui, cx: &mut Context<'_>) -> Vec<Action> {

@@ -310,7 +310,7 @@ default = "adjust"
 applies = "at-once"
 
 # The sections the user opened (true) or closed (false), by id; the others start as their
-# section does.
+# tool declares (`ToolDefinition::open_at_first`).
 [edit.sections]
 owner = "app"
 kind = "table"

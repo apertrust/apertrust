@@ -93,9 +93,6 @@ pub const SUMMARY: &str = "summary";
 /// Whether the Summary is open until the person closes it: it starts open, as Global
 /// options does.
 pub const SUMMARY_OPEN: bool = true;
-/// Whether the section is open until the person opens or closes it, as every tool is
-/// closed at first (decision 29).
-pub const OPEN: bool = false;
 /// How many photos the tool exports: the active one, until a selection comes.
 const PHOTOS: usize = 1;
 

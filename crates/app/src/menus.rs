@@ -2765,6 +2765,7 @@ mod tests {
                 after: &[],
                 reset: Reset::Tool,
                 presets: true,
+                open_at_first: false,
                 menus,
             },
             version: 1,
@@ -2871,6 +2872,7 @@ mod tests {
                 after: &[],
                 reset: Reset::None,
                 presets: false,
+                open_at_first: false,
                 menus: leak(&[
                     at(Open::Photo, 1000, 100, "reset"),
                     at(Open::Options, 4000, 100, "reset"),

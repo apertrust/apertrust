@@ -992,6 +992,7 @@ pub(crate) mod tests {
             after: &[],
             reset: Reset::Tool,
             presets: true,
+            open_at_first: false,
             menus: &[],
         },
         version: 2,

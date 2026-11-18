@@ -2524,13 +2524,24 @@ impl Shell {
         }
     }
 
-    /// Whether the section `id` is open: as the user left it, or `default`; while Find
-    /// Tool… is open, whether it was opened in the search, every tool found closed at first.
-    fn section_open(&self, id: &str, default: bool) -> bool {
+    /// Whether `tool`'s section is open: as the person left it, kept in `[edit.sections]`,
+    /// else as its declaration has it at first (`ToolDefinition::open_at_first`); while
+    /// Find Tool… is open, whether it was opened in the search, every tool found closed at
+    /// first.
+    fn section_open(&self, tool: &ToolDefinition) -> bool {
         if let Some(search) = &self.find {
-            return search.opened.contains(id);
+            return search.opened.contains(tool.id);
         }
-        self.sections.get(id).copied().unwrap_or(default)
+        self.sections
+            .get(tool.id)
+            .copied()
+            .unwrap_or(tool.open_at_first)
+    }
+
+    /// Opens `tool`'s section if it is closed, or closes it, for this run and the next.
+    fn toggle_section(&mut self, tool: &ToolDefinition) {
+        let open = self.section_open(tool);
+        self.set_section_open(tool.id, !open);
     }
 
     /// Keeps the section `id` open or closed, for this run and the next; while Find Tool…
@@ -2572,20 +2583,19 @@ impl Shell {
     }
 
     /// What `definition`'s header is given by the shell (decision 93): its section open as
-    /// kept, or `default`, peeking while `peek` holds, ⋯ holding its declared items as
-    /// the menu builder lists them, then the layout's ([`Shell::layout_head`]), with the
-    /// keymap's keys, enabled as `state` says, and while Find Tool… is open where the tool
-    /// lives ([`Shell::found`]).
+    /// kept, or as declared at first, peeking while `peek` holds, ⋯ holding its declared
+    /// items as the menu builder lists them, then the layout's ([`Shell::layout_head`]),
+    /// with the keymap's keys, enabled as `state` says, and while Find Tool… is open where
+    /// the tool lives ([`Shell::found`]).
     fn head(
         &self,
         ctx: &egui::Context,
         definition: &ToolDefinition,
         state: &State,
         peek: bool,
-        default: bool,
     ) -> tools::Head {
         let head = tools::Head {
-            open: self.section_open(definition.id, default),
+            open: self.section_open(definition),
             peek,
             options: menus::options(ctx, definition.id, &self.keymap, state),
             enabled: true,
@@ -2632,10 +2642,7 @@ impl Shell {
         let mut run = None;
         for pressed in pressed {
             match pressed {
-                tools::Pressed::Toggle => {
-                    let open = self.section_open(history::ID, history::OPEN);
-                    self.set_section_open(history::ID, !open);
-                }
+                tools::Pressed::Toggle => self.toggle_section(&history::declared().tool),
                 tools::Pressed::Run(id) => run = Some(id),
                 tools::Pressed::Tab(_) | tools::Pressed::Reset | tools::Pressed::Own(_) => {}
             }
@@ -2726,7 +2733,7 @@ impl Shell {
     /// Whether Collections and its Folders are open, as the user left them.
     fn collections_open(&self) -> library::Open {
         library::Open {
-            collections: self.section_open(library::ID, library::OPEN),
+            collections: self.section_open(&library::declared().tool),
             folders: self.group_open_or(library::ID, library::FOLDERS, library::FOLDERS_OPEN),
         }
     }
@@ -2751,10 +2758,7 @@ impl Shell {
     /// Applies what the Scopes section asked for, for this run and the next.
     fn scopes_change(&mut self, change: scopes::Change) {
         match change {
-            scopes::Change::Toggle => {
-                let open = self.section_open(scopes::ID, scopes::OPEN);
-                self.set_section_open(scopes::ID, !open);
-            }
+            scopes::Change::Toggle => self.toggle_section(&scopes::declared().tool),
             scopes::Change::View(action) => self.scopes.apply(action),
         }
     }
@@ -2763,7 +2767,7 @@ impl Shell {
     /// ([`scopes::wanted`]); asked whether a photo is open or not, so a photo's first frame
     /// is counted as it renders.
     fn scopes_wanted(&self) -> Option<Graphs> {
-        let open = self.section_open(scopes::ID, scopes::OPEN);
+        let open = self.section_open(&scopes::declared().tool);
         scopes::wanted(self.scopes_shown(), open, self.scopes)
     }
 
@@ -4383,8 +4387,16 @@ impl App {
                 }
             }
             Change::Toggle { tool } => {
-                let open = self.shell.section_open(tool, tools::OPEN);
-                self.shell.set_section_open(tool, !open);
+                let mut tools = self
+                    .mirror
+                    .tools()
+                    .iter()
+                    .map(|tool| &tool.definition().tool);
+                match tools.find(|declared| declared.id == tool) {
+                    Some(declared) => self.shell.toggle_section(declared),
+                    // Only a section the mirror's tools drew asks; any other is a bug.
+                    None => tracing::warn!(target: "control", "no tool {tool} to open or close"),
+                }
             }
             Change::Group { tool, group } => self.shell.toggle_group(tool, group),
             Change::Tab { .. } => self.panels.apply(&change),
@@ -4782,9 +4794,7 @@ impl App {
         // Export's header is the shell's, as every utility's (decision 93), with the photo
         // its ⋯ acts on, so a choice made for another photo is dropped.
         let declared = &export::definition().tool;
-        let head = self
-            .shell
-            .head(ui.ctx(), declared, &state, false, export::OPEN);
+        let head = self.shell.head(ui.ctx(), declared, &state, false);
         let mut photos_shown = PhotosShown {
             collections: (self.shell).layout_head(ui.ctx(), library::ID, &state),
             export: exporting.then(|| ExportShown {
@@ -4858,8 +4868,7 @@ impl App {
         }
         let export = photos.export;
         if export.toggle {
-            let open = self.shell.section_open(export::ID, export::OPEN);
-            self.shell.set_section_open(export::ID, !open);
+            self.shell.toggle_section(&export::definition().tool);
         }
         if export.toggle_summary {
             let open = self
@@ -4875,7 +4884,7 @@ impl App {
         }
         self.run_actions(photos.run, ui.ctx(), &[]);
         // The preview is the tool's feedback: asked while it is open and shown.
-        let open = self.shell.section_open(export::ID, export::OPEN);
+        let open = self.shell.section_open(&export::definition().tool);
         self.preview_export(photos.exported && open);
         let held = tab.history.iter().find_map(|action| match action {
             history::Action::Peek(tool) => Some(*tool),
@@ -7105,7 +7114,7 @@ fn edit_tab(
     if shell.find.is_none() && shell.shown_tab().is_some_and(history_alone) {
         let mut history = history::HistoryTool { alone: true };
         let definition = &history::declared().tool;
-        let head = shell.head(ui.ctx(), definition, state, peek, history::OPEN);
+        let head = shell.head(ui.ctx(), definition, state, peek);
         let head = tools::Head {
             // ⋯ opens while there is a history, or the layout's items are in it.
             enabled: mirror.history.is_some() || head.layout.is_some(),
@@ -7377,7 +7386,7 @@ fn panel_body(
             scopes::ID => {
                 let mut scopes = scopes::ScopesTool;
                 let definition = &scopes.definition().tool;
-                let head = shell.head(&ctx, definition, state, peek, scopes::OPEN);
+                let head = shell.head(&ctx, definition, state, peek);
                 let drawn = utility::section(ui, &mut scopes, cx, head, false);
                 scopes_asked.extend(drawn.actions);
                 changes.extend(drawn.changes);
@@ -7392,7 +7401,7 @@ fn panel_body(
                 // Sharing its tab, its end never scrolls the tab ([`history::HistoryTool`]).
                 let mut history = history::HistoryTool { alone: false };
                 let definition = &history::declared().tool;
-                let head = shell.head(&ctx, definition, state, peek, history::OPEN);
+                let head = shell.head(&ctx, definition, state, peek);
                 let head = tools::Head {
                     // ⋯ opens while there is a history, or the layout's items are in it.
                     enabled: mirror.history.is_some() || head.layout.is_some(),
@@ -7425,7 +7434,7 @@ fn panel_body(
                     let head = tools::Head {
                         enabled: true,
                         photo: mirror.photo.open(),
-                        ..shell.head(&ctx, &tool.definition().tool, state, peek, tools::OPEN)
+                        ..shell.head(&ctx, &tool.definition().tool, state, peek)
                     };
                     let groups = |group: &str| shell.group_open(id, group);
                     // Each section's widgets in an id of their own, the tool's: two tools'
@@ -10349,6 +10358,22 @@ mod tests {
         (shell.drawn_settings(ctx), state)
     }
 
+    /// The processing tool `id`'s declaration.
+    fn processing(id: &str) -> &'static ToolDefinition {
+        let mut tools = apertrust_tools::TOOLS.iter();
+        let tool = tools.find(|tool| tool.definition().tool.id == id);
+        &tool.expect("a processing tool").definition().tool
+    }
+
+    /// `shell` with every processing tool's section opened, as the person would, so their
+    /// pages are drawn: each is closed at first (`ToolDefinition::open_at_first`).
+    fn tools_opened(mut shell: Shell) -> Shell {
+        for tool in apertrust_tools::TOOLS {
+            shell.set_section_open(tool.definition().tool.id, true);
+        }
+        shell
+    }
+
     fn editing(folder: &settings::testing::Folder) -> Harness<'static, Editing> {
         let (_, settings) = Keeper::open(folder.storage());
         Harness::builder()
@@ -10388,7 +10413,7 @@ mod tests {
                     );
                 },
                 Editing {
-                    shell: Shell::new(&settings, Locale::EnGb, OperatingSystem::Mac),
+                    shell: tools_opened(Shell::new(&settings, Locale::EnGb, OperatingSystem::Mac)),
                     mirror: crate::mirror::tests::mirror(),
                     history: Vec::new(),
                     sent: Vec::new(),
@@ -10474,6 +10499,26 @@ mod tests {
         harness.state_mut().shell.panel_tab = ADJUST;
         harness.run();
         assert_eq!(exposure_slider(&harness), (String::from("+0.000 EV"), true));
+    }
+
+    /// As drawn, a processing tool no one has opened or closed is closed, as its
+    /// declaration says (`ToolDefinition::open_at_first`): Exposure's header collapsed,
+    /// its slider not drawn.
+    #[test]
+    fn a_processing_tool_is_drawn_closed_at_first() {
+        let folder = settings::testing::Folder::new("panel-closed-at-first");
+        let mut harness = editing(&folder);
+        let fresh = Shell::new(&Settings::default(), Locale::EnGb, OperatingSystem::Mac);
+        harness.state_mut().shell = fresh;
+        harness.state_mut().shell.panel_tab = ADJUST;
+        harness.run();
+        let header = harness.get_by_role_and_label(Role::Button, "Exposure");
+        assert_eq!(header.accesskit_node().data().is_expanded(), Some(false));
+        assert!(
+            harness
+                .query_by_role_and_label(Role::Slider, "Exposure")
+                .is_none()
+        );
     }
 
     /// The History tab holds the History section, with no Scopes, drawn from the mirror's
@@ -10644,7 +10689,12 @@ mod tests {
             harness.state().sent
         );
         assert_eq!(harness.state().shell.panel_tab, 4);
-        assert!(harness.state().shell.section_open("grain", false));
+        assert!(
+            harness
+                .state()
+                .shell
+                .section_open(&apertrust_tools::grain::Grain.definition().tool)
+        );
     }
 
     /// The eye held on a step's line sends `Hide`, view state, on a photo open for viewing
@@ -10768,7 +10818,7 @@ mod tests {
         let mut shell = opened_on("history");
         shell.reveal("grain");
         assert_eq!(shell.panel_tab, 4);
-        assert!(shell.section_open("grain", false));
+        assert!(shell.section_open(&apertrust_tools::grain::Grain.definition().tool));
         assert!(shell.revealing());
         shell.reveal = None;
         // An operation no tool owns yet, rgblevels, standing for a line of unowned
@@ -10887,7 +10937,7 @@ mod tests {
         let mut shell = essentials(&folder, false);
         shell.reveal("grain");
         assert_eq!(shown_id(&shell), layout::HIDDEN);
-        assert!(shell.section_open("grain", false));
+        assert!(shell.section_open(&apertrust_tools::grain::Grain.definition().tool));
         assert!(shell.revealing());
         let state = shell.state(&ctx, false, false);
         assert_eq!((state.hidden_tab, state.show_hidden), (Some(true), false));
@@ -12416,10 +12466,20 @@ mod tests {
         // Return in the field opens the first, the field keeping the focus.
         find_field(&harness).focus();
         harness.run();
-        assert!(!harness.state().shell.section_open("channelmixerrgb", false));
+        assert!(
+            !harness
+                .state()
+                .shell
+                .section_open(processing("channelmixerrgb"))
+        );
         harness.key_press(Key::Enter);
         harness.run();
-        assert!(harness.state().shell.section_open("channelmixerrgb", false));
+        assert!(
+            harness
+                .state()
+                .shell
+                .section_open(processing("channelmixerrgb"))
+        );
         assert!(find_field(&harness).is_focused());
         // Opened in the search alone: closed, the tab's sections are as they were.
         harness.key_press(Key::Escape);
@@ -12792,8 +12852,8 @@ mod tests {
             shell.find.as_ref().map(|s| s.text.as_str()),
             Some("exposure")
         );
-        assert!(shell.section_open("exposure", false));
-        assert!(!shell.section_open("grain", false));
+        assert!(shell.section_open(processing("exposure")));
+        assert!(!shell.section_open(processing("grain")));
     }
 
     /// Return on a tool found that ↓ gave the focus, in the next frame, is the header's: the
@@ -12809,7 +12869,7 @@ mod tests {
         harness.run();
         harness.key_press(Key::Enter);
         harness.run();
-        assert!(harness.state().shell.section_open("exposure", false));
+        assert!(harness.state().shell.section_open(processing("exposure")));
         assert!(find_field(&harness).is_focused());
         // Each key's press and release in one frame, ↓ then Return in the next.
         let press = |harness: &mut Harness<'_, Editing>, key| {
@@ -13144,7 +13204,7 @@ mod tests {
                     });
                 },
                 Opening {
-                    shell: Shell::new(&settings, Locale::EnGb, OperatingSystem::Mac),
+                    shell: tools_opened(Shell::new(&settings, Locale::EnGb, OperatingSystem::Mac)),
                     mirror,
                     rendering: asked,
                     picture: None,
@@ -14286,7 +14346,7 @@ mod tests {
         assert_eq!(settings.scopes, parade);
         let shell = Shell::new(&settings, Locale::EnGb, OperatingSystem::Mac);
         assert_eq!(shell.scopes, parade);
-        assert!(!shell.section_open(scopes::ID, scopes::OPEN));
+        assert!(!shell.section_open(&scopes::declared().tool));
         // Closed, the next run asks for the totals alone.
         assert_eq!(shell.scopes_wanted(), Some(Graphs::default()));
     }
@@ -14632,6 +14692,40 @@ mod tests {
         shell.recents.set_tab(layout::DEFAULT, tab);
         shell.open_workspace(layout::Workspace::builtin_default());
         shell
+    }
+
+    /// A section starts as its tool declares it (`ToolDefinition::open_at_first`): every
+    /// processing tool closed, Collections, Scopes and History open, Export closed; a state
+    /// the person chose, kept in `[edit.sections]`, wins over it both ways, read again as
+    /// the app starts.
+    #[test]
+    fn a_section_starts_as_declared_and_a_kept_state_wins_both_ways() {
+        let exposure = &apertrust_tools::exposure::Exposure.definition().tool;
+        let (collections, scopes) = (&library::declared().tool, &scopes::declared().tool);
+        let (history, export) = (&history::declared().tool, &export::definition().tool);
+        let shell = Shell::new(&Settings::default(), Locale::EnGb, OperatingSystem::Mac);
+        let at_first = |shell: &Shell| {
+            [exposure, collections, scopes, history, export].map(|tool| shell.section_open(tool))
+        };
+        assert_eq!(at_first(&shell), [false, true, true, true, false]);
+        // Each opened or closed against its declaration, then the app starts again.
+        let mut settings = Settings::default();
+        settings.edit.sections = BTreeMap::from([
+            ("exposure".to_owned(), true),
+            ("collections".to_owned(), false),
+            ("scopes".to_owned(), false),
+            ("history".to_owned(), false),
+            ("export".to_owned(), true),
+        ]);
+        let shell = Shell::new(&settings, Locale::EnGb, OperatingSystem::Mac);
+        assert_eq!(at_first(&shell), [true, false, false, false, true]);
+        // Toggled, the kept state flips and is kept, whichever way the tool started.
+        let mut shell = Shell::new(&Settings::default(), Locale::EnGb, OperatingSystem::Mac);
+        shell.toggle_section(exposure);
+        shell.toggle_section(collections);
+        assert!(shell.section_open(exposure) && !shell.section_open(collections));
+        assert_eq!(shell.sections.get("exposure"), Some(&true));
+        assert_eq!(shell.sections.get("collections"), Some(&false));
     }
 
     /// The tab `state.toml` keeps for the workspace.
@@ -15625,7 +15719,7 @@ mod tests {
                             let revealed = bench.shell.revealing();
                             let shown = ExportShown {
                                 head: tools::Head {
-                                    open: bench.shell.section_open(export::ID, export::OPEN),
+                                    open: bench.shell.section_open(&export::definition().tool),
                                     ..tools::Head::default()
                                 },
                                 shown: export::Shown {
@@ -15680,8 +15774,7 @@ mod tests {
                                 bench.shell.reveal = None;
                             }
                             if drawn.toggle {
-                                let open = bench.shell.section_open(export::ID, export::OPEN);
-                                bench.shell.set_section_open(export::ID, !open);
+                                bench.shell.toggle_section(&export::definition().tool);
                             }
                             return tab;
                         }
@@ -19252,7 +19345,10 @@ mod tests {
             let state = harness.state();
             assert_eq!(state.pressed, [ActionId::EXPORT], "{os:?}");
             assert_eq!(state.shell.panel_tab, PHOTOS, "{os:?}");
-            assert!(state.shell.section_open(export::ID, export::OPEN), "{os:?}");
+            assert!(
+                state.shell.section_open(&export::definition().tool),
+                "{os:?}"
+            );
             assert_eq!(state.shell.reveal, None, "{os:?}: scrolled to once");
             assert!(state.host.0.borrow().shown.is_none(), "{os:?}: no dialog");
             // Its header is scrolled to the top of the panel, Collections' above it, out of
@@ -19287,14 +19383,24 @@ mod tests {
         harness.run_steps(4);
         assert_eq!(harness.state().chosen, [ActionId::EXPORT]);
         assert_eq!(harness.state().shell.panel_tab, PHOTOS);
-        assert!(harness.state().shell.section_open(export::ID, export::OPEN));
+        assert!(
+            harness
+                .state()
+                .shell
+                .section_open(&export::definition().tool)
+        );
         harness.get_by_role_and_label(Role::Button, "Export 1 photo");
         // A click on its header closes it, kept as `export` in `edit.sections`.
         harness
             .get_by_role_and_label(Role::Button, "Export")
             .click();
         harness.run_steps(4);
-        assert!(!harness.state().shell.section_open(export::ID, export::OPEN));
+        assert!(
+            !harness
+                .state()
+                .shell
+                .section_open(&export::definition().tool)
+        );
         assert!(harness.query_by_label("Export 1 photo").is_none());
         let kept = harness.state().shell.to_settings(&harness.ctx).edit;
         assert_eq!(kept.sections.get(export::ID), Some(&false));
@@ -19302,7 +19408,12 @@ mod tests {
         harness.state_mut().shell.panel_tab = 3;
         harness.key_press_modifiers(Modifiers::COMMAND, Key::E);
         harness.run_steps(4);
-        assert!(harness.state().shell.section_open(export::ID, export::OPEN));
+        assert!(
+            harness
+                .state()
+                .shell
+                .section_open(&export::definition().tool)
+        );
         harness.get_by_role_and_label(Role::Button, "Export 1 photo");
     }
 

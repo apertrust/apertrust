@@ -287,6 +287,7 @@ static DEFINITION: ProcessingDefinition = ProcessingDefinition {
         })],
         reset: Reset::Tool,
         presets: true,
+        open_at_first: false,
         menus: &[],
     },
     version: 2,

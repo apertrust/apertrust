@@ -24,8 +24,8 @@ use apertrust_plugin::{Camera, ImageContext, Pattern, Value};
 
 use crate::definition::{
     ChoiceStyle, Control, ControlKind, Coordinate, Picker, PickerKind, PresetRow,
-    ProcessingDefinition, Quad, Range, Reset, Row, SettingRow, Slider, Space, Tab, ToolDefinition,
-    Unit, View, slider_step,
+    ProcessingDefinition, Quad, Range, Row, SettingRow, Slider, Space, Tab, ToolDefinition, Unit,
+    View, slider_step,
 };
 use crate::pick::{Patch, PickKeys, Picked, Reading, Shown, Stats};
 use crate::transfer::{Linear, Transfer};
@@ -88,44 +88,6 @@ pub struct Sample;
 
 static DEFINITION: ProcessingDefinition = ProcessingDefinition {
     tool: ToolDefinition {
-        id: "sample",
-        tabs: &[
-            Tab {
-                id: Some("grain"),
-                rows: &[
-                    Row::Label { id: "grain" },
-                    Row::Slider(Slider::new("grain").decimals(0)),
-                    Row::Choice {
-                        control: "size",
-                        style: ChoiceStyle::Segmented,
-                    },
-                    Row::Slider(Slider::new("coarseness").decimals(0)),
-                    Row::Pickers {
-                        label: Some("measure"),
-                        pickers: &["spread", "show"],
-                    },
-                ],
-            },
-            Tab {
-                id: Some("shape"),
-                rows: &[Row::Group {
-                    id: "midtones",
-                    rows: &[
-                        Row::Choice {
-                            control: "method",
-                            style: ChoiceStyle::List,
-                        },
-                        Row::When {
-                            control: "method",
-                            is: &["biased"],
-                            rows: &[Row::Slider(Slider::new("bias").decimals(0))],
-                        },
-                        Row::Slider(Slider::new("sum").decimals(0).soft(50.0, 150.0)),
-                        Row::Slider(Slider::new("difference").decimals(0)),
-                    ],
-                }],
-            },
-        ],
         before: &[
             Row::Preset {
                 preset: "look",
@@ -133,10 +95,46 @@ static DEFINITION: ProcessingDefinition = ProcessingDefinition {
             },
             Row::Slider(Slider::new("brightness").quad(Quad::Picker("brightness"))),
         ],
-        after: &[],
-        reset: Reset::Tool,
-        presets: true,
-        menus: &[],
+        ..ToolDefinition::processing(
+            "sample",
+            &[
+                Tab {
+                    id: Some("grain"),
+                    rows: &[
+                        Row::Label { id: "grain" },
+                        Row::Slider(Slider::new("grain").decimals(0)),
+                        Row::Choice {
+                            control: "size",
+                            style: ChoiceStyle::Segmented,
+                        },
+                        Row::Slider(Slider::new("coarseness").decimals(0)),
+                        Row::Pickers {
+                            label: Some("measure"),
+                            pickers: &["spread", "show"],
+                        },
+                    ],
+                },
+                Tab {
+                    id: Some("shape"),
+                    rows: &[Row::Group {
+                        id: "midtones",
+                        rows: &[
+                            Row::Choice {
+                                control: "method",
+                                style: ChoiceStyle::List,
+                            },
+                            Row::When {
+                                control: "method",
+                                is: &["biased"],
+                                rows: &[Row::Slider(Slider::new("bias").decimals(0))],
+                            },
+                            Row::Slider(Slider::new("sum").decimals(0).soft(50.0, 150.0)),
+                            Row::Slider(Slider::new("difference").decimals(0)),
+                        ],
+                    }],
+                },
+            ],
+        )
     },
     version: 1,
     layers: true,
@@ -548,21 +546,16 @@ impl ProcessingTool for Following {
 pub struct Faulty;
 
 static FAULTY: ProcessingDefinition = ProcessingDefinition {
-    tool: ToolDefinition {
-        id: "faulty",
-        tabs: &[Tab {
+    tool: ToolDefinition::processing(
+        "faulty",
+        &[Tab {
             id: None,
             rows: &[
                 Row::Toggle { control: "stray" },
                 Row::Toggle { control: "panic" },
             ],
         }],
-        before: &[],
-        after: &[],
-        reset: Reset::Tool,
-        presets: true,
-        menus: &[],
-    },
+    ),
     version: 1,
     layers: false,
     auto: false,
@@ -659,18 +652,13 @@ impl ProcessingTool for Pushing {
 pub struct Defaultless;
 
 static DEFAULTLESS: ProcessingDefinition = ProcessingDefinition {
-    tool: ToolDefinition {
-        id: "defaultless",
-        tabs: &[Tab {
+    tool: ToolDefinition::processing(
+        "defaultless",
+        &[Tab {
             id: None,
             rows: &[Row::Slider(Slider::new("amount"))],
         }],
-        before: &[],
-        after: &[],
-        reset: Reset::Tool,
-        presets: true,
-        menus: &[],
-    },
+    ),
     version: 1,
     layers: false,
     auto: false,
@@ -725,9 +713,9 @@ impl ProcessingTool for Defaultless {
 pub struct Twin;
 
 static TWIN: ProcessingDefinition = ProcessingDefinition {
-    tool: ToolDefinition {
-        id: "twin",
-        tabs: &[Tab {
+    tool: ToolDefinition::processing(
+        "twin",
+        &[Tab {
             id: None,
             rows: &[
                 Row::Slider(Slider::new("x")),
@@ -738,12 +726,7 @@ static TWIN: ProcessingDefinition = ProcessingDefinition {
                 Row::Slider(Slider::new("v")),
             ],
         }],
-        before: &[],
-        after: &[],
-        reset: Reset::Tool,
-        presets: true,
-        menus: &[],
-    },
+    ),
     version: 1,
     layers: false,
     auto: false,

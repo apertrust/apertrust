@@ -64,6 +64,12 @@ pub struct ToolDefinition {
     /// `<id>-presets-later`, until they come with the presets API every tool shares, processing
     /// and utility alike (decision 93; planned).
     pub presets: bool,
+    /// Whether its section is open at first, until the person opens or closes it, which the
+    /// app then keeps in `[edit.sections]` and which wins over this (decision 93): false
+    /// for every processing tool, as darktable's processing modules start collapsed, and
+    /// for Export, which Export… and Ctrl+E open; true for Collections, the way to the
+    /// photos, Scopes and History.
+    pub open_at_first: bool,
     /// The items it adds to context menus (decision 91; `docs/gui.md`, Context menus), each
     /// one of its own actions at a place; none for a tool with nothing to add. The app
     /// builds the menus, every item, the app's included, where its section and order put
@@ -72,6 +78,24 @@ pub struct ToolDefinition {
 }
 
 impl ToolDefinition {
+    /// A processing tool's declaration with a processing tool's defaults: its page `tabs`
+    /// and no rows before or after them, its own reset, the presets button, no context menu
+    /// items, and closed at first, as every processing tool is unless it sets
+    /// `open_at_first` (decision 93). A tool that differs writes the fields it changes
+    /// over it, `ToolDefinition { menus: MENUS, ..ToolDefinition::processing(id, TABS) }`.
+    pub const fn processing(id: &'static str, tabs: &'static [Tab]) -> ToolDefinition {
+        ToolDefinition {
+            id,
+            tabs,
+            before: &[],
+            after: &[],
+            reset: Reset::Tool,
+            presets: true,
+            open_at_first: false,
+            menus: &[],
+        }
+    }
+
     /// Its setting row `id` ([`Row::Setting`]), wherever its page shows it: before its tabs,
     /// on one of them or after them, in a group or among rows following a value.
     pub fn setting(&self, id: &str) -> Option<&'static SettingRow> {
@@ -2442,6 +2466,7 @@ mod tests {
             after: &[],
             reset: Reset::Tool,
             presets: true,
+            open_at_first: false,
             menus: &[],
         },
         version: 1,
@@ -2573,6 +2598,7 @@ mod tests {
             after: &[Row::Toggle { control: "mask" }],
             reset: Reset::Tool,
             presets: true,
+            open_at_first: false,
             menus: &[],
         },
         version: 1,
@@ -4197,6 +4223,7 @@ mod tests {
                 after: &[],
                 reset: Reset::Tool,
                 presets: true,
+                open_at_first: false,
                 menus: &[],
             },
             version: 1,
@@ -4271,6 +4298,7 @@ mod tests {
                 after: &[],
                 reset: Reset::Tool,
                 presets: true,
+                open_at_first: false,
                 menus: &[],
             },
             version: 1,

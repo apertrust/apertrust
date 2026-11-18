@@ -921,18 +921,13 @@ fn a_pick_reads_the_channel_and_keys_shown_as_it_reads() {
 struct Spot;
 
 static SPOT: ProcessingDefinition = ProcessingDefinition {
-    tool: ToolDefinition {
-        id: "spot",
-        tabs: &[Tab {
+    tool: ToolDefinition::processing(
+        "spot",
+        &[Tab {
             id: None,
             rows: &[Row::Slider(Slider::new("red").quad(Quad::Picker("red")))],
         }],
-        before: &[],
-        after: &[],
-        reset: Reset::Tool,
-        presets: true,
-        menus: &[],
-    },
+    ),
     version: 1,
     layers: false,
     auto: false,
@@ -1287,9 +1282,9 @@ fn a_release_whose_reading_misses_completes_the_drag_s_change() {
 struct Configured;
 
 static CONFIGURED: ProcessingDefinition = ProcessingDefinition {
-    tool: ToolDefinition {
-        id: "configured",
-        tabs: &[Tab {
+    tool: ToolDefinition::processing(
+        "configured",
+        &[Tab {
             id: None,
             rows: &[
                 Row::Slider(Slider::new("level").quad(Quad::Picker("level"))),
@@ -1309,12 +1304,7 @@ static CONFIGURED: ProcessingDefinition = ProcessingDefinition {
                 }),
             ],
         }],
-        before: &[],
-        after: &[],
-        reset: Reset::Tool,
-        presets: true,
-        menus: &[],
-    },
+    ),
     version: 1,
     layers: false,
     auto: false,

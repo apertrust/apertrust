@@ -44,8 +44,7 @@ use apertrust_plugin::{ImageContext, Value};
 
 use crate::about::{Fact, Facts, Purpose};
 use crate::definition::{
-    ChoiceStyle, Control, ControlKind, ProcessingDefinition, Reset, Row, Slider, Tab,
-    ToolDefinition, Unit,
+    ChoiceStyle, Control, ControlKind, ProcessingDefinition, Row, Slider, Tab, ToolDefinition, Unit,
 };
 use crate::{Base, ControlValue, Controls, Owned, ProcessingTool, Setting, ToolValues};
 
@@ -286,9 +285,9 @@ const CAPTURE: Row = Row::Group {
 };
 
 static DEFINITION: ProcessingDefinition = ProcessingDefinition {
-    tool: ToolDefinition {
-        id: DEMOSAIC,
-        tabs: &[Tab {
+    tool: ToolDefinition::processing(
+        DEMOSAIC,
+        &[Tab {
             id: None,
             rows: &[
                 Row::Choice {
@@ -345,12 +344,7 @@ static DEFINITION: ProcessingDefinition = ProcessingDefinition {
                 },
             ],
         }],
-        before: &[],
-        after: &[],
-        reset: Reset::Tool,
-        presets: true,
-        menus: &[],
-    },
+    ),
     version: 1,
     layers: false,
     auto: false,
