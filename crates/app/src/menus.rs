@@ -1662,6 +1662,7 @@ mod tests {
             panel_tab: 0,
             workspace: actions::workspace(crate::layout::DEFAULT),
             workspace_given: false,
+            show_hidden_given: false,
             browser: crate::settings::BrowserSettings::default(),
             shown: true,
             background: Some(apertrust_ui::Background::Dark),
