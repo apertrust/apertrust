@@ -52,6 +52,21 @@ tools-panel-newer-tip = This version never overwrites a workspace file a newer A
 # The dot on the Tools panel's ⋮, and Show Hidden Tools' tip: $tools names the hidden tools
 # that change the photo, as "Exposure, Vignetting".
 tools-panel-hidden-change = Hidden tools change this photo: { $tools }
+# Find Tool… (decision 96): its field's name, which it shows while empty, and ✕; the hint
+# under the empty field; what shows where nothing matches, $text what was typed; the count
+# screen readers hear after each keystroke; and where a tool found lives, said after its
+# title, $tab its tab's name.
+find-tool-field = Find a tool
+find-tool-close = Close search
+find-tool-hint = Type a tool’s name.
+find-tool-none = No tool matches “{ $text }”.
+find-tool-count =
+    { $count ->
+        [one] { $count } tool
+       *[other] { $count } tools
+    }
+find-tool-lives-in = in { $tab }
+find-tool-lives-hidden = hidden
 # The built-in workspaces' names in View › Workspace (decision 96); a person's own is
 # named by its file.
 workspace-default = Default
@@ -554,8 +569,10 @@ open-folder-title = Open Folder
 # The Photos tab's first section, which chooses what the Browser shows, and its group
 # of folders. Albums and Smart albums join it with the library.
 section-collections = Collections
+    .search = collections
 collections-folders = Folders
 section-export = Export
+    .search = export
 # The top line's box: what screen readers call it, and its words for none, which the
 # Viewer says too with nothing open; a folder's are its open kind's.
 collections-open-name = What is open
@@ -914,6 +931,8 @@ action-panel-tab-12 = Tools panel tab 12
 # The Hidden tab, after the twelve, while it shows (decision 96).
 action-panel-tab-hidden = Hidden tab
 # The Tools panel's ⋮: the Hidden tab shown last and chosen, or taken away.
+# Find Tool…, in the Tools panel's ⋮: the tab bar becomes a search field (decision 96).
+action-find-tool = Find tool…
 action-tools-panel-show-hidden = Show hidden tools
 # A section's layout (decisions 83 and 96), each acting on the section whose header has the
 # focus, or in ⋯ on its own: the words carry "Tool", so each reads on its own in the keymap.
@@ -1082,6 +1101,7 @@ history-discard-no-alert-unreadable = Discarding this history asks first, since 
 ## The History section in the Tools panel's History tab (docs/history.md)
 
 section-history = History
+    .search = history
 # Its header's reset button, which puts the whole edit back as one step, as Reset Edit.
 history-reset-edit = Reset edit
 # A step's name for screen readers, with its number: VoiceOver reads a list item's name
@@ -1202,6 +1222,7 @@ equalizer-overflows-both = The mask's shadows go past the −8 EV band, and its 
 
 # The section that holds them, pinned at the top of the Tools panel's editing tabs.
 section-scopes = Scopes
+    .search = scopes
 scope-histogram = Histogram
 scope-waveform = Waveform
 scope-parade = RGB parade

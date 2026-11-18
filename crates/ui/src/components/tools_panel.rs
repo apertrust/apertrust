@@ -31,15 +31,20 @@
 //! Workspace ▸, a line, then the tab bar's own, Show tab names and Customise tabs…. It may
 //! carry a dot, `accent` and 6 points, at its top end, saying why in its tooltip, to screen
 //! readers as its description and once, politely, as the dot appears (decision 96).
+//!
+//! Find Tool… puts [`FindBar`] in the tab bar's place, at its height, while the app lists
+//! the tools found under it, each a section saying where it lives ([`Section::found`]).
+//!
+//! [`Section::found`]: super::Section::found
 
 use std::ops::RangeInclusive;
 
-use egui::accesskit::{Action, Orientation};
+use egui::accesskit::{Action, Live, Orientation};
 use egui::text::LayoutJob;
 use egui::{
-    Context, CornerRadius, CursorIcon, EventFilter, FontFamily, FontId, Id, Key, Layout, Rect,
-    Response, Role, ScrollArea, Sense, Stroke, TextFormat, Ui, UiBuilder, WidgetInfo, pos2,
-    scroll_area::ScrollBarVisibility, vec2,
+    Context, CornerRadius, CursorIcon, EventFilter, FontFamily, FontId, Frame, Id, Key, Layout,
+    Margin, Rect, Response, Role, ScrollArea, Sense, Stroke, StrokeKind, TextEdit, TextFormat, Ui,
+    UiBuilder, WidgetInfo, pos2, scroll_area::ScrollBarVisibility, vec2,
 };
 
 use super::{IconButton, focus_ring, pull_down, report_shortcut};
@@ -137,25 +142,14 @@ impl<'a> TabBar<'a> {
 
     pub fn show(self, ui: &mut Ui) -> Option<TabBarAction> {
         let t = theme(ui.ctx());
-        let (tile_w, tile_h) = if self.names {
-            (58.0, 52.0)
-        } else {
-            // 32 high, so the tab bar is as deep as the viewer bar beside it.
-            (36.0, 32.0)
-        };
+        let (tile_w, tile_h) = tile(self.names);
         let pad = t.spacing.xs;
         let (bar, list) =
             ui.allocate_exact_size(vec2(ui.available_width(), tile_h + pad), Sense::hover());
         // Looked up first: widget_info runs while egui holds the context.
         let list_name = tr(ui.ctx(), "tools-panel-tabs");
         list.widget_info(|| WidgetInfo::labeled(Role::TabList, true, &list_name));
-        // A recessed strip above the sections.
-        ui.painter().rect_filled(bar, 0.0, t.colors.sunken);
-        ui.painter().hline(
-            bar.x_range(),
-            bar.bottom() - t.shape.hairline / 2.0,
-            egui::Stroke::new(t.shape.hairline, t.colors.separator),
-        );
+        strip(ui, bar, &t);
 
         // Which tabs fit; the chosen one always shows.
         let room = bar.width() - 2.0 * pad - OPTIONS - GAP;
@@ -357,6 +351,318 @@ impl<'a> TabBar<'a> {
             None => {}
         }
         action
+    }
+}
+
+/// A tab's tile, wide and high, with its name or without: 32 high without, so the tab bar
+/// is as deep as the viewer bar beside it.
+fn tile(names: bool) -> (f32, f32) {
+    if names { (58.0, 52.0) } else { (36.0, 32.0) }
+}
+
+/// The tab bar's recessed strip above the sections, `bar`, with its hairline at its foot.
+fn strip(ui: &Ui, bar: Rect, t: &crate::Theme) {
+    ui.painter().rect_filled(bar, 0.0, t.colors.sunken);
+    ui.painter().hline(
+        bar.x_range(),
+        bar.bottom() - t.shape.hairline / 2.0,
+        Stroke::new(t.shape.hairline, t.colors.separator),
+    );
+}
+
+/// What the user did to Find Tool…'s field this frame (decision 96).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum FindBarAction {
+    /// The text typed, whole, after each keystroke.
+    Typed(String),
+    /// ✕: the search closed.
+    Close,
+    /// Return in the field: the first tool found opened, found by the text typed this
+    /// frame where the frame also changed it, as a paste and Return together do.
+    OpenFirst { typed: Option<String> },
+}
+
+/// Find Tool…'s field, in the tab bar's place while the search is open (decision 96): the
+/// same strip at the tab bar's height, with tab names or without, holding a field with
+/// the search icon at its start and ✕ after it. Typing reports the whole text at once; ↓
+/// takes the focus to the first tool found, Return opens it, and ✕ closes the search.
+/// Escape is the app's, which knows whether a list or a value field below had it first.
+///
+/// Screen readers find a search box named "Find a tool", and hear the number of tools
+/// found after each keystroke, politely ([`FindBar::count`]). The tools found are sections
+/// the app draws under it, each given where it lives ([`Section::found`]): ↑ and ↓ move
+/// between their headers.
+///
+/// [`Section::found`]: super::Section::found
+pub struct FindBar<'a> {
+    text: &'a str,
+    names: bool,
+    focus: bool,
+    count: Option<usize>,
+}
+
+impl<'a> FindBar<'a> {
+    /// The field holding `text`, as high as the tab bar with tab names, `names`, or
+    /// without.
+    pub fn new(text: &'a str, names: bool) -> Self {
+        FindBar {
+            text,
+            names,
+            focus: false,
+            count: None,
+        }
+    }
+
+    /// Gives the field the focus this frame, as the search opens.
+    pub fn focus(mut self, focus: bool) -> Self {
+        self.focus = focus;
+        self
+    }
+
+    /// How many tools match, said to screen readers ("3 tools"); none while nothing is
+    /// typed, when nothing is listed.
+    pub fn count(mut self, count: Option<usize>) -> Self {
+        self.count = count;
+        self
+    }
+
+    /// The field's id, by which the app tells it from a value field below.
+    pub fn field_id() -> Id {
+        Id::unique("apertrust-ui find field")
+    }
+
+    pub fn show(self, ui: &mut Ui) -> Option<FindBarAction> {
+        let t = theme(ui.ctx());
+        let ctx = ui.ctx().clone();
+        let pad = t.spacing.xs;
+        let (_, tile_h) = tile(self.names);
+        let (bar, _) =
+            ui.allocate_exact_size(vec2(ui.available_width(), tile_h + pad), Sense::hover());
+        strip(ui, bar, &t);
+        let id = FindBar::field_id();
+        // The headers drawn last frame become the ones the keys move through; a search
+        // opening starts afresh, and a ↓ the last frame's tools found never took is dropped.
+        ctx.data_mut(|d| {
+            let found = d.get_temp_mut_or_default::<FoundHeaders>(found_headers());
+            if self.focus {
+                *found = FoundHeaders::default();
+            }
+            found.drawn = std::mem::take(&mut found.drawing);
+            found.first = false;
+        });
+
+        let side = t.sizes.row;
+        let close_rect = Rect::from_center_size(
+            pos2(bar.right() - pad - side / 2.0, bar.center().y),
+            vec2(side, side),
+        );
+        let field = Rect::from_min_max(
+            pos2(bar.left() + pad, bar.center().y - side / 2.0),
+            pos2(close_rect.left() - GAP, bar.center().y + side / 2.0),
+        );
+        let painter = ui.painter();
+        painter.rect_filled(field, t.shape.radius, t.colors.sunken);
+        painter.rect_stroke(
+            field,
+            t.shape.radius,
+            Stroke::new(t.shape.hairline, t.colors.border),
+            StrokeKind::Inside,
+        );
+        let icon = t.sizes.icon;
+        let icon_rect = Rect::from_center_size(
+            pos2(field.left() + t.spacing.s + icon / 2.0, field.center().y),
+            vec2(icon, icon),
+        );
+        Icon::Search.paint(painter, icon_rect, t.colors.text_secondary);
+
+        let name = tr(&ctx, "find-tool-field");
+        if self.focus {
+            ctx.memory_mut(|m| m.request_focus(id));
+        }
+        let mut text = self.text.to_owned();
+        let edit_rect = Rect::from_min_max(
+            pos2(icon_rect.right() + t.spacing.xs, field.top()),
+            pos2(field.right() - t.spacing.xs, field.bottom()),
+        );
+        // The text in the middle of the field's height, as the icon is.
+        let font = FontId::proportional(t.text.body);
+        let row = ctx.fonts_mut(|f| f.row_height(&font));
+        let above = ((side - row) / 2.0).max(0.0) as i8;
+        let edit = TextEdit::singleline(&mut text)
+            .id(id)
+            .frame(Frame::NONE.inner_margin(Margin {
+                top: above,
+                ..Margin::ZERO
+            }))
+            .font(font)
+            .text_color(t.colors.text)
+            .desired_width(edit_rect.width())
+            .hint_text(
+                egui::RichText::new(&name)
+                    .size(t.text.body)
+                    .color(t.colors.text_secondary),
+            );
+        let mut inside = ui.new_child(UiBuilder::new().max_rect(edit_rect));
+        inside.spacing_mut().interact_size.y = side;
+        let visuals = inside.visuals_mut();
+        visuals.selection.bg_fill = t.colors.field_selection;
+        visuals.text_cursor.stroke.color = t.colors.text;
+        // Whether the field had the keys before this frame's Return: egui's `lost_focus`
+        // also holds a frame after ↓ gave a tool found the focus, whose Return is its own.
+        let had_focus = ctx.memory(|m| m.has_focus(id));
+        let response = inside.put(edit_rect, edit);
+        let typed = (text != self.text).then_some(text);
+        if response.has_focus() {
+            focus_ring(ui.painter(), field, &t);
+            // ↓ is the search's, to the tools found, never egui's move to what lies below.
+            ctx.memory_mut(|m| {
+                m.set_focus_lock_filter(
+                    id,
+                    EventFilter {
+                        horizontal_arrows: true,
+                        vertical_arrows: true,
+                        ..Default::default()
+                    },
+                )
+            });
+            // ↓ goes to the first of the tools this frame's text finds, once they are drawn
+            // under the field ([`found_header`]): where none is, the field keeps the focus.
+            let down = ui.input(|i| i.modifiers.is_none() && i.key_pressed(Key::ArrowDown));
+            if down {
+                ctx.data_mut(|d| {
+                    d.get_temp_mut_or_default::<FoundHeaders>(found_headers())
+                        .first = true;
+                });
+            }
+        }
+        // Return opens the first tool found, the field keeping the focus for more typing.
+        let returned = had_focus && response.lost_focus();
+        let mut action = if returned && ui.input(|i| i.key_pressed(Key::Enter)) {
+            ctx.memory_mut(|m| m.request_focus(id));
+            Some(FindBarAction::OpenFirst { typed })
+        } else {
+            typed.map(FindBarAction::Typed)
+        };
+        ctx.accesskit_node_builder(id, |node| {
+            node.set_role(Role::SearchInput);
+            node.set_label(name.as_str());
+        });
+
+        let close = tr(&ctx, "find-tool-close");
+        if button_at(ui, close_rect, Icon::Close, &close).clicked() {
+            action = Some(FindBarAction::Close);
+        }
+
+        // A polite live region that takes no room: how many tools match, heard as the count
+        // changes.
+        let said = self
+            .count
+            .map(|count| {
+                let mut args = Args::new();
+                args.set("count", count);
+                translator(&ctx).text_with("find-tool-count", Some(&args))
+            })
+            .unwrap_or_default();
+        let live = ui.interact(
+            Rect::from_min_size(bar.left_top(), egui::Vec2::ZERO),
+            id.with("count"),
+            Sense::hover(),
+        );
+        live.widget_info(|| WidgetInfo::labeled(Role::Status, true, &said));
+        ctx.accesskit_node_builder(live.id, |node| node.set_live(Live::Polite));
+        action
+    }
+}
+
+/// The headers of the tools Find Tool… found, top first: those drawn this frame, as they
+/// are, and the last frame's, which the keys move through; the header the keys moved the
+/// focus to, scrolled into view where it is next drawn, inside the scroll area of the
+/// tools found, at its rectangle then; and whether ↓ in the field asked for the first
+/// header drawn this frame, the first of what the text found once the field had it.
+#[derive(Clone, Debug, Default)]
+struct FoundHeaders {
+    drawing: Vec<Id>,
+    drawn: Vec<Id>,
+    scroll_to: Option<Id>,
+    first: bool,
+}
+
+/// Asks for the header `id` among the tools found to be scrolled into view where it is
+/// next drawn ([`found_header`]).
+fn scroll_to_header(ctx: &Context, id: Id) {
+    ctx.data_mut(|d| {
+        d.get_temp_mut_or_default::<FoundHeaders>(found_headers())
+            .scroll_to = Some(id);
+    });
+}
+
+fn found_headers() -> Id {
+    Id::unique("apertrust-ui found headers")
+}
+
+/// A section's header among the tools Find Tool… found, `toggle` its chevron and title:
+/// the first drawn takes the focus where ↓ in the field asked for it this frame, and,
+/// while one has the focus, ↑ and ↓ take it to the header before or after it, over the
+/// rows of an open one, each scrolled into view.
+pub(super) fn found_header(ui: &Ui, toggle: &Response) {
+    let ctx = ui.ctx();
+    let (drawn, scroll, first) = ctx.data_mut(|d| {
+        let found = d.get_temp_mut_or_default::<FoundHeaders>(found_headers());
+        found.drawing.push(toggle.id);
+        let first = found.first && found.drawing.len() == 1;
+        if first {
+            found.first = false;
+        }
+        let scroll = found.scroll_to == Some(toggle.id);
+        if scroll {
+            found.scroll_to = None;
+        }
+        (found.drawn.clone(), scroll, first)
+    });
+    if first {
+        ctx.memory_mut(|m| m.request_focus(toggle.id));
+    }
+    // The keys moved the focus here: into view at where it is drawn now, in the scroll
+    // area of the tools found.
+    if scroll || first {
+        ui.scroll_to_rect(toggle.rect, None);
+    }
+    if !toggle.has_focus() {
+        return;
+    }
+    ctx.memory_mut(|m| {
+        m.set_focus_lock_filter(
+            toggle.id,
+            EventFilter {
+                vertical_arrows: true,
+                ..Default::default()
+            },
+        )
+    });
+    // A header the keys moved the focus to this frame has had this frame's key.
+    let Some(here) = drawn.iter().position(|id| *id == toggle.id) else {
+        return;
+    };
+    if toggle.gained_focus() {
+        return;
+    }
+    let (up, down) = ui.input(|i| {
+        let plain = i.modifiers.is_none();
+        (
+            plain && i.key_pressed(Key::ArrowUp),
+            plain && i.key_pressed(Key::ArrowDown),
+        )
+    });
+    let to = if down {
+        drawn.get(here + 1)
+    } else if up {
+        here.checked_sub(1).and_then(|i| drawn.get(i))
+    } else {
+        None
+    };
+    if let Some(&to) = to {
+        ctx.memory_mut(|m| m.request_focus(to));
+        scroll_to_header(ctx, to);
     }
 }
 
@@ -648,6 +954,8 @@ impl<'a> PanelEdge<'a> {
 pub struct PanelBody<'a> {
     pinned: Option<Sections<'a>>,
     header: Option<Sections<'a>>,
+    /// The scrolling part's own id, where it is not a tab's ([`PanelBody::scroll_id`]).
+    scroll_id: Option<&'a str>,
 }
 
 /// Draws sections into the panel.
@@ -671,6 +979,14 @@ impl<'a> PanelBody<'a> {
     /// [`Section::show_header`]: super::Section::show_header
     pub fn header(mut self, header: impl FnOnce(&mut Ui) + 'a) -> Self {
         self.header = Some(Box::new(header));
+        self
+    }
+
+    /// Gives the scrolling part an id of its own, `name`, so it keeps its own place: Find
+    /// Tool…'s tools found scroll apart from the tab they take the place of, which keeps
+    /// its offset for when the search closes.
+    pub fn scroll_id(mut self, name: &'a str) -> Self {
+        self.scroll_id = Some(name);
         self
     }
 
@@ -699,7 +1015,7 @@ impl<'a> PanelBody<'a> {
         let mut scrolled = false;
         scroll_area(ui, &t, |ui| {
             let out = ScrollArea::vertical()
-                .id_salt("scrolling sections")
+                .id_salt(self.scroll_id.unwrap_or("scrolling sections"))
                 .auto_shrink([false, false])
                 .scroll_bar_visibility(ScrollBarVisibility::AlwaysVisible)
                 .show(ui, |ui| ui.scope(|ui| restore(ui, scrolling)));

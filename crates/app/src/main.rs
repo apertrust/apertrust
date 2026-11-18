@@ -55,6 +55,7 @@ mod export;
 mod export_again;
 mod exposure;
 mod fade;
+mod find;
 mod folder;
 mod hardware;
 mod history;
@@ -103,9 +104,9 @@ use apertrust_engine::sidecar::Reason;
 use apertrust_tools::ToolDefinition;
 use apertrust_ui::components::{
     ActivityAction, Available, Browser, BrowserAction, BrowserEdge, BrowserEdgeAction,
-    BrowserPosition, CellMenu, CellRating, Jobs, Margin, Marker, PanelBody, PanelEdge,
-    PanelEdgeAction, PanelTab, PhotoCaption, PhotoFrame, PickerAction, Placed, SaveState,
-    ScopeView, TabBar, TabBarAction, Thumb, Toggle, Toolbar, ToolbarAction, ViewerBar,
+    BrowserPosition, CellMenu, CellRating, FindBar, FindBarAction, Jobs, Margin, Marker, PanelBody,
+    PanelEdge, PanelEdgeAction, PanelTab, PhotoCaption, PhotoFrame, PickerAction, Placed,
+    SaveState, ScopeView, TabBar, TabBarAction, Thumb, Toggle, Toolbar, ToolbarAction, ViewerBar,
     ViewerBarAction, Zoom, browser_lines, browser_thickness,
 };
 use apertrust_ui::{
@@ -1644,6 +1645,9 @@ struct Shell {
     /// Whether the Hidden tab shows for the moment while Show Hidden Tools is off, where
     /// something revealed a hidden tool there; until another tab is chosen.
     hidden_for_now: bool,
+    /// Find Tool…'s search while it is open (decision 96): its field in the tab bar's
+    /// place and the tools found in the tab shown's, which stays as it was beneath.
+    find: Option<find::Search>,
     tab_names: bool,
     /// The Tools panel's width as the user dragged it, in points; None for the theme's.
     /// Kept while a narrower window shows the panel narrower ([`panel_widths`]).
@@ -1798,6 +1802,7 @@ impl Shell {
             hidden_chosen: false,
             show_hidden: settings.show_hidden,
             hidden_for_now: false,
+            find: None,
             tab_names: settings.tab_names,
             panel_width: settings.panel_width,
             guides: false,
@@ -2206,8 +2211,12 @@ impl Shell {
             .collect()
     }
 
-    /// The tab shown, with its tools: the Hidden tab while it is chosen.
+    /// The tab shown, with its tools: the tools Find Tool… found while it is open, the
+    /// Hidden tab while it is chosen.
     fn shown_tab(&self) -> Option<&layout::Tab> {
+        if let Some(search) = &self.find {
+            return Some(search.found());
+        }
         if self.hidden_chosen && self.hidden_shown() {
             return Some(self.workspace.hidden_tab());
         }
@@ -2248,6 +2257,41 @@ impl Shell {
         }
     }
 
+    /// Find Tool… opened, its field taking the focus, or closed, the tab shown before it
+    /// shown again as it was, which it never changed (decision 96). The headers drawn before
+    /// no longer count, as on leaving a tab, so a layout action later in the frame acts on
+    /// none of them.
+    fn toggle_find(&mut self) {
+        self.left_tab();
+        self.find = match self.find {
+            Some(_) => None,
+            None => Some(find::Search::new()),
+        };
+    }
+
+    /// The name of the tab `tool` lives in while Find Tool… lists it, the first tab shown
+    /// that holds it, or Hidden: what its header says after its title (decision 96). None
+    /// while the search is closed.
+    fn found(&self, ctx: &egui::Context, tool: &str) -> Option<tools::Found> {
+        self.find.as_ref()?;
+        Some(
+            match self
+                .workspace
+                .holding(tool)
+                .and_then(|i| self.workspace.tab(i))
+            {
+                Some(tab) => tools::Found {
+                    place: tab_name(ctx, tab),
+                    hidden: false,
+                },
+                None => tools::Found {
+                    place: tr(ctx, "tab-hidden"),
+                    hidden: true,
+                },
+            },
+        )
+    }
+
     /// The hidden processing tools that change the photo, `edited` naming those that do
     /// (`Mirror::edited`), in the Hidden tab's order, while the Hidden tab does not show:
     /// what the dot on ⋮ says, which Show Hidden Tools there answers (decision 96).
@@ -2258,6 +2302,20 @@ impl Shell {
         }
         let hidden = self.workspace.shown.hidden.iter().copied();
         hidden.filter(|tool| edited.contains(tool)).collect()
+    }
+
+    /// The settings the Tools panel is drawn with: what settings keep, but while Find Tool…
+    /// is open, the collapsible groups as the search left them, which a utility's page
+    /// reads (decision 96). Never kept: the saved state is the tab's.
+    fn drawn_settings(&self, ctx: &egui::Context) -> Settings {
+        let mut settings = self.to_settings(ctx);
+        if let Some(search) = &self.find {
+            for ((tool, group), open) in &search.groups {
+                let groups = settings.edit.groups.entry(tool.clone()).or_default();
+                groups.insert(group.clone(), *open);
+            }
+        }
+        settings
     }
 
     /// What settings keep of the shell, and of the interface's scale, which egui holds.
@@ -2466,13 +2524,25 @@ impl Shell {
         }
     }
 
-    /// Whether the section `id` is open: as the user left it, or `default`.
+    /// Whether the section `id` is open: as the user left it, or `default`; while Find
+    /// Tool… is open, whether it was opened in the search, every tool found closed at first.
     fn section_open(&self, id: &str, default: bool) -> bool {
+        if let Some(search) = &self.find {
+            return search.opened.contains(id);
+        }
         self.sections.get(id).copied().unwrap_or(default)
     }
 
-    /// Keeps the section `id` open or closed, for this run and the next.
+    /// Keeps the section `id` open or closed, for this run and the next; while Find Tool…
+    /// is open, for the search alone, so the tab comes back as it was (decision 96).
     fn set_section_open(&mut self, id: &str, open: bool) {
+        if let Some(search) = &mut self.find {
+            match open {
+                true => search.opened.insert(id.to_owned()),
+                false => search.opened.remove(id),
+            };
+            return;
+        }
         if self.sections.get(id) != Some(&open) {
             self.sections.insert(id.to_owned(), open);
         }
@@ -2486,19 +2556,26 @@ impl Shell {
     /// Hidden Tools is off (decision 96). Anything else, as an operation's unowned
     /// parameters, changes nothing.
     fn reveal(&mut self, tool: &'static str) {
-        match self.workspace.holding(tool) {
+        let tab = self.workspace.holding(tool);
+        if tab.is_none() && !self.workspace.hides(tool) {
+            return;
+        }
+        // Shown in its tab, so Find Tool…'s search, which would hide it, closes; never
+        // where nothing is revealed.
+        self.find = None;
+        match tab {
             Some(tab) => self.choose_tab(tab),
-            None if self.workspace.hides(tool) => self.choose_hidden(),
-            None => return,
+            None => self.choose_hidden(),
         }
         self.set_section_open(tool, true);
         self.reveal = Some(tool);
     }
 
     /// What `definition`'s header is given by the shell (decision 93): its section open as
-    /// kept, or `default`, peeking while `peek` holds, and ⋯ holding its declared items as
+    /// kept, or `default`, peeking while `peek` holds, ⋯ holding its declared items as
     /// the menu builder lists them, then the layout's ([`Shell::layout_head`]), with the
-    /// keymap's keys, enabled as `state` says.
+    /// keymap's keys, enabled as `state` says, and while Find Tool… is open where the tool
+    /// lives ([`Shell::found`]).
     fn head(
         &self,
         ctx: &egui::Context,
@@ -2514,6 +2591,7 @@ impl Shell {
             enabled: true,
             photo: None,
             layout: None,
+            found: self.found(ctx, definition.id),
         };
         head.with_layout(self.layout_head(ctx, definition.id, state))
     }
@@ -2616,10 +2694,12 @@ impl Shell {
 
     /// Whether `tool`'s collapsible group `group` is open: as the user left it, or
     /// `default`, as Collections' Folders, open in folder mode, where it is Collections
-    /// alone.
+    /// alone; while Find Tool… is open, as the search left it first.
     fn group_open_or(&self, tool: &str, group: &str, default: bool) -> bool {
+        let searched = (self.find.as_ref())
+            .and_then(|search| search.groups.get(&(tool.to_owned(), group.to_owned())));
         let kept = self.groups.get(tool).and_then(|groups| groups.get(group));
-        kept.copied().unwrap_or(default)
+        searched.or(kept).copied().unwrap_or(default)
     }
 
     /// Opens or closes `tool`'s collapsible group `group`, for this run and the next.
@@ -2629,8 +2709,16 @@ impl Shell {
         self.set_group_open(tool, group, open);
     }
 
-    /// Keeps `tool`'s collapsible group `group` open or closed, for this run and the next.
+    /// Keeps `tool`'s collapsible group `group` open or closed, for this run and the next;
+    /// while Find Tool… is open, for the search alone.
     fn set_group_open(&mut self, tool: &str, group: &str, open: bool) {
+        // While Find Tool… is open, for the search alone, so the tab comes back as it was.
+        if let Some(search) = &mut self.find {
+            search
+                .groups
+                .insert((tool.to_owned(), group.to_owned()), open);
+            return;
+        }
         let groups = self.groups.entry(tool.to_owned()).or_default();
         groups.insert(group.to_owned(), open);
     }
@@ -2775,8 +2863,13 @@ impl Shell {
             // The app's, from the folder and the photo it holds ([`App::shell_state`]).
             opened: false,
             recents,
-            tabs: self.workspace.enabled(),
-            hidden_tab: self.hidden_shown().then_some(self.hidden_chosen),
+            // While Find Tool… is open, the tabs give way to its field: their keys and Tools
+            // Panel Tab's items do nothing.
+            tabs: match self.find {
+                Some(_) => [false; layout::MOST_TABS],
+                None => self.workspace.enabled(),
+            },
+            hidden_tab: (self.find.is_none() && self.hidden_shown()).then_some(self.hidden_chosen),
             show_hidden: self.show_hidden,
             scale: ctx.zoom_factor(),
             dialog: self.about.is_open(),
@@ -2980,17 +3073,15 @@ impl Shell {
     ) -> Option<ActionId> {
         let ctx = ui.ctx().clone();
         let words = translator(&ctx);
+        if self.find.is_some() {
+            self.find_bar(ui, &words);
+            return None;
+        }
         // A tab a build knows in the interface's language, one of a person's own as written,
         // then the Hidden tab while it shows.
         let hidden = self.hidden_shown().then(|| self.workspace.hidden_tab());
         let shown: Vec<&layout::Tab> = self.workspace.tabs().iter().chain(hidden).collect();
-        let names: Vec<String> = shown
-            .iter()
-            .map(|tab| match &tab.title {
-                layout::Title::Message(id) => tr(&ctx, id),
-                layout::Title::Own(title) => title.clone(),
-            })
-            .collect();
+        let names: Vec<String> = shown.iter().map(|tab| tab_name(&ctx, tab)).collect();
         // The Hidden tab is chosen by its own action, after the twelve, and can always be
         // chosen, with nothing hidden saying so in its body.
         let hidden_at = hidden.is_some().then(|| self.workspace.tabs().len());
@@ -3035,6 +3126,66 @@ impl Shell {
             }
             Some(TabBarAction::Chosen(id)) => menus::chosen(&id),
             Some(TabBarAction::Customise) | None => None,
+        }
+    }
+
+    /// Find Tool…'s field in the tab bar's place (decision 96), the tools the text finds
+    /// worked out again in the interface's language, `words`, before the panel lists them:
+    /// typing finds them at once, Return opens the first, and ✕ closes the search. Escape is
+    /// [`Shell::find_escape`]'s.
+    fn find_bar(&mut self, ui: &mut egui::Ui, words: &Translator) {
+        let Some(search) = &mut self.find else {
+            return;
+        };
+        search.refresh(words);
+        let count = search.typed().then(|| search.found().order.len());
+        let focus = std::mem::take(&mut search.focus);
+        let asked = FindBar::new(&search.text, self.tab_names)
+            .focus(focus)
+            .count(count)
+            .show(ui);
+        match asked {
+            Some(FindBarAction::Typed(text)) => {
+                search.text = text;
+                search.refresh(words);
+            }
+            Some(FindBarAction::OpenFirst { typed }) => {
+                // What the frame typed first, so the first is the new text's.
+                if let Some(text) = typed {
+                    search.text = text;
+                    search.refresh(words);
+                }
+                if let Some(first) = search.found().order.first().copied() {
+                    self.set_section_open(first, true);
+                }
+            }
+            Some(FindBarAction::Close) => self.find = None,
+            None => {}
+        }
+    }
+
+    /// Escape while Find Tool… is open, before the Tools panel is drawn (decision 96): it
+    /// closes the search at once, the tab shown before it coming back as it was, unless an
+    /// open list or a text field below the field had the keys as the last frame ended,
+    /// which Escape closes alone ([`Shell::find_keys`]), or a dialog is open.
+    fn find_escape(&mut self, ctx: &egui::Context, state: &State) {
+        let Some(search) = &self.find else {
+            return;
+        };
+        let escape = ctx.input(|i| i.key_pressed(egui::Key::Escape));
+        if escape && !search.inner && !state.dialog && !state.modal {
+            self.find = None;
+            ctx.request_repaint();
+        }
+    }
+
+    /// Notes, as the frame's last step, once its Tools panel, `panel`, Browser, Viewer and
+    /// popups have drawn and its actions have run, whether an open list, a text field below
+    /// Find Tool…'s field or a widget outside the panel has the keys, for the next frame's
+    /// Escape ([`Shell::find_escape`]).
+    fn find_keys(&mut self, ctx: &egui::Context, panel: egui::Rect) {
+        if let Some(search) = &mut self.find {
+            search.inner = inner_keys(ctx, panel);
         }
     }
 
@@ -3111,6 +3262,7 @@ impl Shell {
                 }
             }
             Intent::ShowHiddenTools => self.toggle_show_hidden(),
+            Intent::FindTool => self.toggle_find(),
             Intent::Workspace(id) => self.switch_workspace(id),
             Intent::Section(change) => {
                 if let Some(tool) = self.focused_section(ctx) {
@@ -3119,11 +3271,14 @@ impl Shell {
             }
             // Pressed again, it is chosen already, and nothing changes. Hidden, it is
             // revealed in the Hidden tab, opened and scrolled to, as any tool is (decision
-            // 96).
-            Intent::ShowCollections => match self.workspace.holding(library::ID) {
-                Some(tab) => self.choose_tab(tab),
-                None => self.reveal(library::ID),
-            },
+            // 96). Either way Find Tool…'s search, which would hide it, closes first.
+            Intent::ShowCollections => {
+                self.find = None;
+                match self.workspace.holding(library::ID) {
+                    Some(tab) => self.choose_tab(tab),
+                    None => self.reveal(library::ID),
+                }
+            }
             Intent::ScaleUp | Intent::ScaleDown => {
                 let up = intent == Intent::ScaleUp;
                 ctx.set_zoom_factor(actions::step_scale(ctx.zoom_factor(), up));
@@ -4598,6 +4753,7 @@ impl App {
     /// they are drawn. Returns the action of the tab clicked.
     fn tools_panel(&mut self, ui: &mut egui::Ui, peek: bool) -> Option<ActionId> {
         let state = self.state_in_window(ui.ctx());
+        self.shell.find_escape(ui.ctx(), &state);
         let changing = self.shell.hidden_changing(self.mirror.edited());
         let tab_clicked = self.shell.tab_bar(ui, &state, &changing);
         ui.spacing_mut().item_spacing.y = 0.0;
@@ -4621,7 +4777,7 @@ impl App {
         let revealed = self.shell.revealing();
         let (state, settings) = (
             self.state_in_window(ui.ctx()),
-            self.shell.to_settings(ui.ctx()),
+            self.shell.drawn_settings(ui.ctx()),
         );
         // Export's header is the shell's, as every utility's (decision 93), with the photo
         // its ⋯ acts on, so a choice made for another photo is dropped.
@@ -4657,7 +4813,12 @@ impl App {
             keys: &keys,
             home: self.places.home.as_deref(),
         };
-        let mut photos = PhotosDrawn::default();
+        // Where Collections lives while Find Tool… lists it; Export's header says so as
+        // every header the shell gives does.
+        let mut photos = PhotosDrawn {
+            found: self.shell.found(ui.ctx(), library::ID),
+            ..PhotosDrawn::default()
+        };
         let export = &mut self.export;
         let mut others = |ui: &mut egui::Ui, id: &'static str, cx: &mut utility::Context<'_>| {
             let shown = &mut photos_shown;
@@ -5922,6 +6083,10 @@ impl eframe::App for App {
             self.session.send(command);
         }
         self.finish_frame(&ctx, frame, central.union(browser), window);
+        // Who has the keys for the next frame's Escape, last: once everything that may
+        // have taken them this frame has drawn, a found tool's picker on the photo or a
+        // popup, and the frame's actions have run, F6 moving the focus among them.
+        self.shell.find_keys(&ctx, tools_panel.response.rect);
     }
 
     /// What was chosen in the menus runs here, at once: eframe calls this before each frame,
@@ -6935,8 +7100,9 @@ fn edit_tab(
         words: &words,
         commands: &mut tab.commands,
     };
-    // History alone in its tab, its header staying at the tab's top.
-    if shell.shown_tab().is_some_and(history_alone) {
+    // History alone in its tab, its header staying at the tab's top; found alone by Find
+    // Tool…, it is listed as any tool found is.
+    if shell.find.is_none() && shell.shown_tab().is_some_and(history_alone) {
         let mut history = history::HistoryTool { alone: true };
         let definition = &history::declared().tool;
         let head = shell.head(ui.ctx(), definition, state, peek, history::OPEN);
@@ -7023,6 +7189,21 @@ fn hidden_change(ctx: &egui::Context, changing: &[&'static str]) -> String {
     words.text_with("tools-panel-hidden-change", Some(&args))
 }
 
+/// Whether something other than Find Tool…'s field has the keys this frame, so Escape is
+/// its own (decision 96): an open list or menu, a text field below the field, a value
+/// field in a tool found, or a widget outside the Tools panel, `panel`, as a tool found's
+/// picker on the photo, so the search stays open while that tool is used.
+fn inner_keys(ctx: &egui::Context, panel: egui::Rect) -> bool {
+    let field = components::FindBar::field_id();
+    let focused = ctx.memory(|m| m.focused());
+    let outside = focused
+        .filter(|id| *id != field)
+        .and_then(|id| ctx.read_response(id))
+        .is_some_and(|widget| !panel.contains_rect(widget.rect));
+    let text = ctx.text_edit_focused() && focused != Some(field);
+    popup::any_open(ctx) || text || outside
+}
+
 /// Whether `tab` holds History alone, which draws its header at the tab's top
 /// ([`history::tab`]), as the Default workspace's History tab does.
 fn history_alone(tab: &layout::Tab) -> bool {
@@ -7068,6 +7249,8 @@ struct PhotosDrawn {
     export: export::Drawn,
     /// Whether Export was drawn.
     exported: bool,
+    /// Where Collections lives while Find Tool… lists it, which its header says.
+    found: Option<tools::Found>,
 }
 
 /// Routes the change of a utility's setting row, `key` in full set to `value` (decision
@@ -7116,6 +7299,7 @@ fn photos_tool(
         let layout = std::mem::take(&mut shown.collections);
         let head = tools::Head {
             photo: cx.mirror.photo.open(),
+            found: out.found.clone(),
             ..library::head(ui, collections)
         }
         .with_layout(layout);
@@ -7263,6 +7447,10 @@ fn panel_body(
         }
     };
     let mut body = PanelBody::new();
+    // The tools found scroll apart, so the tab keeps its place for when the search closes.
+    if shell.find.is_some() {
+        body = body.scroll_id(find::FOUND);
+    }
     if !tab.pinned.is_empty() {
         body = body.pinned(|ui| {
             for id in &tab.pinned {
@@ -7271,8 +7459,22 @@ fn panel_body(
         });
     }
     body.show(ui, |ui| {
-        if tab.id == layout::HIDDEN && tab.order.is_empty() {
-            no_hidden(ui);
+        match &shell.find {
+            // Nothing listed until something is typed, then what matched, or that nothing did.
+            Some(search) if !search.typed() => {
+                centred_note(ui, &tr(ui.ctx(), "find-tool-hint"), true);
+            }
+            Some(search) if tab.order.is_empty() => {
+                let mut args = apertrust_ui::i18n::Args::new();
+                args.set("text", search.text.trim());
+                let says = translator(ui.ctx()).text_with("find-tool-none", Some(&args));
+                centred_note(ui, &says, true);
+            }
+            Some(_) => {}
+            None if tab.id == layout::HIDDEN && tab.order.is_empty() => {
+                centred_note(ui, &tr(ui.ctx(), "tools-panel-no-hidden"), false);
+            }
+            None => {}
         }
         for id in &tab.order {
             draw(ui, id);
@@ -7281,18 +7483,32 @@ fn panel_body(
     drawn.into_inner().2
 }
 
-/// The Hidden tab's body where the workspace hides nothing: "No hidden tools in this
-/// workspace.", centred in `text_secondary` (decision 96).
-fn no_hidden(ui: &mut egui::Ui) {
+/// What a tab's body says in place of its tools, centred in `text_secondary` (decision 96):
+/// the Hidden tab's where the workspace hides nothing, "No hidden tools in this
+/// workspace.", near its top; and Find Tool…'s while nothing is typed or nothing matches,
+/// in the `middle` of the body, as the wireframe draws them.
+fn centred_note(ui: &mut egui::Ui, says: &str, middle: bool) {
     let t = theme(ui.ctx());
-    let says = tr(ui.ctx(), "tools-panel-no-hidden");
-    ui.add_space(t.spacing.l);
-    ui.vertical_centered(|ui| {
-        let text = egui::RichText::new(says)
-            .color(t.colors.text_secondary)
-            .size(t.text.body);
-        ui.label(text);
-    });
+    let text = egui::RichText::new(says)
+        .color(t.colors.text_secondary)
+        .size(t.text.body);
+    let above = if middle {
+        // The body's scroll area clips at its viewport, which the note is centred in.
+        let font = egui::FontId::proportional(t.text.body);
+        let colour = t.colors.text_secondary;
+        let width = ui.available_width();
+        let height = ui
+            .painter()
+            .layout(says.to_owned(), font, colour, width)
+            .size()
+            .y;
+        let room = ui.clip_rect().bottom() - ui.cursor().top();
+        ((room - height) / 2.0).max(t.spacing.l)
+    } else {
+        t.spacing.l
+    };
+    ui.add_space(above);
+    ui.vertical_centered(|ui| ui.label(text));
 }
 
 /// Prepares `ctx` for the shell before its first frame: its theme, its language and
@@ -10130,7 +10346,7 @@ mod tests {
             discard: options.discard,
             ..shell.state(ctx, open, takes && mirror.resettable())
         };
-        (shell.to_settings(ctx), state)
+        (shell.drawn_settings(ctx), state)
     }
 
     fn editing(folder: &settings::testing::Folder) -> Harness<'static, Editing> {
@@ -11847,6 +12063,785 @@ mod tests {
                 harness.run();
                 let what = if hidden { "hidden" } else { "tab" };
                 harness.snapshot(format!("tool-options-layout-{what}-{name}"));
+                results.extend(harness.take_snapshot_results());
+            }
+        }
+    }
+
+    /// The Tools panel as the app draws it each frame with Find Tool… (decision 96): the
+    /// registry's keys read first, as the Mac's, Escape for the search, the tab bar or the
+    /// search's field, then the tab shown's sections or the tools found, on the panel's
+    /// ground in `which`'s colours.
+    fn find_panel(
+        folder: &settings::testing::Folder,
+        size: egui::Vec2,
+        which: Builtin,
+    ) -> Harness<'static, Editing> {
+        find_panel_beside(folder, size, which, false)
+    }
+
+    /// The Tools panel as [`find_panel`] draws it, with, where `outside`, a strip under it
+    /// outside the panel, drawn after it as the Viewer is, holding a widget named "Outside"
+    /// that a click focuses and that keeps Escape while it has the focus, as a tool's
+    /// picker on the photo does. As the app does, the frame's actions run once both have
+    /// drawn, F6 going between the two, and who has the keys is noted last.
+    fn find_panel_beside(
+        folder: &settings::testing::Folder,
+        size: egui::Vec2,
+        which: Builtin,
+        outside: bool,
+    ) -> Harness<'static, Editing> {
+        let (_, settings) = Keeper::open(folder.storage());
+        Harness::builder()
+            .with_size(size)
+            .with_os(OperatingSystem::Mac)
+            .with_context_setup(move |ctx| {
+                apertrust_ui::install(ctx, Theme::builtin(which));
+                registry_keys_only(ctx);
+            })
+            .build_ui_state(
+                move |ui, editing: &mut Editing| {
+                    let ctx = ui.ctx().clone();
+                    let panel = theme(&ctx).colors.panel;
+                    ui.painter().rect_filled(ui.max_rect(), 0.0, panel);
+                    let strip = if outside { 40.0 } else { 0.0 };
+                    let bottom = ui.max_rect().bottom() - strip;
+                    let (inside, below) = ui.max_rect().split_top_bottom_at_y(bottom);
+                    let mut panel_ui = ui.new_child(egui::UiBuilder::new().max_rect(inside));
+                    let panel_ui = &mut panel_ui;
+                    let state = editing.shell.state(&ctx, false, false);
+                    let mut run = actions::read(&ctx, &editing.shell.keymap, &state).pressed;
+                    editing.shell.find_escape(&ctx, &state);
+                    run.extend(editing.shell.tab_bar(panel_ui, &state, &[]));
+                    panel_ui.spacing_mut().item_spacing.y = 0.0;
+                    let panels = tools::Panels::default();
+                    let (shell, mirror) = (&editing.shell, &editing.mirror);
+                    let (settings, state) = editing_state(&ctx, shell, mirror);
+                    let tab = edit_tab(
+                        panel_ui,
+                        shell,
+                        mirror,
+                        &settings,
+                        &state,
+                        &panels,
+                        false,
+                        &mut |_, _, _| {},
+                    );
+                    editing.history.extend(tab.history.iter().copied());
+                    // Drawn after the panel, as the Viewer is, taking the focus on a click as
+                    // the picker's photo node does.
+                    if outside {
+                        let id = egui::Id::unique("outside the panel");
+                        let widget = ui.interact(below, id, egui::Sense::click());
+                        widget.widget_info(|| {
+                            egui::WidgetInfo::labeled(Role::Button, true, "Outside")
+                        });
+                        if widget.clicked() {
+                            widget.request_focus();
+                        }
+                        let keeps = egui::EventFilter {
+                            escape: true,
+                            ..Default::default()
+                        };
+                        ctx.memory_mut(|m| m.set_focus_lock_filter(id, keeps));
+                    }
+                    // The frame's actions after it is drawn, F6 among them, then who has the
+                    // keys, last.
+                    let state = editing.shell.state(&ctx, false, false);
+                    let regions = [inside, below];
+                    for id in run {
+                        editing.shell.run(id, &state, &ctx, &regions);
+                    }
+                    editing.shell.find_keys(&ctx, inside);
+                },
+                Editing {
+                    shell: Shell::new(&settings, Locale::EnGb, OperatingSystem::Mac),
+                    mirror: crate::mirror::tests::mirror(),
+                    history: Vec::new(),
+                    sent: Vec::new(),
+                },
+            )
+    }
+
+    /// The search field, found by its role and name.
+    fn find_field<'h>(harness: &'h Harness<'_, Editing>) -> egui_kittest::Node<'h> {
+        harness.get_by_role_and_label(Role::SearchInput, "Find a tool")
+    }
+
+    /// Cmd+Shift+F opens Find Tool…, its field in the tab bar's place with the focus, the
+    /// tabs gone and their keys resting, nothing listed until something is typed; then the
+    /// tools found, each saying where it lives, and the count said politely. Escape closes
+    /// it, giving back the tab shown before, and so does Cmd+Shift+F again (decision 96).
+    #[test]
+    fn find_tool_opens_in_the_tab_bar_s_place_and_escape_gives_the_tab_back() {
+        let folder = settings::testing::Folder::new("find-tool-open");
+        let mut harness = find_panel(&folder, egui::vec2(560.0, 900.0), Builtin::Dark);
+        harness.run();
+        harness.get_by_role_and_label(Role::Tab, "Effects").click();
+        harness.run();
+        let effects = harness.state().shell.panel_tab;
+        harness.get_by_role_and_label(Role::Button, "Vignetting");
+
+        harness.key_press_modifiers(Modifiers::COMMAND | Modifiers::SHIFT, Key::F);
+        harness.run();
+        assert!(find_field(&harness).is_focused());
+        assert!(
+            harness
+                .query_by_role_and_label(Role::Tab, "Effects")
+                .is_none()
+        );
+        let ctx = egui::Context::default();
+        let state = harness.state().shell.state(&ctx, false, false);
+        assert_eq!(state.tabs, [false; layout::MOST_TABS]);
+        assert_eq!(state.hidden_tab, None);
+        let tab_1 = actions::action(ActionId::PANEL_TABS[0]).unwrap();
+        assert!(!tab_1.enabled(&state));
+        // Nothing listed until something is typed.
+        harness.get_by_label("Type a tool’s name.");
+        assert!(
+            harness
+                .query_by_role_and_label(Role::Button, "Vignetting")
+                .is_none()
+        );
+
+        find_field(&harness).type_text("vign");
+        harness.run();
+        let found = harness.get_by_role_and_label(Role::Button, "Vignetting");
+        let said = found.accesskit_node().description().unwrap_or_default();
+        assert!(said.starts_with("in Effects"), "{said}");
+        harness.get_by_role_and_label(Role::Status, "1 tool");
+        assert!(harness.query_by_label("Type a tool’s name.").is_none());
+
+        // Escape closes the search at once, giving back the tab shown before.
+        harness.key_press(Key::Escape);
+        harness.run();
+        assert!(harness.state().shell.find.is_none());
+        assert!(harness.query_by_role(Role::SearchInput).is_none());
+        let tab = harness.get_by_role_and_label(Role::Tab, "Effects");
+        assert_eq!(tab.accesskit_node().toggled(), Some(Toggled::True));
+        assert_eq!(harness.state().shell.panel_tab, effects);
+        harness.get_by_role_and_label(Role::Button, "Vignetting");
+
+        // Cmd+Shift+F again closes it, from its own field too.
+        harness.key_press_modifiers(Modifiers::COMMAND | Modifiers::SHIFT, Key::F);
+        harness.run();
+        assert!(harness.state().shell.find.is_some());
+        harness.key_press_modifiers(Modifiers::COMMAND | Modifiers::SHIFT, Key::F);
+        harness.run();
+        assert!(harness.state().shell.find.is_none());
+        harness.get_by_role_and_label(Role::Tab, "Effects");
+    }
+
+    /// Hidden tools are found too, each marked: the eye struck through and Hidden after its
+    /// title, "hidden" to screen readers; what matches nothing says so, the count said
+    /// (decision 96).
+    #[test]
+    fn find_tool_finds_hidden_tools_and_says_when_nothing_matches() {
+        let folder = settings::testing::Folder::new("find-tool-hidden");
+        let mut harness = find_panel(&folder, egui::vec2(560.0, 900.0), Builtin::Dark);
+        let (workspace, _) = layout::Workspaces::builtin().open(layout::ESSENTIALS);
+        harness.state_mut().shell.open_workspace(workspace);
+        assert!(harness.state().shell.workspace.hides("vignette"));
+        harness.state_mut().shell.toggle_find();
+        harness.run();
+        find_field(&harness).type_text("vignetting");
+        harness.run();
+        let found = harness.get_by_role_and_label(Role::Button, "Vignetting");
+        let said = found.accesskit_node().description().unwrap_or_default();
+        assert!(said.starts_with("hidden"), "{said}");
+        // A tool a tab holds, by darktable's alias: Colour calibration's "white balance",
+        // after White balance, whose name it is.
+        find_field(&harness).focus();
+        harness.run();
+        harness.key_press_modifiers(Modifiers::COMMAND, Key::A);
+        find_field(&harness).type_text("white balance");
+        harness.run();
+        let tops: Vec<f32> = ["White balance", "Colour calibration"]
+            .map(|name| {
+                harness
+                    .get_by_role_and_label(Role::Button, name)
+                    .rect()
+                    .top()
+            })
+            .into();
+        assert!(tops[0] < tops[1]);
+        harness.get_by_role_and_label(Role::Status, "2 tools");
+        // Nothing matches.
+        harness.key_press_modifiers(Modifiers::COMMAND, Key::A);
+        find_field(&harness).type_text("xyz");
+        harness.run();
+        harness.get_by_label("No tool matches “xyz”.");
+        harness.get_by_role_and_label(Role::Status, "0 tools");
+    }
+
+    /// ↓ from the field goes to the first tool found's header, ↑ and ↓ between the
+    /// headers; Return in the field opens the first (decision 96).
+    #[test]
+    fn the_keys_move_from_the_field_to_the_tools_found() {
+        let folder = settings::testing::Folder::new("find-tool-keys");
+        let mut harness = find_panel(&folder, egui::vec2(560.0, 900.0), Builtin::Dark);
+        harness.state_mut().shell.toggle_find();
+        harness.run();
+        find_field(&harness).type_text("colour");
+        harness.run();
+        harness.run();
+        let header = |harness: &Harness<'_, Editing>, name: &str| {
+            harness
+                .get_by_role_and_label(Role::Button, name)
+                .is_focused()
+        };
+        harness.key_press(Key::ArrowDown);
+        harness.run();
+        assert!(header(&harness, "Colour calibration"));
+        harness.key_press(Key::ArrowDown);
+        harness.run();
+        assert!(header(&harness, "Colour balance RGB"));
+        harness.key_press(Key::ArrowUp);
+        harness.run();
+        assert!(header(&harness, "Colour calibration"));
+        // Return in the field opens the first, the field keeping the focus.
+        find_field(&harness).focus();
+        harness.run();
+        assert!(!harness.state().shell.section_open("channelmixerrgb", false));
+        harness.key_press(Key::Enter);
+        harness.run();
+        assert!(harness.state().shell.section_open("channelmixerrgb", false));
+        assert!(find_field(&harness).is_focused());
+        // Opened in the search alone: closed, the tab's sections are as they were.
+        harness.key_press(Key::Escape);
+        harness.run();
+        assert!(harness.state().shell.find.is_none());
+        assert_eq!(harness.state().shell.sections.get("channelmixerrgb"), None);
+    }
+
+    /// View › Collections while Find Tool… is open closes the search, its tab chosen, so
+    /// the next Escape changes nothing (decision 96).
+    #[test]
+    fn view_collections_closes_the_search() {
+        let folder = settings::testing::Folder::new("find-tool-collections");
+        let mut harness = find_panel(&folder, egui::vec2(560.0, 900.0), Builtin::Dark);
+        harness.run();
+        harness.get_by_role_and_label(Role::Tab, "Effects").click();
+        harness.run();
+        harness.state_mut().shell.toggle_find();
+        harness.run();
+        let ctx = egui::Context::default();
+        let state = harness.state().shell.state(&ctx, false, false);
+        harness
+            .state_mut()
+            .shell
+            .run(ActionId::SHOW_COLLECTIONS, &state, &ctx, &[]);
+        harness.run();
+        assert!(harness.state().shell.find.is_none());
+        let photos = harness.get_by_role_and_label(Role::Tab, "Photos");
+        assert_eq!(photos.accesskit_node().toggled(), Some(Toggled::True));
+        harness.key_press(Key::Escape);
+        harness.run();
+        let photos = harness.get_by_role_and_label(Role::Tab, "Photos");
+        assert_eq!(photos.accesskit_node().toggled(), Some(Toggled::True));
+    }
+
+    /// Escape is what has the keys first while Find Tool… is open: an open list in a tool
+    /// found, its value field, a widget outside the Tools panel, as its picker on the
+    /// photo, or a dialog, each keeping the search open; with the field's focus it closes
+    /// the search (decision 96).
+    #[test]
+    fn escape_closes_what_has_the_keys_before_the_search() {
+        use crate::mirror::tests::photo;
+        let folder = settings::testing::Folder::new("find-tool-escape");
+        let size = egui::vec2(560.0, 900.0);
+        let mut harness = find_panel_beside(&folder, size, Builtin::Dark, true);
+        let mirror = &mut harness.state_mut().mirror;
+        mirror.apply(Event::Opened(photo(1)));
+        mirror.apply(Event::Values(photo_values(0.0, 2)));
+        harness.state_mut().shell.toggle_find();
+        harness.run();
+        let open = |harness: &Harness<'_, Editing>| harness.state().shell.find.is_some();
+
+        // A found tool's list: Highlight reconstruction's Method, opened from the field.
+        find_field(&harness).type_text("highlight");
+        harness.run();
+        harness.key_press(Key::Enter);
+        harness.run();
+        harness
+            .get_by_role_and_label(Role::ComboBox, "Method")
+            .click();
+        harness.run();
+        assert!(popup::any_open(&harness.ctx));
+        harness.key_press(Key::Escape);
+        harness.run();
+        assert!(!popup::any_open(&harness.ctx));
+        assert!(open(&harness), "the list's Escape closed the search");
+
+        // A found tool's value field: Exposure's, opened by Enter on its slider.
+        find_field(&harness).focus();
+        harness.run();
+        harness.key_press_modifiers(Modifiers::COMMAND, Key::A);
+        find_field(&harness).type_text("exposure");
+        harness.run();
+        harness.key_press(Key::Enter);
+        harness.run();
+        harness
+            .get_by_role_and_label(Role::Slider, "Exposure")
+            .focus();
+        harness.run();
+        harness.key_press(Key::Enter);
+        harness.run();
+        assert!(harness.ctx.text_edit_focused());
+        harness.key_press(Key::Escape);
+        harness.run();
+        assert!(open(&harness), "the value field's Escape closed the search");
+
+        // A widget outside the Tools panel keeping Escape, as a found tool's picker does.
+        harness.get_by_label("Outside").focus();
+        harness.run();
+        harness.key_press(Key::Escape);
+        harness.run();
+        assert!(open(&harness), "the picker's Escape closed the search");
+
+        // A dialog open over the window.
+        find_field(&harness).focus();
+        harness.run();
+        let ctx = harness.ctx.clone();
+        harness.state_mut().shell.about.open(&ctx);
+        harness.run();
+        harness.key_press(Key::Escape);
+        harness.run();
+        assert!(open(&harness), "a dialog's Escape closed the search");
+        harness.state_mut().shell.about = about::About::default();
+        harness.run();
+
+        // The field's own Escape closes it.
+        find_field(&harness).focus();
+        harness.run();
+        harness.key_press(Key::Escape);
+        harness.run();
+        assert!(!open(&harness));
+    }
+
+    /// The tools found scroll apart from the tab, which keeps its place for when the
+    /// search closes (decision 96).
+    #[test]
+    fn the_tools_found_scroll_apart_from_the_tab() {
+        let folder = settings::testing::Folder::new("find-tool-scroll");
+        let mut harness = find_panel(&folder, egui::vec2(560.0, 260.0), Builtin::Dark);
+        harness.run();
+        let top = |harness: &Harness<'_, Editing>, name: &str| {
+            harness
+                .get_by_role_and_label(Role::Button, name)
+                .rect()
+                .top()
+        };
+        let exposure = top(&harness, "Exposure");
+        harness.state_mut().shell.toggle_find();
+        harness.run();
+        find_field(&harness).type_text("o");
+        harness.run();
+        let first = harness.state().shell.find.as_ref().unwrap().found().order[0];
+        let first = tr(&harness.ctx, &find::title(first));
+        let before = top(&harness, &first);
+        harness.get_by_role_and_label(Role::Button, &first).hover();
+        harness.event(egui::Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Point,
+            delta: egui::vec2(0.0, -200.0),
+            phase: egui::TouchPhase::Move,
+            source: egui::MouseWheelSource::Wheel,
+            modifiers: Default::default(),
+        });
+        // Under the pointer, its header waits to show its tooltip.
+        harness.run_steps(8);
+        assert!(
+            top(&harness, &first) < before,
+            "the tools found did not scroll"
+        );
+        find_field(&harness).focus();
+        harness.run();
+        harness.key_press(Key::Escape);
+        harness.run();
+        assert!(harness.state().shell.find.is_none());
+        assert_eq!(top(&harness, "Exposure"), exposure);
+    }
+
+    /// ↓ and ↑ between the tools found scroll the header focused into view.
+    #[test]
+    fn the_keys_scroll_the_header_focused_into_view() {
+        let folder = settings::testing::Folder::new("find-tool-into-view");
+        let height = 200.0;
+        let mut harness = find_panel(&folder, egui::vec2(560.0, height), Builtin::Dark);
+        harness.state_mut().shell.toggle_find();
+        harness.run();
+        find_field(&harness).type_text("o");
+        harness.run();
+        harness.run();
+        let found = harness
+            .state()
+            .shell
+            .find
+            .as_ref()
+            .unwrap()
+            .found()
+            .order
+            .len();
+        assert!(found > 6, "{found} tools found, too few to scroll");
+        for _ in 0..found {
+            harness.key_press(Key::ArrowDown);
+            harness.run();
+        }
+        let focused = harness
+            .ctx
+            .memory(|m| m.focused())
+            .and_then(|id| harness.ctx.read_response(id))
+            .expect("a header has the focus");
+        assert!(focused.rect.bottom() <= height, "{:?}", focused.rect);
+        for _ in 0..found {
+            harness.key_press(Key::ArrowUp);
+            harness.run();
+        }
+        let focused = harness
+            .ctx
+            .memory(|m| m.focused())
+            .and_then(|id| harness.ctx.read_response(id))
+            .expect("a header has the focus");
+        assert!(focused.rect.top() >= 0.0, "{:?}", focused.rect);
+    }
+
+    /// ↓ from the field with the tools found scrolled down takes the focus to the first
+    /// header and scrolls it back into view (decision 96).
+    #[test]
+    fn down_from_the_field_scrolls_the_first_header_back_into_view() {
+        let folder = settings::testing::Folder::new("find-tool-down-scrolled");
+        let mut harness = find_panel(&folder, egui::vec2(560.0, 200.0), Builtin::Dark);
+        harness.state_mut().shell.toggle_find();
+        harness.run();
+        find_field(&harness).type_text("o");
+        harness.run();
+        let first = harness.state().shell.find.as_ref().unwrap().found().order[0];
+        let first = tr(&harness.ctx, &find::title(first));
+        let below = find_field(&harness).rect().bottom();
+        harness.get_by_role_and_label(Role::Button, &first).hover();
+        harness.event(egui::Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Point,
+            delta: egui::vec2(0.0, -300.0),
+            phase: egui::TouchPhase::Move,
+            source: egui::MouseWheelSource::Wheel,
+            modifiers: Default::default(),
+        });
+        // Under the pointer, a header waits to show its tooltip.
+        harness.run_steps(8);
+        let header = |harness: &Harness<'_, Editing>| {
+            harness.get_by_role_and_label(Role::Button, &first).rect()
+        };
+        assert!(
+            header(&harness).top() < below,
+            "not scrolled: {:?}",
+            header(&harness)
+        );
+        find_field(&harness).focus();
+        harness.run_steps(4);
+        harness.key_press(Key::ArrowDown);
+        harness.run_steps(8);
+        let node = harness.get_by_role_and_label(Role::Button, &first);
+        assert!(node.is_focused());
+        assert!(header(&harness).top() >= below, "{:?}", header(&harness));
+    }
+
+    /// ↓ in the frame that empties the field leaves the focus in the field, as nothing is
+    /// listed; with the text unchanged it goes to the first tool found (decision 96).
+    #[test]
+    fn down_as_the_text_is_deleted_keeps_the_focus_in_the_field() {
+        let folder = settings::testing::Folder::new("find-tool-delete-down");
+        let mut harness = find_panel(&folder, egui::vec2(560.0, 900.0), Builtin::Dark);
+        harness.state_mut().shell.toggle_find();
+        harness.run();
+        find_field(&harness).type_text("colour");
+        harness.run();
+        harness.key_press_modifiers(Modifiers::COMMAND, Key::A);
+        harness.run();
+        // Backspace and ↓ in one frame: kittest's queue gives each event a frame.
+        let key = |key, pressed| egui::Event::Key {
+            key,
+            physical_key: None,
+            pressed,
+            repeat: false,
+            modifiers: Modifiers::NONE,
+        };
+        let events = &mut harness.input_mut().events;
+        events.extend([key(Key::Backspace, true), key(Key::Backspace, false)]);
+        events.extend([key(Key::ArrowDown, true), key(Key::ArrowDown, false)]);
+        harness.step();
+        harness.run();
+        let shell = &harness.state().shell;
+        assert_eq!(shell.find.as_ref().map(|s| s.text.as_str()), Some(""));
+        assert!(find_field(&harness).is_focused());
+        // The text unchanged, ↓ goes to the first tool found.
+        find_field(&harness).type_text("colour");
+        harness.run();
+        let events = &mut harness.input_mut().events;
+        events.extend([key(Key::ArrowDown, true), key(Key::ArrowDown, false)]);
+        harness.step();
+        harness.run();
+        let first = harness.get_by_role_and_label(Role::Button, "Colour calibration");
+        assert!(first.is_focused());
+    }
+
+    /// The collapsible groups opened or closed while Find Tool… is open are the search's
+    /// alone: the tab's come back as they were (decision 96).
+    #[test]
+    fn groups_opened_in_the_search_are_the_search_s() {
+        let folder = settings::testing::Folder::new("find-tool-groups");
+        let (_, settings) = Keeper::open(folder.storage());
+        let mut shell = Shell::new(&settings, Locale::EnGb, OperatingSystem::Mac);
+        shell.set_group_open("agx", "look", true);
+        shell.toggle_find();
+        assert!(shell.group_open("agx", "look"));
+        shell.toggle_group("agx", "look");
+        shell.toggle_group("toneequal", "advanced");
+        assert!(!shell.group_open("agx", "look"));
+        shell.toggle_find();
+        assert!(shell.group_open("agx", "look"));
+        assert_eq!(shell.groups.get("toneequal"), None);
+    }
+
+    /// A utility's group, Export's Global options, opened while Find Tool… is open: the
+    /// page is drawn with the search's groups, the settings keep the tab's (decision 96).
+    #[test]
+    fn a_utility_s_group_opened_in_the_search_is_drawn_open() {
+        let folder = settings::testing::Folder::new("find-tool-utility-groups");
+        let (_, settings) = Keeper::open(folder.storage());
+        let mut shell = Shell::new(&settings, Locale::EnGb, OperatingSystem::Mac);
+        let ctx = egui::Context::default();
+        let open = |settings: &Settings| {
+            let groups = settings.edit.groups.get(export::ID);
+            groups.and_then(|groups| groups.get("global")).copied()
+        };
+        let before = open(&shell.to_settings(&ctx));
+        shell.toggle_find();
+        shell.toggle_group(export::ID, "global");
+        let opened = shell.group_open(export::ID, "global");
+        assert_eq!(open(&shell.drawn_settings(&ctx)), Some(opened));
+        assert_eq!(open(&shell.to_settings(&ctx)), before);
+        shell.toggle_find();
+        assert_eq!(open(&shell.drawn_settings(&ctx)), before);
+    }
+
+    /// Opening or closing Find Tool… forgets the header with the focus, so a layout action
+    /// in the same frame, Remove Tool by a key of the person's own, hides no tool whose
+    /// header is no longer shown (decision 96).
+    #[test]
+    fn find_tool_forgets_the_focused_header() {
+        let folder = settings::testing::Folder::new("find-tool-forgets-header");
+        let mut harness = effects_tab(&folder);
+        harness.get_by_role_and_label(Role::Button, "Grain").focus();
+        harness.run();
+        let ctx = harness.ctx.clone();
+        let shell = &mut harness.state_mut().shell;
+        assert_eq!(shell.focused_section(&ctx), Some("grain"));
+        shell.toggle_find();
+        assert_eq!(shell.focused_section(&ctx), None);
+        let state = shell.state(&ctx, false, false);
+        shell.run(ActionId::SECTION_HIDE, &state, &ctx, &[]);
+        assert!(!shell.workspace.hides("grain"));
+        // A tool found, its header drawn, then the search closed: forgotten too.
+        let shell = &mut harness.state_mut().shell;
+        shell.headers.push(("grain", egui::Id::unique("grain")));
+        shell.toggle_find();
+        assert!(shell.headers.is_empty());
+    }
+
+    /// A paste over the text and Return in one frame open the first tool the pasted text
+    /// finds, never the one the text before it found (decision 96).
+    #[test]
+    fn a_paste_and_return_together_open_the_first_the_paste_finds() {
+        let folder = settings::testing::Folder::new("find-tool-paste");
+        let mut harness = find_panel(&folder, egui::vec2(560.0, 900.0), Builtin::Dark);
+        harness.state_mut().shell.toggle_find();
+        harness.run();
+        find_field(&harness).type_text("grain");
+        harness.run();
+        harness.key_press_modifiers(Modifiers::COMMAND, Key::A);
+        harness.run();
+        // In one frame: kittest's queue gives each event a frame of its own.
+        let enter = |pressed| egui::Event::Key {
+            key: Key::Enter,
+            physical_key: None,
+            pressed,
+            repeat: false,
+            modifiers: Modifiers::NONE,
+        };
+        let events = &mut harness.input_mut().events;
+        events.push(egui::Event::Paste("exposure".to_owned()));
+        events.extend([enter(true), enter(false)]);
+        harness.step();
+        harness.run();
+        let shell = &harness.state().shell;
+        assert_eq!(
+            shell.find.as_ref().map(|s| s.text.as_str()),
+            Some("exposure")
+        );
+        assert!(shell.section_open("exposure", false));
+        assert!(!shell.section_open("grain", false));
+    }
+
+    /// Return on a tool found that ↓ gave the focus, in the next frame, is the header's: the
+    /// field takes no focus back and opens nothing, although egui still counts it as having
+    /// lost the focus then (decision 96).
+    #[test]
+    fn return_on_a_tool_found_is_the_header_s() {
+        let folder = settings::testing::Folder::new("find-tool-return-header");
+        let mut harness = find_panel(&folder, egui::vec2(560.0, 900.0), Builtin::Dark);
+        harness.state_mut().shell.toggle_find();
+        harness.run();
+        find_field(&harness).type_text("exposure");
+        harness.run();
+        harness.key_press(Key::Enter);
+        harness.run();
+        assert!(harness.state().shell.section_open("exposure", false));
+        assert!(find_field(&harness).is_focused());
+        // Each key's press and release in one frame, ↓ then Return in the next.
+        let press = |harness: &mut Harness<'_, Editing>, key| {
+            let event = |pressed| egui::Event::Key {
+                key,
+                physical_key: None,
+                pressed,
+                repeat: false,
+                modifiers: Modifiers::NONE,
+            };
+            harness
+                .input_mut()
+                .events
+                .extend([event(true), event(false)]);
+            harness.step();
+        };
+        press(&mut harness, Key::ArrowDown);
+        let header = harness.get_by_role_and_label(Role::Button, "Exposure");
+        assert!(header.is_focused());
+        harness.key_press(Key::Enter);
+        harness.run();
+        let header = harness.get_by_role_and_label(Role::Button, "Exposure");
+        assert!(header.is_focused());
+        assert!(!find_field(&harness).is_focused());
+    }
+
+    /// A click that gives a widget outside the Tools panel the focus, as on a found tool's
+    /// picker on the photo, keeps an Escape in the very next frame from the search: who
+    /// has the keys is noted after everything has drawn (decision 96).
+    #[test]
+    fn escape_right_after_a_click_outside_the_panel_keeps_the_search() {
+        let folder = settings::testing::Folder::new("find-tool-click-outside");
+        let size = egui::vec2(560.0, 900.0);
+        let mut harness = find_panel_beside(&folder, size, Builtin::Dark, true);
+        harness.state_mut().shell.toggle_find();
+        harness.run();
+        find_field(&harness).type_text("exposure");
+        harness.run();
+        harness.get_by_label("Outside").click();
+        harness.step();
+        harness.key_press(Key::Escape);
+        harness.step();
+        assert!(harness.state().shell.find.is_some());
+    }
+
+    /// F6 from the field to a widget outside the Tools panel, then Escape in the next
+    /// frame: the widget has the keys, so the search stays open (decision 96).
+    #[test]
+    fn escape_right_after_f6_out_of_the_panel_keeps_the_search() {
+        let folder = settings::testing::Folder::new("find-tool-f6");
+        let size = egui::vec2(560.0, 900.0);
+        let mut harness = find_panel_beside(&folder, size, Builtin::Dark, true);
+        harness.state_mut().shell.toggle_find();
+        harness.run();
+        find_field(&harness).type_text("exposure");
+        harness.run();
+        assert!(find_field(&harness).is_focused());
+        // Each key's press and release in one frame: kittest's queue gives each event a
+        // frame of its own, which would note who has the keys between them.
+        let press = |harness: &mut Harness<'_, Editing>, key| {
+            let event = |pressed| egui::Event::Key {
+                key,
+                physical_key: None,
+                pressed,
+                repeat: false,
+                modifiers: Modifiers::NONE,
+            };
+            harness
+                .input_mut()
+                .events
+                .extend([event(true), event(false)]);
+            harness.step();
+        };
+        press(&mut harness, Key::F6);
+        assert!(harness.get_by_label("Outside").is_focused());
+        press(&mut harness, Key::Escape);
+        assert!(harness.state().shell.find.is_some());
+    }
+
+    /// A History line naming what no tool owns reveals nothing, so Find Tool…'s search
+    /// stays open; one naming a tool, shown or hidden, closes it (decision 96).
+    #[test]
+    fn a_reveal_closes_the_search_only_where_it_reveals_a_tool() {
+        let folder = settings::testing::Folder::new("find-tool-reveal");
+        let (_, settings) = Keeper::open(folder.storage());
+        let mut shell = Shell::new(&settings, Locale::EnGb, OperatingSystem::Mac);
+        let (workspace, _) = layout::Workspaces::builtin().open(layout::ESSENTIALS);
+        shell.open_workspace(workspace);
+        shell.toggle_find();
+        shell.reveal("no-such-tool");
+        assert!(shell.find.is_some());
+        assert_eq!(shell.reveal, None);
+        // Hidden in Essentials, revealed in the Hidden tab.
+        assert!(shell.workspace.hides("vignette"));
+        shell.reveal("vignette");
+        assert!(shell.find.is_none());
+        assert_eq!(shown_id(&shell), layout::HIDDEN);
+        // In a tab.
+        shell.toggle_find();
+        shell.reveal("exposure");
+        assert!(shell.find.is_none());
+        assert!(shell.shown_tab().is_some_and(|tab| tab.holds("exposure")));
+    }
+
+    /// The Tools panel's ⋮ holds Find Tool… first, with its keys; choosing it opens the
+    /// search (decision 96).
+    #[test]
+    fn the_tools_panel_s_options_open_find_tool() {
+        let folder = settings::testing::Folder::new("find-tool-options");
+        let mut harness = find_panel(&folder, egui::vec2(560.0, 900.0), Builtin::Dark);
+        harness.run();
+        harness.get_by_label("Tab options").click();
+        harness.run();
+        let top = |label: &str| harness.get_by_label(label).rect().top();
+        assert!(top("Find tool…") < top("Show hidden tools"));
+        harness.get_by_label("Find tool…").click();
+        harness.run();
+        harness.run();
+        assert!(find_field(&harness).is_focused());
+    }
+
+    /// Find Tool…'s field in the tab bar's place, empty, with tools found, and with
+    /// nothing matching, in the dark and light themes, at the Tools panel's 320 points: the
+    /// Default workspace, and Essentials for a hidden tool found (decision 96).
+    #[test]
+    fn find_tool_s_field_and_the_tools_found() {
+        let mut results = egui_kittest::SnapshotResults::new();
+        let cases = [
+            ("empty", "", layout::DEFAULT),
+            ("found", "colour", layout::DEFAULT),
+            ("hidden", "output", layout::ESSENTIALS),
+            ("none", "xyz", layout::DEFAULT),
+        ];
+        for (which, name) in [(Builtin::Dark, "dark"), (Builtin::Light, "light")] {
+            for (what, typed, workspace) in cases {
+                let folder = settings::testing::Folder::new("find-tool-snapshot");
+                let mut harness = find_panel(&folder, egui::vec2(320.0, 220.0), which);
+                let (workspace, _) = layout::Workspaces::builtin().open(workspace);
+                harness.state_mut().shell.open_workspace(workspace);
+                harness.state_mut().shell.toggle_find();
+                harness.run();
+                if !typed.is_empty() {
+                    find_field(&harness).type_text(typed);
+                }
+                harness.run();
+                harness.snapshot(format!("find-tool-{what}-{name}"));
                 results.extend(harness.take_snapshot_results());
             }
         }

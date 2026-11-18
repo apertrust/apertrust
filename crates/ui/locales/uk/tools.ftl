@@ -6,6 +6,7 @@
 ## українського перекладу darktable.
 
 tool-rawprepare-title = Точки чорного і білого в raw
+    .search = Точки чорного і білого в raw
 tool-rawprepare-description = Задає, де в сирих даних камери лежать чорне й біле, як їх записав сенсор. Зазвичай лишається як є: змінюйте лише дуже обережно.
 tool-rawprepare-control-raw_black_level_separate_0-label = Рівень чорного 0
 tool-rawprepare-control-raw_black_level_separate_0-full = Рівень чорного 0
@@ -32,6 +33,7 @@ tool-rawprepare-control-flat_field-option-embedded = Вбудована GainMap
 ## українського перекладу darktable.
 
 tool-highlights-title = Відновлення переекспонованого
+    .search = Відновлення переекспонованого
 tool-highlights-description = Не дає переекспонованим ділянкам ставати пурпуровими й намагається відновити їхній колір. Скористайтеся ним, коли найяскравіші ділянки пласкі чи з відтінком.
 tool-highlights-control-mode-label = Метод
 tool-highlights-control-mode-full = Метод
@@ -92,6 +94,7 @@ tool-highlights-control-scales-option-px_4096 = 4096 px (неймовірно п
 ## darktable, дві підказки методу, для матриць Баєра і X-Trans, в одній.
 
 tool-demosaic-title = Демозаїкізація
+    .search = Демозаїкізація
 tool-demosaic-description = Перетворює мозаїку червоних, зелених і синіх точок сенсора на повнокольорові пікселі. Зазвичай лишається як є: змініть, коли дрібні деталі вкриває лабіринт чи хибні кольори.
 tool-demosaic-control-demosaicing_method-label = Метод
 tool-demosaic-control-demosaicing_method-full = Метод демозаїкізації
@@ -167,6 +170,7 @@ tool-demosaic-control-cs_center-promise = Коригування того, що 
 ## тут «Вигляд», де переклад darktable має «Крива».
 
 tool-agx-title = AgX
+    .search = AgX|tone mapping|view transform|display transform
 tool-agx-description = Вміщує світло, яке вловила камера, у те, що може показати екран чи відбиток, з природними світлами й кольорами. Типовий засіб тонального відображення, натхненний AgX із Blender.
 tool-agx-tab-settings = Налаштування
 tool-agx-tab-primaries = Основні кольори
@@ -316,6 +320,7 @@ tool-agx-control-blue_unrotation-promise = Скасувати колірний �
 ## обіцянки двох профілів і опис — чернетки Apertrust.
 
 tool-colorin-title = Вхідний колірний профіль
+    .search = Вхідний колірний профіль
 tool-colorin-description = Переводить кольори камери в колірний простір, у якому працюють усі наступні інструменти. Зазвичай лишається власна матриця камери.
 tool-colorin-control-type-label = Вхідний профіль
 tool-colorin-control-type-full = Вхідний профіль
@@ -364,6 +369,7 @@ tool-colorin-control-normalize-option-lin_rec2020 = Лінійний Rec2020 RGB
 ## українського перекладу darktable.
 
 tool-colorout-title = Вихідний колірний профіль
+    .search = Вихідний колірний профіль
 tool-colorout-description = Перетворює готовий знімок на кольори файлу, який ви експортуєте. Зазвичай лишається sRGB, що пасує екранам і вебу.
 tool-colorout-control-type-label = Профіль експорту
 tool-colorout-control-type-full = Профіль експорту
@@ -384,6 +390,7 @@ tool-colorout-control-type-option-brg = BRG (для тестування)
 ## Баланс білого (docs/tools/white-balance.md)
 
 tool-temperature-title = Баланс білого
+    .search = Баланс білого
 tool-temperature-description = Врівноважує червоний, зелений і синій канали камери, щоб біле виходило білим, і допомагає демозаїкізації. Зазвичай лишається як є: колір освітлення задавайте в «Калібруванні кольору».
 tool-temperature-preset-settings-label = Налаштування
 tool-temperature-preset-settings-full = Налаштування балансу білого
@@ -428,6 +435,7 @@ tool-temperature-picker-spot-promise = Встановити баланс біл�
 ## Орієнтація (docs/tools/orientation.md)
 
 tool-flip-title = Орієнтація
+    .search = Орієнтація|rotation|flip|mirror
 tool-flip-description = Повертає знімок на чверть оберту або віддзеркалює його. Скористайтеся нею, коли знімок лежить на боці.
 tool-flip-control-orientation-label = Трансформації
 tool-flip-control-orientation-full = Трансформації
@@ -457,6 +465,7 @@ tool-flip-action-flip_vertically-promise = Віддзеркалити зобра
 ## Експозиція (docs/tools/exposure.md)
 
 tool-exposure-title = Експозиція
+    .search = Експозиція
 tool-exposure-description = Робить знімок світлішим чи темнішим, ніби ви експонували його в камері інакше, і зберігає кольори. Зазвичай перший інструмент, до якого звертаються.
 tool-exposure-control-mode-label = Режим
 tool-exposure-control-mode-full = Режим
@@ -518,6 +527,7 @@ tool-exposure-picker-reference-hint = Виділіть ділянку, яку з
 ## Калібрування кольору (docs/tools/colour-calibration.md)
 
 tool-channelmixerrgb-title = Калібрування кольору
+    .search = Калібрування кольору|channel mixer|white balance|monochrome
 tool-channelmixerrgb-description = Задає колір освітлення, змішує колірні канали або робить знімок чорно-білим, як плівка. Скористайтеся ним, щоб прибрати колірний відтінок.
 tool-channelmixerrgb-tab-cat = CAT
 tool-channelmixerrgb-control-adaptation-label = Адаптація
@@ -719,6 +729,7 @@ tool-channelmixerrgb-setting-patch_scale-promise = Яку частину кож�
 ## darktable.
 
 tool-toneequal-title = Еквалайзер тонів
+    .search = Еквалайзер тонів|tone curve|tone mapping|relight|background light|shadows highlights
 tool-toneequal-description = Переосвітлює сцену: робить ділянки світлішими чи темнішими залежно від їхньої яскравості, ніби ви освітили її інакше. Скористайтеся ним, щоб відкрити тіні чи стримати яскраве небо.
 tool-toneequal-tab-simple = Простий
 tool-toneequal-tab-advanced = Просунутий
@@ -797,6 +808,7 @@ tool-toneequal-setting-display_exposure_mask-promise = Показує на мі�
 ## перекладу darktable.
 
 tool-colorbalancergb-title = Колірний баланс RGB
+    .search = Колірний баланс RGB|offset power slope|cdl|color grading|contrast|chroma_highlights|hue|vibrance|saturation
 tool-colorbalancergb-description = Колірна корекція: окремо зсуває колір тіней, середніх тонів і світлих ділянок, кожну виділену м’якою маскою. Скористайтеся ним, щоб надати знімку колірного настрою.
 tool-colorbalancergb-tab-master = Основні параметри
 tool-colorbalancergb-tab-four_ways = 4 діапазони
@@ -927,6 +939,7 @@ tool-colorbalancergb-picker-grey_fulcrum-promise = Узяти колір зі з
 ## Тонова крива (docs/tools/tone-curve.md)
 
 tool-tone_curve-title = Тонова крива
+    .search = Крива RGB
 tool-tone_curve-description = Змінює тони знімка кривою, освітлюючи чи затемнюючи будь-який їх діапазон. Скористайтеся нею, щоб точно налаштувати контраст.
 tool-tone_curve-tab-luma = Яскравість
 tool-tone_curve-tab-rgb = RGB
@@ -951,6 +964,7 @@ tool-tone_curve-control-preserve_colour-option-basic_power = Базовий ст
 ## darktable.
 
 tool-hazeremoval-title = Видалення серпанку
+    .search = Видалення серпанку|dehaze|defog|smoke|smog
 tool-hazeremoval-description = Прибирає серпанок і туман, повертаючи контраст і колір далеким частинам сцени. Скористайтеся ним для вицвілих пейзажів.
 tool-hazeremoval-control-strength-label = Інтенсивність
 tool-hazeremoval-control-strength-full = Інтенсивність
@@ -963,6 +977,7 @@ tool-hazeremoval-control-distance-promise = Обмежити видалення 
 ## перекладу darktable.
 
 tool-primaries-title = Основні кольори RGB
+    .search = Основні кольори RGB
 tool-primaries-description = Зсуває основні кольори, червоний, зелений і синій, змінюючи всі кольори, що з них складаються. Скористайтеся ними для широкої, плавної колірної корекції.
 tool-primaries-control-red_hue-label = Відтінок червоного
 tool-primaries-control-red_hue-full = Відтінок червоного
@@ -992,6 +1007,7 @@ tool-primaries-control-achromatic_tint_purity-promise = Величина змі�
 ## Зерно (docs/tools/grain.md): терміни з українського перекладу darktable.
 
 tool-grain-title = Зерно
+    .search = Зерно
 tool-grain-description = Додає зерно, як у плівки, дрібне чи грубе. Скористайтеся ним, щоб надати знімку фактури плівки.
 tool-grain-control-scale-label = Зернистість
 tool-grain-control-scale-full = Зернистість
@@ -1006,6 +1022,7 @@ tool-grain-control-midtones_bias-promise = Величина зміщення с�
 ## Пом'якшення (docs/tools/soften.md): терміни з українського перекладу darktable.
 
 tool-soften-title = Пом'якшення
+    .search = Пом'якшення
 tool-soften-description = Додає м’яке сяйво, накладаючи на знімок розмиту, світлішу копію. Скористайтеся ним для мрійливого вигляду.
 tool-soften-control-size-label = Розмір
 tool-soften-control-size-full = Розмір
@@ -1023,6 +1040,7 @@ tool-soften-control-amount-promise = Суміш ефектів.
 ## Віньєтування (docs/tools/vignetting.md): терміни з українського перекладу darktable.
 
 tool-vignette-title = Віньєтування
+    .search = Віньєтування
 tool-vignette-description = Затемнює чи освітлює знімок до країв, як це робить об’єктив. Скористайтеся ним, щоб привернути погляд до центру.
 tool-vignette-control-scale-label = Початок зони затемнення
 tool-vignette-control-scale-full = Початок зони затемнення

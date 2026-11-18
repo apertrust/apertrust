@@ -28,14 +28,14 @@ use crate::components::{
     About, ActionRow, Available, Axis, Browser, BrowserAction, Button, ButtonState, CellPicture,
     CellRating, CellStatus, Checkbox, Choice, ChoiceAction, ChoiceStyle, Clipped, CollapsibleGroup,
     ColourLabel, ColourLabels, Curve, CurveAction, Equalizer, EqualizerAction, FileManager,
-    GridCell, Histogram, HistogramBins, IconButton, Job, JobFailure, JobMessage, JobPhase, Jobs,
-    Margin, Mark, Marker, MaskHistogram, PanelBody, PanelEdge, PanelEdgeAction, PanelTab, Patch,
-    Patches, PhotoCaption, PhotoFrame, PickerButton, PickerMarks, PickerPlace, Place, Quad, Rail,
-    RailLine, RailNode, ReadoutRow, Reference, ReferenceRow, SaveState, Scale, Scope, ScopeView,
-    Section, SectionAction, Segmented, SliderAction, SliderRow, Swatch, SwatchFill, Swatches,
-    Switch, TabBar, TabBarAction, Thumb, Toggle, ToggleRow, ToolButton, Toolbar, ToolbarAction,
-    Track, VectorscopeBins, ViewerBar, ViewerBarAction, WarningRow, WaveformBins, Zoom,
-    group_label,
+    FindBar, FindBarAction, GridCell, Histogram, HistogramBins, IconButton, Job, JobFailure,
+    JobMessage, JobPhase, Jobs, Margin, Mark, Marker, MaskHistogram, PanelBody, PanelEdge,
+    PanelEdgeAction, PanelTab, Patch, Patches, PhotoCaption, PhotoFrame, PickerButton, PickerMarks,
+    PickerPlace, Place, Quad, Rail, RailLine, RailNode, ReadoutRow, Reference, ReferenceRow,
+    SaveState, Scale, Scope, ScopeView, Section, SectionAction, Segmented, SliderAction, SliderRow,
+    Swatch, SwatchFill, Swatches, Switch, TabBar, TabBarAction, Thumb, Toggle, ToggleRow,
+    ToolButton, Toolbar, ToolbarAction, Track, VectorscopeBins, ViewerBar, ViewerBarAction,
+    WarningRow, WaveformBins, Zoom, group_label,
 };
 use crate::fonts::{MEDIUM, SEMIBOLD};
 use crate::i18n::{Args, Locale, Translator};
@@ -1187,6 +1187,10 @@ struct Demo {
     panel_width: Option<f32>,
     panel_tab: usize,
     tab_names: bool,
+    /// Find Tool…'s text while its field shows in the tab bar's place, from ⋮.
+    finding: Option<String>,
+    /// Whether its field takes the focus this frame, as it opens.
+    find_focus: bool,
     open: [bool; 8],
     exposure_tab: usize,
     peeking: Option<&'static str>,
@@ -1260,6 +1264,8 @@ impl Default for Demo {
             panel_width: None,
             panel_tab: 1,
             tab_names: true,
+            finding: None,
+            find_focus: false,
             open: [true, false, false, true, false, false, false, false],
             exposure_tab: 0,
             peeking: None,
@@ -2047,11 +2053,34 @@ fn tools_panel(page: &mut Ui, t: &Theme, demo: &mut Demo) {
     let mut child = page.new_child(egui::UiBuilder::new().max_rect(inside));
     let ui = &mut child;
     ui.set_clip_rect(inside);
-    match TabBar::new(&tabs, demo.panel_tab, demo.tab_names).show(ui) {
-        Some(TabBarAction::Select(i)) => demo.panel_tab = i,
-        Some(TabBarAction::ShowNames(on)) => demo.tab_names = on,
-        Some(TabBarAction::Customise) => demo.last = "Customise tabs".to_owned(),
-        Some(TabBarAction::Chosen(_)) | None => {}
+    // Find Tool…'s field in the tab bar's place, from ⋮, as the app's; Escape closes it.
+    if let Some(text) = &mut demo.finding {
+        let escape = ui.input(|i| i.key_pressed(egui::Key::Escape));
+        let focus = std::mem::take(&mut demo.find_focus);
+        match FindBar::new(text, demo.tab_names).focus(focus).show(ui) {
+            Some(FindBarAction::Typed(typed))
+            | Some(FindBarAction::OpenFirst { typed: Some(typed) }) => *text = typed,
+            Some(FindBarAction::Close) => demo.finding = None,
+            Some(FindBarAction::OpenFirst { typed: None }) | None if escape => {
+                demo.finding = None;
+            }
+            Some(FindBarAction::OpenFirst { typed: None }) | None => {}
+        }
+    } else {
+        let find = Item::new("find", crate::tr(ui.ctx(), "action-find-tool"));
+        match TabBar::new(&tabs, demo.panel_tab, demo.tab_names)
+            .items(vec![find.shortcut("Ctrl+Shift+F").into()])
+            .show(ui)
+        {
+            Some(TabBarAction::Select(i)) => demo.panel_tab = i,
+            Some(TabBarAction::ShowNames(on)) => demo.tab_names = on,
+            Some(TabBarAction::Customise) => demo.last = "Customise tabs".to_owned(),
+            Some(TabBarAction::Chosen(_)) => {
+                demo.finding = Some(String::new());
+                demo.find_focus = true;
+            }
+            None => {}
+        }
     }
     ui.spacing_mut().item_spacing.y = 0.0;
 

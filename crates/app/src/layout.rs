@@ -351,7 +351,7 @@ pub fn processing(tool: &str) -> bool {
 /// Where `tool` sorts in the Hidden tab: a processing tool by the place in the pipeline of
 /// the first of its operations to run, among [`apertrust_operations::OPERATIONS`], before
 /// every utility, which keeps the order the build lists it in (the sort being stable).
-fn hidden_order(tool: &str) -> (bool, usize) {
+pub fn hidden_order(tool: &str) -> (bool, usize) {
     let Some(processing) = apertrust_tools::TOOLS
         .iter()
         .find(|t| t.definition().tool.id == tool)
