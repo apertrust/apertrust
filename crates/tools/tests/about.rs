@@ -350,7 +350,7 @@ fn the_plain_words_are_the_designed_ones_for_the_tools_shown() {
 /// The utilities whose headers say nothing yet, their sentences a design question of their
 /// own: Collections and Export, which joined [`UTILITIES`] with no tooltip, as each is
 /// drawn (decision 93).
-const SAYS_NOTHING: [&str; 2] = ["browse", "export"];
+const SAYS_NOTHING: [&str; 2] = ["collections", "export"];
 
 #[test]
 fn every_tool_and_utility_says_what_it_is_for_in_every_language() {

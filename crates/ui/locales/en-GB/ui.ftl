@@ -529,7 +529,7 @@ action-open-folder = Open Folder…
 open-folder-title = Open Folder
 # The Photos tab's first section, which chooses what the Browser shows, and its group
 # of folders. Albums and Smart albums join it with the library.
-section-browse = Collections
+section-collections = Collections
 collections-folders = Folders
 section-export = Export
 # The top line's box: what screen readers call it, and its words for none, which the
@@ -651,7 +651,7 @@ settings-group-interface = Interface
 settings-group-start = Start
 settings-group-confirmations = Confirmations
 settings-group-thumbnails = Thumbnails
-settings-group-side-panel = Tools panel
+settings-group-tools-panel = Tools panel
 settings-group-hardware-acceleration = Hardware acceleration
 settings-group-diagnostics = Diagnostics
 settings-group-cache = Cache
@@ -672,7 +672,7 @@ setting-library-reopen-last-label = Reopen what was open last
 setting-library-reopen-last-help = Opens the folder you were working in when { app-name } closed, with its photo. A file or folder opened from the file manager or a terminal opens instead.
 setting-export-ask-before-overwrite-label = Ask before overwriting an exported file
 setting-history-ask-before-discard-label = Ask before discarding a photo’s history
-setting-grid-panel-square-thumbnails-label = Square thumbnails
+setting-browser-square-thumbnails-label = Square thumbnails
 setting-library-raw-thumbnails-from-label = Raw thumbnails from
 setting-library-raw-thumbnails-from-help = For photos with no edit: thumbnails larger than this size are rendered from the raw, in { app-name }'s look, instead of the camera's embedded JPEG. Slower. Edited photos always show their edit.
 setting-library-raw-thumbnails-from-option-always = Always
@@ -687,7 +687,7 @@ setting-library-raw-thumbnails-from-option-6K = 6K
 setting-library-raw-thumbnails-from-option-8K = 8K
 setting-library-raw-thumbnails-from-option-never = Never
 setting-library-raw-thumbnails-from-option-auto = Auto
-setting-side-panel-tab-names-label = Show tab names
+setting-tools-panel-tab-names-label = Show tab names
 setting-engine-adapter-label = Graphics card
 setting-engine-backend-label = Graphics API
 setting-engine-backend-option-auto = Automatic
@@ -929,9 +929,9 @@ action-thumbnails-medium = Medium
 action-thumbnails-large = Large
 action-thumbnails-extra-large = Extra large
 # Where the Browser goes: the browser bar's options menu and View › Browser Position.
-action-grid-position-left = Left
-action-grid-position-right = Right
-action-grid-position-bottom = Bottom
+action-browser-position-left = Left
+action-browser-position-right = Right
+action-browser-position-bottom = Bottom
 # View › Show Labels and the browser bar's Labels: the captions under the thumbnails.
 action-show-labels = Show labels
 action-background-black = Black

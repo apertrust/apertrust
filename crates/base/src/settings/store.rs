@@ -27,6 +27,7 @@ use std::time::{Duration, Instant};
 
 use toml::{Table, Value};
 
+use super::migrations::MIGRATIONS;
 use super::stored::unreadable;
 use super::{Declared, DefaultValue, Kind, Overrides, Setting, Storage, Stored};
 
@@ -45,9 +46,6 @@ pub struct Migration {
     pub from: i64,
     pub migrate: fn(&mut Table),
 }
-
-/// Every migration, in order from version 1: none yet.
-pub const MIGRATIONS: &[Migration] = &[];
 
 /// Migrates `table`, of `version`, through the `migrations` from that version on.
 fn migrate(table: &mut Table, version: i64, migrations: &[Migration]) {
@@ -1259,7 +1257,7 @@ mod tests {
     static MAXIMIZED: Setting<bool> = setting("window.maximized", Kind::Boolean, Is(false));
     /// Computed, as the Tools panel's width is.
     static WIDTH: Setting<f32> = setting(
-        "side_panel.width",
+        "tools_panel.width",
         number(Some(240.0), Some(600.0), None, Some(0)),
         Computed(|| 320.0),
     );
@@ -1560,7 +1558,7 @@ mod tests {
 # Apertrust's settings. Apertrust writes here only what changes, without comments;
 # keys it does not know stay.
 
-version = 1
+version = 2
 name = \"mine\"
 scale = 1.3
 theme = \"high-contrast\"
@@ -1582,7 +1580,7 @@ undo = [\"Ctrl+K\"]
 [scopes]
 channels = [\"blue\", \"red\"]
 
-[side_panel]
+[tools_panel]
 width = 480
 
 [window]
@@ -1709,7 +1707,7 @@ size = [1280, 800]
     fn a_number_out_of_range_reads_as_the_nearer_end() {
         let folder = Folder::holding(
             "out-of-range",
-            "version = 1\nscale = 9.0\n[side_panel]\nwidth = 100\n",
+            "version = 1\nscale = 9.0\n[tools_panel]\nwidth = 100\n",
         );
         let mut store = folder.open();
         assert_eq!((store.get(&SCALE), store.kept(&WIDTH)), (3.0, Some(240.0)));
@@ -1717,7 +1715,7 @@ size = [1280, 800]
             store.warnings(),
             [
                 "scale 9 is out of range; 3 is used",
-                "side_panel.width 100 is out of range; 240 is used"
+                "tools_panel.width 100 is out of range; 240 is used"
             ]
         );
         // What it is read as is what is kept, so it stays in the file until it changes.
@@ -1726,7 +1724,7 @@ size = [1280, 800]
         store.flush();
         let table = folder.table();
         assert_eq!(table["scale"].as_float(), Some(9.0));
-        assert_eq!(table["side_panel"]["width"].as_integer(), Some(100));
+        assert_eq!(table["tools_panel"]["width"].as_integer(), Some(100));
     }
 
     #[test]
@@ -2057,7 +2055,7 @@ size = [1280, 800]
             "conf-precedence",
             "version = 1\nscale = 2\ntheme = \"light\"\n",
         );
-        let overrides = conf(&["scale=1.5", "side_panel.width=500"]).expect("read");
+        let overrides = conf(&["scale=1.5", "tools_panel.width=500"]).expect("read");
         let store = folder.open().with_overrides(&overrides);
         assert_eq!(store.get(&SCALE), 1.5);
         assert_eq!(store.get(&THEME), Theme::Light);
@@ -2069,7 +2067,7 @@ size = [1280, 800]
             .filter(|setting| store.overridden(**setting))
             .map(|setting| setting.id())
             .collect();
-        assert_eq!(overridden, ["scale", "side_panel.width"]);
+        assert_eq!(overridden, ["scale", "tools_panel.width"]);
         assert!(!store.overridden(&THEME));
         drop(store);
         let read = folder.open();
@@ -2082,7 +2080,7 @@ size = [1280, 800]
     fn a_conf_is_never_written_and_a_set_of_it_changes_nothing() {
         let text = "# mine\nversion = 1\nscale = 2\n";
         let folder = Folder::holding("conf-never-written", text);
-        let overrides = conf(&["scale=1.5", "theme=light", "side_panel.width=500"]);
+        let overrides = conf(&["scale=1.5", "theme=light", "tools_panel.width=500"]);
         let overrides = overrides.expect("read");
         let mut store = folder.open().with_overrides(&overrides);
         // Set and reset alone: nothing to write, so the file stays, comment and all.
@@ -2104,7 +2102,7 @@ size = [1280, 800]
 # Apertrust's settings. Apertrust writes here only what changes, without comments;
 # keys it does not know stay.
 
-version = 1
+version = 2
 name = \"mine\"
 scale = 2
 
@@ -2197,14 +2195,14 @@ size = [1280, 800]
     #[test]
     fn a_newer_version_is_read_but_never_overwritten() {
         let text =
-            "version = 2\ntheme = \"light\"\nlayout = \"compact\"\n[window]\nsize = [1400, 900]\n";
+            "version = 3\ntheme = \"light\"\nlayout = \"compact\"\n[window]\nsize = [1400, 900]\n";
         let folder = Folder::holding("newer", text);
         let mut store = folder.open();
         assert_eq!(store.get(&THEME), Theme::Light);
         assert_eq!(store.get(&SIZE), [1400.0, 900.0]);
         assert!(store.writer.is_none());
         assert!(
-            store.warnings().iter().any(|w| w.contains("version 2")),
+            store.warnings().iter().any(|w| w.contains("version 3")),
             "{:?}",
             store.warnings()
         );
@@ -2228,12 +2226,12 @@ size = [1280, 800]
             (
                 "version-missing",
                 "theme = \"light\"\n",
-                "version missing; read as version 1",
+                "version missing; read as version 2",
             ),
             (
                 "version-text",
                 "version = \"one\"\ntheme = \"light\"\n",
-                "version \"one\" is no version; read as version 1",
+                "version \"one\" is no version; read as version 2",
             ),
         ] {
             let folder = Folder::holding(name, text);
@@ -2264,7 +2262,7 @@ size = [1280, 800]
             assert_eq!(migration.from, i as i64 + 1, "migration {i}");
         }
         assert_eq!(VERSION, 1 + MIGRATIONS.len() as i64);
-        assert_eq!(VERSION, 1);
+        assert_eq!(VERSION, 2);
         // A key that moved at version 2, and one that changed meaning at version 3.
         let moved = Migration {
             from: 1,

@@ -42,7 +42,7 @@ use crate::{export, jobs};
 
 /// Collections' id (decision 73), by which settings keep whether its section is open, and
 /// under which they keep its groups.
-pub const ID: &str = "browse";
+pub const ID: &str = "collections";
 
 /// Whether Collections is open when settings have not kept it otherwise.
 pub const OPEN: bool = true;

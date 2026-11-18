@@ -277,9 +277,9 @@ impl BrowserBarAction {
             BrowserBarAction::Size(ThumbnailSize::Medium) => "thumbnails-medium",
             BrowserBarAction::Size(ThumbnailSize::Large) => "thumbnails-large",
             BrowserBarAction::Size(ThumbnailSize::ExtraLarge) => "thumbnails-extra-large",
-            BrowserBarAction::Position(BrowserPosition::Left) => "grid-position-left",
-            BrowserBarAction::Position(BrowserPosition::Right) => "grid-position-right",
-            BrowserBarAction::Position(BrowserPosition::Bottom) => "grid-position-bottom",
+            BrowserBarAction::Position(BrowserPosition::Left) => "browser-position-left",
+            BrowserBarAction::Position(BrowserPosition::Right) => "browser-position-right",
+            BrowserBarAction::Position(BrowserPosition::Bottom) => "browser-position-bottom",
             BrowserBarAction::Labels => "show-labels",
         }
     }

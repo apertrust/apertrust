@@ -1151,7 +1151,7 @@ fn tab_id(tab: usize) -> Option<&'static str> {
 
 /// The widths the Tools panel can be dragged to, in points, as the settings schema has
 /// them: down to 240 and up to 600; it opens at the theme's 320.
-const PANEL_WIDTHS: std::ops::RangeInclusive<f32> = settings::registry::SIDE_PANEL_WIDTH.range();
+const PANEL_WIDTHS: std::ops::RangeInclusive<f32> = settings::registry::TOOLS_PANEL_WIDTH.range();
 
 /// The widths the Tools panel may take in a window `window` points wide: [`PANEL_WIDTHS`],
 /// but never more than half the window, so the photo keeps the other half, and never less
@@ -1704,7 +1704,7 @@ struct Shell {
     panel_width: Option<f32>,
     guides: bool,
     proof_margin: bool,
-    /// The Viewer's margins, from the settings (`[central_panel]`).
+    /// The Viewer's margins, from the settings (`[viewer]`).
     viewer: settings::Viewer,
     /// Whether Settings… ran, for the app to open it in the dialog host after the action.
     settings: bool,
@@ -11675,8 +11675,8 @@ mod tests {
     }
 
     /// Collections' Folders starts open, unlike a tool's groups. A click on its row closes
-    /// it, hiding its rows, and it is kept closed as `browse.folders` in `edit.groups`; a
-    /// click on Collections' header closes Collections, kept as `browse` in
+    /// it, hiding its rows, and it is kept closed as `collections.folders` in `edit.groups`; a
+    /// click on Collections' header closes Collections, kept as `collections` in
     /// `edit.sections`.
     #[test]
     fn a_click_on_folders_closes_it_and_keeps_it_closed() {
@@ -11734,14 +11734,17 @@ mod tests {
         assert!(!harness.state().collections_open().folders);
         let ctx = egui::Context::default();
         let kept = harness.state().to_settings(&ctx).edit;
-        let folders = kept.groups.get("browse").and_then(|g| g.get("folders"));
+        let folders = kept
+            .groups
+            .get("collections")
+            .and_then(|g| g.get("folders"));
         assert_eq!(folders, Some(&false));
         harness
             .get_by_role_and_label(Role::Button, "Collections")
             .click();
         harness.run();
         let kept = harness.state().to_settings(&ctx).edit;
-        assert_eq!(kept.sections.get("browse"), Some(&false));
+        assert_eq!(kept.sections.get("collections"), Some(&false));
     }
 
     /// The id settings had is forgotten once the user chooses a tab: one this build lacks,
@@ -14030,8 +14033,8 @@ mod tests {
         assert!(!harness.state().shell.grid.square_thumbnails);
         host.0.borrow_mut().outputs = vec![
             dialog_host::Output::Settings(Change::Set("settings_window.page", "photos".into())),
-            dialog_host::Output::Settings(Change::Set("grid_panel.square_thumbnails", true.into())),
-            dialog_host::Output::Settings(Change::Set("side_panel.tab_names", false.into())),
+            dialog_host::Output::Settings(Change::Set("browser.square_thumbnails", true.into())),
+            dialog_host::Output::Settings(Change::Set("tools_panel.tab_names", false.into())),
             dialog_host::Output::Settings(Change::Set("engine.memory_budget", 4096.into())),
         ];
         harness.step();
@@ -14042,7 +14045,7 @@ mod tests {
         assert_eq!(d.keeper.page(), apertrust_base::settings::Page::Photos);
         // And back to its default.
         host.0.borrow_mut().outputs = vec![dialog_host::Output::Settings(Change::Reset(
-            "grid_panel.square_thumbnails",
+            "browser.square_thumbnails",
         ))];
         harness.step();
         assert!(!harness.state().shell.grid.square_thumbnails);

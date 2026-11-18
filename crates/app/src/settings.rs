@@ -53,11 +53,11 @@
 //! [sliders]
 //! marker = "triangle"
 //!
-//! [side_panel]
+//! [tools_panel]
 //! tab_names = false
 //! width = 480
 //!
-//! [central_panel]
+//! [viewer]
 //! margin = 16
 //! proof_margin = 0.25
 //!
@@ -74,7 +74,7 @@
 //! graph = "waveform"
 //! channels = ["red", "green", "blue", "luminance"]
 //!
-//! [grid_panel]
+//! [browser]
 //! position = "right"
 //! columns = 2
 //! rows = 2
@@ -171,13 +171,13 @@ pub mod registry {
 
         /// The theme's width, the default theme's here; the shell takes the width of the
         /// theme in use (`Shell::panel_edge`).
-        pub fn side_panel_width() -> f32 {
+        pub fn tools_panel_width() -> f32 {
             Theme::builtin(super::THEME.default()).sizes.tools_panel
         }
 
         /// The default theme's own surround; the shell keeps the theme in use's while
         /// none is chosen.
-        pub fn central_panel_background() -> Background {
+        pub fn viewer_background() -> Background {
             let theme = Theme::builtin(super::THEME.default());
             Background::of(theme.colors.photo_surround).unwrap_or(Background::Dark)
         }
@@ -250,7 +250,7 @@ impl Default for Settings {
             settings_window: None,
             jobs_window: None,
             log: Log::default(),
-            tab_names: SIDE_PANEL_TAB_NAMES.default(),
+            tab_names: TOOLS_PANEL_TAB_NAMES.default(),
             panel_width: None,
             viewer: Viewer::default(),
             edit: ViewState::default(),
@@ -315,12 +315,12 @@ impl Settings {
                 size: store.get(&LOG_WINDOW_SIZE),
                 folder: store.get(&LOG_WINDOW_FOLDER).map(PathBuf::from),
             },
-            tab_names: store.get(&SIDE_PANEL_TAB_NAMES),
-            panel_width: store.kept(&SIDE_PANEL_WIDTH),
+            tab_names: store.get(&TOOLS_PANEL_TAB_NAMES),
+            panel_width: store.kept(&TOOLS_PANEL_WIDTH),
             viewer: Viewer {
-                margin: store.get(&CENTRAL_PANEL_MARGIN),
-                proof_margin: store.get(&CENTRAL_PANEL_PROOF_MARGIN),
-                background: store.kept(&CENTRAL_PANEL_BACKGROUND),
+                margin: store.get(&VIEWER_MARGIN),
+                proof_margin: store.get(&VIEWER_PROOF_MARGIN),
+                background: store.kept(&VIEWER_BACKGROUND),
             },
             edit: ViewState {
                 tab: store.kept(&EDIT_TAB),
@@ -337,15 +337,15 @@ impl Settings {
             },
             grid: Grid {
                 sort: Sort {
-                    key: store.get(&GRID_PANEL_SORT),
-                    descending: store.get(&GRID_PANEL_DESCENDING),
+                    key: store.get(&BROWSER_SORT),
+                    descending: store.get(&BROWSER_DESCENDING),
                 },
-                thumbnails: store.get(&GRID_PANEL_THUMBNAILS),
-                rows: store.get(&GRID_PANEL_ROWS) as usize,
-                position: store.get(&GRID_PANEL_POSITION),
-                columns: store.get(&GRID_PANEL_COLUMNS) as usize,
-                labels: store.get(&GRID_PANEL_LABELS),
-                square_thumbnails: store.get(&GRID_PANEL_SQUARE_THUMBNAILS),
+                thumbnails: store.get(&BROWSER_THUMBNAILS),
+                rows: store.get(&BROWSER_ROWS) as usize,
+                position: store.get(&BROWSER_POSITION),
+                columns: store.get(&BROWSER_COLUMNS) as usize,
+                labels: store.get(&BROWSER_LABELS),
+                square_thumbnails: store.get(&BROWSER_SQUARE_THUMBNAILS),
             },
             keys: store.get(&KEYS),
             export: Values::read(store),
@@ -418,19 +418,19 @@ impl Settings {
             store.set(&WINDOW_MAXIMIZED, s.window.maximized);
         }
         if s.tab_names != was.tab_names {
-            store.set(&SIDE_PANEL_TAB_NAMES, s.tab_names);
+            store.set(&TOOLS_PANEL_TAB_NAMES, s.tab_names);
         }
         if s.panel_width != was.panel_width {
-            keep(store, &SIDE_PANEL_WIDTH, s.panel_width);
+            keep(store, &TOOLS_PANEL_WIDTH, s.panel_width);
         }
         if s.viewer.margin != was.viewer.margin {
-            store.set(&CENTRAL_PANEL_MARGIN, s.viewer.margin);
+            store.set(&VIEWER_MARGIN, s.viewer.margin);
         }
         if s.viewer.proof_margin != was.viewer.proof_margin {
-            store.set(&CENTRAL_PANEL_PROOF_MARGIN, s.viewer.proof_margin);
+            store.set(&VIEWER_PROOF_MARGIN, s.viewer.proof_margin);
         }
         if s.viewer.background != was.viewer.background {
-            keep(store, &CENTRAL_PANEL_BACKGROUND, s.viewer.background);
+            keep(store, &VIEWER_BACKGROUND, s.viewer.background);
         }
         if s.edit.tab != was.edit.tab {
             keep(store, &EDIT_TAB, s.edit.tab.clone());
@@ -460,28 +460,28 @@ impl Settings {
         }
         let (grid, before) = (s.grid, was.grid);
         if grid.sort.key != before.sort.key {
-            store.set(&GRID_PANEL_SORT, grid.sort.key);
+            store.set(&BROWSER_SORT, grid.sort.key);
         }
         if grid.sort.descending != before.sort.descending {
-            store.set(&GRID_PANEL_DESCENDING, grid.sort.descending);
+            store.set(&BROWSER_DESCENDING, grid.sort.descending);
         }
         if grid.thumbnails != before.thumbnails {
-            store.set(&GRID_PANEL_THUMBNAILS, grid.thumbnails);
+            store.set(&BROWSER_THUMBNAILS, grid.thumbnails);
         }
         if grid.rows != before.rows {
-            store.set(&GRID_PANEL_ROWS, grid.rows as f32);
+            store.set(&BROWSER_ROWS, grid.rows as f32);
         }
         if grid.position != before.position {
-            store.set(&GRID_PANEL_POSITION, grid.position);
+            store.set(&BROWSER_POSITION, grid.position);
         }
         if grid.columns != before.columns {
-            store.set(&GRID_PANEL_COLUMNS, grid.columns as f32);
+            store.set(&BROWSER_COLUMNS, grid.columns as f32);
         }
         if grid.labels != before.labels {
-            store.set(&GRID_PANEL_LABELS, grid.labels);
+            store.set(&BROWSER_LABELS, grid.labels);
         }
         if grid.square_thumbnails != before.square_thumbnails {
-            store.set(&GRID_PANEL_SQUARE_THUMBNAILS, grid.square_thumbnails);
+            store.set(&BROWSER_SQUARE_THUMBNAILS, grid.square_thumbnails);
         }
         if s.keys != was.keys {
             store.set(&KEYS, s.keys.clone());
@@ -864,7 +864,7 @@ fn warnings(store: &Store) -> Vec<(&str, String)> {
 }
 
 /// The margins round the Viewer's photo and its caption, and the background behind
-/// them (`[central_panel]`, which no page of the Settings dialog shows; `docs/gui.md`, The
+/// them (`[viewer]`, which no page of the Settings dialog shows; `docs/gui.md`, The
 /// photo frame).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Viewer {
@@ -907,14 +907,14 @@ impl Default for Log {
 impl Default for Viewer {
     fn default() -> Self {
         Viewer {
-            margin: CENTRAL_PANEL_MARGIN.default(),
-            proof_margin: CENTRAL_PANEL_PROOF_MARGIN.default(),
+            margin: VIEWER_MARGIN.default(),
+            proof_margin: VIEWER_PROOF_MARGIN.default(),
             background: None,
         }
     }
 }
 
-/// How the Browser shows the folder's photos (`[grid_panel]`, `docs/gui.md`, The
+/// How the Browser shows the folder's photos (`[browser]`, `docs/gui.md`, The
 /// Browser and The browser bar).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Grid {
@@ -980,15 +980,15 @@ impl Default for Grid {
     fn default() -> Self {
         Grid {
             sort: Sort {
-                key: GRID_PANEL_SORT.default(),
-                descending: GRID_PANEL_DESCENDING.default(),
+                key: BROWSER_SORT.default(),
+                descending: BROWSER_DESCENDING.default(),
             },
-            thumbnails: GRID_PANEL_THUMBNAILS.default(),
-            rows: GRID_PANEL_ROWS.default() as usize,
-            position: GRID_PANEL_POSITION.default(),
-            columns: GRID_PANEL_COLUMNS.default() as usize,
-            labels: GRID_PANEL_LABELS.default(),
-            square_thumbnails: GRID_PANEL_SQUARE_THUMBNAILS.default(),
+            thumbnails: BROWSER_THUMBNAILS.default(),
+            rows: BROWSER_ROWS.default() as usize,
+            position: BROWSER_POSITION.default(),
+            columns: BROWSER_COLUMNS.default() as usize,
+            labels: BROWSER_LABELS.default(),
+            square_thumbnails: BROWSER_SQUARE_THUMBNAILS.default(),
         }
     }
 }
@@ -1176,7 +1176,7 @@ impl Keeper {
         if self.store.overridden(&SCALE) {
             updated.scale = settings.scale;
         }
-        if self.store.overridden(&SIDE_PANEL_WIDTH) {
+        if self.store.overridden(&TOOLS_PANEL_WIDTH) {
             updated.panel_width = settings.panel_width;
         }
         updated
@@ -1535,9 +1535,9 @@ mod tests {
         );
         // What the app takes where nothing is kept.
         assert_eq!(LOCALE.default(), crate::system_locale());
-        assert_eq!(SIDE_PANEL_WIDTH.default(), 320.0);
+        assert_eq!(TOOLS_PANEL_WIDTH.default(), 320.0);
         assert_eq!(
-            SIDE_PANEL_WIDTH.default(),
+            TOOLS_PANEL_WIDTH.default(),
             Theme::builtin(Builtin::Dark).sizes.tools_panel
         );
         // The tab the shell shows when none is kept, or the one kept is no tab.
@@ -1609,15 +1609,20 @@ mod tests {
 # Apertrust's settings. Apertrust writes here only what changes, without comments;
 # keys it does not know stay.
 
-version = 1
+version = 2
 locale = \"pl\"
 scale = 1.3
 theme = \"high-contrast\"
 
-[central_panel]
-background = \"medium\"
-margin = 16
-proof_margin = 0.25
+[browser]
+columns = 2
+descending = true
+labels = false
+position = \"right\"
+rows = 3
+sort = \"file-name\"
+square_thumbnails = true
+thumbnails = \"large\"
 
 [edit]
 tab = \"geometry\"
@@ -1656,16 +1661,6 @@ scale = \"1/2\"
 upscale = true
 width = 2048
 
-[grid_panel]
-columns = 2
-descending = true
-labels = false
-position = \"right\"
-rows = 3
-sort = \"file-name\"
-square_thumbnails = true
-thumbnails = \"large\"
-
 [history]
 ask_before_discard = false
 
@@ -1698,10 +1693,6 @@ shadow_clipping = true
 position = [960, 520]
 scale_factor = 2.0
 
-[side_panel]
-tab_names = false
-width = 480
-
 [sliders]
 marker = \"triangle\"
 
@@ -1710,6 +1701,15 @@ lightness = 42.5
 reference_lightness = 62.5
 reference_photo = \"/photos/IMG_2041.CR3\"
 target = \"lightness\"
+
+[tools_panel]
+tab_names = false
+width = 480
+
+[viewer]
+background = \"medium\"
+margin = 16
+proof_margin = 0.25
 
 [window]
 maximized = true
@@ -1729,6 +1729,197 @@ size = [1280, 800]
         assert_eq!(
             folder.text(),
             expected.replace("scale = 1.3", "scale = 1.5")
+        );
+    }
+
+    /// A version-1 file, from before the window's parts were named by their role (decision
+    /// 95): every renamed key, action id and Browse entry, under its old name.
+    const VERSION_1: &str = "\
+version = 1
+scale = 1.3
+
+[central_panel]
+background = \"white\"
+margin = 24
+proof_margin = 0.3
+
+[edit.groups.browse]
+folders = false
+
+[edit.sections]
+browse = false
+exposure = true
+
+[grid_panel]
+columns = 2
+descending = true
+labels = false
+position = \"bottom\"
+rows = 3
+sort = \"file-name\"
+square_thumbnails = true
+thumbnails = \"large\"
+
+[keys]
+grid-position-bottom = [\"Ctrl+3\"]
+grid-position-left = [\"Ctrl+1\"]
+grid-position-right = [\"Ctrl+2\"]
+show-browse = [\"Shift+L\"]
+undo = [\"Ctrl+K\"]
+
+[side_panel]
+tab_names = false
+width = 480
+";
+
+    /// A version-1 file keeps every value under its new name, and is written as version 2
+    /// with the new names alone at its next write.
+    #[test]
+    fn a_version_1_file_keeps_every_value_under_the_new_names() {
+        let (read, warnings) = read(VERSION_1);
+        assert!(warnings.is_empty(), "{warnings:?}");
+        assert!(!read.tab_names);
+        assert_eq!(read.panel_width, Some(480.0));
+        assert_eq!(
+            read.viewer,
+            Viewer {
+                margin: 24.0,
+                proof_margin: 0.3,
+                background: Some(apertrust_ui::Background::White),
+            }
+        );
+        assert_eq!(
+            read.grid,
+            Grid {
+                sort: Sort {
+                    key: SortKey::FileName,
+                    descending: true,
+                },
+                thumbnails: ThumbnailSize::Large,
+                rows: 3,
+                position: BrowserPosition::Bottom,
+                columns: 2,
+                labels: false,
+                square_thumbnails: true,
+            }
+        );
+        let keys = |keys: &[(&str, &str)]| {
+            keys.iter()
+                .map(|(id, key)| ((*id).to_owned(), vec![(*key).to_owned()]))
+                .collect::<BTreeMap<_, _>>()
+        };
+        assert_eq!(
+            read.keys,
+            keys(&[
+                ("browser-position-bottom", "Ctrl+3"),
+                ("browser-position-left", "Ctrl+1"),
+                ("browser-position-right", "Ctrl+2"),
+                ("show-collections", "Shift+L"),
+                ("undo", "Ctrl+K"),
+            ])
+        );
+        assert_eq!(
+            read.edit.sections,
+            BTreeMap::from([
+                ("collections".to_owned(), false),
+                ("exposure".to_owned(), true)
+            ])
+        );
+        assert_eq!(
+            read.edit.groups,
+            BTreeMap::from([(
+                "collections".to_owned(),
+                BTreeMap::from([("folders".to_owned(), false)])
+            )])
+        );
+        // Opened and closed, the file stays version 1; one change writes it as version 2.
+        let folder = Folder::new("version-1");
+        std::fs::write(folder.settings(), VERSION_1).expect("written");
+        let (keeper, _) = Keeper::open(folder.storage());
+        drop(keeper);
+        assert_eq!(folder.text(), VERSION_1);
+        let changed = Settings { scale: 1.5, ..read };
+        change(&folder, &changed);
+        let expected = "\
+# Apertrust's settings. Apertrust writes here only what changes, without comments;
+# keys it does not know stay.
+
+version = 2
+scale = 1.5
+
+[browser]
+columns = 2
+descending = true
+labels = false
+position = \"bottom\"
+rows = 3
+sort = \"file-name\"
+square_thumbnails = true
+thumbnails = \"large\"
+
+[edit.groups.collections]
+folders = false
+
+[edit.sections]
+collections = false
+exposure = true
+
+[keys]
+browser-position-bottom = [\"Ctrl+3\"]
+browser-position-left = [\"Ctrl+1\"]
+browser-position-right = [\"Ctrl+2\"]
+show-collections = [\"Shift+L\"]
+undo = [\"Ctrl+K\"]
+
+[tools_panel]
+tab_names = false
+width = 480
+
+[viewer]
+background = \"white\"
+margin = 24
+proof_margin = 0.3
+";
+        assert_eq!(folder.text(), expected);
+        assert_eq!(Keeper::open(folder.storage()).1, changed);
+    }
+
+    /// A version-1 file holding an old key and its new one, as only a hand edit makes,
+    /// keeps the new one's value.
+    #[test]
+    fn of_an_old_key_and_its_new_one_the_new_one_wins() {
+        let text = "version = 1\n\
+            [central_panel]\nmargin = 24\n[viewer]\nmargin = 16\n\
+            [keys]\nshow-browse = [\"Shift+L\"]\nshow-collections = [\"Shift+C\"]\n\
+            [edit.sections]\nbrowse = false\ncollections = true\n";
+        let (read, warnings) = read(text);
+        assert!(warnings.is_empty(), "{warnings:?}");
+        assert_eq!(read.viewer.margin, 16.0);
+        assert_eq!(read.keys["show-collections"], ["Shift+C"]);
+        assert!(!read.keys.contains_key("show-browse"));
+        assert_eq!(
+            read.edit.sections,
+            BTreeMap::from([("collections".to_owned(), true)])
+        );
+    }
+
+    /// `--conf` takes the new keys alone: an old one names no setting.
+    #[test]
+    fn conf_takes_the_new_keys_alone() {
+        for old in [
+            "side_panel.width=300",
+            "central_panel.margin=16",
+            "grid_panel.rows=2",
+        ] {
+            assert!(conf(&[old]).is_err(), "{old}");
+        }
+        assert!(
+            conf(&[
+                "tools_panel.width=300",
+                "viewer.margin=16",
+                "browser.rows=2"
+            ])
+            .is_ok()
         );
     }
 
@@ -1795,7 +1986,7 @@ size = [1280, 800]
         let (s, names) = read(
             "version = 1\ntheme = \"solarized\"\nlocale = 3\nscale = 9.0\n\
              [window]\nsize = [1200]\nposition = [10, 20]\nmaximized = true\n\
-             [side_panel]\nwidth = 2000\n\
+             [tools_panel]\nwidth = 2000\n\
              [edit.sections]\nexposure = \"open\"\ncurve = true\n\
              [edit.groups]\nsample = true\n[edit.groups.exposure]\nmapping = 1\nshape = true\n\
              [keys]\nundo = 4\nredo = \"Ctrl+R\"\n",
@@ -1831,7 +2022,7 @@ size = [1280, 800]
                 "locale",
                 "scale",
                 "window.size",
-                "side_panel.width",
+                "tools_panel.width",
                 "edit.sections.exposure",
                 "edit.groups.exposure.mapping",
                 "edit.groups.sample",
@@ -1904,7 +2095,7 @@ size = [1280, 800]
             folder.settings(),
             "version = 1\ntheme = \"solarized\"\nlocale = \"fr\"\n\
              [window]\nposition = [10, 20]\n\
-             [side_panel]\nwidth = \"wide\"\n\
+             [tools_panel]\nwidth = \"wide\"\n\
              [edit]\ntab = 7\n[edit.sections]\nexposure = \"open\"\n[keys]\nundo = 4\n",
         )
         .expect("written");
@@ -1925,7 +2116,7 @@ size = [1280, 800]
             table["window"]["position"].as_array().map(Vec::len),
             Some(2)
         );
-        assert_eq!(table["side_panel"]["width"].as_str(), Some("wide"));
+        assert_eq!(table["tools_panel"]["width"].as_str(), Some("wide"));
         assert_eq!(table["edit"]["tab"].as_integer(), Some(7));
         assert_eq!(table["edit"]["sections"]["exposure"].as_str(), Some("open"));
         assert_eq!(table["keys"]["undo"].as_integer(), Some(4));
@@ -1972,7 +2163,7 @@ size = [1280, 800]
             &folder,
             &Settings {
                 locale: Some(crate::system_locale()),
-                panel_width: Some(SIDE_PANEL_WIDTH.default()),
+                panel_width: Some(TOOLS_PANEL_WIDTH.default()),
                 ..Settings::default()
             },
         );
@@ -2051,7 +2242,7 @@ size = [1280, 800]
         );
 
         let folder = Folder::new("margins-file");
-        let text = "version = 1\n[central_panel]\nmargin = 24\nproof_margin = 0.3\n";
+        let text = "version = 1\n[viewer]\nmargin = 24\nproof_margin = 0.3\n";
         std::fs::write(folder.settings(), text).expect("written");
         let (_, settings) = Keeper::open(folder.storage());
         assert_eq!(
@@ -2064,8 +2255,7 @@ size = [1280, 800]
         );
 
         // `--conf` over the file, and a value out of range at its nearer end.
-        let overrides =
-            conf(&["central_panel.margin=16", "central_panel.proof_margin=0.9"]).expect("read");
+        let overrides = conf(&["viewer.margin=16", "viewer.proof_margin=0.9"]).expect("read");
         let (keeper, settings) = Keeper::open_with(folder.storage(), &overrides);
         assert_eq!(
             settings.viewer,
@@ -2075,16 +2265,16 @@ size = [1280, 800]
                 background: None
             }
         );
-        assert!(keeper.store.overridden(&CENTRAL_PANEL_MARGIN));
-        assert!(!keeper.store.overridden(&SIDE_PANEL_TAB_NAMES));
+        assert!(keeper.store.overridden(&VIEWER_MARGIN));
+        assert!(!keeper.store.overridden(&TOOLS_PANEL_TAB_NAMES));
         assert_eq!(folder.text(), text, "never written");
         // Without a file's value and without `--conf`, the default.
         let none = Folder::new("margins-conf");
-        let overrides = conf(&["central_panel.margin=0"]).expect("read");
+        let overrides = conf(&["viewer.margin=0"]).expect("read");
         let (_, settings) = Keeper::open_with(none.storage(), &overrides);
         assert_eq!(settings.viewer.margin, 0.0);
         assert_eq!(settings.viewer.proof_margin, 0.12);
-        assert!(conf(&["central_panel.margin=wide"]).is_err());
+        assert!(conf(&["viewer.margin=wide"]).is_err());
     }
 
     /// A tool setting `--conf` gives keeps its value for the run: a change of its row and a
@@ -2120,19 +2310,19 @@ size = [1280, 800]
     #[test]
     fn unrelated_dialog_changes_preserve_runtime_geometry_over_conf() {
         let folder = Folder::new("runtime-geometry-conf");
-        let overrides = conf(&["scale=1.5", "side_panel.width=300"]).unwrap();
+        let overrides = conf(&["scale=1.5", "tools_panel.width=300"]).unwrap();
         let (mut keeper, mut settings) = Keeper::open_with(folder.storage(), &overrides);
         settings.scale = 1.7;
         settings.panel_width = Some(350.0);
         let updated = keeper.apply(
             &settings,
-            SIDE_PANEL_TAB_NAMES.id(),
+            TOOLS_PANEL_TAB_NAMES.id(),
             Some(&toml::Value::Boolean(false)),
         );
         assert_eq!(updated.scale, 1.7);
         assert_eq!(updated.panel_width, Some(350.0));
         assert_eq!(keeper.store.get(&SCALE), 1.5);
-        assert_eq!(keeper.store.get(&SIDE_PANEL_WIDTH), 300.0);
+        assert_eq!(keeper.store.get(&TOOLS_PANEL_WIDTH), 300.0);
         keeper.flush();
         assert!(!folder.text().contains("1.7"));
         assert!(!folder.text().contains("350"));
@@ -2267,20 +2457,20 @@ size = [1280, 800]
     #[test]
     fn the_background_follows_the_theme_until_one_is_chosen() {
         use apertrust_ui::Background;
-        assert_eq!(CENTRAL_PANEL_BACKGROUND.default(), Background::Dark);
+        assert_eq!(VIEWER_BACKGROUND.default(), Background::Dark);
         let (_, settings) = Keeper::nowhere();
         assert_eq!(settings.viewer.background, None);
 
         let folder = Folder::new("background-file");
-        let text = "version = 1\n[central_panel]\nbackground = \"very-dark\"\n";
+        let text = "version = 1\n[viewer]\nbackground = \"very-dark\"\n";
         std::fs::write(folder.settings(), text).expect("written");
         let (_, settings) = Keeper::open(folder.storage());
         assert_eq!(settings.viewer.background, Some(Background::VeryDark));
 
-        let overrides = conf(&["central_panel.background=white"]).expect("read");
+        let overrides = conf(&["viewer.background=white"]).expect("read");
         let (_, settings) = Keeper::open_with(folder.storage(), &overrides);
         assert_eq!(settings.viewer.background, Some(Background::White));
-        assert!(conf(&["central_panel.background=grey"]).is_err());
+        assert!(conf(&["viewer.background=grey"]).is_err());
     }
 
     /// `--conf` sets the app's settings and the engine's for the run, over the file: what
@@ -2298,7 +2488,7 @@ size = [1280, 800]
         let (mut keeper, settings) = Keeper::open_with(folder.storage(), &overrides);
         assert_eq!((settings.scale, settings.theme), (1.5, Builtin::Light));
         assert!(keeper.store.overridden(&SCALE) && keeper.store.overridden(&THEME));
-        assert!(!keeper.store.overridden(&SIDE_PANEL_TAB_NAMES));
+        assert!(!keeper.store.overridden(&TOOLS_PANEL_TAB_NAMES));
         let options = keeper.engine();
         assert_eq!(options.budget, 1024 << 20);
         assert_eq!(options.sources[1], Source::Conf);
@@ -2315,13 +2505,13 @@ size = [1280, 800]
 # Apertrust's settings. Apertrust writes here only what changes, without comments;
 # keys it does not know stay.
 
-version = 1
+version = 2
 scale = 2
 
 [engine]
 memory_budget = 4096
 
-[side_panel]
+[tools_panel]
 tab_names = false
 ";
         assert_eq!(folder.text(), expected);
@@ -2442,7 +2632,7 @@ tab_names = false
             &Value::Float(1.0),
         );
         assert_eq!(pair, file);
-        assert_eq!(table["side_panel"]["tab_names"].as_bool(), Some(false));
+        assert_eq!(table["tools_panel"]["tab_names"].as_bool(), Some(false));
 
         // An empty file, the scale factor given.
         let folder = Folder::new("conf-scale-factor");
@@ -2468,7 +2658,7 @@ tab_names = false
     /// naming it.
     #[test]
     fn a_conf_is_checked_against_the_app_s_settings_and_the_engine_s() {
-        let overrides = conf(&["locale=UK", "engine.adapter=M4", "side_panel.width=2000"]);
+        let overrides = conf(&["locale=UK", "engine.adapter=M4", "tools_panel.width=2000"]);
         let (keeper, settings) = Keeper::open_in(None, &overrides.expect("read"));
         // A language's tag in any case, as the file's; out of range, the nearer end.
         assert_eq!(settings.locale, Some(Locale::Uk));

@@ -264,7 +264,7 @@ pub const UTILITIES: &[UtilityDefinition] = &[
     },
     UtilityDefinition {
         tool: ToolDefinition {
-            id: "browse",
+            id: "collections",
             tabs: &[Tab {
                 id: None,
                 rows: &[

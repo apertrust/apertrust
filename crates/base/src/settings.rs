@@ -89,6 +89,7 @@
 
 #[cfg(any(feature = "codegen", test))]
 pub mod codegen;
+mod migrations;
 mod overrides;
 mod storage;
 mod store;
@@ -96,9 +97,10 @@ mod stored;
 
 use std::ops::RangeInclusive;
 
+pub use migrations::MIGRATIONS;
 pub use overrides::{CONF_FLAG, OverrideError, Overrides};
 pub use storage::{FileStorage, Storage};
-pub use store::{DELAY, MIGRATIONS, Migration, Store, VERSION};
+pub use store::{DELAY, Migration, Store, VERSION};
 pub use stored::{Declared, Stored};
 
 /// One setting as the schema declares it, typed by its value, `T`.
@@ -109,7 +111,7 @@ pub use stored::{Declared, Stored};
 /// has no value until its owner keeps one.
 #[derive(Clone, Copy, Debug)]
 pub struct Setting<T: 'static> {
-    /// The dotted path of its key in `settings.toml`, permanent: `side_panel.width`.
+    /// The dotted path of its key in `settings.toml`, permanent: `tools_panel.width`.
     pub id: &'static str,
     pub owner: Owner,
     pub kind: Kind,

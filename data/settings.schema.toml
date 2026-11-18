@@ -4,7 +4,7 @@
 # Every setting is declared once, here: a table whose header is its id, the dotted path of
 # its key in settings.toml, permanent, each part snake_case. The crate that owns a setting
 # generates it from this file in its build.rs, as a typed static named after its id
-# (side_panel.width is SIDE_PANEL_WIDTH), in this file's order, which the Settings dialog
+# (tools_panel.width is TOOLS_PANEL_WIDTH), in this file's order, which the Settings dialog
 # follows; the generator is crates/base/src/settings/codegen.rs. settings.toml's version
 # is the file's own, not a setting.
 #
@@ -29,7 +29,7 @@
 #   An item's or a value's kind is a kind's name, or an inline table of kind and that
 #   kind's fields.
 # - default: a value of its kind, or "computed", computed in Rust by the function its
-#   owner's crate defines under the setting's name (computed::side_panel_width). A
+#   owner's crate defines under the setting's name (computed::tools_panel_width). A
 #   setting with no value until its owner keeps one has none, and says optional = true.
 # - applies: "at-once", "next-photo" or "after-restart".
 # - page and group: the Settings dialog's page that shows it as a row (general, import,
@@ -225,19 +225,19 @@ kind = "text"
 optional = true
 applies = "at-once"
 
-# Whether the side panel's tabs show their names.
-[side_panel.tab_names]
+# Whether the Tools panel's tabs show their names.
+[tools_panel.tab_names]
 owner = "app"
 kind = "boolean"
 default = true
 applies = "at-once"
 page = "editing"
-group = "side_panel"
+group = "tools_panel"
 
-# The side panel's width in points, as the user dragged its edge, kept whole; until then
+# The Tools panel's width in points, as the user dragged its edge, kept whole; until then
 # the theme's. A narrow window shows the panel narrower, never more than half the window,
 # and keeps this width.
-[side_panel.width]
+[tools_panel.width]
 owner = "app"
 kind = "number"
 min = 240
@@ -246,11 +246,11 @@ decimals = 0
 default = "computed"
 applies = "at-once"
 
-# The margin round the photo and its caption in the central panel, in points; the photo
+# The margin round the photo and its caption in the Viewer, in points; the photo
 # fits in what the slot leaves inside it (docs/gui.md, The photo frame). darktable's
 # darkroom border (plugins/darkroom/ui/border_size, 10). Not on a page of the Settings
-# dialog: it is set here, or by --conf central_panel.margin=16.
-[central_panel.margin]
+# dialog: it is set here, or by --conf viewer.margin=16.
+[viewer.margin]
 owner = "app"
 kind = "number"
 min = 0
@@ -263,7 +263,7 @@ applies = "at-once"
 # darktable's colour assessment border (darkroom/ui/color_assessment_total_border_width,
 # whose default is 0.2), but 0.12 by default, 40% less, and with no white inner border. Not
 # on a page of the Settings dialog either.
-[central_panel.proof_margin]
+[viewer.proof_margin]
 owner = "app"
 kind = "number"
 min = 0.05
@@ -273,16 +273,16 @@ default = 0.12
 applies = "at-once"
 
 # The background behind the photo: one of six neutral greys (docs/gui.md, The
-# background), chosen from the central panel's right-click menu or View › Background.
+# background), chosen from the Viewer's right-click menu or View › Background.
 # Computed: until one is chosen it follows the theme, whose own surround is its default.
-[central_panel.background]
+[viewer.background]
 owner = "app"
 kind = "choice"
 type = "apertrust_ui::Background"
 default = "computed"
 applies = "at-once"
 
-# Edit's side panel tab, by its id. Text, not a choice: Customise tabs will make tabs of
+# Edit's Tools panel tab, by its id. Text, not a choice: Customise tabs will make tabs of
 # the user's own. An id that is no tab, or a tab that cannot be chosen yet, shows Adjust.
 [edit.tab]
 owner = "app"
@@ -301,7 +301,7 @@ default = {}
 applies = "at-once"
 
 # The collapsible groups the user opened or closed, by tool and group, the same for
-# every photo; the others start closed (decision 29), but Browse's Folders and Export's
+# every photo; the others start closed (decision 29), but Collections' Folders and Export's
 # Global options, open (decision 90).
 [edit.groups]
 owner = "app"
@@ -332,25 +332,25 @@ applies = "at-once"
 page = "general"
 group = "start"
 
-# The grid panel's sort: its key, chosen in the grid bar's Sort or View › Sort By
-# (docs/gui.md, The grid bar). The app's mirror sorts the folder's photos by it.
-[grid_panel.sort]
+# The Browser's sort: its key, chosen in the browser bar's Sort or View › Sort By
+# (docs/gui.md, The browser bar). The app's mirror sorts the folder's photos by it.
+[browser.sort]
 owner = "app"
 kind = "choice"
 type = "apertrust_ui::components::SortKey"
 default = "capture-time"
 applies = "at-once"
 
-# Whether the grid panel's sort runs descending; ties keep their order either way.
-[grid_panel.descending]
+# Whether the Browser's sort runs descending; ties keep their order either way.
+[browser.descending]
 owner = "app"
 kind = "boolean"
 default = false
 applies = "at-once"
 
-# The thumbnails' size, by name, so its points can be retuned: the grid bar's Zoom and
+# The thumbnails' size, by name, so its points can be retuned: the browser bar's Zoom and
 # View › Thumbnail Size.
-[grid_panel.thumbnails]
+[browser.thumbnails]
 owner = "app"
 kind = "choice"
 type = "apertrust_ui::components::ThumbnailSize"
@@ -358,8 +358,8 @@ default = "medium"
 applies = "at-once"
 
 # Whether the thumbnails show their captions, the rating and labels over the file name:
-# the grid bar's Labels and View › Show Labels (docs/gui.md, The cell).
-[grid_panel.labels]
+# the browser bar's Labels and View › Show Labels (docs/gui.md, The cell).
+[browser.labels]
 owner = "app"
 kind = "boolean"
 default = true
@@ -367,7 +367,7 @@ applies = "at-once"
 
 # Whether each thumbnail fills its square, cut at its longer sides, rather than fitting in
 # it whole (docs/gui.md, The cell).
-[grid_panel.square_thumbnails]
+[browser.square_thumbnails]
 owner = "app"
 kind = "boolean"
 default = false
@@ -389,19 +389,19 @@ applies = "at-once"
 page = "photos"
 group = "thumbnails"
 
-# Where the grid panel is: along the bottom, or a column at the left or right, from the
-# grid bar's options menu and View › Grid Panel Position (docs/gui.md, Its position).
-[grid_panel.position]
+# Where the Browser is: along the bottom, or a column at the left or right, from the
+# browser bar's options menu and View › Browser Position (docs/gui.md, Its position).
+[browser.position]
 owner = "app"
 kind = "choice"
 type = "apertrust_ui::components::BrowserPosition"
 default = "left"
 applies = "at-once"
 
-# How many rows of thumbnails the grid panel shows at the bottom, as its edge was dragged:
+# How many rows of thumbnails the Browser shows at the bottom, as its edge was dragged:
 # whole rows, so a change of scale or of the thumbnails' size still gives whole ones. A
 # smaller window shows fewer, never more than half its height, and keeps this number.
-[grid_panel.rows]
+[browser.rows]
 owner = "app"
 kind = "number"
 min = 1
@@ -410,9 +410,9 @@ decimals = 0
 default = 1
 applies = "at-once"
 
-# How many columns of thumbnails the grid panel shows at the left or right, as its edge
+# How many columns of thumbnails the Browser shows at the left or right, as its edge
 # was dragged, kept apart from its rows; never more than half the window's width.
-[grid_panel.columns]
+[browser.columns]
 owner = "app"
 kind = "number"
 min = 1

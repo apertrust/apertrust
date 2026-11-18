@@ -103,7 +103,7 @@ impl ActionId {
     pub const COPY_APPLY_PARTS: ActionId = ActionId("copy-apply-parts");
     pub const EDIT_VIEW: ActionId = ActionId("view-edit");
     /// View › Collections: the first tab holding Collections.
-    pub const SHOW_COLLECTIONS: ActionId = ActionId("show-browse");
+    pub const SHOW_COLLECTIONS: ActionId = ActionId("show-collections");
     /// The Tools panel's tabs by position, whatever the user puts in them: one for each
     /// of the app's tabs, which a compile-time assert beside the app's `TABS` holds them to.
     pub const PANEL_TABS: [ActionId; 7] = [
@@ -160,9 +160,9 @@ impl ActionId {
     pub const SHOW_LABELS: ActionId = ActionId("show-labels");
     /// The browser bar's options menu and View › Browser Position: left, right, bottom.
     pub const BROWSER_POSITION: [ActionId; 3] = [
-        ActionId("grid-position-left"),
-        ActionId("grid-position-right"),
-        ActionId("grid-position-bottom"),
+        ActionId("browser-position-left"),
+        ActionId("browser-position-right"),
+        ActionId("browser-position-bottom"),
     ];
     /// View › Background and the Viewer's right-click menu, black to white.
     pub const BACKGROUND: [ActionId; 6] = [
@@ -1159,19 +1159,19 @@ pub static ACTIONS: [Action; 77] = [
     // nothing shown too.
     grid(
         ActionId::BROWSER_POSITION[0],
-        "action-grid-position-left",
+        "action-browser-position-left",
         BrowserBarAction::Position(BrowserPosition::Left),
         browser_anywhere,
     ),
     grid(
         ActionId::BROWSER_POSITION[1],
-        "action-grid-position-right",
+        "action-browser-position-right",
         BrowserBarAction::Position(BrowserPosition::Right),
         browser_anywhere,
     ),
     grid(
         ActionId::BROWSER_POSITION[2],
-        "action-grid-position-bottom",
+        "action-browser-position-bottom",
         BrowserBarAction::Position(BrowserPosition::Bottom),
         browser_anywhere,
     ),
