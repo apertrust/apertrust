@@ -18,8 +18,8 @@
 //! AccessKit (`docs/gui.md`, Testing).
 
 use apertrust_ui::components::{
-    PanelBody, PanelTab, Section, SectionAction, SliderRow, TabBar, TabBarAction, section_body,
-    section_list,
+    PanelBody, PanelTab, Section, SectionAction, SliderRow, TabBar, TabBarAction, TabBarWorkspace,
+    section_body, section_list,
 };
 use apertrust_ui::icons::STROKE;
 use apertrust_ui::{Icon, Locale, Theme};
@@ -722,7 +722,7 @@ fn tab_bar(width: f32) -> Harness<'static, (usize, bool, Vec<TabBarAction>)> {
                     match action {
                         TabBarAction::Select(i) => state.0 = i,
                         TabBarAction::ShowNames(on) => state.1 = on,
-                        TabBarAction::Customise => {}
+                        TabBarAction::Customise | TabBarAction::Workspace(_) => {}
                     }
                     state.2.push(action);
                 }
@@ -844,6 +844,69 @@ fn the_options_menu_hides_tab_names_and_opens_customise() {
     harness.get_by_label("Customise tabs…").click();
     harness.run();
     assert_eq!(harness.state().2.last(), Some(&TabBarAction::Customise));
+}
+
+/// ⋮ lists the workspaces handed in under Workspace ▸, first, the one shown checked and one
+/// that cannot be chosen disabled with its reason, and reports the one chosen (decision 96).
+#[test]
+fn the_options_menu_lists_the_workspaces_and_reports_the_one_chosen() {
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(440.0, 320.0))
+        .with_context_setup(|ctx| apertrust_ui::install(ctx, Theme::default()))
+        .build_ui_state(
+            |ui, chosen: &mut Vec<TabBarAction>| {
+                let tabs = [PanelTab {
+                    icon: Icon::Folder,
+                    name: "Photos",
+                    shortcut: None,
+                    enabled: true,
+                }];
+                let workspaces = [
+                    TabBarWorkspace {
+                        name: "Default",
+                        checked: true,
+                        enabled: true,
+                        tip: None,
+                    },
+                    TabBarWorkspace {
+                        name: "Essentials",
+                        checked: false,
+                        enabled: true,
+                        tip: None,
+                    },
+                    TabBarWorkspace {
+                        name: "Portraits",
+                        checked: false,
+                        enabled: false,
+                        tip: Some("Set by --conf for this run"),
+                    },
+                ];
+                let bar = TabBar::new(&tabs, 0, true).workspaces(&workspaces);
+                if let Some(action) = bar.show(ui) {
+                    chosen.push(action);
+                }
+            },
+            Vec::new(),
+        );
+    harness.run();
+    harness.get_by_label("Tab options").click();
+    harness.run();
+    harness.get_by_label("Workspace").click();
+    harness.run();
+    let default = harness.get_by_role_and_label(Role::MenuItemCheckBox, "Default");
+    assert_eq!(
+        default.accesskit_node().toggled(),
+        Some(egui::accesskit::Toggled::True)
+    );
+    assert!(
+        harness
+            .get_by_label("Portraits")
+            .accesskit_node()
+            .is_disabled()
+    );
+    harness.get_by_label("Essentials").click();
+    harness.run();
+    assert_eq!(harness.state(), &vec![TabBarAction::Workspace(1)]);
 }
 
 /// » is a pull-down of the popup service: a list of menu items, a tab that cannot be chosen
