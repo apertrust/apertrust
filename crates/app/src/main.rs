@@ -105,8 +105,8 @@ use apertrust_ui::components::{
     ActivityAction, Available, Browser, BrowserAction, BrowserEdge, BrowserEdgeAction,
     BrowserPosition, CellMenu, CellRating, Jobs, Margin, Marker, PanelBody, PanelEdge,
     PanelEdgeAction, PanelTab, PhotoCaption, PhotoFrame, PickerAction, Placed, SaveState,
-    ScopeView, TabBar, TabBarAction, TabBarWorkspace, Thumb, Toggle, Toolbar, ToolbarAction,
-    ViewerBar, ViewerBarAction, Zoom, browser_lines, browser_thickness,
+    ScopeView, TabBar, TabBarAction, Thumb, Toggle, Toolbar, ToolbarAction, ViewerBar,
+    ViewerBarAction, Zoom, browser_lines, browser_thickness,
 };
 use apertrust_ui::{
     Background, Builtin, Locale, Theme, Translator, components, popup, theme, tr, translator,
@@ -1601,8 +1601,17 @@ struct Shell {
     /// Whether `--conf` sets `workspace` for this run, so View › Workspace's items are
     /// disabled, saying why, as the settings store refuses the change (decision 43).
     workspace_given: bool,
-    /// The tab shown, by its place among the workspace's.
+    /// The tab shown, by its place among the workspace's; while the Hidden tab is chosen,
+    /// the tab shown before it, shown again as it goes.
     panel_tab: usize,
+    /// Whether the Hidden tab is the tab shown, while it shows (decision 96).
+    hidden_chosen: bool,
+    /// Show Hidden Tools: the Hidden tab shown last, kept app-wide
+    /// (`tools_panel.show_hidden`).
+    show_hidden: bool,
+    /// Whether the Hidden tab shows for the moment while Show Hidden Tools is off, where
+    /// something revealed a hidden tool there; until another tab is chosen.
+    hidden_for_now: bool,
     tab_names: bool,
     /// The Tools panel's width as the user dragged it, in points; None for the theme's.
     /// Kept while a narrower window shows the panel narrower ([`panel_widths`]).
@@ -1742,6 +1751,9 @@ impl Shell {
             kept_workspace: settings.workspace.clone(),
             workspace_given: false,
             panel_tab,
+            hidden_chosen: false,
+            show_hidden: settings.show_hidden,
+            hidden_for_now: false,
             tab_names: settings.tab_names,
             panel_width: settings.panel_width,
             guides: false,
@@ -1803,10 +1815,15 @@ impl Shell {
     /// a tab.
     fn open_workspace(&mut self, workspace: layout::Workspace) {
         let kept = self.recents.tab(&workspace.id);
+        // The Hidden tab, last shown while Show Hidden Tools was on, opens again while it is.
+        let hidden = kept == Some(layout::HIDDEN);
+        self.hidden_chosen = hidden && self.show_hidden;
+        self.hidden_for_now = false;
         let place = kept.and_then(|id| workspace.position(id));
         let enabled = workspace.enabled();
         let id = &workspace.id;
         match (kept, place) {
+            (Some(_), None) if hidden => {}
             (Some(tab), None) => {
                 tracing::warn!(target: "settings", "state.toml: tab.{id}: no tab {tab}, the first shown");
             }
@@ -1856,9 +1873,54 @@ impl Shell {
             .collect()
     }
 
-    /// The tab shown, with its tools.
+    /// The tab shown, with its tools: the Hidden tab while it is chosen.
     fn shown_tab(&self) -> Option<&layout::Tab> {
+        if self.hidden_chosen && self.hidden_shown() {
+            return Some(self.workspace.hidden_tab());
+        }
         self.workspace.tab(self.panel_tab)
+    }
+
+    /// Whether the Hidden tab shows, last in the tab bar: while Show Hidden Tools is on, or
+    /// for the moment, where a hidden tool was revealed (decision 96).
+    fn hidden_shown(&self) -> bool {
+        self.show_hidden || self.hidden_for_now
+    }
+
+    /// Shows the Hidden tab and chooses it: for the moment where Show Hidden Tools is off,
+    /// until another tab is chosen. Kept in `state.toml` as the tab last shown only while
+    /// Show Hidden Tools is on, so a start opens on it only then.
+    fn choose_hidden(&mut self) {
+        self.hidden_for_now |= !self.show_hidden;
+        self.hidden_chosen = true;
+        if self.show_hidden {
+            self.recents.set_tab(&self.workspace.id, layout::HIDDEN);
+            self.recents.save();
+        }
+    }
+
+    /// Show Hidden Tools turned on, the Hidden tab shown and chosen, or off, the Hidden tab
+    /// gone and, where it was shown, the tab shown before it shown again (decision 96).
+    fn toggle_show_hidden(&mut self) {
+        self.show_hidden = !self.show_hidden;
+        self.hidden_for_now = false;
+        if self.show_hidden {
+            self.choose_hidden();
+        } else if std::mem::take(&mut self.hidden_chosen) {
+            self.choose_tab(self.panel_tab);
+        }
+    }
+
+    /// The hidden processing tools that change the photo, `edited` naming those that do
+    /// (`Mirror::edited`), in the Hidden tab's order, while the Hidden tab does not show:
+    /// what the dot on ⋮ says, which Show Hidden Tools there answers (decision 96).
+    /// Utilities never change it.
+    fn hidden_changing(&self, edited: &[&'static str]) -> Vec<&'static str> {
+        if self.hidden_shown() {
+            return Vec::new();
+        }
+        let hidden = self.workspace.shown.hidden.iter().copied();
+        hidden.filter(|tool| edited.contains(tool)).collect()
     }
 
     /// What settings keep of the shell, and of the interface's scale, which egui holds.
@@ -1873,6 +1935,7 @@ impl Shell {
             jobs_window: self.jobs_window,
             log: self.log.clone(),
             tab_names: self.tab_names,
+            show_hidden: self.show_hidden,
             panel_width: self.panel_width,
             viewer: self.viewer,
             workspace: self.kept_workspace.clone(),
@@ -2082,12 +2145,15 @@ impl Shell {
     /// line asks, after darktable's Shift-click on a history item,
     /// which switches to the tool's group and expands it: the first tab that lists it is
     /// chosen, the section opened, for this run and the next, and scrolled to as the tab
-    /// shows. A tool no tab lists changes nothing.
+    /// shows. A hidden tool is revealed in the Hidden tab, shown for the moment where Show
+    /// Hidden Tools is off (decision 96). Anything else, as an operation's unowned
+    /// parameters, changes nothing.
     fn reveal(&mut self, tool: &'static str) {
-        let Some(tab) = self.workspace.holding(tool) else {
-            return;
-        };
-        self.choose_tab(tab);
+        match self.workspace.holding(tool) {
+            Some(tab) => self.choose_tab(tab),
+            None if self.workspace.hides(tool) => self.choose_hidden(),
+            None => return,
+        }
         self.set_section_open(tool, true);
         self.reveal = Some(tool);
     }
@@ -2347,7 +2413,8 @@ impl Shell {
             opened: false,
             recents,
             tabs: self.workspace.enabled(),
-            collections: self.workspace.holding(library::ID).is_some(),
+            hidden_tab: self.hidden_shown().then_some(self.hidden_chosen),
+            show_hidden: self.show_hidden,
             scale: ctx.zoom_factor(),
             dialog: self.about.is_open(),
             // About is modal over the window; the open dialog and the host's dialogs are the
@@ -2532,12 +2599,24 @@ impl Shell {
     }
 
     /// The Tools panel's tab bar, each tab's tooltip with its keys, the tabs that cannot be
-    /// chosen yet drawn disabled. Returns the action of the tab clicked.
-    fn tab_bar(&mut self, ui: &mut egui::Ui) -> Option<ActionId> {
+    /// chosen yet drawn disabled, the Hidden tab last while it shows (decision 96). Its ⋮
+    /// holds Show Hidden Tools and Workspace ▸, enabled as `state` says, then the tab bar's
+    /// own items ([`menus::tools_panel`]), and
+    /// carries the dot while `changing`, the hidden tools that change the photo
+    /// ([`Shell::hidden_changing`]), names any. Returns the action of the tab clicked or
+    /// the item chosen.
+    fn tab_bar(
+        &mut self,
+        ui: &mut egui::Ui,
+        state: &State,
+        changing: &[&'static str],
+    ) -> Option<ActionId> {
         let ctx = ui.ctx().clone();
         let words = translator(&ctx);
-        // A tab a build knows in the interface's language, one of a person's own as written.
-        let shown = self.workspace.tabs();
+        // A tab a build knows in the interface's language, one of a person's own as written,
+        // then the Hidden tab while it shows.
+        let hidden = self.hidden_shown().then(|| self.workspace.hidden_tab());
+        let shown: Vec<&layout::Tab> = self.workspace.tabs().iter().chain(hidden).collect();
         let names: Vec<String> = shown
             .iter()
             .map(|tab| match &tab.title {
@@ -2545,6 +2624,13 @@ impl Shell {
                 layout::Title::Own(title) => title.clone(),
             })
             .collect();
+        // The Hidden tab is chosen by its own action, after the twelve, and can always be
+        // chosen, with nothing hidden saying so in its body.
+        let hidden_at = hidden.is_some().then(|| self.workspace.tabs().len());
+        let action = |i: usize| match hidden_at {
+            Some(at) if i == at => Some(ActionId::PANEL_TAB_HIDDEN),
+            _ => ActionId::PANEL_TABS.get(i).copied(),
+        };
         let tabs: Vec<PanelTab> = shown
             .iter()
             .zip(&names)
@@ -2552,35 +2638,30 @@ impl Shell {
             .map(|(i, (tab, name))| PanelTab {
                 icon: tab.icon,
                 name,
-                shortcut: ActionId::PANEL_TABS
-                    .get(i)
-                    .and_then(|id| self.keymap.tip(*id, ctx.os(), &words)),
-                enabled: tab.enabled(),
+                shortcut: action(i).and_then(|id| self.keymap.tip(id, ctx.os(), &words)),
+                enabled: hidden_at == Some(i) || tab.enabled(),
             })
             .collect();
-        // ⋮'s Workspace ▸, as View › Workspace: each item runs its workspace's action.
-        let items = self.workspace_items(&ctx);
-        let shown_action = actions::workspace(&self.workspace.id);
-        let workspaces: Vec<TabBarWorkspace> = items
-            .iter()
-            .map(|item| TabBarWorkspace {
-                name: &item.words,
-                checked: item.id == shown_action,
-                enabled: !self.workspace_given,
-                tip: item.tip.as_deref(),
-            })
-            .collect();
-        match TabBar::new(&tabs, self.panel_tab, self.tab_names)
+        let chosen = match hidden_at {
+            Some(at) if self.hidden_chosen => at,
+            _ => self.panel_tab,
+        };
+        let says = (!changing.is_empty()).then(|| hidden_change(&ctx, changing));
+        // Show Hidden Tools, then Workspace ▸, as View › Workspace lists it.
+        let workspaces = self.workspace_items(&ctx);
+        let items = menus::tools_panel(&ctx, &self.keymap, state, says.as_deref(), &workspaces);
+        match TabBar::new(&tabs, chosen, self.tab_names)
             .customise(false)
-            .workspaces(&workspaces)
+            .items(items)
+            .dot(says.as_deref())
             .show(ui)
         {
-            Some(TabBarAction::Select(i)) => ActionId::PANEL_TABS.get(i).copied(),
-            Some(TabBarAction::Workspace(i)) => items.get(i).map(|item| item.id),
+            Some(TabBarAction::Select(i)) => action(i),
             Some(TabBarAction::ShowNames(on)) => {
                 self.tab_names = on;
                 None
             }
+            Some(TabBarAction::Chosen(id)) => menus::chosen(&id),
             Some(TabBarAction::Customise) | None => None,
         }
     }
@@ -2640,13 +2721,19 @@ impl Shell {
             Intent::Menu => self.menu = true,
             Intent::View(view) => self.view = view,
             Intent::PanelTab(tab) => self.choose_tab(tab),
-            Intent::Workspace(id) => self.switch_workspace(id),
-            // Pressed again, it is chosen already, and nothing changes.
-            Intent::ShowCollections => {
-                if let Some(tab) = self.workspace.holding(library::ID) {
-                    self.choose_tab(tab);
+            Intent::HiddenTab => {
+                if self.hidden_shown() {
+                    self.choose_hidden();
                 }
             }
+            Intent::ShowHiddenTools => self.toggle_show_hidden(),
+            Intent::Workspace(id) => self.switch_workspace(id),
+            // Pressed again, it is chosen already, and nothing changes. Hidden, it is
+            // revealed in the Hidden tab (decision 96).
+            Intent::ShowCollections => match self.workspace.holding(library::ID) {
+                Some(tab) => self.choose_tab(tab),
+                None => self.choose_hidden(),
+            },
             Intent::ScaleUp | Intent::ScaleDown => {
                 let up = intent == Intent::ScaleUp;
                 ctx.set_zoom_factor(actions::step_scale(ctx.zoom_factor(), up));
@@ -2683,7 +2770,7 @@ impl Shell {
 
     /// Shows the Tools panel's tab `tab`, chosen by the user: kept in `state.toml` as the
     /// workspace's tab last shown, the one kept before forgotten, even if it was one this
-    /// build does not have.
+    /// build does not have. The Hidden tab shown for the moment goes.
     fn choose_tab(&mut self, tab: usize) {
         let Some(chosen) = self.workspace.tab(tab) else {
             return;
@@ -2691,6 +2778,8 @@ impl Shell {
         self.recents.set_tab(&self.workspace.id, &chosen.id);
         self.recents.save();
         self.panel_tab = tab;
+        self.hidden_chosen = false;
+        self.hidden_for_now = false;
     }
 
     /// The theme in use, with the background chosen behind the photo, if any.
@@ -4095,7 +4184,9 @@ impl App {
     /// while `peek` holds ([`edit_tab`]). What the sections ask for is sent or applied once
     /// they are drawn. Returns the action of the tab clicked.
     fn tools_panel(&mut self, ui: &mut egui::Ui, peek: bool) -> Option<ActionId> {
-        let tab_clicked = self.shell.tab_bar(ui);
+        let state = self.state_in_window(ui.ctx());
+        let changing = self.shell.hidden_changing(self.mirror.edited());
+        let tab_clicked = self.shell.tab_bar(ui, &state, &changing);
         ui.spacing_mut().item_spacing.y = 0.0;
         let holds = |tool: &str| self.shell.shown_tab().is_some_and(|tab| tab.holds(tool));
         let (collections, exporting) = (holds(library::ID), holds(export::ID));
@@ -6488,6 +6579,21 @@ fn edit_tab(
     tab
 }
 
+/// What the dot on the Tools panel's ⋮ says while the hidden processing tools `changing`
+/// change the photo, in the interface's language: "Hidden tools change this photo:
+/// Exposure, Vignetting" (decision 96).
+fn hidden_change(ctx: &egui::Context, changing: &[&'static str]) -> String {
+    let words = translator(ctx);
+    let names: Vec<String> = changing
+        .iter()
+        .map(|tool| words.text(&apertrust_tools::messages::title(tool)))
+        .collect();
+    let mut args = apertrust_ui::i18n::Args::new();
+    // A comma between the names, as each of the four languages writes a list.
+    args.set("tools", names.join(", "));
+    words.text_with("tools-panel-hidden-change", Some(&args))
+}
+
 /// Whether `tab` holds History alone, which draws its header at the tab's top
 /// ([`history::tab`]), as the Default workspace's History tab does.
 fn history_alone(tab: &layout::Tab) -> bool {
@@ -6710,11 +6816,28 @@ fn panel_body(
         });
     }
     body.show(ui, |ui| {
+        if tab.id == layout::HIDDEN && tab.order.is_empty() {
+            no_hidden(ui);
+        }
         for id in &tab.order {
             draw(ui, id);
         }
     });
     drawn.into_inner().2
+}
+
+/// The Hidden tab's body where the workspace hides nothing: "No hidden tools in this
+/// workspace.", centred in `text_secondary` (decision 96).
+fn no_hidden(ui: &mut egui::Ui) {
+    let t = theme(ui.ctx());
+    let says = tr(ui.ctx(), "tools-panel-no-hidden");
+    ui.add_space(t.spacing.l);
+    ui.vertical_centered(|ui| {
+        let text = egui::RichText::new(says)
+            .color(t.colors.text_secondary)
+            .size(t.text.body);
+        ui.label(text);
+    });
 }
 
 /// Prepares `ctx` for the shell before its first frame: its theme, its language and
@@ -9463,7 +9586,7 @@ mod tests {
                 |ui, side: &mut Side| {
                     let ctx = ui.ctx().clone();
                     let state = side.shell.state(&ctx, true, false);
-                    if let Some(id) = side.shell.tab_bar(ui) {
+                    if let Some(id) = side.shell.tab_bar(ui, &state, &[]) {
                         side.shell.run(id, &state, &ctx, &[]);
                     }
                     ui.spacing_mut().item_spacing.y = 0.0;
@@ -9724,7 +9847,8 @@ mod tests {
                 |ui, editing: &mut Editing| {
                     let ctx = ui.ctx().clone();
                     let state = editing.shell.state(&ctx, false, false);
-                    if let Some(id) = editing.shell.tab_bar(ui) {
+                    let changing = editing.shell.hidden_changing(editing.mirror.edited());
+                    if let Some(id) = editing.shell.tab_bar(ui, &state, &changing) {
                         editing.shell.run(id, &state, &ctx, &[]);
                     }
                     ui.spacing_mut().item_spacing.y = 0.0;
@@ -9964,6 +10088,338 @@ mod tests {
         assert_eq!(shell.panel_tab, 4);
         assert_eq!(shell.reveal, None);
         assert!(!shell.revealing());
+    }
+
+    /// The Essentials workspace's shell, kept in `folder`'s `state.toml`, as built.
+    fn essentials(folder: &settings::testing::Folder, show_hidden: bool) -> Shell {
+        let (recents, _) = Recents::open(folder.0.join("state.toml"), Vec::new);
+        let settings = Settings {
+            show_hidden,
+            ..Settings::default()
+        };
+        let mut shell = Shell {
+            recents,
+            ..Shell::new(&settings, Locale::EnGb, OperatingSystem::Nix)
+        };
+        let (workspace, _) = layout::Workspaces::builtin().open(layout::ESSENTIALS);
+        shell.open_workspace(workspace);
+        shell
+    }
+
+    /// The id of the tab the Tools panel shows.
+    fn shown_id(shell: &Shell) -> &str {
+        shell.shown_tab().map_or("", |tab| tab.id.as_str())
+    }
+
+    /// Show Hidden Tools (decision 96): a checked action, kept app-wide in settings; on,
+    /// the Hidden tab shows last and is chosen, holding the workspace's hidden tools; off,
+    /// it goes and the tab shown before it is shown again. Kept on, a start on the Hidden
+    /// tab opens there again; another tab chosen, the Hidden tab stays and its own action
+    /// chooses it again.
+    #[test]
+    fn show_hidden_tools_shows_the_hidden_tab_last_and_chooses_it() {
+        let ctx = egui::Context::default();
+        let folder = settings::testing::Folder::new("show-hidden");
+        let mut shell = essentials(&folder, false);
+        let adjust = shell.workspace.position("adjust").expect("Adjust");
+        assert_eq!(shell.panel_tab, adjust);
+        let state = shell.state(&ctx, false, false);
+        assert_eq!((state.hidden_tab, state.show_hidden), (None, false));
+        let show = actions::action(ActionId::SHOW_HIDDEN_TOOLS).unwrap();
+        assert_eq!(show.checked(&state), Some(false));
+        let hidden_tab = actions::action(ActionId::PANEL_TAB_HIDDEN).unwrap();
+        assert!(!hidden_tab.enabled(&state));
+        shell.run(ActionId::SHOW_HIDDEN_TOOLS, &state, &ctx, &[]);
+        assert_eq!(shown_id(&shell), layout::HIDDEN);
+        let hidden = shell.shown_tab().unwrap();
+        assert_eq!(hidden.order, shell.workspace.shown.hidden);
+        assert!(hidden.holds("vignette") && !hidden.holds("exposure"));
+        assert!(!hidden.holds(export::ID));
+        let state = shell.state(&ctx, false, false);
+        assert_eq!((state.hidden_tab, state.show_hidden), (Some(true), true));
+        assert_eq!(show.checked(&state), Some(true));
+        assert_eq!(hidden_tab.checked(&state), Some(true));
+        let adjust_item = actions::action(ActionId::PANEL_TABS[adjust]).unwrap();
+        assert_eq!(adjust_item.checked(&state), Some(false));
+        assert!(shell.to_settings(&ctx).show_hidden);
+        assert_eq!(kept_tab(&shell), Some(layout::HIDDEN));
+        // Off: the tab shown before it.
+        shell.run(ActionId::SHOW_HIDDEN_TOOLS, &state, &ctx, &[]);
+        assert_eq!(shown_id(&shell), "adjust");
+        assert_eq!(kept_tab(&shell), Some("adjust"));
+        let state = shell.state(&ctx, false, false);
+        assert_eq!((state.hidden_tab, state.show_hidden), (None, false));
+        assert!(!shell.to_settings(&ctx).show_hidden);
+        // On again, then History chosen: the Hidden tab stays, chosen again by its action.
+        shell.run(ActionId::SHOW_HIDDEN_TOOLS, &state, &ctx, &[]);
+        let history = shell.workspace.position("history").unwrap();
+        let state = shell.state(&ctx, false, false);
+        shell.run(ActionId::PANEL_TABS[history], &state, &ctx, &[]);
+        assert_eq!(shown_id(&shell), "history");
+        let state = shell.state(&ctx, false, false);
+        assert_eq!(state.hidden_tab, Some(false));
+        assert!(hidden_tab.enabled(&state));
+        shell.run(ActionId::PANEL_TAB_HIDDEN, &state, &ctx, &[]);
+        assert_eq!(shown_id(&shell), layout::HIDDEN);
+        // Off with another tab shown leaves that tab.
+        shell.run(ActionId::PANEL_TABS[history], &state, &ctx, &[]);
+        let state = shell.state(&ctx, false, false);
+        shell.run(ActionId::SHOW_HIDDEN_TOOLS, &state, &ctx, &[]);
+        assert_eq!(shown_id(&shell), "history");
+        // Kept on, with the Hidden tab last shown: the next start opens on it, with the tab
+        // it opens on behind it.
+        shell.run(ActionId::SHOW_HIDDEN_TOOLS, &state, &ctx, &[]);
+        shell.recents.flush();
+        let settings = shell.to_settings(&ctx);
+        let again = essentials(&folder, settings.show_hidden);
+        assert_eq!(shown_id(&again), layout::HIDDEN);
+        assert_eq!(again.panel_tab, adjust);
+        // Kept off, it opens on the tab it opens on.
+        let off = essentials(&folder, false);
+        assert_eq!(shown_id(&off), "adjust");
+        // The Default workspace hides nothing: its Hidden tab shows, empty.
+        let mut shell = Shell::new(&settings, Locale::EnGb, OperatingSystem::Nix);
+        shell.open_workspace(layout::Workspace::builtin_default());
+        let state = shell.state(&ctx, false, false);
+        assert_eq!(state.hidden_tab, Some(false));
+        shell.run(ActionId::PANEL_TAB_HIDDEN, &state, &ctx, &[]);
+        assert_eq!(shown_id(&shell), layout::HIDDEN);
+        assert!(shell.shown_tab().unwrap().order.is_empty());
+    }
+
+    /// What reveals a tool reveals a hidden one in the Hidden tab, shown for the moment
+    /// while Show Hidden Tools is off, its section open, until another tab is chosen
+    /// (decision 96): History's Shift-click on a hidden tool's step. A tool in a tab is
+    /// revealed there.
+    #[test]
+    fn a_hidden_tool_a_history_line_opens_is_revealed_in_the_hidden_tab() {
+        let ctx = egui::Context::default();
+        let folder = settings::testing::Folder::new("reveal-hidden");
+        let mut shell = essentials(&folder, false);
+        shell.reveal("grain");
+        assert_eq!(shown_id(&shell), layout::HIDDEN);
+        assert!(shell.section_open("grain", false));
+        assert!(shell.revealing());
+        let state = shell.state(&ctx, false, false);
+        assert_eq!((state.hidden_tab, state.show_hidden), (Some(true), false));
+        // For the moment: not kept as the tab last shown, nor Show Hidden Tools turned on.
+        assert_eq!(kept_tab(&shell), None);
+        assert!(!shell.to_settings(&ctx).show_hidden);
+        shell.reveal = None;
+        shell.reveal("exposure");
+        assert_eq!(shown_id(&shell), "adjust");
+        assert_eq!(shell.state(&ctx, false, false).hidden_tab, None);
+        // With Show Hidden Tools on, the Hidden tab is there already, and chosen.
+        let mut shell = essentials(&folder, true);
+        shell.reveal("vignette");
+        assert_eq!(shown_id(&shell), layout::HIDDEN);
+        shell.reveal("exposure");
+        assert_eq!(shell.state(&ctx, false, false).hidden_tab, Some(false));
+    }
+
+    /// The dot's rule (decision 96): the hidden processing tools the mirror reports
+    /// edited, a switched tool on or a control off the photo's default, in the Hidden tab's
+    /// order, while the Hidden tab does not show; none for a tool in a tab, and none while
+    /// the Hidden tab shows. The mirror never names a utility among the edited tools.
+    #[test]
+    fn the_dot_names_the_hidden_tools_that_change_the_photo() {
+        use crate::mirror::tests::photo;
+        let folder = settings::testing::Folder::new("hidden-dot");
+        let mut shell = essentials(&folder, false);
+        let mut mirror = crate::mirror::tests::mirror();
+        assert!(shell.hidden_changing(mirror.edited()).is_empty());
+        let edited = |tools: &[&str]| {
+            let mut values = photo_values(0.0, 2);
+            for state in &mut values.tools {
+                state.edited = tools.contains(&state.tool);
+            }
+            values
+        };
+        mirror.apply(Event::Opened(photo(1)));
+        mirror.apply(Event::Values(edited(&["exposure"])));
+        assert_eq!(mirror.edited(), ["exposure"]);
+        assert!(shell.hidden_changing(mirror.edited()).is_empty());
+        mirror.apply(Event::Values(edited(&[
+            "exposure",
+            "vignette",
+            "highlights",
+        ])));
+        assert_eq!(
+            shell.hidden_changing(mirror.edited()),
+            ["highlights", "vignette"]
+        );
+        let ctx = egui::Context::default();
+        apertrust_ui::set_locale(&ctx, Locale::EnGb);
+        assert_eq!(
+            hidden_change(&ctx, &shell.hidden_changing(mirror.edited())),
+            "Hidden tools change this photo: Highlight reconstruction, Vignetting"
+        );
+        // The Hidden tab shown, for the moment or kept: no dot.
+        shell.reveal("grain");
+        assert!(shell.hidden_changing(mirror.edited()).is_empty());
+        shell.choose_tab(0);
+        assert_eq!(shell.hidden_changing(mirror.edited()).len(), 2);
+        let state = shell.state(&ctx, false, false);
+        shell.run(ActionId::SHOW_HIDDEN_TOOLS, &state, &ctx, &[]);
+        assert!(shell.hidden_changing(mirror.edited()).is_empty());
+        // Every tool edited: the mirror names tools alone, never a utility.
+        let all: Vec<&str> = layout::known();
+        mirror.apply(Event::Values(edited(&all)));
+        for utility in apertrust_tools::utility::UTILITIES {
+            assert!(!mirror.edited().contains(&utility.tool.id));
+        }
+        // The photo closed: nothing changes it.
+        mirror.closing();
+        assert!(mirror.edited().is_empty());
+    }
+
+    /// The Tools panel's ⋮ holds Show Hidden Tools, then the tab bar's own items; its dot
+    /// says which hidden tools change the photo, as ⋮'s tooltip and description and the
+    /// item's tip, and Show Hidden Tools there shows the Hidden tab, which draws them,
+    /// usable, the dot gone (decision 96).
+    #[test]
+    fn the_tools_panel_s_options_show_hidden_tools_and_carry_the_dot() {
+        use crate::mirror::tests::photo;
+        let folder = settings::testing::Folder::new("panel-hidden-dot");
+        let mut harness = tools_panel(&folder);
+        let (workspace, _) = layout::Workspaces::builtin().open(layout::ESSENTIALS);
+        harness.state_mut().shell.open_workspace(workspace);
+        let mut values = photo_values(0.0, 2);
+        for state in &mut values.tools {
+            state.edited = state.tool == "vignette";
+            state.enabled |= state.tool == "vignette";
+        }
+        let mirror = &mut harness.state_mut().mirror;
+        mirror.apply(Event::Opened(photo(1)));
+        mirror.apply(Event::Values(values));
+        harness.run();
+        let says = "Hidden tools change this photo: Vignetting";
+        let options = harness.get_by_role_and_label(Role::Button, "Tab options");
+        assert_eq!(
+            options.accesskit_node().description().as_deref(),
+            Some(says)
+        );
+        assert!(
+            harness
+                .query_by_role_and_label(Role::Tab, "Hidden")
+                .is_none()
+        );
+        harness.get_by_label("Tab options").click();
+        harness.run();
+        let item = harness.get_by_label("Show hidden tools");
+        assert!(!item.accesskit_node().is_disabled());
+        // Show Hidden Tools first, then the tab bar's own items.
+        let top = |label: &str| harness.get_by_label(label).rect().top();
+        let item = top("Show hidden tools");
+        assert!(item < top("Show tab names") && item < top("Customise tabs…"));
+        // Its tip says it too, beside the live region that said it as the dot appeared.
+        assert_eq!(harness.query_all_by_label(says).count(), 1);
+        harness.get_by_label("Show hidden tools").hover();
+        harness.run();
+        assert_eq!(harness.query_all_by_label(says).count(), 2);
+        harness.get_by_label("Show hidden tools").click();
+        harness.run();
+        harness.run();
+        assert!(harness.state().shell.show_hidden);
+        let tab = harness.get_by_role_and_label(Role::Tab, "Hidden");
+        let on = Some(egui::accesskit::Toggled::True);
+        assert_eq!(tab.accesskit_node().toggled(), on);
+        let options = harness.get_by_role_and_label(Role::Button, "Tab options");
+        assert_ne!(
+            options.accesskit_node().description().as_deref(),
+            Some(says)
+        );
+        assert_eq!(harness.query_all_by_label(says).count(), 0);
+        // The hidden tools, drawn as anywhere: Vignetting's section and its reset.
+        harness.get_by_role_and_label(Role::Button, "Vignetting");
+        let reset = harness.get_by_role_and_label(Role::Button, "Reset Vignetting");
+        assert!(!reset.accesskit_node().is_disabled());
+        assert!(
+            harness
+                .query_by_role_and_label(Role::Button, "Exposure")
+                .is_none()
+        );
+        // A click on Adjust, then on the Hidden tab, chooses each.
+        harness.get_by_role_and_label(Role::Tab, "Adjust").click();
+        harness.run();
+        harness.get_by_role_and_label(Role::Button, "Exposure");
+        harness.get_by_role_and_label(Role::Tab, "Hidden").click();
+        harness.run();
+        assert_eq!(shown_id(&harness.state().shell), layout::HIDDEN);
+    }
+
+    /// ⋮'s Workspace ▸, after Show Hidden Tools, is View › Workspace's list: the one shown
+    /// checked, and a choice there switches as the menu's does (decision 96).
+    #[test]
+    fn the_tools_panel_s_options_switch_workspaces() {
+        let folder = settings::testing::Folder::new("panel-workspaces");
+        let mut harness = tools_panel(&folder);
+        harness
+            .state_mut()
+            .shell
+            .open_workspace(layout::Workspace::builtin_default());
+        harness.run();
+        harness.get_by_label("Tab options").click();
+        harness.run();
+        let top = |label: &str| harness.get_by_label(label).rect().top();
+        assert!(top("Show hidden tools") < top("Workspace"));
+        assert!(top("Workspace") < top("Show tab names"));
+        harness.get_by_label("Workspace").click();
+        harness.run();
+        let default = harness.get_by_role_and_label(Role::MenuItemCheckBox, "Default");
+        let on = Some(egui::accesskit::Toggled::True);
+        assert_eq!(default.accesskit_node().toggled(), on);
+        harness.get_by_label("Essentials").click();
+        harness.run();
+        assert_eq!(harness.state().shell.workspace.id, layout::ESSENTIALS);
+    }
+
+    /// The Default workspace's Hidden tab, shown, says it holds nothing.
+    #[test]
+    fn the_hidden_tab_with_nothing_hidden_says_so() {
+        let folder = settings::testing::Folder::new("panel-hidden-empty");
+        let mut harness = tools_panel(&folder);
+        harness.state_mut().shell.show_hidden = true;
+        harness.run();
+        harness.get_by_role_and_label(Role::Tab, "Hidden").click();
+        harness.run();
+        harness.get_by_label("No hidden tools in this workspace.");
+    }
+
+    /// The tab bar with the Hidden tab shown and chosen, and with the dot on ⋮, in the dark
+    /// and light themes (decision 96): Essentials at the Tools panel's 320 points.
+    #[test]
+    fn the_hidden_tab_and_the_dot() {
+        let mut results = egui_kittest::SnapshotResults::new();
+        for (which, name) in [(Builtin::Dark, "dark"), (Builtin::Light, "light")] {
+            for show_hidden in [true, false] {
+                let folder = settings::testing::Folder::new("hidden-snapshot");
+                let mut shell = essentials(&folder, show_hidden);
+                if show_hidden {
+                    shell.choose_hidden();
+                }
+                let mut harness = Harness::builder()
+                    .with_size(egui::vec2(320.0, 64.0))
+                    .with_context_setup(move |ctx| {
+                        apertrust_ui::install(ctx, Theme::builtin(which));
+                    })
+                    .build_ui_state(
+                        |ui, shell: &mut Shell| {
+                            let ctx = ui.ctx().clone();
+                            let panel = theme(&ctx).colors.panel;
+                            ui.painter().rect_filled(ui.max_rect(), 0.0, panel);
+                            let state = shell.state(&ctx, true, false);
+                            let changing = shell.hidden_changing(&["exposure", "vignette"]);
+                            let _ = shell.tab_bar(ui, &state, &changing);
+                        },
+                        shell,
+                    );
+                harness.run();
+                let what = if show_hidden { "tab" } else { "dot" };
+                harness.snapshot(format!("tools-panel-hidden-{what}-{name}"));
+                results.extend(harness.take_snapshot_results());
+            }
+        }
     }
 
     /// Every tool's values as the session reports them for a photo, every control live,
@@ -12215,7 +12671,7 @@ mod tests {
                     let panel = egui::Panel::right("tools panel")
                         .exact_size(edge.width(&ctx))
                         .resizable(false)
-                        .show(ui, |ui| shell.tab_bar(ui));
+                        .show(ui, |ui| shell.tab_bar(ui, &state, &[]));
                     egui::CentralPanel::default().show(ui, |_| {});
                     if let Some(action) = edge.show(ui, panel.response.rect) {
                         shell.resize_panel(action);
@@ -12622,7 +13078,8 @@ mod tests {
                     let width = edge.width(&ctx);
                     let side = ui.scope(|ui| {
                         ui.set_width(width);
-                        let tab = bench.shell.tab_bar(ui);
+                        let state = bench.shell.state(&ctx, false, false);
+                        let tab = bench.shell.tab_bar(ui, &state, &[]);
                         if bench.shell.panel_tab == PHOTOS {
                             // As `App::tools_panel` draws it: Collections, then the Export
                             // tool.
@@ -16164,11 +16621,11 @@ mod tests {
         assert_eq!(harness.state().pressed, vec![ActionId::SHOW_COLLECTIONS; 2]);
     }
 
-    /// A workspace with Collections in no tab shown leaves View › Collections and L
-    /// unavailable, rather than doing nothing (decision 96; step 3 reveals it in the Hidden
-    /// tab).
+    /// A workspace with Collections in no tab shown keeps View › Collections and L: they
+    /// reveal it in the Hidden tab, shown for the moment while Show Hidden Tools is off, and
+    /// gone again once another tab is chosen (decision 96).
     #[test]
-    fn view_collections_is_unavailable_where_no_tab_holds_collections() {
+    fn view_collections_reveals_collections_in_the_hidden_tab_where_no_tab_holds_it() {
         let folder = settings::testing::Folder::new("no-collections");
         // Every tool seen, so none is placed as new: Collections is in no tab.
         let seen: Vec<String> = layout::known()
@@ -16181,14 +16638,24 @@ mod tests {
         std::fs::write(folder.0.join("own.toml"), text).unwrap();
         let (workspace, _) = layout::Workspace::open(Some(&folder.0), "own");
         assert_eq!(workspace.holding(library::ID), None);
+        assert!(workspace.hides(library::ID));
         let ctx = egui::Context::default();
         let mut shell = Shell::new(&Settings::default(), Locale::EnGb, OperatingSystem::Nix);
-        let collections = actions::action(ActionId::SHOW_COLLECTIONS).unwrap();
-        assert!(collections.enabled(&shell.state(&ctx, false, false)));
         shell.open_workspace(workspace);
         let state = shell.state(&ctx, false, false);
-        assert!(!state.collections);
-        assert!(!collections.enabled(&state));
+        assert_eq!(state.hidden_tab, None);
+        let collections = actions::action(ActionId::SHOW_COLLECTIONS).unwrap();
+        assert!(collections.enabled(&state));
+        shell.run(ActionId::SHOW_COLLECTIONS, &state, &ctx, &[]);
+        assert_eq!(shell.shown_tab().map(|tab| tab.id.as_str()), Some("hidden"));
+        assert!(shell.shown_tab().unwrap().holds(library::ID));
+        let state = shell.state(&ctx, false, false);
+        assert_eq!(state.hidden_tab, Some(true));
+        assert!(!state.show_hidden);
+        // Another tab chosen: the Hidden tab goes, as it was there only for the moment.
+        shell.run(ActionId::PANEL_TABS[0], &state, &ctx, &[]);
+        assert_eq!(shell.shown_tab().map(|tab| tab.id.as_str()), Some("skin"));
+        assert_eq!(shell.state(&ctx, false, false).hidden_tab, None);
     }
 
     #[test]

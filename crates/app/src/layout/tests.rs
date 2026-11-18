@@ -275,16 +275,78 @@ fn the_essentials_workspace_shows_the_tools_most_edits_need() {
         );
     }
     let listed: Vec<&str> = RECORDED.iter().flat_map(|(_, t)| t.to_vec()).collect();
-    let hidden: Vec<&str> = (known().into_iter())
+    let mut hidden: Vec<&str> = (known().into_iter())
         .filter(|tool| *tool != SCOPES && !listed.contains(tool))
         .collect();
-    assert_eq!(shown.hidden, hidden);
+    let mut shown_hidden = shown.hidden.clone();
+    hidden.sort_unstable();
+    shown_hidden.sort_unstable();
+    assert_eq!(shown_hidden, hidden);
     assert!(shown.hidden.contains(&"highlights"));
     assert!(shown.tabs.iter().all(Tab::enabled));
     let (workspace, warnings) = Workspaces::builtin().open(ESSENTIALS);
     assert!(warnings.is_empty(), "{warnings:?}");
     assert_eq!(workspace.shown, shown);
     assert_eq!(workspace.opening(), workspace.position("adjust").unwrap());
+}
+
+/// The Hidden tab (decision 96): id `hidden`, its title `tab-hidden`, its icon Lucide's
+/// `eye-off`, nothing pinned; the workspace's hidden tools, processing tools in pipeline
+/// order, first at the top, as Default's Raw lists them, then utilities. Default hides
+/// none; Essentials every tool its three tabs leave out; Export is never in it.
+#[test]
+fn the_hidden_tab_lists_the_hidden_tools_in_processing_order() {
+    let workspaces = Workspaces::builtin();
+    let (default, _) = workspaces.open(DEFAULT);
+    let tab = default.hidden_tab();
+    assert_eq!(tab.id, HIDDEN);
+    assert_eq!(tab.title, Title::Message("tab-hidden".to_owned()));
+    assert_eq!(tab.icon, Icon::EyeOff);
+    assert!(tab.pinned.is_empty() && tab.order.is_empty());
+    let (essentials, _) = workspaces.open(ESSENTIALS);
+    let order = &essentials.hidden_tab().order;
+    let built: Vec<&str> = [
+        "rawprepare",
+        "highlights",
+        "demosaic",
+        "hazeremoval",
+        "colorin",
+        "channelmixerrgb",
+        "primaries",
+        "tone_curve",
+        "grain",
+        "soften",
+        "vignette",
+        "colorout",
+    ]
+    .into_iter()
+    .filter(|tool| known().contains(tool))
+    .collect();
+    assert_eq!(order, &built);
+    assert!(essentials.hidden_tab().pinned.is_empty());
+    for tool in order {
+        assert!(essentials.hides(tool), "{tool}");
+        assert_eq!(essentials.holding(tool), None, "{tool}");
+    }
+    // Default's Raw lists its tools in the order the Hidden tab would.
+    let raw = default.tab(default.position("raw").unwrap()).unwrap();
+    let mut sorted = raw.order.clone();
+    sorted.sort_by_key(|tool| hidden_order(tool));
+    assert_eq!(sorted, raw.order);
+    // Utilities after the processing tools, in the build's order; Export never, though the
+    // file hides it.
+    let text = "hidden = [\"export\", \"history\", \"exposure\", \"scopes\", \"rawprepare\"]
+                [[tabs]]\nid = \"photos\"\n";
+    let (shown, _) = layout_of(text);
+    assert!(!shown.hidden.contains(&EXPORT));
+    let at = |tool: &str| shown.hidden.iter().position(|t| *t == tool).unwrap();
+    assert!(at("rawprepare") < at("exposure"));
+    let utilities: Vec<&str> = (shown.hidden.iter().copied())
+        .filter(|tool| !processing(tool))
+        .collect();
+    let first_utility = at(utilities[0]);
+    assert!(shown.hidden[first_utility..].iter().all(|t| !processing(t)));
+    assert!(at("scopes") < at("history"));
 }
 
 /// The workspaces are the built-in ones, Default then Essentials, each named by its message

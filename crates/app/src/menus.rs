@@ -206,6 +206,8 @@ static PANEL_TAB: Menu = Menu {
         item(ActionId::PANEL_TABS[4]),
         item(ActionId::PANEL_TABS[5]),
         item(ActionId::PANEL_TABS[6]),
+        // After the twelve a workspace may show, chosen while it shows (decision 96).
+        item(ActionId::PANEL_TAB_HIDDEN),
     ]],
 };
 
@@ -679,6 +681,35 @@ pub fn options(
         Rect::NOTHING,
     )
     .entries
+}
+
+/// The app's items first in the Tools panel's ⋮ (decision 96), before the tab bar's own:
+/// Show Hidden Tools, as the ☰'s menu draws an item ([`shown`]), its tip `tip` where the
+/// dot on ⋮ or `--conf` says why ("Hidden tools change this photo: Exposure"); then
+/// Workspace ▸, View › Workspace's submenu with `workspaces`, the one shown checked, each
+/// item its `workspace-<id>`, so a choice runs as the menu's does ([`chosen`]). The tab
+/// bar's menu's other items join them with that menu.
+pub fn tools_panel(
+    ctx: &egui::Context,
+    keymap: &Keymap,
+    state: &State,
+    tip: Option<&str>,
+    workspaces: &[WorkspaceItem],
+) -> Vec<popup::Entry> {
+    let (os, tr) = (ctx.os(), translator(ctx));
+    let steps = Steps::default();
+    let item = action_item(ActionId::SHOW_HIDDEN_TOOLS, keymap, state, &steps, os, &tr);
+    let item = item.map(|item| match tip {
+        Some(tip) => item.tip(tip),
+        None => item,
+    });
+    let lists = Lists {
+        recents: &[],
+        workspaces,
+    };
+    let workspace = drawn(&WORKSPACE, os, keymap, state, lists, &steps, &tr);
+    let entries = item.into_iter().map(Into::into);
+    entries.chain([workspace.into()]).collect()
 }
 
 /// The app's items in the places open to tools' (decision 91), declared as the tools'
@@ -1533,7 +1564,7 @@ mod tests {
     /// Restart, Settings' Restart now's for now (decision 82); and the eighth to the
     /// twelfth tab's, which only a workspace of more tabs than the Default's has, until Tools
     /// Panel Tab lists the tabs a workspace shows (decision 96).
-    const LEFT_OUT: [ActionId; 14] = [
+    const LEFT_OUT: [ActionId; 15] = [
         ActionId::EDIT_VIEW,
         ActionId::NEXT_REGION,
         ActionId::PREVIOUS_REGION,
@@ -1549,6 +1580,8 @@ mod tests {
         ActionId::PANEL_TABS[9],
         ActionId::PANEL_TABS[10],
         ActionId::PANEL_TABS[11],
+        // The Tools panel's ⋮ holds it, and the tab bar's menu will (decision 96).
+        ActionId::SHOW_HIDDEN_TOOLS,
     ];
 
     /// The actions only the Mac's menus hold: Close Window, since Windows and Linux close
@@ -1619,7 +1652,8 @@ mod tests {
             opened: true,
             recents: [Some(true); crate::recents::MOST],
             tabs: actions::first_tabs(5),
-            collections: true,
+            hidden_tab: Some(false),
+            show_hidden: false,
             scale: 1.5,
             dialog: false,
             modal: false,

@@ -100,6 +100,9 @@ pub enum Icon {
     Labels,
     /// An eye: the History tab's eye, held to see the photo without a tool.
     Visible,
+    /// A crossed-out eye: the Tools panel's Hidden tab, which holds the tools in no tab
+    /// (decision 96).
+    EyeOff,
     /// A star: a point of a photo's rating, under its thumbnail; filled for each point.
     Star,
     /// A crossed circle: a photo's reject mark, under its thumbnail.
@@ -182,13 +185,14 @@ pub enum Icon {
     BeforeAfterFilled,
     GridFilled,
     LabelsFilled,
+    EyeOffFilled,
     StarFilled,
     PickFilled,
     LineFilled,
 }
 
 impl Icon {
-    pub const ALL: [Icon; 93] = [
+    pub const ALL: [Icon; 95] = [
         Icon::Chevron,
         Icon::ChevronDown,
         Icon::ChevronEnd,
@@ -224,6 +228,7 @@ impl Icon {
         Icon::Edited,
         Icon::Labels,
         Icon::Visible,
+        Icon::EyeOff,
         Icon::Star,
         Icon::Reject,
         Icon::RotateLeft,
@@ -279,6 +284,7 @@ impl Icon {
         Icon::BeforeAfterFilled,
         Icon::GridFilled,
         Icon::LabelsFilled,
+        Icon::EyeOffFilled,
         Icon::StarFilled,
         Icon::PickFilled,
         Icon::LineFilled,
@@ -305,6 +311,7 @@ impl Icon {
             Icon::BeforeAfter => Icon::BeforeAfterFilled,
             Icon::Grid => Icon::GridFilled,
             Icon::Labels => Icon::LabelsFilled,
+            Icon::EyeOff => Icon::EyeOffFilled,
             Icon::Star => Icon::StarFilled,
             Icon::Pick => Icon::PickFilled,
             Icon::Line => Icon::LineFilled,
@@ -403,6 +410,7 @@ impl Icon {
             Icon::Edited => derived!("edited", "pencil", 12.0),
             Icon::Labels => derived!("labels", "eye", 16.0),
             Icon::Visible => derived!("visible", "eye", 14.0),
+            Icon::EyeOff => derived!("eye-off", "eye-off", 22.0),
             Icon::Star => derived!("star", "star", 12.0),
             Icon::Reject => derived!("reject", "circle-x", 12.0),
             Icon::RotateLeft => derived!("rotate-left", "rotate-ccw-square", 14.0),
@@ -468,6 +476,7 @@ impl Icon {
             }
             Icon::GridFilled => derived!("grid-filled", "grid-3x3", 16.0),
             Icon::LabelsFilled => derived!("labels-filled", "eye", 16.0),
+            Icon::EyeOffFilled => derived!("eye-off-filled", "eye-off", 22.0),
             Icon::StarFilled => derived!("star-filled", "star", 12.0),
             Icon::PickFilled => derived!("pick-filled", "pipette", 14.0),
             Icon::LineFilled => own!("line-filled", 14.0),
