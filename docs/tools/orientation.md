@@ -33,7 +33,7 @@ It drives one operation, `flip` (camera RGB 16, [../ports/flip.md](../ports/flip
 
 Each tooltip and screen-reader name is the button's full name, darktable's `rotate 90 degrees CCW` and `CW` and its flips in British English. darktable's buttons also tell crop to follow the turn (`_crop_callback`), which comes with crop.
 
-**Show guides**, darktable's per-module toggle of the composition guides while the module has focus, kept in darktablerc and never in an edit, with the global guide settings button at its end, is drawn disabled, off, until the tool's guides come: Apertrust's guides overlay (the central bar's Guides) is global, and the panel has no tool focus yet.
+**Show guides**, darktable's per-module toggle of the composition guides while the module has focus, kept in darktablerc and never in an edit, with the global guide settings button at its end, is drawn disabled, off, until the tool's guides come: Apertrust's guides overlay (the viewer bar's Guides) is global, and the panel has no tool focus yet.
 
 **Commands.**
 

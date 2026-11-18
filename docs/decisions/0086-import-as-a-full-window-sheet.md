@@ -41,8 +41,8 @@ Import… chooses photos on a card or in a folder that is not open, and holds se
 ### Where a tool belongs
 
 - **Every tool has one place,** declared in its `ToolDefinition`, the parent every tool's definition embeds, a utility's as a processing tool's ([0093](0093-one-tool-model-processing-tools-and-utility-tools.md)): the Tools panel (the processing tools and the utilities, Export among them, [0090](0090-export-as-a-photos-tab-tool.md)) or Import (the import tools, utilities whose rows are setting rows, notes and actions).
-- **Import tools never appear in the Tools panel.** Its dispatcher, the workspaces, built in or the person's, Customise tabs, a header's drag, ⋯'s Move to Tab and a drop on a tab's icon take only side-panel tools; a layout read from settings that names a tool of another place skips it, as [0083](0083-the-side-panels-layout-dragged-and-floating.md) skips an id the build does not know, and never places it as a new section.
-- **Side-panel tools never appear in the sheet,** and its column draws only import tools.
+- **Import tools never appear in the Tools panel.** Its dispatcher, the workspaces, built in or the person's, Customise tabs, a header's drag, ⋯'s Move to Tab and a drop on a tab's icon take only the Tools panel's tools; a layout read from settings that names a tool of another place skips it, as [0083](0083-the-side-panels-layout-dragged-and-floating.md) skips an id the build does not know, and never places it as a new section.
+- **The Tools panel's tools never appear in the sheet,** and its column draws only import tools.
 - **Ids are unique across the places,** so Import's Metadata and the Tools panel's Metadata are two tools, their tooltips saying which.
 - **A test** walks every tool and checks that each built-in workspace, Customise tabs' list and the sheet's default order hold only tools of their place, and that every layout operation given an import tool leaves the Tools panel unchanged.
 
@@ -93,7 +93,7 @@ Import… chooses photos on a card or in a folder that is not open, and holds se
 ## Consequences
 
 - `apertrust-ui` gains the setting rows, `Sheet`, the check-box caption and mark slot on `GridCell`, `Checks`, and a preset row for the sheet bar; the app gains the sheet's modality.
-- `ToolDefinition` gains the place, the Tools panel or Import, and the test of places runs over every tool ([0093](0093-one-tool-model-processing-tools-and-utility-tools.md)); [0004](0004-tools-for-people-operations-for-algorithms.md) counts the sheet's sections as tools, and [0083](0083-the-side-panels-layout-dragged-and-floating.md)'s layout takes only side-panel tools.
+- `ToolDefinition` gains the place, the Tools panel or Import, and the test of places runs over every tool ([0093](0093-one-tool-model-processing-tools-and-utility-tools.md)); [0004](0004-tools-for-people-operations-for-algorithms.md) counts the sheet's sections as tools, and [0083](0083-the-side-panels-layout-dragged-and-floating.md)'s layout takes only the Tools panel's tools.
 - [0037](0037-one-view-the-photos-tab.md) and [0041](0041-dialogs-as-native-modal-windows.md) list Import and Print as full-window sheets; an alert a sheet asks is the main window's. Whether Print takes this frame is settled when Print is designed.
 - The settings schema gains the sheet's own settings with owner `app`: `import.column_width`, `import.order`, `import.keep_open` and `import.thumbnails` (the grid's Zoom, Medium by default).
 - `docs/gui.md` describes the sheet ([Sheets](../gui.md#sheets)); `docs/roadmap.md` holds the build order; the wireframe gains a Sheets board, and the `ui-conventions` skill is to describe the sheet.

@@ -7,7 +7,7 @@ Technically it is:
 - **a Rust engine on wgpu,** a GPU-resident, scene-referred fp32 pipeline whose kernels are written in Slang and compiled to WGSL, with derivatives that let it set the sliders;
 - **darktable's trusted colour science,** migrated first, module by module, and then evolved on its own (decision 2);
 - **tools over operations:** people edit tools, the first pass darktable's modules as darktable has them; the engine runs operations, each bound to one owning tool;
-- **one session protocol** that every client speaks: the egui desktop app, the command line, and later the browser, MCP agents and scripts;
+- **one session protocol** that every client speaks: the egui desktop app, the command line, and later the web browser, MCP agents and scripts;
 - **sidecars as the truth,** an `.apxmp` beside each photo, with folder mode first and libraries and projects later, never a database;
 - **ONNX Runtime** with its WebGPU execution provider for AI, and MCP for assistants, both later.
 
@@ -173,7 +173,7 @@ Details: [engine.md, The tool layer](engine.md#the-tool-layer), [tools/README.md
 
 ### The desktop interface
 
-One egui interface for the desktop and the browser, the photo drawn by a wgpu paint callback in the same frame (decision 35). A design system crate holds tokens, themes, fonts, icons, components and translation (decision 36). The app is one view: the Tools panel's Photos tab chooses the photos, the Viewer shows the photo, the Browser is always there (decision 37), each part named by its role (decision 95); it opens a window per place, a folder, a library, a project or photos opened alone, in one instance per user data folder (decision 89, planned). The Edit workspace's tabs group the tools by editing stage, Adjust, Detail, Geometry, Effects and Raw between Photos and History, with darktable's groups kept as a workspace of their own (decision 38); a person moves, pins and floats sections by dragging their headers, display order only, kept in the workspace's settings, the floating panels inside the window (decision 83, planned). The window's frame, menus, popups and dialogs are native where the platform has them (decisions 39 to 41); Import is a full-window sheet, drawn the same everywhere, a grid of photos checked to go beside a column of tools (decision 86, planned), and Export a tool of the Photos tab, built for the active photo (decision 90); the viewport's colour is managed by the app, by the system later for HDR. The interface has two modes, Standard and Touch, the same tabs, tools, rows, actions, selection and commands, Touch changing sizes, spacing and gestures and adapting the layout in two named places, the portrait bottom sheet and Photos' Select mode; Touch, for tablets, is planned, and interface code keeps it an add-on: no literal sizes, nothing only on hover, right-click, double-click or a modifier, sliders and pickers only through their components (decision 94).
+One egui interface for the desktop and the web browser, the photo drawn by a wgpu paint callback in the same frame (decision 35). A design system crate holds tokens, themes, fonts, icons, components and translation (decision 36). The app is one view: the Tools panel's Photos tab chooses the photos, the Viewer shows the photo, the Browser is always there (decision 37), each part named by its role (decision 95); it opens a window per place, a folder, a library, a project or photos opened alone, in one instance per user data folder (decision 89, planned). The Edit workspace's tabs group the tools by editing stage, Adjust, Detail, Geometry, Effects and Raw between Photos and History, with darktable's groups kept as a workspace of their own (decision 38); a person moves, pins and floats sections by dragging their headers, display order only, kept in the workspace's settings, the floating panels inside the window (decision 83, planned). The window's frame, menus, popups and dialogs are native where the platform has them (decisions 39 to 41); Import is a full-window sheet, drawn the same everywhere, a grid of photos checked to go beside a column of tools (decision 86, planned), and Export a tool of the Photos tab, built for the active photo (decision 90); the viewport's colour is managed by the app, by the system later for HDR. The interface has two modes, Standard and Touch, the same tabs, tools, rows, actions, selection and commands, Touch changing sizes, spacing and gestures and adapting the layout in two named places, the portrait bottom sheet and Photos' Select mode; Touch, for tablets, is planned, and interface code keeps it an add-on: no literal sizes, nothing only on hover, right-click, double-click or a modifier, sliders and pickers only through their components (decision 94).
 
 Details: [gui.md](gui.md): [Why egui](gui.md#why-egui), [Display colour](gui.md#display-colour), [The shell](gui.md#the-shell), [Tool panels from definitions](gui.md#tool-panels-from-definitions), and the [UI wireframe](https://claude.ai/artifact/V4r2xReSqn344AQstUgeiK) for how it looks.
 
@@ -256,7 +256,7 @@ Details: [session-protocol.md, Web, tablets and remote access](session-protocol.
 
 **The library's words** are decision 46's ([library.md](library.md#words)):
 
-- The interface says Folder, Library, Project, Album, Smart album, Capture, Selects, Output, Trash, Virtual copy and Snapshot.
+- The interface says Folder, Library, Project, Album, Smart album, Capture, Selects, Output, Trash, Virtual copy and Snapshot, and Collections for the tool that chooses among them (decision 95).
 - The code and docs add **folder roles**, **root** and **collection**, for any set of photos Collections chooses.
 - Never: film roll; catalogue; workspace for a library; session for a library or project ("session" is the engine's); Shoot or layout for the roles; version for a virtual copy.
 
@@ -264,7 +264,7 @@ Details: [session-protocol.md, Web, tablets and remote access](session-protocol.
 
 ## Platforms and language
 
-Windows, macOS and Linux are equal first-class desktop platforms; the browser is an additional target (decision 6). The engine and the UI are written in Rust (decision 5).
+Windows, macOS and Linux are equal first-class desktop platforms; the web browser is an additional target (decision 6). The engine and the UI are written in Rust (decision 5).
 
 **Why Rust:**
 
