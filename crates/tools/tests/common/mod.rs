@@ -73,6 +73,7 @@ pub fn raw_context(width: u32, height: u32, bias: f32) -> ImageContext {
                 [-0.9689, 1.8758, 0.0415],
                 [0.0557, -0.2040, 1.0570],
             ]),
+            embedded_matrix: false,
             crop: [0, 0, width, height],
             declared: [0, 0, width, height],
             exposure_bias: bias,

@@ -257,6 +257,7 @@ mod tests {
             white: 1.0,
             white_balance: None,
             xyz_to_camera: None,
+            embedded_matrix: false,
             crop: [30, 18, 3908, 2602],
             declared: [30, 18, 3908, 2602],
             exposure_bias: 0.0,

@@ -52,6 +52,7 @@ fn images() -> Vec<ImageContext> {
         white: 16383.0,
         white_balance: Some(vec![2.1, 1.0, 1.6]),
         xyz_to_camera: Some([[0.7, -0.2, -0.05], [-0.4, 1.2, 0.2], [-0.05, 0.15, 0.6]]),
+        embedded_matrix: false,
         crop: [0, 0, 6048, 4024],
         declared: [12, 8, 6000, 4000],
         exposure_bias,

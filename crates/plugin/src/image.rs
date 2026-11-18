@@ -281,6 +281,10 @@ pub struct Camera {
     pub white_balance: Option<Vec<f32>>,
     /// XYZ to camera RGB under D65, by rows; `None` if the decoder has none.
     pub xyz_to_camera: Option<[[f32; 3]; 3]>,
+    /// Whether `xyz_to_camera` is the raw's own, a DNG's, as darktable derives its
+    /// embedded matrix (`d65_color_matrix`) from the file's tags; false where it is the
+    /// decoder's camera table's, darktable's standard matrix, or there is none.
+    pub embedded_matrix: bool,
     /// The active area, every valid photosite, which rawprepare keeps: x, y, width,
     /// height on the readout.
     pub crop: [u32; 4],

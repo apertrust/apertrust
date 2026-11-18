@@ -881,6 +881,7 @@ pub fn image() -> ImageContext {
                 [-0.9689, 1.8758, 0.0415],
                 [0.0557, -0.2040, 1.0570],
             ]),
+            embedded_matrix: false,
             crop: [2, 2, 92, 68],
             declared: [6, 4, 84, 62],
             exposure_bias: 0.0,

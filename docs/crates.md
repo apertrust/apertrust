@@ -1200,7 +1200,7 @@ The cache's `Cache::remove(kind, slot)` removes one limited entry and adjusts th
 The operation interface.
 
 - **The `Operation` trait**, its manifest, parameter schema and values (numbers, whole numbers, choices, booleans), and image formats.
-- **Camera metadata**, with the camera's identity (`make`, `model`, `alias` and `iso`, as darktable's, decision 24) and `lens_correction`, darktable's four lens correction types as darktable stores them (decision 25).
+- **Camera metadata**, with the camera's identity (`make`, `model`, `alias` and `iso`, as darktable's, decision 24), `lens_correction`, darktable's four lens correction types as darktable stores them (decision 25), and `embedded_matrix`, whether the camera's matrix is a DNG's own, darktable's embedded matrix, rather than the decoder's camera table's, its standard matrix.
 - **The pipe's kind**, `PipeKind` (an export or the viewport), as `ImageContext::pipe`, set by the planner (decision 16).
 - **The pipe's output profile**, as matrices to and from XYZ D50 (`OutputProfile`, `ImageContext::output_profile`, `None` the working profile), which colorout reports through `Operation::output_profile` (decision 26).
 - **Passes** with explicit bindings and scratch buffers; `Kernel` and the 48-byte pass header; passes' row strips (`Strips`, decision 14).

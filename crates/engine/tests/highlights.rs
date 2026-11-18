@@ -130,6 +130,7 @@ impl Scene {
                 white: WHITE,
                 white_balance: Some(COEFFICIENTS.to_vec()),
                 xyz_to_camera: Some(XYZ_TO_CAMERA),
+                embedded_matrix: false,
                 crop,
                 declared: crop,
                 exposure_bias: 0.0,

@@ -722,13 +722,13 @@ fn white_to_exposure(white: f32) -> f32 {
 
 /// The input profile's camera RGB to XYZ D50, darktable's `matrix_in` of the pipe's input
 /// profile, through which Exposure's picker reads its area: colorin's default for the
-/// photo, which no tool changes, the camera's matrix on a colour raw (darktable's
-/// standard matrix) and linear Rec2020 otherwise. This crate cannot call colorin, so its
-/// rule is repeated here; a test holds the two to agree. `None` on a colour raw with no
-/// matrix, which colorin cannot render.
+/// photo, which no tool changes, the camera's matrix on a DNG with its own (darktable's
+/// embedded matrix) and on another colour raw (its standard matrix), linear Rec2020
+/// otherwise. This crate cannot call colorin, so its rule is repeated here; a test holds
+/// the two to agree. `None` on a colour raw with no matrix, which colorin cannot render.
 pub fn input_profile(image: &ImageContext) -> Option<Mat3> {
     match &image.camera {
-        Some(camera) if camera.cfa.is_some() => {
+        Some(camera) if camera.cfa.is_some() || camera.embedded_matrix => {
             Some(to_f32(camera_to_xyz_d50(camera.xyz_to_camera.as_ref()?)))
         }
         _ => Some(to_f32(profile_rgb_to_xyz_d50(
@@ -2164,7 +2164,18 @@ mod tests {
     fn its_input_profile_and_black_are_colorin_s_and_the_exposure_operation_s() {
         let mut monochrome = raw(0.0);
         monochrome.camera.as_mut().unwrap().cfa = None;
-        for image in [raw(0.0), raw(-0.67), monochrome, ImageContext::full(8, 8)] {
+        let mut dng = raw(0.0);
+        dng.camera.as_mut().unwrap().embedded_matrix = true;
+        let mut linear_dng = dng.clone();
+        linear_dng.camera.as_mut().unwrap().cfa = None;
+        for image in [
+            raw(0.0),
+            raw(-0.67),
+            dng,
+            linear_dng,
+            monochrome,
+            ImageContext::full(8, 8),
+        ] {
             let base = Base::new(OPERATIONS, &image);
             assert_eq!(default_black(&image), base.float(EXPOSURE, "black"));
             // colorin's matrix, from the input profile to the working space, linear

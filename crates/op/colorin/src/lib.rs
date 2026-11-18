@@ -19,9 +19,10 @@
 //! (`src/iop/colorin.c` with `src/common/colorspaces.c`): camera RGB to the working
 //! space, linear Rec2020, through the camera's matrix as darktable builds a profile from
 //! it, with temperature's late correction towards the camera's D65 reference. Ported:
-//! the camera matrix (darktable's standard and embedded matrices, both rawler's matrix
-//! here, decision 23), linear Rec2020 and linear Rec709 as input, linear Rec2020 as the
-//! working space, no gamut clipping. `docs/ports/colorin.md` is its spec.
+//! the camera matrix (darktable's standard matrix, rawler's here, decision 23, and a
+//! DNG's embedded matrix, derived from its tags as darktable derives it), linear Rec2020
+//! and linear Rec709 as input, linear Rec2020 as the working space, no gamut clipping.
+//! `docs/ports/colorin.md` is its spec.
 
 use apertrust_color::{
     Mat3d, REC2020_PRIMARIES, SRGB_PRIMARIES, camera_to_xyz_d50, inverse_d, mul_d,
@@ -170,19 +171,16 @@ impl Operation for Colorin {
         &KERNEL
     }
 
-    /// darktable's `reload_defaults` for a raw: the camera's matrix (darktable's
-    /// standard matrix, or a DNG's embedded one, which the image context holds alike);
-    /// linear Rec2020 for an image that is not a raw, until other images are opened.
+    /// darktable's `reload_defaults` for a raw: a DNG's embedded matrix where the image
+    /// context has one, a linear DNG's too, else darktable's standard matrix on a colour
+    /// raw (both the matrix the image context holds); linear Rec2020 for an image that is
+    /// not a raw, until other images are opened.
     fn defaults(&self, image: &ImageContext) -> ParamValues {
         let mut values = SCHEMA.defaults();
-        let raw = image
-            .camera
-            .as_ref()
-            .is_some_and(|camera| camera.cfa.is_some());
-        let default = if raw {
-            "standard_matrix"
-        } else {
-            "lin_rec2020"
+        let default = match &image.camera {
+            Some(camera) if camera.embedded_matrix => "embedded_matrix",
+            Some(camera) if camera.cfa.is_some() => "standard_matrix",
+            _ => "lin_rec2020",
         };
         values.set("type", Value::Choice(profile(default)));
         values
@@ -278,6 +276,7 @@ mod tests {
                 white: 1.0,
                 white_balance: Some(vec![2.0, 1.0, 1.5]),
                 xyz_to_camera: Some(XYZ_TO_SRGB),
+                embedded_matrix: false,
                 crop: [0, 0, 8, 8],
                 declared: [0, 0, 8, 8],
                 exposure_bias: 0.0,
@@ -356,6 +355,43 @@ mod tests {
             output.maximum,
             [0, 1, 2].map(|c| input.maximum[c] * correction[c])
         );
+    }
+
+    /// darktable's default is a DNG's embedded matrix where it has one, and the standard
+    /// matrix on other raws; both are the matrix the image context holds, so they render
+    /// alike.
+    #[test]
+    fn a_dng_with_its_own_matrix_defaults_to_the_embedded_matrix() {
+        let (mut image, input) = raw(false);
+        let default =
+            |image: &ImageContext| PROFILES[Colorin.defaults(image).choice("type") as usize];
+        assert_eq!(default(&image), "standard_matrix");
+        let standard = Colorin
+            .prepare(
+                &SCHEMA
+                    .resolve_over(&Colorin.defaults(&image), &ParamValues::new())
+                    .unwrap(),
+                &image,
+                &input,
+            )
+            .unwrap();
+        image.camera.as_mut().unwrap().embedded_matrix = true;
+        assert_eq!(default(&image), "embedded_matrix");
+        let embedded = Colorin
+            .prepare(
+                &SCHEMA
+                    .resolve_over(&Colorin.defaults(&image), &ParamValues::new())
+                    .unwrap(),
+                &image,
+                &input,
+            )
+            .unwrap();
+        assert_eq!(embedded.passes[0].params, standard.passes[0].params);
+        // A linear DNG, with no colour filters, keeps its embedded matrix, as darktable's
+        // `reload_defaults` checks for one before the raw's matrix.
+        image.camera.as_mut().unwrap().cfa = None;
+        assert_eq!(default(&image), "embedded_matrix");
+        assert_eq!(default(&ImageContext::full(8, 8)), "lin_rec2020");
     }
 
     #[test]

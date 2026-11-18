@@ -101,6 +101,7 @@ impl Raw {
                     [-0.9689, 1.8758, 0.0415],
                     [0.0557, -0.2040, 1.0570],
                 ]),
+                embedded_matrix: false,
                 crop: self.crop,
                 declared: self.declared,
                 exposure_bias: 0.0,
