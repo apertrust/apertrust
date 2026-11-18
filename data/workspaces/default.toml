@@ -1,0 +1,70 @@
+# The Default workspace, built in (decisions 38 and 96): Photos, the tools by editing
+# stage, then History, Scopes pinned over the five editing tabs. The app embeds
+# this file and reads it as it reads a person's own (crates/app/src/layout.rs). A person's
+# changed copy is <user data>/workspaces/default.toml, in the same format.
+#
+# A built-in tab names no title: its title is the message tab-<id>, so its words follow
+# the language. The interface names the workspace by its message, workspace-default;
+# name is for a reader of this file. Bundled, it lists no seen: its lists are its
+# defaults.
+
+version = 1
+name = "Default"
+hidden = []
+
+[[tabs]]
+id = "photos"
+icon = "folder"
+
+[[tabs]]
+id = "adjust"
+icon = "adjust"
+
+[[tabs]]
+id = "detail"
+icon = "detail"
+
+[[tabs]]
+id = "geometry"
+icon = "correct"
+
+[[tabs]]
+id = "effects"
+icon = "effect"
+
+[[tabs]]
+id = "raw"
+icon = "raw"
+
+[[tabs]]
+id = "history"
+icon = "history"
+
+[pinned]
+adjust = ["scopes"]
+detail = ["scopes"]
+geometry = ["scopes"]
+effects = ["scopes"]
+raw = ["scopes"]
+
+# Each tab's tools top to bottom, in editing order, Raw's in processing order. AgX stands
+# for the edit's tone mapper; the Tone curve has RGB curve's place until RGB curve replaces
+# it. Detail is drawn disabled until its first tool.
+[order]
+photos = ["collections", "export"]
+adjust = [
+    "temperature",
+    "channelmixerrgb",
+    "exposure",
+    "agx",
+    "toneequal",
+    "hazeremoval",
+    "tone_curve",
+    "colorbalancergb",
+    "primaries",
+]
+detail = []
+geometry = ["flip"]
+effects = ["vignette", "grain", "soften"]
+raw = ["rawprepare", "highlights", "demosaic", "colorout"]
+history = ["history"]

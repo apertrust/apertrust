@@ -25,6 +25,7 @@
 //! theme = "light"
 //! locale = "uk"
 //! scale = 1.2
+//! workspace = "portraits"
 //!
 //! [window]
 //! size = [1600, 1000]
@@ -60,9 +61,6 @@
 //! [viewer]
 //! margin = 16
 //! proof_margin = 0.25
-//!
-//! [edit]
-//! tab = "geometry"
 //!
 //! [edit.sections]
 //! exposure = false
@@ -209,6 +207,9 @@ pub struct Settings {
     pub panel_width: Option<f32>,
     /// The margins round the Viewer's photo and caption.
     pub viewer: Viewer,
+    /// The workspace the Tools panel shows, by id, as kept: one with no workspace stays
+    /// until another is chosen (decision 96).
+    pub workspace: String,
     /// Edit's own state.
     pub edit: ViewState,
     /// What the Scopes section shows, and which clipping overlays the photo shows.
@@ -253,6 +254,7 @@ impl Default for Settings {
             tab_names: TOOLS_PANEL_TAB_NAMES.default(),
             panel_width: None,
             viewer: Viewer::default(),
+            workspace: WORKSPACE.default().to_owned(),
             edit: ViewState::default(),
             scopes: ScopeView {
                 scope: SCOPES_GRAPH.default(),
@@ -322,8 +324,8 @@ impl Settings {
                 proof_margin: store.get(&VIEWER_PROOF_MARGIN),
                 background: store.kept(&VIEWER_BACKGROUND),
             },
+            workspace: store.get(&WORKSPACE),
             edit: ViewState {
-                tab: store.kept(&EDIT_TAB),
                 sections: store.get(&EDIT_SECTIONS),
                 groups: store.get(&EDIT_GROUPS),
             },
@@ -432,8 +434,8 @@ impl Settings {
         if s.viewer.background != was.viewer.background {
             keep(store, &VIEWER_BACKGROUND, s.viewer.background);
         }
-        if s.edit.tab != was.edit.tab {
-            keep(store, &EDIT_TAB, s.edit.tab.clone());
+        if s.workspace != was.workspace {
+            store.set(&WORKSPACE, s.workspace.clone());
         }
         if s.edit.sections != was.edit.sections {
             store.set(&EDIT_SECTIONS, s.edit.sections.clone());
@@ -1012,11 +1014,9 @@ pub struct Position {
     pub scale_factor: f32,
 }
 
-/// A view's own state.
+/// A view's own state: the tab last shown is `state.toml`'s, by workspace (decision 96).
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct ViewState {
-    /// The Tools panel's tab, by id.
-    pub tab: Option<String>,
     /// The sections the user opened or closed, by id; the others start as their section
     /// does.
     pub sections: BTreeMap<String, bool>,
@@ -1135,6 +1135,14 @@ impl Keeper {
     pub fn old_recent_folders(&self) -> Vec<PathBuf> {
         let folders = self.store.get(&LIBRARY_RECENT_FOLDERS).into_iter();
         folders.map(PathBuf::from).collect()
+    }
+
+    /// The Tools panel's tab an earlier build kept in settings, `edit.tab`: read only for
+    /// its move into `state.toml`, where it holds no tab for the Default workspace
+    /// (`Recents::move_tab`), and never written: the file's own, never a `--conf` value for
+    /// one run.
+    pub fn old_tab(&self) -> Option<String> {
+        self.store.kept_in_file(&EDIT_TAB)
     }
 
     /// Whether the start reopens what was open last, `library.reopen_last`, read once as
@@ -1347,8 +1355,8 @@ mod tests {
                 proof_margin: 0.25,
                 background: Some(apertrust_ui::Background::Medium),
             },
+            workspace: "portraits".to_owned(),
             edit: ViewState {
-                tab: Some("geometry".to_owned()),
                 sections: BTreeMap::from([
                     ("exposure".to_owned(), false),
                     ("tone_curve".to_owned(), true),
@@ -1424,16 +1432,17 @@ mod tests {
         keeper.flush();
     }
 
-    /// The recent folders an earlier build kept are read for their move, and left in the
-    /// file as they are when the settings are written again.
+    /// The recent folders and the tab an earlier build kept are read for their move, and
+    /// left in the file as they are when the settings are written again.
     #[test]
     fn the_old_recent_folders_are_read_for_the_move_and_left_alone() {
         let folder = Folder::new("old-recents");
-        let text = "version = 1\n\n[library]\nrecent_folders = [\"/photos/b\", \"/photos/a\"]\n";
+        let text = "version = 1\n\n[edit]\ntab = \"raw\"\n\n[library]\nrecent_folders = [\"/photos/b\", \"/photos/a\"]\n";
         std::fs::write(folder.settings(), text).expect("written");
         let (mut keeper, settings) = Keeper::open(folder.storage());
         let old = [PathBuf::from("/photos/b"), PathBuf::from("/photos/a")];
         assert_eq!(keeper.old_recent_folders(), old);
+        assert_eq!(keeper.old_tab().as_deref(), Some("raw"));
         let changed = Settings {
             tab_names: !settings.tab_names,
             ..settings
@@ -1445,6 +1454,14 @@ mod tests {
                 .text()
                 .contains("recent_folders = [\"/photos/b\", \"/photos/a\"]")
         );
+        assert!(folder.text().contains("tab = \"raw\""));
+        // A `--conf` value for one run never moves.
+        let overrides = overrides(&["edit.tab=geometry".to_owned()]).expect("read");
+        let (keeper, _) = Keeper::open_with(folder.storage(), &overrides);
+        assert_eq!(keeper.old_tab().as_deref(), Some("raw"));
+        let empty = Folder::new("old-tab-conf");
+        let (keeper, _) = Keeper::open_with(empty.storage(), &overrides);
+        assert_eq!(keeper.old_tab(), None);
     }
 
     /// The settings `text` holds, with what the store and the app warned of, each by the
@@ -1501,8 +1518,8 @@ mod tests {
                     proof_margin: 0.12,
                     background: None,
                 },
+                workspace: "default".to_owned(),
                 edit: ViewState {
-                    tab: None,
                     sections: BTreeMap::new(),
                     groups: BTreeMap::new(),
                 },
@@ -1542,8 +1559,8 @@ mod tests {
             TOOLS_PANEL_WIDTH.default(),
             Theme::builtin(Builtin::Dark).sizes.tools_panel
         );
-        // The tab the shell shows when none is kept, or the one kept is no tab.
-        assert_eq!(Some(EDIT_TAB.default()), crate::tab_id(crate::ADJUST));
+        // The workspace shown where none is kept, or the one kept is none.
+        assert_eq!(WORKSPACE.default(), crate::layout::DEFAULT);
         assert!(EDIT_SECTIONS.default().is_empty());
         assert!(EDIT_GROUPS.default().is_empty());
         assert!(KEYS.default().is_empty());
@@ -1554,19 +1571,20 @@ mod tests {
     /// The settings the app's own settings write: the app's and the export settings the
     /// Export tool keeps. The engine's, and the page Settings last showed, the Settings
     /// dialog keeps through the keeper (`Keeper::apply`), and so is reopening what was open
-    /// last, read once at the start (`Keeper::reopen_last`); the old recent folders are only
-    /// read, for their move into `state.toml` (`Keeper::old_recent_folders`).
+    /// last, read once at the start (`Keeper::reopen_last`); the old recent folders and tab
+    /// are only read, for their move into `state.toml` (`Keeper::old_recent_folders`,
+    /// `Keeper::old_tab`).
     fn declared() -> impl Iterator<Item = &'static str> {
         let export = apertrust_export::settings::registry::ALL.iter();
         let tools = apertrust_tools::settings::registry::ALL.iter();
         let (page, old) = (SETTINGS_WINDOW_PAGE.id, LIBRARY_RECENT_FOLDERS.id);
-        let reopen = LIBRARY_REOPEN_LAST.id;
+        let (reopen, old_tab) = (LIBRARY_REOPEN_LAST.id, EDIT_TAB.id);
         registry::ALL
             .iter()
             .chain(export)
             .chain(tools)
             .map(|s| s.id())
-            .filter(move |id| *id != page && *id != old && *id != reopen)
+            .filter(move |id| ![page, old, reopen, old_tab].contains(id))
     }
 
     /// Every setting of the schema is one of the app's or the export's, written once it
@@ -1615,6 +1633,7 @@ version = 2
 locale = \"pl\"
 scale = 1.3
 theme = \"high-contrast\"
+workspace = \"portraits\"
 
 [browser]
 columns = 2
@@ -1625,9 +1644,6 @@ rows = 3
 sort = \"file-name\"
 square_thumbnails = true
 thumbnails = \"large\"
-
-[edit]
-tab = \"geometry\"
 
 [edit.groups.exposure]
 area_exposure_mapping = true

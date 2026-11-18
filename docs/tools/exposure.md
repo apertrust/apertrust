@@ -12,7 +12,7 @@ Exposure is darktable's slider, `exposure.exposure` itself, its default the phot
 
 **Edits version 2 saved.** Highlight preservation mode was not ported before version 3 and took only off, so an edit of version 2 or 1 reads it off, as it rendered; version 3's default is on, as darktable's ([port spec](../ports/exposure.md)). An edit with no Exposure entry has nothing to migrate and takes the new default, on, as an unedited photo does.
 
-**Status:** built, in `crates/tools/src/exposure.rs`. The app draws it from its definition (`docs/gui.md`, Tool panels from definitions). Its tab is Edit's Adjust, after Colour calibration and before the tone mapper (decision 38).
+**Status:** built, in `crates/tools/src/exposure.rs`. The app draws it from its definition (`docs/gui.md`, Tool panels from definitions). Its tab is the Default workspace's Adjust, after Colour calibration and before the tone mapper (decision 38).
 
 - Rows E0, E3, E4, E6 to E9, E14, E30 to E37 and E50 to E54 but E51 are tests in `crates/tools/tests/exposure.rs`, with the migration's; [Results](#results) gives what they measured.
 - Automatic mode is built, darktable's deflicker: the raw's histogram counted on the GPU once per photo while it is on, and the exposure it computes shown as a computed value ([Automatic mode](#automatic-mode); [port spec](../ports/exposure.md#automatic-mode-deflicker); decision 87).

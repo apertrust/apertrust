@@ -298,6 +298,12 @@ impl Folders {
         self.user_data.join("state.toml")
     }
 
+    /// The workspaces' folder, `workspaces` in the user data folder, which holds one file
+    /// per workspace, `<id>.toml` (decision 96), and may not exist yet.
+    pub fn workspaces(&self) -> PathBuf {
+        self.user_data.join("workspaces")
+    }
+
     /// The app's start marker, `starting.toml` in the user data folder: written before it
     /// opens its graphics device and removed once its window has drawn, so one found there
     /// says the last start did not finish (decision 82).

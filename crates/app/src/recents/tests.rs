@@ -430,3 +430,123 @@ fn a_folder_s_label_and_its_kind_s_name_in_each_language() {
         assert_eq!(OpenKind::Folder.name(&words), kind, "{locale:?}");
     }
 }
+
+/// The tab last shown in each workspace is kept by workspace id beside the list, merged
+/// into the file as it then is, so a tab another process set for another workspace stays.
+#[test]
+fn the_tab_last_shown_is_kept_by_workspace() {
+    let (_dir, file) = state("tabs");
+    let (mut recents, _) = Recents::open(file.clone(), none);
+    assert_eq!(recents.tab("default"), None);
+    recents.set_tab("default", "effects");
+    recents.flush();
+    // Meanwhile, outside this process: another workspace's tab, and a value it cannot read.
+    let outside = text(&file).replace("[tab]\n", "[tab]\nportraits = \"skin\"\nodd = 4\n");
+    std::fs::write(&file, outside).expect("written");
+    recents.set_tab("default", "raw");
+    recents.flush();
+    let (read, warnings) = Recents::open(file.clone(), none);
+    assert!(warnings.is_empty(), "{warnings:?}");
+    assert_eq!(read.tab("default"), Some("raw"));
+    assert_eq!(read.tab("portraits"), Some("skin"));
+    assert_eq!(read.tab("odd"), None);
+    assert!(text(&file).contains("odd = 4"));
+}
+
+/// The old settings' tab moves once, where the file holds none for the workspace, written
+/// at once; a tab the file holds wins, and no old tab moves nothing.
+#[test]
+fn the_old_tab_moves_once() {
+    let (_dir, file) = state("old-tab");
+    let (mut recents, _) = Recents::open(file.clone(), none);
+    recents.move_tab("default", || None);
+    recents.flush();
+    assert!(!text(&file).contains("[tab]"));
+    recents.move_tab("default", || Some("geometry".to_owned()));
+    drop(recents);
+    let (mut read, _) = Recents::open(file.clone(), none);
+    assert_eq!(read.tab("default"), Some("geometry"));
+    read.move_tab("default", || panic!("read again once moved"));
+    assert_eq!(read.tab("default"), Some("geometry"));
+}
+
+/// A file damaged after the start, met by a later write, keeps the tabs the last write
+/// left, as it keeps its entries, those this process read at the start too.
+#[test]
+fn damage_met_by_a_later_write_keeps_the_last_write_s_tabs() {
+    let (_dir, file) = state("damaged-tabs");
+    std::fs::write(&file, "version = 1\n[tab]\nportraits = \"skin\"\n").expect("written");
+    let (mut recents, _) = Recents::open(file.clone(), none);
+    recents.set_tab("default", "raw");
+    recents.flush();
+    std::fs::write(&file, "not = [toml").expect("written");
+    recents.opened_at(OpenKind::Folder, folder("a"), 100);
+    recents.flush();
+    let (read, _) = Recents::open(file, none);
+    assert_eq!(paths(&read), [folder("a")]);
+    assert_eq!(read.tab("default"), Some("raw"));
+    assert_eq!(read.tab("portraits"), Some("skin"));
+}
+
+/// The old tab's move never replaces a tab another process wrote for the workspace after
+/// this one read the file; a tab the user chooses does.
+#[test]
+fn the_old_tab_s_move_keeps_another_process_s_tab() {
+    let (_dir, file) = state("old-tab-race");
+    let (mut recents, _) = Recents::open(file.clone(), none);
+    recents.flush();
+    let outside = text(&file) + "\n[tab]\ndefault = \"effects\"\n";
+    std::fs::write(&file, outside).expect("written");
+    recents.move_tab("default", || Some("geometry".to_owned()));
+    recents.flush();
+    assert_eq!(
+        Recents::open(file.clone(), none).0.tab("default"),
+        Some("effects")
+    );
+    recents.set_tab("default", "raw");
+    recents.flush();
+    assert_eq!(Recents::open(file, none).0.tab("default"), Some("raw"));
+}
+
+/// A tab the user chooses is written though the old setting's move gave the same one,
+/// which another process's tab kept out of the file.
+#[test]
+fn a_chosen_tab_is_written_though_the_move_gave_it() {
+    let (_dir, file) = state("old-tab-chosen");
+    let (mut recents, _) = Recents::open(file.clone(), none);
+    recents.flush();
+    let outside = text(&file) + "\n[tab]\ndefault = \"effects\"\n";
+    std::fs::write(&file, outside).expect("written");
+    recents.move_tab("default", || Some("geometry".to_owned()));
+    recents.flush();
+    assert_eq!(recents.tab("default"), Some("geometry"));
+    recents.set_tab("default", "geometry");
+    recents.flush();
+    assert_eq!(Recents::open(file, none).0.tab("default"), Some("geometry"));
+}
+
+/// A merge that finds no file, as the retry after a damaged file was set aside and its
+/// replacement could not be written, starts from what the last write left, its list and
+/// its tabs, not from nothing.
+#[test]
+fn a_missing_file_is_written_from_the_last_write() {
+    let (_dir, file) = state("missing-retry");
+    let last = Written {
+        items: vec![Item::Known(Entry {
+            kind: OpenKind::Folder,
+            path: folder("a"),
+            opened: 100,
+        })],
+        tabs: BTreeMap::from([("default".to_owned(), "raw".to_owned())]),
+    };
+    let entry = Entry {
+        kind: OpenKind::Folder,
+        path: folder("b"),
+        opened: 200,
+    };
+    let written = merge(&file, &[Change::Opened(entry)], &last).expect("written");
+    assert_eq!(written.items.len(), 2);
+    let (read, _) = Recents::open(file, none);
+    assert_eq!(paths(&read), [folder("b"), folder("a")]);
+    assert_eq!(read.tab("default"), Some("raw"));
+}

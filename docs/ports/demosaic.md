@@ -7,7 +7,7 @@ Status: ported.
 - **Code:** the kernel is `slang/demosaic.slang` in `crates/op/demosaic`, with its operation and setup in `src/lib.rs`.
 - **Coverage:** only RCD and Markesteijn 1-pass, darktable's defaults for Bayer and X-Trans sensors: RCD inside the band of PPG darktable keeps at the edges, Markesteijn 1-pass inside darktable's band of linear VNG. The other methods return `NotPorted` (decision 51), VNG4 and Monochrome among them, darktable's defaults for a pattern of four colours and a raw with no colour filters, which are refused; so do green equilibration, colour smoothing, dual demosaicing and capture sharpening.
 - **Checks:** with the same parameters the raw stage matches darktable to a mean difference of about 1e-8 (Results). Checked on one GPU so far.
-- **Tool:** Demosaic (`docs/tools/demosaic.md`), darktable's page, in Edit's Raw tab (decision 38), its defaults the operation's, the methods and controls not ported drawn disabled.
+- **Tool:** Demosaic (`docs/tools/demosaic.md`), darktable's page, in the Default workspace's Raw tab (decision 38), its defaults the operation's, the methods and controls not ported drawn disabled.
 
 ## Purpose
 
@@ -80,7 +80,7 @@ darktable's OpenCL RCD computes the discrimination planes over a wider area than
 
 ## Tool binding notes
 
-The Demosaic tool is darktable's (decision 2; `docs/tools/demosaic.md`), in Edit's Raw tab, after Highlight reconstruction (decision 38; in the darktable workspace, in Base, the group darktable's "modules: all" gives it): the method, the per-method thresholds and LMMSE refine, colour smoothing, match greens and the Capture sharpen toggle, each shown where darktable's `gui_changed` shows it, and capture sharpening's five controls, darktable's collapsible section, a collapsible group shown while the toggle is on (decision 29), in the raw stage where darktable has it (`docs/tools/README.md`). It owns every parameter, its defaults the operation's for the photo, so an untouched tool sets nothing; what is not ported is drawn disabled and refused. A change re-runs demosaic (decision 12).
+The Demosaic tool is darktable's (decision 2; `docs/tools/demosaic.md`), in the Default workspace's Raw tab, after Highlight reconstruction (decision 38; in the darktable workspace, in Base, the group darktable's "modules: all" gives it): the method, the per-method thresholds and LMMSE refine, colour smoothing, match greens and the Capture sharpen toggle, each shown where darktable's `gui_changed` shows it, and capture sharpening's five controls, darktable's collapsible section, a collapsible group shown while the toggle is on (decision 29), in the raw stage where darktable has it (`docs/tools/README.md`). It owns every parameter, its defaults the operation's for the photo, so an untouched tool sets nothing; what is not ported is drawn disabled and refused. A change re-runs demosaic (decision 12).
 
 ## Gradients
 

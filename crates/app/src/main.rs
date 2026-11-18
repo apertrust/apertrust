@@ -59,6 +59,7 @@ mod folder;
 mod hardware;
 mod history;
 mod jobs;
+mod layout;
 mod library;
 mod log_window;
 mod menus;
@@ -108,7 +109,7 @@ use apertrust_ui::components::{
     ViewerBarAction, Zoom, browser_lines, browser_thickness,
 };
 use apertrust_ui::{
-    Background, Builtin, Icon, Locale, Theme, Translator, components, popup, theme, tr, translator,
+    Background, Builtin, Locale, Theme, Translator, components, popup, theme, tr, translator,
 };
 use eframe::egui::{self, os::OperatingSystem};
 use eframe::egui_wgpu::{self, WgpuSetup, WgpuSetupCreateNew};
@@ -409,14 +410,23 @@ fn main() -> eframe::Result {
     let recents = match folders.as_ref() {
         Some(folders) => {
             let file = folders.state();
-            let (recents, warnings) = Recents::open(file.clone(), || keeper.old_recent_folders());
+            let (mut recents, warnings) =
+                Recents::open(file.clone(), || keeper.old_recent_folders());
             for warning in warnings {
                 tracing::warn!(target: "settings", "{}: {warning}", file.display());
             }
+            // The tab an earlier build kept in settings, as the Default workspace's.
+            recents.move_tab(layout::DEFAULT, || keeper.old_tab());
             recents
         }
         None => Recents::nowhere(),
     };
+    // The workspace settings name, its layout worked out once, here (decision 96).
+    let workspaces = folders.as_ref().map(Folders::workspaces);
+    let (workspace, warnings) = layout::Workspace::open(workspaces.as_deref(), &settings.workspace);
+    for warning in warnings {
+        tracing::warn!(target: "settings", "{warning}");
+    }
     // Whether the window opens as the start window, nothing to open given or reopened:
     // Finder's files at the launch come only once the loop runs, and `App::new` gives the
     // window the main window's size and place back where they come.
@@ -558,7 +568,7 @@ fn main() -> eframe::Result {
                     engine_gate,
                     engine,
                     cache,
-                    recents,
+                    (recents, workspace),
                     storage_folders,
                     app_host,
                     kept,
@@ -1094,60 +1104,9 @@ fn system_locale() -> Locale {
     )
 }
 
-/// The Tools panel's tabs in Edit (decision 38): the tools by editing stage, Adjust,
-/// Detail, Geometry, Effects and Raw, between Apertrust's own Photos and History. Ctrl+1
-/// to Ctrl+5 choose the first five by position ([`ActionId::PANEL_TABS`]); Raw and
-/// History, the sixth and seventh, have their actions and no default key, since Ctrl+6 is
-/// Ctrl+− on French AZERTY keyboards.
-const TABS: [(Icon, &str); 7] = [
-    (Icon::Folder, "tab-photos"),
-    (Icon::Adjust, "tab-adjust"),
-    (Icon::Detail, "tab-detail"),
-    (Icon::Correct, "tab-geometry"),
-    (Icon::Effect, "tab-effects"),
-    (Icon::Raw, "tab-raw"),
-    (Icon::History, "tab-history"),
-];
-/// The tab Edit opens on, which holds the tools every edit starts with, and the one shown
-/// where settings keep no tab, or one that is not there or cannot be chosen.
-const ADJUST: usize = 1;
-
-/// The tabs' ids, as settings keep the last one, so a tab the user moves keeps its place.
-const TAB_IDS: [&str; TABS.len()] = [
-    "photos", "adjust", "detail", "geometry", "effects", "raw", "history",
-];
-
-/// The Photos tab, first: Collections so far.
-const PHOTOS: usize = 0;
-
-/// The first tab holding Collections, which View › Collections chooses (decision 73): the
-/// Photos tab, until workspaces let the tabs be changed (`docs/gui.md`, Workspaces).
-const COLLECTIONS: usize = PHOTOS;
-
-/// The History tab, last: the History section, Snapshots to come over it, with no Scopes
-/// (`docs/history.md`).
-const HISTORY: usize = 6;
-
-/// Whether each tab can be chosen: an editing tab with no tool built yet is drawn
-/// disabled, saying it is to come, its key unavailable (decision 38), as Detail is until
-/// its first tool. Photos and History have their own sections.
-const TABS_ENABLED: [bool; TABS.len()] = {
-    let mut enabled = [true; TABS.len()];
-    let mut tab = 0;
-    while tab < TABS.len() {
-        enabled[tab] = tab == PHOTOS || tab == HISTORY || !TAB_TOOLS[tab].is_empty();
-        tab += 1;
-    }
-    enabled
-};
-
-// Each tab has its action, which its click, its key and Tools Panel Tab's item run: a tab
-// with none could not be chosen.
-const _: () = assert!(ActionId::PANEL_TABS.len() == TABS.len());
-
-fn tab_id(tab: usize) -> Option<&'static str> {
-    TAB_IDS.get(tab).copied()
-}
+// Each tab a workspace shows has its action, which its click, its key and Tools Panel Tab's
+// item run: a tab with none could not be chosen.
+const _: () = assert!(ActionId::PANEL_TABS.len() == layout::MOST_TABS);
 
 /// The widths the Tools panel can be dragged to, in points, as the settings schema has
 /// them: down to 240 and up to 600; it opens at the theme's 320.
@@ -1168,32 +1127,6 @@ fn panel_widths(window: f32) -> std::ops::RangeInclusive<f32> {
 fn offered(locale: Locale, debug: bool) -> bool {
     locale != Locale::Pseudo || debug
 }
-
-/// The tools each tab shows, by id, top to bottom in editing order, the order a person
-/// reaches for them, Raw's in processing order (decision 38, `docs/tools/README.md`): the
-/// Edit workspace's defaults, which Customise tabs edits once settings keep them
-/// (`docs/gui.md`, The shell). Display order only: the pipeline's stays fixed. AgX stands
-/// for the edit's tone mapper, and the Tone curve has RGB curve's place until RGB curve
-/// replaces it.
-const TAB_TOOLS: [&[&str]; TABS.len()] = [
-    &[export::ID],
-    &[
-        "temperature",
-        "channelmixerrgb",
-        "exposure",
-        "agx",
-        "toneequal",
-        "hazeremoval",
-        "tone_curve",
-        "colorbalancergb",
-        "primaries",
-    ],
-    &[],
-    &["flip"],
-    &["vignette", "grain", "soften"],
-    &["rawprepare", "highlights", "demosaic", "colorout"],
-    &[],
-];
 
 /// darktable's scene-referred module groups by darktable's ids, base, color, correct and
 /// effect: the tabs the darktable workspace will show between Photos and History, chosen
@@ -1235,11 +1168,6 @@ const DARKTABLE_GROUPS: [(&str, &[&str]); 4] = [
     ("correct", &["hazeremoval"]),
     ("effect", &["vignette", "soften", "grain"]),
 ];
-
-/// Whether each tab pins Scopes over its tools: the five editing tabs, as darktable's
-/// histogram sits over its groups (`docs/gui.md`, The tabs, by editing stage); not the
-/// Photos tab, nor History, which holds Snapshots, once built, then History.
-const SCOPES_PINNED: [bool; TABS.len()] = [false, true, true, true, true, true, false];
 
 struct App {
     session: Session,
@@ -1697,6 +1625,13 @@ const ZOOM_MENU: [(ViewerBarAction, ActionId); 4] = [
 /// The shell's own state (`docs/gui.md`, A frame), part of it kept in settings.
 struct Shell {
     view: View,
+    /// The workspace the Tools panel shows, its layout worked out as it was read
+    /// (decision 96).
+    workspace: layout::Workspace,
+    /// The workspace settings keep, `workspace`, as read: one with no workspace stays
+    /// until another is chosen.
+    kept_workspace: String,
+    /// The tab shown, by its place among the workspace's.
     panel_tab: usize,
     tab_names: bool,
     /// The Tools panel's width as the user dragged it, in points; None for the theme's.
@@ -1810,43 +1745,30 @@ struct Shell {
     /// The log kept in memory, as Settings' Diagnostics has it, and its window's place and
     /// folder.
     log: settings::Log,
-    /// The tab the shell opened on, and Edit's tab as settings had it, which stays until
-    /// the user chooses another, even one this build does not have or cannot choose yet;
-    /// None once the user has chosen a tab, so the id read is never written back.
-    opening_tab: Option<(usize, Option<String>)>,
     /// Whether the window is still to be maximised once it shows ([`Shell::maximise`]).
     maximise: bool,
 }
 
 impl Shell {
-    /// The shell as `settings` left it, in `system`'s language unless they keep another.
-    /// A key override that would clash with another action's key is refused, with a
-    /// warning, and so is a tab that is not there, as an older build's (darktable's
-    /// `base`), which opens Adjust; so does a tab that cannot be chosen yet (decision 38).
-    /// Either id stays in settings until the user chooses a tab.
+    /// The shell as `settings` left it, in `system`'s language unless they keep another,
+    /// showing the Default workspace as built, on the tab it opens on, until the app opens
+    /// the one settings name ([`Shell::open_workspace`]). A key override that would clash
+    /// with another action's key is refused, with a warning.
     fn new(settings: &Settings, system: Locale, os: OperatingSystem) -> Shell {
         let (keymap, warnings) = Keymap::load(os, &settings.keys);
         for warning in warnings {
             tracing::warn!(target: "settings", "{warning}");
         }
-        let tab = settings.edit.tab.as_deref();
-        let panel_tab = tab.and_then(|id| (0..TABS.len()).find(|i| tab_id(*i) == Some(id)));
-        match (tab, panel_tab) {
-            (Some(id), None) => {
-                tracing::warn!(target: "settings", "edit.tab: no tab {id}, Adjust shown");
-            }
-            (Some(id), Some(kept)) if !TABS_ENABLED[kept] => {
-                tracing::warn!(target: "settings", "edit.tab: {id} cannot be chosen yet, Adjust shown");
-            }
-            _ => {}
-        }
-        let panel_tab = panel_tab.filter(|tab| TABS_ENABLED[*tab]).unwrap_or(ADJUST);
+        let workspace = layout::Workspace::builtin_default();
+        let panel_tab = workspace.opening();
         let locale = settings
             .locale
             .filter(|l| offered(*l, cfg!(debug_assertions)))
             .unwrap_or(system);
         Shell {
             view: View::Edit,
+            workspace,
+            kept_workspace: settings.workspace.clone(),
             panel_tab,
             tab_names: settings.tab_names,
             panel_width: settings.panel_width,
@@ -1898,17 +1820,41 @@ impl Shell {
             settings_window: settings.settings_window,
             jobs_window: settings.jobs_window,
             log: settings.log.clone(),
-            opening_tab: Some((panel_tab, settings.edit.tab.clone())),
             maximise: MAXIMISES && settings.window.maximized,
         }
     }
 
+    /// Shows `workspace`, on the tab last shown in it, as `state.toml` keeps it in
+    /// [`Shell::recents`], or the one it opens on where none is kept, or the one kept is
+    /// not there, as an older build's (darktable's `base`), or cannot be chosen yet
+    /// (decision 38), with a warning: that id stays in `state.toml` until the user chooses
+    /// a tab.
+    fn open_workspace(&mut self, workspace: layout::Workspace) {
+        let kept = self.recents.tab(&workspace.id);
+        let place = kept.and_then(|id| workspace.position(id));
+        let enabled = workspace.enabled();
+        let id = &workspace.id;
+        match (kept, place) {
+            (Some(tab), None) => {
+                tracing::warn!(target: "settings", "state.toml: tab.{id}: no tab {tab}, the first shown");
+            }
+            (Some(tab), Some(place)) if !enabled[place] => {
+                tracing::warn!(target: "settings", "state.toml: tab.{id}: {tab} cannot be chosen yet, the first shown");
+            }
+            _ => {}
+        }
+        let place = place.filter(|place| enabled[*place]);
+        self.panel_tab = place.unwrap_or_else(|| workspace.opening());
+        self.workspace = workspace;
+    }
+
+    /// The tab shown, with its tools.
+    fn shown_tab(&self) -> Option<&layout::Tab> {
+        self.workspace.tab(self.panel_tab)
+    }
+
     /// What settings keep of the shell, and of the interface's scale, which egui holds.
     fn to_settings(&self, ctx: &egui::Context) -> Settings {
-        let tab = match &self.opening_tab {
-            Some((opening, read)) if self.panel_tab == *opening => read.clone(),
-            _ => tab_id(self.panel_tab).map(str::to_owned),
-        };
         Settings {
             theme: self.theme,
             locale: self.kept_locale,
@@ -1921,8 +1867,8 @@ impl Shell {
             tab_names: self.tab_names,
             panel_width: self.panel_width,
             viewer: self.viewer,
+            workspace: self.kept_workspace.clone(),
             edit: settings::ViewState {
-                tab,
                 sections: self.sections.clone(),
                 groups: self.groups.clone(),
             },
@@ -2130,7 +2076,7 @@ impl Shell {
     /// chosen, the section opened, for this run and the next, and scrolled to as the tab
     /// shows. A tool no tab lists changes nothing.
     fn reveal(&mut self, tool: &'static str) {
-        let Some(tab) = TAB_TOOLS.iter().position(|ids| ids.contains(&tool)) else {
+        let Some(tab) = self.workspace.holding(tool) else {
             return;
         };
         self.choose_tab(tab);
@@ -2218,8 +2164,9 @@ impl Shell {
     /// Whether the tab shown lists the tool a History line opened, which its sections
     /// scroll to this frame ([`Shell::reveal`]).
     fn revealing(&self) -> bool {
-        let shown = TAB_TOOLS.get(self.panel_tab).copied().unwrap_or_default();
-        self.reveal.is_some_and(|tool| shown.contains(&tool))
+        let shown = self.shown_tab();
+        self.reveal
+            .is_some_and(|tool| shown.is_some_and(|tab| tab.holds(tool)))
     }
 
     /// Whether `tool`'s collapsible group `group` is open: as the user left it, or
@@ -2270,9 +2217,10 @@ impl Shell {
         }
     }
 
-    /// Whether the Tools panel shows the Scopes section: the tab shown pins it.
-    fn scopes_pinned(&self) -> bool {
-        SCOPES_PINNED.get(self.panel_tab).copied().unwrap_or(false)
+    /// Whether the Tools panel shows the Scopes section: the tab shown holds it, pinned
+    /// in the Default workspace's editing tabs.
+    fn scopes_shown(&self) -> bool {
+        self.shown_tab().is_some_and(|tab| tab.holds(scopes::ID))
     }
 
     /// Applies what the Scopes section asked for, for this run and the next.
@@ -2291,7 +2239,7 @@ impl Shell {
     /// is counted as it renders.
     fn scopes_wanted(&self) -> Option<Graphs> {
         let open = self.section_open(scopes::ID, scopes::OPEN);
-        scopes::wanted(self.scopes_pinned(), open, self.scopes)
+        scopes::wanted(self.scopes_shown(), open, self.scopes)
     }
 
     /// The Tools panel's edge, for the panel at the end of a window `window` points wide:
@@ -2390,7 +2338,8 @@ impl Shell {
             // The app's, from the folder and the photo it holds ([`App::shell_state`]).
             opened: false,
             recents,
-            tabs: &TABS_ENABLED,
+            tabs: self.workspace.enabled(),
+            collections: self.workspace.holding(library::ID).is_some(),
             scale: ctx.zoom_factor(),
             dialog: self.about.is_open(),
             // About is modal over the window; the open dialog and the host's dialogs are the
@@ -2567,19 +2516,26 @@ impl Shell {
     fn tab_bar(&mut self, ui: &mut egui::Ui) -> Option<ActionId> {
         let ctx = ui.ctx().clone();
         let words = translator(&ctx);
-        let names = TABS.map(|(_, id)| tr(&ctx, id));
-        let tabs: Vec<PanelTab> = TABS
+        // A tab a build knows in the interface's language, one of a person's own as written.
+        let shown = self.workspace.tabs();
+        let names: Vec<String> = shown
+            .iter()
+            .map(|tab| match &tab.title {
+                layout::Title::Message(id) => tr(&ctx, id),
+                layout::Title::Own(title) => title.clone(),
+            })
+            .collect();
+        let tabs: Vec<PanelTab> = shown
             .iter()
             .zip(&names)
-            .zip(TABS_ENABLED)
             .enumerate()
-            .map(|(i, (((icon, _), name), enabled))| PanelTab {
-                icon: *icon,
+            .map(|(i, (tab, name))| PanelTab {
+                icon: tab.icon,
                 name,
                 shortcut: ActionId::PANEL_TABS
                     .get(i)
                     .and_then(|id| self.keymap.tip(*id, ctx.os(), &words)),
-                enabled,
+                enabled: tab.enabled(),
             })
             .collect();
         match TabBar::new(&tabs, self.panel_tab, self.tab_names)
@@ -2641,7 +2597,8 @@ impl Shell {
                 self.recents.save();
             }
             Intent::Close => self.close = true,
-            // The tool is in the Photos tab: chosen, opened, and scrolled to.
+            // The tool's tab, the Photos tab in the Default workspace: chosen, opened, and
+            // scrolled to.
             Intent::Export => self.reveal(export::ID),
             Intent::ExportAgain => self.export_again = true,
             Intent::DiscardHistory => self.discard_history = true,
@@ -2650,7 +2607,11 @@ impl Shell {
             Intent::View(view) => self.view = view,
             Intent::PanelTab(tab) => self.choose_tab(tab),
             // Pressed again, it is chosen already, and nothing changes.
-            Intent::ShowCollections => self.choose_tab(COLLECTIONS),
+            Intent::ShowCollections => {
+                if let Some(tab) = self.workspace.holding(library::ID) {
+                    self.choose_tab(tab);
+                }
+            }
             Intent::ScaleUp | Intent::ScaleDown => {
                 let up = intent == Intent::ScaleUp;
                 ctx.set_zoom_factor(actions::step_scale(ctx.zoom_factor(), up));
@@ -2685,12 +2646,15 @@ impl Shell {
         ctx.request_repaint();
     }
 
-    /// Shows the Tools panel's tab `tab`, chosen by the user: the one settings had is
-    /// forgotten, even if they come back to the tab the shell opened on.
+    /// Shows the Tools panel's tab `tab`, chosen by the user: kept in `state.toml` as the
+    /// workspace's tab last shown, the one kept before forgotten, even if it was one this
+    /// build does not have.
     fn choose_tab(&mut self, tab: usize) {
-        if tab != self.panel_tab {
-            self.opening_tab = None;
-        }
+        let Some(chosen) = self.workspace.tab(tab) else {
+            return;
+        };
+        self.recents.set_tab(&self.workspace.id, &chosen.id);
+        self.recents.save();
         self.panel_tab = tab;
     }
 
@@ -2881,7 +2845,8 @@ impl App {
     /// otherwise, before it first shows.
     /// Its session plans within `engine`'s budget, `engine.memory_budget`, and keeps
     /// `cache`, the disk cache, if the app could open one; Settings says whether the
-    /// adapter in use is the one `engine` chose. Its dialogs are the host's. It keeps the
+    /// adapter in use is the one `engine` chose. The Tools panel shows `workspace`, on the
+    /// tab the recents' `state.toml` kept for it. Its dialogs are the host's. It keeps the
     /// session's log in `kept` while settings say so. `launch` says whether it reopens what
     /// was open last, how it restarts, and what a start that did not finish has it say.
     #[allow(clippy::too_many_arguments, reason = "what the app is made of, once")]
@@ -2894,7 +2859,7 @@ impl App {
         gate: SubmitGate,
         engine: apertrust_engine::settings::Options,
         cache: Option<Arc<Cache>>,
-        recents: Recents,
+        (recents, workspace): (Recents, layout::Workspace),
         storage_folders: storage::Folders,
         dialogs: dialog_host::Host,
         kept: apertrust_base::log::Kept,
@@ -2908,7 +2873,7 @@ impl App {
         // Collections comes into sight.
         let mut recents = recents;
         recents.check();
-        let shell = Shell {
+        let mut shell = Shell {
             overwrite: alerts::Question::overwrite(
                 settings.ask_before_overwrite,
                 keeper.overridden(ask),
@@ -2920,6 +2885,8 @@ impl App {
             recents,
             ..Shell::new(&settings, system_locale(), cc.egui_ctx.os())
         };
+        // On the tab last shown in it, which the recents' `state.toml` keeps.
+        shell.open_workspace(workspace);
         // Its settings `--conf` gives for this run drawn read-only, and kept by its ↺.
         let given = apertrust_export::settings::registry::ALL
             .iter()
@@ -4092,111 +4059,49 @@ impl App {
     fn tools_panel(&mut self, ui: &mut egui::Ui, peek: bool) -> Option<ActionId> {
         let tab_clicked = self.shell.tab_bar(ui);
         ui.spacing_mut().item_spacing.y = 0.0;
-        let collections = self.shell.panel_tab == PHOTOS;
+        let holds = |tool: &str| self.shell.shown_tab().is_some_and(|tab| tab.holds(tool));
+        let (collections, exporting) = (holds(library::ID), holds(export::ID));
         if collections && !self.shell.collections_shown {
             self.shell.recents.check();
         }
         self.shell.collections_shown = collections;
-        if collections {
-            // The Export tool a menu or Ctrl+E asked for is scrolled to once its tab shows.
-            let revealed = self.shell.revealing();
+        if exporting {
             // A photo opened since the last frame has no answer of the earlier one's to draw.
             let photo = match &self.mirror.photo {
                 PhotoState::Open(photo) => Some(photo.path.as_path()),
                 _ => None,
             };
             self.export.retire(&self.export_previews, photo);
-            let (actions, run, changes, mut export) = self.photos_tab(ui);
-            // Collections' page's, then Export's: its settings, routed back to it, and Global
-            // options opened or closed.
-            for change in changes
-                .into_iter()
-                .chain(std::mem::take(&mut export.changes))
-            {
-                self.change(change, ui.ctx());
-            }
-            if revealed {
-                self.shell.reveal = None;
-            }
-            if export.toggle {
-                let open = self.shell.section_open(export::ID, export::OPEN);
-                self.shell.set_section_open(export::ID, !open);
-            }
-            if export.toggle_summary {
-                let open =
-                    self.shell
-                        .group_open_or(export::ID, export::SUMMARY, export::SUMMARY_OPEN);
-                self.shell
-                    .set_group_open(export::ID, export::SUMMARY, !open);
-            }
-            self.carry_out(actions, ui.ctx());
-            self.export(export.asked, ui.ctx());
-            if export.show_jobs {
-                self.run_actions([ActionId::SHOW_JOBS], ui.ctx(), &[]);
-            }
-            self.run_actions(run, ui.ctx(), &[]);
-            // The preview is the tool's feedback: asked while it is open and shown.
-            let open = self.shell.section_open(export::ID, export::OPEN);
-            self.preview_export(open);
-            // No eye is held on another tab.
-            for command in self.shell.peek(None, self.mirror.photo.open()) {
-                self.session.send(command);
-            }
-            return tab_clicked;
         }
-        self.preview_export(false);
-        // A tool's section a History line asked for is scrolled to once its tab shows.
+        // A tool's section a History line asked for, or the Export tool a menu or Ctrl+E
+        // asked for, is scrolled to once its tab shows.
         let revealed = self.shell.revealing();
         let (state, settings) = (
             self.state_in_window(ui.ctx()),
             self.shell.to_settings(ui.ctx()),
         );
-        let (mirror, panels) = (&self.mirror, &self.panels);
-        let tab = edit_tab(ui, &self.shell, mirror, &settings, &state, panels, peek);
-        if revealed {
-            self.shell.reveal = None;
-        }
-        for change in tab.scopes {
-            self.shell.scopes_change(change);
-        }
-        for change in tab.changes {
-            self.change(change, ui.ctx());
-        }
-        for command in tab.commands {
-            self.send_edit(command);
-        }
-        let held = tab.history.iter().find_map(|action| match action {
-            history::Action::Peek(tool) => Some(*tool),
-            _ => None,
-        });
-        // View state, no change to the edit: nothing to save or wait for.
-        for command in self.shell.peek(held, self.mirror.photo.open()) {
-            self.session.send(command);
-        }
-        let asked = self
+        // Export's header is the shell's, as every utility's (decision 93), with the photo
+        // its ⋯ acts on, so a choice made for another photo is dropped.
+        let declared = &export::definition().tool;
+        let head = self
             .shell
-            .history_asked(tab.pressed, &tab.history, ui.ctx());
-        asked.or(tab_clicked)
-    }
-
-    /// The Photos tab's body: its Collections section, as the mirror's folder and the
-    /// recent folders have it, then the Export tool, under the tab bar. Returns what
-    /// Collections asked for, the registry actions its header ran, what the page drawer's
-    /// rows of its page asked for, and what the Export tool asked for.
-    fn photos_tab(
-        &mut self,
-        ui: &mut egui::Ui,
-    ) -> (
-        Vec<library::Action>,
-        Vec<ActionId>,
-        Vec<Change>,
-        export::Drawn,
-    ) {
-        let recent = self.shell.recent_folders();
-        let folder = &self.mirror.folder.folder;
+            .head(ui.ctx(), declared, &state, false, export::OPEN);
+        let mut export_shown = exporting.then(|| ExportShown {
+            head: tools::Head {
+                photo: self.mirror.photo.open(),
+                ..head
+            },
+            shown: self.export_shown(),
+            reveal: revealed && self.shell.reveal == Some(export::ID),
+        });
+        let recent = if collections {
+            self.shell.recent_folders()
+        } else {
+            Vec::new()
+        };
         let keys = self.shell.open_keys(ui.ctx());
-        let mut collections = library::Collections {
-            folder,
+        let mut library = library::Collections {
+            folder: &self.mirror.folder.folder,
             root: self.mirror.folder.root(),
             counts: self.mirror.folder.counts(),
             recent: &recent,
@@ -4206,36 +4111,78 @@ impl App {
             keys: &keys,
             home: self.places.home.as_deref(),
         };
-        // Export's header is the shell's, as every utility's (decision 93), with the photo
-        // its ⋯ acts on, so a choice made for another photo is dropped.
-        let state = self.state_in_window(ui.ctx());
-        let declared = &export::definition().tool;
-        let head = self
-            .shell
-            .head(ui.ctx(), declared, &state, false, export::OPEN);
-        let shown = ExportShown {
-            head: tools::Head {
-                photo: self.mirror.photo.open(),
-                ..head
-            },
-            shown: self.export_shown(),
-            reveal: self.shell.revealing() && self.shell.reveal == Some(export::ID),
+        let mut photos = PhotosDrawn::default();
+        let export = &mut self.export;
+        let mut others = |ui: &mut egui::Ui, id: &'static str, cx: &mut utility::Context<'_>| {
+            let shown = &mut export_shown;
+            photos_tool(ui, id, cx, &mut library, export, shown, &mut photos);
         };
-        let (settings, words) = (self.shell.to_settings(ui.ctx()), translator(ui.ctx()));
-        let mut commands = Vec::new();
-        let mut cx = utility::Context {
-            mirror: &self.mirror,
-            settings: &settings,
-            words: &words,
-            commands: &mut commands,
-        };
-        let drawn = photos_body(ui, &mut cx, &mut collections, &mut self.export, shown);
-        // The commands Collections and Export send, none yet, as an editing tab's
-        // utilities'.
-        for command in commands {
+        let (mirror, panels) = (&self.mirror, &self.panels);
+        let tab = edit_tab(
+            ui,
+            &self.shell,
+            mirror,
+            &settings,
+            &state,
+            panels,
+            peek,
+            &mut others,
+        );
+        if revealed {
+            self.shell.reveal = None;
+        }
+        for change in tab.scopes {
+            self.shell.scopes_change(change);
+        }
+        // The tools', then Collections' page's, then Export's: its settings, routed back to
+        // it, and Global options opened or closed.
+        let export_changes = std::mem::take(&mut photos.export.changes);
+        for change in tab
+            .changes
+            .into_iter()
+            .chain(photos.changes)
+            .chain(export_changes)
+        {
+            self.change(change, ui.ctx());
+        }
+        // The commands the utilities send: History's, none of Collections' and Export's yet.
+        for command in tab.commands {
             self.send_edit(command);
         }
-        drawn
+        let export = photos.export;
+        if export.toggle {
+            let open = self.shell.section_open(export::ID, export::OPEN);
+            self.shell.set_section_open(export::ID, !open);
+        }
+        if export.toggle_summary {
+            let open = self
+                .shell
+                .group_open_or(export::ID, export::SUMMARY, export::SUMMARY_OPEN);
+            self.shell
+                .set_group_open(export::ID, export::SUMMARY, !open);
+        }
+        self.carry_out(photos.actions, ui.ctx());
+        self.export(export.asked, ui.ctx());
+        if export.show_jobs {
+            self.run_actions([ActionId::SHOW_JOBS], ui.ctx(), &[]);
+        }
+        self.run_actions(photos.run, ui.ctx(), &[]);
+        // The preview is the tool's feedback: asked while it is open and shown.
+        let open = self.shell.section_open(export::ID, export::OPEN);
+        self.preview_export(photos.exported && open);
+        let held = tab.history.iter().find_map(|action| match action {
+            history::Action::Peek(tool) => Some(*tool),
+            _ => None,
+        });
+        // View state, no change to the edit: nothing to save or wait for. No eye is held on
+        // a tab without History.
+        for command in self.shell.peek(held, self.mirror.photo.open()) {
+            self.session.send(command);
+        }
+        let asked = self
+            .shell
+            .history_asked(tab.pressed, &tab.history, ui.ctx());
+        asked.or(tab_clicked)
     }
 
     /// What the Export tool is told each frame: its groups as the shell keeps them, the
@@ -6377,7 +6324,7 @@ fn hold_close(ctx: &egui::Context, dialogs: &dialog_host::AppDialogs) -> bool {
     held
 }
 
-/// What an editing tab's sections asked for this frame ([`edit_tab`]).
+/// What the tab shown's sections asked for this frame ([`edit_tab`]).
 #[derive(Debug, Default)]
 struct EditTab {
     /// Scopes', its header's toggle among them.
@@ -6394,16 +6341,26 @@ struct EditTab {
     commands: Vec<Command>,
 }
 
-/// An editing tab's sections as the mirror's photo has them (`docs/gui.md`, The Tools
-/// panel): the open photo's values and Scopes; with no photo, and from the moment another
-/// is asked for until its values arrive, every tool at its defaults and Scopes with no
-/// graph, all drawn disabled and each open or closed as it was, never a blank panel. Only
-/// the open photo's sections send the session anything ([`Mirror::takes_edits`], which
-/// [`App::change`] asks); every section opens, closes and changes tab whatever it shows.
-/// The History tab holds the History section, drawn from the mirror's history, Original
+/// Draws the tools of the tab shown that need the app's own state, Collections and Export,
+/// in their place among the tab's tools ([`App::tools_panel`], [`photos_tool`]); the tests
+/// that draw no such tool pass one that draws nothing.
+type Others<'o> = dyn FnMut(&mut egui::Ui, &'static str, &mut utility::Context<'_>) + 'o;
+
+/// The tab shown's sections as the mirror's photo has them (`docs/gui.md`, The Tools
+/// panel), the workspace's layout giving the tools and their order (decision 96): the open
+/// photo's values and Scopes; with no photo, and from the moment another is asked for
+/// until its values arrive, every tool at its defaults and Scopes with no graph, all drawn
+/// disabled and each open or closed as it was, never a blank panel. Only the open photo's
+/// sections send the session anything ([`Mirror::takes_edits`], which [`App::change`]
+/// asks); every section opens, closes and changes tab whatever it shows. History alone in
+/// its tab keeps its header at the tab's top, drawn from the mirror's history, Original
 /// alone and disabled while it has none. The utilities are drawn through their
 /// `UtilityTool`s with `settings`, every header from its declaration, its buttons and ⋯'s
-/// items enabled as `state` says (decision 93).
+/// items enabled as `state` says (decision 93); Collections and Export by `others`.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the app's own state for the Tools panel, each part apart"
+)]
 fn edit_tab(
     ui: &mut egui::Ui,
     shell: &Shell,
@@ -6412,6 +6369,7 @@ fn edit_tab(
     state: &State,
     panels: &Panels,
     peek: bool,
+    others: &mut Others<'_>,
 ) -> EditTab {
     let shown = mirror.shown();
     // Every control of a photo opening says why it is disabled.
@@ -6423,9 +6381,9 @@ fn edit_tab(
         words: &words,
         commands: &mut tab.commands,
     };
-    // The History tab holds History alone, its header staying at the tab's top.
-    if shell.panel_tab == HISTORY {
-        let mut history = history::HistoryTool;
+    // History alone in its tab, its header staying at the tab's top.
+    if shell.shown_tab().is_some_and(history_alone) {
+        let mut history = history::HistoryTool { alone: true };
         let definition = &history::declared().tool;
         let head = shell.head(ui.ctx(), definition, state, peek, history::OPEN);
         let head = tools::Head {
@@ -6481,9 +6439,22 @@ fn edit_tab(
         shown.editable(),
         opening.as_deref(),
         &pickers,
+        others,
     );
-    (tab.scopes, tab.changes, tab.pressed) = drawn;
+    (tab.scopes, tab.changes, tab.pressed, tab.history) = drawn;
     tab
+}
+
+/// Whether `tab` holds History alone, which draws its header at the tab's top
+/// ([`history::tab`]), as the Default workspace's History tab does.
+fn history_alone(tab: &layout::Tab) -> bool {
+    only_history(&tab.pinned, &tab.order)
+}
+
+/// Whether a tab's two lists hold History and nothing else, pinned or not.
+fn only_history(pinned: &[&str], order: &[&str]) -> bool {
+    let mut tools = pinned.iter().chain(order);
+    tools.next().is_some_and(|id| *id == history::ID) && tools.next().is_none()
 }
 
 /// How the Photos tab shows the Export tool: its header, the shell's, what the tool is
@@ -6493,6 +6464,21 @@ struct ExportShown {
     head: tools::Head,
     shown: export::Shown,
     reveal: bool,
+}
+
+/// What Collections and Export asked for, drawn in the tab shown ([`photos_tool`]).
+#[derive(Debug, Default)]
+struct PhotosDrawn {
+    /// Collections' own.
+    actions: Vec<library::Action>,
+    /// The registry actions Collections' header ran.
+    run: Vec<ActionId>,
+    /// The page drawer's rows of Collections' page.
+    changes: Vec<Change>,
+    /// Export's.
+    export: export::Drawn,
+    /// Whether Export was drawn.
+    exported: bool,
 }
 
 /// Routes the change of a utility's setting row, `key` in full set to `value` (decision
@@ -6522,25 +6508,20 @@ fn utility_setting(
     *shell = export.values().clone();
 }
 
-/// The Photos tab's sections under its tab bar: Collections, through its `UtilityTool`, its
-/// header from its declaration with its own ⋯ items, then the Export tool, last
-/// (`TAB_TOOLS`). Returns what Collections, its header's registry actions, the page
-/// drawer's rows of Collections' page and the tool asked for.
-fn photos_body(
+/// Draws `id`, Collections or the Export tool, where the tab shown holds it: Collections
+/// through its `UtilityTool`, its header from its declaration with its own ⋯ items, and
+/// Export as `shown` has it, taken as it is drawn, scrolled into view where Export… asked.
+/// What either asked for goes into `out`.
+fn photos_tool(
     ui: &mut egui::Ui,
+    id: &str,
     cx: &mut utility::Context<'_>,
     collections: &mut library::Collections<'_>,
     export: &mut export::Export,
-    shown: ExportShown,
-) -> (
-    Vec<library::Action>,
-    Vec<ActionId>,
-    Vec<Change>,
-    export::Drawn,
+    shown: &mut Option<ExportShown>,
+    out: &mut PhotosDrawn,
 ) {
-    let (mut actions, mut run, mut changes) = (Vec::new(), Vec::new(), Vec::new());
-    let mut drawn = export::Drawn::default();
-    PanelBody::new().show(ui, |ui| {
+    if id == library::ID {
         // The active photo's open, so a ⋯ choice made before another photo opened is
         // dropped, never run on the new photo's folder.
         let head = tools::Head {
@@ -6550,12 +6531,15 @@ fn photos_body(
         let section = utility::section(ui, collections, cx, head, false);
         for pressed in &section.pressed {
             match pressed {
-                tools::Pressed::Run(id) => run.push(*id),
-                pressed => actions.extend(library::pressed(collections, pressed)),
+                tools::Pressed::Run(id) => out.run.push(*id),
+                pressed => out.actions.extend(library::pressed(collections, pressed)),
             }
         }
-        actions.extend(section.actions);
-        changes = section.changes;
+        out.actions.extend(section.actions);
+        out.changes.extend(section.changes);
+    } else if id == export::ID
+        && let Some(shown) = shown.take()
+    {
         let tool = ui.push_id(export::ID, |ui| {
             export.show(ui, shown.head, &shown.shown, cx)
         });
@@ -6563,20 +6547,30 @@ fn photos_body(
         if shown.reveal {
             ui.scroll_to_rect(tool.response.rect, Some(egui::Align::TOP));
         }
-        drawn = tool.inner;
-    });
-    (actions, run, changes, drawn)
+        out.export = tool.inner;
+        out.exported = true;
+    }
 }
 
-/// The Tools panel's sections under its tab bar: Scopes pinned over the band where the
-/// tab pins it, through its `UtilityTool`, its graph from what `cx`'s mirror measured, drawn
-/// disabled unless a photo is shown, then the tab's tools among the mirror's, drawn from
-/// their definitions with the mirror's values; each section open as the shell keeps it,
-/// peeking while `peek` holds, its header's buttons and ⋯ enabled as `state` says, its
-/// reset disabled unless `editable`, and its colour pickers as `pickers` says; the section
-/// a History line opened scrolled to. Returns what Scopes asked for, what the page
-/// drawer's rows of Scopes' page and the tools asked for, and what Scopes' header asked
-/// for beyond its toggle.
+/// What the tab shown's sections asked for, as [`panel_body`] returns it: Scopes', the
+/// tools' and the page drawer's rows', the utilities' headers' beyond their own, and
+/// History's list's.
+type Body = (
+    Vec<scopes::Change>,
+    Vec<Change>,
+    Vec<tools::Pressed>,
+    Vec<history::Action>,
+);
+
+/// The Tools panel's sections under its tab bar, the tab shown's tools as the workspace
+/// lays them out (decision 96): its pinned tools over the band, then the rest, each drawn
+/// by its id: Scopes through its `UtilityTool`, its graph from what `cx`'s mirror
+/// measured, drawn disabled unless a photo is shown; History as a section; Collections and
+/// Export by `others`; and the processing tools among the mirror's, drawn from their
+/// definitions with the mirror's values. Each section open as the shell keeps it, peeking
+/// while `peek` holds, its header's buttons and ⋯ enabled as `state` says, its reset
+/// disabled unless `editable`, and its colour pickers as `pickers` says; the section a
+/// History line opened scrolled to.
 #[expect(
     clippy::too_many_arguments,
     reason = "the app's own state for the Tools panel, each part apart"
@@ -6591,60 +6585,93 @@ fn panel_body(
     editable: bool,
     opening: Option<&str>,
     pickers: &tools::Pickers,
-) -> (Vec<scopes::Change>, Vec<Change>, Vec<tools::Pressed>) {
-    let shown = TAB_TOOLS.get(shell.panel_tab).copied().unwrap_or_default();
-    let (mut pinned, mut changes, mut pressed) = (Vec::new(), Vec::new(), Vec::new());
-    // What the page drawer's rows of Scopes' page asked for, before the tools'.
-    let mut scopes_changes = Vec::new();
+    others: &mut Others<'_>,
+) -> Body {
+    let Some(tab) = shell.shown_tab() else {
+        return Body::default();
+    };
     let mirror = cx.mirror;
     let (tools, values) = (mirror.tools(), &mirror.values);
     let ctx = ui.ctx().clone();
-    let mut body = PanelBody::new();
-    let mut scopes = scopes::ScopesTool;
-    if shell.scopes_pinned() {
-        let definition = &scopes.definition().tool;
-        let head = shell.head(&ctx, definition, state, peek, scopes::OPEN);
-        body = body.pinned(|ui| {
-            let drawn = utility::section(ui, &mut scopes, cx, head, false);
-            pinned = drawn.actions;
-            scopes_changes = drawn.changes;
-            for header in drawn.pressed {
-                match header {
-                    tools::Pressed::Toggle => pinned.push(scopes::Change::Toggle),
-                    other => pressed.push(other),
+    // What each section asked for, in the order they are drawn, the pinned first.
+    let drawn = std::cell::RefCell::new((cx, others, Body::default()));
+    let draw = |ui: &mut egui::Ui, id: &'static str| {
+        let mut drawn = drawn.borrow_mut();
+        let (cx, others, (scopes_asked, changes, pressed, history_asked)) = &mut *drawn;
+        match id {
+            scopes::ID => {
+                let mut scopes = scopes::ScopesTool;
+                let definition = &scopes.definition().tool;
+                let head = shell.head(&ctx, definition, state, peek, scopes::OPEN);
+                let drawn = utility::section(ui, &mut scopes, cx, head, false);
+                scopes_asked.extend(drawn.actions);
+                changes.extend(drawn.changes);
+                for header in drawn.pressed {
+                    match header {
+                        tools::Pressed::Toggle => scopes_asked.push(scopes::Change::Toggle),
+                        other => pressed.push(other),
+                    }
                 }
+            }
+            history::ID => {
+                // Sharing its tab, its end never scrolls the tab ([`history::HistoryTool`]).
+                let mut history = history::HistoryTool { alone: false };
+                let definition = &history::declared().tool;
+                let head = tools::Head {
+                    // ⋯ opens while there is a history.
+                    enabled: mirror.history.is_some(),
+                    photo: mirror.photo.open(),
+                    ..shell.head(&ctx, definition, state, peek, history::OPEN)
+                };
+                let resettable = utility::resettable(definition, state);
+                let drawn = utility::section(ui, &mut history, cx, head, resettable);
+                pressed.extend(drawn.pressed);
+                changes.extend(drawn.changes);
+                history_asked.extend(drawn.actions);
+            }
+            library::ID | export::ID => others(ui, id, cx),
+            _ => {
+                let tool = tools.iter().find(|tool| tool.definition().tool.id == id);
+                let state_of = values.tools.iter().find(|state| state.tool == id);
+                if let (Some(tool), Some(tool_state)) = (tool, state_of) {
+                    let head = tools::Head {
+                        enabled: true,
+                        photo: mirror.photo.open(),
+                        ..shell.head(&ctx, &tool.definition().tool, state, peek, tools::OPEN)
+                    };
+                    let groups = |group: &str| shell.group_open(id, group);
+                    // Each section's widgets in an id of their own, the tool's: two tools'
+                    // sliders of one name, as Vignetting's and Soften's Brightness, never
+                    // share one.
+                    let drawn = ui.push_id(id, |ui| {
+                        tools::section(
+                            ui, *tool, tool_state, head, panels, &groups, editable, opening,
+                            pickers,
+                        )
+                    });
+                    // The section a History line opened, its header at the top.
+                    if shell.revealing() && shell.reveal == Some(id) {
+                        ui.scroll_to_rect(drawn.response.rect, Some(egui::Align::TOP));
+                    }
+                    changes.extend(drawn.inner);
+                }
+            }
+        }
+    };
+    let mut body = PanelBody::new();
+    if !tab.pinned.is_empty() {
+        body = body.pinned(|ui| {
+            for id in &tab.pinned {
+                draw(ui, id);
             }
         });
     }
     body.show(ui, |ui| {
-        for id in shown {
-            let tool = tools.iter().find(|tool| tool.definition().tool.id == *id);
-            let state_of = values.tools.iter().find(|state| state.tool == *id);
-            if let (Some(tool), Some(tool_state)) = (tool, state_of) {
-                let head = tools::Head {
-                    enabled: true,
-                    photo: mirror.photo.open(),
-                    ..shell.head(&ctx, &tool.definition().tool, state, peek, tools::OPEN)
-                };
-                let groups = |group: &str| shell.group_open(id, group);
-                // Each section's widgets in an id of their own, the tool's: two tools'
-                // sliders of one name, as Vignetting's and Soften's Brightness, never share
-                // one.
-                let drawn = ui.push_id(id, |ui| {
-                    tools::section(
-                        ui, *tool, tool_state, head, panels, &groups, editable, opening, pickers,
-                    )
-                });
-                // The section a History line opened, its header at the top.
-                if shell.revealing() && shell.reveal == Some(*id) {
-                    ui.scroll_to_rect(drawn.response.rect, Some(egui::Align::TOP));
-                }
-                changes.extend(drawn.inner);
-            }
+        for id in &tab.order {
+            draw(ui, id);
         }
     });
-    scopes_changes.extend(changes);
-    (pinned, scopes_changes, pressed)
+    drawn.into_inner().2
 }
 
 /// Prepares `ctx` for the shell before its first frame: its theme, its language and
@@ -6860,6 +6887,49 @@ mod tests {
     use egui_kittest::Harness;
     use egui_kittest::kittest::{NodeT as _, Queryable as _};
     use std::path::Path;
+
+    /// The Default workspace's tabs by place, as the tests choose them: Photos first, which
+    /// holds Collections, Adjust, which it opens on, and History last
+    /// (`the_default_workspace_s_tabs_are_where_the_tests_choose_them`).
+    const PHOTOS: usize = 0;
+    const ADJUST: usize = 1;
+    const HISTORY: usize = 6;
+    const COLLECTIONS: usize = PHOTOS;
+
+    /// Whether each of the Default workspace's tabs can be chosen, by place.
+    fn default_enabled() -> [bool; layout::MOST_TABS] {
+        layout::Workspace::builtin_default().enabled()
+    }
+
+    /// The tools the Default workspace's tab `tab` holds, pinned first.
+    fn default_tools(tab: usize) -> Vec<&'static str> {
+        let workspace = layout::Workspace::builtin_default();
+        workspace
+            .tab(tab)
+            .map(|t| t.tools().collect())
+            .unwrap_or_default()
+    }
+
+    /// History is alone in a tab holding it and nothing else, pinned or in the order.
+    #[test]
+    fn history_is_alone_pinned_or_not() {
+        assert!(only_history(&[], &[history::ID]));
+        assert!(only_history(&[history::ID], &[]));
+        assert!(!only_history(&[history::ID], &["export"]));
+        assert!(!only_history(&["scopes"], &[history::ID]));
+        assert!(!only_history(&[], &[]));
+    }
+
+    #[test]
+    fn the_default_workspace_s_tabs_are_where_the_tests_choose_them() {
+        let workspace = layout::Workspace::builtin_default();
+        assert_eq!(workspace.position("photos"), Some(PHOTOS));
+        assert_eq!(workspace.position("adjust"), Some(ADJUST));
+        assert_eq!(workspace.position("history"), Some(HISTORY));
+        assert_eq!(workspace.holding(library::ID), Some(COLLECTIONS));
+        assert_eq!(workspace.opening(), ADJUST);
+        assert_eq!(workspace.tabs().len(), HISTORY + 1);
+    }
 
     /// A cache folder that cannot be created or written is warned of once, as the app
     /// starts, and the app runs with no disk cache; one that can is created (decision 76).
@@ -9168,8 +9238,6 @@ mod tests {
             settings_dialog::Change::Set("locale", "uk".into()),
         ];
         harness.run();
-        harness.state_mut().shell.panel_tab = 3;
-        harness.run();
         // The app ends, and starts again.
         harness.state_mut().keeper.flush();
         drop(harness);
@@ -9180,7 +9248,6 @@ mod tests {
             (shell.locale, shell.kept_locale),
             (Locale::Uk, Some(Locale::Uk))
         );
-        assert_eq!(shell.panel_tab, 3);
         // The next start's first frame is in them.
         let ctx = egui::Context::default();
         prepare(&ctx, &shell, settings.scale);
@@ -9367,7 +9434,7 @@ mod tests {
                         words: &words,
                         commands: &mut commands,
                     };
-                    let (scopes, _, _) = panel_body(
+                    let (scopes, _, _, _) = panel_body(
                         ui,
                         shell,
                         &mut cx,
@@ -9377,6 +9444,7 @@ mod tests {
                         true,
                         None,
                         &tools::Pickers::NONE,
+                        &mut |_, _, _| {},
                     );
                     for change in scopes {
                         side.shell.scopes_change(change);
@@ -9451,7 +9519,16 @@ mod tests {
                     let panels = tools::Panels::default();
                     let (shell, mirror) = (&editing.shell, &editing.mirror);
                     let (settings, state) = editing_state(ui.ctx(), shell, mirror);
-                    let tab = edit_tab(ui, shell, mirror, &settings, &state, &panels, false);
+                    let tab = edit_tab(
+                        ui,
+                        shell,
+                        mirror,
+                        &settings,
+                        &state,
+                        &panels,
+                        false,
+                        &mut |_, _, _| {},
+                    );
                     let changes = tab.changes;
                     editing.history.extend(tab.history);
                     editing.sent.extend(tab.commands);
@@ -9478,8 +9555,9 @@ mod tests {
     /// The tool titles `tab` lists, in English.
     fn titles(tab: usize) -> Vec<String> {
         let words = Translator::new(Locale::EnGb);
-        TAB_TOOLS[tab]
+        default_tools(tab)
             .iter()
+            .filter(|id| **id != scopes::ID)
             .map(|id| words.text(&apertrust_tools::messages::title(id)))
             .collect()
     }
@@ -9543,7 +9621,7 @@ mod tests {
     fn with_no_photo_every_edit_tab_draws_its_tools_and_scopes_disabled_at_defaults() {
         let folder = settings::testing::Folder::new("panel-no-photo");
         let mut harness = editing(&folder);
-        for tab in (ADJUST..HISTORY).filter(|tab| TABS_ENABLED[*tab]) {
+        for tab in (ADJUST..HISTORY).filter(|tab| default_enabled()[*tab]) {
             harness.state_mut().shell.panel_tab = tab;
             harness.run();
             draws_no_photo(&harness, tab);
@@ -9611,7 +9689,16 @@ mod tests {
                     let (shell, mirror) = (&editing.shell, &editing.mirror);
                     let revealed = shell.revealing();
                     let (settings, state) = editing_state(&ctx, shell, mirror);
-                    let tab = edit_tab(ui, shell, mirror, &settings, &state, &panels, false);
+                    let tab = edit_tab(
+                        ui,
+                        shell,
+                        mirror,
+                        &settings,
+                        &state,
+                        &panels,
+                        false,
+                        &mut |_, _, _| {},
+                    );
                     if revealed {
                         editing.shell.reveal = None;
                     }
@@ -10004,7 +10091,16 @@ mod tests {
                         let panels = tools::Panels::default();
                         let (shell, mirror) = (&scene.shell, &scene.mirror);
                         let (settings, state) = editing_state(ui.ctx(), shell, mirror);
-                        edit_tab(ui, shell, mirror, &settings, &state, &panels, false);
+                        edit_tab(
+                            ui,
+                            shell,
+                            mirror,
+                            &settings,
+                            &state,
+                            &panels,
+                            false,
+                            &mut |_, _, _| {},
+                        );
                     });
                 },
                 Opening {
@@ -10225,7 +10321,7 @@ mod tests {
         assert_eq!(graph_says_in(&harness, "Histogram"), "Nothing measured yet");
         // Every tab's sections, live, keep ids of their own: the Effects tab's three among
         // them, whose sliders share names.
-        for tab in (ADJUST + 1..HISTORY).filter(|tab| TABS_ENABLED[*tab]) {
+        for tab in (ADJUST + 1..HISTORY).filter(|tab| default_enabled()[*tab]) {
             harness.state_mut().shell.panel_tab = tab;
             harness.run();
             for title in titles(tab) {
@@ -11490,85 +11586,96 @@ mod tests {
         assert!(offered(Locale::Uk, false));
     }
 
-    /// The shell as settings keeping `tab` as Edit's open it.
+    /// The shell as `state.toml` keeping `tab` as the Default workspace's opens it.
     fn opened_on(tab: &str) -> Shell {
-        let settings = Settings {
-            edit: settings::ViewState {
-                tab: Some(tab.to_owned()),
-                ..settings::ViewState::default()
-            },
-            ..Settings::default()
-        };
-        Shell::new(&settings, Locale::EnGb, OperatingSystem::Nix)
+        let mut shell = Shell::new(&Settings::default(), Locale::EnGb, OperatingSystem::Nix);
+        shell.recents.set_tab(layout::DEFAULT, tab);
+        shell.open_workspace(layout::Workspace::builtin_default());
+        shell
+    }
+
+    /// The tab `state.toml` keeps for the workspace.
+    fn kept_tab(shell: &Shell) -> Option<&str> {
+        shell.recents.tab(&shell.workspace.id)
     }
 
     #[test]
     fn a_tab_kept_by_its_id_opens_and_is_kept_again() {
-        let ctx = egui::Context::default();
-        for (tab, id) in TAB_IDS.iter().enumerate().filter(|(i, _)| TABS_ENABLED[*i]) {
-            let shell = opened_on(id);
-            assert_eq!(shell.panel_tab, tab, "{id}");
-            assert_eq!(shell.to_settings(&ctx).edit.tab.as_deref(), Some(*id));
+        let workspace = layout::Workspace::builtin_default();
+        for (tab, shown) in workspace.tabs().iter().enumerate() {
+            if !shown.enabled() {
+                continue;
+            }
+            let shell = opened_on(&shown.id);
+            assert_eq!(shell.panel_tab, tab, "{}", shown.id);
+            assert_eq!(kept_tab(&shell), Some(shown.id.as_str()));
         }
         let mut shell = opened_on("adjust");
-        shell.panel_tab = 3;
-        assert_eq!(
-            shell.to_settings(&ctx).edit.tab.as_deref(),
-            Some("geometry")
-        );
-        assert_eq!(
-            Shell::new(&Settings::default(), Locale::EnGb, OperatingSystem::Nix).panel_tab,
-            ADJUST
-        );
-        assert_eq!(TAB_IDS.len(), TABS.len());
+        shell.choose_tab(3);
+        assert_eq!(kept_tab(&shell), Some("geometry"));
+        let shell = Shell::new(&Settings::default(), Locale::EnGb, OperatingSystem::Nix);
+        assert_eq!(shell.panel_tab, ADJUST);
+        assert_eq!(kept_tab(&shell), None);
     }
 
     /// An older build's tab is read as any unknown id is, under decision 43: darktable's
     /// groups' ids, which earlier builds kept for Edit, `library`, which they kept for the
     /// Photos tab, and the development builds' `profile`, `optics` and `presets` are no
-    /// tab of Edit's, never given to another (decision 38). Adjust is shown, and the id
-    /// stays in settings until the user chooses a tab.
+    /// tab of the Default workspace's, never given to another (decision 38). Adjust is
+    /// shown, and the id stays in `state.toml` until the user chooses a tab.
     #[test]
-    fn a_tab_this_build_lacks_stays_in_settings_until_the_user_chooses_one() {
-        let ctx = egui::Context::default();
+    fn a_tab_this_build_lacks_stays_kept_until_the_user_chooses_one() {
         for old in [
             "base", "color", "correct", "effect", "library", "profile", "optics", "presets",
         ] {
             let mut shell = opened_on(old);
             assert_eq!(shell.panel_tab, ADJUST, "{old}");
-            assert_eq!(shell.to_settings(&ctx).edit.tab.as_deref(), Some(old));
-            shell.panel_tab = 3;
-            assert_eq!(
-                shell.to_settings(&ctx).edit.tab.as_deref(),
-                Some("geometry")
-            );
+            assert_eq!(kept_tab(&shell), Some(old));
+            shell.choose_tab(3);
+            assert_eq!(kept_tab(&shell), Some("geometry"));
         }
     }
 
     /// A tab that cannot be chosen yet, Detail until its first tool, is kept by its id
-    /// but opens Adjust, and stays in settings until the user chooses a tab (decision 38).
+    /// but opens Adjust, and stays kept until the user chooses a tab (decision 38).
     #[test]
     fn a_tab_drawn_disabled_opens_adjust_and_is_kept() {
-        let ctx = egui::Context::default();
-        let detail = TAB_IDS.iter().position(|id| *id == "detail").unwrap();
-        assert!(!TABS_ENABLED[detail]);
+        let workspace = layout::Workspace::builtin_default();
+        let detail = workspace.position("detail").unwrap();
+        assert!(!workspace.enabled()[detail]);
         let mut shell = opened_on("detail");
         assert_eq!(shell.panel_tab, ADJUST);
-        assert_eq!(shell.to_settings(&ctx).edit.tab.as_deref(), Some("detail"));
-        shell.panel_tab = 5;
-        assert_eq!(shell.to_settings(&ctx).edit.tab.as_deref(), Some("raw"));
+        assert_eq!(kept_tab(&shell), Some("detail"));
+        shell.choose_tab(5);
+        assert_eq!(kept_tab(&shell), Some("raw"));
     }
 
     /// The History tab, drawn disabled before its section was built, is kept and opened
     /// by its id as every tab is; the Photos tab's opens the Photos tab.
     #[test]
     fn the_history_tab_is_kept_and_opened_by_its_id() {
-        let ctx = egui::Context::default();
         assert_eq!(opened_on("photos").panel_tab, PHOTOS);
         let shell = opened_on("history");
         assert_eq!(shell.panel_tab, HISTORY);
-        assert_eq!(shell.to_settings(&ctx).edit.tab.as_deref(), Some("history"));
-        assert_eq!(tab_id(HISTORY), Some("history"));
+        assert_eq!(kept_tab(&shell), Some("history"));
+        assert_eq!(shell.workspace.position("history"), Some(HISTORY));
+    }
+
+    /// `settings.toml`'s `workspace` is kept as read, one with no workspace too, which
+    /// shows the Default workspace until another is chosen (decision 96).
+    #[test]
+    fn the_workspace_settings_name_is_kept_as_read() {
+        let ctx = egui::Context::default();
+        let settings = Settings {
+            workspace: "portraits".to_owned(),
+            ..Settings::default()
+        };
+        let mut shell = Shell::new(&settings, Locale::EnGb, OperatingSystem::Nix);
+        let (workspace, warnings) = layout::Workspace::open(None, &settings.workspace);
+        assert_eq!(warnings.len(), 1, "{warnings:?}");
+        shell.open_workspace(workspace);
+        assert_eq!(shell.workspace.id, layout::DEFAULT);
+        assert_eq!(shell.to_settings(&ctx).workspace, "portraits");
     }
 
     /// A folder opened joins the recents at the top, once; Collections' rows say why one
@@ -11771,7 +11878,7 @@ mod tests {
                         keys: &keys,
                         home: None,
                     };
-                    // As the Photos tab draws it ([`photos_body`]).
+                    // As the Photos tab draws it ([`photos_tool`]).
                     let (mirror, settings) = (crate::mirror::tests::mirror(), Settings::default());
                     let (words, mut commands) = (translator(ui.ctx()), Vec::new());
                     let mut cx = utility::Context {
@@ -11820,81 +11927,47 @@ mod tests {
         assert_eq!(kept.sections.get("collections"), Some(&false));
     }
 
-    /// The id settings had is forgotten once the user chooses a tab: one this build lacks,
-    /// or one that cannot be chosen yet, after Geometry and then Adjust, leaves Adjust in
-    /// the file, read as Adjust at the next start, never the id that warned.
+    /// The tab an earlier build kept in settings, `edit.tab`, moves once into `state.toml`
+    /// as the Default workspace's, as the app starts (`main`); one this build lacks, or one
+    /// that cannot be chosen yet, opens Adjust and is forgotten once the user chooses a tab,
+    /// after Geometry and then Adjust, which the next start opens. `settings.toml` keeps
+    /// the old key as it was, never read again (decision 96).
     #[test]
-    fn a_tab_read_at_the_start_is_forgotten_once_the_user_chooses_one() {
+    fn the_old_tab_moves_into_state_and_is_forgotten_once_the_user_chooses_one() {
         let ctx = egui::Context::default();
-        for old in ["optics", "base", "detail"] {
-            let folder = settings::testing::Folder::new(&format!("forgotten-tab-{old}"));
+        for old in ["optics", "base", "detail", "raw"] {
+            let folder = settings::testing::Folder::new(&format!("moved-tab-{old}"));
             let text = format!("version = 1\n\n[edit]\ntab = \"{old}\"\n");
             std::fs::write(folder.settings(), text).expect("written");
-            let (mut keeper, settings) = Keeper::open(folder.storage());
-            let mut shell = Shell::new(&settings, Locale::EnGb, OperatingSystem::Nix);
-            assert_eq!(shell.panel_tab, ADJUST, "{old}");
+            let state = folder.0.join("state.toml");
+            let start = || {
+                let (keeper, settings) = Keeper::open(folder.storage());
+                let (mut recents, _) = Recents::open(state.clone(), Vec::new);
+                recents.move_tab(layout::DEFAULT, || keeper.old_tab());
+                let mut shell = Shell {
+                    recents,
+                    ..Shell::new(&settings, Locale::EnGb, OperatingSystem::Nix)
+                };
+                shell.open_workspace(layout::Workspace::builtin_default());
+                shell
+            };
+            let mut shell = start();
+            assert_eq!(kept_tab(&shell), Some(old));
+            let opens = if old == "raw" { 5 } else { ADJUST };
+            assert_eq!(shell.panel_tab, opens, "{old}");
             for tab in [3, ADJUST] {
                 shell.apply(Intent::PanelTab(tab), &ctx, &[]);
-                keeper.frame(Instant::now(), &shell.to_settings(&ctx));
             }
-            assert_eq!(shell.to_settings(&ctx).edit.tab.as_deref(), Some("adjust"));
-            keeper.flush();
-            assert!(!folder.text().contains(old), "{old}: {}", folder.text());
-            let (_, settings) = Keeper::open(folder.storage());
-            let default = settings::registry::EDIT_TAB.default();
-            let kept = settings.edit.tab.as_deref().unwrap_or(default);
-            assert_eq!(kept, "adjust", "{old}");
+            shell.recents.flush();
+            drop(shell);
+            let written = std::fs::read_to_string(&state).expect("written");
+            assert!(written.contains("default = \"adjust\""), "{old}: {written}");
+            assert!(folder.text().contains(&format!("tab = \"{old}\"")));
+            let shell = start();
+            assert_eq!(shell.panel_tab, ADJUST, "{old}");
+            assert_eq!(kept_tab(&shell), Some("adjust"));
         }
     }
-
-    /// Edit's tabs and their tools as decision 38 records them, top to bottom, by tool id,
-    /// those still to build included: Adjust in editing order, with the edit's tone mapper,
-    /// one of AgX, Sigmoid and Filmic RGB, at its place, and the Tone curve at RGB curve's
-    /// until RGB curve replaces it; Raw in processing order. The Photos tab holds the
-    /// Export tool, a utility and the tab's last, after Collections, which is no entry of
-    /// the lists (decision 90).
-    const DECISION_38: [(&str, &[&str]); 7] = [
-        ("photos", &["export"]),
-        (
-            "adjust",
-            &[
-                "temperature",
-                "channelmixerrgb",
-                "exposure",
-                "agx",
-                "sigmoid",
-                "filmicrgb",
-                "toneequal",
-                "bilat",
-                "hazeremoval",
-                "tone_curve",
-                "rgblevels",
-                "colorbalancergb",
-                "colorequal",
-                "primaries",
-            ],
-        ),
-        (
-            "detail",
-            &["denoiseprofile", "sharpen", "diffuse", "retouch"],
-        ),
-        (
-            "geometry",
-            &["crop", "ashift", "flip", "lens", "cacorrectrgb"],
-        ),
-        ("effects", &["vignette", "grain", "soften", "bloom"]),
-        (
-            "raw",
-            &[
-                "rawprepare",
-                "highlights",
-                "demosaic",
-                "colorin",
-                "colorout",
-            ],
-        ),
-        ("history", &[]),
-    ];
 
     /// Whether `id` is a built-in tool's, or the Export utility's.
     fn built(id: &str) -> bool {
@@ -11902,90 +11975,6 @@ mod tests {
             || apertrust_tools::TOOLS
                 .iter()
                 .any(|tool| tool.definition().tool.id == id)
-    }
-
-    /// Each of Edit's tabs, by id, lists the built tools decision 38 gives it, in its
-    /// order, and no other; each tool decision 38 places is in one tab only. An editing
-    /// tab with nothing built is drawn disabled, and Scopes are pinned over the five
-    /// editing tabs.
-    #[test]
-    fn edit_s_tabs_list_their_tools_as_decision_38_records_them() {
-        assert_eq!(TAB_IDS, DECISION_38.map(|(id, _)| id));
-        for ((id, recorded), tools) in DECISION_38.iter().zip(TAB_TOOLS) {
-            let expected: Vec<&str> = recorded.iter().copied().filter(|t| built(t)).collect();
-            assert_eq!(tools, expected.as_slice(), "{id}");
-        }
-        let mut placed: Vec<&str> = DECISION_38
-            .iter()
-            .flat_map(|(_, tools)| tools.iter().copied())
-            .collect();
-        let count = placed.len();
-        placed.sort_unstable();
-        placed.dedup();
-        assert_eq!(placed.len(), count, "a tool placed twice");
-        for (tab, tools) in TAB_TOOLS.iter().enumerate() {
-            let own = tab == PHOTOS || tab == HISTORY;
-            assert_eq!(
-                TABS_ENABLED[tab],
-                own || !tools.is_empty(),
-                "{}",
-                TAB_IDS[tab]
-            );
-        }
-        assert_eq!(TAB_IDS[ADJUST], "adjust");
-        assert_eq!(TAB_IDS[HISTORY], "history");
-        assert_eq!(SCOPES_PINNED, [false, true, true, true, true, true, false]);
-    }
-
-    /// Every built-in tool is drawn in one of Edit's tabs, once, and every tool a tab
-    /// names is built in, so a tool that joins `TOOLS` joins a tab too. Export, a utility,
-    /// is the Photos tab's last.
-    #[test]
-    fn every_built_in_tool_is_in_one_tab() {
-        let listed: Vec<&str> = TAB_TOOLS
-            .iter()
-            .flat_map(|tab| tab.iter().copied())
-            .collect();
-        for tool in apertrust_tools::TOOLS {
-            let id = tool.definition().tool.id;
-            let tabs = listed.iter().filter(|listed| **listed == id).count();
-            assert_eq!(tabs, 1, "{id} is in {tabs} tabs");
-        }
-        for id in listed {
-            assert!(built(id), "{id} is in a tab but not built in");
-        }
-    }
-
-    /// Every workspace holds Export (decisions 83 and 90): Edit's tabs list it once, in the
-    /// Photos tab, last after Collections; the darktable workspace's tabs, Photos then its
-    /// four groups, hold it once, in Photos, and in none of the groups. There is no kept
-    /// layout or `hidden` list to apply yet; when settings keep them, the same rule, that
-    /// none takes Export out of a workspace and a workspace without it gets it back, is
-    /// checked here.
-    #[test]
-    fn every_workspace_holds_export_once_in_its_photos_tab() {
-        let count = |tabs: &[&[&str]]| {
-            tabs.iter()
-                .map(|tab| tab.iter().filter(|id| **id == export::ID).count())
-                .sum::<usize>()
-        };
-        // The Edit workspace.
-        assert_eq!(count(&TAB_TOOLS), 1);
-        assert_eq!(TAB_TOOLS[PHOTOS].last(), Some(&export::ID));
-        // The darktable workspace: the Photos tab, then base, colour, correct and effect.
-        let mut darktable: Vec<&[&str]> = vec![TAB_TOOLS[PHOTOS]];
-        darktable.extend(DARKTABLE_GROUPS.iter().map(|(_, tools)| *tools));
-        assert_eq!(count(&darktable), 1);
-        assert!(darktable[0].contains(&export::ID));
-        // Every tab, in either, other than Photos, is free of it.
-        for (tab, tools) in TAB_TOOLS.iter().enumerate() {
-            assert_eq!(
-                tools.contains(&export::ID),
-                tab == PHOTOS,
-                "{}",
-                TAB_IDS[tab]
-            );
-        }
     }
 
     /// The darktable workspace's groups (decision 38, planned) list their tools as
@@ -12021,6 +12010,8 @@ mod tests {
             let groups = listed.iter().filter(|listed| **listed == id).count();
             assert_eq!(groups, 1, "{id} is in {groups} groups");
         }
+        // Export stays in the Photos tab the darktable workspace shares (decision 90).
+        assert!(!listed.contains(&export::ID));
         for id in listed {
             assert!(built(id), "{id} is in a group but not built in");
         }
@@ -12522,8 +12513,15 @@ mod tests {
                                 commands: &mut commands,
                             };
                             let export = &mut bench.export;
-                            let (_, _, _, drawn) =
-                                photos_body(ui, &mut cx, &mut collections, export, shown);
+                            let (mut shown, mut drawn) = (Some(shown), PhotosDrawn::default());
+                            PanelBody::new().show(ui, |ui| {
+                                for id in [library::ID, export::ID] {
+                                    let out = &mut drawn;
+                                    let library = &mut collections;
+                                    photos_tool(ui, id, &mut cx, library, export, &mut shown, out);
+                                }
+                            });
+                            let drawn = drawn.export;
                             if revealed {
                                 bench.shell.reveal = None;
                             }
@@ -16012,6 +16010,33 @@ mod tests {
         assert_eq!(harness.state().pressed, vec![ActionId::SHOW_COLLECTIONS; 2]);
     }
 
+    /// A workspace with Collections in no tab shown leaves View › Collections and L
+    /// unavailable, rather than doing nothing (decision 96; step 3 reveals it in the Hidden
+    /// tab).
+    #[test]
+    fn view_collections_is_unavailable_where_no_tab_holds_collections() {
+        let folder = settings::testing::Folder::new("no-collections");
+        // Every tool seen, so none is placed as new: Collections is in no tab.
+        let seen: Vec<String> = layout::known()
+            .iter()
+            .map(|id| format!("\"{id}\""))
+            .collect();
+        let seen = seen.join(", ");
+        let text =
+            format!("seen = [{seen}]\n[[tabs]]\nid = \"skin\"\n[order]\nskin = [\"exposure\"]\n");
+        std::fs::write(folder.0.join("own.toml"), text).unwrap();
+        let (workspace, _) = layout::Workspace::open(Some(&folder.0), "own");
+        assert_eq!(workspace.holding(library::ID), None);
+        let ctx = egui::Context::default();
+        let mut shell = Shell::new(&Settings::default(), Locale::EnGb, OperatingSystem::Nix);
+        let collections = actions::action(ActionId::SHOW_COLLECTIONS).unwrap();
+        assert!(collections.enabled(&shell.state(&ctx, false, false)));
+        shell.open_workspace(workspace);
+        let state = shell.state(&ctx, false, false);
+        assert!(!state.collections);
+        assert!(!collections.enabled(&state));
+    }
+
     #[test]
     fn view_collections_chooses_the_first_tab_holding_collections_and_pressed_again_nothing() {
         let mut harness = bench(OperatingSystem::Windows);
@@ -16021,8 +16046,11 @@ mod tests {
         harness.run();
         assert_eq!(harness.state().shell.panel_tab, COLLECTIONS);
         assert_eq!(COLLECTIONS, PHOTOS);
-        // The tab the settings had is forgotten, as a click on a tab forgets it.
-        assert_eq!(harness.state().shell.opening_tab, None);
+        // Kept as the tab last shown, as a click on a tab keeps it.
+        assert_eq!(
+            harness.state().shell.recents.tab(layout::DEFAULT),
+            Some("photos")
+        );
         harness.key_press(Key::L);
         harness.run();
         assert_eq!(harness.state().shell.panel_tab, COLLECTIONS);
@@ -16113,7 +16141,7 @@ mod tests {
     /// lists it last.
     #[test]
     fn the_export_tool_is_last_in_the_photos_tab() {
-        assert_eq!(TAB_TOOLS[PHOTOS].last(), Some(&export::ID));
+        assert_eq!(default_tools(PHOTOS).last(), Some(&export::ID));
         let mut harness = bench(OperatingSystem::Mac);
         harness.state_mut().shell.panel_tab = PHOTOS;
         harness.state_mut().shell.set_section_open(export::ID, true);

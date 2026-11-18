@@ -2679,7 +2679,7 @@ pub(crate) mod tests {
                         words: &words,
                         commands: &mut scene.commands,
                     };
-                    let mut tool = crate::history::HistoryTool;
+                    let mut tool = crate::history::HistoryTool { alone: true };
                     let head = crate::tools::Head {
                         open: true,
                         ..crate::tools::Head::default()

@@ -2,7 +2,7 @@
 
 ## Context
 
-Which tabs does the Edit workspace's Tools panel have, which tool goes in which, and in what order?
+Which tabs does the Default workspace's Tools panel have, which tool goes in which, and in what order?
 
 darktable's darkroom shows its modules in groups. Its default "workflow: scene-referred" preset (`src/libs/modulegroups.c` at the reference release) groups them by the kind of processing, base, color, correct and effect, and its right panel lists each group's modules in pipeline order, the last at the top. Those groups do not follow the order people edit in, so a normal edit crosses every tab: white balance and exposure in base, colour in color, denoise and lens correction in correct, then back to base for the tone mapper and local contrast. Within a tab the first tool of an edit is at the bottom.
 
@@ -10,9 +10,9 @@ The first pass mirrors darktable's modules ([0002](0002-rewrite-darktable-first-
 
 ## Decision
 
-**The Edit workspace's tabs are Photos, Adjust, Detail, Geometry, Effects, Raw and History, grouped by editing stage so that a normal edit stays in one tab.** A built-in darktable workspace keeps darktable's scene-referred groups for people coming from darktable (planned, [0096](0096-workspaces-as-files-hidden-tools-and-finding-a-tool.md)'s step 2). Edit stays the default. Both are workspaces as 0096 has them, these lists their defaults.
+**The Default workspace's tabs are Photos, Adjust, Detail, Geometry, Effects, Raw and History, grouped by editing stage so that a normal edit stays in one tab.** A built-in darktable workspace keeps darktable's scene-referred groups for people coming from darktable (planned, [0096](0096-workspaces-as-files-hidden-tools-and-finding-a-tool.md)'s step 2). The Default workspace is the one shown where settings name none. Both are workspaces as 0096 has them, these lists their defaults.
 
-### Edit's tabs
+### The Default workspace's tabs
 
 - **Order:** Photos first ([0037](0037-one-view-the-photos-tab.md)), the five editing tabs, History last. Ctrl+1 to Ctrl+5 reach Photos to Effects. Raw and History have no default key, since Ctrl+6 is Ctrl+− on French AZERTY keyboards, whose 6 key types −; the settings file's `keys` table can give each one (`panel-tab-6`, `panel-tab-7`; planned, any tab's by position up to `panel-tab-12`, [0096](0096-workspaces-as-files-hidden-tools-and-finding-a-tool.md)).
 - **What each holds,** top to bottom in editing order, the order a person reaches for them:
@@ -25,11 +25,11 @@ The first pass mirrors darktable's modules ([0002](0002-rewrite-darktable-first-
   - Adjust holds light and colour together, because a scene-referred edit interleaves them: the white balances, exposure, the tone mapper, then contrast and colour.
   - Detail holds what works at the scale of pixels, Geometry what changes the frame and corrects the lens, Effects the finishing looks.
   - Raw holds the raw stage's tools and the colour profiles, set up rather than edited and rarely touched, in a tab of their own, out of the way; their processing order is how they are set up.
-- **Display order only.** The processing order stays the pipeline's whatever a tab lists. These lists are the Edit workspace's defaults: a person can reorder, pin, move, hide and float sections on screen ([0083](0083-the-side-panels-layout-dragged-and-floating.md), [0096](0096-workspaces-as-files-hidden-tools-and-finding-a-tool.md)), and the Tools panel's ⋮ › Processing Order sorts a tab's tools into pipeline order.
+- **Display order only.** The processing order stays the pipeline's whatever a tab lists. These lists are the Default workspace's defaults: a person can reorder, pin, move, hide and float sections on screen ([0083](0083-the-side-panels-layout-dragged-and-floating.md), [0096](0096-workspaces-as-files-hidden-tools-and-finding-a-tool.md)), and the Tools panel's ⋮ › Processing Order sorts a tab's tools into pipeline order.
 - **Labels:** one plain word each, Apertrust's own, in British English and sentence case: Adjust, Detail, Geometry, Effects, Raw; American English has the same words. Ukrainian and Polish translations follow, reviewed as every translation is.
 - **Ids,** as settings keep the tab: `adjust`, `detail`, `geometry`, `effects` and `raw`, beside `photos` and `history`; their messages are `tab-` and the id.
 - **Icons:** one colour, in Lucide's style, drawn at 22 points, each with a filled form for the chosen tab ([0081](0081-icon-only-buttons-draw-no-plates-on-is-the-filled-icon.md)); drawn with the wireframe. Adjust two sliders and Raw a camera, from Lucide; Geometry and Effects darktable's Correct and Effect shapes; Detail a circle crossed by three fine lines, in their family.
-- **Edit opens on Adjust.** A tab id in settings that this build does not know, or one drawn disabled, opens Adjust with a warning, and the id stays in the file until a tab is chosen. darktable's ids, `base`, `color`, `correct` and `effect`, which earlier builds kept for Edit, and `library`, which they kept for Photos, are such ids in Edit, never given to another tab.
+- **Default opens on Adjust.** A tab id kept for it that this build does not know, or one drawn disabled, opens Adjust with a warning, and the id stays in `state.toml` ([0096](0096-workspaces-as-files-hidden-tools-and-finding-a-tool.md)) until a tab is chosen. darktable's ids, `base`, `color`, `correct` and `effect`, which earlier builds kept for the Edit view, and `library`, which they kept for Photos, are such ids in the Default workspace, never given to another tab.
 - **Scopes** are pinned over the five editing tabs' tools by default, in neither the Photos tab nor History; Layers join them when they come.
 - **No quick access panel and no active-modules tab.** darktable's module search is Find Tool…, planned, which finds any tool by its name or darktable's, hidden ones too ([0096](0096-workspaces-as-files-hidden-tools-and-finding-a-tool.md)).
 - **A tab with nothing behind it yet** is drawn disabled in its place, saying it is to come, with no key.
@@ -37,7 +37,7 @@ The first pass mirrors darktable's modules ([0002](0002-rewrite-darktable-first-
 
 ### The darktable workspace
 
-Planned ([0096](0096-workspaces-as-files-hidden-tools-and-finding-a-tool.md)'s step 2): a built-in workspace beside Edit, id `darktable`, named "darktable" in every language, chosen from View › Workspace as any workspace is.
+Planned ([0096](0096-workspaces-as-files-hidden-tools-and-finding-a-tool.md)'s step 2): a built-in workspace beside Default, id `darktable`, named "darktable" in every language, chosen from View › Workspace as any workspace is.
 
 - **Its tabs** are Photos, Base, Colour, Correct, Effect and History: darktable's "workflow: scene-referred" groups between Apertrust's own Photos and History. Ctrl+1 to Ctrl+5 reach Photos and the four groups; History has no default key. It opens on Base.
 - **Labels** are darktable's words in British English and sentence case; their ids are darktable's names, `base`, `color`, `correct` and `effect`, their messages `tab-base`, `tab-color`, `tab-correct` and `tab-effect`. Ukrainian and Polish start from darktable's own translations.
@@ -51,7 +51,7 @@ Planned ([0096](0096-workspaces-as-files-hidden-tools-and-finding-a-tool.md)'s s
 
 ## Options considered
 
-- **darktable's groups as Edit's tabs:** a normal edit switches tab at every stage, and each tab reads bottom to top. Kept as the darktable workspace instead.
+- **darktable's groups as the Default workspace's tabs:** a normal edit switches tab at every stage, and each tab reads bottom to top. Kept as the darktable workspace instead.
 - **Tabs by stage with light and colour apart:** a scene-referred edit still crosses tabs, white balance, exposure and colour calibration going back and forth.
 - **One long list of every tool:** too long at more than 60 tools once the migration ends.
 - **The raw stage's tools as a collapsed group at the bottom of Adjust:** they would still lengthen the tab every edit uses; a tab of their own keeps them out of the way.
@@ -64,7 +64,7 @@ Planned ([0096](0096-workspaces-as-files-hidden-tools-and-finding-a-tool.md)'s s
 
 ## Consequences
 
-- The app's `TABS` and `TAB_TOOLS` hold Edit's lists, the defaults the layout shown starts from ([0083](0083-the-side-panels-layout-dragged-and-floating.md)); a test holds them as recorded here and each first-pass tool in exactly one of Edit's tabs. A tool added to `OPERATIONS` gets its tab in this record and in [tools/README.md](../tools/README.md).
+- `data/workspaces/default.toml`, embedded by the app, holds the Default workspace's lists, the defaults the layout shown starts from ([0083](0083-the-side-panels-layout-dragged-and-floating.md), [0096](0096-workspaces-as-files-hidden-tools-and-finding-a-tool.md)); a test holds them as recorded here and each first-pass tool in exactly one of its tabs. A tool added to `OPERATIONS` gets its tab in this record and in [tools/README.md](../tools/README.md).
 - The darktable workspace's lists, the app's `DARKTABLE_GROUPS`, are kept with the test holding them to `OPERATIONS` reversed; the workspace is built in and chosen from View › Workspace in [0096](0096-workspaces-as-files-hidden-tools-and-finding-a-tool.md)'s step 2.
 - The tab ids, labels and icons in four languages: `tab-adjust` to `tab-raw` in Fluent, three new icons (Adjust, Detail and Raw), the settings schema's tab ids.
 - A tool page names its tab from [tools/README.md](../tools/README.md).

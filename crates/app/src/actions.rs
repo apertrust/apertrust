@@ -104,9 +104,10 @@ impl ActionId {
     pub const EDIT_VIEW: ActionId = ActionId("view-edit");
     /// View › Collections: the first tab holding Collections.
     pub const SHOW_COLLECTIONS: ActionId = ActionId("show-collections");
-    /// The Tools panel's tabs by position, whatever the user puts in them: one for each
-    /// of the app's tabs, which a compile-time assert beside the app's `TABS` holds them to.
-    pub const PANEL_TABS: [ActionId; 7] = [
+    /// The Tools panel's tabs by position, whatever the workspace puts in them: one for
+    /// each tab a workspace shows, which a compile-time assert beside the app's
+    /// `layout::MOST_TABS` holds them to (decision 96).
+    pub const PANEL_TABS: [ActionId; 12] = [
         ActionId("panel-tab-1"),
         ActionId("panel-tab-2"),
         ActionId("panel-tab-3"),
@@ -114,6 +115,11 @@ impl ActionId {
         ActionId("panel-tab-5"),
         ActionId("panel-tab-6"),
         ActionId("panel-tab-7"),
+        ActionId("panel-tab-8"),
+        ActionId("panel-tab-9"),
+        ActionId("panel-tab-10"),
+        ActionId("panel-tab-11"),
+        ActionId("panel-tab-12"),
     ];
     pub const SCALE_UP: ActionId = ActionId("scale-up");
     pub const SCALE_DOWN: ActionId = ActionId("scale-down");
@@ -328,8 +334,12 @@ pub struct State {
     /// none where the list holds no entry there. One found missing cannot.
     pub recents: [Option<bool>; crate::recents::MOST],
     /// The Tools panel's tabs, by position: whether each can be chosen. One with nothing
-    /// behind it yet cannot, so its key is unavailable (decision 38).
-    pub tabs: &'static [bool],
+    /// behind it yet cannot, so its key is unavailable (decision 38), and nor can one the
+    /// workspace does not show.
+    pub tabs: [bool; 12],
+    /// Whether a tab shown holds Collections, which View › Collections and L choose; with
+    /// none, they are unavailable (decision 96).
+    pub collections: bool,
     /// The interface's scale: egui's zoom factor.
     pub scale: f32,
     /// A modal dialog is open, or a dialog's window has the focus: the view's keys rest,
@@ -355,6 +365,13 @@ pub struct State {
     /// The background behind the photo, whose item is shown checked; None for a theme's
     /// own surround that is none of the six.
     pub background: Option<Background>,
+}
+
+/// Whether each of the Tools panel's tabs can be chosen, by position, where the first
+/// `shown` can, as tests give [`State::tabs`].
+#[cfg(test)]
+pub fn first_tabs(shown: usize) -> [bool; 12] {
+    std::array::from_fn(|i| i < shown)
 }
 
 /// One key with its modifiers. Ctrl here is [`Modifiers::COMMAND`], Cmd on macOS. A Mac's
@@ -595,7 +612,7 @@ fn tab_enabled<const I: usize>(state: &State) -> bool {
 
 /// Every action, in the order a keyboard map lists them (`docs/gui.md`, The default
 /// keyboard map). Slider keys are not here: they are the slider's own (`SliderRow`).
-pub static ACTIONS: [Action; 77] = [
+pub static ACTIONS: [Action; 82] = [
     // The Toolbar's mark, and About Apertrust in the menus once they come.
     Action {
         id: ActionId::ABOUT,
@@ -832,7 +849,7 @@ pub static ACTIONS: [Action; 77] = [
         keys: &[plain(Key::L)],
         scope: Scope::App,
         trigger: Trigger::Press,
-        available: on_main_window,
+        available: |s| on_main_window(s) && s.collections,
         emits: Emit::Intent(Intent::ShowCollections),
     },
     Action {
@@ -900,6 +917,53 @@ pub static ACTIONS: [Action; 77] = [
         trigger: Trigger::Press,
         available: tab_enabled::<6>,
         emits: Emit::Intent(Intent::PanelTab(6)),
+    },
+    // The eighth to the twelfth, for a workspace of more tabs than the Default's seven,
+    // none with a default key.
+    Action {
+        id: ActionId::PANEL_TABS[7],
+        message: "action-panel-tab-8",
+        keys: &[],
+        scope: Scope::App,
+        trigger: Trigger::Press,
+        available: tab_enabled::<7>,
+        emits: Emit::Intent(Intent::PanelTab(7)),
+    },
+    Action {
+        id: ActionId::PANEL_TABS[8],
+        message: "action-panel-tab-9",
+        keys: &[],
+        scope: Scope::App,
+        trigger: Trigger::Press,
+        available: tab_enabled::<8>,
+        emits: Emit::Intent(Intent::PanelTab(8)),
+    },
+    Action {
+        id: ActionId::PANEL_TABS[9],
+        message: "action-panel-tab-10",
+        keys: &[],
+        scope: Scope::App,
+        trigger: Trigger::Press,
+        available: tab_enabled::<9>,
+        emits: Emit::Intent(Intent::PanelTab(9)),
+    },
+    Action {
+        id: ActionId::PANEL_TABS[10],
+        message: "action-panel-tab-11",
+        keys: &[],
+        scope: Scope::App,
+        trigger: Trigger::Press,
+        available: tab_enabled::<10>,
+        emits: Emit::Intent(Intent::PanelTab(10)),
+    },
+    Action {
+        id: ActionId::PANEL_TABS[11],
+        message: "action-panel-tab-12",
+        keys: &[],
+        scope: Scope::App,
+        trigger: Trigger::Press,
+        available: tab_enabled::<11>,
+        emits: Emit::Intent(Intent::PanelTab(11)),
     },
     // Ctrl+= first: on most keyboards + needs Shift, and Ctrl++ matches with it held.
     Action {
@@ -2112,7 +2176,8 @@ pub(crate) mod tests {
             photos: 2,
             opened: true,
             recents: [Some(true); crate::recents::MOST],
-            tabs: &[true; 7],
+            tabs: first_tabs(7),
+            collections: true,
             scale: 1.5,
             dialog: false,
             modal: false,

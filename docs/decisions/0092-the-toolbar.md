@@ -88,7 +88,7 @@ The overflow always keeps 24 points of them. On Windows the hit map's `HTCAPTION
 - **The workspace's file** is the full way to customise until a window exists, and stays one after it (83, [0096](0096-workspaces-as-files-hidden-tools-and-finding-a-tool.md)): `toolbar` in `<user data>/workspaces/<id>.toml`, and the labels app-wide in `settings.toml`:
 
   ```toml
-  # workspaces/edit.toml: the toolbar is one key of the workspace's whole file, beside its tabs
+  # workspaces/default.toml: the toolbar is one key of the workspace's whole file, beside its tabs
   version = 1
   toolbar = ["menu-button", "mark", "import", "export", "reset", "undo", "redo", "space",
              "copy-edit", "apply-edit", "flexible-space", "jobs", "save-state"]
