@@ -782,6 +782,12 @@ fn escape(note: &str) -> String {
 }
 
 impl Schema {
+    /// Every setting's id, whoever owns it, in the file's order: a test's way to the ids
+    /// the schema declares without reading its text.
+    pub fn ids(&self) -> impl Iterator<Item = &str> {
+        self.settings.iter().map(|setting| setting.id.as_str())
+    }
+
     /// The code of `owner`'s settings, for its build script to write.
     pub fn generate(&self, owner: &str) -> String {
         assert!(

@@ -131,8 +131,8 @@ Goal: open, edit, save and reopen a photo with the first pass's tools. Migration
 - [x] 93.2. `UtilityTool` in the app, with one `Context`, History, Scopes and Collections implementing it, Collections joining `UTILITIES`.
 - [x] 93.3. One header and ⋯ for every tool in `TOOLS` and `UTILITIES`, from `&ToolDefinition`, History's ⋯ items declared with it, Truncate History an item of its own; Export's with 93.5.
 - [x] 93.4. The utilities on the page model, their widgets as custom rows and `UtilityDefinition::check` refusing a row that edits: Scopes first, then History, then Collections.
-- [x] 93.5. Export on the tool model: Export implements `UtilityTool` and joins `UTILITIES`, drawn with the shared header, its ↺ its own and its presets button drawn disabled, its page five custom rows for now, so nothing a person sees changes.
-- [ ] 93.6. Export's page as setting rows naming the `export.*` keys by full key, with its presets, For sharing and Full size JPEG built in ([gui.md](gui.md#the-export-tool), step 16), before Import's sheet shares those rows ([Export](#export)): the page model grows setting rows naming a key in full with their words declared, a utility's settings kept in the store and never sent through `PickerCommand::Settings`, options disabled at run time, a No and Yes style, tooltips and notes the utility supplies, and settings counted in a group; Export's header drawn through the shell's head with its `photo` set.
+- [x] 93.5. Export on the tool model: Export implements `UtilityTool` and joins `UTILITIES`, drawn with the shared header, its ↺ its own and its presets button drawn disabled, its page custom rows drawing what it drew, so nothing a person sees changes.
+- [x] 93.6. Export's page as setting rows naming the `export.*` keys by full key, before Import's sheet shares those rows ([Export](#export)): the page model grows setting rows naming a key in full with their words declared, a utility's settings kept in the store and never sent through `PickerCommand::Settings`, options disabled at run time, a No and Yes style, tooltips and notes the utility supplies, and settings counted in a group; Export's header drawn through the shell's head with its `photo` set.
 
 **The window's parts named by their role** (decision 95): the top, side, central and grid panels become the Toolbar, Tools (the Tools panel), the Viewer and the Browser, the central and grid bars the viewer bar and the browser bar, and Browse Collections; recorded, then one pull request:
 
@@ -271,12 +271,14 @@ Goal: usable for daily editing, and the editor sets the sliders for a goal. Migr
 - [ ] The rest of the Export tool, a utility last in the Photos tab (decision 90; [gui.md](gui.md#the-export-tool)), its page declared as setting rows in decision 93's step 93.6 ([The window and the shell](#the-window-and-the-shell)):
   - [ ] a spike measuring every export row at the Tools panel's 320 points in British English, Ukrainian, Polish and the pseudo-locale;
   - [x] the groups and the end: Storage options and Format options, always open, and Global options, collapsible and open at first; the path on one line; ↺, the presets button drawn disabled, and ⋯; the Summary group (Preset, File name, Size, Profile, Format, Destination), the warnings, Export N photos in each of its states and a failed export's line (the Summary's preset is Default settings or Custom until presets); names never guessed as exact;
+  - [x] its page as setting rows naming the `export.*` keys, bound to `apertrust-export`'s settings, its snapshots unchanged (decision 93's step 93.6);
+  - [ ] its presets, Default settings, For sharing and Full size JPEG built in, then the person's own, with the presets API every tool shares, processing and utility alike, whose decision comes first;
   - [ ] the keys: Export Again on Ctrl+Shift+E, Ctrl+Return, Esc, the focus on the button after the reveal, and the wheel on the focused row; the preview sent only while the tool is in view, with `focus`, and an answer shown only for its latest request;
   - [ ] Edit › Previous Selection on Ctrl+Shift+D, with Phase 3's selection;
   - [ ] Collections' Import…, opening the Import sheet.
 - [ ] The Import sheet's frame (decision 86; [gui.md](gui.md#sheets)): the sheet bar, a grid of photos checked to go, a column of tools on the Tools panel's side, the footer with Keep open, Close and the primary button, its keys and modality, each tool kept to its place; then Import's first slice (the library's step 20a).
 - [ ] Alerts on Windows, for Overwrite and the quit question; Linux's are built.
-- [ ] Several presets in one go, Multi-preset export ([gui.md](gui.md#the-export-tool), step 17); the presets themselves come with step 93.6.
+- [ ] Several presets in one go, Multi-preset export ([gui.md](gui.md#the-export-tool), step 17); the presets themselves come with the presets API every tool shares, processing and utility alike, as darktable's are, which needs a decision of its own first (planned).
 - [ ] Metadata in exported files, and styles applied on export.
 
 ### Culling, metadata and several computers, in folder mode

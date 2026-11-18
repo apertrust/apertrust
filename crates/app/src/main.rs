@@ -2223,9 +2223,11 @@ impl Shell {
     }
 
     /// Whether `tool`'s collapsible group `group` is open: as the user left it, or
-    /// closed (decision 29).
+    /// closed (decision 29), but a utility's its declaration opens at first, as Export's
+    /// Global options (decision 90).
     fn group_open(&self, tool: &str, group: &str) -> bool {
-        self.group_open_or(tool, group, tools::GROUP_OPEN)
+        let first = tools::GROUP_OPEN || apertrust_tools::utility::opens(tool, group);
+        self.group_open_or(tool, group, first)
     }
 
     /// Whether `tool`'s collapsible group `group` is open: as the user left it, or
@@ -2918,8 +2920,14 @@ impl App {
             recents,
             ..Shell::new(&settings, system_locale(), cc.egui_ctx.os())
         };
+        // Its settings `--conf` gives for this run drawn read-only, and kept by its ↺.
+        let given = apertrust_export::settings::registry::ALL
+            .iter()
+            .filter(|declared| keeper.overridden(**declared))
+            .map(|declared| declared.id().to_owned());
         let export = export::Export::new(shell.export.clone())
-            .alerts(dialog_host::platform::shows_alerts(cc.egui_ctx.os()));
+            .alerts(dialog_host::platform::shows_alerts(cc.egui_ctx.os()))
+            .given(given);
         prepare(&cc.egui_ctx, &shell, settings.scale);
         let (placement, built_start) = built;
         if let Some(window) = cc.winit_window() {
@@ -3139,26 +3147,32 @@ impl App {
     /// shell, and the export itself when Export was pressed, of the settings the shell holds,
     /// which are the tool's. The photo's edit is the session's to take as the command is
     /// handled (D12). Export pressed with On conflict replacing files asks first
-    /// ([`export::Asked::confirm`]), as Export Again does: the export of the photo open
+    /// ([`export::Press::Confirm`]), as Export Again does: the export of the photo open
     /// then is held, and a yes sends that one, whatever photo is open when it comes
     /// ([`App::alert_answered`]). Nothing closes: the tool stays as it was, and the jobs window shows the export. Not
     /// while the app is quitting, as Export Again: a job started now would be uncounted by
     /// the quit alert's yes.
     fn export(&mut self, asked: export::Asked, ctx: &egui::Context) {
-        if let Some(values) = asked.values {
-            self.shell.export = values;
+        // The tool's settings as they stand, its setting rows' changes routed to it
+        // included.
+        if asked.changed {
+            self.shell.export = self.export.values().clone();
         }
-        if !(asked.start || asked.confirm) {
+        if !asked.pressed {
             return;
         }
         if self.quitting() {
             tracing::warn!(target: "gpu", "export dropped: the app is quitting");
             return;
         }
-        if asked.start {
-            self.send_export();
-        } else {
-            self.ask_export(ctx, true);
+        // Decided from the settings the export takes, the frame's changes in, so a change
+        // to Overwrite in the frame Export was pressed in asks too.
+        match export::press(&self.shell.export) {
+            export::Press::Start => {
+                self.send_export();
+                self.export.note_started(ctx.input(|i| i.time));
+            }
+            export::Press::Confirm => self.ask_export(ctx, true),
         }
     }
 
@@ -3725,6 +3739,26 @@ impl App {
                 let command = pickers::pressed(picker, action, keys, settings);
                 self.send_picker(command, ctx);
             }
+            // A utility's, by its key in full: kept in the settings store through the
+            // utility, never the tools' settings and never sent to the session, which takes
+            // them with the command that uses them, as Export's with an export (decision
+            // 93).
+            Change::Setting {
+                tool,
+                setting,
+                value,
+                ..
+            } if apertrust_tools::utility::utility(tool).is_some() => {
+                let keeper = &self.keeper;
+                let overridden = |key: &str| {
+                    let declared = apertrust_export::settings::registry::ALL.iter();
+                    let mut declared = declared.filter(|declared| declared.id() == key);
+                    declared.any(|declared| keeper.overridden(*declared))
+                };
+                let (export, shell) = (&mut self.export, &mut self.shell.export);
+                utility_setting(tool, setting, &value, export, shell, overridden);
+                ctx.request_repaint();
+            }
             // Kept as the user moves it; the session takes them as the gesture ends, and
             // applies the tool's latest reading again by them, as darktable's settings
             // callback does (`exposure.c:1170-1175`).
@@ -4072,8 +4106,13 @@ impl App {
                 _ => None,
             };
             self.export.retire(&self.export_previews, photo);
-            let (actions, run, changes, export) = self.photos_tab(ui);
-            for change in changes {
+            let (actions, run, changes, mut export) = self.photos_tab(ui);
+            // Collections' page's, then Export's: its settings, routed back to it, and Global
+            // options opened or closed.
+            for change in changes
+                .into_iter()
+                .chain(std::mem::take(&mut export.changes))
+            {
                 self.change(change, ui.ctx());
             }
             if revealed {
@@ -4082,12 +4121,6 @@ impl App {
             if export.toggle {
                 let open = self.shell.section_open(export::ID, export::OPEN);
                 self.shell.set_section_open(export::ID, !open);
-            }
-            if export.toggle_global {
-                let open =
-                    self.shell
-                        .group_open_or(export::ID, export::GLOBAL, export::GLOBAL_OPEN);
-                self.shell.set_group_open(export::ID, export::GLOBAL, !open);
             }
             if export.toggle_summary {
                 let open =
@@ -4173,7 +4206,18 @@ impl App {
             keys: &keys,
             home: self.places.home.as_deref(),
         };
+        // Export's header is the shell's, as every utility's (decision 93), with the photo
+        // its ⋯ acts on, so a choice made for another photo is dropped.
+        let state = self.state_in_window(ui.ctx());
+        let declared = &export::definition().tool;
+        let head = self
+            .shell
+            .head(ui.ctx(), declared, &state, false, export::OPEN);
         let shown = ExportShown {
+            head: tools::Head {
+                photo: self.mirror.photo.open(),
+                ..head
+            },
             shown: self.export_shown(),
             reveal: self.shell.revealing() && self.shell.reveal == Some(export::ID),
         };
@@ -4216,10 +4260,6 @@ impl App {
             _ => export::Photo::None,
         };
         export::Shown {
-            open: self.shell.section_open(export::ID, export::OPEN),
-            global: self
-                .shell
-                .group_open_or(export::ID, export::GLOBAL, export::GLOBAL_OPEN),
             summary: self
                 .shell
                 .group_open_or(export::ID, export::SUMMARY, export::SUMMARY_OPEN),
@@ -6446,12 +6486,40 @@ fn edit_tab(
     tab
 }
 
-/// How the Photos tab shows the Export tool: what the tool is told each frame, and whether
-/// Export… asked for it to be scrolled into view.
-#[derive(Clone, Debug)]
+/// How the Photos tab shows the Export tool: its header, the shell's, what the tool is
+/// told each frame, and whether Export… asked for it to be scrolled into view.
+#[derive(Debug)]
 struct ExportShown {
+    head: tools::Head,
     shown: export::Shown,
     reveal: bool,
+}
+
+/// Routes the change of a utility's setting row, `key` in full set to `value` (decision
+/// 93): to the utility that keeps it, and from it to the shell's settings, which the store
+/// keeps, never to the tools' settings or the session, which takes them with the command
+/// that uses them, as Export's with an export. A key `--conf` gives for this run
+/// (`overridden`) is refused, so the tool and its export keep the store's value. Export's
+/// alone keeps settings yet: another utility's change is a bug, dropped.
+fn utility_setting(
+    tool: &str,
+    key: &str,
+    value: &ControlValue,
+    export: &mut export::Export,
+    shell: &mut export::Values,
+    overridden: impl Fn(&str) -> bool,
+) {
+    if tool != export::ID {
+        debug_assert!(false, "{tool} keeps no setting of its own yet: {key}");
+        tracing::warn!(target: "settings", "{tool}: {key} dropped, the utility keeps none");
+        return;
+    }
+    if overridden(key) {
+        tracing::debug!(target: "settings", "{key}: given by --conf for this run, kept as it is");
+        return;
+    }
+    export.set(key, value);
+    *shell = export.values().clone();
 }
 
 /// The Photos tab's sections under its tab bar: Collections, through its `UtilityTool`, its
@@ -6488,7 +6556,9 @@ fn photos_body(
         }
         actions.extend(section.actions);
         changes = section.changes;
-        let tool = ui.push_id(export::ID, |ui| export.show(ui, &shown.shown, cx));
+        let tool = ui.push_id(export::ID, |ui| {
+            export.show(ui, shown.head, &shown.shown, cx)
+        });
         // The section Export… asked for, its header at the top.
         if shown.reveal {
             ui.scroll_to_rect(tool.response.rect, Some(egui::Align::TOP));
@@ -12413,9 +12483,11 @@ mod tests {
                             // tool.
                             let revealed = bench.shell.revealing();
                             let shown = ExportShown {
-                                shown: export::Shown {
+                                head: tools::Head {
                                     open: bench.shell.section_open(export::ID, export::OPEN),
-                                    global: export::GLOBAL_OPEN,
+                                    ..tools::Head::default()
+                                },
+                                shown: export::Shown {
                                     summary: export::SUMMARY_OPEN,
                                     photo: if bench.photo {
                                         export::Photo::Ready {
@@ -13338,16 +13410,18 @@ mod tests {
     }
 
     /// As `App::export`, for what the Export tool asked: nothing while quitting, else the
-    /// export sent, or held while the overwrite question is asked, as Export Again's.
+    /// export sent, or held while the overwrite question is asked, as Export Again's, as
+    /// the settings the shell holds say.
     fn export_tool(d: &mut Dialogged, ctx: &egui::Context, asked: export::Asked) {
-        if !(asked.start || asked.confirm) || d.quit.quitting() || d.quit_held {
+        if !asked.pressed || d.quit.quitting() || d.quit_held {
             return;
         }
-        if asked.start {
-            let command = export_command(d);
-            send_job(d, command);
-        } else {
-            ask_export(d, ctx, true);
+        match export::press(&d.shell.export) {
+            export::Press::Start => {
+                let command = export_command(d);
+                send_job(d, command);
+            }
+            export::Press::Confirm => ask_export(d, ctx, true),
         }
     }
 
@@ -14607,6 +14681,38 @@ mod tests {
         assert_eq!(discards(&harness), 1);
     }
 
+    /// A change of Export's setting row goes to the tool and the shell's settings, which
+    /// the store keeps, through no command; one `--conf` gives for the run is refused, the
+    /// tool and its export keeping the store's value; and a change to Overwrite in the
+    /// frame Export is pressed in asks first, as the app decides from the settings once the
+    /// frame's changes are in (decision 93).
+    #[test]
+    fn a_utility_s_setting_reaches_it_and_the_shell_and_an_overwrite_then_asks_first() {
+        use apertrust_export::settings::OnConflict;
+        let mut tool = export::Export::new(export::Values::default());
+        let mut shell = export::Values::default();
+        let none = |_: &str| false;
+        let overwrite = ControlValue::Choice(1);
+        let key = "export.disk.on_conflict";
+        utility_setting(export::ID, key, &overwrite, &mut tool, &mut shell, none);
+        assert_eq!(tool.values().on_conflict, OnConflict::Overwrite);
+        assert_eq!(shell, *tool.values());
+        // The press of that frame, decided after its changes: the question first.
+        assert_eq!(export::press(&shell), export::Press::Confirm);
+        assert_eq!(
+            export::press(&export::Values::default()),
+            export::Press::Start
+        );
+        // A key `--conf` gives is kept as the store has it.
+        let quality = ControlValue::Number(65.0);
+        let given = |key: &str| key == "export.jpeg.quality";
+        let key = "export.jpeg.quality";
+        utility_setting(export::ID, key, &quality, &mut tool, &mut shell, given);
+        assert_eq!((tool.values().jpeg_quality, shell.jpeg_quality), (95, 95));
+        utility_setting(export::ID, key, &quality, &mut tool, &mut shell, none);
+        assert_eq!((tool.values().jpeg_quality, shell.jpeg_quality), (65, 65));
+    }
+
     /// The settings the Export tool left, as the shell keeps them.
     fn kept(
         harness: &mut Harness<'_, Dialogged>,
@@ -14978,7 +15084,7 @@ mod tests {
     #[test]
     fn the_export_tool_s_yes_exports_the_photo_that_was_open_when_it_asked() {
         let confirm = export::Asked {
-            confirm: true,
+            pressed: true,
             ..export::Asked::default()
         };
         for (answer, sent) in [
@@ -15018,7 +15124,7 @@ mod tests {
     #[test]
     fn the_export_tool_notes_its_start_when_a_yes_sends_its_export() {
         let confirm = export::Asked {
-            confirm: true,
+            pressed: true,
             ..export::Asked::default()
         };
         let host = with_alerts();
@@ -15072,22 +15178,25 @@ mod tests {
 
     /// The Export tool's Export, like Export Again, sends nothing and asks nothing while the
     /// app is quitting, after a yes to the quit alert or while Quit waits for the overwrite
-    /// question; before that it exports.
+    /// question, whether it would export at once or ask first, On conflict at Overwrite;
+    /// before that it exports.
     #[test]
     fn the_export_tool_exports_nothing_and_asks_nothing_while_the_app_is_quitting() {
-        let start = export::Asked {
-            start: true,
+        let pressed = export::Asked {
+            pressed: true,
             ..export::Asked::default()
         };
-        let confirm = export::Asked {
-            confirm: true,
-            ..export::Asked::default()
+        // The same press with the settings an export asks about first.
+        let confirm = |d: &mut Dialogged, ctx: &egui::Context| {
+            d.shell.export.on_conflict = apertrust_export::settings::OnConflict::Overwrite;
+            assert_eq!(export::press(&d.shell.export), export::Press::Confirm);
+            export_tool(d, ctx, pressed.clone());
         };
         let host = with_alerts();
         let mut harness = dialogged(host.clone());
         harness.run();
         let ctx = harness.ctx.clone();
-        export_tool(harness.state_mut(), &ctx, start.clone());
+        export_tool(harness.state_mut(), &ctx, pressed.clone());
         assert_eq!(harness.state().exported, 1, "an export runs as usual");
         assert_eq!(harness.state().sent.len(), 1);
         // The quit alert's yes: the app waits for the jobs, and starts none.
@@ -15096,8 +15205,8 @@ mod tests {
         answer_alert(&host, dialog_host::Answer::Pressed(0));
         harness.step();
         assert!(harness.state().quit.quitting());
-        export_tool(harness.state_mut(), &ctx, start.clone());
-        export_tool(harness.state_mut(), &ctx, confirm.clone());
+        export_tool(harness.state_mut(), &ctx, pressed.clone());
+        confirm(harness.state_mut(), &ctx);
         assert_eq!(harness.state().exported, 1);
         assert_eq!(harness.state().sent.len(), 1);
         assert_eq!(asked_alerts(&host), 1, "no overwrite question either");
@@ -15115,8 +15224,8 @@ mod tests {
             .ask(&mut state.dialogs, purpose, &request, &ctx);
         press_action(&mut harness, ActionId::QUIT);
         assert!(harness.state().quit_held);
-        export_tool(harness.state_mut(), &ctx, start);
-        export_tool(harness.state_mut(), &ctx, confirm);
+        export_tool(harness.state_mut(), &ctx, pressed.clone());
+        confirm(harness.state_mut(), &ctx);
         assert_eq!(harness.state().exported, 0);
         assert!(harness.state().sent.is_empty());
         assert_eq!(asked_alerts(&host), 1);

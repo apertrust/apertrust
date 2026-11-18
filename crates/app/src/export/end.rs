@@ -64,13 +64,11 @@ pub struct Jobs {
     pub failed: Option<(u64, u64)>,
 }
 
-/// What the app tells the tool each frame.
+/// What the app tells the tool each frame besides its header, which is the shell's
+/// (`tools::Head`), and its page's groups, which the settings keep.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Shown {
-    /// Whether the tool's section is open.
-    pub open: bool,
-    /// Whether Global options is, and the summary.
-    pub global: bool,
+    /// Whether the summary is open.
     pub summary: bool,
     pub photo: Photo,
     pub jobs: Jobs,
@@ -354,7 +352,7 @@ impl Export {
                 words.text_with("export-view-only-left-out", Some(&args)),
             );
         }
-        if !matches!(self.photo, Photo::Ready { .. }) || self.path_problem(&ctx).is_some() {
+        if !matches!(self.photo, Photo::Ready { .. }) || self.path_problem(&words).is_some() {
             return;
         }
         let Some((_, preview)) = &self.preview else {
@@ -404,7 +402,7 @@ impl Export {
             }
             Photo::Ready { .. } => {}
         }
-        if let Some(problem) = self.path_problem(ctx) {
+        if let Some(problem) = self.path_problem(&translator(ctx)) {
             return Some(say("export-why-path", &problem.text));
         }
         // Overwrite kept from a platform that asks: no question here, so no export.
@@ -424,7 +422,10 @@ impl Export {
         }
         match &preview.size.as_ref()?.size {
             Ok(_) => None,
-            Err(problem) => Some(say("export-why-size", &size_problem(ctx, problem))),
+            Err(problem) => Some(say(
+                "export-why-size",
+                &size_problem(&translator(ctx), problem),
+            )),
         }
     }
 

@@ -61,7 +61,8 @@ pub struct ToolDefinition {
     /// Whether its header has the presets button: every processing tool's, drawn disabled
     /// until presets come; a utility's only where it will have presets of its setting rows,
     /// as Export's, named `<id>-presets` and drawn disabled, its tooltip
-    /// `<id>-presets-later`, until they are built (decision 93, step 93.6).
+    /// `<id>-presets-later`, until they come with the presets API every tool shares, processing
+    /// and utility alike (decision 93; planned).
     pub presets: bool,
     /// The items it adds to context menus (decision 91; `docs/gui.md`, Context menus), each
     /// one of its own actions at a place; none for a tool with nothing to add. The app
@@ -969,7 +970,7 @@ pub fn slider_step(min: f32, max: f32, factor: f32) -> f32 {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SettingRow {
     /// snake_case, unique among the tool's settings: its words follow from it
-    /// ([`crate::messages::setting`]).
+    /// ([`crate::messages::setting`]) unless it declares its own.
     pub id: &'static str,
     /// A number, a choice or a boolean, with darktable's range, options and default.
     pub kind: ControlKind,
@@ -977,9 +978,50 @@ pub struct SettingRow {
     pub decimals: u8,
     /// A number's track, as a slider's ([`Slider::track`]).
     pub track: Track,
+    /// Its key in the settings in full, where a utility keeps it under a key of its own
+    /// rather than a tool's `tools.<tool>.<id>`, as Export's `export.jpeg.quality`
+    /// (decision 93). A test holds every key to the settings schema. `None` for a
+    /// processing tool's, and for a utility's setting not kept yet, drawn disabled at its
+    /// default.
+    pub key: Option<&'static str>,
+    /// Its words, where it declares its own rather than those its id implies, as Export's
+    /// `export-*` (decision 93): a utility's, whose key in full implies no message.
+    pub words: Option<&'static SettingWords>,
+}
+
+/// The words a setting row declares ([`SettingRow::words`]): message ids, but for an
+/// option's, which may be a name written alike in every language.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SettingWords {
+    pub label: &'static str,
+    /// What screen readers call it; `None` for its label.
+    pub full: Option<&'static str>,
+    /// Its tooltip; `None` for none.
+    pub promise: Option<&'static str>,
+    /// A choice's options, one for each, in their order. A boolean's two, No and Yes,
+    /// make it darktable's choice of No and Yes (decision 90), false the first; with none
+    /// it is a toggle. A number has none.
+    pub options: &'static [Word],
+}
+
+/// A word a setting row declares ([`SettingWords`]), or one its id implies
+/// ([`crate::messages::setting_row_options`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Word<T = &'static str> {
+    /// A message id.
+    Message(T),
+    /// A name written alike in every language, as a file format's "JPEG (8-bit)".
+    Name(T),
 }
 
 impl SettingRow {
+    /// Whether it is a boolean drawn as darktable's choice of No and Yes: one whose words
+    /// name its two options (decision 90).
+    pub fn no_or_yes(&self) -> bool {
+        matches!(self.kind, ControlKind::Bool { .. })
+            && self.words.is_some_and(|words| words.options.len() == 2)
+    }
+
     /// Its default, darktable's.
     pub fn default(&self) -> ControlValue {
         self.control().default()
@@ -996,13 +1038,31 @@ impl SettingRow {
     }
 
     /// Whether the setting holds together: its id, and its kind as a control's; curve
-    /// points are no setting darktable has.
+    /// points are no setting darktable has; a key in full dotted snake_case parts; and
+    /// declared words naming each of a choice's options, a boolean's two or none, and none
+    /// for a number.
     pub(crate) fn check(&self) -> Result<(), DefinitionError> {
         if !is_id(self.id) {
             return Err(DefinitionError::Id(self.id));
         }
         if matches!(self.kind, ControlKind::Points { .. }) {
             return Err(DefinitionError::Row(self.id));
+        }
+        if let Some(key) = self.key
+            && !key.split('.').all(is_id)
+        {
+            return Err(DefinitionError::Key(key));
+        }
+        if let Some(words) = self.words {
+            let named = words.options.len();
+            let holds = match self.kind {
+                ControlKind::Choice { options, .. } => named == options.len(),
+                ControlKind::Bool { .. } => named == 0 || named == 2,
+                ControlKind::Number { .. } | ControlKind::Points { .. } => named == 0,
+            };
+            if !holds {
+                return Err(DefinitionError::SettingWords(self.id));
+            }
         }
         self.control().check_kind()
     }
@@ -1064,14 +1124,15 @@ pub enum Widget {
     /// Collections' Folders: its group, holding the open folder's tree in a list that
     /// scrolls under the top line, so Collections keeps its height (decision 93).
     CollectionsGroups,
-    /// Export's Storage options: Target storage, the path line and On conflict, until its
-    /// rows are setting rows (decision 93, step 93.6).
+    /// Export's Target storage, File on disk the one that can be chosen until the other
+    /// storages come, with no setting yet (decision 93).
     ExportStorage,
-    /// Export's Format options: File format and the rows of the format chosen.
-    ExportFormat,
-    /// Export's Global options: the collapsible group of the size, the toggles, the profile
-    /// and the rows to come.
-    ExportGlobal,
+    /// Export's path line: the path field on one line with the folder button at its end
+    /// and no visible label, the resolved file name its tooltip.
+    ExportPath,
+    /// Export's size line, `[w] × [h] px` or `[w] × [h] cm @ [dpi] dpi` with no label, or
+    /// the scale's field, for Set size's mode.
+    ExportSize,
     /// Export's groups still to come, Metadata and Multi-preset export, drawn disabled.
     ExportLater,
     /// Export's end: the Summary, the warnings, the Export button and its job's line.
@@ -1089,8 +1150,8 @@ impl Widget {
             | Widget::CollectionsTopLine
             | Widget::CollectionsGroups
             | Widget::ExportStorage
-            | Widget::ExportFormat
-            | Widget::ExportGlobal
+            | Widget::ExportPath
+            | Widget::ExportSize
             | Widget::ExportLater
             | Widget::ExportEnd => true,
             Widget::Curve
@@ -1283,6 +1344,20 @@ pub enum DefinitionError {
     UtilityAction(&'static str),
     #[error("a utility's ↺ is a registry action's, its own or none, never a processing tool's")]
     UtilityHeader,
+    #[error("{0:?} is no key of dotted snake_case parts")]
+    Key(&'static str),
+    #[error("the setting {0}'s words name not each of its options")]
+    SettingWords(&'static str),
+    #[error("the setting {0} names a key or words of its own, which only a utility's do")]
+    ToolSettingKey(&'static str),
+    #[error("{0} is titled or opens at first, but is no label or group of the utility's page")]
+    UnknownTitle(&'static str),
+    #[error("a label and a group of the utility's page are both called {0}")]
+    LabelAndGroup(&'static str),
+    #[error("{0} is given more than one title")]
+    DuplicateTitle(&'static str),
+    #[error("the group {0} opens at first, but has no rows, so it is drawn closed")]
+    OpensEmpty(&'static str),
 }
 
 /// snake_case ASCII: a lowercase letter, then lowercase letters, digits and single
@@ -1579,6 +1654,11 @@ impl ProcessingDefinition {
                 Row::Setting(setting) => {
                     if !settings.insert(setting.id) {
                         return Err(DefinitionError::DuplicateSetting(setting.id));
+                    }
+                    // A processing tool's are its own, `tools.<tool>.<id>`, with the words
+                    // their ids imply.
+                    if setting.key.is_some() || setting.words.is_some() {
+                        return Err(DefinitionError::ToolSettingKey(setting.id));
                     }
                     setting.check()?;
                 }
@@ -2933,6 +3013,8 @@ mod tests {
         },
         decimals: 0,
         track: Track::Plain,
+        key: None,
+        words: None,
     };
 
     #[test]
@@ -2953,6 +3035,8 @@ mod tests {
                     },
                     decimals: 3,
                     track: Track::Plain,
+                    key: None,
+                    words: None,
                 }),
             ])),
         };
@@ -2991,6 +3075,13 @@ mod tests {
             ..CHART
         };
         assert_eq!(setting(points), Err(DefinitionError::Row("chart")));
+        // A key in full and declared words are a utility's (decision 93).
+        let keyed = SettingRow {
+            key: Some("tools.sample.chart"),
+            ..CHART
+        };
+        let own = Err(DefinitionError::ToolSettingKey("chart"));
+        assert_eq!(setting(keyed), own);
     }
 
     #[test]
@@ -3427,6 +3518,8 @@ mod tests {
         },
         decimals: 1,
         track: Track::Lightness,
+        key: None,
+        words: None,
     };
 
     /// `rows` after Contrast's row and the chart's setting, on [`PAGE`]'s first tab.

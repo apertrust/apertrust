@@ -1505,7 +1505,7 @@ mod tests {
                 };
                 PanelBody::new().show(ui, |ui| {
                     actions.extend(drawn(ui, &mut collections));
-                    ui.label("After Browse");
+                    ui.label("After Collections");
                 });
             })
         };
@@ -1513,7 +1513,8 @@ mod tests {
         short.run();
         let mut long = drawn(60);
         long.run();
-        let end = |harness: &Harness<'_, Vec<Action>>| harness.get_by_label("After Browse").rect();
+        let end =
+            |harness: &Harness<'_, Vec<Action>>| harness.get_by_label("After Collections").rect();
         assert_eq!(end(&short).top(), end(&long).top());
         // The top line's box, centred in its one-line row, starts where a tool's first
         // row starts, under its header and in from the panel's start.

@@ -774,6 +774,32 @@ fn a_toggle_row_with_room_has_its_promise_alone_as_its_tooltip() {
     assert!(harness.query_by_label(promise).is_some());
 }
 
+/// A slider's promise is what screen readers hear of its track besides its name and value,
+/// enabled or not, as well as its tooltip: egui describes a widget by its hover text.
+#[test]
+fn a_slider_s_promise_is_its_description_enabled_or_not() {
+    let promise = "Adjusts the brightness of the photo.";
+    for enabled in [true, false] {
+        let mut harness = Harness::builder()
+            .with_size(egui::vec2(560.0, 60.0))
+            .with_context_setup(|ctx| apertrust_ui::install(ctx, Theme::default()))
+            .build_ui(move |ui| {
+                SliderRow::new("Exposure", 0.0, -4.0..=4.0)
+                    .promise(promise)
+                    .enabled(enabled)
+                    .show(ui);
+            });
+        harness.run();
+        let track = harness.get_by_role_and_label(Role::Slider, "Exposure");
+        assert_eq!(track.accesskit_node().is_disabled(), !enabled);
+        assert_eq!(
+            track.accesskit_node().description().as_deref(),
+            Some(promise),
+            "{enabled}"
+        );
+    }
+}
+
 #[test]
 fn a_readout_row_says_its_label_and_value_in_the_language_s_format() {
     let mut harness = Harness::builder()
