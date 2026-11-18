@@ -4378,9 +4378,9 @@ Decision 96's workspaces are Phase 2's too, in its seven steps, each one pull re
 
 1. the workspace model: `workspaces/<id>.toml` (tabs with id, title and icon; pinned and order per tab; hidden; seen; version), Edit built in and the default, a person's own workspaces defined by writing a file; `settings.toml`'s `workspace`; the tab last shown in `state.toml`;
 2. switching: View › Workspace, and the darktable workspace built in (decision 38);
-3. hidden tools: a tool in no tab, the Hidden tab with Show Hidden Tools, the dot on the Tools panel's ⋮ while a hidden tool changes the photo;
+3. hidden tools: a tool in no tab, the Hidden tab with Show Hidden Tools, Show Hidden Tools in the Tools panel's ⋮ so every hidden tool can be reached from this step on, the dot on ⋮ while a hidden tool changes the photo;
 4. ⋯'s layout items: Pin or Unpin, Move Up and Move Down, Move to Tab ▸, Hide, and Show in Tab ▸ for a hidden tool (`section-show`), so a hidden tool comes back before dragging exists; their keys and screen readers' actions (decision 83);
-5. the tab bar's menu, on a right-click and in ⋮: Find Tool…, Show Hidden Tools, Workspace ▸, Reset Tab, Reset Workspace (deleting the workspace's file), Processing Order; Find Tool… drawn disabled until step 6;
+5. the tab bar's menu, on a right-click and in ⋮ beside step 3's Show Hidden Tools: Find Tool…, Show Hidden Tools, Workspace ▸, Reset Tab, Reset Workspace (deleting the workspace's file), Processing Order; Find Tool… drawn disabled until step 6;
 6. search: Find Tool… (Ctrl+Shift+F), the field in the tabs' place, the tabs disabled, the list empty until typing, hidden tools found too, Esc back to the tab;
 7. dragging a header, as decision 83 designs it: reorder, pin by a drop in the pinned area, move to another tab through its icon.
 
