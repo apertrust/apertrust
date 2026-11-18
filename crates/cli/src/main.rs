@@ -385,9 +385,8 @@ struct SetFlags {
     /// repeat for more.
     #[arg(long = "set", value_name = "TOOL.CONTROL=VALUE")]
     sets: Vec<String>,
-    /// Set a parameter no tool owns yet, of an operation an unedited photo runs, such as
-    /// `colorin.type=lin_rec709`; any other is refused, since tools set it. Repeat for
-    /// more.
+    /// Set a parameter no tool owns yet, of an operation an unedited photo runs; any
+    /// other is refused, since tools set it. Repeat for more.
     #[arg(long = "param", value_name = "OPERATION.PARAMETER=VALUE")]
     params: Vec<String>,
 }

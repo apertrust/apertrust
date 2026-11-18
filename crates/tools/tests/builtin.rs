@@ -35,7 +35,8 @@ use apertrust_tools::{
 };
 
 /// Image contexts the bindings are swept over: an image that is not a raw, a Bayer raw,
-/// an X-Trans raw with an exposure bias, a Bayer4 raw and a monochrome one.
+/// an X-Trans raw with an exposure bias, a Bayer4 raw, a monochrome one and a DNG with
+/// its own matrix.
 fn images() -> Vec<ImageContext> {
     let camera = |cfa: Pattern<u32>, exposure_bias| Camera {
         make: String::new(),
@@ -94,6 +95,12 @@ fn images() -> Vec<ImageContext> {
         raw(camera(four_colours, 0.0)),
         raw(Camera {
             cfa: None,
+            ..camera(bayer.clone(), 0.0)
+        }),
+        // A DNG whose image context holds its own matrix, darktable's embedded matrix,
+        // which Input colour profile lists in the camera table's place (decision 30).
+        raw(Camera {
+            embedded_matrix: true,
             ..camera(bayer, 0.0)
         }),
     ]

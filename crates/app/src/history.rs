@@ -2453,15 +2453,17 @@ pub(crate) mod tests {
             &["exposure"],
             Some(Note::Text("Brighter".to_owned())),
         ));
-        // An operation's unowned parameters, which no tool's title names.
-        steps.push(step(9, &["colorin"], None));
+        // An operation's unowned parameters, which no tool's title names: rgblevels's here,
+        // a state made for the test, since every operation an unedited photo runs has its
+        // tool now and no edit could hold one.
+        steps.push(step(9, &["rgblevels"], None));
         steps.push(step(10, &[], None));
         steps.extend(batched(
             7,
             vec![
-                step(11, &["colorin"], None),
+                step(11, &["rgblevels"], None),
                 step(12, &["exposure"], None),
-                step(13, &["colorin"], None),
+                step(13, &["rgblevels"], None),
                 step(14, &["agx"], None),
             ],
         ));
@@ -2635,7 +2637,7 @@ pub(crate) mod tests {
     }
 
     /// How many default steps a new photo is given, of the tools the app runs.
-    const DEFAULT_STEPS: usize = 9;
+    const DEFAULT_STEPS: usize = 10;
 
     /// `history`'s steps after a new photo's default steps, one of each of darktable's
     /// default tools, numbered 1 to [`DEFAULT_STEPS`], the end at `end`.
@@ -2763,8 +2765,8 @@ pub(crate) mod tests {
             })
             .expect("the Defaults group");
         assert_eq!(line.name, "Defaults");
-        assert_eq!(line.numbers(&tr).as_deref(), Some("1\u{2013}9"));
-        assert_eq!(line.change.as_deref(), Some("9 tools every photo runs"));
+        assert_eq!(line.numbers(&tr).as_deref(), Some("1\u{2013}10"));
+        assert_eq!(line.change.as_deref(), Some("10 tools every photo runs"));
         assert!(line.group() && !line.greyed());
         let shown: Vec<(Option<usize>, &str, Option<&str>)> = (lines.iter())
             .map(|line| (line.number(), line.name.as_str(), line.tag.as_deref()))
@@ -2772,13 +2774,14 @@ pub(crate) mod tests {
         assert_eq!(
             shown,
             [
-                (Some(9), "AgX", None),
-                (Some(8), "Colour calibration", None),
-                (Some(7), "Exposure", None),
-                (Some(6), "Orientation", None),
-                (Some(5), "Highlight reconstruction", None),
-                (Some(4), "White balance", None),
-                (Some(3), "Output colour profile", None),
+                (Some(10), "AgX", None),
+                (Some(9), "Colour calibration", None),
+                (Some(8), "Exposure", None),
+                (Some(7), "Orientation", None),
+                (Some(6), "Highlight reconstruction", None),
+                (Some(5), "White balance", None),
+                (Some(4), "Output colour profile", None),
+                (Some(3), "Input colour profile", None),
                 (Some(2), "Demosaic", None),
                 (Some(1), "Raw black/white point", None),
             ]
@@ -3438,7 +3441,7 @@ pub(crate) mod tests {
             Some(with_defaults(styled(6), 4)),
         );
         harness.run();
-        for name in ["Steps 12 to 14: Warm film", "Steps 1 to 9: Defaults"] {
+        for name in ["Steps 13 to 15: Warm film", "Steps 1 to 10: Defaults"] {
             item(&harness, name).hover();
             harness.run();
             assert!(!any_eye(&harness), "{name}");
@@ -3460,7 +3463,7 @@ pub(crate) mod tests {
             Some(with_defaults(photo_s(5), DEFAULT_STEPS + 3)),
         );
         harness.run();
-        let group = "Steps 1 to 9: Defaults";
+        let group = "Steps 1 to 10: Defaults";
         assert!(!shows(&harness, "Step 1: Raw black/white point"));
         item(&harness, group).click();
         harness.run();
@@ -3472,7 +3475,7 @@ pub(crate) mod tests {
         assert_eq!(
             harness.state().actions,
             [
-                Action::GoTo(Some(StepId(0xd8))),
+                Action::GoTo(Some(StepId(0xd9))),
                 Action::GoTo(Some(StepId(0xd0))),
                 Action::Open("demosaic"),
             ]
@@ -3511,11 +3514,11 @@ pub(crate) mod tests {
         let selected =
             |harness: &Harness<'_, Scene>, name| item(harness, name).accesskit_node().is_selected();
         assert_eq!(selected(&harness, "Original"), Some(true));
-        assert_eq!(selected(&harness, "Steps 1 to 9: Defaults"), Some(false));
+        assert_eq!(selected(&harness, "Steps 1 to 10: Defaults"), Some(false));
         item(&harness, "Original").click();
         harness.run();
         assert!(harness.state().actions.is_empty());
-        item(&harness, "Step 10: Exposure").click();
+        item(&harness, "Step 11: Exposure").click();
         harness.run();
         assert_eq!(harness.state().actions, [Action::GoTo(Some(StepId(0xa1)))]);
     }
@@ -3767,8 +3770,8 @@ pub(crate) mod tests {
             Some(with_defaults(photo_s(5), DEFAULT_STEPS + 5)),
         );
         harness.run();
-        let group = "Steps 1 to 9: Defaults";
-        item(&harness, "Step 14: Exposure").focus();
+        let group = "Steps 1 to 10: Defaults";
+        item(&harness, "Step 15: Exposure").focus();
         harness.run();
         harness.key_press(egui::Key::End);
         harness.run();
@@ -3777,14 +3780,14 @@ pub(crate) mod tests {
         assert!(focused(&harness, group));
         harness.key_press(egui::Key::ArrowRight);
         harness.run();
-        assert!(shows(&harness, "Step 9: AgX"));
+        assert!(shows(&harness, "Step 10: AgX"));
         assert!(focused(&harness, group));
         harness.key_press(egui::Key::ArrowRight);
         harness.run();
-        assert!(focused(&harness, "Step 9: AgX"));
+        assert!(focused(&harness, "Step 10: AgX"));
         harness.key_press(egui::Key::ArrowDown);
         harness.run();
-        assert!(focused(&harness, "Step 8: Colour calibration"));
+        assert!(focused(&harness, "Step 9: Colour calibration"));
         // Shift+Enter opens the line's tool.
         harness.state_mut().actions.clear();
         harness.key_press_modifiers(egui::Modifiers::SHIFT, egui::Key::Enter);
@@ -3795,7 +3798,7 @@ pub(crate) mod tests {
         assert!(focused(&harness, group));
         harness.key_press(egui::Key::ArrowLeft);
         harness.run();
-        assert!(!shows(&harness, "Step 9: AgX"));
+        assert!(!shows(&harness, "Step 10: AgX"));
         assert!(focused(&harness, group));
     }
 
@@ -3828,8 +3831,11 @@ pub(crate) mod tests {
             Some(with_defaults(photo_s(5), DEFAULT_STEPS + 3)),
         );
         harness.run();
-        let group = "Steps 1 to 9: Defaults";
-        let defaults = item(&harness, "Steps 1 to 9: Defaults, 9 tools every photo runs");
+        let group = "Steps 1 to 10: Defaults";
+        let defaults = item(
+            &harness,
+            "Steps 1 to 10: Defaults, 10 tools every photo runs",
+        );
         assert_eq!(defaults.accesskit_node().level(), Some(0));
         assert_eq!(defaults.accesskit_node().data().is_expanded(), Some(false));
         assert_eq!(
@@ -3839,7 +3845,7 @@ pub(crate) mod tests {
         chevron(&mut harness, group);
         let defaults = item(&harness, group);
         assert_eq!(defaults.accesskit_node().data().is_expanded(), Some(true));
-        let default = item(&harness, "Step 7: Exposure");
+        let default = item(&harness, "Step 8: Exposure");
         assert_eq!(default.accesskit_node().level(), Some(1));
         assert_eq!(
             default.accesskit_node().description().as_deref(),
@@ -4161,9 +4167,10 @@ pub(crate) mod tests {
         );
         assert_eq!(summary(&applied, tools, &tr), None);
         assert_eq!(said("lens_2030", Vec::new()), None);
-        // An operation's unowned parameter, with no definition: its name, as the tooltip's.
+        // An operation's unowned parameter, with no definition: its name, as the tooltip's;
+        // rgblevels's, a state made for the test, as no tool owns it yet.
         assert_eq!(
-            said("colorin", vec![number("gamma", 1.0, 1.2)]),
+            said("rgblevels", vec![number("gamma", 1.0, 1.2)]),
             shown("gamma ↑")
         );
         let lines = lines_in(Some(&photo_s(3)), Locale::EnGb);
@@ -4706,11 +4713,11 @@ pub(crate) mod tests {
         results.extend(harness.take_snapshot_results());
         let mut harness = scene(
             Theme::builtin(Builtin::Dark),
-            egui::vec2(640.0, 480.0),
-            Some(with_defaults(styled(6), 4)),
+            egui::vec2(640.0, 504.0),
+            Some(with_defaults(styled(6), 5)),
         );
         harness.run();
-        // Open of itself, the end inside it.
+        // Open of itself, the end inside it, at White balance.
         harness.remove_cursor();
         harness.run();
         harness.snapshot("history-tab-defaults");

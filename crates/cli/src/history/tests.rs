@@ -136,13 +136,13 @@ fn edit_gives_a_photo_with_no_history_its_default_steps_first() {
     let mut tools = defaults.clone();
     tools.push("exposure");
     assert_eq!(tools_of(&log), tools);
-    assert_eq!((log.end(), log.defaults()), (10, 9));
-    assert!(log.steps()[8].clock < log.steps()[9].clock);
+    assert_eq!((log.end(), log.defaults()), (11, 10));
+    assert!(log.steps()[9].clock < log.steps()[10].clock);
     let unapplied: Vec<String> = log.unapplied(0).into_iter().collect();
     assert_eq!(unapplied, ["agx", "channelmixerrgb", "exposure"]);
-    assert_eq!(mine(&photo.edits()), log.steps()[9].clock);
+    assert_eq!(mine(&photo.edits()), log.steps()[10].clock);
     photo.edit(&["exposure.exposure=2"], None);
-    assert_eq!(photo.log().steps().len(), 11);
+    assert_eq!(photo.log().steps().len(), 12);
     let bytes = photo.bytes();
     photo.edit(&["exposure.exposure=2"], Some("Same again"));
     photo.edit(&[], Some("Nothing"));
@@ -172,9 +172,9 @@ fn clear_at_original_applies_the_tools_not_applied() {
     .unwrap();
     let log = photo.log();
     let defaults = default_tools(TOOLS, OPERATIONS);
-    assert_eq!((log.steps().len(), log.end()), (10, 10));
-    assert_eq!(tools_of(&log)[..9], defaults[..]);
-    let reset = &log.steps()[9];
+    assert_eq!((log.steps().len(), log.end()), (11, 11));
+    assert_eq!(tools_of(&log)[..10], defaults[..]);
+    let reset = &log.steps()[10];
     assert_eq!(reset.note, Some(Note::reset()));
     assert_eq!(
         tools_of(&Log::from_steps(vec![reset.clone()], 1)),
@@ -192,12 +192,12 @@ fn edit_s_note_is_stored_as_written_and_listed() {
         .map(|step| step.note.as_ref())
         .collect();
     let warmer = text::Note::Text("Warmer look".to_owned());
-    assert_eq!(noted[9..], [None, Some(&warmer), Some(&warmer), None]);
+    assert_eq!(noted[10..], [None, Some(&warmer), Some(&warmer), None]);
     let log = photo.log();
     let steps = Described::default().steps(&log, TOOLS, OPERATIONS, &ImageContext::full(0, 0));
     let listed = listing("IMG.ARW", &steps, log.end());
     assert!(
-        listed.contains("11–12  2 steps · \"Warmer look\"\n"),
+        listed.contains("12–13  2 steps · \"Warmer look\"\n"),
         "{listed}"
     );
 }
@@ -220,7 +220,7 @@ fn each_move_writes_what_the_engine_s_log_functions_make() {
         // Over the batch whole, Colour balance RGB and AgX.
         (Move::Undo, |log| log.undo_end().map(|end| at(log, end))),
         (Move::Redo, |log| log.redo_end().map(|end| at(log, end))),
-        (Move::GoTo(10), |log| Some(at(log, 10))),
+        (Move::GoTo(11), |log| Some(at(log, 11))),
         (Move::Truncate, |log| Some(log.truncated())),
         (Move::Undo, |log| log.undo_end().map(|end| at(log, end))),
         // Never over a default step.
@@ -335,10 +335,10 @@ fn refused_moves_leave_the_file_as_it_is() {
     // A step the log does not have.
     let photo = Photo::edited("unknown");
     let bytes = photo.bytes();
-    let refused = make(&photo.path(), Move::GoTo(14), OPERATIONS, TOOLS).unwrap_err();
+    let refused = make(&photo.path(), Move::GoTo(15), OPERATIONS, TOOLS).unwrap_err();
     assert_eq!(
         refused.to_string(),
-        "no step 14: the history has 13 steps; 0 is Original"
+        "no step 15: the history has 14 steps; 0 is Original"
     );
     assert_eq!(photo.bytes(), bytes);
 }
@@ -448,7 +448,7 @@ fn a_file_changed_after_it_was_read_is_not_written_over() {
         "{refused:#}"
     );
     assert_eq!(photo.bytes(), theirs);
-    assert_eq!(photo.log().steps().len(), 14);
+    assert_eq!(photo.log().steps().len(), 15);
 }
 
 /// A step as a client is told it, at `minute` past 10:00 on 14 November 2026 UTC.

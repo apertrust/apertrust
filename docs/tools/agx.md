@@ -93,7 +93,7 @@ The Ukrainian and Polish words are darktable's translations, drafts awaiting nat
 
 The Polish file departs from darktable's po twice, as its header says: a typo fixed in Blue purity boost, and "(hue)" dropped from Preserve hue.
 
-**Operation parameters in an edit.** The tool owns every `agx` parameter, so `apertrust-cli --param` refuses them; its help names colorin's `type`, which no tool owns yet, as its example. An edit that holds one as an operation parameter loses it with a warning when read ("the tool agx owns it now; left out") and stays editable.
+**Operation parameters in an edit.** The tool owns every `agx` parameter, so `apertrust-cli --param` refuses them. An edit that holds one as an operation parameter loses it with a warning when read ("the tool agx owns it now; left out") and stays editable.
 
 **Presets:** darktable's, by its names: unmodified base primaries, blender-like base and punchy, sigmoid-like default and smooth, smooth; the scene-referred default is the tool's defaults. They wait for the header's presets menu ([Gaps](#gaps), 7).
 

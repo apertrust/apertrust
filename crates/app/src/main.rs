@@ -1163,6 +1163,7 @@ const DARKTABLE_GROUPS: [(&str, &[&str]); 4] = [
             "colorbalancergb",
             "primaries",
             "channelmixerrgb",
+            "colorin",
         ],
     ),
     ("correct", &["hazeremoval"]),
@@ -9915,7 +9916,9 @@ mod tests {
         assert!(shell.section_open("grain", false));
         assert!(shell.revealing());
         shell.reveal = None;
-        shell.reveal("colorin");
+        // An operation no tool owns yet, rgblevels, standing for a line of unowned
+        // parameters: a state made for the test.
+        shell.reveal("rgblevels");
         assert_eq!(shell.panel_tab, 4);
         assert_eq!(shell.reveal, None);
         assert!(!shell.revealing());

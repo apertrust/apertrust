@@ -2794,6 +2794,7 @@ mod tests {
     use apertrust_tools::demosaic::Demosaic;
     use apertrust_tools::exposure::Exposure;
     use apertrust_tools::highlight_reconstruction::HighlightReconstruction;
+    use apertrust_tools::input_colour_profile::InputColourProfile;
     use apertrust_tools::output_colour_profile::OutputColourProfile;
     use apertrust_tools::rgb_primaries::RgbPrimaries;
     use apertrust_tools::testing::{self, Sample, Twin};
@@ -6049,6 +6050,110 @@ mod tests {
         harness.get_by_role(Role::ComboBox).click();
         harness.run();
         assert!(harness.state().changes.is_empty());
+    }
+
+    /// Input colour profile's page as darktable's `gui_init` draws it: Input profile,
+    /// Working profile and Gamut clipping, by their full names, with no tab strip, on a
+    /// colour raw at the standard colour matrix. Working profile and Gamut clipping, each
+    /// porting its default alone, are drawn disabled; Input profile's list holds the
+    /// photo's matrix and darktable's fifteen built-in profiles, the thirteen not ported
+    /// disabled, and choosing a linear one sends it.
+    #[test]
+    fn input_colour_profile_draws_darktable_s_three_lists() {
+        let mut harness = panel(&InputColourProfile, untouched(&InputColourProfile));
+        harness.set_size(egui::vec2(400.0, 700.0));
+        harness.run();
+        assert!(harness.query_by_role(Role::Tab).is_none());
+        let rows: Vec<(String, Option<String>, bool)> = harness
+            .get_all_by_role(Role::ComboBox)
+            .map(|node| {
+                let n = node.accesskit_node();
+                (n.label().unwrap_or_default(), n.value(), n.is_disabled())
+            })
+            .collect();
+        let row =
+            |name: &str, value: &str, disabled| (name.to_owned(), Some(value.to_owned()), disabled);
+        assert_eq!(
+            rows,
+            [
+                row("Input profile", "Standard colour matrix", false),
+                row("Working profile", "Linear Rec2020 RGB", true),
+                row("Gamut clipping", "Off", true),
+            ]
+        );
+        harness
+            .get_by_role_and_label(Role::ComboBox, "Input profile")
+            .click();
+        harness.run();
+        assert!(harness.query_by_label("Embedded matrix").is_none());
+        for (option, disabled) in [
+            ("sRGB", true),
+            ("Linear XYZ", true),
+            ("BRG (for testing)", true),
+            ("Linear Rec709 RGB", false),
+        ] {
+            let node = harness.get_by_label(option);
+            assert_eq!(node.accesskit_node().is_disabled(), disabled, "{option}");
+        }
+        assert!(harness.state().changes.is_empty());
+        harness.get_by_label("Linear Rec709 RGB").click();
+        harness.run();
+        let lin_rec709 = apertrust_tools::input_colour_profile::INPUT_PROFILES
+            .iter()
+            .position(|&p| p == "lin_rec709")
+            .unwrap();
+        let chosen = Change::Set {
+            tool: "colorin",
+            control: "type",
+            value: ControlValue::Choice(lin_rec709 as u32),
+            done: true,
+        };
+        assert_eq!(harness.state().changes, std::slice::from_ref(&chosen));
+        // The disabled rows send nothing.
+        for label in ["Working profile", "Gamut clipping"] {
+            harness.get_by_role_and_label(Role::ComboBox, label).click();
+            harness.run();
+        }
+        assert_eq!(harness.state().changes, [chosen]);
+    }
+
+    /// Input colour profile's page, then its Input profile list open, in the dark theme.
+    #[test]
+    fn input_colour_profile_in_the_dark_theme() {
+        let mut results = egui_kittest::SnapshotResults::new();
+        let state = untouched(&InputColourProfile);
+        let mut harness = Harness::builder()
+            .with_size(egui::vec2(320.0, 560.0))
+            .with_context_setup(|ctx| apertrust_ui::install(ctx, Theme::builtin(Builtin::Dark)))
+            .build_ui(move |ui| {
+                let panel = theme(ui.ctx()).colors.panel;
+                ui.painter()
+                    .rect_filled(ui.ctx().content_rect(), 0.0, panel);
+                ui.spacing_mut().item_spacing.y = 0.0;
+                let groups = |_: &str| GROUP_OPEN;
+                section(
+                    ui,
+                    &InputColourProfile,
+                    &state,
+                    Head {
+                        open: true,
+                        ..Head::default()
+                    },
+                    &Panels::default(),
+                    &groups,
+                    true,
+                    None,
+                    &Pickers::NONE,
+                );
+            });
+        harness.run();
+        harness.snapshot("input-colour-profile");
+        harness
+            .get_by_role_and_label(Role::ComboBox, "Input profile")
+            .click();
+        harness.run();
+        harness.snapshot("input-colour-profile-list");
+        results.extend_harness(&mut harness);
     }
 
     /// AgX's page as darktable draws it: on Settings, Auto tune levels and Read exposure

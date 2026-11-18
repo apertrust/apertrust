@@ -604,10 +604,11 @@ fn the_default_tools_are_darktable_s_for_a_new_raw_in_its_history_order() {
     // darktable's modules with no on/off button first, then those with one, each in the
     // pipe's order.
     assert_eq!(
-        lines[..6],
+        lines[..7],
         [
             "rawprepare",
             "demosaic",
+            "colorin",
             "colorout",
             "temperature",
             "highlights",
@@ -616,7 +617,7 @@ fn the_default_tools_are_darktable_s_for_a_new_raw_in_its_history_order() {
     );
     // Then those darktable's workflow auto-applies, in the pipe's order; Tone curve, which
     // no preset applies, has none, nor has any switched tool.
-    let rest = &lines[6..];
+    let rest = &lines[7..];
     assert_eq!(rest, ["exposure", "channelmixerrgb", "agx"], "{lines:?}");
     let switched = |id: &&str| {
         apertrust_tools::TOOLS
@@ -697,6 +698,7 @@ fn the_end_within_the_default_steps_applies_the_first_k() {
     let on = [
         "rawprepare",
         "demosaic",
+        "colorin",
         "colorout",
         "temperature",
         "highlights",

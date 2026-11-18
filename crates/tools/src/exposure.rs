@@ -722,10 +722,11 @@ fn white_to_exposure(white: f32) -> f32 {
 
 /// The input profile's camera RGB to XYZ D50, darktable's `matrix_in` of the pipe's input
 /// profile, through which Exposure's picker reads its area: colorin's default for the
-/// photo, which no tool changes, the camera's matrix on a DNG with its own (darktable's
-/// embedded matrix) and on another colour raw (its standard matrix), linear Rec2020
-/// otherwise. This crate cannot call colorin, so its rule is repeated here; a test holds
-/// the two to agree. `None` on a colour raw with no matrix, which colorin cannot render.
+/// photo, which Input colour profile can change but this does not follow yet, the
+/// camera's matrix on a DNG with its own (darktable's embedded matrix) and on another
+/// colour raw (its standard matrix), linear Rec2020 otherwise. This crate cannot call
+/// colorin, so its rule is repeated here; a test holds the two to agree. `None` on a
+/// colour raw with no matrix, which colorin cannot render.
 pub fn input_profile(image: &ImageContext) -> Option<Mat3> {
     match &image.camera {
         Some(camera) if camera.cfa.is_some() || camera.embedded_matrix => {

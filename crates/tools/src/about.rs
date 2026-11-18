@@ -190,6 +190,7 @@ pub enum Fact {
     NonLinearLab,
     NonLinearLabDisplayReferred,
     LinearOrNonLinearLabDisplayReferred,
+    LinearOrNonLinearRgbSceneReferred,
     NonLinearRgbOrLabDisplayReferred,
     GeometricRgb,
     FrequentialRgb,
@@ -197,7 +198,7 @@ pub enum Fact {
 }
 
 impl Fact {
-    pub const ALL: [Fact; 19] = [
+    pub const ALL: [Fact; 20] = [
         Fact::LinearRawSceneReferred,
         Fact::LinearRaw,
         Fact::ReconstructionRaw,
@@ -213,6 +214,7 @@ impl Fact {
         Fact::NonLinearLab,
         Fact::NonLinearLabDisplayReferred,
         Fact::LinearOrNonLinearLabDisplayReferred,
+        Fact::LinearOrNonLinearRgbSceneReferred,
         Fact::NonLinearRgbOrLabDisplayReferred,
         Fact::GeometricRgb,
         Fact::FrequentialRgb,
@@ -239,6 +241,7 @@ impl Fact {
             Fact::LinearOrNonLinearLabDisplayReferred => {
                 "linear or non-linear, Lab, display-referred"
             }
+            Fact::LinearOrNonLinearRgbSceneReferred => "linear or non-linear, RGB, scene-referred",
             Fact::NonLinearRgbOrLabDisplayReferred => "non-linear, RGB or Lab, display-referred",
             Fact::GeometricRgb => "geometric, RGB",
             Fact::FrequentialRgb => "frequential, RGB",

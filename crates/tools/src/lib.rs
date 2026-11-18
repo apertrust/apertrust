@@ -52,6 +52,7 @@ pub mod exposure;
 pub mod grain;
 pub mod haze_removal;
 pub mod highlight_reconstruction;
+pub mod input_colour_profile;
 pub mod messages;
 pub mod orientation;
 pub mod output_colour_profile;
@@ -86,16 +87,17 @@ pub use values::{ControlValue, Controls, Mark, ToolValues};
 
 /// The built-in tools, in the order the session reports them and an edit saves them:
 /// Raw black/white point, Highlight reconstruction, Demosaic, AgX and Output colour
-/// profile, in the Profile tab's order; then White balance, Orientation, Exposure, Colour
-/// calibration, Tone equalizer, Colour balance RGB, Tone curve, which becomes RGB curve,
-/// Haze removal, then RGB primaries, Grain, Soften and Vignetting, as the Tools panel's
-/// Profile and Adjust tabs listed them in earlier builds; the order the Tools panel shows
-/// them in is the app's (decision 38). The first pass's other tools follow (`docs/gui.md`,
-/// Build order).
+/// profile, in the Profile tab's order, Input colour profile among them after Demosaic;
+/// then White balance, Orientation, Exposure, Colour calibration, Tone equalizer, Colour
+/// balance RGB, Tone curve, which becomes RGB curve, Haze removal, then RGB primaries,
+/// Grain, Soften and Vignetting, as the Tools panel's Profile and Adjust tabs listed them
+/// in earlier builds; the order the Tools panel shows them in is the app's (decision 38).
+/// The first pass's other tools follow (`docs/gui.md`, Build order).
 pub const TOOLS: &[&dyn ProcessingTool] = &[
     &raw_black_white_point::RawBlackWhitePoint,
     &highlight_reconstruction::HighlightReconstruction,
     &demosaic::Demosaic,
+    &input_colour_profile::InputColourProfile,
     &agx::Agx,
     &output_colour_profile::OutputColourProfile,
     &white_balance::WhiteBalance,
