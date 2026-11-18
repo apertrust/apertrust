@@ -173,6 +173,8 @@ const TARGET: Row = Row::Setting(SettingRow {
     },
     decimals: 0,
     track: Track::Plain,
+    key: None,
+    words: None,
 });
 
 /// Lightness, under Picker target while it holds Lightness: the L the picked area is
@@ -192,6 +194,8 @@ const LIGHTNESS: Row = Row::WhenSetting {
         },
         decimals: 1,
         track: Track::Lightness,
+        key: None,
+        words: None,
     })],
 };
 

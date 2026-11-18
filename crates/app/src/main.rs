@@ -2223,9 +2223,11 @@ impl Shell {
     }
 
     /// Whether `tool`'s collapsible group `group` is open: as the user left it, or
-    /// closed (decision 29).
+    /// closed (decision 29), but a utility's its declaration opens at first, as Export's
+    /// Global options (decision 90).
     fn group_open(&self, tool: &str, group: &str) -> bool {
-        self.group_open_or(tool, group, tools::GROUP_OPEN)
+        let first = tools::GROUP_OPEN || apertrust_tools::utility::opens(tool, group);
+        self.group_open_or(tool, group, first)
     }
 
     /// Whether `tool`'s collapsible group `group` is open: as the user left it, or
@@ -3724,6 +3726,26 @@ impl App {
                 let command = pickers::pressed(picker, action, keys, settings);
                 self.send_picker(command, ctx);
             }
+            // A utility's, by its key in full: kept in the settings store through the
+            // utility, never the tools' settings and never sent to the session, which takes
+            // them with the command that uses them, as Export's with an export (decision
+            // 93).
+            Change::Setting {
+                tool,
+                setting,
+                value,
+                ..
+            } if apertrust_tools::utility::utility(tool).is_some() => {
+                let keeper = &self.keeper;
+                let overridden = |key: &str| {
+                    let declared = apertrust_export::settings::registry::ALL.iter();
+                    let mut declared = declared.filter(|declared| declared.id() == key);
+                    declared.any(|declared| keeper.overridden(*declared))
+                };
+                let (export, shell) = (&mut self.export, &mut self.shell.export);
+                utility_setting(tool, setting, &value, export, shell, overridden);
+                ctx.request_repaint();
+            }
             // Kept as the user moves it; the session takes them as the gesture ends, and
             // applies the tool's latest reading again by them, as darktable's settings
             // callback does (`exposure.c:1170-1175`).
@@ -4172,7 +4194,18 @@ impl App {
             keys: &keys,
             home: self.places.home.as_deref(),
         };
+        // Export's header is the shell's, as every utility's (decision 93), with the photo
+        // its ⋯ acts on, so a choice made for another photo is dropped.
+        let state = self.state_in_window(ui.ctx());
+        let declared = &export::definition().tool;
+        let head = self
+            .shell
+            .head(ui.ctx(), declared, &state, false, export::OPEN);
         let shown = ExportShown {
+            head: tools::Head {
+                photo: self.mirror.photo.open(),
+                ..head
+            },
             shown: self.export_shown(),
             reveal: self.shell.revealing() && self.shell.reveal == Some(export::ID),
         };
@@ -4214,7 +4247,6 @@ impl App {
             _ => export::Photo::None,
         };
         export::Shown {
-            open: self.shell.section_open(export::ID, export::OPEN),
             global: self
                 .shell
                 .group_open_or(export::ID, export::GLOBAL, export::GLOBAL_OPEN),
@@ -6449,12 +6481,40 @@ fn edit_tab(
     tab
 }
 
-/// How the Photos tab shows the Export tool: what the tool is told each frame, and whether
-/// Export… asked for it to be scrolled into view.
-#[derive(Clone, Debug)]
+/// How the Photos tab shows the Export tool: its header, the shell's, what the tool is
+/// told each frame, and whether Export… asked for it to be scrolled into view.
+#[derive(Debug)]
 struct ExportShown {
+    head: tools::Head,
     shown: export::Shown,
     reveal: bool,
+}
+
+/// Routes the change of a utility's setting row, `key` in full set to `value` (decision
+/// 93): to the utility that keeps it, and from it to the shell's settings, which the store
+/// keeps, never to the tools' settings or the session, which takes them with the command
+/// that uses them, as Export's with an export. A key `--conf` gives for this run
+/// (`overridden`) is refused, so the tool and its export keep the store's value. Export's
+/// alone keeps settings yet: another utility's change is a bug, dropped.
+fn utility_setting(
+    tool: &str,
+    key: &str,
+    value: &ControlValue,
+    export: &mut export::Export,
+    shell: &mut export::Values,
+    overridden: impl Fn(&str) -> bool,
+) {
+    if tool != export::ID {
+        debug_assert!(false, "{tool} keeps no setting of its own yet: {key}");
+        tracing::warn!(target: "settings", "{tool}: {key} dropped, the utility keeps none");
+        return;
+    }
+    if overridden(key) {
+        tracing::debug!(target: "settings", "{key}: given by --conf for this run, kept as it is");
+        return;
+    }
+    export.set(key, value);
+    *shell = export.values().clone();
 }
 
 /// The Photos tab's sections under its tab bar: Browse, through its `UtilityTool`, its
@@ -6491,7 +6551,9 @@ fn photos_body(
         }
         actions.extend(section.actions);
         changes = section.changes;
-        let tool = ui.push_id(export::ID, |ui| export.show(ui, &shown.shown, cx));
+        let tool = ui.push_id(export::ID, |ui| {
+            export.show(ui, shown.head, &shown.shown, cx)
+        });
         // The section Export… asked for, its header at the top.
         if shown.reveal {
             ui.scroll_to_rect(tool.response.rect, Some(egui::Align::TOP));
@@ -12405,8 +12467,11 @@ mod tests {
                             // As `App::side_panel` draws it: Browse, then the Export tool.
                             let revealed = bench.shell.revealing();
                             let shown = ExportShown {
-                                shown: export::Shown {
+                                head: tools::Head {
                                     open: bench.shell.section_open(export::ID, export::OPEN),
+                                    ..tools::Head::default()
+                                },
+                                shown: export::Shown {
                                     global: export::GLOBAL_OPEN,
                                     summary: export::SUMMARY_OPEN,
                                     photo: if bench.photo {

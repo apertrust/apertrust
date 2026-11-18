@@ -71,6 +71,10 @@ impl Service for Recording {
 struct State {
     selected: usize,
     reported: Vec<ChoiceAction>,
+    /// An option drawn disabled, with its reason.
+    disabled: Option<(usize, &'static str)>,
+    /// Whether the whole row is enabled.
+    enabled: bool,
 }
 
 /// A choice row, with `service` installed.
@@ -84,8 +88,11 @@ fn row(service: Arc<Recording>) -> Harness<'static, State> {
         })
         .build_ui_state(
             |ui, state: &mut State| {
+                let disabled: Vec<(usize, &str)> = state.disabled.into_iter().collect();
                 let action = Choice::new("Illuminant", &OPTIONS, state.selected)
                     .name(ROW)
+                    .disabled_reasons(&disabled)
+                    .enabled(state.enabled)
                     .show(ui);
                 if let Some(action) = action {
                     if let ChoiceAction::Set(i) = action {
@@ -97,6 +104,8 @@ fn row(service: Arc<Recording>) -> Harness<'static, State> {
             State {
                 selected: 0,
                 reported: Vec::new(),
+                disabled: None,
+                enabled: true,
             },
         );
     harness.run();
@@ -144,6 +153,52 @@ fn a_service_takes_the_request_and_its_answer_arrives_on_a_later_frame() {
     popup::answered(&harness.ctx, *id, Answer::Chosen("2".to_owned()));
     harness.run();
     assert_eq!(harness.state().selected, 1);
+}
+
+#[test]
+fn an_option_disabled_while_the_list_is_open_is_never_taken() {
+    let service = Recording::new(true);
+    let mut harness = row(service.clone());
+    harness.get_by_role_and_label(Role::ComboBox, ROW).click();
+    harness.run();
+    let (id, request) = service.opened()[0].clone();
+    assert!(request.entries.len() > 1, "the list offers a second option");
+    // The second option turns disabled after the list opened, then the answer names it.
+    harness.state_mut().disabled = Some((1, "Not for this photo"));
+    harness.run();
+    popup::answered(&harness.ctx, id, Answer::Chosen("1".to_owned()));
+    // One frame: the one the answer is delivered in, so an answer left unread is still
+    // there to see.
+    harness.step();
+    assert!(harness.state().reported.is_empty());
+    assert_eq!(harness.state().selected, 0);
+    assert!(
+        popup::answer(&harness.ctx, id).is_none(),
+        "the answer is consumed"
+    );
+}
+
+#[test]
+fn an_answer_for_a_row_disabled_while_its_list_is_open_is_never_taken() {
+    let service = Recording::new(true);
+    let mut harness = row(service.clone());
+    harness.get_by_role_and_label(Role::ComboBox, ROW).click();
+    harness.run();
+    let (id, _) = service.opened()[0].clone();
+    // The whole row turns disabled after the list opened, then the answer arrives.
+    harness.state_mut().enabled = false;
+    harness.run();
+    popup::answered(&harness.ctx, id, Answer::Chosen("1".to_owned()));
+    // One frame: the one the answer is delivered in, so an answer left unread is still
+    // there to see.
+    harness.step();
+    assert!(harness.state().reported.is_empty());
+    assert_eq!(harness.state().selected, 0);
+    assert!(!popup::is_open(&harness.ctx, id), "the list is closed");
+    assert!(
+        popup::answer(&harness.ctx, id).is_none(),
+        "the answer is consumed"
+    );
 }
 
 #[test]

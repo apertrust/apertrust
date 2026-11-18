@@ -111,6 +111,8 @@ pub struct Choice<'a> {
     enabled: bool,
     /// Options that cannot be chosen, by index, and their tooltip.
     disabled_options: (&'a [usize], &'a str),
+    /// Options that cannot be chosen, each with its own reason.
+    disabled_reasons: &'a [(usize, &'a str)],
     /// Each option's own tooltip in the list, by index; none for those past its end.
     option_tips: &'a [&'a str],
     /// An option the photo does not list, by index, and what it says of it.
@@ -140,6 +142,7 @@ impl<'a> Choice<'a> {
             quad: None,
             enabled: true,
             disabled_options: (&[], ""),
+            disabled_reasons: &[],
             option_tips: &[],
             unlisted: None,
             separator: None,
@@ -196,6 +199,14 @@ impl<'a> Choice<'a> {
         self
     }
 
+    /// Options that cannot be chosen, by index, each with its own reason, translated, as
+    /// its tooltip: listed disabled as [`Self::disabled_options`]' are, which keep theirs
+    /// where an option is in both.
+    pub fn disabled_reasons(mut self, reasons: &'a [(usize, &'a str)]) -> Self {
+        self.disabled_reasons = reasons;
+        self
+    }
+
     /// What each option does, translated, by index: its tooltip in the list, as Exposure's
     /// Picker target says what a pick makes of the area for each (decision 88). An option
     /// disabled or unlisted has its reason as its tooltip instead, and one past the end of
@@ -248,6 +259,13 @@ impl<'a> Choice<'a> {
     /// checked, the others the photo cannot use or the tool does not port disabled, with
     /// their tooltips, the rest with their own where given, and a separator where the row
     /// has one.
+    /// Whether option `i` is drawn disabled: unlisted, disabled or given a reason.
+    fn disabled_now(&self, i: usize) -> bool {
+        self.unlisted.is_some_and(|(unlisted, _)| unlisted == i)
+            || self.disabled_options.0.contains(&i)
+            || self.disabled_reasons.iter().any(|(at, _)| *at == i)
+    }
+
     fn list(&self, anchor: Rect) -> Request {
         let (disabled, disabled_tip) = self.disabled_options;
         let items = self
@@ -260,6 +278,9 @@ impl<'a> Choice<'a> {
                     item.enabled(false).tip(tip)
                 } else if disabled.contains(&i) {
                     item.enabled(false).tip(disabled_tip)
+                } else if let Some((_, why)) = self.disabled_reasons.iter().find(|(at, _)| *at == i)
+                {
+                    item.enabled(false).tip(*why)
                 } else if let Some(tip) = self.option_tips.get(i) {
                     item.tip(*tip)
                 } else {
@@ -510,9 +531,14 @@ impl<'a> Choice<'a> {
         if popup::is_open(ui.ctx(), list) {
             popup::show(ui.ctx());
         }
+        // An option disabled since the list opened, or the whole row, is refused: the answer
+        // is consumed and nothing is set.
         if let Some(Answer::Chosen(chosen)) = popup::answer(ui.ctx(), list)
             && let Ok(i) = chosen.parse::<usize>()
             && self.selected != Some(i)
+            && self.enabled
+            && ui.is_enabled()
+            && !self.disabled_now(i)
         {
             action = Some(ChoiceAction::Set(i));
         }

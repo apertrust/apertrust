@@ -304,12 +304,16 @@ const MAPPING: Row = Row::Group {
             },
             decimals: 0,
             track: Track::Plain,
+            key: None,
+            words: None,
         }),
         Row::Setting(SettingRow {
             id: "channel_mixing",
             kind: ControlKind::Bool { default: true },
             decimals: 0,
             track: Track::Plain,
+            key: None,
+            words: None,
         }),
         Row::Label { id: "target" },
         Row::Setting(SettingRow {
@@ -322,6 +326,8 @@ const MAPPING: Row = Row::Group {
             },
             decimals: 1,
             track: Track::Plain,
+            key: None,
+            words: None,
         }),
         Row::Setting(SettingRow {
             id: "target_hue",
@@ -333,6 +339,8 @@ const MAPPING: Row = Row::Group {
             },
             decimals: 1,
             track: Track::Plain,
+            key: None,
+            words: None,
         }),
         Row::Setting(SettingRow {
             id: "target_chroma",
@@ -344,6 +352,8 @@ const MAPPING: Row = Row::Group {
             },
             decimals: 1,
             track: Track::Plain,
+            key: None,
+            words: None,
         }),
     ],
 };
@@ -482,6 +492,8 @@ static CHECKER: [Row; 1] = [Row::Group {
             },
             decimals: 0,
             track: Track::Plain,
+            key: None,
+            words: None,
         }),
         Row::Setting(SettingRow {
             id: "optimise_for",
@@ -492,6 +504,8 @@ static CHECKER: [Row; 1] = [Row::Group {
             },
             decimals: 0,
             track: Track::Plain,
+            key: None,
+            words: None,
         }),
         Row::Setting(SettingRow {
             id: "patch_scale",
@@ -503,6 +517,8 @@ static CHECKER: [Row; 1] = [Row::Group {
             },
             decimals: 3,
             track: Track::Plain,
+            key: None,
+            words: None,
         }),
     ],
 }];

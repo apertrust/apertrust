@@ -75,7 +75,7 @@ use apertrust_tools::utility;
 use apertrust_tools::{
     Button, ButtonIcon, ChoiceStyle, Computed, ControlKind, Controls, MAX_POINTS, PickerKind,
     ProcessingDefinition, ProcessingTool, Quad, Reset, Row, SettingRow, Slider, ToolDefinition,
-    Track, Unit, View, Widget, check, messages,
+    Track, Unit, View, Widget, Word, check, messages,
 };
 use apertrust_ui::components::{
     self as parts, ActionRow, ButtonState, ButtonsAction, ButtonsRow, Choice, ChoiceAction,
@@ -212,7 +212,8 @@ pub enum Pressed {
 /// processing tool's are an editing tool's three (`Section::edits`), its presets drawn
 /// disabled until presets come; a utility's ↺ is named `reset_name`, and its presets button,
 /// where it has one, is named by the first of `presets` and drawn disabled, its tooltip the
-/// second, until its presets are built (decision 93, step 93.6). ↺ is drawn disabled unless
+/// second, until its presets come with the presets API every tool shares (decision 93;
+/// planned). ↺ is drawn disabled unless
 /// `resettable`. Its tooltip says `about`, where the tool says anything.
 pub fn header<'a>(
     tool: &ToolDefinition,
@@ -1034,6 +1035,68 @@ pub trait Rows {
 
     /// Draws `row`, one of the rows its kind draws.
     fn own(&self, ui: &mut egui::Ui, row: &Row, changes: &mut Vec<Change>);
+
+    /// The title of its group label `id`, or of its collapsible group's where
+    /// `collapsible`: the one its id implies, unless a utility declares its own
+    /// (decision 93).
+    fn title(&self, id: &str, collapsible: bool) -> String {
+        let tool = self.definition().id;
+        self.words().text(&if collapsible {
+            messages::collapsible(tool, id)
+        } else {
+            messages::group(tool, id)
+        })
+    }
+
+    /// The value its setting row `row` shows, and whether it can be changed: the tools'
+    /// settings as the app keeps them, one `--conf` gives keeping its value for the run,
+    /// its row disabled as the Settings dialog draws an overridden row (decision 43); none
+    /// for a setting not kept yet, drawn disabled at its default.
+    fn setting(&self, row: &SettingRow) -> Option<(ControlValue, bool)> {
+        tool_setting(self.settings(), self.definition().id, row)
+    }
+
+    /// The options of its choice setting `row` that cannot be chosen now, by index, and
+    /// why: a utility's, as Export's Overwrite where the platform cannot ask first
+    /// (decision 93).
+    fn disabled(&self, _row: &SettingRow) -> Option<(Vec<usize>, String)> {
+        None
+    }
+
+    /// What `row`'s tooltip says now in place of its promise, and its description: a
+    /// utility's, as Export's Set size from the session's preview (decision 93).
+    fn tip(&self, _row: &Row) -> Option<String> {
+        None
+    }
+
+    /// The note under `row`, as a utility gives the problem that stops its work under the
+    /// row it is about (decision 93).
+    fn note(&self, _row: &Row) -> Option<Note> {
+        None
+    }
+
+    /// The fix of the note under `row` was pressed.
+    fn fixed(&self, _row: &Row) {}
+}
+
+/// `tool`'s setting row `row` as `settings` keep it, and whether it can be changed: one
+/// `--conf` gives keeps its value for the run, its row disabled ([`Rows::setting`]).
+pub(crate) fn tool_setting(
+    settings: &ToolSettings,
+    tool: &str,
+    row: &SettingRow,
+) -> Option<(ControlValue, bool)> {
+    let kept = settings.get(tool, row.id)?;
+    Some((kept.clone(), !settings.overridden(tool, row.id)))
+}
+
+/// A note under a row, which a utility gives (decision 93): a problem that stops its
+/// work, in `error`, the one line a row keeps, and the button of the fix it offers, by its
+/// words, where it offers one, as Export's "Use $(FILE_NAME)" under its path.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Note {
+    pub text: String,
+    pub fix: Option<String>,
 }
 
 /// The one page drawer (decision 93): draws the page of `rows`' tool, the rows before its
@@ -1193,8 +1256,9 @@ impl Rows for Page<'_> {
 }
 
 /// Whether rows following the setting `setting` of `rows`' tool show: whether the option
-/// it holds, as the app keeps it, else its default, is one of `is` (`Row::WhenSetting`).
-fn follows_setting(rows: &dyn Rows, setting: &str, is: &[&str]) -> bool {
+/// it holds, as the page shows it ([`Rows::setting`]), else its default, is one of `is`
+/// (`Row::WhenSetting`).
+pub(crate) fn follows_setting(rows: &dyn Rows, setting: &str, is: &[&str]) -> bool {
     let definition = rows.definition();
     let Some(row) = definition.setting(setting) else {
         return false;
@@ -1202,7 +1266,7 @@ fn follows_setting(rows: &dyn Rows, setting: &str, is: &[&str]) -> bool {
     let ControlKind::Choice { options, .. } = row.kind else {
         return false;
     };
-    let kept = rows.settings().get(definition.id, setting).cloned();
+    let kept = rows.setting(row).map(|(value, _)| value);
     match kept.unwrap_or_else(|| row.default()) {
         ControlValue::Choice(at) => options
             .get(at as usize)
@@ -1242,13 +1306,32 @@ fn draw_row(ui: &mut egui::Ui, rows: &dyn Rows, row: &Row, changes: &mut Vec<Cha
             top..=bottom,
         ));
     }
+    if let Some(note) = rows.note(row) {
+        note_row(ui, rows, row, &note);
+    }
+}
+
+/// The note under `row` (decision 93): its text in `error`, in the small text, wrapped,
+/// and the button of its fix, which tells the page when it is pressed.
+fn note_row(ui: &mut egui::Ui, rows: &dyn Rows, row: &Row, note: &Note) {
+    let t = apertrust_ui::theme(ui.ctx());
+    let text = egui::RichText::new(&note.text)
+        .size(t.text.small)
+        .color(t.colors.error);
+    ui.add(egui::Label::new(text).wrap());
+    if let Some(fix) = &note.fix
+        && parts::Button::new(fix).show(ui).clicked()
+    {
+        rows.fixed(row);
+    }
 }
 
 /// Draws `row`: the rows any tool may hold here, the others by `rows`' kind.
 fn draw_kind(ui: &mut egui::Ui, rows: &dyn Rows, row: &Row, changes: &mut Vec<Change>) {
-    let (words, tool) = (rows.words(), rows.definition().id);
+    let words = rows.words();
+    let tool = rows.definition().id;
     match row {
-        Row::Label { id } => group_label(ui, &words.text(&messages::group(tool, id))),
+        Row::Label { id } => group_label(ui, &rows.title(id, false)),
         Row::Group { id, rows: inside } => group_row(ui, rows, id, inside, changes),
         Row::When {
             control,
@@ -1516,10 +1599,15 @@ fn preset_row(ui: &mut egui::Ui, page: &Page, id: &'static str, changes: &mut Ve
     }
 }
 
-/// One of darktable's own settings for a tool: no control, so nothing an edit stores.
-/// One the app keeps in settings is drawn live with its value there, a change reported as
-/// [`Change::Setting`]; any other, the colour checker's chart, is drawn disabled at
-/// darktable's default until what uses it is built.
+/// One of darktable's own settings for a tool, or a utility's: no control, so nothing an
+/// edit stores. One the app keeps in settings is drawn live with its value there, a change
+/// reported as [`Change::Setting`] by its key in full where it names one, else by its id;
+/// any other, the colour checker's chart, is drawn disabled at darktable's default until
+/// what uses it is built. Its words are its own where it declares them (decision 93); a
+/// tooltip the page supplies, as a utility's from the session, replaces its promise and
+/// is its description too; options the page says cannot be chosen now are drawn disabled
+/// with the page's reason; and a boolean whose words name No and Yes is darktable's choice
+/// of the two (decision 90).
 fn setting_row(
     ui: &mut egui::Ui,
     page: &dyn Rows,
@@ -1527,20 +1615,49 @@ fn setting_row(
     changes: &mut Vec<Change>,
 ) {
     let (words, tool) = (page.words(), page.definition().id);
-    let [label, full, promise] = messages::setting(tool, setting.id).map(|id| words.text(&id));
-    let kept = page.settings().get(tool, setting.id);
-    // One `--conf` gives keeps its value for the run, its row disabled as the Settings
-    // dialog draws an overridden row (decision 43).
-    let live = kept.is_some() && !page.settings().overridden(tool, setting.id);
-    let value = kept.cloned().unwrap_or_else(|| setting.default());
+    let [label, full, promise] =
+        messages::setting_row(tool, setting).map(|id| id.map(|id| words.text(&id)));
+    let (label, full) = (label.unwrap_or_default(), full.unwrap_or_default());
+    // The page's tooltip for it, its description too, else its promise.
+    let tip = page.tip(&Row::Setting(*setting));
+    let promise = tip.clone().or(promise);
+    let (value, live) = page
+        .setting(setting)
+        .unwrap_or_else(|| (setting.default(), false));
+    let id = setting.key.unwrap_or(setting.id);
     let mut set = |value: ControlValue, done: bool| {
         changes.push(Change::Setting {
             tool,
-            setting: setting.id,
+            setting: id,
             value,
             done,
         });
     };
+    let options: Vec<String> = messages::setting_row_options(tool, setting)
+        .into_iter()
+        .map(|word| match word {
+            Word::Message(id) => words.text(&id),
+            Word::Name(name) => name,
+        })
+        .collect();
+    let options: Vec<&str> = options.iter().map(String::as_str).collect();
+    // A boolean drawn as darktable's choice of No and Yes, false the first.
+    if let (true, ControlValue::Bool(on)) = (setting.no_or_yes(), &value) {
+        let mut row = Choice::new(&label, &options, usize::from(*on))
+            .name(&full)
+            .style(parts::ChoiceStyle::Blended)
+            .enabled(live);
+        if let Some(promise) = &promise {
+            row = row.promise(promise);
+        }
+        if let Some(tip) = &tip {
+            row = row.description(tip);
+        }
+        if let Some(ChoiceAction::Set(chosen)) = row.show(ui) {
+            set(ControlValue::Bool(chosen == 1), true);
+        }
+        return;
+    }
     match (setting.kind, value) {
         (
             ControlKind::Number {
@@ -1553,11 +1670,13 @@ fn setting_row(
         ) => {
             let mut row = SliderRow::new(&label, widen(value), widen(min)..=widen(max))
                 .name(&full)
-                .promise(&promise)
                 .default_value(widen(default))
                 .step(widen(step))
                 .decimals(usize::from(setting.decimals))
                 .enabled(live);
+            if let Some(promise) = &promise {
+                row = row.promise(promise);
+            }
             // The unit the settings schema declares for it, as a control's.
             let declared = apertrust_tools::settings::setting(tool, setting.id);
             let unit = declared.and_then(|declared| match declared.kind() {
@@ -1579,20 +1698,16 @@ fn setting_row(
         }
         (
             ControlKind::Choice {
-                options, unported, ..
+                options: ids,
+                unported,
+                ..
             },
             ControlValue::Choice(chosen),
         ) => {
-            let names: Vec<String> = options
-                .iter()
-                .map(|option| words.text(&messages::setting_option(tool, setting.id, option)))
-                .collect();
-            let names: Vec<&str> = names.iter().map(String::as_str).collect();
             // What each option makes a picker do, where a picker's words follow the setting
             // (decision 88).
             let tips: Vec<String> = if page.words_by(setting.id) {
-                options
-                    .iter()
+                ids.iter()
                     .map(|o| words.text(&messages::setting_option_promise(tool, setting.id, o)))
                     .collect()
             } else {
@@ -1601,26 +1716,38 @@ fn setting_row(
             let tips: Vec<&str> = tips.iter().map(String::as_str).collect();
             // The closed row's tooltip is the chosen option's own where the options have
             // tips, else the setting's.
-            let closed = tips.get(chosen as usize).copied().unwrap_or(&promise);
-            // An option still to come is listed, as one darktable lists that is not ported.
-            let later: Vec<usize> = (options.iter().enumerate())
+            let closed = tips.get(chosen as usize).copied().or(promise.as_deref());
+            // An option still to come is listed, as one darktable lists that is not ported,
+            // and so is one the page says cannot be chosen now, each with its own reason.
+            let later_tip = words.text("choice-option-later");
+            let later: Vec<usize> = (ids.iter().enumerate())
                 .filter(|(_, option)| unported.contains(option))
                 .map(|(at, _)| at)
                 .collect();
-            let later_tip = words.text("choice-option-later");
-            let action = Choice::new(&label, &names, chosen as usize)
+            let now = page.disabled(setting);
+            let reasons: Vec<(usize, &str)> = now
+                .iter()
+                .flat_map(|(now, why)| now.iter().map(move |at| (*at, why.as_str())))
+                .collect();
+            let mut row = Choice::new(&label, &options, chosen as usize)
                 .name(&full)
-                .promise(closed)
                 .option_tips(&tips)
                 .disabled_options(&later, &later_tip)
+                .disabled_reasons(&reasons)
                 .style(parts::ChoiceStyle::Blended)
-                .enabled(live)
-                .show(ui);
-            if let Some(ChoiceAction::Set(chosen)) = action {
+                .enabled(live);
+            if let Some(closed) = closed {
+                row = row.promise(closed);
+            }
+            if let Some(tip) = &tip {
+                row = row.description(tip);
+            }
+            if let Some(ChoiceAction::Set(chosen)) = row.show(ui) {
                 set(ControlValue::Choice(chosen as u32), true);
             }
         }
         (ControlKind::Bool { .. }, ControlValue::Bool(on)) => {
+            let promise = promise.unwrap_or_default();
             let toggled = ToggleRow::new(&label, on)
                 .name(&full)
                 .promise(&promise)
@@ -1874,8 +2001,8 @@ fn colour(srgb: [f32; 3]) -> egui::Color32 {
 }
 
 /// A collapsible group: its title, closed or open as the app keeps it, and its rows while
-/// open. While closed with controls set, a dot says so, and its tooltip how many, as the
-/// wireframe's "Margins: 1 set".
+/// open. While closed with controls or settings set, a dot says so, and its tooltip how
+/// many, as the wireframe's "Margins: 1 set".
 fn group_row(
     ui: &mut egui::Ui,
     page: &dyn Rows,
@@ -1884,7 +2011,7 @@ fn group_row(
     changes: &mut Vec<Change>,
 ) {
     let tool = page.definition().id;
-    let title = page.words().text(&messages::collapsible(tool, id));
+    let title = page.title(id, true);
     // A group with no rows has nothing behind it yet: drawn disabled, as a tab with none.
     if rows.is_empty() {
         let later = page.words().text("section-tab-later");
