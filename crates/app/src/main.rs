@@ -1598,6 +1598,9 @@ struct Shell {
     /// The workspace settings keep, `workspace`, as read: one with no workspace stays
     /// until another is chosen.
     kept_workspace: String,
+    /// Whether `--conf` sets `workspace` for this run, so View › Workspace's items are
+    /// disabled, saying why, as the settings store refuses the change (decision 43).
+    workspace_given: bool,
     /// The tab shown, by its place among the workspace's.
     panel_tab: usize,
     tab_names: bool,
@@ -1737,6 +1740,7 @@ impl Shell {
             workspaces: layout::Workspaces::builtin(),
             workspace,
             kept_workspace: settings.workspace.clone(),
+            workspace_given: false,
             panel_tab,
             tab_names: settings.tab_names,
             panel_width: settings.panel_width,
@@ -1834,9 +1838,11 @@ impl Shell {
     }
 
     /// View › Workspace's items: each workspace's action with its name in the interface's
-    /// language, a built-in's its message, a person's own as its file names it.
+    /// language, a built-in's its message, a person's own as its file names it; where
+    /// `--conf` sets the workspace for this run, each says so, as a Settings row does.
     fn workspace_items(&self, ctx: &egui::Context) -> Vec<menus::WorkspaceItem> {
         let tr = translator(ctx);
+        let tip = self.workspace_given.then(|| utility::overridden(&tr));
         let listed = self.workspaces.listed().iter();
         listed
             .map(|listed| menus::WorkspaceItem {
@@ -1845,6 +1851,7 @@ impl Shell {
                     layout::Title::Message(message) => tr.text(&message),
                     layout::Title::Own(name) => name,
                 },
+                tip: tip.clone(),
             })
             .collect()
     }
@@ -2350,6 +2357,7 @@ impl Shell {
             full_screen: ctx.input(|i| i.viewport().fullscreen).unwrap_or(false),
             panel_tab: self.panel_tab,
             workspace: actions::workspace(&self.workspace.id),
+            workspace_given: self.workspace_given,
             browser: self.browser,
             // The app's, from the folder it shows ([`App::shell_state`]).
             shown: false,
@@ -2898,6 +2906,7 @@ impl App {
             ),
             recents,
             workspaces,
+            workspace_given: keeper.overridden(&settings::registry::WORKSPACE),
             ..Shell::new(&settings, system_locale(), cc.egui_ctx.os())
         };
         // On the tab last shown in it, which the recents' `state.toml` keeps.
@@ -11805,6 +11814,56 @@ mod tests {
                 ("workspace-portraits", "Portraits", Some(true)),
             ]
         );
+    }
+
+    /// Where `--conf` sets `workspace` for the run, it is shown, and no other can be chosen,
+    /// as the settings store refuses the change: View › Workspace's items are disabled,
+    /// each saying why, as a Settings row does, and choosing one changes nothing (decision
+    /// 43).
+    #[test]
+    fn a_workspace_given_by_conf_cannot_be_switched() {
+        let ctx = egui::Context::default();
+        ctx.set_os(OperatingSystem::Nix);
+        apertrust_ui::set_locale(&ctx, Locale::EnGb);
+        let folder = settings::testing::Folder::new("workspace-given");
+        let given = settings::overrides(&["workspace=essentials".to_owned()]).expect("read");
+        let (keeper, settings) = Keeper::open_with(folder.storage(), &given);
+        let mut shell = Shell {
+            workspace_given: keeper.overridden(&settings::registry::WORKSPACE),
+            ..Shell::new(&settings, Locale::EnGb, OperatingSystem::Nix)
+        };
+        let (workspace, _) = shell.workspaces.open(&settings.workspace);
+        shell.open_workspace(workspace);
+        assert_eq!(shell.workspace.id, layout::ESSENTIALS);
+        let state = shell.state(&ctx, false, false);
+        shell.run(actions::workspace(layout::DEFAULT), &state, &ctx, &[]);
+        assert_eq!(shell.workspace.id, layout::ESSENTIALS);
+        assert_eq!(shell.to_settings(&ctx).workspace, layout::ESSENTIALS);
+        let workspaces = shell.workspace_items(&ctx);
+        let lists = menus::Lists {
+            recents: &[],
+            workspaces: &workspaces,
+        };
+        let anchor = egui::Rect::NOTHING;
+        let menu = menus::request(&ctx, &shell.keymap, &state, lists, &shell.steps, anchor);
+        fn items(entries: &[popup::Entry]) -> Vec<&popup::Item> {
+            let each = entries.iter().flat_map(|entry| match entry {
+                popup::Entry::Item(item) => vec![item],
+                popup::Entry::Submenu(submenu) => items(&submenu.entries),
+                popup::Entry::Separator => Vec::new(),
+            });
+            each.collect()
+        }
+        let drawn = items(&menu.entries);
+        for id in ["workspace-default", "workspace-essentials"] {
+            let item = drawn.iter().find(|item| item.id == id).expect(id);
+            assert!(!item.enabled, "{id}");
+            assert_eq!(
+                item.tip.as_deref(),
+                Some("Set by --conf for this run"),
+                "{id}"
+            );
+        }
     }
 
     /// A folder opened joins the recents at the top, once; Collections' rows say why one

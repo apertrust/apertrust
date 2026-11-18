@@ -94,7 +94,7 @@ Apertrust never reorders the processing (principles, What we will not build; [00
 
 ## Consequences
 
-- [0038](0038-the-side-panels-tabs-by-editing-stage.md)'s lists are the workspaces' defaults; the tests holding Default's to that record stay on the defaults.
+- [0038](0038-the-side-panels-tabs-by-editing-stage.md)'s lists are the Default workspace's defaults and [0096](0096-workspaces-as-files-hidden-tools-and-finding-a-tool.md)'s Essentials' lists its; the tests holding each to its record stay on the defaults.
 - `crates/app`: `layout.rs` (the model, the workspace's file, resolving, the operations), the tabs drawn by section id through one dispatcher, `reveal`, `revealing`, Collections' tab and `scopes_wanted` from the layout, the floating areas, the actions and their messages in four languages.
 - `apertrust-ui`: `Section::draggable`, `PanelBody`'s drop targets, insertion line and auto-scroll, the tab bar's drop targets, the floating panel's frame; snapshots and kittest drags for each.
 - `data/settings.schema.toml`: the record kind and `tools_panel.floating`; the workspace's file is [0096](0096-workspaces-as-files-hidden-tools-and-finding-a-tool.md)'s.

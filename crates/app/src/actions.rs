@@ -363,6 +363,9 @@ pub struct State {
     pub panel_tab: usize,
     /// The workspace shown, by its action ([`workspace`]), whose item is shown checked.
     pub workspace: ActionId,
+    /// Whether `--conf` sets `workspace` for this run: no workspace can be chosen then, as
+    /// the settings store refuses the setting's change (decision 43).
+    pub workspace_given: bool,
     /// How the Browser shows the folder, whose items are shown checked.
     pub browser: crate::settings::BrowserSettings,
     /// Whether the Browser shows photos: its browser bar's items rest without any.
@@ -1380,7 +1383,8 @@ pub fn workspace_actions() -> Vec<&'static Action> {
 /// for each workspace's as it starts, as tools' actions are made (decision 96): the
 /// registry's `workspace-<id>`, no default keys, its words a built-in's message,
 /// `workspace-<id>`, and for a person's own, which View › Workspace names by its file, the
-/// submenu's, `menu-workspace`. It runs on the main window with no modal dialog over it.
+/// submenu's, `menu-workspace`. It runs on the main window with no modal dialog over it,
+/// unless `--conf` sets the workspace for this run.
 pub fn workspace(id: &str) -> ActionId {
     let wanted = format!("workspace-{id}");
     let mut made = workspaces_made();
@@ -1392,9 +1396,10 @@ pub fn workspace(id: &str) -> ActionId {
     action.id
 }
 
-/// Whether a workspace can be chosen: on the main window, with no modal dialog over it.
+/// Whether a workspace can be chosen: on the main window, with no modal dialog over it,
+/// unless `--conf` sets the workspace for this run.
 fn workspace_available(state: &State) -> bool {
-    on_main_window(state) && no_modal_dialog(state)
+    !state.workspace_given && on_main_window(state) && no_modal_dialog(state)
 }
 
 /// The workspace `id`'s action, made for the run.
@@ -2255,6 +2260,7 @@ pub(crate) mod tests {
             full_screen: false,
             panel_tab: 0,
             workspace: workspace(crate::layout::DEFAULT),
+            workspace_given: false,
             browser: crate::settings::BrowserSettings::default(),
             shown: true,
             background: Some(Background::Dark),
@@ -2441,6 +2447,10 @@ pub(crate) mod tests {
             state.modal = true;
             assert!(!action.enabled(&state));
             state.modal = false;
+            // `--conf` sets the workspace for the run: none can be chosen.
+            state.workspace_given = true;
+            assert!(!action.enabled(&state));
+            state.workspace_given = false;
         }
         let ids: Vec<&str> = workspace_actions().iter().map(|a| a.id.0).collect();
         assert_eq!(

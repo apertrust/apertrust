@@ -109,11 +109,13 @@ pub struct Recent {
 /// One of View › Workspace's items as the app hands it in: the workspace's action,
 /// `workspace-<id>` (`actions::workspace`), and its name, a built-in's message in the
 /// interface's language or a person's own workspace's name as its file writes it (decision
-/// 96). Whether it is checked is its action's ([`State::workspace`]).
+/// 96), with its tip, why it cannot be chosen where something says, which the drawn menu
+/// shows. Whether it is checked is its action's ([`State::workspace`]).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct WorkspaceItem {
     pub id: ActionId,
     pub words: String,
+    pub tip: Option<String>,
 }
 
 /// What the app hands in for the menus whose items it lists: Open Recent's recents and View
@@ -487,7 +489,8 @@ pub fn listed(
                 }
                 Entry::Workspaces => {
                     for workspace in lists.workspaces {
-                        items.push(item(workspace.id, workspace.words.clone(), None));
+                        let tip = workspace.tip.clone();
+                        items.push(item(workspace.id, workspace.words.clone(), tip));
                     }
                 }
                 Entry::Submenu(_) | Entry::System(_) => {}
@@ -1132,14 +1135,19 @@ mod mac {
         menu: &'static super::Menu,
         submenu: Submenu,
         shown: Option<Vec<Listed>>,
+        /// Its check items, each with whether it is checked now: muda toggles one as it is
+        /// chosen, before the app hears of it, so each update puts every check back, as
+        /// [`Placed`]'s are, a choice of the workspace shown changing nothing else.
+        checks: Vec<(CheckMenuItem, bool)>,
     }
 
     impl Listing {
         /// Puts `listed` in place of its items: the actions', the recents' and the
         /// workspaces' items, by their actions' ids, one with a check mark as a check
         /// item, and the lines. A key muda cannot set is left out.
-        fn fill(&self, listed: &[Listed]) -> muda::Result<()> {
+        fn fill(&mut self, listed: &[Listed]) -> muda::Result<()> {
             while self.submenu.remove_at(0).is_some() {}
+            self.checks.clear();
             for listed in listed {
                 match listed {
                     Listed::Item {
@@ -1157,6 +1165,7 @@ mod mac {
                                 item.set_key_accelerator(key)?;
                             }
                             self.submenu.append(&item)?;
+                            self.checks.push((item, *checked));
                         } else {
                             let item = MenuItem::with_id(id, words, enabled, None);
                             if key.is_some() {
@@ -1171,6 +1180,13 @@ mod mac {
                 }
             }
             Ok(())
+        }
+
+        /// Puts each check item's mark back as last filled, whatever a choice of it did.
+        fn recheck(&self) {
+            for (item, checked) in &self.checks {
+                item.set_checked(*checked);
+            }
         }
     }
 
@@ -1238,6 +1254,7 @@ mod mac {
                     menu,
                     submenu: submenu.clone(),
                     shown: None,
+                    checks: Vec::new(),
                 });
                 self.titles
                     .push((menu.title, Titled::Menu(submenu.clone())));
@@ -1361,6 +1378,7 @@ mod mac {
             for listing in &mut self.listing {
                 let now = listed(listing.menu, mac, keymap, state, lists, &tr, focus);
                 if listing.shown.as_ref() == Some(&now) {
+                    listing.recheck();
                     continue;
                 }
                 if let Err(e) = listing.fill(&now)
@@ -1609,6 +1627,7 @@ mod tests {
             full_screen: false,
             panel_tab: 0,
             workspace: actions::workspace(crate::layout::DEFAULT),
+            workspace_given: false,
             browser: crate::settings::BrowserSettings::default(),
             shown: true,
             background: Some(apertrust_ui::Background::Dark),
@@ -1915,6 +1934,7 @@ mod tests {
         workspaces.push(WorkspaceItem {
             id: travel,
             words: "Travel".to_owned(),
+            tip: None,
         });
         let mut state = everything();
         state.workspace = travel;
@@ -2389,6 +2409,7 @@ mod tests {
             .map(|id| WorkspaceItem {
                 id: actions::workspace(id),
                 words: en.text(&format!("workspace-{id}")),
+                tip: None,
             })
             .collect()
     }
