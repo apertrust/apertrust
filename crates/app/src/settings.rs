@@ -214,7 +214,7 @@ pub struct Settings {
     /// What the Scopes section shows, and which clipping overlays the photo shows.
     pub scopes: ScopeView,
     /// How the Browser shows the folder's photos.
-    pub grid: Grid,
+    pub browser: BrowserSettings,
     /// The keys that differ from the defaults, by action id, in `Shortcut::text`'s form,
     /// with what the keymap could not use as it was read; an empty list leaves an action
     /// without a key.
@@ -261,7 +261,7 @@ impl Default for Settings {
                 shadow_clipping: SCOPES_SHADOW_CLIPPING.default(),
                 highlight_clipping: SCOPES_HIGHLIGHT_CLIPPING.default(),
             },
-            grid: Grid::default(),
+            browser: BrowserSettings::default(),
             keys: BTreeMap::new(),
             export: Values::default(),
             tool_settings: ToolSettings::default(),
@@ -335,7 +335,7 @@ impl Settings {
                 shadow_clipping: store.get(&SCOPES_SHADOW_CLIPPING),
                 highlight_clipping: store.get(&SCOPES_HIGHLIGHT_CLIPPING),
             },
-            grid: Grid {
+            browser: BrowserSettings {
                 sort: Sort {
                     key: store.get(&BROWSER_SORT),
                     descending: store.get(&BROWSER_DESCENDING),
@@ -458,30 +458,30 @@ impl Settings {
         if view.highlight_clipping != before.highlight_clipping {
             store.set(&SCOPES_HIGHLIGHT_CLIPPING, view.highlight_clipping);
         }
-        let (grid, before) = (s.grid, was.grid);
-        if grid.sort.key != before.sort.key {
-            store.set(&BROWSER_SORT, grid.sort.key);
+        let (browser, before) = (s.browser, was.browser);
+        if browser.sort.key != before.sort.key {
+            store.set(&BROWSER_SORT, browser.sort.key);
         }
-        if grid.sort.descending != before.sort.descending {
-            store.set(&BROWSER_DESCENDING, grid.sort.descending);
+        if browser.sort.descending != before.sort.descending {
+            store.set(&BROWSER_DESCENDING, browser.sort.descending);
         }
-        if grid.thumbnails != before.thumbnails {
-            store.set(&BROWSER_THUMBNAILS, grid.thumbnails);
+        if browser.thumbnails != before.thumbnails {
+            store.set(&BROWSER_THUMBNAILS, browser.thumbnails);
         }
-        if grid.rows != before.rows {
-            store.set(&BROWSER_ROWS, grid.rows as f32);
+        if browser.rows != before.rows {
+            store.set(&BROWSER_ROWS, browser.rows as f32);
         }
-        if grid.position != before.position {
-            store.set(&BROWSER_POSITION, grid.position);
+        if browser.position != before.position {
+            store.set(&BROWSER_POSITION, browser.position);
         }
-        if grid.columns != before.columns {
-            store.set(&BROWSER_COLUMNS, grid.columns as f32);
+        if browser.columns != before.columns {
+            store.set(&BROWSER_COLUMNS, browser.columns as f32);
         }
-        if grid.labels != before.labels {
-            store.set(&BROWSER_LABELS, grid.labels);
+        if browser.labels != before.labels {
+            store.set(&BROWSER_LABELS, browser.labels);
         }
-        if grid.square_thumbnails != before.square_thumbnails {
-            store.set(&BROWSER_SQUARE_THUMBNAILS, grid.square_thumbnails);
+        if browser.square_thumbnails != before.square_thumbnails {
+            store.set(&BROWSER_SQUARE_THUMBNAILS, browser.square_thumbnails);
         }
         if s.keys != was.keys {
             store.set(&KEYS, s.keys.clone());
@@ -917,7 +917,7 @@ impl Default for Viewer {
 /// How the Browser shows the folder's photos (`[browser]`, `docs/gui.md`, The
 /// Browser and The browser bar).
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Grid {
+pub struct BrowserSettings {
     /// The order the photos are shown in.
     pub sort: Sort,
     /// The thumbnails' size.
@@ -934,7 +934,7 @@ pub struct Grid {
     pub square_thumbnails: bool,
 }
 
-impl Grid {
+impl BrowserSettings {
     /// Whether `chosen` is what it holds, which the menus show checked.
     pub fn holds(&self, chosen: BrowserBarAction) -> bool {
         match chosen {
@@ -976,9 +976,9 @@ impl Grid {
     }
 }
 
-impl Default for Grid {
+impl Default for BrowserSettings {
     fn default() -> Self {
-        Grid {
+        BrowserSettings {
             sort: Sort {
                 key: BROWSER_SORT.default(),
                 descending: BROWSER_DESCENDING.default(),
@@ -1366,7 +1366,7 @@ mod tests {
                 shadow_clipping: true,
                 highlight_clipping: true,
             },
-            grid: Grid {
+            browser: BrowserSettings {
                 sort: Sort {
                     key: SortKey::FileName,
                     descending: true,
@@ -1505,7 +1505,7 @@ mod tests {
                     groups: BTreeMap::new(),
                 },
                 scopes: ScopeView::default(),
-                grid: Grid {
+                browser: BrowserSettings {
                     sort: Sort {
                         key: SortKey::CaptureTime,
                         descending: false,
@@ -1789,8 +1789,8 @@ width = 480
             }
         );
         assert_eq!(
-            read.grid,
-            Grid {
+            read.browser,
+            BrowserSettings {
                 sort: Sort {
                     key: SortKey::FileName,
                     descending: true,

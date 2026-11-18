@@ -265,7 +265,7 @@ pub enum Intent {
     Peek,
     /// The Browser's sort, its direction, the thumbnails' size or where the panel is, as
     /// the browser bar's menus choose them, or its Labels turned on or off.
-    Grid(BrowserBarAction),
+    BrowserBar(BrowserBarAction),
     /// The background behind the photo (`docs/gui.md`, The background).
     Background(Background),
     /// A tool's own action, run as pressing its button does ([`tool_actions`]).
@@ -349,7 +349,7 @@ pub struct State {
     /// The Tools panel's tab shown, by position, whose item is shown checked.
     pub panel_tab: usize,
     /// How the Browser shows the folder, whose items are shown checked.
-    pub grid: crate::settings::Grid,
+    pub browser: crate::settings::BrowserSettings,
     /// Whether the Browser shows photos: its browser bar's items rest without any.
     pub shown: bool,
     /// The background behind the photo, whose item is shown checked; None for a theme's
@@ -463,7 +463,7 @@ impl Action {
         match self.emits {
             Emit::Intent(Intent::FullScreen) => Some(state.full_screen),
             Emit::Intent(Intent::PanelTab(tab)) => Some(state.panel_tab == tab),
-            Emit::Intent(Intent::Grid(chosen)) => Some(state.grid.holds(chosen)),
+            Emit::Intent(Intent::BrowserBar(chosen)) => Some(state.browser.holds(chosen)),
             Emit::Intent(Intent::Background(b)) => Some(state.background == Some(b)),
             _ => None,
         }
@@ -536,7 +536,7 @@ fn browser_anywhere(state: &State) -> bool {
 
 /// The browser bar's choice `chosen` as an action, which can run where `available` says: no
 /// keys by default, its words the action's own message, `action-<id>`.
-const fn grid(
+const fn browser_bar(
     id: ActionId,
     message: &'static str,
     chosen: BrowserBarAction,
@@ -549,7 +549,7 @@ const fn grid(
         scope: Scope::App,
         trigger: Trigger::Press,
         available,
-        emits: Emit::Intent(Intent::Grid(chosen)),
+        emits: Emit::Intent(Intent::BrowserBar(chosen)),
     }
 }
 
@@ -1085,19 +1085,19 @@ pub static ACTIONS: [Action; 77] = [
     // The browser bar's menus and View's Sort By and Thumbnail Size (`docs/gui.md`, The
     // browser bar); no keys by default, so + and − stay free. Rating comes with the
     // ratings.
-    grid(
+    browser_bar(
         ActionId::SORT[0],
         "action-sort-capture-time",
         BrowserBarAction::Sort(SortKey::CaptureTime),
         browser_shown,
     ),
-    grid(
+    browser_bar(
         ActionId::SORT[1],
         "action-sort-file-name",
         BrowserBarAction::Sort(SortKey::FileName),
         browser_shown,
     ),
-    grid(
+    browser_bar(
         ActionId::SORT[2],
         "action-sort-edited",
         BrowserBarAction::Sort(SortKey::Edited),
@@ -1112,44 +1112,44 @@ pub static ACTIONS: [Action; 77] = [
         available: never,
         emits: Emit::Later,
     },
-    grid(
+    browser_bar(
         ActionId::SORT_ASCENDING,
         "action-sort-ascending",
         BrowserBarAction::Descending(false),
         browser_shown,
     ),
-    grid(
+    browser_bar(
         ActionId::SORT_DESCENDING,
         "action-sort-descending",
         BrowserBarAction::Descending(true),
         browser_shown,
     ),
-    grid(
+    browser_bar(
         ActionId::THUMBNAILS[0],
         "action-thumbnails-small",
         BrowserBarAction::Size(ThumbnailSize::Small),
         browser_shown,
     ),
-    grid(
+    browser_bar(
         ActionId::THUMBNAILS[1],
         "action-thumbnails-medium",
         BrowserBarAction::Size(ThumbnailSize::Medium),
         browser_shown,
     ),
-    grid(
+    browser_bar(
         ActionId::THUMBNAILS[2],
         "action-thumbnails-large",
         BrowserBarAction::Size(ThumbnailSize::Large),
         browser_shown,
     ),
-    grid(
+    browser_bar(
         ActionId::THUMBNAILS[3],
         "action-thumbnails-extra-large",
         BrowserBarAction::Size(ThumbnailSize::ExtraLarge),
         browser_shown,
     ),
     // The browser bar's Labels, a toggle shown checked while the captions show.
-    grid(
+    browser_bar(
         ActionId::SHOW_LABELS,
         "action-show-labels",
         BrowserBarAction::Labels,
@@ -1157,19 +1157,19 @@ pub static ACTIONS: [Action; 77] = [
     ),
     // Where the Browser goes, in every state: the browser bar's options menu opens with
     // nothing shown too.
-    grid(
+    browser_bar(
         ActionId::BROWSER_POSITION[0],
         "action-browser-position-left",
         BrowserBarAction::Position(BrowserPosition::Left),
         browser_anywhere,
     ),
-    grid(
+    browser_bar(
         ActionId::BROWSER_POSITION[1],
         "action-browser-position-right",
         BrowserBarAction::Position(BrowserPosition::Right),
         browser_anywhere,
     ),
-    grid(
+    browser_bar(
         ActionId::BROWSER_POSITION[2],
         "action-browser-position-bottom",
         BrowserBarAction::Position(BrowserPosition::Bottom),
@@ -2119,7 +2119,7 @@ pub(crate) mod tests {
             dialog_window: false,
             full_screen: false,
             panel_tab: 0,
-            grid: crate::settings::Grid::default(),
+            browser: crate::settings::BrowserSettings::default(),
             shown: true,
             background: Some(Background::Dark),
         }

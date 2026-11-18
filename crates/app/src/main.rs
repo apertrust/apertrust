@@ -1800,7 +1800,7 @@ struct Shell {
     /// What the Scopes section shows, as the user left it.
     scopes: ScopeView,
     /// How the Browser shows the folder: its sort and its thumbnails' size.
-    grid: settings::Grid,
+    browser: settings::BrowserSettings,
     /// The window's placement as it last stood while neither maximised nor full screen.
     window: settings::Window,
     /// Where Settings' own window was last left, on the Mac.
@@ -1893,7 +1893,7 @@ impl Shell {
             peeked_on: None,
             groups: settings.edit.groups.clone(),
             scopes: settings.scopes,
-            grid: settings.grid,
+            browser: settings.browser,
             window: settings.window,
             settings_window: settings.settings_window,
             jobs_window: settings.jobs_window,
@@ -1927,7 +1927,7 @@ impl Shell {
                 groups: self.groups.clone(),
             },
             scopes: self.scopes,
-            grid: self.grid,
+            browser: self.browser,
             keys: self.keymap.overrides().clone(),
             export: self.export.clone(),
             tool_settings: self.tool_settings.clone(),
@@ -2304,15 +2304,15 @@ impl Shell {
     /// the user dragged it to where it is, as many as fit in half the window's height at
     /// the bottom or half its width at a side (`docs/gui.md`, Its size).
     fn browser_edge(&self, ctx: &egui::Context, window: egui::Vec2) -> BrowserEdge {
-        let (size, position) = (self.grid.thumbnails, self.grid.position);
+        let (size, position) = (self.browser.thumbnails, self.browser.position);
         let room = if position.is_column() {
             window.x
         } else {
             window.y
         };
-        let labels = self.grid.labels;
+        let labels = self.browser.labels;
         let most = browser_lines(ctx, position, size, labels, room / 2.0);
-        BrowserEdge::new(self.grid.lines(), most, size)
+        BrowserEdge::new(self.browser.lines(), most, size)
             .labels(labels)
             .position(position)
     }
@@ -2322,19 +2322,19 @@ impl Shell {
     /// lines its edge gives this frame, a drag in progress included. With it, the edge, to
     /// show after the Viewer, and those lines.
     fn browser_frame(&self, ctx: &egui::Context) -> (egui::Panel, BrowserEdge, usize) {
-        let grid = self.grid;
+        let browser = self.browser;
         let edge = self.browser_edge(ctx, ctx.content_rect().size());
         let lines = edge.lines(ctx);
-        let panel = match grid.position {
+        let panel = match browser.position {
             BrowserPosition::Bottom => egui::Panel::bottom("browser"),
             BrowserPosition::Left => egui::Panel::left("browser"),
             BrowserPosition::Right => egui::Panel::right("browser"),
         }
         .exact_size(browser_thickness(
             ctx,
-            grid.position,
-            grid.thumbnails,
-            grid.labels,
+            browser.position,
+            browser.thumbnails,
+            browser.labels,
             lines,
         ))
         .resizable(false)
@@ -2345,7 +2345,7 @@ impl Shell {
 
     /// Keeps the rows or columns the Browser's edge was dragged to, or goes back to one.
     fn resize_browser(&mut self, action: BrowserEdgeAction) {
-        self.grid.keep_lines(match action {
+        self.browser.keep_lines(match action {
             BrowserEdgeAction::Resize(lines) => lines,
             BrowserEdgeAction::Reset => 1,
         });
@@ -2397,7 +2397,7 @@ impl Shell {
             dialog_window: false,
             full_screen: ctx.input(|i| i.viewport().fullscreen).unwrap_or(false),
             panel_tab: self.panel_tab,
-            grid: self.grid,
+            browser: self.browser,
             // The app's, from the folder it shows ([`App::shell_state`]).
             shown: false,
             background: Background::of(theme(ctx).colors.photo_surround),
@@ -2674,7 +2674,7 @@ impl Shell {
             }
             // Read while held, by the sections.
             Intent::Peek => {}
-            Intent::Grid(chosen) => self.grid.apply(chosen),
+            Intent::BrowserBar(chosen) => self.browser.apply(chosen),
             Intent::Background(background) => {
                 self.viewer.background = Some(background);
                 apertrust_ui::set_theme(ctx, self.look());
@@ -2720,7 +2720,7 @@ impl Shell {
         self.marker = settings.marker;
         apertrust_ui::components::set_marker(ctx, self.marker);
         self.tab_names = settings.tab_names;
-        self.grid.square_thumbnails = settings.grid.square_thumbnails;
+        self.browser.square_thumbnails = settings.browser.square_thumbnails;
         self.log.keep = settings.log.keep;
         self.log.domains.clone_from(&settings.log.domains);
         self.overwrite =
@@ -4287,11 +4287,11 @@ impl App {
     /// its Labels or the cell's menu runs.
     fn browser(&mut self, ui: &mut egui::Ui, lines: usize) -> Option<ActionId> {
         self.thumbnails.sync(ui.ctx(), &self.mirror.folder);
-        let grid = self.shell.grid;
-        self.mirror.folder.sort(grid.sort);
+        let browser = self.shell.browser;
+        self.mirror.folder.sort(browser.sort);
         // A thumbnail filling its square is cut at its longer side, so a 3:2 photo's
         // shorter side must cover the square.
-        let side = grid.thumbnails.side() * if grid.square_thumbnails { 1.5 } else { 1.0 };
+        let side = browser.thumbnails.side() * if browser.square_thumbnails { 1.5 } else { 1.0 };
         let size = thumbnails::size_for(side, ui.pixels_per_point());
         let (clicked, asked, bar, menu) = {
             let mirror = &self.mirror;
@@ -4320,12 +4320,12 @@ impl App {
             };
             // What a caption's first line reports waits for the ratings, as they do.
             let mut panel = Browser::new(order.len(), active, thumb)
-                .sort(grid.sort)
-                .size(grid.thumbnails)
+                .sort(browser.sort)
+                .size(browser.thumbnails)
                 .lines(lines)
-                .position(grid.position)
-                .labels(grid.labels)
-                .square(grid.square_thumbnails);
+                .position(browser.position)
+                .labels(browser.labels)
+                .square(browser.square_thumbnails);
             if let Some(says) = &says {
                 panel = panel.empty(says);
             }
@@ -5344,7 +5344,7 @@ impl eframe::App for App {
         // panel; as many rows or columns as its edge was dragged to, a drag in progress
         // included, the photo held while it moves as for the Tools panel's edge.
         let (browser_frame, browser_edge, lines) = self.shell.browser_frame(&ctx);
-        let placed = (self.shell.grid.position, lines);
+        let placed = (self.shell.browser.position, lines);
         let browser_resized = std::mem::replace(&mut self.browser_lines, placed) != placed;
         let browser = browser_frame.show(ui, |ui| self.browser(ui, lines));
         run.extend(browser.inner);
@@ -10355,7 +10355,7 @@ mod tests {
         // With no photos in the Browser its items rest.
         let resting = shell.state(&ctx, false, false);
         assert!(shell.run(ActionId::SORT[1], &resting, &ctx, &[]).is_none());
-        assert_eq!(shell.grid, settings::Grid::default());
+        assert_eq!(shell.browser, settings::BrowserSettings::default());
         let shown = State {
             shown: true,
             ..resting
@@ -10371,17 +10371,17 @@ mod tests {
         ] {
             shell.run(id, &shown, &ctx, &[]);
         }
-        let chosen = settings::Grid {
+        let chosen = settings::BrowserSettings {
             sort: Sort {
                 key: SortKey::FileName,
                 descending: true,
             },
             thumbnails: ThumbnailSize::ExtraLarge,
             labels: false,
-            ..settings::Grid::default()
+            ..settings::BrowserSettings::default()
         };
-        assert_eq!(shell.grid, chosen);
-        // The menus check what the grid holds.
+        assert_eq!(shell.browser, chosen);
+        // The menus check what the Browser's settings hold.
         let state = State {
             shown: true,
             ..shell.state(&ctx, false, false)
@@ -10396,9 +10396,9 @@ mod tests {
         keeper.frame(std::time::Instant::now(), &shell.to_settings(&ctx));
         keeper.flush();
         let (_, settings) = Keeper::open(folder.storage());
-        assert_eq!(settings.grid, chosen);
+        assert_eq!(settings.browser, chosen);
         assert_eq!(
-            Shell::new(&settings, Locale::EnGb, OperatingSystem::Mac).grid,
+            Shell::new(&settings, Locale::EnGb, OperatingSystem::Mac).browser,
             chosen
         );
     }
@@ -10780,13 +10780,13 @@ mod tests {
         let ctx = egui::Context::default();
         apertrust_ui::install(&ctx, Theme::default());
         let mut shell = Shell::new(&settings, Locale::EnGb, OperatingSystem::Mac);
-        shell.grid.position = apertrust_ui::components::BrowserPosition::Bottom;
-        assert_eq!(shell.grid.rows, 1);
+        shell.browser.position = apertrust_ui::components::BrowserPosition::Bottom;
+        assert_eq!(shell.browser.rows, 1);
         shell.resize_browser(BrowserEdgeAction::Resize(3));
         keeper.frame(std::time::Instant::now(), &shell.to_settings(&ctx));
         keeper.flush();
         let (_, settings) = Keeper::open(folder.storage());
-        assert_eq!(settings.grid.rows, 3);
+        assert_eq!(settings.browser.rows, 3);
         let mut shell = Shell::new(&settings, Locale::EnGb, OperatingSystem::Mac);
         // A window where two rows of Medium fit in half its height shows two, keeping three.
         let size = ThumbnailSize::Medium;
@@ -10797,7 +10797,7 @@ mod tests {
                 .lines(&ctx),
             2
         );
-        assert_eq!(shell.grid.rows, 3);
+        assert_eq!(shell.browser.rows, 3);
         // The rows count the captions: without them five fit in half a window where four
         // rows with them do.
         let window = 2.0 * browser_height(&ctx, size, true, 4) + 1.0;
@@ -10808,9 +10808,9 @@ mod tests {
                 .lines(&ctx)
         };
         assert_eq!(rows(&shell), 4);
-        shell.grid.labels = false;
+        shell.browser.labels = false;
         assert_eq!(rows(&shell), 5);
-        shell.grid.labels = true;
+        shell.browser.labels = true;
         shell.resize_browser(BrowserEdgeAction::Resize(3));
         assert_eq!(
             shell
@@ -10826,7 +10826,7 @@ mod tests {
             1
         );
         shell.resize_browser(BrowserEdgeAction::Reset);
-        assert_eq!(shell.grid.rows, 1);
+        assert_eq!(shell.browser.rows, 1);
     }
 
     /// The window as the app's frame lays out the Tools panel and the Browser, with
@@ -10855,7 +10855,7 @@ mod tests {
                         .show(ui, |_| {});
                     window.side = side.response.rect;
                     let shell = &mut window.shell;
-                    let grid = shell.grid;
+                    let browser = shell.browser;
                     let (frame, edge, lines) = shell.browser_frame(&ctx);
                     let names: Vec<String> = (0..window.count)
                         .map(|i| format!("IMG_{i:04}.ARW"))
@@ -10870,11 +10870,11 @@ mod tests {
                             rating: None,
                         };
                         Browser::new(names.len(), None, thumb)
-                            .sort(grid.sort)
-                            .size(grid.thumbnails)
+                            .sort(browser.sort)
+                            .size(browser.thumbnails)
                             .lines(lines)
-                            .position(grid.position)
-                            .labels(grid.labels)
+                            .position(browser.position)
+                            .labels(browser.labels)
                             .show(ui)
                             .bar
                     });
@@ -10933,11 +10933,11 @@ mod tests {
     fn the_browser_bar_s_options_move_the_panel_and_each_place_keeps_its_lines() {
         use apertrust_ui::components::BrowserPosition;
         let settings = Settings {
-            grid: settings::Grid {
+            browser: settings::BrowserSettings {
                 rows: 2,
                 columns: 3,
                 position: BrowserPosition::Bottom,
-                ..settings::Grid::default()
+                ..settings::BrowserSettings::default()
             },
             ..Settings::default()
         };
@@ -10958,7 +10958,10 @@ mod tests {
         assert_eq!(height(&harness), Some(2.0));
         // At the right, a column between the photo and the Tools panel, three columns wide.
         move_browser(&mut harness, "Right");
-        assert_eq!(harness.state().shell.grid.position, BrowserPosition::Right);
+        assert_eq!(
+            harness.state().shell.browser.position,
+            BrowserPosition::Right
+        );
         let list = browser_list(&harness);
         assert_eq!(list.right(), side.left());
         assert_eq!(list.top(), 8.0);
@@ -10978,7 +10981,7 @@ mod tests {
         move_browser(&mut harness, "Bottom");
         assert_eq!(height(&harness), Some(2.0));
         let ctx = egui::Context::default();
-        let kept = harness.state().shell.to_settings(&ctx).grid;
+        let kept = harness.state().shell.to_settings(&ctx).browser;
         assert_eq!(kept.position, BrowserPosition::Bottom);
         assert_eq!((kept.rows, kept.columns), (2, 3));
     }
@@ -10988,9 +10991,9 @@ mod tests {
         use apertrust_ui::components::{BrowserPosition, ThumbnailSize, browser_height};
         // At the bottom, where the captions add to the panel's height.
         let settings = Settings {
-            grid: settings::Grid {
+            browser: settings::BrowserSettings {
                 position: BrowserPosition::Bottom,
-                ..settings::Grid::default()
+                ..settings::BrowserSettings::default()
             },
             ..Settings::default()
         };
@@ -11007,7 +11010,7 @@ mod tests {
         labels.click();
         harness.run();
         harness.run();
-        assert!(!harness.state().shell.grid.labels);
+        assert!(!harness.state().shell.browser.labels);
         assert_eq!(
             browser_list(&harness).height(),
             browser_height(&ctx, size, false, 1)
@@ -11016,7 +11019,7 @@ mod tests {
         assert_eq!(labels.accesskit_node().toggled(), Some(Toggled::False));
         // Kept for the next start.
         let kept = harness.state().shell.to_settings(&egui::Context::default());
-        assert!(!kept.grid.labels);
+        assert!(!kept.browser.labels);
     }
 
     #[test]
@@ -11025,10 +11028,10 @@ mod tests {
         let ctx = egui::Context::default();
         apertrust_ui::install(&ctx, Theme::default());
         let settings = Settings {
-            grid: settings::Grid {
+            browser: settings::BrowserSettings {
                 position: BrowserPosition::Left,
                 columns: 9,
-                ..settings::Grid::default()
+                ..settings::BrowserSettings::default()
             },
             ..Settings::default()
         };
@@ -11036,7 +11039,7 @@ mod tests {
         let size = ThumbnailSize::Medium;
         let window = egui::vec2(2.0 * browser_width(&ctx, size, 4) + 1.0, 400.0);
         assert_eq!(shell.browser_edge(&ctx, window).lines(&ctx), 4);
-        assert_eq!(shell.grid.columns, 9);
+        assert_eq!(shell.browser.columns, 9);
     }
 
     /// Every choice of the browser bar's menus is an action of the registry, so View's
@@ -14030,7 +14033,7 @@ mod tests {
         let mut harness = dialogged(host.clone());
         harness.run();
         press_action(&mut harness, ActionId::SETTINGS);
-        assert!(!harness.state().shell.grid.square_thumbnails);
+        assert!(!harness.state().shell.browser.square_thumbnails);
         host.0.borrow_mut().outputs = vec![
             dialog_host::Output::Settings(Change::Set("settings_window.page", "photos".into())),
             dialog_host::Output::Settings(Change::Set("browser.square_thumbnails", true.into())),
@@ -14039,7 +14042,7 @@ mod tests {
         ];
         harness.step();
         let d = harness.state();
-        assert!(d.shell.grid.square_thumbnails);
+        assert!(d.shell.browser.square_thumbnails);
         assert!(!d.shell.tab_names);
         assert_eq!(d.keeper.engine().budget, 4096 << 20);
         assert_eq!(d.keeper.page(), apertrust_base::settings::Page::Photos);
@@ -14048,7 +14051,7 @@ mod tests {
             "browser.square_thumbnails",
         ))];
         harness.step();
-        assert!(!harness.state().shell.grid.square_thumbnails);
+        assert!(!harness.state().shell.browser.square_thumbnails);
     }
 
     #[test]
@@ -14994,7 +14997,7 @@ mod tests {
             harness.state_mut().open = first.clone();
             export_tool(harness.state_mut(), &ctx, confirm.clone());
             assert_eq!(asked_alerts(&host), 1);
-            // A grid click opens another photo while the question waits.
+            // A click in the Browser opens another photo while the question waits.
             harness.state_mut().open = PathBuf::from("/Users/anna/Pictures/IMG_9999.ARW");
             answer_alert(&host, answer);
             harness.step();

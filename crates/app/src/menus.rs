@@ -1536,7 +1536,7 @@ mod tests {
             dialog_window: false,
             full_screen: false,
             panel_tab: 0,
-            grid: crate::settings::Grid::default(),
+            browser: crate::settings::BrowserSettings::default(),
             shown: true,
             background: Some(apertrust_ui::Background::Dark),
         }
