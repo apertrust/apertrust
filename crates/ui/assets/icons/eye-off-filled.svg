@@ -1,0 +1,11 @@
+<!-- Derived from Lucide's "eye-off" (https://lucide.dev), ISC licence; its filled form -->
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <mask id="cut" maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24">
+    <path d="M0 0H24V24H0Z" fill="white" stroke="none"/>
+    <circle cx="12" cy="12" r="3" fill="black" stroke="none"/>
+    <path d="M0.586 3.414L20.586 23.414L23.414 20.586L3.414 0.586Z" fill="black" stroke="none"/>
+  </mask>
+  <path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0" fill="currentColor" mask="url(#cut)"/>
+  <path d="M14.084 14.158a3 3 0 0 1-4.242-4.242"/>
+  <path d="m2 2 20 20"/>
+</svg>

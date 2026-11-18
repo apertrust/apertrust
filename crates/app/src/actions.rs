@@ -121,6 +121,11 @@ impl ActionId {
         ActionId("panel-tab-11"),
         ActionId("panel-tab-12"),
     ];
+    /// The Tools panel's Hidden tab, chosen while it shows, after the twelve (decision 96).
+    pub const PANEL_TAB_HIDDEN: ActionId = ActionId("panel-tab-hidden");
+    /// Show Hidden Tools, in the Tools panel's ⋮: the Hidden tab shown last and chosen, or
+    /// taken away (decision 96).
+    pub const SHOW_HIDDEN_TOOLS: ActionId = ActionId("tools-panel-show-hidden");
     pub const SCALE_UP: ActionId = ActionId("scale-up");
     pub const SCALE_DOWN: ActionId = ActionId("scale-down");
     pub const SCALE_RESET: ActionId = ActionId("scale-reset");
@@ -249,6 +254,11 @@ pub enum Intent {
     DiscardHistory,
     View(View),
     PanelTab(usize),
+    /// The Hidden tab chosen, while it shows (decision 96).
+    HiddenTab,
+    /// Show Hidden Tools turned on, the Hidden tab shown last and chosen, or off, it gone
+    /// and the tab shown before it shown again (decision 96).
+    ShowHiddenTools,
     /// View › Collections: the first tab holding Collections chosen, nothing where it is
     /// chosen.
     ShowCollections,
@@ -340,9 +350,11 @@ pub struct State {
     /// behind it yet cannot, so its key is unavailable (decision 38), and nor can one the
     /// workspace does not show.
     pub tabs: [bool; 12],
-    /// Whether a tab shown holds Collections, which View › Collections and L choose; with
-    /// none, they are unavailable (decision 96).
-    pub collections: bool,
+    /// Whether the Hidden tab shows, and whether it is the tab chosen: None while it does
+    /// not show (decision 96).
+    pub hidden_tab: Option<bool>,
+    /// Whether Show Hidden Tools is on, which its item shows checked.
+    pub show_hidden: bool,
     /// The interface's scale: egui's zoom factor.
     pub scale: f32,
     /// A modal dialog is open, or a dialog's window has the focus: the view's keys rest,
@@ -487,7 +499,11 @@ impl Action {
     pub fn checked(&self, state: &State) -> Option<bool> {
         match self.emits {
             Emit::Intent(Intent::FullScreen) => Some(state.full_screen),
-            Emit::Intent(Intent::PanelTab(tab)) => Some(state.panel_tab == tab),
+            Emit::Intent(Intent::PanelTab(tab)) => {
+                Some(state.panel_tab == tab && state.hidden_tab != Some(true))
+            }
+            Emit::Intent(Intent::HiddenTab) => Some(state.hidden_tab == Some(true)),
+            Emit::Intent(Intent::ShowHiddenTools) => Some(state.show_hidden),
             Emit::Intent(Intent::Workspace(_)) => Some(state.workspace == self.id),
             Emit::Intent(Intent::BrowserBar(chosen)) => Some(state.browser.holds(chosen)),
             Emit::Intent(Intent::Background(b)) => Some(state.background == Some(b)),
@@ -621,7 +637,7 @@ fn tab_enabled<const I: usize>(state: &State) -> bool {
 
 /// Every action, in the order a keyboard map lists them (`docs/gui.md`, The default
 /// keyboard map). Slider keys are not here: they are the slider's own (`SliderRow`).
-pub static ACTIONS: [Action; 82] = [
+pub static ACTIONS: [Action; 84] = [
     // The Toolbar's mark, and About Apertrust in the menus once they come.
     Action {
         id: ActionId::ABOUT,
@@ -858,7 +874,7 @@ pub static ACTIONS: [Action; 82] = [
         keys: &[plain(Key::L)],
         scope: Scope::App,
         trigger: Trigger::Press,
-        available: |s| on_main_window(s) && s.collections,
+        available: on_main_window,
         emits: Emit::Intent(Intent::ShowCollections),
     },
     Action {
@@ -973,6 +989,26 @@ pub static ACTIONS: [Action; 82] = [
         trigger: Trigger::Press,
         available: tab_enabled::<11>,
         emits: Emit::Intent(Intent::PanelTab(11)),
+    },
+    // The Hidden tab, after the twelve, while it shows (decision 96).
+    Action {
+        id: ActionId::PANEL_TAB_HIDDEN,
+        message: "action-panel-tab-hidden",
+        keys: &[],
+        scope: Scope::App,
+        trigger: Trigger::Press,
+        available: |s| on_main_window(s) && s.hidden_tab.is_some(),
+        emits: Emit::Intent(Intent::HiddenTab),
+    },
+    // The Tools panel's ⋮ (decision 96); the tab bar's menu joins it.
+    Action {
+        id: ActionId::SHOW_HIDDEN_TOOLS,
+        message: "action-tools-panel-show-hidden",
+        keys: &[],
+        scope: Scope::App,
+        trigger: Trigger::Press,
+        available: on_main_window,
+        emits: Emit::Intent(Intent::ShowHiddenTools),
     },
     // Ctrl+= first: on most keyboards + needs Shift, and Ctrl++ matches with it held.
     Action {
@@ -2252,7 +2288,8 @@ pub(crate) mod tests {
             opened: true,
             recents: [Some(true); crate::recents::MOST],
             tabs: first_tabs(7),
-            collections: true,
+            hidden_tab: Some(false),
+            show_hidden: false,
             scale: 1.5,
             dialog: false,
             modal: false,

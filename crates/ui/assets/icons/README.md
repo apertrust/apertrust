@@ -40,6 +40,7 @@ The interface's icons, one SVG file each, drawn by `apertrust-ui` (`src/icons.rs
 | `edited` | Lucide's `pencil` |
 | `labels`, `labels-filled` | Lucide's `eye` |
 | `visible` | Lucide's `eye` |
+| `eye-off`, `eye-off-filled` | Lucide's `eye-off`: the Tools panel's Hidden tab (decision 96) |
 | `star`, `star-filled` | Lucide's `star` |
 | `reject` | Lucide's `circle-x` |
 | `rotate-left`, `rotate-right` | Lucide's `rotate-ccw-square` and `rotate-cw-square` |

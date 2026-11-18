@@ -41,6 +41,13 @@ tab-correct = Correct
 tab-effect = Effect
 tab-history = History
 tab-metadata = Metadata
+# The Hidden tab, last while Show Hidden Tools is on: the tools the workspace puts in no
+# tab (decision 96).
+tab-hidden = Hidden
+tools-panel-no-hidden = No hidden tools in this workspace.
+# The dot on the Tools panel's ⋮, and Show Hidden Tools' tip: $tools names the hidden tools
+# that change the photo, as "Exposure, Vignetting".
+tools-panel-hidden-change = Hidden tools change this photo: { $tools }
 # The built-in workspaces' names in View › Workspace (decision 96); a person's own is
 # named by its file.
 workspace-default = Default
@@ -891,6 +898,10 @@ action-panel-tab-9 = Tools panel tab 9
 action-panel-tab-10 = Tools panel tab 10
 action-panel-tab-11 = Tools panel tab 11
 action-panel-tab-12 = Tools panel tab 12
+# The Hidden tab, after the twelve, while it shows (decision 96).
+action-panel-tab-hidden = Hidden tab
+# The Tools panel's ⋮: the Hidden tab shown last and chosen, or taken away.
+action-tools-panel-show-hidden = Show hidden tools
 action-scale-up = Larger interface
 action-scale-down = Smaller interface
 action-scale-reset = Normal interface size

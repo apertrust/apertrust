@@ -2051,8 +2051,7 @@ fn tools_panel(page: &mut Ui, t: &Theme, demo: &mut Demo) {
         Some(TabBarAction::Select(i)) => demo.panel_tab = i,
         Some(TabBarAction::ShowNames(on)) => demo.tab_names = on,
         Some(TabBarAction::Customise) => demo.last = "Customise tabs".to_owned(),
-        // The gallery hands in no workspaces, so its ⋮ has no Workspace ▸.
-        Some(TabBarAction::Workspace(_)) | None => {}
+        Some(TabBarAction::Chosen(_)) | None => {}
     }
     ui.spacing_mut().item_spacing.y = 0.0;
 

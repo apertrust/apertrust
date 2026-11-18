@@ -129,6 +129,10 @@ pub struct Mirror {
     pub values: Values,
     /// What the Tools panel draws of `values`.
     shown: Shown,
+    /// The tools that change the photo in `values`, in the tools' order, worked out as
+    /// `values` changes, never per frame: what the dot on the Tools panel's ⋮ reads
+    /// ([`Mirror::edited`]).
+    edited: Vec<&'static str>,
     /// The values with no photo, made once.
     untouched: Values,
     /// What the widgets set that no report includes yet, with each command's number.
@@ -198,6 +202,7 @@ impl Mirror {
             photo: PhotoState::None,
             values: untouched.clone(),
             shown: Shown::Nothing,
+            edited: Vec::new(),
             untouched,
             pending: Vec::new(),
             failure: None,
@@ -224,6 +229,20 @@ impl Mirror {
     /// What the Tools panel's editing tabs draw.
     pub fn shown(&self) -> Shown {
         self.shown
+    }
+
+    /// The tools that change the photo, in the tools' order: each the session reports
+    /// edited, with the changes pending shown (decision 96's rule, `ToolState::edited`):
+    /// a switched tool while it is on, any other while a control is off the photo's
+    /// default. None with no photo.
+    pub fn edited(&self) -> &[&'static str] {
+        &self.edited
+    }
+
+    /// Works out [`Mirror::edited`] again, after `values` changed.
+    fn values_changed(&mut self) {
+        let tools = self.values.tools.iter();
+        self.edited = tools.filter(|t| t.edited).map(|t| t.tool).collect();
     }
 
     /// Whether a change of the edit the Tools panel's controls make is to be sent: only the
@@ -352,6 +371,7 @@ impl Mirror {
     fn no_photo(&mut self) {
         self.shown = Shown::Nothing;
         self.values = self.untouched.clone();
+        self.values_changed();
         self.pending.clear();
         self.history = None;
         self.pickers.forget();
@@ -378,6 +398,7 @@ impl Mirror {
     pub fn pend(&mut self, number: u64, pending: Pending) {
         let image = self.photo.image();
         show(&mut self.values, &pending, self.tools, &image);
+        self.values_changed();
         self.pending.push((number, pending));
     }
 
@@ -433,6 +454,7 @@ impl Mirror {
                         read_only(&mut self.values);
                         Shown::Opening
                     };
+                    self.values_changed();
                 }
             }
             // The first live frame takes the picture's place in one swap.

@@ -26,6 +26,11 @@
 //! name still too wide ends in an ellipsis. The full name stays in the tooltip and for screen readers.
 //! A tab with nothing behind it yet is drawn disabled, as an action that cannot run is: it
 //! cannot be chosen, and its tooltip says it is to come (decision 38).
+//!
+//! ⋮ holds the app's items first, registry actions such as Show Hidden Tools and
+//! Workspace ▸, a line, then the tab bar's own, Show tab names and Customise tabs…. It may
+//! carry a dot, `accent` and 6 points, at its top end, saying why in its tooltip, to screen
+//! readers as its description and once, politely, as the dot appears (decision 96).
 
 use std::ops::RangeInclusive;
 
@@ -39,7 +44,7 @@ use egui::{
 
 use super::{IconButton, focus_ring, pull_down, report_shortcut};
 use crate::i18n::Args;
-use crate::popup::{Entry, Item, Submenu};
+use crate::popup::{Entry, Item};
 use crate::{Icon, theme, tr, translator};
 
 /// One of the Tools panel's tabs.
@@ -57,23 +62,14 @@ pub struct PanelTab<'a> {
     pub enabled: bool,
 }
 
-/// One workspace ⋮'s Workspace ▸ lists: its words, whether it is the one shown, and, where
-/// it cannot be chosen, why (decision 96).
-pub struct TabBarWorkspace<'a> {
-    pub name: &'a str,
-    pub checked: bool,
-    pub enabled: bool,
-    pub tip: Option<&'a str>,
-}
-
 /// What the user did to the tab bar this frame.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum TabBarAction {
     Select(usize),
     ShowNames(bool),
     Customise,
-    /// The workspace at this index of those handed in ([`TabBar::workspaces`]).
-    Workspace(usize),
+    /// One of the app's items in ⋮ ([`TabBar::items`]) was chosen: its id.
+    Chosen(String),
 }
 
 pub struct TabBar<'a> {
@@ -81,8 +77,13 @@ pub struct TabBar<'a> {
     selected: usize,
     names: bool,
     customise: bool,
-    workspaces: &'a [TabBarWorkspace<'a>],
+    items: Vec<Entry>,
+    dot: Option<&'a str>,
 }
+
+/// The ids of ⋮'s own items, which no item of the app's takes.
+const NAMES: &str = "apertrust-ui tab bar names";
+const CUSTOMISE: &str = "apertrust-ui tab bar customise";
 
 const GAP: f32 = 2.0;
 const MORE: f32 = 28.0;
@@ -97,20 +98,29 @@ impl<'a> TabBar<'a> {
             selected,
             names,
             customise: true,
-            workspaces: &[],
+            items: Vec::new(),
+            dot: None,
         }
-    }
-
-    /// The workspaces ⋮ lists under Workspace ▸, first, as View › Workspace does; with
-    /// none, ⋮ has no Workspace ▸.
-    pub fn workspaces(mut self, workspaces: &'a [TabBarWorkspace<'a>]) -> Self {
-        self.workspaces = workspaces;
-        self
     }
 
     /// Whether Customise tabs… can run; it is shown disabled when not.
     pub fn customise(mut self, enabled: bool) -> Self {
         self.customise = enabled;
+        self
+    }
+
+    /// The app's items, first in ⋮, a line after them: registry actions and their
+    /// submenus, as the app's menus build them (Show Hidden Tools, Workspace ▸). A choice,
+    /// a submenu's item's too, comes back as [`TabBarAction::Chosen`] with its id.
+    pub fn items(mut self, items: Vec<Entry>) -> Self {
+        self.items = items;
+        self
+    }
+
+    /// A dot on ⋮ while `says` is some, translated: ⋮'s tooltip and description, heard
+    /// once, politely, as it appears ("Hidden tools change this photo: Exposure").
+    pub fn dot(mut self, says: Option<&'a str>) -> Self {
+        self.dot = says;
         self
     }
 
@@ -267,47 +277,57 @@ impl<'a> TabBar<'a> {
             }
         }
         let name = tr(ui.ctx(), "panel-tab-options");
-        let options = button_at(ui, options_rect, Icon::OptionsVertical, &name);
-        let chosen = pull_down(ui, &options, &name, || {
-            let mut entries: Vec<Entry> = Vec::new();
-            if !self.workspaces.is_empty() {
-                let items = self.workspaces.iter().enumerate().map(|(i, workspace)| {
-                    let item = Item::new(format!("workspace-{i}"), workspace.name)
-                        .checked(workspace.checked)
-                        .enabled(workspace.enabled);
-                    match workspace.tip {
-                        Some(tip) => item.tip(tip),
-                        None => item,
+        let options = ui
+            .scope_builder(
+                UiBuilder::new()
+                    .max_rect(options_rect)
+                    .layout(Layout::centered_and_justified(egui::Direction::LeftToRight)),
+                |ui| {
+                    let button = IconButton::new(Icon::OptionsVertical, &name);
+                    match self.dot {
+                        Some(says) => button.dot(true).tip(says).show(ui),
+                        None => button.show(ui),
                     }
-                    .into()
-                });
-                let title = tr(ui.ctx(), "menu-workspace");
-                entries.push(Submenu::new("workspace", title, items.collect()).into());
+                },
+            )
+            .inner;
+        if let Some(says) = self.dot {
+            ui.ctx()
+                .accesskit_node_builder(options.id, |node| node.set_description(says));
+        }
+        // A polite live region that takes no room, saying the dot's words while it shows,
+        // so screen readers hear them once, as it appears.
+        let said = self.dot.unwrap_or_default();
+        let live = ui.interact(
+            Rect::from_min_size(options_rect.left_top(), egui::Vec2::ZERO),
+            list.id.with("dot live region"),
+            Sense::hover(),
+        );
+        live.widget_info(|| WidgetInfo::labeled(Role::Status, true, said));
+        ui.ctx()
+            .accesskit_node_builder(live.id, |node| node.set_live(egui::accesskit::Live::Polite));
+        let items = self.items;
+        let chosen = pull_down(ui, &options, &name, || {
+            let mut entries = items;
+            if !entries.is_empty() {
                 entries.push(Entry::Separator);
             }
             entries.push(
-                Item::new("names", tr(ui.ctx(), "panel-show-tab-names"))
+                Item::new(NAMES, tr(ui.ctx(), "panel-show-tab-names"))
                     .checked(self.names)
                     .into(),
             );
             entries.push(
-                Item::new("customise", tr(ui.ctx(), "panel-customise-tabs"))
+                Item::new(CUSTOMISE, tr(ui.ctx(), "panel-customise-tabs"))
                     .enabled(self.customise)
                     .into(),
             );
             entries
         });
-        match chosen.as_deref() {
-            Some("names") => action = Some(TabBarAction::ShowNames(!self.names)),
-            Some("customise") => action = Some(TabBarAction::Customise),
-            Some(other) => {
-                let index = other
-                    .strip_prefix("workspace-")
-                    .and_then(|i| i.parse().ok());
-                if let Some(i) = index {
-                    action = Some(TabBarAction::Workspace(i));
-                }
-            }
+        match chosen {
+            Some(id) if id == NAMES => action = Some(TabBarAction::ShowNames(!self.names)),
+            Some(id) if id == CUSTOMISE => action = Some(TabBarAction::Customise),
+            Some(id) => action = Some(TabBarAction::Chosen(id)),
             None => {}
         }
         action

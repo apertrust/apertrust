@@ -243,6 +243,15 @@ applies = "at-once"
 page = "editing"
 group = "tools_panel"
 
+# Whether the Tools panel shows the Hidden tab, last, with the tools the workspace puts in
+# no tab: Show Hidden Tools, in the Tools panel's ⋮, app-wide, the same in every workspace
+# (decision 96).
+[tools_panel.show_hidden]
+owner = "app"
+kind = "boolean"
+default = false
+applies = "at-once"
+
 # The Tools panel's width in points, as the user dragged its edge, kept whole; until then
 # the theme's. A narrow window shows the panel narrower, never more than half the window,
 # and keeps this width.

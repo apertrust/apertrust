@@ -56,6 +56,7 @@
 //!
 //! [tools_panel]
 //! tab_names = false
+//! show_hidden = true
 //! width = 480
 //!
 //! [viewer]
@@ -202,6 +203,8 @@ pub struct Settings {
     pub log: Log,
     /// Whether the Tools panel's tabs show their names.
     pub tab_names: bool,
+    /// Whether the Tools panel shows the Hidden tab, Show Hidden Tools (decision 96).
+    pub show_hidden: bool,
     /// The Tools panel's width in points, within `PANEL_WIDTHS`, as the user dragged it;
     /// None for the theme's.
     pub panel_width: Option<f32>,
@@ -252,6 +255,7 @@ impl Default for Settings {
             jobs_window: None,
             log: Log::default(),
             tab_names: TOOLS_PANEL_TAB_NAMES.default(),
+            show_hidden: TOOLS_PANEL_SHOW_HIDDEN.default(),
             panel_width: None,
             viewer: Viewer::default(),
             workspace: WORKSPACE.default().to_owned(),
@@ -318,6 +322,7 @@ impl Settings {
                 folder: store.get(&LOG_WINDOW_FOLDER).map(PathBuf::from),
             },
             tab_names: store.get(&TOOLS_PANEL_TAB_NAMES),
+            show_hidden: store.get(&TOOLS_PANEL_SHOW_HIDDEN),
             panel_width: store.kept(&TOOLS_PANEL_WIDTH),
             viewer: Viewer {
                 margin: store.get(&VIEWER_MARGIN),
@@ -421,6 +426,9 @@ impl Settings {
         }
         if s.tab_names != was.tab_names {
             store.set(&TOOLS_PANEL_TAB_NAMES, s.tab_names);
+        }
+        if s.show_hidden != was.show_hidden {
+            store.set(&TOOLS_PANEL_SHOW_HIDDEN, s.show_hidden);
         }
         if s.panel_width != was.panel_width {
             keep(store, &TOOLS_PANEL_WIDTH, s.panel_width);
@@ -1349,6 +1357,7 @@ mod tests {
                 folder: Some(PathBuf::from("/photos/logs")),
             },
             tab_names: false,
+            show_hidden: true,
             panel_width: Some(480.0),
             viewer: Viewer {
                 margin: 16.0,
@@ -1512,6 +1521,7 @@ mod tests {
                     folder: None,
                 },
                 tab_names: true,
+                show_hidden: false,
                 panel_width: None,
                 viewer: Viewer {
                     margin: 10.0,
@@ -1721,6 +1731,7 @@ reference_photo = \"/photos/IMG_2041.CR3\"
 target = \"lightness\"
 
 [tools_panel]
+show_hidden = true
 tab_names = false
 width = 480
 

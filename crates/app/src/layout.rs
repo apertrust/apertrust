@@ -32,6 +32,9 @@
 //!   workspace is read ([`resolve`]), never per frame: each tab's lists, the tools hidden,
 //!   a new build's new tools placed by `seen`, the first twelve tabs, and Export always in
 //!   one of them.
+//! - **The Hidden tab,** [`Workspace::hidden_tab`], worked out with the layout shown: the
+//!   tools in no tab shown, processing tools in pipeline order, then utilities, never
+//!   pinned or reordered there.
 //! - **Reading,** [`Workspaces::read`]: a file that is not TOML is set aside as
 //!   `<id>.toml.bak`, one listing no tab refused, both with a warning, the built-in's
 //!   defaults then applying, or a person's own not listed; a newer version's is read for
@@ -56,6 +59,9 @@ pub const MOST_TABS: usize = 12;
 
 /// The Hidden tab's id, reserved: no file's tab takes it.
 pub const HIDDEN: &str = "hidden";
+
+/// The Hidden tab's icon, Lucide's `eye-off`, its filled form on the chosen tab.
+pub const HIDDEN_ICON: Icon = Icon::EyeOff;
 
 /// The Default workspace's id, built in and opened where settings name none or one with no
 /// workspace.
@@ -292,7 +298,9 @@ impl Tab {
 pub struct Shown {
     /// At most [`MOST_TABS`].
     pub tabs: Vec<Tab>,
-    /// Every tool in no tab shown, in the order the build lists them: the Hidden tab's.
+    /// Every tool in no tab shown, the Hidden tab's: processing tools in pipeline order,
+    /// first at the top, as the Default workspace's Raw lists them, then utilities in the
+    /// order the build lists them ([`hidden_order`]).
     pub hidden: Vec<&'static str>,
     /// Those of `hidden` that only a tab past the twelfth holds, never written into the
     /// file's `hidden`.
@@ -310,9 +318,28 @@ pub fn known() -> Vec<&'static str> {
 }
 
 /// Whether `tool` is a processing tool, which edits the photo.
-fn processing(tool: &str) -> bool {
+pub fn processing(tool: &str) -> bool {
     let mut tools = apertrust_tools::TOOLS.iter();
     tools.any(|t| t.definition().tool.id == tool)
+}
+
+/// Where `tool` sorts in the Hidden tab: a processing tool by the place in the pipeline of
+/// the first of its operations to run, among [`apertrust_operations::OPERATIONS`], before
+/// every utility, which keeps the order the build lists it in (the sort being stable).
+fn hidden_order(tool: &str) -> (bool, usize) {
+    let Some(processing) = apertrust_tools::TOOLS
+        .iter()
+        .find(|t| t.definition().tool.id == tool)
+    else {
+        return (true, 0);
+    };
+    let operations = apertrust_operations::OPERATIONS.iter();
+    let places = operations.map(|op| op.manifest().id).enumerate();
+    let place = places
+        .filter(|(_, id)| processing.owns().iter().any(|owned| owned.operation == *id))
+        .map(|(place, _)| place)
+        .min();
+    (false, place.unwrap_or(usize::MAX))
 }
 
 /// The tab ids a build knows, each with its icon by name: the built-in workspaces' tabs.
@@ -342,7 +369,8 @@ pub fn icon(name: &str) -> Option<Icon> {
 ///    shown whose id is one of its default tabs, after its nearest preceding neighbour in
 ///    that tab's default list, pinned where the default pins it; its default tabs are those
 ///    of the first of `defaults` with a tab of that id; with none, it is hidden;
-/// 4. a tool in no tab is hidden, `seen` naming it or not;
+/// 4. a tool in no tab is hidden, `seen` naming it or not, the Hidden tab listing it in
+///    pipeline order ([`Shown::hidden`]);
 /// 5. Export in no tab shown goes to the end of the Photos tab where it is shown, else of
 ///    the first tab shown that can be chosen, else of the first tab.
 pub fn resolve(
@@ -467,7 +495,8 @@ pub fn resolve(
     }
     // 4. Every tool in no tab shown, hidden.
     let unshown = |id: &&'static str| !tabs.iter().any(|tab| tab.holds(id));
-    let hidden: Vec<&'static str> = known.iter().copied().filter(unshown).collect();
+    let mut hidden: Vec<&'static str> = known.iter().copied().filter(unshown).collect();
+    hidden.sort_by_key(|tool| hidden_order(tool));
     let past: Vec<&TabEntry> = listed.iter().skip(MOST_TABS).copied().collect();
     let beyond = hidden
         .iter()
@@ -681,11 +710,19 @@ impl Workspaces {
         let (shown, resolved) = resolve(&listed.layout, &[&defaults], &known());
         let where_ = format!("workspace {}", listed.id);
         warnings.extend(resolved.into_iter().map(|w| format!("{where_}: {w}")));
+        let hidden_tab = Tab {
+            id: HIDDEN.to_owned(),
+            title: Title::Message(format!("tab-{HIDDEN}")),
+            icon: HIDDEN_ICON,
+            pinned: Vec::new(),
+            order: shown.hidden.clone(),
+        };
         let workspace = Workspace {
             id: listed.id.clone(),
             layout: listed.layout.clone(),
             newer: listed.layout.version > VERSION,
             shown,
+            hidden_tab,
         };
         (workspace, warnings)
     }
@@ -701,6 +738,10 @@ pub struct Workspace {
     /// Whether its file is a newer build's, which this build never overwrites.
     pub newer: bool,
     pub shown: Shown,
+    /// The Hidden tab (decision 96): the tools in no tab shown, as [`Shown::hidden`] lists
+    /// them, none pinned, shown last while Show Hidden Tools is on or a tool is revealed
+    /// there.
+    hidden_tab: Tab,
 }
 
 impl Workspace {
@@ -718,6 +759,17 @@ impl Workspace {
         let (workspace, opened) = workspaces.open(id);
         warnings.extend(opened);
         (workspace, warnings)
+    }
+
+    /// The Hidden tab, computed with the layout shown, never kept: its tools are
+    /// [`Shown::hidden`], none pinned.
+    pub fn hidden_tab(&self) -> &Tab {
+        &self.hidden_tab
+    }
+
+    /// Whether `tool` is hidden: in no tab shown, so only the Hidden tab holds it.
+    pub fn hides(&self, tool: &str) -> bool {
+        self.shown.hidden.contains(&tool)
     }
 
     /// The tabs shown.

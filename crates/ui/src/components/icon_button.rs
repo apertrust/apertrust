@@ -26,6 +26,10 @@
 //! key; high contrast's 1-point `button_edge` round it under the pointer. A word on a bar,
 //! [`ToolButton`], keeps the quiet plate: none at rest, `button` under the pointer,
 //! `button_pressed` while pressed.
+//!
+//! A button may carry a dot, `accent` and 6 points across at its icon's top end, saying
+//! something wants a look behind it: the Tools panel's ⋮ while a hidden tool changes the
+//! photo (decision 96), as the Toolbar's Import… will while a card is in (decision 85).
 
 use egui::{Color32, Popup, Rect, Response, Role, Sense, Stroke, StrokeKind, Ui, WidgetInfo, vec2};
 
@@ -43,7 +47,11 @@ pub struct IconButton<'a> {
     width: Option<f32>,
     tip: Option<&'a str>,
     state: Option<ButtonState>,
+    dot: bool,
 }
+
+/// The dot's diameter, in points (decisions 85 and 96).
+const DOT: f32 = 6.0;
 
 /// The colour of an icon-only button's icon (decision 81): `text_secondary` at rest and
 /// focused, `text_strong` under the pointer and while on, `accent_text` while held down,
@@ -74,6 +82,7 @@ impl<'a> IconButton<'a> {
             width: None,
             tip: None,
             state: None,
+            dot: false,
         }
     }
 
@@ -81,6 +90,14 @@ impl<'a> IconButton<'a> {
     /// state.
     pub fn state(mut self, state: ButtonState) -> Self {
         self.state = Some(state);
+        self
+    }
+
+    /// While `on`, a dot, `accent` and 6 points across, centred on the icon's top end
+    /// corner: the caller says why in its tooltip ([`tip`](Self::tip)) and to screen
+    /// readers.
+    pub fn dot(mut self, on: bool) -> Self {
+        self.dot = on;
         self
     }
 
@@ -164,11 +181,13 @@ impl<'a> IconButton<'a> {
             }
             let size = self.icon.size();
             let icon = if on { self.icon.filled() } else { self.icon };
-            icon.paint(
-                painter,
-                Rect::from_center_size(rect.center(), vec2(size, size)),
-                colour(&t, touch, on),
-            );
+            let icon_rect = Rect::from_center_size(rect.center(), vec2(size, size));
+            icon.paint(painter, icon_rect, colour(&t, touch, on));
+            if self.dot {
+                // On the icon's box's top end corner, clear of a narrow glyph as ⋮'s.
+                let centre = icon_rect.right_top();
+                painter.circle_filled(centre, DOT / 2.0, t.colors.accent);
+            }
             paint_focus(painter, rect, t.shape.radius, touch, &t);
         }
         let (name, toggled) = (self.name, self.toggled);
