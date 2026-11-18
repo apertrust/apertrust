@@ -548,7 +548,7 @@ fn main() -> Result<()> {
         } => {
             let store = store();
             let engine = engine(&store, adapter, backend);
-            pollster::block_on(export_all(
+            export_all(
                 &files,
                 output.as_deref(),
                 &Request {
@@ -566,7 +566,7 @@ fn main() -> Result<()> {
                 engine,
                 runs.map(|runs| runs.max(1)),
                 tile,
-            ))
+            )
         }
     }
 }
@@ -1181,7 +1181,9 @@ struct Run<'a> {
     clippy::too_many_arguments,
     reason = "the export command's flags, one by one"
 )]
-async fn export_all(
+/// Blocking CLI orchestration: one export command owns the calling thread. Engine
+/// futures are driven individually with pollster, never on a shared async executor.
+fn export_all(
     files: &[PathBuf],
     output: Option<&Path>,
     request: &Request,
@@ -1225,7 +1227,7 @@ async fn export_all(
             format,
             size: request.clone(),
         };
-        return export_in_session(files, settings, places(), engine).await;
+        return export_in_session(files, settings, places(), engine);
     };
     let run = Run {
         request,
@@ -1243,7 +1245,7 @@ async fn export_all(
     let mut failed = 0;
     for (index, file) in files.iter().enumerate() {
         let number = index as u32 + 1;
-        let Err(error) = export(file, number, &run, &mut gpu).await else {
+        let Err(error) = export(file, number, &run, &mut gpu) else {
             continue;
         };
         if files.len() == 1 {
@@ -1270,13 +1272,13 @@ async fn export_all(
 /// `export` through an in-process session's export job (decision 56; `docs/engine.md`,
 /// The CLI): `Export` sent, and each photo's result printed as the job reports it, until
 /// the job ends. A single photo's failure is the command's error, as before the job.
-async fn export_in_session(
+fn export_in_session(
     files: &[PathBuf],
     settings: ExportSettings,
     places: Places,
     engine: engine::Options,
 ) -> Result<()> {
-    let gpu = GpuContext::new(&engine.gpu).await?;
+    let gpu = pollster::block_on(GpuContext::new(&engine.gpu))?;
     let (woken, wakes) = mpsc::channel();
     let session = Session::start(
         gpu,
@@ -1438,12 +1440,7 @@ impl<'a> Printed<'a> {
 
 /// Photo number `number` of the run: rendered, and written as File on disk says, or
 /// skipped before it is rendered where On conflict leaves it out.
-async fn export(
-    path: &Path,
-    number: u32,
-    run: &Run<'_>,
-    gpu: &mut Option<GpuContext>,
-) -> Result<()> {
+fn export(path: &Path, number: u32, run: &Run<'_>, gpu: &mut Option<GpuContext>) -> Result<()> {
     let Run {
         request,
         flags,
@@ -1469,7 +1466,7 @@ async fn export(
     }
     set_controls(&mut edit, &sets, &image)?;
     if gpu.is_none() {
-        *gpu = Some(GpuContext::new(&engine.gpu).await?);
+        *gpu = Some(pollster::block_on(GpuContext::new(&engine.gpu))?);
     }
     let gpu = gpu.as_ref().expect("made above");
     let instances = instances(&edit, &image, skips)?;
@@ -1516,7 +1513,8 @@ async fn export(
             },
             |edge| Tiling::Tiles([edge, edge]),
         );
-        let exported = export_at(gpu, &instances, &image, input, tiling, resample).await?;
+        let exported =
+            pollster::block_on(export_at(gpu, &instances, &image, input, tiling, resample))?;
         let ImageDesc { width, height, .. } = exported.desc;
         let stored = write(target, format, &exported.pixels, width, height)?;
         let tiles = if exported.tiles > 1 {
@@ -1529,7 +1527,7 @@ async fn export(
     }
     // The raw's histogram where an instance reads it, as an export counts it (decision 87).
     let mut image = image;
-    raw_histogram::fill(gpu, &instances, &mut image, &input).await?;
+    pollster::block_on(raw_histogram::fill(gpu, &instances, &mut image, &input))?;
     let pipe = resample.map_or(Pipe::Export, Pipe::Resampled);
     let plan = pipeline::plan(&instances, &image, input.desc(), pipe, &limits)?;
     let (_, output_desc) = plan.output();
@@ -1540,7 +1538,7 @@ async fn export(
         .iter()
         .map(|op| (op.id, op.passes.len()))
         .collect();
-    let mut pipeline = Pipeline::new(gpu, plan, input).await?;
+    let mut pipeline = pollster::block_on(Pipeline::new(gpu, plan, input))?;
     let mut renders = Vec::new();
     for _ in 0..runs {
         renders.push(pipeline.render(gpu)?);

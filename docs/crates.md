@@ -341,6 +341,8 @@ The headless binary. Its commands are `gpu`, `info`, `edit`, `history`, `export`
 
 **Through the session.** It runs through its in-process session's export job, with the same lines and exit codes. With `--runs` (any value), `--tile`, `--skip`, `--set` or `--param` it renders directly. `--runs N` with `-d perf` gives median timings (the pipeline timings).
 
+**Execution.** Export orchestration is synchronous and owns the CLI thread until the command ends. It drives each required engine future with `pollster::block_on`; it is not a task on a shared async executor. The direct path deliberately decodes raws, reads sidecars and their modification times, and writes outputs on that thread, serially. The ordinary path submits the session's worker job and blocks while consuming its events. Neither path promises concurrent progress for other work on the CLI thread; clients needing that use the session protocol's jobs.
+
 **Size.** Full size, or darktable-cli's `--width` and `--height` (0, no limit), `--hq` (true) and `--upscale` (false), as `apertrust-export`'s `size` computes them: darktable's export size and its lanczos3 resample, after demosaic or, with `--hq`, before colorout (decision 56, [docs/ports/finalscale.md](ports/finalscale.md)). The size never comes from `export.size`.
 
 **Format.** `-o`'s extension chooses it as darktable-cli does (`jpg` or `jpeg`, `png`; case counts), whatever `export.format` says. The file is written with darktable's sRGB profile. The format's options come from the folder's `export.*` settings, as darktable-cli takes them from darktablerc, with `--conf` over them (`apertrust_export::settings::format`):
