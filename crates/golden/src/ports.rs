@@ -1537,7 +1537,7 @@ fn colorin_values(xmp: &str) -> Result<ParamValues> {
 /// fixed windows. Neither is a setting of the port (`docs/ports/hazeremoval.md`,
 /// Deliberate differences): fixed windows are darktable's adaptive ones at full
 /// resolution, where the harness renders, and the compatibility mode's quick select,
-/// which mis-partitions, gives way to the exact selection a new instance uses, which
+/// which partitions wrongly, gives way to the exact selection a new instance uses, which
 /// moves test 0026's A0 by about 2% (a mean ΔE2000 of 0.02 between darktable's two).
 fn hazeremoval_settings(xmp: &str) -> Result<hazeremoval::Settings> {
     let params = module_params(xmp, "hazeremoval")?;

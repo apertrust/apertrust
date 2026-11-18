@@ -58,7 +58,7 @@ The background has exposure, colour balance rgb and RGB curve; layer A (a face, 
 
 ```mermaid
 flowchart LR
-    rawstage["Raw processing,<br/>lens correction"] --> e0["Exposure<br/>background"] --> ea["Exposure<br/>layer A"] --> eb["Exposure<br/>layer B"] --> cc["Colour calibration"] --> b0["Colour balance rgb<br/>background"] --> ba["Colour balance rgb<br/>layer A"] --> c0["RGB curve<br/>background"] --> cb["RGB curve<br/>layer B"] --> tm["Tone mapper<br/>background only"] --> out["Output"]
+    rawstage["Raw processing,<br/>lens correction"] --> e0["Exposure<br/>background"] --> ea["Exposure<br/>layer A"] --> eb["Exposure<br/>layer B"] --> cc["Colour calibration"] --> b0["Colour balance rgb<br/>background"] --> b1["Colour balance rgb<br/>layer A"] --> c0["RGB curve<br/>background"] --> cb["RGB curve<br/>layer B"] --> tm["Tone mapper<br/>background only"] --> out["Output"]
 ```
 
 Layer A's brighter face flows into everything downstream, the tone mapper included, so it is tone-mapped as genuinely brighter light rather than lightened on top. Both layers here use the background's tone mapper; a layer may choose its own, which replaces the background's within its mask, never stacked on it (decisions 33 and 34).
