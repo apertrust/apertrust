@@ -14,7 +14,7 @@ Apertrust never reorders the processing (principles, What we will not build; [00
 
 ## Decision
 
-**Every section's place in the Tools panel is the workspace's layout, kept in the workspace's file, and a person changes it by dragging a section's header, through the header's ⋯ menu, with keys, or in the file.** The layout is display order only: it never reaches the engine, the edit or the history. Planned: ⋯'s items and the drag in Phase 2, the floating panels in Phase 3 ([0096](0096-workspaces-as-files-hidden-tools-and-finding-a-tool.md), When).
+**Every section's place in the Tools panel is the workspace's layout, kept in the workspace's file, and a person changes it by dragging a section's header, through the header's ⋯ menu, with keys, or in the file.** The layout is display order only: it never reaches the engine, the edit or the history. Built: ⋯'s items and their keys, the routes a person has today, the screen readers' custom actions in the AccessKit tree, reaching screen readers once AccessKit's platform adapters pass custom actions on, and the workspace's file written (decision 96's step 4); planned: the drag in Phase 2, the floating panels in Phase 3 ([0096](0096-workspaces-as-files-hidden-tools-and-finding-a-tool.md), When).
 
 ### The layout model
 
