@@ -84,7 +84,7 @@ The libraries Apertrust and its command line are built from, on every platform, 
 - ash 0.38.0+1.3.281: MIT OR Apache-2.0
 - async-broadcast 0.7.2: MIT OR Apache-2.0
 - async-channel 2.5.0: Apache-2.0 OR MIT
-- async-executor 1.14.0: Apache-2.0 OR MIT
+- async-executor 1.14.1: Apache-2.0 OR MIT
 - async-io 2.6.0: Apache-2.0 OR MIT
 - async-lock 3.4.2: Apache-2.0 OR MIT
 - async-process 2.5.0: Apache-2.0 OR MIT
