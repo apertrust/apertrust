@@ -1587,12 +1587,12 @@ fn keys_before_geometry(plan: &Plan) -> Vec<(u64, Option<u64>)> {
 #[test]
 fn a_plan_without_geometry_is_planned_as_before() {
     let fingerprints = [
-        ("export", 0xc9e6_115b_a8d1_af64),
-        ("tile", 0x0733_d235_0e05_e469),
-        ("viewport", 0xb46f_d868_667d_9043),
-        ("tiled viewport", 0xa9e9_4a2f_50ec_bf27),
-        ("x-trans export", 0xeee7_2b61_5376_6fa2),
-        ("export in row strips", 0xd732_b02f_4f66_4a23),
+        ("export", 0x4a0a_2d34_1e8f_616d),
+        ("tile", 0x14ad_08b8_c834_3554),
+        ("viewport", 0xb71d_b821_7704_c394),
+        ("tiled viewport", 0x62b4_b4fd_211d_ea88),
+        ("x-trans export", 0x9dc1_89df_b56f_4d9b),
+        ("export in row strips", 0x77e3_50f8_5250_f6fe),
     ];
     let plans = plans_without_geometry();
     assert_eq!(plans.len(), fingerprints.len());
@@ -1971,20 +1971,20 @@ fn plans_at_a_size() -> Vec<(&'static str, Plan)> {
 #[test]
 fn a_plan_at_a_size_without_haze_removal_is_planned_as_before() {
     let fingerprints = [
-        ("export at 0.5", 0xa3ca_7ebe_1a09_5431),
-        ("export at 1/3", 0x566b_ed12_aa20_625b),
-        ("export at 0.5, high quality", 0x56e5_e711_7977_8597),
-        ("export at 2", 0x5fc9_134f_19a9_6aa6),
-        ("export a pixel short of 1", 0x0aaf_2e7f_6882_20ca),
-        ("tile at 0.5", 0x8aaa_fdc6_88c2_adf0),
-        ("tile past the resample", 0xc57d_03ed_33a4_b2d5),
+        ("export at 0.5", 0x4dbe_f128_afe2_0508),
+        ("export at 1/3", 0x26a3_2132_5434_eb42),
+        ("export at 0.5, high quality", 0xd050_6500_329d_0c62),
+        ("export at 2", 0xdf59_972a_59cc_fd13),
+        ("export a pixel short of 1", 0x985a_4b1d_a1da_6869),
+        ("tile at 0.5", 0xce83_ed5a_ae33_ced3),
+        ("tile past the resample", 0x57ff_607e_6723_f0b0),
         (
             "tile from an RGBA input, high quality",
-            0xaca7_9ea5_52bc_31c7,
+            0xa5a7_0991_6d28_8c4e,
         ),
         (
             "tile past the copy a pixel short of 1",
-            0xb2a6_fcac_ff70_98ef,
+            0xf2b3_b48e_6402_a6aa,
         ),
     ];
     let plans = plans_at_a_size();

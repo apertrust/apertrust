@@ -23,7 +23,7 @@ use anyhow::{Context, Result, ensure};
 
 use crate::cases::Case;
 use crate::darktable::{DarktableCli, REFERENCE_VERSION};
-use crate::xmp::{copy_blend_params, disable_operation};
+use crate::xmp::{copy_blend_params, disable_operation, switch_off};
 
 /// Bump when the darktable-cli options in `DarktableCli::render` change.
 const RENDER_OPTIONS_VERSION: u32 = 1;
@@ -94,7 +94,7 @@ pub fn render_case(darktable: &DarktableCli, case: &Case, images: &Path) -> Resu
     for operation in case.disable {
         xmp_on = disable_operation(&xmp_on, operation)?;
     }
-    let xmp_off = disable_operation(&xmp_on, case.operation)?;
+    let xmp_off = switch_off(&xmp_on, case.operation)?;
 
     let mut hasher = DefaultHasher::new();
     (

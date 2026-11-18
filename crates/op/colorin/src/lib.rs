@@ -21,12 +21,13 @@
 //! it, with temperature's late correction towards the camera's D65 reference. Ported:
 //! the camera matrix (darktable's standard matrix, rawler's here, decision 23, and a
 //! DNG's embedded matrix, derived from its tags as darktable derives it), linear Rec2020
-//! and linear Rec709 as input, linear Rec2020 as the working space, no gamut clipping.
-//! `docs/ports/colorin.md` is its spec.
+//! and linear Rec709 as input, linear Rec2020 as the working space, darktable's gamut
+//! clipping to its four profiles and its blue mapping. `docs/ports/colorin.md` is its
+//! spec.
 
 use apertrust_color::{
-    Mat3d, REC2020_PRIMARIES, SRGB_PRIMARIES, camera_to_xyz_d50, inverse_d, mul_d,
-    profile_rgb_to_xyz_d50,
+    ADOBE_RGB_PRIMARIES, Mat3d, REC2020_PRIMARIES, SRGB_PRIMARIES, camera_to_xyz_d50, inverse_d,
+    mul_d, profile_rgb_to_xyz_d50,
 };
 use apertrust_plugin::{
     Domain, Format, ImageContext, ImageDesc, Kernel, Kind, Manifest, NotPorted, Operation, Param,
@@ -100,7 +101,7 @@ static SCHEMA: Schema = Schema {
             name: "normalize",
             kind: Kind::Choice {
                 default: 0,
-                choices: &["off", "srgb", "adobe_rgb", "lin_rec709", "lin_rec2020"],
+                choices: &GAMUT_CLIPPING,
             },
         },
         Param {
@@ -119,6 +120,52 @@ static SCHEMA: Schema = Schema {
 
 /// darktable's D65 for its built-in RGB profiles, `D65xyY`.
 const PROFILE_D65: [f64; 2] = [0.31271, 0.32902];
+
+/// darktable's gamut clipping, `dt_iop_color_normalize_t`: the schema's `normalize`.
+pub const GAMUT_CLIPPING: [&str; 5] = ["off", "srgb", "adobe_rgb", "lin_rec709", "lin_rec2020"];
+
+/// The clipping profile's linear RGB to XYZ D50, darktable's `lmatrix`, for gamut
+/// clipping `normalize`; `None` when it is off. darktable's sRGB, Adobe RGB (compatible),
+/// linear Rec709 and linear Rec2020 are matrix profiles built from their primaries and
+/// `D65xyY` (`colorspaces.c`); `commit_params` reads their colorants and leaves their
+/// curves out, so the clamp works on linear values whatever the profile's curve.
+fn clipping_profile(normalize: u32) -> Option<Mat3d> {
+    let primaries = match GAMUT_CLIPPING[normalize as usize] {
+        "srgb" | "lin_rec709" => SRGB_PRIMARIES,
+        "adobe_rgb" => ADOBE_RGB_PRIMARIES,
+        "lin_rec2020" => REC2020_PRIMARIES,
+        _ => return None,
+    };
+    Some(profile_rgb_to_xyz_d50(PROFILE_D65, primaries))
+}
+
+/// darktable `_apply_blue_mapping`, on camera RGB: where blue is more than half of the
+/// three channels' sum, `t · 0.11` moves from blue to green, with
+/// `t = (z − 0.5) / 0.5 · min(1, sum / 0.5)` and `z` blue over the sum. The kernel's
+/// `blue_mapping`, restated for tests.
+pub fn blue_mapping(rgb: [f32; 3]) -> [f32; 3] {
+    let [r, g, b] = rgb;
+    let sum = r + g + b;
+    if sum > 0.0 {
+        let z = b / sum;
+        if z > 0.5 {
+            let t = (z - 0.5) / (1.0 - 0.5) * (sum / 0.5).min(1.0) * 0.11;
+            return [r, g + t, b - t];
+        }
+    }
+    rgb
+}
+
+/// Whether darktable runs blue mapping on the image,
+/// `dt_image_is_matrix_correction_supported`: a raw that is not monochrome. Here a raw
+/// with colour filters, since the pipeline refuses a raw without them as it opens, a
+/// linear DNG among them.
+fn matrix_correction_supported(image: &ImageContext) -> bool {
+    image
+        .camera
+        .as_ref()
+        .is_some_and(|camera| camera.cfa.is_some())
+}
 
 /// The input profile's RGB to XYZ D50.
 fn input_profile(name: &str, image: &ImageContext) -> Result<Mat3d, NotPorted> {
@@ -200,37 +247,50 @@ impl Operation for Colorin {
         if input.format != Format::Rgba {
             return Err(not_ported("images other than RGB"));
         }
-        if params.choice("normalize") != 0 {
-            return Err(not_ported("gamut clipping"));
-        }
-        if params.flag("blue_mapping") {
-            return Err(not_ported("blue mapping"));
-        }
         if PROFILES[params.choice("type_work") as usize] != "lin_rec2020" {
             return Err(not_ported("working spaces other than linear Rec2020"));
         }
         let to_xyz = input_profile(PROFILES[params.choice("type") as usize], image)?;
-        let working = profile_rgb_to_xyz_d50(PROFILE_D65, REC2020_PRIMARIES);
-        let matrix = mul_d(&inverse_d(&working), &to_xyz);
-        // darktable applies the late correction to every input profile but Lab.
+        let from_xyz = inverse_d(&profile_rgb_to_xyz_d50(PROFILE_D65, REC2020_PRIMARIES));
+        // darktable `commit_params`: with gamut clipping, camera RGB to the clipping
+        // profile's linear RGB (`nmatrix`), then from it to XYZ D50 (`lmatrix`), here on
+        // to the working space; without, camera RGB to XYZ D50 (`cmatrix`), here on to
+        // the working space. Composed in f64.
+        let clipping = clipping_profile(params.choice("normalize"));
+        let (matrix, clipped) = match clipping {
+            Some(clipped_to_xyz) => (
+                mul_d(&inverse_d(&clipped_to_xyz), &to_xyz),
+                mul_d(&from_xyz, &clipped_to_xyz),
+            ),
+            None => (mul_d(&from_xyz, &to_xyz), [[0.0; 3]; 3]),
+        };
+        // darktable `process_cmatrix`: blue mapping only on a raw that is not monochrome.
+        let blue_mapping = params.flag("blue_mapping") && matrix_correction_supported(image);
+        // darktable's `process` takes the late correction for every input profile but
+        // Lab; its blue-mapping path, `_process_cmatrix_bm`, leaves it out of the pixels.
         let correction = if input.late_correction {
             late_correction(image)
         } else {
             [1.0; 3]
         };
+        let applied = if blue_mapping { [1.0; 3] } else { correction };
         // `ColorinParams` in the kernel.
-        let mut bytes = Vec::with_capacity(64);
-        for row in matrix {
+        let mut bytes = Vec::with_capacity(128);
+        for row in matrix.iter().chain(&clipped) {
             for value in [row[0] as f32, row[1] as f32, row[2] as f32, 0.0] {
                 bytes.extend_from_slice(&value.to_le_bytes());
             }
         }
-        for value in correction.into_iter().chain([1.0]) {
+        for value in applied.into_iter().chain([1.0]) {
             bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        for flag in [clipping.is_some(), blue_mapping, false, false] {
+            bytes.extend_from_slice(&u32::from(flag).to_le_bytes());
         }
         let mut prepared = Prepared::per_pixel(input, bytes, Vec::new());
         // darktable `process`: after the correction, the image is at the camera's D65
-        // reference, and its saturation level moves with it.
+        // reference, and its saturation level moves with it, whether or not the pixels
+        // took it, as on its blue-mapping path.
         if input.late_correction {
             let output = &mut prepared.output;
             output.maximum = [0, 1, 2].map(|c| input.maximum[c] * correction[c]);
@@ -299,10 +359,160 @@ mod tests {
     }
 
     fn kernel(prepared: &Prepared) -> ([[f32; 3]; 3], [f32; 3]) {
+        let uniforms = uniforms(prepared);
+        (uniforms.rows, uniforms.correction)
+    }
+
+    /// `ColorinParams` as the kernel reads it.
+    struct Uniforms {
+        rows: [[f32; 3]; 3],
+        clipped: [[f32; 3]; 3],
+        correction: [f32; 3],
+        clipping: bool,
+        blue_mapping: bool,
+    }
+
+    fn uniforms(prepared: &Prepared) -> Uniforms {
         let bytes = &prepared.passes[0].params;
-        let float = |at: usize| f32::from_le_bytes(bytes[at..at + 4].try_into().unwrap());
-        let rows = [0, 1, 2].map(|r| [0, 1, 2].map(|c| float(16 * r + 4 * c)));
-        (rows, [48, 52, 56].map(float))
+        assert_eq!(bytes.len(), 128);
+        let word = |at: usize| <[u8; 4]>::try_from(&bytes[at..at + 4]).unwrap();
+        let float = |at: usize| f32::from_le_bytes(word(at));
+        let flag = |at: usize| match u32::from_le_bytes(word(at)) {
+            0 => false,
+            1 => true,
+            other => panic!("{other}"),
+        };
+        let matrix = |at: usize| [0, 1, 2].map(|r| [0, 1, 2].map(|c| float(at + 16 * r + 4 * c)));
+        Uniforms {
+            rows: matrix(0),
+            clipped: matrix(48),
+            correction: [96, 100, 104].map(float),
+            clipping: flag(112),
+            blue_mapping: flag(116),
+        }
+    }
+
+    fn prepared(image: &ImageContext, input: &ImageDesc, set: &[(&str, Value)]) -> Prepared {
+        let mut values = ParamValues::new();
+        for (name, value) in set {
+            values.set(name, *value);
+        }
+        let params = SCHEMA
+            .resolve_over(&Colorin.defaults(image), &values)
+            .unwrap();
+        Colorin.prepare(&params, image, input).unwrap()
+    }
+
+    fn product(a: &[[f32; 3]; 3], b: &[[f32; 3]; 3]) -> [[f32; 3]; 3] {
+        std::array::from_fn(|r| std::array::from_fn(|c| (0..3).map(|k| a[r][k] * b[k][c]).sum()))
+    }
+
+    /// Gamut clipping splits the matrix in two at the clipping profile's linear RGB:
+    /// camera RGB to it, then on to the working space, the two together the matrix
+    /// without clipping. sRGB and linear Rec709 clip alike, darktable's sRGB curve being
+    /// left out, and linear Rec2020, the working space, goes on by the identity.
+    #[test]
+    fn gamut_clipping_goes_through_the_clipping_profile_s_linear_rgb() {
+        let (image, input) = raw(false);
+        let off = uniforms(&prepared(&image, &input, &[]));
+        assert!(!off.clipping && !off.blue_mapping);
+        assert_eq!(off.clipped, [[0.0; 3]; 3]);
+        let mut by_name = Vec::new();
+        for (index, name) in GAMUT_CLIPPING.iter().enumerate().skip(1) {
+            let on = uniforms(&prepared(
+                &image,
+                &input,
+                &[("normalize", Value::Choice(index as u32))],
+            ));
+            assert!(on.clipping && !on.blue_mapping, "{name}");
+            let whole = product(&on.clipped, &on.rows);
+            for (row, expected) in whole.iter().zip(&off.rows) {
+                for (value, expected) in row.iter().zip(expected) {
+                    assert!((value - expected).abs() < 1e-5, "{name}: {whole:?}");
+                }
+            }
+            by_name.push((*name, on.rows, on.clipped));
+        }
+        let find = |name| by_name.iter().find(|(n, ..)| *n == name).unwrap();
+        assert_eq!(find("srgb").1, find("lin_rec709").1);
+        assert_eq!(find("srgb").2, find("lin_rec709").2);
+        assert_ne!(find("srgb").1, find("adobe_rgb").1);
+        for (r, row) in find("lin_rec2020").2.iter().enumerate() {
+            for (c, &value) in row.iter().enumerate() {
+                let identity = if r == c { 1.0 } else { 0.0 };
+                assert!((value - identity).abs() < 1e-6, "{row:?}");
+            }
+        }
+    }
+
+    /// darktable's `_apply_blue_mapping`, at values worked by hand.
+    #[test]
+    fn blue_mapping_moves_blue_to_green_where_blue_dominates() {
+        // z = 0.8, bright: t = 0.6, 0.066 moved.
+        let [r, g, b] = blue_mapping([0.1, 0.1, 0.8]);
+        assert_eq!(r, 0.1);
+        assert!(
+            (g - 0.166).abs() < 1e-6 && (b - 0.734).abs() < 1e-6,
+            "{g} {b}"
+        );
+        // z = 0.6 with a sum of 0.25, half of 0.5: t = 0.2 · 0.5, 0.011 moved.
+        let [_, g, b] = blue_mapping([0.05, 0.05, 0.15]);
+        assert!(
+            (g - 0.061).abs() < 1e-6 && (b - 0.139).abs() < 1e-6,
+            "{g} {b}"
+        );
+        // The sum moves nothing.
+        let mapped = blue_mapping([0.2, 0.3, 1.5]);
+        assert!((mapped.iter().sum::<f32>() - 2.0).abs() < 1e-6);
+        // Blue at half the sum or less, a sum of zero or below: unchanged.
+        for rgb in [
+            [0.25, 0.25, 0.5],
+            [0.5, 0.3, 0.2],
+            [0.0; 3],
+            [-0.5, 0.1, 0.3],
+            [0.1, -0.2, -0.3],
+        ] {
+            assert_eq!(blue_mapping(rgb), rgb);
+        }
+    }
+
+    /// darktable runs blue mapping only on a raw that is not monochrome, and its path
+    /// leaves the late correction out of the pixels while moving the saturation level and
+    /// the white balance as if it were in.
+    #[test]
+    fn blue_mapping_runs_on_a_colour_raw_without_the_late_correction() {
+        let set = [("blue_mapping", Value::Bool(true))];
+        let (image, input) = raw(true);
+        let without = prepared(&image, &input, &[]);
+        let with = prepared(&image, &input, &set);
+        let on = uniforms(&with);
+        assert!(on.blue_mapping && !on.clipping);
+        assert_eq!(on.correction, [1.0; 3]);
+        assert_eq!(on.rows, uniforms(&without).rows);
+        assert_eq!(with.output, without.output);
+        assert_ne!(uniforms(&without).correction, [1.0; 3]);
+        // With gamut clipping too.
+        let both = uniforms(&prepared(
+            &image,
+            &input,
+            &[set[0], ("normalize", Value::Choice(1))],
+        ));
+        assert!(both.blue_mapping && both.clipping);
+        // Not on a raw without colour filters, nor on an image that is not a raw: the
+        // late correction is the pixels' again.
+        let mut monochrome = image.clone();
+        monochrome.camera.as_mut().unwrap().cfa = None;
+        let not_raw = ImageContext::full(8, 8);
+        let set = [
+            ("blue_mapping", Value::Bool(true)),
+            ("type", Value::Choice(profile("lin_rec2020"))),
+        ];
+        for image in [&monochrome, &not_raw] {
+            let off = uniforms(&prepared(image, &raw(false).1, &set));
+            assert!(!off.blue_mapping);
+        }
+        let monochrome = uniforms(&prepared(&monochrome, &input, &set));
+        assert_eq!(monochrome.correction, uniforms(&without).correction);
     }
 
     #[test]
@@ -404,8 +614,6 @@ mod tests {
             ("type", Value::Choice(profile("enhanced_matrix"))),
             ("type", Value::Choice(profile("vendor_matrix"))),
             ("type", Value::Choice(profile("alternate_matrix"))),
-            ("normalize", Value::Choice(1)),
-            ("blue_mapping", Value::Bool(true)),
             ("type_work", Value::Choice(profile("prophoto_rgb"))),
         ] {
             let mut values = ParamValues::new();

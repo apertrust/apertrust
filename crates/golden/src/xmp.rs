@@ -34,6 +34,36 @@ pub fn disable_operation(xmp: &str, operation: &str) -> Result<String> {
     })
 }
 
+/// The sidecar with `operation` off, as a case's input renders it: its entries switched
+/// off ([`disable_operation`]), but for colorin, which darktable keeps on whatever its
+/// history says (`dt_dev_read_history_ext` turns an always-on module back on). colorin's
+/// off is linear Rec2020 in, the working space, with no gamut clipping or blue mapping:
+/// an identity, as the raw stage's passthrough has it, but for temperature's late
+/// correction, which darktable applies to every input profile.
+pub fn switch_off(xmp: &str, operation: &str) -> Result<String> {
+    if operation != "colorin" {
+        return disable_operation(xmp, operation);
+    }
+    // `dt_iop_colorin_params_t`, versions 6 and 7 alike: the input profile's type, the
+    // file name, the intent, gamut clipping, blue mapping, the working profile's type.
+    const LINEAR_REC2020: [u8; 4] = 4_i32.to_le_bytes();
+    let params = module_params(xmp, operation)?;
+    ensure!(
+        matches!(params.version, 6 | 7) && params.bytes.len() == 1044,
+        "colorin params version {} of {} bytes, not 6 or 7",
+        params.version,
+        params.bytes.len()
+    );
+    ensure!(
+        params.bytes[528..532] == LINEAR_REC2020,
+        "colorin's working profile is not linear Rec2020"
+    );
+    let mut bytes = params.bytes;
+    bytes[0..4].copy_from_slice(&LINEAR_REC2020);
+    bytes[520..528].fill(0);
+    set_params(xmp, operation, &bytes)
+}
+
 /// Removes every history entry for `operation`, renumbering the later entries and the
 /// history's end, so darktable renders the module with its own defaults for the image.
 pub fn remove_operation(xmp: &str, operation: &str) -> Result<String> {
@@ -453,6 +483,35 @@ mod tests {
         assert!(edited.contains("darktable:modversion=\"4\""));
         assert!(is_enabled(&edited, "exposure").unwrap());
         assert!(!is_enabled(&edited, "agx").unwrap());
+    }
+
+    /// A case's input switches its module off, but colorin, which darktable keeps on, is
+    /// set to its identity: linear Rec2020 in, without gamut clipping or blue mapping,
+    /// the rest of its params kept.
+    #[test]
+    fn colorin_is_switched_off_as_its_identity() {
+        let xmp = include_str!("../cases/colorin-srgb.xmp");
+        let on = module_params(xmp, "colorin").unwrap();
+        let int =
+            |bytes: &[u8], at: usize| i32::from_le_bytes(bytes[at..at + 4].try_into().unwrap());
+        assert_eq!([0, 520, 524].map(|at| int(&on.bytes, at)), [11, 1, 0]);
+        let off = switch_off(xmp, "colorin").unwrap();
+        assert!(is_enabled(&off, "colorin").unwrap());
+        let params = module_params(&off, "colorin").unwrap();
+        assert_eq!(params.version, 7);
+        assert_eq!(
+            [0, 520, 524, 528].map(|at| int(&params.bytes, at)),
+            [4, 0, 0, 4]
+        );
+        assert_eq!(params.bytes[4..520], on.bytes[4..520]);
+        let blue = include_str!("../cases/colorin-blue-mapping.xmp");
+        let params = module_params(&switch_off(blue, "colorin").unwrap(), "colorin").unwrap();
+        assert_eq!(int(&params.bytes, 524), 0);
+        // Any other operation is switched off.
+        assert_eq!(
+            switch_off(XMP, "exposure").unwrap(),
+            disable_operation(XMP, "exposure").unwrap()
+        );
     }
 
     #[test]

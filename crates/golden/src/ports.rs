@@ -72,8 +72,9 @@ pub fn kernel_inputs(case: &Case) -> Result<Option<KernelInputs>> {
 /// (decision 15): the tone equalizer's, whose mask filters take whole-image passes and
 /// scratch buffers, local contrast's, whose pyramid and grid do, haze removal's, whose
 /// ambient light, depth and transmission do, bloom's and soften's, whose box means do, and
-/// filmic rgb's, whose highlight reconstruction does. `None` for the cases the harness
-/// dispatches as one kernel.
+/// filmic rgb's, whose highlight reconstruction does; orientation's, which moves pixels;
+/// and colorin's, whose setup reads the raw's camera from the plan's image context.
+/// `None` for the cases the harness dispatches as one kernel.
 pub fn plan_values(case: &Case) -> Result<Option<ParamValues>> {
     match case.operation {
         "toneequal" => Ok(Some(toneequal::values(&toneequal_settings(case.xmp)?))),
@@ -84,6 +85,7 @@ pub fn plan_values(case: &Case) -> Result<Option<ParamValues>> {
         "colorequal" => Ok(Some(colorequal::values(&colorequal_settings(case.xmp)?))),
         "soften" => Ok(Some(soften::values(&soften_settings(case.xmp)?))),
         "flip" => Ok(Some(flip_values(case.xmp)?)),
+        "colorin" => Ok(Some(colorin_values(case.xmp)?)),
         _ => Ok(None),
     }
 }
@@ -145,7 +147,8 @@ pub fn pipeline_values(case: &Case) -> Result<ParamValues> {
 /// The image context of a case's plan over its input, `width` × `height`: for the tone
 /// equalizer with its raw's camera metadata from rawler, since it measures its radius on
 /// the raw's readout, as darktable's `piece->iwidth` is the pipe's input, the raw before
-/// its crop; haze removal reads only the pipe's scale, 1 here.
+/// its crop, and for colorin, which reads its matrix and colour filters; haze removal reads
+/// only the pipe's scale, 1 here.
 pub fn plan_context(case: &Case, width: u32, height: u32) -> Result<ImageContext> {
     if case.operation == "hazeremoval" {
         return Ok(ImageContext::full(width, height));
@@ -1498,6 +1501,36 @@ fn flip_values(xmp: &str) -> Result<ParamValues> {
     Ok(values)
 }
 
+/// colorin's parameters from darktable's `dt_iop_colorin_params_t`, versions 6 and 7, one
+/// layout (version 7 only resolves an invalid working profile, which the operation
+/// refuses as not ported anyway): the input profile's type, a file name of 512 bytes, the
+/// intent, gamut clipping, blue mapping, the working profile's type and its file name.
+/// The schema's profile choices are darktable's values; it has no file names.
+fn colorin_values(xmp: &str) -> Result<ParamValues> {
+    use apertrust_plugin::Value;
+    let params = module_params(xmp, "colorin")?;
+    ensure!(
+        matches!(params.version, 6 | 7),
+        "colorin params version {} is not supported",
+        params.version
+    );
+    ensure!(
+        params.bytes.len() == 1044,
+        "colorin v{} params are {} bytes, expected 1044",
+        params.version,
+        params.bytes.len()
+    );
+    let int = |at: usize| i32::from_le_bytes(params.bytes[at..at + 4].try_into().unwrap());
+    let choice = |at: usize| u32::try_from(int(at)).context("a negative colorin choice");
+    let mut values = ParamValues::new();
+    values.set("type", Value::Choice(choice(0)?));
+    values.set("intent", Value::Choice(choice(516)?));
+    values.set("normalize", Value::Choice(choice(520)?));
+    values.set("blue_mapping", Value::Bool(int(524) != 0));
+    values.set("type_work", Value::Choice(choice(528)?));
+    Ok(values)
+}
+
 /// darktable `dt_iop_hazeremoval_params_t`, versions 1 to 3: strength and distance (f32),
 /// then from version 2 `compatibility_mode` and from version 3 `adaptive` (gboolean).
 /// `legacy_params` gives version 1 the compatibility mode and fixed windows, version 2
@@ -2534,6 +2567,40 @@ mod tests {
         // Both colour processings have a case.
         assert!(processings.contains(&ColorProcessing::PerChannel));
         assert!(processings.contains(&ColorProcessing::RgbRatio));
+    }
+
+    /// Each colorin case runs as a plan with the standard matrix, linear Rec2020 to work
+    /// in and its option: one clipping profile each, or blue mapping alone.
+    #[test]
+    fn every_colorin_case_sets_its_option() {
+        use apertrust_operations::colorin::{GAMUT_CLIPPING, PROFILES};
+        let mut seen = Vec::new();
+        for case in cases::CASES.iter().filter(|c| c.operation == "colorin") {
+            assert!(kernel_inputs(case).unwrap().is_none(), "{}", case.name);
+            let values = plan_values(case).unwrap().unwrap();
+            assert_eq!(PROFILES[values.choice("type") as usize], "standard_matrix");
+            assert_eq!(PROFILES[values.choice("type_work") as usize], "lin_rec2020");
+            assert_eq!(values.choice("intent"), 0);
+            let normalize = GAMUT_CLIPPING[values.choice("normalize") as usize];
+            let blue_mapping = values.flag("blue_mapping");
+            assert!((normalize == "off") == blue_mapping, "{}", case.name);
+            seen.push(if blue_mapping {
+                "blue_mapping"
+            } else {
+                normalize
+            });
+        }
+        seen.sort_unstable();
+        assert_eq!(
+            seen,
+            [
+                "adobe_rgb",
+                "blue_mapping",
+                "lin_rec2020",
+                "lin_rec709",
+                "srgb"
+            ]
+        );
     }
 
     #[test]
