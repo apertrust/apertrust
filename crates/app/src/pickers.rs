@@ -16,7 +16,7 @@
 
 //! The active colour picker in the app (`docs/pickers.md`, decision 79): what the mirror
 //! keeps of it, its marks over the photo and the commands the pointer and the keys send
-//! there, the central bar's words, and the live region that reads a pick out.
+//! there, the viewer bar's words, and the live region that reads a pick out.
 //!
 //! The session measures and applies every pick; the app sends `Command::Picker` and draws
 //! what `Event::Picker` says. What the app asked since the last reading shows at once: a
@@ -581,7 +581,7 @@ pub fn name(words: &Translator, definition: &ProcessingDefinition, picker: &str)
 
 /// A picker's words that say what a pick will do, by the option the setting its words
 /// follow holds (`Picker::words_by`, decision 88), as the app keeps it in `settings`, else
-/// that setting's default: `part` `promise`, its tooltip, or `hint`, the central bar's
+/// that setting's default: `part` `promise`, its tooltip, or `hint`, the viewer bar's
 /// name of it, "Make an area middle grey". Each of the tool's number settings is the
 /// message's variable of its id, in the language's numbers to the setting's decimals,
 /// none shown after the point where it is whole, "Make an area L 92 %"; a reference's L
@@ -751,7 +751,7 @@ pub fn last_pick_words(
 }
 
 /// The name a reference's photo shows by, "IMG_2041": its file's name without its
-/// extension, as Browse shows a photo, whatever folder it is in.
+/// extension, as Collections shows a photo, whatever folder it is in.
 pub fn photo_name(path: &str) -> String {
     let path = std::path::Path::new(path);
     path.file_stem().or(path.file_name()).map_or_else(
@@ -837,7 +837,7 @@ impl ReferencePhotos {
     }
 }
 
-/// The central bar's words while `picker` is on, measuring an area where `area` says
+/// The viewer bar's words while `picker` is on, measuring an area where `area` says
 /// (`docs/pickers.md`, On the photo): which picker it is, the tool's title and the
 /// picker's name, or what a pick will do where its words follow a setting ([`by_setting`],
 /// "Exposure · Make an area middle grey"), and how to use it, its modifier as `mac` spells
@@ -938,7 +938,7 @@ pub struct OnPhoto<'a> {
     pub switched: Region,
     /// What its point sampled, as the screen shows it.
     pub colour: Color32,
-    /// Its name, as the central bar gives it ([`name`]).
+    /// Its name, as the viewer bar gives it ([`name`]).
     pub name: &'a str,
 }
 
@@ -2533,11 +2533,11 @@ mod tests {
         assert_eq!((mirror.active(), mirror.region()), (None, None));
     }
 
-    /// The central bar names the tool and the picker, its control's label on a quad, and
+    /// The viewer bar names the tool and the picker, its control's label on a quad, and
     /// says how to use it: an area's sentence, or a point picker's own; an area picker
     /// switched to a point has none of its own. The Mac says Cmd.
     #[test]
-    fn the_central_bar_names_the_picker_and_says_how_to_use_it() {
+    fn the_viewer_bar_names_the_picker_and_says_how_to_use_it() {
         let words = Translator::new(Locale::EnGb);
         let settings = ToolSettings::default();
         let bar = |picker, area, mac| {
@@ -2580,7 +2580,7 @@ mod tests {
     /// app keeps it (decision 88): middle grey by default; with Lightness chosen, the
     /// lightness in the language's numbers, its decimal only where it has one.
     #[test]
-    fn the_central_bar_says_what_exposure_s_pick_will_do_by_its_target() {
+    fn the_viewer_bar_says_what_exposure_s_pick_will_do_by_its_target() {
         use apertrust_tools::exposure::Exposure;
         let tools: &[&dyn ProcessingTool] = &[&Exposure];
         let exposure = PickerRef::Tool {

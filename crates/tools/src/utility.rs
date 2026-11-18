@@ -14,8 +14,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! The utilities (`docs/gui.md`, The side panel, One tool model): side-panel tools that
-//! edit nothing, Scopes, History, Browse and Export, with no
+//! The utilities (`docs/gui.md`, The Tools panel, One tool model): the Tools
+//! panel's tools that edit nothing, Scopes, History, Collections and Export, with no
 //! [`ProcessingDefinition`](crate::ProcessingDefinition). Each is listed in [`UTILITIES`]
 //! with its words, its sentence `tool-<id>-description` as a tool's, what it measures,
 //! which its header's tooltip says ([`crate::about`]), what its header's ↺ does, its page
@@ -241,10 +241,10 @@ const fn option(section: Section, order: u32, action: &'static str) -> MenuItem 
 /// The utilities built: Scopes, which measures the finished picture; History, whose ↺ is
 /// Reset Edit, which it adds to the photo's and a thumbnail's menus, and whose ⋯ holds
 /// Compress History, Truncate History and Create a Style…, then Discard History… apart, as
-/// the destructive one; Browse, the Photos tab's first; and Export, its last
+/// the destructive one; Collections, the Photos tab's first; and Export, its last
 /// ([`export::EXPORT`]). The pages of the first three are their own widgets as custom rows,
 /// which keep what each drew before (decision 93): Scopes' the graph with its buttons,
-/// History's its steps, Browse's its recents line and its Folders; Export's are setting
+/// History's its steps, Collections' its recents line and its Folders; Export's are setting
 /// rows in groups, with custom rows of its own.
 pub const UTILITIES: &[UtilityDefinition] = &[
     UtilityDefinition {
@@ -308,16 +308,16 @@ pub const UTILITIES: &[UtilityDefinition] = &[
     },
     UtilityDefinition {
         tool: ToolDefinition {
-            id: "browse",
+            id: "collections",
             tabs: &[Tab {
                 id: None,
                 rows: &[
                     Row::Custom {
-                        widget: Widget::Recents,
+                        widget: Widget::CollectionsTopLine,
                         controls: &[],
                     },
                     Row::Custom {
-                        widget: Widget::Folders,
+                        widget: Widget::CollectionsGroups,
                         controls: &[],
                     },
                 ],

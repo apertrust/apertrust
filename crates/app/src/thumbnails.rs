@@ -14,10 +14,10 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! The grid panel's thumbnails on the app's side (`docs/gui.md`, The grid panel): which to
+//! The Browser's thumbnails on the app's side (`docs/gui.md`, The Browser): which to
 //! ask the session for, and the textures made of those the mirror holds.
 //!
-//! - **What is asked for:** the photos whose cells the grid panel drew this frame that have
+//! - **What is asked for:** the photos whose cells the Browser drew this frame that have
 //!   no thumbnail at the cell's size, each once while it stays in sight, in the panel's
 //!   order, as one `LibraryCommand::Thumbnails`, or `LibraryCommand::PhotoThumbnails` by
 //!   their paths for photos opened alone. A photo that leaves the panel's sight and comes
@@ -355,7 +355,7 @@ mod tests {
         assert_eq!(textures.picture(&name("a"), 256), Some(updated));
     }
 
-    /// The grid panel asks for a folder's photos by name, and for photos opened alone by
+    /// The Browser asks for a folder's photos by name, and for photos opened alone by
     /// path, two of the same name apart, each once while in sight; what comes is drawn in
     /// its cell, and goes with the photos alone.
     #[test]

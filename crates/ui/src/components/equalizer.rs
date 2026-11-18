@@ -65,7 +65,7 @@ use crate::{Theme, Translator, theme, translator};
 
 /// The correction the graph spans either way of its ground, EV: darktable's spans 4 EV.
 const SPAN: f32 = 2.0;
-/// The graph's height over its width: the wireframe's 160 over 256, at the side panel's
+/// The graph's height over its width: the wireframe's 160 over 256, at the Tools panel's
 /// 320 points.
 const ASPECT: f32 = 0.625;
 /// darktable's nodes (`area_draw`): rings of radius 4, 3 wide; its bars 6 wide, its curve 3
@@ -246,9 +246,9 @@ impl<'a> Equalizer<'a> {
         // A value that is not a number reads as the ground; none lies past the graph.
         let bands: Vec<f32> = self.bands.iter().map(|&v| within(v)).collect();
 
-        // The wireframe's layout at the side panel's 320 points, 296 wide: the labels across
-        // the top, 20 high; the tone bar at the start, 8 wide, 8 before the graph; the
-        // labels down the end, 24 wide; the tone bar under the graph, 8 below it.
+        // The wireframe's layout at the Tools panel's 320 points, 296 wide: the labels
+        // across the top, 20 high; the tone bar at the start, 8 wide, 8 before the graph;
+        // the labels down the end, 24 wide; the tone bar under the graph, 8 below it.
         let width = ui.available_width();
         let top = t.spacing.xl + t.spacing.xs;
         let graph_width = (width - t.spacing.xl - t.spacing.xxl).max(0.0);

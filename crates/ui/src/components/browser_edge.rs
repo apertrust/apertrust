@@ -14,9 +14,9 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! The grid panel's edge towards the central panel, which resizes it in whole lines of
-//! cells (`docs/gui.md`, The grid panel, Its size): the side panel's `PanelEdge` laid along
-//! the grid panel's top, or its side when it is a column, stepping by rows or columns
+//! The Browser's edge towards the Viewer, which resizes it in whole lines of
+//! cells (`docs/gui.md`, The Browser, Its size): the Tools panel's `PanelEdge` laid along
+//! the Browser's top, or its side when it is a column, stepping by rows or columns
 //! rather than points.
 
 use egui::accesskit::{Action, Orientation};
@@ -25,21 +25,21 @@ use egui::{
     vec2,
 };
 
+use super::browser::{BrowserPosition, GAP, ThumbnailSize};
 use super::focus_ring;
-use super::grid_panel::{GAP, GridPosition, ThumbnailSize};
 use crate::i18n::Args;
 use crate::{theme, tr, translator};
 
-/// What the user did to the grid panel's edge.
+/// What the user did to the Browser's edge.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum GridEdgeAction {
+pub enum BrowserEdgeAction {
     /// The panel's new number of lines, within those it may show.
     Resize(usize),
     /// Back to one line: a double-click on the edge, or Delete while it has focus.
     Reset,
 }
 
-/// The edge between the grid panel and the central panel, the separator on the panel's
+/// The edge between the Browser and the Viewer, the separator on the panel's
 /// side towards it: its top at the bottom of the window, which resizes it in whole rows,
 /// its right at the left and its left at the right, in whole columns. It brightens from
 /// `separator` to `border` while the pointer is over it, drags it or it has focus.
@@ -50,17 +50,17 @@ pub enum GridEdgeAction {
 ///   few points either side of the line (egui's `resize_grab_radius_side`). A drag leaves
 ///   the focus where it was, so the arrow keys still go from photo to photo.
 /// - **The keyboard**: it takes focus with Tab, with a focus ring. Then the arrow towards
-///   the central panel adds a line and the other takes one away (↑ and ↓ at the bottom),
+///   the Viewer adds a line and the other takes one away (↑ and ↓ at the bottom),
 ///   Home and End take the panel to its fewest and most, and Delete (or Backspace, the
 ///   Mac's Delete) goes back to one.
-/// - **Screen readers** find a splitter, "Grid panel height" at the bottom and "Grid panel
+/// - **Screen readers** find a splitter, "Browser height" at the bottom and "Browser
 ///   width" at a side, whose value is the number of lines ("2 rows", "3 columns"), as
 ///   dragged this frame, which they step by one.
 ///
-/// It is made before the panel is laid out, so that [`GridEdge::lines`] gives the lines a
-/// drag asks for this frame and the panel follows the pointer without a frame's delay,
+/// It is made before the panel is laid out, so that [`BrowserEdge::lines`] gives the lines
+/// a drag asks for this frame and the panel follows the pointer without a frame's delay,
 /// and shown after the panel and what lies beside it, so its grab zone is on top of both.
-pub struct GridEdge {
+pub struct BrowserEdge {
     id: Id,
     /// The lines kept, which a smaller window may show fewer of.
     lines: usize,
@@ -68,20 +68,20 @@ pub struct GridEdge {
     most: usize,
     size: ThumbnailSize,
     labels: bool,
-    position: GridPosition,
+    position: BrowserPosition,
 }
 
-impl GridEdge {
-    /// The edge of a grid panel along the bottom keeping `lines` rows of thumbnails of
+impl BrowserEdge {
+    /// The edge of a Browser along the bottom keeping `lines` rows of thumbnails of
     /// `size`, with their captions, showing at most `most`.
     pub fn new(lines: usize, most: usize, size: ThumbnailSize) -> Self {
-        GridEdge {
-            id: Id::unique("apertrust-ui grid edge"),
+        BrowserEdge {
+            id: Id::unique("apertrust-ui browser edge"),
             lines,
             most: most.max(1),
             size,
             labels: true,
-            position: GridPosition::Bottom,
+            position: BrowserPosition::Bottom,
         }
     }
 
@@ -92,7 +92,7 @@ impl GridEdge {
     }
 
     /// For the panel at `position` instead: at a side its lines are columns.
-    pub fn position(mut self, position: GridPosition) -> Self {
+    pub fn position(mut self, position: BrowserPosition) -> Self {
         self.position = position;
         self
     }
@@ -105,29 +105,29 @@ impl GridEdge {
             .unwrap_or_else(|| self.shown())
     }
 
-    /// Draws the edge of `panel`, laid out with [`GridEdge::lines`], and reports what the
-    /// user did. Shown after the panel and what lies beside it.
-    pub fn show(self, ui: &mut Ui, panel: Rect) -> Option<GridEdgeAction> {
+    /// Draws the edge of `panel`, laid out with [`BrowserEdge::lines`], and reports what
+    /// the user did. Shown after the panel and what lies beside it.
+    pub fn show(self, ui: &mut Ui, panel: Rect) -> Option<BrowserEdgeAction> {
         let t = theme(ui.ctx());
         let grab = ui.style().interaction.resize_grab_radius_side;
         let half = t.shape.separator_width / 2.0;
         // Where the line is, and the zone that takes the pointer round it.
         let (line, rect) = match self.position {
-            GridPosition::Bottom => {
+            BrowserPosition::Bottom => {
                 let y = panel.top();
                 (
                     y + half,
                     Rect::from_x_y_ranges(panel.x_range(), y - grab..=y + grab),
                 )
             }
-            GridPosition::Left => {
+            BrowserPosition::Left => {
                 let x = panel.right();
                 (
                     x - half,
                     Rect::from_x_y_ranges(x - grab..=x + grab, panel.y_range()),
                 )
             }
-            GridPosition::Right => {
+            BrowserPosition::Right => {
                 let x = panel.left();
                 (
                     x + half,
@@ -153,11 +153,11 @@ impl GridEdge {
                     },
                 );
             });
-            // The arrow towards the central panel adds a line.
+            // The arrow towards the Viewer adds a line.
             let (more, fewer) = match self.position {
-                GridPosition::Bottom => (Key::ArrowUp, Key::ArrowDown),
-                GridPosition::Left => (Key::ArrowRight, Key::ArrowLeft),
-                GridPosition::Right => (Key::ArrowLeft, Key::ArrowRight),
+                BrowserPosition::Bottom => (Key::ArrowUp, Key::ArrowDown),
+                BrowserPosition::Left => (Key::ArrowRight, Key::ArrowLeft),
+                BrowserPosition::Right => (Key::ArrowLeft, Key::ArrowRight),
             };
             ui.input(|i| {
                 if i.key_pressed(more) {
@@ -214,9 +214,9 @@ impl GridEdge {
         // For screen readers: a splitter between the photo and the panel, its value the
         // lines as this frame leaves them.
         let (name, unit) = if column {
-            ("grid-panel-width", "grid-columns")
+            ("browser-width", "grid-columns")
         } else {
-            ("grid-panel-height", "grid-rows")
+            ("browser-height", "grid-rows")
         };
         let name = tr(ui.ctx(), name);
         let mut args = Args::new();
@@ -248,9 +248,9 @@ impl GridEdge {
         });
 
         let action = if reset {
-            Some(GridEdgeAction::Reset)
+            Some(BrowserEdgeAction::Reset)
         } else {
-            (lines != shown).then_some(GridEdgeAction::Resize(lines))
+            (lines != shown).then_some(BrowserEdgeAction::Resize(lines))
         };
         if action.is_some() {
             ui.ctx().request_repaint();
@@ -275,16 +275,16 @@ impl GridEdge {
     }
 
     /// The lines a drag of the edge asks for: those it started with, and one more for every
-    /// line's thickness the pointer has moved towards the central panel since the press, a
+    /// line's thickness the pointer has moved towards the Viewer since the press, a
     /// line joining as the pointer passes its middle.
     fn dragged(&self, ctx: &Context, response: &Response) -> Option<usize> {
         if !(response.dragged() || response.drag_stopped()) {
             return None;
         }
         let along = |p: egui::Pos2| match self.position {
-            GridPosition::Bottom => -p.y,
-            GridPosition::Left => p.x,
-            GridPosition::Right => -p.x,
+            BrowserPosition::Bottom => -p.y,
+            BrowserPosition::Left => p.x,
+            BrowserPosition::Right => -p.x,
         };
         let pointer = along(response.interact_pointer_pos()?);
         // The lines and the press's place, kept from the drag's start, since the press

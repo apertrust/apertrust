@@ -424,9 +424,9 @@ fn the_strip_s_close_button_closes_and_a_drag_moves_the_window() {
     assert!(mac.query_by_role_and_label(Role::Button, "Close").is_none());
 }
 
-/// What the window asks of the folders is Browse's to carry out; its own is not.
+/// What the window asks of the folders is Collections' to carry out; its own is not.
 #[test]
-fn what_it_asks_of_the_folders_is_browse_s() {
+fn what_it_asks_of_the_folders_is_collections_s() {
     let path = PathBuf::from("/photos/Wedding");
     assert_eq!(
         Asked::Open(path.clone()).library(),

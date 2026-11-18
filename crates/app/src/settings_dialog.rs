@@ -1481,15 +1481,16 @@ mod tests {
         let (mut keeper, settings) = Keeper::open(folder.storage());
         assert_eq!(Settings::new(&keeper, false).page, Page::General);
         // Another setting written leaves it as it was.
-        keeper.apply(
-            &settings,
-            "grid_panel.square_thumbnails",
-            Some(&true.into()),
-        );
+        keeper.apply(&settings, "browser.square_thumbnails", Some(&true.into()));
         keeper.flush();
         assert!(
             folder.text().contains("page = \"library\""),
             "{}",
+            folder.text()
+        );
+        assert!(
+            folder.text().contains("square_thumbnails = true"),
+            "the other setting reached the file: {}",
             folder.text()
         );
     }

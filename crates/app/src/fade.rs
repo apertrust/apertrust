@@ -15,7 +15,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 //! The fade from an opening photo's first picture to its first live frame (decision 77;
-//! `docs/gui.md`, The central panel's states).
+//! `docs/gui.md`, The Viewer's states).
 //!
 //! The live frame is drawn at full strength from its first frame, with the scopes, the
 //! values and the on-photo controls on at once; the picture is drawn over it, in the place
@@ -148,7 +148,7 @@ mod tests {
         assert!(kept.is_none());
     }
 
-    /// A slot with a fade under way, as the central panel draws it over the live frame.
+    /// A slot with a fade under way, as the Viewer draws it over the live frame.
     struct Scene {
         fade: Option<Fade>,
         open: u64,

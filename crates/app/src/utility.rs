@@ -20,7 +20,8 @@
 //!
 //! - **[`UtilityTool`]** is what a utility does: its page's custom rows, each drawn by its
 //!   [`UtilityTool::body`] with the row's widget, and its own ↺, where its declaration says
-//!   so. Its egui code stays in its module (`history`, `scopes`, `library` for Browse).
+//!   so. Its egui code stays in its module (`history`, `scopes`, `library` for
+//!   Collections).
 //! - **One [`Context`] for every utility:** the mirror, the settings, the words and the
 //!   frame's commands for the session.
 //! - **The shell's part,** its section open or closed and the peek keys, is the header's
@@ -47,8 +48,8 @@ use crate::settings::{Settings, ToolSettings};
 use crate::tools::{self, Change, Head, Note, Pressed, Rows};
 
 /// What every utility is given each frame (decision 93): what the session reported, the
-/// settings, the words, and the commands the frame sends the session once the side panel is
-/// drawn.
+/// settings, the words, and the commands the frame sends the session once the Tools panel
+/// is drawn.
 pub struct Context<'a> {
     pub mirror: &'a Mirror,
     pub settings: &'a Settings,
@@ -354,8 +355,8 @@ pub fn resettable(definition: &ToolDefinition, state: &State) -> bool {
 }
 
 /// What the utility `definition`'s header's tooltip says, where its words hold its
-/// sentence: that it edits nothing, and what it measures. Browse, whose sentence is still a
-/// design question, says nothing, as before.
+/// sentence: that it edits nothing, and what it measures. Collections, whose sentence is
+/// still a design question, says nothing, as before.
 fn about(words: &Translator, definition: &ToolDefinition) -> Option<parts::About> {
     let id = definition.id;
     (words.has(&messages::description(id))).then(|| tools::about(words, id, None))

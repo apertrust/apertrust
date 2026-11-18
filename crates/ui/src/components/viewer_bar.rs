@@ -62,9 +62,9 @@ pub enum Zoom {
     Percent(f64),
 }
 
-/// What the user did to the central bar this frame.
+/// What the user did to the viewer bar this frame.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub enum CentralBarAction {
+pub enum ViewerBarAction {
     ShowSelected,
     ProofMargin,
     BeforeAfter,
@@ -80,7 +80,7 @@ pub enum CentralBarAction {
     ZoomOut,
 }
 
-pub struct CentralBar<'a> {
+pub struct ViewerBar<'a> {
     show_selected: Toggle,
     proof_margin: Toggle,
     before_after: Toggle,
@@ -93,26 +93,26 @@ pub struct CentralBar<'a> {
     zoom: Zoom,
     zoom_enabled: bool,
     zoomable: bool,
-    shortcuts: Vec<(CentralBarAction, &'a str)>,
+    shortcuts: Vec<(ViewerBarAction, &'a str)>,
 }
 
 const BUTTON: f32 = 28.0;
 
 /// The zoom menu, a separator where `None`: darktable's list, then the two steps.
-const ZOOM_MENU: [Option<CentralBarAction>; 13] = [
-    Some(CentralBarAction::Zoom(Zoom::Small)),
-    Some(CentralBarAction::Zoom(Zoom::Fit)),
-    Some(CentralBarAction::Zoom(Zoom::Fill)),
+const ZOOM_MENU: [Option<ViewerBarAction>; 13] = [
+    Some(ViewerBarAction::Zoom(Zoom::Small)),
+    Some(ViewerBarAction::Zoom(Zoom::Fit)),
+    Some(ViewerBarAction::Zoom(Zoom::Fill)),
     None,
-    Some(CentralBarAction::Zoom(Zoom::Percent(50.0))),
-    Some(CentralBarAction::Zoom(Zoom::Percent(100.0))),
-    Some(CentralBarAction::Zoom(Zoom::Percent(200.0))),
-    Some(CentralBarAction::Zoom(Zoom::Percent(400.0))),
-    Some(CentralBarAction::Zoom(Zoom::Percent(800.0))),
-    Some(CentralBarAction::Zoom(Zoom::Percent(1600.0))),
+    Some(ViewerBarAction::Zoom(Zoom::Percent(50.0))),
+    Some(ViewerBarAction::Zoom(Zoom::Percent(100.0))),
+    Some(ViewerBarAction::Zoom(Zoom::Percent(200.0))),
+    Some(ViewerBarAction::Zoom(Zoom::Percent(400.0))),
+    Some(ViewerBarAction::Zoom(Zoom::Percent(800.0))),
+    Some(ViewerBarAction::Zoom(Zoom::Percent(1600.0))),
     None,
-    Some(CentralBarAction::ZoomIn),
-    Some(CentralBarAction::ZoomOut),
+    Some(ViewerBarAction::ZoomIn),
+    Some(ViewerBarAction::ZoomOut),
 ];
 
 /// The largest scale in the menu, past which Zoom in has nowhere to go.
@@ -126,10 +126,10 @@ const ZOOM_GAP: f32 = 4.0;
 const ZOOM_END: f32 = 6.0;
 const CHEVRON: f32 = 10.0;
 
-impl<'a> CentralBar<'a> {
+impl<'a> ViewerBar<'a> {
     /// `layer` is the translated name of the layer being edited, `zoom` the scale shown.
     pub fn new(layer: &'a str, zoom: Zoom) -> Self {
-        CentralBar {
+        ViewerBar {
             show_selected: Toggle::default(),
             proof_margin: Toggle::default(),
             before_after: Toggle::default(),
@@ -161,7 +161,7 @@ impl<'a> CentralBar<'a> {
 
     /// The keys that run one of the zoom menu's entries, in the platform's spelling
     /// (`Ctrl+0`), shown at its end; the app's keymap handles them.
-    pub fn shortcut(mut self, entry: CentralBarAction, keys: &'a str) -> Self {
+    pub fn shortcut(mut self, entry: ViewerBarAction, keys: &'a str) -> Self {
         self.shortcuts.push((entry, keys));
         self
     }
@@ -215,14 +215,14 @@ impl<'a> CentralBar<'a> {
         BUTTON + 2.0 * theme(ctx).spacing.xs
     }
 
-    pub fn show(self, ui: &mut Ui) -> Option<CentralBarAction> {
+    pub fn show(self, ui: &mut Ui) -> Option<ViewerBarAction> {
         let t = theme(ui.ctx());
         let ctx = ui.ctx().clone();
         let (bar, response) = ui.allocate_exact_size(
             vec2(ui.available_width(), Self::height(&ctx)),
             Sense::hover(),
         );
-        let bar_name = tr(&ctx, "central-bar");
+        let bar_name = tr(&ctx, "viewer-bar");
         response.widget_info(|| WidgetInfo::labeled(Role::Toolbar, true, &bar_name));
         ui.painter().rect_filled(bar, 0.0, t.colors.surface);
         ui.painter().hline(
@@ -232,7 +232,7 @@ impl<'a> CentralBar<'a> {
         );
         let inner = bar.shrink2(vec2(t.spacing.m, 0.0));
         let mut action = None;
-        let zoom_text = zoom_words(&ctx, CentralBarAction::Zoom(self.zoom));
+        let zoom_text = zoom_words(&ctx, ViewerBarAction::Zoom(self.zoom));
         let zoom_galley = ui.painter().layout_no_wrap(
             zoom_text,
             FontId::proportional(t.text.body),
@@ -256,25 +256,25 @@ impl<'a> CentralBar<'a> {
                             Icon::PhotosSelected,
                             "photo-show-selected",
                             self.show_selected,
-                            CentralBarAction::ShowSelected,
+                            ViewerBarAction::ShowSelected,
                         ),
                         (
                             Icon::ProofMargin,
                             "photo-proof-margin",
                             self.proof_margin,
-                            CentralBarAction::ProofMargin,
+                            ViewerBarAction::ProofMargin,
                         ),
                         (
                             Icon::BeforeAfter,
                             "photo-before-after",
                             self.before_after,
-                            CentralBarAction::BeforeAfter,
+                            ViewerBarAction::BeforeAfter,
                         ),
                         (
                             Icon::Grid,
                             "photo-guides",
                             self.guides,
-                            CentralBarAction::Guides,
+                            ViewerBarAction::Guides,
                         ),
                     ] {
                         if IconButton::new(icon, &tr(&ctx, id))
@@ -292,7 +292,7 @@ impl<'a> CentralBar<'a> {
                     args.set("layer", self.layer);
                     let layer_name = translator(&ctx).text_with("photo-layer", Some(&args));
                     if layer_button(ui, self.layer, &layer_name, self.layers) {
-                        action = Some(CentralBarAction::Layers);
+                        action = Some(ViewerBarAction::Layers);
                     }
                     if IconButton::new(Icon::Plus, &tr(&ctx, "photo-new-layer"))
                         .enabled(self.layers)
@@ -300,7 +300,7 @@ impl<'a> CentralBar<'a> {
                         .show(ui)
                         .clicked()
                     {
-                        action = Some(CentralBarAction::NewLayer);
+                        action = Some(ViewerBarAction::NewLayer);
                     }
                     ui.min_rect().right()
                 },
@@ -351,11 +351,11 @@ impl<'a> CentralBar<'a> {
 
     /// The zoom's button: the scale and ⌄, opening the zoom menu under it through the
     /// popup service. Returns the entry chosen.
-    fn zoom_button(&self, ui: &mut Ui) -> Option<CentralBarAction> {
+    fn zoom_button(&self, ui: &mut Ui) -> Option<ViewerBarAction> {
         let t = theme(ui.ctx());
         let ctx = ui.ctx().clone();
         let enabled = self.zoom_enabled;
-        let scale = zoom_words(&ctx, CentralBarAction::Zoom(self.zoom));
+        let scale = zoom_words(&ctx, ViewerBarAction::Zoom(self.zoom));
         let colour = if enabled {
             t.colors.text
         } else {
@@ -429,7 +429,7 @@ impl<'a> CentralBar<'a> {
                             Item::new(zoom_id(*entry), zoom_words(&ctx, *entry)).enabled(can);
                         // The scales are a set, the one shown checked; an in-between
                         // scale checks none. Zoom in and out are commands.
-                        if let CentralBarAction::Zoom(zoom) = entry {
+                        if let ViewerBarAction::Zoom(zoom) = entry {
                             item = item.checked(*zoom == self.zoom);
                         }
                         if let Some((_, keys)) = self.shortcuts.iter().find(|(e, _)| e == entry) {
@@ -453,42 +453,42 @@ impl<'a> CentralBar<'a> {
 
     /// Whether the zoom menu's `entry` can be chosen: Fit always, the rest only while the
     /// scale can change, Zoom in short of the largest scale and Zoom out above Small.
-    fn can_choose(&self, entry: CentralBarAction) -> bool {
+    fn can_choose(&self, entry: ViewerBarAction) -> bool {
         match entry {
-            CentralBarAction::Zoom(Zoom::Fit) => true,
+            ViewerBarAction::Zoom(Zoom::Fit) => true,
             _ if !self.zoomable => false,
-            CentralBarAction::ZoomIn => !matches!(self.zoom, Zoom::Percent(p) if p >= MOST),
-            CentralBarAction::ZoomOut => self.zoom != Zoom::Small,
+            ViewerBarAction::ZoomIn => !matches!(self.zoom, Zoom::Percent(p) if p >= MOST),
+            ViewerBarAction::ZoomOut => self.zoom != Zoom::Small,
             _ => true,
         }
     }
 }
 
 /// A zoom menu entry's id in the popup's request; the bar's other actions have none.
-fn zoom_id(entry: CentralBarAction) -> String {
+fn zoom_id(entry: ViewerBarAction) -> String {
     match entry {
-        CentralBarAction::Zoom(Zoom::Small) => "zoom-small".to_owned(),
-        CentralBarAction::Zoom(Zoom::Fit) => "zoom-fit".to_owned(),
-        CentralBarAction::Zoom(Zoom::Fill) => "zoom-fill".to_owned(),
-        CentralBarAction::Zoom(Zoom::Percent(p)) => format!("zoom-{p}"),
-        CentralBarAction::ZoomIn => "zoom-in".to_owned(),
-        CentralBarAction::ZoomOut => "zoom-out".to_owned(),
+        ViewerBarAction::Zoom(Zoom::Small) => "zoom-small".to_owned(),
+        ViewerBarAction::Zoom(Zoom::Fit) => "zoom-fit".to_owned(),
+        ViewerBarAction::Zoom(Zoom::Fill) => "zoom-fill".to_owned(),
+        ViewerBarAction::Zoom(Zoom::Percent(p)) => format!("zoom-{p}"),
+        ViewerBarAction::ZoomIn => "zoom-in".to_owned(),
+        ViewerBarAction::ZoomOut => "zoom-out".to_owned(),
         _ => String::new(),
     }
 }
 
 /// A zoom menu entry's words, translated: a scale as the button shows it, a percentage
 /// rounded to a whole number. The bar's other actions have none.
-fn zoom_words(ctx: &egui::Context, entry: CentralBarAction) -> String {
+fn zoom_words(ctx: &egui::Context, entry: ViewerBarAction) -> String {
     let id = match entry {
-        CentralBarAction::Zoom(Zoom::Percent(p)) => {
+        ViewerBarAction::Zoom(Zoom::Percent(p)) => {
             return format!("{}%", translator(ctx).format_number(p, 0, false));
         }
-        CentralBarAction::Zoom(Zoom::Small) => "photo-zoom-small",
-        CentralBarAction::Zoom(Zoom::Fit) => "photo-zoom-fit",
-        CentralBarAction::Zoom(Zoom::Fill) => "photo-zoom-fill",
-        CentralBarAction::ZoomIn => "photo-zoom-in",
-        CentralBarAction::ZoomOut => "photo-zoom-out",
+        ViewerBarAction::Zoom(Zoom::Small) => "photo-zoom-small",
+        ViewerBarAction::Zoom(Zoom::Fit) => "photo-zoom-fit",
+        ViewerBarAction::Zoom(Zoom::Fill) => "photo-zoom-fill",
+        ViewerBarAction::ZoomIn => "photo-zoom-in",
+        ViewerBarAction::ZoomOut => "photo-zoom-out",
         _ => return String::new(),
     };
     tr(ctx, id)

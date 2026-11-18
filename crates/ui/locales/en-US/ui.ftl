@@ -3,7 +3,7 @@
 # differently (color, gray, center, minimize, canceled, license), with en-GB's variables;
 # every other message is en-GB's.
 
-## The side panel's tabs
+## The Tools panel's tabs
 
 tab-color = Color
 panel-customise-tabs = Customize tabs…
@@ -12,7 +12,7 @@ panel-customise-tabs = Customize tabs…
 
 theme-grey = Gray
 
-## The top panel
+## The Toolbar
 
 window-minimise = Minimize
 window-maximise = Maximize
@@ -27,11 +27,11 @@ job-export-cancelled =
     }
 job-cache-clear-cancelled = Clearing canceled: { job-cache-entries } removed, { job-cache-size }
 
-## The central bar
+## The viewer bar
 
 photo-values-read = Red { $red }, green { $green }, blue { $blue }, gray { $grey }
 
-## The grid panel and its cells
+## The Browser and its cells
 
 grid-cell-labels = Color labels: { $labels }
 grid-cell-colour-labels = Color labels

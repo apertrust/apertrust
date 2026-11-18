@@ -1,8 +1,8 @@
-# 0038. The side panel's tabs, by editing stage
+# 0038. The Tools panel's tabs, by editing stage
 
 ## Context
 
-Which tabs does the Edit workspace's side panel have, which tool goes in which, and in what order?
+Which tabs does the Edit workspace's Tools panel have, which tool goes in which, and in what order?
 
 darktable's darkroom shows its modules in groups. Its default "workflow: scene-referred" preset (`src/libs/modulegroups.c` at the reference release) groups them by the kind of processing, base, color, correct and effect, and its right panel lists each group's modules in pipeline order, the last at the top. Those groups do not follow the order people edit in, so a normal edit crosses every tab: white balance and exposure in base, colour in color, denoise and lens correction in correct, then back to base for the tone mapper and local contrast. Within a tab the first tool of an edit is at the bottom.
 
@@ -25,7 +25,7 @@ The first pass mirrors darktable's modules ([0002](0002-rewrite-darktable-first-
   - Adjust holds light and colour together, because a scene-referred edit interleaves them: the white balances, exposure, the tone mapper, then contrast and colour.
   - Detail holds what works at the scale of pixels, Geometry what changes the frame and corrects the lens, Effects the finishing looks.
   - Raw holds the raw stage's tools and the colour profiles, set up rather than edited and rarely touched, in a tab of their own, out of the way; their processing order is how they are set up.
-- **Display order only.** The processing order stays the pipeline's whatever a tab lists. These lists are the Edit workspace's defaults: a person can reorder, pin, move and float sections on screen ([0083](0083-the-side-panels-layout-dragged-and-floating.md)), and the side panel's ⋮ › Processing Order sorts a tab's tools into pipeline order.
+- **Display order only.** The processing order stays the pipeline's whatever a tab lists. These lists are the Edit workspace's defaults: a person can reorder, pin, move and float sections on screen ([0083](0083-the-side-panels-layout-dragged-and-floating.md)), and the Tools panel's ⋮ › Processing Order sorts a tab's tools into pipeline order.
 - **Labels:** one plain word each, Apertrust's own, in British English and sentence case: Adjust, Detail, Geometry, Effects, Raw; American English has the same words. Ukrainian and Polish translations follow, reviewed as every translation is.
 - **Ids,** as settings keep the tab: `adjust`, `detail`, `geometry`, `effects` and `raw`, beside `photos` and `history`; their messages are `tab-` and the id.
 - **Icons:** one colour, in Lucide's style, drawn at 22 points, each with a filled form for the chosen tab ([0081](0081-icon-only-buttons-draw-no-plates-on-is-the-filled-icon.md)); drawn with the wireframe. Adjust two sliders and Raw a camera, from Lucide; Geometry and Effects darktable's Correct and Effect shapes; Detail a circle crossed by three fine lines, in their family.

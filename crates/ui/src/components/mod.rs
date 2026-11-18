@@ -31,17 +31,16 @@
 mod about;
 mod action_row;
 mod alert;
+mod browser;
+mod browser_edge;
 mod button;
 mod buttons_row;
-mod central_bar;
 mod checkbox;
 mod choice;
 mod collapsible_group;
 mod curve;
 mod equalizer;
 mod grid_cell;
-mod grid_edge;
-mod grid_panel;
 mod histogram;
 mod icon_button;
 mod jobs;
@@ -55,23 +54,28 @@ mod readout_row;
 mod reference_row;
 mod section;
 mod segmented;
-mod side_panel;
 mod slider;
 mod swatches;
 mod switch;
 mod tabs;
 mod text_field;
 mod toggle_row;
-mod top_panel;
+mod toolbar;
+mod tools_panel;
 mod value_field;
+mod viewer_bar;
 mod warning_row;
 
 pub use about::{About, Place};
 pub use action_row::ActionRow;
 pub use alert::{AlertBody, AlertResponse, ButtonOrder};
+pub use browser::{
+    Browser, BrowserAction, BrowserBarAction, BrowserOutput, BrowserPosition, CellMenu, Sort,
+    SortKey, Thumb, ThumbnailSize, browser_height, browser_lines, browser_thickness, browser_width,
+};
+pub use browser_edge::{BrowserEdge, BrowserEdgeAction};
 pub use button::Button;
 pub use buttons_row::{ButtonsAction, ButtonsRow};
-pub use central_bar::{CentralBar, CentralBarAction, Toggle, Zoom};
 pub use checkbox::Checkbox;
 pub use choice::{Choice, ChoiceAction, ChoiceBox, ChoiceStyle};
 pub use collapsible_group::CollapsibleGroup;
@@ -80,12 +84,6 @@ pub use equalizer::{Equalizer, EqualizerAction, MaskHistogram, Settle};
 pub use grid_cell::{
     CellAction, CellPicture, CellRating, CellStatus, ColourLabel, ColourLabels, GridCell,
     GridCellOutput,
-};
-pub use grid_edge::{GridEdge, GridEdgeAction};
-pub use grid_panel::{
-    CellMenu, GridBarAction, GridPanel, GridPanelAction, GridPanelOutput, GridPosition, Sort,
-    SortKey, Thumb, ThumbnailSize, grid_panel_height, grid_panel_lines, grid_panel_thickness,
-    grid_panel_width,
 };
 pub use histogram::{
     Channel, Clipped, Histogram, HistogramAction, HistogramBins, Scale, Scope, ScopeView,
@@ -109,18 +107,19 @@ pub use readout_row::ReadoutRow;
 pub use reference_row::{Reference, ReferenceAction, ReferenceRow};
 pub use section::{Section, SectionAction, SectionOutput, section_body, section_list};
 pub use segmented::Segmented;
-pub use side_panel::{
-    PanelBody, PanelEdge, PanelEdgeAction, PanelTab, TabBar, TabBarAction, quiet_scroll,
-    quiet_scroll_rows,
-};
 pub use slider::{Mark, Quad, SliderAction, SliderRow, Track};
 pub use swatches::{Swatch, SwatchFill, Swatches};
 pub use switch::Switch;
 pub use tabs::{Tabs, group_label};
 pub use text_field::{PathField, PathOutput, TextField, Variable};
 pub use toggle_row::ToggleRow;
-pub use top_panel::{Available, SaveState, TopPanel, TopPanelAction, caption_button};
+pub use toolbar::{Available, SaveState, Toolbar, ToolbarAction, caption_button};
+pub use tools_panel::{
+    PanelBody, PanelEdge, PanelEdgeAction, PanelTab, TabBar, TabBarAction, quiet_scroll,
+    quiet_scroll_rows,
+};
 pub use value_field::ValueField;
+pub use viewer_bar::{Toggle, ViewerBar, ViewerBarAction, Zoom};
 pub use warning_row::WarningRow;
 
 use egui::accesskit::HasPopup;

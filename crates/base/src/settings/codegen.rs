@@ -122,7 +122,7 @@ struct Static {
     /// boolean on a page.
     requires: Option<(String, usize)>,
     owner: String,
-    /// Its name in Rust, the id in capitals: `SIDE_PANEL_WIDTH`.
+    /// Its name in Rust, the id in capitals: `TOOLS_PANEL_WIDTH`.
     name: String,
     code: String,
     /// The choice types in it, whose ids the generated code checks.
@@ -967,7 +967,7 @@ mod tests {
              [window.position]\nowner = \"app\"\nkind = \"list\"\n\
              of = { kind = \"number\", decimals = 0 }\nlength = 2\noptional = true\n\
              applies = \"at-once\"\n\n\
-             [side_panel.width]\nowner = \"app\"\nkind = \"number\"\ndefault = \"computed\"\n\
+             [tools_panel.width]\nowner = \"app\"\nkind = \"number\"\ndefault = \"computed\"\n\
              applies = \"after-restart\"\n\n\
              [keys]\nowner = \"app\"\nkind = \"table\"\nby = \"actions\"\n\
              of = { kind = \"list\", of = \"text\" }\ndefault = { undo = [\"Ctrl+Z\"] }\n\
@@ -984,13 +984,13 @@ mod tests {
             format!("Value({s}::option::<apertrust_ui::Builtin>(\"dark\", \"test.toml:15: [theme]: \\\"dark\\\" is none of apertrust_ui::Builtin's options\"))"),
             format!("pub static WINDOW_POSITION: {s}::Setting<Option<[f32; 2]>> = "),
             format!("default: {s}::DefaultValue::Value(None),"),
-            format!("default: {s}::DefaultValue::Computed(computed::side_panel_width),"),
+            format!("default: {s}::DefaultValue::Computed(computed::tools_panel_width),"),
             format!("applies: {s}::Applies::AfterRestart,"),
             format!("pub static KEYS: {s}::Setting<{s}::Table<&'static [&'static str]>> = "),
             "Value(&[(\"undo\", &[\"Ctrl+Z\"])])".to_owned(),
             format!("kind: {s}::Kind::Table {{ by: \"actions\", of: &{s}::Kind::List {{ of: &{s}::Kind::Text, length: None }} }},"),
             format!("const _: () = assert!(\n    {s}::distinct::<apertrust_ui::Builtin>(),"),
-            format!("pub static ALL: &[&dyn {s}::Declared] = &[\n    &SCALE,\n    &THEME,\n    &WINDOW_POSITION,\n    &SIDE_PANEL_WIDTH,\n    &KEYS,\n];\n"),
+            format!("pub static ALL: &[&dyn {s}::Declared] = &[\n    &SCALE,\n    &THEME,\n    &WINDOW_POSITION,\n    &TOOLS_PANEL_WIDTH,\n    &KEYS,\n];\n"),
         ];
         for part in expect {
             assert!(code.contains(&part), "{part}\nin:\n{code}");

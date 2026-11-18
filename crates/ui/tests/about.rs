@@ -149,7 +149,7 @@ struct Scene {
     peek: bool,
 }
 
-/// A window of `size` with a side panel `panel` points wide at its end (or its start), its
+/// A window of `size` with a Tools panel `panel` points wide at its end (or its start), its
 /// sections the tools `ids`, closed, each with its tooltip, over the photo's surround.
 fn scene(
     which: Builtin,
@@ -766,7 +766,7 @@ fn the_tooltip_in_the_high_contrast_theme() {
     harness.snapshot("section-about-high-contrast");
 }
 
-/// At the side panel's narrowest, 240 points, the header cuts Highlight reconstruction's
+/// At the Tools panel's narrowest, 240 points, the header cuts Highlight reconstruction's
 /// name, so the tooltip starts with it whole, here with the header focused by a key.
 #[test]
 fn a_name_the_header_cuts_comes_first_whole() {

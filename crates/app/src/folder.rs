@@ -23,10 +23,10 @@
 //!   [`FolderState::choosing`], [`FolderState::closing`]); an event naming another is an
 //!   earlier command's and dropped.
 //! - **The root and the active folder:** a way in (Open Folder…, a dropped folder, a
-//!   recent, Open This Folder, the command line) opens a folder that becomes Browse's root,
-//!   at the top of its tree, and only it enters the recents ([`Outcome::Opened`]). A folder
-//!   chosen in the tree is opened too, the library listing its photos, but the root, the
-//!   subfolders listed and the recents stay as they were (`docs/gui.md`, Browse).
+//!   recent, Open This Folder, the command line) opens a folder that becomes Collections'
+//!   root, at the top of its tree, and only it enters the recents ([`Outcome::Opened`]). A
+//!   folder chosen in the tree is opened too, the library listing its photos, but the root,
+//!   the subfolders listed and the recents stay as they were (`docs/gui.md`, Collections).
 //! - **The photos** accumulate from the `Listed` chunks, in the listing's order, until one says
 //!   `done`.
 //! - **The tree's walk** comes in `Walked` batches after the root's own listing, in the
@@ -40,17 +40,17 @@
 //!   which the textures made of them compare (`thumbnails.rs`, `docs/gui.md`, Derived
 //!   caches).
 //! - **Photos alone,** one or several opened together by any route, are [`Folder::Alone`]:
-//!   no folder is asked for, and the grid panel holds just them ([`FolderState::alone`]).
+//!   no folder is asked for, and the Browser holds just them ([`FolderState::alone`]).
 //!   Their thumbnails come one `PhotoThumbnail` at a time, each naming its path, kept with
 //!   them by path and size; other photos opened alone keep those of the paths still among
 //!   them, and a folder's opening drops them all; one of a path no longer among them is
 //!   dropped.
 //! - **A cell's key,** what its thumbnails are kept, asked for and drawn by, is a folder's
 //!   photo's name, or a photo alone's path, whole ([`CellKey`], [`FolderState::key`]).
-//! - **The order** the grid panel shows the photos in is the grid bar's sort
+//! - **The order** the Browser shows the photos in is the browser bar's sort
 //!   ([`FolderState::sort`], [`sorted`]), worked out again when the sort changes, a chunk
-//!   comes or the capture times do (`Taken`, once the listing is done); until they come,
-//!   a photo sorts by its file's modified time (`docs/gui.md`, The grid bar). The listing
+//!   comes or the capture times do (`Taken`, once the listing is done); until they come, a
+//!   photo sorts by its file's modified time (`docs/gui.md`, The browser bar). The listing
 //!   keeps the folder's own order; the panel draws [`FolderState::order`].
 
 use std::cmp::Ordering;
@@ -79,7 +79,7 @@ pub enum Folder {
         reason: Option<String>,
     },
     /// One photo, opened by any route (`docs/library.md`, One photo), or several opened
-    /// together, from any folders: no folder listed, the grid panel holding just them.
+    /// together, from any folders: no folder listed, the Browser holding just them.
     Alone {
         /// The photos' paths, absolute, in the order opened, each once.
         paths: Vec<PathBuf>,
@@ -168,7 +168,7 @@ pub struct FolderState {
     active: Option<usize>,
     /// Raised whenever the folder or its thumbnails change.
     generation: u64,
-    /// The grid bar's sort, which [`FolderState::order`] follows.
+    /// The browser bar's sort, which [`FolderState::order`] follows.
     sort: Option<Sort>,
     /// The listing's photos in the sort's order, by their place in the listing.
     order: Vec<usize>,
@@ -176,12 +176,12 @@ pub struct FolderState {
     place: Vec<usize>,
     /// The subfolders of the folders in the root's tree, by path, as the library listed them:
     /// the root's and each chosen folder's with their opens (`LibraryEvent::Subfolders`), the
-    /// others' as Browse's tree asked (`LibraryEvent::SubfoldersOf`).
+    /// others' as Collections' tree asked (`LibraryEvent::SubfoldersOf`).
     inside: HashMap<PathBuf, Result<Vec<String>, String>>,
     /// The folders inside it whose subfolders were asked for, so each is asked once an open.
     asked: HashSet<PathBuf>,
-    /// Browse's root: the folder a way in opened, at the top of the tree, which a folder
-    /// chosen in the tree keeps; none with nothing open, and once a way in failed.
+    /// Collections' root: the folder a way in opened, at the top of the tree, which a
+    /// folder chosen in the tree keeps; none with nothing open, and once a way in failed.
     root: Option<PathBuf>,
     /// The session's tree, whose walk the counts come from: the first folder opened, kept
     /// while each later open lies inside it, as the session keeps it; none once closed.
@@ -211,10 +211,10 @@ impl FolderState {
         self.ask(path, number);
     }
 
-    /// The folder at `path`, the root or one inside its tree, is chosen in Browse's tree and
-    /// asked for by the command numbered `number`: the grid panel shows its photos, and the
-    /// root and the subfolders listed stay. Those asked for are asked again, since the open
-    /// cancels their listing.
+    /// The folder at `path`, the root or one inside its tree, is chosen in Collections'
+    /// tree and asked for by the command numbered `number`: the Browser shows its photos,
+    /// and the root and the subfolders listed stay. Those asked for are asked again, since
+    /// the open cancels their listing.
     pub fn choosing(&mut self, path: PathBuf, number: u64) {
         if self.root.is_none() {
             self.opening(path, number);
@@ -254,7 +254,7 @@ impl FolderState {
 
     /// The photos at `paths`, absolute, are opened alone, together, the first active
     /// (`docs/library.md`, One photo), with no folder open or after the folder open was
-    /// closed ([`FolderState::closing`]): nothing is listed, and the grid panel holds just
+    /// closed ([`FolderState::closing`]): nothing is listed, and the Browser holds just
     /// them, each once, in the order given, until a folder opens. The thumbnails of photos
     /// alone before that are among them still are kept.
     pub fn alone(&mut self, paths: Vec<PathBuf>) {
@@ -369,7 +369,7 @@ impl FolderState {
     }
 
     /// The largest thumbnail that has come of the raw at `path`, if it is one of the open
-    /// folder's photos or of the photos alone: what the central panel shows at once as it
+    /// folder's photos or of the photos alone: what the Viewer shows at once as it
     /// opens (decision 77).
     pub fn largest_thumbnail(&self, path: &Path) -> Option<&Thumbnail> {
         let key = match &self.folder {
@@ -396,7 +396,7 @@ impl FolderState {
             .filter(|_| matches!(self.folder, Folder::Open(_) | Folder::Alone { .. }))
     }
 
-    /// The photos the grid panel holds, in the listing's order: the open folder's, or the
+    /// The photos the Browser holds, in the listing's order: the open folder's, or the
     /// photo alone.
     pub fn photos(&self) -> &[Photo] {
         match &self.folder {
@@ -406,12 +406,12 @@ impl FolderState {
         }
     }
 
-    /// The grid panel's active cell: the photo open, where it is in the order.
+    /// The Browser's active cell: the photo open, where it is in the order.
     pub fn active_shown(&self) -> Option<usize> {
         self.active().and_then(|i| self.place.get(i).copied())
     }
 
-    /// The listing's photos as the grid panel shows them: each one's place in the listing,
+    /// The listing's photos as the Browser shows them: each one's place in the listing,
     /// in the sort's order.
     pub fn order(&self) -> &[usize] {
         &self.order
@@ -513,8 +513,8 @@ impl FolderState {
         self.asked.remove(folder);
     }
 
-    /// Browse's root, at the top of its tree: the folder a way in opened, while it is being
-    /// read, open, or a folder chosen in its tree is.
+    /// Collections' root, at the top of its tree: the folder a way in opened, while it is
+    /// being read, open, or a folder chosen in its tree is.
     pub fn root(&self) -> Option<&Path> {
         self.root.as_deref()
     }
@@ -534,7 +534,7 @@ impl FolderState {
         &self.counts
     }
 
-    /// The folder shown, the active folder, whose photos the grid panel shows: the open one,
+    /// The folder shown, the active folder, whose photos the Browser shows: the open one,
     /// or the one being opened; none for a photo alone, whose folder is not listed.
     pub fn shown(&self) -> Option<&Path> {
         match &self.folder {
@@ -770,7 +770,7 @@ fn same(alone: &Path, photo: &Path) -> bool {
 
 /// The photos' order by `sort`, each by its place in `photos`; `taken`, the photos' capture
 /// times once they are known, else their files' modified times stand in (`docs/gui.md`, The
-/// grid bar). Descending reverses the key, never the ties: photos equal by it stay in
+/// browser bar). Descending reverses the key, never the ties: photos equal by it stay in
 /// shooting order, then the file browser's order of their names, and photos with no time
 /// come last whichever way. Rating has no ratings to sort by yet, so only its ties order.
 pub fn sorted(photos: &[Photo], taken: Option<&[Option<DateTime>]>, sort: Sort) -> Vec<usize> {
@@ -1083,7 +1083,7 @@ mod tests {
         })
     }
 
-    /// A folder chosen in the tree is opened, and the grid panel shows it, but the root,
+    /// A folder chosen in the tree is opened, and the Browser shows it, but the root,
     /// its count, the subfolders listed and the recents stay; what was asked is asked again,
     /// since the open cancels its listing. A way in makes a new root, enters the recents and
     /// drops what was listed of the tree before.
@@ -1378,7 +1378,7 @@ mod tests {
         assert_eq!(state.active(), None);
     }
 
-    /// Photos opened together alone: each once, in the order opened, the grid panel holding
+    /// Photos opened together alone: each once, in the order opened, the Browser holding
     /// just them, the first active, then whichever of them opens; their edit marks follow
     /// the session's values, and the close of the folder left, sent before them, leaves
     /// them.

@@ -95,7 +95,7 @@ A pick and another option move no memory, as darktable's callbacks for them leav
 
 ### The picker
 
-`spot`, darktable's "from image area" (`dt_color_picker_new_with_cst(self, DT_COLOR_PICKER_AREA, NULL, IOP_CS_NONE)`, `temperature.c:2088`): an area, not denoised, read at `temperature`'s input in no space of its own, so the mosaic per CFA colour (`Space::Operation`), not keep-active, writing `red`, `green`, `blue` and `preset`, reading no setting. Until the button bar comes, Settings' from image area is its one place (`PresetRow::pickers`). Its words: `tool-temperature-picker-spot-label` "From image area", which the central bar shows as "White balance · From image area" with the area sentence, and `-promise` darktable's tooltip, "Set white balance to detected from area".
+`spot`, darktable's "from image area" (`dt_color_picker_new_with_cst(self, DT_COLOR_PICKER_AREA, NULL, IOP_CS_NONE)`, `temperature.c:2088`): an area, not denoised, read at `temperature`'s input in no space of its own, so the mosaic per CFA colour (`Space::Operation`), not keep-active, writing `red`, `green`, `blue` and `preset`, reading no setting. Until the button bar comes, Settings' from image area is its one place (`PresetRow::pickers`). Its words: `tool-temperature-picker-spot-label` "From image area", which the viewer bar shows as "White balance · From image area" with the area sentence, and `-promise` darktable's tooltip, "Set white balance to detected from area".
 
 **Its pick** (`ProcessingTool::pick`, darktable's `color_picker_apply`, `temperature.c:1948-1969`), on the reading's input mean `m`, one channel per CFA colour:
 

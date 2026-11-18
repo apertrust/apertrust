@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! The grid cell: one photo of the grid panel (`docs/gui.md`, The grid panel, The cell):
+//! The grid cell: one photo of the Browser (`docs/gui.md`, The Browser, The cell):
 //! its picture in a square and, while the grid shows labels, a caption under it. It is
 //! given a file's name, what the library knows of its edit, its rating and labels where
 //! the library has them, and, once it has come, the photo's thumbnail, a texture the

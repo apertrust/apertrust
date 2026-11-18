@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! The system's preference for less motion (`docs/gui.md`, The central panel's states):
+//! The system's preference for less motion (`docs/gui.md`, The Viewer's states):
 //! with it on, the app cuts where it would fade.
 //!
 //! - **macOS:** Accessibility › Display › Reduce motion,

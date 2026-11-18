@@ -4,7 +4,7 @@
 
 On Linux, a dialog waits for neither the window manager's modal hints nor Linux's alerts ([0041](0041-dialogs-as-native-modal-windows.md)): Settings shows there as a modal window already. GNOME on Wayland draws no frame round a window, so every dialog window showed winit's fallback frame: minimise, maximise and close as bare squares, though a dialog can only be closed. On Wayland the window also kept the host's first guess at its size, so a dialog showed cut off.
 
-On Windows the main window's top panel is its title bar ([0039](0039-one-top-bar-native-menus-on-the-mac-one-menu-button-elsewhere.md)), drawn in the theme; the system's title bar on a dialog would show an accent-coloured caption and the app's icon beside it.
+On Windows the main window's Toolbar is its title bar ([0039](0039-one-top-bar-native-menus-on-the-mac-one-menu-button-elsewhere.md)), drawn in the theme; the system's title bar on a dialog would show an accent-coloured caption and the app's icon beside it.
 
 ## Decision
 

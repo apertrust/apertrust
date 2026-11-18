@@ -16,17 +16,17 @@ A tool's section already has its own buttons: reset, presets and options (⋯). 
 
 **The places.** `Place`, in `apertrust-tools`, names the places open to tools' items and no other: `Photo`, `Thumbnail` and `Options`. A tool's or a utility's item can name no other place, since its type has none. The app's own list is `menus::Place`: `Open(apertrust_tools::Place)` for those three, and one variant for each place of the app's alone, added with its place's menu, `Surround` first.
 
-- Open to tools' items: `Photo` (the photo in the central panel), `Thumbnail` (a grid panel cell, and a cell in Photo when several photos show), and `Options` (a tool's own ⋯, in its own section only).
+- Open to tools' items: `Photo` (the photo in the Viewer), `Thumbnail` (a Browser cell, and a cell in Photo when several photos show), and `Options` (a tool's own ⋯, in its own section only).
 - The app's alone, each built with its feature:
   - the surround, `Place::Surround` (built: View › Background's items);
-  - the grid bar (built: Position ▸);
-  - Browse's folder rows (built);
-  - the grid panel's empty area: the grid bar's options, with Select All and Select None;
+  - the browser bar (built: Position ▸);
+  - Collections' folder rows (built);
+  - the Browser's empty area: the browser bar's options, with Select All and Select None;
   - a History step: Go to Step, Show Tool, Compress up to Here and Truncate after Here;
   - the jobs window's rows: Cancel, Show in Folder and Copy Error;
   - a layer (Phase 4), the scopes, a tab's icon.
 - Another place opens to tools' items only by a decision of its own, which adds it to `apertrust-tools`' `Place`.
-- The top panel, `TopPanel`, is the app's alone: a right-click anywhere on it, an item or its empty areas, opens the toolbar menu ([0092](0092-the-toolbar.md)), the system's window menu staying on the system's own key ([0039](0039-one-top-bar-native-menus-on-the-mac-one-menu-button-elsewhere.md)).
+- The Toolbar, `Toolbar`, is the app's alone: a right-click anywhere on it, an item or its empty areas, opens the toolbar menu, planned ([0092](0092-the-toolbar.md)), the system's window menu staying on the system's own key ([0039](0039-one-top-bar-native-menus-on-the-mac-one-menu-button-elsewhere.md)).
 
 **A tool takes no right-click.**
 
@@ -35,7 +35,7 @@ A tool's section already has its own buttons: reset, presets and options (⋯). 
 - Its own menu is the header's options button, ⋯, a pull-down from that button.
 - Shift+F10 and the Menu key on a focused header open nothing; Tab reaches ⋯.
 - A control keeps its own gesture, which is never a menu: a slider's right-click opens darktable's fine control (42), and a picker button's takes an area ([0079](0079-colour-pickers-one-api-for-tools-and-the-colour-picker.md)).
-- The rows of a list a tool shows are items of their own and may have a menu, as a place does: Browse's folders, the Keywords list ([0073](0073-the-photos-tabs-tools-browse-first-filters-in-folder-mode.md)), History's steps and layers. The Colour picker's stored samples keep darktable's right-click load and store (79).
+- The rows of a list a tool shows are items of their own and may have a menu, as a place does: Collections' folders, the Keywords list ([0073](0073-the-photos-tabs-tools-browse-first-filters-in-folder-mode.md)), History's steps and layers. The Colour picker's stored samples keep darktable's right-click load and store (79).
 
 **Every item is an action** of the registry (36). So it can be given keys, it is in the menu bar or its tool too, it is enabled and checked from the state, and the native menu only reports which was chosen.
 
@@ -117,7 +117,7 @@ Discard History… is in no context menu: it stays in Edit and History's ⋯ ([0
   - the generated `tool-<tool>-<action>` actions (`actions::tool_actions`), run through `Intent::ToolAction` and `tool_action`;
   - `menus::Place` with `Surround`, the surround's menu built by `menus::context` too;
   - `Target`, `menus::APP_ITEMS` and `menus::context(place, target)`;
-  - the photo's right-click menu (`central_menu`), a picker on taking the right-click first, and a thumbnail's from the grid panel's cell (`CellMenu`), both through `context_popup`, with its two behaviours while a menu is open;
+  - the photo's right-click menu (`central_menu`), a picker on taking the right-click first, and a thumbnail's from the Browser's cell (`CellMenu`), both through `context_popup`, with its two behaviours while a menu is open;
 - the items: History's Reset in both menus, and Orientation ▸ on the photo, after Background ▸, the first submenu a tool adds;
 - the tests: the limits and the section rules, the menus' size, a repeated `(section, order)` in one menu, Background ▸ equal to View › Background, every item reachable elsewhere, the photo's and a thumbnail's menus as they read, and the generated actions' ids, words, availability and keys.
 
@@ -144,10 +144,10 @@ Pickers as items, the other places, and the app's items in ⋯, Reset, Copy Sett
   - the generated tool actions in `actions.rs`, found by every lookup by id;
   - `menus::Place` and `Target`;
   - `menus::context(place, target)` for every context menu, the surround's included;
-  - the photo's right-click in `main.rs`, and a thumbnail's from the grid panel;
+  - the photo's right-click in `main.rs`, and a thumbnail's from the Browser;
   - the app's own items as `MenuItem`s, `menus::APP_ITEMS`;
   - tests of the limits, of the menu's size, of a repeated `(section, order)` in one menu, of Background ▸ against View › Background, and of every item being reachable elsewhere.
-- `apertrust-ui`: the grid panel reports a cell's right-click and its menu keys, with the cell (`GridPanelOutput::menu`). It still holds no tool types.
+- `apertrust-ui`: the Browser reports a cell's right-click and its menu keys, with the cell (`BrowserOutput::menu`). It still holds no tool types.
 - The engine and the session protocol are unchanged: an item runs an action that already sends its command.
 - Decision 92's tools' items on the toolbar are these generated actions.
 - Decisions 83 and 86 no longer open anything on a right-click on a section's header.

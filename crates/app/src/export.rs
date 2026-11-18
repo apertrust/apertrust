@@ -15,9 +15,9 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 //! The Export tool (`docs/gui.md`, The Export tool; decision 56): darktable's export module
-//! row for row, a utility section of the Photos tab's side panel, after Browse. It is a
-//! function of `&mut Ui`, so the app draws it in the panel and the interaction tests draw it
-//! in a harness.
+//! row for row, a utility section of the Photos tab's Tools panel, after Collections. It is
+//! a function of `&mut Ui`, so the app draws it in the panel and the interaction tests draw
+//! it in a harness.
 //!
 //! **Its page is a utility's declaration** (decision 93; `apertrust_tools::utility::export`),
 //! drawn by the one page drawer: Storage options and Format options, plain titled groups

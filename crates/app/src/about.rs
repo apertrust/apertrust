@@ -15,7 +15,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 //! About Apertrust (`docs/gui.md`, Help): a modal dialog of Apertrust's own, which the
-//! `about` action opens, from the top panel's mark among others. Its page shows the full
+//! `about` action opens, from the Toolbar's mark among others. Its page shows the full
 //! logo, the version as the startup banner gives it, the copyright and the licence, with
 //! two buttons, Credits and Licence, each a page one step in: `CREDITS.md` drawn as
 //! Markdown, and the GNU GPL's text.
@@ -67,7 +67,7 @@ pub struct About {
     /// a click, so no button is drawn highlighted there.
     focus: Option<Page>,
     /// The control that opened the dialog, which gets the keyboard focus back as it
-    /// closes: the top panel's mark.
+    /// closes: the Toolbar's mark.
     opener: Option<egui::Id>,
     /// The version with the commit, as the startup banner gives it.
     version: String,

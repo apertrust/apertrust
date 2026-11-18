@@ -180,7 +180,8 @@ pub struct Head {
     /// Whether the keys that peek are held (`Section::peek`).
     pub peek: bool,
     /// ⋯'s entries: the items the tool declares at `Place::Options`, as
-    /// [`crate::menus::options`] builds them, then, until they are declared, Browse's own.
+    /// [`crate::menus::options`] builds them, then, until they are declared, Collections'
+    /// own.
     pub options: Vec<popup::Entry>,
     /// Whether ⋯ opens while it holds anything: History's only while the photo has a
     /// history.
@@ -202,7 +203,7 @@ pub enum Pressed {
     Reset,
     /// A registry action: ↺'s where it runs one, as History's Reset Edit, or an item of ⋯.
     Run(ActionId),
-    /// An item of ⋯ the tool has not declared yet, by its id: Browse's.
+    /// An item of ⋯ the tool has not declared yet, by its id: Collections'.
     Own(String),
 }
 
@@ -6145,7 +6146,7 @@ mod tests {
     }
 
     /// Every slider row of every built tool, at either end of its range, in each
-    /// language and the pseudo-locale, at the side panel's narrowest: its value is drawn
+    /// language and the pseudo-locale, at the Tools panel's narrowest: its value is drawn
     /// whole, with its unit, as darktable writes it and as screen readers hear it, 5 points
     /// from the row's end, the widest, the tone equalizer's Edges refinement/feathering at
     /// its top, "10000.00", included, never elided; the label, cut where the line has no
@@ -6794,7 +6795,7 @@ mod tests {
     }
 
     /// Tone curve's section with a curve drawn, on Luma, and open on Advanced, in every
-    /// theme and the pseudo-locale, as wide as the side panel at its narrowest, where its
+    /// theme and the pseudo-locale, as wide as the Tools panel at its narrowest, where its
     /// six tabs are tightest.
     fn photograph_tone_curve(which: Builtin, locale: Locale, name: &str) {
         let mut luma = untouched(&ToneCurve);

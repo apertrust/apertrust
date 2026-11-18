@@ -14,14 +14,13 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! The shell's parts: the top panel, the central bar, the grid panel and the side panel's
+//! The shell's parts: the Toolbar, the viewer bar, the Browser and the Tools panel's
 //! edge, driven through AccessKit, and photographed at a full window's width, where nothing
 //! is compact (`docs/gui.md`, Testing).
 
 use apertrust_ui::components::{
-    Available, CentralBar, CentralBarAction, GridPanel, GridPanelAction, Margin, PanelEdge,
-    PanelEdgeAction, PhotoCaption, PhotoFrame, SaveState, Thumb, Toggle, TopPanel, TopPanelAction,
-    Zoom,
+    Available, Browser, BrowserAction, Margin, PanelEdge, PanelEdgeAction, PhotoCaption,
+    PhotoFrame, SaveState, Thumb, Toggle, Toolbar, ToolbarAction, ViewerBar, ViewerBarAction, Zoom,
 };
 use apertrust_ui::{Builtin, Locale, Theme, Translator};
 use egui::accesskit::{Action, Role};
@@ -33,13 +32,13 @@ fn install(ctx: &egui::Context) {
     apertrust_ui::install(ctx, Theme::default());
 }
 
-fn top_panel(available: Available) -> Harness<'static, Vec<TopPanelAction>> {
+fn toolbar(available: Available) -> Harness<'static, Vec<ToolbarAction>> {
     Harness::builder()
         .with_size(egui::vec2(1200.0, 60.0))
         .with_context_setup(install)
         .build_ui_state(
-            move |ui, actions: &mut Vec<TopPanelAction>| {
-                if let Some(action) = TopPanel::new()
+            move |ui, actions: &mut Vec<ToolbarAction>| {
+                if let Some(action) = Toolbar::new()
                     .available(available)
                     .saved(SaveState::Saved)
                     .show(ui)
@@ -63,8 +62,8 @@ const ACTIONS: [&str; 7] = [
 ];
 
 #[test]
-fn the_top_panel_reports_its_actions() {
-    let mut harness = top_panel(Available::default());
+fn the_toolbar_reports_its_actions() {
+    let mut harness = toolbar(Available::default());
     harness.run();
     // The mark first, a button named for what it opens.
     harness
@@ -78,14 +77,14 @@ fn the_top_panel_reports_its_actions() {
     assert_eq!(
         *harness.state(),
         vec![
-            TopPanelAction::About,
-            TopPanelAction::Import,
-            TopPanelAction::Export,
-            TopPanelAction::Reset,
-            TopPanelAction::Undo,
-            TopPanelAction::Redo,
-            TopPanelAction::CopyEdit,
-            TopPanelAction::ApplyEdit,
+            ToolbarAction::About,
+            ToolbarAction::Import,
+            ToolbarAction::Export,
+            ToolbarAction::Reset,
+            ToolbarAction::Undo,
+            ToolbarAction::Redo,
+            ToolbarAction::CopyEdit,
+            ToolbarAction::ApplyEdit,
         ]
     );
     // No Settings button: Settings is in the menus and on its keys.
@@ -94,7 +93,7 @@ fn the_top_panel_reports_its_actions() {
 
 #[test]
 fn the_actions_come_first_in_order_and_saved_last() {
-    let mut harness = top_panel(Available::default());
+    let mut harness = toolbar(Available::default());
     harness.run();
     let rect = |name: &str| harness.get_by_label(name).rect();
     for pair in ACTIONS.windows(2) {
@@ -121,7 +120,7 @@ fn the_actions_come_first_in_order_and_saved_last() {
 
 #[test]
 fn unavailable_actions_do_nothing() {
-    let mut harness = top_panel(Available {
+    let mut harness = toolbar(Available {
         undo: false,
         export: false,
         ..Available::default()
@@ -133,15 +132,15 @@ fn unavailable_actions_do_nothing() {
     assert!(harness.state().is_empty());
 }
 
-/// The top panel `width` points wide, with the save state `saved`, and as on the Mac, the window's buttons'
-/// room at its start, or as on Windows and Linux, the ☰ at its start and the caption
-/// buttons at its end; and Export's keys.
+/// The Toolbar `width` points wide, with the save state `saved`, and as on the Mac, the
+/// window's buttons' room at its start, or as on Windows and Linux, the ☰ at its start and
+/// the caption buttons at its end; and Export's keys.
 fn narrow(
     width: f32,
     saved: SaveState<'static>,
     inset: f32,
     caption: bool,
-) -> Harness<'static, Vec<TopPanelAction>> {
+) -> Harness<'static, Vec<ToolbarAction>> {
     narrow_in(Locale::EnGb, width, saved, inset, caption)
 }
 
@@ -152,7 +151,7 @@ fn narrow_in(
     saved: SaveState<'static>,
     inset: f32,
     caption: bool,
-) -> Harness<'static, Vec<TopPanelAction>> {
+) -> Harness<'static, Vec<ToolbarAction>> {
     Harness::builder()
         .with_size(egui::vec2(width, 120.0))
         .with_context_setup(move |ctx| {
@@ -160,8 +159,8 @@ fn narrow_in(
             apertrust_ui::set_locale(ctx, locale);
         })
         .build_ui_state(
-            move |ui, actions: &mut Vec<TopPanelAction>| {
-                if let Some(action) = TopPanel::new()
+            move |ui, actions: &mut Vec<ToolbarAction>| {
+                if let Some(action) = Toolbar::new()
                     .available(Available {
                         redo: false,
                         apply: false,
@@ -172,7 +171,7 @@ fn narrow_in(
                     .title_bar(true)
                     .menu_button(caption)
                     .caption_buttons(caption)
-                    .shortcut(TopPanelAction::Export, "Ctrl+E")
+                    .shortcut(ToolbarAction::Export, "Ctrl+E")
                     .show(ui)
                 {
                     actions.push(action);
@@ -183,7 +182,7 @@ fn narrow_in(
 }
 
 /// The common actions the panel shows, by name, and the width of each.
-fn shown(harness: &Harness<'_, Vec<TopPanelAction>>) -> Vec<(&'static str, f32)> {
+fn shown(harness: &Harness<'_, Vec<ToolbarAction>>) -> Vec<(&'static str, f32)> {
     ACTIONS
         .iter()
         .filter_map(|name| Some((*name, harness.query_by_label(name)?.rect().width())))
@@ -191,7 +190,7 @@ fn shown(harness: &Harness<'_, Vec<TopPanelAction>>) -> Vec<(&'static str, f32)>
 }
 
 #[test]
-fn a_narrowing_top_panel_folds_its_words_then_its_actions_into_more() {
+fn a_narrowing_toolbar_folds_its_words_then_its_actions_into_more() {
     let mut wide = narrow(1200.0, SaveState::Saved, 0.0, false);
     wide.run();
     // Import, Export and Reset with their words; no ⋯.
@@ -232,7 +231,7 @@ fn a_narrowing_top_panel_folds_its_words_then_its_actions_into_more() {
     );
     export.click();
     more.run();
-    assert_eq!(*more.state(), vec![TopPanelAction::Export]);
+    assert_eq!(*more.state(), vec![ToolbarAction::Export]);
 
     // At the narrowest, Undo and Redo join them.
     let mut least = narrow(150.0, SaveState::Saved, 0.0, false);
@@ -291,14 +290,14 @@ fn the_more_menu_is_a_popup_list_with_keys_and_enabled_states() {
     harness.key_press(Key::Enter);
     harness.run();
     assert!(harness.query_by_role(Role::Menu).is_none());
-    assert_eq!(*harness.state(), vec![TopPanelAction::Import]);
+    assert_eq!(*harness.state(), vec![ToolbarAction::Import]);
 }
 
 /// Opened with the pointer, ⋯ gives the focus to its button as it closes, chosen or not:
 /// a press leaves no focus to give back, so the button is the menu's opener.
 #[test]
 fn the_more_menu_opened_with_the_pointer_gives_the_focus_to_its_button() {
-    let focused = |harness: &Harness<'_, Vec<TopPanelAction>>| {
+    let focused = |harness: &Harness<'_, Vec<ToolbarAction>>| {
         harness
             .get_by(|node| node.is_focused())
             .accesskit_node()
@@ -312,7 +311,7 @@ fn the_more_menu_opened_with_the_pointer_gives_the_focus_to_its_button() {
         .get_by_role_and_label(Role::MenuItem, "Export…")
         .click();
     harness.run();
-    assert_eq!(*harness.state(), vec![TopPanelAction::Export]);
+    assert_eq!(*harness.state(), vec![ToolbarAction::Export]);
     assert_eq!(focused(&harness).as_deref(), Some("More actions"));
     let mut harness = narrow(300.0, SaveState::Saved, 0.0, false);
     harness.run();
@@ -325,7 +324,7 @@ fn the_more_menu_opened_with_the_pointer_gives_the_focus_to_its_button() {
 }
 
 #[test]
-fn a_narrowing_top_panel_always_leaves_room_to_move_the_window() {
+fn a_narrowing_toolbar_always_leaves_room_to_move_the_window() {
     // In every language; as on the Mac, with the traffic lights' room, and as on Linux,
     // with the caption buttons; with Saving… and the save warning, the save state's two
     // forms, whose slot is the same when it shows nothing; down to the window's minimum
@@ -333,7 +332,7 @@ fn a_narrowing_top_panel_always_leaves_room_to_move_the_window() {
     for locale in Locale::ALL {
         let words = Translator::new(locale);
         let parts = [
-            "top-panel-more",
+            "toolbar-more",
             "action-import",
             "action-export",
             "action-reset",
@@ -404,7 +403,7 @@ fn saving_never_moves_the_fold() {
         .with_context_setup(install)
         .build_ui_state(
             |ui, saved: &mut SaveState<'static>| {
-                TopPanel::new().saved(*saved).show(ui);
+                Toolbar::new().saved(*saved).show(ui);
             },
             SaveState::Saved,
         );
@@ -432,7 +431,7 @@ fn saving_never_moves_the_fold() {
 }
 
 /// What the save state test harness holds: the state drawn and what the panel reported.
-type Saving = (SaveState<'static>, Vec<TopPanelAction>);
+type Saving = (SaveState<'static>, Vec<ToolbarAction>);
 
 /// The save state as the app draws it, in a panel `width` points wide that is the title bar.
 fn saving(width: f32) -> Harness<'static, Saving> {
@@ -442,7 +441,7 @@ fn saving(width: f32) -> Harness<'static, Saving> {
         .with_context_setup(install)
         .build_ui_state(
             |ui, (saved, actions): &mut Saving| {
-                let action = TopPanel::new().saved(*saved).title_bar(true).show(ui);
+                let action = Toolbar::new().saved(*saved).title_bar(true).show(ui);
                 actions.extend(action);
             },
             (SaveState::Saved, Vec::new()),
@@ -473,7 +472,7 @@ fn nothing_shows_at_rest_and_the_slot_moves_the_window() {
     }
     harness.drop_at(slot - egui::vec2(30.0, 0.0));
     harness.run();
-    assert_eq!(harness.state().1, vec![TopPanelAction::MoveWindow]);
+    assert_eq!(harness.state().1, vec![ToolbarAction::MoveWindow]);
 }
 
 #[test]
@@ -522,7 +521,7 @@ fn a_failed_write_shows_a_warning_button_that_asks_for_the_reason() {
             .get_by_role_and_label(Role::Button, "Not saved")
             .click();
         harness.run();
-        assert_eq!(harness.state().1, vec![TopPanelAction::NotSaved; 2]);
+        assert_eq!(harness.state().1, vec![ToolbarAction::NotSaved; 2]);
     }
 }
 
@@ -550,7 +549,7 @@ fn screen_readers_hear_a_failed_write_and_saving_working_again_and_nothing_else(
             })
             .build_ui_state(
                 |ui, saved: &mut SaveState<'static>| {
-                    TopPanel::new().saved(*saved).show(ui);
+                    Toolbar::new().saved(*saved).show(ui);
                 },
                 SaveState::Saved,
             );
@@ -578,14 +577,14 @@ fn screen_readers_hear_a_failed_write_and_saving_working_again_and_nothing_else(
         );
         assert_eq!(step(SaveState::Saved), saved, "{locale:?}");
         assert_eq!(step(SaveState::Saving), saved, "{locale:?}");
-        // A photo left with its write failed is the central panel's to tell: no Saved.
+        // A photo left with its write failed is the Viewer's to tell: no Saved.
         step(SaveState::Failed("gone"));
         assert_ne!(step(SaveState::None), saved, "{locale:?}");
         assert_ne!(step(SaveState::Saved), saved, "{locale:?}");
     }
 }
 
-/// The save warning, then Saving…, at the end of a top panel in the dark theme.
+/// The save warning, then Saving…, at the end of a Toolbar in the dark theme.
 #[test]
 fn the_save_warning_and_saving() {
     let mut harness = Harness::builder()
@@ -597,25 +596,25 @@ fn the_save_warning_and_saving() {
                 .rect_filled(ui.ctx().content_rect(), 0.0, panel);
             ui.spacing_mut().item_spacing.y = 0.0;
             ui.push_id("failed", |ui| {
-                TopPanel::new()
+                Toolbar::new()
                     .saved(SaveState::Failed("Permission denied"))
                     .show(ui);
             });
             ui.push_id("saving", |ui| {
-                TopPanel::new().saved(SaveState::Saving).show(ui);
+                Toolbar::new().saved(SaveState::Saving).show(ui);
             });
         });
     harness.run();
-    harness.snapshot("top-panel-save-state");
+    harness.snapshot("toolbar-save-state");
 }
 
 #[test]
-fn a_widening_top_panel_unfolds_only_with_room_to_spare() {
+fn a_widening_toolbar_unfolds_only_with_room_to_spare() {
     let mut width = 700.0;
     let mut harness = narrow(width, SaveState::Saved, 0.0, false);
     harness.run();
     let words =
-        |h: &Harness<'_, Vec<TopPanelAction>>| h.get_by_label("Import…").rect().width() > 30.0;
+        |h: &Harness<'_, Vec<ToolbarAction>>| h.get_by_label("Import…").rect().width() > 30.0;
     // Narrowed a point at a time until the words go.
     while words(&harness) {
         width -= 1.0;
@@ -640,9 +639,9 @@ fn tooltips_carry_the_keys_and_screen_readers_hear_them() {
             ctx.global_style_mut(|style| style.interaction.tooltip_delay = 0.0);
         })
         .build_ui(|ui| {
-            TopPanel::new()
-                .shortcut(TopPanelAction::CopyEdit, "Ctrl+Shift+C")
-                .shortcut(TopPanelAction::Export, "Ctrl+E")
+            Toolbar::new()
+                .shortcut(ToolbarAction::CopyEdit, "Ctrl+Shift+C")
+                .shortcut(ToolbarAction::Export, "Ctrl+E")
                 .show(ui);
         });
     harness.run();
@@ -671,10 +670,10 @@ fn tooltips_carry_the_keys_and_screen_readers_hear_them() {
     assert_eq!(harness.query_all_by_label("About Apertrust").count(), 1);
 }
 
-/// The top panel as the window's title bar, or not, with room for the window's buttons at
+/// The Toolbar as the window's title bar, or not, with room for the window's buttons at
 /// its start. At 60 frames a second, since each event takes a frame of its own and a
 /// double-click's second click must come within 0.3 s of its first.
-fn title_bar(on: bool, start: f32) -> Harness<'static, Vec<TopPanelAction>> {
+fn title_bar(on: bool, start: f32) -> Harness<'static, Vec<ToolbarAction>> {
     title_bar_with(on, start, Available::default())
 }
 
@@ -683,14 +682,14 @@ fn title_bar_with(
     on: bool,
     start: f32,
     available: Available,
-) -> Harness<'static, Vec<TopPanelAction>> {
+) -> Harness<'static, Vec<ToolbarAction>> {
     Harness::builder()
         .with_size(egui::vec2(1200.0, 120.0))
         .with_step_dt(1.0 / 60.0)
         .with_context_setup(install)
         .build_ui_state(
-            move |ui, actions: &mut Vec<TopPanelAction>| {
-                if let Some(action) = TopPanel::new()
+            move |ui, actions: &mut Vec<ToolbarAction>| {
+                if let Some(action) = Toolbar::new()
                     .available(available)
                     .saved(SaveState::Saved)
                     .start_inset(start)
@@ -712,7 +711,7 @@ fn empty_point<T>(harness: &Harness<'_, T>) -> egui::Pos2 {
     egui::pos2((apply.right() + end) / 2.0, apply.center().y)
 }
 
-fn press(harness: &Harness<'_, Vec<TopPanelAction>>, pos: egui::Pos2, pressed: bool) {
+fn press(harness: &Harness<'_, Vec<ToolbarAction>>, pos: egui::Pos2, pressed: bool) {
     harness.event(egui::Event::PointerButton {
         pos,
         button: egui::PointerButton::Primary,
@@ -723,7 +722,7 @@ fn press(harness: &Harness<'_, Vec<TopPanelAction>>, pos: egui::Pos2, pressed: b
 
 /// Two clicks at `pos`, half a second after anything before, which would otherwise make
 /// them a triple click.
-fn double_click(harness: &mut Harness<'_, Vec<TopPanelAction>>, pos: egui::Pos2) {
+fn double_click(harness: &mut Harness<'_, Vec<ToolbarAction>>, pos: egui::Pos2) {
     harness.run_steps(30);
     harness.hover_at(pos);
     for pressed in [true, false, true, false] {
@@ -733,7 +732,7 @@ fn double_click(harness: &mut Harness<'_, Vec<TopPanelAction>>, pos: egui::Pos2)
 }
 
 /// Presses at `from`, moves 30 points across a frame at a time, and lets go.
-fn drag(harness: &mut Harness<'_, Vec<TopPanelAction>>, from: egui::Pos2) {
+fn drag(harness: &mut Harness<'_, Vec<ToolbarAction>>, from: egui::Pos2) {
     harness.hover_at(from);
     press(harness, from, true);
     harness.step();
@@ -746,13 +745,13 @@ fn drag(harness: &mut Harness<'_, Vec<TopPanelAction>>, from: egui::Pos2) {
 }
 
 #[test]
-fn the_top_panel_keeps_room_for_the_window_s_buttons() {
+fn the_toolbar_keeps_room_for_the_window_s_buttons() {
     let mut plain = title_bar(false, 0.0);
     plain.run();
     let mut inset = title_bar(true, 90.0);
     inset.run();
-    let first = |h: &Harness<'_, Vec<TopPanelAction>>| h.get_by_label("Import…").rect().left();
-    let last = |h: &Harness<'_, Vec<TopPanelAction>>| h.get_by_role(Role::Status).rect().right();
+    let first = |h: &Harness<'_, Vec<ToolbarAction>>| h.get_by_label("Import…").rect().left();
+    let last = |h: &Harness<'_, Vec<ToolbarAction>>| h.get_by_role(Role::Status).rect().right();
     // The room takes the place of the panel's margin at its start, 8 points; the end stays.
     assert_eq!(first(&inset) - first(&plain), 90.0 - 8.0);
     assert!(first(&inset) >= 90.0);
@@ -765,11 +764,11 @@ fn the_title_bar_moves_and_zooms_the_window_from_its_empty_areas_only() {
     harness.run();
     let empty = empty_point(&harness);
     double_click(&mut harness, empty);
-    assert_eq!(*harness.state(), vec![TopPanelAction::TitleBarDoubleClick]);
+    assert_eq!(*harness.state(), vec![ToolbarAction::TitleBarDoubleClick]);
     // A drag is reported once, however far it goes.
     harness.state_mut().clear();
     drag(&mut harness, empty);
-    assert_eq!(*harness.state(), vec![TopPanelAction::MoveWindow]);
+    assert_eq!(*harness.state(), vec![ToolbarAction::MoveWindow]);
 
     // On a button, a double-click is two clicks, and a drag neither clicks nor moves. The
     // mark is a button too, after the window's buttons' room.
@@ -778,11 +777,11 @@ fn the_title_bar_moves_and_zooms_the_window_from_its_empty_areas_only() {
     let bar = harness.get_by_role(Role::Toolbar).rect();
     assert_eq!(mark.left() - bar.left(), 90.0);
     double_click(&mut harness, mark.center());
-    assert_eq!(*harness.state(), vec![TopPanelAction::About; 2]);
+    assert_eq!(*harness.state(), vec![ToolbarAction::About; 2]);
     harness.state_mut().clear();
     let reset = harness.get_by_label("Reset").rect().center();
     double_click(&mut harness, reset);
-    assert_eq!(*harness.state(), vec![TopPanelAction::Reset; 2]);
+    assert_eq!(*harness.state(), vec![ToolbarAction::Reset; 2]);
     harness.state_mut().clear();
     let undo = harness.get_by_label("Undo").rect().center();
     drag(&mut harness, undo);
@@ -793,7 +792,7 @@ fn the_title_bar_moves_and_zooms_the_window_from_its_empty_areas_only() {
 }
 
 #[test]
-fn a_top_panel_that_is_not_the_title_bar_ignores_its_empty_areas() {
+fn a_toolbar_that_is_not_the_title_bar_ignores_its_empty_areas() {
     let mut harness = title_bar(false, 0.0);
     harness.run();
     let empty = empty_point(&harness);
@@ -818,7 +817,7 @@ fn a_disabled_button_and_the_margin_round_a_button_are_no_empty_areas() {
     let reset = harness.get_by_label("Reset").rect();
     let near = egui::pos2(reset.center().x, reset.bottom() + 3.0);
     double_click(&mut harness, near);
-    assert_eq!(*harness.state(), vec![TopPanelAction::Reset; 2]);
+    assert_eq!(*harness.state(), vec![ToolbarAction::Reset; 2]);
     harness.state_mut().clear();
     drag(&mut harness, near);
     assert!(harness.state().is_empty());
@@ -837,11 +836,11 @@ fn a_new_press_moves_the_window_again_when_the_last_release_never_came() {
         harness.hover_at(empty + egui::vec2(0.0, 10.0));
         harness.step();
     }
-    assert_eq!(*harness.state(), vec![TopPanelAction::MoveWindow; 2]);
+    assert_eq!(*harness.state(), vec![ToolbarAction::MoveWindow; 2]);
 }
 
 /// A right-click at `pos`, as a press and a release.
-fn right_click(harness: &mut Harness<'_, Vec<TopPanelAction>>, pos: egui::Pos2) {
+fn right_click(harness: &mut Harness<'_, Vec<ToolbarAction>>, pos: egui::Pos2) {
     harness.run_steps(30);
     harness.hover_at(pos);
     for pressed in [true, false] {
@@ -861,7 +860,7 @@ fn a_right_click_on_the_empty_areas_asks_for_the_window_s_menu() {
     harness.run();
     let empty = empty_point(&harness);
     right_click(&mut harness, empty);
-    assert_eq!(*harness.state(), vec![TopPanelAction::WindowMenu]);
+    assert_eq!(*harness.state(), vec![ToolbarAction::WindowMenu]);
     // On a control, enabled or not, it is not the title bar's, and it clicks nothing.
     harness.state_mut().clear();
     for name in ["About Apertrust", "Reset", "Undo", "Apply edit"] {
@@ -878,14 +877,14 @@ fn a_right_click_on_the_empty_areas_asks_for_the_window_s_menu() {
 }
 
 /// The title bar with the window's caption buttons, the window maximised or not.
-fn caption_buttons(maximised: bool) -> Harness<'static, Vec<TopPanelAction>> {
+fn caption_buttons(maximised: bool) -> Harness<'static, Vec<ToolbarAction>> {
     Harness::builder()
         .with_size(egui::vec2(1200.0, 120.0))
         .with_step_dt(1.0 / 60.0)
         .with_context_setup(install)
         .build_ui_state(
-            move |ui, actions: &mut Vec<TopPanelAction>| {
-                if let Some(action) = TopPanel::new()
+            move |ui, actions: &mut Vec<ToolbarAction>| {
+                if let Some(action) = Toolbar::new()
                     .saved(SaveState::Saved)
                     .title_bar(true)
                     .caption_buttons(true)
@@ -922,15 +921,15 @@ fn the_caption_buttons_report_their_clicks() {
     assert_eq!(
         *harness.state(),
         vec![
-            TopPanelAction::Minimise,
-            TopPanelAction::MaximiseOrRestore,
-            TopPanelAction::Close,
+            ToolbarAction::Minimise,
+            ToolbarAction::MaximiseOrRestore,
+            ToolbarAction::Close,
         ]
     );
     // They are no empty areas: a double-click on one is two clicks, never a zoom.
     harness.state_mut().clear();
     double_click(&mut harness, minimise.center());
-    assert_eq!(*harness.state(), vec![TopPanelAction::Minimise; 2]);
+    assert_eq!(*harness.state(), vec![ToolbarAction::Minimise; 2]);
     harness.state_mut().clear();
     right_click(&mut harness, close.center());
     assert!(harness.state().is_empty());
@@ -945,7 +944,7 @@ fn a_maximised_window_s_middle_button_restores() {
         .get_by_role_and_label(Role::Button, "Restore")
         .click();
     harness.run();
-    assert_eq!(*harness.state(), vec![TopPanelAction::MaximiseOrRestore]);
+    assert_eq!(*harness.state(), vec![ToolbarAction::MaximiseOrRestore]);
     let mut normal = caption_buttons(false);
     normal.run();
     assert!(normal.query_by_label("Restore").is_none());
@@ -961,7 +960,7 @@ fn without_the_option_there_are_no_caption_buttons() {
     }
 }
 
-/// The end of a top panel with caption buttons, in the dark theme, for its snapshots.
+/// The end of a Toolbar with caption buttons, in the dark theme, for its snapshots.
 fn caption_snapshot() -> Harness<'static> {
     Harness::builder()
         .with_size(egui::vec2(700.0, 90.0))
@@ -970,7 +969,7 @@ fn caption_snapshot() -> Harness<'static> {
             let panel = apertrust_ui::theme(ui.ctx()).colors.panel;
             ui.painter()
                 .rect_filled(ui.ctx().content_rect(), 0.0, panel);
-            TopPanel::new()
+            Toolbar::new()
                 .title_bar(true)
                 .caption_buttons(true)
                 .show(ui);
@@ -1000,7 +999,7 @@ fn the_minimise_button_focused_by_the_keyboard() {
 
 /// The title bar with, when `cover` is set, a popup drawn over that point of it.
 struct Covered {
-    actions: Vec<TopPanelAction>,
+    actions: Vec<ToolbarAction>,
     cover: Option<egui::Pos2>,
 }
 
@@ -1012,7 +1011,7 @@ fn a_popup_over_the_bar_takes_its_presses() {
         .with_context_setup(install)
         .build_ui_state(
             |ui, state: &mut Covered| {
-                if let Some(action) = TopPanel::new().title_bar(true).show(ui) {
+                if let Some(action) = Toolbar::new().title_bar(true).show(ui) {
                     state.actions.push(action);
                 }
                 if let Some(at) = state.cover {
@@ -1060,23 +1059,23 @@ fn a_popup_over_the_bar_takes_its_presses() {
     harness.run();
     assert_eq!(
         harness.state().actions,
-        vec![TopPanelAction::TitleBarDoubleClick]
+        vec![ToolbarAction::TitleBarDoubleClick]
     );
 }
 
-/// The central bar with its state applied as the app would.
+/// The viewer bar with its state applied as the app would.
 struct Photo {
     guides: bool,
     zoom: Zoom,
     zoomable: bool,
-    actions: Vec<CentralBarAction>,
+    actions: Vec<ViewerBarAction>,
 }
 
-fn central_bar() -> Harness<'static, Photo> {
-    central_bar_in(Theme::default(), egui::vec2(1000.0, 420.0), true)
+fn viewer_bar() -> Harness<'static, Photo> {
+    viewer_bar_in(Theme::default(), egui::vec2(1000.0, 420.0), true)
 }
 
-fn central_bar_in(theme: Theme, size: egui::Vec2, zoomable: bool) -> Harness<'static, Photo> {
+fn viewer_bar_in(theme: Theme, size: egui::Vec2, zoomable: bool) -> Harness<'static, Photo> {
     Harness::builder()
         .with_size(size)
         .with_context_setup(move |ctx| apertrust_ui::install(ctx, theme.clone()))
@@ -1085,7 +1084,7 @@ fn central_bar_in(theme: Theme, size: egui::Vec2, zoomable: bool) -> Harness<'st
                 let panel = apertrust_ui::theme(ui.ctx()).colors.panel;
                 ui.painter()
                     .rect_filled(ui.ctx().content_rect(), 0.0, panel);
-                if let Some(action) = CentralBar::new("Image", state.zoom)
+                if let Some(action) = ViewerBar::new("Image", state.zoom)
                     .toggles(
                         Toggle::new(false, false),
                         Toggle::new(false, true),
@@ -1095,15 +1094,15 @@ fn central_bar_in(theme: Theme, size: egui::Vec2, zoomable: bool) -> Harness<'st
                     .values(Some([142, 128, 113]))
                     .zoom_enabled(true)
                     .zoomable(state.zoomable)
-                    .shortcut(CentralBarAction::Zoom(Zoom::Fit), "Ctrl+0")
-                    .shortcut(CentralBarAction::Zoom(Zoom::Percent(100.0)), "Z")
-                    .shortcut(CentralBarAction::ZoomIn, "Ctrl+=")
-                    .shortcut(CentralBarAction::ZoomOut, "Ctrl+−")
+                    .shortcut(ViewerBarAction::Zoom(Zoom::Fit), "Ctrl+0")
+                    .shortcut(ViewerBarAction::Zoom(Zoom::Percent(100.0)), "Z")
+                    .shortcut(ViewerBarAction::ZoomIn, "Ctrl+=")
+                    .shortcut(ViewerBarAction::ZoomOut, "Ctrl+−")
                     .show(ui)
                 {
                     match action {
-                        CentralBarAction::Guides => state.guides = !state.guides,
-                        CentralBarAction::Zoom(zoom) => state.zoom = zoom,
+                        ViewerBarAction::Guides => state.guides = !state.guides,
+                        ViewerBarAction::Zoom(zoom) => state.zoom = zoom,
                         _ => {}
                     }
                     state.actions.push(action);
@@ -1141,8 +1140,8 @@ fn zoom_lines(harness: &Harness<'_, Photo>) -> Vec<String> {
 }
 
 #[test]
-fn the_central_bar_toggles_and_shows_the_values() {
-    let mut harness = central_bar();
+fn the_viewer_bar_toggles_and_shows_the_values() {
+    let mut harness = viewer_bar();
     harness.run();
     harness.get_by_label("Guides").click();
     harness.run();
@@ -1150,7 +1149,7 @@ fn the_central_bar_toggles_and_shows_the_values() {
     // Disabled: one photo, nothing to show side by side.
     harness.get_by_label("Show all selected photos").click();
     harness.run();
-    assert_eq!(harness.state().actions, vec![CentralBarAction::Guides]);
+    assert_eq!(harness.state().actions, vec![ViewerBarAction::Guides]);
     assert_eq!(
         harness.get_by_label("Values under the cursor").value(),
         Some("Red 142, green 128, blue 113, grey 130".to_owned())
@@ -1159,7 +1158,7 @@ fn the_central_bar_toggles_and_shows_the_values() {
 
 #[test]
 fn the_zoom_is_one_button_whose_menu_is_darktable_s_list_then_the_steps() {
-    let mut harness = central_bar();
+    let mut harness = viewer_bar();
     harness.run();
     let button = harness.get_by_role_and_label(Role::Button, "Zoom");
     let node = button.accesskit_node();
@@ -1227,16 +1226,16 @@ fn the_zoom_is_one_button_whose_menu_is_darktable_s_list_then_the_steps() {
     assert_eq!(
         harness.state().actions,
         [
-            CentralBarAction::Zoom(Zoom::Percent(100.0)),
-            CentralBarAction::Zoom(Zoom::Fill),
-            CentralBarAction::ZoomIn,
+            ViewerBarAction::Zoom(Zoom::Percent(100.0)),
+            ViewerBarAction::Zoom(Zoom::Fill),
+            ViewerBarAction::ZoomIn,
         ]
     );
 }
 
 #[test]
 fn an_in_between_scale_shows_rounded_and_checks_nothing() {
-    let mut harness = central_bar();
+    let mut harness = viewer_bar();
     harness.state_mut().zoom = Zoom::Percent(137.4);
     harness.run();
     let button = harness.get_by_role_and_label(Role::Button, "Zoom");
@@ -1259,7 +1258,7 @@ fn an_in_between_scale_shows_rounded_and_checks_nothing() {
 
 #[test]
 fn while_the_viewport_only_fits_every_entry_but_fit_is_disabled() {
-    let mut harness = central_bar_in(Theme::default(), egui::vec2(1000.0, 420.0), false);
+    let mut harness = viewer_bar_in(Theme::default(), egui::vec2(1000.0, 420.0), false);
     harness.run();
     let button = harness.get_by_role_and_label(Role::Button, "Zoom");
     assert_eq!(button.accesskit_node().value().as_deref(), Some("Fit"));
@@ -1286,12 +1285,12 @@ fn while_the_viewport_only_fits_every_entry_but_fit_is_disabled() {
         .get_by_role_and_label(Role::MenuItemCheckBox, "Fit")
         .click();
     harness.run();
-    assert_eq!(harness.state().actions, [CentralBarAction::Zoom(Zoom::Fit)]);
+    assert_eq!(harness.state().actions, [ViewerBarAction::Zoom(Zoom::Fit)]);
 }
 
 #[test]
 fn the_zoom_s_tooltip_says_how_to_zoom_and_at_100_what_it_shows() {
-    let mut harness = central_bar();
+    let mut harness = viewer_bar();
     harness.run();
     harness.get_by_role_and_label(Role::Button, "Zoom").hover();
     harness.run();
@@ -1306,7 +1305,7 @@ fn the_zoom_s_tooltip_says_how_to_zoom_and_at_100_what_it_shows() {
 
 #[test]
 fn the_zoom_menu_opens_and_closes_by_keys_and_gives_the_focus_back() {
-    let mut harness = central_bar();
+    let mut harness = viewer_bar();
     harness.run();
     let menu_open = |harness: &Harness<'_, Photo>| {
         harness
@@ -1354,13 +1353,13 @@ fn the_zoom_menu_opens_and_closes_by_keys_and_gives_the_focus_back() {
 /// The zoom's button at rest and its menu open, at 100%, in `which` theme.
 fn photograph_the_zoom(which: Builtin, name: &str) {
     let size = egui::vec2(420.0, 400.0);
-    let mut harness = central_bar_in(Theme::builtin(which), size, true);
+    let mut harness = viewer_bar_in(Theme::builtin(which), size, true);
     harness.state_mut().zoom = Zoom::Percent(100.0);
     harness.run();
-    harness.snapshot(format!("central-bar-zoom-{name}"));
+    harness.snapshot(format!("viewer-bar-zoom-{name}"));
     harness.get_by_role_and_label(Role::Button, "Zoom").click();
     harness.run();
-    harness.snapshot(format!("central-bar-zoom-menu-{name}"));
+    harness.snapshot(format!("viewer-bar-zoom-menu-{name}"));
 }
 
 #[test]
@@ -1373,12 +1372,12 @@ fn the_zoom_is_photographed_in_the_light_theme() {
     photograph_the_zoom(Builtin::Light, "light");
 }
 
-fn grid_panel(count: usize) -> Harness<'static, Vec<GridPanelAction>> {
+fn browser(count: usize) -> Harness<'static, Vec<BrowserAction>> {
     Harness::builder()
         .with_size(egui::vec2(800.0, 200.0))
         .with_context_setup(install)
         .build_ui_state(
-            move |ui, actions: &mut Vec<GridPanelAction>| {
+            move |ui, actions: &mut Vec<BrowserAction>| {
                 let names: Vec<String> = (0..count).map(|i| format!("IMG_{i:04}.ARW")).collect();
                 let thumb = |i: usize| Thumb {
                     name: &names[i],
@@ -1388,7 +1387,7 @@ fn grid_panel(count: usize) -> Harness<'static, Vec<GridPanelAction>> {
                     picture: None,
                     rating: None,
                 };
-                if let Some(action) = GridPanel::new(count, Some(0), thumb).show(ui).action {
+                if let Some(action) = Browser::new(count, Some(0), thumb).show(ui).action {
                     actions.push(action);
                 }
             },
@@ -1397,8 +1396,8 @@ fn grid_panel(count: usize) -> Harness<'static, Vec<GridPanelAction>> {
 }
 
 #[test]
-fn the_grid_panel_opens_and_selects_with_modifiers() {
-    let mut harness = grid_panel(20);
+fn the_browser_opens_and_selects_with_modifiers() {
+    let mut harness = browser(20);
     harness.run();
     harness.get_by_label("IMG_0003.ARW").click();
     harness.run();
@@ -1413,16 +1412,16 @@ fn the_grid_panel_opens_and_selects_with_modifiers() {
     assert_eq!(
         *harness.state(),
         vec![
-            GridPanelAction::Open(3),
-            GridPanelAction::SelectRange(5),
-            GridPanelAction::ToggleSelected(2),
+            BrowserAction::Open(3),
+            BrowserAction::SelectRange(5),
+            BrowserAction::ToggleSelected(2),
         ]
     );
 }
 
 #[test]
-fn the_grid_panel_draws_only_what_is_visible() {
-    let mut harness = grid_panel(10_000);
+fn the_browser_draws_only_what_is_visible() {
+    let mut harness = browser(10_000);
     harness.run();
     assert!(harness.query_by_label("IMG_0001.ARW").is_some());
     assert!(harness.query_by_label("IMG_9000.ARW").is_none());
@@ -1439,7 +1438,7 @@ struct Panel {
 const OWN: f32 = 400.0;
 
 /// A panel `width` wide at the window's end, or its start, beside the photo, laid out as
-/// the app lays out the side panel: at the width its edge gives, the edge shown last.
+/// the app lays out the Tools panel: at the width its edge gives, the edge shown last.
 fn panel(width: f32, at_start: bool) -> Harness<'static, Panel> {
     Harness::builder()
         .with_size(vec2(1000.0, 300.0))
@@ -1448,7 +1447,7 @@ fn panel(width: f32, at_start: bool) -> Harness<'static, Panel> {
         .with_context_setup(install)
         .build_ui_state(
             |ui, state: &mut Panel| {
-                let edge = PanelEdge::new("Side panel width", state.width, 320.0..=600.0)
+                let edge = PanelEdge::new("Tools panel width", state.width, 320.0..=600.0)
                     .at_start(state.at_start);
                 let side = if state.at_start {
                     egui::Panel::left("panel")
@@ -1479,7 +1478,7 @@ fn panel(width: f32, at_start: bool) -> Harness<'static, Panel> {
 /// Where the edge is: the middle of the splitter screen readers find.
 fn edge(harness: &Harness<'_, Panel>) -> Pos2 {
     harness
-        .get_by_role_and_label(Role::Splitter, "Side panel width")
+        .get_by_role_and_label(Role::Splitter, "Tools panel width")
         .rect()
         .center()
 }
@@ -1535,7 +1534,7 @@ fn dragging_the_panel_edge_resizes_the_panel_within_its_widths() {
     // Screen readers hear the width as dragged, not as it was.
     assert_eq!(
         harness
-            .get_by_role_and_label(Role::Splitter, "Side panel width")
+            .get_by_role_and_label(Role::Splitter, "Tools panel width")
             .accesskit_node()
             .numeric_value(),
         Some(390.0)
@@ -1546,7 +1545,7 @@ fn dragging_the_panel_edge_resizes_the_panel_within_its_widths() {
     // A drag leaves the focus where it was.
     assert!(
         !harness
-            .get_by_role_and_label(Role::Splitter, "Side panel width")
+            .get_by_role_and_label(Role::Splitter, "Tools panel width")
             .is_focused()
     );
 
@@ -1566,7 +1565,7 @@ fn a_double_click_on_the_panel_edge_resets_the_panel() {
     let end = edge(&harness).x + 520.0;
     for _ in 0..2 {
         harness
-            .get_by_role_and_label(Role::Splitter, "Side panel width")
+            .get_by_role_and_label(Role::Splitter, "Tools panel width")
             .click();
         // Each queued event runs in a frame of its own; the last is the release.
         harness.step();
@@ -1590,7 +1589,7 @@ fn the_panel_edge_shows_the_resize_cursor_and_steps_for_screen_readers() {
         harness.output().platform_output.cursor_icon,
         CursorIcon::ResizeColumn
     );
-    let splitter = harness.get_by_role_and_label(Role::Splitter, "Side panel width");
+    let splitter = harness.get_by_role_and_label(Role::Splitter, "Tools panel width");
     assert_eq!(
         splitter.accesskit_node().numeric_value(),
         Some(f64::from(OWN))
@@ -1601,7 +1600,7 @@ fn the_panel_edge_shows_the_resize_cursor_and_steps_for_screen_readers() {
     // At its widest it can only be stepped narrower.
     harness.state_mut().width = 600.0;
     harness.run();
-    let splitter = harness.get_by_role_and_label(Role::Splitter, "Side panel width");
+    let splitter = harness.get_by_role_and_label(Role::Splitter, "Tools panel width");
     assert!(
         !splitter
             .accesskit_node()
@@ -1625,7 +1624,7 @@ fn the_focused_panel_edge_moves_with_the_arrows_and_takes_the_ends_and_reset_key
         let mut harness = panel(OWN, at_start);
         harness.run();
         harness
-            .get_by_role_and_label(Role::Splitter, "Side panel width")
+            .get_by_role_and_label(Role::Splitter, "Tools panel width")
             .focus();
         harness.run();
         let width = |harness: &Harness<'_, Panel>| harness.state().width;
@@ -1655,7 +1654,7 @@ fn the_focused_panel_edge_moves_with_the_arrows_and_takes_the_ends_and_reset_key
         // The arrows stay with the edge rather than moving the focus.
         assert!(
             harness
-                .get_by_role_and_label(Role::Splitter, "Side panel width")
+                .get_by_role_and_label(Role::Splitter, "Tools panel width")
                 .is_focused()
         );
     }
@@ -1671,14 +1670,14 @@ fn the_shell_at_full_width() {
             ui.painter()
                 .rect_filled(ui.ctx().content_rect(), 0.0, panel);
             ui.spacing_mut().item_spacing.y = 0.0;
-            TopPanel::new()
+            Toolbar::new()
                 .available(Available {
                     redo: false,
                     ..Available::default()
                 })
                 .saved(SaveState::Saved)
                 .show(ui);
-            CentralBar::new("Image", Zoom::Fit)
+            ViewerBar::new("Image", Zoom::Fit)
                 .toggles(
                     Toggle::new(false, true),
                     Toggle::new(true, true),
@@ -1708,7 +1707,7 @@ fn the_shell_at_full_width() {
     harness.snapshot("shell-full-width");
 }
 
-/// While a colour picker is on, the central bar says which it is and how to use it, after
+/// While a colour picker is on, the viewer bar says which it is and how to use it, after
 /// the layer's buttons, in place of the values under the cursor (`docs/pickers.md`, On the
 /// photo); where how does not fit, the name alone.
 #[test]
@@ -1720,7 +1719,7 @@ fn a_picker_s_words_take_the_values_place() {
             .with_size(egui::vec2(width, 60.0))
             .with_context_setup(|ctx| apertrust_ui::install(ctx, Theme::default()))
             .build_ui(|ui| {
-                CentralBar::new("Image", Zoom::Fit)
+                ViewerBar::new("Image", Zoom::Fit)
                     .values(Some([142, 128, 113]))
                     .picker(NAME, HOW)
                     .show(ui);

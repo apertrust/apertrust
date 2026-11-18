@@ -119,7 +119,7 @@ pub enum Action {
     /// Go to a step, or to Original with `None`: `Command::GoTo`, which History's body sends
     /// ([`HistoryTool`]).
     GoTo(Option<StepId>),
-    /// Open this tool's section in the side panel.
+    /// Open this tool's section in the Tools panel.
     Open(&'static str),
     /// The eye held this frame on this tool's line: the photo shown without the tool
     /// while it is held, `Command::Hide`.
@@ -2973,7 +2973,7 @@ pub(crate) mod tests {
         assert_eq!(line_name(&bare, apertrust_tools::TOOLS, &tr), "Auto");
     }
 
-    /// The History section drawn from a history the test holds, as the side panel draws
+    /// The History section drawn from a history the test holds, as the Tools panel draws
     /// it, its header from its declaration and its ⋯'s items as the menu builder lists
     /// them, and what it reported.
     struct Scene {
@@ -2989,7 +2989,7 @@ pub(crate) mod tests {
         actions: Vec<Action>,
         /// What its header asked for.
         pressed: Vec<Pressed>,
-        /// The side panel's width; the theme's where none.
+        /// The Tools panel's width; the theme's where none.
         panel: Option<f32>,
     }
 
@@ -3002,13 +3002,13 @@ pub(crate) mod tests {
             })
             .build_ui_state(
                 |ui, scene: &mut Scene| {
-                    // The side panel at its usual width at the window's end, the photo's
+                    // The Tools panel at its usual width at the window's end, the photo's
                     // surround before it, where a tooltip too wide for the panel goes.
                     let t = theme(ui.ctx());
                     let window = ui.max_rect();
                     let side = egui::Rect::from_min_max(
                         pos2(
-                            window.right() - scene.panel.unwrap_or(t.sizes.side_panel),
+                            window.right() - scene.panel.unwrap_or(t.sizes.tools_panel),
                             window.top(),
                         ),
                         window.max,
@@ -4041,10 +4041,10 @@ pub(crate) mod tests {
         assert_eq!(shown("Two controls", 5.0).as_deref(), Some("Two…"));
     }
 
-    /// The section at the side panel's narrowest, 240 points: a line's change cut, the
+    /// The section at the Tools panel's narrowest, 240 points: a line's change cut, the
     /// undone mark cut with its whole words in its tooltip, and a tag kept whole.
     #[test]
-    fn at_the_narrowest_side_panel_the_lines_and_the_mark_are_cut() {
+    fn at_the_narrowest_tools_panel_the_lines_and_the_mark_are_cut() {
         let mut harness = scene(
             Theme::builtin(Builtin::Dark),
             egui::vec2(480.0, 480.0),

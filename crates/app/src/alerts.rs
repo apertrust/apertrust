@@ -24,7 +24,7 @@
 //!   small machine the tests drive: it waits for a write of the edit under way, asks once,
 //!   lets the app leave when nothing runs and the edit is saved, and after a yes waits for
 //!   the jobs that cannot be stopped.
-//! - **Why the edit is not saved** ([`Purpose::Save`]): the top panel's save warning
+//! - **Why the edit is not saved** ([`Purpose::Save`]): the Toolbar's save warning
 //!   pressed, with Try Again.
 //! - **Why a drop opens nothing** ([`Purpose::Refused`]): what was dropped onto the window
 //!   is neither a folder nor a raw, or is a library's or a project's file, or an edit whose

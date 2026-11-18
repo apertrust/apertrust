@@ -22,17 +22,17 @@
 //! reactions back.
 //!
 //! - **What it holds:** the photo ([`PhotoState`]), the tools' values as the session last
-//!   reported them with the changes sent since shown over them, what the side panel's
+//!   reported them with the changes sent since shown over them, what the Tools panel's
 //!   editing tabs draw of them ([`Shown`]), the latest frame, the scopes' reading, whether
 //!   the edit is on disk ([`Saving`]), the photo's history, which names what Undo and Redo
 //!   would do ([`History`]), the active colour picker ([`pickers::Mirror`]), the jobs
-//!   ([`jobs::Mirror`]), the failure the central panel shows, the open folder
+//!   ([`jobs::Mirror`]), the failure the Viewer shows, the open folder
 //!   ([`folder::FolderState`]) and the Export tool's floor for previews. Panels read it
 //!   each frame; nothing subscribes.
 //! - **What it does not hold:** the app's own state (the theme, a tab, a dialog open). That
 //!   changes by intents after the frame, with no event.
 //! - **No photo:** before any, from the moment another is asked for until its values
-//!   arrive, and after an open fails, the side panel draws every tool at its
+//!   arrive, and after an open fails, the Tools panel draws every tool at its
 //!   definition's defaults and Scopes with no graph, disabled ([`Shown::Nothing`]): never a blank
 //!   panel. The photo's values replace them in one apply ([`Shown::Photo`]).
 //! - **Stale events:** while a photo opens, what an earlier open left on its way is dropped
@@ -89,12 +89,12 @@ pub enum Reaction {
         settings: Vec<(&'static str, ControlValue)>,
     },
     /// The first live frame of the photo the open numbered `open` replaced its first
-    /// picture, the mirror's of `generation`: the central panel fades that picture out over
+    /// picture, the mirror's of `generation`: the Viewer fades that picture out over
     /// the frame (decision 77). Only that swap: never an edit's frame, nor another photo's.
     Swapped { open: u64, generation: u64 },
 }
 
-/// What the side panel's editing tabs draw (`docs/gui.md`, The side panel): the values
+/// What the Tools panel's editing tabs draw (`docs/gui.md`, The Tools panel): the values
 /// the mirror holds, and whether what the user does to them reaches the session.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Shown {
@@ -112,7 +112,7 @@ pub enum Shown {
 }
 
 impl Shown {
-    /// Whether the side panel's resets are drawn enabled.
+    /// Whether the Tools panel's resets are drawn enabled.
     pub fn editable(self) -> bool {
         self == Shown::Photo { editable: true }
     }
@@ -127,13 +127,13 @@ pub struct Mirror {
     /// with the pending ones in their place (`docs/gui.md`, A frame); with no photo, and
     /// while one opens, every tool untouched ([`untouched`]).
     pub values: Values,
-    /// What the side panel draws of `values`.
+    /// What the Tools panel draws of `values`.
     shown: Shown,
     /// The values with no photo, made once.
     untouched: Values,
     /// What the widgets set that no report includes yet, with each command's number.
     pub pending: Vec<(u64, Pending)>,
-    /// What failed since the last frame, shown in the central panel until the next one.
+    /// What failed since the last frame, shown in the Viewer until the next one.
     pub failure: Option<String>,
     /// What the session said of the photo's history that lasts until another photo is asked
     /// for, which no frame clears: another program's change to its file that kept no move
@@ -141,7 +141,7 @@ pub struct Mirror {
     pub notice: Option<String>,
     /// The latest frame, which the viewport draws.
     pub frame: Option<Frame>,
-    /// What the central panel shows of the photo until its first live frame (decision 77):
+    /// What the Viewer shows of the photo until its first live frame (decision 77):
     /// the largest thumbnail the folder held for it as it was asked for, then the
     /// session's picture where it is larger or rendered.
     pub picture: Option<Picture>,
@@ -156,7 +156,7 @@ pub struct Mirror {
     asked_at: Option<Instant>,
     /// The latest scopes reading, and what the session was asked to count.
     pub scopes: Scopes,
-    /// Whether the photo's edit is on disk as it is now, as the top panel says.
+    /// Whether the photo's edit is on disk as it is now, as the Toolbar says.
     pub saving: Saving,
     /// The open photo's history as the session last reported it, the latest by its
     /// `through` (decision 78): what Undo and Redo would do, which Edit's items name; none
@@ -221,12 +221,12 @@ impl Mirror {
         }
     }
 
-    /// What the side panel's editing tabs draw.
+    /// What the Tools panel's editing tabs draw.
     pub fn shown(&self) -> Shown {
         self.shown
     }
 
-    /// Whether a change of the edit the side panel's controls make is to be sent: only the
+    /// Whether a change of the edit the Tools panel's controls make is to be sent: only the
     /// open photo's, once its values have arrived, and never while it is open for viewing
     /// only.
     pub fn takes_edits(&self) -> bool {
@@ -248,8 +248,8 @@ impl Mirror {
     }
 
     /// The raw at `path` is asked for by the open numbered `open`, `now`: nothing of the
-    /// photo left is shown for the new one, the side panel shows no photo until the new
-    /// one's values arrive, and the central panel shows at once the largest thumbnail the
+    /// photo left is shown for the new one, the Tools panel shows no photo until the new
+    /// one's values arrive, and the Viewer shows at once the largest thumbnail the
     /// folder holds of it, if any (decision 77).
     pub fn opening(&mut self, path: PathBuf, open: u64, now: Instant) {
         let held = self.folder.largest_thumbnail(&path).cloned();
@@ -270,7 +270,7 @@ impl Mirror {
     }
 
     /// The photo is closed, File › Close's `Command::Close` sent: none is open from now on,
-    /// the side panel shows no photo, and what the session still sends of it is dropped,
+    /// the Tools panel shows no photo, and what the session still sends of it is dropped,
     /// but the write of its edit, which `saving` waits for as for a photo left.
     pub fn closing(&mut self) {
         self.photo = PhotoState::None;
@@ -302,7 +302,7 @@ impl Mirror {
         Some(path.file_name()?.to_string_lossy().into_owned())
     }
 
-    /// From when the central bar says Rendering…, while the photo is not live:
+    /// From when the viewer bar says Rendering…, while the photo is not live:
     /// [`RENDERING_AFTER`] after it was asked for (decision 77). `None` once it is live, or
     /// with none asked for.
     pub fn rendering_from(&self) -> Option<Instant> {
@@ -313,7 +313,7 @@ impl Mirror {
             .map(|at| at + RENDERING_AFTER)
     }
 
-    /// Whether the central bar says Rendering… at `now`: the photo still not live
+    /// Whether the viewer bar says Rendering… at `now`: the photo still not live
     /// [`RENDERING_AFTER`] after it was asked for, so a fast open shows nothing.
     pub fn rendering(&self, now: Instant) -> bool {
         self.rendering_from().is_some_and(|from| now >= from)
@@ -590,7 +590,7 @@ impl Mirror {
     }
 }
 
-/// Every tool's controls at its definition's defaults, as the side panel draws them with
+/// Every tool's controls at its definition's defaults, as the Tools panel draws them with
 /// no photo open: none can change anything, none is marked, no preset row's option can be
 /// applied, and a choice lists every option. A preset row reads the option the defaults
 /// match and a view's coordinates are the tool's view of them, both on the no-photo
@@ -779,15 +779,15 @@ impl PhotoState {
     }
 }
 
-/// How long a write of the open photo's edit may go unconfirmed before the top panel says
+/// How long a write of the open photo's edit may go unconfirmed before the Toolbar says
 /// Saving… (`docs/gui.md`, The edit, saved).
 pub const SAVING_AFTER: Duration = Duration::from_secs(2);
 
-/// How long a photo may go unlive after it was asked for before the central bar says
+/// How long a photo may go unlive after it was asked for before the viewer bar says
 /// Rendering… (decision 77): a fast open shows nothing.
 pub const RENDERING_AFTER: Duration = Duration::from_secs(1);
 
-/// The picture the central panel shows of a photo until its first live frame (decision
+/// The picture the Viewer shows of a photo until its first live frame (decision
 /// 77), unmarked: a thumbnail, its rendered one or the camera's.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Picture {
@@ -813,7 +813,7 @@ fn read_only(values: &mut Values) {
 }
 
 /// Whether the open photo's edit is on disk as it stands, from what the app sent and the
-/// session reported, for the top panel's save state: nothing while saving works, Saving…
+/// session reported, for the Toolbar's save state: nothing while saving works, Saving…
 /// while a write is unconfirmed [`SAVING_AFTER`] it started, and a failed write's reason
 /// kept until one succeeds. Once another photo is asked for, the photo left is another
 /// photo's: its last write's success changes nothing, and its failure is kept apart
@@ -868,7 +868,7 @@ impl Saving {
         self.failure = None;
     }
 
-    /// What the top panel's save state shows at `now`.
+    /// What the Toolbar's save state shows at `now`.
     pub fn state(&self, now: Instant) -> SaveState<'_> {
         if self.sidecar.is_none() || self.view_only {
             return SaveState::None;
@@ -1500,7 +1500,7 @@ pub(crate) mod tests {
         assert!(!m.saving.writing());
         let why = m.saving.failure.as_deref();
         assert!(why.is_some_and(|why| why.contains("disk full")));
-        // The failed save is the saving's, not the central panel's failure.
+        // The failed save is the saving's, not the Viewer's failure.
         assert_eq!(m.failure, None);
         // A refusal does not hide it.
         m.apply(refused(2, "no"));
@@ -1515,7 +1515,7 @@ pub(crate) mod tests {
 
     /// An edit the session could not write over another program's file is told as a failed
     /// write: no longer awaited, so Quit asks rather than waits; the save state's, not the
-    /// central panel's, so no frame clears it; and kept as the photo left's as it closes.
+    /// Viewer's, so no frame clears it; and kept as the photo left's as it closes.
     #[test]
     fn an_edit_not_saved_over_another_program_s_file_is_a_failed_write() {
         let mut m = mirror();
@@ -1568,7 +1568,7 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn a_failed_open_is_the_photo_s_and_a_failure_later_is_the_central_panel_s() {
+    fn a_failed_open_is_the_photo_s_and_a_failure_later_is_the_viewer_s() {
         let mut m = mirror();
         m.opening(PathBuf::from("/photos/b.ARW"), 4, Instant::now());
         // The photo left on its way, the values of the old one: dropped.
@@ -1588,7 +1588,7 @@ pub(crate) mod tests {
             _ => panic!("the open failed"),
         }
         assert_eq!(m.failure, None);
-        // With a photo open, a failure is for the central panel; a scopes failure shows
+        // With a photo open, a failure is for the Viewer; a scopes failure shows
         // nothing, never the frame.
         m.apply(Event::Opened(photo(5)));
         let reading = crate::scopes::testing::reading(true, false, false);
@@ -1898,7 +1898,7 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn a_failed_open_leaves_no_photo_in_the_side_panel() {
+    fn a_failed_open_leaves_no_photo_in_the_tools_panel() {
         let mut m = mirror();
         m.apply(Event::Opened(photo(1)));
         m.apply(Event::Values(report(1.5, 1)));
@@ -2347,7 +2347,7 @@ pub(crate) mod tests {
         let Some(frame) = gpu_frame(6) else {
             return;
         };
-        // The swap the central panel fades, once: an edit's frame after it is not one.
+        // The swap the Viewer fades, once: an edit's frame after it is not one.
         let generation = m.picture().map(|(_, generation)| generation).unwrap();
         assert_eq!(
             m.apply(Event::Frame(frame)),
@@ -2459,7 +2459,7 @@ pub(crate) mod tests {
         session: apertrust_engine::session::Session,
         wakes: std::sync::mpsc::Receiver<()>,
         mirror: Mirror,
-        /// What the side panel showed, whether a picture, and the photo's path, after each
+        /// What the Tools panel showed, whether a picture, and the photo's path, after each
         /// event, a state shown again left out.
         seen: Vec<(Shown, bool, Option<PathBuf>)>,
     }
@@ -2817,7 +2817,7 @@ pub(crate) mod tests {
         let _ = std::fs::remove_dir_all(&folder);
     }
 
-    /// A photo opened alone (`docs/library.md`, One photo): the grid panel holds it by
+    /// A photo opened alone (`docs/library.md`, One photo): the Browser holds it by
     /// itself, its cell following its edit, while no folder is shown and nothing reaches
     /// the recents, whatever the photo's events say. Open This Folder then opens its folder,
     /// which joins the recents, the photo active in it.

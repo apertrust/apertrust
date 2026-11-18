@@ -1005,7 +1005,7 @@ mod tests {
                 args.set("width", 2048);
                 args.set("height", 1365);
                 args.set("exist", 1);
-                // The grid bar's: the sort's key and direction, the thumbnails' size.
+                // The browser bar's: the sort's key and direction, the thumbnails' size.
                 args.set("key", "file-name");
                 args.set("descending", "yes");
                 args.set("size", "large");
@@ -1041,7 +1041,7 @@ mod tests {
                 args.set("last", 16);
                 args.set("tools", "Exposure, Grain");
                 args.set("date", "12 November");
-                // Browse's missing recent: its label, its open kind and its name.
+                // Collections' missing recent: its label, its open kind and its name.
                 args.set("label", "Folder: 2026-10 Lisbon");
                 // The start window's recent, to screen readers: its path.
                 args.set("path", "~/Pictures/2026-10 Lisbon");

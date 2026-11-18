@@ -4,7 +4,7 @@
 
 app-name = Apertrust
 
-## Загальні дії на верхній панелі
+## Загальні дії на смузі інструментів
 
 action-import = Імпорт…
 action-export = Експорт…
@@ -19,7 +19,7 @@ action-copy-apply-parts = Копіювати або застосувати ча�
 action-settings = Налаштування
 status-saved = Збережено
 
-## Вкладки бічної панелі
+## Вкладки панелі інструментів
 
 tab-photos = Фото
 tab-adjust = Корекція
@@ -34,12 +34,12 @@ tab-effect = Ефект
 tab-history = Історія
 tab-metadata = Метадані
 panel-tab-later = { $tab }: з'явиться в одній із наступних версій
-panel-tabs = Вкладки бічної панелі
+tools-panel-tabs = Вкладки панелі інструментів
 panel-more-tabs = Інші вкладки
 panel-tab-options = Параметри вкладок
 panel-show-tab-names = Показувати назви вкладок
 panel-customise-tabs = Налаштувати вкладки…
-panel-width = Ширина бічної панелі
+tools-panel-width = Ширина панелі інструментів
 
 ## Кнопки в заголовку розділу; $section — назва розділу
 
@@ -120,11 +120,11 @@ unit-kelvin-value = { $value } K
 unit-pixels-value = { $value } px
 unit-iso-value = { $value } ISO
 
-## Верхня панель
+## Смуга інструментів
 
-top-panel = Верхня панель
-top-panel-menu = Меню
-top-panel-more = Інші дії
+toolbar = Смуга інструментів
+toolbar-menu = Меню
+toolbar-more = Інші дії
 status-saving = Збереження…
 status-saving-tip = Обробку цього фото ще записують поруч із ним
 status-not-saved = Не збережено
@@ -135,7 +135,7 @@ window-maximise = Розгорнути
 window-restore = Відновити
 window-close = Закрити
 
-## Завдання: індикатор у кінці верхньої панелі і вікно, яке він відкриває
+## Завдання: індикатор у кінці смуги інструментів і вікно, яке він відкриває
 
 jobs-name = Завдання
 action-show-jobs = Завдання
@@ -264,9 +264,9 @@ activity-try-again = Повторити
 activity-try-again-tip = Експортувати знімки, які не вдалося експортувати, ще раз з тими самими параметрами
 activity-dismiss = Закрити
 
-## Центральна смуга, над знімком
+## Смуга переглядача, над знімком
 
-central-bar = Центральна смуга
+viewer-bar = Смуга переглядача
 photo-show-selected = Показати всі вибрані знімки
 photo-proof-margin = Поле перевірки
 photo-before-after = До і після
@@ -291,7 +291,7 @@ photo-zoom-tip-exact = На 100% екран показує саме те, яки
 photo-zoom-later = Масштаб з'явиться разом із переглядом 100%
 layer-image = Знімок
 
-## Центральна панель
+## Переглядач
 
 photo-opening = Відкриваю { $name }…
 photo-rendering = Рендеринг…
@@ -315,9 +315,9 @@ photo-iso = ISO { $value }
 open-title = Відкрити
 open-filter = Raw-знімки
 
-## Панель сітки та її комірки
+## Оглядач і його комірки
 
-grid-panel = Панель сітки
+browser = Оглядач
 grid-cell-edited = Оброблено
 grid-cell-view-only = Лише перегляд: редагування записала новіша версія Apertrust
 grid-cell-unreadable = Не вдалося прочитати редагування: { $reason }
@@ -347,7 +347,7 @@ colour-label-yellow = Жовтий
 colour-label-green = Зелений
 colour-label-blue = Синій
 colour-label-purple = Фіолетовий
-grid-panel-height = Висота панелі сітки
+browser-height = Висота оглядача
 grid-rows =
     { $count ->
         [one] { $count } рядок
@@ -355,7 +355,7 @@ grid-rows =
         [many] { $count } рядків
        *[other] { $count } рядка
     }
-grid-panel-width = Ширина панелі сітки
+browser-width = Ширина оглядача
 grid-columns =
     { $count ->
         [one] { $count } стовпець
@@ -363,9 +363,9 @@ grid-columns =
         [many] { $count } стовпців
        *[other] { $count } стовпця
     }
-grid-bar-options = Параметри панелі сітки
-grid-position = Розташування
-grid-bar = Смуга сітки
+browser-bar-options = Параметри оглядача
+browser-position = Розташування
+browser-bar = Смуга оглядача
 grid-sort = Сортування
 grid-sort-value =
     { $key ->
@@ -412,31 +412,31 @@ open-kind-folder = Тека: { $name }
 
 action-open-folder = Відкрити теку…
 open-folder-title = Відкрити теку
-section-browse = Огляд
-browse-folders = Теки
+section-collections = Колекції
+collections-folders = Теки
 section-export = Експорт
-browse-open-name = Що відкрито
-browse-no-folder = Жодної теки не відкрито
-browse-recents-none = Немає нещодавніх тек
-browse-recent-missing = { $label }, не знайдено
-browse-try-again = Спробувати ще раз
-browse-locate = Знайти…
-browse-remove = Прибрати зі списку
-browse-locate-title = Знайти теку
-browse-plus = Створити або відкрити
+collections-open-name = Що відкрито
+collections-no-folder = Жодної теки не відкрито
+collections-recents-none = Немає нещодавніх тек
+collections-recent-missing = { $label }, не знайдено
+collections-try-again = Спробувати ще раз
+collections-locate = Знайти…
+collections-remove = Прибрати зі списку
+collections-locate-title = Знайти теку
+collections-plus = Створити або відкрити
 action-new-library = Нова бібліотека…
 action-new-project = Новий проєкт…
-browse-folder-menu = Меню теки { $name }
-browse-open-row = Відкрити
-browse-open-this-folder = Відкрити цю теку
-browse-reading = Читання…
-browse-unreadable = Не вдалося прочитати. Спробувати ще раз
+collections-folder-menu = Меню теки { $name }
+collections-open-row = Відкрити
+collections-open-this-folder = Відкрити цю теку
+collections-reading = Читання…
+collections-unreadable = Не вдалося прочитати. Спробувати ще раз
 folders-reading = Читання { $name }…
 folders-recent-missing = Цю теку не вдалося відкрити. { $reason }
 folders-recent-gone = Цієї теки там більше немає.
 folder-reading = Читання { $folder }…
 folder-empty = Немає доступних фото
-folder-empty-hint = Виберіть підтеку в розділі «Огляд».
+folder-empty-hint = Виберіть підтеку в розділі «Колекції».
 folder-failed = Не вдалося відкрити { $folder }: { $reason }
 folder-cancelled = Читання { $folder } скасовано
 folder-no-photo = Знімок не вибрано
@@ -491,7 +491,7 @@ settings-group-interface = Інтерфейс
 settings-group-start = Запуск
 settings-group-confirmations = Підтвердження
 settings-group-thumbnails = Мініатюри
-settings-group-side-panel = Бічна панель
+settings-group-tools-panel = Панель інструментів
 settings-group-hardware-acceleration = Апаратне прискорення
 settings-group-diagnostics = Діагностика
 settings-group-cache = Кеш
@@ -510,7 +510,7 @@ setting-library-reopen-last-label = Відкривати те, що було в�
 setting-library-reopen-last-help = Відкриває теку, з якою ви працювали, коли { app-name } закрився, разом з її фото. Файл або тека, відкриті з файлового менеджера чи термінала, відкриваються замість неї.
 setting-export-ask-before-overwrite-label = Питати перед перезаписом експортованого файлу
 setting-history-ask-before-discard-label = Питати перед відкиданням історії знімка
-setting-grid-panel-square-thumbnails-label = Квадратні мініатюри
+setting-browser-square-thumbnails-label = Квадратні мініатюри
 setting-library-raw-thumbnails-from-label = Мініатюри з raw від розміру
 setting-library-raw-thumbnails-from-help = Для знімків без змін: мініатюри, більші за цей розмір, рендеряться з raw-файлу в { app-name }, а не беруться з вбудованого JPEG камери. Повільніше. Знімки зі змінами завжди показують свої зміни.
 setting-library-raw-thumbnails-from-option-always = Завжди
@@ -525,7 +525,7 @@ setting-library-raw-thumbnails-from-option-6K = 6K
 setting-library-raw-thumbnails-from-option-8K = 8K
 setting-library-raw-thumbnails-from-option-never = Ніколи
 setting-library-raw-thumbnails-from-option-auto = Авто
-setting-side-panel-tab-names-label = Показувати назви вкладок
+setting-tools-panel-tab-names-label = Показувати назви вкладок
 setting-engine-adapter-label = Відеокарта
 setting-engine-backend-label = Графічний API
 setting-engine-backend-option-auto = Автоматично
@@ -669,14 +669,14 @@ about-back = Назад
 
 action-open = Відкрити…
 action-view-edit = Перейти до обробки
-action-show-browse = Огляд
-action-panel-tab-1 = Вкладка бічної панелі 1
-action-panel-tab-2 = Вкладка бічної панелі 2
-action-panel-tab-3 = Вкладка бічної панелі 3
-action-panel-tab-4 = Вкладка бічної панелі 4
-action-panel-tab-5 = Вкладка бічної панелі 5
-action-panel-tab-6 = Вкладка бічної панелі 6
-action-panel-tab-7 = Вкладка бічної панелі 7
+action-show-collections = Колекції
+action-panel-tab-1 = Вкладка панелі інструментів 1
+action-panel-tab-2 = Вкладка панелі інструментів 2
+action-panel-tab-3 = Вкладка панелі інструментів 3
+action-panel-tab-4 = Вкладка панелі інструментів 4
+action-panel-tab-5 = Вкладка панелі інструментів 5
+action-panel-tab-6 = Вкладка панелі інструментів 6
+action-panel-tab-7 = Вкладка панелі інструментів 7
 action-scale-up = Збільшити інтерфейс
 action-scale-down = Зменшити інтерфейс
 action-scale-reset = Звичайний розмір інтерфейсу
@@ -715,9 +715,9 @@ action-thumbnails-small = Малі
 action-thumbnails-medium = Середні
 action-thumbnails-large = Великі
 action-thumbnails-extra-large = Дуже великі
-action-grid-position-left = Ліворуч
-action-grid-position-right = Праворуч
-action-grid-position-bottom = Унизу
+action-browser-position-left = Ліворуч
+action-browser-position-right = Праворуч
+action-browser-position-bottom = Унизу
 action-show-labels = Показувати підписи
 action-background-black = Чорне
 action-background-very-dark = Дуже темне
@@ -736,12 +736,12 @@ menu-photo = &Знімок
 menu-view = &Перегляд
 menu-window = &Вікно
 menu-help = &Довідка
-menu-panel-tab = Вкладка бічної панелі
+menu-tools-panel-tab = Вкладка панелі інструментів
 menu-interface-size = Розмір інтерфейсу
 menu-sort-by = Сортувати за
 menu-thumbnail-size = Розмір мініатюр
 menu-background = Тло
-menu-grid-position = Розташування панелі сітки
+menu-browser-position = Розташування оглядача
 menu-open-recent = Відкрити недавні
 menu-recent-in = { $name } — { $parent }
 menu-undo-step = Скасувати: { $step }
@@ -784,7 +784,7 @@ history-discard-tip-unreadable = Починає історію наново ві
 history-discard-no-alert = Відкидання історії спершу питає, а це питання тут поки не можна показати. Щоб відкидати без питання, вимкніть у Налаштуваннях «Питати перед відкиданням історії знімка».
 history-discard-no-alert-unreadable = Відкидання цієї історії спершу питає, адже те, що не вдається прочитати, уже не повернути, а це питання тут поки не можна показати.
 
-## Розділ «Історія» на вкладці «Історія» бічної панелі
+## Розділ «Історія» на вкладці «Історія» панелі інструментів
 
 section-history = Історія
 history-reset-edit = Скинути обробку

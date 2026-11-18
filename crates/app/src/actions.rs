@@ -18,7 +18,7 @@
 //!
 //! Every action is declared once, in [`ACTIONS`]: its id, its name (a message id), its
 //! default keys, its scope, when it can run and what it emits, a command for the engine's
-//! session or an intent for the interface. The top panel's buttons, the side panel's tabs,
+//! session or an intent for the interface. The Toolbar's buttons, the Tools panel's tabs,
 //! the sections' peeking and the tooltips all read it, and [`read`] turns the frame's keys
 //! into actions before any widget is drawn; no widget handles a shortcut.
 //!
@@ -52,7 +52,7 @@ use std::collections::BTreeMap;
 
 use apertrust_engine::session::Command;
 use apertrust_tools::{ProcessingDefinition, Row};
-use apertrust_ui::components::{GridBarAction, GridPosition, SortKey, ThumbnailSize};
+use apertrust_ui::components::{BrowserBarAction, BrowserPosition, SortKey, ThumbnailSize};
 use apertrust_ui::{Background, Translator};
 use eframe::egui::{self, Key, Modifiers, os::OperatingSystem};
 
@@ -102,9 +102,9 @@ impl ActionId {
     pub const APPLY_EDIT: ActionId = ActionId("apply-edit");
     pub const COPY_APPLY_PARTS: ActionId = ActionId("copy-apply-parts");
     pub const EDIT_VIEW: ActionId = ActionId("view-edit");
-    /// View › Browse: the first tab holding Browse.
-    pub const SHOW_BROWSE: ActionId = ActionId("show-browse");
-    /// The side panel's tabs by position, whatever the user puts in them: one for each
+    /// View › Collections: the first tab holding Collections.
+    pub const SHOW_COLLECTIONS: ActionId = ActionId("show-collections");
+    /// The Tools panel's tabs by position, whatever the user puts in them: one for each
     /// of the app's tabs, which a compile-time assert beside the app's `TABS` holds them to.
     pub const PANEL_TABS: [ActionId; 7] = [
         ActionId("panel-tab-1"),
@@ -134,13 +134,13 @@ impl ActionId {
     pub const PEEK: ActionId = ActionId("peek");
     pub const NEXT_PHOTO: ActionId = ActionId("next-photo");
     pub const PREVIOUS_PHOTO: ActionId = ActionId("previous-photo");
-    /// The photo's zoom, View's items and the central bar's zoom menu's: in, out, Fit and
+    /// The photo's zoom, View's items and the viewer bar's zoom menu's: in, out, Fit and
     /// 100%.
     pub const ZOOM_IN: ActionId = ActionId("zoom-in");
     pub const ZOOM_OUT: ActionId = ActionId("zoom-out");
     pub const ZOOM_FIT: ActionId = ActionId("zoom-fit");
     pub const ZOOM_100: ActionId = ActionId("zoom-100");
-    /// The grid bar's Sort menu and View › Sort By: the key, then the direction.
+    /// The browser bar's Sort menu and View › Sort By: the key, then the direction.
     pub const SORT: [ActionId; 4] = [
         ActionId("sort-capture-time"),
         ActionId("sort-file-name"),
@@ -149,22 +149,22 @@ impl ActionId {
     ];
     pub const SORT_ASCENDING: ActionId = ActionId("sort-ascending");
     pub const SORT_DESCENDING: ActionId = ActionId("sort-descending");
-    /// The grid bar's Zoom menu and View › Thumbnail Size, smallest first.
+    /// The browser bar's Zoom menu and View › Thumbnail Size, smallest first.
     pub const THUMBNAILS: [ActionId; 4] = [
         ActionId("thumbnails-small"),
         ActionId("thumbnails-medium"),
         ActionId("thumbnails-large"),
         ActionId("thumbnails-extra-large"),
     ];
-    /// The grid bar's Labels and View › Show Labels: the thumbnails' captions.
+    /// The browser bar's Labels and View › Show Labels: the thumbnails' captions.
     pub const SHOW_LABELS: ActionId = ActionId("show-labels");
-    /// The grid bar's options menu and View › Grid Panel Position: left, right, bottom.
-    pub const GRID_POSITION: [ActionId; 3] = [
-        ActionId("grid-position-left"),
-        ActionId("grid-position-right"),
-        ActionId("grid-position-bottom"),
+    /// The browser bar's options menu and View › Browser Position: left, right, bottom.
+    pub const BROWSER_POSITION: [ActionId; 3] = [
+        ActionId("browser-position-left"),
+        ActionId("browser-position-right"),
+        ActionId("browser-position-bottom"),
     ];
-    /// View › Background and the central panel's right-click menu, black to white.
+    /// View › Background and the Viewer's right-click menu, black to white.
     pub const BACKGROUND: [ActionId; 6] = [
         ActionId("background-black"),
         ActionId("background-very-dark"),
@@ -175,8 +175,8 @@ impl ActionId {
     ];
 }
 
-/// The old views enum, from before the one view (decision 37), to become the central
-/// panel's layouts: only Edit is left.
+/// The old views enum, from before the one view (decision 37), to become the
+/// Viewer's layouts: only Edit is left.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum View {
     Edit,
@@ -243,8 +243,9 @@ pub enum Intent {
     DiscardHistory,
     View(View),
     PanelTab(usize),
-    /// View › Browse: the first tab holding Browse chosen, nothing where it is chosen.
-    ShowBrowse,
+    /// View › Collections: the first tab holding Collections chosen, nothing where it is
+    /// chosen.
+    ShowCollections,
     ScaleUp,
     ScaleDown,
     ScaleReset,
@@ -262,9 +263,9 @@ pub enum Intent {
     Restart,
     /// Held, never applied: the sections read it ([`Keys::held`]) and peek.
     Peek,
-    /// The grid panel's sort, its direction, the thumbnails' size or where the panel is, as
-    /// the grid bar's menus choose them, or its Labels turned on or off.
-    Grid(GridBarAction),
+    /// The Browser's sort, its direction, the thumbnails' size or where the panel is, as
+    /// the browser bar's menus choose them, or its Labels turned on or off.
+    BrowserBar(BrowserBarAction),
     /// The background behind the photo (`docs/gui.md`, The background).
     Background(Background),
     /// A tool's own action, run as pressing its button does ([`tool_actions`]).
@@ -326,7 +327,7 @@ pub struct State {
     /// The recents Open Recent lists, newest first, by place: whether each can be opened,
     /// none where the list holds no entry there. One found missing cannot.
     pub recents: [Option<bool>; crate::recents::MOST],
-    /// The side panel's tabs, by position: whether each can be chosen. One with nothing
+    /// The Tools panel's tabs, by position: whether each can be chosen. One with nothing
     /// behind it yet cannot, so its key is unavailable (decision 38).
     pub tabs: &'static [bool],
     /// The interface's scale: egui's zoom factor.
@@ -345,11 +346,11 @@ pub struct State {
     pub dialog_window: bool,
     /// Whether the window is full screen, which Full Screen's item shows checked.
     pub full_screen: bool,
-    /// The side panel's tab shown, by position, whose item is shown checked.
+    /// The Tools panel's tab shown, by position, whose item is shown checked.
     pub panel_tab: usize,
-    /// How the grid panel shows the folder, whose items are shown checked.
-    pub grid: crate::settings::Grid,
-    /// Whether the grid panel shows photos: its grid bar's items rest without any.
+    /// How the Browser shows the folder, whose items are shown checked.
+    pub browser: crate::settings::BrowserSettings,
+    /// Whether the Browser shows photos: its browser bar's items rest without any.
     pub shown: bool,
     /// The background behind the photo, whose item is shown checked; None for a theme's
     /// own surround that is none of the six.
@@ -457,12 +458,12 @@ impl Action {
 
     /// For an action that turns something on or chooses one of a set, whether it is on or
     /// the one chosen in `state`, which its menu item shows by a check mark: Full Screen,
-    /// and the side panel's tabs. None for a command.
+    /// and the Tools panel's tabs. None for a command.
     pub fn checked(&self, state: &State) -> Option<bool> {
         match self.emits {
             Emit::Intent(Intent::FullScreen) => Some(state.full_screen),
             Emit::Intent(Intent::PanelTab(tab)) => Some(state.panel_tab == tab),
-            Emit::Intent(Intent::Grid(chosen)) => Some(state.grid.holds(chosen)),
+            Emit::Intent(Intent::BrowserBar(chosen)) => Some(state.browser.holds(chosen)),
             Emit::Intent(Intent::Background(b)) => Some(state.background == Some(b)),
             _ => None,
         }
@@ -521,24 +522,24 @@ fn on_main_window(state: &State) -> bool {
     !state.dialog_window
 }
 
-/// Whether the grid bar's menus can be used: the grid panel shows photos, on the main
+/// Whether the browser bar's menus can be used: the Browser shows photos, on the main
 /// window, with no modal dialog over it.
-fn grid_shown(state: &State) -> bool {
+fn browser_shown(state: &State) -> bool {
     state.shown && on_main_window(state) && !state.modal
 }
 
-/// Whether the grid panel can be moved: on the main window, with no modal dialog over it,
+/// Whether the Browser can be moved: on the main window, with no modal dialog over it,
 /// whether it shows photos or not, as its options menu opens in every state.
-fn grid_anywhere(state: &State) -> bool {
+fn browser_anywhere(state: &State) -> bool {
     on_main_window(state) && !state.modal
 }
 
-/// The grid bar's choice `chosen` as an action, which can run where `available` says: no
+/// The browser bar's choice `chosen` as an action, which can run where `available` says: no
 /// keys by default, its words the action's own message, `action-<id>`.
-const fn grid(
+const fn browser_bar(
     id: ActionId,
     message: &'static str,
-    chosen: GridBarAction,
+    chosen: BrowserBarAction,
     available: fn(&State) -> bool,
 ) -> Action {
     Action {
@@ -548,12 +549,12 @@ const fn grid(
         scope: Scope::App,
         trigger: Trigger::Press,
         available,
-        emits: Emit::Intent(Intent::Grid(chosen)),
+        emits: Emit::Intent(Intent::BrowserBar(chosen)),
     }
 }
 
 /// The background `chosen` as an action: no keys by default, on the main window with no
-/// modal dialog over it, in every state, as the central panel's menu opens with no photo.
+/// modal dialog over it, in every state, as the Viewer's menu opens with no photo.
 const fn background(id: ActionId, message: &'static str, chosen: Background) -> Action {
     Action {
         id,
@@ -561,7 +562,7 @@ const fn background(id: ActionId, message: &'static str, chosen: Background) -> 
         keys: &[],
         scope: Scope::App,
         trigger: Trigger::Press,
-        available: grid_anywhere,
+        available: browser_anywhere,
         emits: Emit::Intent(Intent::Background(chosen)),
     }
 }
@@ -586,7 +587,7 @@ const fn open_recent<const I: usize>(message: &'static str) -> Action {
     }
 }
 
-/// Whether the side panel has an `I`th tab, by position, that can be chosen, the main
+/// Whether the Tools panel has an `I`th tab, by position, that can be chosen, the main
 /// window the one acted on.
 fn tab_enabled<const I: usize>(state: &State) -> bool {
     on_main_window(state) && state.tabs.get(I).copied().unwrap_or(false)
@@ -595,7 +596,7 @@ fn tab_enabled<const I: usize>(state: &State) -> bool {
 /// Every action, in the order a keyboard map lists them (`docs/gui.md`, The default
 /// keyboard map). Slider keys are not here: they are the slider's own (`SliderRow`).
 pub static ACTIONS: [Action; 77] = [
-    // The top panel's mark, and About Apertrust in the menus once they come.
+    // The Toolbar's mark, and About Apertrust in the menus once they come.
     Action {
         id: ActionId::ABOUT,
         message: "action-about",
@@ -646,7 +647,7 @@ pub static ACTIONS: [Action; 77] = [
         available: no_modal_dialog,
         emits: Emit::Intent(Intent::Open),
     },
-    // Folder mode: the folder's photos fill the grid panel.
+    // Folder mode: the folder's photos fill the Browser.
     Action {
         id: ActionId::OPEN_FOLDER,
         message: "action-open-folder",
@@ -826,13 +827,13 @@ pub static ACTIONS: [Action; 77] = [
         emits: Emit::Intent(Intent::View(View::Edit)),
     },
     Action {
-        id: ActionId::SHOW_BROWSE,
-        message: "action-show-browse",
+        id: ActionId::SHOW_COLLECTIONS,
+        message: "action-show-collections",
         keys: &[plain(Key::L)],
         scope: Scope::App,
         trigger: Trigger::Press,
         available: on_main_window,
-        emits: Emit::Intent(Intent::ShowBrowse),
+        emits: Emit::Intent(Intent::ShowCollections),
     },
     Action {
         id: ActionId::PANEL_TABS[0],
@@ -880,7 +881,7 @@ pub static ACTIONS: [Action; 77] = [
         emits: Emit::Intent(Intent::PanelTab(4)),
     },
     // No default key for the sixth and seventh: Ctrl+6 is Ctrl+− on French AZERTY
-    // keyboards, which would zoom out (`docs/gui.md`, The side panel). The settings file's
+    // keyboards, which would zoom out (`docs/gui.md`, The Tools panel). The settings file's
     // `keys` table can give each one.
     Action {
         id: ActionId::PANEL_TABS[5],
@@ -950,7 +951,7 @@ pub static ACTIONS: [Action; 77] = [
     // 39). Its name is the ☰'s, and the menu it opens never holds it.
     Action {
         id: ActionId::MENU,
-        message: "top-panel-menu",
+        message: "toolbar-menu",
         keys: &[plain(Key::F10).only(Platforms::NotMac)],
         scope: Scope::App,
         trigger: Trigger::Press,
@@ -1081,25 +1082,26 @@ pub static ACTIONS: [Action; 77] = [
         available: |s| s.photo,
         emits: Emit::Later,
     },
-    // The grid bar's menus and View's Sort By and Thumbnail Size (`docs/gui.md`, The grid
-    // bar); no keys by default, so + and − stay free. Rating comes with the ratings.
-    grid(
+    // The browser bar's menus and View's Sort By and Thumbnail Size (`docs/gui.md`, The
+    // browser bar); no keys by default, so + and − stay free. Rating comes with the
+    // ratings.
+    browser_bar(
         ActionId::SORT[0],
         "action-sort-capture-time",
-        GridBarAction::Sort(SortKey::CaptureTime),
-        grid_shown,
+        BrowserBarAction::Sort(SortKey::CaptureTime),
+        browser_shown,
     ),
-    grid(
+    browser_bar(
         ActionId::SORT[1],
         "action-sort-file-name",
-        GridBarAction::Sort(SortKey::FileName),
-        grid_shown,
+        BrowserBarAction::Sort(SortKey::FileName),
+        browser_shown,
     ),
-    grid(
+    browser_bar(
         ActionId::SORT[2],
         "action-sort-edited",
-        GridBarAction::Sort(SortKey::Edited),
-        grid_shown,
+        BrowserBarAction::Sort(SortKey::Edited),
+        browser_shown,
     ),
     Action {
         id: ActionId::SORT[3],
@@ -1110,68 +1112,68 @@ pub static ACTIONS: [Action; 77] = [
         available: never,
         emits: Emit::Later,
     },
-    grid(
+    browser_bar(
         ActionId::SORT_ASCENDING,
         "action-sort-ascending",
-        GridBarAction::Descending(false),
-        grid_shown,
+        BrowserBarAction::Descending(false),
+        browser_shown,
     ),
-    grid(
+    browser_bar(
         ActionId::SORT_DESCENDING,
         "action-sort-descending",
-        GridBarAction::Descending(true),
-        grid_shown,
+        BrowserBarAction::Descending(true),
+        browser_shown,
     ),
-    grid(
+    browser_bar(
         ActionId::THUMBNAILS[0],
         "action-thumbnails-small",
-        GridBarAction::Size(ThumbnailSize::Small),
-        grid_shown,
+        BrowserBarAction::Size(ThumbnailSize::Small),
+        browser_shown,
     ),
-    grid(
+    browser_bar(
         ActionId::THUMBNAILS[1],
         "action-thumbnails-medium",
-        GridBarAction::Size(ThumbnailSize::Medium),
-        grid_shown,
+        BrowserBarAction::Size(ThumbnailSize::Medium),
+        browser_shown,
     ),
-    grid(
+    browser_bar(
         ActionId::THUMBNAILS[2],
         "action-thumbnails-large",
-        GridBarAction::Size(ThumbnailSize::Large),
-        grid_shown,
+        BrowserBarAction::Size(ThumbnailSize::Large),
+        browser_shown,
     ),
-    grid(
+    browser_bar(
         ActionId::THUMBNAILS[3],
         "action-thumbnails-extra-large",
-        GridBarAction::Size(ThumbnailSize::ExtraLarge),
-        grid_shown,
+        BrowserBarAction::Size(ThumbnailSize::ExtraLarge),
+        browser_shown,
     ),
-    // The grid bar's Labels, a toggle shown checked while the captions show.
-    grid(
+    // The browser bar's Labels, a toggle shown checked while the captions show.
+    browser_bar(
         ActionId::SHOW_LABELS,
         "action-show-labels",
-        GridBarAction::Labels,
-        grid_shown,
+        BrowserBarAction::Labels,
+        browser_shown,
     ),
-    // Where the grid panel goes, in every state: the grid bar's options menu opens with
+    // Where the Browser goes, in every state: the browser bar's options menu opens with
     // nothing shown too.
-    grid(
-        ActionId::GRID_POSITION[0],
-        "action-grid-position-left",
-        GridBarAction::Position(GridPosition::Left),
-        grid_anywhere,
+    browser_bar(
+        ActionId::BROWSER_POSITION[0],
+        "action-browser-position-left",
+        BrowserBarAction::Position(BrowserPosition::Left),
+        browser_anywhere,
     ),
-    grid(
-        ActionId::GRID_POSITION[1],
-        "action-grid-position-right",
-        GridBarAction::Position(GridPosition::Right),
-        grid_anywhere,
+    browser_bar(
+        ActionId::BROWSER_POSITION[1],
+        "action-browser-position-right",
+        BrowserBarAction::Position(BrowserPosition::Right),
+        browser_anywhere,
     ),
-    grid(
-        ActionId::GRID_POSITION[2],
-        "action-grid-position-bottom",
-        GridBarAction::Position(GridPosition::Bottom),
-        grid_anywhere,
+    browser_bar(
+        ActionId::BROWSER_POSITION[2],
+        "action-browser-position-bottom",
+        BrowserBarAction::Position(BrowserPosition::Bottom),
+        browser_anywhere,
     ),
     background(
         ActionId::BACKGROUND[0],
@@ -2045,8 +2047,8 @@ pub fn access_key<T>(ctx: &egui::Context, mut menu: impl FnMut(char) -> Option<T
 }
 
 /// The widget F6 moves the focus to: the first that takes focus in the region after the
-/// focused widget's, or before it going back, in `regions`' order (the top panel, the
-/// central bar, the side panel, the grid panel). With nothing focused, F6 starts at the
+/// focused widget's, or before it going back, in `regions`' order (the Toolbar, the
+/// viewer bar, the Tools panel, the Browser). With nothing focused, F6 starts at the
 /// first region and Shift+F6 at the last. `widgets` are the focusable widgets in the order
 /// egui met them.
 pub fn next_region(
@@ -2117,7 +2119,7 @@ pub(crate) mod tests {
             dialog_window: false,
             full_screen: false,
             panel_tab: 0,
-            grid: crate::settings::Grid::default(),
+            browser: crate::settings::BrowserSettings::default(),
             shown: true,
             background: Some(Background::Dark),
         }
@@ -2760,7 +2762,7 @@ pub(crate) mod tests {
                 egui::Rect::from_min_size(egui::pos2(5.0, y + 2.0), egui::vec2(5.0, 5.0)),
             )
         };
-        // Nothing to focus in the central bar (region 1).
+        // Nothing to focus in the viewer bar (region 1).
         let widgets = [
             widget(1, 0.0),
             widget(2, 0.0),

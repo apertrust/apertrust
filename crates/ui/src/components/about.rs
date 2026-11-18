@@ -22,7 +22,7 @@
 //!
 //! It is a tooltip, not a popover: nothing in it is clicked, so it is painted on the
 //! tooltip layer and never takes the focus. Its timing is its own, the tooltips' 0.6 s at
-//! rest, a sweep down the headers showing each at once, and its place too: beside the side
+//! rest, a sweep down the headers showing each at once, and its place too: beside the Tools
 //! panel over the photo, level with the header, or under it inside the panel where the
 //! window leaves too little room.
 

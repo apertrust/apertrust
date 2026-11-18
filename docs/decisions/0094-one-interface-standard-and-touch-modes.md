@@ -13,7 +13,7 @@ What constrains it:
 
 ## Decision
 
-**One interface with two modes, Standard and Touch.** The tabs, the tools and their sections, the rows, the actions registry, the selection model and the session's commands are the same in both. Touch mode changes sizes, spacing and gestures, and makes two named layout adaptations that present the same parts: the side panel as a bottom sheet in portrait, and the Photos tab's Select mode with its batch bar. The dividing line is the input model, not the platform. Touch mode is the tablet's interface; a phone's layout is a later, separate design. Standard is built; Touch mode is planned, its design on the wireframe's Tablet page.
+**One interface with two modes, Standard and Touch.** The tabs, the tools and their sections, the rows, the actions registry, the selection model and the session's commands are the same in both. Touch mode changes sizes, spacing and gestures, and makes two named layout adaptations that present the same parts: the Tools panel as a bottom sheet in portrait, and the Photos tab's Select mode with its batch bar. The dividing line is the input model, not the platform. Touch mode is the tablet's interface; a phone's layout is a later, separate design. Standard is built; Touch mode is planned, its design on the wireframe's Tablet page.
 
 ### The setting
 
@@ -33,7 +33,7 @@ Planned, as the wireframe's Tablet page draws them:
 - **A picker:** a tap picks a point, a drag an area, two fingers zoom and pan.
 - **A long press** opens the context menus that exist ([0091](0091-context-menus-places-and-tools-items-as-actions.md)).
 - **A swipe on the photo at Fit** does nothing; it never moves to another photo.
-- **In portrait** the side panel becomes a bottom sheet.
+- **In portrait** the Tools panel becomes a bottom sheet.
 - **The Photos tab** has a Select mode: a tap or a slide selects photos, with a batch bar for what acts on them.
 
 ### Rules for interface code, from now on

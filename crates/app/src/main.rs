@@ -15,8 +15,8 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 //! `apertrust`: the desktop editor. For now it is the shell (`docs/gui.md`, The shell)
-//! with one raw in Edit: the top panel, the side panel, the central bar and the grid panel,
-//! and in the side panel's tabs, darktable's module groups, the tools' sections, each
+//! with one raw in Edit: the Toolbar, the Tools panel, the viewer bar and the Browser,
+//! and in the Tools panel's tabs, darktable's module groups, the tools' sections, each
 //! drawn from its definition (`tools`), under the Scopes section every editing tab pins
 //! (`scopes`). Its buttons and keys run the actions declared in `actions`. File › Open
 //! Image… opens another raw in its place, chosen in the platform's open dialog
@@ -26,7 +26,7 @@
 //! the app sends it [`Command`]s, mirrors what its events report, and draws its latest
 //! frame with a paint callback (`viewport`). The window is sRGB, tagged as such every
 //! frame by `apertrust-display`, since wgpu leaves it untagged and macOS then shows it
-//! without colour management. On macOS the top panel is the window's title bar (decision
+//! without colour management. On macOS the Toolbar is the window's title bar (decision
 //! 39): `apertrust-display` places the traffic lights in it every frame, and a drag or a
 //! double-click on its empty areas moves the window or does what the system's setting
 //! says, run after the frame. The menu bar there is the system's, built from the registry
@@ -34,7 +34,7 @@
 //! `App::logic`, so it runs while the window is minimised too.
 //!
 //! What the shell keeps between runs (the theme, the language, the scale, the keys, the
-//! side panel's tab and width, the scopes' view, the window's placement) is read from
+//! Tools panel's tab and width, the scopes' view, the window's placement) is read from
 //! `settings` before the window opens, in the user data folder `apertrust_base::folders`
 //! chooses, and written back once it has stood still for a second.
 //!
@@ -101,11 +101,11 @@ use apertrust_engine::session::{
 use apertrust_engine::sidecar::Reason;
 use apertrust_tools::ToolDefinition;
 use apertrust_ui::components::{
-    ActivityAction, Available, CellMenu, CellRating, CentralBar, CentralBarAction, GridEdge,
-    GridEdgeAction, GridPanel, GridPanelAction, GridPosition, Jobs, Margin, Marker, PanelBody,
-    PanelEdge, PanelEdgeAction, PanelTab, PhotoCaption, PhotoFrame, PickerAction, Placed,
-    SaveState, ScopeView, TabBar, TabBarAction, Thumb, Toggle, TopPanel, TopPanelAction, Zoom,
-    grid_panel_lines, grid_panel_thickness,
+    ActivityAction, Available, Browser, BrowserAction, BrowserEdge, BrowserEdgeAction,
+    BrowserPosition, CellMenu, CellRating, Jobs, Margin, Marker, PanelBody, PanelEdge,
+    PanelEdgeAction, PanelTab, PhotoCaption, PhotoFrame, PickerAction, Placed, SaveState,
+    ScopeView, TabBar, TabBarAction, Thumb, Toggle, Toolbar, ToolbarAction, ViewerBar,
+    ViewerBarAction, Zoom, browser_lines, browser_thickness,
 };
 use apertrust_ui::{
     Background, Builtin, Icon, Locale, Theme, Translator, components, popup, theme, tr, translator,
@@ -715,14 +715,14 @@ const PLACE_AFTER_CREATION: bool = cfg!(any(target_os = "macos", target_os = "wi
 /// neither follow nor restore it there, and the window opens at its last size.
 const MAXIMISES: bool = !cfg!(target_os = "macos");
 
-/// The top panel is the window's title bar (`docs/gui.md`, The window frame and menus;
+/// The Toolbar is the window's title bar (`docs/gui.md`, The window frame and menus;
 /// decision 39). On macOS, built: the content runs to the window's top edge under a title
-/// bar that is neither drawn nor titled, and the traffic lights sit in the top panel. On
+/// bar that is neither drawn nor titled, and the traffic lights sit in the Toolbar. On
 /// Windows and Linux, see [`CAPTION_BUTTONS`].
 const OWN_TITLE_BAR: bool = cfg!(target_os = "macos");
 
-/// On Windows and on Linux, X11 and Wayland, the top panel is the title bar too, built as
-/// decision 39 says: decorations off, so no system draws a title bar; the top panel draws
+/// On Windows and on Linux, X11 and Wayland, the Toolbar is the title bar too, built as
+/// decision 39 says: decorations off, so no system draws a title bar; the Toolbar draws
 /// minimise, maximise or restore and close at its end, and the window resizes from bands
 /// inside its edges ([`RESIZE_BAND`]). Moves, resizes and the window menu are the
 /// system's: on Windows winit keeps the styles Aero Snap and Win+arrows need, and the
@@ -1094,7 +1094,7 @@ fn system_locale() -> Locale {
     )
 }
 
-/// The side panel's tabs in Edit (decision 38): the tools by editing stage, Adjust,
+/// The Tools panel's tabs in Edit (decision 38): the tools by editing stage, Adjust,
 /// Detail, Geometry, Effects and Raw, between Apertrust's own Photos and History. Ctrl+1
 /// to Ctrl+5 choose the first five by position ([`ActionId::PANEL_TABS`]); Raw and
 /// History, the sixth and seventh, have their actions and no default key, since Ctrl+6 is
@@ -1117,12 +1117,12 @@ const TAB_IDS: [&str; TABS.len()] = [
     "photos", "adjust", "detail", "geometry", "effects", "raw", "history",
 ];
 
-/// The Photos tab, first: Browse so far.
+/// The Photos tab, first: Collections so far.
 const PHOTOS: usize = 0;
 
-/// The first tab holding Browse, which View › Browse chooses (decision 73): the Photos tab,
-/// until workspaces let the tabs be changed (`docs/gui.md`, Workspaces).
-const BROWSE: usize = PHOTOS;
+/// The first tab holding Collections, which View › Collections chooses (decision 73): the
+/// Photos tab, until workspaces let the tabs be changed (`docs/gui.md`, Workspaces).
+const COLLECTIONS: usize = PHOTOS;
 
 /// The History tab, last: the History section, Snapshots to come over it, with no Scopes
 /// (`docs/history.md`).
@@ -1141,7 +1141,7 @@ const TABS_ENABLED: [bool; TABS.len()] = {
     enabled
 };
 
-// Each tab has its action, which its click, its key and Side Panel Tab's item run: a tab
+// Each tab has its action, which its click, its key and Tools Panel Tab's item run: a tab
 // with none could not be chosen.
 const _: () = assert!(ActionId::PANEL_TABS.len() == TABS.len());
 
@@ -1149,11 +1149,11 @@ fn tab_id(tab: usize) -> Option<&'static str> {
     TAB_IDS.get(tab).copied()
 }
 
-/// The widths the side panel can be dragged to, in points, as the settings schema has them:
-/// down to 240 and up to 600; it opens at the theme's 320.
-const PANEL_WIDTHS: std::ops::RangeInclusive<f32> = settings::registry::SIDE_PANEL_WIDTH.range();
+/// The widths the Tools panel can be dragged to, in points, as the settings schema has
+/// them: down to 240 and up to 600; it opens at the theme's 320.
+const PANEL_WIDTHS: std::ops::RangeInclusive<f32> = settings::registry::TOOLS_PANEL_WIDTH.range();
 
-/// The widths the side panel may take in a window `window` points wide: [`PANEL_WIDTHS`],
+/// The widths the Tools panel may take in a window `window` points wide: [`PANEL_WIDTHS`],
 /// but never more than half the window, so the photo keeps the other half, and never less
 /// than the narrowest, where half is less: how the shell gives way below 960 points is
 /// still to be designed (decision 39).
@@ -1249,16 +1249,16 @@ struct App {
     bounds: Bounds,
     /// The window's size at the last frame, in points, to tell when it is resizing.
     window_size: egui::Vec2,
-    /// The side panel's width at the last frame, in points, to tell when its edge moves.
+    /// The Tools panel's width at the last frame, in points, to tell when its edge moves.
     panel_width: f32,
-    /// The grid panel's place and lines at the last frame, to tell when it moves.
-    grid_lines: (GridPosition, usize),
+    /// The Browser's place and lines at the last frame, to tell when it moves.
+    browser_lines: (BrowserPosition, usize),
     shell: Shell,
     /// Each tool section's open state and tab.
     panels: Panels,
     /// Whether tagging the window's colour space failed, reported once.
     tag_failed: bool,
-    /// Whether placing the window's buttons in the top panel failed, reported once.
+    /// Whether placing the window's buttons in the Toolbar failed, reported once.
     buttons_failed: bool,
     /// Whether the last frame handed a window move to the system, whose release egui
     /// may then never see ([`release_after_drag`]).
@@ -1311,9 +1311,9 @@ struct App {
     fade: Option<fade::Fade>,
     /// What the colour picker's live region reads out (decision 79).
     said: pickers::Said,
-    /// The grid panel's thumbnails as textures, made of what the mirror holds.
+    /// The Browser's thumbnails as textures, made of what the mirror holds.
     thumbnails: thumbnails::Textures,
-    /// The thumbnails asked for of the photos in the grid panel's sight.
+    /// The thumbnails asked for of the photos in the Browser's sight.
     thumbnails_asked: thumbnails::Asking,
     /// The session's log kept in memory, while Settings says so, for the log window.
     kept: apertrust_base::log::Kept,
@@ -1357,9 +1357,9 @@ struct App {
     start: start::Window,
 }
 
-/// What the top panel asked for this frame.
+/// What the Toolbar asked for this frame.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum FromTopPanel {
+enum FromToolbar {
     /// A registry action, from its button.
     Action(ActionId),
     /// Something of the window's, from the panel's empty areas where it is the title bar.
@@ -1370,7 +1370,7 @@ enum FromTopPanel {
     NotSaved,
 }
 
-/// What the top panel's empty areas, and its caption buttons where it draws them, ask of
+/// What the Toolbar's empty areas, and its caption buttons where it draws them, ask of
 /// the window where the panel is its title bar. Close is the Quit action's.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum TitleBar {
@@ -1382,7 +1382,7 @@ enum TitleBar {
     MaximiseOrRestore,
 }
 
-/// What the window's platform does for the top panel's gestures, through
+/// What the window's platform does for the Toolbar's gestures, through
 /// `apertrust-display`; the tests stand in for it.
 trait WindowControl {
     /// What a double-click on a title bar does, by the system's setting.
@@ -1446,10 +1446,10 @@ impl WindowControl for System<'_> {
     }
 }
 
-/// The room the top panel keeps at its start for the window's buttons, in egui's points at
+/// The room the Toolbar keeps at its start for the window's buttons, in egui's points at
 /// the interface's scale `zoom`, from where `apertrust-display` left them (`buttons`, in
 /// the window system's points, `None` where it could not reach the window): none where
-/// the top panel is not the title bar; the room measured, whether it placed them or not;
+/// the Toolbar is not the title bar; the room measured, whether it placed them or not;
 /// and where the window could not be reached, the room AppKit's own title bar gives them
 /// where the app draws its own (`own_title_bar`), unless in full screen, so the panel stays
 /// the title bar and the window can still be moved.
@@ -1529,7 +1529,7 @@ fn reaches_under_modal(input: &egui::RawInput) -> bool {
     })
 }
 
-/// Does what the top panel's empty areas or its caption buttons asked of the window, as its
+/// Does what the Toolbar's empty areas or its caption buttons asked of the window, as its
 /// title bar would, after the frame: a drag moves it, a double-click does what the
 /// system's setting says, a right-click opens the window's menu where the pointer is, and
 /// the buttons minimise it, or maximise or restore it. The platform zooms the window from
@@ -1670,28 +1670,28 @@ fn resize_hover(ctx: &egui::Context, band: f32) {
     }
 }
 
-/// The top panel's buttons and the actions they run.
-const TOP_PANEL: [(TopPanelAction, ActionId); 9] = [
-    (TopPanelAction::Menu, ActionId::MENU),
-    (TopPanelAction::About, ActionId::ABOUT),
-    (TopPanelAction::Import, ActionId::IMPORT),
-    (TopPanelAction::Export, ActionId::EXPORT),
-    (TopPanelAction::Reset, ActionId::RESET),
-    (TopPanelAction::Undo, ActionId::UNDO),
-    (TopPanelAction::Redo, ActionId::REDO),
-    (TopPanelAction::CopyEdit, ActionId::COPY_EDIT),
-    (TopPanelAction::ApplyEdit, ActionId::APPLY_EDIT),
+/// The Toolbar's buttons and the actions they run.
+const TOOLBAR: [(ToolbarAction, ActionId); 9] = [
+    (ToolbarAction::Menu, ActionId::MENU),
+    (ToolbarAction::About, ActionId::ABOUT),
+    (ToolbarAction::Import, ActionId::IMPORT),
+    (ToolbarAction::Export, ActionId::EXPORT),
+    (ToolbarAction::Reset, ActionId::RESET),
+    (ToolbarAction::Undo, ActionId::UNDO),
+    (ToolbarAction::Redo, ActionId::REDO),
+    (ToolbarAction::CopyEdit, ActionId::COPY_EDIT),
+    (ToolbarAction::ApplyEdit, ActionId::APPLY_EDIT),
 ];
 
-/// The central bar's zoom menu entries that are actions too, whose keys they show.
-const ZOOM_MENU: [(CentralBarAction, ActionId); 4] = [
-    (CentralBarAction::Zoom(Zoom::Fit), ActionId::ZOOM_FIT),
+/// The viewer bar's zoom menu entries that are actions too, whose keys they show.
+const ZOOM_MENU: [(ViewerBarAction, ActionId); 4] = [
+    (ViewerBarAction::Zoom(Zoom::Fit), ActionId::ZOOM_FIT),
     (
-        CentralBarAction::Zoom(Zoom::Percent(100.0)),
+        ViewerBarAction::Zoom(Zoom::Percent(100.0)),
         ActionId::ZOOM_100,
     ),
-    (CentralBarAction::ZoomIn, ActionId::ZOOM_IN),
-    (CentralBarAction::ZoomOut, ActionId::ZOOM_OUT),
+    (ViewerBarAction::ZoomIn, ActionId::ZOOM_IN),
+    (ViewerBarAction::ZoomOut, ActionId::ZOOM_OUT),
 ];
 
 /// The shell's own state (`docs/gui.md`, A frame), part of it kept in settings.
@@ -1699,13 +1699,13 @@ struct Shell {
     view: View,
     panel_tab: usize,
     tab_names: bool,
-    /// The side panel's width as the user dragged it, in points; None for the theme's.
+    /// The Tools panel's width as the user dragged it, in points; None for the theme's.
     /// Kept while a narrower window shows the panel narrower ([`panel_widths`]).
     panel_width: Option<f32>,
     guides: bool,
     proof_margin: bool,
-    /// The central panel's margins, from the settings (`[central_panel]`).
-    central_panel: settings::CentralPanel,
+    /// The Viewer's margins, from the settings (`[viewer]`).
+    viewer: settings::Viewer,
     /// Whether Settings… ran, for the app to open it in the dialog host after the action.
     settings: bool,
     /// Whether Show Log ran, for the app to open the log window after the action.
@@ -1728,14 +1728,14 @@ struct Shell {
     /// ends the app: the start window's own close on the Mac does not ([`App`]'s
     /// `raw_input_hook`).
     leaving: bool,
-    /// What was opened, newest first, kept in `state.toml`: Browse's recent folders and
+    /// What was opened, newest first, kept in `state.toml`: Collections' recent folders and
     /// Open Recent's list, with what was open last beside them.
     recents: Recents,
-    /// Whether Browse was shown at the last frame, so the recents are checked again as it
-    /// comes into sight.
-    browse_shown: bool,
-    /// The folders the user opened (true) or closed (false) in Browse's tree, for this run:
-    /// neither a folder chosen in the tree nor a way in changes them.
+    /// Whether Collections was shown at the last frame, so the recents are checked again as
+    /// it comes into sight.
+    collections_shown: bool,
+    /// The folders the user opened (true) or closed (false) in Collections' tree, for this
+    /// run: neither a folder chosen in the tree nor a way in changes them.
     tree: BTreeMap<PathBuf, bool>,
     /// The missing recent Locate… asked about, for the folder dialog after the frame.
     locate: Option<PathBuf>,
@@ -1799,8 +1799,8 @@ struct Shell {
     groups: BTreeMap<String, BTreeMap<String, bool>>,
     /// What the Scopes section shows, as the user left it.
     scopes: ScopeView,
-    /// How the grid panel shows the folder: its sort and its thumbnails' size.
-    grid: settings::Grid,
+    /// How the Browser shows the folder: its sort and its thumbnails' size.
+    browser: settings::BrowserSettings,
     /// The window's placement as it last stood while neither maximised nor full screen.
     window: settings::Window,
     /// Where Settings' own window was last left, on the Mac.
@@ -1852,7 +1852,7 @@ impl Shell {
             panel_width: settings.panel_width,
             guides: false,
             proof_margin: false,
-            central_panel: settings.central_panel,
+            viewer: settings.viewer,
             settings: false,
             show_log: false,
             show_jobs: false,
@@ -1864,7 +1864,7 @@ impl Shell {
             close: false,
             leaving: false,
             recents: Recents::nowhere(),
-            browse_shown: false,
+            collections_shown: false,
             tree: BTreeMap::new(),
             locate: None,
             missing: BTreeMap::new(),
@@ -1893,7 +1893,7 @@ impl Shell {
             peeked_on: None,
             groups: settings.edit.groups.clone(),
             scopes: settings.scopes,
-            grid: settings.grid,
+            browser: settings.browser,
             window: settings.window,
             settings_window: settings.settings_window,
             jobs_window: settings.jobs_window,
@@ -1920,14 +1920,14 @@ impl Shell {
             log: self.log.clone(),
             tab_names: self.tab_names,
             panel_width: self.panel_width,
-            central_panel: self.central_panel,
+            viewer: self.viewer,
             edit: settings::ViewState {
                 tab,
                 sections: self.sections.clone(),
                 groups: self.groups.clone(),
             },
             scopes: self.scopes,
-            grid: self.grid,
+            browser: self.browser,
             keys: self.keymap.overrides().clone(),
             export: self.export.clone(),
             tool_settings: self.tool_settings.clone(),
@@ -2005,8 +2005,8 @@ impl Shell {
         self.recents.save();
     }
 
-    /// Opens or closes `folder` in Browse's tree, for the run; `root` says it is the tree's
-    /// root, which starts open, the others closed. Returns whether it is open now.
+    /// Opens or closes `folder` in Collections' tree, for the run; `root` says it is the
+    /// tree's root, which starts open, the others closed. Returns whether it is open now.
     fn toggle_tree(&mut self, folder: &Path, root: bool) -> bool {
         let now = !self.tree.get(folder).copied().unwrap_or(root);
         self.tree.insert(folder.to_owned(), now);
@@ -2231,7 +2231,8 @@ impl Shell {
     }
 
     /// Whether `tool`'s collapsible group `group` is open: as the user left it, or
-    /// `default`, as Browse's Folders, open in folder mode, where it is Browse alone.
+    /// `default`, as Collections' Folders, open in folder mode, where it is Collections
+    /// alone.
     fn group_open_or(&self, tool: &str, group: &str, default: bool) -> bool {
         let kept = self.groups.get(tool).and_then(|groups| groups.get(group));
         kept.copied().unwrap_or(default)
@@ -2250,26 +2251,26 @@ impl Shell {
         groups.insert(group.to_owned(), open);
     }
 
-    /// Whether Browse and its Folders are open, as the user left them.
-    fn browse_open(&self) -> library::Open {
+    /// Whether Collections and its Folders are open, as the user left them.
+    fn collections_open(&self) -> library::Open {
         library::Open {
-            browse: self.section_open(library::ID, library::OPEN),
+            collections: self.section_open(library::ID, library::OPEN),
             folders: self.group_open_or(library::ID, library::FOLDERS, library::FOLDERS_OPEN),
         }
     }
 
-    /// Opens or closes Browse, or its Folders, as Browse's header or the Folders' row
-    /// asked (`library::Action::Toggle`, `ToggleFolders`), for this run and the next.
-    fn toggle_browse(&mut self, folders: bool) {
-        let open = self.browse_open();
+    /// Opens or closes Collections, or its Folders, as Collections' header or the Folders'
+    /// row asked (`library::Action::Toggle`, `ToggleFolders`), for this run and the next.
+    fn toggle_collections(&mut self, folders: bool) {
+        let open = self.collections_open();
         if folders {
             self.set_group_open(library::ID, library::FOLDERS, !open.folders);
         } else {
-            self.set_section_open(library::ID, !open.browse);
+            self.set_section_open(library::ID, !open.collections);
         }
     }
 
-    /// Whether the side panel shows the Scopes section: the tab shown pins it.
+    /// Whether the Tools panel shows the Scopes section: the tab shown pins it.
     fn scopes_pinned(&self) -> bool {
         SCOPES_PINNED.get(self.panel_tab).copied().unwrap_or(false)
     }
@@ -2293,49 +2294,49 @@ impl Shell {
         scopes::wanted(self.scopes_pinned(), open, self.scopes)
     }
 
-    /// The side panel's edge, for the panel at the end of a window `window` points wide: at
-    /// the width the user dragged it to, or the theme's, within [`panel_widths`]; `name`
-    /// is `panel-width`'s message, for screen readers.
+    /// The Tools panel's edge, for the panel at the end of a window `window` points wide:
+    /// at the width the user dragged it to, or the theme's, within [`panel_widths`]; `name`
+    /// is `tools-panel-width`'s message, for screen readers.
     fn panel_edge<'a>(&self, ctx: &egui::Context, window: f32, name: &'a str) -> PanelEdge<'a> {
-        let width = self.panel_width.unwrap_or(theme(ctx).sizes.side_panel);
+        let width = self.panel_width.unwrap_or(theme(ctx).sizes.tools_panel);
         PanelEdge::new(name, width, panel_widths(window))
     }
 
-    /// The grid panel's edge, for a window `window` points in size: at the rows or columns
+    /// The Browser's edge, for a window `window` points in size: at the rows or columns
     /// the user dragged it to where it is, as many as fit in half the window's height at
     /// the bottom or half its width at a side (`docs/gui.md`, Its size).
-    fn grid_edge(&self, ctx: &egui::Context, window: egui::Vec2) -> GridEdge {
-        let (size, position) = (self.grid.thumbnails, self.grid.position);
+    fn browser_edge(&self, ctx: &egui::Context, window: egui::Vec2) -> BrowserEdge {
+        let (size, position) = (self.browser.thumbnails, self.browser.position);
         let room = if position.is_column() {
             window.x
         } else {
             window.y
         };
-        let labels = self.grid.labels;
-        let most = grid_panel_lines(ctx, position, size, labels, room / 2.0);
-        GridEdge::new(self.grid.lines(), most, size)
+        let labels = self.browser.labels;
+        let most = browser_lines(ctx, position, size, labels, room / 2.0);
+        BrowserEdge::new(self.browser.lines(), most, size)
             .labels(labels)
             .position(position)
     }
 
-    /// The grid panel's egui panel where the shell keeps it, laid out after the side panel
-    /// so that at the right it lies between the photo and the side panel: as thick as the
+    /// The Browser's egui panel where the shell keeps it, laid out after the Tools panel
+    /// so that at the right it lies between the photo and the Tools panel: as thick as the
     /// lines its edge gives this frame, a drag in progress included. With it, the edge, to
-    /// show after the central panel, and those lines.
-    fn grid_frame(&self, ctx: &egui::Context) -> (egui::Panel, GridEdge, usize) {
-        let grid = self.grid;
-        let edge = self.grid_edge(ctx, ctx.content_rect().size());
+    /// show after the Viewer, and those lines.
+    fn browser_frame(&self, ctx: &egui::Context) -> (egui::Panel, BrowserEdge, usize) {
+        let browser = self.browser;
+        let edge = self.browser_edge(ctx, ctx.content_rect().size());
         let lines = edge.lines(ctx);
-        let panel = match grid.position {
-            GridPosition::Bottom => egui::Panel::bottom("grid panel"),
-            GridPosition::Left => egui::Panel::left("grid panel"),
-            GridPosition::Right => egui::Panel::right("grid panel"),
+        let panel = match browser.position {
+            BrowserPosition::Bottom => egui::Panel::bottom("browser"),
+            BrowserPosition::Left => egui::Panel::left("browser"),
+            BrowserPosition::Right => egui::Panel::right("browser"),
         }
-        .exact_size(grid_panel_thickness(
+        .exact_size(browser_thickness(
             ctx,
-            grid.position,
-            grid.thumbnails,
-            grid.labels,
+            browser.position,
+            browser.thumbnails,
+            browser.labels,
             lines,
         ))
         .resizable(false)
@@ -2344,15 +2345,15 @@ impl Shell {
         (panel, edge, lines)
     }
 
-    /// Keeps the rows or columns the grid panel's edge was dragged to, or goes back to one.
-    fn resize_grid(&mut self, action: GridEdgeAction) {
-        self.grid.keep_lines(match action {
-            GridEdgeAction::Resize(lines) => lines,
-            GridEdgeAction::Reset => 1,
+    /// Keeps the rows or columns the Browser's edge was dragged to, or goes back to one.
+    fn resize_browser(&mut self, action: BrowserEdgeAction) {
+        self.browser.keep_lines(match action {
+            BrowserEdgeAction::Resize(lines) => lines,
+            BrowserEdgeAction::Reset => 1,
         });
     }
 
-    /// Keeps the width the side panel's edge was dragged to, for this run and the next, or
+    /// Keeps the width the Tools panel's edge was dragged to, for this run and the next, or
     /// goes back to the theme's on a double-click.
     fn resize_panel(&mut self, action: PanelEdgeAction) {
         self.panel_width = match action {
@@ -2398,7 +2399,7 @@ impl Shell {
             dialog_window: false,
             full_screen: ctx.input(|i| i.viewport().fullscreen).unwrap_or(false),
             panel_tab: self.panel_tab,
-            grid: self.grid,
+            browser: self.browser,
             // The app's, from the folder it shows ([`App::shell_state`]).
             shown: false,
             background: Background::of(theme(ctx).colors.photo_surround),
@@ -2412,7 +2413,7 @@ impl Shell {
         if !self.drawn_menus || state.dialog {
             return;
         }
-        let Some(anchor) = TopPanel::menu_anchor(ctx) else {
+        let Some(anchor) = Toolbar::menu_anchor(ctx) else {
             return;
         };
         let mut request = None;
@@ -2433,7 +2434,7 @@ impl Shell {
         });
         if let Some(request) = opened {
             self.menu_recents = shown.unwrap_or_default();
-            popup::open(ctx, TopPanel::menu_popup(), request);
+            popup::open(ctx, Toolbar::menu_popup(), request);
         }
     }
 
@@ -2441,7 +2442,7 @@ impl Shell {
     /// and returns the action chosen in the ☰'s menu, if one was this frame.
     fn popups(&self, ctx: &egui::Context) -> Option<ActionId> {
         popup::show(ctx);
-        match popup::answer(ctx, TopPanel::menu_popup())? {
+        match popup::answer(ctx, Toolbar::menu_popup())? {
             popup::Answer::Chosen(id) => menus::chosen(&id),
             popup::Answer::Dismissed => None,
         }
@@ -2462,7 +2463,7 @@ impl Shell {
     /// during the frame, under the ☰ as last drawn and with what can run in `state`; F10
     /// closes it where it is open.
     fn open_menu(&mut self, ctx: &egui::Context, state: &State) {
-        let id = TopPanel::menu_popup();
+        let id = Toolbar::menu_popup();
         let close = std::mem::take(&mut self.close_menu);
         if state.dialog {
             self.menu = false;
@@ -2486,7 +2487,7 @@ impl Shell {
         }
         if popup::is_open(ctx, id) {
             popup::close(ctx, id);
-        } else if let Some(anchor) = TopPanel::menu_anchor(ctx) {
+        } else if let Some(anchor) = Toolbar::menu_anchor(ctx) {
             let recents = self.show_recents(ctx);
             let state = State {
                 recents: self.recent_states(),
@@ -2498,12 +2499,12 @@ impl Shell {
         }
     }
 
-    /// The top panel, from the registry: what can't run is drawn disabled, and each tooltip
+    /// The Toolbar, from the registry: what can't run is drawn disabled, and each tooltip
     /// carries its keys. With `title_bar`, the room the window's buttons take at its start,
     /// it is the window's title bar; with `caption`, it draws the caption buttons at its
     /// end, Restore in place of Maximise where `caption` says the window is maximised.
     /// Returns what was asked for, to run after the frame.
-    fn top_panel(
+    fn toolbar(
         &self,
         ui: &mut egui::Ui,
         state: &State,
@@ -2511,7 +2512,7 @@ impl Shell {
         title_bar: Option<f32>,
         caption: Option<bool>,
         jobs: &[apertrust_ui::components::Job],
-    ) -> Option<FromTopPanel> {
+    ) -> Option<FromToolbar> {
         let ctx = ui.ctx().clone();
         let words = translator(&ctx);
         let can = |id| actions::action(id).is_some_and(|a| a.enabled(state));
@@ -2525,11 +2526,11 @@ impl Shell {
             copy: can(ActionId::COPY_EDIT),
             apply: can(ActionId::APPLY_EDIT),
         };
-        let tips: Vec<(TopPanelAction, String)> = TOP_PANEL
+        let tips: Vec<(ToolbarAction, String)> = TOOLBAR
             .iter()
             .filter_map(|(button, id)| Some((*button, self.keymap.tip(*id, ctx.os(), &words)?)))
             .collect();
-        let mut bar = TopPanel::new()
+        let mut bar = Toolbar::new()
             .menu_button(self.drawn_menus)
             .available(available)
             .jobs(Jobs::new(jobs).file_manager(jobs::FILE_MANAGER))
@@ -2543,25 +2544,25 @@ impl Shell {
         for (button, keys) in &tips {
             bar = bar.shortcut(*button, keys);
         }
-        let window = |gesture| Some(FromTopPanel::Window(gesture));
+        let window = |gesture| Some(FromToolbar::Window(gesture));
         match bar.show(ui)? {
-            TopPanelAction::MoveWindow => window(TitleBar::Move),
-            TopPanelAction::TitleBarDoubleClick => window(TitleBar::DoubleClick),
-            TopPanelAction::WindowMenu => window(TitleBar::Menu),
-            TopPanelAction::Minimise => window(TitleBar::Minimise),
-            TopPanelAction::MaximiseOrRestore => window(TitleBar::MaximiseOrRestore),
+            ToolbarAction::MoveWindow => window(TitleBar::Move),
+            ToolbarAction::TitleBarDoubleClick => window(TitleBar::DoubleClick),
+            ToolbarAction::WindowMenu => window(TitleBar::Menu),
+            ToolbarAction::Minimise => window(TitleBar::Minimise),
+            ToolbarAction::MaximiseOrRestore => window(TitleBar::MaximiseOrRestore),
             // Closing the window quits, through the app's way out.
-            TopPanelAction::Close => Some(FromTopPanel::Action(ActionId::QUIT)),
-            TopPanelAction::Jobs => Some(FromTopPanel::Jobs),
-            TopPanelAction::NotSaved => Some(FromTopPanel::NotSaved),
-            clicked => TOP_PANEL
+            ToolbarAction::Close => Some(FromToolbar::Action(ActionId::QUIT)),
+            ToolbarAction::Jobs => Some(FromToolbar::Jobs),
+            ToolbarAction::NotSaved => Some(FromToolbar::NotSaved),
+            clicked => TOOLBAR
                 .iter()
                 .find(|(button, _)| *button == clicked)
-                .map(|(_, id)| FromTopPanel::Action(*id)),
+                .map(|(_, id)| FromToolbar::Action(*id)),
         }
     }
 
-    /// The side panel's tab bar, each tab's tooltip with its keys, the tabs that cannot be
+    /// The Tools panel's tab bar, each tab's tooltip with its keys, the tabs that cannot be
     /// chosen yet drawn disabled. Returns the action of the tab clicked.
     fn tab_bar(&mut self, ui: &mut egui::Ui) -> Option<ActionId> {
         let ctx = ui.ctx().clone();
@@ -2597,7 +2598,7 @@ impl Shell {
     /// Runs `id` if it can run where it is in `state`: applies its intent, or returns its
     /// command for the session. Keys, clicks and the ☰'s menu's choices arrive here after
     /// the frame, the Mac's menus' choices before it (`App::logic`); `regions` are the
-    /// frame's top panel, central bar, side panel and grid panel, for F6. Undo and Redo
+    /// frame's Toolbar, viewer bar, Tools panel and Browser, for F6. Undo and Redo
     /// act on a text field with the focus, handing it its own keys for the next frame
     /// (decision 39).
     fn run(
@@ -2649,7 +2650,7 @@ impl Shell {
             Intent::View(view) => self.view = view,
             Intent::PanelTab(tab) => self.choose_tab(tab),
             // Pressed again, it is chosen already, and nothing changes.
-            Intent::ShowBrowse => self.choose_tab(BROWSE),
+            Intent::ShowCollections => self.choose_tab(COLLECTIONS),
             Intent::ScaleUp | Intent::ScaleDown => {
                 let up = intent == Intent::ScaleUp;
                 ctx.set_zoom_factor(actions::step_scale(ctx.zoom_factor(), up));
@@ -2675,16 +2676,16 @@ impl Shell {
             }
             // Read while held, by the sections.
             Intent::Peek => {}
-            Intent::Grid(chosen) => self.grid.apply(chosen),
+            Intent::BrowserBar(chosen) => self.browser.apply(chosen),
             Intent::Background(background) => {
-                self.central_panel.background = Some(background);
+                self.viewer.background = Some(background);
                 apertrust_ui::set_theme(ctx, self.look());
             }
         }
         ctx.request_repaint();
     }
 
-    /// Shows the side panel's tab `tab`, chosen by the user: the one settings had is
+    /// Shows the Tools panel's tab `tab`, chosen by the user: the one settings had is
     /// forgotten, even if they come back to the tab the shell opened on.
     fn choose_tab(&mut self, tab: usize) {
         if tab != self.panel_tab {
@@ -2695,7 +2696,7 @@ impl Shell {
 
     /// The theme in use, with the background chosen behind the photo, if any.
     fn look(&self) -> Theme {
-        Theme::builtin(self.theme).with_background(self.central_panel.background)
+        Theme::builtin(self.theme).with_background(self.viewer.background)
     }
 
     /// Takes in what the Settings dialog's rows show of `settings` and shows it in the main
@@ -2721,7 +2722,7 @@ impl Shell {
         self.marker = settings.marker;
         apertrust_ui::components::set_marker(ctx, self.marker);
         self.tab_names = settings.tab_names;
-        self.grid.square_thumbnails = settings.grid.square_thumbnails;
+        self.browser.square_thumbnails = settings.browser.square_thumbnails;
         self.log.keep = settings.log.keep;
         self.log.domains.clone_from(&settings.log.domains);
         self.overwrite =
@@ -2903,8 +2904,8 @@ impl App {
         let ask = &apertrust_export::settings::registry::EXPORT_ASK_BEFORE_OVERWRITE;
         let discard = &settings::registry::HISTORY_ASK_BEFORE_DISCARD;
         // Whether each recent entry is there, asked as the window shows, off this thread,
-        // so a slow share never holds a frame; again as it gains the focus and as Browse
-        // comes into sight.
+        // so a slow share never holds a frame; again as it gains the focus and as
+        // Collections comes into sight.
         let mut recents = recents;
         recents.check();
         let shell = Shell {
@@ -2933,9 +2934,9 @@ impl App {
             frame_shadow(window);
             place(window, &placement, built_start);
         }
-        // Only the top panel's empty areas move the window, never its buttons.
+        // Only the Toolbar's empty areas move the window, never its buttons.
         if OWN_TITLE_BAR && let Err(e) = apertrust_display::content_never_moves_window(cc) {
-            tracing::warn!(target: "gpu", "window moves not kept to the top panel: {e}");
+            tracing::warn!(target: "gpu", "window moves not kept to the Toolbar: {e}");
         }
         // Now the window exists, in the language `prepare` set.
         let menus = menus::NativeMenus::install(&cc.egui_ctx);
@@ -3021,7 +3022,7 @@ impl App {
             bounds: Bounds::default(),
             window_size: egui::Vec2::ZERO,
             panel_width: 0.0,
-            grid_lines: (GridPosition::Bottom, 0),
+            browser_lines: (BrowserPosition::Bottom, 0),
             shell,
             panels: Panels::default(),
             tag_failed: false,
@@ -3452,7 +3453,7 @@ impl App {
         }
     }
 
-    /// Opens the raw at `path`, one of the grid panel's, in the session, in place of the
+    /// Opens the raw at `path`, one of the Browser's, in the session, in place of the
     /// photo open ([`open_listed`]).
     fn open(&mut self, path: PathBuf) {
         let session = &self.session;
@@ -3486,15 +3487,15 @@ impl App {
         }
     }
 
-    /// Opens the folder at `path` in the library, its photos going into the grid panel, a
-    /// way in: it becomes Browse's root and, once open, the first of the recents; Open
-    /// Folder…, Open Recent, Browse's recents and Open This Folder, Locate… and a dropped
-    /// folder. The photo shown follows it ([`change_folder`]).
+    /// Opens the folder at `path` in the library, its photos going into the Browser, a way
+    /// in: it becomes Collections' root and, once open, the first of the recents; Open
+    /// Folder…, Open Recent, Collections' recents and Open This Folder, Locate… and a
+    /// dropped folder. The photo shown follows it ([`change_folder`]).
     fn open_folder(&mut self, path: PathBuf) {
         self.change_folder(path, FolderChange::WayIn);
     }
 
-    /// Shows the folder at `path`, chosen in Browse's tree, in the grid panel. The photo
+    /// Shows the folder at `path`, chosen in Collections' tree, in the Browser. The photo
     /// shown follows it ([`change_folder`]).
     fn choose_folder(&mut self, path: PathBuf) {
         self.change_folder(path, FolderChange::Choose);
@@ -3813,7 +3814,7 @@ impl App {
         number
     }
 
-    /// Sends a command that changes the edit: the top panel's save state waits for the
+    /// Sends a command that changes the edit: the Toolbar's save state waits for the
     /// session to report a write that includes it, one that completes a change at once.
     fn send_edit(&mut self, command: Command) -> u64 {
         let completes = completes(&command);
@@ -4051,11 +4052,11 @@ impl App {
         }
     }
 
-    /// Places the window's buttons in the top panel, `height` points tall, where it is the
+    /// Places the window's buttons in the Toolbar, `height` points tall, where it is the
     /// title bar, and returns the room they take at its start in egui's points: none in
     /// full screen, where the system hides them, nor where it draws the title bar itself.
     /// Every frame, since the system lays them out again as the window changes. Buttons
-    /// that cannot be placed keep the top panel the title bar, with room for them where
+    /// that cannot be placed keep the Toolbar the title bar, with room for them where
     /// they are, so the window can still be moved. Where the app draws the caption
     /// buttons itself ([`CAPTION_BUTTONS`]), at the panel's end, none at its start.
     fn window_buttons(
@@ -4088,15 +4089,15 @@ impl App {
     /// The tab bar and the tab's sections, as the mirror's photo has them, which peek
     /// while `peek` holds ([`edit_tab`]). What the sections ask for is sent or applied once
     /// they are drawn. Returns the action of the tab clicked.
-    fn side_panel(&mut self, ui: &mut egui::Ui, peek: bool) -> Option<ActionId> {
+    fn tools_panel(&mut self, ui: &mut egui::Ui, peek: bool) -> Option<ActionId> {
         let tab_clicked = self.shell.tab_bar(ui);
         ui.spacing_mut().item_spacing.y = 0.0;
-        let browse = self.shell.panel_tab == PHOTOS;
-        if browse && !self.shell.browse_shown {
+        let collections = self.shell.panel_tab == PHOTOS;
+        if collections && !self.shell.collections_shown {
             self.shell.recents.check();
         }
-        self.shell.browse_shown = browse;
-        if browse {
+        self.shell.collections_shown = collections;
+        if collections {
             // The Export tool a menu or Ctrl+E asked for is scrolled to once its tab shows.
             let revealed = self.shell.revealing();
             // A photo opened since the last frame has no answer of the earlier one's to draw.
@@ -4106,7 +4107,7 @@ impl App {
             };
             self.export.retire(&self.export_previews, photo);
             let (actions, run, changes, mut export) = self.photos_tab(ui);
-            // Browse's page's, then Export's: its settings, routed back to it, and Global
+            // Collections' page's, then Export's: its settings, routed back to it, and Global
             // options opened or closed.
             for change in changes
                 .into_iter()
@@ -4178,10 +4179,10 @@ impl App {
         asked.or(tab_clicked)
     }
 
-    /// The Photos tab's body: its Browse section, as the mirror's folder and the recent
-    /// folders have it, then the Export tool, under the tab bar. Returns what Browse asked
-    /// for, the registry actions its header ran, what the page drawer's rows of its page
-    /// asked for, and what the Export tool asked for.
+    /// The Photos tab's body: its Collections section, as the mirror's folder and the
+    /// recent folders have it, then the Export tool, under the tab bar. Returns what
+    /// Collections asked for, the registry actions its header ran, what the page drawer's
+    /// rows of its page asked for, and what the Export tool asked for.
     fn photos_tab(
         &mut self,
         ui: &mut egui::Ui,
@@ -4194,12 +4195,12 @@ impl App {
         let recent = self.shell.recent_folders();
         let folder = &self.mirror.folder.folder;
         let keys = self.shell.open_keys(ui.ctx());
-        let mut browse = library::Browse {
+        let mut collections = library::Collections {
             folder,
             root: self.mirror.folder.root(),
             counts: self.mirror.folder.counts(),
             recent: &recent,
-            open: self.shell.browse_open(),
+            open: self.shell.collections_open(),
             tree: &self.shell.tree,
             inside: self.mirror.folder.inside(),
             keys: &keys,
@@ -4228,8 +4229,9 @@ impl App {
             words: &words,
             commands: &mut commands,
         };
-        let drawn = photos_body(ui, &mut cx, &mut browse, &mut self.export, shown);
-        // The commands Browse and Export send, none yet, as an editing tab's utilities'.
+        let drawn = photos_body(ui, &mut cx, &mut collections, &mut self.export, shown);
+        // The commands Collections and Export send, none yet, as an editing tab's
+        // utilities'.
         for command in commands {
             self.send_edit(command);
         }
@@ -4268,10 +4270,11 @@ impl App {
         }
     }
 
-    /// What Browse and the empty states asked for: the dialogs are asked after the frame, a
-    /// recent opened or a folder in the tree chosen through the session at once, Browse's
-    /// header, its Folders' row and the tree's folders open or close them, the file manager is started, and a
-    /// missing recent is taken out of the recents or located.
+    /// What Collections and the empty states asked for: the dialogs are asked after the
+    /// frame, a recent opened or a folder in the tree chosen through the session at once,
+    /// Collections' header, its Folders' row and the tree's folders open or close them, the
+    /// file manager is started, and a missing recent is taken out of the recents or
+    /// located.
     fn carry_out(&mut self, actions: Vec<library::Action>, ctx: &egui::Context) {
         let mut repaint = false;
         for action in actions {
@@ -4282,8 +4285,8 @@ impl App {
                 library::Action::OpenFiles => self.shell.open = true,
                 library::Action::Open(path) => self.open_folder(path),
                 library::Action::Choose(path) => self.choose_folder(path),
-                library::Action::Toggle => self.shell.toggle_browse(false),
-                library::Action::ToggleFolders => self.shell.toggle_browse(true),
+                library::Action::Toggle => self.shell.toggle_collections(false),
+                library::Action::ToggleFolders => self.shell.toggle_collections(true),
                 library::Action::ToggleTree(path) => {
                     let root = self.mirror.folder.root() == Some(path.as_path());
                     self.shell.toggle_tree(&path, root);
@@ -4313,22 +4316,22 @@ impl App {
         }
     }
 
-    /// The grid panel: the open folder's photos, in the grid bar's sort, the photo open
-    /// the active cell; a click or Enter opens one. Always there, empty with no folder
-    /// (`docs/gui.md`, The grid panel), and holding the photos open alone, just them, the
+    /// The Browser: the open folder's photos, in the browser bar's sort, the photo open the
+    /// active cell; a click or Enter opens one. Always there, empty with no folder
+    /// (`docs/gui.md`, The Browser), and holding the photos open alone, just them, the
     /// active one's cell active. Each cell draws its thumbnail once it has come, and those
     /// in sight without one are asked for (`thumbnails.rs`), a photo alone's from its own
     /// file, nothing of its folder read. A cell's right-click, or its menu keys, opens its
-    /// photo's menu, the photo made active first unless it is already ([`App::thumbnail_menu`]).
-    /// Returns the action a choice in the grid bar's menus, its Labels or the cell's menu
-    /// runs.
-    fn grid_panel(&mut self, ui: &mut egui::Ui, lines: usize) -> Option<ActionId> {
+    /// photo's menu, the photo made active first unless it is already
+    /// ([`App::thumbnail_menu`]). Returns the action a choice in the browser bar's menus,
+    /// its Labels or the cell's menu runs.
+    fn browser(&mut self, ui: &mut egui::Ui, lines: usize) -> Option<ActionId> {
         self.thumbnails.sync(ui.ctx(), &self.mirror.folder);
-        let grid = self.shell.grid;
-        self.mirror.folder.sort(grid.sort);
+        let browser = self.shell.browser;
+        self.mirror.folder.sort(browser.sort);
         // A thumbnail filling its square is cut at its longer side, so a 3:2 photo's
         // shorter side must cover the square.
-        let side = grid.thumbnails.side() * if grid.square_thumbnails { 1.5 } else { 1.0 };
+        let side = browser.thumbnails.side() * if browser.square_thumbnails { 1.5 } else { 1.0 };
         let size = thumbnails::size_for(side, ui.pixels_per_point());
         let (clicked, asked, bar, menu) = {
             let mirror = &self.mirror;
@@ -4339,7 +4342,7 @@ impl App {
             };
             let active = mirror.folder.active_shown();
             let empty = library::Empty::of(&mirror.folder.folder);
-            let (says, hint) = (empty.grid_says(ui.ctx()), empty.grid_hint(ui.ctx()));
+            let (says, hint) = (empty.browser_says(ui.ctx()), empty.browser_hint(ui.ctx()));
             let photos = mirror.folder.photos();
             let order = mirror.folder.order();
             let thumb = |i: usize| {
@@ -4356,13 +4359,13 @@ impl App {
                 }
             };
             // What a caption's first line reports waits for the ratings, as they do.
-            let mut panel = GridPanel::new(order.len(), active, thumb)
-                .sort(grid.sort)
-                .size(grid.thumbnails)
+            let mut panel = Browser::new(order.len(), active, thumb)
+                .sort(browser.sort)
+                .size(browser.thumbnails)
                 .lines(lines)
-                .position(grid.position)
-                .labels(grid.labels)
-                .square(grid.square_thumbnails);
+                .position(browser.position)
+                .labels(browser.labels)
+                .square(browser.square_thumbnails);
             if let Some(says) = &says {
                 panel = panel.empty(says);
             }
@@ -4377,8 +4380,8 @@ impl App {
             };
             // The photo open stays as it is when its own cell is pressed again.
             let clicked = match output.action {
-                Some(GridPanelAction::Open(i)) if active == Some(i) => None,
-                Some(GridPanelAction::Open(i)) => path(i),
+                Some(BrowserAction::Open(i)) if active == Some(i) => None,
+                Some(BrowserAction::Open(i)) => path(i),
                 _ => None,
             };
             let menu = output.menu.map(|menu| {
@@ -4426,22 +4429,18 @@ impl App {
         context_popup(ctx, id, opened, &self.shell.keymap, &state, asked)
     }
 
-    /// The central bar, the photo and its caption. Returns the central bar's rectangle, a
+    /// The viewer bar, the photo and its caption. Returns the viewer bar's rectangle, a
     /// region for F6, and the action a choice in its right-click menu runs.
-    /// `panel_resized`: the side panel's width or the grid panel's rows changed this frame.
-    fn central_panel(
-        &mut self,
-        ui: &mut egui::Ui,
-        panel_resized: bool,
-    ) -> (egui::Rect, Option<ActionId>) {
+    /// `panel_resized`: the Tools panel's width or the Browser's rows changed this frame.
+    fn viewer(&mut self, ui: &mut egui::Ui, panel_resized: bool) -> (egui::Rect, Option<ActionId>) {
         ui.spacing_mut().item_spacing = egui::Vec2::ZERO;
-        // The photo's slot, everything under the central bar, first. The photo and its
+        // The photo's slot, everything under the viewer bar, first. The photo and its
         // caption are one block in it, inside the margin (`PhotoFrame`, `docs/gui.md`, The
         // photo frame).
         let top = ui.cursor().min;
         let rest = ui.available_rect_before_wrap();
         let slot = egui::Rect::from_min_max(
-            egui::pos2(rest.min.x, rest.min.y + CentralBar::height(ui.ctx())),
+            egui::pos2(rest.min.x, rest.min.y + ViewerBar::height(ui.ctx())),
             rest.max,
         );
         // A right-click round the photo chooses the background behind it; the photo itself
@@ -4449,7 +4448,7 @@ impl App {
         // keeps its own clicks.
         let id = ui.scope_id().with("background");
         let background = ui.interact(slot, id, egui::Sense::click());
-        let margins = self.shell.central_panel;
+        let margins = self.shell.viewer;
         let margin = if self.shell.proof_margin {
             Margin::Proof(margins.proof_margin)
         } else {
@@ -4461,8 +4460,8 @@ impl App {
         let ppp = ui.pixels_per_point();
         let room = block.bounds();
         let bounds = ((room.x * ppp).floor() as u32, (room.y * ppp).floor() as u32);
-        // A drag of the side panel's edge resizes the photo as a window resize does, a frame
-        // at a time, so it is held the same way.
+        // A drag of the Tools panel's edge resizes the photo as a window resize does, a
+        // frame at a time, so it is held the same way.
         let window = ui.ctx().input(|i| i.viewport_rect().size());
         let resized = std::mem::replace(&mut self.window_size, window) != window || panel_resized;
         let now = Instant::now();
@@ -4495,7 +4494,7 @@ impl App {
             .then(|| tr(ui.ctx(), "photo-rendering"));
         // The zoom menu's entries with the keys of the actions that do the same.
         let words = translator(ui.ctx());
-        let keys: Vec<(CentralBarAction, String)> = ZOOM_MENU
+        let keys: Vec<(ViewerBarAction, String)> = ZOOM_MENU
             .iter()
             .filter_map(|(entry, id)| {
                 Some((*entry, self.shell.keymap.tip(*id, ui.ctx().os(), &words)?))
@@ -4521,7 +4520,7 @@ impl App {
             });
         // The viewport only fits the photo for now: the zoom shows Fit, and its menu
         // offers Fit alone, which it already is.
-        let mut bar = CentralBar::new(&layer, Zoom::Fit)
+        let mut bar = ViewerBar::new(&layer, Zoom::Fit)
             .toggles(
                 Toggle::new(false, false),
                 Toggle::new(self.shell.proof_margin, open),
@@ -4538,14 +4537,14 @@ impl App {
         }
         match bar.show(ui) {
             // The area was laid out before the bar, so the margin shows from the next frame.
-            Some(CentralBarAction::ProofMargin) => {
+            Some(ViewerBarAction::ProofMargin) => {
                 self.shell.proof_margin = !self.shell.proof_margin;
                 ui.ctx().request_repaint();
             }
-            Some(CentralBarAction::Guides) => self.shell.guides = !self.shell.guides,
+            Some(ViewerBarAction::Guides) => self.shell.guides = !self.shell.guides,
             _ => {}
         }
-        let central_bar =
+        let viewer_bar =
             egui::Rect::from_min_max(top, egui::pos2(ui.max_rect().right(), ui.cursor().top()));
 
         // Until its first frame, the photo's picture where one is in hand, else its name.
@@ -4654,7 +4653,7 @@ impl App {
         }
         self.carry_out(asked, ui.ctx());
         (
-            central_bar,
+            viewer_bar,
             self.background_menu(ui.ctx(), &background, photo_rect),
         )
     }
@@ -4700,7 +4699,7 @@ impl App {
         pickers::live_region(ui, photo.left_bottom(), self.said.text());
     }
 
-    /// The central panel's right-click menus, hung from the pointer where `slot` was
+    /// The Viewer's right-click menus, hung from the pointer where `slot` was
     /// right-clicked ([`central_menu`]): the photo's on `photo`, the photo's rectangle while
     /// one is shown, unless a picker is on, and the surround's, View › Background's items,
     /// round it (`docs/gui.md`, The background, Context menus). Returns the action of the
@@ -4805,7 +4804,7 @@ impl App {
 
     /// One frame of the main window as the start window (`start.rs`): its window buttons in
     /// its strip on the Mac, the app's keys, the recents and the buttons, what they ask run
-    /// as Browse's would, and the rest of the frame as the main window's.
+    /// as Collections' would, and the rest of the frame as the main window's.
     fn start_frame(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
         let room = self.window_buttons(frame, &ctx, start::STRIP);
@@ -4952,7 +4951,7 @@ impl App {
         self.dialogs.hardware(self.hardware.clone(), Vec::new());
     }
 
-    /// The notice of a start that did not finish, under the top panel or the start window's
+    /// The notice of a start that did not finish, under the Toolbar or the start window's
     /// strip, until one of its buttons is pressed: Keep sets the graphics settings to what
     /// runs, so nothing waits for a restart, but where `--conf` sets either, which then
     /// cannot change, it changes nothing and the notice stays, saying so; Try again
@@ -4964,7 +4963,7 @@ impl App {
         let top = if self.start.shown {
             start::STRIP
         } else {
-            theme(ctx).sizes.top_bar
+            theme(ctx).sizes.toolbar
         };
         match notice.show(ctx, top, self.notice_held) {
             Some(recovery::Pressed::Keep) if recovery::held(&self.keeper) => {
@@ -5309,7 +5308,7 @@ impl eframe::App for App {
             return;
         }
         let t = theme(&ctx);
-        let title_bar = self.window_buttons(frame, &ctx, t.sizes.top_bar);
+        let title_bar = self.window_buttons(frame, &ctx, t.sizes.toolbar);
         let maximised = ctx.input(|i| i.viewport().maximized.unwrap_or(false));
         let caption = (CAPTION_BUTTONS && title_bar.is_some()).then_some(maximised);
         // A press in the bands inside the window's edges, taken from egui's input.
@@ -5327,10 +5326,10 @@ impl eframe::App for App {
         let drawn = self.state_in_window(&ctx);
         let peek = keys.held.contains(&ActionId::PEEK);
         let mut run = keys.pressed;
-        // The side panel runs the window's height under the top panel; the grid panel runs
+        // The Tools panel runs the window's height under the Toolbar; the Browser runs
         // under the photo only.
-        let top_panel = egui::Panel::top("top panel")
-            .exact_size(t.sizes.top_bar)
+        let toolbar = egui::Panel::top("toolbar")
+            .exact_size(t.sizes.toolbar)
             .resizable(false)
             .show_separator_line(false)
             .frame(egui::Frame::NONE)
@@ -5345,13 +5344,13 @@ impl eframe::App for App {
                 }
                 let saved = self.mirror.saving.state(now);
                 self.shell
-                    .top_panel(ui, &drawn, saved, title_bar, caption, &self.jobs_view)
+                    .toolbar(ui, &drawn, saved, title_bar, caption, &self.jobs_view)
             });
         let mut window = None;
-        match top_panel.inner {
-            Some(FromTopPanel::Action(id)) => run.push(id),
-            Some(FromTopPanel::Window(gesture)) => window = Some(gesture),
-            Some(FromTopPanel::Jobs) => {
+        match toolbar.inner {
+            Some(FromToolbar::Action(id)) => run.push(id),
+            Some(FromToolbar::Window(gesture)) => window = Some(gesture),
+            Some(FromToolbar::Jobs) => {
                 let place = self.shell.jobs_window;
                 let view = &self.jobs_view;
                 jobs::refresh(
@@ -5363,58 +5362,56 @@ impl eframe::App for App {
                     &ctx,
                 );
             }
-            Some(FromTopPanel::NotSaved) => self.ask_why_not_saved(&ctx),
+            Some(FromToolbar::NotSaved) => self.ask_why_not_saved(&ctx),
             None => {}
         }
-        // The side panel is as wide as its edge was dragged, a drag in progress included.
+        // The Tools panel is as wide as its edge was dragged, a drag in progress included.
         // While the edge moves, the photo's size is held as it is while the window resizes.
-        let edge_name = tr(&ctx, "panel-width");
+        let edge_name = tr(&ctx, "tools-panel-width");
         let edge = self
             .shell
             .panel_edge(&ctx, ui.available_width(), &edge_name);
         let panel_width = edge.width(&ctx);
         let panel_resized = std::mem::replace(&mut self.panel_width, panel_width) != panel_width;
-        let side_panel = egui::Panel::right("side panel")
+        let tools_panel = egui::Panel::right("tools panel")
             .exact_size(panel_width)
             .resizable(false)
             .frame(egui::Frame::NONE.fill(t.colors.panel))
-            .show(ui, |ui| self.side_panel(ui, peek));
-        run.extend(side_panel.inner);
-        // Never hidden: empty with no folder open (`docs/gui.md`, The grid panel). Along the
-        // bottom, or a column at the window's left, or between the photo and the side
+            .show(ui, |ui| self.tools_panel(ui, peek));
+        run.extend(tools_panel.inner);
+        // Never hidden: empty with no folder open (`docs/gui.md`, The Browser). Along the
+        // bottom, or a column at the window's left, or between the photo and the Tools
         // panel; as many rows or columns as its edge was dragged to, a drag in progress
-        // included, the photo held while it moves as for the side panel's edge.
-        let (grid_frame, grid_edge, lines) = self.shell.grid_frame(&ctx);
-        let placed = (self.shell.grid.position, lines);
-        let grid_resized = std::mem::replace(&mut self.grid_lines, placed) != placed;
-        let grid_panel = grid_frame.show(ui, |ui| self.grid_panel(ui, lines));
-        run.extend(grid_panel.inner);
-        let grid_panel = grid_panel.response.rect;
+        // included, the photo held while it moves as for the Tools panel's edge.
+        let (browser_frame, browser_edge, lines) = self.shell.browser_frame(&ctx);
+        let placed = (self.shell.browser.position, lines);
+        let browser_resized = std::mem::replace(&mut self.browser_lines, placed) != placed;
+        let browser = browser_frame.show(ui, |ui| self.browser(ui, lines));
+        run.extend(browser.inner);
+        let browser = browser.response.rect;
         let central = egui::CentralPanel::default()
             .frame(egui::Frame::NONE.fill(t.colors.photo_surround))
-            .show(ui, |ui| {
-                self.central_panel(ui, panel_resized || grid_resized)
-            });
-        let (central_bar, background) = central.inner;
+            .show(ui, |ui| self.viewer(ui, panel_resized || browser_resized));
+        let (viewer_bar, background) = central.inner;
         let central = central.response.rect;
         run.extend(background);
-        // The side panel parts from the photo by a separator, as the bars do: its edge,
-        // which resizes it, over the photo and the panel both; the grid panel's likewise.
-        if let Some(action) = edge.show(ui, side_panel.response.rect) {
+        // The Tools panel parts from the photo by a separator, as the bars do: its edge,
+        // which resizes it, over the photo and the panel both; the Browser's likewise.
+        if let Some(action) = edge.show(ui, tools_panel.response.rect) {
             self.shell.resize_panel(action);
         }
-        if let Some(action) = grid_edge.show(ui, grid_panel) {
-            self.shell.resize_grid(action);
+        if let Some(action) = browser_edge.show(ui, browser) {
+            self.shell.resize_browser(action);
         }
         self.shell.about.show(&ctx);
         run.extend(self.shell.popups(&ctx));
 
         // F6 goes through the regions in reading order.
         let regions: Vec<egui::Rect> = [
-            Some(top_panel.response.rect),
-            Some(central_bar),
-            Some(side_panel.response.rect),
-            Some(grid_panel),
+            Some(toolbar.response.rect),
+            Some(viewer_bar),
+            Some(tools_panel.response.rect),
+            Some(browser),
         ]
         .into_iter()
         .flatten()
@@ -5425,7 +5422,7 @@ impl eframe::App for App {
         if let Some(command) = self.mirror.scopes.ask(self.shell.scopes_wanted()) {
             self.session.send(command);
         }
-        self.finish_frame(&ctx, frame, central.union(grid_panel), window);
+        self.finish_frame(&ctx, frame, central.union(browser), window);
     }
 
     /// What was chosen in the menus runs here, at once: eframe calls this before each frame,
@@ -5621,8 +5618,8 @@ type SendCommand<'a> = dyn FnMut(Command) -> u64 + 'a;
 
 /// Opens the photos at `paths` alone, together, the first active (`docs/library.md`, One
 /// photo), by any route: File › Open…, a drop, Open With, a double-click, the command line.
-/// No folder is listed, nothing enters the recents or what was open last, and the grid
-/// panel holds just them; nothing is written but their edits, once something in one
+/// No folder is listed, nothing enters the recents or what was open last, and the
+/// Browser holds just them; nothing is written but their edits, once something in one
 /// changes. A folder open, the one the photos came from among them, is closed first, so
 /// folder mode ends; the first photo opens in place of the photo open, the session saving
 /// that one's edit as it saves any photo it leaves. No path, nothing.
@@ -5642,8 +5639,8 @@ fn open_alone(paths: Vec<PathBuf>, mirror: &mut Mirror, send: &mut SendCommand<'
     mirror.opening(first, open, Instant::now());
 }
 
-/// Opens the raw at `path`, one of the grid panel's, in place of the photo open, as a click
-/// in the grid panel does: the folder, or the photos alone, stay as they are. The session
+/// Opens the raw at `path`, one of the Browser's, in place of the photo open, as a click
+/// in the Browser does: the folder, or the photos alone, stay as they are. The session
 /// saves the open photo's edit first, if anything in it is not on disk yet, and reads the
 /// new photo's from beside it.
 fn open_listed(path: PathBuf, mirror: &mut Mirror, send: &mut SendCommand<'_>) {
@@ -5651,8 +5648,8 @@ fn open_listed(path: PathBuf, mirror: &mut Mirror, send: &mut SendCommand<'_>) {
     mirror.opening(path, open, Instant::now());
 }
 
-/// Opens the folder at `path` in the library, its photos going into the grid panel, a way
-/// in: it becomes Browse's root and, once open, the first of the recents. The photo open
+/// Opens the folder at `path` in the library, its photos going into the Browser, a way in:
+/// it becomes Collections' root and, once open, the first of the recents. The photo open
 /// stays open (`docs/events.md`, The library's events).
 fn open_folder(path: PathBuf, mirror: &mut Mirror, send: &mut SendCommand<'_>) {
     // Absolute, from the folder the app started in, so the tree's folders are inside it for
@@ -5663,9 +5660,9 @@ fn open_folder(path: PathBuf, mirror: &mut Mirror, send: &mut SendCommand<'_>) {
     mirror.folder.opening(path, open);
 }
 
-/// Shows the folder at `path`, chosen in Browse's tree, in the grid panel: the library opens
-/// it, and the tree's root, what it has listed and the recents stay as they were
-/// (`docs/gui.md`, Browse).
+/// Shows the folder at `path`, chosen in Collections' tree, in the Browser: the library
+/// opens it, and the tree's root, what it has listed and the recents stay as they were
+/// (`docs/gui.md`, Collections).
 fn choose_folder(path: PathBuf, mirror: &mut Mirror, send: &mut SendCommand<'_>) {
     let source = Source::Folder(path.clone());
     let open = send(Command::Library(LibraryCommand::Open(source)));
@@ -5673,7 +5670,7 @@ fn choose_folder(path: PathBuf, mirror: &mut Mirror, send: &mut SendCommand<'_>)
 }
 
 /// File › Close: the photo open closed, its edit saved as the session saves any photo it
-/// leaves, and the folder open closed, so the central panel shows where to start; the
+/// leaves, and the folder open closed, so the Viewer shows where to start; the
 /// photos `remembered` this run are forgotten, as what was open last is. Nothing that is
 /// not open is closed.
 fn close(remembered: &mut Remembered, mirror: &mut Mirror, send: &mut SendCommand<'_>) {
@@ -5686,7 +5683,7 @@ fn close(remembered: &mut Remembered, mirror: &mut Mirror, send: &mut SendComman
 }
 
 /// The photo open, or opening, closed with the folder left open: the session saves its
-/// edit as it saves any photo it leaves and frees it, and the side panel shows no photo.
+/// edit as it saves any photo it leaves and frees it, and the Tools panel shows no photo.
 /// With none, nothing.
 fn close_photo(mirror: &mut Mirror, send: &mut SendCommand<'_>) {
     if !matches!(mirror.photo, PhotoState::None) {
@@ -5727,8 +5724,8 @@ impl Remembered {
         }
     }
 
-    /// Opens the photo waited for once the folder chosen lists it, as a click in the grid
-    /// panel opens one, unless a photo was asked for meanwhile or another folder is; a
+    /// Opens the photo waited for once the folder chosen lists it, as a click in the
+    /// Browser opens one, unless a photo was asked for meanwhile or another folder is; a
     /// listing that ends without it, or a folder that could not be read, ends the wait.
     fn restore(&mut self, mirror: &mut Mirror, send: &mut SendCommand<'_>) {
         let Some(waiting) = &mut self.waiting else {
@@ -5769,15 +5766,15 @@ fn listed_since(listing: &folder::Listing, looked: &mut usize, name: Option<&OsS
 /// How the active folder changes ([`change_folder`]).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum FolderChange {
-    /// A way in ([`open_folder`]): the folder becomes Browse's root.
+    /// A way in ([`open_folder`]): the folder becomes Collections' root.
     WayIn,
-    /// A folder chosen in Browse's tree ([`choose_folder`]): the root stays.
+    /// A folder chosen in Collections' tree ([`choose_folder`]): the root stays.
     Choose,
 }
 
 /// The active folder changes to `path` by `change`, as the person asked: the one place the
 /// rule that the photo shown is always one of the active folder's is kept (`docs/gui.md`,
-/// Browse). The photo open is closed unless it is one of that folder's; then the photo
+/// Collections). The photo open is closed unless it is one of that folder's; then the photo
 /// last active there this run, `remembered`, or else the one what was open last, `last`,
 /// records for that folder, opens once the folder lists it. With none, or one gone from
 /// it, none is shown. File › Open… of a raw and the start's reopening open a photo of
@@ -5915,7 +5912,7 @@ fn reopen(
 /// Follows what was open last as it reopens, after the events of a frame. Once the root
 /// has opened, the folder of its tree is chosen; once the folder followed lists the photo,
 /// it opens, if no photo has been asked for meanwhile. A root that could not be read, or
-/// whose reading was cancelled, is closed, so the central panel says nothing is open, its
+/// whose reading was cancelled, is closed, so the Viewer says nothing is open, its
 /// recent marked; a folder of its tree that could not be is left for the root, chosen
 /// again. It ends there, and as another folder is asked for, or the listing ends without
 /// the photo.
@@ -6397,7 +6394,7 @@ struct EditTab {
     commands: Vec<Command>,
 }
 
-/// An editing tab's sections as the mirror's photo has them (`docs/gui.md`, The side
+/// An editing tab's sections as the mirror's photo has them (`docs/gui.md`, The Tools
 /// panel): the open photo's values and Scopes; with no photo, and from the moment another
 /// is asked for until its values arrive, every tool at its defaults and Scopes with no
 /// graph, all drawn disabled and each open or closed as it was, never a blank panel. Only
@@ -6525,14 +6522,14 @@ fn utility_setting(
     *shell = export.values().clone();
 }
 
-/// The Photos tab's sections under its tab bar: Browse, through its `UtilityTool`, its
+/// The Photos tab's sections under its tab bar: Collections, through its `UtilityTool`, its
 /// header from its declaration with its own ⋯ items, then the Export tool, last
-/// (`TAB_TOOLS`). Returns what Browse, its header's registry actions, the page drawer's rows
-/// of Browse's page and the tool asked for.
+/// (`TAB_TOOLS`). Returns what Collections, its header's registry actions, the page
+/// drawer's rows of Collections' page and the tool asked for.
 fn photos_body(
     ui: &mut egui::Ui,
     cx: &mut utility::Context<'_>,
-    browse: &mut library::Browse<'_>,
+    collections: &mut library::Collections<'_>,
     export: &mut export::Export,
     shown: ExportShown,
 ) -> (
@@ -6548,13 +6545,13 @@ fn photos_body(
         // dropped, never run on the new photo's folder.
         let head = tools::Head {
             photo: cx.mirror.photo.open(),
-            ..library::head(ui, browse)
+            ..library::head(ui, collections)
         };
-        let section = utility::section(ui, browse, cx, head, false);
+        let section = utility::section(ui, collections, cx, head, false);
         for pressed in &section.pressed {
             match pressed {
                 tools::Pressed::Run(id) => run.push(*id),
-                pressed => actions.extend(library::pressed(browse, pressed)),
+                pressed => actions.extend(library::pressed(collections, pressed)),
             }
         }
         actions.extend(section.actions);
@@ -6571,7 +6568,7 @@ fn photos_body(
     (actions, run, changes, drawn)
 }
 
-/// The side panel's sections under its tab bar: Scopes pinned over the band where the
+/// The Tools panel's sections under its tab bar: Scopes pinned over the band where the
 /// tab pins it, through its `UtilityTool`, its graph from what `cx`'s mirror measured, drawn
 /// disabled unless a photo is shown, then the tab's tools among the mirror's, drawn from
 /// their definitions with the mirror's values; each section open as the shell keeps it,
@@ -6582,7 +6579,7 @@ fn photos_body(
 /// for beyond its toggle.
 #[expect(
     clippy::too_many_arguments,
-    reason = "the app's own state for the side panel, each part apart"
+    reason = "the app's own state for the Tools panel, each part apart"
 )]
 fn panel_body(
     ui: &mut egui::Ui,
@@ -6683,7 +6680,7 @@ const RESIZE_SETTLED: std::time::Duration = std::time::Duration::from_millis(150
 /// step by step through a zoom's animation or a live resize, and eframe draws each step;
 /// the engine could not render each step in time, and nobody would see most of them, so
 /// the last frame is shown scaled to the coming size until the window has kept its size
-/// for [`RESIZE_SETTLED`]. The side panel's edge, dragged or held under a key, resizes the
+/// for [`RESIZE_SETTLED`]. The Tools panel's edge, dragged or held under a key, resizes the
 /// photo the same way and is held the same way.
 #[derive(Debug, Default)]
 struct Bounds {
@@ -6750,7 +6747,7 @@ fn focusable(ctx: &egui::Context) -> Vec<(egui::Id, egui::Rect)> {
     })
 }
 
-/// What the central panel says over the photo, `said`, each apart: on a raised plate at its
+/// What the Viewer says over the photo, `said`, each apart: on a raised plate at its
 /// centre, and to screen readers as a polite status, which they hear as it changes, as a
 /// failed save's words or another program's change to the history.
 fn central_words(ui: &mut egui::Ui, slot: egui::Rect, said: &[&str]) {
@@ -7043,10 +7040,10 @@ mod tests {
         );
     }
 
-    /// What the central panel says over the photo, as another program's change to the
+    /// What the Viewer says over the photo, as another program's change to the
     /// history, is a status screen readers hear, its words the panel's.
     #[test]
-    fn the_central_panel_s_words_are_a_status_screen_readers_hear() {
+    fn the_viewer_s_words_are_a_status_screen_readers_hear() {
         use egui_kittest::Harness;
         use egui_kittest::kittest::Queryable as _;
         let said = "Another program changed the history of IMG.ARW";
@@ -7647,7 +7644,7 @@ mod tests {
     /// Photos opened alone, by any route, from two folders: the first opened is the one
     /// command, no library command is sent, so nothing is listed, and nothing of the photo's
     /// own events reaches the recents, which a folder's opening alone adds to
-    /// (`Reaction::FolderOpened`); the recents' file stays as it was. The grid panel holds
+    /// (`Reaction::FolderOpened`); the recents' file stays as it was. The Browser holds
     /// just them, and a click on another opens it, the photos staying. With none, nothing.
     #[test]
     fn photos_alone_send_no_library_command_and_leave_the_recents_untouched() {
@@ -7736,7 +7733,7 @@ mod tests {
         assert!(shows_start(opened(&m), false, false, false));
         assert!(matches!(m.photo, PhotoState::None));
         assert_eq!(m.folder.folder, folder::Folder::None);
-        // Browse's tree has no root after it.
+        // Collections' tree has no root after it.
         assert_eq!(m.folder.root(), None);
         assert_eq!(library::Empty::of(&m.folder.folder), library::Empty::Start);
         m.apply(Event::Values(mirror::tests::report(1.0, 3)));
@@ -7758,8 +7755,8 @@ mod tests {
         assert!(none.is_empty());
     }
 
-    /// The folder `AT` open with `R0001176.DNG` active, opening as a click in the grid
-    /// panel opens it, its subfolders `New 1`, empty, and `Day 2`.
+    /// The folder `AT` open with `R0001176.DNG` active, opening as a click in the
+    /// Browser opens it, its subfolders `New 1`, empty, and `Day 2`.
     fn at_with_its_photo() -> (Mirror, Vec<Command>, Remembered, PathBuf) {
         let (mut m, mut sent) = (mirror::tests::mirror(), Vec::new());
         let at = PathBuf::from("/photos/AT");
@@ -7772,12 +7769,12 @@ mod tests {
         (m, sent, remembered, at)
     }
 
-    /// The photo the central panel shows, open or opening.
+    /// The photo the Viewer shows, open or opening.
     fn photo_shown(m: &Mirror) -> Option<&Path> {
         m.photo.asked()
     }
 
-    /// Choosing another folder in Browse's tree closes the photo of the folder left,
+    /// Choosing another folder in Collections' tree closes the photo of the folder left,
     /// through the session's `Close` alone, the folder staying: an empty subfolder, or one
     /// with photos and none remembered, shows no photo, the editing tabs as with none
     /// active, and what was open last keeps the folder with no photo.
@@ -7838,7 +7835,7 @@ mod tests {
     }
 
     /// Going back to a folder opens the photo last active in it this run, as a click in the
-    /// grid panel does, once its listing holds it and not before; one gone from it shows
+    /// Browser does, once its listing holds it and not before; one gone from it shows
     /// none. What was open last then agrees.
     #[test]
     fn a_folder_chosen_again_reopens_its_photo_once_listed() {
@@ -8146,9 +8143,9 @@ mod tests {
         assert_eq!(photo_shown(&m), None);
     }
 
-    /// A way in, as Open Folder…, Open Recent, Browse's recents or a dropped folder open
-    /// one, follows the same rule as the tree: the photo of the folder left closes, and the
-    /// photo last active in the folder opened this run opens once it is listed.
+    /// A way in, as Open Folder…, Open Recent, Collections' recents or a dropped folder
+    /// open one, follows the same rule as the tree: the photo of the folder left closes,
+    /// and the photo last active in the folder opened this run opens once it is listed.
     #[test]
     fn a_folder_opened_as_a_way_in_shows_its_own_photo_or_none() {
         let (mut m, mut sent, mut remembered, at) = at_with_its_photo();
@@ -8240,10 +8237,11 @@ mod tests {
     }
 
     /// A photo opened by File › Open…, a drop or Open With from the folder already open, or
-    /// from inside its tree, or elsewhere, opens alone all the same (decision 46): the folder
-    /// is closed through the library, Browse loses its root and tree, the grid panel holds
-    /// the photo by itself, and nothing reaches the recents, what was open last staying as
-    /// it was; what the folder's reading still sends changes nothing, nor does its close.
+    /// from inside its tree, or elsewhere, opens alone all the same (decision 46): the
+    /// folder is closed through the library, Collections loses its root and tree, the
+    /// Browser holds the photo by itself, and nothing reaches the recents, what was open
+    /// last staying as it was; what the folder's reading still sends changes nothing, nor
+    /// does its close.
     #[test]
     fn a_photo_opened_from_the_folder_open_opens_alone() {
         let joins = |reactions: Vec<Reaction>| {
@@ -8532,11 +8530,11 @@ mod tests {
         assert_eq!((sent.len(), reopening), (2, None));
     }
 
-    /// Browse's Clear Menu runs Open Recent's, as `carry_out` runs it: the one list of
-    /// recents empties, Browse's and Open Recent's both, and Open Recent's Clear Menu is
-    /// disabled after it.
+    /// Collections' Clear Menu runs Open Recent's, as `carry_out` runs it: the one list of
+    /// recents empties, Collections' and Open Recent's both, and Open Recent's Clear Menu
+    /// is disabled after it.
     #[test]
-    fn browse_s_clear_menu_clears_the_recents_open_recent_shows() {
+    fn collections_s_clear_menu_clears_the_recents_open_recent_shows() {
         let mut shell = opened_on("photos");
         shell.remember_folder(PathBuf::from("/photos/A"));
         shell.remember_folder(PathBuf::from("/photos/B"));
@@ -8691,7 +8689,7 @@ mod tests {
             ActionId::CLOSE,
             ActionId::EXPORT,
             ActionId::FULL_SCREEN,
-            ActionId::SHOW_BROWSE,
+            ActionId::SHOW_COLLECTIONS,
             ActionId::PANEL_TABS[1],
         ] {
             assert!(!enabled(id, &state), "{id:?}");
@@ -9292,7 +9290,7 @@ mod tests {
         assert!(!shell.group_open("exposure", "midtones"));
     }
 
-    /// The side panel as the app draws it with a photo open, Exposure untouched in the
+    /// The Tools panel as the app draws it with a photo open, Exposure untouched in the
     /// mirror: what Scopes asks for applied to the shell, what the session is asked to
     /// count sent as `App::ui` sends it, and the settings kept as the app's frame keeps
     /// them.
@@ -9304,7 +9302,7 @@ mod tests {
         sent: Vec<Command>,
     }
 
-    /// The side panel with the settings in `folder`.
+    /// The Tools panel with the settings in `folder`.
     fn side(folder: &settings::testing::Folder) -> Harness<'static, Side> {
         use apertrust_engine::session::{ControlState, ToolState};
 
@@ -9411,7 +9409,7 @@ mod tests {
         }))
     }
 
-    /// The side panel's editing tab as the app draws it from its mirror ([`edit_tab`]),
+    /// The Tools panel's editing tab as the app draws it from its mirror ([`edit_tab`]),
     /// the mirror fed events by the test. With nothing to edit, a frame may change only the
     /// sections' own state.
     struct Editing {
@@ -9423,8 +9421,8 @@ mod tests {
         sent: Vec<Command>,
     }
 
-    /// The settings and the actions' state the side panel is drawn with, as
-    /// [`App::side_panel`] makes them, for `mirror`'s photo.
+    /// The settings and the actions' state the Tools panel is drawn with, as
+    /// [`App::tools_panel`] makes them, for `mirror`'s photo.
     fn editing_state(ctx: &egui::Context, shell: &Shell, mirror: &Mirror) -> (Settings, State) {
         let takes = mirror.takes_edits();
         let open = matches!(mirror.photo, PhotoState::Open(_));
@@ -9592,11 +9590,11 @@ mod tests {
         assert!(harness.query_by_role(Role::List).is_none());
     }
 
-    /// The side panel as `App::side_panel` draws it, its tab bar with every tab in sight:
+    /// The Tools panel as `App::tools_panel` draws it, its tab bar with every tab in sight:
     /// a tab clicked runs its action, and what the History section asks for is carried
     /// out as the app does ([`Shell::history_asked`]), the commands it sends kept in
     /// `sent`.
-    fn side_panel(folder: &settings::testing::Folder) -> Harness<'static, Editing> {
+    fn tools_panel(folder: &settings::testing::Folder) -> Harness<'static, Editing> {
         let (_, settings) = Keeper::open(folder.storage());
         Harness::builder()
             .with_size(egui::vec2(560.0, 3000.0))
@@ -9645,7 +9643,7 @@ mod tests {
         use crate::mirror::tests::photo;
         use apertrust_engine::session::StepId;
         let folder = settings::testing::Folder::new("panel-history-steps");
-        let mut harness = side_panel(&folder);
+        let mut harness = tools_panel(&folder);
         harness.state_mut().shell.panel_tab = HISTORY;
         let mirror = &mut harness.state_mut().mirror;
         mirror.apply(Event::Opened(photo(1)));
@@ -9714,7 +9712,7 @@ mod tests {
         use crate::mirror::tests::photo;
         use apertrust_engine::sidecar::Newer;
         let folder = settings::testing::Folder::new("panel-history-eye");
-        let mut harness = side_panel(&folder);
+        let mut harness = tools_panel(&folder);
         harness.state_mut().shell.panel_tab = HISTORY;
         let mirror = &mut harness.state_mut().mirror;
         // A newer build's edit: open for viewing only, no step taken, the eye still sent.
@@ -9801,11 +9799,11 @@ mod tests {
     }
 
     /// A click on the History tab in the tab bar runs its action and shows the History
-    /// section, as the side panel draws it.
+    /// section, as the Tools panel draws it.
     #[test]
     fn a_click_on_the_history_tab_shows_the_history_section() {
         let folder = settings::testing::Folder::new("panel-history-click");
-        let mut harness = side_panel(&folder);
+        let mut harness = tools_panel(&folder);
         harness.run();
         assert!(
             harness
@@ -9907,9 +9905,9 @@ mod tests {
         assert_eq!(described, 0);
     }
 
-    /// A photo opening as the app draws it, for the snapshots: the central bar, Rendering…
-    /// on it from `rendering`, the picture fitted in the photo's slot, and the side panel's
-    /// Adjust tab with the photo's values read-only.
+    /// A photo opening as the app draws it, for the snapshots: the viewer bar, Rendering…
+    /// on it from `rendering`, the picture fitted in the photo's slot, and the Tools
+    /// panel's Adjust tab with the photo's values read-only.
     struct Opening {
         shell: Shell,
         mirror: Mirror,
@@ -9979,7 +9977,7 @@ mod tests {
                             .rendering(now)
                             .then(|| tr(ui.ctx(), "photo-rendering"));
                         let layer = tr(ui.ctx(), "layer-image");
-                        CentralBar::new(&layer, Zoom::Fit)
+                        ViewerBar::new(&layer, Zoom::Fit)
                             .toggles(
                                 Toggle::new(false, false),
                                 Toggle::new(false, false),
@@ -9993,7 +9991,7 @@ mod tests {
                         let ppp = ui.pixels_per_point();
                         let room = block.bounds();
                         let bounds = ((room.x * ppp) as u32, (room.y * ppp) as u32);
-                        // As `App::central_panel` places and draws it.
+                        // As `App::viewer` places and draws it.
                         let (picture, generation) = scene.mirror.picture().expect("the picture");
                         let values = Some(&scene.mirror.values);
                         let placed = place_photo(&block, bounds, ppp, values, Some(picture))
@@ -10018,7 +10016,7 @@ mod tests {
             )
     }
 
-    /// The central panel showing a photo's picture while it opens, its controls disabled,
+    /// The Viewer showing a photo's picture while it opens, its controls disabled,
     /// with no Rendering… before a second, then with it (decision 77). Look at them.
     #[test]
     fn a_photo_opening_shows_its_picture_unmarked_then_rendering() {
@@ -10035,7 +10033,7 @@ mod tests {
         harness.snapshot("opening-rendering");
     }
 
-    /// A photo's slot as the central panel places and draws it while the photo opens, its
+    /// A photo's slot as the Viewer places and draws it while the photo opens, its
     /// picture's rectangle and the photo's place kept from the last frame.
     struct Places {
         mirror: Mirror,
@@ -10063,7 +10061,7 @@ mod tests {
             .with_pixels_per_point(2.0)
             .build_ui_state(
                 |ui, scene: &mut Places| {
-                    // As `App::central_panel` places and draws it.
+                    // As `App::viewer` places and draws it.
                     let slot = ui.max_rect();
                     let block = PhotoFrame::new(slot, Margin::Points(24.0));
                     let ppp = ui.pixels_per_point();
@@ -10418,16 +10416,16 @@ mod tests {
     }
 
     #[test]
-    fn the_grid_bar_s_choices_change_the_grid_and_survive_a_new_shell() {
+    fn the_browser_bar_s_choices_change_the_grid_and_survive_a_new_shell() {
         use apertrust_ui::components::{Sort, SortKey, ThumbnailSize};
         let folder = settings::testing::Folder::new("grid-kept");
         let (mut keeper, settings) = Keeper::open(folder.storage());
         let ctx = egui::Context::default();
         let mut shell = Shell::new(&settings, Locale::EnGb, OperatingSystem::Mac);
-        // With no photos in the grid panel its items rest.
+        // With no photos in the Browser its items rest.
         let resting = shell.state(&ctx, false, false);
         assert!(shell.run(ActionId::SORT[1], &resting, &ctx, &[]).is_none());
-        assert_eq!(shell.grid, settings::Grid::default());
+        assert_eq!(shell.browser, settings::BrowserSettings::default());
         let shown = State {
             shown: true,
             ..resting
@@ -10436,24 +10434,24 @@ mod tests {
             ActionId::SORT[1],
             ActionId::SORT_DESCENDING,
             ActionId::THUMBNAILS[3],
-            // The grid bar's Labels, which turns the captions off.
+            // The browser bar's Labels, which turns the captions off.
             ActionId::SHOW_LABELS,
             // Not built: Rating changes nothing.
             ActionId::SORT[3],
         ] {
             shell.run(id, &shown, &ctx, &[]);
         }
-        let chosen = settings::Grid {
+        let chosen = settings::BrowserSettings {
             sort: Sort {
                 key: SortKey::FileName,
                 descending: true,
             },
             thumbnails: ThumbnailSize::ExtraLarge,
             labels: false,
-            ..settings::Grid::default()
+            ..settings::BrowserSettings::default()
         };
-        assert_eq!(shell.grid, chosen);
-        // The menus check what the grid holds.
+        assert_eq!(shell.browser, chosen);
+        // The menus check what the Browser's settings hold.
         let state = State {
             shown: true,
             ..shell.state(&ctx, false, false)
@@ -10468,14 +10466,14 @@ mod tests {
         keeper.frame(std::time::Instant::now(), &shell.to_settings(&ctx));
         keeper.flush();
         let (_, settings) = Keeper::open(folder.storage());
-        assert_eq!(settings.grid, chosen);
+        assert_eq!(settings.browser, chosen);
         assert_eq!(
-            Shell::new(&settings, Locale::EnGb, OperatingSystem::Mac).grid,
+            Shell::new(&settings, Locale::EnGb, OperatingSystem::Mac).browser,
             chosen
         );
     }
 
-    /// A frame as the app's: the central panel's menus read over the whole window, the
+    /// A frame as the app's: the Viewer's menus read over the whole window, the
     /// photo at `photo` if any, a picker on while `picking`, and the frame's popups drawn
     /// after it. The photo is open with an edit Reset can take back.
     struct Surround {
@@ -10841,66 +10839,68 @@ mod tests {
         keeper.frame(std::time::Instant::now(), &shell.to_settings(&ctx));
         keeper.flush();
         let (_, settings) = Keeper::open(folder.storage());
-        assert_eq!(settings.central_panel.background, Some(Background::White));
+        assert_eq!(settings.viewer.background, Some(Background::White));
     }
 
     #[test]
-    fn the_grid_panel_s_rows_are_kept_and_never_more_than_half_the_window() {
-        use apertrust_ui::components::{ThumbnailSize, grid_panel_height};
+    fn the_browser_s_rows_are_kept_and_never_more_than_half_the_window() {
+        use apertrust_ui::components::{ThumbnailSize, browser_height};
         let folder = settings::testing::Folder::new("grid-rows");
         let (mut keeper, settings) = Keeper::open(folder.storage());
         let ctx = egui::Context::default();
         apertrust_ui::install(&ctx, Theme::default());
         let mut shell = Shell::new(&settings, Locale::EnGb, OperatingSystem::Mac);
-        shell.grid.position = apertrust_ui::components::GridPosition::Bottom;
-        assert_eq!(shell.grid.rows, 1);
-        shell.resize_grid(GridEdgeAction::Resize(3));
+        shell.browser.position = apertrust_ui::components::BrowserPosition::Bottom;
+        assert_eq!(shell.browser.rows, 1);
+        shell.resize_browser(BrowserEdgeAction::Resize(3));
         keeper.frame(std::time::Instant::now(), &shell.to_settings(&ctx));
         keeper.flush();
         let (_, settings) = Keeper::open(folder.storage());
-        assert_eq!(settings.grid.rows, 3);
+        assert_eq!(settings.browser.rows, 3);
         let mut shell = Shell::new(&settings, Locale::EnGb, OperatingSystem::Mac);
         // A window where two rows of Medium fit in half its height shows two, keeping three.
         let size = ThumbnailSize::Medium;
-        let window = 2.0 * grid_panel_height(&ctx, size, true, 2) + 1.0;
+        let window = 2.0 * browser_height(&ctx, size, true, 2) + 1.0;
         assert_eq!(
             shell
-                .grid_edge(&ctx, egui::vec2(1600.0, window))
+                .browser_edge(&ctx, egui::vec2(1600.0, window))
                 .lines(&ctx),
             2
         );
-        assert_eq!(shell.grid.rows, 3);
+        assert_eq!(shell.browser.rows, 3);
         // The rows count the captions: without them five fit in half a window where four
         // rows with them do.
-        let window = 2.0 * grid_panel_height(&ctx, size, true, 4) + 1.0;
-        shell.resize_grid(GridEdgeAction::Resize(9));
+        let window = 2.0 * browser_height(&ctx, size, true, 4) + 1.0;
+        shell.resize_browser(BrowserEdgeAction::Resize(9));
         let rows = |shell: &Shell| {
             shell
-                .grid_edge(&ctx, egui::vec2(1600.0, window))
+                .browser_edge(&ctx, egui::vec2(1600.0, window))
                 .lines(&ctx)
         };
         assert_eq!(rows(&shell), 4);
-        shell.grid.labels = false;
+        shell.browser.labels = false;
         assert_eq!(rows(&shell), 5);
-        shell.grid.labels = true;
-        shell.resize_grid(GridEdgeAction::Resize(3));
+        shell.browser.labels = true;
+        shell.resize_browser(BrowserEdgeAction::Resize(3));
         assert_eq!(
             shell
-                .grid_edge(&ctx, egui::vec2(1600.0, 3000.0))
+                .browser_edge(&ctx, egui::vec2(1600.0, 3000.0))
                 .lines(&ctx),
             3
         );
         // However small, one; a reset goes back to it.
         assert_eq!(
-            shell.grid_edge(&ctx, egui::vec2(1600.0, 10.0)).lines(&ctx),
+            shell
+                .browser_edge(&ctx, egui::vec2(1600.0, 10.0))
+                .lines(&ctx),
             1
         );
-        shell.resize_grid(GridEdgeAction::Reset);
-        assert_eq!(shell.grid.rows, 1);
+        shell.resize_browser(BrowserEdgeAction::Reset);
+        assert_eq!(shell.browser.rows, 1);
     }
 
-    /// The window as the app's frame lays out the side panel and the grid panel, with
-    /// `count` photos in the grid panel; what its grid bar chooses runs as the app runs it,
+    /// The window as the app's frame lays out the Tools panel and the Browser, with
+    /// `count` photos in the Browser; what its browser bar chooses runs as the app runs it,
     /// and its edge resizes it as the app keeps it.
     struct Window {
         shell: Shell,
@@ -10919,14 +10919,14 @@ mod tests {
             .build_ui_state(
                 |ui, window: &mut Window| {
                     let ctx = ui.ctx().clone();
-                    let side = egui::Panel::right("side panel")
+                    let side = egui::Panel::right("tools panel")
                         .exact_size(320.0)
                         .resizable(false)
                         .show(ui, |_| {});
                     window.side = side.response.rect;
                     let shell = &mut window.shell;
-                    let grid = shell.grid;
-                    let (frame, edge, lines) = shell.grid_frame(&ctx);
+                    let browser = shell.browser;
+                    let (frame, edge, lines) = shell.browser_frame(&ctx);
                     let names: Vec<String> = (0..window.count)
                         .map(|i| format!("IMG_{i:04}.ARW"))
                         .collect();
@@ -10939,18 +10939,18 @@ mod tests {
                             picture: None,
                             rating: None,
                         };
-                        GridPanel::new(names.len(), None, thumb)
-                            .sort(grid.sort)
-                            .size(grid.thumbnails)
+                        Browser::new(names.len(), None, thumb)
+                            .sort(browser.sort)
+                            .size(browser.thumbnails)
                             .lines(lines)
-                            .position(grid.position)
-                            .labels(grid.labels)
+                            .position(browser.position)
+                            .labels(browser.labels)
                             .show(ui)
                             .bar
                     });
                     egui::CentralPanel::default().show(ui, |_| {});
                     if let Some(action) = edge.show(ui, panel.response.rect) {
-                        shell.resize_grid(action);
+                        shell.resize_browser(action);
                     }
                     if let Some(chosen) = panel.inner {
                         let state = State {
@@ -10968,17 +10968,15 @@ mod tests {
             )
     }
 
-    fn grid_list(harness: &Harness<'_, Window>) -> egui::Rect {
-        harness
-            .get_by_role_and_label(Role::List, "Grid panel")
-            .rect()
+    fn browser_list(harness: &Harness<'_, Window>) -> egui::Rect {
+        harness.get_by_role_and_label(Role::List, "Browser").rect()
     }
 
-    /// Right-clicks the grid bar's empty part, its middle between Sort at its start and
+    /// Right-clicks the browser bar's empty part, its middle between Sort at its start and
     /// Zoom at its far end, and chooses Position's `place`.
-    fn move_grid(harness: &mut Harness<'_, Window>, place: &str) {
+    fn move_browser(harness: &mut Harness<'_, Window>, place: &str) {
         let bar = harness
-            .get_by_role_and_label(Role::Toolbar, "Grid bar")
+            .get_by_role_and_label(Role::Toolbar, "Browser bar")
             .rect();
         let at = bar.center();
         harness.hover_at(at);
@@ -11002,67 +11000,70 @@ mod tests {
     }
 
     #[test]
-    fn the_grid_bar_s_options_move_the_panel_and_each_place_keeps_its_lines() {
-        use apertrust_ui::components::GridPosition;
+    fn the_browser_bar_s_options_move_the_panel_and_each_place_keeps_its_lines() {
+        use apertrust_ui::components::BrowserPosition;
         let settings = Settings {
-            grid: settings::Grid {
+            browser: settings::BrowserSettings {
                 rows: 2,
                 columns: 3,
-                position: GridPosition::Bottom,
-                ..settings::Grid::default()
+                position: BrowserPosition::Bottom,
+                ..settings::BrowserSettings::default()
             },
             ..Settings::default()
         };
         let mut harness = window(&settings, 30);
         harness.run();
-        // At the bottom, under the photo and beside the side panel, two rows high; the
+        // At the bottom, under the photo and beside the Tools panel, two rows high; the
         // harness's ui keeps 8 points round the window.
-        let list = grid_list(&harness);
+        let list = browser_list(&harness);
         let side = harness.state().side;
         assert_eq!(list.right(), side.left());
         assert_eq!(list.bottom(), 900.0 - 8.0);
         let height = |harness: &Harness<'_, Window>| {
             harness
-                .get_by_role_and_label(Role::Splitter, "Grid panel height")
+                .get_by_role_and_label(Role::Splitter, "Browser height")
                 .accesskit_node()
                 .numeric_value()
         };
         assert_eq!(height(&harness), Some(2.0));
-        // At the right, a column between the photo and the side panel, three columns wide.
-        move_grid(&mut harness, "Right");
-        assert_eq!(harness.state().shell.grid.position, GridPosition::Right);
-        let list = grid_list(&harness);
+        // At the right, a column between the photo and the Tools panel, three columns wide.
+        move_browser(&mut harness, "Right");
+        assert_eq!(
+            harness.state().shell.browser.position,
+            BrowserPosition::Right
+        );
+        let list = browser_list(&harness);
         assert_eq!(list.right(), side.left());
         assert_eq!(list.top(), 8.0);
         let width = |harness: &Harness<'_, Window>| {
             harness
-                .get_by_role_and_label(Role::Splitter, "Grid panel width")
+                .get_by_role_and_label(Role::Splitter, "Browser width")
                 .accesskit_node()
                 .numeric_value()
         };
         assert_eq!(width(&harness), Some(3.0));
         // At the left, at the window's left edge.
-        move_grid(&mut harness, "Left");
-        let list = grid_list(&harness);
+        move_browser(&mut harness, "Left");
+        let list = browser_list(&harness);
         assert_eq!(list.left(), 8.0);
         assert_eq!(width(&harness), Some(3.0));
         // Back at the bottom with its two rows; the place is kept.
-        move_grid(&mut harness, "Bottom");
+        move_browser(&mut harness, "Bottom");
         assert_eq!(height(&harness), Some(2.0));
         let ctx = egui::Context::default();
-        let kept = harness.state().shell.to_settings(&ctx).grid;
-        assert_eq!(kept.position, GridPosition::Bottom);
+        let kept = harness.state().shell.to_settings(&ctx).browser;
+        assert_eq!(kept.position, BrowserPosition::Bottom);
         assert_eq!((kept.rows, kept.columns), (2, 3));
     }
 
     #[test]
-    fn the_grid_bar_s_labels_turns_the_captions_off_and_the_panel_loses_their_height() {
-        use apertrust_ui::components::{GridPosition, ThumbnailSize, grid_panel_height};
+    fn the_browser_bar_s_labels_turns_the_captions_off_and_the_panel_loses_their_height() {
+        use apertrust_ui::components::{BrowserPosition, ThumbnailSize, browser_height};
         // At the bottom, where the captions add to the panel's height.
         let settings = Settings {
-            grid: settings::Grid {
-                position: GridPosition::Bottom,
-                ..settings::Grid::default()
+            browser: settings::BrowserSettings {
+                position: BrowserPosition::Bottom,
+                ..settings::BrowserSettings::default()
             },
             ..Settings::default()
         };
@@ -11071,52 +11072,52 @@ mod tests {
         let ctx = harness.ctx.clone();
         let size = ThumbnailSize::Medium;
         assert_eq!(
-            grid_list(&harness).height(),
-            grid_panel_height(&ctx, size, true, 1)
+            browser_list(&harness).height(),
+            browser_height(&ctx, size, true, 1)
         );
         let labels = harness.get_by_role_and_label(Role::Button, "Labels");
         assert_eq!(labels.accesskit_node().toggled(), Some(Toggled::True));
         labels.click();
         harness.run();
         harness.run();
-        assert!(!harness.state().shell.grid.labels);
+        assert!(!harness.state().shell.browser.labels);
         assert_eq!(
-            grid_list(&harness).height(),
-            grid_panel_height(&ctx, size, false, 1)
+            browser_list(&harness).height(),
+            browser_height(&ctx, size, false, 1)
         );
         let labels = harness.get_by_role_and_label(Role::Button, "Labels");
         assert_eq!(labels.accesskit_node().toggled(), Some(Toggled::False));
         // Kept for the next start.
         let kept = harness.state().shell.to_settings(&egui::Context::default());
-        assert!(!kept.grid.labels);
+        assert!(!kept.browser.labels);
     }
 
     #[test]
-    fn the_grid_panel_s_columns_are_never_more_than_half_the_window_s_width() {
-        use apertrust_ui::components::{GridPosition, ThumbnailSize, grid_panel_width};
+    fn the_browser_s_columns_are_never_more_than_half_the_window_s_width() {
+        use apertrust_ui::components::{BrowserPosition, ThumbnailSize, browser_width};
         let ctx = egui::Context::default();
         apertrust_ui::install(&ctx, Theme::default());
         let settings = Settings {
-            grid: settings::Grid {
-                position: GridPosition::Left,
+            browser: settings::BrowserSettings {
+                position: BrowserPosition::Left,
                 columns: 9,
-                ..settings::Grid::default()
+                ..settings::BrowserSettings::default()
             },
             ..Settings::default()
         };
         let shell = Shell::new(&settings, Locale::EnGb, OperatingSystem::Mac);
         let size = ThumbnailSize::Medium;
-        let window = egui::vec2(2.0 * grid_panel_width(&ctx, size, 4) + 1.0, 400.0);
-        assert_eq!(shell.grid_edge(&ctx, window).lines(&ctx), 4);
-        assert_eq!(shell.grid.columns, 9);
+        let window = egui::vec2(2.0 * browser_width(&ctx, size, 4) + 1.0, 400.0);
+        assert_eq!(shell.browser_edge(&ctx, window).lines(&ctx), 4);
+        assert_eq!(shell.browser.columns, 9);
     }
 
-    /// Every choice of the grid bar's menus is an action of the registry, so View's items
-    /// run the same.
+    /// Every choice of the browser bar's menus is an action of the registry, so View's
+    /// items run the same.
     #[test]
-    fn every_grid_bar_choice_is_an_action() {
-        use apertrust_ui::components::GridBarAction;
-        for chosen in GridBarAction::ALL {
+    fn every_browser_bar_choice_is_an_action() {
+        use apertrust_ui::components::BrowserBarAction;
+        for chosen in BrowserBarAction::ALL {
             let action = actions::action(ActionId(chosen.id())).expect("declared");
             assert_eq!(action.message, format!("action-{}", chosen.id()));
         }
@@ -11570,8 +11571,8 @@ mod tests {
         assert_eq!(tab_id(HISTORY), Some("history"));
     }
 
-    /// A folder opened joins the recents at the top, once; Browse's rows say why one cannot
-    /// be opened, its failure this run before the check's finding it gone.
+    /// A folder opened joins the recents at the top, once; Collections' rows say why one
+    /// cannot be opened, its failure this run before the check's finding it gone.
     #[test]
     fn a_folder_opened_joins_the_recents_and_a_missing_one_says_why() {
         let mut shell = opened_on("photos");
@@ -11598,7 +11599,7 @@ mod tests {
     }
 
     /// Through a real session: a way in opens the folder as the root and enters the
-    /// recents; a folder chosen in its tree is opened by the library, the grid panel showing
+    /// recents; a folder chosen in its tree is opened by the library, the Browser showing
     /// it, but the root stays and its `Opened` asks nothing of the recents.
     #[test]
     fn a_folder_chosen_in_the_tree_is_opened_but_keeps_the_root_and_the_recents() {
@@ -11654,7 +11655,7 @@ mod tests {
         assert_eq!(mirror.folder.root(), Some(root.as_path()));
         let reactions = until_opened(&mut mirror, chosen);
         assert!(reactions.is_empty(), "{reactions:?}");
-        // The library opened the chosen folder for the grid panel.
+        // The library opened the chosen folder for the Browser.
         let folder::Folder::Open(listing) = &mirror.folder.folder else {
             panic!("{:?}", mirror.folder.folder);
         };
@@ -11746,9 +11747,10 @@ mod tests {
         assert_eq!(recents, [found]);
     }
 
-    /// Browse's Folders starts open, unlike a tool's groups. A click on its row closes it,
-    /// hiding its rows, and it is kept closed as `browse.folders` in `edit.groups`; a
-    /// click on Browse's header closes Browse, kept as `browse` in `edit.sections`.
+    /// Collections' Folders starts open, unlike a tool's groups. A click on its row closes
+    /// it, hiding its rows, and it is kept closed as `collections.folders` in `edit.groups`; a
+    /// click on Collections' header closes Collections, kept as `collections` in
+    /// `edit.sections`.
     #[test]
     fn a_click_on_folders_closes_it_and_keeps_it_closed() {
         let shell = opened_on("photos");
@@ -11758,12 +11760,12 @@ mod tests {
             .build_ui_state(
                 |ui, shell: &mut Shell| {
                     let keys = library::Keys::default();
-                    let mut browse = library::Browse {
+                    let mut collections = library::Collections {
                         folder: &folder::Folder::None,
                         root: None,
                         counts: &HashMap::new(),
                         recent: &[],
-                        open: shell.browse_open(),
+                        open: shell.collections_open(),
                         tree: &BTreeMap::new(),
                         inside: &std::collections::HashMap::new(),
                         keys: &keys,
@@ -11780,16 +11782,16 @@ mod tests {
                     };
                     let mut actions = Vec::new();
                     PanelBody::new().show(ui, |ui| {
-                        let head = library::head(ui, &browse);
-                        let drawn = utility::section(ui, &mut browse, &mut cx, head, false);
+                        let head = library::head(ui, &collections);
+                        let drawn = utility::section(ui, &mut collections, &mut cx, head, false);
                         let pressed = drawn.pressed.iter();
-                        actions.extend(pressed.filter_map(|p| library::pressed(&browse, p)));
+                        actions.extend(pressed.filter_map(|p| library::pressed(&collections, p)));
                         actions.extend(drawn.actions);
                     });
                     for action in actions {
                         match action {
-                            library::Action::Toggle => shell.toggle_browse(false),
-                            library::Action::ToggleFolders => shell.toggle_browse(true),
+                            library::Action::Toggle => shell.toggle_collections(false),
+                            library::Action::ToggleFolders => shell.toggle_collections(true),
                             other => panic!("{other:?}"),
                         }
                     }
@@ -11797,22 +11799,25 @@ mod tests {
                 shell,
             );
         harness.run();
-        assert!(harness.state().browse_open().folders);
+        assert!(harness.state().collections_open().folders);
         harness
             .get_by_role_and_label(Role::Button, "Folders")
             .click();
         harness.run();
-        assert!(!harness.state().browse_open().folders);
+        assert!(!harness.state().collections_open().folders);
         let ctx = egui::Context::default();
         let kept = harness.state().to_settings(&ctx).edit;
-        let folders = kept.groups.get("browse").and_then(|g| g.get("folders"));
+        let folders = kept
+            .groups
+            .get("collections")
+            .and_then(|g| g.get("folders"));
         assert_eq!(folders, Some(&false));
         harness
-            .get_by_role_and_label(Role::Button, "Browse")
+            .get_by_role_and_label(Role::Button, "Collections")
             .click();
         harness.run();
         let kept = harness.state().to_settings(&ctx).edit;
-        assert_eq!(kept.sections.get("browse"), Some(&false));
+        assert_eq!(kept.sections.get("collections"), Some(&false));
     }
 
     /// The id settings had is forgotten once the user chooses a tab: one this build lacks,
@@ -11846,8 +11851,8 @@ mod tests {
     /// those still to build included: Adjust in editing order, with the edit's tone mapper,
     /// one of AgX, Sigmoid and Filmic RGB, at its place, and the Tone curve at RGB curve's
     /// until RGB curve replaces it; Raw in processing order. The Photos tab holds the
-    /// Export tool, a utility and the tab's last, after Browse, which is no entry of the
-    /// lists (decision 90).
+    /// Export tool, a utility and the tab's last, after Collections, which is no entry of
+    /// the lists (decision 90).
     const DECISION_38: [(&str, &[&str]); 7] = [
         ("photos", &["export"]),
         (
@@ -11952,10 +11957,11 @@ mod tests {
     }
 
     /// Every workspace holds Export (decisions 83 and 90): Edit's tabs list it once, in the
-    /// Photos tab, last after Browse; the darktable workspace's tabs, Photos then its four
-    /// groups, hold it once, in Photos, and in none of the groups. There is no kept layout
-    /// or `hidden` list to apply yet; when settings keep them, the same rule, that none takes
-    /// Export out of a workspace and a workspace without it gets it back, is checked here.
+    /// Photos tab, last after Collections; the darktable workspace's tabs, Photos then its
+    /// four groups, hold it once, in Photos, and in none of the groups. There is no kept
+    /// layout or `hidden` list to apply yet; when settings keep them, the same rule, that
+    /// none takes Export out of a workspace and a workspace without it gets it back, is
+    /// checked here.
     #[test]
     fn every_workspace_holds_export_once_in_its_photos_tab() {
         let count = |tabs: &[&[&str]]| {
@@ -12021,7 +12027,7 @@ mod tests {
     }
 
     #[test]
-    fn the_side_panel_may_take_at_most_half_the_window() {
+    fn the_tools_panel_may_take_at_most_half_the_window() {
         assert_eq!(panel_widths(1600.0), 240.0..=600.0);
         assert_eq!(panel_widths(960.0), 240.0..=480.0);
         assert_eq!(panel_widths(1001.0), 240.0..=500.0);
@@ -12037,7 +12043,7 @@ mod tests {
         pressed: Vec<ActionId>,
     }
 
-    /// The side panel and the photo as the app's frame lays them out, the keys read first,
+    /// The Tools panel and the photo as the app's frame lays them out, the keys read first,
     /// in a harness `width` points wide, whose ui keeps 8 points either side; the shell as
     /// `settings` leave it, with two photos, so ← and → would go from one to the other.
     fn panels(width: f32, settings: &Settings) -> Harness<'static, Panels> {
@@ -12059,9 +12065,9 @@ mod tests {
                     };
                     let keys = actions::read(&ctx, &shell.keymap, &state);
                     panels.pressed.extend(keys.pressed);
-                    let name = tr(&ctx, "panel-width");
+                    let name = tr(&ctx, "tools-panel-width");
                     let edge = shell.panel_edge(&ctx, ui.available_width(), &name);
-                    let panel = egui::Panel::right("side panel")
+                    let panel = egui::Panel::right("tools panel")
                         .exact_size(edge.width(&ctx))
                         .resizable(false)
                         .show(ui, |ui| shell.tab_bar(ui));
@@ -12077,16 +12083,16 @@ mod tests {
             )
     }
 
-    /// The side panel's edge, as screen readers find it: its value is the panel's width.
+    /// The Tools panel's edge, as screen readers find it: its value is the panel's width.
     fn panel_edge<'h>(harness: &'h Harness<'_, Panels>) -> egui_kittest::Node<'h> {
-        harness.get_by_role_and_label(Role::Splitter, "Side panel width")
+        harness.get_by_role_and_label(Role::Splitter, "Tools panel width")
     }
 
     fn shown_width(harness: &Harness<'_, Panels>) -> Option<f64> {
         panel_edge(harness).accesskit_node().numeric_value()
     }
 
-    /// Drags the side panel's edge `by` points along the window.
+    /// Drags the Tools panel's edge `by` points along the window.
     fn drag_panel_edge(harness: &mut Harness<'_, Panels>, by: f32) {
         let from = panel_edge(harness).rect().center();
         let to = from + egui::vec2(by, 0.0);
@@ -12101,7 +12107,7 @@ mod tests {
     }
 
     #[test]
-    fn the_side_panel_keeps_the_width_its_edge_was_dragged_to() {
+    fn the_tools_panel_keeps_the_width_its_edge_was_dragged_to() {
         let mut harness = panels(1600.0, &Settings::default());
         harness.run();
         assert_eq!(shown_width(&harness), Some(320.0));
@@ -12130,7 +12136,7 @@ mod tests {
     }
 
     #[test]
-    fn the_side_panel_never_takes_more_than_half_the_window() {
+    fn the_tools_panel_never_takes_more_than_half_the_window() {
         // A window 960 points wide, at the width the user kept in a wider one.
         let settings = Settings {
             panel_width: Some(600.0),
@@ -12154,7 +12160,7 @@ mod tests {
     }
 
     #[test]
-    fn the_focused_side_panel_edge_keeps_its_keys_from_the_actions() {
+    fn the_focused_tools_panel_edge_keeps_its_keys_from_the_actions() {
         // ← and → are the photos' keys, which do nothing yet, so End opens Settings here.
         let settings = Settings {
             keys: BTreeMap::from([("settings".to_owned(), vec!["End".to_owned()])]),
@@ -12305,7 +12311,7 @@ mod tests {
     }
 
     /// The shell as the app's frame runs it, without the engine, which `App` needs a GPU
-    /// for: the keys read first, then the top panel, the side panel's tabs and a section,
+    /// for: the keys read first, then the Toolbar, the Tools panel's tabs and a section,
     /// the settings dialog, then what the keys and clicks asked for, Open…'s dialog, which a
     /// stand-in for the person answers, and last what was dropped onto the window.
     struct Bench {
@@ -12325,13 +12331,13 @@ mod tests {
         /// The commands sent to the session.
         commands: Vec<Command>,
         peeking: bool,
-        /// The top panel's and the side panel's rectangles, the regions F6 goes through.
+        /// The Toolbar's and the Tools panel's rectangles, the regions F6 goes through.
         regions: Vec<egui::Rect>,
-        /// The room the window's buttons take where the top panel is the title bar.
+        /// The room the window's buttons take where the Toolbar is the title bar.
         title_bar: Option<f32>,
-        /// Whether the top panel draws the caption buttons, and the window is maximised.
+        /// Whether the Toolbar draws the caption buttons, and the window is maximised.
         caption: Option<bool>,
-        /// The window's platform, as the top panel's gestures see it.
+        /// The window's platform, as the Toolbar's gestures see it.
         system: Stub,
         /// The open dialog, as Open… sees it.
         dialog: Person,
@@ -12351,7 +12357,8 @@ mod tests {
         /// The alert up, and what each refusal's asking of it came to.
         alerts: alerts::Alerts,
         asked: Vec<dialog_host::Ask>,
-        /// The Export tool, which the Photos tab draws after Browse, as the app's does.
+        /// The Export tool, which the Photos tab draws after Collections, as the app's
+        /// does.
         export: export::Export,
     }
 
@@ -12457,22 +12464,23 @@ mod tests {
                         let (title_bar, caption) = (bench.title_bar, bench.caption);
                         bench
                             .shell
-                            .top_panel(ui, &state, SaveState::None, title_bar, caption, &[])
+                            .toolbar(ui, &state, SaveState::None, title_bar, caption, &[])
                     });
                     let mut window = None;
                     match top.inner {
-                        Some(FromTopPanel::Action(id)) => run.push(id),
-                        Some(FromTopPanel::Window(gesture)) => window = Some(gesture),
-                        Some(FromTopPanel::Jobs | FromTopPanel::NotSaved) | None => {}
+                        Some(FromToolbar::Action(id)) => run.push(id),
+                        Some(FromToolbar::Window(gesture)) => window = Some(gesture),
+                        Some(FromToolbar::Jobs | FromToolbar::NotSaved) | None => {}
                     }
-                    let name = tr(&ctx, "panel-width");
+                    let name = tr(&ctx, "tools-panel-width");
                     let edge = bench.shell.panel_edge(&ctx, ui.available_width(), &name);
                     let width = edge.width(&ctx);
                     let side = ui.scope(|ui| {
                         ui.set_width(width);
                         let tab = bench.shell.tab_bar(ui);
                         if bench.shell.panel_tab == PHOTOS {
-                            // As `App::side_panel` draws it: Browse, then the Export tool.
+                            // As `App::tools_panel` draws it: Collections, then the Export
+                            // tool.
                             let revealed = bench.shell.revealing();
                             let shown = ExportShown {
                                 head: tools::Head {
@@ -12492,16 +12500,16 @@ mod tests {
                                 },
                                 reveal: revealed && bench.shell.reveal == Some(export::ID),
                             };
-                            let browse_keys = library::Keys::default();
-                            let mut browse = library::Browse {
+                            let collections_keys = library::Keys::default();
+                            let mut collections = library::Collections {
                                 folder: &folder::Folder::None,
                                 root: None,
                                 counts: &HashMap::new(),
                                 recent: &[],
-                                open: bench.shell.browse_open(),
+                                open: bench.shell.collections_open(),
                                 tree: &BTreeMap::new(),
                                 inside: &HashMap::new(),
-                                keys: &browse_keys,
+                                keys: &collections_keys,
                                 home: None,
                             };
                             let (mirror, settings) =
@@ -12515,7 +12523,7 @@ mod tests {
                             };
                             let export = &mut bench.export;
                             let (_, _, _, drawn) =
-                                photos_body(ui, &mut cx, &mut browse, export, shown);
+                                photos_body(ui, &mut cx, &mut collections, export, shown);
                             if revealed {
                                 bench.shell.reveal = None;
                             }
@@ -12689,17 +12697,17 @@ mod tests {
             .any(|v| v.commands.contains(command))
     }
 
-    /// An empty point of the top panel: between its last action and its end.
+    /// An empty point of the Toolbar: between its last action and its end.
     fn empty_point(harness: &Harness<'_, Bench>) -> egui::Pos2 {
         let apply = harness.get_by_label("Apply edit").rect();
         let bar = harness
-            .get_by_role_and_label(Role::Toolbar, "Top panel")
+            .get_by_role_and_label(Role::Toolbar, "Toolbar")
             .rect();
         egui::pos2((apply.right() + bar.right()) / 2.0, apply.center().y)
     }
 
     #[test]
-    fn where_the_top_panel_is_the_title_bar_its_empty_areas_move_and_zoom_the_window() {
+    fn where_the_toolbar_is_the_title_bar_its_empty_areas_move_and_zoom_the_window() {
         let mut harness = bench(OperatingSystem::Mac);
         harness.state_mut().title_bar = Some(90.0);
         harness.run();
@@ -13954,7 +13962,7 @@ mod tests {
                 .with_context_setup(|ctx| apertrust_ui::install(ctx, Theme::default()))
                 .build_ui(|ui| {
                     let state = shell.state(ui.ctx(), true, false);
-                    let top = shell.top_panel(ui, &state, SaveState::None, None, None, &jobs);
+                    let top = shell.toolbar(ui, &state, SaveState::None, None, None, &jobs);
                     asked.borrow_mut().extend(top);
                 });
             harness.run();
@@ -13971,7 +13979,7 @@ mod tests {
         let job = Job::new(1, JobPhase::Running, JobMessage::new("job-thumbnails"));
         let (spinner, asked) = shown(vec![job]);
         assert!(spinner);
-        assert_eq!(asked, [FromTopPanel::Jobs]);
+        assert_eq!(asked, [FromToolbar::Jobs]);
     }
 
     #[test]
@@ -14089,35 +14097,35 @@ mod tests {
         assert_eq!(translator(&harness.ctx).locale(), Locale::Uk);
     }
 
-    /// Square thumbnails, the Photos page's, and the side panel's tab names, the Editing
+    /// Square thumbnails, the Photos page's, and the Tools panel's tab names, the Editing
     /// page's, reach the shell at once; the engine's settings are kept for its next start
     /// and the page shown for the dialog's next opening.
     #[test]
-    fn the_settings_window_s_other_rows_reach_the_grid_and_the_side_panel_at_once() {
+    fn the_settings_window_s_other_rows_reach_the_grid_and_the_tools_panel_at_once() {
         use settings_dialog::Change;
         let host = FakeHost::default();
         let mut harness = dialogged(host.clone());
         harness.run();
         press_action(&mut harness, ActionId::SETTINGS);
-        assert!(!harness.state().shell.grid.square_thumbnails);
+        assert!(!harness.state().shell.browser.square_thumbnails);
         host.0.borrow_mut().outputs = vec![
             dialog_host::Output::Settings(Change::Set("settings_window.page", "photos".into())),
-            dialog_host::Output::Settings(Change::Set("grid_panel.square_thumbnails", true.into())),
-            dialog_host::Output::Settings(Change::Set("side_panel.tab_names", false.into())),
+            dialog_host::Output::Settings(Change::Set("browser.square_thumbnails", true.into())),
+            dialog_host::Output::Settings(Change::Set("tools_panel.tab_names", false.into())),
             dialog_host::Output::Settings(Change::Set("engine.memory_budget", 4096.into())),
         ];
         harness.step();
         let d = harness.state();
-        assert!(d.shell.grid.square_thumbnails);
+        assert!(d.shell.browser.square_thumbnails);
         assert!(!d.shell.tab_names);
         assert_eq!(d.keeper.engine().budget, 4096 << 20);
         assert_eq!(d.keeper.page(), apertrust_base::settings::Page::Photos);
         // And back to its default.
         host.0.borrow_mut().outputs = vec![dialog_host::Output::Settings(Change::Reset(
-            "grid_panel.square_thumbnails",
+            "browser.square_thumbnails",
         ))];
         harness.step();
-        assert!(!harness.state().shell.grid.square_thumbnails);
+        assert!(!harness.state().shell.browser.square_thumbnails);
     }
 
     #[test]
@@ -15095,7 +15103,7 @@ mod tests {
             harness.state_mut().open = first.clone();
             export_tool(harness.state_mut(), &ctx, confirm.clone());
             assert_eq!(asked_alerts(&host), 1);
-            // A grid click opens another photo while the question waits.
+            // A click in the Browser opens another photo while the question waits.
             harness.state_mut().open = PathBuf::from("/Users/anna/Pictures/IMG_9999.ARW");
             answer_alert(&host, answer);
             harness.step();
@@ -15769,7 +15777,7 @@ mod tests {
     }
 
     #[test]
-    fn ctrl_1_to_5_choose_the_side_panel_s_tabs() {
+    fn ctrl_1_to_5_choose_the_tools_panel_s_tabs() {
         let mut harness = bench(OperatingSystem::Windows);
         harness.run();
         assert_eq!(harness.state().shell.panel_tab, ADJUST);
@@ -15988,7 +15996,7 @@ mod tests {
     #[test]
     fn a_plain_letter_runs_unless_its_press_typed_another_key_s_character() {
         let mut harness = bench(OperatingSystem::Windows);
-        // L chooses Browse's tab from another.
+        // L chooses Collections' tab from another.
         harness.state_mut().shell.panel_tab = ADJUST;
         harness.run();
         // AltGr+L types ł on a Polish keyboard, and arrives as L.
@@ -15997,36 +16005,36 @@ mod tests {
         assert_eq!(harness.state().shell.panel_tab, ADJUST);
         // Д is the Ukrainian layout's own letter on the L key.
         type_l(&mut harness, "д");
-        assert_eq!(harness.state().pressed, vec![ActionId::SHOW_BROWSE]);
-        assert_eq!(harness.state().shell.panel_tab, BROWSE);
+        assert_eq!(harness.state().pressed, vec![ActionId::SHOW_COLLECTIONS]);
+        assert_eq!(harness.state().shell.panel_tab, COLLECTIONS);
         harness.state_mut().shell.panel_tab = ADJUST;
         type_l(&mut harness, "l");
-        assert_eq!(harness.state().pressed, vec![ActionId::SHOW_BROWSE; 2]);
+        assert_eq!(harness.state().pressed, vec![ActionId::SHOW_COLLECTIONS; 2]);
     }
 
     #[test]
-    fn view_browse_chooses_the_first_tab_holding_browse_and_pressed_again_nothing() {
+    fn view_collections_chooses_the_first_tab_holding_collections_and_pressed_again_nothing() {
         let mut harness = bench(OperatingSystem::Windows);
         harness.state_mut().shell.panel_tab = 3;
         harness.run();
         harness.key_press(Key::L);
         harness.run();
-        assert_eq!(harness.state().shell.panel_tab, BROWSE);
-        assert_eq!(BROWSE, PHOTOS);
+        assert_eq!(harness.state().shell.panel_tab, COLLECTIONS);
+        assert_eq!(COLLECTIONS, PHOTOS);
         // The tab the settings had is forgotten, as a click on a tab forgets it.
         assert_eq!(harness.state().shell.opening_tab, None);
         harness.key_press(Key::L);
         harness.run();
-        assert_eq!(harness.state().shell.panel_tab, BROWSE);
-        assert_eq!(harness.state().pressed, vec![ActionId::SHOW_BROWSE; 2]);
-        // From the ☰'s menu too, View › Browse, with its key.
+        assert_eq!(harness.state().shell.panel_tab, COLLECTIONS);
+        assert_eq!(harness.state().pressed, vec![ActionId::SHOW_COLLECTIONS; 2]);
+        // From the ☰'s menu too, View › Collections, with its key.
         harness.state_mut().shell.panel_tab = 3;
         alt(&mut harness, Key::V, Some("v"));
-        let item = harness.get_by_role_and_label(Role::MenuItem, "Browse");
+        let item = harness.get_by_role_and_label(Role::MenuItem, "Collections");
         assert_eq!(item.accesskit_node().data().keyboard_shortcut(), Some("L"));
         item.click();
         harness.run();
-        assert_eq!(harness.state().shell.panel_tab, BROWSE);
+        assert_eq!(harness.state().shell.panel_tab, COLLECTIONS);
     }
 
     /// Ctrl+E (Cmd+E on the Mac) reveals the Export tool from another tab: it chooses the
@@ -16050,15 +16058,18 @@ mod tests {
             assert!(state.shell.section_open(export::ID, export::OPEN), "{os:?}");
             assert_eq!(state.shell.reveal, None, "{os:?}: scrolled to once");
             assert!(state.host.0.borrow().shown.is_none(), "{os:?}: no dialog");
-            // Its header is scrolled to the top of the panel, Browse's above it, out of view.
+            // Its header is scrolled to the top of the panel, Collections' above it, out of
+            // view.
             let header = harness.get_by_role_and_label(Role::Button, "Export").rect();
             let tabs = harness.get_by_role_and_label(Role::Tab, "Photos").rect();
-            let browse = harness.get_by_role_and_label(Role::Button, "Browse").rect();
+            let collections = harness
+                .get_by_role_and_label(Role::Button, "Collections")
+                .rect();
             assert!(
                 header.top() < tabs.bottom() + 40.0,
                 "{os:?} {header:?} {tabs:?}"
             );
-            assert!(browse.bottom() <= header.top(), "{os:?}");
+            assert!(collections.bottom() <= header.top(), "{os:?}");
         }
     }
 
@@ -16098,8 +16109,8 @@ mod tests {
         harness.get_by_role_and_label(Role::Button, "Export 1 photo");
     }
 
-    /// The Export tool is the Photos tab's last section, after Browse, and the tab lists
-    /// it last.
+    /// The Export tool is the Photos tab's last section, after Collections, and the tab
+    /// lists it last.
     #[test]
     fn the_export_tool_is_last_in_the_photos_tab() {
         assert_eq!(TAB_TOOLS[PHOTOS].last(), Some(&export::ID));
@@ -16107,9 +16118,14 @@ mod tests {
         harness.state_mut().shell.panel_tab = PHOTOS;
         harness.state_mut().shell.set_section_open(export::ID, true);
         harness.run_steps(4);
-        let browse = harness.get_by_role_and_label(Role::Button, "Browse").rect();
+        let collections = harness
+            .get_by_role_and_label(Role::Button, "Collections")
+            .rect();
         let export = harness.get_by_role_and_label(Role::Button, "Export").rect();
-        assert!(browse.top() < export.top(), "{browse:?} {export:?}");
+        assert!(
+            collections.top() < export.top(),
+            "{collections:?} {export:?}"
+        );
         // Every row of the tool is under its header, and its button under them all.
         let button = harness
             .get_by_role_and_label(Role::Button, "Export 1 photo")
@@ -16328,7 +16344,7 @@ mod tests {
     }
 
     /// The shell beside a text field, as a value field or a dialog's name field has one:
-    /// the keys read first, the top panel and the field, then what the keys and the menus
+    /// the keys read first, the Toolbar and the field, then what the keys and the menus
     /// ran, and the ☰'s menu opened where it is drawn.
     struct Field {
         shell: Shell,
@@ -16361,7 +16377,7 @@ mod tests {
                     field.shell.close_menu(&keys.pressed);
                     let top = field
                         .shell
-                        .top_panel(ui, &now, SaveState::None, None, None, &[]);
+                        .toolbar(ui, &now, SaveState::None, None, None, &[]);
                     let name = ui.label("Name");
                     let response = ui.text_edit_singleline(&mut field.text);
                     let response = response.labelled_by(name.id);
@@ -16370,7 +16386,7 @@ mod tests {
                     }
                     let mut run = keys.pressed;
                     run.append(&mut field.chosen);
-                    if let Some(FromTopPanel::Action(id)) = top {
+                    if let Some(FromToolbar::Action(id)) = top {
                         run.push(id);
                     }
                     run.extend(field.shell.popups(&ctx));
@@ -16762,7 +16778,7 @@ mod tests {
                 .iter()
                 .position(|r| r.contains(centre))
         };
-        // Into the top panel, on its first control: the ☰.
+        // Into the Toolbar, on its first control: the ☰.
         harness.key_press(Key::F6);
         harness.run();
         assert_eq!(region_of_focus(&harness), Some(0));
@@ -17060,7 +17076,7 @@ mod tests {
             menu_line(&harness, item, "Quit"),
             (true, keys("Ctrl+Q"), None)
         );
-        // Full screen and the side panel's tabs are checked as they are.
+        // Full screen and the Tools panel's tabs are checked as they are.
         alt(&mut harness, Key::V, Some("v"));
         assert_eq!(
             menu_line(&harness, check, "Full screen"),
@@ -17072,7 +17088,7 @@ mod tests {
             menu_line(&harness, item, "Zoom to 100%"),
             (false, keys("Z"), None)
         );
-        // Then Sort By, its checks the grid panel's sort, resting with no photos shown.
+        // Then Sort By, its checks the Browser's sort, resting with no photos shown.
         for _ in 0..4 {
             harness.key_press(Key::ArrowDown);
         }
@@ -17098,14 +17114,14 @@ mod tests {
         }
         harness.key_press(Key::ArrowRight);
         harness.run();
-        assert!(menu_open(&harness, "Side Panel Tab"));
+        assert!(menu_open(&harness, "Tools Panel Tab"));
         let tab = |harness: &Harness<'_, Bench>, n| {
-            menu_line(harness, check, &format!("Side-panel tab {n}")).2
+            menu_line(harness, check, &format!("Tools panel tab {n}")).2
         };
         assert_eq!(tab(&harness, ADJUST + 1), Some(Toggled::True));
         assert_eq!(tab(&harness, 1), Some(Toggled::False));
         // The Photos tab is the first, built.
-        let photos = menu_line(&harness, check, "Side-panel tab 1");
+        let photos = menu_line(&harness, check, "Tools panel tab 1");
         assert!(photos.0);
         // Reset is disabled while the photo is as it opened.
         harness.key_press(Key::Escape);

@@ -159,7 +159,7 @@ impl OpenDialog for Native<'_> {
             }
             Pick::Folder | Pick::Locate(_) => {
                 let title = match pick {
-                    Pick::Locate(_) => "browse-locate-title",
+                    Pick::Locate(_) => "collections-locate-title",
                     _ => "open-folder-title",
                 };
                 dialog = dialog.set_title(tr(self.ctx, title));

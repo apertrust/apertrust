@@ -14,25 +14,25 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! The top panel (`docs/gui.md`, The top panel): at its start, on Windows and Linux, the
-//! menu button, ☰, which opens the menus ([`TopPanel::menu_button`], decision 39), then the
+//! The Toolbar (`docs/gui.md`, The Toolbar): at its start, on Windows and Linux, the
+//! menu button, ☰, which opens the menus ([`Toolbar::menu_button`], decision 39), then the
 //! mark, a button that opens About, and the common actions, Import, Export, Reset, Undo
 //! and Redo, then after a gap Copy edit and Apply edit; at its end, when the app asks, the
-//! jobs spinner ([`TopPanel::jobs`]), then the edit's save state ([`SaveState`]), which
+//! jobs spinner ([`Toolbar::jobs`]), then the edit's save state ([`SaveState`]), which
 //! shows only when a save goes wrong. Each sits in a slot of its own, as wide as its widest
 //! form at the fold, kept whether it shows anything or not, so neither ever moves anything.
 //! Each tooltip carries its action's keys, which the app's actions registry gives.
 //! As it narrows it gives way one step at a time ([`Fold`]), always keeping empty panel to
 //! move the window by.
 //!
-//! It runs to the window's top edge and is the window's title bar ([`TopPanel::title_bar`];
+//! It runs to the window's top edge and is the window's title bar ([`Toolbar::title_bar`];
 //! `docs/gui.md`, The window frame and menus, decision 39): it keeps room at its start for
 //! the window's own buttons where the system draws them there, as macOS does
-//! ([`TopPanel::start_inset`]), and reports a drag starting or a double-click on its empty
+//! ([`Toolbar::start_inset`]), and reports a drag starting or a double-click on its empty
 //! areas, the same on every platform, for the app to move the window or do what the
 //! system does on a double-click, and a right-click there, for the window's menu. It
 //! draws the caption buttons Windows and Linux need, minimise, maximise or restore and
-//! close, at its very end when asked ([`TopPanel::caption_buttons`]). It knows nothing of
+//! close, at its very end when asked ([`Toolbar::caption_buttons`]). It knows nothing of
 //! platforms: the app says whether it is the title bar, how much room the system's
 //! buttons take, whether to draw its own and whether the window is maximised.
 
@@ -46,12 +46,12 @@ use super::{IconButton, Jobs, ToolButton, focus_ring, pull_down, report_shortcut
 use crate::i18n::Args;
 use crate::{Icon, popup, theme, tr, translator};
 
-/// What the user did to the top panel this frame.
+/// What the user did to the Toolbar this frame.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum TopPanelAction {
-    /// The ☰ ([`TopPanel::menu_button`]), pressed or given ↓ while its menu is closed: the
-    /// menus should open, hung from [`TopPanel::menu_anchor`] as the popup
-    /// [`TopPanel::menu_popup`].
+pub enum ToolbarAction {
+    /// The ☰ ([`Toolbar::menu_button`]), pressed or given ↓ while its menu is closed: the
+    /// menus should open, hung from [`Toolbar::menu_anchor`] as the popup
+    /// [`Toolbar::menu_popup`].
     Menu,
     /// The mark: About Apertrust.
     About,
@@ -71,13 +71,13 @@ pub enum TopPanelAction {
     /// An empty part of the panel right-clicked, where the panel is the title bar: the
     /// window's menu should open.
     WindowMenu,
-    /// The jobs spinner ([`TopPanel::jobs`]): the jobs window should open, or come to the
+    /// The jobs spinner ([`Toolbar::jobs`]): the jobs window should open, or come to the
     /// front.
     Jobs,
     /// The save warning ([`SaveState::Failed`]): why the edit is not saved should show,
     /// with Try again.
     NotSaved,
-    /// The caption buttons ([`TopPanel::caption_buttons`]): minimise the window.
+    /// The caption buttons ([`Toolbar::caption_buttons`]): minimise the window.
     Minimise,
     /// Maximise the window, or restore it where it is maximised.
     MaximiseOrRestore,
@@ -130,12 +130,12 @@ pub enum SaveState<'a> {
 }
 
 #[derive(Default)]
-pub struct TopPanel<'a> {
+pub struct Toolbar<'a> {
     available: Available,
     saved: SaveState<'a>,
     jobs: Option<Jobs<'a>>,
     undo_tip: Option<&'a str>,
-    shortcuts: Vec<(TopPanelAction, &'a str)>,
+    shortcuts: Vec<(ToolbarAction, &'a str)>,
     start_inset: f32,
     menu: bool,
     title_bar: bool,
@@ -153,8 +153,8 @@ const EMPTY: f32 = 24.0;
 /// The room beyond its own width a step needs to be undone, so a resize never flickers.
 const SPARE: f32 = 16.0;
 
-/// How far the panel gives way to its width, one step at a time (`docs/gui.md`, The top
-/// panel, Narrowing). The ☰ and the mark never fold.
+/// How far the panel gives way to its width, one step at a time (`docs/gui.md`, The
+/// Toolbar, Narrowing). The ☰ and the mark never fold.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum Fold {
     /// Everything shown: Import, Export and Reset with their words.
@@ -179,11 +179,11 @@ impl Fold {
     ];
 
     /// Whether `action` is under ⋯.
-    fn hides(self, action: TopPanelAction) -> bool {
+    fn hides(self, action: ToolbarAction) -> bool {
         match self {
             Fold::None | Fold::Words => false,
             Fold::Actions | Fold::Status => {
-                !matches!(action, TopPanelAction::Undo | TopPanelAction::Redo)
+                !matches!(action, ToolbarAction::Undo | ToolbarAction::Redo)
             }
             Fold::Undo => true,
         }
@@ -196,7 +196,7 @@ struct Common {
     /// Its translated name; Undo's says what it would undo.
     name: String,
     enabled: bool,
-    action: TopPanelAction,
+    action: ToolbarAction,
 }
 
 impl Common {
@@ -205,14 +205,14 @@ impl Common {
     fn has_words(&self) -> bool {
         matches!(
             self.action,
-            TopPanelAction::Import | TopPanelAction::Export | TopPanelAction::Reset
+            ToolbarAction::Import | ToolbarAction::Export | ToolbarAction::Reset
         )
     }
 }
 
-impl<'a> TopPanel<'a> {
+impl<'a> Toolbar<'a> {
     pub fn new() -> Self {
-        TopPanel::default()
+        Toolbar::default()
     }
 
     /// Keeps `points` clear at the panel's start, in place of its margin there: room for
@@ -225,8 +225,8 @@ impl<'a> TopPanel<'a> {
 
     /// Draws the menu button, ☰, first, before the mark, where the system has no menu bar:
     /// on Windows and Linux (decision 39). It never folds. Pressed, or given ↓, it reports
-    /// [`TopPanelAction::Menu`] for the app to open the menus as the popup
-    /// [`TopPanel::menu_popup`]; it is drawn on while that popup hangs from it, and a press
+    /// [`ToolbarAction::Menu`] for the app to open the menus as the popup
+    /// [`Toolbar::menu_popup`]; it is drawn on while that popup hangs from it, and a press
     /// then closes it. Off by default.
     pub fn menu_button(mut self, on: bool) -> Self {
         self.menu = on;
@@ -235,21 +235,21 @@ impl<'a> TopPanel<'a> {
 
     /// The popup the ☰'s menu opens as ([`popup::open`]).
     pub fn menu_popup() -> Id {
-        Id::unique("apertrust-ui top panel menu")
+        Id::unique("apertrust-ui toolbar menu")
     }
 
-    /// The ☰'s rectangle as last drawn, for the menu to hang from; None before a top panel
+    /// The ☰'s rectangle as last drawn, for the menu to hang from; None before a Toolbar
     /// has drawn one.
     pub fn menu_anchor(ctx: &egui::Context) -> Option<Rect> {
         ctx.data(|d| d.get_temp(menu_anchor_id()))
     }
 
     /// Makes the panel the window's title bar: a drag that starts on an empty part of it
-    /// reports [`TopPanelAction::MoveWindow`] once it has moved, never on the press, so a
-    /// double-click stays one and reports [`TopPanelAction::TitleBarDoubleClick`]. Its
+    /// reports [`ToolbarAction::MoveWindow`] once it has moved, never on the press, so a
+    /// double-click stays one and reports [`ToolbarAction::TitleBarDoubleClick`]. Its
     /// buttons, the mark among them, take their presses as before; the status slots count
     /// as empty but for the save warning and the spinner.
-    /// A right-click on an empty part reports [`TopPanelAction::WindowMenu`].
+    /// A right-click on an empty part reports [`ToolbarAction::WindowMenu`].
     pub fn title_bar(mut self, on: bool) -> Self {
         self.title_bar = on;
         self
@@ -257,8 +257,8 @@ impl<'a> TopPanel<'a> {
 
     /// Draws the window's caption buttons at the panel's very end, after a group's gap,
     /// where the system draws none: minimise, maximise or restore, and close, each as tall
-    /// as the panel and 46 points wide. Their clicks report [`TopPanelAction::Minimise`],
-    /// [`TopPanelAction::MaximiseOrRestore`] and [`TopPanelAction::Close`]. Off by
+    /// as the panel and 46 points wide. Their clicks report [`ToolbarAction::Minimise`],
+    /// [`ToolbarAction::MaximiseOrRestore`] and [`ToolbarAction::Close`]. Off by
     /// default.
     pub fn caption_buttons(mut self, on: bool) -> Self {
         self.caption_buttons = on;
@@ -279,7 +279,7 @@ impl<'a> TopPanel<'a> {
 
     /// The save state, at the panel's very end. Its slot is kept at its widest at every
     /// state, so it never moves the fold or the spinner. A press of the save warning comes
-    /// back as [`TopPanelAction::NotSaved`].
+    /// back as [`ToolbarAction::NotSaved`].
     pub fn saved(mut self, saved: SaveState<'a>) -> Self {
         self.saved = saved;
         self
@@ -287,7 +287,7 @@ impl<'a> TopPanel<'a> {
 
     /// Draws the jobs spinner before the save state while there are jobs to show, and keeps
     /// its live region in the tree, empty while there are none. Its press comes back as
-    /// [`TopPanelAction::Jobs`]. Its slot is kept with or without jobs, a group's gap before
+    /// [`ToolbarAction::Jobs`]. Its slot is kept with or without jobs, a group's gap before
     /// the save state's, so neither moves the other or anything else. The spinner has no
     /// words, so it never folds. Off by default.
     pub fn jobs(mut self, jobs: Jobs<'a>) -> Self {
@@ -303,17 +303,17 @@ impl<'a> TopPanel<'a> {
 
     /// The keys that run `action`, in the platform's spelling (`Ctrl+E`), for its tooltip;
     /// the app's actions registry handles them.
-    pub fn shortcut(mut self, action: TopPanelAction, keys: &'a str) -> Self {
+    pub fn shortcut(mut self, action: ToolbarAction, keys: &'a str) -> Self {
         self.shortcuts.push((action, keys));
         self
     }
 
-    pub fn show(self, ui: &mut Ui) -> Option<TopPanelAction> {
+    pub fn show(self, ui: &mut Ui) -> Option<ToolbarAction> {
         let t = theme(ui.ctx());
         let ctx = ui.ctx().clone();
         let (bar, response) =
-            ui.allocate_exact_size(vec2(ui.available_width(), t.sizes.top_bar), Sense::hover());
-        let toolbar_name = tr(&ctx, "top-panel");
+            ui.allocate_exact_size(vec2(ui.available_width(), t.sizes.toolbar), Sense::hover());
+        let toolbar_name = tr(&ctx, "toolbar");
         response.widget_info(|| WidgetInfo::labeled(Role::Toolbar, true, &toolbar_name));
         ui.painter().rect_filled(bar, 0.0, t.colors.surface);
         ui.painter().hline(
@@ -329,7 +329,7 @@ impl<'a> TopPanel<'a> {
             response.clicked()
         };
         let shortcuts = &self.shortcuts;
-        let keys = |action: TopPanelAction| {
+        let keys = |action: ToolbarAction| {
             shortcuts
                 .iter()
                 .find(|(a, _)| *a == action)
@@ -354,33 +354,33 @@ impl<'a> TopPanel<'a> {
                 Icon::Import,
                 "action-import",
                 a.import,
-                TopPanelAction::Import,
+                ToolbarAction::Import,
             ),
             (
                 Icon::Export,
                 "action-export",
                 a.export,
-                TopPanelAction::Export,
+                ToolbarAction::Export,
             ),
-            (Icon::Reset, "action-reset", a.reset, TopPanelAction::Reset),
-            (Icon::Undo, "action-undo", a.undo, TopPanelAction::Undo),
-            (Icon::Redo, "action-redo", a.redo, TopPanelAction::Redo),
+            (Icon::Reset, "action-reset", a.reset, ToolbarAction::Reset),
+            (Icon::Undo, "action-undo", a.undo, ToolbarAction::Undo),
+            (Icon::Redo, "action-redo", a.redo, ToolbarAction::Redo),
             (
                 Icon::Copy,
                 "action-copy-edit",
                 a.copy,
-                TopPanelAction::CopyEdit,
+                ToolbarAction::CopyEdit,
             ),
             (
                 Icon::Apply,
                 "action-apply-edit",
                 a.apply,
-                TopPanelAction::ApplyEdit,
+                ToolbarAction::ApplyEdit,
             ),
         ]
         .map(|(icon, id, enabled, action)| Common {
             icon,
-            name: if action == TopPanelAction::Undo {
+            name: if action == ToolbarAction::Undo {
                 undo.clone()
             } else {
                 tr(&ctx, id)
@@ -399,7 +399,7 @@ impl<'a> TopPanel<'a> {
             // After the mark, and after the ☰ the same.
             let mut spaces = t.spacing.s * if self.menu { 2.0 } else { 1.0 };
             for c in common.iter().filter(|c| !fold.hides(c.action)) {
-                if c.action == TopPanelAction::CopyEdit {
+                if c.action == ToolbarAction::CopyEdit {
                     spaces += t.spacing.xl - gap;
                 }
                 let words = c.has_words() && fold == Fold::None;
@@ -441,11 +441,11 @@ impl<'a> TopPanel<'a> {
             |ui| {
                 ui.spacing_mut().item_spacing.x = gap;
                 if self.menu {
-                    let (button, press) = menu_button(ui, keys(TopPanelAction::Menu));
+                    let (button, press) = menu_button(ui, keys(ToolbarAction::Menu));
                     pressed(button);
                     match press {
-                        Some(MenuPress::Open) => action = Some(TopPanelAction::Menu),
-                        Some(MenuPress::Close) => popup::close(&ctx, TopPanel::menu_popup()),
+                        Some(MenuPress::Open) => action = Some(ToolbarAction::Menu),
+                        Some(MenuPress::Close) => popup::close(&ctx, Toolbar::menu_popup()),
                         None => {}
                     }
                     // As far from the mark as the mark is from Import.
@@ -453,14 +453,14 @@ impl<'a> TopPanel<'a> {
                 }
                 // The mark, in secondary text so it isn't read as the first of the actions.
                 let about = tr(&ctx, "action-about");
-                let mark = mark(ui, &about, keys(TopPanelAction::About));
+                let mark = mark(ui, &about, keys(ToolbarAction::About));
                 if pressed(mark) {
-                    action = Some(TopPanelAction::About);
+                    action = Some(ToolbarAction::About);
                 }
                 ui.add_space(t.spacing.s);
                 for c in common.iter().filter(|c| !fold.hides(c.action)) {
                     // Copy edit and Apply edit are a group of their own.
-                    if c.action == TopPanelAction::CopyEdit {
+                    if c.action == ToolbarAction::CopyEdit {
                         ui.add_space(t.spacing.xl - gap);
                     }
                     let response = if c.has_words() && fold == Fold::None {
@@ -476,13 +476,13 @@ impl<'a> TopPanel<'a> {
                     }
                 }
                 if common.iter().any(|c| fold.hides(c.action)) {
-                    let more = IconButton::new(Icon::Options, &tr(&ctx, "top-panel-more"))
+                    let more = IconButton::new(Icon::Options, &tr(&ctx, "toolbar-more"))
                         .size(BUTTON)
                         .show(ui);
                     pressed(more.clone());
                     // Each with its keys, and disabled where it can't run. Screen readers
                     // hear its name, and the keys as its shortcut, as on every control.
-                    let name = tr(&ctx, "top-panel-more");
+                    let name = tr(&ctx, "toolbar-more");
                     let chosen = pull_down(ui, &more, &name, || {
                         common
                             .iter()
@@ -520,7 +520,7 @@ impl<'a> TopPanel<'a> {
         if let Some(button) = save.inner
             && pressed(button)
         {
-            action = Some(TopPanelAction::NotSaved);
+            action = Some(ToolbarAction::NotSaved);
         }
 
         // Before it: the jobs spinner, in its own slot, a group's gap before.
@@ -537,7 +537,7 @@ impl<'a> TopPanel<'a> {
                     if let Some(spinner) = jobs.spinner(ui)
                         && pressed(spinner)
                     {
-                        action = Some(TopPanelAction::Jobs);
+                        action = Some(ToolbarAction::Jobs);
                     }
                 },
             );
@@ -562,10 +562,10 @@ impl<'a> TopPanel<'a> {
                             Icon::Minimise,
                             "window-minimise",
                             false,
-                            TopPanelAction::Minimise,
+                            ToolbarAction::Minimise,
                         ),
-                        (icon, middle, false, TopPanelAction::MaximiseOrRestore),
-                        (Icon::Close, "window-close", true, TopPanelAction::Close),
+                        (icon, middle, false, ToolbarAction::MaximiseOrRestore),
+                        (Icon::Close, "window-close", true, ToolbarAction::Close),
                     ] {
                         if pressed(caption_button(ui, icon, &tr(&ctx, id), close, &t)) {
                             action = Some(done);
@@ -701,7 +701,7 @@ impl SaveSlot {
 
 /// What the save state's live region says now: "Not saved: …" with the reason once a write
 /// fails, "Saved" once one succeeds after a failure, kept until the next, so nothing is
-/// heard on every save. A photo left with its write failed is the central panel's to tell.
+/// heard on every save. A photo left with its write failed is the Viewer's to tell.
 fn announce(ui: &Ui, state: SaveState<'_>, because: &dyn Fn(&str) -> String) -> String {
     let id = ui.scope_id().with("save heard");
     let mut heard: SaveHeard = ui.data(|d| d.get_temp(id)).unwrap_or_default();
@@ -733,7 +733,7 @@ enum MenuPress {
 }
 
 fn menu_anchor_id() -> Id {
-    Id::unique("apertrust-ui top panel menu anchor")
+    Id::unique("apertrust-ui toolbar menu anchor")
 }
 
 /// The ☰, with `keys` in its tooltip: a button that opens a menu, drawn on while the menu
@@ -744,8 +744,8 @@ fn menu_button(ui: &mut Ui, keys: Option<&str>) -> (egui::Response, Option<MenuP
     // Where the button goes, the next in its row, as the menu was hung from it.
     let room = ui.available_rect_before_wrap();
     let centre = pos2(room.left() + BUTTON / 2.0, room.center().y);
-    let open = popup::anchor(&ctx, TopPanel::menu_popup()).is_some_and(|a| a.contains(centre));
-    let name = tr(&ctx, "top-panel-menu");
+    let open = popup::anchor(&ctx, Toolbar::menu_popup()).is_some_and(|a| a.contains(centre));
+    let name = tr(&ctx, "toolbar-menu");
     let mut button = icon_button(Icon::Menu, &name, keys).size(BUTTON);
     if open {
         button = button.toggled(true);
@@ -781,12 +781,7 @@ fn menu_button(ui: &mut Ui, keys: Option<&str>) -> (egui::Response, Option<MenuP
 /// Read from the pointer, not from a widget under the panel's controls, which would take
 /// from each the margin within which egui gives a near press to the closest control: a
 /// press within that margin is the control's, never the title bar's.
-fn title_bar_gesture(
-    ui: &Ui,
-    bar: Rect,
-    id: egui::Id,
-    controls: &[Rect],
-) -> Option<TopPanelAction> {
+fn title_bar_gesture(ui: &Ui, bar: Rect, id: egui::Id, controls: &[Rect]) -> Option<ToolbarAction> {
     let margin = ui.style().interaction.interact_radius;
     let layer = ui.layer_id();
     // On the panel, under no popup over it, and off every control, a disabled one too.
@@ -819,11 +814,11 @@ fn title_bar_gesture(
     // A double-click's clicks are close together, egui counts them so, and each lands
     // where it was pressed.
     if double && at.is_some_and(is_empty) {
-        return Some(TopPanelAction::TitleBarDoubleClick);
+        return Some(ToolbarAction::TitleBarDoubleClick);
     }
     // A right-click, on its release as egui's context menus open, where it was let go.
     if menu && at.is_some_and(is_empty) {
-        return Some(TopPanelAction::WindowMenu);
+        return Some(ToolbarAction::WindowMenu);
     }
     // egui lets go of a press's target once it moves, so where it began is asked of the
     // panel.
@@ -832,7 +827,7 @@ fn title_bar_gesture(
         && !ui.data(|d| d.get_temp::<bool>(reported).unwrap_or(false))
     {
         ui.data_mut(|d| d.insert_temp(reported, true));
-        return Some(TopPanelAction::MoveWindow);
+        return Some(ToolbarAction::MoveWindow);
     }
     None
 }
@@ -840,7 +835,7 @@ fn title_bar_gesture(
 /// One of the window's caption buttons, 46 points wide and as tall as `ui` has room for:
 /// no corners, `hover` behind it under the pointer, or, for `close`, the close button's
 /// red with its own icon colour. The focus ring is drawn inside, since the button meets
-/// the window's edges. The top panel draws minimise, maximise and close with it, and the
+/// the window's edges. The Toolbar draws minimise, maximise and close with it, and the
 /// dialog host a dialog's close where it draws the window's frame.
 pub fn caption_button(
     ui: &mut Ui,

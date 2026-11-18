@@ -137,7 +137,7 @@ pub enum Reset {
     /// The utility's own, `UtilityTool::reset` in the app, named `<id>-reset`, as Export's
     /// Default settings.
     Own,
-    /// No ↺, as Scopes' and Browse's headers have none.
+    /// No ↺, as Scopes' and Collections' headers have none.
     None,
 }
 
@@ -187,10 +187,10 @@ pub struct ProcessingDefinition {
 /// pickers, a reference row, or a preset row's option that turns it on
 /// ([`PresetRow::pickers`]).
 ///
-/// Its words come with its button and the central bar (`docs/pickers.md`, The picker
+/// Its words come with its button and the viewer bar (`docs/pickers.md`, The picker
 /// button, On the photo), in the controls' and actions' scheme:
 /// `tool-<tool>-picker-<id>-label`, its name; `-full`, what screen readers say;
-/// `-promise`, its tooltip; and, for a point picker, `-what`, the central bar's sentence
+/// `-promise`, its tooltip; and, for a point picker, `-what`, the viewer bar's sentence
 /// ([`crate::messages::picker`]). A picker whose words follow a setting
 /// ([`Picker::words_by`]) has, in place of `-promise`, `-promise-<option>` and
 /// `-hint-<option>` for each of its options. [`crate::messages::of`] implies them.
@@ -233,9 +233,10 @@ pub struct Picker {
 /// list is closed: the app's other places, as the surround's, hold the app's items alone.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Place {
-    /// The photo in the central panel.
+    /// The photo in the Viewer.
     Photo,
-    /// A thumbnail: a cell of the grid panel, or of Photo while several photos show.
+    /// A thumbnail: a cell of the Browser, or a thumbnail in the Viewer's Photo layout while it
+    /// shows several photos.
     Thumbnail,
     /// The tool's own options, ⋯, in its own section only.
     Options,
@@ -1117,11 +1118,12 @@ pub enum Widget {
     /// Scopes' graph with its buttons (decision 93): which graph, the scale, the channels
     /// and the clipping toggles are the graph's own state, kept in the app's settings.
     Scopes,
-    /// Browse's top line: what is open, the recents to choose from, and ＋ (decision 93).
-    Recents,
-    /// Browse's Folders: its group, holding the open folder's tree in a list that scrolls
-    /// under the top line, so Browse keeps its height (decision 93).
-    Folders,
+    /// Collections' top line: what is open, the recents to choose from, and ＋ (decision
+    /// 93).
+    CollectionsTopLine,
+    /// Collections' Folders: its group, holding the open folder's tree in a list that
+    /// scrolls under the top line, so Collections keeps its height (decision 93).
+    CollectionsGroups,
     /// Export's Target storage, File on disk the one that can be chosen until the other
     /// storages come, with no setting yet (decision 93).
     ExportStorage,
@@ -1145,8 +1147,8 @@ impl Widget {
         match self {
             Widget::History
             | Widget::Scopes
-            | Widget::Recents
-            | Widget::Folders
+            | Widget::CollectionsTopLine
+            | Widget::CollectionsGroups
             | Widget::ExportStorage
             | Widget::ExportPath
             | Widget::ExportSize
@@ -2626,8 +2628,8 @@ mod tests {
         for widget in [
             Widget::Scopes,
             Widget::History,
-            Widget::Recents,
-            Widget::Folders,
+            Widget::CollectionsTopLine,
+            Widget::CollectionsGroups,
         ] {
             let rows = Box::leak(Box::new([Row::Custom {
                 widget,

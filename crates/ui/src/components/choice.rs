@@ -563,7 +563,7 @@ impl<'a> Choice<'a> {
 }
 
 /// A Boxed choice's box alone, as wide as the caller gives it, which the caller hangs a
-/// list of its own from with [`pull_down`](super::pull_down): Browse's top line, whose
+/// list of its own from with [`pull_down`](super::pull_down): Collections' top line, whose
 /// list holds submenus a [`Choice`]'s cannot. It looks as the Boxed row's box does: the
 /// sunken field, its text in the small size after an icon where it has one, ⌄ at its end,
 /// the focus ring round it, and no band under the pointer; to screen readers a combo box

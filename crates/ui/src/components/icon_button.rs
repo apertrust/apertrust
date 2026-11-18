@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! A button that is only an icon: a section's header buttons, the top panel's actions, a
+//! A button that is only an icon: a section's header buttons, the Toolbar's actions, a
 //! slider's quad. Its name is its tooltip and what screen readers say; the keys that run
 //! it, given by the app's actions registry, follow the name in the tooltip and are
 //! reported to screen readers as its shortcut.
@@ -85,7 +85,7 @@ impl<'a> IconButton<'a> {
     }
 
     /// The tooltip, translated, in place of the name: a button whose tooltip says more,
-    /// as the grid bar's Sort names the order ("Sort: capture time, ascending").
+    /// as the browser bar's Sort names the order ("Sort: capture time, ascending").
     pub fn tip(mut self, tip: &'a str) -> Self {
         self.tip = Some(tip);
         self
@@ -271,7 +271,7 @@ impl<'a> ToolButton<'a> {
             egui::FontId::proportional(t.text.body),
             colour,
         );
-        let size = vec2(self.width_of(galley.size().x, &t), t.sizes.top_bar - 14.0);
+        let size = vec2(self.width_of(galley.size().x, &t), t.sizes.toolbar - 14.0);
         let sense = if enabled {
             Sense::click()
         } else {

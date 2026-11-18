@@ -291,7 +291,7 @@ pub fn short_black(tool: &str, picker: &str) -> String {
 }
 
 /// A picker's words over the photo where they are its own and follow no setting: the
-/// central bar's name of it, `tool-<tool>-picker-<picker>-hint`, as the reference row's
+/// viewer bar's name of it, `tool-<tool>-picker-<picker>-hint`, as the reference row's
 /// picker's "Drag over the area to keep as the reference" (decision 88).
 pub fn picker_hint(tool: &str, picker: &str) -> String {
     format!("tool-{tool}-picker-{picker}-hint")
@@ -317,8 +317,8 @@ pub fn computed(tool: &str, id: &str) -> [String; 2] {
     ["label", "promise"].map(|part| format!("tool-{tool}-computed-{id}-{part}"))
 }
 
-/// A colour picker's name, full name, promise and, for one that takes a point, the central
-/// bar's sentence ([`crate::Picker`]): `tool-<tool>-picker-<picker>-label`, `-full`,
+/// A colour picker's name, full name, promise and, for one that takes a point, the
+/// viewer bar's sentence ([`crate::Picker`]): `tool-<tool>-picker-<picker>-label`, `-full`,
 /// `-promise` and `-what`.
 pub fn picker(tool: &str, picker: &str) -> [String; 4] {
     ["label", "full", "promise", "what"].map(|part| format!("tool-{tool}-picker-{picker}-{part}"))
@@ -332,7 +332,7 @@ pub fn picker_option(tool: &str, picker: &str, part: &str, option: &str) -> Stri
     format!("tool-{tool}-picker-{picker}-{part}-{option}")
 }
 
-/// The words of `picker` of `definition` that its button and the central bar use, of
+/// The words of `picker` of `definition` that its button and the viewer bar use, of
 /// [`picker`]'s: its promise and full name, or where its words follow a setting a promise
 /// and a hint for each of the setting's options ([`picker_option`]), the promise being its
 /// button's name too, the action; its name
@@ -419,7 +419,7 @@ pub fn unit_value(unit: Unit) -> String {
 /// option, each view's coordinate's label, full name and promise, as a control's, each
 /// preset row's label, full name, promise and options, each unit it uses, Custom if it
 /// has a preset row, the patches' words if it has patches, a reference row's if it has
-/// one, and each picker's words its button and the central bar use ([`picker_words`]),
+/// one, and each picker's words its button and the viewer bar use ([`picker_words`]),
 /// then, where it has darktable's facts, its kind's and what it works on, and each of
 /// darktable's lines.
 pub fn of(definition: &ProcessingDefinition) -> Vec<String> {

@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! Interaction tests for the section frame and the side panel's tab bar, driven through
+//! Interaction tests for the section frame and the Tools panel's tab bar, driven through
 //! AccessKit (`docs/gui.md`, Testing).
 
 use apertrust_ui::components::{
@@ -384,7 +384,7 @@ fn a_tab_with_nothing_behind_it_is_disabled_and_says_so() {
     assert_eq!(*harness.state(), vec![SectionAction::Tab(2)]);
 }
 
-/// A tool section with `tabs`, at `width` in the side panel's body, and the tab chosen.
+/// A tool section with `tabs`, at `width` in the Tools panel's body, and the tab chosen.
 fn tabbed(tabs: Vec<String>, width: f32, locale: Locale) -> Harness<'static, usize> {
     Harness::builder()
         .with_size(egui::vec2(width + 40.0, 160.0))
@@ -484,11 +484,11 @@ fn tone_curve_tabs() -> Vec<String> {
         .to_vec()
 }
 
-/// At the side panel's 320 points Colour calibration's and the Tone curve's English tabs
+/// At the Tools panel's 320 points Colour calibration's and the Tone curve's English tabs
 /// are too wide with 8 points at each end: the padding gives way, all tabs alike, and
 /// every name stays whole.
 #[test]
-fn at_the_side_panel_s_usual_width_the_padding_gives_way_before_the_names() {
+fn at_the_tools_panel_s_usual_width_the_padding_gives_way_before_the_names() {
     for names in [calibration_tabs(Locale::EnGb), tone_curve_tabs()] {
         let mut wide = tabbed(names.clone(), 600.0, Locale::EnGb);
         wide.run();
@@ -515,12 +515,12 @@ fn at_the_side_panel_s_usual_width_the_padding_gives_way_before_the_names() {
     }
 }
 
-/// Colour calibration's seven tabs at the side panel's narrowest, 240 points: 4 points at
+/// Colour calibration's seven tabs at the Tools panel's narrowest, 240 points: 4 points at
 /// each end, the names sharing the rest in proportion to their widths, one after another
 /// on one row, each cut at its end with an ellipsis; a single letter, R, G or B, cannot be
 /// cut and stays whole in its tab.
 #[test]
-fn at_the_narrowest_side_panel_the_tabs_shrink_in_proportion_on_one_row() {
+fn at_the_narrowest_tools_panel_the_tabs_shrink_in_proportion_on_one_row() {
     for locale in [Locale::Uk, Locale::Pseudo] {
         let names = calibration_tabs(locale);
         let mut wide = tabbed(names.clone(), 600.0, locale);
@@ -797,10 +797,10 @@ fn a_tab_with_nothing_behind_it_cannot_be_chosen_and_says_it_is_to_come() {
     assert!(harness.state().2.is_empty());
 }
 
-/// Without names the tiles are 36 by 32 points, so the tab bar is as deep as the central
-/// bar beside it; with names they keep their 52.
+/// Without names the tiles are 36 by 32 points, so the tab bar is as deep as the
+/// viewer bar beside it; with names they keep their 52.
 #[test]
-fn without_names_the_tab_bar_is_as_deep_as_the_central_bar() {
+fn without_names_the_tab_bar_is_as_deep_as_the_viewer_bar() {
     for (names, expected) in [(false, None), (true, Some(52.0 + 4.0))] {
         let mut harness = Harness::builder()
             .with_size(egui::vec2(320.0, 120.0))
@@ -819,7 +819,7 @@ fn without_names_the_tab_bar_is_as_deep_as_the_central_bar() {
                     let top = ui.cursor().top();
                     let _ = TabBar::new(&tabs, 0, names).show(ui);
                     state.0 = ui.min_rect().bottom() - top;
-                    state.1 = apertrust_ui::components::CentralBar::height(ui.ctx());
+                    state.1 = apertrust_ui::components::ViewerBar::height(ui.ctx());
                 },
                 (0.0, 0.0),
             );
@@ -975,7 +975,7 @@ const TAB_IDS: [(Icon, &str); 7] = [
     (Icon::History, "tab-history"),
 ];
 
-/// The side panel's tabs, named in `locale`, in a panel wide enough to show all seven. A
+/// The Tools panel's tabs, named in `locale`, in a panel wide enough to show all seven. A
 /// disabled tab's name is measured and drawn as any other's, so every tab here can be
 /// chosen.
 fn named_tabs(locale: Locale) -> Harness<'static> {
@@ -1106,11 +1106,11 @@ fn tab_names_that_fit_keep_the_theme_s_size() {
     }
 }
 
-/// The longest Ukrainian tool title, Highlight reconstruction's, in a section at the side
-/// panel's narrowest, 240 points, with every button a header has: cut at its end before
-/// the buttons, and whole in its tooltip and to screen readers.
+/// The longest Ukrainian tool title, Highlight reconstruction's, in a section at the Tools
+/// panel's narrowest, 240 points, with every button a header has: cut at its end before the
+/// buttons, and whole in its tooltip and to screen readers.
 #[test]
-fn a_long_title_is_cut_before_the_header_s_buttons_at_the_narrowest_side_panel() {
+fn a_long_title_is_cut_before_the_header_s_buttons_at_the_narrowest_tools_panel() {
     let words = apertrust_ui::Translator::new(Locale::Uk);
     let title = words.text("tool-highlights-title");
     let shown = title.clone();
@@ -1348,7 +1348,7 @@ fn a_section_list_keeps_its_height_scrolls_and_floats_its_bar_in_the_end_margin(
     assert_eq!(end(&long), end(&short));
 }
 
-/// A section of `lines` labels in the side panel's body, its header drawn apart and kept
+/// A section of `lines` labels in the Tools panel's body, its header drawn apart and kept
 /// over the scrolling body where `apart`, else as any section.
 fn utility(lines: usize, apart: bool) -> Harness<'static> {
     Harness::builder()

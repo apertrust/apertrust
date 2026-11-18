@@ -24,7 +24,7 @@
 //! included, comes out oversaturated (the viewport spike). [`tag_window`] gives
 //! the layer its colour space back. Other platforms need nothing yet.
 //!
-//! On macOS the app's top bar is the window's title bar: [`place_window_buttons`] centres
+//! On macOS the app's Toolbar is the window's title bar: [`place_window_buttons`] centres
 //! the traffic lights in it, [`content_never_moves_window`] and [`start_window_drag`]
 //! leave moving the window to the app, [`title_bar_double_click`] reads what a
 //! double-click on it should do, and [`zoom_window`] zooms.

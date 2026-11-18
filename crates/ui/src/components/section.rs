@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! A section of the side panel: a tool, one that edits the photo or a utility such as
+//! A section of the Tools panel: a tool, one that edits the photo or a utility such as
 //! Scopes or History, which edits nothing.
 //!
 //! The header holds the chevron and the title, then the buttons, in the wireframe's order:
@@ -33,7 +33,7 @@
 //!
 //! A section given what it is for ([`Section::about`]) shows it in its header's tooltip,
 //! over the chevron, the title and the empty space, after the tooltips' delay at rest or
-//! with the header focused by a key, beside the side panel (`docs/gui.md`, The header's
+//! with the header focused by a key, beside the Tools panel (`docs/gui.md`, The header's
 //! tooltip); screen readers hear the same words as the header's description.
 
 use egui::{
@@ -554,7 +554,7 @@ pub fn section_body<R>(ui: &mut Ui, body: impl FnOnce(&mut Ui) -> R) -> R {
 /// is egui's floating one in the quiet bar's colours ([`super::quiet_scroll`]), drawn in
 /// the body's end margin ([`Section::body_margin`]), clear of the rows: hidden until the
 /// pointer is over the list and the content is taller than it, then a thin thumb on its
-/// `sunken` track, as wide as the side panel's under the pointer and while dragged. Call
+/// `sunken` track, as wide as the Tools panel's under the pointer and while dragged. Call
 /// it inside a section's body; `id_salt` tells it from another list there.
 pub fn section_list<R>(
     ui: &mut Ui,

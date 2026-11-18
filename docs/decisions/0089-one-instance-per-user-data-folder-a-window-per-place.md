@@ -50,7 +50,7 @@ A second start with no paths, as a launcher's click on Windows or Linux, brings 
 | Open | Goes to |
 | --- | --- |
 | From outside: Open With, a double-click, a drop on the Mac's Dock icon, a second start's paths | A new window, by default; with the setting `library.open_in` at `current_window`, the key window, its place replaced |
-| From inside a window: Open…, Open Folder…, Open Recent, the start window, Browse, Open This Folder, a drop on the window | That window, its place replaced, as now |
+| From inside a window: Open…, Open Folder…, Open Recent, the start window, Collections, Open This Folder, a drop on the window | That window, its place replaced, as now |
 | A place already open, from outside or inside, whatever `library.open_in` says | That window, brought forward, never its place replaced into another |
 | File › New Window (Ctrl+N) | A new start window |
 
@@ -82,7 +82,7 @@ A different `--user-data-dir` is a **separate instance, not a separate applicati
 
 - **The app** owns the settings store, the recents (`state.toml`), the jobs' mirror and a registry of windows. **Each window** has its place, its session, its layout state, its egui context, its AccessKit adapter and its surface.
 - **The engine:** one engine thread per device serves every window's session. Each turn it takes every session's commands, renders the key window's live frame first, then one bounded submission of background work across sessions. A window that is not the key window shows stills only: its active photo as its still, live again once its window is the key window. One live photo in the process, [0037](0037-one-view-the-photos-tab.md)'s setting. The memory budget ([0012](0012-planning-regions-scale-and-cache-points.md)), the compiled kernels and the job control are the process's.
-- **Settings** are written once, by the app's store, and sent to every window and session. What a window remembers of its layout (the side panel's width and tab, the grid panel, its placement) is its own as it changes, the last change written as the next window's default, never pushed to the other windows open. A new window cascades from the key window.
+- **Settings** are written once, by the app's store, and sent to every window and session. What a window remembers of its layout (the Tools panel's width and tab, the Browser, its placement) is its own as it changes, the last change written as the next window's default, never pushed to the other windows open. A new window cascades from the key window.
 - **Menus** ([0039](0039-one-top-bar-native-menus-on-the-mac-one-menu-button-elsewhere.md)): on macOS one menu bar acting on the key window, File › New Window, and the Window menu listing every window by its title, Cmd+` cycling them as AppKit does; on Windows and Linux a ☰ in each window, acting on that window.
 - **Dialogs and alerts** ([0041](0041-dialogs-as-native-modal-windows.md)) are parented to the window they rise from, one dialog at a time per window. Settings and the jobs window stay one each, the jobs' rows labelled with their place; asked for from another window, each comes forward where it is.
 - **The host:** main windows move from eframe's single root to the app's own winit, egui-winit and egui-wgpu host, as the dialog host's windows already are, with an AccessKit adapter per window and the submit gate held round each window's callbacks ([0018](0018-one-submit-gate-for-the-engine-and-the-window.md)). A spike measures it before it is committed to; a miss reopens this part.

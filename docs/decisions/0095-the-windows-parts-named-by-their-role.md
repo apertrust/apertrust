@@ -19,7 +19,7 @@ What constrains the rename:
 
 ## Decision
 
-Planned, in one rename pull request (below, The steps); until it lands, the window's parts keep their old names everywhere but this record.
+Built, in one rename pull request (below, The steps).
 
 ### The names
 
@@ -32,7 +32,7 @@ Planned, in one rename pull request (below, The steps); until it lands, the wind
 | The Photos tab's first tool | **Collections** | Browse | Choosing what the Browser shows ([0073](0073-the-photos-tabs-tools-browse-first-filters-in-folder-mode.md)) |
 
 - **The bars follow their parts:** the viewer bar (was the central bar) and the browser bar (was the grid bar). A cell stays a cell, the Browser being a grid of them; the tab bar, sections, the caption and floating panels keep their names. "Panel" stays the kind: the panels are the window's main regions, bars the strips inside them.
-- **Written as names,** capitalised as the tabs and tools are: the Toolbar, the Viewer, the Browser, Collections. In a list of the parts, View › Panels and the regions F6 visits and screen readers name, the panel of tools is **Tools**; in prose, and in a label where "Tools" alone would read as the tools themselves, it is **the Tools panel** ("Tools panel width"). The bars are written in lower case.
+- **Written as names,** capitalised as the tabs and tools are: the Toolbar, the Viewer, the Browser, Collections. In a list of the parts, View › Panels and the regions F6 visits and screen readers name, the panel of tools is **Tools** (the region's name for screen readers planned: today they hear its tab list, "Tools panel tabs", and its edge, "Tools panel width"); in prose, and in a label where "Tools" alone would read as the tools themselves, it is **the Tools panel** ("Tools panel width"). The bars are written in lower case.
 - **"Browser" alone is the part.** A web browser is written "web browser" wherever the two could be confused.
 - **Collections** fits every mode: a folder's tree in folder mode, and Folders, Albums and Smart albums in a library or a project. darktable's module that chooses what its lighttable and filmstrip show is collections (`src/libs/collect.c`), and the docs already call any set of photos the tool chooses a collection. Folder, Album and Smart album stay the interface's words for what it holds; "collection" in lower case stays the code's and the docs' word for a set.
 - **The start window's Browse…** is a verb, finding a library's or a project's file, and keeps its word.
@@ -131,8 +131,8 @@ Every identifier that names a part's old name follows its new name; "panel" alon
 
 ### The steps
 
-1. **This decision,** with decision 37's paragraph naming the parts, the index, the roadmap and AGENTS.md, all marked planned; until step 2 lands, the code, the interface's words and every other doc, the other decision records included, keep the old names, which the tables above map.
-2. **One rename pull request,** planned, so no nightly build sits between renamed keys and their migration, in commits by layer, each building and passing its tests:
+1. **This decision,** with decision 37's paragraph naming the parts, the index, the roadmap and AGENTS.md.
+2. **One rename pull request,** built, so no nightly build sits between renamed keys and their migration, in commits by layer, each building and passing its tests:
    1. the code's identifiers;
    2. the words and their Fluent ids in en-GB, en-US, uk and pl;
    3. the settings keys, the action ids and Browse's id, with the migration to version 2 and its test;
@@ -173,11 +173,9 @@ Then the UI wireframe's boards, and the agent kit's `ui-conventions` and `deskto
 
 ## Consequences
 
-Each of these is planned, with the rename pull request:
-
 - **[0037](0037-one-view-the-photos-tab.md)** names the parts by their role, and its words add Collections and the parts' names, "collection" staying the code's and the docs' word for a set.
 - **[0073](0073-the-photos-tabs-tools-browse-first-filters-in-folder-mode.md):** Collections is the Photos tab's first tool, its id `collections`, View › Collections (`show-collections`, L); Browse is among the options it rejects.
-- **The records that name the parts say the new names once the rename lands,** in its docs commit: 4, 38, 39, 43, 46, 57, 69, 77, 78, 79, 81, 83, 85, 86, 88, 89, 90, 91, 92, 93 and 94, their code names this decision's. The titles of 38, 39, 73, 83 and 92 change; their files keep their names, so every link stays.
+- **The records that named the parts say the new names:** 4, 38, 39, 43, 46, 57, 69, 77, 78, 79, 81, 83, 85, 86, 88, 89, 90, 91, 92, 93 and 94, their code names this decision's. The titles of 38, 39, 73, 83 and 92 change; their files keep their names, so every link stays.
 - **The settings store** gains its first migration, `settings.toml` version 2 ([0043](0043-settings-and-apertrusts-folders.md)), and settings.md's test of a version-1 file becomes one of version 2.
 - **gui.md's "The names of the parts"** lists the new names, the code's types and messages with them, and drops its note that `top_bar` keeps its name.
-- **The docs' sweep** is the rename pull request's: until it lands, gui.md, library.md, settings.md, crates.md, the tool docs and the port specs say the old names.
+- **The docs say the new names,** gui.md, library.md, settings.md, crates.md, the tool docs and the port specs among them, their anchors with them.

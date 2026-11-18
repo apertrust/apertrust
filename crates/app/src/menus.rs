@@ -18,8 +18,8 @@
 //!
 //! One model, [`MENUS`]: menus of groups that lines separate, each entry an action of the
 //! registry by id, a submenu, one of the Mac's own items, or Open Recent's list, whose
-//! items are the recents the app hands in ([`Recent`]). It names actions as the top
-//! panel's `TOP_PANEL` does, so the registry still declares each action once: an item's
+//! items are the recents the app hands in ([`Recent`]). It names actions as the
+//! Toolbar's `TOOLBAR` does, so the registry still declares each action once: an item's
 //! words are its action's message, Undo's and Redo's naming the step they would take back
 //! or put back ([`words`]), its key the keymap's first for the platform, and it is enabled
 //! exactly when its action can run where it is ([`shown`]). Only actions the
@@ -32,7 +32,7 @@
 //! muda only for what changed; a choice comes back through muda's event handler, down a
 //! channel, and runs in `App::logic`, before the next frame or, while the window is
 //! minimised or hidden, without one ([`runs`] says when). On Windows and Linux the same
-//! model is the one menu of the top panel's ☰ (decision 39), drawn by the popup service
+//! model is the one menu of the Toolbar's ☰ (decision 39), drawn by the popup service
 //! ([`request`]); the id chosen in it runs as the Mac's choices do.
 
 // Off the Mac the Mac's own parts are read only by the tests.
@@ -170,7 +170,7 @@ const fn item(id: ActionId) -> Entry {
 }
 
 static PANEL_TAB: Menu = Menu {
-    title: "menu-panel-tab",
+    title: "menu-tools-panel-tab",
     role: Role::Plain,
     on: Platforms::All,
     groups: &[&[
@@ -234,7 +234,7 @@ static THUMBNAIL_SIZE: Menu = Menu {
     ]],
 };
 
-/// View › Background, which the central panel's right-click menu lists too.
+/// View › Background, which the Viewer's right-click menu lists too.
 pub static BACKGROUND: Menu = Menu {
     title: "menu-background",
     role: Role::Plain,
@@ -249,14 +249,14 @@ pub static BACKGROUND: Menu = Menu {
     ]],
 };
 
-static GRID_POSITION: Menu = Menu {
-    title: "menu-grid-position",
+static BROWSER_POSITION: Menu = Menu {
+    title: "menu-browser-position",
     role: Role::Plain,
     on: Platforms::All,
     groups: &[&[
-        item(ActionId::GRID_POSITION[0]),
-        item(ActionId::GRID_POSITION[1]),
-        item(ActionId::GRID_POSITION[2]),
+        item(ActionId::BROWSER_POSITION[0]),
+        item(ActionId::BROWSER_POSITION[1]),
+        item(ActionId::BROWSER_POSITION[2]),
     ]],
 };
 
@@ -331,22 +331,22 @@ pub static MENUS: [Menu; 7] = [
         role: Role::Plain,
         on: Platforms::All,
         groups: &[
-            // The photo's zoom, which the central bar's zoom menu offers too.
+            // The photo's zoom, which the viewer bar's zoom menu offers too.
             &[
                 item(ActionId::ZOOM_IN),
                 item(ActionId::ZOOM_OUT),
                 item(ActionId::ZOOM_FIT),
                 item(ActionId::ZOOM_100),
             ],
-            // The grid bar's menus (`docs/gui.md`, The grid bar).
+            // The browser bar's menus (`docs/gui.md`, The browser bar).
             &[
                 Entry::Submenu(&SORT_BY),
                 Entry::Submenu(&THUMBNAIL_SIZE),
                 item(ActionId::SHOW_LABELS),
-                Entry::Submenu(&GRID_POSITION),
+                Entry::Submenu(&BROWSER_POSITION),
             ],
             &[
-                item(ActionId::SHOW_BROWSE),
+                item(ActionId::SHOW_COLLECTIONS),
                 Entry::Submenu(&PANEL_TAB),
                 Entry::Submenu(&INTERFACE_SIZE),
                 Entry::Submenu(&BACKGROUND),
@@ -554,7 +554,7 @@ pub fn request(
     let entries = menus(os)
         .map(|menu| drawn(menu, os, keymap, state, recents, steps, &tr).into())
         .collect();
-    popup::Request::pull_down(anchor, tr.text("top-panel-menu"), entries)
+    popup::Request::pull_down(anchor, tr.text("toolbar-menu"), entries)
 }
 
 /// Where a context menu opens (decision 91; `docs/gui.md`, Context menus): a place tools
@@ -564,7 +564,7 @@ pub enum Place {
     /// The photo, a thumbnail or a tool's ⋯: the app's items and the tools', by section and
     /// order.
     Open(apertrust_tools::Place),
-    /// The central panel's surround, round the photo: View › Background's items alone
+    /// The Viewer's surround, round the photo: View › Background's items alone
     /// (`docs/gui.md`, The background).
     Surround,
 }
@@ -966,7 +966,7 @@ pub fn chosen(id: &str) -> Option<ActionId> {
 #[cfg(target_os = "macos")]
 pub use mac::NativeMenus;
 
-/// No native menus off the Mac: Windows and Linux will draw [`MENUS`] in the top panel.
+/// No native menus off the Mac: Windows and Linux will draw [`MENUS`] in the Toolbar.
 #[cfg(not(target_os = "macos"))]
 pub enum NativeMenus {}
 
@@ -1536,7 +1536,7 @@ mod tests {
             dialog_window: false,
             full_screen: false,
             panel_tab: 0,
-            grid: crate::settings::Grid::default(),
+            browser: crate::settings::BrowserSettings::default(),
             shown: true,
             background: Some(apertrust_ui::Background::Dark),
         }
@@ -1962,7 +1962,7 @@ mod tests {
             key: Key::Z,
         };
         assert_eq!(key(ActionId::REDO, Focus::Text), Some(shift));
-        assert_eq!(key(ActionId::SHOW_BROWSE, Focus::Text), None);
+        assert_eq!(key(ActionId::SHOW_COLLECTIONS, Focus::Text), None);
         assert_eq!(key(ActionId::NEXT_PHOTO, Focus::Text), None);
         assert_eq!(
             key(ActionId::SETTINGS, Focus::Text),

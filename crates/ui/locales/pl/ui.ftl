@@ -4,7 +4,7 @@
 
 app-name = Apertrust
 
-## Wspólne działania na górnym pasku
+## Wspólne działania na pasku narzędzi
 
 action-import = Importuj…
 action-export = Eksportuj…
@@ -19,7 +19,7 @@ action-copy-apply-parts = Kopiuj lub zastosuj część
 action-settings = Ustawienia
 status-saved = Zapisano
 
-## Karty panelu bocznego
+## Karty panelu narzędzi
 
 tab-photos = Zdjęcia
 tab-adjust = Regulacja
@@ -34,12 +34,12 @@ tab-effect = Efekt
 tab-history = Historia
 tab-metadata = Metadane
 panel-tab-later = { $tab }: pojawi się w jednej z kolejnych wersji
-panel-tabs = Karty panelu bocznego
+tools-panel-tabs = Karty panelu narzędzi
 panel-more-tabs = Więcej kart
 panel-tab-options = Opcje kart
 panel-show-tab-names = Pokaż nazwy kart
 panel-customise-tabs = Dostosuj karty…
-panel-width = Szerokość panelu bocznego
+tools-panel-width = Szerokość panelu narzędzi
 
 ## Przyciski w nagłówku sekcji; $section to tytuł sekcji
 
@@ -120,11 +120,11 @@ unit-kelvin-value = { $value } K
 unit-pixels-value = { $value } px
 unit-iso-value = { $value } ISO
 
-## Panel górny
+## Pasek narzędzi
 
-top-panel = Panel górny
-top-panel-menu = Menu
-top-panel-more = Więcej działań
+toolbar = Pasek narzędzi
+toolbar-menu = Menu
+toolbar-more = Więcej działań
 status-saving = Zapisywanie…
 status-saving-tip = Edycja tego zdjęcia wciąż jest zapisywana obok niego
 status-not-saved = Nie zapisano
@@ -135,7 +135,7 @@ window-maximise = Maksymalizuj
 window-restore = Przywróć
 window-close = Zamknij
 
-## Zadania: wskaźnik na końcu górnego paska i okno, które otwiera
+## Zadania: wskaźnik na końcu paska narzędzi i okno, które otwiera
 
 jobs-name = Zadania
 action-show-jobs = Zadania
@@ -266,9 +266,9 @@ activity-try-again = Ponów
 activity-try-again-tip = Wyeksportuj ponownie zdjęcia, które się nie powiodły, z tymi samymi ustawieniami
 activity-dismiss = Zamknij
 
-## Pasek centralny, nad zdjęciem
+## Pasek podglądu, nad zdjęciem
 
-central-bar = Pasek centralny
+viewer-bar = Pasek podglądu
 photo-show-selected = Pokaż wszystkie zaznaczone zdjęcia
 photo-proof-margin = Margines próbny
 photo-before-after = Przed i po
@@ -293,7 +293,7 @@ photo-zoom-tip-exact = Przy 100% ekran pokazuje dokładnie to, czym będzie eksp
 photo-zoom-later = Powiększenie pojawi się wraz z widokiem 100%
 layer-image = Obraz
 
-## Panel centralny
+## Podgląd
 
 photo-opening = Otwieranie { $name }…
 photo-rendering = Renderowanie…
@@ -317,9 +317,9 @@ photo-iso = ISO { $value }
 open-title = Otwórz
 open-filter = Zdjęcia raw
 
-## Panel siatki i jego komórki
+## Przeglądarka i jej komórki
 
-grid-panel = Panel siatki
+browser = Przeglądarka
 grid-cell-edited = Edytowane
 grid-cell-view-only = Tylko podgląd: edycję zapisała nowsza wersja Apertrust
 grid-cell-unreadable = Nie udało się odczytać edycji: { $reason }
@@ -349,7 +349,7 @@ colour-label-yellow = Żółty
 colour-label-green = Zielony
 colour-label-blue = Niebieski
 colour-label-purple = Fioletowy
-grid-panel-height = Wysokość panelu siatki
+browser-height = Wysokość przeglądarki
 grid-rows =
     { $count ->
         [one] { $count } wiersz
@@ -357,7 +357,7 @@ grid-rows =
         [many] { $count } wierszy
        *[other] { $count } wiersza
     }
-grid-panel-width = Szerokość panelu siatki
+browser-width = Szerokość przeglądarki
 grid-columns =
     { $count ->
         [one] { $count } kolumna
@@ -365,9 +365,9 @@ grid-columns =
         [many] { $count } kolumn
        *[other] { $count } kolumny
     }
-grid-bar-options = Opcje panelu siatki
-grid-position = Położenie
-grid-bar = Pasek siatki
+browser-bar-options = Opcje przeglądarki
+browser-position = Położenie
+browser-bar = Pasek przeglądarki
 grid-sort = Sortowanie
 grid-sort-value =
     { $key ->
@@ -414,31 +414,31 @@ open-kind-folder = Folder: { $name }
 
 action-open-folder = Otwórz folder…
 open-folder-title = Otwórz folder
-section-browse = Przeglądaj
-browse-folders = Foldery
+section-collections = Kolekcje
+collections-folders = Foldery
 section-export = Eksport
-browse-open-name = Co jest otwarte
-browse-no-folder = Nie otwarto folderu
-browse-recents-none = Brak ostatnich folderów
-browse-recent-missing = { $label }, nie znaleziono
-browse-try-again = Spróbuj ponownie
-browse-locate = Wskaż…
-browse-remove = Usuń z listy
-browse-locate-title = Wskaż folder
-browse-plus = Nowy lub otwórz
+collections-open-name = Co jest otwarte
+collections-no-folder = Nie otwarto folderu
+collections-recents-none = Brak ostatnich folderów
+collections-recent-missing = { $label }, nie znaleziono
+collections-try-again = Spróbuj ponownie
+collections-locate = Wskaż…
+collections-remove = Usuń z listy
+collections-locate-title = Wskaż folder
+collections-plus = Nowy lub otwórz
 action-new-library = Nowa biblioteka…
 action-new-project = Nowy projekt…
-browse-folder-menu = Menu folderu { $name }
-browse-open-row = Otwórz
-browse-open-this-folder = Otwórz ten folder
-browse-reading = Odczytywanie…
-browse-unreadable = Nie udało się odczytać. Spróbuj ponownie
+collections-folder-menu = Menu folderu { $name }
+collections-open-row = Otwórz
+collections-open-this-folder = Otwórz ten folder
+collections-reading = Odczytywanie…
+collections-unreadable = Nie udało się odczytać. Spróbuj ponownie
 folders-reading = Odczytywanie { $name }…
 folders-recent-missing = Nie udało się otworzyć tego folderu. { $reason }
 folders-recent-gone = Tego folderu już tam nie ma.
 folder-reading = Odczytywanie { $folder }…
 folder-empty = Brak dostępnych zdjęć
-folder-empty-hint = Wybierz podfolder w sekcji „Przeglądaj”.
+folder-empty-hint = Wybierz podfolder w sekcji „Kolekcje”.
 folder-failed = Nie udało się otworzyć { $folder }: { $reason }
 folder-cancelled = Odczytywanie { $folder } przerwano
 folder-no-photo = Nie wybrano zdjęcia
@@ -493,7 +493,7 @@ settings-group-interface = Interfejs
 settings-group-start = Uruchamianie
 settings-group-confirmations = Potwierdzenia
 settings-group-thumbnails = Miniatury
-settings-group-side-panel = Panel boczny
+settings-group-tools-panel = Panel narzędzi
 settings-group-hardware-acceleration = Akceleracja sprzętowa
 settings-group-diagnostics = Diagnostyka
 settings-group-cache = Pamięć podręczna
@@ -512,7 +512,7 @@ setting-library-reopen-last-label = Otwieraj ponownie to, co było otwarte ostat
 setting-library-reopen-last-help = Otwiera folder, w którym pracowano, gdy { app-name } został zamknięty, wraz z jego zdjęciem. Plik lub folder otwarty z menedżera plików lub terminala otwiera się zamiast niego.
 setting-export-ask-before-overwrite-label = Pytaj przed nadpisaniem wyeksportowanego pliku
 setting-history-ask-before-discard-label = Pytaj przed odrzuceniem historii zdjęcia
-setting-grid-panel-square-thumbnails-label = Kwadratowe miniatury
+setting-browser-square-thumbnails-label = Kwadratowe miniatury
 setting-library-raw-thumbnails-from-label = Miniatury z pliku raw od rozmiaru
 setting-library-raw-thumbnails-from-help = Dla zdjęć bez zmian: miniatury większe niż ten rozmiar są renderowane z pliku raw w { app-name }, zamiast osadzonego JPEG z aparatu. Wolniej. Zdjęcia ze zmianami zawsze pokazują swoje zmiany.
 setting-library-raw-thumbnails-from-option-always = Zawsze
@@ -527,7 +527,7 @@ setting-library-raw-thumbnails-from-option-6K = 6K
 setting-library-raw-thumbnails-from-option-8K = 8K
 setting-library-raw-thumbnails-from-option-never = Nigdy
 setting-library-raw-thumbnails-from-option-auto = Auto
-setting-side-panel-tab-names-label = Pokaż nazwy kart
+setting-tools-panel-tab-names-label = Pokaż nazwy kart
 setting-engine-adapter-label = Karta graficzna
 setting-engine-backend-label = API graficzne
 setting-engine-backend-option-auto = Automatycznie
@@ -671,14 +671,14 @@ about-back = Wstecz
 
 action-open = Otwórz…
 action-view-edit = Przejdź do edycji
-action-show-browse = Przeglądaj
-action-panel-tab-1 = Karta panelu bocznego 1
-action-panel-tab-2 = Karta panelu bocznego 2
-action-panel-tab-3 = Karta panelu bocznego 3
-action-panel-tab-4 = Karta panelu bocznego 4
-action-panel-tab-5 = Karta panelu bocznego 5
-action-panel-tab-6 = Karta panelu bocznego 6
-action-panel-tab-7 = Karta panelu bocznego 7
+action-show-collections = Kolekcje
+action-panel-tab-1 = Karta panelu narzędzi 1
+action-panel-tab-2 = Karta panelu narzędzi 2
+action-panel-tab-3 = Karta panelu narzędzi 3
+action-panel-tab-4 = Karta panelu narzędzi 4
+action-panel-tab-5 = Karta panelu narzędzi 5
+action-panel-tab-6 = Karta panelu narzędzi 6
+action-panel-tab-7 = Karta panelu narzędzi 7
 action-scale-up = Powiększ interfejs
 action-scale-down = Pomniejsz interfejs
 action-scale-reset = Normalny rozmiar interfejsu
@@ -717,9 +717,9 @@ action-thumbnails-small = Małe
 action-thumbnails-medium = Średnie
 action-thumbnails-large = Duże
 action-thumbnails-extra-large = Bardzo duże
-action-grid-position-left = Po lewej
-action-grid-position-right = Po prawej
-action-grid-position-bottom = Na dole
+action-browser-position-left = Po lewej
+action-browser-position-right = Po prawej
+action-browser-position-bottom = Na dole
 action-show-labels = Pokazuj podpisy
 action-background-black = Czarne
 action-background-very-dark = Bardzo ciemne
@@ -739,12 +739,12 @@ menu-view = &Widok
 menu-window = &Okno
 # P is Plik's.
 menu-help = Po&moc
-menu-panel-tab = Karta panelu bocznego
+menu-tools-panel-tab = Karta panelu narzędzi
 menu-interface-size = Rozmiar interfejsu
 menu-sort-by = Sortuj według
 menu-thumbnail-size = Rozmiar miniatur
 menu-background = Tło
-menu-grid-position = Położenie panelu siatki
+menu-browser-position = Położenie przeglądarki
 menu-open-recent = Otwórz ostatnie
 menu-recent-in = { $name } — { $parent }
 menu-undo-step = Cofnij: { $step }
@@ -787,7 +787,7 @@ history-discard-tip-unreadable = Zaczyna historię od nowa od zdjęcia w obecnym
 history-discard-no-alert = Odrzucenie historii najpierw pyta, a tego pytania nie da się tu jeszcze pokazać. Aby odrzucać bez pytania, wyłącz w Ustawieniach „Pytaj przed odrzuceniem historii zdjęcia”.
 history-discard-no-alert-unreadable = Odrzucenie tej historii najpierw pyta, bo tego, czego nie da się odczytać, nie będzie można przywrócić, a tego pytania nie da się tu jeszcze pokazać.
 
-## Sekcja Historia na karcie Historia panelu bocznego
+## Sekcja Historia na karcie Historia panelu narzędzi
 
 section-history = Historia
 history-reset-edit = Resetuj edycję

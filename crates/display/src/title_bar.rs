@@ -14,9 +14,9 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! The window's frame where the app's top bar is its title bar (`docs/gui.md`, The window
+//! The window's frame where the app's Toolbar is its title bar (`docs/gui.md`, The window
 //! frame and menus; decision 39), as far as winit cannot do it: on macOS the traffic
-//! lights placed in the top bar, the window moved only from the top bar's empty areas,
+//! lights placed in the Toolbar, the window moved only from the Toolbar's empty areas,
 //! what a double-click on a title bar does by the user's setting, and zooming from the
 //! run loop, so each step of the animation is drawn. Elsewhere these do nothing yet.
 
@@ -67,10 +67,10 @@ pub fn title_bar_double_click() -> DoubleClick {
 /// Where the window's own buttons are once [`place_window_buttons`] has run.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum WindowButtons {
-    /// The top bar is not the title bar: in full screen, which hides the system's title
+    /// The Toolbar is not the title bar: in full screen, which hides the system's title
     /// bar and its buttons with it, and on platforms whose title bar the system draws.
     None,
-    /// Centred in the top bar. The room they take from the window's left edge, in the
+    /// Centred in the Toolbar. The room they take from the window's left edge, in the
     /// window system's points, with a margin after them as wide as the one before; none
     /// where the window hides them.
     Placed(f32),
@@ -79,7 +79,7 @@ pub enum WindowButtons {
     Unplaced(f32),
 }
 
-/// Places the window's own buttons (close, minimise and zoom) in the app's top bar,
+/// Places the window's own buttons (close, minimise and zoom) in the app's Toolbar,
 /// which runs to the window's top edge and is `height` points tall, in the window
 /// system's points (egui's points times the interface's scale): centred in it, the close
 /// button's centre as far from the window's left edge as from its top, the others after
@@ -103,10 +103,10 @@ pub fn place_window_buttons(
 
 /// Keeps the system from moving the window by itself when a press on the app's content
 /// is dragged (macOS). Under a transparent title bar AppKit moves the window from any
-/// view that lets it, and winit's lets it, so a drag that began on a button in the top
-/// bar would move the window. Afterwards winit's view lets it move only while
-/// [`start_window_drag`] runs, which the app calls for a drag that began on the top
-/// bar's empty areas (decision 39), and keeps each press's mouse-down for it. Call it
+/// view that lets it, and winit's lets it, so a drag that began on a button in the
+/// Toolbar would move the window. Afterwards winit's view lets it move only while
+/// [`start_window_drag`] runs, which the app calls for a drag that began on the
+/// Toolbar's empty areas (decision 39), and keeps each press's mouse-down for it. Call it
 /// once the window exists; elsewhere it does nothing.
 pub fn content_never_moves_window(window: &impl HasWindowHandle) -> Result<(), Error> {
     let handle = window.window_handle()?;
@@ -150,7 +150,7 @@ impl std::fmt::Display for DragEvent {
     }
 }
 
-/// Hands moving the window to the system, from a drag that began on the top bar's empty
+/// Hands moving the window to the system, from a drag that began on the Toolbar's empty
 /// areas (macOS): AppKit's `performWindowDragWithEvent:` with the press's own mouse-down,
 /// which winit's view keeps once [`content_never_moves_window`] has run, else the
 /// left-button event AppKit is handling, else a mouse-down built where the pointer is,
@@ -212,7 +212,7 @@ mod macos {
         static MOVES: Cell<bool> = const { Cell::new(false) };
         /// The last press's mouse-down in winit's view, which `drag` hands AppKit.
         static PRESS: RefCell<Option<Retained<NSEvent>>> = const { RefCell::new(None) };
-        /// The window whose buttons `place` last placed, by address, and the top bar's
+        /// The window whose buttons `place` last placed, by address, and the Toolbar's
         /// height, which its frame's changes put them back for (`keep_placed`).
         static PLACED: Cell<Option<(usize, f64)>> = const { Cell::new(None) };
         /// Whether the buttons are being placed, so placing them, which lays out the
@@ -517,7 +517,7 @@ mod macos {
         }
     }
 
-    /// Places the buttons of `window` in a top bar `height` points tall.
+    /// Places the buttons of `window` in a Toolbar `height` points tall.
     fn place_in(window: &NSWindow, height: f64) -> WindowButtons {
         // In full screen the buttons live in the system's own title bar, which slides
         // down over the window's top when the pointer reaches the screen's edge.
@@ -530,7 +530,7 @@ mod macos {
             NSWindowButton::ZoomButton,
         ]
         .map(|button| window.standardWindowButton(button));
-        // A window that hides its buttons still has the top bar for its title bar.
+        // A window that hides its buttons still has the Toolbar for its title bar.
         let [Some(close), Some(minimise), Some(zoom)] = buttons else {
             return WindowButtons::Placed(0.0);
         };

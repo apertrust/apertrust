@@ -984,7 +984,7 @@ mod tests {
     use super::{fraction_at, x_at};
     use crate::components::Marker;
 
-    /// A 300-point track, as a 320-point side panel's rows have.
+    /// A 300-point track, as a 320-point Tools panel's rows have.
     const TRACK: Rangef = Rangef {
         min: 10.0,
         max: 310.0,

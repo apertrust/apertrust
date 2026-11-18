@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! The side panel's parts (`docs/gui.md`, The shell): the tab bar, with an icon and a name
+//! The Tools panel's parts (`docs/gui.md`, The shell): the tab bar, with an icon and a name
 //! on each tab, » for the tabs that don't fit and ⋮ for the tab options; the body, with
 //! the pinned sections over a 4-point band and the rest scrolling below them, with a quiet
 //! scroll bar that is always there; and the edge towards the photo, which resizes the
@@ -42,7 +42,7 @@ use crate::i18n::Args;
 use crate::popup::Item;
 use crate::{Icon, theme, tr, translator};
 
-/// One of the side panel's tabs.
+/// One of the Tools panel's tabs.
 #[derive(Clone, Debug)]
 pub struct PanelTab<'a> {
     pub icon: Icon,
@@ -99,14 +99,14 @@ impl<'a> TabBar<'a> {
         let (tile_w, tile_h) = if self.names {
             (58.0, 52.0)
         } else {
-            // 32 high, so the tab bar is as deep as the central bar beside it.
+            // 32 high, so the tab bar is as deep as the viewer bar beside it.
             (36.0, 32.0)
         };
         let pad = t.spacing.xs;
         let (bar, list) =
             ui.allocate_exact_size(vec2(ui.available_width(), tile_h + pad), Sense::hover());
         // Looked up first: widget_info runs while egui holds the context.
-        let list_name = tr(ui.ctx(), "panel-tabs");
+        let list_name = tr(ui.ctx(), "tools-panel-tabs");
         list.widget_info(|| WidgetInfo::labeled(Role::TabList, true, &list_name));
         // A recessed strip above the sections.
         ui.painter().rect_filled(bar, 0.0, t.colors.sunken);
@@ -327,7 +327,7 @@ impl NameStyle {
     }
 }
 
-/// What the user did to the side panel's edge.
+/// What the user did to the Tools panel's edge.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum PanelEdgeAction {
     /// The panel's new width, in whole points, within the widths it may take.
@@ -342,7 +342,7 @@ pub enum PanelEdgeAction {
 const KEY_STEP: f32 = 10.0;
 const KEY_STEP_LARGE: f32 = 50.0;
 
-/// The side panel's edge towards the photo, which resizes it. It is the separator between
+/// The Tools panel's edge towards the photo, which resizes it. It is the separator between
 /// the panel and the photo, inside the panel, and brightens from `separator` to `border`
 /// while the pointer is over it, drags it or it has focus.
 ///
@@ -374,7 +374,7 @@ pub struct PanelEdge<'a> {
 
 impl<'a> PanelEdge<'a> {
     /// The edge of a panel at the end of the window, `width` points wide, drawn within
-    /// `widths`; `name` is what screen readers call it ("Side panel width"), translated.
+    /// `widths`; `name` is what screen readers call it ("Tools panel width"), translated.
     pub fn new(name: &'a str, width: f32, widths: RangeInclusive<f32>) -> Self {
         let edge = PanelEdge {
             id: Id::unique(("apertrust-ui panel edge", name)),
@@ -544,7 +544,7 @@ impl<'a> PanelEdge<'a> {
     }
 }
 
-/// The side panel's body: the tab's pinned sections, a 4-point band, then the rest,
+/// The Tools panel's body: the tab's pinned sections, a 4-point band, then the rest,
 /// scrolling with a quiet scroll bar, always there. Pinned sections take at most 70% of
 /// the height and scroll on their own beyond it; a tab with none pinned has no band.
 ///
@@ -672,7 +672,7 @@ pub(super) fn restore<R>(ui: &mut Ui, add: impl FnOnce(&mut Ui) -> R) -> R {
     add(ui)
 }
 
-/// Shows `area` with the side panel's quiet scroll bar, `add` drawing its content in the
+/// Shows `area` with the Tools panel's quiet scroll bar, `add` drawing its content in the
 /// normal style: for any other scrolling text, as About's Credits and Licence.
 pub fn quiet_scroll<R>(ui: &mut Ui, area: ScrollArea, add: impl FnOnce(&mut Ui) -> R) -> R {
     let t = theme(ui.ctx());
