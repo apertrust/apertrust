@@ -14,7 +14,7 @@ The first pass mirrors darktable's modules ([0002](0002-rewrite-darktable-first-
 
 ### Edit's tabs
 
-- **Order:** Photos first ([0037](0037-one-view-the-photos-tab.md)), the five editing tabs, History last. Ctrl+1 to Ctrl+5 reach Photos to Effects. Raw and History have no default key, since Ctrl+6 is Ctrl+− on French AZERTY keyboards, whose 6 key types −; the settings file's `keys` table can give each one (`panel-tab-6`, `panel-tab-7`, as any tab's by position up to `panel-tab-12`, [0096](0096-workspaces-as-files-hidden-tools-and-finding-a-tool.md)).
+- **Order:** Photos first ([0037](0037-one-view-the-photos-tab.md)), the five editing tabs, History last. Ctrl+1 to Ctrl+5 reach Photos to Effects. Raw and History have no default key, since Ctrl+6 is Ctrl+− on French AZERTY keyboards, whose 6 key types −; the settings file's `keys` table can give each one (`panel-tab-6`, `panel-tab-7`; planned, any tab's by position up to `panel-tab-12`, [0096](0096-workspaces-as-files-hidden-tools-and-finding-a-tool.md)).
 - **What each holds,** top to bottom in editing order, the order a person reaches for them:
   - Adjust: White balance, Colour calibration, Exposure, the edit's tone mapper, Tone equalizer, Local contrast, Haze removal, RGB curve (the Tone curve at its place until RGB curve replaces it), RGB levels, Colour balance RGB, Colour equalizer, RGB primaries;
   - Detail: Denoise (profiled), Sharpen, Diffuse or sharpen, Retouch (retouch layers, Phase 4: [0074](0074-masks-ported-from-darktables-master.md));
@@ -31,7 +31,7 @@ The first pass mirrors darktable's modules ([0002](0002-rewrite-darktable-first-
 - **Icons:** one colour, in Lucide's style, drawn at 22 points, each with a filled form for the chosen tab ([0081](0081-icon-only-buttons-draw-no-plates-on-is-the-filled-icon.md)); drawn with the wireframe. Adjust two sliders and Raw a camera, from Lucide; Geometry and Effects darktable's Correct and Effect shapes; Detail a circle crossed by three fine lines, in their family.
 - **Edit opens on Adjust.** A tab id in settings that this build does not know, or one drawn disabled, opens Adjust with a warning, and the id stays in the file until a tab is chosen. darktable's ids, `base`, `color`, `correct` and `effect`, which earlier builds kept for Edit, and `library`, which they kept for Photos, are such ids in Edit, never given to another tab.
 - **Scopes** are pinned over the five editing tabs' tools by default, in neither the Photos tab nor History; Layers join them when they come.
-- **No quick access panel and no active-modules tab.** darktable's module search is Find Tool…, which finds any tool by its name or darktable's, hidden ones too ([0096](0096-workspaces-as-files-hidden-tools-and-finding-a-tool.md)).
+- **No quick access panel and no active-modules tab.** darktable's module search is Find Tool…, planned, which finds any tool by its name or darktable's, hidden ones too ([0096](0096-workspaces-as-files-hidden-tools-and-finding-a-tool.md)).
 - **A tab with nothing behind it yet** is drawn disabled in its place, saying it is to come, with no key.
 - **Styles** go in the Photos tab, as darktable's styles module is the lighttable's.
 

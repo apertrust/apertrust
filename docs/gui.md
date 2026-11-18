@@ -1663,7 +1663,7 @@ sequenceDiagram
 
 ### Its place and what it acts on
 
-- **The Photos tab's last section,** id `export`, after Collections, Filters, Keywords, Metadata and Styles (decision 73). A person moves, pins and floats it as any section (decision 83), but **every workspace keeps it, never hidden:** the visual editor, a drag and Move to Tab may move it, none takes it out of a workspace's last tab holding it, and ⋯ › Hide is disabled for it; a workspace's file that leaves it out, `export` in its `hidden` included, gets it back at the end of the Photos tab (decision 96). So Ctrl+E always has a place to reveal it.
+- **The Photos tab's last section,** id `export`, after Collections, Filters, Keywords, Metadata and Styles (decision 73). A person moves, pins and floats it as any section (decision 83), but **every workspace keeps it, never hidden:** the visual editor, a drag and Move to Tab may move it, none takes it out of a workspace's last tab holding it, and ⋯ › Hide is disabled for it; a workspace's file that leaves it out, `export` in its `hidden` included, gets it back at the end of the Photos tab, or of the first tab where the workspace has no Photos tab (decision 96). So Ctrl+E always has a place to reveal it.
 - **A utility:** no on switch, no kept markers, no history step; a change is a setting written at once, Cmd+Z in a field undoing typing only.
 - **It exports the window's selection, else the active photo;** the active photo alone until Phase 3 can select several. A view-only photo, whose edit a newer Apertrust wrote or whose history cannot be read, is left out and counted in a warning.
 - **No per-photo marks** on the Browser: the warning gives the counts. Marks are revisited in the usability pass after Phase 3.

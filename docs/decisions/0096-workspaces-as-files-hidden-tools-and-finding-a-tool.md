@@ -75,7 +75,7 @@ scopes = "skin"
 - **`tabs`,** an array of tables in order, each `id`, `title` and `icon`:
   - a tab id a build knows (Edit's, darktable's, `photos`, `history`) takes its title from Fluent by its id (`tab-<id>`) and its icon from code, so its words follow the language; a `title` or `icon` written for it overrides them. The file of a built-in writes the id alone.
   - A person's own tab has the `title` written, the same in every language, and its icon by name, one of `apertrust-ui`'s icons as a toolbar item's is (92); with no title its id shows, and with no icon or an unknown one Lucide's `square`.
-  - `hidden` is reserved, the Hidden tab's id. At most 12 tabs show, the Hidden tab included, `panel-tab-1` to `panel-tab-12` choosing them by position; a tab past them is not shown, with a warning, and stays in the file.
+  - `hidden` is reserved, the Hidden tab's id. At most 12 tabs show, the Hidden tab included, `panel-tab-1` to `panel-tab-12` choosing them by position; a tab past them is not shown, with a warning, and stays in the file. A workspace whose file lists no tab is refused, with a warning: a built-in's defaults apply, or a person's own is not listed.
 - **`[pinned]` and `[order]`,** keyed by tab id, each a list of tool ids, top first: a tab's pinned tools and the rest (83). A list for a tab id `tabs` lacks is skipped and kept.
 - **`hidden`,** the tools the workspace hides; **`seen`,** every tool the build that wrote the file knew, so a new build's new tool is told from one hidden.
 - **Written whole,** through the safe write, on a thread of its own, once the layout has stood still for a second and on exit, as settings are. The file is read as the app starts; a write first reads it again and, where it changed on disk since, applies the person's change to it as it is then, so a hand edit made meanwhile is kept. A tool id or tab id this build does not know keeps its place. Opening and closing the app writes nothing. A file added while the app runs is read at the next start.
@@ -88,7 +88,7 @@ Worked out when the workspace is read and after each change, never per frame (83
 2. A tool `hidden` names is in no tab, whatever the lists say, but Export.
 3. **A new tool,** one of the Tools panel's that `seen` does not name, goes into each tab whose id is one of its default tabs, if the workspace has one, placed after its nearest preceding neighbour in that tab's default list (83's rule); else it is hidden. Its default tabs are the workspace's own defaults for a built-in, and for a person's own Edit's, then the darktable workspace's, so a tool new in Adjust joins any workspace with a tab `adjust`. Scopes, new in several tabs, goes into each.
 4. **A tool in no tab** after these steps, that `seen` names, is hidden as if `hidden` named it, and written there at the next write: a hand edit that drops a tool from every list hides it.
-5. **Export** is never hidden: `hidden` naming it is ignored, and in no tab it goes to the end of the Photos tab's scrolling list, else of the first tab's.
+5. **Export** is never hidden: `hidden` naming it is ignored, and in no tab shown, none or only one past the twelfth, it goes to the end of the Photos tab's scrolling list, else of the first tab's, so Ctrl+E always reaches it.
 
 With no file, a built-in workspace is its defaults. A person's own needs only `tabs` and its lists: a tool it does not name is new and goes by step 3.
 
@@ -119,7 +119,7 @@ Held by the operations and unit-tested: a tool at most once in a tab, `pinned` a
 - **`Place::TabBar`,** a place of the app's alone (91): a right-click anywhere on the tab bar, on a tab's icon or its empty end, or Shift+F10 and the Menu key on a focused tab, opens it.
 - **Its items:** Find Tool…, Show Hidden Tools, Workspace ▸; then Reset Tab, Reset Workspace and Processing Order (83). Opened on a tab's icon, Reset Tab and Processing Order act on that tab, elsewhere on the tab shown; on the Hidden tab, and on a tab of a person's own with no defaults, Reset Tab and Processing Order are disabled.
 - **Workspace ▸** lists every workspace, Edit, darktable, then a person's own by name, the current one checked. Each runs `workspace-<id>`, an action made as the app starts from the workspaces it reads, as tools' actions are (91), with no default keys; settings keep a key by that id.
-- **Reset Workspace** deletes the current workspace's file and applies its defaults: a built-in's alone, disabled for a built-in with no file and for a person's own.
+- **Reset Workspace** deletes the current workspace's file and applies its defaults: a built-in's alone, disabled for a built-in with no file, for a person's own, and for a file a newer build wrote, which this build never overwrites or removes.
 - **The Tools panel's ⋮** holds the same items, so none needs a right-click, then its own: Show Tab Names, Customise Tabs…, drawn disabled until the visual editor (Phase 3), and Dock All Floating Panels (Phase 3).
 
 ### ⋯ on a tool
