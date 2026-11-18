@@ -30,7 +30,7 @@ applies = "at-once"
 
 A setting holds:
 
-- **its id,** the table's header: the dotted path of its key in `settings.toml`, permanent, its parts snake\_case (`scale`, `tools_panel.width`, `engine.memory_budget`, `tools.exposure.lightness`);
+- **its id,** the table's header: the dotted path of its key in `settings.toml`, stable within a file version, a key that moves needing a versioned migration ([below](#the-settings-schema), The migrations), its parts snake\_case (`scale`, `tools_panel.width`, `engine.memory_budget`, `tools.exposure.lightness`);
 - **`owner`:**
   - `app`: read by the desktop app alone;
   - `engine`: read by every process that runs the engine, the app, the CLI and later the server;
@@ -68,7 +68,7 @@ A setting holds:
   - It refuses at build time, naming the line: an unknown field, a field or value wrong for the kind, an unknown owner, kind or `applies`, a page the dialog does not have, a group without its page or a page without its group, a duplicate id, a default outside its range, and a missing default on a setting that is not `optional`. What rustc refuses in the generated code, it leaves to rustc: a choice's default none of its type's ids, a type that is no `Choice`, two ids with one name in Rust.
 - **The registry** is the statics generated from the schema, taken together: what code, the store, `--conf` and the dialog read, as the actions registry is.
 - **Other readers:** docs, the web client, scripts and MCP read the schema file itself.
-- **Tests:** every id unique; every default within its range; every choice's type matching its default (the build's check); every message of a setting on a page, or of a tool's setting, present in en-GB, uk and pl; a version-2 `settings.toml` of every key read and written back byte for byte; a version-1 file holding every renamed key, action id and Browse entry read with every value kept under its new name and written as version 2 with the new keys alone; and one holding an old key and its new one keeping the new one's value.
+- **Tests:** every id unique; every default within its range; every choice's type matching its default (the build's check); every message of a setting on a page, or of a tool's setting, present in en-GB, uk and pl; a version-2 `settings.toml` of every key read and written back byte for byte; a version-1 file holding every renamed key, action id and Browse entry read with every value kept under its new name and written as version 2 with the new keys alone; one holding an old key and its new one keeping the new one's value, Browse's groups joining Collections'; and a file with no version read as version 1, its old keys and key bindings moved and kept through a write.
 
 **Why a schema file rather than Rust declarations:** one file lists every setting of every owner, in the dialog's order, where Rust declarations would sit in three crates; a change to a setting is a change to data, reviewed as such; and docs, scripts, the web client and MCP read it without compiling Rust. The generated code is small, regenerated on every build and points back to the schema, and it makes typed statics, not widgets, so the dialog is still drawn from data at run time.
 
@@ -87,8 +87,9 @@ A setting holds:
 **The migrations,** `MIGRATIONS` in `crates/base/src/settings/migrations.rs`, each from one version to the next, run on the file's table before it is read and before each write merges into it. The file is version 2. The one migration so far, from version 1, came with the window's parts named by their role (decision 95):
 
 - **It moves** each key of `[side_panel]`, `[central_panel]` and `[grid_panel]` to `[tools_panel]`, `[viewer]` and `[browser]`; the action ids `show-browse` and `grid-position-left`, `-right` and `-bottom` in `[keys]` to `show-collections` and `browser-position-left`, `-right` and `-bottom`; and Browse's entries in `edit.sections` and `edit.groups`, `browse`, to `collections`.
-- **Where both are present,** as only a hand edit makes them in a version-1 file, the new key wins and the old is dropped, with a line under `-d settings` naming it. An old key whose new place holds something other than a table, again only a hand edit's doing, stays where it is: the file is still written as version 2, so the key is kept but never moved or read again, and `-d settings` names it.
-- **Nothing is lost:** a version-1 file is read migrated at every start, and written as version 2, holding the new keys alone, at its next write.
+- **Where both are present,** as only a hand edit makes them in a version-1 file, the new key wins and the old is dropped, with a line under `-d settings` naming it. Browse's groups join Collections' one by one, each of Collections' winning.
+- **Every key that can move keeps its value:** a version-1 file is read migrated at every start, and written as version 2, holding the moved keys under their new names alone, at its next write. A file with no version, or one that cannot be read, is read as version 1, with a warning, so its old keys move too.
+- **An old key whose new place holds something other than a table,** again only a hand edit's doing, stays on disk where it is, without effect: the file is still written as version 2, so the key is kept but never moved or read again, and `-d settings` names it.
 - **`--conf` takes the new keys only;** an old one stops the start, as any key no setting has does. An older build reads a version-2 file for what it knows and never overwrites it, so it shows these settings at their defaults.
 
 **Engine settings** live under `[engine]`:

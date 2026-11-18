@@ -136,7 +136,8 @@ Goal: open, edit, save and reopen a photo with the first pass's tools. Migration
 
 **The window's parts named by their role** (decision 95): the top, side, central and grid panels become the Toolbar, Tools (the Tools panel), the Viewer and the Browser, the central and grid bars the viewer bar and the browser bar, and Browse Collections; recorded, then one pull request:
 
-- [x] The rename, in one pull request of commits by layer, with no change of behaviour or look beyond the words: the code's identifiers; the words and their Fluent ids in British and American English, Ukrainian and Polish, View › Browse becoming View › Collections (L); the settings keys, action ids and Browse's id, with `settings.toml`'s version 2 migrating them and its test that an old file keeps every value; the themes' two sizes, the theme loader still reading their old names; then the docs, the decision records that name the parts among them, gui.md, library.md, settings.md, crates.md and the tool docs with their anchors. The UI wireframe's boards and the agent kit's `ui-conventions` and `desktop-architecture` skills follow once it lands.
+- [x] The rename, in one pull request of commits by layer, with no change of behaviour or look beyond the words: the code's identifiers; the words and their Fluent ids in British and American English, Ukrainian and Polish, View › Browse becoming View › Collections (L); the settings keys, action ids and Browse's id, with `settings.toml`'s version 2 migrating them and its test that an old file keeps every value; the themes' two sizes, the theme loader still reading their old names; then the docs, the decision records that name the parts among them, gui.md, library.md, settings.md, crates.md and the tool docs with their anchors.
+- [ ] The UI wireframe's boards, and the agent kit's `ui-conventions` and `desktop-architecture` skills, with the new names: planned, once the rename lands.
 
 ### Editing
 

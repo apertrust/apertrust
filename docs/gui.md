@@ -811,7 +811,7 @@ Phase 4: the menu appears with Layers, and its keys are set with their design. I
 | Tools Panel Tab → each tab by its name, the one shown checked | `panel-tab-1` to `panel-tab-7` | Ctrl+1 to Ctrl+5; in Edit the sixth and seventh, Raw and History, none | Built (decision 38) |
 | Workspace → each workspace by its name, the current one checked; —; Save as Workspace…, Rename Workspace…, Delete Workspace…, Reset Workspace | `workspace-1` to `workspace-9`, `save-workspace`, `rename-workspace`, `delete-workspace`, `reset-workspace` | — | New, Phase 3 ([Workspaces](#workspaces)) |
 | Panels → | | | |
-| Tools Panel | `tools-panel` | — | New, Phase 3, proposed. No item hides the Browser |
+| Tools | `tools-panel` | — | New, Phase 3, proposed. No item hides the Browser |
 | Tab Names | `panel-tab-names` | — | Built in the tab bar's ⋮; the action is new |
 | Customise Tabs… | `customise-tabs` | — | New, drawn disabled until step 7 builds it |
 | Show Menu Button, while the ☰ is hidden, on Windows and Linux | `show-menu-button` | — | New, Phase 3 (decision 92); also in the toolbar menu, and F10 reaches it with the ☰ hidden |
@@ -886,7 +886,7 @@ A dialog of Apertrust's own on every platform (decision 39): a modal over a scri
 
 ### Windows and Linux
 
-The menus open from one menu button, ☰, at the very start of the Toolbar, before the mark (decision 39; the Toolbar is the window's title bar). It opens one menu whose items are the menus, **File, Edit, Photo, Layer (from Phase 4), View, Help**, each a submenu, with the access keys &File, &Edit, &Photo, &Layer, &View and &Help in English: Alt with one opens the menu with that submenu expanded. There are no titles. Built on Linux; Windows' comes next. Each menu holds what macOS's does, except:
+The menus open from one menu button, ☰, at the very start of the Toolbar, before the mark (decision 39; the Toolbar is the window's title bar). It opens one menu whose items are the menus, **File, Edit, Photo, Layer (from Phase 4), View, Help**, each a submenu, with the access keys &File, &Edit, &Photo, &Layer, &View and &Help in English: Alt with one opens the menu with that submenu expanded. There are no titles. Built on Windows and Linux, ☰ and F10 opening it, but for Windows' Alt pressed and released alone ([The ☰ on Windows and Linux](#the--on-windows-and-linux)). Each menu holds what macOS's does, except:
 
 | | macOS | Windows | Linux |
 | --- | --- | --- | --- |
@@ -2416,9 +2416,9 @@ The parts are named by their role, not by where they sit, so a name stays true w
 - **Browser bar:** three icon buttons, Sort and Labels at its start and Zoom at its end, and nothing else: at the bottom a narrow column at the Browser's left end, the buttons stacked; at the left or right a row across the panel's top ([The browser bar](#the-browser-bar)). No name or count of the folder shows in it.
 - The **caption** under the photo in the Viewer, and the Tools panel's **tab bar** and **sections**. The Browser is a grid of **cells**.
 - **Floating panel:** a section floating over the Viewer, belonging to no tab (decision 83, planned).
-- **Collections:** the Photos tab's first tool, choosing what the Browser shows ([Collections](#collections)). The start window's Browse… is a verb, finding a library's or a project's file, and keeps its word.
+- **Collections:** the Photos tab's first tool, choosing what the Browser shows ([Collections](#collections)). The start window's Browse… is a verb, to find a library's or a project's file (planned, Phase 5), and keeps its word.
 
-The names are written as names, capitalised as the tabs and tools are; the bars in lower case. They are also the names screen readers hear for the regions F6 moves between ([Keyboard and actions](#keyboard-and-actions)) and the words of View › Panels, where the panel of tools is Tools. The code takes them:
+The names are written as names, capitalised as the tabs and tools are; the bars in lower case. They are also the names screen readers hear for the regions F6 moves between ([Keyboard and actions](#keyboard-and-actions)) and the words of View › Panels, where the panel of tools is Tools; the Tools region's own name is planned, its tab list and its edge named meanwhile (`tools-panel-tabs`, `tools-panel-width`). The code takes them:
 
 | Part | In `apertrust-ui` | In the app | Its messages |
 | --- | --- | --- | --- |
@@ -3103,13 +3103,13 @@ The current folder's or album's thumbnails, in a column at the window's left by 
 **Built** as `Browser`: `GridCell`s, each a square of the browser bar's size with its caption under it ([The cell](#the-cell)), with the browser bar, Sort, Labels and Zoom and its options menu's Position: along the window's bottom in rows, the bar a column at its left end, scrolling sideways, or at the left or right in columns, scrolling up and down, the bar a row across its top, as many as `BrowserEdge`, its edge, was dragged to.
 
 - It shows the open folder's photos in the browser bar's sort, or the photos opened alone ([one photo](library.md#one-photo)) in the order opened, the photo open being the active cell, outlined thicker than a selected one, both in the icons' grey.
-- It is never hidden and is empty with no folder. A folder with no raws shows, centred in it and muted (`text_secondary`), a struck-through photo (`Icon::PhotoOff`, Lucide's `image-off`), "No photos available" (`folder-empty`) under it and, where the folder's listing found subfolders, the ones Collections' tree shows under it, "Choose a subfolder in Collections." (`folder-empty-hint`) smaller under that; nothing is listed for the hint. Each line is wrapped to the panel's width, so a one-column side holds them too (`Browser::empty` and `empty_hint`; snapshots `browser-empty` and `browser-empty-left`).
+- It is never hidden and is empty with no folder and no photos opened alone. A folder with no raws shows, centred in it and muted (`text_secondary`), a struck-through photo (`Icon::PhotoOff`, Lucide's `image-off`), "No photos available" (`folder-empty`) under it and, where the folder's listing found subfolders, the ones Collections' tree shows under it, "Choose a subfolder in Collections." (`folder-empty-hint`) smaller under that; nothing is listed for the hint. Each line is wrapped to the panel's width, so a one-column side holds them too (`Browser::empty` and `empty_hint`; snapshots `browser-empty` and `browser-empty-left`).
 - A click or Enter opens a photo. With a cell focused, the arrows move to the cell beside it in the layout, Home and End to the first and last, scrolling to keep it in sight, and the active photo is scrolled into view when it changes ([Its keys](#its-keys)).
 - A cell shows its photo's thumbnail ([The cell](#the-cell)). Until Apertrust renders its own, a thumbnail is the camera's embedded JPEG, turned upright by the photo's orientation and shown unmarked, as darktable shows it. Until it comes, and for a photo whose raw holds none, the file name stands in a box of the square's size.
 - **Asking for them:** the panel reports the cells it drew (`BrowserOutput::shown`), and the app asks the session for those with no thumbnail at the cell's size, each once while it stays in sight, in the panel's order, as one `LibraryCommand::Thumbnails`, or for photos opened alone, by path, one `LibraryCommand::PhotoThumbnails`, which reads each photo's own file and nothing of its folder (`crates/app/src/thumbnails.rs`). The size is the cell's side in physical pixels rounded up to 128, 256, 512 or 1024, so a change of the interface's scale or of the thumbnails' size asks again only past a step, a thumbnail at another size standing in meanwhile. A photo that leaves the panel's sight and comes back without its thumbnail is asked for again, so one the session's stack of 30 dropped comes in the end.
 - **Their textures** are a cache derived from the mirror, which keeps the thumbnails by photo and size with the folder, or by path and size with the photos alone: made as they come, by comparing the folder's generation, and dropped with the folder, or with a photo alone as it leaves the photos opened alone.
 - To screen readers a cell is a list item named by its file, its marks, rating, reject and labels in its description.
-- File › Open… of a photo is a way in to its folder, which it opens as the tree's root, even where that folder is the active one inside another root's tree; where the folder is the root already, the root is chosen if another folder of its tree is active, and nothing changes if it is the active one.
+- Open This Folder, from a photo opened alone, is a way in to that photo's folder, which it opens as the tree's root, even where that folder is the active one inside another root's tree; where the folder is the root already, the root is chosen if another folder of its tree is active, and nothing changes if it is the active one.
 
 How it selects and what screen readers hear of its thumbnails are in [Selection and the active photo](#selection-and-the-active-photo).
 
@@ -3289,7 +3289,7 @@ Each tool is darktable's page as darktable has it, with no Advanced controls tog
 - **Rows under every tab.** Rows darktable shows under every tab, outside its notebook, sit before or after the tab's rows, the definition's `before` and `after`, drawn whichever tab is open: `before` under the tab strip, above the tab's rows, as the colour equalizer's graph and node placement sit under darktable's notebook tabs; `after` below them.
 - White balance is darktable's white balance page, and Colour calibration's CAT tab darktable's, adaptation first, the closed Area colour mapping group last (decision 27; [tools/README.md](tools/README.md)).
 - **Collapsible groups,** a UI element of their own (decision 29): each of darktable's collapsible sections is a group inside its tool, at darktable's place and under its label, holding controls and never another group (`Row::Group { id, rows }`).
-  - It is closed at first. Its open state is kept app-wide per group in settings, keyed by tool and group beside `Shell::section_open` (`Shell::group_open`, `[edit.groups.<module>]` in `settings.toml`, `<group> = true`, beside `[edit.sections]`; planned to move with them to `[tools_panel.groups.<module>]`), never in the edit. Reset tool leaves it alone.
+  - It is closed at first. Its open state is kept app-wide per group in settings, keyed by tool and group beside `Shell::section_open` (`Shell::group_open`, `[edit.groups.<tool>]` in `settings.toml`, `<group> = true`, beside `[edit.sections]`; planned to move with them to `[tools_panel.groups.<module>]`), never in the edit. Reset tool leaves it alone.
   - A label may have a group's id: their messages differ (`-group-` and `-collapsible-`), and only groups are kept in settings.
   - Its row is in the table below.
 - **Rows follow darktable's conditions** (decision 29): a row darktable shows only for one mode, or while another control holds a value, names that control and its values in the definition and is drawn only then. `Row::When { control, is, rows }`: the control a choice or a toggle of the tool, and `is` its values as the control writes them (option ids, `true` or `false`), which `ProcessingDefinition::check` and so `check::accept` hold to.
@@ -3960,7 +3960,7 @@ Decision 19; engine.md's [Scopes](engine.md#scopes). Built for the histogram, th
   - Alt and Shift must match exactly, so Option letters on a Mac never fire a shortcut. Only keys whose symbol needs Shift on many layouts (+ : ? ! | { }) allow an extra Shift: Ctrl++ is Ctrl+Shift+= on a US keyboard.
   - AltGr is no modifier egui sees: on Windows winit drops Ctrl and Alt while it is held, and on Linux it is a modifier of its own, so AltGr+E, ę on a Polish keyboard, arrives as a plain E, since egui-winit does not report AltGr. A letter's shortcut is skipped when the same press typed something else: a Latin letter not its own (ę, ł) or no letter at all (@, €). A letter of another alphabet, у on a Ukrainian keyboard, is that key's own and still runs it.
 - **Platforms.** Ctrl is Cmd on macOS (egui's `Modifiers::COMMAND`), and a few keys differ (below). Tooltips spell keys the platform's way, `Ctrl+Shift+Z`, and on macOS `Shift+Cmd+Z`, in Apple's order of Control, Option, Shift and Command. On macOS the modifiers are words, not ⌘ ⇧ ⌥ ⌃, which IBM Plex Sans lacks. Key names stay as printed on the keys (Ctrl, Shift, F6, and on a Mac Delete and Return); Space is translated. The keys also reach screen readers as the control's AccessKit shortcut.
-- **Focus order follows reading order:** Toolbar, viewer bar, the Viewer when it can take focus (Photo's cells with several selected), the Tools panel's tabs, then its sections, then the Browser. F6 moves the focus to the first focusable control of the next region that has one, in that order; Shift+F6 goes back. Screen readers hear each region by its part's name ([The shell](#the-names-of-the-parts)): "Toolbar", "Viewer bar", "Viewer", "Tools" and "Browser".
+- **Focus order follows reading order:** Toolbar, viewer bar, the Viewer when it can take focus (Photo's cells with several selected), the Tools panel's tabs, then its sections, then the Browser. F6 moves the focus to the first focusable control of the next region that has one, in that order; Shift+F6 goes back. Screen readers hear each region by its part's name ([The shell](#the-names-of-the-parts)): "Toolbar", "Viewer bar", "Viewer", "Tools" (planned: until then they hear its tab list, "Tools panel tabs") and "Browser".
 
 **Slider keys:**
 
@@ -4163,10 +4163,13 @@ workspace = "cull"          # from Phase 3
 tab_names = false
 width = 480
 
-[tools_panel.sections]
+[edit]
+tab = "adjust"
+
+[edit.sections]
 exposure = false
 
-[tools_panel.groups.agx]
+[edit.groups.agx]
 advanced_curve_parameters = true
 
 [browser]
@@ -4176,16 +4179,13 @@ sort = "file-name"
 descending = true
 thumbnails = "large"
 
-[tools_panel.floating.scopes]   # decision 83
+[tools_panel.floating.scopes]   # decision 83, planned
 corner = "top-away"
 x = 24
 y = 48
 width = 320
 
-[workspaces.edit]
-tab = "adjust"
-
-[workspaces.edit.pinned]       # decision 83
+[workspaces.edit.pinned]       # decision 83, planned
 adjust = ["scopes"]
 
 [workspaces.edit.order]
@@ -4194,7 +4194,7 @@ adjust = ["exposure", "temperature", "channelmixerrgb", "agx", "toneequal", "haz
 [workspaces.edit.floating]
 scopes = "adjust"
 
-[workspaces.photos]
+[workspaces.photos]            # from Phase 3
 tab = "photos"
 
 [viewer]
@@ -4210,7 +4210,8 @@ show_selected = false       # from Phase 3
 - **The tab** is kept by id (`adjust`), each workspace its own, so a tab that moves keeps it. **Sections** are kept by id, the same in every workspace, only those the user opened or closed, the others as their section starts. **Tab names** are the Tools panel's, the same in every workspace.
 - **The Tools panel's width** is in points, the same in every layout and workspace, under `[tools_panel]` as `width`, kept only once dragged. A value outside 240 to 600 is read as the nearer end, with a warning, and left in the file until the user drags the edge; the width shown in a narrower window is never written.
 - **The Browser's size** is in whole lines under `[browser]`, `rows` at the bottom and `columns` at the sides, beside `position`, `sort`, `descending` and `thumbnails`, the same in every layout and workspace, each kept only once changed; a value out of range is read as the nearer end; the lines a smaller window shows are never written.
-- **`[edit]`, from development builds.** Edit's tab, sections and collapsible groups were kept under `[edit]` (`tab`, `[edit.sections]` and `[edit.groups.<module>]`, decision 29). The tab is now the Edit workspace's, `[workspaces.edit]`'s `tab`; the sections and the groups stay in `[edit.sections]` and `[edit.groups.<module>]`, planned to move to `[tools_panel.sections]` and `[tools_panel.groups.<module>]`.
+- **`[edit]`** holds Edit's tab, sections and collapsible groups (`tab`, `[edit.sections]` and `[edit.groups.<tool>]`, decision 29). Version 2 keeps them there, its migration renaming their `browse` entries `collections` ([settings.md](settings.md#the-settings-schema), The migrations).
+- **Planned with the layout** (decision 83): the tab moves to the Edit workspace's, `[workspaces.edit]`'s `tab`, and the sections and the groups to `[tools_panel.sections]` and `[tools_panel.groups.<tool>]`.
   - A file with `[edit]` is read into those where they are missing, and the first write of any of them removes `[edit]`, so none is written without the others and the move drops no group.
   - The version stays as it is: nothing else changes meaning, and an older build reading the new file only starts its tab, sections and groups afresh, keeping the new tables as keys it does not know.
 
@@ -4398,7 +4399,7 @@ The decisions this design rests on, by area; each decision record has the option
 What is still undecided in the interface. Each says what the app does meanwhile.
 
 - **Spike D1 on Windows and Linux** (decision 41): one native test dialog through the app's dialog host on Windows 11, GNOME and KDE on Wayland and an X11 desktop. It measures the dialog's first frame, idle and behind a 61 MP first render; the main window's engine frames while it is open; focus, Escape and Enter; clicks on the main window; Narrator and Orca; a monitor of another scale; and Wayland's parent and modal hint on Mutter and KWin. On macOS neither the sheet nor the modeless window stops the main window's engine frames, and no app-modal window is needed.
-- **The shell between 960 and 500 points wide** (decision 39). The minimum width is 500 so that Windows 11's half and third snap zones take the window, and the shell must stay usable down to it, with the photo in sight and every action reached by the menus and keys. The Toolbar folds the actions' words first, then every action but Undo and Redo into ⋯, then the status words, and last Undo and Redo ([The Toolbar](#the-toolbar)). How the Tools panel narrows, hides or lies over the photo is still to design; until then it keeps at least 320 points, and at most half a wider window ([The Tools panel](#the-tools-panel)). The minimum is lowered in code once the shell gives way. The quarter zones stay out, kept out by the minimum height of 600 points on a 1080-pixel screen.
+- **The shell between 960 and 500 points wide** (decision 39). The minimum width is 500 so that Windows 11's half and third snap zones take the window, and the shell must stay usable down to it, with the photo in sight and every action reached by the menus and keys. The Toolbar folds the actions' words first, then every action but Undo and Redo into ⋯, then the status words, and last Undo and Redo ([The Toolbar](#the-toolbar)). How the Tools panel narrows, hides or lies over the photo is still to design; until then it takes 240 to 600 points, 320 by default, never more than half the window but never less than 240, more than half in a window under 480 points ([The Tools panel](#the-tools-panel)). The minimum is lowered in code once the shell gives way. The quarter zones stay out, kept out by the minimum height of 600 points on a 1080-pixel screen.
 - **The panels' edges in the Tab order.** The Tools panel's and the Browser's edges are drawn after the Viewer, so their grab zones lie over it, and so Tab reaches each edge after the Viewer's controls, not right after its own panel's last control as [Its size](#its-size) has it. Meanwhile the order is egui's, the order they are drawn in; F6 still lands on the Browser's thumbnails first.
 - [x] **A second start on Windows and Linux:** settled by decision 89, a second start handing its files to the instance running on its user data folder and exiting, Windows' starts per file joined while each comes within 500 ms of the one before, the gaps measured in step 1 ([Instances and windows](#instances-and-windows)). Until step 1 is built each start is an app of its own.
 - **What the next start reopens with several windows** (decision 89). `library.reopen_last` reopens one place today, and Restart now passes what one window holds (decision 82). With several windows the next start could reopen every window open at Quit, each with its place, or only the key window's. Recommended: every window's place, in its own window, but a window of photos opened alone, which never reopens at the next start (decision 46); Restart now reopens every window, photos opened alone included, as it passes them today (decision 82), since a restart that drops windows loses the person's set-up. Reopening photos opened alone at the next start would change decision 46 and needs a decision of its own. Meanwhile, until step 4, there is one window, and it reopens as now.

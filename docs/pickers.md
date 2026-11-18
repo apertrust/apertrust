@@ -488,7 +488,7 @@ On a Mac, Control-click is the right-click, as everywhere in the app (gui.md, Po
 
 ## On the photo
 
-The Viewer draws the active picker and the stored samples over the frame and turns the pointer into commands, from the regions in the photo's coordinates that the events carry. Every mark is drawn with the design system's on-photo overlay, one line and two handles for every mark on the photo ([gui.md, On-photo overlays](gui.md#on-photo-overlays)), as the wireframe's Pickers frame draws them; the app owns the commands.
+The Viewer draws the active picker over the frame, and the stored samples once they are built (planned, steps 79.14 and 79.16), and turns the pointer into commands, from the regions in the photo's coordinates that the events carry. Every mark is drawn with the design system's on-photo overlay, one line and two handles for every mark on the photo ([gui.md, On-photo overlays](gui.md#on-photo-overlays)), as the wireframe's Pickers frame draws them; the app owns the commands.
 
 **The picker's marks,** darktable's `_darkroom_pickers_draw` (`darkroom.c:331-470`) in that language:
 

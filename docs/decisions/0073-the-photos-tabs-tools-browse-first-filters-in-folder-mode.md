@@ -37,5 +37,5 @@ The Photos tab (decisions 37 and 38) chooses what the Browser shows and describe
 - The read that gives the capture times (`LibraryEvent::Taken`) also gives camera, lens and exposure.
 - The roadmap's steps 15 and 15b carry the Keywords, Metadata and Filters tools in folder mode; step 26 the library's keyword list.
 - Collections' section id is `collections`, its title message `section-collections`. View › Collections (`show-collections`, L, darktable's lighttable key) chooses the first tab holding it ([gui.md](../gui.md#view)).
-- Collections' ＋ ends with Open…, as File › Open… (decision 46), and Styles' first content tab is All. The start window's Browse… button is a verb, finding a library's or a project's file, and keeps its word.
+- Collections' ＋ ends with Open…, as File › Open… (decision 46), and Styles' first content tab is All. The start window's Browse… button is a verb, to find a library's or a project's file (planned, Phase 5; drawn disabled until then), and keeps its word.
 - `docs/gui.md` lists the tab's tools; `docs/library.md` the filters in folder mode, the keyword file and the commands; `docs/settings.md` the user data folder's `keywords.toml`.
