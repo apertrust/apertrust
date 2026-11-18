@@ -107,6 +107,103 @@ fn the_header_buttons_report_in_the_wireframe_s_order() {
     );
 }
 
+/// What two sections reported: each action by its section's title, and the section whose
+/// header had the focus at the last frame.
+#[derive(Default)]
+struct Moves {
+    actions: Vec<(&'static str, SectionAction)>,
+    focused: Option<&'static str>,
+}
+
+/// Two sections, Exposure movable and Scopes not, and what they reported.
+fn movable_and_not() -> Harness<'static, Moves> {
+    Harness::builder()
+        .with_size(egui::vec2(400.0, 120.0))
+        .with_context_setup(|ctx| apertrust_ui::install(ctx, Theme::default()))
+        .build_ui_state(
+            |ui, moves: &mut Moves| {
+                moves.focused = None;
+                for (title, movable) in [("Exposure", true), ("Scopes", false)] {
+                    let out = Section::new(title, false).movable(movable).show(ui, |_| {});
+                    assert!(out.header.is_some());
+                    moves
+                        .actions
+                        .extend(out.actions.into_iter().map(|a| (title, a)));
+                    if out.focused {
+                        moves.focused = Some(title);
+                    }
+                }
+            },
+            Moves::default(),
+        )
+}
+
+/// Alt+↑ and Alt+↓ on a movable section's focused header are its own keys, reported as a
+/// move; an arrow alone, or a section that does not move, reports none (decision 83).
+#[test]
+fn alt_arrows_on_a_movable_header_report_a_move() {
+    let mut harness = movable_and_not();
+    harness.run();
+    for title in ["Exposure", "Scopes"] {
+        harness.get_by_role_and_label(Role::Button, title).focus();
+        harness.run();
+        assert_eq!(harness.state().focused, Some(title));
+        harness.key_press_modifiers(egui::Modifiers::ALT, Key::ArrowUp);
+        harness.key_press_modifiers(egui::Modifiers::ALT, Key::ArrowDown);
+        harness.key_press(Key::ArrowDown);
+        harness.run();
+        let moved = std::mem::take(&mut harness.state_mut().actions);
+        let expected = match title {
+            "Exposure" => vec![
+                (title, SectionAction::MoveUp),
+                (title, SectionAction::MoveDown),
+            ],
+            _ => Vec::new(),
+        };
+        assert_eq!(moved, expected, "{title}");
+    }
+}
+
+/// A press of `key` with `modifiers`, as the window would send it.
+fn press(key: Key, modifiers: egui::Modifiers) -> egui::Event {
+    egui::Event::Key {
+        key,
+        physical_key: None,
+        pressed: true,
+        repeat: false,
+        modifiers,
+    }
+}
+
+/// Only Alt alone moves a header, Option on a Mac: Alt+Shift, kept for floating panels,
+/// and Alt with Ctrl or Cmd do not. Two presses in one frame are reported in the order
+/// they came (decision 83).
+#[test]
+fn only_alt_alone_moves_a_header_each_press_in_its_order() {
+    let mut harness = movable_and_not();
+    harness.run();
+    harness
+        .get_by_role_and_label(Role::Button, "Exposure")
+        .focus();
+    harness.run();
+    let alt = egui::Modifiers::ALT;
+    for modifiers in [
+        alt | egui::Modifiers::SHIFT,
+        alt | egui::Modifiers::COMMAND,
+        alt | egui::Modifiers::CTRL,
+    ] {
+        harness.event(press(Key::ArrowUp, modifiers));
+        harness.run();
+    }
+    assert!(harness.state().actions.is_empty());
+    harness.event(press(Key::ArrowDown, alt));
+    harness.event(press(Key::ArrowUp, alt));
+    harness.run();
+    let moved = std::mem::take(&mut harness.state_mut().actions);
+    let expected = [SectionAction::MoveDown, SectionAction::MoveUp].map(|a| ("Exposure", a));
+    assert_eq!(moved, expected);
+}
+
 /// A tool's section and a utility's, closed, one under the other, presets and options
 /// asked of both, enabled or not, and what they reported.
 fn editing_tool_and_utility(enabled: bool) -> Harness<'static, Vec<SectionAction>> {
@@ -828,6 +925,60 @@ fn without_names_the_tab_bar_is_as_deep_as_the_viewer_bar() {
         let (bar, central) = *harness.state();
         assert_eq!(bar, expected.unwrap_or(central), "names {names}");
     }
+}
+
+/// A tab given the focus takes it that frame, as one a section moved to does (decision 83);
+/// one drawn disabled gives it to ⋮, and one folded under » to ».
+#[test]
+fn a_tab_given_the_focus_takes_it() {
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(320.0, 120.0))
+        .with_context_setup(|ctx| apertrust_ui::install(ctx, Theme::default()))
+        .build_ui_state(
+            |ui, focus: &mut Option<usize>| {
+                let tabs: Vec<PanelTab> = [
+                    ("Photos", Icon::Folder, true),
+                    ("Adjust", Icon::Base, true),
+                    ("Detail", Icon::Detail, false),
+                    ("Raw", Icon::Raw, true),
+                    ("Effect", Icon::Effect, true),
+                    ("History", Icon::History, true),
+                ]
+                .into_iter()
+                .map(|(name, icon, enabled)| PanelTab {
+                    icon,
+                    name,
+                    shortcut: None,
+                    enabled,
+                })
+                .collect();
+                let _ = TabBar::new(&tabs, 0, true).focus(focus.take()).show(ui);
+            },
+            None,
+        );
+    harness.run();
+    let adjust = |h: &Harness<'_, Option<usize>>| {
+        let tab = h.get_by_role_and_label(Role::Tab, "Adjust");
+        tab.accesskit_node().is_focused()
+    };
+    assert!(!adjust(&harness));
+    *harness.state_mut() = Some(1);
+    harness.run();
+    assert!(adjust(&harness));
+    let focused = |h: &Harness<'_, Option<usize>>, label: &str| {
+        h.get_by_label(label).accesskit_node().is_focused()
+    };
+    *harness.state_mut() = Some(2);
+    harness.run();
+    assert!(focused(&harness, "Tab options"));
+    assert!(
+        harness
+            .query_by_role_and_label(Role::Tab, "History")
+            .is_none()
+    );
+    *harness.state_mut() = Some(5);
+    harness.run();
+    assert!(focused(&harness, "More tabs"));
 }
 
 #[test]

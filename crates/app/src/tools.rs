@@ -86,8 +86,9 @@ use apertrust_ui::components::{
 use apertrust_ui::i18n::Args;
 use apertrust_ui::{Translator, popup, translator};
 use eframe::egui;
+use eframe::egui::accesskit::{Action as AccessAction, ActionData, CustomAction};
 
-use crate::actions::ActionId;
+use crate::actions::{self, ActionId, Placing};
 use crate::pickers::Picked;
 use crate::settings::ToolSettings;
 
@@ -189,6 +190,11 @@ pub struct Head {
     /// The open of the photo ⋯'s items act on: another since the last frame closes ⋯, and
     /// a choice from it is dropped, never run on the photo after ([`pressed`]).
     pub photo: Option<u64>,
+    /// Where the section is in the workspace's layout, for one of the Tools panel's tabs
+    /// (decisions 83 and 96): Alt+↑ and Alt+↓ on its focused header move it where it is in
+    /// a tab, and screen readers' actions on the header are the layout's ([`pressed`]).
+    /// None for a section that does not move.
+    pub layout: Option<Placing>,
 }
 
 /// What a tool's header asked for this frame (decision 93).
@@ -225,7 +231,10 @@ pub fn header<'a>(
     about: Option<parts::About>,
     head: Head,
 ) -> Section<'a> {
-    let mut section = Section::new(title, head.open).peek(head.peek);
+    let movable = head.layout.is_some_and(|placing| !placing.hidden);
+    let mut section = Section::new(title, head.open)
+        .peek(head.peek)
+        .movable(movable);
     if let Some(about) = about {
         section = section.about(about);
     }
@@ -250,12 +259,21 @@ pub fn header<'a>(
 /// own, unless the photo ⋯ acts on is no longer `photo`, the open of the photo now: ⋯,
 /// opened for the photo before, then closes, and its choice is dropped. Presets and an
 /// empty ⋯ are drawn disabled, nothing behind them yet.
+///
+/// What it asks of the layout, where `layout` places it in the workspace, goes to the
+/// shell apart, by the tool's id ([`layout_asked`]): Alt+↑ and Alt+↓ on its focused
+/// header, a layout item of ⋯, and screen readers' actions on its header, which it gives
+/// them here; and whether its header has the focus.
 pub fn pressed(
     ui: &egui::Ui,
     tool: &ToolDefinition,
     out: &parts::SectionOutput,
     photo: Option<u64>,
+    layout: Option<Placing>,
 ) -> Vec<Pressed> {
+    if let Some(placing) = layout {
+        moves(ui, tool.id, out, placing);
+    }
     let photo_id = ui.make_persistent_id(("options photo", tool.id));
     let before = ui.data(|d| d.get_temp::<Option<u64>>(photo_id));
     ui.data_mut(|d| d.insert_temp(photo_id, photo));
@@ -270,7 +288,10 @@ pub fn pressed(
             SectionAction::Toggle => Some(Pressed::Toggle),
             SectionAction::Tab(tab) => Some(Pressed::Tab(*tab)),
             SectionAction::Reset => reset.clone(),
-            SectionAction::Presets | SectionAction::Options => None,
+            SectionAction::Presets
+            | SectionAction::Options
+            | SectionAction::MoveUp
+            | SectionAction::MoveDown => None,
         })
         .collect();
     if replaced {
@@ -278,12 +299,115 @@ pub fn pressed(
             popup::close(ui.ctx(), popup::button_menu(button));
         }
     } else if let Some(id) = out.chosen.as_deref() {
-        pressed.push(match crate::menus::chosen(id) {
-            Some(action) => Pressed::Run(action),
-            None => Pressed::Own(id.to_owned()),
-        });
+        match crate::menus::chosen(id) {
+            // The layout's, on this tool, whatever photo is open.
+            Some(action) if actions::moves_section(action) => {
+                ask_layout(ui.ctx(), |asked| asked.run.push((tool.id, action)));
+            }
+            Some(action) => pressed.push(Pressed::Run(action)),
+            None => pressed.push(Pressed::Own(id.to_owned())),
+        }
     }
     pressed
+}
+
+/// What the headers asked of the workspace's layout this frame (decisions 83 and 96), for
+/// the shell to carry out after the frame ([`layout_asked`]).
+#[derive(Clone, Debug, Default)]
+pub struct LayoutAsked {
+    /// The layout's actions to run, each on its tool's section.
+    pub run: Vec<(&'static str, ActionId)>,
+    /// Each header drawn, by its tool: the one with the focus is the one the registry's
+    /// layout actions act on, and the focus may go to one.
+    pub headers: Vec<(&'static str, egui::Id)>,
+}
+
+/// Where the frame's [`LayoutAsked`] waits in the context's memory.
+fn layout_asked_id() -> egui::Id {
+    egui::Id::unique("tools layout asked")
+}
+
+/// Adds to what the headers asked of the layout this frame.
+fn ask_layout(ctx: &egui::Context, ask: impl FnOnce(&mut LayoutAsked)) {
+    ctx.data_mut(|d| ask(d.get_temp_mut_or_default::<LayoutAsked>(layout_asked_id())));
+}
+
+/// What the headers drawn this frame asked of the layout ([`pressed`]), taken: drawn again,
+/// they ask afresh.
+pub fn layout_asked(ctx: &egui::Context) -> LayoutAsked {
+    ctx.data_mut(|d| d.remove_temp::<LayoutAsked>(layout_asked_id()))
+        .unwrap_or_default()
+}
+
+/// Screen readers' actions on a header (decisions 83 and 96), AccessKit's custom actions by
+/// these ids, each the layout action of the same words.
+const MOVES: [(i32, ActionId); 5] = [
+    (1, ActionId::SECTION_MOVE_UP),
+    (2, ActionId::SECTION_MOVE_DOWN),
+    (3, ActionId::SECTION_PIN),
+    (4, ActionId::SECTION_HIDE),
+    (5, ActionId::SECTION_SHOW),
+];
+
+/// The layout's side of the header of `tool`, drawn as `out` reports, where `placing` says
+/// it is: Alt+↑ and Alt+↓ on its focused header and screen readers' actions on it, each
+/// asked of the shell ([`layout_asked`]), and its header named. Its
+/// actions are those that can do something where it is: Move Tool Up and Move Tool Down
+/// away from its list's ends, Pin Tool or Unpin Tool and Remove Tool, but Export's, in a
+/// tab, Show Tool in Tab hidden.
+fn moves(ui: &egui::Ui, tool: &'static str, out: &parts::SectionOutput, placing: Placing) {
+    let ctx = ui.ctx();
+    let keys = out.actions.iter().filter_map(|action| match action {
+        SectionAction::MoveUp => Some(ActionId::SECTION_MOVE_UP),
+        SectionAction::MoveDown => Some(ActionId::SECTION_MOVE_DOWN),
+        _ => None,
+    });
+    let mut run: Vec<ActionId> = keys.collect();
+    if let Some(header) = out.header {
+        let offered = |action: ActionId| match action {
+            ActionId::SECTION_MOVE_UP => !placing.hidden && placing.up,
+            ActionId::SECTION_MOVE_DOWN => !placing.hidden && placing.down,
+            ActionId::SECTION_PIN => !placing.hidden,
+            ActionId::SECTION_HIDE => !placing.hidden && placing.removable,
+            _ => placing.hidden && placing.show,
+        };
+        let words = translator(ctx);
+        let custom = MOVES.iter().filter(|(_, action)| offered(*action));
+        let custom: Vec<CustomAction> = custom
+            .map(|(id, action)| CustomAction {
+                id: *id,
+                description: words.text(actions::section_words(*action, placing)),
+            })
+            .collect();
+        ctx.accesskit_node_builder(header, |node| node.set_custom_actions(custom));
+        let requested = ui.input(|i| {
+            let requests = i.accesskit_action_requests(header, AccessAction::CustomAction);
+            let requests = requests.filter_map(|request| match request.data {
+                Some(ActionData::CustomAction(which)) => Some(which),
+                _ => None,
+            });
+            requests.collect::<Vec<i32>>()
+        });
+        let by_id = |which: i32| MOVES.iter().find(|(id, _)| *id == which);
+        run.extend(requested.into_iter().filter_map(by_id).map(|(_, a)| *a));
+    }
+    ask_layout(ctx, |asked| {
+        asked
+            .run
+            .extend(run.into_iter().map(|action| (tool, action)));
+        asked
+            .headers
+            .extend(out.header.map(|header| (tool, header)));
+    });
+}
+
+/// The title of the tool or utility `id`, in `words`: a utility's `section-<id>`, a
+/// processing tool's its own message.
+pub fn title(words: &Translator, id: &str) -> String {
+    match utility::utility(id) {
+        Some(_) => words.text(&format!("section-{id}")),
+        None => words.text(&messages::title(id)),
+    }
 }
 
 /// What a utility's ↺ is called, `title` its title: for what it resets, "Reset edit" for
@@ -888,7 +1012,7 @@ pub fn section(
     // for screen readers, who hear "Not applied".
     let resettable = state.edited || !definition.switched;
     let about = about(&words, id, definition.facts.as_ref());
-    let photo = head.photo;
+    let (photo, layout) = (head.photo, head.layout);
     let reset = editable && resettable;
     let mut section = header(
         &definition.tool,
@@ -939,7 +1063,7 @@ pub fn section(
         let rows = page.controls.take();
         ui.ctx().data_mut(|data| data.insert_temp(rows_id, rows));
     });
-    for pressed in pressed(ui, &definition.tool, &out, photo) {
+    for pressed in pressed(ui, &definition.tool, &out, photo, layout) {
         changes.push(match pressed {
             Pressed::Toggle => Change::Toggle { tool: id },
             Pressed::Tab(tab) => Change::Tab { tool: id, tab },

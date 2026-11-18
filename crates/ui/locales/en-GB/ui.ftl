@@ -45,6 +45,10 @@ tab-metadata = Metadata
 # tab (decision 96).
 tab-hidden = Hidden
 tools-panel-no-hidden = No hidden tools in this workspace.
+# Over the Tools panel's sections, once a tool moves in a workspace whose file a newer
+# Apertrust wrote, which this build never overwrites (decision 96).
+tools-panel-newer = A newer Apertrust saved this layout, so changes to it won't be kept
+tools-panel-newer-tip = This version never overwrites a workspace file a newer Apertrust wrote. Tools you move stay where you put them until you quit.
 # The dot on the Tools panel's ⋮, and Show Hidden Tools' tip: $tools names the hidden tools
 # that change the photo, as "Exposure, Vignetting".
 tools-panel-hidden-change = Hidden tools change this photo: { $tools }
@@ -76,6 +80,15 @@ section-tab-later = Coming in a later version
 # The description screen readers hear on the section of a tool darktable leaves off on a
 # new photo while it is off (decision 32): it renders nothing until a control changes.
 section-not-applied = Not applied
+# What screen readers hear as a tool moves in the workspace's layout (decisions 83 and 96):
+# $tool is its name, $tab the tab's, $at its place among the tab's tools and $of how many
+# the tab holds.
+section-moved = { $tool } moved to { $at } of { $of } in { $tab }
+section-pinned = { $tool } pinned in { $tab }
+section-unpinned = { $tool } unpinned in { $tab }
+section-moved-to = { $tool } moved to { $tab }
+section-hidden = { $tool } hidden
+section-shown = { $tool } shown in { $tab }
 # A section header's tooltip (docs/gui.md, The header's tooltip): its rows' labels, and a
 # row as screen readers hear it.
 section-about-kind = Kind
@@ -902,6 +915,27 @@ action-panel-tab-12 = Tools panel tab 12
 action-panel-tab-hidden = Hidden tab
 # The Tools panel's ⋮: the Hidden tab shown last and chosen, or taken away.
 action-tools-panel-show-hidden = Show hidden tools
+# A section's layout (decisions 83 and 96), each acting on the section whose header has the
+# focus, or in ⋯ on its own: the words carry "Tool", so each reads on its own in the keymap.
+# Pin Tool is Unpin Tool while the tool is pinned.
+action-section-pin = Pin Tool
+action-section-unpin = Unpin Tool
+action-section-move-up = Move Tool Up
+action-section-move-down = Move Tool Down
+action-section-move-to-tab-1 = Move Tool to Tab 1
+action-section-move-to-tab-2 = Move Tool to Tab 2
+action-section-move-to-tab-3 = Move Tool to Tab 3
+action-section-move-to-tab-4 = Move Tool to Tab 4
+action-section-move-to-tab-5 = Move Tool to Tab 5
+action-section-move-to-tab-6 = Move Tool to Tab 6
+action-section-move-to-tab-7 = Move Tool to Tab 7
+action-section-move-to-tab-8 = Move Tool to Tab 8
+action-section-move-to-tab-9 = Move Tool to Tab 9
+action-section-move-to-tab-10 = Move Tool to Tab 10
+action-section-move-to-tab-11 = Move Tool to Tab 11
+action-section-move-to-tab-12 = Move Tool to Tab 12
+action-section-hide = Remove Tool
+action-section-show = Show Tool in Tab
 action-scale-up = Larger interface
 action-scale-down = Smaller interface
 action-scale-reset = Normal interface size

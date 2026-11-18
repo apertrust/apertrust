@@ -82,13 +82,13 @@ mod tools;
 mod utility;
 mod viewport;
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Instant;
 
-use actions::{ActionId, Emit, Focus, Intent, Keymap, State, View};
+use actions::{ActionId, Emit, Focus, Intent, Keymap, SectionMove, State, View};
 use apertrust_base::cache::{Cache, Limit};
 use apertrust_base::folders::{self, Folders, Given};
 use apertrust_base::settings::CONF_FLAG;
@@ -574,7 +574,7 @@ fn main() -> eframe::Result {
                     engine_gate,
                     engine,
                     cache,
-                    (recents, workspaces, workspace),
+                    (recents, workspaces, workspace, folder),
                     storage_folders,
                     app_host,
                     kept,
@@ -1598,6 +1598,35 @@ struct Shell {
     /// The workspace settings keep, `workspace`, as read: one with no workspace stays
     /// until another is chosen.
     kept_workspace: String,
+    /// The workspaces' files: each move written once the layout has stood still, at once
+    /// on a switch and on exit (decision 96).
+    workspace_files: layout::Files,
+    /// The headers the last frame drew, by their tools: the one with the focus as an
+    /// action runs is the one the layout's actions act on (decisions 83 and 96,
+    /// [`Shell::focused_section`]).
+    headers: Vec<(&'static str, egui::Id)>,
+    /// What the last move says to screen readers ("Exposure pinned in Adjust").
+    announced: String,
+    /// What the polite live region in the Tools panel says now, and what it says next, a
+    /// message a frame, so two moves in one frame are each heard ([`Shell::announce`]).
+    said: String,
+    to_say: VecDeque<String>,
+    /// The workspaces whose file a write found a newer build's while another was shown:
+    /// said as each is shown again (decision 96).
+    newer_found: BTreeSet<String>,
+    /// Whether the workspace just shown is one of those, to be said at the next frame.
+    newer_shown: bool,
+    /// The tab whose icon takes the focus at the next frame: where a section went.
+    focus_tab: Option<usize>,
+    /// The tool whose header takes the focus once drawn: the one after a hidden tool's in
+    /// its tab, else the one before it; or a tool pinned or unpinned, in its new list.
+    focus_section: Option<&'static str>,
+    /// The workspaces whose file a newer Apertrust wrote that a move has warned of this run,
+    /// once each.
+    newer_warned: BTreeSet<String>,
+    /// Whether the Tools panel says the workspace shown keeps no change, its file a newer
+    /// Apertrust's: from the first move in it this run until another is shown.
+    newer_warning: bool,
     /// Whether `--conf` sets `workspace` for this run, so View › Workspace's items are
     /// disabled, saying why, as the settings store refuses the change (decision 43).
     workspace_given: bool,
@@ -1752,6 +1781,17 @@ impl Shell {
             workspaces: layout::Workspaces::builtin(),
             workspace,
             kept_workspace: settings.workspace.clone(),
+            workspace_files: layout::Files::nowhere(),
+            headers: Vec::new(),
+            announced: String::new(),
+            said: String::new(),
+            to_say: VecDeque::new(),
+            newer_found: BTreeSet::new(),
+            newer_shown: false,
+            focus_tab: None,
+            focus_section: None,
+            newer_warned: BTreeSet::new(),
+            newer_warning: false,
             workspace_given: false,
             show_hidden_given: false,
             panel_tab,
@@ -1823,6 +1863,14 @@ impl Shell {
         let hidden = kept == Some(layout::HIDDEN);
         self.hidden_chosen = hidden && self.show_hidden;
         self.hidden_for_now = false;
+        self.newer_warning = false;
+        // A write found its file a newer build's while another was shown: said now.
+        self.newer_shown = self.newer_found.remove(&workspace.id);
+        // Nothing of the workspace left: no header acted on, none or no tab to focus, so a
+        // layout action in the same frame acts on nothing of it.
+        self.headers.clear();
+        self.focus_section = None;
+        self.focus_tab = None;
         let place = kept.and_then(|id| workspace.position(id));
         let enabled = workspace.enabled();
         let id = &workspace.id;
@@ -1845,17 +1893,301 @@ impl Shell {
     /// settings as `workspace`, its layout worked out from what was read as the app
     /// started, with no file read now, on the tab last shown in it, else the tab it opens
     /// on ([`Shell::open_workspace`]). Chosen again, it is shown already, and nothing
-    /// changes. An id of no workspace read shows Default, with a warning.
+    /// changes. An id of no workspace read shows Default, with a warning. The moves made in
+    /// the workspace it leaves are written at once.
     fn switch_workspace(&mut self, id: &str) {
         if self.workspace.id == id && self.kept_workspace == id {
             return;
         }
+        self.workspace_files.write_now();
         let (workspace, warnings) = self.workspaces.open(id);
         for warning in warnings {
             tracing::warn!(target: "settings", "{warning}");
         }
         self.kept_workspace = workspace.id.clone();
         self.open_workspace(workspace);
+    }
+
+    /// The tab shown that `tool`'s layout actions act in: the tab shown where it holds it,
+    /// else the first tab shown that does; none for a hidden tool.
+    fn acting_tab(&self, tool: &str) -> Option<usize> {
+        let shown = self.workspace.tab(self.panel_tab);
+        let hidden_chosen = self.hidden_chosen && self.hidden_shown();
+        if !hidden_chosen && shown.is_some_and(|tab| tab.holds(tool)) {
+            return Some(self.panel_tab);
+        }
+        self.workspace.holding(tool)
+    }
+
+    /// Where `tool` is, as the layout's actions see it ([`State::section`]): hidden, or in
+    /// the tab they act in ([`Shell::acting_tab`]); none for no tool of the Tools panel.
+    fn placing(&self, tool: &'static str) -> Option<actions::Placing> {
+        let hidden = self.workspace.hides(tool);
+        let place = self.acting_tab(tool);
+        let place = place.and_then(|tab| self.workspace.place(tool, tab));
+        if !hidden && place.is_none() {
+            return None;
+        }
+        let receiving = self.workspace.receiving();
+        let tabs = std::array::from_fn(|i| {
+            let holds = self.workspace.tab(i).is_some_and(|tab| tab.holds(tool));
+            receiving[i] && !holds
+        });
+        Some(actions::Placing {
+            hidden,
+            pinned: place.is_some_and(|place| place.pinned),
+            up: place.is_some_and(|place| place.up),
+            down: place.is_some_and(|place| place.down),
+            removable: tool != export::ID,
+            tabs,
+            show: hidden && self.workspace.show_in(tool).is_some(),
+        })
+    }
+
+    /// The polite live region that says where each move took a tool, taking no room at the
+    /// top of the Tools panel's sections: screen readers hear it as it changes, one message
+    /// a frame, in the order the moves came. Under it, from the first move in a workspace
+    /// whose file a newer Apertrust wrote, or as one a write found so is shown, until
+    /// another is shown, the one line saying its changes will not be kept (decision 96).
+    fn announce(&mut self, ui: &mut egui::Ui) {
+        if std::mem::take(&mut self.newer_shown)
+            && let Some(warning) = self.warn_newer(ui.ctx())
+        {
+            self.say(warning);
+        }
+        if let Some(next) = self.to_say.pop_front() {
+            self.said = next;
+            ui.ctx().request_repaint();
+        }
+        if self.newer_warning {
+            let t = theme(ui.ctx());
+            let margin = apertrust_ui::components::Section::body_margin(&t);
+            let (text, tip) = (
+                tr(ui.ctx(), "tools-panel-newer"),
+                tr(ui.ctx(), "tools-panel-newer-tip"),
+            );
+            egui::Frame::new()
+                .inner_margin(egui::Margin::symmetric(margin as i8, t.spacing.xs as i8))
+                .show(ui, |ui| {
+                    components::WarningRow::new(&text).tip(&tip).show(ui)
+                });
+        }
+        let at = egui::Rect::from_min_size(ui.cursor().min, egui::Vec2::ZERO);
+        let live = ui.interact(at, ui.scope_id().with("layout moved"), egui::Sense::hover());
+        let said = self.said.as_str();
+        let role = egui::accesskit::Role::Status;
+        live.widget_info(|| egui::WidgetInfo::labeled(role, true, said));
+        (ui.ctx()).accesskit_node_builder(live.id, |node| {
+            node.set_live(egui::accesskit::Live::Polite);
+        });
+    }
+
+    /// Carries out what the headers drawn this frame asked of the layout
+    /// ([`tools::layout_asked`]), each on its own section, and keeps the headers drawn, for
+    /// the registry's layout actions to find the one with the focus.
+    fn layout_asked(&mut self, state: &State, ctx: &egui::Context) {
+        let asked = tools::layout_asked(ctx);
+        self.headers = asked.headers;
+        // The header a move asked the focus for, drawn this frame where the move put it:
+        // the one after a hidden tool's, or a tool's pinned or unpinned. A move this frame
+        // asks for its header as the next frame draws it.
+        if let Some(tool) = self.focus_section.take() {
+            let header = self.headers.iter().find(|(t, _)| *t == tool);
+            if let Some((_, id)) = header {
+                ctx.memory_mut(|memory| memory.request_focus(*id));
+            }
+        }
+        for (tool, id) in asked.run {
+            self.run_on_section(tool, id, state, ctx);
+        }
+    }
+
+    /// The tool whose header has the focus now, which the registry's layout actions act on:
+    /// read as each runs, so one after a key that moved the focus, F6 say, acts on where
+    /// the focus went, none where it left the headers.
+    fn focused_section(&self, ctx: &egui::Context) -> Option<&'static str> {
+        let focused = ctx.memory(|memory| memory.focused())?;
+        let header = self.headers.iter().find(|(_, id)| *id == focused);
+        header.map(|(tool, _)| *tool)
+    }
+
+    /// Runs the layout action `id` on `tool`'s section, as its ⋯ or a screen reader's
+    /// action on its header asks, if it can run there in `state`.
+    fn run_on_section(
+        &mut self,
+        tool: &'static str,
+        id: ActionId,
+        state: &State,
+        ctx: &egui::Context,
+    ) {
+        let state = State {
+            section: self.placing(tool),
+            ..*state
+        };
+        let action = actions::action(id).filter(|action| action.enabled(&state));
+        if let Some(Emit::Intent(Intent::Section(change))) = action.map(|a| &a.emits) {
+            self.move_section(tool, *change, ctx);
+        }
+    }
+
+    /// Moves `tool`'s section as `change` asks (decisions 83 and 96): display order only,
+    /// sending nothing to the session, so the edit, its history and its file never change.
+    /// The workspace's file is written once the layout has stood still, and screen readers
+    /// hear where it went. A move that changes nothing, as one at an end, does nothing.
+    fn move_section(&mut self, tool: &'static str, change: SectionMove, ctx: &egui::Context) {
+        let Some(placing) = self.placing(tool) else {
+            return;
+        };
+        let tab_id = |at: usize| self.workspace.tab(at).map(|tab| tab.id.clone());
+        let at = self.acting_tab(tool).and_then(tab_id);
+        let change = match (change, at) {
+            (SectionMove::Pin, Some(tab)) if placing.pinned => layout::Move::Unpin { tool, tab },
+            (SectionMove::Pin, Some(tab)) => layout::Move::Pin { tool, tab },
+            (SectionMove::Up, Some(tab)) => layout::Move::Up { tool, tab },
+            (SectionMove::Down, Some(tab)) => layout::Move::Down { tool, tab },
+            (SectionMove::ToTab(to), from) => match tab_id(to) {
+                Some(to) => layout::Move::ToTab { tool, from, to },
+                None => return,
+            },
+            (SectionMove::Hide, _) => layout::Move::Hide { tool },
+            (SectionMove::Show, None) => match self.workspace.show_in(tool).and_then(tab_id) {
+                Some(to) => layout::Move::ToTab {
+                    tool,
+                    from: None,
+                    to,
+                },
+                None => return,
+            },
+            _ => return,
+        };
+        // The tab shown's tools as they were, for the focus where the tool leaves it.
+        let shown = self.shown_tab();
+        let was: Vec<&'static str> = shown.map(|tab| tab.tools().collect()).unwrap_or_default();
+        if !self.workspace.apply(&change) {
+            return;
+        }
+        self.workspaces.keep(&self.workspace);
+        let mut said = self.announcement(&change, ctx);
+        if let Some(warning) = self.warn_newer(ctx) {
+            said = format!("{said}\n{warning}");
+        }
+        self.say(said);
+        let left = self.shown_tab().is_none_or(|tab| !tab.holds(tool));
+        if let Some(at) = was.iter().position(|t| *t == tool).filter(|_| left) {
+            self.focus_left(&change, &was, at);
+            // Its header gone, it no longer counts as the one with the focus, so a layout
+            // action later in the frame acts on nothing.
+            self.headers.retain(|(t, _)| *t != tool);
+        }
+        // Pinned or unpinned, its header is drawn in the other list, under another id: the
+        // focus follows it there, as it follows a tool to another tab.
+        if let layout::Move::Pin { .. } | layout::Move::Unpin { .. } = change {
+            self.focus_section = Some(tool);
+        }
+        self.workspace_files
+            .moved(&self.workspace, change, Instant::now());
+        ctx.request_repaint();
+    }
+
+    /// The one line saying the workspace shown keeps no change, its file a newer
+    /// Apertrust's, the first time this run (decision 96): shown over the Tools panel's
+    /// sections until another workspace is, and its words for screen readers to hear.
+    fn warn_newer(&mut self, ctx: &egui::Context) -> Option<String> {
+        if !self.workspace.newer || !self.newer_warned.insert(self.workspace.id.clone()) {
+            return None;
+        }
+        self.newer_warning = true;
+        Some(tr(ctx, "tools-panel-newer"))
+    }
+
+    /// Takes in what the workspaces' writer found since the last frame: a workspace whose
+    /// file a newer Apertrust wrote after this one read it is never written from now, and,
+    /// shown, says so at once, its moves lasting for the session.
+    fn follow_files(&mut self, ctx: &egui::Context) {
+        for id in self.workspace_files.newer() {
+            self.workspaces.mark_newer(&id);
+            if self.workspace.id == id {
+                self.workspace.newer = true;
+                if let Some(warning) = self.warn_newer(ctx) {
+                    self.say(warning);
+                    ctx.request_repaint();
+                }
+            } else {
+                // Said as it is shown again.
+                self.newer_found.insert(id);
+            }
+        }
+    }
+
+    /// Has screen readers hear `words`, after what they are still to hear ([`Shell::announce`]).
+    fn say(&mut self, words: String) {
+        self.announced.clone_from(&words);
+        self.to_say.push_back(words);
+    }
+
+    /// Where the focus goes when `change` took a tool out of the tab shown, where it was at
+    /// `at` among the tools `was` lists, its header gone (decisions 83 and 96): moved to a
+    /// tab, that tab's icon, or » where it is folded under it; hidden, the next header in
+    /// the tab, else the one before, else the tab's own icon, or ⋮ where the tab, left
+    /// empty, is drawn disabled (`TabBar::focus`).
+    fn focus_left(&mut self, change: &layout::Move, was: &[&'static str], at: usize) {
+        if let layout::Move::ToTab { to, .. } = change {
+            self.focus_tab = self.workspace.position(to);
+            return;
+        }
+        let next = was.get(at + 1).or_else(|| was.get(at.checked_sub(1)?));
+        match next {
+            Some(tool) => self.focus_section = Some(tool),
+            None if self.hidden_chosen && self.hidden_shown() => {
+                self.focus_tab = Some(self.workspace.tabs().len());
+            }
+            None => self.focus_tab = Some(self.panel_tab),
+        }
+    }
+
+    /// What screen readers hear of `change`, made (decisions 83 and 96): "Exposure moved to
+    /// 3 of 12 in Adjust", "Exposure pinned in Adjust", "Exposure moved to Raw", "Vignetting
+    /// hidden", "Vignetting shown in Effects".
+    fn announcement(&self, change: &layout::Move, ctx: &egui::Context) -> String {
+        let words = translator(ctx);
+        let tool = change.tool();
+        let mut args = apertrust_ui::i18n::Args::new();
+        args.set("tool", tools::title(&words, tool));
+        let at = |id: &str| self.workspace.position(id);
+        let tab = |id: &str| match at(id).and_then(|at| self.workspace.tab(at)) {
+            Some(tab) => match &tab.title {
+                layout::Title::Message(message) => words.text(message),
+                layout::Title::Own(title) => title.clone(),
+            },
+            None => id.to_owned(),
+        };
+        let message = match change {
+            layout::Move::Up { tab: id, .. } | layout::Move::Down { tab: id, .. } => {
+                let place = at(id).and_then(|at| self.workspace.place(tool, at));
+                args.set("tab", tab(id));
+                args.set("at", place.map_or(0, |place| place.at));
+                args.set("of", place.map_or(0, |place| place.of));
+                "section-moved"
+            }
+            layout::Move::Pin { tab: id, .. } => {
+                args.set("tab", tab(id));
+                "section-pinned"
+            }
+            layout::Move::Unpin { tab: id, .. } => {
+                args.set("tab", tab(id));
+                "section-unpinned"
+            }
+            layout::Move::ToTab { from, to, .. } => {
+                args.set("tab", tab(to));
+                if from.is_some() {
+                    "section-moved-to"
+                } else {
+                    "section-shown"
+                }
+            }
+            layout::Move::Hide { .. } => "section-hidden",
+        };
+        words.text_with(message, Some(&args))
     }
 
     /// View › Workspace's items: each workspace's action with its name in the interface's
@@ -1895,6 +2227,9 @@ impl Shell {
     /// until another tab is chosen. Kept in `state.toml` as the tab last shown only while
     /// Show Hidden Tools is on, so a start opens on it only then.
     fn choose_hidden(&mut self) {
+        if !self.hidden_chosen {
+            self.left_tab();
+        }
         self.hidden_for_now |= !self.show_hidden;
         self.hidden_chosen = true;
         if self.show_hidden {
@@ -1911,6 +2246,7 @@ impl Shell {
         if self.show_hidden {
             self.choose_hidden();
         } else if std::mem::take(&mut self.hidden_chosen) {
+            self.left_tab();
             self.choose_tab(self.panel_tab);
         }
     }
@@ -2179,6 +2515,7 @@ impl Shell {
             options: menus::options(ctx, definition.id, &self.keymap, state),
             enabled: true,
             photo: None,
+            layout: self.placing(definition.id).filter(|_| !state.modal),
         }
     }
 
@@ -2430,6 +2767,9 @@ impl Shell {
             workspace: actions::workspace(&self.workspace.id),
             workspace_given: self.workspace_given,
             show_hidden_given: self.show_hidden_given,
+            section: self
+                .focused_section(ctx)
+                .and_then(|tool| self.placing(tool)),
             browser: self.browser,
             // The app's, from the folder it shows ([`App::shell_state`]).
             shown: false,
@@ -2663,6 +3003,7 @@ impl Shell {
             .customise(false)
             .items(items)
             .dot(says.as_deref())
+            .focus(self.focus_tab.take())
             .show(ui)
         {
             Some(TabBarAction::Select(i)) => action(i),
@@ -2688,6 +3029,18 @@ impl Shell {
         ctx: &egui::Context,
         regions: &[egui::Rect],
     ) -> Option<Command> {
+        // A layout action's availability depends on where its section is as it runs, so
+        // two in one frame each see the other's move (decision 83).
+        let placed;
+        let state = if actions::moves_section(id) {
+            let section = self
+                .focused_section(ctx)
+                .and_then(|tool| self.placing(tool));
+            placed = State { section, ..*state };
+            &placed
+        } else {
+            state
+        };
         let action = actions::action(id).filter(|a| a.enabled(state))?;
         if state.text
             && let Some(keys) = actions::field_keys(id, ctx.os())
@@ -2737,6 +3090,11 @@ impl Shell {
             }
             Intent::ShowHiddenTools => self.toggle_show_hidden(),
             Intent::Workspace(id) => self.switch_workspace(id),
+            Intent::Section(change) => {
+                if let Some(tool) = self.focused_section(ctx) {
+                    self.move_section(tool, change, ctx);
+                }
+            }
             // Pressed again, it is chosen already, and nothing changes. Hidden, it is
             // revealed in the Hidden tab, opened and scrolled to, as any tool is (decision
             // 96).
@@ -2754,6 +3112,9 @@ impl Shell {
                 let focused = ctx.memory(|m| m.focused());
                 if let Some(id) = actions::next_region(regions, &focusable(ctx), focused, forward) {
                     ctx.memory_mut(|m| m.request_focus(id));
+                    // The focus a move asked for earlier in the frame gives way to it.
+                    self.focus_section = None;
+                    self.focus_tab = None;
                 }
             }
             Intent::FullScreen => {
@@ -2787,9 +3148,18 @@ impl Shell {
         };
         self.recents.set_tab(&self.workspace.id, &chosen.id);
         self.recents.save();
+        if tab != self.panel_tab || self.hidden_chosen {
+            self.left_tab();
+        }
         self.panel_tab = tab;
         self.hidden_chosen = false;
         self.hidden_for_now = false;
+    }
+
+    /// The tab shown changed: the headers drawn in the one left no longer count, so a layout
+    /// action later in the frame acts on none of its tools.
+    fn left_tab(&mut self) {
+        self.headers.clear();
     }
 
     /// The theme in use, with the background chosen behind the photo, if any.
@@ -2994,7 +3364,12 @@ impl App {
         gate: SubmitGate,
         engine: apertrust_engine::settings::Options,
         cache: Option<Arc<Cache>>,
-        (recents, workspaces, workspace): (Recents, layout::Workspaces, layout::Workspace),
+        (recents, workspaces, workspace, folder): (
+            Recents,
+            layout::Workspaces,
+            layout::Workspace,
+            Option<PathBuf>,
+        ),
         storage_folders: storage::Folders,
         dialogs: dialog_host::Host,
         kept: apertrust_base::log::Kept,
@@ -3019,6 +3394,11 @@ impl App {
             ),
             recents,
             workspaces,
+            workspace_files: folder.map_or_else(layout::Files::nowhere, |folder| {
+                // A newer build's file found while the window rests: a frame to say so.
+                let ctx = cc.egui_ctx.clone();
+                layout::Files::waking(folder, move || ctx.request_repaint())
+            }),
             workspace_given: keeper.overridden(&settings::registry::WORKSPACE),
             show_hidden_given: keeper.overridden(&settings::registry::TOOLS_PANEL_SHOW_HIDDEN),
             ..Shell::new(&settings, system_locale(), cc.egui_ctx.os())
@@ -4199,6 +4579,7 @@ impl App {
         let changing = self.shell.hidden_changing(self.mirror.edited());
         let tab_clicked = self.shell.tab_bar(ui, &state, &changing);
         ui.spacing_mut().item_spacing.y = 0.0;
+        self.shell.announce(ui);
         let holds = |tool: &str| self.shell.shown_tab().is_some_and(|tab| tab.holds(tool));
         let (collections, exporting) = (holds(library::ID), holds(export::ID));
         if collections && !self.shell.collections_shown {
@@ -4226,14 +4607,17 @@ impl App {
         let head = self
             .shell
             .head(ui.ctx(), declared, &state, false, export::OPEN);
-        let mut export_shown = exporting.then(|| ExportShown {
-            head: tools::Head {
-                photo: self.mirror.photo.open(),
-                ..head
-            },
-            shown: self.export_shown(),
-            reveal: revealed && self.shell.reveal == Some(export::ID),
-        });
+        let mut photos_shown = PhotosShown {
+            collections: self.shell.placing(library::ID).filter(|_| !state.modal),
+            export: exporting.then(|| ExportShown {
+                head: tools::Head {
+                    photo: self.mirror.photo.open(),
+                    ..head
+                },
+                shown: self.export_shown(),
+                reveal: revealed && self.shell.reveal == Some(export::ID),
+            }),
+        };
         let recent = if collections {
             self.shell.recent_folders()
         } else {
@@ -4254,7 +4638,7 @@ impl App {
         let mut photos = PhotosDrawn::default();
         let export = &mut self.export;
         let mut others = |ui: &mut egui::Ui, id: &'static str, cx: &mut utility::Context<'_>| {
-            let shown = &mut export_shown;
+            let shown = &mut photos_shown;
             photos_tool(ui, id, cx, &mut library, export, shown, &mut photos);
         };
         let (mirror, panels) = (&self.mirror, &self.panels);
@@ -4322,6 +4706,7 @@ impl App {
         let asked = self
             .shell
             .history_asked(tab.pressed, &tab.history, ui.ctx());
+        self.shell.layout_asked(&state, ui.ctx());
         asked.or(tab_clicked)
     }
 
@@ -5672,6 +6057,8 @@ impl eframe::App for App {
 
     fn on_exit(&mut self) {
         self.keeper.flush();
+        // The moves made since the workspace's file was last written (decision 96).
+        self.shell.workspace_files.flush();
         // What was open last, with the folder and photo active in it, for the next start;
         // as it was while it still reopens.
         keep_at_exit(
@@ -6626,6 +7013,16 @@ struct ExportShown {
     reveal: bool,
 }
 
+/// What the shell gives the Photos tab's own tools ([`photos_tool`]): Collections' place in
+/// the workspace's layout, the rest of its header its own, and the Export tool, taken as
+/// it is drawn.
+#[derive(Debug, Default)]
+struct PhotosShown {
+    /// Where Collections is in the layout (`tools::Head::layout`).
+    collections: Option<actions::Placing>,
+    export: Option<ExportShown>,
+}
+
 /// What Collections and Export asked for, drawn in the tab shown ([`photos_tool`]).
 #[derive(Debug, Default)]
 struct PhotosDrawn {
@@ -6669,16 +7066,16 @@ fn utility_setting(
 }
 
 /// Draws `id`, Collections or the Export tool, where the tab shown holds it: Collections
-/// through its `UtilityTool`, its header from its declaration with its own ⋯ items, and
-/// Export as `shown` has it, taken as it is drawn, scrolled into view where Export… asked.
-/// What either asked for goes into `out`.
+/// through its `UtilityTool`, its header from its declaration with its own ⋯ items, placed
+/// in the layout as `shown` says, and Export as `shown` has it, taken as it is drawn,
+/// scrolled into view where Export… asked. What either asked for goes into `out`.
 fn photos_tool(
     ui: &mut egui::Ui,
     id: &str,
     cx: &mut utility::Context<'_>,
     collections: &mut library::Collections<'_>,
     export: &mut export::Export,
-    shown: &mut Option<ExportShown>,
+    shown: &mut PhotosShown,
     out: &mut PhotosDrawn,
 ) {
     if id == library::ID {
@@ -6686,6 +7083,7 @@ fn photos_tool(
         // dropped, never run on the new photo's folder.
         let head = tools::Head {
             photo: cx.mirror.photo.open(),
+            layout: shown.collections,
             ..library::head(ui, collections)
         };
         let section = utility::section(ui, collections, cx, head, false);
@@ -6698,7 +7096,7 @@ fn photos_tool(
         out.actions.extend(section.actions);
         out.changes.extend(section.changes);
     } else if id == export::ID
-        && let Some(shown) = shown.take()
+        && let Some(shown) = shown.export.take()
     {
         let tool = ui.push_id(export::ID, |ui| {
             export.show(ui, shown.head, &shown.shown, cx)
@@ -6876,7 +7274,8 @@ fn prepare(ctx: &egui::Context, shell: &Shell, scale: f32) {
 }
 
 /// Hands the frame's settings to `keeper`, which writes them once they have stood still,
-/// and asks for a frame then, should nothing else bring one; keeps the window's size and
+/// as the workspace's file is once its layout has, and asks for a frame then, should
+/// nothing else bring one; keeps the window's size and
 /// place, and maximises it once it shows, if it was, only where they are the main window's
 /// own (`placed`), never the start window's.
 fn keep(shell: &mut Shell, keeper: &mut Keeper, ctx: &egui::Context, placed: bool) {
@@ -6885,6 +7284,12 @@ fn keep(shell: &mut Shell, keeper: &mut Keeper, ctx: &egui::Context, placed: boo
         shell.track_window(ctx);
     }
     if let Some(wait) = keeper.frame(Instant::now(), &shell.to_settings(ctx)) {
+        ctx.request_repaint_after(wait);
+    }
+    // The workspace's file, once its layout has stood still, and what its writer found
+    // (decision 96).
+    shell.follow_files(ctx);
+    if let Some(wait) = shell.workspace_files.poll(Instant::now()) {
         ctx.request_repaint_after(wait);
     }
 }
@@ -9862,10 +10267,19 @@ mod tests {
     /// out as the app does ([`Shell::history_asked`]), the commands it sends kept in
     /// `sent`.
     fn tools_panel(folder: &settings::testing::Folder) -> Harness<'static, Editing> {
+        tools_panel_in(folder, egui::vec2(560.0, 3000.0), Theme::default())
+    }
+
+    /// [`tools_panel`] at `size`, in `theme`.
+    fn tools_panel_in(
+        folder: &settings::testing::Folder,
+        size: egui::Vec2,
+        theme: Theme,
+    ) -> Harness<'static, Editing> {
         let (_, settings) = Keeper::open(folder.storage());
         Harness::builder()
-            .with_size(egui::vec2(560.0, 3000.0))
-            .with_context_setup(|ctx| apertrust_ui::install(ctx, Theme::default()))
+            .with_size(size)
+            .with_context_setup(move |ctx| apertrust_ui::install(ctx, theme.clone()))
             .build_ui_state(
                 |ui, editing: &mut Editing| {
                     let ctx = ui.ctx().clone();
@@ -9875,6 +10289,7 @@ mod tests {
                         editing.shell.run(id, &state, &ctx, &[]);
                     }
                     ui.spacing_mut().item_spacing.y = 0.0;
+                    editing.shell.announce(ui);
                     let panels = tools::Panels::default();
                     let (shell, mirror) = (&editing.shell, &editing.mirror);
                     let revealed = shell.revealing();
@@ -9901,6 +10316,7 @@ mod tests {
                     editing.sent.extend(tab.commands);
                     editing.history.extend(tab.history.iter().copied());
                     editing.shell.history_asked(tab.pressed, &tab.history, &ctx);
+                    editing.shell.layout_asked(&state, &ctx);
                 },
                 Editing {
                     shell: Shell::new(&settings, Locale::EnGb, OperatingSystem::Mac),
@@ -10477,6 +10893,737 @@ mod tests {
                 results.extend(harness.take_snapshot_results());
             }
         }
+    }
+
+    /// The Tools panel of the Default workspace on its Effects tab, its workspace's file
+    /// kept in `folder`'s `workspaces`.
+    fn effects_tab(folder: &settings::testing::Folder) -> Harness<'static, Editing> {
+        let mut harness = tools_panel(folder);
+        let shell = &mut harness.state_mut().shell;
+        shell.workspace_files = layout::Files::new(folder.0.join("workspaces"));
+        let effects = shell.workspace.position("effects").unwrap();
+        shell.choose_tab(effects);
+        harness.run();
+        harness
+    }
+
+    /// The Effects tab's scrolling list.
+    fn effects_order(harness: &Harness<'_, Editing>) -> Vec<&'static str> {
+        let shell = &harness.state().shell;
+        let effects = shell.workspace.position("effects").unwrap();
+        shell.workspace.tab(effects).unwrap().order.clone()
+    }
+
+    /// The polite live region that says where the last move took a tool.
+    fn announced(harness: &Harness<'_, Editing>) -> String {
+        let said = harness.state().shell.announced.clone();
+        let live = harness.get_by_role_and_label(Role::Status, &said);
+        let polite = Some(egui::accesskit::Live::Polite);
+        assert_eq!(live.accesskit_node().data().live(), polite);
+        said
+    }
+
+    /// Alt+↑ and Alt+↓ on a focused header move it one place in its list, nothing at an
+    /// end, and screen readers hear where it went; the header keeps the focus, and nothing
+    /// reaches the session (decisions 83 and 96).
+    #[test]
+    fn alt_arrows_move_a_focused_header_in_its_list() {
+        let folder = settings::testing::Folder::new("layout-alt-arrows");
+        let mut harness = effects_tab(&folder);
+        let before = effects_order(&harness);
+        assert_eq!(before[0], "vignette");
+        harness
+            .get_by_role_and_label(Role::Button, "Vignetting")
+            .focus();
+        harness.run();
+        harness.key_press_modifiers(Modifiers::ALT, Key::ArrowDown);
+        harness.run();
+        let after = effects_order(&harness);
+        assert_eq!(after[..2], [before[1], "vignette"]);
+        let of = before.len() + 1;
+        assert_eq!(
+            announced(&harness),
+            format!("Vignetting moved to 3 of {of} in Effects")
+        );
+        let header = harness.get_by_role_and_label(Role::Button, "Vignetting");
+        assert!(header.accesskit_node().is_focused());
+        harness.key_press_modifiers(Modifiers::ALT, Key::ArrowUp);
+        harness.run();
+        assert_eq!(effects_order(&harness), before);
+        // At the top, nothing moves.
+        harness.key_press_modifiers(Modifiers::ALT, Key::ArrowUp);
+        harness.run();
+        assert_eq!(effects_order(&harness), before);
+        // An arrow alone is not the header's.
+        harness.key_press(Key::ArrowDown);
+        harness.run();
+        assert_eq!(effects_order(&harness), before);
+        assert!(harness.state().sent.is_empty());
+    }
+
+    /// The registry's layout actions act on the section whose header has the focus, and
+    /// none can run while no header has it (decisions 83 and 96).
+    #[test]
+    fn the_layout_s_actions_act_on_the_focused_header() {
+        let folder = settings::testing::Folder::new("layout-registry");
+        let mut harness = effects_tab(&folder);
+        let ctx = harness.ctx.clone();
+        let state = harness.state().shell.state(&ctx, false, false);
+        assert_eq!(state.section, None);
+        for id in [ActionId::SECTION_PIN, ActionId::SECTION_HIDE] {
+            assert!(!actions::action(id).unwrap().enabled(&state), "{}", id.0);
+        }
+        harness.get_by_role_and_label(Role::Button, "Grain").focus();
+        harness.run();
+        let state = harness.state().shell.state(&ctx, false, false);
+        let placing = state.section.expect("Grain's header has the focus");
+        assert!(!placing.hidden && !placing.pinned && placing.up && placing.removable);
+        let shell = &mut harness.state_mut().shell;
+        shell.run(ActionId::SECTION_PIN, &state, &ctx, &[]);
+        let effects = shell.workspace.position("effects").unwrap();
+        assert_eq!(
+            shell.workspace.tab(effects).unwrap().pinned,
+            ["scopes", "grain"]
+        );
+        assert_eq!(shell.announced, "Grain pinned in Effects");
+        let photos = shell.workspace.position("photos").unwrap();
+        let to_photos = ActionId::SECTION_MOVE_TO_TAB[photos];
+        let state = shell.state(&ctx, false, false);
+        shell.run(to_photos, &state, &ctx, &[]);
+        assert!(shell.workspace.tab(photos).unwrap().holds("grain"));
+        assert!(!shell.workspace.tab(effects).unwrap().holds("grain"));
+        assert_eq!(shell.announced, "Grain moved to Photos");
+        // Its header gone from the tab shown, the focus goes to the Photos tab's icon.
+        assert_eq!(shell.focus_tab, Some(photos));
+        harness.run();
+        let photos_tab = harness.get_by_role_and_label(Role::Tab, "Photos");
+        assert!(photos_tab.accesskit_node().is_focused());
+    }
+
+    /// What the layout's actions can do to a tool, where it is (decisions 83, 90 and 96):
+    /// in a tab, every move but to its own tab, one already holding it or one that cannot
+    /// be chosen; Export never removed; hidden, only a move to a tab.
+    #[test]
+    fn the_layout_s_actions_run_where_they_can() {
+        let folder = settings::testing::Folder::new("layout-available");
+        let mut shell = essentials(&folder, false);
+        let ctx = egui::Context::default();
+        let state = |shell: &Shell, tool| State {
+            section: shell.placing(tool),
+            ..shell.state(&ctx, false, false)
+        };
+        let can = |state: &State, id: ActionId| actions::action(id).unwrap().enabled(state);
+        let photos = shell.workspace.position("photos").unwrap();
+        let adjust = shell.workspace.position("adjust").unwrap();
+        let history = shell.workspace.position("history").unwrap();
+        let exposure = state(&shell, "exposure");
+        assert!(can(&exposure, ActionId::SECTION_PIN));
+        assert!(can(&exposure, ActionId::SECTION_HIDE));
+        assert!(!can(&exposure, ActionId::SECTION_SHOW));
+        assert!(can(&exposure, ActionId::SECTION_MOVE_TO_TAB[photos]));
+        assert!(!can(&exposure, ActionId::SECTION_MOVE_TO_TAB[adjust]));
+        assert!(can(&exposure, ActionId::SECTION_MOVE_TO_TAB[history]));
+        assert!(
+            !can(&exposure, ActionId::SECTION_MOVE_TO_TAB[3]),
+            "no fourth tab"
+        );
+        // Export stays in every workspace.
+        let export = state(&shell, export::ID);
+        assert!(!can(&export, ActionId::SECTION_HIDE));
+        assert!(can(&export, ActionId::SECTION_PIN));
+        // Hidden: only to a tab.
+        let vignette = state(&shell, "vignette");
+        assert!(vignette.section.unwrap().hidden);
+        for id in [
+            ActionId::SECTION_PIN,
+            ActionId::SECTION_HIDE,
+            ActionId::SECTION_MOVE_UP,
+            ActionId::SECTION_MOVE_DOWN,
+        ] {
+            assert!(!can(&vignette, id), "{}", id.0);
+        }
+        assert!(can(&vignette, ActionId::SECTION_SHOW));
+        assert!(can(&vignette, ActionId::SECTION_MOVE_TO_TAB[adjust]));
+        // A modal dialog over the window: none.
+        let modal = State {
+            modal: true,
+            ..exposure
+        };
+        assert!(!can(&modal, ActionId::SECTION_PIN));
+        // Shown in its first default tab the workspace has, else the first tab.
+        shell.run_on_section("vignette", ActionId::SECTION_SHOW, &vignette, &ctx);
+        assert!(shell.workspace.tab(photos).unwrap().holds("vignette"));
+        assert_eq!(shell.announced, "Vignetting shown in Photos");
+        // In the Default workspace, a disabled tab takes nothing.
+        shell.open_workspace(layout::Workspace::builtin_default());
+        let detail = shell.workspace.position("detail").unwrap();
+        let grain = state(&shell, "grain");
+        assert!(!can(&grain, ActionId::SECTION_MOVE_TO_TAB[detail]));
+    }
+
+    /// Screen readers' actions on a header are the layout's that can do something where the
+    /// tool is, each running as its action (decisions 83 and 96): in a tab, Move Tool Down
+    /// at the top, Pin Tool and Remove Tool; hidden, Show Tool in Tab alone. Each move is
+    /// said in the live region.
+    #[test]
+    fn screen_readers_move_a_tool_from_its_header() {
+        use egui::accesskit::{Action, ActionData, ActionRequest};
+        let folder = settings::testing::Folder::new("layout-screen-readers");
+        let mut harness = effects_tab(&folder);
+        let custom = |harness: &Harness<'_, Editing>| -> Vec<(i32, String)> {
+            let header = harness.get_by_role_and_label(Role::Button, "Vignetting");
+            let node = header.accesskit_node();
+            let actions = node.data().custom_actions().iter();
+            actions.map(|a| (a.id, a.description.clone())).collect()
+        };
+        let named = |actions: Vec<(i32, String)>| -> Vec<String> {
+            actions.into_iter().map(|(_, words)| words).collect()
+        };
+        assert_eq!(
+            named(custom(&harness)),
+            ["Move Tool Down", "Pin Tool", "Remove Tool"]
+        );
+        let request = |harness: &mut Harness<'_, Editing>, words: &str| {
+            let actions = custom(harness);
+            let (id, _) = actions.iter().find(|(_, w)| w == words).unwrap();
+            let header = harness.get_by_role_and_label(Role::Button, "Vignetting");
+            let (target, tree) = header.accesskit_node().locate();
+            harness.event(egui::Event::AccessKitActionRequest(ActionRequest {
+                action: Action::CustomAction,
+                target_tree: tree,
+                target_node: target,
+                data: Some(ActionData::CustomAction(*id)),
+            }));
+            harness.run();
+            harness.run();
+        };
+        request(&mut harness, "Pin Tool");
+        assert_eq!(announced(&harness), "Vignetting pinned in Effects");
+        assert_eq!(
+            named(custom(&harness)),
+            ["Move Tool Up", "Unpin Tool", "Remove Tool"]
+        );
+        request(&mut harness, "Remove Tool");
+        assert_eq!(announced(&harness), "Vignetting hidden");
+        assert!(harness.state().shell.workspace.hides("vignette"));
+        harness.state_mut().shell.choose_hidden();
+        harness.run();
+        assert_eq!(named(custom(&harness)), ["Show Tool in Tab"]);
+        request(&mut harness, "Show Tool in Tab");
+        assert_eq!(announced(&harness), "Vignetting shown in Effects");
+        assert!(!harness.state().shell.workspace.hides("vignette"));
+        assert!(harness.state().sent.is_empty());
+    }
+
+    /// Alt+↓ then Alt+↑ in one frame on the first header take it down and back, in the order
+    /// they came (decision 83).
+    #[test]
+    fn two_moves_in_a_frame_go_in_their_order() {
+        let folder = settings::testing::Folder::new("layout-two-moves");
+        let mut harness = effects_tab(&folder);
+        let before = effects_order(&harness);
+        harness
+            .get_by_role_and_label(Role::Button, "Vignetting")
+            .focus();
+        harness.run();
+        for key in [Key::ArrowDown, Key::ArrowUp] {
+            harness.event(egui::Event::Key {
+                key,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers: Modifiers::ALT,
+            });
+        }
+        harness.run();
+        assert_eq!(effects_order(&harness), before);
+        // Both ran: the last said where Up took it back to, second after Scopes.
+        let of = before.len() + 1;
+        assert_eq!(
+            harness.state().shell.announced,
+            format!("Vignetting moved to 2 of {of} in Effects")
+        );
+    }
+
+    /// The registry's Move Tool Down then Move Tool Up, bound and pressed in one frame on the
+    /// top header, each run as the section then is: down and back. Up alone at the top does
+    /// nothing (decision 83).
+    #[test]
+    fn bound_moves_in_one_frame_see_each_other() {
+        let folder = settings::testing::Folder::new("layout-bound-moves");
+        let mut harness = effects_tab(&folder);
+        let before = effects_order(&harness);
+        harness
+            .get_by_role_and_label(Role::Button, "Vignetting")
+            .focus();
+        harness.run();
+        let ctx = harness.ctx.clone();
+        // The frame's state, read once before its keys run, the top header unable to rise.
+        let state = harness.state().shell.state(&ctx, false, false);
+        assert!(!state.section.unwrap().up);
+        let shell = &mut harness.state_mut().shell;
+        shell.run(ActionId::SECTION_MOVE_UP, &state, &ctx, &[]);
+        assert!(shell.announced.is_empty());
+        shell.run(ActionId::SECTION_MOVE_DOWN, &state, &ctx, &[]);
+        shell.run(ActionId::SECTION_MOVE_UP, &state, &ctx, &[]);
+        let of = before.len() + 1;
+        assert_eq!(
+            shell.announced,
+            format!("Vignetting moved to 2 of {of} in Effects")
+        );
+        assert_eq!(effects_order(&harness), before);
+    }
+
+    /// A bound Pin Tool acts on the header with the focus as it runs: after a key that took
+    /// the focus elsewhere in the same frame, F6 say, on nothing; with the header still
+    /// focused, on it.
+    #[test]
+    fn a_bound_pin_acts_on_the_header_focused_as_it_runs() {
+        let folder = settings::testing::Folder::new("layout-pin-after-f6");
+        let mut harness = effects_tab(&folder);
+        harness.get_by_role_and_label(Role::Button, "Grain").focus();
+        harness.run();
+        let ctx = harness.ctx.clone();
+        // The frame's state, read before its keys run, Grain's header focused.
+        let state = harness.state().shell.state(&ctx, false, false);
+        assert!(state.section.is_some());
+        let effects = harness.state().shell.workspace.position("effects").unwrap();
+        let pinned = |harness: &Harness<'_, Editing>| {
+            let shell = &harness.state().shell;
+            shell.workspace.tab(effects).unwrap().pinned.clone()
+        };
+        // F6 moved the focus to another region before Pin ran.
+        harness.get_by_role_and_label(Role::Tab, "Photos").focus();
+        harness.run();
+        let shell = &mut harness.state_mut().shell;
+        shell.run(ActionId::SECTION_PIN, &state, &ctx, &[]);
+        assert_eq!(pinned(&harness), ["scopes"]);
+        // Back on Grain's header, Pin pins it.
+        harness.get_by_role_and_label(Role::Button, "Grain").focus();
+        harness.run();
+        let state = harness.state().shell.state(&ctx, false, false);
+        let shell = &mut harness.state_mut().shell;
+        shell.run(ActionId::SECTION_PIN, &state, &ctx, &[]);
+        assert_eq!(pinned(&harness), ["scopes", "grain"]);
+    }
+
+    /// Pinned or unpinned, a tool's header is drawn in its other list, and the focus follows
+    /// it there, as it follows a tool to another tab.
+    #[test]
+    fn the_focus_follows_a_tool_pinned_and_unpinned() {
+        let folder = settings::testing::Folder::new("layout-pin-focus");
+        let mut harness = effects_tab(&folder);
+        harness.get_by_role_and_label(Role::Button, "Grain").focus();
+        harness.run();
+        let ctx = harness.ctx.clone();
+        for _ in 0..2 {
+            let state = harness.state().shell.state(&ctx, false, false);
+            let shell = &mut harness.state_mut().shell;
+            shell.run(ActionId::SECTION_PIN, &state, &ctx, &[]);
+            harness.run();
+            harness.run();
+            let header = harness.get_by_role_and_label(Role::Button, "Grain");
+            assert!(header.accesskit_node().is_focused());
+            assert_eq!(harness.state().shell.focused_section(&ctx), Some("grain"));
+        }
+        let effects = harness.state().shell.workspace.position("effects").unwrap();
+        let tab = harness.state().shell.workspace.tab(effects).unwrap();
+        assert_eq!(tab.pinned, ["scopes"]);
+    }
+
+    /// A tool moved to another tab no longer counts as the one with the focus, so a bound
+    /// Pin later in the frame acts on nothing; after a move within its list it still does,
+    /// so the reorder keys go on working.
+    #[test]
+    fn a_tool_moved_away_is_no_longer_the_focused_one() {
+        let folder = settings::testing::Folder::new("layout-moved-away");
+        let mut harness = effects_tab(&folder);
+        harness.get_by_role_and_label(Role::Button, "Grain").focus();
+        harness.run();
+        let ctx = harness.ctx.clone();
+        let state = harness.state().shell.state(&ctx, false, false);
+        let shell = &mut harness.state_mut().shell;
+        shell.run(ActionId::SECTION_MOVE_DOWN, &state, &ctx, &[]);
+        shell.run(ActionId::SECTION_MOVE_DOWN, &state, &ctx, &[]);
+        assert_eq!(shell.focused_section(&ctx), Some("grain"));
+        let photos = shell.workspace.position("photos").unwrap();
+        shell.run(ActionId::SECTION_MOVE_TO_TAB[photos], &state, &ctx, &[]);
+        assert!(shell.workspace.tab(photos).unwrap().holds("grain"));
+        assert_eq!(shell.focused_section(&ctx), None);
+        shell.run(ActionId::SECTION_PIN, &state, &ctx, &[]);
+        assert!(shell.workspace.tab(photos).unwrap().pinned.is_empty());
+    }
+
+    /// F6 after a bound Pin in the same frame keeps the focus where F6 put it: the header
+    /// the Pin asked the focus for gives way.
+    #[test]
+    fn a_region_move_wins_over_a_pin_s_focus() {
+        let folder = settings::testing::Folder::new("layout-pin-then-f6");
+        let mut harness = effects_tab(&folder);
+        harness.get_by_role_and_label(Role::Button, "Grain").focus();
+        harness.run();
+        let ctx = harness.ctx.clone();
+        let state = harness.state().shell.state(&ctx, false, false);
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(560.0, 3000.0));
+        let shell = &mut harness.state_mut().shell;
+        shell.run(ActionId::SECTION_PIN, &state, &ctx, &[]);
+        assert_eq!(shell.focus_section, Some("grain"));
+        shell.run(ActionId::NEXT_REGION, &state, &ctx, &[screen]);
+        assert_eq!(shell.focus_section, None);
+        let focused = ctx.memory(|memory| memory.focused());
+        harness.run();
+        harness.run();
+        assert_eq!(ctx.memory(|memory| memory.focused()), focused);
+        let grain = harness.get_by_role_and_label(Role::Button, "Grain");
+        assert!(!grain.accesskit_node().is_focused());
+    }
+
+    /// Another tab chosen by its key, the Hidden tab too, then a bound Pin in the same
+    /// frame: the headers of the tab left no longer count, so the Pin acts on nothing.
+    #[test]
+    fn a_pin_after_a_tab_s_key_acts_on_nothing() {
+        let folder = settings::testing::Folder::new("layout-tab-then-pin");
+        let mut harness = effects_tab(&folder);
+        harness.get_by_role_and_label(Role::Button, "Grain").focus();
+        harness.run();
+        let ctx = harness.ctx.clone();
+        let state = harness.state().shell.state(&ctx, false, false);
+        let shell = &mut harness.state_mut().shell;
+        let effects = shell.workspace.position("effects").unwrap();
+        let adjust = shell.workspace.position("adjust").unwrap();
+        shell.run(ActionId::PANEL_TABS[adjust], &state, &ctx, &[]);
+        shell.run(ActionId::SECTION_PIN, &state, &ctx, &[]);
+        assert_eq!(shell.workspace.tab(effects).unwrap().pinned, ["scopes"]);
+        assert_eq!(shell.workspace.tab(adjust).unwrap().pinned, ["scopes"]);
+        // Back on Effects, Grain focused, then the Hidden tab.
+        shell.choose_tab(effects);
+        harness.run();
+        harness.get_by_role_and_label(Role::Button, "Grain").focus();
+        harness.run();
+        let shell = &mut harness.state_mut().shell;
+        assert_eq!(shell.focused_section(&ctx), Some("grain"));
+        shell.choose_hidden();
+        let state = shell.state(&ctx, false, false);
+        shell.run(ActionId::SECTION_PIN, &state, &ctx, &[]);
+        assert_eq!(shell.workspace.tab(effects).unwrap().pinned, ["scopes"]);
+    }
+
+    /// Two moves in one frame are each heard, in order, one a frame, in the polite live
+    /// region.
+    #[test]
+    fn two_moves_in_a_frame_are_each_said() {
+        let folder = settings::testing::Folder::new("layout-two-said");
+        let mut harness = effects_tab(&folder);
+        let of = effects_order(&harness).len() + 1;
+        harness
+            .get_by_role_and_label(Role::Button, "Vignetting")
+            .focus();
+        harness.run();
+        for key in [Key::ArrowDown, Key::ArrowUp] {
+            harness.event(egui::Event::Key {
+                key,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers: Modifiers::ALT,
+            });
+        }
+        let mut heard = Vec::new();
+        for _ in 0..4 {
+            harness.step();
+            let said = harness.state().shell.said.clone();
+            if !said.is_empty() && heard.last() != Some(&said) {
+                harness.get_by_role_and_label(Role::Status, &said);
+                heard.push(said);
+            }
+        }
+        assert_eq!(
+            heard,
+            [
+                format!("Vignetting moved to 3 of {of} in Effects"),
+                format!("Vignetting moved to 2 of {of} in Effects"),
+            ]
+        );
+    }
+
+    /// A newer build's file a write finds while another workspace is shown is said as that
+    /// workspace is shown again, in its one line and to screen readers.
+    #[test]
+    fn a_newer_file_found_while_away_is_said_on_return() {
+        let folder = settings::testing::Folder::new("layout-newer-away");
+        let files = folder.0.join("workspaces");
+        let mut harness = effects_tab(&folder);
+        let ctx = egui::Context::default();
+        let newer = "version = 2\n[[tabs]]\nid = \"effects\"\n[order]\neffects = [\"grain\"]\n";
+        std::fs::create_dir_all(&files).unwrap();
+        std::fs::write(files.join("default.toml"), newer).unwrap();
+        let state = harness.state().shell.state(&ctx, false, false);
+        let shell = &mut harness.state_mut().shell;
+        shell.run_on_section("grain", ActionId::SECTION_PIN, &state, &ctx);
+        // The switch writes at once; the refusal arrives while Essentials shows.
+        shell.switch_workspace(layout::ESSENTIALS);
+        shell.workspace_files.wait();
+        shell.follow_files(&ctx);
+        assert!(!shell.newer_warning);
+        harness.run();
+        let warning = "A newer Apertrust saved this layout, so changes to it won't be kept";
+        assert!(harness.query_by_label(warning).is_none());
+        harness.state_mut().shell.switch_workspace(layout::DEFAULT);
+        harness.run();
+        assert!(harness.state().shell.workspace.newer);
+        assert_eq!(harness.query_all_by_label(warning).count(), 2);
+        // Away and back again: said once a run.
+        let shell = &mut harness.state_mut().shell;
+        shell.switch_workspace(layout::ESSENTIALS);
+        shell.switch_workspace(layout::DEFAULT);
+        harness.run();
+        assert!(!harness.state().shell.newer_warning);
+    }
+
+    /// Switching the workspace forgets the header with the focus and where the focus was to
+    /// go, so a layout action in the same frame acts on nothing of the workspace left.
+    #[test]
+    fn a_switch_forgets_the_focused_header() {
+        let folder = settings::testing::Folder::new("layout-switch-focus");
+        let mut harness = effects_tab(&folder);
+        harness.get_by_role_and_label(Role::Button, "Grain").focus();
+        harness.run();
+        let ctx = harness.ctx.clone();
+        assert_eq!(harness.state().shell.focused_section(&ctx), Some("grain"));
+        let shell = &mut harness.state_mut().shell;
+        shell.focus_section = Some("vignette");
+        shell.focus_tab = Some(1);
+        shell.switch_workspace(layout::ESSENTIALS);
+        assert_eq!(shell.focused_section(&ctx), None);
+        assert!(shell.headers.is_empty());
+        assert_eq!((shell.focus_section, shell.focus_tab), (None, None));
+        let state = shell.state(&ctx, false, false);
+        assert_eq!(state.section, None);
+        shell.run(ActionId::SECTION_PIN, &state, &ctx, &[]);
+        let adjust = shell.workspace.position("adjust").unwrap();
+        assert_eq!(shell.workspace.tab(adjust).unwrap().pinned, ["scopes"]);
+        assert!(shell.announced.is_empty());
+    }
+
+    /// A workspace whose file a newer Apertrust wrote after this one read it: the writer
+    /// leaves the file and tells the shell, which never writes it again and says so at once
+    /// in its one line, the moves lasting for the session (decision 96).
+    #[test]
+    fn a_newer_file_found_by_a_write_is_said_and_never_written() {
+        let folder = settings::testing::Folder::new("layout-newer-found");
+        let files = folder.0.join("workspaces");
+        let mut harness = effects_tab(&folder);
+        let ctx = egui::Context::default();
+        let newer = "version = 2\n[[tabs]]\nid = \"effects\"\n[order]\neffects = [\"grain\"]\n";
+        std::fs::create_dir_all(&files).unwrap();
+        std::fs::write(files.join("default.toml"), newer).unwrap();
+        let state = harness.state().shell.state(&ctx, false, false);
+        let shell = &mut harness.state_mut().shell;
+        assert!(!shell.workspace.newer);
+        shell.run_on_section("grain", ActionId::SECTION_PIN, &state, &ctx);
+        shell.workspace_files.write_now();
+        shell.workspace_files.wait();
+        shell.follow_files(&ctx);
+        assert!(shell.workspace.newer);
+        let warning = "A newer Apertrust saved this layout, so changes to it won't be kept";
+        assert_eq!(shell.announced, warning);
+        harness.run();
+        // The line, and the live region saying it.
+        assert_eq!(harness.query_all_by_label(warning).count(), 2);
+        // The session's moves still work; the file stays the newer build's.
+        let state = harness.state().shell.state(&ctx, false, false);
+        let shell = &mut harness.state_mut().shell;
+        shell.run_on_section("vignette", ActionId::SECTION_PIN, &state, &ctx);
+        assert_eq!(shell.announced, "Vignetting pinned in Effects");
+        shell.workspace_files.flush();
+        let file = std::fs::read_to_string(files.join("default.toml")).unwrap();
+        assert_eq!(file, newer);
+        // Switching away and back keeps it known as a newer build's.
+        shell.switch_workspace(layout::ESSENTIALS);
+        shell.switch_workspace(layout::DEFAULT);
+        assert!(shell.workspace.newer);
+    }
+
+    /// A tool hidden by its header's keys or a screen reader's action leaves the focus to the
+    /// next header in its tab, else the one before, else the tab's icon (decision 96).
+    #[test]
+    fn a_hidden_tool_leaves_the_focus_to_its_neighbour() {
+        let folder = settings::testing::Folder::new("layout-hide-focus");
+        let mut harness = effects_tab(&folder);
+        let order = effects_order(&harness);
+        let ctx = harness.ctx.clone();
+        let focused = |harness: &Harness<'_, Editing>, title: &str| {
+            let header = harness.get_by_role_and_label(Role::Button, title);
+            header.accesskit_node().is_focused()
+        };
+        let hide = |harness: &mut Harness<'_, Editing>, title: &str| {
+            harness.get_by_role_and_label(Role::Button, title).focus();
+            harness.run();
+            let state = harness.state().shell.state(&ctx, false, false);
+            let shell = &mut harness.state_mut().shell;
+            shell.run(ActionId::SECTION_HIDE, &state, &ctx, &[]);
+            harness.run();
+            harness.run();
+        };
+        assert_eq!(order[..2], ["vignette", "grain"]);
+        hide(&mut harness, "Vignetting");
+        assert!(focused(&harness, "Grain"));
+        // The last: the one before it.
+        let last = *effects_order(&harness).last().unwrap();
+        let title = tools::title(&translator(&harness.ctx), last);
+        let before = effects_order(&harness);
+        hide(&mut harness, &title);
+        let previous = before[before.len() - 2];
+        let previous = tools::title(&translator(&harness.ctx), previous);
+        assert!(focused(&harness, &previous));
+        // Scopes alone at last: the tab's icon, drawn disabled once the tab holds nothing,
+        // so ⋮.
+        for tool in effects_order(&harness) {
+            let title = tools::title(&translator(&harness.ctx), tool);
+            hide(&mut harness, &title);
+        }
+        hide(&mut harness, "Scopes");
+        let options = harness.get_by_label("Tab options");
+        assert!(options.accesskit_node().is_focused());
+    }
+
+    /// A tool moved to a tab folded under » gives the focus to », the control drawn
+    /// (decision 83).
+    #[test]
+    fn a_move_to_a_folded_tab_focuses_more() {
+        let folder = settings::testing::Folder::new("layout-folded");
+        let size = egui::vec2(240.0, 1200.0);
+        let mut harness = tools_panel_in(&folder, size, Theme::default());
+        let shell = &mut harness.state_mut().shell;
+        let effects = shell.workspace.position("effects").unwrap();
+        shell.choose_tab(effects);
+        harness.run();
+        assert!(
+            harness
+                .query_by_role_and_label(Role::Tab, "History")
+                .is_none()
+        );
+        let ctx = egui::Context::default();
+        let state = harness.state().shell.state(&ctx, false, false);
+        let shell = &mut harness.state_mut().shell;
+        let history = shell.workspace.position("history").unwrap();
+        let to_history = ActionId::SECTION_MOVE_TO_TAB[history];
+        shell.run_on_section("grain", to_history, &state, &ctx);
+        harness.run();
+        harness.run();
+        let more = harness.get_by_label("More tabs");
+        assert!(more.accesskit_node().is_focused());
+    }
+
+    /// While a modal dialog is open, a header offers screen readers none of the layout's
+    /// actions.
+    #[test]
+    fn no_layout_action_is_offered_under_a_modal() {
+        let folder = settings::testing::Folder::new("layout-modal");
+        let mut harness = effects_tab(&folder);
+        let custom = |harness: &Harness<'_, Editing>| {
+            let header = harness.get_by_role_and_label(Role::Button, "Vignetting");
+            header.accesskit_node().data().custom_actions().len()
+        };
+        assert_eq!(custom(&harness), 3);
+        let ctx = harness.ctx.clone();
+        harness.state_mut().shell.about.open(&ctx);
+        harness.run();
+        assert_eq!(custom(&harness), 0);
+    }
+
+    /// The first move in a workspace whose file a newer Apertrust wrote says, once, in one
+    /// line over the Tools panel's sections and to screen readers, that its changes will not
+    /// be kept; the move still works. Another workspace shown, the line goes, and coming
+    /// back and moving again says nothing more (decision 96).
+    #[test]
+    fn a_newer_build_s_workspace_warns_once_at_its_first_move() {
+        let folder = settings::testing::Folder::new("layout-newer-warning");
+        let files = folder.0.join("workspaces");
+        std::fs::create_dir_all(&files).unwrap();
+        let newer = "version = 2\n[[tabs]]\nid = \"photos\"\nicon = \"folder\"\n\
+                     [[tabs]]\nid = \"effects\"\nicon = \"effect\"\n\
+                     [order]\nphotos = [\"collections\", \"export\"]\n\
+                     effects = [\"vignette\", \"grain\"]\n";
+        std::fs::write(files.join("default.toml"), newer).unwrap();
+        let mut harness = tools_panel(&folder);
+        let (workspaces, _) = layout::Workspaces::read(Some(&files));
+        let (workspace, _) = workspaces.open(layout::DEFAULT);
+        let shell = &mut harness.state_mut().shell;
+        shell.workspaces = workspaces;
+        shell.workspace_files = layout::Files::new(files.clone());
+        shell.open_workspace(workspace);
+        let effects = shell.workspace.position("effects").unwrap();
+        shell.choose_tab(effects);
+        harness.run();
+        let warning = "A newer Apertrust saved this layout, so changes to it won't be kept";
+        assert!(harness.query_by_label(warning).is_none());
+        let ctx = egui::Context::default();
+        let state = harness.state().shell.state(&ctx, false, false);
+        let shell = &mut harness.state_mut().shell;
+        shell.run_on_section("grain", ActionId::SECTION_PIN, &state, &ctx);
+        harness.run();
+        harness.get_by_label(warning);
+        let said = harness.state().shell.announced.clone();
+        assert_eq!(said, format!("Grain pinned in Effects\n{warning}"));
+        assert!(
+            harness
+                .state()
+                .shell
+                .workspace
+                .tab(effects)
+                .unwrap()
+                .pinned
+                .contains(&"grain")
+        );
+        // Away and back: the line goes, and a move says no more.
+        let shell = &mut harness.state_mut().shell;
+        shell.switch_workspace(layout::ESSENTIALS);
+        shell.switch_workspace(layout::DEFAULT);
+        assert!(shell.workspace.newer);
+        let effects = shell.workspace.position("effects").unwrap();
+        shell.choose_tab(effects);
+        harness.run();
+        assert!(harness.query_by_label(warning).is_none());
+        let state = harness.state().shell.state(&ctx, false, false);
+        let shell = &mut harness.state_mut().shell;
+        shell.run_on_section("grain", ActionId::SECTION_PIN, &state, &ctx);
+        harness.run();
+        assert!(harness.query_by_label(warning).is_none());
+        assert_eq!(harness.state().shell.announced, "Grain unpinned in Effects");
+        harness.state_mut().shell.workspace_files.flush();
+        let file = std::fs::read_to_string(files.join("default.toml")).unwrap();
+        assert_eq!(file, newer);
+    }
+
+    /// A move is display order only (decisions 83 and 96): no command reaches the session,
+    /// the edit's file beside the photo stays byte for byte as it was, and the only file
+    /// written is the workspace's, once the move is let be.
+    #[test]
+    fn a_move_writes_the_workspace_s_file_alone() {
+        let folder = settings::testing::Folder::new("layout-no-edit");
+        let sidecar = folder.0.join("IMG_0001.CR3.apxmp");
+        let edit = b"<x:xmpmeta>the edit</x:xmpmeta>\n";
+        std::fs::write(&sidecar, edit).unwrap();
+        let mut harness = effects_tab(&folder);
+        harness
+            .get_by_role_and_label(Role::Button, "Vignetting")
+            .focus();
+        harness.run();
+        harness.key_press_modifiers(Modifiers::ALT, Key::ArrowDown);
+        harness.run();
+        let ctx = harness.ctx.clone();
+        let state = harness.state().shell.state(&ctx, false, false);
+        let shell = &mut harness.state_mut().shell;
+        shell.run(ActionId::SECTION_HIDE, &state, &ctx, &[]);
+        shell.workspace_files.flush();
+        assert!(harness.state().sent.is_empty());
+        assert_eq!(std::fs::read(&sidecar).unwrap(), edit);
+        assert_eq!(folder.files(), ["IMG_0001.CR3.apxmp", "workspaces"]);
+        let file = folder.0.join("workspaces").join("default.toml");
+        let (written, _) = layout::read(&file);
+        let written = written.expect("the workspace's file");
+        assert!(written.hidden.iter().any(|tool| tool == "vignette"));
     }
 
     /// Every tool's values as the session reports them for a photo, every control live,
@@ -13181,7 +14328,11 @@ mod tests {
                                 commands: &mut commands,
                             };
                             let export = &mut bench.export;
-                            let (mut shown, mut drawn) = (Some(shown), PhotosDrawn::default());
+                            let mut shown = PhotosShown {
+                                collections: None,
+                                export: Some(shown),
+                            };
+                            let mut drawn = PhotosDrawn::default();
                             PanelBody::new().show(ui, |ui| {
                                 for id in [library::ID, export::ID] {
                                     let out = &mut drawn;

@@ -150,7 +150,7 @@ pub fn section<T: UtilityTool>(
     let definition = &tool.definition().tool;
     let [title, reset, name, later] = titles(cx.words, definition);
     let about = about(cx.words, definition);
-    let photo = head.photo;
+    let (photo, layout) = (head.photo, head.layout);
     let (mut changes, mut actions) = (Vec::new(), Vec::new());
     let section = tools::header(
         definition,
@@ -162,7 +162,7 @@ pub fn section<T: UtilityTool>(
         head,
     );
     let out = section.show(ui, |ui| (changes, actions) = rows(ui, tool, cx));
-    let mut pressed = tools::pressed(ui, definition, &out, photo);
+    let mut pressed = tools::pressed(ui, definition, &out, photo, layout);
     if pressed.contains(&Pressed::Reset) {
         tool.reset(cx);
     }
@@ -330,7 +330,7 @@ pub fn header(
     let words = translator(ui.ctx());
     let [title, reset, name, later] = titles(&words, definition);
     let about = about(&words, definition);
-    let photo = head.photo;
+    let (photo, layout) = (head.photo, head.layout);
     let section = tools::header(
         definition,
         &title,
@@ -341,7 +341,7 @@ pub fn header(
         head,
     );
     let out = section.show_header(ui);
-    tools::pressed(ui, definition, &out, photo)
+    tools::pressed(ui, definition, &out, photo, layout)
 }
 
 /// Whether the utility `definition`'s ↺ can run in `state`: as its registry action can,

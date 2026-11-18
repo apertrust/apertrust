@@ -126,6 +126,34 @@ impl ActionId {
     /// Show Hidden Tools, in the Tools panel's ⋮: the Hidden tab shown last and chosen, or
     /// taken away (decision 96).
     pub const SHOW_HIDDEN_TOOLS: ActionId = ActionId("tools-panel-show-hidden");
+    /// A section's layout (decisions 83 and 96), each acting on the section whose header has
+    /// the focus, or in ⋯ on its own: Pin Tool or Unpin Tool, in ⋯.
+    pub const SECTION_PIN: ActionId = ActionId("section-pin");
+    /// Move Tool Up and Move Tool Down, one place in its list, as Alt+↑ and Alt+↓ on its
+    /// header do; in no menu.
+    pub const SECTION_MOVE_UP: ActionId = ActionId("section-move-up");
+    pub const SECTION_MOVE_DOWN: ActionId = ActionId("section-move-down");
+    /// Move Tool to Tab ▸'s items by the tab's position, or Show Tool in Tab ▸'s for a
+    /// hidden tool, in ⋯.
+    pub const SECTION_MOVE_TO_TAB: [ActionId; 12] = [
+        ActionId("section-move-to-tab-1"),
+        ActionId("section-move-to-tab-2"),
+        ActionId("section-move-to-tab-3"),
+        ActionId("section-move-to-tab-4"),
+        ActionId("section-move-to-tab-5"),
+        ActionId("section-move-to-tab-6"),
+        ActionId("section-move-to-tab-7"),
+        ActionId("section-move-to-tab-8"),
+        ActionId("section-move-to-tab-9"),
+        ActionId("section-move-to-tab-10"),
+        ActionId("section-move-to-tab-11"),
+        ActionId("section-move-to-tab-12"),
+    ];
+    /// Remove Tool, in ⋯: out of every tab into `hidden`, its edit staying.
+    pub const SECTION_HIDE: ActionId = ActionId("section-hide");
+    /// Show Tool in Tab, for keys and screen readers: a hidden tool to its first default tab
+    /// shown.
+    pub const SECTION_SHOW: ActionId = ActionId("section-show");
     pub const SCALE_UP: ActionId = ActionId("scale-up");
     pub const SCALE_DOWN: ActionId = ActionId("scale-down");
     pub const SCALE_RESET: ActionId = ActionId("scale-reset");
@@ -292,6 +320,44 @@ pub enum Intent {
     /// View › Workspace's item for the workspace of this id: it shown in the Tools panel,
     /// on the tab last shown in it, and kept in settings ([`workspace`]; decision 96).
     Workspace(&'static str),
+    /// A move of the section whose header has the focus, or whose ⋯ chose it (decisions
+    /// 83 and 96): display order only, never the edit.
+    Section(SectionMove),
+}
+
+/// What a layout action does to its section ([`Intent::Section`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SectionMove {
+    /// Pins it in its tab, or unpins it.
+    Pin,
+    Up,
+    Down,
+    /// Moves it to the tab shown at this position, out of `hidden` for a hidden tool.
+    ToTab(usize),
+    /// Takes it out of every tab into `hidden`.
+    Hide,
+    /// Moves a hidden tool to its first default tab shown.
+    Show,
+}
+
+/// Where the section a layout action acts on is ([`State::section`]): what each of the
+/// layout's actions can do to it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Placing {
+    /// Whether it is hidden, in no tab shown: only Show Tool in Tab can run.
+    pub hidden: bool,
+    /// Whether it is pinned in its tab, which names Pin Tool's item Unpin Tool.
+    pub pinned: bool,
+    /// Whether a tool of its list is above it, and below it.
+    pub up: bool,
+    pub down: bool,
+    /// Whether it can be hidden: every tool but Export (decision 90).
+    pub removable: bool,
+    /// Whether it can move to each tab shown, by position: one that can be chosen and does
+    /// not hold it.
+    pub tabs: [bool; 12],
+    /// Whether Show Tool in Tab has a tab to move it to.
+    pub show: bool,
 }
 
 /// What the actions' availability depends on, as the app is this frame.
@@ -381,6 +447,9 @@ pub struct State {
     /// Whether `--conf` sets `tools_panel.show_hidden` for this run: Show Hidden Tools
     /// cannot be turned on or off then, as the settings store refuses the change.
     pub show_hidden_given: bool,
+    /// Where the section the layout's actions act on is: the one whose header has the
+    /// focus, or in ⋯ its own; none where none has, and they cannot run.
+    pub section: Option<Placing>,
     /// How the Browser shows the folder, whose items are shown checked.
     pub browser: crate::settings::BrowserSettings,
     /// Whether the Browser shows photos: its browser bar's items rest without any.
@@ -557,6 +626,22 @@ pub fn options_tip(id: ActionId, state: &State) -> Option<&'static str> {
     })
 }
 
+/// Whether `id` is one of the layout's actions, which move a section (decisions 83 and
+/// 96): run on the section whose ⋯ chose it, never through the edit.
+pub fn moves_section(id: ActionId) -> bool {
+    action(id).is_some_and(|a| matches!(a.emits, Emit::Intent(Intent::Section(_))))
+}
+
+/// The words of the layout's action `id` for a section where `placing` says it is: Pin
+/// Tool's are Unpin Tool's while it is pinned; the others' are their own.
+pub fn section_words(id: ActionId, placing: Placing) -> &'static str {
+    match action(id) {
+        Some(_) if id == ActionId::SECTION_PIN && placing.pinned => "action-section-unpin",
+        Some(action) => action.message,
+        None => "",
+    }
+}
+
 fn no_modal_dialog(state: &State) -> bool {
     !state.modal
 }
@@ -638,9 +723,34 @@ fn tab_enabled<const I: usize>(state: &State) -> bool {
     on_main_window(state) && state.tabs.get(I).copied().unwrap_or(false)
 }
 
+/// Whether a layout action can run on the section it acts on, `can` saying what it needs
+/// of where that is: on the main window, with no modal dialog over it.
+fn section_can(state: &State, can: impl Fn(&Placing) -> bool) -> bool {
+    on_main_window(state) && no_modal_dialog(state) && state.section.as_ref().is_some_and(can)
+}
+
+/// Whether the section can move to the tab shown at position `I`.
+fn to_tab_enabled<const I: usize>(state: &State) -> bool {
+    section_can(state, |s| s.tabs[I])
+}
+
+/// A layout action moving its section to the tab shown at position `I`, Move Tool to Tab
+/// `I + 1` in the keymap: no keys by default.
+const fn to_tab<const I: usize>(message: &'static str) -> Action {
+    Action {
+        id: ActionId::SECTION_MOVE_TO_TAB[I],
+        message,
+        keys: &[],
+        scope: Scope::App,
+        trigger: Trigger::Press,
+        available: to_tab_enabled::<I>,
+        emits: Emit::Intent(Intent::Section(SectionMove::ToTab(I))),
+    }
+}
+
 /// Every action, in the order a keyboard map lists them (`docs/gui.md`, The default
 /// keyboard map). Slider keys are not here: they are the slider's own (`SliderRow`).
-pub static ACTIONS: [Action; 84] = [
+pub static ACTIONS: [Action; 101] = [
     // The Toolbar's mark, and About Apertrust in the menus once they come.
     Action {
         id: ActionId::ABOUT,
@@ -1012,6 +1122,65 @@ pub static ACTIONS: [Action; 84] = [
         trigger: Trigger::Press,
         available: |s| on_main_window(s) && !s.show_hidden_given,
         emits: Emit::Intent(Intent::ShowHiddenTools),
+    },
+    // A section's layout (decisions 83 and 96), on the section whose header has the focus,
+    // none with a default key: Alt+↑ and Alt+↓ are the header's own.
+    Action {
+        id: ActionId::SECTION_PIN,
+        message: "action-section-pin",
+        keys: &[],
+        scope: Scope::App,
+        trigger: Trigger::Press,
+        available: |s| section_can(s, |s| !s.hidden),
+        emits: Emit::Intent(Intent::Section(SectionMove::Pin)),
+    },
+    Action {
+        id: ActionId::SECTION_MOVE_UP,
+        message: "action-section-move-up",
+        keys: &[],
+        scope: Scope::App,
+        trigger: Trigger::Repeat,
+        available: |s| section_can(s, |s| !s.hidden && s.up),
+        emits: Emit::Intent(Intent::Section(SectionMove::Up)),
+    },
+    Action {
+        id: ActionId::SECTION_MOVE_DOWN,
+        message: "action-section-move-down",
+        keys: &[],
+        scope: Scope::App,
+        trigger: Trigger::Repeat,
+        available: |s| section_can(s, |s| !s.hidden && s.down),
+        emits: Emit::Intent(Intent::Section(SectionMove::Down)),
+    },
+    to_tab::<0>("action-section-move-to-tab-1"),
+    to_tab::<1>("action-section-move-to-tab-2"),
+    to_tab::<2>("action-section-move-to-tab-3"),
+    to_tab::<3>("action-section-move-to-tab-4"),
+    to_tab::<4>("action-section-move-to-tab-5"),
+    to_tab::<5>("action-section-move-to-tab-6"),
+    to_tab::<6>("action-section-move-to-tab-7"),
+    to_tab::<7>("action-section-move-to-tab-8"),
+    to_tab::<8>("action-section-move-to-tab-9"),
+    to_tab::<9>("action-section-move-to-tab-10"),
+    to_tab::<10>("action-section-move-to-tab-11"),
+    to_tab::<11>("action-section-move-to-tab-12"),
+    Action {
+        id: ActionId::SECTION_HIDE,
+        message: "action-section-hide",
+        keys: &[],
+        scope: Scope::App,
+        trigger: Trigger::Press,
+        available: |s| section_can(s, |s| !s.hidden && s.removable),
+        emits: Emit::Intent(Intent::Section(SectionMove::Hide)),
+    },
+    Action {
+        id: ActionId::SECTION_SHOW,
+        message: "action-section-show",
+        keys: &[],
+        scope: Scope::App,
+        trigger: Trigger::Press,
+        available: |s| section_can(s, |s| s.hidden && s.show),
+        emits: Emit::Intent(Intent::Section(SectionMove::Show)),
     },
     // Ctrl+= first: on most keyboards + needs Shift, and Ctrl++ matches with it held.
     Action {
@@ -2302,6 +2471,7 @@ pub(crate) mod tests {
             workspace: workspace(crate::layout::DEFAULT),
             workspace_given: false,
             show_hidden_given: false,
+            section: None,
             browser: crate::settings::BrowserSettings::default(),
             shown: true,
             background: Some(Background::Dark),

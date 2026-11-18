@@ -1845,7 +1845,7 @@ fn write_edits(
                 && let Some((at, known)) = &mut files.known
                 && *at == path
             {
-                if let Some(stamp) = stamp {
+                if let Some(stamp) = written_stamp(&path, stamp) {
                     *known = Some(stamp);
                 }
                 files.base = base;
@@ -1883,6 +1883,17 @@ fn write_edits(
             saved();
         }
     }
+}
+
+/// The stamp of the file this wrote at `path`: `read`, from the file itself after its
+/// rename, or where there is none, the file's as it is now, so the next save never takes
+/// this one's write for another program's and skips itself. There is none where the file
+/// held the bytes already and was not renamed (`Written::Unchanged`), or where its
+/// metadata could not be read after the rename. Read again from the path, another
+/// program's file put there in that instant would be taken for this one's: a window of
+/// the same kind as the one around the rename (`docs/library.md`, Comparing two copies).
+fn written_stamp(path: &Path, read: Option<Stamp>) -> Option<Stamp> {
+    read.or_else(|| Stamp::of(path))
 }
 
 impl Drop for Writer {
@@ -6441,6 +6452,23 @@ mod tests {
         let _ = std::fs::remove_dir_all(&directory);
         std::fs::create_dir_all(&directory).unwrap();
         directory.join("synthetic.ARW")
+    }
+
+    /// A write whose file's metadata could not be read after its rename records the file's
+    /// stamp as it is now, so the next save compares with this write's file and is never
+    /// taken for another program's change and skipped.
+    #[test]
+    fn a_write_with_no_metadata_records_the_file_as_it_is() {
+        let raw = scratch("no-metadata");
+        let edit = raw.with_file_name("synthetic.ARW.apxmp");
+        std::fs::write(&edit, b"<x:xmpmeta>one</x:xmpmeta>").unwrap();
+        let before = Stamp::of(&edit);
+        std::fs::write(&edit, b"<x:xmpmeta>one, longer</x:xmpmeta>").unwrap();
+        let now = Stamp::of(&edit);
+        assert!(now.is_some() && now != before);
+        assert_eq!(written_stamp(&edit, None), now);
+        assert_eq!(written_stamp(&edit, before), before);
+        remove(&raw);
     }
 
     /// Removes `path`'s folder, trying again for a while should a write still under way,
