@@ -96,6 +96,9 @@ icu_datetime = { version = "2.4.0", default-features = false, features = ["compi
 # CLDR number formats, compiled in (Unicode-3.0, allowed by deny.toml).
 icu_decimal = { version = "2.4.0", features = ["alloc"] }
 icu_locale_core = "2.4.0"
+# Unicode's canonical decomposition, compiled in (Unicode-3.0): Find Tool… matches a tool's
+# words with their accents ignored.
+icu_normalizer = { version = "2.4.0", default-features = false, features = ["compiled_data"] }
 # Thread-safe ICU data (Arc instead of Rc), so formatters can be shared.
 icu_provider = { version = "2.4.0", features = ["sync"] }
 flate2 = "1.1.10"

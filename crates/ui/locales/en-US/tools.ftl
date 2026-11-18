@@ -36,6 +36,7 @@ tool-agx-control-blue_unrotation-promise = Reverse the color shift in blues.
 ## Input color profile
 
 tool-colorin-title = Input color profile
+    .search = input color profile
 tool-colorin-control-type-promise = The color profile the camera's colors are read in.
 tool-colorin-control-type-option-standard_matrix = Standard color matrix
 tool-colorin-control-type_work-promise = The color space every tool after this one works in.
@@ -44,6 +45,7 @@ tool-colorin-control-normalize-promise = Confine Lab values to gamut of RGB colo
 ## Output color profile
 
 tool-colorout-title = Output color profile
+    .search = output color profile
 tool-colorout-control-type-promise = The color profile the image is exported in.
 
 ## White balance
@@ -67,6 +69,7 @@ tool-exposure-picker-exposure-hint-middle_grey = Make an area middle gray
 ## Color calibration
 
 tool-channelmixerrgb-title = Color calibration
+    .search = color calibration|channel mixer|white balance|monochrome
 tool-channelmixerrgb-control-adaptation-promise = How the illuminant is adapted, and the color space the tool works in. Linear Bradford (1985) is consistent with the ICC v4 toolchain. CAT16 (2016) is more robust and accurate. Non-linear Bradford (1985) is the original Bradford: it can give better results than the linear one, but is unreliable. XYZ is a simple scaling in XYZ space, not recommended in general. None disables any adaptation and uses the pipeline's working RGB.
 tool-channelmixerrgb-control-illuminant-promise = The light the scene was lit by, which the adaptation turns into white: a standard light, one at a temperature, the camera's own or a custom color.
 tool-channelmixerrgb-control-hue-promise = The color of the light, around the pipeline's white.
@@ -127,6 +130,7 @@ tool-toneequal-control-quantization-promise = 0 turns quantization off. Higher v
 ## Color balance RGB
 
 tool-colorbalancergb-title = Color balance RGB
+    .search = color balance rgb|offset power slope|cdl|color grading|contrast|chroma_highlights|hue|vibrance|saturation
 tool-colorbalancergb-control-vibrance-promise = Increases colorfulness mostly on low-chroma colors.
 tool-colorbalancergb-control-chroma_global-promise = Increases colorfulness at the same luminance, globally.
 tool-colorbalancergb-control-chroma_shadows-promise = Increases colorfulness at the same luminance, mostly in the shadows.

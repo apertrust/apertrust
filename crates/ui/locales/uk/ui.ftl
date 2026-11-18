@@ -38,6 +38,19 @@ tools-panel-no-hidden = У цьому робочому просторі нема
 tools-panel-newer = Це компонування зберегла новіша версія Apertrust, тож зміни в ньому не збережуться
 tools-panel-newer-tip = Ця версія ніколи не перезаписує файл робочого простору, який записала новіша версія Apertrust. Переміщені інструменти лишаються на своїх місцях до виходу з програми.
 tools-panel-hidden-change = Приховані інструменти змінюють це фото: { $tools }
+find-tool-field = Знайти інструмент
+find-tool-close = Закрити пошук
+find-tool-hint = Введіть назву інструмента.
+find-tool-none = Жоден інструмент не відповідає «{ $text }».
+find-tool-count =
+    { $count ->
+        [one] { $count } інструмент
+        [few] { $count } інструменти
+        [many] { $count } інструментів
+       *[other] { $count } інструмента
+    }
+find-tool-lives-in = у вкладці { $tab }
+find-tool-lives-hidden = прихований
 workspace-default = Типовий
 workspace-essentials = Основне
 panel-tab-later = { $tab }: з'явиться в одній із наступних версій
@@ -426,8 +439,10 @@ open-kind-folder = Тека: { $name }
 action-open-folder = Відкрити теку…
 open-folder-title = Відкрити теку
 section-collections = Колекції
+    .search = Колекції
 collections-folders = Теки
 section-export = Експорт
+    .search = Експорт
 collections-open-name = Що відкрито
 collections-no-folder = Жодної теки не відкрито
 collections-recents-none = Немає нещодавніх тек
@@ -696,6 +711,7 @@ action-panel-tab-10 = Вкладка панелі інструментів 10
 action-panel-tab-11 = Вкладка панелі інструментів 11
 action-panel-tab-12 = Вкладка панелі інструментів 12
 action-panel-tab-hidden = Вкладка «Приховані»
+action-find-tool = Знайти інструмент…
 action-tools-panel-show-hidden = Показувати приховані інструменти
 action-section-pin = Закріпити інструмент
 action-section-unpin = Відкріпити інструмент
@@ -830,6 +846,7 @@ history-discard-no-alert-unreadable = Відкидання цієї історі
 ## Розділ «Історія» на вкладці «Історія» панелі інструментів
 
 section-history = Історія
+    .search = Історія
 history-reset-edit = Скинути обробку
 history-step-name = Крок { $number }: { $name }
 history-original = Оригінал
@@ -922,6 +939,7 @@ equalizer-overflows-both = Тіні маски виходять за смугу 
 ## Гістограма й інші графіки; $shadows і $highlights — частки пікселів знімка, у відсотках
 
 section-scopes = Графіки
+    .search = Гістограми
 scope-histogram = Гістограма
 scope-waveform = Осцилограма
 scope-parade = RGB-парад

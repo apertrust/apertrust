@@ -110,6 +110,8 @@ pub struct Section<'a> {
     about: Option<About>,
     /// Whether Alt+↑ and Alt+↓ on its focused header move it.
     movable: bool,
+    /// Where a tool Find Tool… found lives, and whether it is hidden ([`Self::found`]).
+    found: Option<(String, bool)>,
 }
 
 impl Section<'_> {
@@ -143,6 +145,7 @@ impl<'a> Section<'a> {
             not_applied: false,
             about: None,
             movable: false,
+            found: None,
         }
     }
 
@@ -244,6 +247,15 @@ impl<'a> Section<'a> {
     /// header's description (`docs/gui.md`, The header's tooltip).
     pub fn about(mut self, about: About) -> Self {
         self.about = Some(about);
+        self
+    }
+
+    /// A tool Find Tool… found (decision 96): after its title, in `text_secondary`, where
+    /// it lives, `place`, translated: its tab's name, or for a `hidden` one `eye-off` and
+    /// Hidden. Screen readers hear "in Adjust" or "hidden" first in the header's
+    /// description. Its header is one of the tools found, which ↑ and ↓ move between.
+    pub fn found(mut self, place: impl Into<String>, hidden: bool) -> Self {
+        self.found = Some((place.into(), hidden));
         self
     }
 
@@ -386,6 +398,9 @@ impl<'a> Section<'a> {
         toggle.widget_info(|| WidgetInfo::labeled(Role::Button, true, self.title));
         ui.ctx()
             .accesskit_node_builder(id, |node| node.set_expanded(self.open));
+        if self.found.is_some() {
+            super::tools_panel::found_header(ui, &toggle);
+        }
 
         let painter = ui.painter();
         let mut x = toggle_rect.left() + t.spacing.s;
@@ -404,18 +419,47 @@ impl<'a> Section<'a> {
         // A title too long for the toggle is cut at its end, before the buttons; the
         // tooltip and screen readers have it whole.
         let font = FontId::new(t.text.section_title, FontFamily::Name(fonts::MEDIUM.into()));
+        let room = (toggle_rect.right() - x).max(0.0);
+        // Where a tool found lives, after its title, given half the room at most: its
+        // tab's name, or the eye struck through and Hidden.
+        let icon = t.sizes.icon;
+        let found = self.found.as_ref().map(|(place, hidden)| {
+            let mark = if *hidden { icon + t.spacing.xxs } else { 0.0 };
+            let small = FontId::proportional(t.text.small);
+            let width = (room / 2.0 - 2.0 * t.spacing.s - mark).max(0.0);
+            let place = painter.layout_job(truncated(place, small, width, t.colors.text_secondary));
+            (place, *hidden, t.spacing.s + mark)
+        });
+        // Clear of the buttons by a gap of its own.
+        let after = found.as_ref().map_or(0.0, |(place, _, before)| {
+            before + place.size().x + t.spacing.s
+        });
         let title = painter.layout_job(truncated(
             self.title,
             font,
-            (toggle_rect.right() - x).max(0.0),
+            (room - after).max(0.0),
             t.colors.text,
         ));
         let cut = title.elided;
+        let title_end = x + title.size().x;
         painter.galley(
             pos2(x, header.center().y - title.size().y / 2.0),
             title,
             t.colors.text,
         );
+        if let Some((place, hidden, before)) = found {
+            let colour = t.colors.text_secondary;
+            if hidden {
+                let at = pos2(title_end + t.spacing.s + icon / 2.0, header.center().y);
+                Icon::EyeOff.paint(
+                    painter,
+                    Rect::from_center_size(at, vec2(icon, icon)),
+                    colour,
+                );
+            }
+            let at = pos2(title_end + before, header.center().y - place.size().y / 2.0);
+            painter.galley(at, place, colour);
+        }
         if toggle.has_focus() {
             focus_ring(painter, toggle_rect, &t);
         }
@@ -485,6 +529,23 @@ impl<'a> Section<'a> {
                 let said = match node.description() {
                     Some(tip) => format!("{not_applied}\n{tip}"),
                     None => not_applied,
+                };
+                node.set_description(said);
+            });
+        }
+        if let Some((place, hidden)) = &self.found {
+            let lives = if *hidden {
+                tr.text("find-tool-lives-hidden")
+            } else {
+                let mut args = Args::new();
+                args.set("tab", place.as_str());
+                tr.text_with("find-tool-lives-in", Some(&args))
+            };
+            // First, before "Not applied" and what the tool is for.
+            ui.ctx().accesskit_node_builder(id, |node| {
+                let said = match node.description() {
+                    Some(tip) => format!("{lives}\n{tip}"),
+                    None => lives,
                 };
                 node.set_description(said);
             });

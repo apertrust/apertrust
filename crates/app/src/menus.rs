@@ -751,7 +751,8 @@ pub fn layout_items(
 }
 
 /// The app's items first in the Tools panel's ⋮ (decision 96), before the tab bar's own:
-/// Show Hidden Tools, as the ☰'s menu draws an item ([`shown`]), its tip `tip` where the
+/// Find Tool…, with its keys, and Show Hidden Tools, as the ☰'s menu draws an item
+/// ([`shown`]), Show Hidden Tools' tip `tip` where the
 /// dot on ⋮ or `--conf` says why ("Hidden tools change this photo: Exposure"); then
 /// Workspace ▸, View › Workspace's submenu with `workspaces`, the one shown checked, each
 /// item its `workspace-<id>`, so a choice runs as the menu's does ([`chosen`]). The tab
@@ -765,6 +766,7 @@ pub fn tools_panel(
 ) -> Vec<popup::Entry> {
     let (os, tr) = (ctx.os(), translator(ctx));
     let steps = Steps::default();
+    let find = action_item(ActionId::FIND_TOOL, keymap, state, &steps, os, &tr);
     let item = action_item(ActionId::SHOW_HIDDEN_TOOLS, keymap, state, &steps, os, &tr);
     let item = item.map(|item| match tip {
         Some(tip) => item.tip(tip),
@@ -775,7 +777,7 @@ pub fn tools_panel(
         workspaces,
     };
     let workspace = drawn(&WORKSPACE, os, keymap, state, lists, &steps, &tr);
-    let entries = item.into_iter().map(Into::into);
+    let entries = find.into_iter().chain(item).map(Into::into);
     entries.chain([workspace.into()]).collect()
 }
 
@@ -1631,7 +1633,7 @@ mod tests {
     /// Restart, Settings' Restart now's for now (decision 82); and the eighth to the
     /// twelfth tab's, which only a workspace of more tabs than the Default's has, until Tools
     /// Panel Tab lists the tabs a workspace shows (decision 96).
-    const LEFT_OUT: [ActionId; 32] = [
+    const LEFT_OUT: [ActionId; 33] = [
         ActionId::EDIT_VIEW,
         ActionId::NEXT_REGION,
         ActionId::PREVIOUS_REGION,
@@ -1647,7 +1649,8 @@ mod tests {
         ActionId::PANEL_TABS[9],
         ActionId::PANEL_TABS[10],
         ActionId::PANEL_TABS[11],
-        // The Tools panel's ⋮ holds it, and the tab bar's menu will (decision 96).
+        // The Tools panel's ⋮ holds them, and the tab bar's menu will (decision 96).
+        ActionId::FIND_TOOL,
         ActionId::SHOW_HIDDEN_TOOLS,
         // A section's layout, in its ⋯ and on its header's keys and screen readers'
         // actions, acting on that section (decisions 83 and 96).

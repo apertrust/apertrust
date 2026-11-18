@@ -123,6 +123,9 @@ impl ActionId {
     ];
     /// The Tools panel's Hidden tab, chosen while it shows, after the twelve (decision 96).
     pub const PANEL_TAB_HIDDEN: ActionId = ActionId("panel-tab-hidden");
+    /// Find Tool…, in the Tools panel's ⋮: the tab bar becomes a search field and the tools
+    /// found take the tab's place, or, open, the search closes (decision 96).
+    pub const FIND_TOOL: ActionId = ActionId("find-tool");
     /// Show Hidden Tools, in the Tools panel's ⋮: the Hidden tab shown last and chosen, or
     /// taken away (decision 96).
     pub const SHOW_HIDDEN_TOOLS: ActionId = ActionId("tools-panel-show-hidden");
@@ -287,6 +290,9 @@ pub enum Intent {
     /// Show Hidden Tools turned on, the Hidden tab shown last and chosen, or off, it gone
     /// and the tab shown before it shown again (decision 96).
     ShowHiddenTools,
+    /// Find Tool… opened, the search field in the tab bar's place, or closed, the tab shown
+    /// before it as it was (decision 96).
+    FindTool,
     /// View › Collections: the first tab holding Collections chosen, nothing where it is
     /// chosen.
     ShowCollections,
@@ -750,7 +756,7 @@ const fn to_tab<const I: usize>(message: &'static str) -> Action {
 
 /// Every action, in the order a keyboard map lists them (`docs/gui.md`, The default
 /// keyboard map). Slider keys are not here: they are the slider's own (`SliderRow`).
-pub static ACTIONS: [Action; 101] = [
+pub static ACTIONS: [Action; 102] = [
     // The Toolbar's mark, and About Apertrust in the menus once they come.
     Action {
         id: ActionId::ABOUT,
@@ -1113,7 +1119,17 @@ pub static ACTIONS: [Action; 101] = [
         available: |s| on_main_window(s) && s.hidden_tab.is_some(),
         emits: Emit::Intent(Intent::HiddenTab),
     },
-    // The Tools panel's ⋮ (decision 96); the tab bar's menu joins it.
+    // The Tools panel's ⋮ (decision 96); the tab bar's menu joins it. Ctrl+Shift+F is Find
+    // Tool…'s, from a text field too, Ctrl+F being kept for Search Photos….
+    Action {
+        id: ActionId::FIND_TOOL,
+        message: "action-find-tool",
+        keys: &[command_shift(Key::F)],
+        scope: Scope::App,
+        trigger: Trigger::Press,
+        available: on_main_window,
+        emits: Emit::Intent(Intent::FindTool),
+    },
     Action {
         id: ActionId::SHOW_HIDDEN_TOOLS,
         message: "action-tools-panel-show-hidden",

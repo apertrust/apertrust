@@ -236,6 +236,20 @@ impl Translator {
         }
     }
 
+    /// The attribute `name` of the message `id`, translated, as `tool-exposure-title`'s
+    /// `.search`; a translation lacking it falls back to British English. None where
+    /// neither has it. American English's overlay keeps an attribute only where it writes
+    /// it again with the message.
+    pub fn attribute(&self, id: &str, name: &str) -> Option<String> {
+        let text = format_attribute(&self.bundle, id, name)
+            .or_else(|| (self.english.as_ref()).and_then(|b| format_attribute(b, id, name)))?;
+        Some(if self.locale == Locale::Pseudo {
+            lengthen(&text)
+        } else {
+            text
+        })
+    }
+
     /// `value` with `decimals` decimal places in the locale's format, with no digit
     /// grouping, as value fields show it: `−1.25` in English, `−1,25` in Ukrainian and
     /// Polish. A negative value takes the minus sign (U+2212), which has the digits'
@@ -331,6 +345,45 @@ fn format(bundle: &FluentBundle<FluentResource>, id: &str, args: Option<&Args>) 
             .format_pattern(pattern, args, &mut errors)
             .into_owned(),
     )
+}
+
+fn format_attribute(bundle: &FluentBundle<FluentResource>, id: &str, name: &str) -> Option<String> {
+    let pattern = bundle.get_message(id)?.get_attribute(name)?.value();
+    let mut errors = Vec::new();
+    Some(
+        bundle
+            .format_pattern(pattern, None, &mut errors)
+            .into_owned(),
+    )
+}
+
+/// `text` as a search compares it, in any of the interface's languages: lower case, the
+/// accents taken off Latin letters, `ł` read as `l`, so "Ł", "ł" and "l", "É" and "e" are
+/// one, and an apostrophe however it is typed, `ʼ` and `’` read as `'`. Cyrillic letters
+/// are kept whole: `й`, `ї` and `ё` are letters of their own, not `и`, `і` and `е` with a
+/// mark, however they were typed. Unicode's canonical decomposition splits a Latin letter
+/// from its marks, which are then dropped.
+pub fn fold(text: &str) -> String {
+    let nfd = icu_normalizer::DecomposingNormalizerBorrowed::new_nfd();
+    // Composed first, so an и typed with its breve apart is й.
+    let text = icu_normalizer::ComposingNormalizerBorrowed::new_nfc().normalize(text);
+    let mut folded = String::with_capacity(text.len());
+    let mut one = [0; 4];
+    for c in text.chars().flat_map(char::to_lowercase) {
+        match c {
+            'ł' => folded.push('l'),
+            '\u{2bc}' | '\u{2019}' => folded.push('\''),
+            '\u{400}'..='\u{4ff}' => folded.push(c),
+            _ => folded.extend(
+                nfd.normalize(c.encode_utf8(&mut one))
+                    .chars()
+                    // The combining marks Latin letters carry: accents, diaeresis,
+                    // cedillas and ogoneks.
+                    .filter(|c| !('\u{0300}'..='\u{036f}').contains(c)),
+            ),
+        }
+    }
+    folded
 }
 
 /// Fluent's formatter for numbers in messages, for the locale whose formatters sit at
@@ -752,6 +805,36 @@ mod tests {
         assert!(photos.starts_with("[12 "), "{photos}");
     }
 
+    /// A search compares text in lower case with its accents off, in every language of
+    /// the interface (decision 96).
+    #[test]
+    fn a_search_folds_case_and_accents() {
+        assert_eq!(fold("Zmiękczenie ŁÓDŹ"), "zmiekczenie lodz");
+        // Cyrillic's й, ї and ё are letters of their own, kept.
+        assert_eq!(fold("Їжак Й Ёлка"), "їжак й ёлка");
+        assert_ne!(fold("й"), fold("и"));
+        assert_ne!(fold("ї"), fold("і"));
+        assert_eq!(fold("\u{438}\u{306}"), "й");
+        // An apostrophe however it is typed.
+        assert_eq!(fold("Пом’якшення"), fold("Пом'якшення"));
+        assert_eq!(fold("Помʼякшення"), "пом'якшення");
+        assert_eq!(fold("Éclairé"), "eclaire");
+        assert_eq!(fold("RGB curve"), "rgb curve");
+    }
+
+    /// A message's attribute, translated, a utility's section's too; one no language has
+    /// is none.
+    #[test]
+    fn an_attribute_is_translated() {
+        let search = |locale| Translator::new(locale).attribute("tool-exposure-title", "search");
+        assert_eq!(search(Locale::EnGb).as_deref(), Some("exposure"));
+        assert_eq!(search(Locale::Uk).as_deref(), Some("Експозиція"));
+        let utility = Translator::new(Locale::Uk).attribute("section-scopes", "search");
+        assert_eq!(utility.as_deref(), Some("Гістограми"));
+        let none = Translator::new(Locale::Pl).attribute("tool-exposure-title", "nothing");
+        assert_eq!(none, None);
+    }
+
     #[test]
     fn a_missing_message_falls_back_to_english_then_its_id() {
         let uk = Translator::new(Locale::Uk);
@@ -1082,6 +1165,7 @@ mod tests {
                 // Where a moved tool went: its place among its tab's tools (decision 96).
                 args.set("at", 3);
                 args.set("of", 12);
+                args.set("text", "colour");
                 let mut errors = Vec::new();
                 bundle.format_pattern(pattern, Some(&args), &mut errors);
                 assert!(errors.is_empty(), "{} {id}: {errors:?}", locale.id());

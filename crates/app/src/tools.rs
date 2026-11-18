@@ -195,6 +195,8 @@ pub struct Head {
     /// a tab, and screen readers' actions on the header are the layout's ([`pressed`]).
     /// None for a section that does not move.
     pub layout: Option<Placing>,
+    /// Where the tool lives, while Find Tool… lists it among the tools found (decision 96).
+    pub found: Option<Found>,
 }
 
 impl Head {
@@ -208,6 +210,14 @@ impl Head {
         self.layout = layout.layout;
         self
     }
+}
+
+/// Where a tool Find Tool… found lives, said after its title (`Section::found`): its tab's
+/// name, translated, or Hidden.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Found {
+    pub place: String,
+    pub hidden: bool,
 }
 
 /// What a tool's header asked for this frame (decision 93).
@@ -234,7 +244,8 @@ pub enum Pressed {
 /// where it has one, is named by the first of `presets` and drawn disabled, its tooltip the
 /// second, until its presets come with the presets API every tool shares (decision 93;
 /// planned). ↺ is drawn disabled unless
-/// `resettable`. Its tooltip says `about`, where the tool says anything.
+/// `resettable`. Its tooltip says `about`, where the tool says anything, and after its
+/// title it says where it lives while Find Tool… lists it (`head.found`).
 pub fn header<'a>(
     tool: &ToolDefinition,
     title: &'a str,
@@ -250,6 +261,9 @@ pub fn header<'a>(
         .movable(movable);
     if let Some(about) = about {
         section = section.about(about);
+    }
+    if let Some(found) = head.found {
+        section = section.found(found.place, found.hidden);
     }
     section = match tool.reset {
         Reset::Tool => section.edits().reset(resettable).presets(false),

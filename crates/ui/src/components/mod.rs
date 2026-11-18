@@ -115,8 +115,8 @@ pub use text_field::{PathField, PathOutput, TextField, Variable};
 pub use toggle_row::ToggleRow;
 pub use toolbar::{Available, SaveState, Toolbar, ToolbarAction, caption_button};
 pub use tools_panel::{
-    PanelBody, PanelEdge, PanelEdgeAction, PanelTab, TabBar, TabBarAction, quiet_scroll,
-    quiet_scroll_rows,
+    FindBar, FindBarAction, PanelBody, PanelEdge, PanelEdgeAction, PanelTab, TabBar, TabBarAction,
+    quiet_scroll, quiet_scroll_rows,
 };
 pub use value_field::ValueField;
 pub use viewer_bar::{Toggle, ViewerBar, ViewerBarAction, Zoom};

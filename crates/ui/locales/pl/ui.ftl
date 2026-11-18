@@ -38,6 +38,19 @@ tools-panel-no-hidden = W tym obszarze roboczym nie ma ukrytych narzędzi.
 tools-panel-newer = Ten układ zapisała nowsza wersja Apertrust, więc zmiany w nim nie zostaną zachowane
 tools-panel-newer-tip = Ta wersja nigdy nie nadpisuje pliku obszaru roboczego zapisanego przez nowszą wersję Apertrust. Przeniesione narzędzia zostają na miejscu do zamknięcia programu.
 tools-panel-hidden-change = Ukryte narzędzia zmieniają to zdjęcie: { $tools }
+find-tool-field = Znajdź narzędzie
+find-tool-close = Zamknij wyszukiwanie
+find-tool-hint = Wpisz nazwę narzędzia.
+find-tool-none = Żadne narzędzie nie pasuje do „{ $text }”.
+find-tool-count =
+    { $count ->
+        [one] { $count } narzędzie
+        [few] { $count } narzędzia
+        [many] { $count } narzędzi
+       *[other] { $count } narzędzia
+    }
+find-tool-lives-in = na karcie { $tab }
+find-tool-lives-hidden = ukryte
 workspace-default = Domyślny
 workspace-essentials = Podstawy
 panel-tab-later = { $tab }: pojawi się w jednej z kolejnych wersji
@@ -428,8 +441,10 @@ open-kind-folder = Folder: { $name }
 action-open-folder = Otwórz folder…
 open-folder-title = Otwórz folder
 section-collections = Kolekcje
+    .search = kolekcje
 collections-folders = Foldery
 section-export = Eksport
+    .search = eksportuj
 collections-open-name = Co jest otwarte
 collections-no-folder = Nie otwarto folderu
 collections-recents-none = Brak ostatnich folderów
@@ -698,6 +713,7 @@ action-panel-tab-10 = Karta panelu narzędzi 10
 action-panel-tab-11 = Karta panelu narzędzi 11
 action-panel-tab-12 = Karta panelu narzędzi 12
 action-panel-tab-hidden = Karta Ukryte
+action-find-tool = Znajdź narzędzie…
 action-tools-panel-show-hidden = Pokaż ukryte narzędzia
 action-section-pin = Przypnij narzędzie
 action-section-unpin = Odepnij narzędzie
@@ -833,6 +849,7 @@ history-discard-no-alert-unreadable = Odrzucenie tej historii najpierw pyta, bo 
 ## Sekcja Historia na karcie Historia panelu narzędzi
 
 section-history = Historia
+    .search = historia
 history-reset-edit = Resetuj edycję
 history-step-name = Krok { $number }: { $name }
 history-original = Oryginał
@@ -923,6 +940,7 @@ equalizer-overflows-both = Cienie maski wychodzą poza pasmo −8 EV, a światł
 ## Histogram i inne wykresy; $shadows i $highlights to udział pikseli zdjęcia, w procentach
 
 section-scopes = Wykresy
+    .search = analizy obrazu
 scope-histogram = Histogram
 scope-waveform = Przebieg
 scope-parade = Parada RGB
