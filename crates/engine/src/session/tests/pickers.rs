@@ -1304,6 +1304,8 @@ static CONFIGURED: ProcessingDefinition = ProcessingDefinition {
                     },
                     decimals: 1,
                     track: apertrust_tools::Track::Plain,
+                    key: None,
+                    words: None,
                 }),
             ],
         }],

@@ -29,6 +29,9 @@ thiserror.workspace = true
 apertrust-base = { workspace = true, features = ["codegen"] }
 
 [dev-dependencies]
+# The settings schema's parser, for the test holding a utility's keys to the ids it
+# declares.
+apertrust-base = { workspace = true, features = ["codegen"] }
 # The invariant tests in tests/ render through the engine (decision 28); unit tests in
 # src/ never use it, or the crate would be compiled twice. The golden harness gives them
 # its synthetic sweep and its CIEDE2000, and apertrust-raw the corpus raws.

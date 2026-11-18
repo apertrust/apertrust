@@ -38,7 +38,9 @@ const NARROWEST: f32 = 240.0;
 /// The tool as the Photos tab draws it, and what each frame asked of the app.
 struct Bench {
     content: Export,
-    /// What the app tells the tool each frame; the bench follows the toggles it reports.
+    /// Whether its section is open, as the shell's header has it, and what the app tells
+    /// the tool each frame; the bench follows the toggles it reports.
+    open: bool,
     shown: Shown,
     asked: Vec<Asked>,
     toggled: usize,
@@ -100,13 +102,17 @@ fn tool_of(export: Export, which: Builtin, locale: Locale, width: f32) -> Harnes
                     words: &words,
                     commands: &mut commands,
                 };
+                let head = crate::tools::Head {
+                    open: bench.open,
+                    ..crate::tools::Head::default()
+                };
                 PanelBody::new().show(ui, |ui| {
-                    let section = ui.scope(|ui| bench.content.show(ui, &shown, &mut cx));
+                    let section = ui.scope(|ui| bench.content.show(ui, head, &shown, &mut cx));
                     bench.bottom = section.response.rect.bottom();
                     let drawn = section.inner;
                     bench.toggled += usize::from(drawn.toggle);
                     bench.jobs_shown += usize::from(drawn.show_jobs);
-                    bench.shown.open ^= drawn.toggle;
+                    bench.open ^= drawn.toggle;
                     bench.shown.global ^= drawn.toggle_global;
                     bench.shown.summary ^= drawn.toggle_summary;
                     let asked = drawn.asked;
@@ -117,8 +123,8 @@ fn tool_of(export: Export, which: Builtin, locale: Locale, width: f32) -> Harnes
             },
             Bench {
                 content: export,
+                open: true,
                 shown: Shown {
-                    open: true,
                     global: GLOBAL_OPEN,
                     summary: SUMMARY_OPEN,
                     photo: Photo::Ready {
@@ -853,14 +859,14 @@ fn the_header_opens_and_closes_the_tool_and_a_closed_one_draws_no_rows() {
         .click();
     settle(&mut harness);
     assert_eq!(harness.state().toggled, 1);
-    assert!(!harness.state().shown.open);
+    assert!(!harness.state().open);
     assert!(harness.query_by_label("Target storage").is_none());
     assert!(harness.query_by_label("Export 1 photo").is_none());
     harness
         .get_by_role_and_label(Role::Button, "Export")
         .click();
     settle(&mut harness);
-    assert!(harness.state().shown.open);
+    assert!(harness.state().open);
     harness.get_by_label("Target storage");
 }
 
@@ -1038,10 +1044,7 @@ fn press_export(harness: &mut Harness<'_, Bench>) -> (bool, bool) {
         .click();
     harness.run();
     let state = harness.state();
-    assert!(
-        state.shown.open && state.toggled == 0,
-        "Export closes nothing"
-    );
+    assert!(state.open && state.toggled == 0, "Export closes nothing");
     let asked = &state.asked[before..];
     (
         asked.iter().any(|a| a.start),
@@ -1358,7 +1361,7 @@ fn export_asks_for_the_export_and_closes_nothing() {
     harness.run();
     let state = harness.state();
     assert!(state.asked.last().is_some_and(|a| a.start));
-    assert!(state.shown.open && state.toggled == 0);
+    assert!(state.open && state.toggled == 0);
     // And it can be pressed again, as the settings stand.
     harness
         .get_by_role_and_label(Role::Button, "Export 1 photo")
@@ -1429,7 +1432,7 @@ fn escape_closes_a_list_and_a_row_being_typed_in_and_nothing_else() {
     harness.run();
     assert!(harness.query_by_role(Role::ListBox).is_none());
     // The tool stays open throughout.
-    assert!(harness.state().shown.open && harness.state().toggled == 0);
+    assert!(harness.state().open && harness.state().toggled == 0);
 }
 
 #[test]

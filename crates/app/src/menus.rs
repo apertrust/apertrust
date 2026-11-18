@@ -2517,6 +2517,8 @@ mod tests {
                 ]),
             },
             measures: None,
+            titles: &[],
+            open: &[],
         }];
         let tools = [first, tool("none", &[]), second];
         let ids = |place, target: Target| -> Vec<(u32, u32, String)> {

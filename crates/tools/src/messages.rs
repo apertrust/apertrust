@@ -18,11 +18,14 @@
 //! Tool panels from definitions). Hyphens separate the parts, ids are snake_case, and a
 //! fixed word comes before each id, so an option or a tab called `label` or `title`
 //! cannot collide with another message. The messages are in
-//! `crates/ui/locales/<locale>/tools.ftl`.
+//! `crates/ui/locales/<locale>/tools.ftl`. A utility may declare words of its own for its
+//! titles and settings, as Export's `export-*` in `ui.ftl` (decision 93).
 
 use std::collections::BTreeSet;
 
-use crate::definition::{ControlKind, ProcessingDefinition, Reset, Row, SettingRow, Slider, Unit};
+use crate::definition::{
+    ControlKind, ProcessingDefinition, Reset, Row, SettingRow, Slider, Unit, Word,
+};
 use crate::utility::UtilityDefinition;
 
 /// The tool's title: `tool-<tool>-title`.
@@ -134,6 +137,45 @@ pub fn setting(tool: &str, setting: &str) -> [String; 3] {
 /// A tool's setting's option: `tool-<tool>-setting-<setting>-option-<option>`.
 pub fn setting_option(tool: &str, setting: &str, option: &str) -> String {
     format!("tool-{tool}-setting-{setting}-option-{option}")
+}
+
+/// A setting row's label, full name and promise, as message ids: the words it declares
+/// ([`SettingRow::words`]), a full name it leaves out being its label's and a promise it
+/// leaves out none; else those its id implies ([`setting`]).
+pub fn setting_row(tool: &str, row: &SettingRow) -> [Option<String>; 3] {
+    match row.words {
+        Some(words) => [
+            Some(words.label),
+            Some(words.full.unwrap_or(words.label)),
+            words.promise,
+        ]
+        .map(|id| id.map(str::to_owned)),
+        None => setting(tool, row.id).map(Some),
+    }
+}
+
+/// A setting row's options' words, each a message id or a name: those it declares,
+/// else the messages its options' ids imply ([`setting_option`]); none for a number and a
+/// toggle, and a boolean's No and Yes where it is drawn as their choice
+/// ([`SettingRow::no_or_yes`]).
+pub fn setting_row_options(tool: &str, row: &SettingRow) -> Vec<Word<String>> {
+    if let Some(words) = row.words {
+        return words
+            .options
+            .iter()
+            .map(|word| match word {
+                Word::Message(id) => Word::Message((*id).to_owned()),
+                Word::Name(name) => Word::Name((*name).to_owned()),
+            })
+            .collect();
+    }
+    match row.kind {
+        ControlKind::Choice { options, .. } => options
+            .iter()
+            .map(|option| Word::Message(setting_option(tool, row.id, option)))
+            .collect(),
+        _ => Vec::new(),
+    }
 }
 
 /// What an option of a setting a picker's words follow ([`crate::Picker::words_by`]) does,
@@ -493,23 +535,30 @@ pub fn utility_presets(utility: &str) -> [String; 2] {
 
 /// Every message a utility's header and rows imply, each once, as [`of`] lists a
 /// processing tool's: its own ↺'s name, its presets button's words, each group label's,
-/// each collapsible group's title, and each setting's words and options. Its custom rows'
-/// words are its widgets' own.
+/// each collapsible group's title, and each setting's words and options, those it
+/// declares where it does, a name an option declares needing none. Its custom rows' words
+/// are its widgets' own.
 pub fn of_utility(utility: &UtilityDefinition) -> Vec<String> {
-    fn rows(tool: &str, list: &[Row], ids: &mut Vec<String>) {
+    fn rows(utility: &UtilityDefinition, list: &[Row], ids: &mut Vec<String>) {
+        let tool = utility.tool.id;
         for row in list {
             match row {
-                Row::Label { id } => ids.push(group(tool, id)),
-                Row::Group { id, .. } => ids.push(collapsible(tool, id)),
-                Row::Setting(SettingRow { id, kind, .. }) => {
-                    ids.extend(setting(tool, id));
-                    if let ControlKind::Choice { options, .. } = kind {
-                        ids.extend(options.iter().map(|o| setting_option(tool, id, o)));
-                    }
+                Row::Label { id } => ids.push(utility.title(id, false)),
+                Row::Group { id, .. } => ids.push(utility.title(id, true)),
+                Row::Setting(setting) => {
+                    ids.extend(setting_row(tool, setting).into_iter().flatten());
+                    ids.extend(
+                        setting_row_options(tool, setting).into_iter().filter_map(
+                            |word| match word {
+                                Word::Message(id) => Some(id),
+                                Word::Name(_) => None,
+                            },
+                        ),
+                    );
                 }
                 _ => {}
             }
-            rows(tool, row.rows(), ids);
+            rows(utility, row.rows(), ids);
         }
     }
     let definition = &utility.tool;
@@ -525,7 +574,7 @@ pub fn of_utility(utility: &UtilityDefinition) -> Vec<String> {
         .chain(tabs)
         .chain(std::iter::once(definition.after))
     {
-        rows(definition.id, list, &mut ids);
+        rows(utility, list, &mut ids);
     }
     let mut seen = BTreeSet::new();
     ids.retain(|id| seen.insert(id.clone()));
@@ -723,6 +772,8 @@ mod tests {
                     },
                     decimals: 0,
                     track: Track::Plain,
+                    key: None,
+                    words: None,
                 })],
                 reset: Reset::Tool,
                 presets: true,

@@ -282,6 +282,8 @@ static DEFINITION: ProcessingDefinition = ProcessingDefinition {
             kind: ControlKind::Bool { default: false },
             decimals: 0,
             track: Track::Plain,
+            key: None,
+            words: None,
         })],
         reset: Reset::Tool,
         presets: true,

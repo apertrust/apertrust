@@ -34,9 +34,9 @@
 
 use std::cell::RefCell;
 
-use apertrust_engine::session::Command;
+use apertrust_engine::session::{Command, ControlValue};
 use apertrust_tools::utility::UtilityDefinition;
-use apertrust_tools::{Reset, Row, ToolDefinition, Widget, messages};
+use apertrust_tools::{Reset, Row, SettingRow, ToolDefinition, Widget, messages};
 use apertrust_ui::components as parts;
 use apertrust_ui::{Translator, translator};
 use eframe::egui;
@@ -44,7 +44,7 @@ use eframe::egui;
 use crate::actions::{self, State};
 use crate::mirror::Mirror;
 use crate::settings::{Settings, ToolSettings};
-use crate::tools::{self, Change, Head, Pressed, Rows};
+use crate::tools::{self, Change, Head, Note, Pressed, Rows};
 
 /// What every utility is given each frame (decision 93): what the session reported, the
 /// settings, the words, and the commands the frame sends the session once the side panel is
@@ -75,6 +75,55 @@ pub trait UtilityTool {
 
     /// Its header's ↺, where its declaration's `reset` is its own (`Reset::Own`).
     fn reset(&mut self, _cx: &mut Context<'_>) {}
+
+    /// The value its setting row `row` shows, one naming its key in full, where it keeps
+    /// it: its settings are the settings store's, never the tools' (decision 93). None
+    /// for one not kept yet, drawn disabled at its default.
+    fn setting(&self, _row: &SettingRow) -> Option<ControlValue> {
+        None
+    }
+
+    /// Its setting `key`, named in full, set to `value`, as the app routes a change of its
+    /// setting row to it (decision 93).
+    fn set(&mut self, _key: &str, _value: &ControlValue) {}
+
+    /// Whether `--conf` gives its setting `key` for this run (decision 43): its row is
+    /// then drawn disabled at the value given, saying so, and a change of it is refused.
+    fn given(&self, _key: &str) -> bool {
+        false
+    }
+
+    /// The options of its choice setting `row` that cannot be chosen now, by index, and
+    /// why, in `words`.
+    fn disabled(&self, _row: &SettingRow, _words: &Translator) -> Option<(Vec<usize>, String)> {
+        None
+    }
+
+    /// What `row`'s tooltip says now, in `words`, in place of its promise, and its
+    /// description.
+    fn tip(&self, _row: &Row, _words: &Translator) -> Option<String> {
+        None
+    }
+
+    /// The note under `row`, in `words`.
+    fn note(&self, _row: &Row, _words: &Translator) -> Option<Note> {
+        None
+    }
+
+    /// The fix of the note under `row` was pressed.
+    fn fix(&mut self, _row: &Row) {}
+
+    /// How many settings its custom row `widget` shows off their defaults, which a
+    /// collapsible group holding it counts in its "N set".
+    fn set_in(&self, _widget: Widget) -> usize {
+        0
+    }
+
+    /// The spacing between its page's rows and their parts, where it is not the style's:
+    /// Export's rows stack with no gap between them, as its custom rows have them.
+    fn spacing(&self, _ui: &egui::Ui) -> Option<egui::Vec2> {
+        None
+    }
 }
 
 /// What a utility's section did this frame: what its header asked the app for, its own
@@ -133,11 +182,14 @@ pub fn rows<T: UtilityTool>(
     cx: &mut Context<'_>,
 ) -> (Vec<Change>, Vec<T::Action>) {
     let (words, settings) = (cx.words, cx.settings);
-    let definition = &tool.definition().tool;
+    let utility = tool.definition();
+    if let Some(spacing) = tool.spacing(ui) {
+        ui.spacing_mut().item_spacing = spacing;
+    }
     let page = Page {
         words,
         settings,
-        definition,
+        utility,
         drawn: RefCell::new((tool, cx, Vec::new())),
     };
     let mut changes = Vec::new();
@@ -146,14 +198,47 @@ pub fn rows<T: UtilityTool>(
     (changes, actions)
 }
 
+/// Why a utility's row is disabled where `--conf` gives its setting for the run, in
+/// `words`, as the Settings dialog says it of such a row (decision 43).
+pub fn overridden(words: &Translator) -> String {
+    let mut args = apertrust_ui::i18n::Args::new();
+    args.set("flag", apertrust_base::settings::CONF_FLAG);
+    words.text_with("settings-overridden", Some(&args))
+}
+
 /// A utility's page as the one page drawer draws it (decision 93): its words, its
-/// declaration, its collapsible groups open as the settings keep them, and the utility,
-/// whose body draws its custom rows, with what they asked for.
+/// declaration, its collapsible groups open as the settings keep them, its settings as it
+/// keeps them, and the utility, whose body draws its custom rows, with what they asked
+/// for.
 struct Page<'t, 'c, T: UtilityTool> {
     words: &'c Translator,
     settings: &'c Settings,
-    definition: &'static ToolDefinition,
+    utility: &'static UtilityDefinition,
     drawn: RefCell<(&'t mut T, &'t mut Context<'c>, Vec<T::Action>)>,
+}
+
+impl<T: UtilityTool> Page<'_, '_, T> {
+    /// How many settings `rows` show now off their defaults, those inside them included:
+    /// its setting rows', and its custom rows' as the utility counts them.
+    fn count(&self, rows: &[Row]) -> usize {
+        let mut set = 0;
+        for row in rows {
+            match row {
+                Row::WhenSetting { setting, is, rows } => {
+                    if tools::follows_setting(self, setting, is) {
+                        set += self.count(rows);
+                    }
+                }
+                Row::Setting(setting) => {
+                    let shown = self.setting(setting).map(|(value, _)| value);
+                    set += usize::from(shown.is_some_and(|value| value != setting.default()));
+                }
+                Row::Custom { widget, .. } => set += self.drawn.borrow().0.set_in(*widget),
+                row => set += self.count(row.rows()),
+            }
+        }
+        set
+    }
 }
 
 impl<T: UtilityTool> Rows for Page<'_, '_, T> {
@@ -162,17 +247,22 @@ impl<T: UtilityTool> Rows for Page<'_, '_, T> {
     }
 
     fn definition(&self) -> &ToolDefinition {
-        self.definition
+        &self.utility.tool
     }
 
+    /// As the settings keep it, else open where its declaration says it opens at first.
     fn group_open(&self, group: &str) -> bool {
-        let groups = self.settings.edit.groups.get(self.definition.id);
+        let groups = self.settings.edit.groups.get(self.utility.tool.id);
         let kept = groups.and_then(|groups| groups.get(group));
-        kept.copied().unwrap_or(tools::GROUP_OPEN)
+        kept.copied().unwrap_or(self.utility.opens(group))
     }
 
     fn settings(&self) -> &ToolSettings {
         &self.settings.tool_settings
+    }
+
+    fn set_in(&self, rows: &[Row]) -> usize {
+        self.count(rows)
     }
 
     /// A custom row, by the utility's body; `UtilityDefinition::check` refuses every other
@@ -182,6 +272,47 @@ impl<T: UtilityTool> Rows for Page<'_, '_, T> {
             let (tool, cx, actions) = &mut *self.drawn.borrow_mut();
             actions.extend(tool.body(*widget, ui, cx));
         }
+    }
+
+    fn title(&self, id: &str, collapsible: bool) -> String {
+        self.words.text(&self.utility.title(id, collapsible))
+    }
+
+    /// A setting naming its key in full as the utility keeps it, live but where `--conf`
+    /// gives it for the run, drawn disabled at that value as the Settings dialog draws such
+    /// a row (decision 43), a change of it refused as the app routes it too (`main.rs`'s
+    /// `utility_setting`); any other as a tool's.
+    fn setting(&self, row: &SettingRow) -> Option<(ControlValue, bool)> {
+        match row.key {
+            None => tools::tool_setting(&self.settings.tool_settings, self.utility.tool.id, row),
+            Some(key) => {
+                let tool = &self.drawn.borrow().0;
+                Some((tool.setting(row)?, !tool.given(key)))
+            }
+        }
+    }
+
+    fn disabled(&self, row: &SettingRow) -> Option<(Vec<usize>, String)> {
+        self.drawn.borrow().0.disabled(row, self.words)
+    }
+
+    /// The utility's, but for a setting `--conf` gives for the run, which says so.
+    fn tip(&self, row: &Row) -> Option<String> {
+        let tool = &self.drawn.borrow().0;
+        if let Row::Setting(SettingRow { key: Some(key), .. }) = row
+            && tool.given(key)
+        {
+            return Some(overridden(self.words));
+        }
+        tool.tip(row, self.words)
+    }
+
+    fn note(&self, row: &Row) -> Option<Note> {
+        self.drawn.borrow().0.note(row, self.words)
+    }
+
+    fn fixed(&self, row: &Row) {
+        self.drawn.borrow_mut().0.fix(row);
     }
 }
 
@@ -247,7 +378,7 @@ fn titles(words: &Translator, definition: &ToolDefinition) -> [String; 4] {
 #[cfg(test)]
 mod tests {
     use apertrust_tools::utility::UTILITIES;
-    use apertrust_tools::{Reset, TOOLS, Tab};
+    use apertrust_tools::{ControlKind, Reset, TOOLS, Tab, Track, Word};
     use egui_kittest::Harness;
     use egui_kittest::kittest::Queryable;
 
@@ -307,6 +438,8 @@ mod tests {
             menus: &[],
         },
         measures: None,
+        titles: &[],
+        open: &[],
     };
 
     /// Draws each custom row as a line naming its widget, and says it drew it.
@@ -367,5 +500,280 @@ mod tests {
         harness.state_mut().settings.edit.groups.clear();
         harness.run();
         assert_eq!(harness.state().drawn.1, [Widget::Scopes]);
+    }
+
+    /// Declared words: On conflict's, with options named alike in every language.
+    const CONFLICT: apertrust_tools::SettingWords = apertrust_tools::SettingWords {
+        label: "export-on-conflict",
+        full: None,
+        promise: None,
+        options: &[
+            Word::Message("export-conflict-unique"),
+            Word::Message("export-conflict-overwrite"),
+            Word::Name("Skip it"),
+            Word::Name("Keep both"),
+        ],
+    };
+    const UPSCALE: apertrust_tools::SettingWords = apertrust_tools::SettingWords {
+        label: "export-upscale",
+        full: None,
+        promise: None,
+        options: &[
+            Word::Message("export-option-no"),
+            Word::Message("export-option-yes"),
+        ],
+    };
+
+    /// A utility whose settings it keeps itself under keys in full, with words of its
+    /// own: a label and a group titled by it, the group open at first, holding a choice, a
+    /// boolean of No and Yes and a custom row with a note under it.
+    static KEEPER: UtilityDefinition = UtilityDefinition {
+        tool: ToolDefinition {
+            id: "keeper",
+            tabs: &[Tab {
+                id: None,
+                rows: &[
+                    Row::Label { id: "first" },
+                    Row::Group {
+                        id: "more",
+                        rows: &[
+                            Row::Setting(SettingRow {
+                                id: "conflict",
+                                kind: ControlKind::Choice {
+                                    options: &["unique", "overwrite", "skip", "keep"],
+                                    default: 0,
+                                    unported: &["keep"],
+                                },
+                                decimals: 0,
+                                track: Track::Plain,
+                                key: Some("keeper.conflict"),
+                                words: Some(&CONFLICT),
+                            }),
+                            Row::Setting(SettingRow {
+                                id: "upscale",
+                                kind: ControlKind::Bool { default: false },
+                                decimals: 0,
+                                track: Track::Plain,
+                                key: Some("keeper.upscale"),
+                                words: Some(&UPSCALE),
+                            }),
+                            Row::Custom {
+                                widget: Widget::Scopes,
+                                controls: &[],
+                            },
+                        ],
+                    },
+                ],
+            }],
+            before: &[],
+            after: &[],
+            reset: Reset::None,
+            presets: false,
+            menus: &[],
+        },
+        measures: None,
+        titles: &[
+            ("first", "export-storage-options"),
+            ("more", "export-global-options"),
+        ],
+        open: &["more"],
+    };
+
+    /// Keeps its two settings, says Overwrite cannot be chosen now and why, while Keep
+    /// both is still to come, puts a tip on the
+    /// choice and a note with a fix under its custom row, and counts one setting there.
+    #[derive(Default)]
+    struct Keeper {
+        conflict: u32,
+        upscale: bool,
+        fixed: bool,
+        /// The setting `--conf` gives for the run, if one.
+        given: Option<&'static str>,
+    }
+
+    impl UtilityTool for Keeper {
+        type Action = ();
+
+        fn definition(&self) -> &'static UtilityDefinition {
+            &KEEPER
+        }
+
+        fn body(&mut self, _: Widget, ui: &mut egui::Ui, _: &mut Context<'_>) -> Vec<()> {
+            ui.label("graph");
+            Vec::new()
+        }
+
+        fn setting(&self, row: &SettingRow) -> Option<ControlValue> {
+            match row.key? {
+                "keeper.conflict" => Some(ControlValue::Choice(self.conflict)),
+                "keeper.upscale" => Some(ControlValue::Bool(self.upscale)),
+                _ => None,
+            }
+        }
+
+        fn set(&mut self, key: &str, value: &ControlValue) {
+            match (key, value) {
+                ("keeper.conflict", ControlValue::Choice(at)) => self.conflict = *at,
+                ("keeper.upscale", ControlValue::Bool(on)) => self.upscale = *on,
+                _ => {}
+            }
+        }
+
+        fn disabled(&self, row: &SettingRow, _: &Translator) -> Option<(Vec<usize>, String)> {
+            (row.id == "conflict").then(|| (vec![1], "Not on this computer".to_owned()))
+        }
+
+        fn tip(&self, row: &Row, _: &Translator) -> Option<String> {
+            matches!(row, Row::Setting(SettingRow { id: "conflict", .. }))
+                .then(|| "What happens to a file there".to_owned())
+        }
+
+        fn note(&self, row: &Row, _: &Translator) -> Option<Note> {
+            matches!(row, Row::Custom { .. }).then(|| Note {
+                text: "Something stops it".to_owned(),
+                fix: (!self.fixed).then(|| "Fix it".to_owned()),
+            })
+        }
+
+        fn fix(&mut self, _: &Row) {
+            self.fixed = true;
+        }
+
+        fn given(&self, key: &str) -> bool {
+            self.given == Some(key)
+        }
+
+        fn set_in(&self, _: Widget) -> usize {
+            1
+        }
+    }
+
+    /// The page drawer draws a utility's settings by their keys in full with their own
+    /// words, its titles its own, its group open at first, an option disabled with the
+    /// utility's reason, a tooltip and a note with its fix from the utility, a boolean as
+    /// No and Yes, and counts the settings set in a closed group; a change is reported by
+    /// its key, for the app to route to the utility (decision 93).
+    #[test]
+    fn a_utility_s_settings_are_drawn_by_their_keys_with_its_words_tips_and_notes() {
+        use egui::accesskit::Role;
+        use egui_kittest::kittest::NodeT as _;
+        struct Scene {
+            settings: Settings,
+            keeper: Keeper,
+            changes: Vec<Change>,
+        }
+        let mut harness = Harness::builder()
+            .with_size(egui::vec2(320.0, 400.0))
+            .with_context_setup(|ctx| apertrust_ui::install(ctx, apertrust_ui::Theme::default()))
+            .build_ui_state(
+                |ui, scene: &mut Scene| {
+                    let mirror = crate::mirror::tests::mirror();
+                    let (words, mut commands) = (translator(ui.ctx()), Vec::new());
+                    let mut cx = Context {
+                        mirror: &mirror,
+                        settings: &scene.settings,
+                        words: &words,
+                        commands: &mut commands,
+                    };
+                    let (changes, _) = rows(ui, &mut scene.keeper, &mut cx);
+                    // As the app routes them: the utility's settings to it, the groups to
+                    // the settings.
+                    for change in changes {
+                        match &change {
+                            Change::Setting { setting, value, .. } => {
+                                scene.keeper.set(setting, value);
+                            }
+                            Change::Group { tool, group } => {
+                                let groups = scene.settings.edit.groups.entry(tool.to_string());
+                                let open = groups.or_default().entry(group.to_string());
+                                let open = open.or_insert(true);
+                                *open = !*open;
+                            }
+                            _ => {}
+                        }
+                        scene.changes.push(change);
+                    }
+                },
+                Scene {
+                    settings: Settings::default(),
+                    keeper: Keeper::default(),
+                    changes: Vec::new(),
+                },
+            );
+        harness.run();
+        harness.get_by_label("Storage options");
+        let group = harness.get_by_role_and_label(Role::Button, "Global options");
+        assert_eq!(group.accesskit_node().data().is_expanded(), Some(true));
+        let conflict = harness.get_by_role_and_label(Role::ComboBox, "On conflict");
+        let tip = conflict.accesskit_node().description();
+        assert_eq!(tip.as_deref(), Some("What happens to a file there"));
+        harness.get_by_label("Something stops it");
+        harness
+            .get_by_role_and_label(Role::Button, "Fix it")
+            .click();
+        harness.run();
+        assert!(harness.state().keeper.fixed);
+        assert!(harness.query_by_label("Fix it").is_none());
+        // Overwrite can't be chosen now, nor Keep both, still to come, each saying its own
+        // reason; Skip it, a name, can.
+        harness
+            .get_by_role_and_label(Role::ComboBox, "On conflict")
+            .click();
+        harness.run();
+        for (option, why) in [
+            ("Overwrite", "Not on this computer"),
+            ("Keep both", "Coming in a later version"),
+        ] {
+            let item = harness.get_by_role_and_label(Role::MenuItemCheckBox, option);
+            assert!(item.accesskit_node().is_disabled(), "{option}");
+            item.hover();
+            harness.run();
+            harness.run();
+            assert!(harness.query_by_label(why).is_some(), "{option}: {why}");
+        }
+        harness
+            .get_by_role_and_label(Role::MenuItemCheckBox, "Skip it")
+            .click();
+        harness.run();
+        let upscale = harness.get_by_role_and_label(Role::ComboBox, "Allow upscaling");
+        upscale.click();
+        harness.run();
+        harness
+            .get_by_role_and_label(Role::MenuItemCheckBox, "Yes")
+            .click();
+        harness.run();
+        let keeper = &harness.state().keeper;
+        assert_eq!((keeper.conflict, keeper.upscale), (2, true));
+        let keys: Vec<&str> = (harness.state().changes.iter())
+            .filter_map(|change| match change {
+                Change::Setting { setting, .. } => Some(*setting),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(keys, ["keeper.conflict", "keeper.upscale"]);
+        // Closed, the group counts its two settings set and its custom row's one.
+        harness
+            .get_by_role_and_label(Role::Button, "Global options")
+            .click();
+        harness.run();
+        let group = harness.get_by_role_and_label(Role::Button, "Global options");
+        assert_eq!(
+            group.accesskit_node().description().as_deref(),
+            Some("3 set")
+        );
+        // A setting `--conf` gives for the run is drawn disabled at its value, saying so;
+        // the other stays live.
+        harness.state_mut().keeper.given = Some("keeper.upscale");
+        harness
+            .get_by_role_and_label(Role::Button, "Global options")
+            .click();
+        harness.run();
+        let upscale = harness.get_by_role_and_label(Role::ComboBox, "Allow upscaling");
+        assert!(upscale.accesskit_node().is_disabled());
+        assert_eq!(upscale.accesskit_node().value().as_deref(), Some("Yes"));
+        let why = upscale.accesskit_node().description();
+        assert_eq!(why.as_deref(), Some("Set by --conf for this run"));
+        let conflict = harness.get_by_role_and_label(Role::ComboBox, "On conflict");
+        assert!(!conflict.accesskit_node().is_disabled());
     }
 }

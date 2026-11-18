@@ -64,12 +64,11 @@ pub struct Jobs {
     pub failed: Option<(u64, u64)>,
 }
 
-/// What the app tells the tool each frame.
+/// What the app tells the tool each frame besides its header, which is the shell's
+/// (`tools::Head`).
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Shown {
-    /// Whether the tool's section is open.
-    pub open: bool,
-    /// Whether Global options is, and the summary.
+    /// Whether Global options is open, and the summary.
     pub global: bool,
     pub summary: bool,
     pub photo: Photo,

@@ -464,6 +464,11 @@ pub struct Export {
     reset: bool,
 }
 
+/// Export's declaration, in `UTILITIES` (decision 93).
+pub fn definition() -> &'static UtilityDefinition {
+    apertrust_tools::utility::utility(ID).expect("Export is built in")
+}
+
 /// Export as a utility tool (decision 93): its page five custom rows, Storage options,
 /// Format options, Global options, the groups to come and the Summary with the tool's end,
 /// each drawn here as before, until its rows are setting rows (step 93.6); its ↺ its own,
@@ -472,7 +477,7 @@ impl UtilityTool for Export {
     type Action = Page;
 
     fn definition(&self) -> &'static UtilityDefinition {
-        apertrust_tools::utility::utility(ID).expect("Export is built in")
+        definition()
     }
 
     fn body(&mut self, widget: Widget, ui: &mut Ui, _cx: &mut Context<'_>) -> Vec<Page> {
@@ -577,16 +582,16 @@ impl Export {
     }
 
     /// The settings as they stand.
-    #[cfg(test)]
     pub fn values(&self) -> &Values {
         &self.values
     }
 
-    /// Draws the section in `ui` as `shown` says, through its `UtilityTool` with every
-    /// tool's header and the one page drawer (decision 93): open or closed, its groups, the
-    /// photo it acts on and the jobs. Returns what it asked of the app: the header pressed,
-    /// the groups', the settings changed, Export and Show jobs.
-    pub fn show(&mut self, ui: &mut Ui, shown: &Shown, cx: &mut Context<'_>) -> Drawn {
+    /// Draws the section in `ui`, its header as `head` has it, the shell's as every
+    /// utility's is, and the rest as `shown` says, through its `UtilityTool` with every
+    /// tool's header and the one page drawer (decision 93): its groups, the photo it acts
+    /// on and the jobs. Returns what it asked of the app: the header pressed, the groups',
+    /// the settings changed, Export and Show jobs.
+    pub fn show(&mut self, ui: &mut Ui, head: Head, shown: &Shown, cx: &mut Context<'_>) -> Drawn {
         let ctx = ui.ctx().clone();
         let before = self.values.clone();
         self.photo = shown.photo.clone();
@@ -595,10 +600,6 @@ impl Export {
         // Its ↺ applies Default settings, drawn disabled while they hold; then the presets
         // button, drawn disabled until presets come, then its options, which hold nothing
         // yet.
-        let head = Head {
-            open: shown.open,
-            ..Head::default()
-        };
         let resettable = self.values != Values::default();
         let drawn = crate::utility::section(ui, self, cx, head, resettable);
         if std::mem::take(&mut self.reset) {
