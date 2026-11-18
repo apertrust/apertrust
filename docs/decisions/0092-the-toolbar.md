@@ -10,7 +10,7 @@ People want the actions they use on every photo within reach, and tools want but
 - The caption buttons and the Mac's traffic lights are the platform's.
 - Every command is a registry action ([0036](0036-the-design-system.md)).
 - Tools add items as data and run no code in the interface ([0091](0091-context-menus-places-and-tools-items-as-actions.md)).
-- What a person arranges belongs to the workspace, with the settings file always a way to change it ([0083](0083-the-side-panels-layout-dragged-and-floating.md)).
+- What a person arranges belongs to the workspace, with the workspace's file always a way to change it ([0083](0083-the-side-panels-layout-dragged-and-floating.md), [0096](0096-workspaces-as-files-hidden-tools-and-finding-a-tool.md)).
 
 ## Decision
 
@@ -85,20 +85,21 @@ The overflow always keeps 24 points of them. On Windows the hit map's `HTCAPTION
 
 ### Customising
 
-- **The settings file** is the full way to customise until a window exists, and stays one after it (83):
+- **The workspace's file** is the full way to customise until a window exists, and stays one after it (83, [0096](0096-workspaces-as-files-hidden-tools-and-finding-a-tool.md)): `toolbar` in `<user data>/workspaces/<id>.toml`, and the labels app-wide in `settings.toml`:
 
   ```toml
-  [workspaces.edit]
+  # workspaces/edit.toml
   toolbar = ["menu-button", "mark", "import", "export", "reset", "undo", "redo", "space",
              "copy-edit", "apply-edit", "flexible-space", "jobs", "save-state"]
 
+  # settings.toml
   [toolbar]
   labels = false
   ```
 
-- `toolbar` is written only once it changes, so a workspace nobody changed follows each build's default.
+- A built-in workspace nobody changed has no file and follows each build's default toolbar; once its file is written, whole, its `toolbar` is the list as it then was.
 - An id this build does not know, a tool or an action removed or from a newer build, is skipped and kept in the file.
-- Save as Workspace copies the list, and Reset Workspace puts the default back.
+- A new workspace from the visual editor copies the list, and Reset Workspace, deleting a built-in's file, puts the default back.
 - **Customise Toolbar…**, from the toolbar menu and View › Panels, opens a dedicated window of the dialog host ([0041](0041-dialogs-as-native-modal-windows.md)), built much later; its design is settled when it is built. There is no palette inside the main window.
 
 ### The overflow
@@ -164,7 +165,7 @@ The toolbar is measured every frame at the current scale and language, and gives
   - `Toolbar` reports the right-click with what is under it;
   - the ☰ may be hidden, never folds while shown, and F6 lands on the toolbar's first control.
 - **Decision 91:** the Toolbar is an app-only place, `Toolbar`, holding the toolbar menu.
-- **Decision 83:** a workspace also holds its `toolbar` list.
+- **Decisions 83 and 96:** a workspace also holds its `toolbar` list, in its file.
 - **Decision 36:** a registry action may carry an icon, which makes it a candidate, and its message a `.toolbar` word.
 - **`apertrust-ui`:** `Toolbar` draws a list of items, with spaces, the overflow and labels, in place of its fixed parts, and » in place of ⋯ More actions. It knows parts and items only as plain data.
 - **The app:**
