@@ -1,8 +1,8 @@
-# 0092. The toolbar
+# 0092. The Toolbar
 
 ## Context
 
-The top panel is each main window's title bar ([0039](0039-one-top-bar-native-menus-on-the-mac-one-menu-button-elsewhere.md)). Today it holds a fixed set of parts, from a constant in the app (`TOP_PANEL`): the ☰ on Windows and Linux, the mark, Import…, Export…, Reset, Undo, Redo, Copy edit and Apply edit, the jobs spinner and the save state. Under 960 points it folds them into ⋯ More actions.
+The Toolbar is each main window's title bar ([0039](0039-one-top-bar-native-menus-on-the-mac-one-menu-button-elsewhere.md)). Today it holds a fixed set of parts, from a constant in the app (`TOOLBAR`): the ☰ on Windows and Linux, the mark, Import…, Export…, Reset, Undo, Redo, Copy edit and Apply edit, the jobs spinner and the save state. Under 960 points it folds them into ⋯ More actions.
 
 People want the actions they use on every photo within reach, and tools want buttons of their own there, such as Orientation's rotations. Several things constrain how:
 
@@ -14,7 +14,7 @@ People want the actions they use on every photo within reach, and tools want but
 
 ## Decision
 
-**The top panel is a toolbar a person customises.** It is an ordered list of item ids, kept for each workspace and drawn by the app from the registry. Everything but the caption buttons and the Mac's traffic lights may be moved or hidden. Planned: Phase 3 builds the toolbar, its menu, tools' items, the overflow and labels; the Customise Toolbar window comes much later.
+**The Toolbar is one a person customises.** It is an ordered list of item ids, kept for each workspace and drawn by the app from the registry. Everything but the caption buttons and the Mac's traffic lights may be moved or hidden. Planned: Phase 3 builds the toolbar, its menu, tools' items, the overflow and labels; the Customise Toolbar window comes much later.
 
 ### The list and its defaults
 
@@ -26,14 +26,14 @@ There is one ordered list of item ids for each workspace. The caption buttons an
 | Windows, Linux | `menu-button`, then the same, then 16 points (`spacing.xl`) before minimise, maximise and close |
 
 - There is one list for every platform. The Mac never shows `menu-button` and never takes it out of the list.
-- Before and After, Clipping Warnings and Zoom to 100% are offered but not in the default, since the central bar has them. So is Settings….
+- Before and After, Clipping Warnings and Zoom to 100% are offered but not in the default, since the viewer bar has them. So is Settings….
 
 **What can be placed:**
 
 | Kind | Ids | How many |
 | --- | --- | --- |
 | Parts | `menu-button` (Windows and Linux), `mark`, `jobs`, `save-state`, `assistant` (Phase 6) | One each |
-| The app's actions | A registry action that is pressed or toggled and has an icon: Import…, Export…, Export Again, Cull, Reset, Undo, Redo, Copy edit, Apply edit, Copy or Apply Parts…, Open…, Open Folder…, Before and After, Clipping Warnings, Zoom to 100%, Zoom to Fit, Full Screen, Jobs, Browse, Show in Folder, Next Photo, Previous Photo, Settings… | One each |
+| The app's actions | A registry action that is pressed or toggled and has an icon: Import…, Export…, Export Again, Cull, Reset, Undo, Redo, Copy edit, Apply edit, Copy or Apply Parts…, Open…, Open Folder…, Before and After, Clipping Warnings, Zoom to 100%, Zoom to Fit, Full Screen, Jobs, Collections, Show in Folder, Next Photo, Previous Photo, Settings… | One each |
 | Tools' actions | A processing tool's `tool-<tool>-<action>`, generated from its own actions as decision 91 built them, or the registry action a utility names, as History's `reset`, that its tool offers for the toolbar; the item's id is the action's | One each |
 | Spacing | `space`, 16 points; `flexible-space`, sharing what is left | Any number; the overflow removes fixed spaces as it narrows |
 
@@ -61,7 +61,7 @@ There is one ordered list of item ids for each workspace. The caption buttons an
 | The mark | About stays in Help on Windows and Linux and in the app menu on the Mac |
 | Everything | The toolbar is all empty area and still moves the window |
 
-**Moving the window.** These are empty areas: they move the window and take a double-click, as the top panel's empty areas do (39):
+**Moving the window.** These are empty areas: they move the window and take a double-click, as the Toolbar's empty areas do (39):
 
 - flexible spaces;
 - the parts of a fixed space outside egui's 5-point margin round a control;
@@ -71,7 +71,7 @@ The overflow always keeps 24 points of them. On Windows the hit map's `HTCAPTION
 
 ### The toolbar menu
 
-**A right-click anywhere on the toolbar opens the toolbar menu,** on an item or on empty space, on every platform, as does Shift+F10 or the Menu key on a focused item. It is an app-only place of decision 91's, `Place::TopPanel`. It holds:
+**A right-click anywhere on the toolbar opens the toolbar menu,** on an item or on empty space, on every platform, as does Shift+F10 or the Menu key on a focused item. It is an app-only place of decision 91's, `Place::Toolbar`. It holds:
 
 1. Hide "Undo", on an item;
 2. Show Menu Button, while the ☰ is hidden;
@@ -92,7 +92,7 @@ The overflow always keeps 24 points of them. On Windows the hit map's `HTCAPTION
   toolbar = ["menu-button", "mark", "import", "export", "reset", "undo", "redo", "space",
              "copy-edit", "apply-edit", "flexible-space", "jobs", "save-state"]
 
-  [top_panel]
+  [toolbar]
   labels = false
   ```
 
@@ -107,20 +107,20 @@ The toolbar is measured every frame at the current scale and language, and gives
 
 1. The labels fold, all at once.
 2. The fixed spaces narrow to 8 points, then go one at a time from the end, so that any number of them fits.
-3. The actions move into » (`top-panel-more`, 30 points) one at a time:
+3. The actions move into » (`toolbar-more`, 30 points) one at a time:
    - in reverse reading order, tools' items before the app's, Undo and Redo last;
    - » stands just before the first flexible space, or, with none in the list, after the last item, at the toolbar's end before the caption buttons.
 4. The status words fold to their signs.
 5. Undo and Redo go into ».
 
-- » lists its items in the toolbar's order, with their keys, check marks and disabled states. It replaces the built ⋯ More actions and matches the side panel's ».
+- » lists its items in the toolbar's order, with their keys, check marks and disabled states. It replaces the built ⋯ More actions and matches the Tools panel's ».
 - **Never folded:** the parts placed, », the caption buttons and 24 points of empty area.
 - **When even those do not fit,** at a large interface size, the window's minimum width grows to their width, so the bar never overlaps itself or the caption buttons and keeps its 24 points to move the window.
 - A test checks at 500 points, in every language, both platforms' defaults and a list with every part placed.
 
 ### Labels
 
-- **Icons by default.** Toolbar Labels is one app-wide setting, `top_panel.labels`, off by default. It is in View › Panels, the toolbar menu and Settings › General.
+- **Icons by default.** Toolbar Labels is one app-wide setting, `toolbar.labels`, off by default. It is in View › Panels, the toolbar menu and Settings › General.
 - **A labelled item:** 8 points, the 16-point icon in `text_secondary`, 6 points, the word in the body's 13 points in `text`, 8 points.
 - **The word** is the action's message's new `.toolbar` attribute where it has one, else the message. A test fails on a word over 96 points. Ukrainian's Copy edit and Apply edit need a `.toolbar` form.
 - **Tooltips** always give the words and the first key ("Undo Exposure · Ctrl+Z"), labels on or off. A tool's item is prefixed by its tool's title ("Orientation: Rotate 90° clockwise").
@@ -147,31 +147,31 @@ The toolbar is measured every frame at the current scale and language, and gives
 
 ## Options considered
 
-- **A fixed top panel, as built.** No room for a person's own actions or a tool's.
+- **A fixed Toolbar, as built.** No room for a person's own actions or a tool's.
 - **A palette inside the main window,** from which items are dragged onto the toolbar. Drags on a title bar compete with moving the window, and it is a second mode of the main window. A dedicated window is one place, and it can wait while the file serves.
 - **F6 landing on the toolbar itself when nothing in it is focusable,** with Shift+F10 there opening the toolbar menu. A focus stop with no control is a new kind of stop for one case; Show Menu Button in View › Panels uses the route F10 already keeps.
 - **A limit on fixed spaces.** A number would be arbitrary and still depend on the window's width; removing them as the bar narrows fits any number.
 - **Keeping the system's window menu on a right-click on empty space.** The toolbar menu would then open only on items, so a toolbar with every item hidden could never be reached from it, and one gesture would mean two things on one bar. The system's key keeps its menu.
-- **One toolbar for the app, or one per layout.** A toolbar suits a task as a workspace's tabs do (83). A layout is what the central panel shows, not a task.
+- **One toolbar for the app, or one per layout.** A toolbar suits a task as a workspace's tabs do (83). A layout is what the Viewer shows, not a task.
 - **Labels per workspace, or per item.** Labels are about reading the bar, not about the task. One setting is simpler and folds as one step.
 - **Tools' items without a limit.** The overflow and the bar would fill with one tool's buttons.
-- **Separator lines between groups.** The top panel parts its groups by space, and a line on a title bar reads as a border.
+- **Separator lines between groups.** The Toolbar parts its groups by space, and a line on a title bar reads as a border.
 
 ## Consequences
 
 - **Decision 39:**
-  - a right-click on the top panel's empty areas opens the toolbar menu on every platform, and the system's window menu stays on the system's own key;
-  - `TopPanel` reports the right-click with what is under it;
+  - a right-click on the Toolbar's empty areas opens the toolbar menu on every platform, and the system's window menu stays on the system's own key;
+  - `Toolbar` reports the right-click with what is under it;
   - the ☰ may be hidden, never folds while shown, and F6 lands on the toolbar's first control.
-- **Decision 91:** the top panel is an app-only place, `TopPanel`, holding the toolbar menu.
+- **Decision 91:** the Toolbar is an app-only place, `Toolbar`, holding the toolbar menu.
 - **Decision 83:** a workspace also holds its `toolbar` list.
 - **Decision 36:** a registry action may carry an icon, which makes it a candidate, and its message a `.toolbar` word.
-- **`apertrust-ui`:** `TopPanel` draws a list of items, with spaces, the overflow and labels, in place of its fixed parts, and » in place of ⋯ More actions. It knows parts and items only as plain data.
+- **`apertrust-ui`:** `Toolbar` draws a list of items, with spaces, the overflow and labels, in place of its fixed parts, and » in place of ⋯ More actions. It knows parts and items only as plain data.
 - **The app:**
-  - the list from the workspace in place of `TOP_PANEL`;
+  - the list from the workspace in place of `TOOLBAR`;
   - the guards;
   - the toolbar menu;
-  - `top_panel.labels` in the settings schema;
+  - `toolbar.labels` in the settings schema;
   - Show Menu Button in View › Panels on Windows and Linux;
   - the window's minimum width raised to what the toolbar never folds;
   - the tests: of the overflow at 500 points, of the parts' ids, of the icon names and of the words' width.
