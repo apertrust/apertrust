@@ -127,6 +127,7 @@ impl Geometry {
                     [-0.4296, 1.2053, 0.2532],
                     [-0.0429, 0.1282, 0.5774],
                 ]),
+                embedded_matrix: false,
                 crop: self.crop,
                 declared: self.declared,
                 exposure_bias: 0.0,

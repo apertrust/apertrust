@@ -579,6 +579,7 @@ mod tests {
                 white: 4095.0,
                 white_balance: Some(vec![2.0, 1.0, 1.5]),
                 xyz_to_camera: None,
+                embedded_matrix: false,
                 crop: [2, 2, 60, 44],
                 declared: [5, 4, 52, 38],
                 exposure_bias: 0.0,

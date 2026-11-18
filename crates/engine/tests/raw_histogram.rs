@@ -137,6 +137,7 @@ fn it_is_counted_over_the_declared_image_only_where_an_instance_reads_it() {
             white: 65535.0,
             white_balance: None,
             xyz_to_camera: None,
+            embedded_matrix: false,
             crop: [1, 1, 1999, 401],
             declared: REGION,
             exposure_bias: 0.0,

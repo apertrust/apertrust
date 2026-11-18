@@ -412,6 +412,7 @@ mod tests {
                 [-0.4244, 1.2136, 0.2371],
                 [-0.058, 0.1303, 0.598],
             ]),
+            embedded_matrix: false,
             crop: [0, 0, 4, 4],
             declared: [0, 0, 4, 4],
             exposure_bias: 0.0,

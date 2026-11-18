@@ -66,6 +66,7 @@ fn context(width: u32, height: u32) -> ImageContext {
             white: 1.0,
             white_balance: None,
             xyz_to_camera: None,
+            embedded_matrix: false,
             crop: [0, 0, READOUT[0], READOUT[1]],
             declared: [0, 0, READOUT[0], READOUT[1]],
             exposure_bias: 0.0,

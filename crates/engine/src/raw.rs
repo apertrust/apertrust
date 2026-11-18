@@ -36,6 +36,7 @@ pub fn image_context(raw: &RawImage) -> ImageContext {
     let declared = raw
         .default_crop
         .map_or(crop, |declared| intersect(declared, crop));
+    let embedded = raw.dng_color.as_ref().and_then(dng_matrix);
     let cfa = raw.cfa.as_ref().map(|cfa| Pattern {
         width: cfa.width,
         height: cfa.height,
@@ -76,7 +77,8 @@ pub fn image_context(raw: &RawImage) -> ImageContext {
                 .copied()
                 .unwrap_or(u32::from(u16::MAX)) as f32,
             white_balance: raw.white_balance.clone(),
-            xyz_to_camera: xyz_to_camera(raw),
+            xyz_to_camera: embedded.or_else(|| standard_matrix(raw)),
+            embedded_matrix: embedded.is_some(),
             crop: [crop.x, crop.y, crop.width, crop.height],
             declared: [declared.x, declared.y, declared.width, declared.height],
             exposure_bias: raw.exposure_bias.unwrap_or(0.0),
@@ -153,18 +155,16 @@ fn lens_correction(correction: &apertrust_raw::LensCorrection) -> LensCorrection
     }
 }
 
-/// The camera's XYZ to camera RGB matrix under D65, by rows: a DNG's as darktable derives it from the file's calibration;
-/// otherwise, or when none qualifies, as darktable falls back to its standard matrix,
+/// The camera's XYZ to camera RGB matrix under D65, by rows, from the decoder's camera
+/// table, as darktable falls back to its standard matrix where a raw has no embedded one:
 /// rawler's D65 matrix, or its last.
-pub fn xyz_to_camera(raw: &RawImage) -> Option<Mat3> {
-    raw.dng_color.as_ref().and_then(dng_matrix).or_else(|| {
-        raw.color_matrices
-            .iter()
-            .find(|m| m.illuminant == Illuminant::D65)
-            .or(raw.color_matrices.last())
-            .filter(|m| m.xyz_to_camera.len() == 3)
-            .map(|m| [m.xyz_to_camera[0], m.xyz_to_camera[1], m.xyz_to_camera[2]])
-    })
+fn standard_matrix(raw: &RawImage) -> Option<Mat3> {
+    raw.color_matrices
+        .iter()
+        .find(|m| m.illuminant == Illuminant::D65)
+        .or(raw.color_matrices.last())
+        .filter(|m| m.xyz_to_camera.len() == 3)
+        .map(|m| [m.xyz_to_camera[0], m.xyz_to_camera[1], m.xyz_to_camera[2]])
 }
 
 /// darktable's camera matrix for a DNG (`apertrust_color::dng_xyz_to_camera`): the
@@ -321,6 +321,12 @@ mod tests {
             .and_then(|camera| camera.xyz_to_camera)
     }
 
+    /// Whether the image context says its matrix is the DNG's own, darktable's embedded
+    /// matrix.
+    fn embedded(raw: &RawImage) -> bool {
+        image_context(raw).camera.unwrap().embedded_matrix
+    }
+
     fn values(m: Mat3) -> Option<Vec<f32>> {
         Some(m.as_flattened().to_vec())
     }
@@ -415,6 +421,7 @@ mod tests {
         );
         assert_eq!(xyz_to_camera(&without_d65), Some(UNDER_D50));
         assert_eq!(xyz_to_camera(&raw(&[], None)), None);
+        assert!(!embedded(&both) && !embedded(&without_d65));
     }
 
     #[test]
@@ -427,10 +434,12 @@ mod tests {
             ..Default::default()
         };
         let matrices = [(Illuminant::A, UNDER_A), (Illuminant::D50, UNDER_D50)];
+        let dng = raw(&matrices, Some(q2));
         assert_eq!(
-            xyz_to_camera(&raw(&matrices, Some(q2))),
+            xyz_to_camera(&dng),
             Some(mul(&dng_light_source(D50).to_d65, &UNDER_D50))
         );
+        assert!(embedded(&dng));
     }
 
     #[test]
@@ -467,6 +476,7 @@ mod tests {
     fn a_dng_without_a_qualifying_calibration_falls_back_to_rawler_s() {
         // A monochrome DNG has no calibration at all.
         assert_eq!(xyz_to_camera(&raw(&[], Some(DngColor::default()))), None);
+        assert!(!embedded(&raw(&[], Some(DngColor::default()))));
         // A twelve-value ColorMatrix, a four-colour camera's, is not read.
         let four_colours = DngColor {
             calibration_illuminants: [Some(D65), None, None],
@@ -482,9 +492,9 @@ mod tests {
             ..Default::default()
         };
         let matrices = [(Illuminant::D65, UNDER_D65)];
-        assert_eq!(
-            xyz_to_camera(&raw(&matrices, Some(undefined))),
-            Some(UNDER_D65)
-        );
+        let fallen_back = raw(&matrices, Some(undefined));
+        assert_eq!(xyz_to_camera(&fallen_back), Some(UNDER_D65));
+        // rawler's, darktable's standard matrix, not an embedded one.
+        assert!(!embedded(&fallen_back));
     }
 }
