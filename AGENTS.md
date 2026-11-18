@@ -193,7 +193,7 @@ What each crate has built and planned is in [docs/crates.md](docs/crates.md).
 - Each crate lives in `crates/<name>`, its package name without `apertrust-`: the app in `crates/app`, operation crates in `crates/op/<id>` (decision 65). A new crate goes into `members` in the root `Cargo.toml`.
 - Add a crate when its first real code lands, and only when a module of an existing crate cannot do: `unsafe` FFI, a dependency direction that would otherwise break, or a decided boundary such as an operation's (decision 65). Keep the number of crates small.
 - Shared dependency versions live in the root `Cargo.toml` under `[workspace.dependencies]`.
-- Data files live in the top-level `data/`, as darktable's (decision 45): darktable's verbatim under their names, and those several crates or readers outside Rust read, the settings schema first. Each is added with its first consumer, its provenance in `data/README.md`, embedded at build time by the one crate that parses it, never read from an installed folder. Themes, icons, fonts and locales stay in `apertrust-ui`, kernels in their operation crates.
+- Data files live in the top-level `data/`, as darktable's (decision 45): darktable's verbatim under their names, those several crates or readers outside Rust read, the settings schema first, and the built-in themes. Each is added with its first consumer, its provenance in `data/README.md`, embedded at build time by the one crate that parses it, never read from an installed folder. Icons, fonts and locales stay in `apertrust-ui`, kernels in their operation crates.
 
 ## Engineering rules
 

@@ -17,7 +17,7 @@
   The plates are as wide as the icons, y 266-292, where Finder's labels of 13 points sit
   centred (checked in Finder on macOS 27).
   The ground is its surface, the arrow its text_secondary in a 1.25-point line, as Lucide
-  draws arrow-right (crates/ui/themes/dark.toml). The logo is the dark one, linked.
+  draws arrow-right (data/themes/dark.toml). The logo is the dark one, linked.
 
   The caption, "Drag Apertrust to Applications", is IBM Plex Sans Regular at 13 points,
   centred at x 330 on the baseline y 352, in text_secondary, outlined to a path so that

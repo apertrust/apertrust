@@ -2276,7 +2276,8 @@ A top-level `data/` folder, as darktable's, holds darktable's data files verbati
 - **Provenance:** `data/README.md` gives each file's provenance and licence (for darktable's: the tag, the blob, the size and the SHA-256) and what reads it. A test in the crate that embeds a darktable file holds its SHA-256, so a later release's file is a deliberate change.
 - **Embedded once:** each file is embedded at build time, with `include_str!` or by a build script, by the crate that parses it. Other crates reach what it parsed through that crate or the image context. `wb_presets.json` is to be parsed by `apertrust-raw`, which puts the decoded camera's presets in the image context (`Camera::white_balance_presets`), where the temperature operation's defaults and the White balance tool read them (decision 27).
 - **Never read from an installed folder,** unlike darktable's `share/darktable`: a binary's results depend on its build alone (principle 2). darktable's `--noiseprofiles FILE`, for profiling a camera, may become a flag later.
-- **Elsewhere:** themes, icons, fonts and locales stay in `apertrust-ui`, the design system that owns them (decision 36); kernels stay in their operation crates (decision 20).
+- **The themes** are in `data/themes`, embedded by `apertrust-ui` (decision 36).
+- **Elsewhere:** icons, fonts and locales stay in `apertrust-ui`, the design system that owns them (decision 36); kernels stay in their operation crates (decision 20).
 
 ## Limits and errors
 
