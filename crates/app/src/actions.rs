@@ -288,6 +288,11 @@ pub enum Intent {
     Export,
     /// The export with the settings as last kept, with no dialog (`export_again`).
     ExportAgain,
+    /// Next Photo, or Previous Photo where false: the active photo moves through the
+    /// selection, or the folder (`selection::step`).
+    Step {
+        next: bool,
+    },
     /// Discard History, asked first unless the setting says not to (`alerts`).
     DiscardHistory,
     View(View),
@@ -418,6 +423,9 @@ pub struct State {
     pub text: bool,
     /// What Edit's selection items would change, from the mirror (`selection::selectable`).
     pub select: Selectable,
+    /// Whether Next Photo, and Previous Photo, have a photo to go to (`selection::stepped`).
+    pub next: bool,
+    pub previous: bool,
     /// The photos selected: the active one alone until several can be (decision 91 hides
     /// what acts on one photo alone from a thumbnail's menu while several are).
     pub photos: usize,
@@ -1394,8 +1402,8 @@ pub static ACTIONS: [Action; 106] = [
         keys: &[plain(Key::Space), plain(Key::ArrowRight)],
         scope: Scope::View(View::Edit),
         trigger: Trigger::Repeat,
-        available: |s| s.photos > 1,
-        emits: Emit::Later,
+        available: |s| s.next && on_main_window(s) && !s.modal,
+        emits: Emit::Intent(Intent::Step { next: true }),
     },
     Action {
         id: ActionId::PREVIOUS_PHOTO,
@@ -1403,8 +1411,8 @@ pub static ACTIONS: [Action; 106] = [
         keys: &[plain(Key::Backspace), plain(Key::ArrowLeft)],
         scope: Scope::View(View::Edit),
         trigger: Trigger::Repeat,
-        available: |s| s.photos > 1,
-        emits: Emit::Later,
+        available: |s| s.previous && on_main_window(s) && !s.modal,
+        emits: Emit::Intent(Intent::Step { next: false }),
     },
     // The photo's zoom, not built until the viewport can zoom. Then Fit, in and out take
     // Ctrl+0, Ctrl+= and Ctrl+− from the interface's size (`docs/gui.md`, The default
@@ -2554,6 +2562,8 @@ pub(crate) mod tests {
                 invert: true,
                 unedited: true,
             },
+            next: true,
+            previous: true,
             photos: 2,
             opened: true,
             recents: [Some(true); crate::recents::MOST],
@@ -2889,6 +2899,34 @@ pub(crate) mod tests {
         assert_eq!(keys(ActionId::SELECT_NONE), [ctrl(shift, Key::A)]);
         assert!(keys(ActionId::INVERT_SELECTION).is_empty());
         assert!(keys(ActionId::SELECT_UNEDITED).is_empty());
+    }
+
+    /// Next Photo and Previous Photo move the active photo, each disabled with no photo to
+    /// go to, under a modal dialog, and while a dialog's own window has the focus.
+    #[test]
+    fn next_and_previous_photo_run_with_a_photo_to_go_to() {
+        let next = action(ActionId::NEXT_PHOTO).expect("declared");
+        let previous = action(ActionId::PREVIOUS_PHOTO).expect("declared");
+        assert_eq!(next.emits, Emit::Intent(Intent::Step { next: true }));
+        assert_eq!(previous.emits, Emit::Intent(Intent::Step { next: false }));
+        let mut state = everything();
+        assert!(next.enabled(&state) && previous.enabled(&state));
+        state.next = false;
+        assert!(!next.enabled(&state) && previous.enabled(&state));
+        state.previous = false;
+        assert!(!previous.enabled(&state));
+        for rest in [
+            State {
+                modal: true,
+                ..everything()
+            },
+            State {
+                dialog_window: true,
+                ..everything()
+            },
+        ] {
+            assert!(!next.enabled(&rest) && !previous.enabled(&rest));
+        }
     }
 
     /// Ctrl+A in a focused text field is the field's, selecting its text, never the

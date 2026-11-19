@@ -1785,6 +1785,8 @@ mod tests {
                 invert: true,
                 unedited: true,
             },
+            next: true,
+            previous: true,
             photos: 2,
             opened: true,
             recents: [Some(true); crate::recents::MOST],
@@ -2389,6 +2391,9 @@ mod tests {
         assert!(enabled(ActionId::SETTINGS, &state));
         // Declared, not built: drawn disabled.
         assert!(!enabled(ActionId::COPY_EDIT, &state));
+        // Next Photo, with a photo to go to.
+        assert!(enabled(ActionId::NEXT_PHOTO, &state));
+        state.next = false;
         assert!(!enabled(ActionId::NEXT_PHOTO, &state));
         state.edited = false;
         assert!(!enabled(ActionId::RESET, &state));

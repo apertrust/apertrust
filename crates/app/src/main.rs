@@ -1957,6 +1957,9 @@ struct Shell {
     references: pickers::ReferencePhotos,
     /// Whether Export Again ran, for the app to send the preview that decides its question.
     export_again: bool,
+    /// Next Photo or Previous Photo ran (`next` false), for the app to open the photo it
+    /// reaches.
+    step: Option<bool>,
     /// The Export tool's settings, as it left them (`export.*`).
     export: export::Values,
     /// The tools' settings, as their rows and picks left them (`tools.*`).
@@ -2089,6 +2092,7 @@ impl Shell {
             missing: BTreeMap::new(),
             references: pickers::ReferencePhotos::new(),
             export_again: false,
+            step: None,
             export: settings.export.clone(),
             tool_settings: settings.tool_settings.clone(),
             overwrite: alerts::Question::overwrite(settings.ask_before_overwrite, false),
@@ -3143,6 +3147,8 @@ impl Shell {
             text: Focus::of(ctx) == Focus::Text,
             // The app's, from the mirror ([`App::shell_state`]).
             select: actions::Selectable::default(),
+            next: false,
+            previous: false,
             // One photo until the catalogue.
             photos: usize::from(photo),
             // The app's, from the folder and the photo it holds ([`App::shell_state`]).
@@ -3536,6 +3542,7 @@ impl Shell {
             // scrolled to.
             Intent::Export => self.reveal(export::ID),
             Intent::ExportAgain => self.export_again = true,
+            Intent::Step { next } => self.step = Some(next),
             Intent::DiscardHistory => self.discard_history = true,
             Intent::ToolAction { tool, action } => self.tool_action = Some((tool, action)),
             Intent::Menu => self.menu = true,
@@ -4914,6 +4921,8 @@ impl App {
             discard_why: history::discard_why(options),
             exportable: open && !self.view_only(),
             select: selection::selectable(&self.mirror),
+            next: selection::stepped(true, &self.mirror).is_some(),
+            previous: selection::stepped(false, &self.mirror).is_some(),
             ..state
         }
     }
@@ -4955,6 +4964,9 @@ impl App {
             if !hold_for_panel(id, self.asking.is_some() || overwrite, &mut self.quit_held) {
                 continue;
             }
+            // In the Browser's sort as an earlier action may have left it, which Next Photo
+            // and Previous Photo read.
+            self.mirror.folder.sort(self.shell.browser.sort);
             let state = self.state(ctx);
             // Close Window on the start window closes it, as its close button does; on a
             // dialog's own window with the focus, that window.
@@ -4999,6 +5011,11 @@ impl App {
             }
             if std::mem::take(&mut self.shell.export_again) {
                 self.export_again(ctx);
+            }
+            if let Some(next) = self.shell.step.take() {
+                let session = &self.session;
+                let send = &mut |command| session.send(command);
+                selection::step(next, &mut self.mirror, send);
             }
             if std::mem::take(&mut self.shell.discard_history) {
                 self.discard_history(ctx);

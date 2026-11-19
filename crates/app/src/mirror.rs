@@ -361,6 +361,20 @@ impl Mirror {
         self.ask(number, Ask::Select(command.clone(), active));
     }
 
+    /// Whether a selection command that needs the collection, All, Invert or Unedited, is
+    /// sent and not yet told: what the selection is waits for the session until then.
+    pub fn selection_pending(&self) -> bool {
+        self.asked.iter().any(|asked| {
+            matches!(
+                asked.ask,
+                Ask::Select(
+                    SelectionCommand::All | SelectionCommand::Invert | SelectionCommand::Unedited,
+                    _
+                )
+            )
+        })
+    }
+
     /// The open numbered `open` failed: it selected nothing, and a range sent after it runs
     /// from no photo, as the session, with none active then, applies it.
     fn open_failed(&mut self, open: u64) {
