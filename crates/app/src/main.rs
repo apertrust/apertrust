@@ -1622,6 +1622,10 @@ struct Shell {
     /// The tool whose header takes the focus once drawn: the one after a hidden tool's in
     /// its tab, else the one before it; or a tool pinned or unpinned, in its new list.
     focus_section: Option<&'static str>,
+    /// The header a move handed the focus to, by its tool, scrolled into view as the next
+    /// frame draws it: its list may have it out of sight, as an unpinned tool's at the top
+    /// of a list scrolled down.
+    reveal_header: Option<(&'static str, egui::Id)>,
     /// The workspaces whose file a newer Apertrust wrote that a move has warned of this run,
     /// once each.
     newer_warned: BTreeSet<String>,
@@ -1794,6 +1798,7 @@ impl Shell {
             newer_shown: false,
             focus_tab: None,
             focus_section: None,
+            reveal_header: None,
             newer_warned: BTreeSet::new(),
             newer_warning: false,
             workspace_given: false,
@@ -1871,10 +1876,11 @@ impl Shell {
         self.newer_warning = false;
         // A write found its file a newer build's while another was shown: said now.
         self.newer_shown = self.newer_found.remove(&workspace.id);
-        // Nothing of the workspace left: no header acted on, none or no tab to focus, so a
-        // layout action in the same frame acts on nothing of it.
+        // Nothing of the workspace left: no header acted on or scrolled to, none or no tab
+        // to focus, so a layout action in the same frame acts on nothing of it.
         self.headers.clear();
         self.focus_section = None;
+        self.reveal_header = None;
         self.focus_tab = None;
         let place = kept.and_then(|id| workspace.position(id));
         let enabled = workspace.enabled();
@@ -1995,11 +2001,13 @@ impl Shell {
         self.headers = asked.headers;
         // The header a move asked the focus for, drawn this frame where the move put it:
         // the one after a hidden tool's, or a tool's pinned or unpinned. A move this frame
-        // asks for its header as the next frame draws it.
+        // asks for its header as the next frame draws it, which scrolls it into view.
+        self.reveal_header = None;
         if let Some(tool) = self.focus_section.take() {
             let header = self.headers.iter().find(|(t, _)| *t == tool);
             if let Some((_, id)) = header {
                 ctx.memory_mut(|memory| memory.request_focus(*id));
+                self.reveal_header = Some((tool, *id));
             }
         }
         for (tool, id) in asked.run {
@@ -2580,6 +2588,10 @@ impl Shell {
         }
         self.set_section_open(tool, true);
         self.reveal = Some(tool);
+        // The header a move earlier asked the focus for, in this tab too, gives way: never
+        // scrolled to after the section revealed.
+        self.focus_section = None;
+        self.reveal_header = None;
     }
 
     /// What `definition`'s header is given by the shell (decision 93): its section open as
@@ -3295,6 +3307,7 @@ impl Shell {
                     ctx.memory_mut(|m| m.request_focus(id));
                     // The focus a move asked for earlier in the frame gives way to it.
                     self.focus_section = None;
+                    self.reveal_header = None;
                     self.focus_tab = None;
                 }
             }
@@ -3338,9 +3351,10 @@ impl Shell {
     }
 
     /// The tab shown changed: the headers drawn in the one left no longer count, so a layout
-    /// action later in the frame acts on none of its tools.
+    /// action later in the frame acts on none of its tools, and none is scrolled to.
     fn left_tab(&mut self) {
         self.headers.clear();
+        self.reveal_header = None;
     }
 
     /// The theme in use, with the background chosen behind the photo, if any.
@@ -7354,7 +7368,7 @@ type Body = (
 /// definitions with the mirror's values. Each section open as the shell keeps it, peeking
 /// while `peek` holds, its header's buttons and ⋯ enabled as `state` says, its reset
 /// disabled unless `editable`, and its colour pickers as `pickers` says; the section a
-/// History line opened scrolled to.
+/// History line opened scrolled to, and the header a move handed the focus to.
 #[expect(
     clippy::too_many_arguments,
     reason = "the app's own state for the Tools panel, each part apart"
@@ -7455,6 +7469,19 @@ fn panel_body(
             }
         }
     };
+    // The header a move handed the focus to, drawn in `list`, scrolled into view in its
+    // list's scroll area, at once, as a screen reader's Scroll Into View is
+    // ([`Shell::reveal_header`]).
+    let reveal = |ui: &egui::Ui, list: &[&'static str]| {
+        let Some((tool, header)) = shell.reveal_header else {
+            return;
+        };
+        if list.contains(&tool)
+            && let Some(response) = ui.ctx().read_response(header)
+        {
+            response.scroll_to_me_animation(None, egui::style::ScrollAnimation::none());
+        }
+    };
     let mut body = PanelBody::new();
     // The tools found scroll apart, so the tab keeps its place for when the search closes.
     if shell.find.is_some() {
@@ -7465,6 +7492,7 @@ fn panel_body(
             for id in &tab.pinned {
                 draw(ui, id);
             }
+            reveal(ui, &tab.pinned);
         });
     }
     body.show(ui, |ui| {
@@ -7488,6 +7516,7 @@ fn panel_body(
         for id in &tab.order {
             draw(ui, id);
         }
+        reveal(ui, &tab.order);
     });
     drawn.into_inner().2
 }
@@ -11552,6 +11581,68 @@ mod tests {
         assert_eq!(shell.focused_section(&ctx), None);
         shell.run(ActionId::SECTION_PIN, &state, &ctx, &[]);
         assert!(shell.workspace.tab(photos).unwrap().pinned.is_empty());
+    }
+
+    /// A tool unpinned in a list scrolled down has its header, at the list's top, scrolled
+    /// into view as it takes the focus.
+    #[test]
+    fn an_unpinned_tool_s_header_is_scrolled_into_view() {
+        let folder = settings::testing::Folder::new("layout-unpin-reveal");
+        let mut harness = tools_panel_in(&folder, egui::vec2(560.0, 320.0), Theme::default());
+        let shell = &mut harness.state_mut().shell;
+        shell.workspace_files = layout::Files::new(folder.0.join("workspaces"));
+        let effects = shell.workspace.position("effects").unwrap();
+        shell.choose_tab(effects);
+        // Each tool open, so the list is taller than the panel.
+        for tool in shell.workspace.tab(effects).unwrap().order.clone() {
+            shell.set_section_open(tool, true);
+        }
+        harness.run();
+        let last = *effects_order(&harness).last().unwrap();
+        let title = tools::title(&translator(&harness.ctx), last);
+        harness
+            .get_by_role_and_label(Role::Button, &title)
+            .scroll_to_me();
+        harness.run();
+        // Under the tab bar, where the sections start.
+        let top = harness.get_by_role(Role::TabList).rect().bottom();
+        let first = harness.get_by_role_and_label(Role::Button, "Vignetting");
+        assert!(first.rect().top() < top, "the list is scrolled down");
+        let ctx = harness.ctx.clone();
+        let state = harness.state().shell.state(&ctx, false, false);
+        let shell = &mut harness.state_mut().shell;
+        shell.run_on_section(scopes::ID, ActionId::SECTION_PIN, &state, &ctx);
+        harness.run();
+        harness.run();
+        assert_eq!(effects_order(&harness)[0], scopes::ID);
+        let scopes = harness.get_by_role_and_label(Role::Button, "Scopes");
+        assert!(scopes.accesskit_node().is_focused());
+        assert!(
+            scopes.rect().top() >= top,
+            "{:?} under {top}",
+            scopes.rect()
+        );
+    }
+
+    /// A section revealed after a move in the same frame, as a History line reveals one,
+    /// wins over the header the move asked the focus for, in the same tab too: it takes no
+    /// focus and nothing scrolls back to it.
+    #[test]
+    fn a_reveal_wins_over_a_move_s_focus() {
+        let folder = settings::testing::Folder::new("layout-pin-then-reveal");
+        let mut harness = effects_tab(&folder);
+        let ctx = harness.ctx.clone();
+        let state = harness.state().shell.state(&ctx, false, false);
+        let shell = &mut harness.state_mut().shell;
+        shell.run_on_section("grain", ActionId::SECTION_PIN, &state, &ctx);
+        assert_eq!(shell.focus_section, Some("grain"));
+        shell.reveal("vignette");
+        assert_eq!(shell.focus_section, None);
+        harness.run();
+        harness.run();
+        assert_eq!(harness.state().shell.reveal_header, None);
+        let grain = harness.get_by_role_and_label(Role::Button, "Grain");
+        assert!(!grain.accesskit_node().is_focused());
     }
 
     /// F6 after a bound Pin in the same frame keeps the focus where F6 put it: the header
