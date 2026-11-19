@@ -1378,6 +1378,9 @@ struct App {
     /// The refused starts whose alerts wait, each its flags and token: for the window to
     /// show, or for the alert up before it to go (decision 89).
     refusals: VecDeque<(Vec<OsString>, instance::Token)>,
+    /// The token of the latest hand-off taken before the window showed, which brings it
+    /// forward once it has.
+    forward: Option<instance::Token>,
     /// The Pictures folder, where the open dialog starts with no photo open; read once.
     pictures: Option<PathBuf>,
     /// The dialogs' windows (decision 41).
@@ -3946,6 +3949,7 @@ impl App {
             hand_offs: None,
             join: instance::Join::new(Vec::new(), Instant::now(), instance::Join::platform()),
             refusals: VecDeque::new(),
+            forward: None,
             pictures: paths::pictures(),
             dialogs,
             jobs_view: Vec::new(),
@@ -5686,8 +5690,8 @@ impl App {
     /// Takes what second starts handed over (decision 89): once the window has drawn a
     /// frame, each brings it forward with its token, through `window` where winit's own
     /// request cannot, a refused one's alert raised in it, in turn, each once the one
-    /// before has gone; before, their paths join the command line's and the alerts wait.
-    /// Opens the paths [`instance::Join`] has joined once they are due.
+    /// before has gone; before, their paths join the command line's, the alerts wait and
+    /// the latest token is kept, to bring the window forward as it shows. Opens the paths [`instance::Join`] has joined once they are due.
     fn take_hand_offs(
         &mut self,
         ctx: &egui::Context,
@@ -5704,12 +5708,17 @@ impl App {
                     self.join.arrive(paths, at);
                     if shown {
                         self.come_forward(ctx, window, &token);
+                    } else {
+                        self.forward = Some(token);
                     }
                 }
                 instance::Arrival::Refused { flags, token } => {
                     self.refusals.push_back((flags, token));
                 }
             }
+        }
+        if shown && let Some(token) = self.forward.take() {
+            self.come_forward(ctx, window, &token);
         }
         if shown {
             let mut waiting = std::mem::take(&mut self.refusals);
