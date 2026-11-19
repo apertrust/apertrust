@@ -2317,7 +2317,7 @@ On Windows and Linux:
 
 `--safe-mode`, `--conf`, `-d`, a `--cache-dir` naming another folder than the instance's, and any such flag the app gains refuse a start while an instance runs on its folder:
 
-- **on Windows and Linux,** the instance's alert, in its window brought forward, "Apertrust is already running with this folder", says to quit it first and start again; the same words go to stderr, and the start exits with status 1;
+- **on Windows and Linux,** the instance's alert, in its window brought forward, "Apertrust is already running with this folder", says to quit it first and start again; the same words go to stderr, and the start exits with status 1. On Windows the alert waits for [the system's alerts](#dialogs-and-alerts) there: the window comes forward and stderr says it;
 - **on macOS,** the stderr refusal above.
 
 They are never dropped, and never run a second instance on the folder.
