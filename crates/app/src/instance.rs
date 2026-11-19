@@ -1016,7 +1016,15 @@ pub struct Inbox {
     wake: Waker,
 }
 
-type Waker = Arc<Mutex<Option<Box<dyn Fn() + Send>>>>;
+/// How the window is woken, and whether it still takes arrivals: one lock for both, so an
+/// arrival is either delivered before the inbox closes or refused after.
+type Waker = Arc<Mutex<Door>>;
+
+#[derive(Default)]
+struct Door {
+    wake: Option<Box<dyn Fn() + Send>>,
+    closed: bool,
+}
 
 /// A post and the inbox it delivers to.
 pub fn mailbox() -> (Post, Inbox) {
@@ -1031,14 +1039,15 @@ pub fn mailbox() -> (Post, Inbox) {
 
 impl Post {
     /// Delivers `arrival`, waking the window where it has said how; false where it cannot
-    /// be, the window's inbox gone as the app ends.
+    /// be, the inbox closed or gone as the app ends.
     pub fn send(&self, arrival: Arrival) -> bool {
-        if self.sender.send(arrival).is_err() {
+        let Ok(door) = self.wake.lock() else {
+            return false;
+        };
+        if door.closed || self.sender.send(arrival).is_err() {
             return false;
         }
-        if let Ok(wake) = self.wake.lock()
-            && let Some(wake) = wake.as_ref()
-        {
+        if let Some(wake) = door.wake.as_ref() {
             wake();
         }
         true
@@ -1057,9 +1066,19 @@ pub fn closing_words(folder: &Path) -> String {
 impl Inbox {
     /// Wakes the window with `wake` as each arrival comes from now on.
     pub fn wake_with(&self, wake: impl Fn() + Send + 'static) {
-        if let Ok(mut waker) = self.wake.lock() {
-            *waker = Some(Box::new(wake));
+        if let Ok(mut door) = self.wake.lock() {
+            door.wake = Some(Box::new(wake));
         }
+    }
+
+    /// Takes no more arrivals, as the app commits to quitting: each later [`Post::send`]
+    /// is refused. Returns what arrived since the last [`Inbox::take`], which can no longer
+    /// open.
+    pub fn close(&self) -> Vec<Arrival> {
+        if let Ok(mut door) = self.wake.lock() {
+            door.closed = true;
+        }
+        self.take()
     }
 
     /// Everything that arrived since the last call, in order.
@@ -1933,6 +1952,25 @@ mod tests {
         let mut huge = (MOST_FIELDS + 1).to_le_bytes().to_vec();
         huge.extend([0; 8]);
         assert!(read_frame(&mut huge.as_slice()).is_err());
+    }
+
+    /// A closed inbox takes nothing more, and gives back what came before it closed.
+    #[test]
+    fn a_closed_inbox_takes_nothing_more() {
+        let (post, inbox) = mailbox();
+        let open = |name: &str| Arrival::Open {
+            paths: paths(&[name]),
+            at: Instant::now(),
+            token: Token::default(),
+        };
+        assert!(post.send(open("a")));
+        let left = inbox.close();
+        assert!(
+            matches!(&left[..], [Arrival::Open { paths: given, .. }] if *given == paths(&["a"])),
+            "{left:?}"
+        );
+        assert!(!post.send(open("b")));
+        assert!(inbox.take().is_empty());
     }
 
     /// The flags for one run are refused, all of them; the cache folder only where it is

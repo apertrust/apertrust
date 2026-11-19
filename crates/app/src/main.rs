@@ -6533,6 +6533,18 @@ impl eframe::App for App {
     }
 
     fn on_exit(&mut self) {
+        // No second start is taken from here on: one that comes while the app writes what
+        // it keeps is refused as quitting, never answered Taken and lost (decision 89). One
+        // taken since the last frame's look can no longer open, and is said so.
+        if let Some(inbox) = &self.hand_offs {
+            for arrival in inbox.close() {
+                if let instance::Arrival::Open { paths, .. } = arrival
+                    && !paths.is_empty()
+                {
+                    tracing::warn!(target: "control", "a second start's paths came as the app quit, and do not open: {paths:?}");
+                }
+            }
+        }
         // What Wayland's activation keeps over winit's display, while it is connected.
         apertrust_display::instance::end_activation();
         self.keeper.flush();
@@ -8827,9 +8839,9 @@ mod tests {
             panic!("not posted: {arrived:?}");
         };
         assert_eq!(flags, &[OsString::from("--safe-mode")]);
-        // Once the window's inbox has gone, as the app quits, nothing is taken that
-        // cannot open.
-        drop(inbox);
+        // Once the window's inbox has closed, as the app commits to quitting, or gone,
+        // nothing is taken that cannot open.
+        let _ = inbox.close();
         let late = instance::HandOff {
             arguments: vec!["IMG_2.ARW".into()],
             ..instance::HandOff::default()
