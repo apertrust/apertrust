@@ -6444,11 +6444,10 @@ impl eframe::App for App {
         // The start marker goes once a frame has been drawn into the window (decision 82).
         self.marker.frame(ctx);
         // Finder's files, taken here since `logic` runs while the window is minimised too,
-        // which then comes back and to the front to show them. They join the opens second
-        // starts hand over, each waiting for the one before, so neither replaces the
-        // other's look under way.
+        // which then comes back and to the front to show them. macOS has no hand-off, so
+        // they never wait behind one: a look under way gives way to them, as a drop's does.
         if let Some(files) = apertrust_display::take_opened_files() {
-            self.join.arrive(files, Instant::now());
+            self.opened.look(files, ctx);
             self.reveal(ctx);
             ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
             ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
