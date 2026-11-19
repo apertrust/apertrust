@@ -2527,6 +2527,7 @@ With several photos selected, the rating, reject and label keys, Apply Edit and 
 - **The active photo,** none or one, is what the Tools panel edits and shows (its tools, scopes, layers and history), what the caption and the window's title name, and what the accent marks.
 - **The selection** is a set of the current folder's or album's photos, which holds the active photo whenever there is one. Selected photos are marked neutral, by a ring in the text colour.
 - **Both are the session's** (decision 37), not the interface's, so a script or an assistant reads and sets them with the same commands, and an assistant's note says how many photos it changed (principle 8).
+- **Built:** the session's half. `Command::Selection` sets the photos, adds or removes one, selects a range from the active photo in the client's sort, all, none, the inverse or the unedited photos; opening a photo outside the selection selects it alone, and a command that leaves the active photo out closes it; a folder listed again keeps the selection by photo. The session tells it as `Event::Selection`, which the app's mirror keeps (`Mirror::selection`; [session-protocol.md](session-protocol.md#the-selection), [events.md](events.md#the-selection)). Nothing in the app draws or sends it yet: the Browser's cells show no selection.
 
 | Action | Acts on | What it says |
 | --- | --- | --- |

@@ -106,6 +106,7 @@ mod history;
 pub(crate) mod open;
 mod outbox;
 mod pickers;
+mod selection;
 mod thumbnail;
 
 use std::borrow::Cow;
@@ -161,6 +162,7 @@ pub(crate) use open::Load;
 use open::{Decodes, Stage};
 use outbox::Drain;
 pub(crate) use outbox::Outbox;
+pub use selection::{Selection, SelectionCommand};
 use thumbnail::Tally;
 
 /// What a client asks of the session. Plain data, so it can move into the protocol.
@@ -402,6 +404,15 @@ pub enum Command {
     /// same way from its own file, whatever is open, and comes as
     /// [`LibraryEvent::PhotoThumbnail`], naming the latest open or close.
     Library(LibraryCommand),
+    /// A command on the selection (decision 37; [`SelectionCommand`]): the photos set, one
+    /// added or removed, a range, all, none, the selection inverted, or the unedited
+    /// photos, answered by [`Event::Selection`] where it changed. View state, never a
+    /// command on the edit; one that leaves the active photo out closes it, as
+    /// [`Command::Close`] does. A photo named by `Set`, `Add` or `Range`'s `to` that is
+    /// neither one of the collection's, the folder open's as listed, nor the active photo
+    /// is refused ([`SessionError::NotInCollection`]); one `Remove` or `Range`'s `order`
+    /// names is passed over.
+    Selection(SelectionCommand),
     /// A command of the disk cache's (decision 76).
     ///
     /// - [`CacheCommand::Limit`], the limit as `cache.limited` and `cache.limit` now give
@@ -464,6 +475,7 @@ fn on_edit(command: &Command) -> bool {
         | Command::Export { .. }
         | Command::PreviewExport { .. }
         | Command::Library(_)
+        | Command::Selection(_)
         | Command::Cache(_) => false,
         #[cfg(test)]
         Command::Synthetic(_)
@@ -520,6 +532,9 @@ pub(crate) enum Inbox {
     /// The edit writer found the live photo's sidecar changed by another program and wrote
     /// nothing: the session takes the newer file in ([`Engine::newer_file`]).
     Newer,
+    /// What the reading of a folder found of its photos, a `Listed` chunk or its failure,
+    /// which the selection follows ([`selection`]).
+    Listing(LibraryEvent),
     Stop,
 }
 
@@ -599,6 +614,9 @@ pub enum Event {
     /// commands changed the log, its end or the undo records, after the batch's values and
     /// before its frame; a gesture's `done: false` changes send none.
     History(History),
+    /// The selection and the active photo (decision 37): once a turn in which either
+    /// changed, after its other events.
+    Selection(Selection),
     Failed(SessionError),
 }
 
@@ -641,6 +659,8 @@ pub enum Fact {
     Cache,
     /// The open photo's history: [`Event::History`].
     History,
+    /// The selection and the active photo: [`Event::Selection`].
+    Selection,
 }
 
 impl Event {
@@ -655,6 +675,7 @@ impl Event {
             Event::ExportPreview { .. } => Fact::ExportPreview,
             Event::Cache(_) => Fact::Cache,
             Event::History(_) => Fact::History,
+            Event::Selection(_) => Fact::Selection,
             // Each of a job's values is a topic of its own, since each event carries only
             // its own (decision 72); its adding and its end each happen once.
             Event::Job { event, .. } => match *event {
@@ -1024,6 +1045,10 @@ pub enum SessionError {
     /// of the session, and the frames go on without them.
     #[error("the colour pickers are off: {0}")]
     Pickers(String),
+    /// A [`Command::Selection`] named a photo that is neither one of the collection's, the
+    /// folder open's as listed, nor the active photo: the selection is as it was.
+    #[error("{} is not among the photos shown", photo.display())]
+    NotInCollection { photo: PathBuf },
     /// [`Command::CancelJob`] named a job that cannot be cancelled: it goes on.
     #[error("job {job} cannot be cancelled")]
     NotCancellable { job: JobId },
@@ -1234,6 +1259,11 @@ impl Session {
         let saved: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
             let _ = saves.send(Inbox::Saved);
         });
+        // And as it classifies a sidecar for the selection.
+        let classifies = commands.clone();
+        let classified: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
+            let _ = classifies.send(Inbox::Saved);
+        });
         // And as it finds the live photo's sidecar changed by another program.
         let newer_files = commands.clone();
         let newer: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
@@ -1262,6 +1292,7 @@ impl Session {
                 engine.load = load;
                 engine.writer.on_saved(saved);
                 engine.writer.on_newer(newer);
+                engine.writer.on_classified(classified);
                 engine.cache = cache.map(|options| {
                     let stop = Arc::clone(&stopping);
                     Upkeep::start(options, &engine.jobs.control, ask, stop)
@@ -1318,6 +1349,7 @@ impl Session {
                                 break;
                             }
                             Inbox::Evict => engine.evict_cache(),
+                            Inbox::Listing(event) => engine.selection.listing(&event),
                             Inbox::Saved | Inbox::Newer => {}
                             // The handle's last word: the tasks after it are the end's.
                             Inbox::Stop => {
@@ -1343,26 +1375,12 @@ impl Session {
                         }
                         continue;
                     }
+                    // The commands the turn takes, which count as applied should it panic.
+                    let taken = engine.applied + batch.len() as u64;
                     let work = || engine.turn(batch, staged);
                     let events = match catch_unwind(AssertUnwindSafe(work)) {
                         Ok(events) => events,
-                        Err(panic) => {
-                            // Whatever it was doing may be half done: start again empty,
-                            // without saving what may be half an edit, the colour picker
-                            // off.
-                            let picking = engine.pickers.on();
-                            let through = engine.applied;
-                            engine.close();
-                            let message = panic_message(panic.as_ref());
-                            let mut events = vec![Event::Failed(SessionError::Panicked(message))];
-                            if picking {
-                                events.push(Event::Picker {
-                                    through,
-                                    reading: None,
-                                });
-                            }
-                            events
-                        }
+                        Err(panic) => engine.recover(panic.as_ref(), taken),
                     };
                     // The batch's events are one burst, one wake.
                     outbox.send_all(events);
@@ -1403,8 +1421,8 @@ impl Session {
 
 impl Drop for Session {
     /// Ends the thread once its current batch is done: the edit commands still queued
-    /// apply, up to one that opens another photo, nothing more renders, and the edit is
-    /// saved. Then the jobs end, as [`Control::shutdown`] ends them, cancellable ones
+    /// apply, up to one that opens another photo or closes this one, a selection's that
+    /// leaves it out among them, nothing more renders, and the edit is saved. Then the jobs end, as [`Control::shutdown`] ends them, cancellable ones
     /// cancelled and the rest finished, the thread stepping their GPU tasks until they
     /// have. The batch and the tasks may submit, so the thread is joined with the submit
     /// gate free, should the dropping thread hold it, as a window's toolkit does.
@@ -1452,6 +1470,12 @@ enum Order {
         paths: Vec<PathBuf>,
         answer: mpsc::Sender<Vec<Snapshot>>,
     },
+    /// Classify the sidecar of `photo` as a listing does, once the writes before are done,
+    /// for the selection, tagged with the folder's open `open` (decision 37).
+    Classify {
+        photo: PathBuf,
+        open: u64,
+    },
     /// Write nothing more until the permit's sender drops, for a test.
     #[cfg(test)]
     Hold(mpsc::Receiver<()>),
@@ -1485,6 +1509,13 @@ struct Writes {
     failed: BTreeSet<PathBuf>,
     /// Told after each successful write.
     on_saved: Option<Arc<dyn Fn() + Send + Sync>>,
+    /// Sidecars asked to be classified and not answered yet.
+    classifying: usize,
+    /// Each classified, with the folder's open it was asked in, the photo and its state,
+    /// for the engine to take.
+    classified: Vec<(u64, PathBuf, library::EditState)>,
+    /// Told as each is classified.
+    on_classified: Option<Arc<dyn Fn() + Send + Sync>>,
 }
 
 /// What the writer knows of the live photo's sidecar, which it compares before it writes.
@@ -1522,6 +1553,25 @@ impl Writer {
                     let mut writes: Vec<(Job, usize)> = Vec::new();
                     for order in std::iter::once(first).chain(received.try_iter()) {
                         let (paths, answer) = match order {
+                            Order::Classify { photo, open } => {
+                                // After the edits handed over before, its last among them.
+                                let pending = std::mem::take(&mut writes);
+                                write_edits(pending, &shared, &known, &outbox);
+                                let state = library::sidecar_state(&sidecar::path_for(&photo));
+                                let told = {
+                                    let (lock, changed) = &*shared;
+                                    let mut writes =
+                                        lock.lock().unwrap_or_else(PoisonError::into_inner);
+                                    writes.classifying = writes.classifying.saturating_sub(1);
+                                    writes.classified.push((open, photo, state));
+                                    changed.notify_all();
+                                    writes.on_classified.clone()
+                                };
+                                if let Some(told) = told {
+                                    told();
+                                }
+                                continue;
+                            }
                             Order::Write(job) => {
                                 let queued = writes.iter_mut().find(|(q, _)| q.path == job.path);
                                 match queued {
@@ -1594,6 +1644,37 @@ impl Writer {
             let _ = jobs.send(Order::Read { paths, answer });
         }
         answered
+    }
+
+    /// Asks for the sidecar of `photo` to be classified as a listing classifies it, once
+    /// every edit handed over before is written or has failed, off the engine thread, for
+    /// the selection, tagged with the folder's open `open`: taken by
+    /// [`Writer::take_classified`].
+    fn classify(&self, photo: PathBuf, open: u64) {
+        let Some(jobs) = &self.jobs else {
+            return;
+        };
+        self.lock().classifying += 1;
+        if jobs.send(Order::Classify { photo, open }).is_err() {
+            self.lock().classifying -= 1;
+        }
+    }
+
+    /// The sidecars classified since the last take, oldest first; with `wait`, once every
+    /// one asked for is answered.
+    fn take_classified(&self, wait: bool) -> Vec<(u64, PathBuf, library::EditState)> {
+        let mut state = self.lock();
+        while wait && state.classifying > 0 {
+            state = (self.state.1)
+                .wait(state)
+                .unwrap_or_else(PoisonError::into_inner);
+        }
+        std::mem::take(&mut state.classified)
+    }
+
+    /// Calls `classified` as each sidecar asked for is classified.
+    fn on_classified(&self, classified: Arc<dyn Fn() + Send + Sync>) {
+        self.lock().on_classified = Some(classified);
     }
 
     /// Holds the writer, for a test: no edit handed over after this is written until the
@@ -2008,6 +2089,8 @@ struct Engine {
     /// The job walking that tree for each folder's raw count ([`library::walk`]), which a
     /// new root or a close cancels, and an open inside the tree leaves running.
     walk: Option<JobId>,
+    /// The selection, of the folder open's photos, and the active photo (decision 37).
+    selection: selection::State,
     /// When a frame is published, for a test of the history's merging; else when it is.
     #[cfg(test)]
     published_at: Option<Instant>,
@@ -2155,7 +2238,7 @@ impl Jobs {
 
     /// [`Command::CancelJob`]: a job shown that can be cancelled is; one that cannot is
     /// refused; one not shown, ended or never with a progress, changes nothing.
-    fn cancel(&self, job: JobId) -> Result<(), SessionError> {
+    fn cancel(&self, job: JobId) -> Result<bool, SessionError> {
         // Looked up first: the control tells the observer, which takes the map.
         let cancellable = self
             .shown
@@ -2164,12 +2247,9 @@ impl Jobs {
             .get(&job)
             .copied();
         match cancellable {
-            Some(true) => {
-                self.control.cancel(job);
-                Ok(())
-            }
+            Some(true) => Ok(self.control.cancel(job)),
             Some(false) => Err(SessionError::NotCancellable { job }),
-            None => Ok(()),
+            None => Ok(false),
         }
     }
 
@@ -2487,6 +2567,7 @@ impl Engine {
             subfolders: Vec::new(),
             tree: None,
             walk: None,
+            selection: selection::State::default(),
             #[cfg(test)]
             published_at: None,
             #[cfg(test)]
@@ -2547,6 +2628,8 @@ impl Engine {
     /// pickers' readings, the thumbnail due, and the frame again where the raw's histogram
     /// was counted outside a batch since a failure (decision 87).
     fn turn(&mut self, batch: Vec<(Instant, Command)>, staged: Option<Box<Stage>>) -> Vec<Event> {
+        // What the writer has classified for the selection since.
+        self.take_classified(false);
         let mut events = if batch.is_empty() {
             Vec::new()
         } else {
@@ -2568,6 +2651,10 @@ impl Engine {
             let refreshed = self.guarded(|engine| engine.stale_frame());
             self.settle_stale_frame(&refreshed);
             events.extend(refreshed);
+        }
+        // The selection, last, as the turn's commands, open and listing left it.
+        if let Some(selection) = self.selection_event(&events) {
+            events.push(selection);
         }
         events
     }
@@ -2693,6 +2780,8 @@ impl Engine {
         // What was handed over is written, after a panic too, before the writer forgets the
         // photo's file.
         self.writer.flush(None);
+        // The selection reads the photo as its sidecar now holds it.
+        self.settle_closed();
         if let Some(opening) = self.opening.take() {
             self.jobs.control.cancel(opening.job);
         }
@@ -2712,6 +2801,29 @@ impl Engine {
             meter.discard();
         }
         self.pickers.clear();
+    }
+
+    /// After a turn that panicked: whatever it was doing may be half done, so the session
+    /// starts again empty, without saving what may be half an edit, the colour picker off,
+    /// and says so, with the selection as the photo's close left it. The turn's commands
+    /// it never reached count as applied, up to the first `taken`, so a later fact's
+    /// `through` includes every command the client sent before.
+    fn recover(&mut self, panic: &(dyn std::any::Any + Send), taken: u64) -> Vec<Event> {
+        self.applied = self.applied.max(taken);
+        let picking = self.pickers.on();
+        let through = self.applied;
+        // Its edit is dropped unsaved: the selection reads its sidecar as listed.
+        self.close();
+        let message = panic_message(panic);
+        let mut events = vec![Event::Failed(SessionError::Panicked(message))];
+        if picking {
+            events.push(Event::Picker {
+                through,
+                reading: None,
+            });
+        }
+        events.extend(self.selection_event(&events));
+        events
     }
 
     /// Tells the export jobs whether a live frame now shares the GPU with them
@@ -2788,6 +2900,9 @@ impl Engine {
                     // off.
                     self.picker_off(&mut events);
                     self.pickers.forget_photo();
+                    // Selected alone, unless it is selected already.
+                    let active = self.active().map(Path::to_owned);
+                    self.selection.opening(&path, active.as_deref());
                     events.extend(self.open(path, self.applied, at));
                     (values, render, save, cancelled) = (false, false, false, false);
                     answer = false;
@@ -2836,7 +2951,7 @@ impl Engine {
                         self.step(StepSource::Auto, None);
                     }
                 }),
-                Command::CancelJob { job } => self.jobs.cancel(job),
+                Command::CancelJob { job } => self.cancel_job(job),
                 Command::RetryJob { job } => self.retry(job),
                 Command::Export {
                     photos,
@@ -2864,6 +2979,28 @@ impl Engine {
                 Command::Library(command) => {
                     self.library(command, &mut events);
                     Ok(())
+                }
+                Command::Selection(command) => {
+                    // Unedited reads the open photo's edit as the batch has left it so far.
+                    if command == SelectionCommand::Unedited {
+                        self.settle_edited();
+                        self.take_classified(true);
+                    }
+                    let active = self.active().map(Path::to_owned);
+                    match self.selection.command(command, active.as_deref()) {
+                        // Left out of the selection, the active photo closes, as by `Close`.
+                        Ok(true) => {
+                            self.picker_off(&mut events);
+                            self.pickers.forget_photo();
+                            events.extend(self.close_saving());
+                            (values, render, save, cancelled) = (false, false, false, false);
+                            answer = false;
+                            resample = false;
+                            Ok(())
+                        }
+                        Ok(false) => Ok(()),
+                        Err(error) => Err(error),
+                    }
                 }
                 Command::Cache(command) => self.cache(command, &mut events),
                 #[cfg(test)]
@@ -3017,6 +3154,38 @@ impl Engine {
         for (at, command) in batch {
             if matches!(command, Command::Open(_) | Command::Close) {
                 return true;
+            }
+            // A folder opened or closed changes the collection a later selection command
+            // reads; nothing is read of it now.
+            if let Command::Library(LibraryCommand::Open(library::Source::Folder(path))) = &command
+            {
+                self.applied += 1;
+                self.selection.folder_opened(self.applied, path);
+                continue;
+            }
+            if let Command::Library(LibraryCommand::Close) = &command {
+                self.applied += 1;
+                self.selection.folder_closed();
+                continue;
+            }
+            // So does a folder's reading cancelled, as in a turn.
+            if let Command::CancelJob { job } = command {
+                self.applied += 1;
+                let _ = self.cancel_job(job);
+                continue;
+            }
+            // A selection that leaves the active photo out closes it, as `Close` does.
+            if let Command::Selection(command) = command {
+                if command == SelectionCommand::Unedited {
+                    self.settle_edited();
+                    self.take_classified(true);
+                }
+                let active = self.active().map(Path::to_owned);
+                if matches!(self.selection.command(command, active.as_deref()), Ok(true)) {
+                    return true;
+                }
+                self.applied += 1;
+                continue;
             }
             self.applied += 1;
             // A refused change is refused as it would have been; no one is told.
@@ -3203,6 +3372,7 @@ impl Engine {
             | Command::Export { .. }
             | Command::PreviewExport { .. }
             | Command::Library(_)
+            | Command::Selection(_)
             | Command::Cache(_) => {
                 return Ok(Effect::default());
             }
@@ -3738,6 +3908,7 @@ impl Engine {
         };
         if let Some(error) = failure {
             tracing::error!(target: "pipe", "open {name}: {error}");
+            self.selection.open_failed(&path);
             self.close();
             events.push(Event::Failed(SessionError::Open {
                 open,
@@ -4107,6 +4278,7 @@ impl Engine {
         self.latest_library = open;
         let Some(source) = source else {
             self.shown = None;
+            self.selection.folder_closed();
             self.tree = None;
             if let Some(walk) = self.walk.take() {
                 self.jobs.control.cancel(walk);
@@ -4116,6 +4288,7 @@ impl Engine {
         };
         let library::Source::Folder(path) = &source;
         self.shown = Some((open, path.clone()));
+        self.selection.folder_opened(open, path);
         // A new root's walk starts once its own photos are listed, or its reading ends
         // otherwise, when the sender goes.
         let (listed, walk) = mpsc::channel::<()>();
@@ -4130,19 +4303,31 @@ impl Engine {
         let message = jobs::Message::new("job-folder").with("folder", path.as_path());
         let description = format!("reading {}", path.display());
         let outbox = self.jobs.outbox.clone();
+        // The engine thread follows the photos listed, for the selection.
+        let inbox = self.jobs.inbox.clone();
         #[cfg(test)]
         let hold = self.folder_hold.take();
         let job = self.jobs.add(open, Queue::UserBackground, |_| {
             jobs::Job::new("folder", description, move |context| {
+                // Held for a test until let go, or cancelled.
                 #[cfg(test)]
-                if let Some(hold) = &hold {
-                    hold.wait();
+                if let Some(hold) = &hold
+                    && !hold.wait_unless(|| context.cancelled())
+                {
+                    return Ok(());
                 }
                 let tell = |event| {
                     let last = matches!(
                         event,
                         LibraryEvent::Listed { done: true, .. } | LibraryEvent::Failed { .. }
                     );
+                    if matches!(
+                        event,
+                        LibraryEvent::Listed { .. } | LibraryEvent::Failed { .. }
+                    ) {
+                        // Gone with the engine thread, which then needs it no more.
+                        let _ = inbox.send(Inbox::Listing(event.clone()));
+                    }
                     outbox.send(Event::Library(event));
                     if last {
                         // The walk may have ended already: nothing waits then.
@@ -5132,6 +5317,7 @@ pub(crate) const TEST_WAIT: Duration = Duration::from_secs(600);
 #[cfg(test)]
 mod tests {
     mod history;
+    mod selection;
 
     use std::sync::mpsc::Receiver;
 
@@ -5586,7 +5772,9 @@ mod tests {
             done: true,
         });
         let sent = session.send(Command::Open(PathBuf::from("no such raw.CR2")));
-        let events = until(&session, &wakes, |e| matches!(e, Event::Failed(_)));
+        let mut events = until(&session, &wakes, |e| matches!(e, Event::Failed(_)));
+        // The photo asked for is the active one, selected, until its open fails.
+        events.retain(|e| !matches!(e, Event::Selection(_)));
         assert!(
             matches!(&events[..], [Event::Failed(SessionError::Open { open, error })]
                 if *open == sent && matches!(**error, SessionError::Decode(_))),
@@ -6313,6 +6501,7 @@ mod tests {
                     | Inbox::Evict
                     | Inbox::Saved
                     | Inbox::Newer
+                    | Inbox::Listing(_)
                     | Inbox::Stop => {}
                 }
             }
@@ -11064,7 +11253,7 @@ mod tests {
         assert_eq!(shown(&jobs), [(one, true), (two, false)]);
 
         // Cancelled as it waits, it ends and goes.
-        assert!(jobs.cancel(one).is_ok());
+        assert_eq!(jobs.cancel(one).ok(), Some(true));
         until(one, ended);
         assert_eq!(shown(&jobs), [(two, false)]);
         assert!(matches!(
@@ -11075,7 +11264,8 @@ mod tests {
         drop(go);
         until(two, ended);
         assert_eq!(shown(&jobs), []);
-        assert!(jobs.cancel(two).is_ok());
+        // Ended, its cancel is not taken.
+        assert_eq!(jobs.cancel(two).ok(), Some(false));
     }
 
     #[test]
@@ -11338,6 +11528,7 @@ mod tests {
                 CacheEvent::Sizes { .. } | CacheEvent::NoCache => Topic::Fact(Fact::Cache),
             },
             Event::History(_) => Topic::Fact(Fact::History),
+            Event::Selection(_) => Topic::Fact(Fact::Selection),
             Event::Failed(_) => Topic::Notice,
         }
     }
@@ -11476,8 +11667,9 @@ mod tests {
             };
             assert!(line.ends_with(kind), "{line}");
         }
-        // Every variant, the ones a session sent among them, and every job event.
-        assert_eq!(seen.len(), 14, "{events:?}");
+        // Every variant, the ones a session sent among them, the selection as the photo
+        // opened, and every job event.
+        assert_eq!(seen.len(), 15, "{events:?}");
         assert_eq!(jobs.len(), 7, "{jobs:?}");
         // Each job's progress, title, detail, destination and state are facts of their
         // own.

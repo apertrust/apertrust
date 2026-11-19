@@ -27,8 +27,9 @@
 //!   the edit is on disk ([`Saving`]), the photo's history, which names what Undo and Redo
 //!   would do ([`History`]), the active colour picker ([`pickers::Mirror`]), the jobs
 //!   ([`jobs::Mirror`]), the failure the Viewer shows, the open folder
-//!   ([`folder::FolderState`]) and the Export tool's floor for previews. Panels read it
-//!   each frame; nothing subscribes.
+//!   ([`folder::FolderState`]), the selection and the active photo as the session last
+//!   told them ([`Selection`], decision 37) and the Export tool's floor for previews.
+//!   Panels read it each frame; nothing subscribes.
 //! - **What it does not hold:** the app's own state (the theme, a tab, a dialog open). That
 //!   changes by intents after the frame, with no event.
 //! - **No photo:** before any, from the moment another is asked for until its values
@@ -50,7 +51,7 @@ use std::time::{Duration, Instant};
 use apertrust_engine::session::library::Thumbnail;
 use apertrust_engine::session::{
     ControlState, ControlValue, CoordinateState, Event, ExportPreview, Frame, History, OpenPreview,
-    Photo, PresetState, PreviewSource, SessionError, ToolState, Values,
+    Photo, PresetState, PreviewSource, Selection, SessionError, ToolState, Values,
 };
 use apertrust_engine::{edit, sidecar};
 use apertrust_plugin::ImageContext;
@@ -176,6 +177,9 @@ pub struct Mirror {
     pub jobs: jobs::Mirror,
     /// The open folder and its photos.
     pub folder: FolderState,
+    /// The selection and the active photo, the session's (decision 37), as it last told
+    /// them, the latest by its `through`: empty before it tells any.
+    pub selection: Selection,
     /// The disk cache's latest sizes and the Clears under way, Settings › Storage's.
     pub cache: crate::storage::Mirror,
     /// The number of the first preview the Export tool asked for as it was shown, then of
@@ -220,6 +224,7 @@ impl Mirror {
             picked: pickers::Picked::default(),
             jobs,
             folder: FolderState::default(),
+            selection: Selection::default(),
             cache: crate::storage::Mirror::default(),
             export_floor: 0,
             edit_changes: 0,
@@ -497,6 +502,12 @@ impl Mirror {
             Event::Library(_) => {}
             // Taken in above, for Settings › Storage.
             Event::Cache(_) => {}
+            // The session's selection, the latest by its `through`.
+            Event::Selection(selection) => {
+                if selection.through >= self.selection.through {
+                    self.selection = selection;
+                }
+            }
             // The open photo's history, the latest by its `through`, which Undo and Redo
             // name; one numbered lower arrived late.
             Event::History(history) => {
@@ -2114,6 +2125,37 @@ pub(crate) mod tests {
             error: Box::new(SessionError::NotAMosaic),
         }));
         assert_eq!(undo(&m), None);
+    }
+
+    /// The mirror keeps the session's latest selection by its `through`, one arriving late
+    /// dropped, whatever photo is opening or closed (decision 37).
+    #[test]
+    fn the_mirror_keeps_the_session_s_latest_selection() {
+        use apertrust_engine::session::Selection;
+
+        let told = |photos: &[&str], active: Option<&str>, through| {
+            let at = |photo: &&str| PathBuf::from("/photos").join(photo);
+            Event::Selection(Selection {
+                photos: photos.iter().map(at).collect(),
+                active: active.as_ref().map(at),
+                through,
+            })
+        };
+        let mut m = mirror();
+        assert_eq!(m.selection, Selection::default());
+        m.opening(PathBuf::from("/photos/a.ARW"), 1, Instant::now());
+        m.apply(told(&["a.ARW"], Some("a.ARW"), 1));
+        assert_eq!(m.selection.photos, [PathBuf::from("/photos/a.ARW")]);
+        m.apply(told(&["a.ARW", "b.ARW"], Some("a.ARW"), 3));
+        // An earlier one, late.
+        m.apply(told(&["a.ARW"], Some("a.ARW"), 2));
+        assert_eq!(m.selection.photos.len(), 2);
+        assert_eq!(m.selection.through, 3);
+        // The photo closed: the selection the session tells with no active photo.
+        m.closing();
+        m.apply(told(&["b.ARW"], None, 4));
+        assert_eq!(m.selection.photos, [PathBuf::from("/photos/b.ARW")]);
+        assert_eq!(m.selection.active, None);
     }
 
     use apertrust_engine::jobs::{JobEvent, Message, Queue, State};

@@ -266,13 +266,27 @@ fn sidecar_name(raw: &str) -> String {
     format!("{raw}{}", crate::sidecar::SUFFIX)
 }
 
+/// Reads the sidecar at `path` alone, once, as a listing reads each: none where there is
+/// no file, unreadable for any other failure.
+pub fn read_one(path: &Path) -> Sidecar {
+    match std::fs::read(path) {
+        Ok(bytes) => parse_sidecar(&bytes),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Sidecar::None,
+        Err(error) => Sidecar::Unreadable(error.to_string()),
+    }
+}
+
 /// Reads one sidecar: its bytes, their hash and what [`crate::sidecar`] makes of them.
 fn read_sidecar(path: &Path, reader: &impl Fn(&Path) -> io::Result<Vec<u8>>) -> Sidecar {
-    let bytes = match reader(path) {
-        Ok(bytes) => bytes,
-        Err(error) => return Sidecar::Unreadable(error.to_string()),
-    };
-    let Ok(text) = std::str::from_utf8(&bytes) else {
+    match reader(path) {
+        Ok(bytes) => parse_sidecar(&bytes),
+        Err(error) => Sidecar::Unreadable(error.to_string()),
+    }
+}
+
+/// What a sidecar's `bytes` say: their hash and what [`crate::sidecar`] makes of them.
+fn parse_sidecar(bytes: &[u8]) -> Sidecar {
+    let Ok(text) = std::str::from_utf8(bytes) else {
         return Sidecar::Unreadable("not text".to_owned());
     };
     // The modified time names a version 1 file's steps alone, which the index never shows.
@@ -281,7 +295,7 @@ fn read_sidecar(path: &Path, reader: &impl Fn(&Path) -> io::Result<Vec<u8>>) -> 
             let view_only = edits.newer();
             Sidecar::Read(Edit {
                 version: edits.version,
-                file_hash: hash(&bytes),
+                file_hash: hash(bytes),
                 edited: edits.edited() || view_only.is_some(),
                 view_only,
             })
@@ -304,6 +318,22 @@ mod tests {
     use tempfile::TempDir;
 
     use super::*;
+
+    /// One sidecar read alone: none where there is no file, read where there is one, and
+    /// unreadable where it is no `.apxmp`.
+    #[test]
+    fn one_sidecar_reads_as_a_listing_reads_it() {
+        let dir = folder(1);
+        let raw = dir.path().join("DSCF0000.RAF");
+        let path = sidecar::path_for(&raw);
+        assert!(matches!(
+            read_one(&path),
+            Sidecar::Read(Edit { edited: true, .. })
+        ));
+        assert_eq!(read_one(&dir.path().join("none.apxmp")), Sidecar::None);
+        std::fs::write(&path, "not an apxmp").unwrap();
+        assert!(matches!(read_one(&path), Sidecar::Unreadable(_)));
+    }
 
     /// A folder of `count` photos, each with a sidecar holding one entry.
     fn folder(count: usize) -> TempDir {
