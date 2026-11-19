@@ -566,8 +566,14 @@ fn main() -> eframe::Result {
             },
         ));
     }
+    // Another user data folder's name ends the window's title (decision 89).
+    let platform = Folders::platform_user_data(apertrust_base::program!().dev);
+    let title = window_title(
+        folders.as_ref().map(Folders::user_data),
+        platform.as_deref(),
+    );
     let options = eframe::NativeOptions {
-        viewport: window(&placement, starts),
+        viewport: window(&placement, starts, &title),
         // The start window with no place kept, as on the first run, in the screen's middle.
         centered: starts && placement.position.is_none(),
         renderer: eframe::Renderer::Wgpu,
@@ -913,16 +919,32 @@ const RESIZE_BAND: f32 = 6.0;
 /// button ends about 70 points from the window's edge.
 const BUTTONS_ROOM: f32 = 78.0;
 
+/// The window's title: the app's name, and where the user data folder `user_data` is
+/// another than the platform's, `platform`, compared by canonical path, that folder's name
+/// after a dash, "Apertrust — work" (decision 89).
+fn window_title(user_data: Option<&Path>, platform: Option<&Path>) -> String {
+    let default =
+        |folder: &&Path| platform.is_some_and(|platform| instance::same_folder(folder, platform));
+    match user_data
+        .filter(|folder| !default(folder))
+        .and_then(Path::file_name)
+    {
+        Some(name) => format!("{APP_NAME} — {}", name.to_string_lossy()),
+        None => APP_NAME.to_owned(),
+    }
+}
+
 /// The window as it last stood: its size, its position where the platform lets an app
 /// place it (Wayland does not), and maximised or not. Full screen is not restored. The
 /// window is created at the interface's scale of 1, so a position in logical pixels is
 /// its pixels over its scale factor. Its title is kept where it is not drawn, for
-/// Mission Control, the Window menu and screen readers. As the start window (`start`), the
-/// size `placement` holds, `start_placement`'s, and neither resized nor maximised.
-fn window(placement: &settings::Window, start: bool) -> egui::ViewportBuilder {
+/// Mission Control, the Window menu and screen readers, `title` ([`window_title`]). As the
+/// start window (`start`), the size `placement` holds, `start_placement`'s, and neither
+/// resized nor maximised.
+fn window(placement: &settings::Window, start: bool, title: &str) -> egui::ViewportBuilder {
     let size = inner_size(placement, start);
     let viewport = egui::ViewportBuilder::default()
-        .with_title(APP_NAME)
+        .with_title(title)
         .with_app_id(APP_ID)
         .with_icon(icon());
     let viewport = if start {
@@ -8895,6 +8917,23 @@ mod tests {
             assert!(request.message.contains("--safe-mode"), "{locale:?}");
             assert!(request.check().is_ok(), "{locale:?}");
         }
+    }
+
+    /// Another user data folder's name ends the window's title; the platform's, however
+    /// it is written, shows none (decision 89).
+    #[test]
+    fn another_user_data_folder_names_the_window() {
+        let folder = settings::testing::Folder::new("window-title");
+        let (work, default) = (folder.0.join("work"), folder.0.join("default"));
+        for made in [&work, &default] {
+            std::fs::create_dir(made).expect("a folder");
+        }
+        let named = format!("{APP_NAME} — work");
+        assert_eq!(window_title(Some(&work), Some(&default)), named);
+        assert_eq!(window_title(Some(&work), None), named);
+        let roundabout = work.join("..").join("default");
+        assert_eq!(window_title(Some(&roundabout), Some(&default)), APP_NAME);
+        assert_eq!(window_title(None, Some(&default)), APP_NAME);
     }
 
     /// `--in-folder`, which earlier nightly builds' registrations passed before the files,
