@@ -363,6 +363,46 @@ fn open_with_passes_the_files_alone() {
     }
 }
 
+/// Open With is offered for any number of files on Windows (decision 89): each open verb
+/// that passes a file, the ProgIDs' and the app's entry's, has `MultiSelectModel` =
+/// `Player`, past the 15 files Explorer's default model allows; each start then hands its
+/// file to the running app. The uninstaller removes the keys that hold them.
+#[test]
+fn open_with_takes_any_number_of_files() {
+    let template = read("packaging/windows/installer.nsi");
+    let lines: Vec<&str> = template.lines().map(str::trim).collect();
+    let verbs = |suffix: &str| -> BTreeSet<String> {
+        lines
+            .iter()
+            .filter(|line| line.starts_with("WriteRegStr") && !line.contains("{{protocol}}"))
+            .filter_map(|line| {
+                let key = line.split('"').nth(1)?;
+                let verb = key.strip_suffix(suffix)?;
+                line.contains(suffix).then(|| verb.to_owned())
+            })
+            .collect()
+    };
+    let commands = verbs(r"\shell\open\command");
+    assert_eq!(
+        commands.len(),
+        2,
+        "the ProgID's and the app's entry's: {commands:?}"
+    );
+    let models = lines
+        .iter()
+        .filter(|line| line.ends_with(r#"\shell\open" "MultiSelectModel" "Player""#))
+        .filter_map(|line| line.split('"').nth(1)?.strip_suffix(r"\shell\open"))
+        .map(str::to_owned)
+        .collect::<BTreeSet<_>>();
+    assert_eq!(models, commands);
+    for removed in [
+        r#"DeleteRegKey SHCTX "Software\Classes\\{{association.name}}""#,
+        r#"DeleteRegKey SHCTX "${APPKEY}""#,
+    ] {
+        assert!(lines.contains(&removed), "{removed}");
+    }
+}
+
 /// The extensions of the association named `name` in `config`, `Packager.toml`.
 fn association(config: &toml::Table, name: &str) -> BTreeSet<String> {
     let associations = config["fileAssociations"].as_array().expect("associations");
