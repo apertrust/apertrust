@@ -913,19 +913,33 @@ fn start_placement(main: &settings::Window, scale: f32) -> settings::Window {
 /// Gives the window it shows the start window's placement or the main window's, as `start`
 /// says: its size, its least size and whether it resizes and maximises; then its place,
 /// where `placement` has one on a monitor still there (Wayland places none); and, for the
-/// main window, maximised if it was.
-fn reshape(window: &egui_winit::winit::window::Window, placement: &settings::Window, start: bool) {
+/// main window, maximised if it was. The size and the maximising go through `ctx`'s
+/// viewport commands, never to winit directly: on Wayland winit applies a size at once and
+/// sends no `Resized`, so eframe would keep drawing into a surface of the old size, which
+/// the compositor then shrinks or stretches into the window. eframe resizes the surface
+/// for a size its commands change (egui issue 4196).
+fn reshape(
+    ctx: &egui::Context,
+    window: &egui_winit::winit::window::Window,
+    placement: &settings::Window,
+    start: bool,
+) {
     use egui_winit::winit::dpi::LogicalSize;
     use egui_winit::winit::window::WindowButtons;
     let [width, height] = placement
         .size
         .unwrap_or(settings::registry::WINDOW_SIZE.default());
     let logical = |[width, height]: [f32; 2]| LogicalSize::new(f64::from(width), f64::from(height));
+    // Logical pixels as egui's points, which the interface's scale enlarges.
+    let resize = |size: [f32; 2]| {
+        let points = egui::Vec2::from(size) / ctx.zoom_factor();
+        ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(points));
+    };
     window.set_min_inner_size(None::<LogicalSize<f64>>);
     window.set_max_inner_size(None::<LogicalSize<f64>>);
     if start {
         let size = logical([width, height]);
-        let _ = window.request_inner_size(size);
+        resize([width, height]);
         window.set_min_inner_size(Some(size));
         window.set_max_inner_size(Some(size));
         window.set_resizable(false);
@@ -936,7 +950,7 @@ fn reshape(window: &egui_winit::winit::window::Window, placement: &settings::Win
         let size = inner_size(placement, false);
         let mac = cfg!(target_os = "macos");
         let size = size_on_screen(size, false, &monitors(window), mac).unwrap_or(size);
-        let _ = window.request_inner_size(logical(size));
+        resize(size);
         window.set_min_inner_size(Some(logical(WINDOW_MIN)));
         window.set_resizable(true);
         window.set_enabled_buttons(WindowButtons::all());
@@ -949,7 +963,8 @@ fn reshape(window: &egui_winit::winit::window::Window, placement: &settings::Win
         }
     }
     if !start && MAXIMISES && placement.maximized {
-        egui_winit::set_maximized(window, true);
+        // After the size, which would otherwise undo it.
+        ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(true));
     }
 }
 
@@ -3795,7 +3810,7 @@ impl App {
             } else {
                 settings.window
             };
-            reshape(window, &placement, starts);
+            reshape(&cc.egui_ctx, window, &placement, starts);
         }
         // Finder's files, at the launch and later, and a click on the Dock icon wake the app
         // as they come.
@@ -5423,7 +5438,7 @@ impl App {
                 self.reveal(ctx);
                 if let Some(window) = window {
                     let placement = placed_on_monitor(window, self.shell.window);
-                    reshape(window, &placement, false);
+                    reshape(ctx, window, &placement, false);
                 }
                 self.start.settling = Some(start::SIZE * self.start.zoom);
             }
@@ -5450,7 +5465,7 @@ impl App {
                     ..placement
                 };
                 if let Some(window) = window {
-                    reshape(window, &placement, true);
+                    reshape(ctx, window, &placement, true);
                 }
                 self.start.reshape = false;
                 self.start.zoom = zoom;
