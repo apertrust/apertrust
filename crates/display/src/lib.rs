@@ -60,15 +60,22 @@
 //! On Windows the app is a windowed program, with no console of its own:
 //! [`attach_to_terminal`] attaches it to the terminal it was started from, so what it
 //! prints shows there.
+//!
+//! The single-instance hand-off (decision 89) asks the system what the standard library
+//! does not say: on Linux the user a process runs as and the one at a Unix socket's other
+//! end, on Windows the named pipe, its server's user and the right to come forward handed
+//! to the instance, and on Wayland a window activated with another process's token
+//! (`instance`), let go of as the event loop ends (`instance::end_activation`).
 
 #![allow(
     unsafe_code,
-    reason = "Objective-C calls to tag the window's Metal layer, place its buttons and start its moves, register a default for the menu bar, present sheets and popup menus from the run loop, and methods given to AppKit's and winit's classes, the open-documents and reopen events' among them; on Windows, the console calls that attach the app to its terminal and the reading of its animation setting; on Wayland, wayland-client's views of winit's display and toplevels, to set a dialog's parent"
+    reason = "Objective-C calls to tag the window's Metal layer, place its buttons and start its moves, register a default for the menu bar, present sheets and popup menus from the run loop, and methods given to AppKit's and winit's classes, the open-documents and reopen events' among them; on Windows, the console calls that attach the app to its terminal and the reading of its animation setting, the instance's named pipe, its server's user and the foreground right; on Linux, the C library's calls for a process's user and a socket peer's; on Wayland, wayland-client's views of winit's display, toplevels and surfaces, to set a dialog's parent and activate a window with a token"
 )]
 
 mod alert;
 mod console;
 mod dialog;
+pub mod instance;
 mod menu_bar;
 mod motion;
 mod opened;
@@ -111,6 +118,9 @@ pub enum Error {
     #[cfg(target_os = "linux")]
     #[error("Wayland connection: {0}")]
     WaylandConnection(#[from] wayland_client::backend::WaylandError),
+    #[cfg(target_os = "linux")]
+    #[error("Wayland globals: {0}")]
+    WaylandGlobals(#[from] wayland_client::globals::GlobalError),
     #[error("no Metal layer")]
     NoMetalLayer,
     #[error("the view is in no window")]
