@@ -36,6 +36,8 @@ crates/app/tests/packaging.rs
 
 # Other files with a platform cfg.
 crates/engine/src/session/cache/tests.rs
+crates/engine/src/session/selection.rs
+crates/engine/src/session/tests/selection.rs
 crates/app/src/jobs.rs
 crates/app/src/jobs/**
 crates/app/src/menus.rs

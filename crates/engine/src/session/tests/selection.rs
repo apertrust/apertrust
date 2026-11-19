@@ -1,0 +1,576 @@
+// Apertrust, a free, non-destructive, cross-platform raw photo editor
+// Copyright (C) 2026  Apertrust developers
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+//! The selection through a session (decision 37): the commands, the photo opened, the
+//! folder's listing and the `Selection` fact.
+
+use super::*;
+
+/// A folder of its own holding the raws A, B and C, which [`remove`] takes with it.
+fn three_photos(name: &str) -> PathBuf {
+    let folder = scratch(name).parent().unwrap().to_owned();
+    for raw in ["A.ARW", "B.ARW", "C.ARW"] {
+        std::fs::write(folder.join(raw), [0u8; 4]).unwrap();
+    }
+    folder
+}
+
+/// Waits for the selection the session tells next whose photos are `photos`, in `folder`,
+/// with `active`, the active photo, through at least the command numbered `through`.
+fn told(
+    session: &Session,
+    wakes: &Receiver<()>,
+    folder: &Path,
+    photos: &[&str],
+    active: Option<&str>,
+    through: u64,
+) -> Vec<Event> {
+    let photos: Vec<PathBuf> = photos.iter().map(|photo| folder.join(photo)).collect();
+    let active = active.map(|photo| folder.join(photo));
+    until(session, wakes, |event| {
+        matches!(event, Event::Selection(selection)
+            if selection.photos == photos
+                && selection.active == active
+                && selection.through >= through)
+    })
+}
+
+/// Waits until the photo the open numbered `open` opens is live, unless `events`,
+/// drained already, say so.
+fn go_live(session: &Session, wakes: &Receiver<()>, events: &[Event], open: u64) {
+    let live =
+        |e: &Event| matches!(e, Event::Values(values) if values.live && values.through >= open);
+    if !events.iter().any(live) {
+        until(session, wakes, live);
+    }
+}
+
+fn select(command: SelectionCommand) -> Command {
+    Command::Selection(command)
+}
+
+/// Each command, the rule that the selection holds the active photo, opening a photo
+/// outside the selection and a selected one, Unedited by the edit the open photo's values
+/// report, a photo outside the folder refused, and a folder listed again.
+#[test]
+fn a_session_keeps_the_selection_of_the_folder_s_photos() {
+    let gpu = gpu();
+    let folder = three_photos("selection");
+    let (session, wakes) = start_with(&gpu, &[&Sample], synthetic);
+    session.send(Command::Resize {
+        width: 64,
+        height: 48,
+    });
+    let open = session.send(open_folder(&folder));
+    let listed = |e: &Event| matches!(e, Event::Library(LibraryEvent::Listed { open: o, done: true, .. }) if *o == open);
+    until(&session, &wakes, listed);
+
+    // Opened, A is selected alone; C added.
+    open_live(&session, &wakes, &folder.join("A.ARW"));
+    let add = session.send(select(SelectionCommand::Add(folder.join("C.ARW"))));
+    told(
+        &session,
+        &wakes,
+        &folder,
+        &["A.ARW", "C.ARW"],
+        Some("A.ARW"),
+        add,
+    );
+    // A photo of another folder is refused, naming its command.
+    let elsewhere = scratch("selection-elsewhere");
+    let refused = session.send(select(SelectionCommand::Add(elsewhere.clone())));
+    let events = until(&session, &wakes, |e| matches!(e, Event::Failed(_)));
+    assert!(
+        events.iter().any(|e| matches!(e,
+            Event::Failed(SessionError::Refused { command, error })
+                if *command == refused
+                    && matches!(&**error, SessionError::NotInCollection { photo } if *photo == elsewhere))),
+        "{events:?}"
+    );
+    // B, opened from outside the selection, is selected alone.
+    let b = session.send(Command::Open(folder.join("B.ARW")));
+    told(&session, &wakes, &folder, &["B.ARW"], Some("B.ARW"), b);
+    let all = session.send(select(SelectionCommand::All));
+    let every = ["A.ARW", "B.ARW", "C.ARW"];
+    told(&session, &wakes, &folder, &every, Some("B.ARW"), all);
+    // C, selected, made active: the selection stays.
+    let c = session.send(Command::Open(folder.join("C.ARW")));
+    let events = told(&session, &wakes, &folder, &every, Some("C.ARW"), c);
+    go_live(&session, &wakes, &events, c);
+
+    // C edited, as its values say, is not among the unedited: it closes, its edit saved.
+    let edit = session.send(set("brightness", ControlValue::Number(0.2), true));
+    until(
+        &session,
+        &wakes,
+        |e| matches!(e, Event::Values(values) if values.through >= edit && values.edited),
+    );
+    let unedited = session.send(select(SelectionCommand::Unedited));
+    let events = told(
+        &session,
+        &wakes,
+        &folder,
+        &["A.ARW", "B.ARW"],
+        None,
+        unedited,
+    );
+    let mut events = events.into_iter().chain(session.events());
+    assert!(
+        !events.any(|e| matches!(e, Event::Values(values) if values.through >= unedited)),
+        "no photo is open"
+    );
+    // B opens, selected, keeping the selection; Invert leaves C, B closing.
+    let b = session.send(Command::Open(folder.join("B.ARW")));
+    let events = told(
+        &session,
+        &wakes,
+        &folder,
+        &["A.ARW", "B.ARW"],
+        Some("B.ARW"),
+        b,
+    );
+    go_live(&session, &wakes, &events, b);
+    let invert = session.send(select(SelectionCommand::Invert));
+    told(&session, &wakes, &folder, &["C.ARW"], None, invert);
+
+    // A range from the active photo in the client's order, then Select None.
+    let a = session.send(Command::Open(folder.join("A.ARW")));
+    told(&session, &wakes, &folder, &["A.ARW"], Some("A.ARW"), a);
+    let order = ["C.ARW", "A.ARW", "B.ARW"].map(|photo| folder.join(photo));
+    let range = session.send(select(SelectionCommand::Range {
+        to: folder.join("C.ARW"),
+        order: order.to_vec(),
+    }));
+    told(
+        &session,
+        &wakes,
+        &folder,
+        &["A.ARW", "C.ARW"],
+        Some("A.ARW"),
+        range,
+    );
+    let none = session.send(select(SelectionCommand::Clear));
+    told(&session, &wakes, &folder, &[], None, none);
+
+    // Listed again with C gone, the selection keeps A and B by photo and drops C.
+    let a = session.send(Command::Open(folder.join("A.ARW")));
+    let set = select(SelectionCommand::Set(
+        every.map(|p| folder.join(p)).to_vec(),
+    ));
+    let set = session.send(set);
+    told(&session, &wakes, &folder, &every, Some("A.ARW"), set.max(a));
+    std::fs::remove_file(folder.join("C.ARW")).unwrap();
+    let again = session.send(open_folder(&folder));
+    told(
+        &session,
+        &wakes,
+        &folder,
+        &["A.ARW", "B.ARW"],
+        Some("A.ARW"),
+        again,
+    );
+    // Another folder: A alone, the active photo.
+    let other = three_photos("selection-other");
+    let other_open = session.send(open_folder(&other));
+    told(
+        &session,
+        &wakes,
+        &folder,
+        &["A.ARW"],
+        Some("A.ARW"),
+        other_open,
+    );
+    drop(session);
+    remove(&folder.join("A.ARW"));
+    remove(&other.join("A.ARW"));
+    remove(&elsewhere);
+}
+
+/// The first selection the session tells through at least the command numbered `through`,
+/// which must be `photos`, in `folder`, with `active`.
+fn told_next(
+    session: &Session,
+    wakes: &Receiver<()>,
+    folder: &Path,
+    photos: &[&str],
+    active: Option<&str>,
+    through: u64,
+) {
+    let after = |e: &Event| matches!(e, Event::Selection(s) if s.through >= through);
+    let events = until(session, wakes, after);
+    let Some(Event::Selection(selection)) = events.into_iter().find(after) else {
+        unreachable!("`until` stops at it");
+    };
+    let photos: Vec<PathBuf> = photos.iter().map(|photo| folder.join(photo)).collect();
+    assert_eq!(selection.photos, photos);
+    assert_eq!(selection.active, active.map(|photo| folder.join(photo)));
+}
+
+/// Holds the engine thread at the submit gate, rendering the photo at `width`, which
+/// changes no edit, until what this returns is dropped: the commands sent meanwhile are
+/// then taken as one batch.
+fn one_batch<'a>(gpu: &'a GpuContext, session: &Session, width: u32) -> crate::gpu::Held<'a> {
+    let held = gpu.gate.hold();
+    session.send(Command::Resize { width, height: 48 });
+    // The test's hold and the engine's turn, waiting.
+    gpu.gate.until_asked(2);
+    held
+}
+
+/// A change to the open photo and `Unedited` in one batch: `Unedited` reads the photo as
+/// the change left it, so it closes; and a photo changed in the batch that closes it, whose
+/// values that batch never sends, is read as it left too.
+#[test]
+fn unedited_reads_the_photo_as_its_own_batch_changed_it() {
+    let gpu = gpu();
+    let folder = three_photos("selection-batch");
+    let (session, wakes) = start_with(&gpu, &[&Sample], synthetic);
+    session.send(Command::Resize {
+        width: 64,
+        height: 48,
+    });
+    let open = session.send(open_folder(&folder));
+    let listed = |e: &Event| matches!(e, Event::Library(LibraryEvent::Listed { open: o, done: true, .. }) if *o == open);
+    until(&session, &wakes, listed);
+    // A edited and Unedited sent together, never waiting for the values between them.
+    open_live(&session, &wakes, &folder.join("A.ARW"));
+    let held = one_batch(&gpu, &session, 60);
+    session.send(set("brightness", ControlValue::Number(0.2), true));
+    let unedited = session.send(select(SelectionCommand::Unedited));
+    drop(held);
+    let left = ["B.ARW", "C.ARW"];
+    told_next(&session, &wakes, &folder, &left, None, unedited);
+    // B edited and closed by Select None in one batch, which sends none of its values.
+    open_live(&session, &wakes, &folder.join("B.ARW"));
+    let held = one_batch(&gpu, &session, 56);
+    session.send(set("brightness", ControlValue::Number(0.2), true));
+    let none = session.send(select(SelectionCommand::Clear));
+    drop(held);
+    told(&session, &wakes, &folder, &[], None, none);
+    let unedited = session.send(select(SelectionCommand::Unedited));
+    told_next(&session, &wakes, &folder, &["C.ARW"], None, unedited);
+    drop(session);
+    remove(&folder.join("A.ARW"));
+}
+
+/// A turn that panics closes the photo, unsaved, and the selection says so in the same
+/// burst, with no active photo, through every command the turn took, those it never
+/// reached included.
+#[test]
+fn a_panicked_turn_tells_the_selection_with_no_active_photo() {
+    let path = scratch("selection-panic");
+    let mut driven = Driven::new(&[&Sample]);
+    driven.open(&path);
+    let opened = driven.engine.selection_event(&[]);
+    assert!(
+        matches!(&opened, Some(Event::Selection(s)) if s.active.as_deref() == Some(&*path)),
+        "{opened:?}"
+    );
+    let payload: Box<dyn std::any::Any + Send> = Box::new("a bug");
+    let taken = driven.engine.applied + 3;
+    let events = driven.engine.recover(payload.as_ref(), taken);
+    assert!(
+        matches!(&events[..], [
+            Event::Failed(SessionError::Panicked(_)),
+            Event::Selection(Selection { photos, active: None, through }),
+        ] if photos.is_empty() && *through == taken),
+        "{events:?}"
+    );
+    assert_eq!(driven.engine.applied, taken);
+    remove(&path);
+}
+
+/// Commands still queued as the client drops its handle: the folder's close counts, so
+/// `Unedited` with no collection closes the photo, and the change after it is not written.
+#[test]
+fn a_folder_closed_while_the_handle_drops_counts_for_the_selection() {
+    let gpu = gpu();
+    let folder = three_photos("selection-drop");
+    let (session, wakes) = start_with(&gpu, &[&Sample], synthetic);
+    session.send(Command::Resize {
+        width: 64,
+        height: 48,
+    });
+    let open = session.send(open_folder(&folder));
+    let listed = |e: &Event| matches!(e, Event::Library(LibraryEvent::Listed { open: o, done: true, .. }) if *o == open);
+    until(&session, &wakes, listed);
+    let a = folder.join("A.ARW");
+    open_live(&session, &wakes, &a);
+    // Held at the gate, the engine takes what follows only after the handle is gone.
+    let held = one_batch(&gpu, &session, 60);
+    session.send(Command::Library(LibraryCommand::Close));
+    session.send(select(SelectionCommand::Unedited));
+    session.send(set("brightness", ControlValue::Number(0.2), true));
+    drop(session);
+    drop(held);
+    assert!(
+        !sidecar::path_for(&a).exists(),
+        "the change after Unedited is not written"
+    );
+    remove(&a);
+}
+
+/// A listing of the folder again cancelled through its job, as the jobs window's Cancel
+/// does, leaves the folder with no photo, as the Browser shows it: the selection keeps the
+/// active photo alone, and the photos before are no longer the collection.
+#[test]
+fn a_listing_cancelled_leaves_the_folder_with_no_photo() {
+    let gpu = gpu();
+    let folder = three_photos("selection-cancel");
+    let (session, wakes) = start_with(&gpu, &[&Sample], synthetic);
+    session.send(Command::Resize {
+        width: 64,
+        height: 48,
+    });
+    let open = session.send(open_folder(&folder));
+    let listed = |e: &Event| matches!(e, Event::Library(LibraryEvent::Listed { open: o, done: true, .. }) if *o == open);
+    until(&session, &wakes, listed);
+    open_live(&session, &wakes, &folder.join("A.ARW"));
+    let add = session.send(select(SelectionCommand::Add(folder.join("B.ARW"))));
+    told(
+        &session,
+        &wakes,
+        &folder,
+        &["A.ARW", "B.ARW"],
+        Some("A.ARW"),
+        add,
+    );
+    // Listed again, held before it reads, and cancelled.
+    let (hold, begun, permit) = export_job::testing::Hold::new();
+    session.send(Command::HoldFolder(hold));
+    let again = session.send(open_folder(&folder));
+    let added = |e: &Event| matches!(e, Event::Job { event: JobEvent::Added { .. }, command: Some(c) } if *c == again);
+    let events = until(&session, &wakes, added);
+    let job = events
+        .iter()
+        .find_map(|e| match e {
+            Event::Job {
+                event: JobEvent::Added { job, .. },
+                command: Some(c),
+            } if *c == again => Some(*job),
+            _ => None,
+        })
+        .expect("its job");
+    begun.recv_timeout(TEST_WAIT).expect("the reading begins");
+    session.send(Command::CancelJob { job });
+    // A refusal after it proves the cancel taken before the reading is let go.
+    let elsewhere = scratch("selection-cancel-elsewhere");
+    let refused = session.send(select(SelectionCommand::Add(elsewhere.clone())));
+    let answered = |e: &Event| matches!(e, Event::Failed(SessionError::Refused { command, .. }) if *command == refused);
+    let events = until(&session, &wakes, answered);
+    drop(permit);
+    // Its end may have come with the refusal: the held reading ends as the cancel reaches it.
+    let ended = |e: &Event| matches!(e, Event::Job { event: JobEvent::Ended { job: j, .. }, .. } if *j == job);
+    if !events.iter().any(ended) {
+        until(&session, &wakes, ended);
+    }
+    // Inverted over no photo: none, and A, left out, closes; over the photos before, C.
+    let invert = session.send(select(SelectionCommand::Invert));
+    told_next(&session, &wakes, &folder, &[], None, invert);
+    drop(session);
+    remove(&folder.join("A.ARW"));
+    remove(&elsewhere);
+}
+
+/// A photo's change whose writes fail, at its close too, leaves it read as its sidecar
+/// holds it: `Unedited` selects it, as nothing was saved. On Unix, by a folder no write
+/// lands in, unless the tests run with the rights to write there anyway.
+#[cfg(unix)]
+#[test]
+fn a_photo_whose_write_failed_reads_as_listed() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let gpu = gpu();
+    let folder = three_photos("selection-unwritten");
+    let (session, wakes) = start_with(&gpu, &[&Sample], synthetic);
+    session.send(Command::Resize {
+        width: 64,
+        height: 48,
+    });
+    let open = session.send(open_folder(&folder));
+    let listed = |e: &Event| matches!(e, Event::Library(LibraryEvent::Listed { open: o, done: true, .. }) if *o == open);
+    until(&session, &wakes, listed);
+    let a = folder.join("A.ARW");
+    open_live(&session, &wakes, &a);
+    // No write lands in the folder.
+    let mode = |mode| std::fs::set_permissions(&folder, std::fs::Permissions::from_mode(mode));
+    mode(0o555).unwrap();
+    let probe = folder.join("probe");
+    if std::fs::write(&probe, b"").is_ok() {
+        // Run with the rights to write anywhere: no write fails here.
+        let _ = std::fs::remove_file(&probe);
+        mode(0o755).unwrap();
+        drop(session);
+        remove(&a);
+        return;
+    }
+    session.send(set("brightness", ControlValue::Number(0.2), true));
+    let close = session.send(Command::Close);
+    told(&session, &wakes, &folder, &["A.ARW"], None, close);
+    let unedited = session.send(select(SelectionCommand::Unedited));
+    let every = ["A.ARW", "B.ARW", "C.ARW"];
+    told_next(&session, &wakes, &folder, &every, None, unedited);
+    drop(session);
+    mode(0o755).unwrap();
+    assert!(!sidecar::path_for(&a).exists());
+    remove(&a);
+}
+
+/// A turn that panics after a gesture never saved: the photo, closed unsaved, reads as
+/// its listing found it, so `Unedited` selects it.
+#[test]
+fn a_photo_a_panic_closes_mid_gesture_reads_as_listed() {
+    let path = scratch("selection-panic-gesture");
+    let mut driven = Driven::new(&[&Sample]);
+    driven.open(&path);
+    let folder = path.parent().unwrap();
+    let photo = |name: &str| library::Photo {
+        name: name.to_owned(),
+        size: 0,
+        modified: None,
+        edit: library::EditState::None,
+    };
+    let selection = &mut driven.engine.selection;
+    selection.folder_opened(1, folder);
+    selection.listing(&LibraryEvent::Listed {
+        open: 1,
+        photos: vec![photo("other.ARW"), photo("synthetic.ARW")],
+        done: true,
+    });
+    let events = driven.run([set("brightness", ControlValue::Number(0.5), false)]);
+    assert!(values(&events).edited);
+    driven.engine.selection_event(&events);
+    let payload: Box<dyn std::any::Any + Send> = Box::new("a bug");
+    let taken = driven.engine.applied;
+    driven.engine.recover(payload.as_ref(), taken);
+    // The writer classifies its sidecar after its last write, off the engine thread.
+    driven.engine.take_classified(true);
+    let unedited = driven
+        .engine
+        .selection
+        .command(SelectionCommand::Unedited, None);
+    assert!(matches!(unedited, Ok(false)), "{unedited:?}");
+    let told = driven.engine.selection.fact(None, taken).expect("told");
+    assert_eq!(told.photos, [folder.join("other.ARW"), path.clone()]);
+    remove(&path);
+}
+
+/// A change saved, then a turn that panics: the photo, closed, reads as its sidecar holds
+/// it, edited, so `Unedited` leaves it out.
+#[test]
+fn a_photo_saved_then_closed_by_a_panic_reads_as_its_sidecar() {
+    let path = scratch("selection-panic-saved");
+    let mut driven = Driven::new(&[&Sample]);
+    driven.open(&path);
+    let folder = path.parent().unwrap();
+    let photo = |name: &str| library::Photo {
+        name: name.to_owned(),
+        size: 0,
+        modified: None,
+        edit: library::EditState::None,
+    };
+    let selection = &mut driven.engine.selection;
+    selection.folder_opened(1, folder);
+    selection.listing(&LibraryEvent::Listed {
+        open: 1,
+        photos: vec![photo("other.ARW"), photo("synthetic.ARW")],
+        done: true,
+    });
+    driven.run([set("brightness", ControlValue::Number(0.5), true)]);
+    driven.writes();
+    assert!(sidecar::path_for(&path).exists(), "saved");
+    let payload: Box<dyn std::any::Any + Send> = Box::new("a bug");
+    let taken = driven.engine.applied;
+    driven.engine.recover(payload.as_ref(), taken);
+    // The writer classifies its sidecar after its last write, off the engine thread.
+    driven.engine.take_classified(true);
+    let unedited = driven
+        .engine
+        .selection
+        .command(SelectionCommand::Unedited, None);
+    assert!(matches!(unedited, Ok(false)), "{unedited:?}");
+    let told = driven.engine.selection.fact(None, taken).expect("told");
+    assert_eq!(told.photos, [folder.join("other.ARW")]);
+    remove(&path);
+}
+
+/// The handle dropped with a `CancelJob` queued: the folder's reading, held before it
+/// reads, cancelled, the folder holds no photo, so `Unedited` closes A and the change after
+/// it is not written; a cancel of the reading that has ended changes nothing, so A stays
+/// open and the change is written.
+#[test]
+fn a_cancel_queued_as_the_handle_drops_counts_only_when_taken() {
+    for taken in [true, false] {
+        let gpu = gpu();
+        let name = if taken {
+            "selection-drop-cancel"
+        } else {
+            "selection-drop-ended"
+        };
+        let folder = three_photos(name);
+        let (session, wakes) = start_with(&gpu, &[&Sample], synthetic);
+        session.send(Command::Resize {
+            width: 64,
+            height: 48,
+        });
+        let open = session.send(open_folder(&folder));
+        let added = |open: u64| move |e: &Event| matches!(e, Event::Job { event: JobEvent::Added { .. }, command: Some(c) } if *c == open);
+        let job_of = |events: &[Event], open: u64| {
+            events.iter().find_map(|e| match e {
+                Event::Job {
+                    event: JobEvent::Added { job, .. },
+                    command: Some(c),
+                } if *c == open => Some(*job),
+                _ => None,
+            })
+        };
+        let mut events = until(&session, &wakes, added(open));
+        let listed = |e: &Event| matches!(e, Event::Library(LibraryEvent::Listed { open: o, done: true, .. }) if *o == open);
+        if !events.iter().any(listed) {
+            events.extend(until(&session, &wakes, listed));
+        }
+        let first = job_of(&events, open).expect("its job");
+        let a = folder.join("A.ARW");
+        events.extend(open_live(&session, &wakes, &a));
+        let ended = |e: &Event| matches!(e, Event::Job { event: JobEvent::Ended { job: j, .. }, .. } if *j == first);
+        if !events.iter().any(ended) {
+            until(&session, &wakes, ended);
+        }
+        let mut permit = None;
+        let job = if taken {
+            let (hold, begun, go) = export_job::testing::Hold::new();
+            session.send(Command::HoldFolder(hold));
+            let again = session.send(open_folder(&folder));
+            let events = until(&session, &wakes, added(again));
+            begun.recv_timeout(TEST_WAIT).expect("the reading begins");
+            permit = Some(go);
+            job_of(&events, again).expect("its job")
+        } else {
+            first
+        };
+        // Held at the gate, the engine takes what follows only after the handle is gone.
+        let held = one_batch(&gpu, &session, 60);
+        session.send(Command::CancelJob { job });
+        session.send(select(SelectionCommand::Unedited));
+        session.send(set("brightness", ControlValue::Number(0.2), true));
+        // The held reading lets go as the cancel, or the session's end, reaches it.
+        drop(session);
+        drop(held);
+        drop(permit);
+        assert_eq!(sidecar::path_for(&a).exists(), !taken, "taken: {taken}");
+        remove(&a);
+    }
+}

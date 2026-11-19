@@ -797,9 +797,9 @@ pub fn thumbnail_slot(path: &Path, size: u32) -> Vec<u8> {
     slot
 }
 
-/// A photo of the index as a client sees it.
-fn photo(entry: crate::index::Entry) -> Photo {
-    let edit = match entry.sidecar {
+/// What a sidecar says of its photo's edit, as a client sees it.
+fn edit_state(sidecar: Sidecar) -> EditState {
+    match sidecar {
         Sidecar::Read(edit) => match edit.view_only {
             Some(newer) => EditState::ViewOnly(newer),
             None if edit.edited => EditState::Edited,
@@ -808,7 +808,18 @@ fn photo(entry: crate::index::Entry) -> Photo {
         Sidecar::Unreadable(reason) => EditState::Unreadable(reason),
         // An index that was not cancelled has read every sidecar.
         Sidecar::None | Sidecar::NotRead => EditState::None,
-    };
+    }
+}
+
+/// The edit state of the photo whose sidecar is at `path`, read now, as a listing of its
+/// folder would read it.
+pub fn sidecar_state(path: &Path) -> EditState {
+    edit_state(crate::index::read_one(path))
+}
+
+/// A photo of the index as a client sees it.
+fn photo(entry: crate::index::Entry) -> Photo {
+    let edit = edit_state(entry.sidecar);
     Photo {
         name: entry.name,
         size: entry.raw.size,
