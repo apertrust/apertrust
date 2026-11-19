@@ -1403,6 +1403,29 @@ fn up_and_down_keep_unknown_ids_by_their_neighbours() {
     );
 }
 
+/// A utility moved into a tab, or a tool unpinned, goes to the top of the scrolling list
+/// after the ids this build does not know that start it, so those stay first.
+#[test]
+fn the_top_is_after_leading_unknown_ids() {
+    let text = "[[tabs]]\nid = \"adjust\"\n[[tabs]]\nid = \"photos\"\n\
+                [pinned]\nadjust = [\"scopes\"]\n\
+                [order]\nadjust = [\"future-first\", \"exposure\"]\n\
+                photos = [\"collections\", \"export\"]\n";
+    let mut layout = parsed(text);
+    let unpin = Move::Unpin {
+        tool: SCOPES,
+        tab: "adjust".to_owned(),
+    };
+    assert!(layout.apply(&unpin, &known()));
+    assert_eq!(layout.order["adjust"], ["future-first", SCOPES, "exposure"]);
+    let mut layout = parsed(text);
+    assert!(layout.apply(&to_tab("collections", "photos", "adjust"), &known()));
+    assert_eq!(
+        layout.order["adjust"],
+        ["future-first", "collections", "exposure"]
+    );
+}
+
 /// The tabs a move may go to are those shown as `resolve` works them out: a tab listed
 /// twice counts once, so a tab after twelve copies of another is still shown.
 #[test]
