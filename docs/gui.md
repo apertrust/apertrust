@@ -1144,7 +1144,7 @@ Decision 91; its first slice is built. A right-click menu opens only in a named 
 | Place | Tools' items | The app's items | When |
 | --- | --- | --- | --- |
 | The photo | Yes, at most two a tool; History's Reset first, Orientation ▸ | Export…; Background ▸ ([The background](#the-background)) | Built |
-| A thumbnail, in the Browser or a cell in Photo | Yes, at most two a tool; History's Reset first | Export…; Show in Folder once built | Built |
+| A thumbnail, in the Browser or a cell in Photo | Yes, at most two a tool; none that needs its photo open, so not History's Reset | Export…; Show in Folder once built | Built |
 | A tool's ⋯ (`Options`), its own section only | Yes, at most four | Reset, Copy Settings and Paste Settings (with Copy and Apply Parts, Phase 3) in `EDIT`; the layout's items, Pin Tool or Unpin Tool, Move Tool Up and Move Tool Down, Move Tool to Tab ▸ and Remove Tool, or Show Tool in Tab ▸ alone for a hidden tool ([Moving, pinning and floating sections](#moving-pinning-and-floating-sections)), in `LAYOUT`, last | Built: the layout's items (decision 96), added by the app after the tool's own (`menus::layout_items`) |
 | The surround (`Surround`) | No | View › Background's items | Built |
 | The browser bar | No | Show Labels, Position ▸ | Built |
@@ -1189,7 +1189,7 @@ A place opens to tools' items only by a decision of its own, which adds it to `a
 1. Every item for the place, the app's and the tools', is sorted by `(section, order)`. The surround's holds View › Background's items alone, read from `BACKGROUND`.
 2. A separator falls wherever `section` changes; a section with no item shown, empty or all hidden, leaves no line.
 3. A test fails on two items with the same `(section, order)` in one menu, built as it shows: the photo's and a thumbnail's with every tool's items, and each tool's and utility's ⋯ with the app's items and its own. Two tools may share a `(section, order)` in their own ⋯.
-4. In the photo's and a thumbnail's menus an item whose action cannot run on the target is hidden, whatever stops it; one that waits only for the photo to become live, as on a thumbnail just made active, is shown disabled. ⋯, a pull-down from a button, keeps the pull-down's rule: an item that cannot run is drawn disabled with its tip.
+4. In the photo's and a thumbnail's menus an item whose action cannot run on the target is hidden, whatever stops it; one that waits only for the photo to become live, as while the photo open is still opening, is shown disabled. ⋯, a pull-down from a button, keeps the pull-down's rule: an item that cannot run is drawn disabled with its tip.
 5. A submenu goes one level deep, and the photo's and a thumbnail's menus show no keys.
 6. A test holds the photo's and a thumbnail's menus, every item of every tool shown, to at most 16 items, a submenu's children each counted; an item past that needs a decision.
 7. An item a tool adds to either menu is listed on its tool's page.
@@ -1197,7 +1197,7 @@ A place opens to tools' items only by a decision of its own, which adds it to `a
 **The target:**
 
 - **On the photo:** the active photo, with the point under the pointer in the photo's coordinates as pickers take them, none from the keys; an action that needs a point is hidden without one.
-- **On a thumbnail:** its photo. Opening its menu, by a right-click or from the keys on its focused cell, selects it alone and makes it active first unless it is in the selection ([Selection and the active photo](#selection-and-the-active-photo)), so the selection the menu acts on always includes the photo it was opened on, and in Phase 2, where the selection is the active photo alone, each item acts on the active photo as from the menu bar. From Phase 3 the selection when the photo is in it; while several are selected, an item that acts on one photo alone is hidden, History's Reset among them.
+- **On a thumbnail:** the selection when its photo is in it ([Selection and the active photo](#selection-and-the-active-photo)), else that photo alone. Opening its menu, by a right-click or from the keys on its focused cell, changes neither the selection nor the photo in the Viewer: only a click opens a photo. In Phase 2, where the selection is the active photo alone, Export… still exports the active photo; exporting the photo the menu was opened on is planned (#294). An item that needs its photo open, as History's Reset does, is not in a thumbnail's menu. From Phase 3, while several are selected, an item that acts on one photo alone is hidden.
 - **In ⋯:** its tool. **On the surround:** the app.
 
 **Opening.**
@@ -1208,13 +1208,13 @@ A place opens to tools' items only by a decision of its own, which adds it to `a
 
 **While it is open** (`context_popup` in `main.rs`):
 
-- A drawn menu opened while its photo waits to go live, as a thumbnail's on the photo it has just made active, shows the waiting items disabled, and is rebuilt in place, at the same anchor with the same opener, once the photo is live.
+- A drawn menu opened while its photo waits to go live, the photo's or a thumbnail's while the photo open is still opening, shows the waiting items disabled, and is rebuilt in place, at the same anchor with the same opener, once the photo is live.
 - The photo's and a thumbnail's menus act on the photo asked for as they opened: when another photo becomes the one asked for, by a drop, Open… or an open asked for earlier, the menu is dismissed, taking no answer.
 - The Mac's native menu is modal: nothing changes while it is open, and it keeps what it opened with.
 
 **Every item is reachable without a right-click:** in the menu bar, in its tool's section or ⋯, in the Tools panel's ⋮ for the tab bar's (decision 96), or by its keys. A right-click menu is a shortcut. A tool's action has its button by construction, and a test holds each utility's item to a menu bar item.
 
-**Built, the first slice:** in `apertrust-tools`, `Place`, `Section`, `MenuItem`, `MenuEntry`, `ToolDefinition::menus` and their checks, `UTILITIES` in `utility`; in the app, the generated tool actions, `menus::Place` with `Surround`, `Target`, `menus::APP_ITEMS` and `menus::context(place, target)`, the photo's menu and a thumbnail's with the two behaviours while one is open; History's Reset in both, and Orientation ▸ on the photo, so the photo's reads Reset, —, Export…, —, Background ▸, Orientation ▸ and a thumbnail's Reset, —, Export…. Discard History… is in no context menu. Pickers as items wait for the open question ([Open questions](#open-questions)). ⋯ is built through the builder with each tool's declared items (`menus::options`, decision 93), History's four; the app's items and the layout's join it later.
+**Built, the first slice:** in `apertrust-tools`, `Place`, `Section`, `MenuItem`, `MenuEntry`, `ToolDefinition::menus` and their checks, `UTILITIES` in `utility`; in the app, the generated tool actions, `menus::Place` with `Surround`, `Target`, `menus::APP_ITEMS` and `menus::context(place, target)`, the photo's menu and a thumbnail's with the two behaviours while one is open; History's Reset and Orientation ▸ on the photo, so the photo's reads Reset, —, Export…, —, Background ▸, Orientation ▸ and a thumbnail's Export…; a thumbnail's opens no photo. Discard History… is in no context menu. Pickers as items wait for the open question ([Open questions](#open-questions)). ⋯ is built through the builder with each tool's declared items (`menus::options`, decision 93), History's four; the app's items and the layout's join it later.
 
 ### Checks
 
@@ -2550,7 +2550,7 @@ With several photos selected, the rating, reject and label keys, Apply Edit and 
 | Shift-click | Selects the range from the active photo to it; the active photo stays, so the Viewer does not jump while a range grows | — |
 | Double-click, or Enter | As a click: that photo alone, active | That photo alone |
 | A click on empty space: between the cells, on a caption, or in a cell's square round a fitted picture | Nothing: clearing the selection by accident would disable the Tools panel; Select None has its key and its item | Nothing |
-| Right-click | The context menu ([Context menus](#context-menus)) acts on the selection when the photo is in it, else on the photo alone, selected first | The same |
+| Right-click | The context menu ([Context menus](#context-menus)) acts on the selection when the photo is in it, else on the photo alone; the selection and the photo in the Viewer stay as they are | The same |
 
 - **The keys,** the same in every layout:
   - → and Space, ← and Backspace: with several selected, the active photo moves through the selection, which stays; with one, to the next or previous photo of the folder or album, selected alone;

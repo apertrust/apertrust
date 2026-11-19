@@ -61,7 +61,7 @@ A tool's section already has its own buttons: reset, presets and options (⋯). 
 - A submenu's children follow the item rules below: each hidden or shown disabled as an item is, and none shows its keys. A submenu left with no child shown is hidden.
 - **`section`** says which section of the menu an item is in. `Section` is a set of named constants, in `apertrust-tools` and shared by the app and the tools, whose value sets the section's place in a menu, 1000 apart: `Section::EDIT` 1000, `EXPORT` 2000, `VIEW` 3000, `HISTORY` 4000, and `LAYOUT` 9000 for ⋯'s layout items, last.
   - A tool's or a utility's item takes a section from `EDIT` up to, not including, `LAYOUT`, a named one or a value of its own: below `EDIT` and from `LAYOUT` up are the app's, so its items fall between the app's editing items and the layout's, which stay last.
-  - In `EDIT`, order 100 is Reset's, the app's in ⋯ and History's on the photo and a thumbnail, so a tool's or a utility's item there takes order 200 or more and Reset stays first.
+  - In `EDIT`, order 100 is Reset's, the app's in ⋯ and History's on the photo, so a tool's or a utility's item there takes order 200 or more and Reset stays first.
   - `check_section` holds a tool's items to both rules, refusing the section (`DefinitionError::MenuSection`) or the order (`MenuOrder`); an app test holds the utilities to the same, History's Reset alone at `(EDIT, 100)`. The app's own items are exempt.
 - **`order`** places an item within its section, 100 apart (100, 200, 300 and on), lower first.
 - The gaps leave room to put an item between two others without renumbering them.
@@ -82,7 +82,7 @@ A tool's section already has its own buttons: reset, presets and options (⋯). 
 **What an item acts on**, `Target`:
 
 - On the photo: the active photo, with the point under the pointer in the photo's coordinates as pickers take them (79), or no point when the menu opens from the keys. An action that needs a point is hidden without one.
-- On a thumbnail: its photo. Opening its menu, by a right-click or from the keys on its focused cell, selects it alone and makes it active first, unless it is in the selection ([0037](0037-one-view-the-photos-tab.md)), so the selection the menu acts on always includes the photo it was opened on, and in Phase 2, where the selection is the active photo alone, every item acts on the active photo as it would from the menu bar. From Phase 3, the selection when the photo is in it; while several photos are selected, an item that acts on one photo alone is hidden.
+- On a thumbnail: the selection when its photo is in it ([0037](0037-one-view-the-photos-tab.md)), else that photo alone. Opening its menu, by a right-click or from the keys on its focused cell, changes neither the selection nor the photo in the Viewer: only a click opens a photo. In Phase 2, where the selection is the active photo alone, Export… still exports the active photo; exporting the photo the menu was opened on is planned (#294). An item that needs its photo open, as History's Reset does, is not in a thumbnail's menu. From Phase 3, while several photos are selected, an item that acts on one photo alone is hidden.
 - In ⋯: its tool.
 - On the surround: the app.
 
@@ -95,7 +95,7 @@ A tool's section already has its own buttons: reset, presets and options (⋯). 
 
 **While a menu is open** (`context_popup`):
 
-- **A drawn menu opened while its photo waits** to go live, as a thumbnail's does on the photo it has just made active, shows the items that wait disabled. Once the photo is live it is rebuilt in place, at the same anchor and with the same opener, so they are enabled without the menu reopening.
+- **A drawn menu opened while its photo waits** to go live, as the photo's or a thumbnail's does while the photo open is still opening, shows the items that wait disabled. Once the photo is live it is rebuilt in place, at the same anchor and with the same opener, so they are enabled without the menu reopening.
 - **The photo's and a thumbnail's act on the photo asked for as they opened.** When another photo becomes the one asked for while one is open, by a drop, Open… or an open asked for earlier, the menu is dismissed, taking no answer, so it never acts on a photo other than its own.
 - **The Mac's native menu is modal:** nothing changes while it is open, and it keeps what it opened with until it closes.
 
@@ -106,7 +106,7 @@ A tool's section already has its own buttons: reset, presets and options (⋯). 
 | Place | The app's items | Tools' items | The menu reads |
 | --- | --- | --- | --- |
 | The photo | Export… (`EXPORT`, 100); Background ▸ (`VIEW`, 100); Show in Finder joining once folder mode can reveal a photo | History's Reset (`EDIT`, 100); Orientation's Orientation ▸ (`VIEW`, 200), its four buttons: rotate 90° anticlockwise, rotate 90° clockwise, flip horizontally and flip vertically | Reset, —, Export…, —, Background ▸, Orientation ▸ |
-| A thumbnail | Export… (`EXPORT`, 100); Show in Folder once built | History's Reset (`EDIT`, 100), hidden while several photos are selected, since it acts on one photo | Reset, —, Export… |
+| A thumbnail | Export… (`EXPORT`, 100); Show in Folder once built | None: History's Reset needs its photo open, which a thumbnail's may not be | Export… |
 | ⋯ | Reset, then Copy Settings and Paste Settings with Copy and Apply Parts (Phase 3), in `EDIT`; the layout's items ([0083](0083-the-side-panels-layout-dragged-and-floating.md), [0096](0096-workspaces-as-files-hidden-tools-and-finding-a-tool.md): Pin Tool or Unpin Tool, Move Tool to Tab ▸ and Remove Tool, or Show Tool in Tab ▸ alone for a hidden tool) in `LAYOUT` | The tool's own, in a section of its choosing between them; History's are Compress History, Truncate History, Create a Style… and Discard History…, each an item of its own ([0093](0093-one-tool-model-processing-tools-and-utility-tools.md)) | — |
 
 Discard History… is in no context menu: it stays in Edit and History's ⋯ ([0078](0078-undo-redo-and-the-edits-history.md)).

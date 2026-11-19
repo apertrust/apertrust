@@ -622,7 +622,8 @@ fn a_cell_s_right_click_and_menu_keys_ask_for_its_photo_s_menu() {
     let asked = harness.state().menus.clone();
     assert_eq!(asked.len(), 1);
     assert_eq!((asked[0].photo, asked[0].at), (2, cell.center()));
-    // No photo opens on a right-click: the app makes it active.
+    // A right-click opens no photo and selects none: only a click does (issue #288).
+    assert_eq!(harness.state().actions, []);
     harness.get_by_label("IMG_0003.ARW").focus();
     harness.run();
     let under = harness.get_by_label("IMG_0003.ARW").rect().left_bottom();
@@ -636,6 +637,7 @@ fn a_cell_s_right_click_and_menu_keys_ask_for_its_photo_s_menu() {
         assert_eq!((menu.photo, menu.at), (3, under), "{key:?}");
     }
     assert_eq!(harness.state().menus.len(), 3);
+    assert_eq!(harness.state().actions, []);
     // Focused elsewhere, the keys ask for nothing.
     harness.get_by_role_and_label(Role::Button, "Sort").focus();
     harness.run();
