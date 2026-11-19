@@ -269,6 +269,13 @@ fn start_as(
                     canonical.display()
                 ));
             }
+            Attempt::Unconfirmed(error) => {
+                return Start::Ended(format!(
+                    "the hand-off reached the instance on {}, but its answer did not come \
+                     ({error}): what was asked may or may not open there, and is not sent again",
+                    canonical.display()
+                ));
+            }
             Attempt::Unreached => {}
         }
         drop(lock);
@@ -283,13 +290,17 @@ fn start_as(
 }
 
 /// How one try to reach the instance went.
-#[derive(Debug, PartialEq)]
+#[derive(Debug)]
 enum Attempt {
     Answered(Answer),
     /// The server runs as another user: nothing was sent.
     NotOwn,
-    /// No channel yet, or one that refused or broke off: tried again.
+    /// No channel yet, or one that refused or broke off before the hand-off was sent
+    /// whole: tried again.
     Unreached,
+    /// The hand-off was sent whole, but no answer came: never sent again, since the
+    /// instance may have taken it.
+    Unconfirmed(io::Error),
 }
 
 /// One try to hand `hand_off` in format `format` to the instance on `canonical`, whose
@@ -303,8 +314,17 @@ fn attempt(lock: &File, canonical: &Path, hand_off: &HandOff, format: u32, user:
     };
     match exchange(&mut stream, hand_off, format) {
         Ok(answer) => Attempt::Answered(answer),
-        Err(_) => Attempt::Unreached,
+        Err(Failed::Unsent) => Attempt::Unreached,
+        Err(Failed::Unconfirmed(error)) => Attempt::Unconfirmed(error),
     }
+}
+
+/// How an exchange failed: before the hand-off was sent whole, which the instance cannot
+/// have taken, since it reads only a whole message; or after, waiting for its answer.
+#[derive(Debug)]
+enum Failed {
+    Unsent,
+    Unconfirmed(io::Error),
 }
 
 /// The instance's end of its channel, as a second start reaches it.
@@ -353,14 +373,15 @@ fn named_socket(mut lock: &File) -> io::Result<Option<PathBuf>> {
 /// A second start's side of the exchange on `stream`: the instance's greeting, the
 /// foreground right handed to its process on Windows, `hand_off` sent in format `format`,
 /// then the answer.
-fn exchange(stream: &mut Stream, hand_off: &HandOff, format: u32) -> io::Result<Answer> {
-    let hello = read_frame(stream)?;
-    let process = hello_process(&hello)?;
+fn exchange(stream: &mut Stream, hand_off: &HandOff, format: u32) -> Result<Answer, Failed> {
+    let hello = read_frame(stream).map_err(|_| Failed::Unsent)?;
+    let process = hello_process(&hello).map_err(|_| Failed::Unsent)?;
     // Before the hand-off, so the instance may come forward as it takes it.
     let _ = apertrust_display::instance::allow_foreground(process);
-    write_frame(stream, &request_fields(hand_off, format))?;
-    stream.flush()?;
-    answer_of(&read_frame(stream)?)
+    write_frame(stream, &request_fields(hand_off, format)).map_err(|_| Failed::Unsent)?;
+    stream.flush().map_err(Failed::Unconfirmed)?;
+    let answer = read_frame(stream).map_err(Failed::Unconfirmed)?;
+    answer_of(&answer).map_err(Failed::Unconfirmed)
 }
 
 /// The running instance: the lock held, the channel bound and served, until it is
@@ -1483,6 +1504,66 @@ mod tests {
             assert!(notes.contains("left alone"), "{notes}");
             assert!(named.exists(), "{}", named.display());
         }
+    }
+
+    /// An instance of the test's own on `fixture`, in this process: the lock held, the
+    /// socket the lock file names served by `serve` for each connection, whose count it
+    /// gives. Its thread runs until the test process ends.
+    #[cfg(unix)]
+    fn fake_instance(
+        fixture: &Fixture,
+        serve: fn(&mut Stream),
+    ) -> (File, Arc<std::sync::atomic::AtomicUsize>) {
+        let lock = File::options()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(fixture.lock())
+            .unwrap();
+        lock.try_lock().unwrap();
+        let socket = fixture.runtime.join("fake.sock");
+        let listener = std::os::unix::net::UnixListener::bind(&socket).unwrap();
+        std::fs::write(fixture.lock(), socket.as_os_str().as_encoded_bytes()).unwrap();
+        let count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counted = Arc::clone(&count);
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                counted.fetch_add(1, Ordering::SeqCst);
+                serve(&mut stream.unwrap());
+            }
+        });
+        (lock, count)
+    }
+
+    /// The instance's greeting, as `serve` writes it.
+    #[cfg(unix)]
+    fn greeting() -> Vec<u8> {
+        let mut hello = Vec::new();
+        let fields = [
+            MAGIC.to_vec(),
+            FORMAT.to_le_bytes().to_vec(),
+            1u32.to_le_bytes().to_vec(),
+        ];
+        write_frame(&mut hello, &fields).unwrap();
+        hello
+    }
+
+    /// A hand-off sent whole whose answer never comes is not sent again: the start ends,
+    /// saying it cannot tell whether it was taken.
+    #[cfg(unix)]
+    #[test]
+    fn a_hand_off_sent_whole_is_never_sent_again() {
+        let fixture = Fixture::new("unanswered");
+        let (_lock, count) = fake_instance(&fixture, |stream| {
+            stream.write_all(&greeting()).unwrap();
+            let _ = read_frame(stream);
+        });
+        let Start::Ended(why) = second(&fixture, photo()) else {
+            panic!("not ended");
+        };
+        assert!(why.contains("answer did not come"), "{why}");
+        assert_eq!(count.load(Ordering::SeqCst), 1, "sent once");
     }
 
     /// A start refuses to send anything to a server that runs as another user.
