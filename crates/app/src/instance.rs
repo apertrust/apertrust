@@ -449,6 +449,9 @@ struct Channel {
     thread: Option<JoinHandle<()>>,
     #[cfg(unix)]
     socket: PathBuf,
+    /// The threads serving Windows' starts, one each, each holding its end of the pipe.
+    #[cfg(windows)]
+    serving: Arc<Mutex<Vec<JoinHandle<()>>>>,
 }
 
 impl Instance {
@@ -557,6 +560,8 @@ impl Instance {
             .map_err(|e| format!("{name}: {e}"))?;
         let stop = Arc::new(AtomicBool::new(false));
         let stopped = Arc::clone(&stop);
+        let serving: Arc<Mutex<Vec<JoinHandle<()>>>> = Arc::default();
+        let started = Arc::clone(&serving);
         let thread = std::thread::Builder::new()
             .name("instance".into())
             .spawn(move || {
@@ -581,8 +586,16 @@ impl Instance {
                                 let _ = pipe.sync_all();
                             }
                         });
-                    if let Err(e) = served {
-                        tracing::warn!(target: "control", "a second start not answered: no thread: {e}");
+                    match served {
+                        Ok(served) => {
+                            if let Ok(mut threads) = started.lock() {
+                                threads.retain(|thread| !thread.is_finished());
+                                threads.push(served);
+                            }
+                        }
+                        Err(e) => {
+                            tracing::warn!(target: "control", "a second start not answered: no thread: {e}");
+                        }
                     }
                 }
             })
@@ -590,6 +603,7 @@ impl Instance {
         Ok(Channel {
             stop,
             thread: Some(thread),
+            serving,
         })
     }
 
@@ -628,6 +642,12 @@ impl Instance {
             {
                 let _ = thread.join();
             }
+            // Each start's own end of the pipe closed too, for a while at most, so the next
+            // instance can make the pipe's first instance of its name.
+            #[cfg(windows)]
+            if let Ok(mut serving) = channel.serving.lock() {
+                wait_for(std::mem::take(&mut *serving), Instant::now() + RETRY);
+            }
             #[cfg(unix)]
             let _ = std::fs::remove_file(&channel.socket);
         }
@@ -643,6 +663,28 @@ impl Instance {
 impl Drop for Instance {
     fn drop(&mut self) {
         self.close();
+    }
+}
+
+/// Waits for `threads` until `deadline`, joining each that has ended; one still running
+/// then, as a Windows start that never writes holds its read, is left to the process's end.
+#[cfg_attr(
+    not(windows),
+    allow(dead_code, reason = "Windows' alone serves on threads")
+)]
+fn wait_for(threads: Vec<JoinHandle<()>>, deadline: Instant) {
+    let mut running = threads;
+    loop {
+        let (ended, still): (Vec<_>, Vec<_>) =
+            running.into_iter().partition(JoinHandle::is_finished);
+        for thread in ended {
+            let _ = thread.join();
+        }
+        if still.is_empty() || Instant::now() >= deadline {
+            return;
+        }
+        running = still;
+        std::thread::sleep(Duration::from_millis(10));
     }
 }
 
@@ -1741,6 +1783,33 @@ mod tests {
         assert!(matches!(answer, Err(Failed::Unconfirmed(_))), "{answer:?}");
         let quick = within(Instant::now() + limit, |_| Ok(Answer::Taken));
         assert!(matches!(quick, Ok(Answer::Taken)));
+    }
+
+    /// Release waits for the threads serving starts, for a while at most: those that end
+    /// in time are joined, one that never would is left behind at the deadline.
+    #[test]
+    fn release_waits_for_the_starts_served_for_a_while() {
+        let ended = Arc::new(AtomicBool::new(false));
+        let ending = Arc::clone(&ended);
+        let quick = std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(100));
+            ending.store(true, Ordering::Release);
+        });
+        let stuck = std::thread::spawn(|| std::thread::sleep(Duration::from_secs(30)));
+        let began = Instant::now();
+        wait_for(vec![quick, stuck], began + Duration::from_millis(400));
+        assert!(ended.load(Ordering::Acquire), "the quick one waited for");
+        let took = began.elapsed();
+        assert!(
+            took >= Duration::from_millis(400) && took < Duration::from_secs(2),
+            "{took:?}"
+        );
+        let began = Instant::now();
+        wait_for(Vec::new(), began + Duration::from_secs(5));
+        assert!(
+            began.elapsed() < Duration::from_millis(100),
+            "nothing to wait for"
+        );
     }
 
     /// A start refuses to send anything to a server that runs as another user.
