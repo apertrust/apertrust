@@ -799,6 +799,16 @@ menu-section-move-to-tab = Przenieś narzędzie na kartę
 menu-section-show-in-tab = Pokaż narzędzie na karcie
 section-hide-tip = Usuwa narzędzie „{ $tool }” z kart tego obszaru roboczego. Jego edycja zostaje; „Pokaż ukryte narzędzia” je pokazuje.
 section-hide-export = Eksport jest w każdym obszarze roboczym
+section-move-up-first =
+    { $list ->
+        [pinned] Narzędzie „{ $tool }” jest już na górze przypiętych
+       *[other] Narzędzie „{ $tool }” jest już na górze
+    }
+section-move-down-last =
+    { $list ->
+        [pinned] Narzędzie „{ $tool }” jest już na dole przypiętych
+       *[other] Narzędzie „{ $tool }” jest już na dole
+    }
 menu-interface-size = Rozmiar interfejsu
 menu-sort-by = Sortuj według
 menu-thumbnail-size = Rozmiar miniatur
