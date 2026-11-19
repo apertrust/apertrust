@@ -392,6 +392,9 @@ fn main() -> eframe::Result {
     // What this start was given for its run alone, which an instance already running on
     // the folder refuses (decision 89).
     let one_run = one_run(&domains, &conf, safe_mode);
+    // Its command line as an instance takes it, its paths absolute from this start's own
+    // folder: a drive-relative `C:IMG_1.ARW` on Windows is this start's C: folder's.
+    let handed = handed(&flags, safe_mode, &paths);
     let logging = match apertrust_base::log::init(&domains) {
         Ok(logging) => logging,
         Err(error) => {
@@ -430,7 +433,7 @@ fn main() -> eframe::Result {
     let (post, inbox) = instance::mailbox();
     let instance = match folders.as_ref() {
         Some(found) => {
-            let request = || hand_off(one_run, found);
+            let request = || hand_off(handed, one_run, found);
             let handler = hand_offs(post, found.cache().to_owned(), found.user_data().to_owned());
             match instance::start(
                 found.user_data(),
@@ -696,13 +699,27 @@ fn one_run(domains: &[String], conf: &[String], safe_mode: bool) -> Vec<OsString
     flags
 }
 
+/// This start's command line as it hands it over ([`handed`]): its flags as `flags`
+/// keeps them, `--safe-mode` where given, then its paths, already absolute, from this
+/// start's folder, never the instance's, which would take a drive-relative path on
+/// Windows from its own folder on that drive.
+fn handed(flags: &[OsString], safe_mode: bool, paths: &[PathBuf]) -> Vec<OsString> {
+    let safe = safe_mode.then(|| OsString::from(restart::SAFE_MODE_FLAG));
+    let paths = paths.iter().map(|path| path.clone().into_os_string());
+    flags.iter().cloned().chain(safe).chain(paths).collect()
+}
+
 /// What this start hands an instance already running on its user data folder: its command
-/// line as given, its working folder and activation token, its flags for one run, and the
-/// cache folder its `--cache-dir` names.
-fn hand_off(one_run: Vec<OsString>, folders: &Folders) -> instance::HandOff {
+/// line, `arguments`, its paths absolute ([`handed`]), its working folder and activation
+/// token, its flags for one run, and the cache folder its `--cache-dir` names.
+fn hand_off(
+    arguments: Vec<OsString>,
+    one_run: Vec<OsString>,
+    folders: &Folders,
+) -> instance::HandOff {
     let named = matches!(folders.cache_chosen(), folders::CacheChosen::Flag(_));
     instance::HandOff {
-        arguments: std::env::args_os().skip(1).collect(),
+        arguments,
         folder: std::env::current_dir().unwrap_or_default(),
         token: instance::Token::from_environment(),
         one_run,
@@ -8700,6 +8717,40 @@ mod tests {
             given.paths,
             [folder.join("Trips/IMG_1.ARW"), absolute("/a/IMG_2.CR3")]
         );
+    }
+
+    /// A second start hands over its paths already absolute, from its own folder, with its
+    /// flags, so the instance reads the same command line wherever its own folder is; on
+    /// Windows a drive-relative path is the second start's drive's.
+    #[test]
+    fn a_second_start_hands_over_its_paths_absolute() {
+        let line = [
+            "-d",
+            "gpu",
+            "Trips/IMG_1.ARW",
+            "--safe-mode",
+            "--conf=scale=2",
+        ];
+        let given = read(&line).expect("read");
+        let sent = handed(&given.flags, given.safe_mode, &given.paths);
+        let elsewhere = std::path::absolute("elsewhere").expect("absolute");
+        let taken = arguments_in(sent, Some(&elsewhere)).expect("read");
+        assert_eq!(
+            taken.paths,
+            [std::path::absolute("Trips/IMG_1.ARW").expect("absolute")]
+        );
+        assert_eq!(
+            (taken.domains, taken.conf, taken.safe_mode),
+            (given.domains, given.conf, true)
+        );
+        #[cfg(windows)]
+        {
+            let drive = read(&["C:IMG_1.ARW"]).expect("read");
+            let sent = handed(&drive.flags, drive.safe_mode, &drive.paths);
+            let taken = arguments_in(sent, Some(Path::new(r"D:\elsewhere"))).expect("read");
+            assert_eq!(taken.paths, drive.paths);
+            assert!(taken.paths[0].is_absolute(), "{:?}", taken.paths);
+        }
     }
 
     /// The flags for one run a second start hands over: `--safe-mode`, each domain and each

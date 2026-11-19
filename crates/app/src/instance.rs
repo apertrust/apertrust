@@ -35,8 +35,9 @@
 //!   in a directory that passes the check; any other path is left alone, which
 //!   [`Instance::notes`] says, for stderr.
 //! - **A second start** connects, checks that the server runs as its own user before it
-//!   sends anything, and sends a [`HandOff`]: the format, its arguments as given, its
-//!   working folder, its activation token and its flags for one run. The answer is
+//!   sends anything, and sends a [`HandOff`]: the format, its arguments, its paths made
+//!   absolute, its working folder, its activation token and its flags for one run. The
+//!   answer is
 //!   [`Answer::Taken`] or [`Answer::Refused`] with the reason. Another format is refused,
 //!   saying another version is running. A start that cannot connect while the lock is held
 //!   retries for [`RETRY`], reading the lock file again each time, then gives up.
@@ -124,7 +125,8 @@ impl Token {
 /// What a second start hands the instance.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct HandOff {
-    /// Its command line after the program's name, as given.
+    /// Its command line after the program's name, its paths made absolute from its own
+    /// working folder, so a drive-relative one on Windows is its own drive's.
     pub arguments: Vec<OsString>,
     /// Its working folder, which its relative paths are taken from.
     pub folder: PathBuf,
