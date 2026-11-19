@@ -867,9 +867,9 @@ macOS only: the menu AppKit fills once it is the app's Windows menu.
 Planned (decision 97). Help opens the Apertrust Guide, a website of its own at `guide.apertrust.org`, built from `apertrust/apertrust-guide`, in the system's browser.
 
 - **Topics.** The app names a topic, never a page: a tool's is `tools/<id>`, from its id, with nothing declared (`ToolDefinition::help` overrides it); every other place names its own, `browser`, `viewer`, `workspaces`, `settings/<page>`, `dialogs/<id>`. The Guide's pages claim topics, so a page moves without a change to the app; a topic in a release is never renamed.
-- **The URL:** `{help.url}/{version}/{language}/topic/{topic}/`, the version `X.Y` for a release build and `development` for any other, the language the interface's, `en` for both Englishes.
+- **The URL:** `{help.url}/{version}/{language}/topic/{topic}/` for a topic and `{help.url}/{version}/{language}/` for the start page, the version `X.Y` for a release build and `development` for any other, the language the interface's, `en` for both Englishes.
 - **Where:**
-  - Help, last in every tool's ⋯, after the layout's items, a line before it (`section-help`);
+  - Help, last in every Tools panel tool's ⋯, after the layout's items, a line before it (`section-help`); the Import sheet's tools take none until the sheet is designed again;
   - Apertrust Guide in the Help menu (`guide`);
   - Help last in the browser bar's options and in the Tools panel's ⋮;
   - a Help button at the footer's start in Settings and in a dialog that needs one;
