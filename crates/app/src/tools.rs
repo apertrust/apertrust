@@ -2503,7 +2503,7 @@ fn widen(value: f32) -> f64 {
 }
 
 /// A value a slider reports, rounded to the decimals its row shows and kept in the
-/// control's range: a key step with Alt moves a tenth of a step, and a control set to
+/// control's range: a key step with Ctrl moves a tenth of a step, and a control set to
 /// 0.1 while its row shows "0" would change the image while it reads as untouched.
 fn shown_as(value: f64, decimals: u8, min: f32, max: f32) -> f32 {
     let scale = 10f64.powi(i32::from(decimals));
@@ -3439,9 +3439,9 @@ mod tests {
             .get_by_role_and_label(Role::Slider, "tool-sample-control-brightness-full")
             .focus();
         harness.run();
-        // Alt steps a tenth of 0.01, under the two decimals the row shows: it moves by
+        // Ctrl steps a tenth of 0.01, under the two decimals the row shows: it moves by
         // 0.01, darktable's `min_visible`, rather than by nothing that would show.
-        harness.key_press_modifiers(Modifiers::ALT, Key::ArrowRight);
+        harness.key_press_modifiers(Modifiers::CTRL | Modifiers::COMMAND, Key::ArrowRight);
         harness.run();
         harness.key_press_modifiers(Modifiers::SHIFT, Key::ArrowRight);
         harness.run();
@@ -6957,9 +6957,9 @@ mod tests {
         harness.run();
         harness.key_press_modifiers(Modifiers::SHIFT, Key::ArrowUp);
         harness.run();
-        // Alt's tenth of a step, 0.001 EV, is finer than the two decimals the band's row
+        // Ctrl's tenth of a step, 0.001 EV, is finer than the two decimals the band's row
         // shows, so it moves by the last of them, as a slider row's does.
-        harness.key_press_modifiers(Modifiers::ALT, Key::ArrowDown);
+        harness.key_press_modifiers(Modifiers::CTRL | Modifiers::COMMAND, Key::ArrowDown);
         harness.run();
         assert_eq!(
             bands_set(&harness.state().changes),

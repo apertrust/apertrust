@@ -312,7 +312,7 @@ A first-pass tool's sliders are darktable's (rule 3, decision 30). Each tool's p
 - **The step:** what a key moves.
   - At rest, for a slider given none, as every float from params is, `dt_bauhaus_slider_get_step`: 1 in the parameter's units where the soft range's top reaches 100, else a hundredth of it in the units shown, taken to the power of ten at or just below it (within a tenth of a decade above), times 5 where it lies more than half a decade above that power: 0.04 EV gives 0.05, 0.2 % gives 0.1 %.
   - Once the track widens, the step is darktable's for the span shown, as its zoom step (`bauhaus/zoom_step`, on by default) makes it, never less than the step at rest.
-  - A key's move, Alt's tenth included, is never less than the last decimal shown, darktable's `min_visible`. A drag or a typed value rounds to the decimals shown instead, as darktable's `_slider_set_normalized` rounds to its digits.
+  - A key's move, Ctrl's tenth included (Option's on the Mac), is never less than the last decimal shown, darktable's `min_visible`. A drag or a typed value rounds to the decimals shown instead, as darktable's `_slider_set_normalized` rounds to its digits.
   - A whole number from params, an int, steps by the 1 `dt_bauhaus_slider_from_params` gives it (`testing::DarktableSlider::whole`), as the tone equalizer's Filter diffusion does.
 
 ## Test images

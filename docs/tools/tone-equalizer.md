@@ -118,7 +118,7 @@ Q4 in detail: the parameters bound are the cases' bit for bit, curve smoothing's
 - **Masking:** Luminance estimator and Preserve details are dropdowns with every darktable option, the two guided filters drawn disabled; Filter diffusion, Smoothing diameter, Edges refinement/feathering and Mask quantisation follow Preserve details at once, hidden while it is No, as darktable hides them.
 - **Advanced:** darktable's graph of the bands first ([below](#the-bands-graph)), then Mask contrast compensation, which follows Preserve details from the Masking tab: shown with EIGF and hidden with No or Averaged EIGF, as darktable's is.
 - **Tracks** span darktable's soft ranges, and widen to show a value typed or scripted beyond one, as darktable's do, until the row is reset.
-- **Keyboard:** every slider row is a `SliderRow`, stepping by darktable's step, Shift ten steps and Alt a tenth, the value rounded to the decimals shown before it is sent.
+- **Keyboard:** every slider row is a `SliderRow`, stepping by darktable's step, Shift ten steps and Ctrl a tenth, Option on the Mac, the value rounded to the decimals shown before it is sent.
 - **While closed** the section shows its title and buttons; its presets and options are drawn disabled until something is behind them.
 
 ### The bands' graph
@@ -144,7 +144,7 @@ Every change while the pointer moves sets the bands whose value, rounded to the 
 **By keyboard** the graph is one focus stop:
 
 - Page Up and Page Down choose a band, Home and End the first and the last.
-- The arrows move it by 0.01 EV: Shift ten, Alt a tenth, but never less than the 0.01 EV its slider shows, as a slider row's keys.
+- The arrows move it by 0.01 EV: Shift ten, Ctrl a tenth (Option on the Mac), but never less than the 0.01 EV its slider shows, as a slider row's keys.
 - Delete resets it and Shift+Delete all nine, as one `Step`.
 - Each band is a slider for screen readers, named as its own slider is.
 

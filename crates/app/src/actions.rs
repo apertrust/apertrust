@@ -2022,7 +2022,9 @@ impl Focus {
     }
 
     /// Whether the focused widget keeps `key` for itself: the widget scope, narrower than
-    /// any action's.
+    /// any action's. A control keeps the arrows with Ctrl on Windows and Linux too, a
+    /// slider's, the curve's and the equalizer's tenth of a step, never with the Mac's Cmd;
+    /// on the Mac that tenth is Option's, which no shortcut of a control's keys takes.
     pub fn keeps(self, key: Key, modifiers: Modifiers) -> bool {
         // Insert and + add a point to a focused curve.
         const CONTROL: [Key; 16] = [
@@ -2062,8 +2064,15 @@ impl Focus {
             Key::Delete,
         ];
         let command = modifiers.ctrl || modifiers.command || modifiers.mac_cmd;
+        let arrow = matches!(
+            key,
+            Key::ArrowLeft | Key::ArrowRight | Key::ArrowUp | Key::ArrowDown
+        );
+        // Ctrl on Windows and Linux is egui's command without the Mac's Cmd.
+        let finer = modifiers.command && !modifiers.mac_cmd;
         match self {
             Focus::None => false,
+            Focus::Control if arrow && finer => true,
             Focus::Control => !command && CONTROL.contains(&key),
             Focus::Text if command => TEXT.contains(&key),
             // F6 and F11 still work while typing.
@@ -3084,6 +3093,29 @@ pub(crate) mod tests {
         assert!(!Focus::Text.keeps(Key::F6, Modifiers::NONE));
         assert!(!Focus::Text.keeps(Key::F11, Modifiers::NONE));
         assert!(!Focus::None.keeps(Key::ArrowLeft, Modifiers::NONE));
+    }
+
+    /// A focused control keeps the arrows with Ctrl on Windows and Linux, its tenth of a
+    /// step, Shift with it too, but no other key with Ctrl and no arrow with the Mac's Cmd
+    /// or Control.
+    #[test]
+    fn a_focused_control_keeps_the_arrows_with_ctrl_for_their_tenth() {
+        let ctrl = Modifiers::CTRL | Modifiers::COMMAND;
+        for key in [
+            Key::ArrowLeft,
+            Key::ArrowRight,
+            Key::ArrowUp,
+            Key::ArrowDown,
+        ] {
+            assert!(Focus::Control.keeps(key, ctrl));
+            assert!(Focus::Control.keeps(key, ctrl | Modifiers::SHIFT));
+            assert!(Focus::Control.keeps(key, Modifiers::ALT));
+            assert!(!Focus::Control.keeps(key, Modifiers::MAC_CMD | Modifiers::COMMAND));
+            assert!(!Focus::Control.keeps(key, Modifiers::CTRL));
+            assert!(!Focus::None.keeps(key, ctrl));
+        }
+        assert!(!Focus::Control.keeps(Key::Home, ctrl));
+        assert!(!Focus::Control.keeps(Key::PageUp, ctrl));
     }
 
     #[test]

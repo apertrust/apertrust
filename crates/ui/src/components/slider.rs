@@ -52,15 +52,15 @@
 //! history can merge a drag into one step. A dragged or typed value is rounded to the
 //! decimals shown, as darktable rounds it to its digits; the step is what a key moves,
 //! growing with the track's span as darktable's does, and never less than the last decimal
-//! shown. Arrow keys step (Shift ten steps, Alt a tenth), Home and End go to the track's
-//! ends, Delete or a double-click on the label or the track resets, and Enter opens the
-//! value field until darktable's popup comes (planned: decision 42; `docs/gui.md`, The
-//! slider popup). A row given a [`Wheel`] takes the scroll wheel as darktable's slider
-//! does, a notch a key's step, each sent done as a key's is, and takes the focus with it
-//! ([`super::wheel`]). Tab goes through the row as it reads: the marker, the quad, the
-//! value field while it is open, then the track. Screen readers hear the value as it is
-//! drawn, with its unit, and are told the range a value may hold, which a value they set
-//! may reach, and step inside the track's span, as the keys do.
+//! shown. Arrow keys step (Shift ten steps, Ctrl a tenth, Option on the Mac), Home and End
+//! go to the track's ends, Delete or a double-click on the label or the track resets, and
+//! Enter opens the value field until darktable's popup comes (planned: decision 42;
+//! `docs/gui.md`, The slider popup). A row given a [`Wheel`] takes the scroll wheel as
+//! darktable's slider does, a notch a key's step, each sent done as a key's is, and takes
+//! the focus with it ([`super::wheel`]). Tab goes through the row as it reads: the marker,
+//! the quad, the value field while it is open, then the track. Screen readers hear the
+//! value as it is drawn, with its unit, and are told the range a value may hold, which a
+//! value they set may reach, and step inside the track's span, as the keys do.
 
 use std::ops::RangeInclusive;
 
@@ -73,7 +73,7 @@ use egui::{
 };
 
 use super::value_field::number_char;
-use super::wheel::notches;
+use super::wheel::{key_scale, notches};
 use super::{
     ButtonState, IconButton, PickerAction, PickerButton, ValueField, Wheel, field_inset,
     focus_ring, focus_ring_centred, marker, paint_keep_marker, truncated,
@@ -364,7 +364,7 @@ impl<'a> SliderRow<'a> {
         // What a key moves, as darktable's `dt_bauhaus_slider_get_step` with its zoom step
         // on: the step given while the track spans its rest, and once it widens darktable's
         // step for the span shown, never less. A move is never less than the last decimal
-        // shown, darktable's `min_visible`, so Alt's tenth of a step still moves.
+        // shown, darktable's `min_visible`, so a tenth of a step still moves.
         let step = if self.step > 0.0 && (low, high) == rest {
             self.step
         } else {
@@ -426,14 +426,12 @@ impl<'a> SliderRow<'a> {
                         },
                     );
                 });
+                let os = ui.ctx().os();
                 let keyed = ui.input(|i| {
-                    let scale = if i.modifiers.shift {
-                        10.0
-                    } else if i.modifiers.alt {
-                        0.1
-                    } else {
-                        1.0
-                    };
+                    // Keys with a modifier of the app's are the app's, and so are Page Up
+                    // and Page Down with Ctrl: only the arrows take its tenth.
+                    let scale = key_scale(os, i.modifiers).unwrap_or(0.0);
+                    let command = i.modifiers.command || i.modifiers.ctrl;
                     let mut delta = 0.0;
                     for (key, sign) in [
                         (Key::ArrowRight, 1.0),
@@ -443,7 +441,8 @@ impl<'a> SliderRow<'a> {
                         (Key::PageUp, 10.0),
                         (Key::PageDown, -10.0),
                     ] {
-                        if i.key_pressed(key) {
+                        let page = matches!(key, Key::PageUp | Key::PageDown);
+                        if i.key_pressed(key) && !(page && command) {
                             delta += sign * scale * step;
                         }
                     }

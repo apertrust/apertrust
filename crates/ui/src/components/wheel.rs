@@ -14,9 +14,9 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! The scroll wheel over a row (`docs/gui.md`, The scroll wheel over a row), as
-//! darktable's bauhaus widgets take it (`_widget_scroll`, `_slider_add_step`,
-//! `dt_gui_ignore_scroll`).
+//! The scroll wheel over a row and the keys' fine step (`docs/gui.md`, The scroll wheel
+//! over a row), as darktable's bauhaus widgets take them (`_widget_scroll`,
+//! `_slider_add_step`, `dt_gui_ignore_scroll`).
 //!
 //! - **Mouse wheel scrolls the Tools panel**, on by default ([`set_wheel_scrolls_panel`]):
 //!   a plain scroll scrolls the panel, and only with the finer modifier, Ctrl or Option on
@@ -72,6 +72,26 @@ pub(crate) fn finer(os: OperatingSystem, m: Modifiers) -> bool {
         m.alt
     } else {
         m.ctrl || m.command
+    }
+}
+
+/// What a key's step is multiplied by with `m` held, darktable's multipliers: Shift ten,
+/// the finer modifier a tenth ([`finer`]), else one. None where `m` leaves the key to the
+/// app: Cmd or Ctrl on the Mac, Alt elsewhere.
+pub(crate) fn key_scale(os: OperatingSystem, m: Modifiers) -> Option<f64> {
+    let app = if os == OperatingSystem::Mac {
+        m.command || m.mac_cmd || m.ctrl
+    } else {
+        m.alt || m.mac_cmd
+    };
+    if app {
+        None
+    } else if m.shift {
+        Some(10.0)
+    } else if finer(os, m) {
+        Some(0.1)
+    } else {
+        Some(1.0)
     }
 }
 
@@ -224,7 +244,7 @@ mod tests {
     use egui::os::OperatingSystem;
     use egui::{Modifiers, MouseWheelUnit, vec2};
 
-    use super::{finer, in_notches};
+    use super::{finer, in_notches, key_scale};
 
     const MAC: OperatingSystem = OperatingSystem::Mac;
     const NIX: OperatingSystem = OperatingSystem::Nix;
@@ -236,6 +256,23 @@ mod tests {
         assert!(!finer(MAC, Modifiers::MAC_CMD | Modifiers::COMMAND));
         assert!(finer(NIX, Modifiers::CTRL | Modifiers::COMMAND));
         assert!(!finer(NIX, Modifiers::ALT));
+    }
+
+    #[test]
+    fn a_key_s_step_is_ten_with_shift_and_a_tenth_with_the_finer_modifier() {
+        let ctrl = Modifiers::CTRL | Modifiers::COMMAND;
+        assert_eq!(key_scale(NIX, Modifiers::NONE), Some(1.0));
+        assert_eq!(key_scale(NIX, Modifiers::SHIFT), Some(10.0));
+        assert_eq!(key_scale(NIX, ctrl), Some(0.1));
+        assert_eq!(key_scale(NIX, ctrl | Modifiers::SHIFT), Some(10.0));
+        // Alt is the app's on Windows and Linux, as Cmd and Ctrl are on the Mac.
+        assert_eq!(key_scale(NIX, Modifiers::ALT), None);
+        assert_eq!(key_scale(MAC, Modifiers::ALT), Some(0.1));
+        assert_eq!(
+            key_scale(MAC, Modifiers::MAC_CMD | Modifiers::COMMAND),
+            None
+        );
+        assert_eq!(key_scale(MAC, Modifiers::CTRL), None);
     }
 
     #[test]

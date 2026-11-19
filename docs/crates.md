@@ -866,7 +866,7 @@ In `crates/ui/src/components`. Each reports its role, full name and value to Acc
 **`SliderRow`**, in two lines, the track under the label and the value:
 
 - The track spans darktable's soft range when given (`soft_range`), and widens to show a value beyond it until reset.
-- A dragged or typed value is rounded to the decimals shown. A key's step grows with a widened span and is never under the last decimal shown.
+- A dragged or typed value is rounded to the decimals shown. A key's step grows with a widened span and is never under the last decimal shown; the arrows move a step, ten with Shift and a tenth with Ctrl, Option on the Mac, and with Alt on Windows and Linux, or Cmd or Ctrl on the Mac, leave it to the app (`wheel::key_scale`).
 - At rest the value is read-only, with its unit as darktable's `dt_bauhaus_slider_get_text` writes it, signed while the range spans zero, zero as "+0.00" (`format_number`'s signed zero). It is 12 points and never cut; the label is cut instead.
 - Under the pointer: the hover band and an I-beam.
 - A click on the value, a digit, a minus sign or the separator typed on the track, or Enter, opens `ValueField` in its place, the number selected, as wide as it needs (`ValueField::width`).
@@ -983,14 +983,14 @@ In `crates/ui/src/components`. Each reports its role, full name and value to Acc
 **`Curve`:** points on a square plot through a curve the caller samples, black and white handles as `levels` or as the curve's `ends`, a histogram, display axes.
 
 - To AccessKit, a list of the points, each named with its input and output, and sliders for the handles.
-- Page Up and Page Down choose points, the arrows move them, Insert or + adds, Delete removes, Shift+Delete resets.
+- Page Up and Page Down choose points, the arrows move them, a tenth with Ctrl (Option on the Mac), Insert or + adds, Delete removes, Shift+Delete resets.
 - Its open choices are in [docs/gui.md](gui.md), The curve.
 
 **`Equalizer`:** darktable's tone equalizer graph of its bands, in the theme's tokens.
 
 - −8 to +0 EV across, ±2 EV down; the tone bars; the curve the caller samples, in `warning` where no curve fits; the bands' bars and ring nodes.
 - A drag moves the bands around the pointer by darktable's falloff, settling them as the caller says, with a ring of the drag's reach under the pointer. A double-click resets them.
-- Page Up and Page Down choose a band, the arrows move it, Delete and Shift+Delete reset.
+- Page Up and Page Down choose a band, the arrows move it, a tenth with Ctrl (Option on the Mac), Delete and Shift+Delete reset.
 - To AccessKit, a group of sliders, one per band, described by where the mask overflows them.
 - The mask's histogram is `MaskHistogram` (bins, their EV range, the 5th and 95th percentiles), drawn in `graph_histogram` with darktable's warning signs; `None` until the engine measures it (decision 19).
 - Its open choices are in [docs/gui.md](gui.md), The equalizer.

@@ -586,7 +586,7 @@ One menu button, ☰, at the very start of the Toolbar, before the mark (decisio
   - On the Mac the native menu carries each placed action's keys, from the keymap, as its key equivalents, and its events run the registry's actions. AppKit matches those keys by its own rules before the window sees them, so for them its matching takes the place of the registry's.
   - Windows and Linux have no native accelerators: the registry reads every key, and the drawn menus only show them.
   - While a drawn popup is open it takes the plain keys and typed text first, before the registry reads them (decision 40): every press without Ctrl, Cmd or Alt but the F-keys, so a letter typed to find an item never runs an action. F-keys and keys with a modifier stay the registry's.
-  - The slider popup takes Alt with the arrows, Page Up, Page Down, Home and End, and the clipboard's Paste, too. Any other key with Ctrl, Cmd or Alt, or an F-key, closes it, putting the value back, and then runs (decision 42).
+  - The slider popup takes the arrows with Ctrl, Option on the Mac, Page Up, Page Down, Home and End, and the clipboard's Paste, too. Any other key with Ctrl, Cmd or Alt, or an F-key, closes it, putting the value back, and then runs (decision 42).
 - **The focused widget keeps its keys, menus or not.** While a widget has focus, the native menu holds no key equivalent that `Focus::keeps` gives that widget: a text field every plain key, and Cmd with A, C, V, X, Z, Y, the arrows, Home, End, Backspace and Delete; a slider or a button its arrows, Space, Enter and the rest. This holds whichever comes first in AppKit, the menu or the view. The editing actions are the exception, below.
 - **The editing actions act on what has focus,** as the Mac's Edit menu does.
   - Undo, Redo, Cut, Copy, Paste and Select All keep their keys while a text field has focus and act on the field: egui's `RequestCut`, `RequestCopy` and `RequestPaste`, and Cmd+Z, Shift+Cmd+Z and Cmd+A added to the next frame's input through `raw_input_hook`.
@@ -959,7 +959,7 @@ The menus open from one menu button, ☰, at the very start of the Toolbar, befo
 - A menu shows an action's first key for the platform, as its tooltip does, and follows a change in Settings at once.
 - Showing a key never takes it from a narrower scope: with a button focused, Space presses the button and not Next Photo; in a value field, Ctrl+Z undoes typing. On the Mac the native menu holds no key the focused widget keeps; on Windows and Linux the registry reads every key and the menus only show them.
 - Keys kept from actions (decision 39): on the Mac Cmd+H, Option+Cmd+H and Cmd+M, which the system's items hold, and Shift+Cmd+/ (the Help search), Ctrl+Cmd+Space (Emoji & Symbols) and Cmd+\`, which macOS acts on; on Windows and Linux F10, which opens the ☰'s menu, Alt with a letter, which opens it with the top-level menu of that access key expanded (decision 39), and Alt+F4 and Alt+Space, which the system acts on.
-- On Windows, Alt pressed and released with nothing else opens the ☰'s menu, as F10 does, where Windows would focus a menu bar's first title; Alt with an arrow, a slider's tenth of a step, never does.
+- On Windows, Alt pressed and released with nothing else opens the ☰'s menu, as F10 does, where Windows would focus a menu bar's first title; Alt held with another key never does this: Alt with a menu title's letter is that menu's access key, as Alt+F opens File, and Alt with any other key, as a header's Alt+↑, opens nothing.
 - macOS's menus draw keys with its glyphs in the system font, so they differ from the tooltips' words, which IBM Plex Sans needs. The menus look as every Mac menu does; the tooltips stay readable.
 
 **Feedback, undo and focus.** An item gives the feedback its button or key gives, and is undone as they are: Reset Edit is a history step once history exists, and a batch (a rating or Apply Edit on several photos) is one change, which one Undo takes back. The viewer bar's toggles, the layouts and the workspaces change only what is shown and are not steps. A menu never waits for the engine: Undo's step and every enabled state come from the session mirror. When a menu closes, focus returns to the control that had it.
@@ -3468,7 +3468,7 @@ Compact rows, from the wireframe's ModulePanel board, with darktable's sliders t
   - **A range that follows other controls,** as AgX's pivot spans black to white relative exposure: the range, the soft range and the step are those the session reports for the tool's values (`ControlState::range`, decision 30). When the reported soft range moves, the span starts again from it, widened just enough to show the value, as darktable's `dt_bauhaus_slider_set_soft_min` resets its visible range, and a value the moved range leaves outside comes back clamped, as the session stores it.
   - **A value beyond the soft range,** typed, pasted, set by a script, a preset or an edit, reaches the range, and the track widens just enough to show it, its handle at the end, as darktable's `dt_bauhaus_slider_set` does. It keeps that span, as darktable's visible range, until the row is reset (a double-click, Delete), when it goes back to the soft range, as `dt_bauhaus_widget_reset` does. The span is the row's state in egui's memory, never in the edit.
   - **Within the span:** a drag, a click and the keys stay inside the span the track shows, Home and End at its ends, as darktable's popup and shortcuts take them to its visible range.
-  - **Rounding and steps.** A dragged or typed value is rounded to the decimals shown, as darktable's `_slider_set_normalized` rounds to its digits; the step is a key's alone. The step is darktable's at rest and, once the track widens, darktable's for the span shown, as its zoom step (on by default) makes it, never less than the step at rest. A key's move, Alt's tenth included, is never less than the last decimal shown, darktable's `min_visible`. In the units shown the step is darktable's exactly but for a slider with an offset, RGB primaries' purities, whose top darktable measures in its parameter's units.
+  - **Rounding and steps.** A dragged or typed value is rounded to the decimals shown, as darktable's `_slider_set_normalized` rounds to its digits; the step is a key's alone. The step is darktable's at rest and, once the track widens, darktable's for the span shown, as its zoom step (on by default) makes it, never less than the step at rest. A key's move, Ctrl's tenth included, is never less than the last decimal shown, darktable's `min_visible`. In the units shown the step is darktable's exactly but for a slider with an offset, RGB primaries' purities, whose top darktable measures in its parameter's units.
   - **Screen readers** are told the control's range as the value's limits, since a value they set may reach it as a typed one may, and Increment and Decrement step inside the track's span as the keys do.
   - **Focused by the keyboard,** the row shows the focus ring round all of it, centred on its edge and 4 points beyond the content at its start and end, as far as a dropdown row's hover band, so it runs into neither the top line nor the next row.
 - **Every one-line row in a tool panel is 24 points** (`sizes.panel_line`): the Blended dropdown row and the preset row, the boolean's row, the action row, the button row, a computed value's row, a tool's setting, and a collapsible group's row, with their text centred, so stacked choices read as separate rows, as darktable's do beside its sliders. `sizes.row` (26) stays for popups, text fields, segments and the dialogs, and the sheets' rows are a tool's (decision 86, planned), and a Boxed dropdown row stays 20. The slider row is 37.
@@ -3619,7 +3619,7 @@ Over a section's header, its chevron, title and empty space, never its buttons, 
   - `ApplyPreset`, which it sends as `ApplyPreset` and shows once the session reports it, since the option's values are the photo's;
   - `Picker`, a picker's button pressed, which it sends as `Command::Picker` and shows at once, the picker on or off ([pickers.md](pickers.md#the-picker-button));
   - `Toggle`, `Tab` and `Group`, which change the app's own state after the section is drawn.
-- **Values are what the row shows:** a definition's 0.01 is f32's 0.0099999998, so the renderer widens each f32 to the decimal it was written as before the slider steps and clamps in f64, and a key step lands on +2.00, not on +1.9999999. A value is then rounded to the row's decimals before it is sent, so nothing finer than the row shows is ever set: a Contrast of 0.1 would run colour balance rgb while its row read "0". A key's move is never less than that last decimal (darktable's `min_visible`), so Alt's tenth of a step still moves where the step is the last decimal, as on Global offset chroma.
+- **Values are what the row shows:** a definition's 0.01 is f32's 0.0099999998, so the renderer widens each f32 to the decimal it was written as before the slider steps and clamps in f64, and a key step lands on +2.00, not on +1.9999999. A value is then rounded to the row's decimals before it is sent, so nothing finer than the row shows is ever set: a Contrast of 0.1 would run colour balance rgb while its row read "0". A key's move is never less than that last decimal (darktable's `min_visible`), so Ctrl's tenth of a step still moves where the step is the last decimal, as on Global offset chroma.
 - **Which tools a tab shows** is the workspace's: the Default workspace's lists are `data/workspaces/default.toml`'s, in [tools/README.md](tools/README.md)'s order (decision 38; [The tabs](#the-tabs-by-editing-stage)), and the layout shown is worked out from them and the workspace's file in the user data folder, if any, as it is read (`crates/app/src/layout.rs`; decisions 83 and 96). The Tools panel draws the tab shown's tools by id, the pinned over the band (`panel_body`). History has a tab of its own only as the Default workspace places it: alone in a tab, wherever that is, it keeps its header at the top and scrolls its end into sight as it moves; beside other tools it is a section as any, which never scrolls the tab.
   - **Built:** the Default workspace's tabs by editing stage, each list in editing order, Raw's in processing order; a test holds the file's lists as decision 38 records them, for the tools built, each tool in exactly one of its tabs, Scopes in the five it pins it in:
     - Adjust: White balance, Colour calibration, Exposure, AgX (the edit's tone mapper), the Tone equalizer, Haze removal, the Tone curve (RGB curve's place), Colour balance RGB and RGB primaries;
@@ -3637,7 +3637,7 @@ None of these blocks a tool built so far:
 
 - **A row's own buttons** are only its quad, with no Auto of its own yet.
 - **Slider values** (decision 42, [their cards](#slider-values-the-build-in-cards)): the value with its unit at rest and the number-only field are built. Dropping one trailing unit of the closed list and darktable's expressions wait until there is a need.
-- **darktable's other ways past a soft range than typing:** its fine-tuning popup, its zoom and the middle click come with decision 42's cards. A drag with Ctrl+Shift stepping beyond it still needs a decision, and so does a scroll, whose Ctrl+Shift moves ten steps inside the span here ([The scroll wheel over a row](#the-scroll-wheel-over-a-row)); a typed value, a script and a preset already reach the range. darktable wraps a hue typed past ±180° onto the turn; Apertrust clamps it (`docs/tools/rgb-primaries.md`, Gaps).
+- **darktable's other ways past a soft range than typing:** its fine-tuning popup, its zoom and the middle click come with decision 42's cards. A drag with Ctrl+Shift stepping beyond it still needs a decision, and so does a scroll, whose Ctrl+Shift (Option+Shift on the Mac) moves ten steps inside the span here ([The scroll wheel over a row](#the-scroll-wheel-over-a-row)); a typed value, a script and a preset already reach the range. darktable wraps a hue typed past ±180° onto the turn; Apertrust clamps it (`docs/tools/rgb-primaries.md`, Gaps).
 - **How a widened track looks,** which Colour calibration's temperature row needs first (its track over 3000 to 7000 K, its range 1667 to 25000). darktable draws the parts of a widened track outside the soft range in its insensitive colour (`_draw_baseline`), so the soft range stays visible within the span shown, where Apertrust draws the whole span alike. darktable also remaps a gradient track's stops onto the visible range, from positions over the hard range, where `Track::Gradient` places its stops along the track whatever it spans, so a colour band over a soft range or a widened span would show the wrong colours at each value.
 - **Track shapes.** `SliderRow` maps the track linearly, as darktable's sliders do. `Track` has temperature, tint and hue, but not the saturation and luminance bands the definition offers; the renderer draws those plain.
 - **Markers and resets.** `Choice`'s Blended style has the kept marker; a choice's reset (darktable's quick second click), and `Segmented`'s and the toggle's marker and reset, remain. Only `Choice` has a quad, which a choice with a picker needs.
@@ -3745,7 +3745,7 @@ darktable's fine control, nothing removed (`_popup_show`, `_popup_draw`, `_windo
 | --- | --- |
 | Enter | Sets the typed number, rounded to the row's decimals and clamped to its range; with nothing typed, or with no digit, a sign or a separator alone, keeps the current value; closes. Once the expressions come, the result through the calculator, and one that is no value keeping it open, the text in `error` with "Not a value. Correct it, or press Esc." (deviation 5) |
 | Esc | Puts back the value it opened with; closes |
-| ↑, →, Page Up | One step up, live; Shift ten steps, Alt a tenth (darktable's Ctrl, which stays the app's: deviation 8) |
+| ↑, →, Page Up | One step up, live; with an arrow, Shift ten steps and Ctrl a tenth, Option on the Mac, as darktable's; Page Up with Ctrl stays the app's |
 | ↓, ←, Page Down | One step down, live, likewise |
 | Home, End | The ends of the span shown |
 | Backspace, Delete | Remove the last typed character |
@@ -3760,7 +3760,7 @@ darktable's fine control, nothing removed (`_popup_show`, `_popup_draw`, `_windo
   - Without a gradient it has ticks, labelled 0°, −90°, 90° and 180°.
   - The wheel does nothing over it (deviation 15).
 - **darktable's settings that touch it,** `bauhaus/zoom_step` and `bauhaus/color_wheel` (both on) and the step multipliers (1, 10 and 0.1): Apertrust follows the defaults and adds no setting. darktable has no setting for the popup's size.
-- **Screen readers:** a SpinButton named by the control's full name with its unit, its numeric value, the value text and the range, described by its keys ("Move the pointer down for finer steps. Type a value. The arrows step, with Shift ten steps and Alt a tenth. Enter sets it, Esc puts it back.", `slider-popup-keys`, which says "Type a value or an expression; x is the value now." once the expressions come). A polite live region announces each step; the focus goes back to the slider when it closes. Everything works by key but the pointer's precision, which typing and Alt's tenth replace; the zoom has no key, as in darktable.
+- **Screen readers:** a SpinButton named by the control's full name with its unit, its numeric value, the value text and the range, described by its keys ("Move the pointer down for finer steps. Type a value. The arrows step, with Shift ten steps and Ctrl a tenth. Enter sets it, Esc puts it back.", Option in place of Ctrl on the Mac, `slider-popup-keys`, which says "Type a value or an expression; x is the value now." once the expressions come). A polite live region announces each step; the focus goes back to the slider when it closes. Everything works by key but the pointer's precision, which typing and the arrows' tenth replace; the zoom has no key, as in darktable.
 
 ### Choice rows: two styles
 
@@ -3820,7 +3820,7 @@ Each is drawn by `SliderRow`, so they need nothing of their own.
 A slider row or a choice row in the Tools panel takes the mouse wheel as darktable's bauhaus widgets do (`_widget_scroll`), by the setting **Mouse wheel scrolls the Tools panel**, `tools_panel.wheel_scrolls_panel`, in Settings › Editing's Tools panel group, on by default. Built: `apertrust_ui::components::wheel`, a row taking it where it is given a `Wheel`.
 
 - **On:** a plain scroll scrolls the Tools panel and never changes a row. **Ctrl+scroll** over a slider changes it by its step, ten steps with Shift too, and over a choice row steps its options, as darktable's wheel does a combobox's. darktable's modifier here is Ctrl+Alt; Apertrust's is Ctrl alone, since Linux desktops' window managers take Alt with the mouse.
-- **Off,** darktable's default (`darkroom/ui/sidebar_scroll_default`, "mouse wheel scrolls modules side panel by default"): the wheel over a slider or a choice row changes it, one step a notch, ten with **Shift** and a tenth with **Ctrl**, as darktable's; anywhere else in the panel it scrolls the panel.
+- **Off,** darktable's default (`darkroom/ui/sidebar_scroll_default`, "mouse wheel scrolls modules side panel by default"): the wheel over a slider changes it, one step a notch, ten with **Shift** and a tenth with **Ctrl** (**Option** on the Mac), as darktable's, and over a choice row it steps one option a notch, whatever is held; anywhere else in the panel it scrolls the panel.
 - **On the Mac** Option takes Ctrl's place in both, Ctrl+scroll being the system's screen zoom, as it does with the arrows ([Keyboard and actions](#keyboard-and-actions)).
 - **On by default is a deviation** from darktable (decision 2): a new user's scroll down a long panel would otherwise change every slider passing under the pointer.
 - **Either way:**
@@ -3852,7 +3852,6 @@ Nothing new but the cancel. The client evaluates what is typed and sends numbers
 | 5 | An expression that is no value keeps the field or the popup open and marked; darktable closes and keeps the old value. Waits with the expressions: taking a number only, each puts the value back on no number, with no mark |
 | 6 | Esc restores exactly the value the popup opened with, even after a zoom; darktable restores the normalised position |
 | 7 | Opened from the keyboard, the popup sits over its row, and the pointer cancels it only after entering it |
-| 8 | A tenth of a step is Alt, not Ctrl |
 | 9 | An app key (Ctrl or Cmd, the F-keys) closes the popup, putting the value back, then runs |
 | 10 | Near the window's bottom the popup moves up to stay whole |
 | 11 | Paste works in the field and the popup, a number taken whole or nothing |
@@ -3863,7 +3862,7 @@ Nothing new but the cancel. The client evaluates what is typed and sends numbers
 | 16 | The value's tooltip always says how to type and fine-tune; darktable hints only at the track's ends |
 | 17 | U+2212 and CLDR digits; hues typed past ±180° clamp, where darktable wraps them; a disabled slider shows its dimmed value |
 
-Number 2 is not used.
+Numbers 2 and 8 are not used.
 
 ### The choice rows' deviations from darktable
 
@@ -3888,7 +3887,7 @@ Against darktable's combobox and the wireframe's `Controls` and `ModulePanel` bo
 ### Slider values: still open
 
 - **A choice row's reset,** darktable's quick second click, and the marker and reset of `Segmented` and the toggle ([what the renderer still lacks](#what-the-renderer-still-lacks)).
-- **Ctrl+Shift's steps past the soft range,** darktable's on a drag or a scroll: a scroll's Ctrl+Shift moves ten steps inside the span here, and a drag's has no meaning yet.
+- **Ctrl+Shift's steps past the soft range,** darktable's on a drag or a scroll: a scroll's Ctrl+Shift (Option+Shift on the Mac) moves ten steps inside the span here, and a drag's has no meaning yet.
 - **Two choices to confirm on the wireframe:** the field's width growing towards the label, and leaving the field with no value putting the value back.
 
 ### Slider values: the build, in cards
@@ -3896,7 +3895,7 @@ Against darktable's combobox and the wireframe's `Controls` and `ModulePanel` bo
 Each card one deliverable, reviewed before the next, one after another, since each touches the popup's files, `slider.rs`, the renderer and the gallery, whose snapshots photograph every component. Cards 1 to 6 and 11 are built (the value at rest, the calculator, the number field, the session's cancel, the Blended style, the drawn dropdown, the marker's shapes and ends) and described above. What is left:
 
 - **7. The popup's pointer and its cancel.** A new `crates/ui/src/popup/slider.rs` with `Kind::Slider` in `popup.rs`: its request and answers, the geometry, the fan, the pick-up rule, the precision curve, the press and the release, the 50 and 400 point tolerances, a press outside and a right-click inside. `slider.rs`: opening on a right-click, a Control-click on the Mac, Enter, Shift+F10, the Menu key and ShowContextMenu, Enter no longer opening the field; `SliderAction::Cancel`. `crates/app/src/actions.rs`: Shift+F10 and the Menu key kept by a focused slider. `crates/app/src/tools.rs` and `main.rs`: `Change::Cancel` sent as `CancelGesture`, the pending display showing the tool as reported when the gesture began. Tests in a new `crates/ui/tests/slider_popup.rs` and the app's. Out of scope: typing and the keys inside (card 8), the zoom (card 9), the colour wheel (card 10).
-- **8. The popup's keys, typing and screen readers.** `popup/slider.rs`: the key table, the typed number drawn large, taking what the value field takes (`value_field.rs`'s `number_char` and `takes`, shared), the cursor, Paste taken whole or not at all, Enter setting the number, or the current value with no digit typed; the plugin giving the popup Alt with the arrows and Paste, and an app key cancelling it before it runs; the SpinButton, its description and the live region. The locales: `slider-popup-keys`, saying "Type a value." Out of scope: the zoom; darktable's characters, Enter through the calculator and the error text, which wait with the expressions.
+- **8. The popup's keys, typing and screen readers.** `popup/slider.rs`: the key table, the typed number drawn large, taking what the value field takes (`value_field.rs`'s `number_char` and `takes`, shared), the cursor, Paste taken whole or not at all, Enter setting the number, or the current value with no digit typed; the plugin giving the popup the arrows with Ctrl, Option on the Mac, and Paste, and an app key cancelling it before it runs; the SpinButton, its description and the live region. The locales: `slider-popup-keys`, saying "Type a value." Out of scope: the zoom; darktable's characters, Enter through the calculator and the error text, which wait with the expressions.
 - **9. The zoom and the middle click.** `popup/slider.rs`: the wheel's √2 zoom and the wait for the line; `slider.rs`: the row keeping a zoomed span narrower than the soft range until reset, the middle click on the row and in the popup. Out of scope: Ctrl+Shift's steps.
 - **10. The colour wheel.** `popup/slider.rs`: darktable's wheel for a ° slider whose span shown is 360°, its angles, the inner quarter, the ticks without a gradient, the wheel's notches ignored over it.
 
@@ -3922,8 +3921,8 @@ The widgets drawn with egui's painter rather than built from other components. E
   - Dragging a point moves it between its neighbours, and never makes it jump to the pointer.
   - A double-click on a point removes it. Dragging a point off the plot does not: the plot clamps it.
 - **Keys** (the table under [Keyboard and actions](#keyboard-and-actions)):
-  - Page Up and Page Down, Home and End choose points; the arrows move the chosen point, a hundredth of the plot, Shift ten, Alt a tenth (0.001), as the slider row, unless a tool sets another step.
-  - Insert or + adds, Delete removes, Shift+Delete resets the curve, removing every point as Delete removes one; Ctrl is left to the app.
+  - Page Up and Page Down, Home and End choose points; the arrows move the chosen point, a hundredth of the plot, Shift ten, Ctrl a tenth (0.001), Option on the Mac, as the slider row, unless a tool sets another step.
+  - Insert or + adds, Delete removes, Shift+Delete resets the curve, removing every point as Delete removes one; other keys with Ctrl are left to the app.
   - Moving repeats while a key is held; adding, removing and resetting happen once a press.
   - Each handle is a slider of its own, after the plot in the focus order, with the slider's keys but Enter, as it has no value field.
 - **No exact values in the first pass,** as darktable's curves have none: the readout shows them, read-only and with no popup.
@@ -3964,7 +3963,7 @@ The widgets drawn with egui's painter rather than built from other components. E
   - a step whose bands no curve fits is undone and ends the drag; so does the pointer leaving the graph, as darktable's `area_enter_leave_notify` commits a drag, and the pointer's last move before the release counts, as darktable's last motion does;
   - the node within 0.45 of the nodes' spacing of the pointer is filled;
   - a double-click resets every band; the tooltip says so, darktable's "Double-click to reset the curve."
-- **Keys:** the graph is one focus stop. Page Up and Page Down choose the previous and the next band, as on the curve, Home and End the first and the last. The arrows move the chosen one by its step (Shift ten, Alt a tenth), up and right raising it, as a slider's, never by less than the last decimal the bands show (`Equalizer::decimals`). Delete resets it and Shift+Delete resets every band. Keys with Ctrl are the app's.
+- **Keys:** the graph is one focus stop. Page Up and Page Down choose the previous and the next band, as on the curve, Home and End the first and the last. The arrows move the chosen one by its step (Shift ten, Ctrl a tenth, Option on the Mac), up and right raising it, as a slider's, never by less than the last decimal the bands show (`Equalizer::decimals`). Delete resets it and Shift+Delete resets every band. Other keys with Ctrl are the app's.
 - **What it reports,** one `EqualizerAction` a frame: `Move { from, to, done }`, the bands from where the gesture found them to where it put them, a drag's every change and once more, done, on release, a key's or a screen reader's step done; `ResetBand(i)`; `Reset`. The renderer sends `SetControl` for each band whose value, rounded to its own slider row's decimals, changes, and on release for each band the gesture moved, several sent together as one `Step { source: You }`, so the drag is one history step; `ResetControl` for a reset, `Reset`'s nine as one `Step`.
 - **No value and no popup on the graph,** as darktable's: each band's own slider row has its value at rest, its field and its popup (decision 42).
 - **Screen readers:** a group named by its full name, whose description says where the mask overflows the bands, as darktable's sign does without words, then what the keys do; each band a slider named by its band's full name, its value with its unit, −2 to +2 EV, its step, and the Increment, Decrement and SetValue actions; the chosen one the active descendant.
@@ -4043,7 +4042,7 @@ Decision 19; engine.md's [Scopes](engine.md#scopes). Built for the histogram, th
 - **Scope:** a shortcut belongs to the app, the view or the focused widget, and the narrowest scope wins. Keys held down, such as H to see the photo without a tool, are actions too.
   - The view's scope holds the keys that act on the photos, the Viewer and the Tools panel. With one view (decision 37) it is one scope: a key means the same whatever the Viewer shows, and a key that means nothing in the current layout is unavailable there, so it does nothing, such as H outside Photo. In code, `Scope::View(View)` is to become `Scope::View`, and the `View` type is to give way to `Layout`.
   - The widget scope is the focused widget's own keys, a fixed list rather than registry entries.
-    - A focused control (a button, a slider, a tab) keeps the arrows, Home, End, Page Up, Page Down, Space, Enter, Tab, Escape, Backspace and Delete, without Ctrl.
+    - A focused control (a button, a slider, a tab) keeps the arrows, Home, End, Page Up, Page Down, Space, Enter, Tab, Escape, Backspace and Delete, without Ctrl, and the arrows with Ctrl on Windows and Linux too, a slider's, the curve's and the equalizer's tenth of a step, which is Option's on the Mac.
     - A focused slider also keeps a digit, a minus sign and the decimal separator, which open its value field, and Shift+F10 and the Menu key, which open its popup (decision 42).
     - A focused section header also keeps Alt+↑ and Alt+↓ (Option on a Mac), which move it in its list, and on a floating panel Alt+Shift with the arrows, which move the panel (decision 83, planned).
     - A focused control also keeps Insert and +, which add a point to a curve: Czech and Slovak keyboards type + on the 1 key, and the curve still gets it, while Ctrl with it still chooses the first tab.
@@ -4061,8 +4060,8 @@ Decision 19; engine.md's [Scopes](engine.md#scopes). Built for the histogram, th
 
 | Key | Does |
 | --- | --- |
-| Arrow keys | One step; Shift ten steps, Alt a tenth of one |
-| Page Up, Page Down | Ten steps |
+| Arrow keys | One step; Shift ten steps, Ctrl a tenth of one, Option on the Mac, as darktable's |
+| Page Up, Page Down | Ten steps; with Ctrl, the app's |
 | Home, End | The two ends of the track's span |
 | Delete or double-click on the label or the track | Reset to the default |
 | Enter | Open darktable's popup, as darktable's own key does (decision 42); until the popup is built, the value field |
@@ -4078,7 +4077,7 @@ The keys inside the field and the popup are in [Slider values and choices](#slid
 | --- | --- |
 | Page Up, Page Down | The previous and the next point |
 | Home, End | The first and the last point |
-| Arrow keys | Move the chosen point one step: a hundredth of the plot unless the tool sets it; Shift ten steps, Alt a tenth of one |
+| Arrow keys | Move the chosen point one step: a hundredth of the plot unless the tool sets it; Shift ten steps, Ctrl a tenth of one, Option on the Mac |
 | Insert or + | Add a point on the curve, midway to the next one (to the one before for the last) |
 | Delete or Backspace | Remove the chosen point; the first and last stay unless the handles are the ends |
 | Shift+Delete or Shift+Backspace | Remove them all: reset the curve |

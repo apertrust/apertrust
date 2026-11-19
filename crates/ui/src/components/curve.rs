@@ -30,10 +30,11 @@
 //!   handles are the curve's ends.
 //! - **Keys:** Tab focuses the plot. Page Up and Page Down choose the previous and the next
 //!   point, Home and End the first and the last. The arrow keys move the chosen point, by a
-//!   hundredth of the plot unless the caller sets the step (Shift ten steps, Alt a tenth).
-//!   Insert or + adds a point midway to the next one, Delete removes the chosen one, and
-//!   Shift with Delete removes them all: it resets the curve. Ctrl is left to the app, and
-//!   only moves repeat while a key is held.
+//!   hundredth of the plot unless the caller sets the step (Shift ten steps, Ctrl a tenth,
+//!   Option on the Mac). Insert or + adds a point midway to the next one, Delete removes
+//!   the chosen one, and Shift with Delete removes them all: it resets the curve. Other
+//!   keys with Ctrl, and the arrows with another of the app's modifiers, are left to the
+//!   app, and only moves repeat while a key is held.
 //! - **Handles:** black and white points under the plot, either levels that move on their
 //!   own ([`Curve::levels`]) or the curve's own ends ([`Curve::ends`]). Each is a slider of
 //!   its own, after the plot in the focus order, with the slider row's keys; a double-click
@@ -51,6 +52,7 @@ use egui::{
     Shape, Stroke, StrokeKind, Ui, UiBuilder, Vec2, WidgetInfo, pos2, vec2,
 };
 
+use super::wheel::key_scale;
 use super::{focus_ring, focus_shows, marker};
 use crate::i18n::Args;
 use crate::{Translator, theme, translator};
@@ -406,9 +408,9 @@ impl<'a> Curve<'a> {
             state.drag = None;
         }
 
-        // Keys: only those the app leaves a focused control, none with Ctrl (`docs/gui.md`,
-        // Keyboard and actions). Moving repeats while a key is held; adding, removing and
-        // resetting happen once a press.
+        // Keys: only those the app leaves a focused control, none with Ctrl but the arrows'
+        // tenth of a step (`docs/gui.md`, Keyboard and actions). Moving repeats while a key
+        // is held; adding, removing and resetting happen once a press.
         if self.enabled && response.has_focus() {
             ui.memory_mut(|m| {
                 m.set_focus_lock_filter(
@@ -421,15 +423,10 @@ impl<'a> Curve<'a> {
                 );
             });
             let current = state.selected.or((n > 0).then_some(0));
+            let os = ui.ctx().os();
             let keys = ui.input(|i| {
                 let command = i.modifiers.command || i.modifiers.ctrl;
-                let scale = if i.modifiers.shift {
-                    10.0
-                } else if i.modifiers.alt {
-                    0.1
-                } else {
-                    1.0
-                };
+                let scale = key_scale(os, i.modifiers);
                 let mut nudge = Vec2::ZERO;
                 for (key, direction) in [
                     (Key::ArrowRight, vec2(1.0, 0.0)),
@@ -437,8 +434,10 @@ impl<'a> Curve<'a> {
                     (Key::ArrowUp, vec2(0.0, 1.0)),
                     (Key::ArrowDown, vec2(0.0, -1.0)),
                 ] {
-                    if !command && i.key_pressed(key) {
-                        nudge += direction * scale * self.step;
+                    if let Some(scale) = scale
+                        && i.key_pressed(key)
+                    {
+                        nudge += direction * scale as f32 * self.step;
                     }
                 }
                 let choose = if command {
@@ -1026,14 +1025,12 @@ fn level_handle(
                 },
             );
         });
+        let os = ui.ctx().os();
         let keyed = ui.input(|i| {
-            let scale = if i.modifiers.shift {
-                10.0
-            } else if i.modifiers.alt {
-                0.1
-            } else {
-                1.0
-            };
+            // A modifier of the app's leaves the steps to it, and so does Ctrl with Page Up
+            // and Page Down: only the arrows take its tenth.
+            let scale = key_scale(os, i.modifiers).unwrap_or(0.0) as f32;
+            let command = i.modifiers.command || i.modifiers.ctrl;
             let mut delta = 0.0;
             for (key, steps) in [
                 (Key::ArrowRight, 1.0),
@@ -1043,12 +1040,15 @@ fn level_handle(
                 (Key::PageUp, PAGE),
                 (Key::PageDown, -PAGE),
             ] {
-                if i.key_pressed(key) {
+                let page = matches!(key, Key::PageUp | Key::PageDown);
+                if i.key_pressed(key) && !(page && command) {
                     delta += steps * scale * level.step;
                 }
             }
-            if i.modifiers.command || i.modifiers.ctrl {
-                // Keys with Ctrl are the app's.
+            if delta != 0.0 {
+                Some(along(place + delta))
+            } else if i.modifiers.command || i.modifiers.ctrl {
+                // Other keys with Ctrl are the app's.
                 None
             } else if i.key_pressed(Key::Home) {
                 Some(level.settle(level.low))
@@ -1056,8 +1056,6 @@ fn level_handle(
                 Some(level.settle(level.high))
             } else if i.key_pressed(Key::Delete) || i.key_pressed(Key::Backspace) {
                 Some(level.settle(level.default))
-            } else if delta != 0.0 {
-                Some(along(place + delta))
             } else {
                 None
             }

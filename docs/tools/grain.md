@@ -104,7 +104,7 @@ Measured on the Apple M4 (Metal) by `crates/tools/tests/grain.rs`. The synthetic
 - **No tabs and no group labels:** darktable's three sliders, one under another, in its order.
 - **Values** show with darktable's digits and their unit, as darktable writes them, the coarseness with no decimals and the others with two: "1600 ISO", "25.00%" and "100.00%", in the language's number format. Screen readers hear the same; the field a click opens holds the number alone (decision 42).
 - **Tracks** are plain, over the whole range, filled from the default: the strength's from 25 %, the bias's from its end at 100 %.
-- **Keyboard:** every row is a `SliderRow`, stepping by darktable's step, 50 ISO or 1 %, Shift ten steps and Alt a tenth, never less than the last decimal shown, 1 ISO or 0.01 %, as darktable's `min_visible`. The value is rounded to the decimals shown before it is sent.
+- **Keyboard:** every row is a `SliderRow`, stepping by darktable's step, 50 ISO or 1 %, Shift ten steps and Ctrl a tenth, Option on the Mac, never less than the last decimal shown, 1 ISO or 0.01 %, as darktable's `min_visible`. The value is rounded to the decimals shown before it is sent.
 - **While closed** the section shows its title and buttons; its presets and options are drawn disabled until something is behind them.
 
 ## Gaps
