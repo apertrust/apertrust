@@ -146,7 +146,7 @@ pub enum Answer {
 }
 
 /// What the instance's thread does with each hand-off of its format: its answer.
-pub type Handler = Box<dyn Fn(HandOff) -> Answer + Send>;
+pub type Handler = Arc<dyn Fn(HandOff) -> Answer + Send + Sync>;
 
 /// Where the instance's socket may go: the runtime directory, `$XDG_RUNTIME_DIR` on Linux
 /// or `$TMPDIR` on macOS, and the folder its fallback is made in, `/tmp`.
@@ -500,9 +500,20 @@ impl Instance {
                         std::thread::sleep(RETRY_STEP);
                         continue;
                     };
-                    if serve(&mut pipe, &handler).is_ok() {
-                        // Until the second start has read the answer.
-                        let _ = pipe.sync_all();
+                    // Each start on a thread of its own: a pipe has no read timeout, so a
+                    // client that connects and never writes holds only its own thread, never
+                    // the next start's hand-off.
+                    let handler = Arc::clone(&handler);
+                    let served = std::thread::Builder::new()
+                        .name("instance start".into())
+                        .spawn(move || {
+                            if serve(&mut pipe, &handler).is_ok() {
+                                // Until the second start has read the answer.
+                                let _ = pipe.sync_all();
+                            }
+                        });
+                    if let Err(e) = served {
+                        tracing::warn!(target: "control", "a second start not answered: no thread: {e}");
                     }
                 }
             })
@@ -1150,7 +1161,7 @@ mod tests {
     /// A handler as the app's decides, with the user data folder's `cache` folder as the
     /// instance's: what it takes printed on stdout, for a test in another process.
     fn printing(cache: PathBuf, folder: PathBuf) -> Handler {
-        Box::new(move |hand_off| {
+        Arc::new(move |hand_off| {
             if let Some(flags) = refused(&hand_off, &cache) {
                 return Answer::Refused(refused_words(&folder, &flags));
             }
@@ -1160,7 +1171,7 @@ mod tests {
     }
 
     fn taking() -> Handler {
-        Box::new(|_| Answer::Taken)
+        Arc::new(|_| Answer::Taken)
     }
 
     fn photo() -> HandOff {

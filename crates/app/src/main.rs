@@ -702,7 +702,7 @@ fn hand_off(one_run: Vec<OsString>, folders: &Folders) -> instance::HandOff {
 /// `cache`: one with flags for one run refused, the window's alert saying so; any other's
 /// paths, taken from its working folder, posted to the window to open.
 fn hand_offs(post: instance::Post, cache: PathBuf, folder: PathBuf) -> instance::Handler {
-    Box::new(move |hand_off| {
+    std::sync::Arc::new(move |hand_off| {
         let token = hand_off.token.clone();
         if let Some(flags) = instance::refused(&hand_off, &cache) {
             let words = instance::refused_words(&folder, &flags);
