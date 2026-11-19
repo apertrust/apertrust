@@ -13,7 +13,7 @@ Apertrust needs help a person can reach from where they are: every tool, and the
 - **A tool's topic** is `tools/<id>`, from its id, for processing tools and utilities alike, with nothing declared: `tools/exposure`, `tools/export`, `tools/history`. `ToolDefinition::help: Option<&'static str>` overrides it where a tool's help is elsewhere, which should be rare (planned).
 - **Every other place offering help names its topic:** `browser`, `viewer`, `workspaces` (the Tools panel's ⋮), `settings/<page>` for each page of Settings, `dialogs/<id>` for a dialog with a Help button. The Guide's start page needs none.
 
-**The URL.** The app joins four parts and opens the system's browser, through egui's `open_url` (eframe's `links`, already built in): `{base}/{version}/{language}/topic/{topic}/`, for example `https://guide.apertrust.org/1.0/uk/topic/tools/exposure/`.
+**The URL.** The app joins four parts and opens the system's browser, through egui's `open_url` (eframe's `links`, already built in): `{base}/{version}/{language}/topic/{topic}/` for a topic, for example `https://guide.apertrust.org/1.0/uk/topic/tools/exposure/`, and `{base}/{version}/{language}/` for the Guide's start page, `https://guide.apertrust.org/1.0/uk/`.
 
 - **`base`** is the setting `help.url`, `https://guide.apertrust.org` by default, so a person can point it at a mirror or a copy of their own (planned).
 - **`version`** is the release's major and minor, `1.0`, for a build of a `release-X.Y.Z` tag; `development` for any other build, a commit after a tag and a nightly among them (decision 44's versions).
@@ -26,18 +26,18 @@ Apertrust needs help a person can reach from where they are: every tool, and the
 
 | Place | How | Topic |
 | --- | --- | --- |
-| A tool's ⋯ | Help, its last item, after the layout's, a line before it: the registry action `section-help`, acting on its own section as the `section-*` items do | `tools/<id>` |
-| The Help menu | Apertrust Guide, its first item after macOS's search: the action `guide` | The start page |
+| A tool's ⋯ in the Tools panel | Help, its last item, after the layout's, a line before it: the registry action `section-help`, acting on its own section as the `section-*` items do | `tools/<id>`, or its override |
+| The Help menu | Apertrust Guide, its first item after macOS's search: the action `guide` | None: the start page, `{base}/{version}/{language}/` |
 | The browser bar's options menu | Help, last | `browser` |
 | The Tools panel's ⋮ | Help, last | `workspaces` |
 | Settings, and a dialog that needs explaining | A Help button, an icon at the footer's start, "Help" its tooltip and its name for screen readers | `settings/<page>`, `dialogs/<id>` |
 | What has the focus | The action `help`, no key by default: F1 to F5 are the colour labels, as darktable has them ([the default keyboard map](../gui.md#the-default-keyboard-map)), so a person binds one | Its own topic, a tool's header `tools/<id>` |
 
-The photo's and a thumbnail's right-click menus hold no Help: they act on photos, and decision 91 bounds them to 16 items.
+The photo's and a thumbnail's right-click menus hold no Help: they act on photos, and decision 91 bounds them to 16 items. The Import sheet's tools, whose ⋯ holds Move Up and Move Down alone (decision 86), take no Help until the sheet is designed again; their topics would be `tools/<id>` too.
 
 **The Guide's repository** (planned):
 
-- **Astro with Starlight,** Astro's own theme for documentation, builds it, as Astro builds apertrust.org, and GitHub Pages serves it. Starlight brings what the Guide needs: languages with an English fallback, a search that runs in the browser (Pagefind), dark and light, and accessible navigation. A page's path is where readers find it, and its front matter lists the topics it answers, `topics: [tools/exposure]`, a topic taking a heading too (`workspaces/hidden-tools: "#hidden-tools"`).
+- **Astro with Starlight,** Astro's own theme for documentation, builds it, as Astro builds apertrust.org, and GitHub Pages serves it. Starlight brings what the Guide needs: languages with an English fallback, a search that runs in the browser (Pagefind), dark and light, and accessible navigation. A page's path is where readers find it, and its front matter lists the topics it answers, `topics: [tools/exposure]`, a topic taking a heading on the page after a `#` (`workspaces/hidden-tools#hidden-tools`).
 - **Each topic becomes a redirect page,** `/{version}/{language}/topic/{topic}/`, to the page that claims it, generated from the pages' `topics` as the site is built. A topic no page claims has no page of its own: the site's 404 page, which GitHub Pages serves for every path it does not have, reads a `topic/` path from the address and says the page is not written yet, in that version and language, with the search and a link to the start page. A page not translated is the English page with Starlight's line saying so; a language the Guide does not have reaches English through the same 404 page, so the app's URL always lands.
 - **Versions are branches:** `main` builds `/development/`; a `release-X.Y` branch, cut at the release of X.Y.0 and kept for its patch releases, builds `/X.Y/`, which shows the Guide of the newest X.Y release; `/latest/` redirects to the newest. One workflow builds every branch with its own base path into one site; every minor release's Guide stays published, its redirects its own.
 - **Translations** go through Weblate with po4a, as darktable's manual does, once the English pages settle: a changed English paragraph marks its translations for review instead of leaving them stale.
