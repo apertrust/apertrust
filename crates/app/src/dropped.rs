@@ -207,6 +207,41 @@ fn given_opens(paths: &[PathBuf], mut kind: impl FnMut(&Path) -> Kind) -> Option
     dropped
 }
 
+/// What hand-offs joined while the app started open (decision 89, `instance::Join`),
+/// `groups` each one's paths in the order they came, the command line's first: each opens
+/// as [`given_opens`] has it, and they follow one another as they would once the window
+/// had shown, but that raws join raws. So raws after raws open with them in one photo,
+/// the first active; a folder replaces what opened before it, and raws after a folder
+/// replace it, never ignored for it; what opens nothing changes nothing, unless nothing
+/// opens at all. None for no path.
+fn joined(groups: &[Vec<PathBuf>], mut kind: impl FnMut(&Path) -> Kind) -> Option<Dropped> {
+    let mut joined: Option<Dropped> = None;
+    for group in groups {
+        let Some(next) = given_opens(group, &mut kind) else {
+            continue;
+        };
+        joined = Some(match (joined, next) {
+            (
+                Some(Dropped::Raws { first, mut others }),
+                Dropped::Raws {
+                    first: more,
+                    others: rest,
+                },
+            ) => {
+                for photo in std::iter::once(more).chain(rest) {
+                    if photo != first && !others.contains(&photo) {
+                        others.push(photo);
+                    }
+                }
+                Dropped::Raws { first, others }
+            }
+            (Some(before), Dropped::Refused { .. }) => before,
+            (_, next) => next,
+        });
+    }
+    joined
+}
+
 /// The paths of `paths` that would open nothing on their own, each with why, as `kind`
 /// finds them: what a drop of them all leaves out without a word.
 fn left_out(paths: &[PathBuf], mut kind: impl FnMut(&Path) -> Kind) -> Vec<(PathBuf, Refusal)> {
@@ -290,25 +325,27 @@ impl Drops {
     /// looked at, so a share that hangs never holds a frame; `ctx` is asked for a frame
     /// once they have been.
     pub fn look(&mut self, paths: Vec<PathBuf>, ctx: &egui::Context) {
-        self.spawn(paths, false, ctx);
+        self.spawn(vec![paths], false, ctx);
     }
 
-    /// Looks at the paths the app's command line gave, as [`Drops::look`] does, each
-    /// resolved first, a refusal's reason also on stderr ([`given_opens`]).
-    pub fn look_given(&mut self, paths: Vec<PathBuf>, ctx: &egui::Context) {
-        self.spawn(paths, true, ctx);
+    /// Looks at the paths the app's command line and the hand-offs joined with it gave,
+    /// `groups` each one's, as [`Drops::look`] does, each resolved first, a refusal's
+    /// reason also on stderr, a folder never taking the place of raws handed in after it
+    /// ([`joined`]).
+    pub fn look_given(&mut self, groups: Vec<Vec<PathBuf>>, ctx: &egui::Context) {
+        self.spawn(groups, true, ctx);
     }
 
-    fn spawn(&mut self, paths: Vec<PathBuf>, given: bool, ctx: &egui::Context) {
+    fn spawn(&mut self, groups: Vec<Vec<PathBuf>>, given: bool, ctx: &egui::Context) {
         let (answer, looking) = mpsc::channel();
         let ctx = ctx.clone();
         let looked = std::thread::Builder::new()
             .name("drop".into())
             .spawn(move || {
                 let dropped = if given {
-                    given_opens(&paths, kind)
+                    joined(&groups, kind)
                 } else {
-                    opens(&paths, kind)
+                    opens(&groups.concat(), kind)
                 };
                 let _ = answer.send(dropped);
                 ctx.request_repaint();
@@ -438,6 +475,45 @@ pub(crate) mod tests {
             Some(Dropped::Folder(PathBuf::from("/a/Wedding")))
         );
         assert_eq!(opens(&[]), None);
+    }
+
+    /// Hand-offs joined while the app started (decision 89): raws join raws, the first
+    /// active; raws after a folder replace it, never ignored for it, and a folder after
+    /// raws replaces them, as each would once the window had shown; what opens nothing
+    /// changes nothing.
+    #[test]
+    fn joined_hand_offs_open_as_they_would_one_after_another() {
+        let absolute = |path: &str| std::path::absolute(path).expect("absolute");
+        let joined = |each: &[&[&str]]| {
+            let groups: Vec<Vec<PathBuf>> = each.iter().map(|names| paths(names)).collect();
+            joined(&groups, by_name)
+        };
+        let raws = |first: &str, others: &[&str]| Dropped::Raws {
+            first: absolute(first),
+            others: others.iter().map(|other| absolute(other)).collect(),
+        };
+        let folder_then_raws = joined(&[&["/a/Wedding"], &["/a/IMG_1.CR3", "/b/DSC_2.NEF"]]);
+        assert_eq!(
+            folder_then_raws,
+            Some(raws("/a/IMG_1.CR3", &["/b/DSC_2.NEF"]))
+        );
+        let raws_joined = joined(&[
+            &["/a/IMG_1.CR3"],
+            &["/a/IMG_2.CR3", "/a/IMG_1.CR3"],
+            &["/a/notes.txt"],
+        ]);
+        assert_eq!(raws_joined, Some(raws("/a/IMG_1.CR3", &["/a/IMG_2.CR3"])));
+        let raws_then_folder = joined(&[&["/a/IMG_1.CR3"], &["/a/Wedding"]]);
+        let wedding = Dropped::Folder(absolute("/a/Wedding"));
+        assert_eq!(raws_then_folder, Some(wedding));
+        // One hand-off is a drop of its own: its first folder opens.
+        let one = joined(&[&["/a/Wedding", "/a/IMG_1.CR3"]]);
+        assert_eq!(one, Some(Dropped::Folder(absolute("/a/Wedding"))));
+        let nothing = joined(&[&["/a/notes.txt"], &["/a/Home.aplibrary"]]);
+        let path = absolute("/a/notes.txt");
+        let why = Refusal::Unknown;
+        assert_eq!(nothing, Some(Dropped::Refused { path, why }));
+        assert_eq!(joined(&[]), None);
     }
 
     fn refused(path: &str, why: Refusal) -> Option<Dropped> {

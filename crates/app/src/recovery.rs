@@ -26,9 +26,11 @@
 //!   that opens no window (`--version`, `--help`, `--list-adapters`, a command line
 //!   refused) writes none, and a normal quit leaves none. Where the user data folder cannot be
 //!   written, there is no marker, logged under `settings`.
-//! - **A marker another start holds locked** is a start under way at the same moment, as
-//!   Open With on several raws starts one process for each: it is neither read nor written,
-//!   and this start keeps none.
+//! - **The instance lock comes first** (decision 89, `instance`): a second start on the
+//!   folder hands off to the running app before it reaches the marker, so only the
+//!   instance writes one. **A marker another start holds locked** is then a start under
+//!   way beside this one where neither could take the instance lock, as on a file system
+//!   without locks: it is neither read nor written, and this start keeps none.
 //! - **A marker unlocked with something in it** is a start that did not finish, having
 //!   crashed, hung or been closed with a black window ([`decide`]): this run opens
 //!   Automatic instead, the settings kept in the file, and says so in the window
@@ -721,10 +723,10 @@ mod tests {
         assert_eq!(mine(&path).1, Some(alternate));
     }
 
-    /// Two starts at once, as Open With on several raws starts: the second finds the
-    /// marker locked by the first, under way, and neither reads it as a start that did not
-    /// finish nor writes its own; the first's lock goes with it, and only then is what it
-    /// left read.
+    /// Two starts at once, as where neither could take the instance lock: the second finds
+    /// the marker locked by the first, under way, and neither reads it as a start that did
+    /// not finish nor writes its own; the first's lock goes with it, and only then is what
+    /// it left read.
     #[test]
     fn a_marker_another_start_holds_is_that_start_s_under_way() {
         let folder = Folder::new("start-marker-two");

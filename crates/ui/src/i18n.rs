@@ -1168,6 +1168,8 @@ mod tests {
                 // Which of its tab's lists a tool is in, as Move Tool Up's tip says.
                 args.set("list", "pinned");
                 args.set("text", "colour");
+                // A second start's flags for one run, which the app running refuses.
+                args.set("flags", "--safe-mode");
                 let mut errors = Vec::new();
                 bundle.format_pattern(pattern, Some(&args), &mut errors);
                 assert!(errors.is_empty(), "{} {id}: {errors:?}", locale.id());

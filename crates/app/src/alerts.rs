@@ -15,7 +15,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 //! The app's confirmations (`docs/gui.md`, Dialogs and alerts; decision 41): the system's
-//! alerts, asked through the dialog host and answered on a later frame. Five so far:
+//! alerts, asked through the dialog host and answered on a later frame. Six so far:
 //!
 //! - **Export's overwrite question** ([`Purpose::Overwrite`]): Export asks before it
 //!   replaces files, as darktable does, from the Export tool or Export Again.
@@ -32,6 +32,9 @@
 //! - **Discard History** ([`Purpose::Discard`]): Edit › Discard History… and the History
 //!   section's ⋯ ask before the edit's history is cleared, as darktable does
 //!   (`ask_before_discard`).
+//! - **Already running** ([`Purpose::Running`]): a second start on the user data folder
+//!   with flags for one run is refused (decision 89), and the instance's window, brought
+//!   forward, says to quit it first.
 //!
 //! One alert is up at a time ([`Alerts`]); the words are Fluent messages handed over as
 //! text.
@@ -64,6 +67,8 @@ pub enum Purpose {
     Refused,
     /// Discard History was asked for: yes sends it.
     Discard,
+    /// A second start with flags for one run was refused: the alert only says so.
+    Running,
 }
 
 /// The open photo's edit as Quit finds it.
@@ -339,6 +344,17 @@ pub fn refused_request(ctx: &egui::Context, name: &str, why: Refusal) -> Request
     Request::new(title, message).button(tr(ctx, "alert-refused-button"), Role::Cancel)
 }
 
+/// "Apertrust is already running with this folder": a second start on the user data
+/// folder given `flags`, its flags for one run as one line, was refused, and is to quit
+/// this one first, with one button, which Return and Escape both press.
+pub fn running_request(ctx: &egui::Context, flags: &str) -> Request {
+    let mut args = Args::new();
+    args.set("flags", flags);
+    let message = translator(ctx).text_with("alert-running-message", Some(&args));
+    Request::new(tr(ctx, "alert-running-title"), message)
+        .button(tr(ctx, "alert-running-button"), Role::Cancel)
+}
+
 /// One Quit or Close Window deciding whether the app leaves: `run_action` asks
 /// [`Leave::may`] once no dialog is open, and the app asks the alert afterwards if
 /// [`Leave::ask`] says so.
@@ -450,7 +466,7 @@ pub fn then(purpose: Purpose, answer: Answer, guard: &mut Guard, jobs: &Mirror) 
         Purpose::Save => Then::Nothing,
         Purpose::Discard if confirmed => Then::Discard,
         Purpose::Discard => Then::Nothing,
-        Purpose::Refused => Then::Told,
+        Purpose::Refused | Purpose::Running => Then::Told,
     }
 }
 
