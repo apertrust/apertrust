@@ -2304,8 +2304,8 @@ sequenceDiagram
 
 On Windows and Linux:
 
-- **The hand-off comes first:** a start takes or checks the lock and hands off before anything else, before the log, the settings, the GPU or a window, so a second start lives only milliseconds.
-- **The instance** binds the channel right after taking the lock, before its first window opens. Hand-offs arriving before that window shows join its own command line into one open.
+- **The hand-off comes first:** a start takes or checks the lock and hands off as soon as it has read its command line, set up the log and found its folders, before the settings, the GPU or a window, so a second start lives only milliseconds.
+- **The instance** binds the channel right after taking the lock, before its first window opens. Hand-offs arriving before that window shows join its own command line into one open, each opening as it would after the one before: raws join raws, and a folder, or raws after a folder, replace what came before, so raws are never lost to a folder handed in before them.
 - **The message:** a format version; the arguments, their paths made absolute against the second start's working folder, so Windows' drive-relative paths such as `C:IMG_1.ARW` resolve as it meant them; its activation token; its flags for one run. The answer is Taken or Refused, with the reason. **Another format,** another build on the folder, is refused, saying another version is running.
 - **No answer:** a second start that cannot connect while the lock is held retries for 2 s, then says on stderr that the instance is not answering, and exits with status 1.
 - **No paths,** a launcher's click: the window comes forward.

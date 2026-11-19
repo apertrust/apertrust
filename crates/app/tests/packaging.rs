@@ -363,7 +363,7 @@ fn open_with_passes_the_files_alone() {
     }
 }
 
-/// Open With is offered for any number of files on Windows (decision 89): each open verb
+/// Open With is offered for up to 100 files on Windows (decision 89): each open verb
 /// that passes a file, the ProgIDs' and the app's entry's, has `MultiSelectModel` =
 /// `Player`, past the 15 files Explorer's default model allows; each start then hands its
 /// file to the running app. The uninstaller removes the keys that hold them.

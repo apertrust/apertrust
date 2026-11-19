@@ -56,7 +56,7 @@ sequenceDiagram
     end
 ```
 
-- **It comes first:** a start takes or checks the lock and hands off before anything else, before the log, the settings, the GPU or a window, so a second start lives only milliseconds.
+- **It comes first:** a start takes or checks the lock and hands off as soon as it has read its command line, set up the log and found its folders, before the settings, the GPU or a window, so a second start lives only milliseconds.
 - **The instance** binds the channel right after taking the lock, before its first window opens. Hand-offs that arrive before that window shows join its own command line into one open, however long the start takes.
 - **The message:**
   - a format version;
