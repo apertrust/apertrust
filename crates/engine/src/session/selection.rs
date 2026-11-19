@@ -621,11 +621,15 @@ impl Engine {
     /// [`Command::CancelJob`](super::Command::CancelJob): the job cancelled where it can
     /// be; the folder's reading, queued or running, cancelled then, not one that had ended,
     /// leaves the folder with no photo, as one that failed, and the selection takes it so.
+    /// One that had sent its last chunk or its failure already, which the client has or
+    /// will have, changes nothing: that word reaches the selection after the cancel.
     pub(super) fn cancel_job(&mut self, job: super::JobId) -> Result<(), SessionError> {
         let accepted = self.jobs.cancel(job)?;
         if accepted
-            && self.folder == Some(job)
+            && let Some((reading, ended)) = &self.folder
+            && *reading == job
             && let Some((open, _)) = &self.shown
+            && !ended.swap(true, std::sync::atomic::Ordering::AcqRel)
         {
             self.selection.cancelled(*open);
         }

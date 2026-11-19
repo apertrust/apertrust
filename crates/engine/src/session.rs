@@ -533,7 +533,7 @@ pub(crate) enum Inbox {
     /// nothing: the session takes the newer file in ([`Engine::newer_file`]).
     Newer,
     /// What the reading of a folder found of its photos, a `Listed` chunk or its failure,
-    /// which the selection follows ([`selection`]).
+    /// which the selection follows ([`selection`]), after the commands sent before it.
     Listing(LibraryEvent),
     Stop,
 }
@@ -1301,11 +1301,14 @@ impl Session {
                 // Once the handle has dropped, an Open still queued, and what follows it,
                 // was for a photo that never opens.
                 let mut past_open = false;
+                // A listing's chunk sent after a command of the batch, taken first next turn.
+                let mut carried = None;
                 loop {
-                    // Blocks for the next command, then takes every other that has
-                    // arrived; while a scopes or picker reading or a GPU task's step is on
-                    // its way, or a task waits for one, looks at the GPU between them, as
-                    // often as `GpuContext::wait` does.
+                    // Blocks for the next command, unless a chunk waits from the turn
+                    // before, then takes every other that has arrived; while a scopes or
+                    // picker reading or a GPU task's step is on its way, or a task waits for
+                    // one, looks at the GPU between them, as often as `GpuContext::wait`
+                    // does.
                     let polling = engine.reading()
                         || engine.pickers.pending()
                         || engine.jobs.background.waiting();
@@ -1322,19 +1325,20 @@ impl Session {
                             .flatten()
                             .min()
                     };
-                    let first =
-                        if let Some(wait) = wait.filter(|_| !stopping.load(Ordering::Relaxed)) {
-                            match received.recv_timeout(wait) {
-                                Ok(first) => Some(first),
-                                Err(mpsc::RecvTimeoutError::Timeout) => None,
-                                Err(mpsc::RecvTimeoutError::Disconnected) => break,
-                            }
-                        } else {
-                            match received.recv() {
-                                Ok(first) => Some(first),
-                                Err(mpsc::RecvError) => break,
-                            }
-                        };
+                    let first = if carried.is_some() {
+                        carried.take()
+                    } else if let Some(wait) = wait.filter(|_| !stopping.load(Ordering::Relaxed)) {
+                        match received.recv_timeout(wait) {
+                            Ok(first) => Some(first),
+                            Err(mpsc::RecvTimeoutError::Timeout) => None,
+                            Err(mpsc::RecvTimeoutError::Disconnected) => break,
+                        }
+                    } else {
+                        match received.recv() {
+                            Ok(first) => Some(first),
+                            Err(mpsc::RecvError) => break,
+                        }
+                    };
                     let mut batch = Vec::new();
                     let mut stop = false;
                     // What an open's job read, taken after the commands sent before it and
@@ -1349,7 +1353,16 @@ impl Session {
                                 break;
                             }
                             Inbox::Evict => engine.evict_cache(),
-                            Inbox::Listing(event) => engine.selection.listing(&event),
+                            Inbox::Listing(event) if batch.is_empty() => {
+                                engine.selection.listing(&event);
+                            }
+                            // Sent after the batch's commands, it is applied after them, as
+                            // the next turn's first: the selection follows the listing and
+                            // the commands in the order they were sent.
+                            listing @ Inbox::Listing(_) => {
+                                carried = Some(listing);
+                                break;
+                            }
                             Inbox::Saved | Inbox::Newer => {}
                             // The handle's last word: the tasks after it are the end's.
                             Inbox::Stop => {
@@ -2062,8 +2075,10 @@ struct Engine {
     cache: Option<Upkeep>,
     /// The latest export preview's job, which the next one cancels.
     preview: Option<JobId>,
-    /// The job reading the folder last opened, which the next open or a close cancels.
-    folder: Option<JobId>,
+    /// The job reading the folder last opened, which the next open or a close cancels, and
+    /// whether its last chunk or its failure, or a cancel, came first: whichever does
+    /// stands ([`Engine::cancel_job`]).
+    folder: Option<(JobId, Arc<AtomicBool>)>,
     /// The folder last opened, with its open's number, whose thumbnails are asked for.
     shown: Option<(u64, PathBuf)>,
     /// The number of the latest open or close, which the thumbnails of photos opened alone
@@ -4268,7 +4283,7 @@ impl Engine {
             LibraryCommand::Close => None,
         };
         self.rendered_thumbnails.clear_asked();
-        if let Some(older) = self.folder.take() {
+        if let Some((older, _)) = self.folder.take() {
             self.jobs.control.cancel(older);
         }
         for job in self.thumbnails.drain(..).chain(self.subfolders.drain(..)) {
@@ -4305,13 +4320,15 @@ impl Engine {
         let outbox = self.jobs.outbox.clone();
         // The engine thread follows the photos listed, for the selection.
         let inbox = self.jobs.inbox.clone();
+        let ended = Arc::new(AtomicBool::new(false));
+        let ending = Arc::clone(&ended);
         #[cfg(test)]
         let hold = self.folder_hold.take();
         let job = self.jobs.add(open, Queue::UserBackground, |_| {
             jobs::Job::new("folder", description, move |context| {
                 // Held for a test until let go, or cancelled.
                 #[cfg(test)]
-                if let Some(hold) = &hold
+                if let Some(hold) = hold.as_ref().filter(|hold| !hold.holds_last_chunk())
                     && !hold.wait_unless(|| context.cancelled())
                 {
                     return Ok(());
@@ -4321,6 +4338,18 @@ impl Engine {
                         event,
                         LibraryEvent::Listed { done: true, .. } | LibraryEvent::Failed { .. }
                     );
+                    // The last word or a cancel, whichever comes first, stands: one taken
+                    // first drops it, so the selection and the client both see the reading
+                    // cancelled ([`Engine::cancel_job`]).
+                    if last && ending.swap(true, Ordering::AcqRel) {
+                        return;
+                    }
+                    // Held for a test with the last word claimed, before it is sent.
+                    #[cfg(test)]
+                    if last && let Some(hold) = hold.as_ref().filter(|hold| hold.holds_last_chunk())
+                    {
+                        hold.wait();
+                    }
                     if matches!(
                         event,
                         LibraryEvent::Listed { .. } | LibraryEvent::Failed { .. }
@@ -4339,7 +4368,7 @@ impl Engine {
             })
             .progress(message, true)
         });
-        self.folder = Some(job);
+        self.folder = Some((job, ended));
     }
 
     /// The whole tree under `root`, made the tree's root by the open numbered `open`, walked

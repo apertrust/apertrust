@@ -1069,6 +1069,7 @@ pub(crate) mod testing {
         permit: Arc<Mutex<Receiver<()>>>,
         refuse: bool,
         strips: Option<Sender<Option<u64>>>,
+        last_chunk: bool,
     }
 
     impl PartialEq for Hold {
@@ -1088,8 +1089,22 @@ pub(crate) mod testing {
                 permit: permit_lock,
                 refuse: false,
                 strips: None,
+                last_chunk: false,
             };
             (hold, begun, permit)
+        }
+
+        /// This hold, given to a folder's reading, holding it once its last chunk or its
+        /// failure is claimed, before it is sent, in place of before it begins.
+        pub fn holding_last_chunk(self) -> Hold {
+            Hold {
+                last_chunk: true,
+                ..self
+            }
+        }
+
+        pub(crate) fn holds_last_chunk(&self) -> bool {
+            self.last_chunk
         }
 
         /// This hold, telling through what it returns, for each photo in turn, the strip
