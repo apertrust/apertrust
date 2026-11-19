@@ -77,6 +77,7 @@ mod recents;
 mod recovery;
 mod restart;
 mod scopes;
+mod selection;
 mod settings;
 mod settings_dialog;
 mod start;
@@ -108,10 +109,10 @@ use apertrust_engine::session::{
 use apertrust_engine::sidecar::Reason;
 use apertrust_tools::ToolDefinition;
 use apertrust_ui::components::{
-    ActivityAction, Available, Browser, BrowserAction, BrowserEdge, BrowserEdgeAction,
-    BrowserPosition, CellMenu, CellRating, FindBar, FindBarAction, Jobs, Margin, Marker, PanelBody,
-    PanelEdge, PanelEdgeAction, PanelTab, PhotoCaption, PhotoFrame, PickerAction, Placed,
-    SaveState, ScopeView, TabBar, TabBarAction, Thumb, Toggle, Toolbar, ToolbarAction, ViewerBar,
+    ActivityAction, Available, Browser, BrowserEdge, BrowserEdgeAction, BrowserPosition, CellMenu,
+    CellRating, FindBar, FindBarAction, Jobs, Margin, Marker, PanelBody, PanelEdge,
+    PanelEdgeAction, PanelTab, PhotoCaption, PhotoFrame, PickerAction, Placed, SaveState,
+    ScopeView, TabBar, TabBarAction, Thumb, Toggle, Toolbar, ToolbarAction, ViewerBar,
     ViewerBarAction, Zoom, browser_lines, browser_thickness,
 };
 use apertrust_ui::{
@@ -4413,13 +4414,6 @@ impl App {
         }
     }
 
-    /// Opens the raw at `path`, one of the Browser's, in the session, in place of the
-    /// photo open ([`open_listed`]).
-    fn open(&mut self, path: PathBuf) {
-        let session = &self.session;
-        open_listed(path, &mut self.mirror, &mut |command| session.send(command));
-    }
-
     /// Opens the photos at `paths` alone, together, the first active ([`open_alone`]).
     /// Leaving folder mode for them, what was open last keeps the folder and photo active
     /// now where its root is the one open, as the app's end would keep them.
@@ -5275,7 +5269,8 @@ impl App {
     }
 
     /// The Browser: the open folder's photos, in the browser bar's sort, the photo open the
-    /// active cell; a click or Enter opens one. Always there, empty with no folder
+    /// active cell and the selected ones marked; a click or Enter opens one, Ctrl and
+    /// Shift-click select ([`selection::browse`]). Always there, empty with no folder
     /// (`docs/gui.md`, The Browser), and holding the photos open alone, just them, the
     /// active one's cell active. Each cell draws its thumbnail once it has come, and those
     /// in sight without one are asked for (`thumbnails.rs`), a photo alone's from its own
@@ -5290,7 +5285,7 @@ impl App {
         // shorter side must cover the square.
         let side = browser.thumbnails.side() * if browser.square_thumbnails { 1.5 } else { 1.0 };
         let size = thumbnails::size_for(side, ui.pixels_per_point());
-        let (clicked, asked, bar, menu) = {
+        let (picked, asked, bar, menu) = {
             let mirror = &self.mirror;
             let textures = &self.thumbnails;
             let listing = match &mirror.folder.folder {
@@ -5302,13 +5297,18 @@ impl App {
             let (says, hint) = (empty.browser_says(ui.ctx()), empty.browser_hint(ui.ctx()));
             let photos = mirror.folder.photos();
             let order = mirror.folder.order();
+            let path = |i: usize| match (listing, &mirror.folder.folder) {
+                (Some(listing), _) => Some(listing.path.join(&photos[order[i]].name)),
+                (None, folder::Folder::Alone { paths, .. }) => paths.get(order[i]).cloned(),
+                _ => None,
+            };
             let thumb = |i: usize| {
                 let photo = &photos[order[i]];
                 Thumb {
                     name: &photo.name,
                     edited: matches!(photo.edit, EditState::Edited),
                     status: folder::status(&photo.edit),
-                    selected: false,
+                    selected: path(i).is_some_and(|path| mirror.is_selected(&path)),
                     picture: textures.picture(&mirror.folder.key(order[i]), size),
                     // The library keeps no ratings or labels yet (Phase 3): every photo
                     // shows as unrated and unlabelled.
@@ -5322,7 +5322,9 @@ impl App {
                 .lines(lines)
                 .position(browser.position)
                 .labels(browser.labels)
-                .square(browser.square_thumbnails);
+                .square(browser.square_thumbnails)
+                // Photos opened alone are no collection the session selects in.
+                .several(listing.is_some());
             if let Some(says) = &says {
                 panel = panel.empty(says);
             }
@@ -5330,27 +5332,23 @@ impl App {
                 panel = panel.empty_hint(hint);
             }
             let output = panel.show(ui);
-            let path = |i: usize| match (listing, &mirror.folder.folder) {
-                (Some(listing), _) => Some(listing.path.join(&photos[order[i]].name)),
-                (None, folder::Folder::Alone { paths, .. }) => paths.get(order[i]).cloned(),
-                _ => None,
-            };
-            // The photo open stays as it is when its own cell is pressed again.
-            let clicked = match output.action {
-                Some(BrowserAction::Open(i)) if active == Some(i) => None,
-                Some(BrowserAction::Open(i)) => path(i),
-                _ => None,
-            };
+            // The photos' paths in the Browser's order, which a gesture's index counts.
+            let picked = output.action.map(|action| {
+                let paths: Vec<PathBuf> = (0..order.len()).filter_map(path).collect();
+                (action, paths, listing.is_none())
+            });
             let menu = output.menu;
             let shown = order.get(output.shown).unwrap_or_default();
             let asked = (self.thumbnails_asked).command(&mirror.folder, shown, size);
-            (clicked, asked, output.bar, menu)
+            (picked, asked, output.bar, menu)
         };
         if let Some(asked) = asked {
             self.session.send(Command::Library(asked));
         }
-        if let Some(path) = clicked {
-            self.open(path);
+        if let Some((action, order, alone)) = picked {
+            let session = &self.session;
+            let send = &mut |command| session.send(command);
+            selection::browse(action, &order, alone, &mut self.mirror, send);
         }
         let id = ui.make_persistent_id("thumbnail menu");
         let chosen = self.thumbnail_menu(ui.ctx(), id, menu);
@@ -5476,7 +5474,8 @@ impl App {
                 Toggle::new(self.shell.guides, open),
             )
             .zoom_enabled(open)
-            .status(rendering.as_deref());
+            .status(rendering.as_deref())
+            .selected(self.mirror.selected_count());
         if let Some((name, how)) = &picker_words {
             bar = bar.picker(name, how);
         }

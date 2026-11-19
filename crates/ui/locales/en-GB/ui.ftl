@@ -386,6 +386,13 @@ photo-layer = Layer: { $layer }. Change layer
 photo-new-layer = New layer
 photo-values = Values under the cursor
 photo-values-read = Red { $red }, green { $green }, blue { $blue }, grey { $grey }
+# Before the zoom while more than one photo is selected: how many are, $count, which
+# English says the same way whatever the number (decision 37).
+photo-selected-count =
+    { $count ->
+        [one] { $count } selected
+       *[other] { $count } selected
+    }
 photo-zoom = Zoom
 photo-zoom-small = Small
 photo-zoom-fit = Fit

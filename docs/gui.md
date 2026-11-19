@@ -35,7 +35,7 @@ Steps 1 to 5 of the [build order](#build-order) are built, step 6 has its render
 - [The settings file](#settings-and-workspace), `settings.toml`, in the user data folder (decision 43).
 - The Mac's [window frame](#the-frame) and native [menu bar](#the-menus), and the frames of Windows and Linux with the ☰ and its drawn menu (decision 39), on the first piece of [the popup service](#popups) (decision 40).
 - The dialog host, with Settings, the jobs window, the log window and the system's alerts ([Dialogs and alerts](#dialogs-and-alerts), [The log window](#the-log-window)); the Export tool, a section of the Photos tab ([The Export tool, as built](#as-built)).
-- Folder mode's first parts: File › Open Folder… and Open…, drag and drop onto the window, View › Collections, Collections' Folders in the Photos tab, the Browser's cells and the Viewer's empty states ([File](#file), [The Browser](#the-browser), [The Viewer's layouts](#the-viewers-layouts)); Open Recent, File › Close, reopening what was open last and [the start window](#the-start-window).
+- Folder mode's first parts: File › Open Folder… and Open…, drag and drop onto the window, View › Collections, Collections' Folders in the Photos tab, the Browser's cells and the Viewer's empty states ([File](#file), [The Browser](#the-browser), [The Viewer's layouts](#the-viewers-layouts)); Open Recent, File › Close, reopening what was open last and [the start window](#the-start-window); selecting several photos in the Browser ([Selection and the active photo](#selection-and-the-active-photo)).
 
 Still to come:
 
@@ -1216,7 +1216,7 @@ A place opens to tools' items only by a decision of its own, which adds it to `a
 **The target:**
 
 - **On the photo:** the active photo, with the point under the pointer in the photo's coordinates as pickers take them, none from the keys; an action that needs a point is hidden without one.
-- **On a thumbnail:** the selection when its photo is in it ([Selection and the active photo](#selection-and-the-active-photo)), else that photo alone. Opening its menu, by a right-click or from the keys on its focused cell, changes neither the selection nor the photo in the Viewer: only a click opens a photo. In Phase 2, where the selection is the active photo alone, Export… still exports the active photo; exporting the photo the menu was opened on is planned (#294). An item that needs its photo open, as History's Reset does, is not in a thumbnail's menu. From Phase 3, while several are selected, an item that acts on one photo alone is hidden.
+- **On a thumbnail:** the selection when its photo is in it ([Selection and the active photo](#selection-and-the-active-photo)), else that photo alone. Opening its menu, by a right-click or from the keys on its focused cell, changes neither the selection nor the photo in the Viewer: only a click opens a photo. Export… still exports the active photo, however many are selected, until it exports the selection (#320); exporting the photo the menu was opened on is planned (#294). An item that needs its photo open, as History's Reset does, is not in a thumbnail's menu. From Phase 3, while several are selected, an item that acts on one photo alone is hidden.
 - **In ⋯:** its tool. **On the surround:** the app.
 
 **Opening.**
@@ -2524,10 +2524,11 @@ The app never opens with nothing loaded: it reopens what was open last, or shows
 
 With several photos selected, the rating, reject and label keys, Apply Edit and Export act on every selected photo, saying how many, and one Undo takes the change back (decision 37). The sliders and Reset act on the active photo alone. No toggle makes the sliders edit every selected photo.
 
-- **The active photo,** none or one, is what the Tools panel edits and shows (its tools, scopes, layers and history), what the caption and the window's title name, and what the accent marks.
-- **The selection** is a set of the current folder's or album's photos, which holds the active photo whenever there is one. Selected photos are marked neutral, by a ring in the text colour.
+- **The active photo,** none or one, is what the Tools panel edits and shows (its tools, scopes, layers and history), what the caption and the window's title name, and what the Browser marks with its thicker ring.
+- **The selection** is a set of the current folder's or album's photos, which holds the active photo whenever there is one. Selected photos are marked neutral, by a thin ring in the icons' grey, the active photo by a thicker one, never the accent ([The cell](#the-cell)).
 - **Both are the session's** (decision 37), not the interface's, so a script or an assistant reads and sets them with the same commands, and an assistant's note says how many photos it changed (principle 8).
-- **Built:** the session's half. `Command::Selection` sets the photos, adds or removes one, selects a range from the active photo in the client's sort, all, none, the inverse or the unedited photos; opening a photo outside the selection selects it alone, and a command that leaves the active photo out closes it; a folder listed again keeps the selection by photo. The session tells it as `Event::Selection`, which the app's mirror keeps (`Mirror::selection`; [session-protocol.md](session-protocol.md#the-selection), [events.md](events.md#the-selection)). Nothing in the app draws or sends it yet: the Browser's cells show no selection.
+- **Built:** the session's half. `Command::Selection` sets the photos, adds or removes one, selects a range from the active photo in the client's sort, all, none, the inverse or the unedited photos; opening a photo outside the selection selects it alone, and a command that leaves the active photo out closes it; a folder listed again keeps the selection by photo. The session tells it as `Event::Selection`, which the app's mirror keeps (`Mirror::selection`; [session-protocol.md](session-protocol.md#the-selection), [events.md](events.md#the-selection)).
+- **Built in the Browser:** its pointer's rows below, Ctrl+Space, the cells' rings, the viewer bar's count and what screen readers hear. Ctrl-click on the active photo takes it out, which closes it as File › Close does, then opens the nearest selected photo in the Browser's order, the later of two as near; with none selected, no photo is active. Each gesture shows at once, before the session answers, and the next one reads what it did (`Mirror::selecting`). Among photos opened alone, which the session holds no collection of, Ctrl and Shift-click do nothing. The batch actions, Edit's Select items and the keys that move through the selection are not built yet.
 
 | Action | Acts on | What it says |
 | --- | --- | --- |
@@ -2552,7 +2553,7 @@ With several photos selected, the rating, reject and label keys, Apply Edit and 
 | Input | In the Browser | On a cell in Photo |
 | --- | --- | --- |
 | A click on a photo's picture | Selects the photo alone and makes it active | Makes it active; the selection stays |
-| Ctrl-click (Cmd on a Mac) | Adds the photo, active, or removes it; removing the active photo makes the nearest selected one active, or none | Removes it from the selection, and so from the cells |
+| Ctrl-click (Cmd on a Mac) | Adds the photo to the selection, the active photo staying as it is, or removes it; removing the active photo makes the nearest selected one active, or none | Removes it from the selection, and so from the cells |
 | Shift-click | Selects the range from the active photo to it; the active photo stays, so the Viewer does not jump while a range grows | — |
 | Double-click, or Enter | As a click: that photo alone, active | That photo alone |
 | A click on empty space: between the cells, on a caption, or in a cell's square round a fitted picture | Nothing: clearing the selection by accident would disable the Tools panel; Select None has its key and its item | Nothing |
@@ -2561,10 +2562,11 @@ With several photos selected, the rating, reject and label keys, Apply Edit and 
 - **The keys,** the same in every layout:
   - → and Space, ← and Backspace: with several selected, the active photo moves through the selection, which stays; with one, to the next or previous photo of the folder or album, selected alone;
   - Shift with the arrows extends the selection in the Browser;
+  - Ctrl+Space (Cmd+Space or Control+Space on a Mac, since Spotlight holds Cmd+Space) adds the focused cell's photo, the active photo staying, or removes it, as Ctrl-click does;
   - Ctrl+A selects every photo the folder or album shows, Ctrl+Shift+A none, which leaves no active photo ([The menu bar](#edit));
   - with the Browser focused, it keeps its arrows, Home, End, Space and Enter, as a focused control does.
-- **Screen readers:** the Browser's thumbnails are a list that allows several to be selected. Each item is named by its file name, rating, labels and whether it is edited ("IMG_2041.ARW, 3 stars, red label, edited"), reports whether it is selected, and the active photo is the current one. A cell in Photo is named the same way.
-- **When:** Phase 2 has one photo active, chosen in the Browser. Selecting several, the cells and the batch actions arrive in Phase 3, with the ratings.
+- **Screen readers:** the Browser's thumbnails are a list that allows several to be selected (built). Each item is named by its file name, its rating, labels and whether it is edited in its description ("IMG_2041.ARW"; "3 stars, red label, edited"; [The cell](#the-cell)), reports whether it is selected, and the active photo is the current one. A cell in Photo is named the same way.
+- **When:** selecting several in the Browser is built; Photo's cells and the batch actions arrive in Phase 3, with the ratings.
 
 ### Workspaces
 
@@ -3072,7 +3074,7 @@ Built. The surround behind the photo is one of six neutral greys (`Background`),
 
 The thin bar along the Viewer's top, `ViewerBar` in the code. Up to the Map toggle it is the same in every layout, the photo's toggles and the Map toggle staying where they are; after it, it is the layout's. Its parts in Photo are built; the Map toggle and Guides' own icon are not.
 
-- **In Photo,** at its start the photo's toggles: Show all selected photos, Proof margin, Before and after and Guides, then the Map toggle (later); then the layer being edited and + for a new one; in its middle the values under the cursor; at its end the zoom, one button showing the scale ([The zoom](#the-zoom)). With more than one photo selected, the count, "12 selected", stands before the zoom.
+- **In Photo,** at its start the photo's toggles: Show all selected photos, Proof margin, Before and after and Guides, then the Map toggle (later); then the layer being edited and + for a new one; in its middle the values under the cursor; at its end the zoom, one button showing the scale ([The zoom](#the-zoom)). With more than one photo selected, the count, "12 selected", stands before the zoom, in the text colour, a label to screen readers (built, `ViewerBar::selected`).
   - **Show all selected photos:** on, Photo shows the selected photos side by side; off, the active photo alone ([The Viewer's layouts](#the-viewers-layouts)). On by default. It is enabled whenever a photo is active, since it sets what Photo does once several are selected; View › Show All Selected is the same toggle.
   - **Guides,** the composition guides drawn over the photo in the `guides` token. Its message is `photo-guides`, and its action `guides` (View › Guides) comes with the menus. It is to take an icon of its own, thirds over a frame; until then it shows the icon `grid`. Which guides it draws is chosen with Crop's composition guides once Crop exists.
   - **The values under the cursor:** four numbers 0–255, with no swatch. Red, green and blue each in its channel's colour token and grey in the text colour, with no letters; their full names for screen readers.
@@ -3182,7 +3184,7 @@ The current folder's or album's thumbnails, in a column at the window's left by 
 
 - It shows the open folder's photos in the browser bar's sort, or the photos opened alone ([one photo](library.md#one-photo)) in the order opened, the photo open being the active cell, outlined thicker than a selected one, both in the icons' grey.
 - It is never hidden and is empty with no folder and no photos opened alone. A folder with no raws shows, centred in it and muted (`text_secondary`), a struck-through photo (`Icon::PhotoOff`, Lucide's `image-off`), "No photos available" (`folder-empty`) under it and, where the folder's listing found subfolders, the ones Collections' tree shows under it, "Choose a subfolder in Collections." (`folder-empty-hint`) smaller under that; nothing is listed for the hint. Each line is wrapped to the panel's width, so a one-column side holds them too (`Browser::empty` and `empty_hint`; snapshots `browser-empty` and `browser-empty-left`).
-- A click or Enter opens a photo. With a cell focused, the arrows move to the cell beside it in the layout, Home and End to the first and last, scrolling to keep it in sight, and the active photo is scrolled into view when it changes ([Its keys](#its-keys)).
+- A click or Enter opens a photo, selected alone. In a folder, Ctrl-click, Ctrl+Space and Shift-click select several, each selected photo's cell ringed ([Selection and the active photo](#selection-and-the-active-photo)); among photos opened alone they do nothing. With a cell focused, the arrows move to the cell beside it in the layout, Home and End to the first and last, scrolling to keep it in sight, and the active photo is scrolled into view when it changes ([Its keys](#its-keys)).
 - A cell shows its photo's thumbnail ([The cell](#the-cell)). Until Apertrust renders its own, a thumbnail is the camera's embedded JPEG, turned upright by the photo's orientation and shown unmarked, as darktable shows it. Until it comes, and for a photo whose raw holds none, the file name stands in a box of the square's size.
 - **Asking for them:** the panel reports the cells it drew (`BrowserOutput::shown`), and the app asks the session for those with no thumbnail at the cell's size, each once while it stays in sight, in the panel's order, as one `LibraryCommand::Thumbnails`, or for photos opened alone, by path, one `LibraryCommand::PhotoThumbnails`, which reads each photo's own file and nothing of its folder (`crates/app/src/thumbnails.rs`). The size is the cell's side in physical pixels rounded up to 128, 256, 512 or 1024, so a change of the interface's scale or of the thumbnails' size asks again only past a step, a thumbnail at another size standing in meanwhile. A photo that leaves the panel's sight and comes back without its thumbnail is asked for again, so one the session's stack of 30 dropped comes in the end.
 - **Their textures** are a cache derived from the mirror, which keeps the thumbnails by photo and size with the folder, or by path and size with the photos alone: made as they come, by comparing the folder's generation, and dropped with the folder, or with a photo alone as it leaves the photos opened alone.
@@ -3222,6 +3224,7 @@ With a cell focused the arrows move as the cells lie:
 - **Along the strip** (← and → at the bottom, ↑ and ↓ at the sides): to the same place in the next or previous line of cells across, the last photo where the last line is short.
 - **Across it** (↑ and ↓ at the bottom, ← and → at the sides): to the cell beside it in its own line, and nothing at the line's end. With one line, these do nothing.
 - **Home and End**: the first and the last photo. Enter or Space opens the photo focused.
+- **Ctrl+Space** (Cmd+Space or Control+Space on a Mac) adds the photo focused to the selection, the active photo staying, or removes it, as Ctrl-click does, in a folder; among photos opened alone it does nothing.
 - The panel keeps these keys while a cell has the focus, as a focused control does; Shift with them extends the selection from Phase 3.
 
 #### Its size
@@ -4110,6 +4113,7 @@ Ctrl means Cmd on macOS.
 | View | See the photo without the section under the pointer | Hold H | In Photo. The section shows that it peeks, a tool's section too; rendering the photo without that tool is not built: H will send the same `Hide` the History tab's eye sends while held |
 | View | Next and previous photo | Space and →, Backspace and ← | With several selected, through the selection; else through the folder or album, the photo reached selected alone. Disabled with one photo |
 | View | Extend the selection | Shift with the arrows, in the Browser | Phase 3, with selecting several photos |
+| View | Add the focused cell's photo to the selection, the active photo staying, or take it out | Ctrl+Space, in the Browser; Control+Space too on the Mac, where Spotlight holds Cmd+Space | Built: the focused cell's own key, as Ctrl-click; no action of the registry |
 | View | Zoom the photo in and out, and to Fit | Ctrl+= (or Ctrl++), Ctrl+−; Ctrl+0 fits | Declared with no key, not yet available: the scale's zoom comes with the viewport's 100% view, and the keys with it; at the point under the pointer when it is over the photo. Every cell together with several shown |
 | View | Zoom the photo to 100%, and back to Fit | Z | Declared with Z, not yet available, as above; in Photo only |
 | View | Find a tool (`find-tool`), the Tools panel's search | Ctrl+Shift+F, from a value field too, which does not keep it | Built, decision 96's step 6: in ⋮, and in the tab bar's menu with step 5 ([Finding a tool](#finding-a-tool)) |

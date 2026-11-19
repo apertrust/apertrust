@@ -107,7 +107,7 @@ The app sends commands from its frame and drains in `App::logic`, its `wake` `eg
 
 ### The selection
 
-The selection and the active photo are the session's (decision 37; [gui.md](gui.md#selection-and-the-active-photo)), so a script reads and sets them with the commands the app is to send, `Command::Selection(SelectionCommand)` (the app sends none yet), and hears them as one fact, `Event::Selection` ([events.md](events.md#the-selection)).
+The selection and the active photo are the session's (decision 37; [gui.md](gui.md#selection-and-the-active-photo)), so a script reads and sets them with the commands the app sends, `Command::Selection(SelectionCommand)`, as the Browser's gestures do, and hears them as one fact, `Event::Selection` ([events.md](events.md#the-selection)).
 
 - **The collection** is the folder open, as its reading lists it. Photos opened alone are the client's: with no folder open the collection is empty, and the selection holds the active photo alone.
 - **A photo named** by `Set`, `Add` or `Range`'s `to` must be one of the collection's or the active photo; any other refuses the command, `NotInCollection { photo }`, and the selection is as it was. `Remove` of such a photo, and one in `Range`'s `order`, are passed over.

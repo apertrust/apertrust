@@ -47,8 +47,8 @@
 //!   labels through the popup service (AppKit's menu on the Mac), each checked while on,
 //!   with darktable's keys, and Clear labels.
 //! - **To AccessKit** a list item named by the file name, its marks, rating, reject and
-//!   labels in its description whatever the caption shows, selected when it is selected or
-//!   active; the first line's stars, reject and circle are buttons inside it.
+//!   labels in its description whatever the caption shows, selected, as a list's item and
+//!   as toggled, when it is selected or active; the first line's stars, reject and circle are buttons inside it.
 
 use egui::accesskit::HasPopup;
 use egui::{
@@ -470,9 +470,15 @@ impl<'a> GridCell<'a> {
         let clicked = response.clicked()
             && (!pointer || released_at(ui).is_some_and(|at| picture.contains(at)));
 
-        // What screen readers and the tooltip say of the marks.
+        // What screen readers and the tooltip say of the marks; whether it is selected as a
+        // list's item says it, which egui's `selected` alone tells as toggled.
         let notes = self.notes(ui);
         ui.ctx().accesskit_node_builder(response.id, |node| {
+            node.set_selected(selected);
+            // The active photo, of those selected, as the list's current item.
+            if self.active {
+                node.set_aria_current(egui::accesskit::AriaCurrent::True);
+            }
             if !notes.is_empty() {
                 node.set_description(notes.clone());
             }
