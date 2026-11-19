@@ -73,7 +73,7 @@ use apertrust_tools::utility::UtilityDefinition;
 use apertrust_tools::{ControlKind, Row, SettingRow, Widget};
 use apertrust_ui::components::{
     Button, Choice, ChoiceStyle, CollapsibleGroup, IconButton, PathField, TextField, ValueField,
-    Variable, field_inset,
+    Variable, Wheel, field_inset,
 };
 use apertrust_ui::i18n::Args;
 use apertrust_ui::{Icon, Theme, Translator, theme, tr, translator};
@@ -801,6 +801,12 @@ impl UtilityTool for Export {
     /// are laid out).
     fn spacing(&self, ui: &Ui) -> Option<egui::Vec2> {
         Some(vec2(theme(ui.ctx()).spacing.s, 0.0))
+    }
+
+    /// Only the focused row takes the wheel, never the one under the pointer, so a scroll
+    /// through its settings never changes where or what it writes (decision 90).
+    fn wheel(&self) -> Wheel {
+        Wheel::Focused
     }
 }
 

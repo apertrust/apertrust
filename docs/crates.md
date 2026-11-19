@@ -873,6 +873,7 @@ In `crates/ui/src/components`. Each reports its role, full name and value to Acc
 - Screen readers hear the value as drawn, with Enter as its key (Return on the Mac). The focus goes back to the track after Enter or Esc.
 - A field whose row was hidden before it ended keeps nothing typed.
 - `SliderRow::unit`: a value with its unit for screen readers (`unit-<unit>-value`).
+- `SliderRow::wheel`: where the row takes the scroll wheel, a notch a key's step sent done, taking the focus (below).
 
 **`ValueField`** takes a number only, for now (`ValueField::number_only`, decision 42):
 
@@ -887,6 +888,10 @@ In `crates/ui/src/components`. Each reports its role, full name and value to Acc
 
 - `ChoiceStyle::Boxed`, the default;
 - `Blended`, darktable's combobox: its option right-aligned with ⌄ after it, its stroke ending where slider values end, no box and no minimum width, the hover band across the row and the focus ring round it, and the kept marker a slider row has (`Choice::mark`, `ChoiceAction::ToggleKeep`).
+
+`Choice::wheel` gives it the wheel too, an option a notch, past those that cannot be chosen, stopping at the ends, never while its list is open.
+
+**The wheel** (`components/wheel.rs`; [docs/gui.md](gui.md#the-scroll-wheel-over-a-row)): `Wheel::Off`, the default, the Settings dialog's; `Pointer`, the Tools panel's rows, taking it under the pointer; `Focused`, Export's, only while focused too. `set_wheel_scrolls_panel` holds `tools_panel.wheel_scrolls_panel` in the context, as `set_marker` the marker: on, the default, a row takes the wheel only with Ctrl (Option on the Mac), Shift with it ten steps; off, darktable's default, plain, Shift ten steps and Ctrl a tenth. A line is a notch, a trackpad's points darktable's `_scroll_attenuate`'s, the rest of a notch kept in the row for the next; momentum changes no row; a row that took a notch keeps the frame's scroll, and the rest of that scroll's, from the panel. Disabled rows take none.
 
 **Checkboxes, text buttons and icon buttons** ([docs/gui.md](gui.md#checkboxes-text-buttons-and-icon-buttons)): `Checkbox`, `Button` (default, or primary with `Button::primary`; at least a width, with the keys that do the same at its end, `Button::width` and `Button::keys`) and `ToolButton`, the bars' quiet one, drawn from one plate, and `IconButton`, drawn with none, its icon `text_secondary` at rest, `text_strong` under the pointer, `accent_text` held down and its filled form while on (decision 81), with a dot, `accent` and 6 points, centred on its icon's top end corner where asked (`IconButton::dot`, decisions 85 and 96), all with one focus ring with a point of ground inside it (`components/plate.rs`); `ButtonState` draws any of them in one state, as the gallery's strip of states does.
 

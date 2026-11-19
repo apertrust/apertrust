@@ -1817,7 +1817,7 @@ It scrolls with the tool, never pinned. The Summary is a group after Multi-prese
 
 ### Mistake guards
 
-- **The wheel:** a plain scroll always scrolls the Tools panel; Option+scroll (Ctrl+scroll on Windows and Linux) changes only the focused export row, never one under the pointer ([The scroll wheel over a row](#the-scroll-wheel-over-a-row)).
+- **The wheel:** only a focused export row takes it, never another under the pointer, by the setting's rule: while the wheel scrolls the Tools panel, Option+scroll (Ctrl+scroll on Windows and Linux) over the focused row, otherwise a plain scroll there too ([The scroll wheel over a row](#the-scroll-wheel-over-a-row)).
 - **Stale settings:** the Summary sits over the button, open at first, its first row the preset in use; Ctrl+E reveals the tool rather than exporting; Storage options and Format options never close, and a closed collapsible group shows the dot of a setting off its default; the settings are taken as Export is pressed.
 - **A stray click dropping the selection:** the count is in the button, the viewer bar says "12 selected", and Edit › Previous Selection takes the selection back one level ([Edit](#edit)).
 
@@ -1886,7 +1886,7 @@ Kept from darktable:
 
 ### As built
 
-The Export tool: `crates/app/src/export.rs`, with its end in `export/end.rs` and its tests in `export/tests.rs`, the Photos tab's last section, after Collections (`photos_tool`, `data/workspaces/default.toml`). Export is no dialog: the dialog host serves Settings, the jobs and log windows, Linux's alerts, the prompts and decision 89's windows. Not built yet: the keys (Ctrl+Return, Esc, Ctrl+Shift+E, the focus on the button after the reveal, the wheel rule), the preview's "in view, with focus" rule and its `through` rule, presets and the later groups, and several photos.
+The Export tool: `crates/app/src/export.rs`, with its end in `export/end.rs` and its tests in `export/tests.rs`, the Photos tab's last section, after Collections (`photos_tool`, `data/workspaces/default.toml`). Export is no dialog: the dialog host serves Settings, the jobs and log windows, Linux's alerts, the prompts and decision 89's windows. Its rows take the wheel only while focused (`UtilityTool::wheel`). Not built yet: the keys (Ctrl+Return, Esc, Ctrl+Shift+E, the focus on the button after the reveal), the preview's "in view, with focus" rule and its `through` rule, presets and the later groups, and several photos.
 
 - **Revealing it.** File › Export… and Ctrl+E (Cmd+E) (`export`) reveal it, enabled with a photo open and no modal dialog, on every platform: `Shell::reveal` chooses the first tab holding it, the Photos tab in the Default workspace, opens the section and scrolls it to the top of the panel. Nothing opens over the window. Where the host shows no alert yet, on Windows ([Dialogs and alerts](#still-to-build)), On conflict's Overwrite, which asks first, is listed disabled with its reason in the tooltip, and Export rests while a kept Overwrite is chosen. Linux's drawn alert asks above the main window. Every workspace holds it, never hidden: where no tab shown lists it, at the end of the Photos tab where that is shown, else of the first tab shown that holds tools, else of the first tab (decision 96).
 - **Its header** is a utility's: the title Export, then ↺, which applies Default settings (disabled while they are in place), the presets button, drawn disabled with "Presets come in a later version", and ⋯, drawn disabled; closed at first, as its declaration says and every processing tool's does, Export… and Ctrl+E opening it, its state kept as `export` in `edit.sections`. The field `App.export` lives as long as the app; its values are the `export.*` settings and nothing of the edit.
@@ -3637,7 +3637,7 @@ None of these blocks a tool built so far:
 
 - **A row's own buttons** are only its quad, with no Auto of its own yet.
 - **Slider values** (decision 42, [their cards](#slider-values-the-build-in-cards)): the value with its unit at rest and the number-only field are built. Dropping one trailing unit of the closed list and darktable's expressions wait until there is a need.
-- **darktable's other ways past a soft range than typing:** its fine-tuning popup, its zoom and the middle click come with decision 42's cards. A drag or a scroll with Ctrl+Shift stepping beyond it still needs a decision, since keys with Ctrl are the app's here (`ui-conventions`); a typed value, a script and a preset already reach the range. darktable wraps a hue typed past ±180° onto the turn; Apertrust clamps it (`docs/tools/rgb-primaries.md`, Gaps).
+- **darktable's other ways past a soft range than typing:** its fine-tuning popup, its zoom and the middle click come with decision 42's cards. A drag with Ctrl+Shift stepping beyond it still needs a decision, and so does a scroll, whose Ctrl+Shift moves ten steps inside the span here ([The scroll wheel over a row](#the-scroll-wheel-over-a-row)); a typed value, a script and a preset already reach the range. darktable wraps a hue typed past ±180° onto the turn; Apertrust clamps it (`docs/tools/rgb-primaries.md`, Gaps).
 - **How a widened track looks,** which Colour calibration's temperature row needs first (its track over 3000 to 7000 K, its range 1667 to 25000). darktable draws the parts of a widened track outside the soft range in its insensitive colour (`_draw_baseline`), so the soft range stays visible within the span shown, where Apertrust draws the whole span alike. darktable also remaps a gradient track's stops onto the visible range, from positions over the hard range, where `Track::Gradient` places its stops along the track whatever it spans, so a colour band over a soft range or a widened span would show the wrong colours at each value.
 - **Track shapes.** `SliderRow` maps the track linearly, as darktable's sliders do. `Track` has temperature, tint and hue, but not the saturation and luminance bands the definition offers; the renderer draws those plain.
 - **Markers and resets.** `Choice`'s Blended style has the kept marker; a choice's reset (darktable's quick second click), and `Segmented`'s and the toggle's marker and reset, remain. Only `Choice` has a quad, which a choice with a picker needs.
@@ -3817,12 +3817,20 @@ Each is drawn by `SliderRow`, so they need nothing of their own.
 
 ### The scroll wheel over a row
 
-A plain scroll scrolls the Tools panel and never changes a row; this is a deviation from darktable's default (decision 2). Planned.
+A slider row or a choice row in the Tools panel takes the mouse wheel as darktable's bauhaus widgets do (`_widget_scroll`), by the setting **Mouse wheel scrolls the Tools panel**, `tools_panel.wheel_scrolls_panel`, in Settings › Editing's Tools panel group, on by default. Built: `apertrust_ui::components::wheel`, a row taking it where it is given a `Wheel`.
 
-- **Option+scroll** on the Mac, **Ctrl+scroll** on Windows and Linux, over a slider adjusts it by its step, ten with Shift, and over a choice row steps its options, as darktable's wheel does a combobox's. Alt is unreliable on Linux desktops, and a released Alt opens Windows' menu; the Mac's Ctrl+scroll is the system's screen zoom.
-- Over the photo, Ctrl+scroll stays the photo's zoom, what is under the pointer deciding.
-- **In the Export tool** the modifier changes only the focused row, never the row under the pointer, so a scroll through its settings never changes where or what it writes (decision 90); a plain scroll scrolls the panel there too.
-- darktable has this as its setting "mouse wheel scrolls modules side panel by default" (`darkroom/ui/sidebar_scroll_default`), with Ctrl+Alt to change a widget; Apertrust makes it the default, with one modifier.
+- **On:** a plain scroll scrolls the Tools panel and never changes a row. **Ctrl+scroll** over a slider changes it by its step, ten steps with Shift too, and over a choice row steps its options, as darktable's wheel does a combobox's. darktable's modifier here is Ctrl+Alt; Apertrust's is Ctrl alone, since Linux desktops' window managers take Alt with the mouse.
+- **Off,** darktable's default (`darkroom/ui/sidebar_scroll_default`, "mouse wheel scrolls modules side panel by default"): the wheel over a slider or a choice row changes it, one step a notch, ten with **Shift** and a tenth with **Ctrl**, as darktable's; anywhere else in the panel it scrolls the panel.
+- **On the Mac** Option takes Ctrl's place in both, Ctrl+scroll being the system's screen zoom, as it does with the arrows ([Keyboard and actions](#keyboard-and-actions)).
+- **On by default is a deviation** from darktable (decision 2): a new user's scroll down a long panel would otherwise change every slider passing under the pointer.
+- **Either way:**
+  - What is under the pointer decides: over the photo, Ctrl+scroll (Cmd+scroll on the Mac) never reaches a row; it is to be the photo's zoom, which is planned.
+  - **In the Export tool** only a focused row takes the wheel, while the pointer is over it, never another row the pointer is over, so a scroll through its settings never changes a row that has no focus, where or what it writes among them (decision 90).
+  - A disabled row takes none, and the panel scrolls instead; nor does a choice whose list is open, or a slider whose value field is.
+  - A choice steps one option a notch whatever else is held, passing over those that cannot be chosen and stopping at the ends, as darktable's `_combobox_next_sensitive`.
+  - Each notch is a change sent done, as a key's, and the row takes the focus, as darktable's does; the history merges a run of notches on one control into one step (decision 78).
+  - A notch is a line of the wheel. A trackpad's points are made notches as darktable's `_scroll_attenuate` makes the Mac's, 0.06 × points^0.7 an event, and what is less than a notch waits in the row for the next, darktable's discrete scrolling. The system's momentum after the fingers lift changes no row, and a row that took a notch keeps the panel still for the rest of that scroll, though the pointer leave it. Each notch's step is by the modifiers held as it came.
+  - The Settings dialog's rows take no wheel; the slider popup keeps its own, its zoom ([The slider popup](#the-slider-popup)).
 
 ### What the session sees
 
@@ -3872,7 +3880,7 @@ Against darktable's combobox and the wireframe's `Controls` and `ModulePanel` bo
 | C7 | On the Mac the list is AppKit's native pop-up menu, the chosen item over the option, with the system's menu font and type-select (decision 40); darktable draws its own list on every platform |
 | C8 | On Windows and Linux the drawn list opens under the row, its end edge on the option's, the chosen option checked; darktable's opens over the row, the chosen entry where the row is |
 | C9 | In the open list the arrows move the highlight and Enter, Space or a click chooses; Esc closes with nothing changed. darktable's arrows, wheel and a held drag change the value live while it is open, and Esc keeps what they set |
-| C10 | A focused row that is closed opens on Space, Enter or ↓ (decision 40); darktable's arrows step the choice in place. The wheel over the row: Option+scroll on the Mac, Ctrl+scroll elsewhere, steps it, a plain scroll scrolling the panel ([above](#the-scroll-wheel-over-a-row)) |
+| C10 | A focused row that is closed opens on Space, Enter or ↓ (decision 40); darktable's arrows step the choice in place. The wheel over the row steps it: with Ctrl, Option on the Mac, while Mouse wheel scrolls the Tools panel is on, a plain scroll then scrolling the panel, and plain while it is off ([above](#the-scroll-wheel-over-a-row)) |
 | C11 | A click opens the list, and a quick second click does not reset; darktable resets a combobox when the second press comes within its long-click time (`_popup_button_press`) |
 | C12 | A neutral `hover` band across the whole row under the pointer; darktable only brightens the text |
 | C13 | The chevron is Apertrust's 10-point `ChevronDown` icon in `text_secondary`; darktable draws a flat one-pixel "v" in the text colour |
@@ -3880,7 +3888,7 @@ Against darktable's combobox and the wireframe's `Controls` and `ModulePanel` bo
 ### Slider values: still open
 
 - **A choice row's reset,** darktable's quick second click, and the marker and reset of `Segmented` and the toggle ([what the renderer still lacks](#what-the-renderer-still-lacks)).
-- **Ctrl+Shift's steps past the soft range,** darktable's on a drag or a scroll, since keys with Ctrl are the app's.
+- **Ctrl+Shift's steps past the soft range,** darktable's on a drag or a scroll: a scroll's Ctrl+Shift moves ten steps inside the span here, and a drag's has no meaning yet.
 - **Two choices to confirm on the wireframe:** the field's width growing towards the label, and leaving the field with no value putting the value back.
 
 ### Slider values: the build, in cards
@@ -4218,7 +4226,7 @@ The schema is one file in TOML, `data/settings.schema.toml` (decisions 43 and 45
 | General | Confirmations | Ask before overwriting an exported file (`export.ask_before_overwrite`), Ask before discarding a photo’s history (`history.ask_before_discard`) |
 | General | Diagnostics | Keep a log of this session (`log.keep`, off), Log (`log.domains`, a list of the `-d` domains and Verbose, all but Memory and Verbose ticked); each with its help in its tooltip ([The log window](#the-log-window)) |
 | Photos | Thumbnails | Square thumbnails (`browser.square_thumbnails`) |
-| Editing | Tools panel | Show tab names (`tools_panel.tab_names`) |
+| Editing | Tools panel | Show tab names (`tools_panel.tab_names`), Mouse wheel scrolls the Tools panel (`tools_panel.wheel_scrolls_panel`, on), its help in its tooltip ([The scroll wheel over a row](#the-scroll-wheel-over-a-row)) |
 | Processing | Hardware acceleration | Graphics card (`engine.adapter`, a list of the adapters the chosen API finds, below), Graphics API (`engine.backend`, Automatic, Direct3D 12 or Vulkan, on Windows alone; decision 82), Memory budget (`engine.memory_budget`, in MiB), each after a restart; then the In use line |
 | Storage | Cache | Limit the cache's size (`cache.limited`, on), Cache limit (`cache.limit`, in GB, disabled while the first is off), Library caches unused for (`cache.unused_after`, 90 days); each with its help in its tooltip; the page's Folders group before them and its In the cache group after, built by hand ([cache.md](cache.md#settings--storage)) |
 
@@ -4238,7 +4246,7 @@ Import, Shortcuts, Presets and AI are dimmed until they hold something. Planned 
 
 **Its window** is a native window of its own (decision 41, [Dialogs and alerts](#dialogs-and-alerts)): on the Mac a modeless window rather than a sheet, minimise and zoom dimmed, no Close button, its own close button and Cmd+W closing it and Escape not, as in the Mac's own Settings windows, opening where the user last left it, centred over the main window the first time. On Windows and Linux it is a modal window of the host, with its Close button, and Escape closes it. Its content is 960 by 640 points, the page list 200 of them.
 
-**Built** (`crates/app/src/settings_dialog.rs`, a `Dialog` of the dialog host on every platform): the page list, the pages of rows drawn from the registry by kind, a list of a choice's switch rows, the help in the label's tooltip, the dot, the reset by a double-click or the row's menu, `--conf`'s rows disabled, the after-restart note, the waiting line with Restart now and the page kept. A change goes to the app as `settings_dialog::Change` (a setting set to a value as `settings.toml` keeps it, or reset), which `Keeper::apply` keeps in the store, after the frame's own settings, and the shell takes in from the settings read back (`Shell::follow`): the theme and the language as before, the interface's size, square thumbnails in the grid, the tab names in the Tools panel and the log kept as Diagnostics says at once; the engine's settings are kept for its next start. The dialog shows the theme and the language in its own window at once too. Storage's hand-built part is built (`crates/app/src/storage.rs`): its folders with how each was chosen and Show in Finder, each limited kind's size with its Clear, the libraries' caches as one line and the total against the limit, the sizes asked each time the page is shown and handed to it by the app as they change ([cache.md](cache.md#settings--storage)). Still to build: the other hand-built pages, Shortcuts first, key rebinding among them, each library's cache on Storage with its Remove (step 27), and the help button that opens a page's documentation.
+**Built** (`crates/app/src/settings_dialog.rs`, a `Dialog` of the dialog host on every platform): the page list, the pages of rows drawn from the registry by kind, a list of a choice's switch rows, the help in the label's tooltip, the dot, the reset by a double-click or the row's menu, `--conf`'s rows disabled, the after-restart note, the waiting line with Restart now and the page kept. A change goes to the app as `settings_dialog::Change` (a setting set to a value as `settings.toml` keeps it, or reset), which `Keeper::apply` keeps in the store, after the frame's own settings, and the shell takes in from the settings read back (`Shell::follow`): the theme and the language as before, the interface's size, square thumbnails in the grid, the tab names and the wheel's rule in the Tools panel and the log kept as Diagnostics says at once; the engine's settings are kept for its next start. The dialog shows the theme and the language in its own window at once too. Storage's hand-built part is built (`crates/app/src/storage.rs`): its folders with how each was chosen and Show in Finder, each limited kind's size with its Clear, the libraries' caches as one line and the total against the limit, the sizes asked each time the page is shown and handed to it by the app as they change ([cache.md](cache.md#settings--storage)). Still to build: the other hand-built pages, Shortcuts first, key rebinding among them, each library's cache on Storage with its Remove (step 27), and the help button that opens a page's documentation.
 
 ### What the file looks like
 
@@ -4249,6 +4257,7 @@ workspace = "portraits"     # the current workspace's id, decision 96, planned
 
 [tools_panel]
 tab_names = false
+wheel_scrolls_panel = false # the wheel over a row changes it, as darktable's default
 show_hidden = true          # Show Hidden Tools, decision 96
 width = 480
 

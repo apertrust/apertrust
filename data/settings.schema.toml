@@ -243,6 +243,18 @@ applies = "at-once"
 page = "editing"
 group = "tools_panel"
 
+# Whether the mouse wheel scrolls the Tools panel: on, a plain scroll scrolls it and Ctrl
+# (Option on the Mac) with the wheel changes the slider or choice under the pointer; off,
+# darktable's default (darkroom/ui/sidebar_scroll_default false), the wheel changes them
+# plain (docs/gui.md, The scroll wheel over a row).
+[tools_panel.wheel_scrolls_panel]
+owner = "app"
+kind = "boolean"
+default = true
+applies = "at-once"
+page = "editing"
+group = "tools_panel"
+
 # Whether the Tools panel shows the Hidden tab, last, with the tools the workspace puts in
 # no tab: Show Hidden Tools, in the Tools panel's ⋮, app-wide, the same in every workspace
 # (decision 96).

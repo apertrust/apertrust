@@ -65,6 +65,7 @@ mod tools_panel;
 mod value_field;
 mod viewer_bar;
 mod warning_row;
+mod wheel;
 
 pub use about::{About, Place};
 pub use action_row::ActionRow;
@@ -121,6 +122,7 @@ pub use tools_panel::{
 pub use value_field::ValueField;
 pub use viewer_bar::{Toggle, ViewerBar, ViewerBarAction, Zoom};
 pub use warning_row::WarningRow;
+pub use wheel::{Wheel, set_wheel_scrolls_panel, wheel_scrolls_panel};
 
 use egui::accesskit::HasPopup;
 use egui::text::LayoutJob;
