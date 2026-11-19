@@ -672,6 +672,162 @@ fn the_arrow_keys_move_between_cells_and_enter_opens_the_one_focused() {
     assert_eq!(harness.state().last(), Some(&BrowserAction::Open(0)));
 }
 
+/// The panel with three rated photos, IMG_0000 landscape, IMG_0001 portrait and IMG_0002
+/// with no thumbnail yet, IMG_0000 active and selected, and what it reported.
+fn pictured_panel() -> Harness<'static, Vec<BrowserAction>> {
+    let textures = std::sync::Arc::new(std::sync::OnceLock::<[egui::TextureHandle; 2]>::new());
+    Harness::builder()
+        .with_size(egui::vec2(700.0, 200.0))
+        // Frames a sixtieth of a second apart, so two clicks make a double-click (0.3 s).
+        .with_step_dt(1.0 / 60.0)
+        .with_context_setup(install)
+        .build_ui_state(
+            move |ui, actions: &mut Vec<BrowserAction>| {
+                let [landscape, portrait] = textures.get_or_init(|| {
+                    [[3, 2], [2, 3]].map(|[w, h]| {
+                        let image = egui::ColorImage::new([w, h], vec![egui::Color32::RED; w * h]);
+                        ui.ctx()
+                            .load_texture("thumbnail", image, egui::TextureOptions::LINEAR)
+                    })
+                });
+                let names: Vec<String> = (0..3).map(|i| format!("IMG_{i:04}.ARW")).collect();
+                let thumb = |i: usize| Thumb {
+                    name: &names[i],
+                    edited: false,
+                    status: None,
+                    selected: i == 0,
+                    picture: [landscape, portrait].get(i).map(|handle| CellPicture {
+                        texture: handle.id(),
+                        size: handle.size_vec2(),
+                    }),
+                    rating: rated(),
+                };
+                if let Some(action) = Browser::new(3, Some(0), thumb).show(ui).action {
+                    actions.push(action);
+                }
+            },
+            Vec::new(),
+        )
+}
+
+/// A click of the primary button at `pos` with `modifiers` held, in frames of its own.
+fn click_at<T>(harness: &mut Harness<'_, T>, pos: egui::Pos2, modifiers: egui::Modifiers) {
+    harness.event(egui::Event::ModifiersChanged(modifiers));
+    harness.hover_at(pos);
+    harness.step();
+    for pressed in [true, false] {
+        harness.event(egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers,
+        });
+    }
+    harness.step();
+    harness.event(egui::Event::ModifiersChanged(egui::Modifiers::NONE));
+    harness.step();
+}
+
+/// Only a click on a photo's picture, or on the name's box until the picture comes, picks
+/// it (`docs/gui.md`, The pointer): the caption and the square round a fitted picture are
+/// empty space, where a click, Ctrl or Cmd-click, Shift-click or double-click does nothing.
+#[test]
+fn only_a_click_on_a_photo_s_picture_selects_it() {
+    let mut harness = pictured_panel();
+    harness.run();
+    let cell = harness.get_by_label("IMG_0001.ARW").rect();
+    let square = egui::Rect::from_min_size(cell.min, egui::vec2(cell.width(), cell.width()));
+    // The portrait picture is two thirds of the square wide, centred: a sixth either side
+    // is empty.
+    let beside = [
+        egui::pos2(square.left() + 8.0, square.center().y),
+        egui::pos2(square.right() - 8.0, square.top() + 8.0),
+    ];
+    // The name, the caption's second line, at its bottom.
+    let name = egui::pos2(cell.center().x, cell.bottom() - 6.0);
+    let command = egui::Modifiers::COMMAND;
+    let shift = egui::Modifiers::SHIFT;
+    let none = egui::Modifiers::NONE;
+    for (at, modifiers) in [
+        (beside[0], none),
+        (beside[1], none),
+        (name, none),
+        (beside[0], command),
+        (name, command),
+        (beside[1], shift),
+        (name, shift),
+    ] {
+        click_at(&mut harness, at, modifiers);
+        assert!(
+            harness.state().is_empty(),
+            "{at:?} {modifiers:?}: {:?}",
+            harness.state()
+        );
+    }
+    // A double-click beside the picture.
+    click_at(&mut harness, beside[0], none);
+    click_at(&mut harness, beside[0], none);
+    assert!(harness.state().is_empty(), "{:?}", harness.state());
+
+    // On the picture, a click opens the photo, and so does one on the name's box of a photo
+    // whose picture has yet to come.
+    click_at(&mut harness, square.center(), none);
+    assert_eq!(*harness.state(), [BrowserAction::Open(1)]);
+    let waiting = harness.get_by_label("IMG_0002.ARW").rect();
+    click_at(
+        &mut harness,
+        waiting.left_top() + egui::vec2(8.0, 8.0),
+        none,
+    );
+    assert_eq!(harness.state().last(), Some(&BrowserAction::Open(2)));
+    click_at(&mut harness, square.center(), command);
+    assert_eq!(
+        harness.state().last(),
+        Some(&BrowserAction::ToggleSelected(1))
+    );
+    click_at(&mut harness, square.center(), shift);
+    assert_eq!(harness.state().last(), Some(&BrowserAction::SelectRange(1)));
+}
+
+/// The picture is judged where the button was released, not where the pointer went after
+/// it in the same frame: released beside the picture and moved onto it picks nothing;
+/// released on it and moved off it picks the photo.
+#[test]
+fn a_click_is_judged_where_the_button_was_released() {
+    let mut harness = pictured_panel();
+    harness.run();
+    let cell = harness.get_by_label("IMG_0001.ARW").rect();
+    let square = egui::Rect::from_min_size(cell.min, egui::vec2(cell.width(), cell.width()));
+    let beside = egui::pos2(square.left() + 8.0, square.center().y);
+    let on = square.center();
+    let click_then_move = |harness: &mut Harness<'_, _>, at: egui::Pos2, to: egui::Pos2| {
+        harness.hover_at(at);
+        harness.step();
+        harness.event(egui::Event::PointerButton {
+            pos: at,
+            button: egui::PointerButton::Primary,
+            pressed: true,
+            modifiers: egui::Modifiers::NONE,
+        });
+        harness.step();
+        // The release and a move after it, in one frame.
+        let events = &mut harness.input_mut().events;
+        events.push(egui::Event::PointerButton {
+            pos: at,
+            button: egui::PointerButton::Primary,
+            pressed: false,
+            modifiers: egui::Modifiers::NONE,
+        });
+        events.push(egui::Event::PointerMoved(to));
+        harness.step();
+        harness.step();
+    };
+    click_then_move(&mut harness, beside, on);
+    assert!(harness.state().is_empty(), "{:?}", harness.state());
+    click_then_move(&mut harness, on, beside);
+    assert_eq!(*harness.state(), [BrowserAction::Open(1)]);
+}
+
 #[test]
 fn the_cells_hang_under_the_browser_s_list_so_a_screen_reader_hears_n_items() {
     let mut harness = panel(4, Some(0));

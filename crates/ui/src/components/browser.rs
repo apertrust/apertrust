@@ -24,8 +24,9 @@
 //! photos it drew ([`BrowserOutput::shown`]), so the caller asks for the thumbnails of
 //! those on screen as it scrolls.
 //!
-//! A click opens a photo; Shift-click selects a range, Ctrl or Cmd-click adds or removes
-//! one. A right-click on a cell, a Control-click on the Mac, or the menu key, Shift+F10 or
+//! A click on a photo's picture opens it; Shift-click selects a range, Ctrl or Cmd-click
+//! adds or removes one. A click on a caption or round a fitted picture does nothing. A
+//! right-click on a cell, a Control-click on the Mac, or the menu key, Shift+F10 or
 //! AccessKit's ShowContextMenu on the one focused, asks for its photo's menu, which the
 //! caller builds ([`BrowserOutput::menu`]). With a cell focused, ← and → move the focus to
 //! the next or previous photo, Home and End to the first and last, and Enter or Space opens
@@ -551,7 +552,7 @@ impl<'a, F: Fn(usize) -> Thumb<'a>> Browser<'a, F> {
                             if let Some(done) = cell.action {
                                 cell_action = Some((i, done));
                             }
-                            let response = cell.response;
+                            let (response, picked) = (cell.response, cell.clicked);
                             if response.has_focus() {
                                 moved = moved.or(keyed(ui, id, i, &cells));
                             }
@@ -566,7 +567,7 @@ impl<'a, F: Fn(usize) -> Thumb<'a>> Browser<'a, F> {
                                     cell: id,
                                 });
                             }
-                            if response.clicked() && !clicked {
+                            if picked && !clicked {
                                 let modifiers = ui.input(|input| input.modifiers);
                                 action = Some(if modifiers.shift {
                                     BrowserAction::SelectRange(i)

@@ -2545,11 +2545,11 @@ With several photos selected, the rating, reject and label keys, Apply Edit and 
 
 | Input | In the Browser | On a cell in Photo |
 | --- | --- | --- |
-| Click | Selects the photo alone and makes it active | Makes it active; the selection stays |
+| A click on a photo's picture | Selects the photo alone and makes it active | Makes it active; the selection stays |
 | Ctrl-click (Cmd on a Mac) | Adds the photo, active, or removes it; removing the active photo makes the nearest selected one active, or none | Removes it from the selection, and so from the cells |
 | Shift-click | Selects the range from the active photo to it; the active photo stays, so the Viewer does not jump while a range grows | — |
 | Double-click, or Enter | As a click: that photo alone, active | That photo alone |
-| A click on empty space | Nothing: clearing the selection by accident would disable the Tools panel; Select None has its key and its item | Nothing |
+| A click on empty space: between the cells, on a caption, or in a cell's square round a fitted picture | Nothing: clearing the selection by accident would disable the Tools panel; Select None has its key and its item | Nothing |
 | Right-click | The context menu ([Context menus](#context-menus)) acts on the selection when the photo is in it, else on the photo alone, selected first | The same |
 
 - **The keys,** the same in every layout:
@@ -3198,6 +3198,7 @@ How it selects and what screen readers hear of its thumbnails are in [Selection 
   - **The second line:** the file name on one line, centred, cut in its middle when too long as the caption under the photo cuts it, keeping its extension; the active photo's in `text_strong`, the others' in `text`.
   - **Its clicks,** each reported with the photo as a cell action: a star rates the photo so many stars; the reject mark turns its reject on or off; the circle opens the list of the five labels through the popup service (AppKit's menu on the Mac), each checked while on, with darktable's keys F1 to F5 shown, and Clear labels after a separator. The circle is outlined under the pointer, never while its list is open. A click there never opens the photo.
   - **Until the library keeps ratings** (Phase 3), the app draws every photo's first line unrated, not rejected and unlabelled; the gallery draws it with sample values. What its clicks report changes nothing until the ratings come.
+- **What picks the photo:** a click, Ctrl-click, Shift-click or double-click on its picture, or on its name's box until the picture comes ([Selection and the active photo](#selection-and-the-active-photo), The pointer). The caption, the first line's three marks apart, and the square round a fitted picture are empty space. The cell stays one element: a right-click anywhere on it, or a Control-click on the Mac, asks for its photo's menu, and its focus and keys are the whole cell's.
 - **Screen readers** hear the name as the list item's name and the marks, the rating (or that it is rejected) and the labels in its description, whatever the toggle shows; the first line's stars, reject and circle are buttons inside it, the stars on while within the rating, the reject on while rejected, the circle with a menu and the labels set as its value. They take no Tab stops: the keys rate from Phase 3.
 - **Kept:** whether labels show is `browser.labels` ([The browser bar](#the-browser-bar)), and square thumbnails `browser.square_thumbnails`.
 

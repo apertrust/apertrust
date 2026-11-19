@@ -38,6 +38,10 @@
 //!   `text_strong`; at Small 20 points, the name alone. Without a rating ([`CellRating`],
 //!   which the library has yet to keep), the first line is not drawn and the name takes its
 //!   place.
+//! - **The click that picks the photo** is taken over the picture alone, or the name's box
+//!   until it comes ([`GridCellOutput::clicked`]): the caption and the square round a
+//!   fitted picture are empty space. The cell stays one widget, so a right-click anywhere
+//!   on it, its focus and its keys are the whole cell's.
 //! - **The first line's clicks**, reported as a [`CellAction`]: a star rates the photo, the
 //!   reject mark turns its reject on or off, and the circle opens the list of the five
 //!   labels through the popup service (AppKit's menu on the Mac), each checked while on,
@@ -48,8 +52,8 @@
 
 use egui::accesskit::HasPopup;
 use egui::{
-    Align, Color32, FontId, Id, Pos2, Rect, Response, Role, Sense, Shape, Stroke, StrokeKind, Ui,
-    UiBuilder, WidgetInfo, pos2, text::LayoutJob, vec2,
+    Align, Color32, FontId, Id, PointerButton, Pos2, Rect, Response, Role, Sense, Shape, Stroke,
+    StrokeKind, Ui, UiBuilder, WidgetInfo, pos2, text::LayoutJob, vec2,
 };
 
 use super::photo_frame::middle_cut;
@@ -195,10 +199,30 @@ pub enum CellAction {
     ClearLabels,
 }
 
-/// What a cell reported: its response, for its clicks and focus, and what the user did on
-/// its first line.
+/// Where the primary button was last released this frame, if it was.
+fn released_at(ui: &Ui) -> Option<Pos2> {
+    ui.input(|input| {
+        input.events.iter().rev().find_map(|event| match event {
+            egui::Event::PointerButton {
+                pos,
+                button: PointerButton::Primary,
+                pressed: false,
+                ..
+            } => Some(*pos),
+            _ => None,
+        })
+    })
+}
+
+/// What a cell reported: its response, for its focus and right-click, whether the photo was
+/// clicked, and what the user did on its first line.
 pub struct GridCellOutput {
+    /// The whole cell's, its square and caption: its own `clicked` counts a click anywhere
+    /// on it.
     pub response: Response,
+    /// The photo was clicked: by the pointer on its picture, or on the name's box while it
+    /// has none, or by Enter, Space or a screen reader.
+    pub clicked: bool,
     pub action: Option<CellAction>,
 }
 
@@ -439,6 +463,13 @@ impl<'a> GridCell<'a> {
             }
         }
 
+        // A pointer's click picks the photo over the picture alone, where the button was
+        // released: a move after it in the same frame moves `interact_pointer_pos` on. The
+        // keys' and screen readers' click the whole cell.
+        let pointer = response.clicked_by(PointerButton::Primary);
+        let clicked = response.clicked()
+            && (!pointer || released_at(ui).is_some_and(|at| picture.contains(at)));
+
         // What screen readers and the tooltip say of the marks.
         let notes = self.notes(ui);
         ui.ctx().accesskit_node_builder(response.id, |node| {
@@ -453,6 +484,7 @@ impl<'a> GridCell<'a> {
         };
         GridCellOutput {
             response: response.on_hover_text(tip),
+            clicked,
             action,
         }
     }
