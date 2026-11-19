@@ -893,6 +893,8 @@ impl Inbox {
 ///   and the joined paths open once none has arrived for `interval`: on Windows [`JOIN`],
 ///   since Explorer starts the app once per file; elsewhere none, so each opens at once.
 /// - A hand-off with no paths joins nothing; it only brings the window forward.
+/// - **Every open comes,** in order: a hand-off that joins none comes after the open waiting
+///   before it, however many arrive before the window takes them.
 #[derive(Debug)]
 pub struct Join {
     interval: Duration,
@@ -900,6 +902,8 @@ pub struct Join {
     batch: Vec<PathBuf>,
     last: Instant,
     due: bool,
+    /// Opens that no later hand-off can join, oldest first, each due at once.
+    ready: std::collections::VecDeque<Vec<PathBuf>>,
 }
 
 impl Join {
@@ -911,6 +915,7 @@ impl Join {
             due: !own.is_empty(),
             batch: own,
             last: started,
+            ready: std::collections::VecDeque::new(),
         }
     }
 
@@ -926,7 +931,10 @@ impl Join {
         }
         let joins = !self.shown || at.saturating_duration_since(self.last) < self.interval;
         if !joins {
-            self.batch.clear();
+            let before = std::mem::take(&mut self.batch);
+            if self.due {
+                self.ready.push_back(before);
+            }
         }
         for path in paths {
             if !self.batch.contains(&path) {
@@ -948,12 +956,19 @@ impl Join {
 
     /// Whether an open waits: the start window is not shown meanwhile.
     pub fn pending(&self) -> bool {
-        self.due
+        self.due || !self.ready.is_empty()
     }
 
-    /// The paths to open `now`, where an open is due.
+    /// The paths of the oldest open due `now`, one an open; the next is taken once it has
+    /// opened.
     pub fn take(&mut self, now: Instant) -> Option<Vec<PathBuf>> {
-        if !self.due || !self.shown || now.saturating_duration_since(self.last) < self.interval {
+        if !self.shown {
+            return None;
+        }
+        if let Some(paths) = self.ready.pop_front() {
+            return Some(paths);
+        }
+        if !self.due || now.saturating_duration_since(self.last) < self.interval {
             return None;
         }
         self.due = false;
@@ -962,7 +977,13 @@ impl Join {
 
     /// How long until an open is due, for the window to wake then.
     pub fn wait(&self, now: Instant) -> Option<Duration> {
-        (self.due && self.shown).then(|| {
+        if !self.shown {
+            return None;
+        }
+        if !self.ready.is_empty() {
+            return Some(Duration::ZERO);
+        }
+        self.due.then(|| {
             self.interval
                 .saturating_sub(now.saturating_duration_since(self.last))
         })
@@ -1664,6 +1685,34 @@ mod tests {
         join.arrive(Vec::new(), at(9100));
         assert_eq!(join.take(at(9500)), Some(paths(&["g"])));
         assert_eq!(join.take(at(9600)), None);
+    }
+
+    /// Hand-offs that join none, taken by the window together, each open in order, none
+    /// lost: on Windows past the interval, elsewhere any two.
+    #[test]
+    fn every_open_comes_however_many_arrive_at_once() {
+        let started = Instant::now();
+        let at = |ms| started + Duration::from_millis(ms);
+        let mut join = Join::new(Vec::new(), started, Duration::ZERO);
+        join.show();
+        join.arrive(paths(&["a"]), at(100));
+        join.arrive(paths(&["b"]), at(100));
+        join.arrive(paths(&["c"]), at(120));
+        assert_eq!(join.wait(at(120)), Some(Duration::ZERO));
+        assert_eq!(join.take(at(120)), Some(paths(&["a"])));
+        assert_eq!(join.take(at(120)), Some(paths(&["b"])));
+        assert!(join.pending());
+        assert_eq!(join.take(at(120)), Some(paths(&["c"])));
+        assert!(!join.pending());
+        assert_eq!(join.take(at(120)), None);
+        let mut windows = Join::new(Vec::new(), started, JOIN);
+        windows.show();
+        windows.arrive(paths(&["a"]), at(1000));
+        windows.arrive(paths(&["b"]), at(1200));
+        windows.arrive(paths(&["c"]), at(1800));
+        assert_eq!(windows.take(at(1900)), Some(paths(&["a", "b"])));
+        assert_eq!(windows.take(at(1900)), None, "within 500 ms of c");
+        assert_eq!(windows.take(at(2300)), Some(paths(&["c"])));
     }
 
     /// Elsewhere each hand-off once the window shows opens at once, alone; an instance with

@@ -5647,10 +5647,15 @@ impl App {
             }
         }
         let now = Instant::now();
-        if let Some(paths) = self.join.take(now) {
+        // One open at a time: a look started over another under way replaces it.
+        if !self.opened.looking()
+            && let Some(paths) = self.join.take(now)
+        {
             self.opened.look_given(paths, ctx);
         }
         match self.join.wait(now) {
+            // The look under way asks for the frame that takes the next once it is done.
+            Some(_) if self.opened.looking() => {}
             Some(wait) => ctx.request_repaint_after(wait),
             // The first frame drawn, for the paths waiting on it.
             None if self.join.pending() || !self.refused_early.is_empty() => {
