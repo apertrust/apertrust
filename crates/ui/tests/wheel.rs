@@ -467,6 +467,44 @@ fn a_notch_taken_leaves_the_panel_still_for_the_rest_of_its_scroll() {
     assert_eq!(top(&harness, Role::ComboBox, "Mode"), at);
 }
 
+/// The arrows on a focused slider: a step, Shift ten, the finer modifier a tenth, as
+/// darktable's; Alt on Windows and Linux, and Cmd or Ctrl on the Mac, leave them to the app.
+#[test]
+fn the_arrows_step_a_tenth_with_the_finer_modifier_and_ten_with_shift() {
+    for os in PLATFORMS {
+        let mut harness = panel(os, true);
+        harness.run();
+        harness
+            .get_by_role_and_label(Role::Slider, "Exposure")
+            .focus();
+        harness.run();
+        let mut press = |modifiers, key| {
+            harness.key_press_modifiers(modifiers, key);
+            harness.run();
+            harness.state().exposure
+        };
+        let fine = finer(os);
+        assert!(near(press(Modifiers::NONE, Key::ArrowRight), 0.1), "{os:?}");
+        assert!(near(press(Modifiers::SHIFT, Key::ArrowUp), 1.1), "{os:?}");
+        assert!(near(press(fine, Key::ArrowLeft), 1.09), "{os:?}");
+        assert!(
+            near(press(fine | Modifiers::SHIFT, Key::ArrowDown), 0.09),
+            "{os:?}"
+        );
+        let app = if os == OperatingSystem::Mac {
+            [Modifiers::MAC_CMD | Modifiers::COMMAND, Modifiers::CTRL]
+        } else {
+            [Modifiers::ALT, Modifiers::ALT | Modifiers::SHIFT]
+        };
+        for modifiers in app {
+            assert!(near(press(modifiers, Key::ArrowRight), 0.09), "{os:?}");
+        }
+        // Page Up and Page Down with Ctrl are the app's; the arrows alone take its tenth.
+        let ctrl = Modifiers::CTRL | Modifiers::COMMAND;
+        assert!(near(press(ctrl, Key::PageUp), 0.09), "{os:?}");
+    }
+}
+
 /// What is under the pointer decides: Ctrl+scroll over the photo, Cmd+scroll on the Mac,
 /// whichever way the setting is, reaches what is drawn there, here a stand-in reading
 /// egui's zoom, and changes no row. The photo's own zoom is planned.

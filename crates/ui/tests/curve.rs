@@ -383,7 +383,11 @@ fn keys_choose_a_point_and_move_it() {
     assert!(x == 0.5 && (y - 0.51).abs() < 1e-6, "{x} {y}");
     press(&mut harness, Modifiers::SHIFT, Key::ArrowUp);
     assert!((harness.state().points[1].1 - 0.61).abs() < 1e-5);
-    press(&mut harness, Modifiers::ALT, Key::ArrowRight);
+    press(
+        &mut harness,
+        Modifiers::CTRL | Modifiers::COMMAND,
+        Key::ArrowRight,
+    );
     assert!((harness.state().points[1].0 - 0.501).abs() < 1e-5);
     press(&mut harness, Modifiers::NONE, Key::End);
     press(&mut harness, Modifiers::NONE, Key::ArrowDown);

@@ -118,7 +118,7 @@ P4 in detail: six of the eight parameters bind darktable's exactly. The tint's h
 - **No tabs and no group labels:** darktable's eight sliders, one under another, in its order.
 - **Tracks** are plain, filled from the default, where darktable paints each slider in the colours its primary takes ([Gaps](#gaps)).
 - **Values** show one decimal with their unit, in the language's number format: "+9.5°", "−15.7%". A slider whose range spans zero is signed, as darktable's is, zero included: "+0.0°".
-- **Keyboard:** every row is a `SliderRow`, stepping by darktable's step, Shift ten steps and Alt a tenth, never less than 0.1, the decimal shown, as darktable's `min_visible`; the step grows as a widened track's span does, as darktable's zoom step makes it. The value is rounded to the decimal shown before it is sent.
+- **Keyboard:** every row is a `SliderRow`, stepping by darktable's step, Shift ten steps and Ctrl a tenth, Option on the Mac, never less than 0.1, the decimal shown, as darktable's `min_visible`; the step grows as a widened track's span does, as darktable's zoom step makes it. The value is rounded to the decimal shown before it is sent.
 - **While closed** the section shows its title and buttons; its presets and options are drawn disabled until something is behind them.
 
 ## Gaps

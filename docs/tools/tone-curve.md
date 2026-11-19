@@ -43,7 +43,7 @@ It drives one `rgbcurve` instance. An unedited photo does not run it, so it is p
 **In the panel and from scripts:** clicking adds a point, and dragging one off the frame removes it. Everything else here is proposed, so that no interaction needs the mouse:
 
 - With the curve focused, Page Up and Page Down select the next or previous point.
-- The arrows move the selected point by 0.001, with Shift ten times that and Alt a tenth.
+- The arrows move the selected point by 0.001, with Shift ten times that and Ctrl a tenth, Option on the Mac.
 - Insert adds a point on the curve, midway to the next one.
 - Delete removes the selected point.
 - Enter opens the point's x and y value fields.

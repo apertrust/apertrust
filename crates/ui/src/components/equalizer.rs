@@ -40,9 +40,10 @@
 //!   it is filled. A double-click resets every band, as the tooltip says.
 //! - **Keys:** Tab focuses the graph. Page Up and Page Down choose the previous and the
 //!   next node, Home and End the first and the last; the arrow keys move the chosen one by
-//!   its step (Shift ten steps, Alt a tenth), up and right raising it, never by less than
-//!   the last decimal shown; Delete resets it and Shift with Delete resets them all. Ctrl is
-//!   left to the app.
+//!   its step (Shift ten steps, Ctrl a tenth, Option on the Mac), up and right raising it,
+//!   never by less than the last decimal shown; Delete resets it and Shift with Delete
+//!   resets them all. Other keys with Ctrl, and the arrows with another of the app's
+//!   modifiers, are left to the app.
 //! - **Screen readers:** the graph is a group named by its full name, described by its
 //!   keys and by where the mask overflows the bands, which darktable's sign says with no
 //!   words; each node is a slider named by its band, the chosen one active.
@@ -59,6 +60,7 @@ use egui::{
 };
 
 use super::curve::pressed_once;
+use super::wheel::key_scale;
 use super::{focus_ring, focus_shows};
 use crate::i18n::Args;
 use crate::{Theme, Translator, theme, translator};
@@ -225,8 +227,8 @@ impl<'a> Equalizer<'a> {
     }
 
     /// The decimals the bands show, two unless set: no key or screen reader's step moves a
-    /// band by less than the last of them, as a slider row's never does, so Alt's tenth of
-    /// a step still moves.
+    /// band by less than the last of them, as a slider row's never does, so a tenth of a
+    /// step still moves.
     pub fn decimals(mut self, decimals: usize) -> Self {
         self.decimals = decimals;
         self
@@ -351,8 +353,8 @@ impl<'a> Equalizer<'a> {
             state.drag = None;
         }
 
-        // Keys: only those the app leaves a focused control, none with Ctrl (`docs/gui.md`,
-        // Keyboard and actions).
+        // Keys: only those the app leaves a focused control, none with Ctrl but the arrows'
+        // tenth of a step (`docs/gui.md`, Keyboard and actions).
         if self.enabled && response.has_focus() {
             ui.memory_mut(|m| {
                 m.set_focus_lock_filter(
@@ -365,15 +367,10 @@ impl<'a> Equalizer<'a> {
                 );
             });
             let current = state.selected.unwrap_or(0);
+            let os = ui.ctx().os();
             let keys = ui.input(|i| {
                 let command = i.modifiers.command || i.modifiers.ctrl;
-                let scale = if i.modifiers.shift {
-                    10.0
-                } else if i.modifiers.alt {
-                    0.1
-                } else {
-                    1.0
-                };
+                let scale = key_scale(os, i.modifiers);
                 let mut rise = 0.0;
                 for (key, steps) in [
                     (Key::ArrowUp, 1.0),
@@ -381,8 +378,10 @@ impl<'a> Equalizer<'a> {
                     (Key::ArrowDown, -1.0),
                     (Key::ArrowLeft, -1.0),
                 ] {
-                    if !command && i.key_pressed(key) {
-                        rise += steps * scale * self.step;
+                    if let Some(scale) = scale
+                        && i.key_pressed(key)
+                    {
+                        rise += steps * scale as f32 * self.step;
                     }
                 }
                 let choose = if command {

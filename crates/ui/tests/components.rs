@@ -310,12 +310,13 @@ fn a_key_s_step_grows_with_the_track_s_span_as_darktable_s_zoom_step() {
 #[test]
 fn a_key_s_move_is_never_less_than_the_last_decimal_shown() {
     // A tenth of 0.01 is 0.001, under the two decimals shown: darktable's `min_visible`
-    // makes it 0.01, so Alt still moves, as on Global offset chroma.
+    // makes it 0.01, so Ctrl still moves, as on Global offset chroma.
     let mut harness = exposure(Locale::EnGb);
     harness.run();
-    let value = press(&mut harness, Modifiers::ALT, Key::ArrowRight);
+    let ctrl = Modifiers::CTRL | Modifiers::COMMAND;
+    let value = press(&mut harness, ctrl, Key::ArrowRight);
     assert!(near(value, 0.01), "{value}");
-    let value = press(&mut harness, Modifiers::ALT, Key::ArrowLeft);
+    let value = press(&mut harness, ctrl, Key::ArrowLeft);
     assert!(near(value, 0.0), "{value}");
     // A screen reader's increment too.
     harness

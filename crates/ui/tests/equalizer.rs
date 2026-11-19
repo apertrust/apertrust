@@ -390,15 +390,19 @@ fn keys_choose_a_node_move_it_and_reset() {
     let mut harness = graph([0.0; 9]);
     harness.get_by_role_and_label(Role::Group, NAME).focus();
     harness.run();
-    // The first node at first; up and right raise it by its step, Shift ten, Alt a tenth.
+    // The first node at first; up and right raise it by its step, Shift ten, Ctrl a tenth.
     press(&mut harness, Modifiers::NONE, Key::ArrowUp);
     assert_eq!(moved(&harness), (0, 0.01));
     press(&mut harness, Modifiers::NONE, Key::PageDown);
     press(&mut harness, Modifiers::SHIFT, Key::ArrowRight);
     let (band, value) = moved(&harness);
     assert!(band == 1 && (value - 0.1).abs() < 1e-6, "{band}: {value}");
-    // Alt's tenth, 0.001, is less than the last decimal shown, so it moves by that.
-    press(&mut harness, Modifiers::ALT, Key::ArrowDown);
+    // Ctrl's tenth, 0.001, is less than the last decimal shown, so it moves by that.
+    press(
+        &mut harness,
+        Modifiers::CTRL | Modifiers::COMMAND,
+        Key::ArrowDown,
+    );
     let (band, value) = moved(&harness);
     assert!(band == 1 && (value - 0.09).abs() < 1e-6, "{band}: {value}");
     press(&mut harness, Modifiers::NONE, Key::End);
@@ -407,9 +411,10 @@ fn keys_choose_a_node_move_it_and_reset() {
     press(&mut harness, Modifiers::NONE, Key::PageUp);
     press(&mut harness, Modifiers::NONE, Key::ArrowUp);
     assert_eq!(moved(&harness).0, 7);
-    // Keys with Ctrl are the app's.
+    // Other keys with Ctrl are the app's, and so are the arrows with Alt.
     let before = harness.state().actions.len();
-    press(&mut harness, Modifiers::CTRL, Key::ArrowUp);
+    press(&mut harness, Modifiers::CTRL | Modifiers::COMMAND, Key::End);
+    press(&mut harness, Modifiers::ALT, Key::ArrowUp);
     assert_eq!(harness.state().actions.len(), before);
     // Delete resets the chosen node, Shift with it every node.
     press(&mut harness, Modifiers::NONE, Key::Home);

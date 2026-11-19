@@ -138,7 +138,7 @@ So darktable UCS leaves neutral and moderately saturated colours where they were
 - **Tabs:** Master, 4 ways and Masks, the first shown at first; the tab shown is the app's for the run. Nothing shows under every tab.
 - **Hues** are drawn on the hue track and unfilled, as darktable draws them. The luminance and saturation tracks are drawn plain until the renderer draws those bands (`docs/gui.md`, What the renderer still lacks).
 - **Saturation formula** is a dropdown with both of darktable's options, both ported.
-- **Keyboard:** every row but the formula is a `SliderRow`, stepping by darktable's step, Shift ten steps and Alt a tenth. A step is never less than 0.01, the last decimal shown, as darktable's `min_visible`, so Alt moves Global offset chroma, whose step is 0.01 %. The step grows as a widened track's span does, as darktable's zoom step makes it. The value is rounded to the two decimals shown before it is sent.
+- **Keyboard:** every row but the formula is a `SliderRow`, stepping by darktable's step, Shift ten steps and Ctrl a tenth, Option on the Mac. A step is never less than 0.01, the last decimal shown, as darktable's `min_visible`, so Ctrl's tenth moves Global offset chroma, whose step is 0.01 %. The step grows as a widened track's span does, as darktable's zoom step makes it. The value is rounded to the two decimals shown before it is sent.
 - **While closed** the section shows its title and buttons; its presets and options are drawn disabled until something is behind them.
 
 ## Gaps
