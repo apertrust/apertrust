@@ -551,8 +551,6 @@ grid-thumbnail-size-tip =
         [large] large
        *[extra-large] extra large
     }
-# Its Labels button, which shows the captions under the thumbnails or hides them.
-grid-labels = Labels
 
 ## Open kinds: what a window holds, named wherever a recent or what is open is
 
@@ -1005,7 +1003,7 @@ action-thumbnails-extra-large = Extra large
 action-browser-position-left = Left
 action-browser-position-right = Right
 action-browser-position-bottom = Bottom
-# View › Show Labels and the browser bar's Labels: the captions under the thumbnails.
+# View › Show Labels and the browser bar's options menu: the captions under the thumbnails.
 action-show-labels = Show labels
 action-background-black = Black
 action-background-very-dark = Very dark

@@ -316,7 +316,7 @@ One model for the three controls, as the wireframe's "Controls · checkboxes, te
 - **Quiet buttons** (`ToolButton`): a plate only while touched, on the bars alone, the Toolbar's Import…, Export… and Reset, and from Phase 3 the toolbar's labelled items (decision 92), so a row of them is no wall of boxes.
 - **Icon buttons** (`IconButton`) draw no plate in any state; the icon says it all (decision 81, the wireframe's "Controls · icon-only buttons: no plates, the filled icon for On" board).
   - At rest the outline icon in `text_secondary`; under the pointer the same icon in `text_strong`, high contrast adding its 1-point `button_edge` outline round the button, kept while it is held down; held down, the icon in `accent_text`, feedback only, never a state; focused by a key, the focus ring; disabled, `text_disabled`.
-  - On, a toggle that is on, a quad's picker in use and a button whose menu is open, shows the icon's filled form in `text_strong` (`Icon::filled`): the viewer bar's toggles, the browser bar's Labels, the pipette and the quads' line. An icon of lines and dots alone has no shape to fill and shows On by `text_strong` alone, as under the pointer: ⋯, ⋮, », ☰, ＋ and Sort, each a button whose menu hanging from it shows that it is open, and which tells screen readers so (`pull_down`). Every toggle has a filled form.
+  - On, a toggle that is on, a quad's picker in use and a button whose menu is open, shows the icon's filled form in `text_strong` (`Icon::filled`): the viewer bar's toggles, the pipette and the quads' line. An icon of lines and dots alone has no shape to fill and shows On by `text_strong` alone, as under the pointer: ⋯, ⋮, », ☰, ＋ and Sort, each a button whose menu hanging from it shows that it is open, and which tells screen readers so (`pull_down`). Every toggle has a filled form.
   - The hit area is the whole button; nothing grows on hover.
   - The jobs spinner, drawn apart from `IconButton`, keeps the quiet plate.
 - **egui's own widgets left,** the gallery's selectable chips, a list's line, take the plate through the theme: `Theme::apply` maps egui's rest, hover and active onto `button`, `button_hover` and `button_pressed`, its words under the pointer onto `text_on_button_hover`, `button_edge` on the pressed one alone, so a chip or a line at rest or under the pointer has no edge. egui draws a focused widget as active, so these show focus as pressed. Collections' folder lines are list lines: the rows' `hover` band and their focus ring.
@@ -804,7 +804,7 @@ Phase 4: the menu appears with Layers, and its keys are set with their design. I
 | Search Photos… | `grid-search` | Ctrl+F, kept for it and unassigned until it is built; Find Tool… has Ctrl+Shift+F (decision 96) | Planned: in the menu bar alone, with no button on the browser bar |
 | Sort By → Capture Time, File Name, Edited, Rating, the one in use checked; —; Ascending, Descending, one checked | `sort-capture-time`, `sort-file-name`, `sort-edited`, `sort-rating`, `sort-ascending`, `sort-descending` | — | New, Phase 2, with the browser bar; Rating in Phase 3 |
 | Thumbnail Size → Small, Medium, Large, Extra Large, the one in use checked | `thumbnails-small`, `thumbnails-medium`, `thumbnails-large`, `thumbnails-extra-large` | — | New, Phase 2, with the browser bar |
-| Show Labels, checked while the thumbnails show their captions | `show-labels` | — | Built, with the browser bar's Labels |
+| Show Labels, checked while the thumbnails show their captions | `show-labels` | — | Built, also in the browser bar's options menu |
 | Browser Position → Left, Right, Bottom, the one in use checked | `browser-position-left`, `browser-position-right`, `browser-position-bottom` | — | New, Phase 2, with the browser bar's options menu |
 | — | | | |
 | Collections | `show-collections` | L | Built: chooses the first tab shown holding Collections, the Photos tab in the Default workspace; pressed again, nothing; where no tab shown holds it, reveals it in the Hidden tab, open and scrolled to (decisions 37, 73 and 96) |
@@ -833,7 +833,7 @@ Phase 4: the menu appears with Layers, and its keys are set with their design. I
 - **Slideshow** plays the selected photos when several are selected, else the folder or album from the active photo.
 - **Clipping Warnings** is one item and one key, J, for both of the photo's clipping overlays: checked while both are on; choosing it turns both on, or both off when both are on. The scopes' corner toggles set each alone. One state, three places.
 - **Tools Panel Tab** lists the first seven tabs, those under » too: today the Default workspace's seven, a workspace's eighth to twelfth having their actions alone; only the first five have keys, Ctrl+1 choosing the first tab whatever the workspace, Photos in the Default workspace.
-- **Sort By, Thumbnail Size, Show Labels and Browser Position** run the browser bar's actions ([The browser bar](#the-browser-bar)), and their checks show what the browser bar's menus and its Labels show. **Search Photos** is planned in the menu alone.
+- **Sort By, Thumbnail Size, Show Labels and Browser Position** run the browser bar's actions ([The browser bar](#the-browser-bar)), and their checks show what the browser bar's menus show. **Search Photos** is planned in the menu alone.
 - **The theme and the language** are not in the menus: they are settings, one Ctrl+, away.
 
 #### Window
@@ -1147,7 +1147,7 @@ Decision 91; its first slice is built. A right-click menu opens only in a named 
 | A thumbnail, in the Browser or a cell in Photo | Yes, at most two a tool; History's Reset first | Export…; Show in Folder once built | Built |
 | A tool's ⋯ (`Options`), its own section only | Yes, at most four | Reset, Copy Settings and Paste Settings (with Copy and Apply Parts, Phase 3) in `EDIT`; the layout's items, Pin Tool or Unpin Tool, Move Tool Up and Move Tool Down, Move Tool to Tab ▸ and Remove Tool, or Show Tool in Tab ▸ alone for a hidden tool ([Moving, pinning and floating sections](#moving-pinning-and-floating-sections)), in `LAYOUT`, last | Built: the layout's items (decision 96), added by the app after the tool's own (`menus::layout_items`) |
 | The surround (`Surround`) | No | View › Background's items | Built |
-| The browser bar | No | Position ▸ | Built |
+| The browser bar | No | Show Labels, Position ▸ | Built |
 | Collections' folder rows | No | Show in Folder, Open | Built |
 | The Browser's empty area | No | The browser bar's options, Select All, Select None | Later |
 | A History step | No | Go to Step, Show Tool, Compress up to Here, Truncate after Here | Later |
@@ -2415,7 +2415,7 @@ The parts are named by their role, not by where they sit, so a name stays true w
 - **Viewer:** the active photo, the selected photos side by side, or the map.
 - **Browser:** the current folder's or album's thumbnails, along the bottom or in a column at the left or right. "Browser" alone is the part; a web browser is written "web browser".
 - **Viewer bar:** the thin bar along the Viewer's top.
-- **Browser bar:** three icon buttons, Sort and Labels at its start and Zoom at its end, and nothing else: at the bottom a narrow column at the Browser's left end, the buttons stacked; at the left or right a row across the panel's top ([The browser bar](#the-browser-bar)). No name or count of the folder shows in it.
+- **Browser bar:** two icon buttons, Sort at its start and Zoom at its end, and nothing else: at the bottom a narrow column at the Browser's left end, the buttons stacked; at the left or right a row across the panel's top ([The browser bar](#the-browser-bar)). No name or count of the folder shows in it.
 - The **caption** under the photo in the Viewer, and the Tools panel's **tab bar** and **sections**. The Browser is a grid of **cells**.
 - **Floating panel:** a section floating over the Viewer, belonging to no tab (decision 83, planned).
 - **Collections:** the Photos tab's first tool, choosing what the Browser shows ([Collections](#collections)). The start window's Browse… is a verb, to find a library's or a project's file (planned, Phase 5), and keeps its word.
@@ -3170,9 +3170,9 @@ The row under the photo has three zones: the file name at its start, the photo's
 
 ### The Browser
 
-The current folder's or album's thumbnails, in a column at the window's left by default, or at its right, or along its bottom except under the Tools panel ([Position](#its-position)). The browser bar, holding Sort, Labels and Zoom, is a column at its left end at the bottom and a row across its top at a side ([The browser bar](#the-browser-bar)).
+The current folder's or album's thumbnails, in a column at the window's left by default, or at its right, or along its bottom except under the Tools panel ([Position](#its-position)). The browser bar, holding Sort and Zoom, is a column at its left end at the bottom and a row across its top at a side ([The browser bar](#the-browser-bar)).
 
-**Built** as `Browser`: `GridCell`s, each a square of the browser bar's size with its caption under it ([The cell](#the-cell)), with the browser bar, Sort, Labels and Zoom and its options menu's Position: along the window's bottom in rows, the bar a column at its left end, scrolling sideways, or at the left or right in columns, scrolling up and down, the bar a row across its top, as many as `BrowserEdge`, its edge, was dragged to.
+**Built** as `Browser`: `GridCell`s, each a square of the browser bar's size with its caption under it ([The cell](#the-cell)), with the browser bar, Sort and Zoom and its options menu's Show Labels and Position: along the window's bottom in rows, the bar a column at its left end, scrolling sideways, or at the left or right in columns, scrolling up and down, the bar a row across its top, as many as `BrowserEdge`, its edge, was dragged to.
 
 - It shows the open folder's photos in the browser bar's sort, or the photos opened alone ([one photo](library.md#one-photo)) in the order opened, the photo open being the active cell, outlined thicker than a selected one, both in the icons' grey.
 - It is never hidden and is empty with no folder and no photos opened alone. A folder with no raws shows, centred in it and muted (`text_secondary`), a struck-through photo (`Icon::PhotoOff`, Lucide's `image-off`), "No photos available" (`folder-empty`) under it and, where the folder's listing found subfolders, the ones Collections' tree shows under it, "Choose a subfolder in Collections." (`folder-empty-hint`) smaller under that; nothing is listed for the hint. Each line is wrapped to the panel's width, so a one-column side holds them too (`Browser::empty` and `empty_hint`; snapshots `browser-empty` and `browser-empty-left`).
@@ -3252,12 +3252,12 @@ With a cell focused the arrows move as the cells lie:
 
 #### The browser bar
 
-Three icon buttons, **Sort** and **Labels** at its start and **Zoom** at its end, and nothing else: no name or count of the folder or album, and no search. Its place follows the panel's: **at the bottom**, a narrow column at the Browser's left end, as tall as the panel, the buttons stacked; **at the left or right**, a row across the panel's top, the buttons side by side.
+Two icon buttons, **Sort** at its start and **Zoom** at its end, and nothing else: no name or count of the folder or album, and no search. Its place follows the panel's: **at the bottom**, a narrow column at the Browser's left end, as tall as the panel, the buttons stacked; **at the left or right**, a row across the panel's top, the buttons side by side.
 
 - **Layout.** Drawn by `Browser`, told the sort, the size, whether labels show and the position, reporting what was chosen and knowing no photos.
-  - At the bottom, a column 36 points wide on the Browser's background, with the 2-point separator between it and the thumbnails, as the viewer bar has under it, Sort and Labels at its top and Zoom at its bottom. Together they take 92 points, so they fit beside one row of the smallest thumbnails without captions, 100 points with their room; with more rows the space before Zoom grows.
-  - At a side, a row as tall as the viewer bar, with the viewer bar's 2-point separator under it, so the two lines meet, Sort and Labels at its left end and Zoom at its right. It never folds: the narrowest column, one Small cell, still holds all three.
-  - The three buttons are the viewer bar's 28-point `IconButton`s, in the order Sort, Labels, Zoom: the bar is at the panel's start, the left in a left-to-right language, mirrored in a right-to-left one.
+  - At the bottom, a column 36 points wide on the Browser's background, with the 2-point separator between it and the thumbnails, as the viewer bar has under it, Sort at its top and Zoom at its bottom, with room between them; with more rows the space before Zoom grows.
+  - At a side, a row as tall as the viewer bar, with the viewer bar's 2-point separator under it, so the two lines meet, Sort at its left end and Zoom at its right. It never folds: the narrowest column, one Small cell, still holds both.
+  - The two buttons are the viewer bar's 28-point `IconButton`s, Sort then Zoom: the bar is at the panel's start, the left in a left-to-right language, mirrored in a right-to-left one.
 - **Sort** opens a menu through the popup service (decision 40; native on the Mac), with the same items as View › Sort By:
   - the key, one checked: Capture Time, File Name, Edited, and Rating, drawn disabled until the ratings come in Phase 3; a separator; Ascending and Descending, one checked. Capture time ascending, oldest first, is the default;
   - Capture time is the camera's time of the shot, read from each raw's EXIF; until it is known, a photo sorts by its file's modified time. File name follows the file browser's order, digits compared as numbers, so IMG_2 comes before IMG_10. Edited puts the photos without an edit first and the edited ones after, one open for viewing only among them; the open photo moves, and its cell's pencil shows, as soon as the session reports its values with an edit or without one. Rating puts rejected photos first, then no stars, then 1 to 5;
@@ -3269,32 +3269,30 @@ Three icon buttons, **Sort** and **Labels** at its start and **Zoom** at its end
   - The panel keeps its number of lines, so it grows and shrinks with the size, up to half the window; beyond that it shows fewer lines without changing the number kept, as a smaller window does.
   - A choice lays the panel out again on that frame, the active photo kept in view. A cell shows the thumbnail cache's nearest size at least as large as itself and, until that one is rendered, a smaller one scaled up, never an empty cell.
   - Its icon is `zoom-in`; its tooltip and its value for screen readers name the size: "Thumbnail size: Medium".
-- **Labels** shows the thumbnails' captions or hides them ([The cell](#the-cell)), the same as View › Show Labels: a toggle, its icon Lucide's `eye`, filled on the raised colour while the captions show and outlined, as the other buttons at rest, while they do not. On by default.
-  - A change lays the panel out again on that frame: each cell gains or loses its caption, and the panel's rows, its height and its edge's step count it, so the panel keeps its number of rows, as tall as they now are, up to half the window.
-  - Screen readers hear a toggle button named "Labels", pressed while the captions show.
-- **The options menu,** a right-click anywhere on the browser bar, a column or a row: Position › Left, Right, Bottom, the one in use checked ([Its position](#its-position)).
+- **The options menu,** a right-click anywhere on the browser bar, a column or a row:
+  - **Show Labels**, checked while the thumbnails show their captions, shows them or hides them ([The cell](#the-cell)), the same as View › Show Labels. On by default. A change lays the panel out again on that frame: each cell gains or loses its caption, and the panel's rows, its height and its edge's step count it, so the panel keeps its number of rows, as tall as they now are, up to half the window.
+  - **Position ›** Left, Right, Bottom, the one in use checked ([Its position](#its-position)).
 - **States:**
 
-  | State | Sort | Labels | Zoom |
-  | --- | --- | --- | --- |
-  | A folder with no raws | Drawn disabled | Drawn disabled | Drawn disabled |
-  | Photos shown | Enabled | Enabled | Enabled |
+  | State | Sort | Zoom |
+  | --- | --- | --- |
+  | A folder with no raws | Drawn disabled | Drawn disabled |
+  | Photos shown | Enabled | Enabled |
 
   Under the pointer, a button's icon in `text_strong` with no plate (decision 81), and its tooltip; with keyboard focus, the focus ring; while its menu is open, Sort's icon in `text_strong`, as it has no filled form. The options menu opens in every state.
 - **Keys and focus.**
-  - Sort, Labels and Zoom have no default keys. Ctrl+= and Ctrl+− zoom the photo, even after a click on a thumbnail; + and − with the thumbnails focused would take Czech and Slovak keyboards' 1 key, which rates. Their items are actions a user may give keys (`sort-…`, `thumbnails-…`, `show-labels`, `browser-position-…`), and they are in the View menu.
-  - In the Browser's F6 region the thumbnails come first, so F6 lands on them; Tab then reaches Sort, Labels and Zoom, then the edge. A menu closing gives the focus back to its button.
+  - Sort, Zoom and Show Labels have no default keys. Ctrl+= and Ctrl+− zoom the photo, even after a click on a thumbnail; + and − with the thumbnails focused would take Czech and Slovak keyboards' 1 key, which rates. Their items are actions a user may give keys (`sort-…`, `thumbnails-…`, `show-labels`, `browser-position-…`), and they are in the View menu.
+  - In the Browser's F6 region the thumbnails come first, so F6 lands on them; Tab then reaches Sort and Zoom, then the edge. A menu closing gives the focus back to its button.
 - **Screen readers.** The browser bar is a toolbar named "Browser bar", in either form.
   - Sort is a button with a menu, named "Sort", its value the order ("Capture time, ascending").
-  - Labels is a toggle button named "Labels", pressed while the captions show.
   - Zoom is a button with a menu, named "Thumbnail size", its value the size.
   - The thumbnails' list is named by the folder or album and its count ("Wedding 2026-10, 212 photos"), so landing in the Browser says what it shows.
 - **Undo:** none. The sort, the size, the labels and the position change what is shown, not a photo, as the viewer bar's toggles do.
-- **Kept** in settings, under `[browser]`: the sort as `sort` (`capture-time`, `file-name`, `edited`, `rating`) and `descending`, the size by name as `thumbnails` (`small` to `extra-large`), so its points can be retuned, and Labels as `labels`. They are one for every folder and album, the same in every layout and workspace, and written only once changed; not per folder, since settings hold no folder ([Settings and workspace](#settings-and-workspace)).
+- **Kept** in settings, under `[browser]`: the sort as `sort` (`capture-time`, `file-name`, `edited`, `rating`) and `descending`, the size by name as `thumbnails` (`small` to `extra-large`), so its points can be retuned, and Show Labels as `labels`. They are one for every folder and album, the same in every layout and workspace, and written only once changed; not per folder, since settings hold no folder ([Settings and workspace](#settings-and-workspace)).
 - **What a script sees:** the sort is to be the session's, as the selection is (decision 37), since → and ←, Shift's ranges and Select All follow it; a script would read the order the person sees and set a sort with the same commands. How the protocol carries it is still to be designed; until then the app's mirror sorts. The size is interface state, which the session never sees.
 - **Search Photos** (Ctrl+F) is planned, in the menu bar alone ([View](#view)): searching the folder or album by file name, then from Phase 5 by metadata. The browser bar has no button for it.
 - **When:**
-  - Phase 2, step 9, with the Browser: the browser bar; Sort by capture time, file name and Edited; Labels; Zoom; the options menu's Position; their View items.
+  - Phase 2, step 9, with the Browser: the browser bar; Sort by capture time, file name and Edited; Zoom; the options menu's Show Labels and Position; their View items.
   - Phase 3: Sort by Rating, with the ratings.
   - Phase 5, with the Library's index: any further sort key the index makes cheap, if one is asked for.
 
@@ -4097,7 +4095,7 @@ Ctrl means Cmd on macOS.
 | View | Zoom the photo to 100%, and back to Fit | Z | Declared with Z, not yet available, as above; in Photo only |
 | View | Find a tool (`find-tool`), the Tools panel's search | Ctrl+Shift+F, from a value field too, which does not keep it | Built, decision 96's step 6: in ⋮, and in the tab bar's menu with step 5 ([Finding a tool](#finding-a-tool)) |
 | View | Search the Browser by file name | Ctrl+F, from a value field too, which does not keep it; unassigned until it is built (decision 96) | Planned: View › Search Photos… alone ([The browser bar](#the-browser-bar)) |
-| View | The Browser's sort and its direction; the thumbnails' size; their captions; the panel's position | None by default: the browser bar's Sort, Labels and Zoom, its options menu and View's items; Ctrl+= and Ctrl+− stay the photo's | Phase 2, with the browser bar; Sort by Rating in Phase 3 |
+| View | The Browser's sort and its direction; the thumbnails' size; their captions; the panel's position | None by default: the browser bar's Sort and Zoom, its options menu's Show Labels and Position, and View's items; Ctrl+= and Ctrl+− stay the photo's | Phase 2, with the browser bar; Sort by Rating in Phase 3 |
 | View | Select every photo, or none | Ctrl+A, Ctrl+Shift+A | Phase 3; Ctrl+A is a focused field's own |
 | View | Previous Selection | Ctrl+Shift+D (decision 90) | Phase 3, with selecting several photos. darktable gives this key to "duplicate virgin", New Virtual Copy from Original here, which gets another key when virtual copies are designed |
 | View | Rate the selected photos: no stars, or 1 to 5 | 0 to 5, on the number row and the keypad, as darktable's | Not built: Phase 3, with ratings ([the caption](#the-caption-under-the-photo)); on every selected photo (decision 37) |

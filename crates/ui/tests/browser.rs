@@ -118,7 +118,7 @@ fn the_browser_bar_is_a_toolbar_of_sort_and_zoom_named_for_screen_readers() {
         .query_all_by_role(Role::Button)
         .map(|b| b.accesskit_node().label().unwrap_or_default())
         .collect();
-    assert_eq!(buttons, ["Sort", "Labels", "Thumbnail size"]);
+    assert_eq!(buttons, ["Sort", "Thumbnail size"]);
     let bar = bar.rect();
     let sort = harness.get_by_role_and_label(Role::Button, "Sort");
     let data = sort.accesskit_node();
@@ -146,21 +146,26 @@ fn the_browser_bar_is_a_toolbar_of_sort_and_zoom_named_for_screen_readers() {
         .get_by_role_and_label(Role::Button, "Thumbnail size")
         .rect();
     assert_eq!(sort.center().x, zoom.center().x);
-    assert!(sort.bottom() < zoom.top());
-    // Labels right under Sort, Zoom alone at the column's bottom.
-    let labels = harness.get_by_role_and_label(Role::Button, "Labels").rect();
-    assert_eq!(labels.center().x, sort.center().x);
-    assert!(sort.bottom() <= labels.top() && labels.top() - sort.bottom() <= 4.0);
-    assert!(zoom.top() - labels.bottom() > 40.0);
+    // Sort at the column's top, Zoom alone at its bottom.
+    assert_eq!(sort.top(), bar.top() + 4.0);
+    assert!(zoom.top() - sort.bottom() > 40.0);
     assert_eq!(zoom.bottom(), bar.bottom() - 4.0);
 }
 
+/// The browser bar's options menu, opened by a right-click on its empty middle.
+fn options(harness: &mut Harness<'_, BrowserState>) {
+    let bar = harness
+        .get_by_role_and_label(Role::Toolbar, "Browser bar")
+        .rect();
+    right_click(harness, bar.center());
+}
+
 #[test]
-fn labels_shows_the_captions_and_counts_them_in_the_cells_and_the_panel() {
+fn show_labels_shows_the_captions_and_counts_them_in_the_cells_and_the_panel() {
     let mut harness = browser(12);
     harness.run();
-    let labels = harness.get_by_role_and_label(Role::Button, "Labels");
-    assert_eq!(labels.accesskit_node().toggled(), Some(Toggled::True));
+    options(&mut harness);
+    assert_eq!(line(&harness, "Show labels"), (true, Some(Toggled::True)));
     // A Medium cell is its square and a 40-point caption, the panel as tall as its row.
     let cell = harness.get_by_label("IMG_0000.ARW").rect();
     assert_eq!(cell.size(), egui::vec2(120.0, 160.0));
@@ -177,16 +182,18 @@ fn labels_shows_the_captions_and_counts_them_in_the_cells_and_the_panel() {
             - browser_height(&ctx, ThumbnailSize::Medium, true, 1),
         120.0 + 40.0 + 8.0
     );
-    // Pressed, it reports itself; the caller turns the captions off, and the cells and the
+    // Chosen, it reports itself; the caller turns the captions off, and the cells and the
     // panel lose them.
     harness
-        .get_by_role_and_label(Role::Button, "Labels")
+        .get_by_role_and_label(Role::MenuItemCheckBox, "Show labels")
         .click();
     harness.run();
     assert_eq!(harness.state().chosen, [BrowserBarAction::Labels]);
     assert!(!harness.state().labels);
-    let labels = harness.get_by_role_and_label(Role::Button, "Labels");
-    assert_eq!(labels.accesskit_node().toggled(), Some(Toggled::False));
+    options(&mut harness);
+    assert_eq!(line(&harness, "Show labels"), (true, Some(Toggled::False)));
+    harness.key_press(egui::Key::Escape);
+    harness.run();
     assert_eq!(
         harness.get_by_label("IMG_0000.ARW").rect().size(),
         egui::vec2(120.0, 120.0)
@@ -208,7 +215,7 @@ fn labels_shows_the_captions_and_counts_them_in_the_cells_and_the_panel() {
 fn with_no_photos_the_browser_bar_s_buttons_are_disabled() {
     let mut harness = browser(0);
     harness.run();
-    for name in ["Sort", "Labels", "Thumbnail size"] {
+    for name in ["Sort", "Thumbnail size"] {
         let button = harness.get_by_role_and_label(Role::Button, name);
         assert!(button.accesskit_node().is_disabled(), "{name}");
     }
@@ -564,7 +571,7 @@ fn right_click<T>(harness: &mut Harness<'_, T>, pos: egui::Pos2) {
 }
 
 #[test]
-fn a_right_click_on_the_browser_bar_opens_its_position_menu() {
+fn a_right_click_on_the_browser_bar_opens_its_options_menu() {
     let mut harness = browser(12);
     harness.run();
     let bar = harness
@@ -573,6 +580,7 @@ fn a_right_click_on_the_browser_bar_opens_its_position_menu() {
     // The bar's empty middle, between Sort at its top and Zoom at its bottom.
     right_click(&mut harness, bar.center());
     let menu = harness.get_by_role_and_label(Role::Menu, "Browser options");
+    assert!(menu.query_by_label("Show labels").is_some());
     assert!(menu.query_by_label("Position").is_some());
     harness.get_by_label("Position").click();
     harness.run();
@@ -823,12 +831,9 @@ fn at_a_side_the_cells_fill_rows_of_the_columns_and_the_bar_is_on_top() {
         .get_by_role_and_label(Role::Button, "Thumbnail size")
         .rect();
     assert_eq!(sort.center().y, zoom.center().y);
-    assert!(sort.right() < zoom.left());
-    // Labels right after Sort, Zoom alone at the row's end.
-    let labels = harness.get_by_role_and_label(Role::Button, "Labels").rect();
-    assert_eq!(labels.center().y, sort.center().y);
-    assert!(sort.right() <= labels.left() && labels.left() - sort.right() <= 4.0);
-    assert!(zoom.left() - labels.right() > 40.0);
+    // Sort at the row's start, Zoom alone at its end.
+    assert_eq!(sort.left(), bar.left() + 8.0);
+    assert!(zoom.left() - sort.right() > 40.0);
     assert_eq!(zoom.right(), bar.right() - 8.0);
     // At the window's left, its edge on its right.
     let list = harness.get_by_role_and_label(Role::List, "Browser").rect();

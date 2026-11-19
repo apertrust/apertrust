@@ -96,8 +96,6 @@ pub enum Icon {
     Lock,
     /// A pencil: a photo with an edit, on its cell in the Browser.
     Edited,
-    /// An eye: the browser bar's Labels, which shows the captions under the thumbnails.
-    Labels,
     /// An eye: the History tab's eye, held to see the photo without a tool.
     Visible,
     /// A crossed-out eye: the Tools panel's Hidden tab, which holds the tools in no tab
@@ -184,7 +182,6 @@ pub enum Icon {
     ProofMarginFilled,
     BeforeAfterFilled,
     GridFilled,
-    LabelsFilled,
     EyeOffFilled,
     StarFilled,
     PickFilled,
@@ -192,7 +189,7 @@ pub enum Icon {
 }
 
 impl Icon {
-    pub const ALL: [Icon; 95] = [
+    pub const ALL: [Icon; 93] = [
         Icon::Chevron,
         Icon::ChevronDown,
         Icon::ChevronEnd,
@@ -226,7 +223,6 @@ impl Icon {
         Icon::Warning,
         Icon::Lock,
         Icon::Edited,
-        Icon::Labels,
         Icon::Visible,
         Icon::EyeOff,
         Icon::Star,
@@ -283,7 +279,6 @@ impl Icon {
         Icon::ProofMarginFilled,
         Icon::BeforeAfterFilled,
         Icon::GridFilled,
-        Icon::LabelsFilled,
         Icon::EyeOffFilled,
         Icon::StarFilled,
         Icon::PickFilled,
@@ -310,7 +305,6 @@ impl Icon {
             Icon::ProofMargin => Icon::ProofMarginFilled,
             Icon::BeforeAfter => Icon::BeforeAfterFilled,
             Icon::Grid => Icon::GridFilled,
-            Icon::Labels => Icon::LabelsFilled,
             Icon::EyeOff => Icon::EyeOffFilled,
             Icon::Star => Icon::StarFilled,
             Icon::Pick => Icon::PickFilled,
@@ -408,7 +402,6 @@ impl Icon {
             Icon::Warning => derived!("warning", "triangle-exclamation-point", 12.0),
             Icon::Lock => derived!("lock", "lock", 12.0),
             Icon::Edited => derived!("edited", "pencil", 12.0),
-            Icon::Labels => derived!("labels", "eye", 16.0),
             Icon::Visible => derived!("visible", "eye", 14.0),
             Icon::EyeOff => derived!("eye-off", "eye-off", 22.0),
             Icon::Star => derived!("star", "star", 12.0),
@@ -475,7 +468,6 @@ impl Icon {
                 derived!("before-after-filled", "square-split-horizontal", 16.0)
             }
             Icon::GridFilled => derived!("grid-filled", "grid-3x3", 16.0),
-            Icon::LabelsFilled => derived!("labels-filled", "eye", 16.0),
             Icon::EyeOffFilled => derived!("eye-off-filled", "eye-off", 22.0),
             Icon::StarFilled => derived!("star-filled", "star", 12.0),
             Icon::PickFilled => derived!("pick-filled", "pipette", 14.0),
