@@ -415,14 +415,37 @@ mod linux {
     // proxies and queue kept over it would touch it. Only `end_activation` drops it; a
     // start that ends without it leaves it to the process's end.
     thread_local! {
-        static BOUND: RefCell<Option<ManuallyDrop<Bound>>> = const { RefCell::new(None) };
+        static BOUND: RefCell<Option<Kept>> = const { RefCell::new(None) };
+    }
+
+    /// What is known of a display's activation: the global bound, or that it has none, so
+    /// a compositor without it is asked once, never at every hand-off.
+    enum Kept {
+        Bound(ManuallyDrop<Bound>),
+        Unsupported(usize),
+    }
+
+    impl Kept {
+        /// The display it is known for.
+        fn display(&self) -> usize {
+            match self {
+                Kept::Bound(bound) => bound.display,
+                Kept::Unsupported(display) => *display,
+            }
+        }
+    }
+
+    /// Whether the display at `display` is to be asked for its activation global, with
+    /// `known` the display what is kept is known for: once per display.
+    fn to_bind(known: Option<usize>, display: usize) -> bool {
+        known != Some(display)
     }
 
     /// [`super::end_activation`] on Linux: the global destroyed and what was kept dropped,
     /// while winit's display is connected.
     pub(super) fn end_activation() {
-        let bound = BOUND.with_borrow_mut(Option::take);
-        if let Some(bound) = bound {
+        let kept = BOUND.with_borrow_mut(Option::take);
+        if let Some(Kept::Bound(bound)) = kept {
             let bound = ManuallyDrop::into_inner(bound);
             bound.activation.destroy();
             let _ = bound.connection.flush();
@@ -442,13 +465,16 @@ mod linux {
             return Ok(false);
         };
         let pointer = display.display.as_ptr() as usize;
-        BOUND.with_borrow_mut(|bound| {
+        BOUND.with_borrow_mut(|kept| {
             // One bound over another display, which winit never makes, is left as it is
             // rather than dropped over a display that may be gone.
-            if bound.as_ref().is_none_or(|bound| bound.display != pointer) {
-                *bound = bind(display.display.as_ptr())?.map(ManuallyDrop::new);
+            if to_bind(kept.as_ref().map(Kept::display), pointer) {
+                *kept = Some(match bind(display.display.as_ptr())? {
+                    Some(bound) => Kept::Bound(ManuallyDrop::new(bound)),
+                    None => Kept::Unsupported(pointer),
+                });
             }
-            let Some(bound) = bound.as_ref() else {
+            let Some(Kept::Bound(bound)) = kept.as_ref() else {
                 return Ok(false);
             };
             // SAFETY: the surface is the window's own `wl_surface`, which winit destroys only
@@ -488,6 +514,21 @@ mod linux {
             activation,
             _queue: queue,
         }))
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::{Kept, to_bind};
+
+        /// A display is asked for its activation global once: a compositor without one is
+        /// remembered as such, and only another display is asked again.
+        #[test]
+        fn a_display_without_activation_is_asked_once() {
+            assert!(to_bind(None, 7));
+            let known = Kept::Unsupported(7);
+            assert!(!to_bind(Some(known.display()), 7));
+            assert!(to_bind(Some(known.display()), 8));
+        }
     }
 }
 
