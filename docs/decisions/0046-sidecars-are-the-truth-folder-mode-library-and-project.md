@@ -8,7 +8,7 @@ How are photos organised and found, and where is the truth about an edit kept? d
 
 **Sidecars are the truth; no database ever is.** A photo's edit and metadata live in its `.apxmp` ([0048](0048-the-apxmp-format.md)), written whenever they change; anything else, a library's cache included ([0055](0055-the-librarys-cache.md)), is rebuilt from the files.
 
-**Four modes:** one photo, folder mode, a library and a project. The main window opens one of them at a time, its place; there is one main window per user data folder ([0089](0089-one-instance-and-one-window-per-user-data-folder.md)).
+**Four modes:** one photo, folder mode, a library and a project. The main window opens one of them at a time, its place; there is to be one main window per user data folder (planned, [0089](0089-one-instance-and-one-window-per-user-data-folder.md)); until then each start is an app of its own.
 
 **One photo: opening a photo, by any route, opens that photo alone.** Open With and a double-click on a raw or its `.apxmp` (the photo beside it; one whose photo is missing is refused with the alert naming the photo), File › Open…, raws dropped onto the window or the Mac's Dock icon, and `apertrust FILE` from a terminal all open it the same way, so the same photo never opens two ways. Opening a file means "show me this photo": a folder full of other photos, a changed recents list and a background listing are side effects nobody asked for.
 
