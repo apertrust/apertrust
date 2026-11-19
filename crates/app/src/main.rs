@@ -92,7 +92,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use actions::{ActionId, Emit, Focus, Intent, Keymap, SectionMove, State, View};
 use apertrust_base::cache::{Cache, Limit};
@@ -439,7 +439,7 @@ fn main() -> eframe::Result {
         Some(found) => {
             let request = || hand_off(handed, one_run, found);
             let (cache, user_data) = (found.cache().to_owned(), found.user_data().to_owned());
-            let handler = hand_offs(post, cache, user_data);
+            let handler = hand_offs(post, cache, user_data, began);
             match instance::start(found.user_data(), request, handler) {
                 instance::Start::Instance(instance) => Some(instance),
                 instance::Start::Alone(why) => {
@@ -730,8 +730,15 @@ fn hand_off(
 
 /// The instance's answer to each second start on its folder `folder`, whose cache folder is
 /// `cache`: one with flags for one run refused, the window's alert saying so; any other's
-/// paths, taken from its working folder, posted to the window to open.
-fn hand_offs(post: instance::Post, cache: PathBuf, folder: PathBuf) -> instance::Handler {
+/// paths, taken from its working folder, posted to the window to open, each taken logged
+/// under `control` with when it arrived after `began`, this start's beginning, for the
+/// switch test to read the gaps between them (decision 89).
+fn hand_offs(
+    post: instance::Post,
+    cache: PathBuf,
+    folder: PathBuf,
+    began: Instant,
+) -> instance::Handler {
     std::sync::Arc::new(move |hand_off| {
         let at = Instant::now();
         let token = hand_off.token.clone();
@@ -744,12 +751,15 @@ fn hand_offs(post: instance::Post, cache: PathBuf, folder: PathBuf) -> instance:
         }
         match arguments_in(hand_off.arguments, Some(&hand_off.folder)) {
             Ok(given) => {
+                let count = given.paths.len();
                 let open = instance::Arrival::Open {
                     paths: given.paths,
                     at,
                     token,
                 };
                 if post.send(open) {
+                    let line = taken_line(count, at.saturating_duration_since(began));
+                    tracing::debug!(target: "control", "{line}");
                     instance::Answer::Taken
                 } else {
                     instance::Answer::Refused(instance::closing_words(&folder))
@@ -758,6 +768,14 @@ fn hand_offs(post: instance::Post, cache: PathBuf, folder: PathBuf) -> instance:
             Err(error) => instance::Answer::Refused(error),
         }
     })
+}
+
+/// The `control` line of a hand-off taken: its `count` of paths and when it arrived, `after` the
+/// start, to the tenth of a millisecond, as the log's own times.
+fn taken_line(count: usize, after: Duration) -> String {
+    let arrived = after.as_secs_f64();
+    let noun = if count == 1 { "path" } else { "paths" };
+    format!("hand-off taken: {count} {noun}, arrived: {arrived:.4} s")
 }
 
 /// The folders `folders` holds that an environment variable chose, `APERTRUST_USER_DATA_DIR`
@@ -8828,7 +8846,7 @@ mod tests {
     fn the_instance_takes_a_second_start_or_refuses_it() {
         let (post, inbox) = instance::mailbox();
         let cache = PathBuf::from("/cache");
-        let handler = hand_offs(post, cache.clone(), "/user-data".into());
+        let handler = hand_offs(post, cache.clone(), "/user-data".into(), Instant::now());
         let token = instance::Token {
             wayland: Some("token".into()),
             x11: None,
@@ -8934,6 +8952,20 @@ mod tests {
         let roundabout = work.join("..").join("default");
         assert_eq!(window_title(Some(&roundabout), Some(&default)), APP_NAME);
         assert_eq!(window_title(None, Some(&default)), APP_NAME);
+    }
+
+    /// Each hand-off taken is one `control` line with when it arrived, for the switch test.
+    #[test]
+    fn a_hand_off_taken_is_logged_with_its_arrival() {
+        let after = Duration::from_micros(3_210_400);
+        assert_eq!(
+            taken_line(1, after),
+            "hand-off taken: 1 path, arrived: 3.2104 s"
+        );
+        assert_eq!(
+            taken_line(3, after),
+            "hand-off taken: 3 paths, arrived: 3.2104 s"
+        );
     }
 
     /// `--in-folder`, which earlier nightly builds' registrations passed before the files,
