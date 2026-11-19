@@ -1227,8 +1227,9 @@ mod tests {
     use super::*;
 
     /// A test's own user data folder, with on macOS and Linux a runtime directory of its
-    /// own, `0700`, and the fallback's folder, all removed as it drops. Short names, so the
-    /// socket's path fits macOS's limit under its long `$TMPDIR`.
+    /// own, `0700`, and the fallback's folder, all removed as it drops. In `/tmp` there,
+    /// never under macOS's long `$TMPDIR`, so even the fallback's socket path,
+    /// `<root>/apertrust-<uid>/apertrust-<hash>.sock`, fits macOS's 104 bytes.
     struct Fixture {
         root: PathBuf,
         user_data: PathBuf,
@@ -1241,7 +1242,12 @@ mod tests {
 
     impl Fixture {
         fn new(name: &str) -> Fixture {
-            let root = std::env::temp_dir().join(format!("ai-{name}-{}", std::process::id()));
+            let base = if cfg!(unix) {
+                PathBuf::from("/tmp")
+            } else {
+                std::env::temp_dir()
+            };
+            let root = base.join(format!("ai-{name}-{}", std::process::id()));
             let _ = std::fs::remove_dir_all(&root);
             let user_data = root.join("u");
             let runtime = root.join("r");
@@ -1730,6 +1736,11 @@ mod tests {
             panic!("not the instance");
         };
         let fallback = fixture.root.join(format!("apertrust-{}", own_user()));
+        // The longest path a fixture's socket takes, with the longest uid and process id:
+        // inside macOS's limit.
+        let longest = Path::new("/tmp/ai-open-4294967295/apertrust-4294967295")
+            .join(socket_name(&hash(&fixture.canonical())));
+        assert!(longest.as_os_str().len() < 104, "{}", longest.display());
         assert_eq!(
             instance.socket().and_then(Path::parent),
             Some(fallback.as_path())
