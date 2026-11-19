@@ -6382,6 +6382,16 @@ impl eframe::App for App {
     fn logic(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         // The start marker goes once a frame has been drawn into the window (decision 82).
         self.marker.frame(ctx);
+        // Finder's files, taken here since `logic` runs while the window is minimised too,
+        // which then comes back and to the front to show them. They join the opens second
+        // starts hand over, each waiting for the one before, so neither replaces the
+        // other's look under way.
+        if let Some(files) = apertrust_display::take_opened_files() {
+            self.join.arrive(files, Instant::now());
+            self.reveal(ctx);
+            ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
+            ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+        }
         // What second starts handed over, and the command line's paths once the window has
         // shown, taken here since `logic` runs while the window is minimised too.
         self.take_hand_offs(ctx, frame.winit_window().map(|window| &**window));
@@ -6389,14 +6399,6 @@ impl eframe::App for App {
         self.drain(ctx);
         // The recents checked again as the window gains the focus, a folder that came back
         // no longer shown missing; what their checks have found, without waiting.
-        // Finder's files, taken here since `logic` runs while the window is minimised too,
-        // which then comes back and to the front to show them.
-        if let Some(files) = apertrust_display::take_opened_files() {
-            self.opened.look(files, ctx);
-            self.reveal(ctx);
-            ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
-            ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
-        }
         // The start window closed on the Mac comes back with a click on the Dock icon.
         if apertrust_display::take_reopened() {
             self.reveal(ctx);
