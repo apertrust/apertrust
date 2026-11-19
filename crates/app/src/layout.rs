@@ -558,7 +558,8 @@ pub enum Move {
     Down { tool: &'static str, tab: String },
     /// To the end of the tab's pinned list.
     Pin { tool: &'static str, tab: String },
-    /// To the top of the tab's scrolling list.
+    /// To the top of the tab's scrolling list, after the ids this build does not know that
+    /// start it ([`top`]).
     Unpin { tool: &'static str, tab: String },
     /// Out of the tab `from`, or out of `hidden` where none, into the tab `to`, unpinned, as
     /// a drop on its icon puts it ([`landing`]); nothing where `to` holds it already.
@@ -609,15 +610,22 @@ fn keeping(file: &[String], now: &[&'static str], known: &[&'static str]) -> Vec
     list
 }
 
+/// The top of `list` for a tool put there: after the ids not `known` it starts with, which
+/// stay first ([`keeping`]), before its first tool `known`.
+fn top(list: &[String], known: &[&'static str]) -> usize {
+    let unknown = list.iter().take_while(|id| !known.contains(&id.as_str()));
+    unknown.count()
+}
+
 /// Where `tool` lands in the scrolling list `list` of a tab, as a drop on the tab's icon
 /// puts it (decision 83): a processing tool after the processing tool there nearest before
 /// it in the pipeline and the ids not `known` that follow that one, else before the one
-/// nearest after it, else last; a utility at the top. Never after Export, the Photos tab's
-/// last (decision 90). Only the tools `known` count.
+/// nearest after it, else last; a utility at the top ([`top`]). Never after Export, the
+/// Photos tab's last (decision 90). Only the tools `known` count.
 fn landing(list: &[String], tool: &str, known: &[&'static str]) -> usize {
     let (utility, place) = hidden_order(tool);
     if utility {
-        return 0;
+        return top(list, known);
     }
     let places = list.iter().enumerate().filter_map(|(i, id)| {
         let (utility, place) = hidden_order(id);
@@ -802,7 +810,7 @@ impl Layout {
                 }
                 self.list(!pin, tab).retain(|id| id != tool);
                 let list = self.list(pin, tab);
-                let at = if pin { list.len() } else { 0 };
+                let at = if pin { list.len() } else { top(list, known) };
                 list.insert(at, (*tool).to_owned());
                 // The list it left, where the move emptied it; every other stays.
                 let left = if pin {
