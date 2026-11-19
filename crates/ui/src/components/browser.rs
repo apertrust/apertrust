@@ -34,9 +34,9 @@
 //! gives one, says why: a struck-through photo over the message, and a hint under it where
 //! the app gives one too.
 //!
-//! The browser bar holds Sort and Labels at its start and Zoom at its end: Sort and Zoom
-//! each open their menu through the popup service, the one in use checked, and Labels shows
-//! or hides the cells' captions. The panel reports what was chosen ([`BrowserBarAction`])
+//! The browser bar holds Sort at its start and Zoom at its end, each opening its menu
+//! through the popup service, the one in use checked; its options menu, on a right-click,
+//! shows or hides the cells' captions. The panel reports what was chosen ([`BrowserBarAction`])
 //! and knows no photos, so the caller sorts them and sizes the cells. A cell's height
 //! counts its caption while labels show, and so do the panel's rows; what the user did on a
 //! caption's first line is reported with its photo ([`BrowserOutput::cell`]).
@@ -238,9 +238,9 @@ pub enum BrowserBarAction {
     /// Descending, or ascending.
     Descending(bool),
     Size(ThumbnailSize),
-    /// From the options menu, a right-click on the browser bar.
+    /// From the options menu, a right-click on the browser bar, as Show Labels below.
     Position(BrowserPosition),
-    /// Labels: show the cells' captions, or hide them.
+    /// Show Labels, in the options menu: show the cells' captions, or hide them.
     Labels,
 }
 
@@ -602,13 +602,13 @@ impl<'a, F: Fn(usize) -> Thumb<'a>> Browser<'a, F> {
         }
     }
 
-    /// The browser bar in `header`, its toolbar's id `id`: Sort, Labels and Zoom, drawn
-    /// disabled with no photos, and its options menu, Position, on a right-click anywhere
-    /// on it. At a side it is a row across the panel's top, the viewer bar's separator
-    /// under it, so the two bars' lines meet, Sort and Labels at its left end and Zoom at
+    /// The browser bar in `header`, its toolbar's id `id`: Sort and Zoom, drawn disabled
+    /// with no photos, and its options menu, Show Labels and Position, on a right-click
+    /// anywhere on it. At a side it is a row across the panel's top, the viewer bar's
+    /// separator under it, so the two bars' lines meet, Sort at its left end and Zoom at
     /// its right; at the bottom a column at the panel's left end, the same separator
-    /// between it and the cells, Sort and Labels at its top and Zoom at its bottom.
-    /// Returns what was chosen in their menus, or Labels pressed.
+    /// between it and the cells, Sort at its top and Zoom at its bottom. Returns what was
+    /// chosen in their menus.
     fn bar(&self, ui: &mut Ui, header: Rect, id: Id) -> Option<BrowserBarAction> {
         let t = theme(ui.ctx());
         let ctx = ui.ctx().clone();
@@ -689,14 +689,6 @@ impl<'a, F: Fn(usize) -> Thumb<'a>> Browser<'a, F> {
                 &text("grid-sort-value"),
                 &BrowserBarAction::ALL[..6],
             );
-            // Labels after Sort: a toggle, its eye filled while the captions show.
-            let labels = IconButton::new(Icon::Labels, &tr(&ctx, "grid-labels"))
-                .toggled(self.labels)
-                .enabled(enabled)
-                .size(BUTTON)
-                .show(ui)
-                .clicked()
-                .then_some(BrowserBarAction::Labels);
             // Zoom at the bar's far end: the column's bottom, the row's right.
             let room = if stacked {
                 ui.available_height()
@@ -713,14 +705,14 @@ impl<'a, F: Fn(usize) -> Thumb<'a>> Browser<'a, F> {
                 &text("grid-thumbnail-size-value"),
                 &BrowserBarAction::ALL[6..10],
             );
-            let chosen = sorted.or(labels).or(zoomed);
+            let chosen = sorted.or(zoomed);
             chosen.or(options)
         }
     }
 
     /// The browser bar's options menu, hung from the pointer where `toolbar` was
-    /// right-clicked: Position › Left, Right, Bottom, the one in use checked. Returns what
-    /// was chosen.
+    /// right-clicked: Show Labels, checked while the captions show, then Position › Left,
+    /// Right, Bottom, the one in use checked. Returns what was chosen.
     fn options(&self, ui: &Ui, toolbar: &Response) -> Option<BrowserBarAction> {
         let ctx = ui.ctx();
         let id = toolbar.id.with("options");
@@ -731,8 +723,10 @@ impl<'a, F: Fn(usize) -> Thumb<'a>> Browser<'a, F> {
                 .iter()
                 .map(|action| action.item(ui, self))
                 .collect();
-            let entries =
-                vec![Submenu::new("position", tr(ctx, "browser-position"), positions).into()];
+            let entries = vec![
+                BrowserBarAction::Labels.item(ui, self),
+                Submenu::new("position", tr(ctx, "browser-position"), positions).into(),
+            ];
             let anchor = Rect::from_min_size(at, vec2(0.0, 0.0));
             let request = Request::pull_down(anchor, tr(ctx, "browser-bar-options"), entries);
             popup::open(ctx, id, request);

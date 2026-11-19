@@ -430,7 +430,6 @@ grid-thumbnail-size-tip =
         [large] duże
        *[extra-large] bardzo duże
     }
-grid-labels = Podpisy
 
 ## Co jest otwarte, według rodzaju
 

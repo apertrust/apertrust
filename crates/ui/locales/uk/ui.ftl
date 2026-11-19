@@ -428,7 +428,6 @@ grid-thumbnail-size-tip =
         [large] великі
        *[extra-large] дуже великі
     }
-grid-labels = Підписи
 
 ## Що відкрито, за видом
 

@@ -26,7 +26,7 @@ The Photos tab (decisions 37 and 38) chooses what the Browser shows and describe
 - **Photos:** it repeats the tab.
 - **Browse:** a verb among the tools' nouns, and beside the Browser it shows for, two names a letter apart ([0095](0095-the-windows-parts-named-by-their-role.md)).
 - **Filters only with the library's cache, in Phase 5:** folder mode would have no filter for culling, though its index already holds what the first groups need.
-- **Quick filters on the browser bar:** the browser bar keeps three buttons (Sort, Labels, Zoom); filters with counts need a tool's room.
+- **Quick filters on the browser bar:** the browser bar keeps two buttons (Sort, Zoom); filters with counts need a tool's room.
 - **Keywords and a keyword list as two tools,** as commercial raw editors split them: two places would assign keywords, or the list could not assign at all; darktable's tagging is one module.
 - **Image information and the metadata editor as two tools,** as darktable has them: the facts and the fields about one photo read best as one list.
 - **Folder mode's keyword properties in each sidecar:** a property belongs to the keyword, not to a photo, and would differ between photos.

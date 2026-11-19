@@ -14079,7 +14079,7 @@ mod tests {
     }
 
     #[test]
-    fn the_browser_bar_s_labels_turns_the_captions_off_and_the_panel_loses_their_height() {
+    fn the_browser_bar_s_show_labels_turns_the_captions_off_and_the_panel_loses_their_height() {
         use apertrust_ui::components::{BrowserPosition, ThumbnailSize, browser_height};
         // At the bottom, where the captions add to the panel's height.
         let settings = Settings {
@@ -14097,9 +14097,21 @@ mod tests {
             browser_list(&harness).height(),
             browser_height(&ctx, size, true, 1)
         );
-        let labels = harness.get_by_role_and_label(Role::Button, "Labels");
-        assert_eq!(labels.accesskit_node().toggled(), Some(Toggled::True));
-        labels.click();
+        // Show Labels, in the browser bar's options menu.
+        let show_labels = |harness: &mut Harness<'_, Window>| {
+            let bar = harness
+                .get_by_role_and_label(Role::Toolbar, "Browser bar")
+                .rect();
+            right_click_at(harness, bar.center());
+            harness
+                .get_by_role_and_label(Role::MenuItemCheckBox, "Show labels")
+                .accesskit_node()
+                .toggled()
+        };
+        assert_eq!(show_labels(&mut harness), Some(Toggled::True));
+        harness
+            .get_by_role_and_label(Role::MenuItemCheckBox, "Show labels")
+            .click();
         harness.run();
         harness.run();
         assert!(!harness.state().shell.browser.labels);
@@ -14107,8 +14119,9 @@ mod tests {
             browser_list(&harness).height(),
             browser_height(&ctx, size, false, 1)
         );
-        let labels = harness.get_by_role_and_label(Role::Button, "Labels");
-        assert_eq!(labels.accesskit_node().toggled(), Some(Toggled::False));
+        assert_eq!(show_labels(&mut harness), Some(Toggled::False));
+        harness.key_press(Key::Escape);
+        harness.run();
         // Kept for the next start.
         let kept = harness.state().shell.to_settings(&egui::Context::default());
         assert!(!kept.browser.labels);
