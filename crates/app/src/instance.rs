@@ -757,9 +757,19 @@ mod channel {
 
     impl Served {
         /// The channel of the instance on `canonical`, bound and served by `handler`, its
-        /// connections from `user` alone.
+        /// connections from `user` alone. A name still taken is tried again for [`RETRY`]:
+        /// the instance before, as Restart now's, may not have let it go yet.
         pub fn bind(canonical: &Path, handler: Handler, user: u32) -> io::Result<Served> {
-            let mut listener = Listener::bind(canonical, user)?;
+            let deadline = Instant::now() + RETRY;
+            let mut listener = loop {
+                match Listener::bind(canonical, user) {
+                    Ok(listener) => break listener,
+                    Err(e) if Listener::taken(&e) && Instant::now() < deadline => {
+                        std::thread::sleep(RETRY_STEP);
+                    }
+                    Err(e) => return Err(e),
+                }
+            };
             let stop = Arc::new(AtomicBool::new(false));
             let stopped = Arc::clone(&stop);
             let serving: Arc<Mutex<Vec<JoinHandle<()>>>> = Arc::default();
@@ -1095,6 +1105,11 @@ mod channel {
                 Ok(Listener { listener, user })
             }
 
+            /// Whether `error`, a bind's, says another process has the name.
+            pub fn taken(error: &io::Error) -> bool {
+                error.kind() == io::ErrorKind::AddrInUse
+            }
+
             /// The next connection, from the user's own account, each read and write limited
             /// to [`RETRY`]; another user's is dropped unanswered, an error.
             pub fn accept(&mut self) -> io::Result<Stream> {
@@ -1146,6 +1161,12 @@ mod channel {
             /// Creates the pipe as the first instance of its name.
             pub fn bind(canonical: &Path, _user: u32) -> io::Result<Listener> {
                 PipeListener::bind(&name(canonical)).map(Listener)
+            }
+
+            /// Whether `error`, a bind's, says another process has the name: an instance of
+            /// it there already (`ERROR_ACCESS_DENIED`), or all busy (`ERROR_PIPE_BUSY`).
+            pub fn taken(error: &io::Error) -> bool {
+                matches!(error.raw_os_error(), Some(5 | 231))
             }
 
             /// The next second start's end of the pipe.
@@ -1421,6 +1442,28 @@ mod tests {
             panic!("not the instance");
         };
         drop(next);
+    }
+
+    /// A start whose channel's name is still taken, as by the instance before it while it
+    /// ends, tries again until it is free, for 2 s at most, then serves it.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_name_still_taken_is_tried_again() {
+        let fixture = Fixture::new("taken-name");
+        let address = channel::socket::address(&fixture.canonical(), own_user()).unwrap();
+        let before = std::os::unix::net::UnixListener::bind_addr(&address).unwrap();
+        let let_go = std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(300));
+            drop(before);
+        });
+        let began = Instant::now();
+        let Start::Instance(instance) = second(&fixture, photo()) else {
+            panic!("not the instance");
+        };
+        assert!(began.elapsed() >= Duration::from_millis(300));
+        let_go.join().unwrap();
+        assert!(matches!(second(&fixture, photo()), Start::Taken));
+        drop(instance);
     }
 
     /// An instance killed leaves nothing behind but its lock file, which the system has
