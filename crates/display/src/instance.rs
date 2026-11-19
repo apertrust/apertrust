@@ -490,8 +490,9 @@ mod windows {
         SECURITY_IDENTIFICATION, SECURITY_SQOS_PRESENT,
     };
     use windows_sys::Win32::System::Pipes::{
-        ConnectNamedPipe, CreateNamedPipeW, GetNamedPipeServerProcessId, PIPE_READMODE_BYTE,
-        PIPE_REJECT_REMOTE_CLIENTS, PIPE_TYPE_BYTE, PIPE_UNLIMITED_INSTANCES, PIPE_WAIT,
+        ConnectNamedPipe, CreateNamedPipeW, DisconnectNamedPipe, GetNamedPipeServerProcessId,
+        PIPE_READMODE_BYTE, PIPE_REJECT_REMOTE_CLIENTS, PIPE_TYPE_BYTE, PIPE_UNLIMITED_INSTANCES,
+        PIPE_WAIT,
     };
     use windows_sys::Win32::System::Threading::{
         GetCurrentProcess, OpenProcess, OpenProcessToken, PROCESS_QUERY_LIMITED_INFORMATION,
@@ -635,14 +636,22 @@ mod windows {
         }
 
         /// Waits for a second start to connect, and returns its end as a file to read and
-        /// write, the pipe's next instance made first, so one always waits.
+        /// write, the pipe's next instance made first, so one always waits. Where the
+        /// connection failed, as for a start that closed its end before it was taken
+        /// (`ERROR_NO_DATA`), the waiting instance is disconnected, or replaced where it
+        /// cannot be, so the next call waits on it afresh.
         pub fn accept(&mut self) -> io::Result<File> {
             // SAFETY: the waiting instance's handle, valid for the call; no overlapped I/O.
             let connected =
                 unsafe { ConnectNamedPipe(self.waiting.as_raw_handle(), ptr::null_mut()) };
             // SAFETY: a plain call, right after the one it reads the error of.
-            if connected == 0 && unsafe { GetLastError() } != ERROR_PIPE_CONNECTED {
-                return Err(io::Error::last_os_error());
+            let error = (connected == 0).then(|| unsafe { GetLastError() });
+            if let Some(code) = error.filter(|code| *code != ERROR_PIPE_CONNECTED) {
+                // SAFETY: the waiting instance's handle, valid for the call.
+                if unsafe { DisconnectNamedPipe(self.waiting.as_raw_handle()) } == 0 {
+                    self.waiting = create(&self.name, false)?;
+                }
+                return Err(io::Error::from_raw_os_error(code as i32));
             }
             let next = create(&self.name, false)?;
             Ok(File::from(std::mem::replace(&mut self.waiting, next)))
