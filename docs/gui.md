@@ -2550,7 +2550,7 @@ With several photos selected, the rating, reject and label keys, Apply Edit and 
 | Shift-click | Selects the range from the active photo to it; the active photo stays, so the Viewer does not jump while a range grows | — |
 | Double-click, or Enter | As a click: that photo alone, active | That photo alone |
 | A click on empty space: between the cells, on a caption, or in a cell's square round a fitted picture | Nothing: clearing the selection by accident would disable the Tools panel; Select None has its key and its item | Nothing |
-| Right-click | The context menu ([Context menus](#context-menus)) acts on the selection when the photo is in it, else on the photo alone; the selection and the photo in the Viewer stay as they are | The same |
+| Right-click | The context menu ([Context menus](#context-menus)) acts on the selection when the photo is in it, else on the photo alone, though its Export… exports the active photo until it exports that photo (planned, #294); the selection and the photo in the Viewer stay as they are | The same |
 
 - **The keys,** the same in every layout:
   - → and Space, ← and Backspace: with several selected, the active photo moves through the selection, which stays; with one, to the next or previous photo of the folder or album, selected alone;
