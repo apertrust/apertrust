@@ -339,6 +339,26 @@ pub struct Drawn {
     pub gesture: Option<Gesture>,
 }
 
+/// One frame's [`Drawn`], `pass` the last of its passes and `earlier` what the passes
+/// before it gave, where egui ran the frame again ([`egui::Context::request_discard`]).
+/// Only the first pass has the frame's input (egui hands a later pass none), so what any
+/// pass asked for is kept, in order, with the keys it left alone and a press on the frame,
+/// and the size is the last pass's, which is the one drawn.
+fn gathered(earlier: Option<Drawn>, pass: Drawn) -> Drawn {
+    let Some(earlier) = earlier else {
+        return pass;
+    };
+    let mut outputs = earlier.outputs;
+    outputs.extend(pass.outputs);
+    Drawn {
+        outputs,
+        close: earlier.close || pass.close,
+        size: pass.size,
+        unread: earlier.unread.or(pass.unread),
+        gesture: earlier.gesture.or(pass.gesture),
+    }
+}
+
 /// What a press on the frame the host draws (`platform::draws_frame`) asks of the
 /// dialog's window: a drag on its empty strip moves it, through the compositor or the
 /// window manager; a right-click there opens the system's window menu, at that point.
@@ -1831,7 +1851,7 @@ impl Open {
         let mut drawn = None;
         let dialog = self.dialog.as_mut();
         let output = self.ctx.run_ui(input, |ui| {
-            drawn = Some(draw(ui, dialog));
+            drawn = Some(gathered(drawn.take(), draw(ui, dialog)));
             if banded {
                 crate::resize_hover(ui.ctx(), band);
             }
@@ -2613,8 +2633,14 @@ mod tests {
             })
             .build_ui_state(
                 |ui, bench: &mut Bench| {
-                    let drawn = draw(ui, &mut bench.content);
-                    bench.asked.push(drawn);
+                    // A frame's passes gathered as the host gathers them.
+                    let pass = draw(ui, &mut bench.content);
+                    let earlier = if ui.ctx().current_pass_index() == 0 {
+                        None
+                    } else {
+                        bench.asked.pop()
+                    };
+                    bench.asked.push(gathered(earlier, pass));
                 },
                 Bench {
                     content: settings,
@@ -2865,6 +2891,44 @@ mod tests {
     }
 
     #[test]
+    fn a_frame_drawn_again_keeps_what_its_first_pass_asked_for() {
+        let pass = |outputs: Vec<Output>, close, size, gesture| Drawn {
+            outputs,
+            close,
+            size,
+            unread: None,
+            gesture,
+        };
+        let set =
+            |id, value: &str| Output::Settings(settings_dialog::Change::Set(id, value.into()));
+        // The first pass had the click and the press; the second, drawn, had none.
+        let first = pass(
+            vec![set("locale", "uk")],
+            true,
+            egui::vec2(600.0, 400.0),
+            Some(Gesture::Move),
+        );
+        let second = pass(
+            vec![set("theme", "light")],
+            false,
+            egui::vec2(640.0, 420.0),
+            None,
+        );
+        assert_eq!(
+            gathered(Some(first), second),
+            pass(
+                vec![set("locale", "uk"), set("theme", "light")],
+                true,
+                egui::vec2(640.0, 420.0),
+                Some(Gesture::Move),
+            )
+        );
+        // A frame of one pass is that pass.
+        let only = pass(Vec::new(), false, egui::vec2(1.0, 1.0), None);
+        assert_eq!(gathered(None, only.clone()), only);
+    }
+
+    #[test]
     fn settings_in_its_modal_window_on_windows_and_linux_changes_at_once_and_closes() {
         for os in [OperatingSystem::Windows, OperatingSystem::Nix] {
             let mut harness = settings_on(os, &[]);
@@ -2883,6 +2947,8 @@ mod tests {
                 .get_by_role_and_label(Role::ComboBox, "Language")
                 .click();
             harness.run();
+            // The new language widens Close, so egui draws that frame again, and the
+            // change its first pass asked for is still handed on (issue #275).
             harness.get_by_label("Українська").click();
             harness.run();
             assert_eq!(
