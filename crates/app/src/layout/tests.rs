@@ -1501,6 +1501,35 @@ fn hide_leaves_the_lists_of_tabs_the_workspace_lacks() {
     assert!(layout.hidden.iter().any(|t| t == "grain"));
 }
 
+/// A write leaves the lists for a tab id the file lacks as they are, in `[pinned]` and
+/// `[order]`, an item this build skips included.
+#[test]
+fn a_write_keeps_the_lists_of_tabs_the_file_lacks_as_written() {
+    let folder = Folder::new("workspace-undeclared-lists");
+    let file = folder.0.join("portraits.toml");
+    let own = "[[tabs]]\nid = \"skin\"\n\
+               [pinned]\nskin = [\"scopes\"]\nelsewhere = [\"grain\", 42]\n\
+               [order]\nskin = [\"exposure\", \"grain\"]\nelsewhere = [\"bloom\", 7]\n";
+    std::fs::write(&file, own).unwrap();
+    let hide = [Move::Hide { tool: "grain" }];
+    let wrote = files::write(
+        &file,
+        "portraits",
+        false,
+        &hide,
+        &mut files::Kept::default(),
+    );
+    assert_eq!(wrote.unwrap(), files::Wrote::Written);
+    let table: Table = std::fs::read_to_string(&file).unwrap().parse().unwrap();
+    let list = |key: &str, tab: &str| table[key][tab].as_array().cloned().unwrap();
+    assert_eq!(
+        list("pinned", "elsewhere"),
+        [Value::from("grain"), 42.into()]
+    );
+    assert_eq!(list("order", "elsewhere"), [Value::from("bloom"), 7.into()]);
+    assert!(!list("order", "skin").contains(&Value::from("grain")));
+}
+
 /// A write that failed is tried again on a switch with no new move, at once, not only at
 /// the next move or on exit.
 #[test]

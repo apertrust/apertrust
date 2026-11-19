@@ -866,21 +866,29 @@ impl Layout {
 
     /// Writes what a move changes into `table`, a workspace's file as read, the rest of it
     /// kept as it is: `version`, `hidden`, `seen`, `[pinned]` and `[order]` (decision 96).
+    /// A list for a tab id it lacks, which no move changes, stays as the file has it, an
+    /// item this build skips included.
     pub fn write_into(&self, table: &mut Table) {
         let ids = |ids: &[String]| Value::Array(ids.iter().map(|id| id.as_str().into()).collect());
-        let lists = |lists: &BTreeMap<String, Vec<String>>| {
-            let lists = lists.iter().map(|(tab, list)| (tab.clone(), ids(list)));
+        let declared = |id: &str| self.tabs.iter().any(|tab| tab.id == id);
+        let lists = |key: &str, lists: &BTreeMap<String, Vec<String>>| {
+            let raw = table.get(key).and_then(Value::as_table);
+            let lists = lists.iter().map(|(tab, list)| {
+                let kept = raw.filter(|_| !declared(tab)).and_then(|raw| raw.get(tab));
+                (tab.clone(), kept.cloned().unwrap_or_else(|| ids(list)))
+            });
             Value::Table(lists.collect())
         };
+        let (pinned, order) = (lists("pinned", &self.pinned), lists("order", &self.order));
         table.insert("version".into(), VERSION.into());
         table.insert("hidden".into(), ids(&self.hidden));
         table.insert("seen".into(), ids(&self.seen));
         if self.pinned.is_empty() {
             table.remove("pinned");
         } else {
-            table.insert("pinned".into(), lists(&self.pinned));
+            table.insert("pinned".into(), pinned);
         }
-        table.insert("order".into(), lists(&self.order));
+        table.insert("order".into(), order);
     }
 }
 
