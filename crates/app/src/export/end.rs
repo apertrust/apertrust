@@ -64,6 +64,15 @@ pub struct Jobs {
     pub failed: Option<(u64, u64)>,
 }
 
+/// The selected photos besides the one open, while several are selected (decision 90):
+/// how many the export takes, and how many it leaves out, open for viewing only. None
+/// with one photo.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Others {
+    pub taken: usize,
+    pub left_out: usize,
+}
+
 /// What the app tells the tool each frame besides its header, which is the shell's
 /// (`tools::Head`), and its page's groups, which the settings keep.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -71,6 +80,7 @@ pub struct Shown {
     /// Whether the summary is open.
     pub summary: bool,
     pub photo: Photo,
+    pub others: Others,
     pub jobs: Jobs,
 }
 
@@ -137,7 +147,8 @@ impl Export {
     pub(super) fn end(&mut self, ui: &mut Ui, t: &Theme) -> End {
         ui.add_space(t.spacing.m);
         // With no photo there is nothing to warn of: only the button, disabled.
-        if matches!(self.photo, Photo::Ready { .. } | Photo::ViewOnly { .. }) {
+        let others = self.others.taken + self.others.left_out > 0;
+        if others || matches!(self.photo, Photo::Ready { .. } | Photo::ViewOnly { .. }) {
             self.warnings(ui, t);
             ui.add_space(t.spacing.m);
         }
@@ -343,9 +354,11 @@ impl Export {
     fn warnings(&self, ui: &mut Ui, t: &Theme) {
         let ctx = ui.ctx().clone();
         let words = translator(&ctx);
-        if matches!(self.photo, Photo::ViewOnly { .. }) {
+        let left_out =
+            usize::from(matches!(self.photo, Photo::ViewOnly { .. })) + self.others.left_out;
+        if left_out > 0 {
             let mut args = Args::new();
-            args.set("count", 1.0);
+            args.set("count", left_out as f64);
             warn(
                 ui,
                 t,
@@ -377,7 +390,7 @@ impl Export {
     /// Why Export cannot run, in words, if it cannot: nothing to export, or only a photo
     /// open for viewing only, or the session has found a problem with the path, its folder
     /// or the size (D8). Until the session answers there is none to find; it checks again as
-    /// the job starts.
+    /// the job starts. Other selected photos it takes make the photo open no reason.
     pub(super) fn cannot_export(&self, ctx: &egui::Context) -> Option<String> {
         let say = |id: &str, problem: &str| {
             let mut args = Args::new();
@@ -385,6 +398,7 @@ impl Export {
             translator(ctx).text_with(id, Some(&args))
         };
         match &self.photo {
+            _ if self.others.taken > 0 => {}
             // Nothing open: the button is disabled, and says nothing more.
             Photo::None => return None,
             Photo::ViewOnly {
@@ -402,12 +416,23 @@ impl Export {
             }
             Photo::Ready { .. } => {}
         }
-        if let Some(problem) = self.path_problem(&translator(ctx)) {
+        // The path's own problems are every photo's; its folder's checks are the photo
+        // open's folder's, no reason where the export leaves that photo out.
+        let problem = match self.photo {
+            Photo::Ready { .. } => self.path_problem(&translator(ctx)),
+            _ => self.pattern_problem(&translator(ctx)),
+        };
+        if let Some(problem) = problem {
             return Some(say("export-why-path", &problem.text));
         }
         // Overwrite kept from a platform that asks: no question here, so no export.
         if !self.alerts && asks_before(self.values.on_conflict) {
             return Some(tr(ctx, "export-conflict-overwrite-no-alert"));
+        }
+        // The preview's names and size are the photo open's: no reason where the export
+        // leaves it out.
+        if !matches!(self.photo, Photo::Ready { .. }) {
+            return None;
         }
         let (_, preview) = self.preview.as_ref()?;
         // A path that expands to nothing for every photo, such as one made of variables with
@@ -435,9 +460,11 @@ impl Export {
     fn button(&mut self, ui: &mut Ui) -> bool {
         let ctx = ui.ctx().clone();
         let reason = self.cannot_export(&ctx);
-        let idle = matches!(self.photo, Photo::None);
+        let idle = matches!(self.photo, Photo::None) && self.others.taken == 0;
+        // The photos it exports; with none, the words as for one.
+        let count = usize::from(matches!(self.photo, Photo::Ready { .. })) + self.others.taken;
         let mut args = Args::new();
-        args.set("count", PHOTOS as f64);
+        args.set("count", count.max(1) as f64);
         let words = translator(&ctx).text_with("export-button", Some(&args));
         let mut button = Button::new(&words)
             .primary(true)

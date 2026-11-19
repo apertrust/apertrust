@@ -36,7 +36,8 @@
 //! Selection and Select Unedited, each drawn disabled where it would change nothing
 //! ([`selectable`]). So do Next Photo and Previous Photo ([`step`]): with several photos
 //! selected, the active photo moves through them in the Browser's order, the selection
-//! staying; else through the folder, the photo reached selected alone.
+//! staying; else through the folder, the photo reached selected alone. And an export takes
+//! every selected photo ([`exported`]).
 
 use std::path::{Path, PathBuf};
 
@@ -46,7 +47,7 @@ use apertrust_ui::components::BrowserAction;
 
 use crate::actions::Selectable;
 use crate::folder::{Folder, Listing};
-use crate::mirror::Mirror;
+use crate::mirror::{Mirror, PhotoState};
 use crate::{SendCommand, open_listed};
 
 /// Does what `action` asks of the Browser's photos, `order` their paths in its sort, which
@@ -267,6 +268,92 @@ pub(crate) fn stepped(next: bool, mirror: &Mirror) -> Option<PathBuf> {
         order[..to].iter().rev().copied().find(reached)
     };
     found.map(path)
+}
+
+/// The photos an export takes, and how many it leaves out ([`exported`]).
+#[derive(Debug, Default, PartialEq)]
+pub(crate) struct Exported {
+    /// Their paths as the Browser names them, in its order.
+    pub photos: Vec<PathBuf>,
+    /// The selected photos open for viewing only, which the export leaves out.
+    pub left_out: usize,
+}
+
+/// What Export and Export Again take (decision 90): with several selected, every selected
+/// photo of the folder in the Browser's order, the selection staying as it is; else the
+/// photo open. Nothing while All, Invert or Unedited is not yet told, as Next Photo waits
+/// for them ([`Mirror::selection_pending`]). A photo open for viewing only is left out, as the Export tool leaves it out:
+/// the open one by its own state, the folder's others by their listed edit, a newer
+/// Apertrust's or an unreadable one.
+pub(crate) fn exported(mirror: &Mirror) -> Exported {
+    let mut exported = Exported::default();
+    // All, Invert or Unedited not yet told: what is selected waits for the session.
+    if mirror.selection_pending() {
+        return exported;
+    }
+    match several(mirror) {
+        Some(listing) => {
+            for (photo, takes) in selected(mirror, listing) {
+                if takes {
+                    exported.photos.push(photo);
+                } else {
+                    exported.left_out += 1;
+                }
+            }
+        }
+        None => match &mirror.photo {
+            PhotoState::Open(photo) if photo.view_only.is_none() => {
+                exported.photos.push(photo.path.clone());
+            }
+            PhotoState::Open(_) => exported.left_out = 1,
+            _ => {}
+        },
+    }
+    exported
+}
+
+/// Whether an export would take any photo ([`exported`]), stopping at the first: worked out
+/// for each frame's actions.
+pub(crate) fn exportable(mirror: &Mirror) -> bool {
+    if mirror.selection_pending() {
+        return false;
+    }
+    match several(mirror) {
+        Some(listing) => selected(mirror, listing).any(|(_, takes)| takes),
+        None => matches!(&mirror.photo, PhotoState::Open(photo) if photo.view_only.is_none()),
+    }
+}
+
+/// The folder open, while several of its photos are selected.
+fn several(mirror: &Mirror) -> Option<&Listing> {
+    listing(mirror).filter(|_| mirror.selected_count() > 1)
+}
+
+/// The selected photos of `listing`, in the Browser's order, each with whether an export
+/// takes it ([`exported`]).
+fn selected<'a>(
+    mirror: &'a Mirror,
+    listing: &'a Listing,
+) -> impl Iterator<Item = (PathBuf, bool)> + 'a {
+    let open = match &mirror.photo {
+        PhotoState::Open(photo) => Some(photo),
+        _ => None,
+    };
+    mirror.folder.order().iter().filter_map(move |&i| {
+        let photo = &listing.photos[i];
+        let path = listing.path.join(&photo.name);
+        if !mirror.is_selected(&path) {
+            return None;
+        }
+        let takes = match open.filter(|open| open.path == path) {
+            Some(open) => open.view_only.is_none(),
+            None => !matches!(
+                photo.edit,
+                EditState::ViewOnly(_) | EditState::Unreadable(_)
+            ),
+        };
+        Some((path, takes))
+    })
 }
 
 /// The folder open, the session's collection; none with no folder or photos opened alone.
@@ -961,5 +1048,143 @@ mod tests {
         assert_eq!((stepped(true, &f.m), stepped(false, &f.m)), (None, None));
         f.told(&["b", "d"], None);
         assert_eq!(stepped(true, &f.m), Some(at("b")));
+    }
+
+    /// The photo open, `view_only` or not, as the session's `Opened` makes it: `a`, which
+    /// [`Folder::new`] opened as command 1.
+    fn opened_a(f: &mut Folder, view_only: bool) {
+        use apertrust_engine::sidecar::{Problem, Reason, ViewOnly};
+        let mut photo = crate::mirror::tests::photo(1);
+        if view_only {
+            photo.view_only = Some(ViewOnly {
+                build: None,
+                reason: Reason::Unreadable(Problem::End {
+                    copy: "00000000".to_owned(),
+                    end: "00000000000000ff".to_owned(),
+                }),
+            });
+        }
+        f.m.apply(Event::Opened(photo));
+    }
+
+    /// With one photo selected an export takes the photo open, as before; with none open,
+    /// or one open for viewing only, nothing, that one left out.
+    #[test]
+    fn an_export_of_one_photo_takes_the_photo_open() {
+        let mut f = Folder::new("a");
+        f.listed(&[], false);
+        f.told(&["a"], Some("a"));
+        // Still opening: nothing to export yet.
+        assert_eq!(exported(&f.m), Exported::default());
+        assert!(!exportable(&f.m));
+        opened_a(&mut f, false);
+        let one = Exported {
+            photos: vec![at("a")],
+            left_out: 0,
+        };
+        assert_eq!(exported(&f.m), one);
+        assert!(exportable(&f.m));
+        let mut f = Folder::new("a");
+        f.listed(&[], false);
+        f.told(&["a"], Some("a"));
+        opened_a(&mut f, true);
+        let none = Exported {
+            photos: Vec::new(),
+            left_out: 1,
+        };
+        assert_eq!(exported(&f.m), none);
+        assert!(!exportable(&f.m));
+    }
+
+    /// With several selected an export takes every one in the Browser's order, whatever is
+    /// open, leaving out those open for viewing only, the open one by its own state and the
+    /// rest by their listed edit; the selection stays as it was.
+    #[test]
+    fn an_export_of_several_takes_every_selected_photo_in_the_browser_s_order() {
+        let mut f = Folder::new("a");
+        // e, d, c, b, a.
+        f.listed(&[], true);
+        f.told(&["a", "c", "e"], Some("a"));
+        let all = Exported {
+            photos: vec![at("e"), at("c"), at("a")],
+            left_out: 0,
+        };
+        assert_eq!(exported(&f.m), all);
+        assert!(exportable(&f.m));
+        assert_eq!(f.m.selected_count(), 3);
+        // c's sidecar unreadable, the open a view-only: e alone.
+        let mut f = Folder::new("a");
+        let folder = PathBuf::from("/photos");
+        f.m.folder.opening(folder.clone(), 100);
+        let name = "photos".to_owned();
+        f.m.apply(Event::Library(LibraryEvent::Opened {
+            open: 100,
+            name,
+            folder,
+        }));
+        let newer = EditState::Unreadable("not an .apxmp".to_owned());
+        let photos = [
+            ("a", EditState::None),
+            ("c", newer),
+            ("e", EditState::Edited),
+        ]
+        .map(|(name, edit)| Photo {
+            name: format!("{name}.ARW"),
+            size: 1,
+            modified: None,
+            edit,
+        })
+        .to_vec();
+        f.m.apply(Event::Library(LibraryEvent::Listed {
+            open: 100,
+            photos,
+            done: true,
+        }));
+        f.told(&["a", "c", "e"], Some("a"));
+        opened_a(&mut f, true);
+        let e = Exported {
+            photos: vec![at("e")],
+            left_out: 2,
+        };
+        assert_eq!(exported(&f.m), e);
+        assert!(exportable(&f.m));
+    }
+
+    /// While Select All is not yet told an export takes nothing, as the selection it reads
+    /// is the one Select All replaces; once told, every photo.
+    #[test]
+    fn an_export_waits_for_select_all_to_be_told() {
+        let mut f = Folder::new("a");
+        f.listed(&[], false);
+        f.told(&["a", "c"], Some("a"));
+        f.edit(SelectionCommand::All);
+        assert_eq!(exported(&f.m), Exported::default());
+        assert!(!exportable(&f.m));
+        f.told(&["a", "b", "c", "d", "e"], Some("a"));
+        assert_eq!(exported(&f.m).photos.len(), 5);
+        assert!(exportable(&f.m));
+    }
+
+    /// Export Again exports the photos selected as it runs, as the app makes its command
+    /// (`App::ask_export`): a selection changed since the last export is the one it takes.
+    #[test]
+    fn export_again_takes_the_selection_as_it_is_now() {
+        let values = crate::export::Values::default();
+        let places = crate::export::places();
+        let again = |m: &Mirror| {
+            let photos = exported(m).photos;
+            crate::export_again::export(photos, &values, &places)
+        };
+        let command = |names: &[&str]| Command::Export {
+            photos: names.iter().map(|name| at(name)).collect(),
+            settings: values.settings(),
+            places: places.clone(),
+        };
+        let mut f = Folder::new("a");
+        f.listed(&[], false);
+        f.told(&["a", "c"], Some("a"));
+        assert_eq!(again(&f.m), command(&["a", "c"]));
+        f.browse(BrowserAction::ToggleSelected(3));
+        assert_eq!(again(&f.m), command(&["a", "c", "d"]));
     }
 }

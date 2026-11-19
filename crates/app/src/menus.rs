@@ -139,11 +139,22 @@ pub struct Steps {
 /// would do, `steps` ("Undo Exposure", `menu-undo-step`; "Redo Go to Step",
 /// `menu-redo-step`). With nothing to name, and while a text field has the focus, whose own
 /// undo they then are, they read Undo and Redo alone (`docs/gui.md`, The editing items
-/// follow focus).
+/// follow focus). Export… and Export Again say how many photos they export while several
+/// are selected ("Export 12 Photos…", `menu-export-photos`; "Export 12 Photos Again",
+/// `menu-export-photos-again`).
 pub fn words(action: &Action, steps: &Steps, state: &State, tr: &Translator) -> String {
     let (step, message) = match action.id {
         ActionId::UNDO => (&steps.undo, "menu-undo-step"),
         ActionId::REDO => (&steps.redo, "menu-redo-step"),
+        ActionId::EXPORT | ActionId::EXPORT_AGAIN if state.photos > 1 => {
+            let message = match action.id {
+                ActionId::EXPORT => "menu-export-photos",
+                _ => "menu-export-photos-again",
+            };
+            let mut args = Args::new();
+            args.set("count", state.photos as f64);
+            return tr.text_with(message, Some(&args));
+        }
         _ => return tr.text(action.message),
     };
     match step {
@@ -156,10 +167,13 @@ pub fn words(action: &Action, steps: &Steps, state: &State, tr: &Translator) -> 
     }
 }
 
-/// Whether `id`'s words follow the photo's history, so the Mac's menus word its item again
-/// each frame rather than only when the language changes.
+/// Whether `id`'s words follow the photo's history or the selection, so the Mac's menus
+/// word its item again each frame rather than only when the language changes.
 fn names_a_step(id: ActionId) -> bool {
-    id == ActionId::UNDO || id == ActionId::REDO
+    matches!(
+        id,
+        ActionId::UNDO | ActionId::REDO | ActionId::EXPORT | ActionId::EXPORT_AGAIN
+    )
 }
 
 /// The Mac's own items, which muda predefines: macOS performs them, so they are not the
@@ -2448,6 +2462,35 @@ mod tests {
         }
     }
 
+    /// Export… and Export Again say how many photos they export while several are
+    /// selected, in each language's plural; with one, their own words.
+    #[test]
+    fn export_and_export_again_name_the_photos_while_several_are_selected() {
+        let named = |locale, photos, id| {
+            let state = State {
+                photos,
+                ..everything()
+            };
+            let action = actions::action(id).expect("declared");
+            words(action, &Steps::default(), &state, &Translator::new(locale))
+        };
+        let (export, again) = (ActionId::EXPORT, ActionId::EXPORT_AGAIN);
+        assert_eq!(named(Locale::EnGb, 1, export), "Export…");
+        assert_eq!(named(Locale::EnGb, 1, again), "Export Again");
+        assert_eq!(named(Locale::EnGb, 2, export), "Export 2 Photos…");
+        assert_eq!(named(Locale::EnGb, 12, again), "Export 12 Photos Again");
+        assert_eq!(named(Locale::EnUs, 12, export), "Export 12 Photos…");
+        assert_eq!(named(Locale::Uk, 3, export), "Експортувати 3 знімки…");
+        assert_eq!(
+            named(Locale::Uk, 12, again),
+            "Експортувати ще раз 12 знімків"
+        );
+        assert_eq!(named(Locale::Pl, 2, export), "Eksportuj 2 zdjęcia…");
+        assert_eq!(named(Locale::Pl, 12, again), "Eksportuj ponownie 12 zdjęć");
+        // Worded again each frame on the Mac, as the selection changes.
+        assert!(names_a_step(export) && names_a_step(again));
+    }
+
     /// The words of `id`'s item in `menu`'s Edit.
     fn edit_item(menu: &popup::Request, id: ActionId) -> (String, bool) {
         let edit = tops(menu)[1];
@@ -2698,7 +2741,9 @@ mod tests {
         assert_eq!(find(ActionId::PANEL_TABS[0]).checked, Some(false));
         assert_eq!(find(ActionId::QUIT).checked, None);
         // Every item is its action's, as the registry has it, and the menus' order; Open
-        // Recent, given no recents, holds Clear Menu alone.
+        // Recent, given no recents, holds Clear Menu alone. Two photos selected: Export…
+        // and Export Again say so.
+        assert_eq!(find(ActionId::EXPORT).text, "Export 2 Photos…");
         let keymap = Keymap::defaults(OperatingSystem::Nix);
         let en = Translator::new(Locale::EnGb);
         let ids: Vec<&str> = all.iter().map(|item| item.id.as_str()).collect();
@@ -2711,7 +2756,8 @@ mod tests {
         for item in all {
             let id = chosen(&item.id).expect("an action's id");
             let action = actions::action(id).expect("declared");
-            assert_eq!(item.text, en.text(action.message), "{}", id.0);
+            let named = words(action, &Steps::default(), &state, &en);
+            assert_eq!(item.text, named, "{}", id.0);
             assert_eq!(item.enabled, action.enabled(&state), "{}", id.0);
             let key = keymap
                 .keys(id)
@@ -3450,7 +3496,7 @@ mod tests {
         // on the active photo, as Edit › Reset does.
         let several = State { photos: 2, ..one };
         let menu = open(Open::Thumbnail, Target::Selection, &several);
-        assert_eq!(words(&menu), ["Export…"]);
+        assert_eq!(words(&menu), ["Export 2 Photos…"]);
         let menu = open(Open::Photo, photo, &several);
         assert_eq!(words(&menu)[0], "Reset");
         // Nothing to reset: hidden.

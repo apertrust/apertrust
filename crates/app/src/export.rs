@@ -83,7 +83,7 @@ use crate::tools::{Change, Head, Note, Pressed};
 use crate::utility::{Context, UtilityTool};
 
 mod end;
-pub use end::{Jobs, Photo, Shown, Why};
+pub use end::{Jobs, Others, Photo, Shown, Why};
 
 /// The tool's id, as the shell keeps its section's state and Export… reveals it.
 pub const ID: &str = "export";
@@ -93,8 +93,6 @@ pub const SUMMARY: &str = "summary";
 /// Whether the Summary is open until the person closes it: it starts open, as Global
 /// options does.
 pub const SUMMARY_OPEN: bool = true;
-/// How many photos the tool exports: the active one, until a selection comes.
-const PHOTOS: usize = 1;
 
 /// The export settings as the tool edits them: one field for each `export.*` setting the
 /// tool's rows show.
@@ -612,6 +610,7 @@ pub struct Export {
     alerts: bool,
     /// The photo it acts on and how the user's exports stand, as the last frame was told.
     photo: Photo,
+    others: Others,
     jobs: Jobs,
     /// When Export was last pressed to some effect, for the guard against a second press.
     pressed_at: Option<f64>,
@@ -831,6 +830,7 @@ impl Export {
             print: None,
             alerts: true,
             photo: Photo::None,
+            others: Others::default(),
             jobs: Jobs::default(),
             pressed_at: None,
             summary: SUMMARY_OPEN,
@@ -924,6 +924,7 @@ impl Export {
         let ctx = ui.ctx().clone();
         let before = self.values.clone();
         self.photo = shown.photo.clone();
+        self.others = shown.others;
         self.jobs = shown.jobs.clone();
         self.summary = shown.summary;
         // Its ↺ applies Default settings, drawn disabled while they hold; then the presets
@@ -1135,7 +1136,26 @@ impl Export {
     /// (D8): none while all is well, and none until the session has answered.
     fn path_problem(&self, words: &Translator) -> Option<Problem> {
         let (_, preview) = self.preview.as_ref()?;
-        problem_of(words, preview, &self.values.path, self.home.as_deref())
+        problem_of(
+            words,
+            preview,
+            &self.values.path,
+            self.home.as_deref(),
+            true,
+        )
+    }
+
+    /// What stops the path itself, every photo's, leaving out its folder's checks, which
+    /// are the photo open's folder's ([`Self::path_problem`]).
+    fn pattern_problem(&self, words: &Translator) -> Option<Problem> {
+        let (_, preview) = self.preview.as_ref()?;
+        problem_of(
+            words,
+            preview,
+            &self.values.path,
+            self.home.as_deref(),
+            false,
+        )
     }
 
     /// The size line for Set size's mode: its fields on one line, or the scale's. Set size
@@ -1318,6 +1338,7 @@ fn problem_of(
     preview: &ExportPreview,
     path: &str,
     home: Option<&Path>,
+    folders: bool,
 ) -> Option<Problem> {
     let say = |id: &str, pairs: &[(&str, String)]| {
         let mut args = Args::new();
@@ -1375,6 +1396,9 @@ fn problem_of(
                 &[("depth", variables::MAX_DEPTH.to_string())],
             )),
         });
+    }
+    if !folders {
+        return None;
     }
     preview.folders.iter().find_map(|check| {
         let Preflight::Blocked { why, .. } = &check.preflight else {

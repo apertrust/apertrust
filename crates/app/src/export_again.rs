@@ -25,17 +25,18 @@
 //! ([`crate::export::asks_before`]), so nothing waits for the session: [`export`] makes the
 //! command, and [`Again`] holds it while the question is up.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use apertrust_engine::session::{Command, Places};
 
 use crate::export::Values;
 
-/// The export of `photo` with `values`, the settings as the tool left them: Export Again's,
-/// and the Export button's.
-pub fn export(photo: &Path, values: &Values, places: &Places) -> Command {
+/// The export of `photos` with `values`, the settings as the tool left them: Export
+/// Again's, and the Export button's, each the selected photos or the photo open
+/// (`selection::exported`).
+pub fn export(photos: Vec<PathBuf>, values: &Values, places: &Places) -> Command {
     Command::Export {
-        photos: vec![photo.to_owned()],
+        photos,
         settings: values.settings(),
         places: places.clone(),
     }
@@ -123,7 +124,7 @@ pub(crate) mod tests {
             photos,
             settings,
             places: sent,
-        } = export(Path::new(PHOTO), &kept, &places())
+        } = export(vec![PathBuf::from(PHOTO)], &kept, &places())
         else {
             panic!("an export");
         };
@@ -136,14 +137,14 @@ pub(crate) mod tests {
     fn a_yes_sends_the_held_export_once_and_a_no_sends_nothing() {
         let kept = values(OnConflict::Overwrite);
         let mut again = Again::default();
-        again.hold(export(Path::new(PHOTO), &kept, &places()));
+        again.hold(export(vec![PathBuf::from(PHOTO)], &kept, &places()));
         let Some(Command::Export { settings, .. }) = again.confirmed() else {
             panic!("a yes sends the export");
         };
         assert_eq!(settings, kept.settings());
         assert_eq!(again.confirmed(), None, "once");
 
-        again.hold(export(Path::new(PHOTO), &kept, &places()));
+        again.hold(export(vec![PathBuf::from(PHOTO)], &kept, &places()));
         again.declined();
         assert_eq!(again.confirmed(), None, "a no sends nothing");
     }
@@ -151,7 +152,7 @@ pub(crate) mod tests {
     #[test]
     fn a_yes_says_whether_the_export_tool_asked() {
         let kept = values(OnConflict::Overwrite);
-        let command = || export(Path::new(PHOTO), &kept, &places());
+        let command = || export(vec![PathBuf::from(PHOTO)], &kept, &places());
         let mut again = Again::default();
         again.hold_for_tool(command());
         assert_eq!(again.confirmed_by(), Some((command(), true)));
@@ -167,12 +168,12 @@ pub(crate) mod tests {
     fn holding_another_export_replaces_the_one_held() {
         let mut again = Again::default();
         again.hold(export(
-            Path::new(PHOTO),
+            vec![PathBuf::from(PHOTO)],
             &values(OnConflict::CreateUniqueFilename),
             &places(),
         ));
         let newer = values(OnConflict::Overwrite);
-        again.hold(export(Path::new(PHOTO), &newer, &places()));
+        again.hold(export(vec![PathBuf::from(PHOTO)], &newer, &places()));
         let Some(Command::Export { settings, .. }) = again.confirmed() else {
             panic!("the export");
         };

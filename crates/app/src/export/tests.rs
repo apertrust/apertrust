@@ -172,6 +172,7 @@ fn tool_of(export: Export, which: Builtin, locale: Locale, width: f32) -> Harnes
                     photo: Photo::Ready {
                         name: "IMG_2041.ARW".to_owned(),
                     },
+                    others: Others::default(),
                     jobs: Jobs::default(),
                 },
                 asked: Vec::new(),
@@ -308,7 +309,7 @@ fn the_preview_and_the_export_are_the_session_s_commands_for_the_photo_open() {
         }
     );
     assert_eq!(
-        crate::export_again::export(photo, &held, &places),
+        crate::export_again::export(vec![photo.to_owned()], &held, &places),
         Command::Export {
             photos: vec![photo.to_owned()],
             settings: held.settings(),
@@ -2257,6 +2258,64 @@ fn a_view_only_photo_is_left_out_with_a_warning_and_a_button_that_says_why() {
     tell(&mut harness, ready(), Jobs::default());
     assert!(!says(&harness, "1 view-only photo left out"));
     assert!(!disabled(&harness, Role::Button, "Export 1 photo"));
+}
+
+/// With several selected the button counts every photo it exports, the photo open among
+/// them, and the warning every one left out; the photo open being view-only holds nothing
+/// off while others export.
+#[test]
+fn several_selected_photos_are_counted_on_the_button_and_in_the_warning() {
+    let mut harness = open();
+    harness.state_mut().shown.others = Others {
+        taken: 11,
+        left_out: 0,
+    };
+    tell(&mut harness, ready(), Jobs::default());
+    assert!(!disabled(&harness, Role::Button, "Export 12 photos"));
+    let newer = Photo::ViewOnly {
+        name: "IMG_2041.ARW".to_owned(),
+        why: Why::Newer,
+    };
+    harness.state_mut().shown.others = Others {
+        taken: 10,
+        left_out: 1,
+    };
+    tell(&mut harness, newer, Jobs::default());
+    assert!(says(&harness, "2 view-only photos left out"));
+    assert!(!disabled(&harness, Role::Button, "Export 10 photos"));
+    // The photo open's size problem holds nothing off where the export leaves it out.
+    let mut p = preview();
+    p.size = Some(ActiveSize {
+        source: PathBuf::from("/Users/anna/Pictures/IMG_2041.ARW"),
+        size: Err(SizeProblem::TooLarge {
+            format: "JPEG",
+            largest: 65535,
+            width: 70000,
+            height: 50000,
+        }),
+    });
+    answer(&mut harness, 1, p);
+    assert!(!disabled(&harness, Role::Button, "Export 10 photos"));
+    // Nor does its folder's check, though the path's own problem, every photo's, does.
+    let mut p = preview();
+    p.folders = vec![FolderCheck {
+        folder: PathBuf::from("/Volumes/Photos NAS/Exports"),
+        preflight: Preflight::Blocked {
+            at: PathBuf::from("/Volumes/Photos NAS"),
+            why: Blocked::NotConnected,
+        },
+    }];
+    answer(&mut harness, 2, p);
+    assert!(!disabled(&harness, Role::Button, "Export 10 photos"));
+    let mut p = preview();
+    p.problem = Some(PathProblem::Empty);
+    answer(&mut harness, 3, p);
+    assert!(disabled(&harness, Role::Button, "Export 10 photos"));
+    // Back to that photo alone, which the export takes: the words as before, and a
+    // problem holds Export off.
+    harness.state_mut().shown.others = Others::default();
+    tell(&mut harness, ready(), Jobs::default());
+    assert!(disabled(&harness, Role::Button, "Export 1 photo"));
 }
 
 #[test]

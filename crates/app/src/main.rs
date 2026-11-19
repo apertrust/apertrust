@@ -4188,23 +4188,21 @@ impl App {
         self.ask_export(ctx, false);
     }
 
-    /// Exports the photo open with the settings as they stand, asking the overwrite
-    /// question first where On conflict calls for it and holding the export through it:
-    /// File › Export Again's, or the Export tool's (`tool`), which then says it started
-    /// once the export is sent.
+    /// Exports the selected photos, else the photo open ([`selection::exported`]), with the
+    /// settings as they stand, asking the overwrite question first where On conflict calls
+    /// for it and holding the export through it: File › Export Again's, or the Export
+    /// tool's (`tool`), which then says it started once the export is sent. A photo open
+    /// for viewing only is left out, as the tool leaves it out; with none left, nothing.
     fn ask_export(&mut self, ctx: &egui::Context, tool: bool) {
-        let PhotoState::Open(photo) = &self.mirror.photo else {
-            return;
-        };
-        // The tool leaves a photo open for viewing only out of an export; so does this.
-        if photo.view_only.is_some() {
+        let photos = selection::exported(&self.mirror).photos;
+        if photos.is_empty() {
             return;
         }
         if self.quitting() {
             tracing::warn!(target: "gpu", "export again dropped: the app is quitting");
             return;
         }
-        let command = export_again::export(&photo.path, &self.shell.export, &self.places);
+        let command = export_again::export(photos, &self.shell.export, &self.places);
         if !export::asks_before(self.shell.export.on_conflict) {
             self.send_job(command);
             return;
@@ -4226,12 +4224,14 @@ impl App {
         self.mirror.jobs.starting(number);
     }
 
-    /// Sends the export of the photo open with the settings the shell holds.
+    /// Sends the export of the selected photos, else the photo open, with the settings the
+    /// shell holds.
     fn send_export(&mut self) {
-        let PhotoState::Open(photo) = &self.mirror.photo else {
+        let photos = selection::exported(&self.mirror).photos;
+        if photos.is_empty() {
             return;
-        };
-        let command = export_again::export(&photo.path, &self.shell.export, &self.places);
+        }
+        let command = export_again::export(photos, &self.shell.export, &self.places);
         self.send_job(command);
     }
 
@@ -4919,7 +4919,10 @@ impl App {
             discard: options.discard,
             unreadable: options.unreadable,
             discard_why: history::discard_why(options),
-            exportable: open && !self.view_only(),
+            exportable: selection::exportable(&self.mirror),
+            // The photos selected, the active one at least while there is one.
+            photos: (self.mirror.selected_count())
+                .max(usize::from(self.mirror.photo.asked().is_some())),
             select: selection::selectable(&self.mirror),
             next: selection::stepped(true, &self.mirror).is_some(),
             previous: selection::stepped(false, &self.mirror).is_some(),
@@ -5252,6 +5255,7 @@ impl App {
                 .shell
                 .group_open_or(export::ID, export::SUMMARY, export::SUMMARY_OPEN),
             photo,
+            others: export_others(&self.mirror),
             jobs: export::Jobs {
                 failed: self.mirror.jobs.failed_export(),
             },
@@ -5415,13 +5419,9 @@ impl App {
             anchor: egui::Rect::from_min_size(menu.at, egui::Vec2::ZERO),
             opener: Some(menu.cell),
         });
-        // The menu acts on the selection, so it counts the photos selected, where the shell's
-        // state counts the active photo alone.
+        // The menu acts on the selection, which the shell's state counts (`State::photos`).
         let selected = self.mirror.selected_count();
-        let state = State {
-            photos: selected,
-            ..self.state(ctx)
-        };
+        let state = self.state(ctx);
         let asked = self.mirror.photo.asked();
         let chosen = context_popup(ctx, id, opened, &self.shell.keymap, &state, asked);
         chosen.and_then(|chosen| menus::chosen_on_thumbnail(chosen, selected))
@@ -6727,6 +6727,23 @@ enum Opens {
     /// Photos alone, together, the first active.
     Photos(Vec<PathBuf>),
     Folder(PathBuf),
+}
+
+/// The selected photos an export takes or leaves out besides the photo open
+/// ([`selection::exported`]), which the Export tool counts: none with one selected.
+fn export_others(mirror: &Mirror) -> export::Others {
+    let exported = selection::exported(mirror);
+    let open = match &mirror.photo {
+        PhotoState::Open(photo) => Some(photo),
+        _ => None,
+    };
+    // The photo open is the tool's own: taken where it can be, else left out.
+    let taken = open.is_some_and(|open| exported.photos.contains(&open.path));
+    let left_out = open.is_some_and(|open| open.view_only.is_some());
+    export::Others {
+        taken: (exported.photos.len()).saturating_sub(usize::from(taken)),
+        left_out: (exported.left_out).saturating_sub(usize::from(left_out)),
+    }
 }
 
 /// Sends a command to the session, returning its number: the app's session, or a test's
@@ -16620,6 +16637,7 @@ mod tests {
                                     } else {
                                         export::Photo::None
                                     },
+                                    others: export::Others::default(),
                                     jobs: export::Jobs::default(),
                                 },
                                 reveal: revealed && bench.shell.reveal == Some(export::ID),
@@ -17475,7 +17493,7 @@ mod tests {
     /// The export of the photo open with the settings as the shell keeps them, as the app
     /// makes it.
     fn export_command(d: &Dialogged) -> Command {
-        export_again::export(&d.open, &d.shell.export, &export::places())
+        export_again::export(vec![d.open.clone()], &d.shell.export, &export::places())
     }
 
     /// The export held for the overwrite question, as the app holds it as it asks.

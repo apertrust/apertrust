@@ -81,8 +81,8 @@ A tool's section already has its own buttons: reset, presets and options (⋯). 
 
 **What an item acts on**, `Target`:
 
-- On the photo: the active photo, with the point under the pointer in the photo's coordinates as pickers take them (79), or no point when the menu opens from the keys. An action that needs a point is hidden without one.
-- On a thumbnail: the selection, which always holds its photo. Opening its menu, by a right-click or from the keys on its focused cell, opens its photo first unless it is the active one ([0037](0037-one-view-the-photos-tab.md)): a photo in the selection keeps it, one outside it is selected alone. So Reset, which acts on the active photo alone, acts on the photo the menu was opened on, and while several photos are selected it is hidden, as any item that acts on one photo alone is. Export… stays shown with several selected, exporting the active photo until it exports the selection (planned).
+- On the photo: the active photo, with the point under the pointer in the photo's coordinates as pickers take them (79), or no point when the menu opens from the keys. An action that needs a point is hidden without one. Export… there is File › Export…'s: it reveals the Export tool, whose button exports the selection, and its words say how many.
+- On a thumbnail: the selection, which always holds its photo. Opening its menu, by a right-click or from the keys on its focused cell, opens its photo first unless it is the active one ([0037](0037-one-view-the-photos-tab.md)): a photo in the selection keeps it, one outside it is selected alone. So Reset, which acts on the active photo alone, acts on the photo the menu was opened on, and while several photos are selected it is hidden, as any item that acts on one photo alone is. Export… stays shown with several selected, saying how many ("Export 12 Photos…"); it reveals the Export tool, whose button exports the selection.
 - In ⋯: its tool.
 - On the surround: the app.
 
