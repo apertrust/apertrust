@@ -690,6 +690,15 @@ fn raise_in_turn<T>(waiting: &mut VecDeque<T>, mut ask: impl FnMut(&T) -> dialog
     }
 }
 
+/// Keeps `token`, a hand-off's taken before the window showed, in `kept`, to bring the
+/// window forward once it has: the latest that has one, a later hand-off with none never
+/// replacing it.
+fn keep_forward(kept: &mut Option<instance::Token>, token: instance::Token) {
+    if kept.is_none() || token != instance::Token::default() {
+        *kept = Some(token);
+    }
+}
+
 /// The flags for one run among the command line's, as they were typed but `-d`'s long
 /// form: `--safe-mode`, each `-d DOMAIN` and each `--conf KEY=VALUE`. The cache folder's is
 /// handed over as the folder it names ([`hand_off`]).
@@ -1380,8 +1389,8 @@ struct App {
     /// The refused starts whose alerts wait, each its flags and token: for the window to
     /// show, or for the alert up before it to go (decision 89).
     refusals: VecDeque<(Vec<OsString>, instance::Token)>,
-    /// The token of the latest hand-off taken before the window showed, which brings it
-    /// forward once it has.
+    /// The token of the latest hand-off taken before the window showed that has one, which
+    /// brings it forward once it has ([`keep_forward`]).
     forward: Option<instance::Token>,
     /// The Pictures folder, where the open dialog starts with no photo open; read once.
     pictures: Option<PathBuf>,
@@ -5711,7 +5720,7 @@ impl App {
                     if shown {
                         self.come_forward(ctx, window, &token);
                     } else {
-                        self.forward = Some(token);
+                        keep_forward(&mut self.forward, token);
                     }
                 }
                 instance::Arrival::Refused { flags, token } => {
@@ -8948,6 +8957,24 @@ mod tests {
         let mut answers = vec![Ask::Shown, Ask::Failed].into_iter();
         raise_in_turn(&mut waiting, |_| answers.next().unwrap());
         assert!(waiting.is_empty());
+    }
+
+    /// The window comes forward with the latest token handed over while it started, one
+    /// with none never taking its place.
+    #[test]
+    fn the_latest_token_brings_the_window_forward() {
+        let wayland = |token: &str| instance::Token {
+            wayland: Some(token.into()),
+            x11: None,
+        };
+        let mut kept = None;
+        keep_forward(&mut kept, instance::Token::default());
+        assert_eq!(kept, Some(instance::Token::default()));
+        keep_forward(&mut kept, wayland("first"));
+        keep_forward(&mut kept, instance::Token::default());
+        assert_eq!(kept, Some(wayland("first")));
+        keep_forward(&mut kept, wayland("second"));
+        assert_eq!(kept, Some(wayland("second")));
     }
 
     /// The alert a refused start raises names its flags, in every language.
