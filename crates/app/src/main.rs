@@ -913,13 +913,15 @@ fn start_placement(main: &settings::Window, scale: f32) -> settings::Window {
 /// Gives the window it shows the start window's placement or the main window's, as `start`
 /// says: its size, its least and greatest sizes and whether it resizes and maximises;
 /// then its place, where `placement` has one on a monitor still there (Wayland places
-/// none); and, for the main window, maximised if it was. All but the place go through
-/// `ctx`'s viewport commands, in that order, never to winit directly: on Wayland winit
-/// applies a size at once and sends no `Resized`, so eframe would keep drawing into a
-/// surface of the old size, which the compositor then shrinks or stretches into the
-/// window; eframe resizes the surface for a size its commands change (egui issue 4196).
-/// The rest follow the size, since a window made fixed in size on Wayland keeps its size
-/// as it stands then as its least and greatest.
+/// none); and, for the main window, maximised if it was. The size, the resizing, the
+/// buttons and the maximising go through `ctx`'s viewport commands, in that order, never
+/// to winit directly: on Wayland winit applies a size at once and sends no `Resized`, so
+/// eframe would keep drawing into a surface of the old size, which the compositor then
+/// shrinks or stretches into the window; eframe resizes the surface for a size its
+/// commands change (egui issue 4196). The resizing follows the size, since a window made
+/// fixed in size on Wayland takes its size as it stands then as its least and greatest.
+/// The least and greatest sizes go to winit directly, in logical pixels, which follow the
+/// monitor's scale where the commands' physical pixels would not.
 fn reshape(
     ctx: &egui::Context,
     window: &egui_winit::winit::window::Window,
@@ -927,22 +929,25 @@ fn reshape(
     start: bool,
 ) {
     use egui::ViewportCommand;
+    use egui_winit::winit::dpi::LogicalSize;
     let [width, height] = placement
         .size
         .unwrap_or(settings::registry::WINDOW_SIZE.default());
+    let logical = |[width, height]: [f32; 2]| LogicalSize::new(f64::from(width), f64::from(height));
     // Logical pixels as egui's points, which the interface's scale enlarges.
-    let points = |size: [f32; 2]| egui::Vec2::from(size) / ctx.zoom_factor();
-    let send = |command| ctx.send_viewport_cmd(command);
-    // No least or greatest size, until the window has its new size.
-    send(ViewportCommand::MinInnerSize(egui::Vec2::ZERO));
-    send(ViewportCommand::MaxInnerSize(egui::Vec2::INFINITY));
+    let resize = |size: [f32; 2]| {
+        let points = egui::Vec2::from(size) / ctx.zoom_factor();
+        ctx.send_viewport_cmd(ViewportCommand::InnerSize(points));
+    };
+    window.set_min_inner_size(None::<LogicalSize<f64>>);
+    window.set_max_inner_size(None::<LogicalSize<f64>>);
     if start {
-        let size = points([width, height]);
-        send(ViewportCommand::InnerSize(size));
-        send(ViewportCommand::MinInnerSize(size));
-        send(ViewportCommand::MaxInnerSize(size));
-        send(ViewportCommand::Resizable(false));
-        send(ViewportCommand::EnableButtons {
+        let size = logical([width, height]);
+        resize([width, height]);
+        window.set_min_inner_size(Some(size));
+        window.set_max_inner_size(Some(size));
+        ctx.send_viewport_cmd(ViewportCommand::Resizable(false));
+        ctx.send_viewport_cmd(ViewportCommand::EnableButtons {
             close: true,
             minimized: true,
             maximize: false,
@@ -953,10 +958,10 @@ fn reshape(
         let size = inner_size(placement, false);
         let mac = cfg!(target_os = "macos");
         let size = size_on_screen(size, false, &monitors(window), mac).unwrap_or(size);
-        send(ViewportCommand::InnerSize(points(size)));
-        send(ViewportCommand::MinInnerSize(points(WINDOW_MIN)));
-        send(ViewportCommand::Resizable(true));
-        send(ViewportCommand::EnableButtons {
+        resize(size);
+        window.set_min_inner_size(Some(logical(WINDOW_MIN)));
+        ctx.send_viewport_cmd(ViewportCommand::Resizable(true));
+        ctx.send_viewport_cmd(ViewportCommand::EnableButtons {
             close: true,
             minimized: true,
             maximize: true,
@@ -971,7 +976,7 @@ fn reshape(
     }
     if !start && MAXIMISES && placement.maximized {
         // After the size, which would otherwise undo it.
-        send(ViewportCommand::Maximized(true));
+        ctx.send_viewport_cmd(ViewportCommand::Maximized(true));
     }
 }
 
