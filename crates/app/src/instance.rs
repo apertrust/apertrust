@@ -401,13 +401,36 @@ pub fn mailbox() -> (Post, Inbox) {
 }
 
 impl Post {
-    /// Delivers `arrival`, waking the window where it has said how; false where it cannot
-    /// be, the inbox closed or gone as the app ends.
-    pub fn send(&self, arrival: Arrival) -> bool {
+    /// Delivers a hand-off's `paths` and `token` to open, when it arrives: the time is taken
+    /// as it joins the inbox's queue, under its lock, so the arrivals' times keep the
+    /// queue's order however the threads serving starts interleave, as the join needs.
+    /// None where it cannot be delivered, the inbox closed or gone as the app ends.
+    pub fn open(&self, paths: Vec<PathBuf>, token: Token) -> Option<Instant> {
+        let mut at = None;
+        self.send(|| {
+            let now = Instant::now();
+            at = Some(now);
+            Arrival::Open {
+                paths,
+                at: now,
+                token,
+            }
+        });
+        at
+    }
+
+    /// Delivers a start refused for its `flags`, with its `token`: false where it cannot be.
+    pub fn refuse(&self, flags: Vec<OsString>, token: Token) -> bool {
+        self.send(|| Arrival::Refused { flags, token })
+    }
+
+    /// Delivers the arrival `make` makes inside the inbox's lock, waking the window where it
+    /// has said how; false where it cannot be.
+    fn send(&self, make: impl FnOnce() -> Arrival) -> bool {
         let Ok(door) = self.wake.lock() else {
             return false;
         };
-        if door.closed || self.sender.send(arrival).is_err() {
+        if door.closed || self.sender.send(make()).is_err() {
             return false;
         }
         if let Some(wake) = door.wake.as_ref() {
@@ -1658,19 +1681,46 @@ mod tests {
     #[test]
     fn a_closed_inbox_takes_nothing_more() {
         let (post, inbox) = mailbox();
-        let open = |name: &str| Arrival::Open {
-            paths: paths(&[name]),
-            at: Instant::now(),
-            token: Token::default(),
-        };
-        assert!(post.send(open("a")));
+        let open = |name: &str| post.open(paths(&[name]), Token::default());
+        assert!(open("a").is_some());
         let left = inbox.close();
         assert!(
             matches!(&left[..], [Arrival::Open { paths: given, .. }] if *given == paths(&["a"])),
             "{left:?}"
         );
-        assert!(!post.send(open("b")));
+        assert!(open("b").is_none());
         assert!(inbox.take().is_empty());
+    }
+
+    /// The arrivals' times keep the inbox's order, however many threads post at once and
+    /// however they interleave: each is taken as its arrival joins the queue, so the join
+    /// on Windows never sees a later arrival before an earlier one.
+    #[test]
+    fn arrival_times_keep_the_inbox_s_order() {
+        let (post, inbox) = mailbox();
+        let threads: Vec<_> = (0..8)
+            .map(|_| {
+                let post = post.clone();
+                std::thread::spawn(move || {
+                    for _ in 0..200 {
+                        assert!(post.open(paths(&["a"]), Token::default()).is_some());
+                    }
+                })
+            })
+            .collect();
+        for thread in threads {
+            thread.join().unwrap();
+        }
+        let times: Vec<Instant> = inbox
+            .take()
+            .into_iter()
+            .map(|arrival| match arrival {
+                Arrival::Open { at, .. } => at,
+                Arrival::Refused { .. } => panic!("refused"),
+            })
+            .collect();
+        assert_eq!(times.len(), 1600);
+        assert!(times.is_sorted(), "out of the queue's order");
     }
 
     /// The flags for one run are refused, all of them; the cache folder only where it is

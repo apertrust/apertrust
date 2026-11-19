@@ -740,24 +740,19 @@ fn hand_offs(
     began: Instant,
 ) -> instance::Handler {
     std::sync::Arc::new(move |hand_off| {
-        let at = Instant::now();
         let token = hand_off.token.clone();
         if let Some(flags) = instance::refused(&hand_off, &cache) {
             let words = instance::refused_words(&folder, &flags);
             tracing::debug!(target: "control", "a second start refused: {words}");
             // Refused whether or not the window can still say so.
-            post.send(instance::Arrival::Refused { flags, token });
+            post.refuse(flags, token);
             return instance::Answer::Refused(words);
         }
         match arguments_in(hand_off.arguments, Some(&hand_off.folder)) {
             Ok(given) => {
                 let count = given.paths.len();
-                let open = instance::Arrival::Open {
-                    paths: given.paths,
-                    at,
-                    token,
-                };
-                if post.send(open) {
+                // When it arrived is when it joined the window's queue, in that queue's order.
+                if let Some(at) = post.open(given.paths, token) {
                     let line = taken_line(count, at.saturating_duration_since(began));
                     tracing::debug!(target: "control", "{line}");
                     instance::Answer::Taken
