@@ -56,13 +56,17 @@ pub const CHUNK: usize = 256;
 pub enum Source {
     /// A folder, in folder mode (decision 47): its photos, not its subfolders'.
     Folder(PathBuf),
+    /// Photos opened alone, together, from any folders (`docs/library.md`, One photo), in
+    /// the order opened: the collection in place of a folder's. No folder is read, so
+    /// nothing is told of them; the folder open is closed.
+    Photos(Vec<PathBuf>),
 }
 
 /// What a client asks of the library.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LibraryCommand {
-    /// Opens a folder in place of the one open, whose reading stops. Opening a folder
-    /// opens no photo.
+    /// Opens a folder, or photos alone, in place of what is open, whose reading stops.
+    /// Opening either opens no photo.
     Open(Source),
     /// Closes the folder open, stopping its reading; answered by
     /// [`LibraryEvent::Closed`].
@@ -335,7 +339,7 @@ pub fn inside(root: &Path, folder: &Path) -> bool {
 /// photo is sent, [`READERS`] at a time, so the photos show before their times are known.
 /// `cancel` is asked between calls into the folder and before each event; once it answers
 /// true, the call returns and nothing more is sent, without waiting for a call into the
-/// folder that has not returned.
+/// folder that has not returned. Photos opened alone send nothing.
 pub fn open(
     open: u64,
     source: &Source,
@@ -353,7 +357,10 @@ fn open_in_chunks(
     observer: &(dyn Fn(LibraryEvent) + Send + Sync),
     cancel: &(dyn Fn() -> bool + Sync),
 ) -> Ended {
-    let Source::Folder(folder) = source;
+    // Photos opened alone are listed by no one: nothing is read of them.
+    let Source::Folder(folder) = source else {
+        return Ended::Listed;
+    };
     // Each event is sent only while the open still stands.
     let tell = |event| {
         if cancel() {
