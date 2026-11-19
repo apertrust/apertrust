@@ -1,6 +1,6 @@
 [package]
 name = "apertrust-display"
-description = "Apertrust display colour, title bar and dialogs: tags the window surface's colour space where wgpu does not, places the window's buttons in the app's top bar, presents dialogs as sheets and shows popup menus from the run loop, receives the files Finder opens with the app, and attaches the Windows app to the terminal it was started from"
+description = "Apertrust display colour, title bar and dialogs: tags the window surface's colour space where wgpu does not, places the window's buttons in the app's top bar, presents dialogs as sheets and shows popup menus from the run loop, receives the files Finder opens with the app, attaches the Windows app to the terminal it was started from, and makes the single-instance hand-off's system calls"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -14,7 +14,8 @@ thiserror.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
 wayland-client = { version = "0.31.15", features = ["system"] }
-wayland-protocols = { version = "0.32.13", features = ["client"] }
+# `staging` for xdg-activation, which winit's toolkit turns on already.
+wayland-protocols = { version = "0.32.13", features = ["client", "staging"] }
 winit = { version = "0.30.13", default-features = false, features = ["rwh_06", "wayland", "wayland-dlopen"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
@@ -29,8 +30,9 @@ objc2-quartz-core = { version = "0.3.2", default-features = false, features = ["
 
 [target.'cfg(windows)'.dependencies]
 # The console calls that attach the windowed app to the terminal it was started from
-# (`console.rs`); the version eframe and rfd already bring.
-windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_Console", "Win32_UI_WindowsAndMessaging"] }
+# (`console.rs`), and the instance's named pipe, its server's user and the foreground
+# right (`instance.rs`); the version eframe and rfd already bring.
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Security", "Win32_Security_Authorization", "Win32_Storage_FileSystem", "Win32_System_Console", "Win32_System_IO", "Win32_System_Pipes", "Win32_System_Threading", "Win32_UI_WindowsAndMessaging"] }
 
 [lints]
 workspace = true

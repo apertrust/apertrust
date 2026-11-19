@@ -13,7 +13,7 @@ The questions: how many processes and main windows run on one folder; how a seco
 - The CLI stays a separate process, with no lock.
 - An open from outside replaces the window's place, as [0046](0046-sidecars-are-the-truth-folder-mode-library-and-project.md) has it.
 - Several main windows are not planned (Options considered).
-- The single-instance hand-off is planned.
+- The single-instance hand-off is built, but for the switch test's measurement, which waits for Windows.
 
 ### The lock
 
@@ -56,7 +56,7 @@ sequenceDiagram
     end
 ```
 
-- **It comes first:** a start takes or checks the lock and hands off before anything else, before the log, the settings, the GPU or a window, so a second start lives only milliseconds.
+- **It comes first:** a start takes or checks the lock and hands off as soon as it has read its command line, set up the log and found its folders, before the settings, the GPU or a window, so a second start lives only milliseconds.
 - **The instance** binds the channel right after taking the lock, before its first window opens. Hand-offs that arrive before that window shows join its own command line into one open, however long the start takes.
 - **The message:**
   - a format version;
@@ -76,7 +76,7 @@ sequenceDiagram
 
 A start with flags for one run (`--safe-mode`, `--conf`, `-d`, a `--cache-dir` naming another folder than the instance's, and any such flag the app gains, an adapter or `--max-binding`) while an instance runs on its folder is **refused**:
 
-- on Windows and Linux, an alert in the instance's window, brought forward, saying Apertrust is already running with that folder and must be quit first, plus the same words on stderr and exit status 1;
+- on Windows and Linux, an alert in the instance's window, brought forward, saying Apertrust is already running with that folder and must be quit first, plus the same words on stderr and exit status 1; on Windows the alert is planned, waiting for the app's alerts there, and until then the window is still brought forward and the words go to stderr;
 - on macOS, the stderr refusal above.
 
 Such a start is never handed off with its flags dropped, and never runs as a second writer.
@@ -87,7 +87,7 @@ Another `--user-data-dir` is a **separate instance of the same application**: it
 
 - **On Windows and Linux** opens from outside start with no `--user-data-dir`, so they reach the instance on the folder such a start uses: `APERTRUST_USER_DATA_DIR`'s where the desktop session sets it, else the platform's.
 - **On macOS** an instance on another folder takes an open-documents event LaunchServices delivers to it, as any instance does. It starts from a terminal (`open -n -a Apertrust --args --user-data-dir DIR`, or the binary).
-- **Its window's title ends with the folder's name,** "Apertrust — work", and the default folder's shows none (planned). The default is the platform's folder, compared by canonical path.
+- **Its window's title ends with the folder's name,** "Apertrust — work", and the default folder's shows none. The default is the platform's folder, compared by canonical path.
 - **A truly separate application** is Apertrust Nightly's model, its own identity and folder ([0043](0043-settings-and-apertrusts-folders.md), [0068](0068-packages-built-by-cargo-packager.md)).
 - **Two instances opening one library or folder** rely on the library cache's lock and the sidecars' rules ([0052](0052-comparing-two-copies-of-a-sidecar.md), [0054](0054-four-layers-for-the-librarys-code.md), [0076](0076-the-cache-kinds-limits-and-control.md)), as the CLI does.
 

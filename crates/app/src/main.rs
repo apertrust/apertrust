@@ -38,6 +38,10 @@
 //! `settings` before the window opens, in the user data folder `apertrust_base::folders`
 //! chooses, and written back once it has stood still for a second.
 //!
+//! One instance runs per user data folder (decision 89, `instance`): a start that finds the
+//! app running on its folder hands that instance its command line and exits, on Windows
+//! and Linux, or is refused on macOS, before the settings, the GPU or a window are touched.
+//!
 //! On Windows it is a windowed program, so no console opens beside it, in a release
 //! build or a debug one; started from a terminal, it attaches to it first thing, so
 //! `--version`, `-d`'s lines and its errors print there (`apertrust-display`). Its unit
@@ -59,6 +63,7 @@ mod find;
 mod folder;
 mod hardware;
 mod history;
+mod instance;
 mod jobs;
 mod layout;
 mod library;
@@ -87,7 +92,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use actions::{ActionId, Emit, Focus, Intent, Keymap, SectionMove, State, View};
 use apertrust_base::cache::{Cache, Limit};
@@ -200,6 +205,15 @@ fn help_asked(mut args: impl Iterator<Item = OsString>) -> bool {
 /// cache folder without one is an error, so that another is never used in its place, as is
 /// `--conf` without its setting.
 fn arguments(args: impl IntoIterator<Item = OsString>) -> Result<Arguments, String> {
+    arguments_in(args, None)
+}
+
+/// [`arguments`], its relative paths taken from `folder` where one is given, as a second
+/// start's are from its own working folder (`instance`), else from the current folder.
+fn arguments_in(
+    args: impl IntoIterator<Item = OsString>,
+    folder: Option<&Path>,
+) -> Result<Arguments, String> {
     let mut args = args.into_iter();
     let mut arguments = Arguments::default();
     while let Some(arg) = args.next() {
@@ -212,11 +226,14 @@ fn arguments(args: impl IntoIterator<Item = OsString>) -> Result<Arguments, Stri
         } else if arg == restart::NO_REOPEN_FLAG {
             arguments.reopen = Some(false);
         } else if arg == "-d" || arg == "--debug" {
-            let domain = args.next();
-            let named = domain.as_ref().map(|d| d.to_string_lossy().into_owned());
-            arguments.domains.extend(named);
-            arguments.flags.push(arg);
-            arguments.flags.extend(domain);
+            // A `-d` with no domain after it is dropped, so that a hand-off or a restart
+            // never reads the path it puts next as the domain.
+            if let Some(domain) = args.next() {
+                arguments
+                    .domains
+                    .push(domain.to_string_lossy().into_owned());
+                arguments.flags.extend([arg, domain]);
+            }
         } else if arg == CONF_FLAG {
             let given = args
                 .next()
@@ -235,7 +252,17 @@ fn arguments(args: impl IntoIterator<Item = OsString>) -> Result<Arguments, Stri
             let (flag, folder) = given?;
             arguments.named(flag, folder);
         } else {
-            let path = PathBuf::from(arg);
+            let path = match folder {
+                // A relative path with no folder of the sender's to take it from is never
+                // taken from the receiver's own, where it may name another file.
+                Some(folder) if !folder.is_absolute() && Path::new(&arg).is_relative() => {
+                    let path = Path::new(&arg).display();
+                    tracing::warn!(target: "control", "a second start's {path} dropped: relative, and its folder unknown");
+                    continue;
+                }
+                Some(folder) => folder.join(arg),
+                None => PathBuf::from(arg),
+            };
             arguments
                 .paths
                 .push(std::path::absolute(&path).unwrap_or(path));
@@ -334,6 +361,9 @@ fn build(program: &apertrust_base::log::Program) -> Vec<apertrust_base::log::Ite
 }
 
 fn main() -> eframe::Result {
+    // When this start began, which its own command line's paths count as arriving at, for
+    // the hand-offs joined with them (`instance::Join`).
+    let began = Instant::now();
     // Before anything is printed: a windowed program's stdout and stderr go nowhere until
     // it attaches to the terminal that started it, where one did.
     apertrust_display::attach_to_terminal();
@@ -369,6 +399,12 @@ fn main() -> eframe::Result {
             std::process::exit(2);
         }
     };
+    // What this start was given for its run alone, which an instance already running on
+    // the folder refuses (decision 89).
+    let one_run = one_run(&domains, &conf, safe_mode);
+    // Its command line as an instance takes it, its paths absolute from this start's own
+    // folder: a drive-relative `C:IMG_1.ARW` on Windows is this start's C: folder's.
+    let handed = handed(&flags, safe_mode, &paths);
     let logging = match apertrust_base::log::init(&domains) {
         Ok(logging) => logging,
         Err(error) => {
@@ -399,6 +435,32 @@ fn main() -> eframe::Result {
             eprintln!("apertrust: {error}");
             std::process::exit(1);
         }
+    };
+    // The hand-off, before the settings, the GPU or a window are touched (decision 89): a
+    // start that finds the app running on its user data folder hands it its command line
+    // and ends, on Windows and Linux, saying on stderr why where it is not taken; on macOS
+    // it ends refused. The instance's thread posts what it takes to the window, which
+    // opens it once it shows.
+    let (post, inbox) = instance::mailbox();
+    let instance = match folders.as_ref() {
+        Some(found) => {
+            let request = || hand_off(handed, one_run, found);
+            let (cache, user_data) = (found.cache().to_owned(), found.user_data().to_owned());
+            let handler = hand_offs(post, cache, user_data, began);
+            match instance::start(found.user_data(), request, handler) {
+                instance::Start::Instance(instance) => Some(instance),
+                instance::Start::Alone(why) => {
+                    tracing::warn!(target: "settings", "no instance lock, a second start runs beside this one: {why}");
+                    None
+                }
+                instance::Start::Taken => return Ok(()),
+                instance::Start::Ended(why) => {
+                    eprintln!("apertrust: {why}");
+                    std::process::exit(1);
+                }
+            }
+        }
+        None => None,
     };
     // A folder an environment variable chose is a flag for a restart, which the Mac's
     // `open` starts without this process's environment (`restart`).
@@ -450,7 +512,9 @@ fn main() -> eframe::Result {
     // loads another (decision 82). The marker, locked for this start, is
     // written naming what it tries before anything loads a graphics driver, the engine's
     // settings included, then what they resolve to, and removed once the window has drawn
-    // (`recovery`). One another start holds is that start's, under way at once.
+    // (`recovery`). The instance lock comes first, so only the instance writes it; one
+    // another start holds is that start's, under way beside this one where neither could
+    // take the lock.
     let path = folders.as_ref().map(Folders::starting);
     let (graphics, backend) = keeper.graphics();
     let tried = recovery::Tried::of(graphics, backend);
@@ -492,6 +556,8 @@ fn main() -> eframe::Result {
         restart: restart::Restart::new(flags, safe_mode, relaunch.clone()),
         run,
         marker: recovery::Pending::new(marker),
+        hand_offs: instance.is_some().then_some(inbox),
+        began,
     };
     let mut setup = WgpuSetupCreateNew::without_display_handle();
     setup.instance_descriptor = gpu::instance_descriptor(&engine.gpu);
@@ -507,8 +573,14 @@ fn main() -> eframe::Result {
             },
         ));
     }
+    // Another user data folder's name ends the window's title (decision 89).
+    let platform = Folders::platform_user_data(apertrust_base::program!().dev);
+    let title = window_title(
+        folders.as_ref().map(Folders::user_data),
+        platform.as_deref(),
+    );
     let options = eframe::NativeOptions {
-        viewport: window(&placement, starts),
+        viewport: window(&placement, starts, &title),
         // The start window with no place kept, as on the first run, in the screen's middle.
         centered: starts && placement.position.is_none(),
         renderer: eframe::Renderer::Wgpu,
@@ -591,6 +663,11 @@ fn main() -> eframe::Result {
             "the window could not open: eframe's error is in the log above".into(),
         ));
     }
+    // The lock and the channel, released before a restart starts, so its new process
+    // becomes the instance (decision 89).
+    if let Some(instance) = instance {
+        instance.release();
+    }
     // Restart now's new start, the very last step: the app has ended, its window gone,
     // its settings and recents written and its session dropped, its edit saved, so the
     // new one never races it for a file (decision 82).
@@ -599,6 +676,117 @@ fn main() -> eframe::Result {
         restart::start(relaunch);
     }
     Ok(())
+}
+
+/// Raises the alerts `waiting`, oldest first, each with `ask`, until one finds an alert up
+/// already ([`dialog_host::Ask::Busy`]): it and those after it wait for the next call. One
+/// that is shown, or cannot be, is done.
+fn raise_in_turn<T>(waiting: &mut VecDeque<T>, mut ask: impl FnMut(&T) -> dialog_host::Ask) {
+    while let Some(next) = waiting.front() {
+        if ask(next) == dialog_host::Ask::Busy {
+            return;
+        }
+        waiting.pop_front();
+    }
+}
+
+/// Keeps `token`, a hand-off's taken before the window showed, in `kept`, to bring the
+/// window forward once it has: the latest that has one, a later hand-off with none never
+/// replacing it.
+fn keep_forward(kept: &mut Option<instance::Token>, token: instance::Token) {
+    if kept.is_none() || token != instance::Token::default() {
+        *kept = Some(token);
+    }
+}
+
+/// The flags for one run among the command line's, as they were typed but `-d`'s long
+/// form: `--safe-mode`, each `-d DOMAIN` and each `--conf KEY=VALUE`. The cache folder's is
+/// handed over as the folder it names ([`hand_off`]).
+fn one_run(domains: &[String], conf: &[String], safe_mode: bool) -> Vec<OsString> {
+    let mut flags: Vec<OsString> = Vec::new();
+    if safe_mode {
+        flags.push(restart::SAFE_MODE_FLAG.into());
+    }
+    for domain in domains {
+        flags.extend(["-d".into(), domain.into()]);
+    }
+    for given in conf {
+        flags.extend([CONF_FLAG.into(), given.into()]);
+    }
+    flags
+}
+
+/// This start's command line as it hands it over ([`handed`]): its flags as `flags`
+/// keeps them, `--safe-mode` where given, then its paths, already absolute, from this
+/// start's folder, never the instance's, which would take a drive-relative path on
+/// Windows from its own folder on that drive.
+fn handed(flags: &[OsString], safe_mode: bool, paths: &[PathBuf]) -> Vec<OsString> {
+    let safe = safe_mode.then(|| OsString::from(restart::SAFE_MODE_FLAG));
+    let paths = paths.iter().map(|path| path.clone().into_os_string());
+    flags.iter().cloned().chain(safe).chain(paths).collect()
+}
+
+/// What this start hands an instance already running on its user data folder: its command
+/// line, `arguments`, its paths absolute ([`handed`]), its working folder and activation
+/// token, its flags for one run, and the cache folder its `--cache-dir` names.
+fn hand_off(
+    arguments: Vec<OsString>,
+    one_run: Vec<OsString>,
+    folders: &Folders,
+) -> instance::HandOff {
+    let named = matches!(folders.cache_chosen(), folders::CacheChosen::Flag(_));
+    instance::HandOff {
+        arguments,
+        folder: std::env::current_dir().unwrap_or_default(),
+        token: instance::Token::from_environment(),
+        one_run,
+        cache: named.then(|| folders.cache().to_owned()),
+    }
+}
+
+/// The instance's answer to each second start on its folder `folder`, whose cache folder is
+/// `cache`: one with flags for one run refused, the window's alert saying so; any other's
+/// paths, taken from its working folder, posted to the window to open, each taken logged
+/// under `control` with when it arrived after `began`, this start's beginning, for the
+/// switch test to read the gaps between them (decision 89).
+fn hand_offs(
+    post: instance::Post,
+    cache: PathBuf,
+    folder: PathBuf,
+    began: Instant,
+) -> instance::Handler {
+    std::sync::Arc::new(move |hand_off| {
+        let token = hand_off.token.clone();
+        if let Some(flags) = instance::refused(&hand_off, &cache) {
+            let words = instance::refused_words(&folder, &flags);
+            tracing::debug!(target: "control", "a second start refused: {words}");
+            // Refused whether or not the window can still say so.
+            post.refuse(flags, token);
+            return instance::Answer::Refused(words);
+        }
+        match arguments_in(hand_off.arguments, Some(&hand_off.folder)) {
+            Ok(given) => {
+                let count = given.paths.len();
+                // When it arrived is when it joined the window's queue, in that queue's order.
+                if let Some(at) = post.open(given.paths, token) {
+                    let line = taken_line(count, at.saturating_duration_since(began));
+                    tracing::debug!(target: "control", "{line}");
+                    instance::Answer::Taken
+                } else {
+                    instance::Answer::Refused(instance::closing_words(&folder))
+                }
+            }
+            Err(error) => instance::Answer::Refused(error),
+        }
+    })
+}
+
+/// The `control` line of a hand-off taken: its `count` of paths and when it arrived, `after` the
+/// start, to the tenth of a millisecond, as the log's own times.
+fn taken_line(count: usize, after: Duration) -> String {
+    let arrived = after.as_secs_f64();
+    let noun = if count == 1 { "path" } else { "paths" };
+    format!("hand-off taken: {count} {noun}, arrived: {arrived:.4} s")
 }
 
 /// The folders `folders` holds that an environment variable chose, `APERTRUST_USER_DATA_DIR`
@@ -619,13 +807,18 @@ fn carried(folders: Option<&Folders>) -> Vec<OsString> {
 }
 
 /// What `main` hands the app of how it starts: whether it reopens what was open last, its
-/// restart, and what it opens its graphics device with, which decides what the window
-/// says (decision 82).
+/// restart, what it opens its graphics device with, which decides what the window says
+/// (decision 82), and the second starts' hand-offs (decision 89).
 struct Launch {
     reopen_last: bool,
     restart: restart::Restart,
     run: recovery::Run,
     marker: recovery::Pending,
+    /// What second starts hand the instance, none where this start holds no instance lock
+    /// (decision 89).
+    hand_offs: Option<instance::Inbox>,
+    /// When this start began, which its own command line's paths count as arriving at.
+    began: Instant,
 }
 
 /// eframe's winit application, run with the engine's [`SubmitGate`] held while any of its
@@ -755,16 +948,32 @@ const RESIZE_BAND: f32 = 6.0;
 /// button ends about 70 points from the window's edge.
 const BUTTONS_ROOM: f32 = 78.0;
 
+/// The window's title: the app's name, and where the user data folder `user_data` is
+/// another than the platform's, `platform`, compared by canonical path, that folder's name
+/// after a dash, "Apertrust — work" (decision 89).
+fn window_title(user_data: Option<&Path>, platform: Option<&Path>) -> String {
+    let default =
+        |folder: &&Path| platform.is_some_and(|platform| instance::same_folder(folder, platform));
+    match user_data
+        .filter(|folder| !default(folder))
+        .and_then(Path::file_name)
+    {
+        Some(name) => format!("{APP_NAME} — {}", name.to_string_lossy()),
+        None => APP_NAME.to_owned(),
+    }
+}
+
 /// The window as it last stood: its size, its position where the platform lets an app
 /// place it (Wayland does not), and maximised or not. Full screen is not restored. The
 /// window is created at the interface's scale of 1, so a position in logical pixels is
 /// its pixels over its scale factor. Its title is kept where it is not drawn, for
-/// Mission Control, the Window menu and screen readers. As the start window (`start`), the
-/// size `placement` holds, `start_placement`'s, and neither resized nor maximised.
-fn window(placement: &settings::Window, start: bool) -> egui::ViewportBuilder {
+/// Mission Control, the Window menu and screen readers, `title` ([`window_title`]). As the
+/// start window (`start`), the size `placement` holds, `start_placement`'s, and neither
+/// resized nor maximised.
+fn window(placement: &settings::Window, start: bool, title: &str) -> egui::ViewportBuilder {
     let size = inner_size(placement, start);
     let viewport = egui::ViewportBuilder::default()
-        .with_title(APP_NAME)
+        .with_title(title)
         .with_app_id(APP_ID)
         .with_icon(icon());
     let viewport = if start {
@@ -1196,8 +1405,20 @@ struct App {
     /// What was dropped onto the window, while it is looked at (`dropped`).
     drops: dropped::Drops,
     /// The files the system asked the app to open, Finder's, and the paths its command line
-    /// gave, while they are looked at.
+    /// or a second start's gave, while they are looked at.
     opened: dropped::Drops,
+    /// What second starts on the user data folder hand this instance, none where it holds
+    /// no instance lock (decision 89).
+    hand_offs: Option<instance::Inbox>,
+    /// The command line's paths and the hand-offs, joined into opens: none opens before the
+    /// window shows, and on Windows those coming within 500 ms of each other open together.
+    join: instance::Join,
+    /// The refused starts whose alerts wait, each its flags and token: for the window to
+    /// show, or for the alert up before it to go (decision 89).
+    refusals: VecDeque<(Vec<OsString>, instance::Token)>,
+    /// The token of the latest hand-off taken before the window showed that has one, which
+    /// brings it forward once it has ([`keep_forward`]).
+    forward: Option<instance::Token>,
     /// The Pictures folder, where the open dialog starts with no photo open; read once.
     pictures: Option<PathBuf>,
     /// The dialogs' windows (decision 41).
@@ -3717,6 +3938,8 @@ impl App {
             restart,
             run,
             marker,
+            hand_offs,
+            began,
         } = launch;
         // What a start that did not finish has the window say, by what opened: where the
         // CPU was asked for and the API has none, wgpu's choice opened again.
@@ -3761,6 +3984,10 @@ impl App {
             asking: None,
             drops: dropped::Drops::default(),
             opened: dropped::Drops::default(),
+            hand_offs: None,
+            join: instance::Join::new(Vec::new(), Instant::now(), instance::Join::platform()),
+            refusals: VecDeque::new(),
+            forward: None,
             pictures: paths::pictures(),
             dialogs,
             jobs_view: Vec::new(),
@@ -3796,22 +4023,28 @@ impl App {
             remembered: Remembered::default(),
             start: start::Window::new(false, settings.scale),
         };
-        // The command line's paths and Finder's files at the launch, which macOS hands over
-        // as it finishes launching, before the window, win over what was open last, looked
-        // at as a drop's are; any that come later open over them.
+        // The command line's paths, Finder's files at the launch, which macOS hands over as
+        // it finishes launching, before the window, and the paths second starts handed over
+        // meanwhile win over what was open last, looked at as a drop's are once the window
+        // shows, together; any that come later open over them (decision 89).
         let mut paths = paths;
         paths.extend(apertrust_display::take_opened_files().unwrap_or_default());
-        if paths.is_empty() {
+        app.join = instance::Join::new(paths, began, instance::Join::platform());
+        if let Some(inbox) = hand_offs {
+            let ctx = cc.egui_ctx.clone();
+            inbox.wake_with(move || ctx.request_repaint());
+            app.hand_offs = Some(inbox);
+            app.take_hand_offs(&cc.egui_ctx, None);
+        }
+        if !app.join.pending() {
             let session = &app.session;
             let send = &mut |command| session.send(command);
             let last = app.shell.recents.last();
             app.reopening = reopen(last, reopen_last, &mut app.mirror, send);
-        } else {
-            app.opened.look_given(paths, &cc.egui_ctx);
         }
         // With nothing to open, the start window in place of the main window; the window
         // given the other's size and place where the start turned out otherwise.
-        let looking = app.opened.looking();
+        let looking = app.opened.looking() || app.join.pending();
         let starts = shows_start(opened(&app.mirror), looking, false, false);
         app.start.shown = starts;
         if starts != built_start
@@ -5487,9 +5720,99 @@ impl App {
 
     /// Whether the main window is to be the start window now ([`shows_start`]).
     fn shows_start(&self, ctx: &egui::Context) -> bool {
-        let looking = self.opened.looking() || self.drops.looking();
+        let looking = self.opened.looking() || self.drops.looking() || self.join.pending();
         let modal = self.state(ctx).modal;
         shows_start(opened(&self.mirror), looking, modal, self.start.shown)
+    }
+
+    /// Takes what second starts handed over (decision 89): once the window has drawn a
+    /// frame, each brings it forward with its token, through `window` where winit's own
+    /// request cannot, a refused one's alert raised in it, in turn, each once the one
+    /// before has gone; before, their paths join the command line's, the alerts wait and
+    /// the latest token is kept, to bring the window forward as it shows. Opens the paths [`instance::Join`] has joined once they are due.
+    fn take_hand_offs(
+        &mut self,
+        ctx: &egui::Context,
+        window: Option<&egui_winit::winit::window::Window>,
+    ) {
+        if !self.join.shown() && ctx.cumulative_frame_nr() > 0 {
+            self.join.show();
+        }
+        let shown = self.join.shown();
+        let arrivals = self.hand_offs.as_ref().map(instance::Inbox::take);
+        for arrival in arrivals.unwrap_or_default() {
+            match arrival {
+                instance::Arrival::Open { paths, at, token } => {
+                    self.join.arrive(paths, at);
+                    if shown {
+                        self.come_forward(ctx, window, &token);
+                    } else {
+                        keep_forward(&mut self.forward, token);
+                    }
+                }
+                instance::Arrival::Refused { flags, token } => {
+                    self.refusals.push_back((flags, token));
+                }
+            }
+        }
+        if shown && let Some(token) = self.forward.take() {
+            self.come_forward(ctx, window, &token);
+        }
+        if shown {
+            let mut waiting = std::mem::take(&mut self.refusals);
+            raise_in_turn(&mut waiting, |(flags, token)| {
+                if self.alerts.pending().is_some() {
+                    return dialog_host::Ask::Busy;
+                }
+                self.come_forward(ctx, window, token);
+                let request = alerts::running_request(ctx, &instance::flags_line(flags));
+                let purpose = alerts::Purpose::Running;
+                self.alerts.ask(&mut self.dialogs, purpose, &request, ctx)
+            });
+            self.refusals = waiting;
+        }
+        let now = Instant::now();
+        // One open at a time: a look started over another under way replaces it.
+        if !self.opened.looking()
+            && let Some(paths) = self.join.take(now)
+        {
+            self.opened.look_given(paths, ctx);
+        }
+        match self.join.wait(now) {
+            // The look under way asks for the frame that takes the next once it is done.
+            Some(_) if self.opened.looking() => {}
+            Some(wait) => ctx.request_repaint_after(wait),
+            // The first frame drawn, for the paths and alerts waiting on it; once shown, an
+            // alert waits for the answer to the one up, which brings a frame of its own.
+            None if !shown && (self.join.pending() || !self.refusals.is_empty()) => {
+                ctx.request_repaint();
+            }
+            None => {}
+        }
+    }
+
+    /// Brings the window forward for a second start: shown and unminimised, then focused,
+    /// which on the Mac activates the app and on Windows uses the right the second start
+    /// handed over; on Wayland through `token`, the second start's activation token, which
+    /// winit cannot use for a window it has made. X11's comes with the hand-off too, winit's
+    /// own request going without it.
+    fn come_forward(
+        &mut self,
+        ctx: &egui::Context,
+        window: Option<&egui_winit::winit::window::Window>,
+        token: &instance::Token,
+    ) {
+        self.reveal(ctx);
+        ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
+        ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+        #[cfg(target_os = "linux")]
+        if let (Some(window), Some(token)) = (window, token.wayland.as_deref())
+            && let Err(e) = apertrust_display::instance::activate_with_token(window, token)
+        {
+            tracing::warn!(target: "control", "the window not activated with the second start's token: {e}");
+        }
+        #[cfg(not(target_os = "linux"))]
+        let _ = (window, token);
     }
 
     /// Shows the main window again where the start window was closed on the Mac, with the
@@ -6144,21 +6467,25 @@ impl eframe::App for App {
     /// What was chosen in the menus runs here, at once: eframe calls this before each frame,
     /// and alone while the window is minimised or hidden, when it runs no frame, so a choice
     /// such as Quit never waits for the window to show.
-    fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+    fn logic(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         // The start marker goes once a frame has been drawn into the window (decision 82).
         self.marker.frame(ctx);
-        // What the engine reported first, so the actions and the frame see it.
-        self.drain(ctx);
-        // The recents checked again as the window gains the focus, a folder that came back
-        // no longer shown missing; what their checks have found, without waiting.
         // Finder's files, taken here since `logic` runs while the window is minimised too,
-        // which then comes back and to the front to show them.
+        // which then comes back and to the front to show them. macOS has no hand-off, so
+        // they never wait behind one: a look under way gives way to them, as a drop's does.
         if let Some(files) = apertrust_display::take_opened_files() {
             self.opened.look(files, ctx);
             self.reveal(ctx);
             ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
             ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
         }
+        // What second starts handed over, and the command line's paths once the window has
+        // shown, taken here since `logic` runs while the window is minimised too.
+        self.take_hand_offs(ctx, frame.winit_window().map(|window| &**window));
+        // What the engine reported first, so the actions and the frame see it.
+        self.drain(ctx);
+        // The recents checked again as the window gains the focus, a folder that came back
+        // no longer shown missing; what their checks have found, without waiting.
         // The start window closed on the Mac comes back with a click on the Dock icon.
         if apertrust_display::take_reopened() {
             self.reveal(ctx);
@@ -6295,6 +6622,20 @@ impl eframe::App for App {
     }
 
     fn on_exit(&mut self) {
+        // No second start is taken from here on: one that comes while the app writes what
+        // it keeps is refused as quitting, never answered Taken and lost (decision 89). One
+        // taken since the last frame's look can no longer open, and is said so.
+        if let Some(inbox) = &self.hand_offs {
+            for arrival in inbox.close() {
+                if let instance::Arrival::Open { paths, .. } = arrival
+                    && !paths.is_empty()
+                {
+                    tracing::warn!(target: "control", "a second start's paths came as the app quit, and do not open: {paths:?}");
+                }
+            }
+        }
+        // What Wayland's activation keeps over winit's display, while it is connected.
+        apertrust_display::instance::end_activation();
         self.keeper.flush();
         // The moves made since the workspace's file was last written (decision 96).
         self.shell.workspace_files.flush();
@@ -8466,6 +8807,245 @@ mod tests {
         assert!(read(&["-d", "gpu"]).expect("read").paths.is_empty());
     }
 
+    /// A second start's paths are taken from its own working folder, never the instance's
+    /// (decision 89); its absolute ones as they are.
+    #[test]
+    fn a_second_start_s_paths_are_taken_from_its_folder() {
+        let folder = std::path::absolute("elsewhere").expect("absolute");
+        let line = ["Trips/IMG_1.ARW", "-d", "gpu", "/a/IMG_2.CR3"].map(OsString::from);
+        let given = arguments_in(line, Some(&folder)).expect("read");
+        let absolute = |path: &str| std::path::absolute(path).expect("absolute");
+        assert_eq!(
+            given.paths,
+            [folder.join("Trips/IMG_1.ARW"), absolute("/a/IMG_2.CR3")]
+        );
+    }
+
+    /// A second start whose working folder could not be read hands over none: its relative
+    /// paths are dropped rather than taken from the instance's folder, its absolute ones
+    /// taken.
+    #[test]
+    fn a_relative_path_with_no_sender_folder_is_dropped() {
+        let absolute = std::path::absolute("IMG_2.CR3").expect("absolute");
+        let line = [
+            OsString::from("IMG_1.ARW"),
+            absolute.clone().into_os_string(),
+        ];
+        let given = arguments_in(line, Some(Path::new(""))).expect("read");
+        assert_eq!(given.paths, [absolute]);
+    }
+
+    /// A second start hands over its paths already absolute, from its own folder, with its
+    /// flags, so the instance reads the same command line wherever its own folder is; on
+    /// Windows a drive-relative path is the second start's drive's.
+    #[test]
+    fn a_second_start_hands_over_its_paths_absolute() {
+        let line = [
+            "-d",
+            "gpu",
+            "Trips/IMG_1.ARW",
+            "--safe-mode",
+            "--conf=scale=2",
+        ];
+        let given = read(&line).expect("read");
+        let sent = handed(&given.flags, given.safe_mode, &given.paths);
+        let elsewhere = std::path::absolute("elsewhere").expect("absolute");
+        let taken = arguments_in(sent, Some(&elsewhere)).expect("read");
+        assert_eq!(
+            taken.paths,
+            [std::path::absolute("Trips/IMG_1.ARW").expect("absolute")]
+        );
+        assert_eq!(
+            (taken.domains, taken.conf, taken.safe_mode),
+            (given.domains, given.conf, true)
+        );
+        #[cfg(windows)]
+        {
+            let drive = read(&["C:IMG_1.ARW"]).expect("read");
+            let sent = handed(&drive.flags, drive.safe_mode, &drive.paths);
+            let taken = arguments_in(sent, Some(Path::new(r"D:\elsewhere"))).expect("read");
+            assert_eq!(taken.paths, drive.paths);
+            assert!(taken.paths[0].is_absolute(), "{:?}", taken.paths);
+        }
+        let trailing = read(&["IMG_1.ARW", "-d"]).expect("read");
+        let sent = handed(&trailing.flags, trailing.safe_mode, &trailing.paths);
+        let taken = arguments_in(sent, Some(&elsewhere)).expect("read");
+        assert_eq!(taken.paths, trailing.paths);
+        assert!(taken.domains.is_empty(), "{:?}", taken.domains);
+    }
+
+    /// The flags for one run a second start hands over: `--safe-mode`, each domain and each
+    /// `--conf`, as typed; none for a start given only paths and folders.
+    #[test]
+    fn a_second_start_hands_over_its_flags_for_one_run() {
+        let given = read(&[
+            "--debug",
+            "gpu",
+            "photo.ARW",
+            "--conf=scale=2",
+            "--safe-mode",
+            "--user-data-dir",
+            "dev",
+            "--cache-dir",
+            "cache",
+        ])
+        .expect("read");
+        let flags = one_run(&given.domains, &given.conf, given.safe_mode);
+        assert_eq!(
+            instance::flags_line(&flags),
+            "--safe-mode -d gpu --conf scale=2"
+        );
+        let plain = read(&["photo.ARW", "--user-data-dir", "dev"]).expect("read");
+        assert!(one_run(&plain.domains, &plain.conf, plain.safe_mode).is_empty());
+    }
+
+    /// The instance takes a second start's paths, from its working folder, and posts them
+    /// to the window with its token; one with flags for one run is refused, and the window
+    /// told, to raise its alert.
+    #[test]
+    fn the_instance_takes_a_second_start_or_refuses_it() {
+        let (post, inbox) = instance::mailbox();
+        let cache = PathBuf::from("/cache");
+        let handler = hand_offs(post, cache.clone(), "/user-data".into(), Instant::now());
+        let token = instance::Token {
+            wayland: Some("token".into()),
+            x11: None,
+        };
+        let taken = instance::HandOff {
+            arguments: vec!["IMG_1.ARW".into()],
+            folder: std::path::absolute("trip").expect("absolute"),
+            token: token.clone(),
+            cache: Some(cache),
+            ..instance::HandOff::default()
+        };
+        assert_eq!(handler(taken.clone()), instance::Answer::Taken);
+        let arrived = inbox.take();
+        let [
+            instance::Arrival::Open {
+                paths,
+                token: given,
+                ..
+            },
+        ] = &arrived[..]
+        else {
+            panic!("not posted: {arrived:?}");
+        };
+        assert_eq!(paths, &[taken.folder.join("IMG_1.ARW")]);
+        assert_eq!(given, &token);
+        let refused = instance::HandOff {
+            one_run: vec!["--safe-mode".into()],
+            ..taken
+        };
+        let instance::Answer::Refused(why) = handler(refused) else {
+            panic!("taken");
+        };
+        assert!(
+            why.contains("/user-data") && why.contains("--safe-mode"),
+            "{why}"
+        );
+        let arrived = inbox.take();
+        let [instance::Arrival::Refused { flags, .. }] = &arrived[..] else {
+            panic!("not posted: {arrived:?}");
+        };
+        assert_eq!(flags, &[OsString::from("--safe-mode")]);
+        // Once the window's inbox has closed, as the app commits to quitting, or gone,
+        // nothing is taken that cannot open.
+        let _ = inbox.close();
+        let late = instance::HandOff {
+            arguments: vec!["IMG_2.ARW".into()],
+            ..instance::HandOff::default()
+        };
+        let instance::Answer::Refused(why) = handler(late) else {
+            panic!("taken with no window to open it");
+        };
+        assert!(why.contains("quitting"), "{why}");
+    }
+
+    /// Refused starts' alerts come one at a time, in order: one that finds an alert up waits
+    /// for the next turn rather than being lost; one that cannot be shown is done.
+    #[test]
+    fn refused_starts_alerts_wait_their_turn() {
+        use dialog_host::Ask;
+        let mut waiting = VecDeque::from(["first", "second", "third"]);
+        let mut asked = Vec::new();
+        let mut up = false;
+        raise_in_turn(&mut waiting, |flags| {
+            if up {
+                return Ask::Busy;
+            }
+            asked.push(*flags);
+            up = true;
+            Ask::Shown
+        });
+        assert_eq!(asked, ["first"]);
+        assert_eq!(waiting, ["second", "third"]);
+        // The first answered: the second is shown, the third failing is done with.
+        let mut answers = vec![Ask::Shown, Ask::Failed].into_iter();
+        raise_in_turn(&mut waiting, |_| answers.next().unwrap());
+        assert!(waiting.is_empty());
+    }
+
+    /// The window comes forward with the latest token handed over while it started, one
+    /// with none never taking its place.
+    #[test]
+    fn the_latest_token_brings_the_window_forward() {
+        let wayland = |token: &str| instance::Token {
+            wayland: Some(token.into()),
+            x11: None,
+        };
+        let mut kept = None;
+        keep_forward(&mut kept, instance::Token::default());
+        assert_eq!(kept, Some(instance::Token::default()));
+        keep_forward(&mut kept, wayland("first"));
+        keep_forward(&mut kept, instance::Token::default());
+        assert_eq!(kept, Some(wayland("first")));
+        keep_forward(&mut kept, wayland("second"));
+        assert_eq!(kept, Some(wayland("second")));
+    }
+
+    /// The alert a refused start raises names its flags, in every language.
+    #[test]
+    fn the_running_alert_names_the_flags() {
+        let ctx = egui::Context::default();
+        for locale in Locale::ALL {
+            apertrust_ui::set_locale(&ctx, locale);
+            let request = alerts::running_request(&ctx, "--safe-mode");
+            assert!(request.message.contains("--safe-mode"), "{locale:?}");
+            assert!(request.check().is_ok(), "{locale:?}");
+        }
+    }
+
+    /// Another user data folder's name ends the window's title; the platform's, however
+    /// it is written, shows none (decision 89).
+    #[test]
+    fn another_user_data_folder_names_the_window() {
+        let folder = settings::testing::Folder::new("window-title");
+        let (work, default) = (folder.0.join("work"), folder.0.join("default"));
+        for made in [&work, &default] {
+            std::fs::create_dir(made).expect("a folder");
+        }
+        let named = format!("{APP_NAME} — work");
+        assert_eq!(window_title(Some(&work), Some(&default)), named);
+        assert_eq!(window_title(Some(&work), None), named);
+        let roundabout = work.join("..").join("default");
+        assert_eq!(window_title(Some(&roundabout), Some(&default)), APP_NAME);
+        assert_eq!(window_title(None, Some(&default)), APP_NAME);
+    }
+
+    /// Each hand-off taken is one `control` line with when it arrived, for the switch test.
+    #[test]
+    fn a_hand_off_taken_is_logged_with_its_arrival() {
+        let after = Duration::from_micros(3_210_400);
+        assert_eq!(
+            taken_line(1, after),
+            "hand-off taken: 1 path, arrived: 3.2104 s"
+        );
+        assert_eq!(
+            taken_line(3, after),
+            "hand-off taken: 3 paths, arrived: 3.2104 s"
+        );
+    }
+
     /// `--in-folder`, which earlier nightly builds' registrations passed before the files,
     /// is ignored wherever it comes, the files read as any path, and left out of the usage,
     /// which names several files.
@@ -8583,7 +9163,7 @@ mod tests {
         harness.state_mut().commands.clear();
         let ctx = harness.ctx.clone();
         let given = vec![folder.0.join(".")];
-        harness.state_mut().opened.look_given(given, &ctx);
+        harness.state_mut().opened.look_given(vec![given], &ctx);
         harness.state_mut().opened.wait();
         harness.run();
         let resolved = if cfg!(windows) {
@@ -8605,7 +9185,10 @@ mod tests {
         let given = [raw.clone(), two.clone(), three.clone()];
         let ctx = harness.ctx.clone();
         harness.state_mut().commands.clear();
-        harness.state_mut().opened.look_given(given.to_vec(), &ctx);
+        harness
+            .state_mut()
+            .opened
+            .look_given(vec![given.to_vec()], &ctx);
         harness.state_mut().opened.wait();
         harness.run();
         let photos = [

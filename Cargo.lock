@@ -276,6 +276,7 @@ dependencies = [
  "apertrust-plugin",
  "apertrust-tools",
  "apertrust-ui",
+ "blake3",
  "bytemuck",
  "chrono",
  "directories",

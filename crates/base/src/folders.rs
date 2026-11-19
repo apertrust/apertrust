@@ -276,6 +276,14 @@ impl Folders {
         choose(given, cache, system, std::env::current_dir, writes)
     }
 
+    /// The platform's user data folder for a `dev` build or not, the one used when neither
+    /// a flag nor the variable names another, whichever this run uses: None where the
+    /// system gives none.
+    pub fn platform_user_data(dev: bool) -> Option<PathBuf> {
+        let dirs = ProjectDirs::from_path(platform_folder(dev).into())?;
+        Some(dirs.config_dir().to_owned())
+    }
+
     /// The user data folder.
     pub fn user_data(&self) -> &Path {
         &self.user_data
@@ -673,10 +681,7 @@ mod tests {
     /// and Apertrust's stays where settings have always been.
     #[test]
     fn a_development_build_has_a_platform_folder_of_its_own() {
-        let config = |dev| {
-            let dirs = ProjectDirs::from_path(platform_folder(dev).into());
-            dirs.map(|dirs| dirs.config_dir().to_owned())
-        };
+        let config = Folders::platform_user_data;
         let stable = ProjectDirs::from("", "", "Apertrust").map(|d| d.config_dir().to_owned());
         assert_eq!(config(false), stable, "Apertrust's, as before");
         let (Some(stable), Some(dev)) = (config(false), config(true)) else {

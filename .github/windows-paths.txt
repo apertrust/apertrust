@@ -45,6 +45,7 @@ crates/app/src/hardware.rs
 crates/app/src/hardware/**
 crates/app/src/restart.rs
 crates/app/src/recovery.rs
+crates/app/src/instance.rs
 crates/engine/src/gpu.rs
 crates/ui/src/components/alert.rs
 
