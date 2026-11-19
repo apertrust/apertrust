@@ -707,6 +707,7 @@ fn hand_offs(post: instance::Post, cache: PathBuf, folder: PathBuf) -> instance:
         if let Some(flags) = instance::refused(&hand_off, &cache) {
             let words = instance::refused_words(&folder, &flags);
             tracing::debug!(target: "control", "a second start refused: {words}");
+            // Refused whether or not the window can still say so.
             post.send(instance::Arrival::Refused { flags, token });
             return instance::Answer::Refused(words);
         }
@@ -715,12 +716,16 @@ fn hand_offs(post: instance::Post, cache: PathBuf, folder: PathBuf) -> instance:
                 let count = given.paths.len();
                 tracing::debug!(target: "control", "a second start handed over {count} paths");
                 let at = Instant::now();
-                post.send(instance::Arrival::Open {
+                let open = instance::Arrival::Open {
                     paths: given.paths,
                     at,
                     token,
-                });
-                instance::Answer::Taken
+                };
+                if post.send(open) {
+                    instance::Answer::Taken
+                } else {
+                    instance::Answer::Refused(instance::closing_words(&folder))
+                }
             }
             Err(error) => instance::Answer::Refused(error),
         }
@@ -8753,6 +8758,17 @@ mod tests {
             panic!("not posted: {arrived:?}");
         };
         assert_eq!(flags, &[OsString::from("--safe-mode")]);
+        // Once the window's inbox has gone, as the app quits, nothing is taken that
+        // cannot open.
+        drop(inbox);
+        let late = instance::HandOff {
+            arguments: vec!["IMG_2.ARW".into()],
+            ..instance::HandOff::default()
+        };
+        let instance::Answer::Refused(why) = handler(late) else {
+            panic!("taken with no window to open it");
+        };
+        assert!(why.contains("quitting"), "{why}");
     }
 
     /// The alert a refused start raises names its flags, in every language.

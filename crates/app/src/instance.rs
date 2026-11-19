@@ -949,15 +949,28 @@ pub fn mailbox() -> (Post, Inbox) {
 }
 
 impl Post {
-    /// Delivers `arrival`, waking the window where it has said how.
-    pub fn send(&self, arrival: Arrival) {
-        let _ = self.sender.send(arrival);
+    /// Delivers `arrival`, waking the window where it has said how; false where it cannot
+    /// be, the window's inbox gone as the app ends.
+    pub fn send(&self, arrival: Arrival) -> bool {
+        if self.sender.send(arrival).is_err() {
+            return false;
+        }
         if let Ok(wake) = self.wake.lock()
             && let Some(wake) = wake.as_ref()
         {
             wake();
         }
+        true
     }
+}
+
+/// What a start is told when the instance can no longer open what it hands over, its
+/// window gone as it quits.
+pub fn closing_words(folder: &Path) -> String {
+    format!(
+        "Apertrust is quitting on the user data folder {}: start again once it has",
+        folder.display()
+    )
 }
 
 impl Inbox {
