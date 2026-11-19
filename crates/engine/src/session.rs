@@ -1840,12 +1840,15 @@ fn write_edits(
         // What this wrote is what the next write compares, and what a newer file is
         // compared with; a file that held the bytes or the edit already is as it was.
         if write && !failed {
+            // Looked at before the lock, which the engine takes too: a slow mount must not
+            // hold it up.
+            let stamp = written_stamp(&path, stamp);
             let mut files = lock_files();
             if files.generation == generation
                 && let Some((at, known)) = &mut files.known
                 && *at == path
             {
-                if let Some(stamp) = written_stamp(&path, stamp) {
+                if let Some(stamp) = stamp {
                     *known = Some(stamp);
                 }
                 files.base = base;
@@ -1893,7 +1896,31 @@ fn write_edits(
 /// program's file put there in that instant would be taken for this one's: a window of
 /// the same kind as the one around the rename (`docs/library.md`, Comparing two copies).
 fn written_stamp(path: &Path, read: Option<Stamp>) -> Option<Stamp> {
-    read.or_else(|| Stamp::of(path))
+    read.or_else(|| {
+        #[cfg(test)]
+        slow_stamp(path);
+        Stamp::of(path)
+    })
+}
+
+/// The sidecars a test makes slow to look at for a stamp, as on a slow mount: each with
+/// whom to tell once the writer is looking, and what the writer waits for until then.
+#[cfg(test)]
+type SlowStamp = (PathBuf, mpsc::Sender<()>, mpsc::Receiver<()>);
+#[cfg(test)]
+static SLOW_STAMPS: Mutex<Vec<SlowStamp>> = Mutex::new(Vec::new());
+
+/// Holds the writer as it looks at `path` for its stamp, where a test asked it to, until
+/// the test lets it go.
+#[cfg(test)]
+fn slow_stamp(path: &Path) {
+    let mut slow = SLOW_STAMPS.lock().unwrap_or_else(PoisonError::into_inner);
+    let at = slow.iter().position(|(slow, ..)| slow == path);
+    if let Some((_, looking, go)) = at.map(|at| slow.remove(at)) {
+        drop(slow);
+        let _ = looking.send(());
+        let _ = go.recv();
+    }
 }
 
 impl Drop for Writer {
@@ -6470,6 +6497,35 @@ mod tests {
         assert_eq!(written_stamp(&edit, None), now);
         assert_eq!(written_stamp(&edit, before), before);
         remove(&raw);
+    }
+
+    /// The writer looks at a file it wrote for its stamp before it takes the lock the
+    /// engine takes too, so a slow mount never holds the engine up; what it finds is still
+    /// what the next write compares.
+    #[test]
+    fn a_written_file_s_stamp_is_read_outside_the_lock() {
+        let photo = scratch("stamp-unlocked");
+        let path = sidecar::path_for(&photo);
+        // Holding the bytes already, the write reads no metadata, and looks at the file.
+        std::fs::write(&path, XML).unwrap();
+        let (sent, _saved) = outbox::channel(Arc::new(|| {}));
+        let writer = Writer::start(sent);
+        let base = crate::session::history::Base::default;
+        writer.watch(Some((&path, Stamp::of(&path), base())));
+        let (looking, writer_looks) = mpsc::channel();
+        let (go, writer_goes) = mpsc::channel();
+        let slow = (path.clone(), looking, writer_goes);
+        SLOW_STAMPS.lock().unwrap().push(slow);
+        writer.write(path.clone(), XML.to_owned(), 1, false, base());
+        writer_looks
+            .recv_timeout(Duration::from_secs(10))
+            .expect("the writer looks at the file");
+        assert!(writer.files.try_lock().is_ok(), "looked at under the lock");
+        drop(go);
+        writer.flush(Some(&path));
+        let known = writer.files().known.clone();
+        assert_eq!(known, Some((path.clone(), Stamp::of(&path))));
+        remove(&photo);
     }
 
     /// Removes `path`'s folder, trying again for a while should a write still under way,
