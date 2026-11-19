@@ -319,14 +319,47 @@ fn attempt(
         Ok(None) => return Attempt::NotOwn,
         Err(_) => return Attempt::Unreached,
     };
-    let mut stream = Timed {
-        stream: &mut stream,
-        deadline,
-    };
-    match exchange(&mut stream, hand_off, format) {
+    let hand_off = hand_off.clone();
+    let exchanged = within(deadline, move |sending| {
+        let mut stream = Timed {
+            stream: &mut stream,
+            deadline,
+        };
+        exchange(&mut stream, &hand_off, format, sending)
+    });
+    match exchanged {
         Ok(answer) => Attempt::Answered(answer),
         Err(Failed::Unsent) => Attempt::Unreached,
         Err(Failed::Unconfirmed(error)) => Attempt::Unconfirmed(error),
+    }
+}
+
+/// Runs `work`, an exchange, on a thread of its own, and waits for it no later than
+/// `deadline`: Windows' pipe has no timeouts, so an instance that never greets or never
+/// answers would hold a read for ever. Past the deadline the exchange counts as unsent,
+/// or, once `work` has marked the flag it is given, as sent without an answer; its thread
+/// is left to end with the process.
+fn within(
+    deadline: Instant,
+    work: impl FnOnce(&AtomicBool) -> Result<Answer, Failed> + Send + 'static,
+) -> Result<Answer, Failed> {
+    let sending = Arc::new(AtomicBool::new(false));
+    let marked = Arc::clone(&sending);
+    let (answer, answered) = mpsc::channel();
+    let spawned = std::thread::Builder::new()
+        .name("hand-off".into())
+        .spawn(move || {
+            let _ = answer.send(work(&marked));
+        });
+    if spawned.is_err() {
+        return Err(Failed::Unsent);
+    }
+    match answered.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
+        Ok(exchanged) => exchanged,
+        Err(_) if sending.load(Ordering::Acquire) => {
+            Err(Failed::Unconfirmed(io::ErrorKind::TimedOut.into()))
+        }
+        Err(_) => Err(Failed::Unsent),
     }
 }
 
@@ -381,16 +414,20 @@ fn named_socket(mut lock: &File) -> io::Result<Option<PathBuf>> {
 
 /// A second start's side of the exchange on `stream`: the instance's greeting, the
 /// foreground right handed to its process on Windows, `hand_off` sent in format `format`,
-/// then the answer.
+/// `sending` marked just before, then the answer.
 fn exchange(
     stream: &mut Timed<'_, Stream>,
     hand_off: &HandOff,
     format: u32,
+    sending: &AtomicBool,
 ) -> Result<Answer, Failed> {
     let hello = read_frame(stream).map_err(|_| Failed::Unsent)?;
     let process = hello_process(&hello).map_err(|_| Failed::Unsent)?;
     // Before the hand-off, so the instance may come forward as it takes it.
     let _ = apertrust_display::instance::allow_foreground(process);
+    // Before the first byte, so a deadline that passes while it is written never counts
+    // as unsent, to be sent again.
+    sending.store(true, Ordering::Release);
     write_frame(stream, &request_fields(hand_off, format)).map_err(|_| Failed::Unsent)?;
     stream.flush().map_err(Failed::Unconfirmed)?;
     let answer = read_frame(stream).map_err(Failed::Unconfirmed)?;
@@ -1679,6 +1716,31 @@ mod tests {
             took >= RETRY && took < RETRY + Duration::from_secs(1),
             "{took:?}"
         );
+    }
+
+    /// An exchange is waited for no later than its deadline, whatever its reads do, as on
+    /// Windows' pipe, which has no timeouts: unsent while nothing was being sent, then sent
+    /// without an answer; a quick one gives its answer.
+    #[test]
+    fn an_exchange_is_waited_for_no_later_than_its_deadline() {
+        let slow = Duration::from_secs(5);
+        let limit = Duration::from_millis(300);
+        let began = Instant::now();
+        let greeting = within(began + limit, move |_| {
+            std::thread::sleep(slow);
+            Ok(Answer::Taken)
+        });
+        assert!(matches!(greeting, Err(Failed::Unsent)), "{greeting:?}");
+        assert!(began.elapsed() < limit + Duration::from_millis(500));
+        let began = Instant::now();
+        let answer = within(began + limit, move |sending| {
+            sending.store(true, Ordering::Release);
+            std::thread::sleep(slow);
+            Ok(Answer::Taken)
+        });
+        assert!(matches!(answer, Err(Failed::Unconfirmed(_))), "{answer:?}");
+        let quick = within(Instant::now() + limit, |_| Ok(Answer::Taken));
+        assert!(matches!(quick, Ok(Answer::Taken)));
     }
 
     /// A start refuses to send anything to a server that runs as another user.
