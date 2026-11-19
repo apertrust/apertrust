@@ -253,6 +253,13 @@ fn arguments_in(
             arguments.named(flag, folder);
         } else {
             let path = match folder {
+                // A relative path with no folder of the sender's to take it from is never
+                // taken from the receiver's own, where it may name another file.
+                Some(folder) if !folder.is_absolute() && Path::new(&arg).is_relative() => {
+                    let path = Path::new(&arg).display();
+                    tracing::warn!(target: "control", "a second start's {path} dropped: relative, and its folder unknown");
+                    continue;
+                }
                 Some(folder) => folder.join(arg),
                 None => PathBuf::from(arg),
             };
@@ -8777,6 +8784,20 @@ mod tests {
             given.paths,
             [folder.join("Trips/IMG_1.ARW"), absolute("/a/IMG_2.CR3")]
         );
+    }
+
+    /// A second start whose working folder could not be read hands over none: its relative
+    /// paths are dropped rather than taken from the instance's folder, its absolute ones
+    /// taken.
+    #[test]
+    fn a_relative_path_with_no_sender_folder_is_dropped() {
+        let absolute = std::path::absolute("IMG_2.CR3").expect("absolute");
+        let line = [
+            OsString::from("IMG_1.ARW"),
+            absolute.clone().into_os_string(),
+        ];
+        let given = arguments_in(line, Some(Path::new(""))).expect("read");
+        assert_eq!(given.paths, [absolute]);
     }
 
     /// A second start hands over its paths already absolute, from its own folder, with its
