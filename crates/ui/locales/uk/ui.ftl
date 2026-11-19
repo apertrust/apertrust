@@ -686,6 +686,8 @@ log-save-title = Зберегти журнал
 
 action-about = Про { app-name }
 about-version = Версія { $version }
+about-copy-version = Клацніть, щоб скопіювати версію
+about-version-copied = Версію скопійовано
 about-copyright = Авторське право © 2026 розробники { app-name }.
 about-free-software = Вільне програмне забезпечення за ліцензією GNU General Public License версії 3 або пізнішої.
 about-credits = Подяки

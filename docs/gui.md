@@ -869,13 +869,13 @@ A dialog of Apertrust's own on every platform (decision 39): a modal over a scri
 
 - **Its page:**
   - the full logo, 260 points wide and centred, in its own colours, never tinted (`apertrust-logo.svg`, ink letters, in the light theme; `apertrust-logo-dark.svg`, paper letters, in the dark, grey and high-contrast themes), rendered with resvg at the pixel size it is drawn at, as the icons are (`Picture`);
-  - "Version" and the version as the startup banner gives it, from the app's `apertrust_base::program!()` (decision 44), 14 points in Medium;
+  - "Version" and the version as the startup banner gives it, from the app's `apertrust_base::program!()` (decision 44), 14 points in Medium; a click on the line, or Enter or Space while it has the focus, copies the version alone, as `--version` prints it (`0.2.0+12~gabc1234`), for a bug report. Under the pointer the line shows the hand and the tooltip "Click to copy the version"; after a copy a tooltip at the line says "Version copied" for 1.5 seconds, and screen readers hear it, politely. To them the line is a button named by its words;
   - in secondary text, "Copyright © 2026 Apertrust developers." and "Free software under the GNU General Public License, version 3 or later.";
   - two buttons centred under them, Credits and Licence.
 
   No Close button, no Copy Details, no GPU and no component on this page.
-- **Closing it.** A click anywhere but on the two buttons closes it, on the dialog or outside it, and so does Esc, but never the second click of a double-click, whose first opened it or went back to it.
-- **Focus.** Nothing has the focus as it opens, so no button is drawn highlighted; Tab reaches Credits first, and the control that opened it, the mark, has it back when it closes. Screen readers hear a dialog named About Apertrust.
+- **Closing it.** A click anywhere but on the version line and the two buttons closes it, on the dialog or outside it, and so does Esc, but never the second click of a double-click, whose first opened it or went back to it.
+- **Focus.** Nothing has the focus as it opens, so no button is drawn highlighted; Tab reaches the version line first, then Credits, and the control that opened it, the mark, has it back when it closes. Screen readers hear a dialog named About Apertrust.
 - **Credits and Licence** are one step in, about 560 points wide: a back button (a left chevron) and the title, over text scrolling in about 440 points.
   - `CREDITS.md` is drawn as Markdown by `egui_commonmark`, its title left out, since the header gives it, its links opening in the system's web browser. The repository's `LICENSE` is drawn in the body font with its line breaks kept: Plex Mono is the log window's alone.
   - Both texts are compiled in; `tools/credits.sh` writes `CREDITS.md`'s list of components from `Cargo.lock`, and CI checks it is current.

@@ -20,12 +20,16 @@
 //! two buttons, Credits and Licence, each a page one step in: `CREDITS.md` drawn as
 //! Markdown, and the GNU GPL's text.
 //!
-//! On About a click anywhere but on its buttons closes it, and so does Esc; on Credits and
-//! Licence only a click outside closes it, and Esc or the back button goes back.
+//! On About a click anywhere but on its buttons and its version line closes it, and so does
+//! Esc; on Credits and Licence only a click outside closes it, and Esc or the back button
+//! goes back. A click on the version line, or Enter or Space while it has the focus, copies
+//! the version alone, as `--version` prints it, and says so in a tooltip at the line for a
+//! moment and, politely, to screen readers.
 
-use apertrust_ui::components::{Button, IconButton, quiet_scroll};
+use apertrust_ui::components::{Button, IconButton, focus_ring_centred, quiet_scroll};
 use apertrust_ui::i18n::Args;
 use apertrust_ui::{Icon, Picture, fonts, theme, tr, translator};
+use eframe::egui::accesskit::Live;
 use eframe::egui::{self, Key, Modifiers, Role, Sense, UiBuilder, WidgetInfo};
 use egui_commonmark::{CommonMarkCache, CommonMarkViewer};
 
@@ -49,6 +53,8 @@ const LOGO_WIDTH: f32 = 260.0;
 /// the window has room.
 const PAGE_WIDTH: f32 = 560.0;
 const PAGE_HEIGHT: f32 = 440.0;
+/// How long the version line's tooltip says the version was copied, in seconds.
+const COPIED_FOR: f64 = 1.5;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Page {
@@ -71,6 +77,9 @@ pub struct About {
     opener: Option<egui::Id>,
     /// The version with the commit, as the startup banner gives it.
     version: String,
+    /// When the version line last copied the version, in egui's time, while its tooltip
+    /// still says so.
+    copied: Option<f64>,
     /// egui_commonmark's state for Credits.
     markdown: CommonMarkCache,
 }
@@ -82,6 +91,7 @@ impl Default for About {
             focus: None,
             opener: None,
             version: apertrust_base::log::full_version(apertrust_base::program!()),
+            copied: None,
             markdown: CommonMarkCache::default(),
         }
     }
@@ -93,6 +103,7 @@ impl About {
     pub fn open(&mut self, ctx: &egui::Context) {
         self.page = Some(Page::About);
         self.focus = None;
+        self.copied = None;
         self.opener = ctx
             .viewport(|v| v.interact_widgets.clicked)
             .or_else(|| ctx.memory(|m| m.focused()));
@@ -194,16 +205,7 @@ impl About {
             let width = LOGO_WIDTH.min(ui.available_width());
             logo(&t).show(ui, width, &tr(&ctx, "app-name"));
             ui.add_space(t.spacing.xl);
-            let mut args = Args::new();
-            args.set("version", self.version.as_str());
-            let version = translator(&ctx).text_with("about-version", Some(&args));
-            let medium = egui::FontFamily::Name(fonts::MEDIUM.into());
-            ui.label(
-                egui::RichText::new(version)
-                    .size(t.text.title)
-                    .family(medium)
-                    .color(t.colors.text),
-            );
+            self.version_line(ui);
             ui.add_space(t.spacing.s);
             for id in ["about-copyright", "about-free-software"] {
                 let line = egui::RichText::new(tr(&ctx, id))
@@ -215,6 +217,67 @@ impl About {
             self.buttons(ui)
         })
         .inner
+    }
+
+    /// "Version" and the version, which a click, or Enter or Space while it has the focus,
+    /// copies alone, the dialog staying open; then a tooltip at the line says so for
+    /// [`COPIED_FOR`] seconds, and a polite live region to screen readers.
+    fn version_line(&mut self, ui: &mut egui::Ui) {
+        let ctx = ui.ctx().clone();
+        let t = theme(&ctx);
+        let words = translator(&ctx);
+        let mut args = Args::new();
+        args.set("version", self.version.as_str());
+        let line = words.text_with("about-version", Some(&args));
+        let medium = egui::FontFamily::Name(fonts::MEDIUM.into());
+        let text = egui::RichText::new(line.as_str())
+            .size(t.text.title)
+            .family(medium);
+        let galley = egui::WidgetText::from(text).into_galley(
+            ui,
+            None,
+            ui.available_width(),
+            egui::TextStyle::Body,
+        );
+        let (rect, response) = ui.allocate_exact_size(galley.size(), Sense::click());
+        let tip = words.text("about-copy-version");
+        response.widget_info(|| WidgetInfo::labeled(Role::Button, true, &line));
+        ctx.accesskit_node_builder(response.id, |node| node.set_description(tip.as_str()));
+        let painter = ui.painter();
+        painter.galley(rect.min, galley, t.colors.text);
+        if response.has_focus() {
+            focus_ring_centred(painter, rect.expand(t.spacing.xs), &t);
+        }
+
+        let now = ctx.input(|i| i.time);
+        if response.clicked() {
+            ctx.copy_text(self.version.clone());
+            self.copied = Some(now);
+        }
+        self.copied = self.copied.filter(|at| now - at < COPIED_FOR);
+        let id = response.id;
+        let response = response.on_hover_cursor(egui::CursorIcon::PointingHand);
+        let copied = words.text("about-version-copied");
+        let said = match self.copied {
+            Some(at) => {
+                egui::Tooltip::for_widget(&response).show(|ui| ui.label(copied.as_str()));
+                ctx.request_repaint_after_secs((at + COPIED_FOR - now) as f32);
+                copied.as_str()
+            }
+            None => {
+                drop(response.on_hover_text(tip));
+                ""
+            }
+        };
+        // A polite live region that takes no room, saying the version was copied while the
+        // tooltip does, so screen readers hear it once, as it appears.
+        let live = ui.interact(
+            egui::Rect::from_min_size(rect.left_top(), egui::Vec2::ZERO),
+            id.with("copied"),
+            Sense::hover(),
+        );
+        live.widget_info(|| WidgetInfo::labeled(Role::Status, true, said));
+        ctx.accesskit_node_builder(live.id, |node| node.set_live(Live::Polite));
     }
 
     /// Credits and Licence, side by side and centred together.
@@ -333,9 +396,10 @@ enum Step {
 #[cfg(test)]
 mod tests {
     use apertrust_ui::{Builtin, Theme};
+    use eframe::egui::OutputCommand;
     use eframe::egui::accesskit::Role;
     use egui_kittest::Harness;
-    use egui_kittest::kittest::Queryable as _;
+    use egui_kittest::kittest::{NodeT as _, Queryable as _};
 
     use super::*;
 
@@ -422,6 +486,134 @@ mod tests {
                 window.contains_rect(shown),
                 "{page:?}: {shown:?} in {window:?}"
             );
+        }
+    }
+
+    /// The version line as the test dialog shows it, and what it copies.
+    const LINE: &str = "Version 0.1.0+197~g9201df0";
+    const VERSION: &str = "0.1.0+197~g9201df0";
+
+    /// Sends `events` a frame each, and returns the texts those frames copied.
+    fn copied(harness: &mut Harness<'_, About>, events: Vec<egui::Event>) -> Vec<String> {
+        let mut texts = Vec::new();
+        for event in events {
+            harness.event(event);
+            harness.step();
+            let commands = &harness.output().platform_output.commands;
+            texts.extend(commands.iter().filter_map(|command| match command {
+                OutputCommand::CopyText(text) => Some(text.clone()),
+                _ => None,
+            }));
+        }
+        texts
+    }
+
+    /// What the polite live region says.
+    fn said(harness: &Harness<'_, About>) -> String {
+        let polite = Some(egui::accesskit::Live::Polite);
+        let live = harness
+            .get_all_by_role(Role::Status)
+            .find(|node| node.accesskit_node().data().live() == polite)
+            .expect("a polite live region");
+        live.accesskit_node().label().unwrap_or_default()
+    }
+
+    /// A key going down or up, with no modifiers.
+    fn key(key: Key, pressed: bool) -> egui::Event {
+        egui::Event::Key {
+            key,
+            physical_key: None,
+            pressed,
+            repeat: false,
+            modifiers: Modifiers::NONE,
+        }
+    }
+
+    #[test]
+    fn the_version_line_is_a_button_that_says_it_copies() {
+        let mut harness = dialog(Builtin::Dark, egui::vec2(800.0, 600.0), Page::About);
+        harness.run();
+        let line = harness.get_by_role_and_label(Role::Button, LINE);
+        assert_eq!(
+            line.accesskit_node().description().as_deref(),
+            Some("Click to copy the version")
+        );
+        // Under the pointer it shows the hand, and after a moment its tooltip.
+        line.hover();
+        harness.run_steps(4);
+        let cursor = harness.output().platform_output.cursor_icon;
+        assert_eq!(cursor, egui::CursorIcon::PointingHand);
+        assert!(
+            harness
+                .query_by_role_and_label(Role::Label, "Click to copy the version")
+                .is_some()
+        );
+        assert_eq!(said(&harness), "");
+    }
+
+    #[test]
+    fn a_click_on_the_version_copies_it_alone_and_leaves_about_open() {
+        let mut harness = dialog(Builtin::Dark, egui::vec2(800.0, 600.0), Page::About);
+        harness.run();
+        let at = harness
+            .get_by_role_and_label(Role::Button, LINE)
+            .rect()
+            .center();
+        let button = |pressed| egui::Event::PointerButton {
+            pos: at,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: Modifiers::NONE,
+        };
+        let click = vec![egui::Event::PointerMoved(at), button(true), button(false)];
+        assert_eq!(copied(&mut harness, click), [VERSION]);
+        let copied_at = harness.ctx.input(|i| i.time);
+        harness.run();
+        assert_eq!(harness.state().page(), Some(Page::About));
+        // A tooltip at the line says so, and screen readers hear it, politely; the
+        // tooltip that offers the copy waits meanwhile.
+        let tooltip = |harness: &Harness<'_, About>| {
+            harness
+                .query_by_role_and_label(Role::Label, "Version copied")
+                .is_some()
+        };
+        assert!(tooltip(&harness));
+        assert_eq!(said(&harness), "Version copied");
+        assert!(
+            harness
+                .query_by_role_and_label(Role::Label, "Click to copy the version")
+                .is_none()
+        );
+        // Still there a quarter second before one and a half, gone then, the dialog still
+        // open; the harness steps a quarter second a frame.
+        let until = |harness: &mut Harness<'_, About>, seconds: f64| {
+            while harness.ctx.input(|i| i.time) < copied_at + seconds {
+                harness.step();
+            }
+        };
+        until(&mut harness, 1.25);
+        assert!(tooltip(&harness));
+        until(&mut harness, 1.5);
+        assert!(!tooltip(&harness));
+        assert_eq!(said(&harness), "");
+        assert_eq!(harness.state().page(), Some(Page::About));
+    }
+
+    #[test]
+    fn enter_or_space_on_the_focused_version_line_copies_it() {
+        for pressed in [Key::Enter, Key::Space] {
+            let mut harness = dialog(Builtin::Dark, egui::vec2(800.0, 600.0), Page::About);
+            harness.run();
+            // The first Tab stop, before Credits.
+            harness.key_press(Key::Tab);
+            harness.run();
+            let line = harness.get_by_role_and_label(Role::Button, LINE);
+            assert!(line.is_focused(), "{pressed:?}");
+            let press = vec![key(pressed, true), key(pressed, false)];
+            assert_eq!(copied(&mut harness, press), [VERSION], "{pressed:?}");
+            harness.run();
+            assert_eq!(harness.state().page(), Some(Page::About), "{pressed:?}");
+            assert_eq!(said(&harness), "Version copied", "{pressed:?}");
         }
     }
 }
