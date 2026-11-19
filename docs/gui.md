@@ -39,7 +39,7 @@ Steps 1 to 5 of the [build order](#build-order) are built, step 6 has its render
 
 Still to come:
 
-- Rebinding keys in Settings, the actions the menus add ([what arrives when](#what-arrives-when)), and on Windows Alt pressed and released alone and native hit testing (decision 39).
+- Settings › Shortcuts and darktable's actions for every control (decision 98, [Actions after darktable](#actions-after-darktable)), the actions the menus add ([what arrives when](#what-arrives-when)), and on Windows Alt pressed and released alone and native hit testing (decision 39).
 - With the viewport: the scale's zoom, which needs the 100% view's regions, before and after, and the values under the cursor; the clipping overlays on the photo (the rest of step 8).
 - Decision 42's slider popup and the rest of [their cards](#slider-values-the-build-in-cards).
 - [One tool model](#one-tool-model) (decision 93): Export's page as setting rows (the header and ⋯, one page drawer for every tool, the utilities on the page model and Export on the tool model are built).
@@ -593,17 +593,18 @@ One menu button, ☰, at the very start of the Toolbar, before the mark (decisio
   - Without a focused field, Undo and Redo act on the photo's history and Select All on the photos once they can be selected, while Cut, Copy and Paste are disabled. Copying an edit is Copy Edit's, with its own keys, so Ctrl+C never has two meanings.
   - The drawn menus do the same when an editing item is chosen with a field focused. The app remembers the field when a menu opens, since opening it moves egui's focus, and gives focus back when it closes.
   - Built for Undo and Redo (step 9.4): while a text field has the focus they keep their keys on the Mac's items (`menus::edits_the_field`) and read Undo and Redo; performed by AppKit or chosen from a menu, they add egui's own Cmd+Z or Shift+Cmd+Z to the next frame's input through `raw_input_hook` (`actions::field_keys`). On Windows and Linux the registry leaves the field its keys. The ☰'s menu opened by F10 gives the field the focus back before its choice runs. Still to do, with Cut, Copy and Paste in step 7: the ☰ opened by a click remembering the field, since the press takes the focus from it first.
-- **Rebinding** changes the keymap, and the native menu follows on the next frame. A key muda cannot express stays with the registry, and its item shows none.
+- **A change** on Settings › Shortcuts or by visual mapping (decision 98, planned) changes the keymap, and the native menu follows on the next frame. A key muda cannot express stays with the registry, and its item shows none.
+- **An item will show a key equivalent** (decision 98, planned) only for a plain key at its action's default element and effect, and only where the key acts at press: a key that waits for a double, triple or long press, or for a click or a move, is the dispatcher's alone, and its item shows none ([Which shortcut runs](#which-shortcut-runs)).
 - **Keys kept from actions,** as [the menu bar's rules](#rules) list them. `Keymap::load` and the Settings dialog refuse them, as they refuse the clipboard's keys.
   - On the Mac: Cmd+H, Option+Cmd+H and Cmd+M, which the system's menu items hold, and Shift+Cmd+/, Ctrl+Cmd+Space and Cmd+\`, which macOS acts on.
   - On Windows and Linux: F10, which opens the ☰'s menu; Alt with a letter, which opens it at the top-level menu whose access key that is (decision 39); and Alt+F4 and Alt+Space.
   - Built on Windows and Linux: `Keymap::load` refuses Alt with a letter for every action (`opens_menu`, "opens the menus") and keeps F10 from every action but the menu's.
 - **AltGr and the exact-modifier rules** hold on Windows and Linux. AltGr arrives without Alt, so it never opens a menu by an access key, nor counts on Windows as Alt pressed and released alone. The Mac has no AltGr, and its native menu's keys follow AppKit's matching.
-- **Hold actions are never menu items:** H peeks while held, and a menu item is a press. Repeat actions repeat from a key equivalent as from the registry.
+- **A hold action is a menu item only at its toggle effect:** Help › Shortcuts Overview toggles the overview (decision 98); H's peek, which means something only while held, is in no menu. Repeat actions repeat from a key equivalent as from the registry.
 
 ### Checks
 
-- **Unit tests:** the tree against the registry (every id in it, none twice, no Hold action, every press action placed or listed as left out); every default key as muda's accelerator; the keys suspended for each kind of focus equal to `Focus::keeps`; the editing actions' routing with and without a focused field; the refused keys on each platform.
+- **Unit tests:** the tree against the registry (every id in it, none twice, no hold action but the overview, every press action placed or listed as left out); every default key as muda's accelerator; the keys suspended for each kind of focus equal to `Focus::keeps`; the editing actions' routing with and without a focused field; the refused keys on each platform.
 - **Interaction tests** with `egui_kittest`: the ☰ and its menu through AccessKit (F10, and on Windows Alt alone; Alt with an access key opening the menu at its top-level menu, in each language; the arrows into and out of a submenu, Enter running the action, a disabled item doing nothing, a check mark, focus back on close), built for Linux in `crates/ui/tests/menu.rs` and the app's tests, Alt alone waiting for Windows; `Toolbar`'s caption buttons and the reports from its empty areas; snapshots in every theme and the pseudo-locale.
 - **On the M4 by hand,** since native menus do not run headless: L, Space and the arrows typed into a value field with every menu in place; Cmd+Z in a field undoes its text, and outside one does what the registry says; Cmd+Q and the Dock's Quit write the settings and the edit; Cmd+H hides; AppKit adds no second full-screen item; Cmd+Z and Cmd+1 on Ukrainian and French layouts; a language switch renames the menus; the photo while a menu is open.
 - **On a Mac by hand, for its frame,** since AppKit's drags and layouts do not run headless:
@@ -858,7 +859,9 @@ macOS only: the menu AppKit fills once it is the app's Windows menu.
 | Apertrust Guide | `guide`: the Guide's start page ([Help and the Apertrust Guide](#help-and-the-apertrust-guide)) | — | Planned (decision 97) |
 | Show Log | `show-log`: the log window, logging on or off ([The log window](#the-log-window)) | — | Built, every platform |
 | — | | | |
-| Keyboard Shortcuts | `keyboard-shortcuts`: Settings, at its keys | Ctrl+? on Windows and Linux; none on macOS, where Cmd+? is the search | New, Phase 2, with rebinding (step 7) |
+| Keyboard Shortcuts | `keyboard-shortcuts`: Settings, at Shortcuts | Ctrl+? on Windows and Linux; none on macOS, where Cmd+? is the search | Phase 2, decision 98's step 3 |
+| Shortcuts Overview | `shortcuts-overview`: darktable's accels window, toggled ([Tooltips, feedback and the overview](#tooltips-feedback-and-the-overview)) | — | Phase 3, decision 98's step 9 |
+| Map Shortcuts | `map-shortcuts`: visual mapping, checked while on ([Visual mapping](#visual-mapping)) | — | Phase 3, decision 98's step 7 |
 | —, Windows and Linux | | | |
 | About Apertrust, Windows and Linux; in the app menu on macOS | `about` | — | Built; drawn on Windows and Linux with their menus |
 
@@ -956,7 +959,7 @@ The menus open from one menu button, ☰, at the very start of the Toolbar, befo
 
 **Keys** (decision 39, [Who owns the keys](#who-owns-the-keys)).
 
-- A menu shows an action's first key for the platform, as its tooltip does, and follows a change in Settings at once.
+- A menu shows an action's first key for the platform, as its tooltip does, and follows a change in Settings at once; planned, only a plain key at the action's default element and effect that acts at press ([Who owns the keys](#who-owns-the-keys), decision 98).
 - Showing a key never takes it from a narrower scope: with a button focused, Space presses the button and not Next Photo; in a value field, Ctrl+Z undoes typing. On the Mac the native menu holds no key the focused widget keeps; on Windows and Linux the registry reads every key and the menus only show them.
 - Keys kept from actions (decision 39): on the Mac Cmd+H, Option+Cmd+H and Cmd+M, which the system's items hold, and Shift+Cmd+/ (the Help search), Ctrl+Cmd+Space (Emoji & Symbols) and Cmd+\`, which macOS acts on; on Windows and Linux F10, which opens the ☰'s menu, Alt with a letter, which opens it with the top-level menu of that access key expanded (decision 39), and Alt+F4 and Alt+Space, which the system acts on.
 - On Windows, Alt pressed and released with nothing else opens the ☰'s menu, as F10 does, where Windows would focus a menu bar's first title; Alt held with another key never does this: Alt with a menu title's letter is that menu's access key, as Alt+F opens File, and Alt with any other key, as a header's Alt+↑, opens nothing.
@@ -1032,13 +1035,15 @@ Keep each slice to what exists.
 | --- | --- |
 | Built on the Mac, with its native bar | The app menu; About; Settings; Quit; Close Window; Open… (`open`, Ctrl+O, first in File: raws, opened alone together with the first active, closing the folder); Open Folder…; Export… and Export Again; Reset Edit; Collections; Tools Panel Tab; Workspace, its items check items, filled afresh as Open Recent is; Interface Size; Jobs; Full Screen; the Window menu; Help's search. Drawn disabled: Import, Copy Edit, Apply Edit, Copy or Apply Parts, Next Photo and Previous Photo, and View's zoom items |
 | Built on Windows and Linux | The ☰ and its drawn menu, holding what the Mac's menus hold but the Mac's own items and its Window menu, with check marks on Full Screen, the Tools panel's tabs and the workspace shown; the `menu` action, F10 |
-| Still in step 7 | Cut, Copy, Paste and Select All for value fields; Guides; Proof Margin; Panels › Tab Names; Customise Tabs, drawn disabled until Phase 3's visual editor (decision 96); new actions `cut`, `copy`, `paste`, `select-all`, `guides`, `proof-margin`, `panel-tab-names` and `customise-tabs`, with the platforms' keys kept from actions; Keyboard Shortcuts; Windows' Alt pressed and released alone |
+| Still in step 7 | Cut, Copy, Paste and Select All for value fields; Guides; Proof Margin; Panels › Tab Names; Customise Tabs, drawn disabled until Phase 3's visual editor (decision 96); new actions `cut`, `copy`, `paste`, `select-all`, `guides`, `proof-margin`, `panel-tab-names` and `customise-tabs`, with the platforms' keys kept from actions; Windows' Alt pressed and released alone |
 | Built in step 9c | Open Recent with Clear Menu, and Close, on the Mac's bar and in the ☰ |
 | Built in the library's step 9.4 | Undo and Redo, naming the step, on the Mac's bar and in the ☰ |
 | Later in Phase 2 | Show in Folder, with folder mode; Search Photos, Sort By and Thumbnail Size, with the browser bar (step 9); Next and Previous Photo, with the Browser; the zoom items, with the scale's zoom; Clipping Warnings, with the overlays (step 8) |
 | Built in decision 96's step 2 | View › Workspace with its workspaces, on the Mac's bar and in the ☰ |
 | Phase 2, decision 96's steps | Reset Workspace (step 5) |
 | Phase 3 | Save as, Rename and Delete Workspace, with the visual editor for workspaces; Sort By › Rating; Export on Windows and Linux; Copy Edit, Apply Edit, Copy or Apply Parts; Save Edit as Style; Select All for photos and Select None; Before and After; Show All Selected; Rotate and Flip; Panels › Tools Panel and the side; Rotate and perspective's Auto; Rating and Colour Label, with the caption's controls; Import, a sheet, by copy in folder mode, with step 20a (decisions 46 and 85) |
+| Phase 2, decision 98's step 3 | Help › Keyboard Shortcuts, opening Settings at Shortcuts |
+| Phase 3, decision 98's steps 7 and 9 | Help › Map Shortcuts and Help › Shortcuts Overview |
 | Phase 4 | The Layer menu |
 | Phase 5 | New Library, Add Folder, Import library, then New Project and Export as Project, with the library and the project (decision 46); Open… opening a library's or a project's file |
 | Phase 6 | Match a Photo; an assistant's connection, placed with its design |
@@ -2707,7 +2712,7 @@ Planned (decision 92): Phase 3 builds the toolbar, its menu, tools' items, the o
 - One list for every platform: the Mac never shows `menu-button` and never takes it out of the list.
 - **What can be placed:**
   - the parts `menu-button` (Windows and Linux), `mark`, `jobs`, `save-state` and `assistant`, one each;
-  - the app's actions that are pressed or toggled and have an icon, one each: Import…, Export…, Export Again, Cull, Reset, Undo, Redo, Copy edit, Apply edit, Copy or Apply Parts…, Open…, Open Folder…, Before and After, Clipping Warnings, Zoom to 100%, Zoom to Fit, Full Screen, Jobs, Collections, Show in Folder, Next Photo, Previous Photo and Settings…; Before and After, Clipping Warnings, Zoom to 100% and Settings… are not in the default;
+  - the app's actions that are pressed or toggled and have an icon, one each: Import…, Export…, Export Again, Cull, Reset, Undo, Redo, Copy edit, Apply edit, Copy or Apply Parts…, Open…, Open Folder…, Before and After, Clipping Warnings, Zoom to 100%, Zoom to Fit, Full Screen, Jobs, Collections, Show in Folder, Next Photo, Previous Photo, Settings… and Map Shortcuts (decision 98, [Visual mapping](#visual-mapping)); Before and After, Clipping Warnings, Zoom to 100%, Settings… and Map Shortcuts are not in the default;
   - tools' actions, a processing tool's `tool-<tool>-<action>` actions decision 91 built ([Context menus](#context-menus)) or the registry action a utility names, as History's `reset`, the item's id the action's, that a tool offers in `ToolDefinition::toolbar` (`ToolbarItem { action, icon }`, at most two a tool), a processing tool's or a utility's ([One tool model](#one-tool-model), decision 93); the icon one of `apertrust-ui`'s by name, a `Row::Buttons` action taking its button's; Orientation's Rotate 90° anticlockwise and clockwise first;
   - `space`, 16 points, and `flexible-space`, sharing what is left, any number; the overflow removes fixed spaces as it narrows.
 - **Never placeable:** hold actions (H), focus moves (F6), a set's members (the backgrounds, the workspaces), the platform's own items. Groups are told apart by space, never a line.
@@ -4033,12 +4038,13 @@ Decision 19; engine.md's [Scopes](engine.md#scopes). Built for the histogram, th
 ## Keyboard and actions
 
 - **Every action is declared once**, in an actions registry (`crates/app/src/actions.rs`): a stable id, a message id, its default keys, its scope, when it is available and what it emits, a session command or a UI intent.
-  - Buttons, menus, tooltips (which show the first key), the keyboard handler and, later, a command palette all read the registry, so a shortcut and its button never disagree.
+  - Buttons, menus, tooltips (which show the first key; planned, every shortcut), the keyboard handler and, later, a command palette all read the registry, so a shortcut and its button never disagree.
+  - Planned (decision 98): darktable's action framework ported whole, every control of every tool an action of its widget's kind, generated from the tools' definitions, with darktable's elements and effects ([Actions after darktable](#actions-after-darktable)).
   - A tool's own actions, each `Row::Action` and each button of `Row::Buttons`, are generated into it from the tools' definitions as the app starts, `tool-<tool>-<action>` with no default keys, and found by id as the others are ([Context menus](#context-menus), decision 91).
   - On the Mac the native menu holds the registry's keys as its key equivalents and runs its actions, holding none that the focused widget keeps; on Windows and Linux the registry reads every key and the drawn menus only show them ([Who owns the keys](#who-owns-the-keys), decision 39).
   - An action that can't run is drawn disabled, and its keys do nothing. One not built yet is listed all the same, so that its keys are kept and shown, and never runs.
   - The keys are read once a frame, before anything is drawn; what they ask for runs after the frame, with what was clicked. No widget handles a shortcut: a section is told whether the keys that peek are held.
-- **Shortcuts can be rebound** in settings, with conflicts shown. darktable's shortcuts can be offered as a preset set. The settings file keeps the keys that differ from the defaults ([Settings and workspace](#settings-and-workspace)); rebinding them in the Settings dialog is still to come.
+- **Shortcuts are darktable's** (decision 98, planned): any action at any of its elements and effects, on a key with modifiers, a double, triple or long press, a click or a move while it is held, at a speed ([Shortcuts](#shortcuts)), set on [Settings › Shortcuts](#settings--shortcuts) or by [visual mapping](#visual-mapping), conflicts asked about as darktable asks. The settings file keeps those that differ from the defaults ([Settings and workspace](#settings-and-workspace)); built, a plain key per action overridden there, and nothing in the app sets them yet.
 - **Scope:** a shortcut belongs to the app, the view or the focused widget, and the narrowest scope wins. Keys held down, such as H to see the photo without a tool, are actions too.
   - The view's scope holds the keys that act on the photos, the Viewer and the Tools panel. With one view (decision 37) it is one scope: a key means the same whatever the Viewer shows, and a key that means nothing in the current layout is unavailable there, so it does nothing, such as H outside Photo. In code, `Scope::View(View)` is to become `Scope::View`, and the `View` type is to give way to `Layout`.
   - The widget scope is the focused widget's own keys, a fixed list rather than registry entries.
@@ -4109,6 +4115,10 @@ Ctrl means Cmd on macOS.
 | App | Quit | Ctrl+Q | Closes the window |
 | App | Restart | None, and in no menu | Quits as Quit does, then starts the app again with what is open; Settings' Restart now and the start notice's Try again run it (decision 82) |
 | App | The menu | F10, Windows and Linux | Opens the ☰'s menu at its top |
+| App | Keyboard Shortcuts (`keyboard-shortcuts`) | Ctrl+? on Windows and Linux; none on macOS, where Cmd+? is the search | Opens Settings at Shortcuts; Phase 2, decision 98's step 3 |
+| App | Shortcuts Overview (`shortcuts-overview`), darktable's accels window, while held, or toggled from Help | None: H stays the peek (decision 98) | Phase 3, decision 98's step 9 |
+| App | Map Shortcuts (`map-shortcuts`), visual mapping on and off | None | Phase 3, decision 98's step 7 |
+| App | Change the shortcuts' slider precision: normal, fine, coarse | None | Phase 3, decision 98's step 6 |
 | View | The layouts: Photo, and Map toggled on and off, as its toggle on the viewer bar is | Shift+M toggles Map, pressed again back to Photo; Photo has no key of its own, and E is left free | The Edit view's action, built with E, is to become Photo's, with no key; Shift+M comes with the Map and its toggle |
 | View | Collections (`show-collections`): the first tab holding Collections | L; pressed again, nothing | Built, on the main window; a click chooses the tab too, and Ctrl+1 where Collections is in the first tab, as in the Default workspace |
 | View | See the photo without the section under the pointer | Hold H | In Photo. The section shows that it peeks, a tool's section too; rendering the photo without that tool is not built: H will send the same `Hide` the History tab's eye sends while held |
@@ -4135,7 +4145,153 @@ Ctrl means Cmd on macOS.
   - Three things stay with the focused widget or the platform. A focused text field keeps the digits and X, so typing a value never rates the photo, but not F1 to F5, which reach the registry from a field as F6 does. A focused curve keeps +, which Czech and Slovak keyboards type on the 1 key. On a Mac, F1 to F5 are the system's brightness and other keys unless Fn is held or the standard function keys are turned on, as in darktable.
   - A focused slider takes a digit, a minus sign or the decimal separator as the start of a typed value, so 3 with a slider focused never rates the photo (`Focus::keeps`).
 - **Kept free** for later features, as plain keys: `\`, J, O, W, B, S, C and M, M for the gradient shape, so the Map takes Shift+M; G and E are free too. On Polish keyboards AltGr with L types ł, which the AltGr rule above keeps from running Collections.
+  - Most of them are darktable's own plain keys (decision 98): O raw overexposed, W the full preview held, B the collapsed controls, S the slideshow, C crop, M the map, G the guides and E exposure's slider, each coming with its feature where the map does not already give the feature another key; the Map is on Shift+M and the slideshow has no key today, which the audit below settles; `\` and J are not darktable's.
+  - **The map is audited** against darktable's 247 default registrations before Phase 3's defaults land (decision 98's step 9): each difference moves to darktable's key or becomes a listed deviation with its reason, the Map on Shift+M, the slideshow with no key, Copy edit on Ctrl+Shift+C where darktable has Ctrl+C, and Collections on L among them.
 - **A test fails** if a default takes a key kept free, if two keys in one scope can be one press, or if a key of the view would hide an app's. One press is judged by the matching rules (`actions::conflict`): on Windows and Linux Ctrl and Command of one letter, Ctrl++ and Ctrl+Shift++, and a symbol that a known layout types on a digit key with that digit. The one overlap accepted is Ctrl++ with Ctrl+1 on Czech and Slovak keyboards, where the 1 key types `+`: the digit wins there, and Ctrl+= zooms the photo in.
+
+### Actions after darktable
+
+Planned (decision 98): darktable's action and shortcut framework (`src/gui/accelerators.c`, `src/bauhaus/bauhaus.c`, `src/develop/imageop.c`, `src/libs/lib.c`) ported whole. Its deviations from darktable are listed in [the decision](decisions/0098-actions-and-shortcuts-after-darktable.md#deviations-from-darktable).
+
+**One registry, shown as darktable's tree.** The registry stays flat by stable id; each action's owner places it in the tree that Settings › Shortcuts shows, by translated words: Global (the app's actions), Photos (the view's), Utility tools, Processing tools (`<focused>` first) and Fallbacks, then `<blending>` with layers and Scripts with scripting. Nothing is stored by path, so a relabelled control keeps its shortcuts.
+
+**Every tool's control and row is an action,** generated from `ToolDefinition` as the app starts, as the buttons' already are (decision 91), so a tool's author writes nothing for shortcuts. One action per control, `tool-<tool>-control-<control>`, however many rows draw it: a control with a row in each of a tool's modes (`Row::When`) acts on the row the current mode shows.
+
+| Row | Kind | Id |
+| --- | --- | --- |
+| The tool itself | `processing module` or `utility module` | `tool-<tool>` |
+| Its tabs, where it has more than one | `tabs`, an element per tab | `tool-<tool>-tabs` |
+| `Row::Slider`, a control's or a view coordinate's | `slider` | `tool-<tool>-control-<control>` |
+| `Row::Choice`; `Row::Preset` | `dropdown` | `tool-<tool>-control-<control>`; `tool-<tool>-preset_row-<id>` |
+| `Row::Toggle` | `toggle` | `tool-<tool>-control-<control>` |
+| `Row::Pickers`' buttons | `toggle` | `tool-<tool>-picker-<picker>` |
+| `Row::Buttons`' buttons, `Row::Action` | `button` | `tool-<tool>-<action>` (built) |
+| `Row::Setting` | `slider`, `dropdown`, `toggle` or `entry`, by its kind | `tool-<tool>-setting-<setting>` |
+| `Row::Custom` | what darktable defines for that widget, from the port spec | per port |
+| A preset, with the presets API | darktable's `PRESET` node | `tool-<tool>-preset-<name>` |
+
+A preset row's family is `preset_row`, so no preset, `tool-<tool>-preset-<name>`, can take its id; the name is encoded to stay ASCII and reversible: `a`–`z`, `0`–`9` and `_` as they are, every other byte of its UTF-8, upper-case letters among them, as `~` and two lower-case hex digits, so `été` is `~c3~a9t~c3~a9` and `C3A9` is `~433~419` (decision 98). `tabs` is reserved for the tabs' action: no button or `Row::Action` may take it as its id, and the tools' check refuses it (decision 98).
+
+Tool, control and action ids are snake_case with no hyphen, so `-` always splits a family's parts. The app's actions keep their ids, each a `command`, a `toggle` (Full Screen, the Map) or a `hold` (the peek, the overview).
+
+**Elements and effects,** darktable's words, every list held to darktable's arrays by a test:
+
+| Kind | Element | Effects | What they do here |
+| --- | --- | --- | --- |
+| `slider` | `value` | edit, up, down, reset, top, bottom, set | Edit opens the slider popup (decision 42), the value field until it is built; up and down move by the step × size × speed × precision, within the span shown; reset is `ResetControl`; top and bottom the span's ends; set sets the shortcut's speed as the value |
+| | `button` | toggle, on, off, ctrl-toggle, ctrl-on, right-toggle, right-on | The quad: a picker on or off, right- for its area (decision 79) |
+| | `force` | as `value` | Past the soft range to the hard one |
+| | `zoom` | as `value` | The span shown, as the popup's wheel zooms it |
+| `dropdown` | `selection` | popup, next, previous, reset, last, first, `item:<option>` | Next and previous skip disabled options; `item:` names an option by its id |
+| | `button` | the toggle effects | The quad, where the row has one |
+| `toggle` | | toggle, on, off, ctrl-toggle, ctrl-on, right-toggle, right-on | Ctrl- and right- replay a Ctrl-click and a right-click where the widget has one, else the plain click |
+| `button` | | activate, ctrl-activate, right-activate | |
+| `entry` | | focus, start, end, clear | A text setting row, Export's path among them |
+| `hold` | | hold, on, off, toggle | The peek and the overview; on, off and toggle latch them |
+| `tabs` | one per tab | activate, next, previous, reset | Reset resets the tab's controls |
+| `processing module` | `show`, `reset`, `presets`, `focus`, `instance` | as darktable's | Below |
+| `utility module` | `show`, `reset`, `presets` | as darktable's | Below |
+
+- **A tool's `show`** reveals it as darktable's `_show_module_callback` does: a hidden tool shown in the Hidden tab, as decision 96's reveals are, its tab chosen, its section opened or closed. **`reset`** is the header's ↺. **`presets`** opens the presets menu, its previous and next moving through them, with the presets API. **`focus`** comes with the focused tool, **`instance`** with layers; an element not built yet is listed and does nothing.
+- **No `enable`:** a person never turns a tool on or off explicitly (decision 32). A switched tool turns on as a control changes and off with its reset, from a shortcut as from the panel.
+- **`<focused>`,** darktable's `iop/focus`, acts on the focused tool: its sliders, dropdowns and buttons by position, `1st` to `20th`, its tabs, `show`, and the cycle through tools; with the focused tool.
+- **Only an effect that changes a value makes a change:** a slider's `set`, `up`, `down`, `reset`, `top` and `bottom` on `value` or `force`; a dropdown's `next`, `previous`, `reset`, `last`, `first` and `item:`; a toggle's `toggle`, `on`, `off` and their ctrl- and right- forms; a button's `activate` and its forms, as its button runs it; a tool's `reset` and its presets' `previous` and `next`. **An effect that opens or shows something makes none** and never turns a switched tool on: a slider's `edit` opening the slider popup (the value field until it is built), a dropdown's `popup` opening its list, a tool's `show` and `focus`, a presets' `show`, a zoom of the span shown. What the popup changes is its own (decision 42): live changes as a gesture, Enter keeping them as one step, Esc or a cancel putting the value back (`CancelGesture`).
+- **A step is one completed change** on a processing tool, `SetControl { done: true }`, `ResetControl`, `ResetTool` or `ApplyPreset`, repeated ones on a control merging into one step by decision 78's rule, as the wheel's notches do. A utility's setting row goes through the app's settings store (`set`, decision 93), as the row itself does, never through the session. A control whose rows the current mode all hides, or one the photo cannot take, is not active, and says so.
+- **Menus, the Toolbar and context menus** run an item's action at its default element and effect (decisions 91 and 92).
+
+### Shortcuts
+
+Planned (decision 98). A shortcut is darktable's: a trigger, an action, an element, an effect, a speed and an instance.
+
+- **The trigger:** a key with its modifiers; a double, triple or long press of it; a mouse button's click, double, triple or long, while it is held; a move while it is held: the wheel (`scroll`, the notches its size), a sideways wheel (`pan`), or a drag, `horizontal`, `vertical`, `diagonal` or `skew`, a step per 10 points; or one half of a move, up or down. A shortcut's click or move needs a key held: as darktable's dispatcher, a move or a click with no key held is no shortcut, and goes to the widget under the pointer. Modifiers alone, with or without a click or a move, are a trigger only under a fallback. A device's key or move comes with input devices; the device is part of the shortcut from the start.
+- **The speed** multiplies a move, 1 by default, from −1000 to 1000; for `set` it is the value. **A speed adjustment** is a shortcut with no trigger, scaling that action's every move; it is kept in `[shortcuts.speeds]`, apart from the action's shortcuts, so setting one never removes them.
+- **The instance** chooses which of a tool's instances it acts on: preferred, first, last, or ±1 to ±9 from either end; only the preferred one until layers.
+- **The precision** of every shortcut's step is `shortcuts.slider_precision`, normal, fine or coarse (×1, ×0.1, ×10), cycled by its action, with no row in Settings, as darktable's.
+- **Spelt** the platform's way (Platforms, above), its extras after commas as darktable writes them: "E, scroll", "T double-press", "Ctrl+E, left double-click".
+
+### Which shortcut runs
+
+Planned (decision 98), in darktable's order (`dt_shortcut_dispatcher`):
+
+1. **The focused widget** keeps its own keys (`Focus::keeps`, above).
+2. **A key no shortcut uses** passes on untouched; modifiers alone start none.
+3. **Presses are collected** in eframe's `raw_input_hook`, before egui reads the input. Only while a key that a shortcut with a click or a move uses is held are the wheel, pointer and button events taken out of the frame, as darktable's seat grab takes them, so the row under the pointer never scrolls. With no such key held they go to the widget under the pointer, so a row keeps Ctrl+wheel by its own rule ([The scroll wheel over a row](#the-scroll-wheel-over-a-row)).
+   - A key acts **at press** only where nothing longer is defined on it: no move, no click and no double, triple or long press shortcut on that key and modifiers, and fallbacks off or a kind without them.
+   - A key with any longer shortcut acts **at release**, as darktable's, after the double-click time where a multi-press exists, and a move or a click while it is held cancels its plain action: with Right bound to the next photo and Right with the wheel to a slider, Right pressed and released goes to the next photo, and Right held while the wheel turns moves the slider alone.
+   - A hold acts on press and release; a move acts at each step. So the arrows act at once and repeat only while no move or click shortcut uses them.
+   - A key that holds an action, as H holds peek, takes no longer shortcut: the page and mapping mode refuse a move, a click or a longer press on it as a clash, naming the hold, and load refuses one in `[keys]` with a warning, the same test.
+4. **The closest match wins** (`_shortcut_closest_match`): a move, a click or a longer press while the key is held matches the shortcut that has it, never the key's plain action, which it cancels; what it leaves over goes to the fallbacks.
+5. **The action runs** on its target: "not active" where the control is hidden or cannot take it, "… not assigned" where nothing matched.
+
+**Fallbacks** are darktable's tables, off by default (`shortcuts.fallbacks`), turned on by Enable fallbacks on the Shortcuts page. A person may add, change and delete fallbacks of their own on the page's fallbacks branch, as darktable lets them, listed with darktable's; each is recorded as darktable records one, its recording starting with a keyless press, so modifiers, a button or a move with no key become its trigger, which needs step 5's recording.
+
+| Node | Fallbacks |
+| --- | --- |
+| `value` | Ctrl: speed 0.1. Shift: speed 10. Ctrl+Shift: speed 10. Horizontal move: 0.1. Vertical move: 10. Left double-click: reset. Left double-click with a vertical move: top |
+| `slider` | Left click: the button element. Ctrl+left click: button, ctrl-toggle. Ctrl+Shift: the force element, speed 10, once Ctrl+Shift's steps past the soft range are settled ([Slider values: still open](#slider-values-still-open)). Right button with a vertical move: the zoom element |
+| `dropdown` | Left double-click: reset. Left click: the button element. Ctrl+left click: button, ctrl-toggle. Scroll: speed −1. Vertical move: speed −1 |
+| `toggle` | Ctrl: ctrl-toggle. Right button: right-toggle. Long press: right-toggle |
+| `button` | Ctrl: ctrl-activate. Right button: right-activate. Long press: right-activate |
+| `processing module` | Long left click: focus. Right double-click: instance. Left double-click: reset. Right click: presets. darktable's left click, `enable`, is not ported |
+| `utility module` | Left click: show. Left double-click: reset. Right click: presets |
+
+The value node's modifiers are a slider's fine step (decision 42): one table read by both, as darktable's `dt_accel_get_speed_multiplier` reads it for the mouse, Option taking Ctrl's place on the Mac.
+
+**Conflicts.** On the page and in mapping mode, darktable's questions as alerts (decision 41): "Clashing shortcuts exist. Remove these existing shortcuts?", "Shortcut exists with different settings. Reset the settings of the shortcut?", "Shortcut already exists. Disable this default shortcut?" or "Remove the shortcut?", and "Shortcut for move exists with single effect. Create separate shortcuts for up and down move?"; a Ctrl-click on the mapping button skips them for the session. On load, a person's shortcut wins over another action's default it clashes with, the default left out with a warning; two of a person's own that clash are both refused. A clash is two shortcuts with the same whole trigger: the key and its modifiers together by the matching rules above (`actions::conflict`, so Ctrl++ and Ctrl+Shift++, one press on many layouts, clash), then the presses, buttons and click, the move and its direction, so Right and Right with the wheel are no clash and both survive load; the page and load apply this one test. A speed adjustment, with no trigger, clashes with nothing, and the keys kept from actions stay kept ([Who owns the keys](#who-owns-the-keys)).
+
+### Settings › Shortcuts
+
+Planned (decision 98's step 3): darktable's page, `dt_shortcuts_prefs`, on the Settings window's Shortcuts page, top to bottom:
+
+1. **darktable's notice:** "The recommended way to assign shortcuts to visual elements is visual shortcut mapping mode…", with a close button, its dismissal kept (`shortcuts.hide_notice`).
+2. **The actions tree,** its columns the action and its kind's translated name. Selecting an action filters the list below to its shortcuts; a double-click or Enter records a new one.
+3. **A splitter,** its place kept.
+4. **The shortcuts list,** grouped in active view, fallbacks (while they are on), speed adjustments and disabled defaults; its columns shortcut, action, element, effect, speed and instance, element, effect and speed edited in place, element and effect as dropdowns of the kind's lists; the instance shows the preferred one alone, read-only, until instances come in Phase 4. Enter on a row records a new trigger for it; Delete removes it after asking "Remove the selected shortcut?", or for a default "Disable the selected default shortcut?" or "Restore the selected default shortcut?".
+5. **The bar:** Search actions and Search shortcuts, darktable's incremental searches over the translated words, a shortcut's matching its trigger's words too; ?, the page's help; and Restore…, all from step 3; Enable fallbacks, with darktable's tooltip, from step 6; Export…, Import extras and Import… from step 8, the page showing none of them until its step.
+
+Then **Load default shortcuts at startup** (`shortcuts.load_defaults`, on; what it does to `[keys]` is in [Reading and writing](#reading-and-writing)) and, with layers, darktable's instance preferences, which darktable keeps under miscellaneous.
+
+- **Recording,** darktable's `_grab_in_tree_view`: the page dims and says "Define a shortcut by pressing a key, optionally combined with modifier keys…"; from step 3 the next key with its modifiers becomes the trigger; from step 5, with the dispatcher, the recording also takes a key's double, triple or long press, and a click or a move with a key held, as darktable's recording does. A trigger with no key, modifiers alone with or without a click or a move, is recorded only on the fallbacks branch, from step 6, its recording starting with a keyless press as darktable's does; mapping assigns to a control's action, never to a fallback. A right-click with nothing held, or Esc, cancels; on the fallbacks branch only Esc cancels, so a plain right-click can be recorded as a fallback's trigger; a key kept from actions is refused with its reason.
+- **Restore…** offers darktable's three states, the defaults, as the app started, and as the page opened, with "clear all newer shortcuts". **Export…** writes `[keys]`' TOML, the keyboard's or one device's, with the speed adjustments of `[shortcuts.speeds]` beside them; **Import…** merges or replaces both the same way from such a file, or from a darktable `shortcutsrc`, a line naming a tool not ported or a widget with no counterpart listed, never guessed; **Import extras** reads darktable's sample shortcuts, `data/shortcutsrc`, or `shortcutsrc.de` for a German keyboard.
+- **Screen readers:** the tree an AccessKit tree with each item's expanded state, the list a grid with its column headers; a recording announced as it starts ("Press the shortcut. Esc cancels."), each assignment as darktable logs it ("E, scroll assigned to Exposure, Exposure"). Every part of a shortcut but its trigger is edited without a mouse.
+- **Translation:** darktable's words for kinds, elements, effects, moves and presses as messages, `shortcut-kind-<name>`, `shortcut-element-<name>`, `shortcut-effect-<name>`, `shortcut-move-<name>` and the rest, in every language.
+- **The window** stays Settings' (decision 41): modal on Windows and Linux, as darktable's dialog is, modeless on the Mac; a key is tried in the main window by visual mapping, darktable's way.
+
+### Tooltips, feedback and the overview
+
+Planned (decision 98's steps 4 and 9).
+
+- **Tooltips** end with each of the control's shortcuts and what it does ("E: edit", "Ctrl+[: up"), the element under the pointer first, hidden while a modifier or a mouse button is held, as darktable's `dt_shortcut_tooltip_callback`. Until then a tooltip shows the first key, on buttons and menus.
+- **Feedback,** darktable's toast, as the message over the photo and a polite live region: "Exposure: +1.20 EV" after a value changes, "Exposure: not active", "Shift+E not assigned".
+- **The overview,** darktable's accels window: every shortcut of the view in columns by category, while its hold action is held, or toggled by Help › Shortcuts Overview until Esc or the item again. It has no default key, H being the peek; a person may give it one.
+
+### Visual mapping
+
+Planned (decision 98's step 7): darktable's mode (`global_toolbox.c`), the toggle action Map Shortcuts (`map-shortcuts`), in Help, as a button on the Shortcuts page, and offered for the Toolbar outside its default list ([Customising the Toolbar](#customising-the-toolbar)). While it is on:
+
+- the cursor shows whether the control under it can be mapped;
+- a trigger over a control assigns it to the control's action at the element under the pointer, by its kind's table: the quad is a slider's or a dropdown's `button`, the rest of a slider its `value` and of a dropdown its `selection`, a toggle and a button their one element; one already there is removed, with the confirmations above;
+- the wheel over a control, nothing held, sets its speed adjustment, ×10 a notch, and a middle click resets it;
+- a click or a move over a control with a key held is recorded as a trigger, as on the page; with no key held nothing is assigned;
+- a plain left click, nothing held, ends the mode and opens Settings › Shortcuts at that control's action, as darktable's does; a right click, Esc or Map Shortcuts again ends it without opening Settings;
+- started from the Shortcuts page's button, Settings closes, being modal on Windows and Linux, and mapping runs in the main window; the Mac does the same, for one rule;
+- a Ctrl-click on Map Shortcuts' button skips the confirmations; a Ctrl-click on a control does nothing, there being no quick access panel (decision 96).
+
+Each row the renderer draws, each Toolbar item and each viewer bar toggle registers its rectangle, action and element for the frame, as darktable's `mapping_widget` records them. Menus are not mappable, as darktable has none; their keys are set on the page. Mapping is never the only way to assign a trigger it records: both come with step 5's recording of clicks and moves, and in steps 3 and 4, before mapping, the page records keys with their modifiers alone.
+
+### Input devices and scripts
+
+- **MIDI and gamepads** come later, on demand (decision 98): darktable's drivers' behaviour, notes as keys and CCs as moves, encoders learned, a knob's value sent back to its LEDs, a gamepad's buttons and sticks by SDL's names, on `midir` and `gilrs` rather than PortMidi and SDL2 (decision 5), with darktable's `modifiers`, "reinitialise input devices" and `all_actions`. A device thread feeds the dispatcher through a channel, and the window's thread alone touches the keymap.
+- **The engine never sees an action.** A control's action sends the session's own commands, so a script or an MCP tool reaches every control through the session protocol already. When scripting is designed, the app offers darktable's `dt.gui.action` by Apertrust's ids to the scripts it runs, and `dt.gui.mimic`'s actions under Scripts.
+
+### Shortcuts: the build, in steps
+
+Decision 98's steps, each one pull request usable on its own:
+
+- **Phase 2:** 1. the model (the shortcut, its trigger, kinds and effects, the owned registry, `[keys]`' inline form and the load rule); 2. the tools' actions, generated from their definitions, one per control, a processing tool's sent as session commands and a utility's setting rows through the settings store; 3. Settings › Shortcuts, recording a key with its modifiers, and Help › Keyboard Shortcuts; 4. tooltips and toasts.
+- **Phase 3:** 5. the dispatcher in `raw_input_hook`, with presses, and clicks and moves with a key held, and recording them on the page; 6. fallbacks, a person's own recorded on the page's fallbacks branch with no key, speed adjustments and slider precision; 7. visual mapping; 8. the files: Export…, Import…, Import extras and a darktable `shortcutsrc`; 9. darktable's defaults, after the keymap's audit, with `<focused>` and the overview.
+- **Phase 4:** instances on layers, `<blending>`, mapping's instance.
+- **Later, on demand:** MIDI and gamepads; scripting's action call.
 
 ## Settings and workspace
 
@@ -4202,7 +4358,7 @@ The schema is one file in TOML, `data/settings.schema.toml` (decisions 43 and 45
 - the page last shown is kept, `settings_window.page`, and the dialog opens on it, or on General where that page holds nothing;
 - Tab walks the pages, then the rows; ↑ and ↓ move between the pages that can be chosen.
 
-**Two sources.** The pages of rows are drawn from the registry (decision 43): each setting the schema gives a `page` and a `group` is a row there. Shortcuts (the keymap editor, drawn from the actions registry), Storage (the user data and cache folders, each with how it was chosen, read-only, since a folder is chosen before the app starts, and Show in Finder; each cache kind's entries and size with Clear, a `UserBackground` job; the limit's rows, `cache.limited` (Unlimited when off) and `cache.limit`, disabled while unlimited, against the limited kinds' total; `cache.unused_after` (30, 90, 180 or 365 days, or Never); each library's cache with its name, last path, last opened and size, those unopened for that long or not found marked, with Remove; the conflict copies' count and size; decision 76, [cache.md](cache.md#settings--storage)), Presets (darktable's presets by tool, the person's own beside them) and AI (the models) are panels built by hand in the same window and look. Import is rows, as General is. Where edits are kept is no setting: each library's file and each root's id file say (decision 47).
+**Two sources.** The pages of rows are drawn from the registry (decision 43): each setting the schema gives a `page` and a `group` is a row there. Shortcuts (darktable's shortcuts page, drawn from the actions registry; [Settings › Shortcuts](#settings--shortcuts), decision 98), Storage (the user data and cache folders, each with how it was chosen, read-only, since a folder is chosen before the app starts, and Show in Finder; each cache kind's entries and size with Clear, a `UserBackground` job; the limit's rows, `cache.limited` (Unlimited when off) and `cache.limit`, disabled while unlimited, against the limited kinds' total; `cache.unused_after` (30, 90, 180 or 365 days, or Never); each library's cache with its name, last path, last opened and size, those unopened for that long or not found marked, with Remove; the conflict copies' count and size; decision 76, [cache.md](cache.md#settings--storage)), Presets (darktable's presets by tool, the person's own beside them) and AI (the models) are panels built by hand in the same window and look. Import is rows, as General is. Where edits are kept is no setting: each library's file and each root's id file say (decision 47).
 
 **Its rows:**
 
@@ -4245,7 +4401,7 @@ Import, Shortcuts, Presets and AI are dimmed until they hold something. Planned 
 
 **Its window** is a native window of its own (decision 41, [Dialogs and alerts](#dialogs-and-alerts)): on the Mac a modeless window rather than a sheet, minimise and zoom dimmed, no Close button, its own close button and Cmd+W closing it and Escape not, as in the Mac's own Settings windows, opening where the user last left it, centred over the main window the first time. On Windows and Linux it is a modal window of the host, with its Close button, and Escape closes it. Its content is 960 by 640 points, the page list 200 of them.
 
-**Built** (`crates/app/src/settings_dialog.rs`, a `Dialog` of the dialog host on every platform): the page list, the pages of rows drawn from the registry by kind, a list of a choice's switch rows, the help in the label's tooltip, the dot, the reset by a double-click or the row's menu, `--conf`'s rows disabled, the after-restart note, the waiting line with Restart now and the page kept. A change goes to the app as `settings_dialog::Change` (a setting set to a value as `settings.toml` keeps it, or reset), which `Keeper::apply` keeps in the store, after the frame's own settings, and the shell takes in from the settings read back (`Shell::follow`): the theme and the language as before, the interface's size, square thumbnails in the grid, the tab names and the wheel's rule in the Tools panel and the log kept as Diagnostics says at once; the engine's settings are kept for its next start. The dialog shows the theme and the language in its own window at once too. Storage's hand-built part is built (`crates/app/src/storage.rs`): its folders with how each was chosen and Show in Finder, each limited kind's size with its Clear, the libraries' caches as one line and the total against the limit, the sizes asked each time the page is shown and handed to it by the app as they change ([cache.md](cache.md#settings--storage)). Still to build: the other hand-built pages, Shortcuts first, key rebinding among them, each library's cache on Storage with its Remove (step 27), and the help button that opens a page's documentation.
+**Built** (`crates/app/src/settings_dialog.rs`, a `Dialog` of the dialog host on every platform): the page list, the pages of rows drawn from the registry by kind, a list of a choice's switch rows, the help in the label's tooltip, the dot, the reset by a double-click or the row's menu, `--conf`'s rows disabled, the after-restart note, the waiting line with Restart now and the page kept. A change goes to the app as `settings_dialog::Change` (a setting set to a value as `settings.toml` keeps it, or reset), which `Keeper::apply` keeps in the store, after the frame's own settings, and the shell takes in from the settings read back (`Shell::follow`): the theme and the language as before, the interface's size, square thumbnails in the grid, the tab names and the wheel's rule in the Tools panel and the log kept as Diagnostics says at once; the engine's settings are kept for its next start. The dialog shows the theme and the language in its own window at once too. Storage's hand-built part is built (`crates/app/src/storage.rs`): its folders with how each was chosen and Show in Finder, each limited kind's size with its Clear, the libraries' caches as one line and the total against the limit, the sizes asked each time the page is shown and handed to it by the app as they change ([cache.md](cache.md#settings--storage)). Still to build: the other hand-built pages, Shortcuts first (decision 98's step 3), each library's cache on Storage with its Remove (step 27), and the help button that opens a page's documentation.
 
 ### What the file looks like
 
@@ -4320,7 +4476,17 @@ show_selected = false       # from Phase 3
   - On macOS egui reads the zoom only when the window opens, so whether it was zoomed is neither followed nor restored there (asking the window would risk egui's deadlock, egui issue 3494).
 - **Keys** are kept by action id (`ActionId`), only those that differ from the defaults, in Qt's portable text form, the same on every platform: `Ctrl+Shift+Z`, where Ctrl is the platform's command key (Cmd on macOS) and Meta a Mac's Control key, then Alt, Shift and the key by egui's name (`Comma`, `Plus`, `F6`), so a + is never a key. They are read leniently: any order and case, Cmd and Option, symbols (`Ctrl+,`).
   - An empty list leaves an action without a key. `Keymap::load` puts them in place of `Keymap::defaults(os)`.
-  - An override is refused, with a warning, when it names no action, holds text that is no key, holds a key egui keeps for the clipboard (`actions::clipboard`: Ctrl+C, X and V, and on Windows Ctrl+Insert, Shift+Insert and Shift+Delete), or holds a key that one press can be with another action's where both work (`actions::conflict`: in one scope, or in the view's and the app's). Both of two clashing overrides are refused. A clash the defaults already have, Ctrl++ with Ctrl+1 on Czech keyboards, is not one.
+  - Planned (decision 98's step 1): a shortcut with more than a key is an inline table of darktable's fields by darktable's words, `keys`, `press`, `button`, `click`, `move`, `direction`, `element`, `effect`, `speed`, `instance`, `device` and `default`, beside the plain strings, `keys` holding modifiers alone, or left out, only under a fallback, every other shortcut having a key; a speed adjustment is kept apart, in `[shortcuts.speeds]`, an action's id to its speed (`tool-exposure-control-exposure = 2.0`), never in `[keys]`, whose list replaces the action's defaults, so it scales the action's shortcuts and removes none; a list still replaces the action's defaults, so files written now read unchanged ([settings.md](settings.md#the-settings-dialog)). `[keys]` is always compared with the built-in defaults, whatever Load default shortcuts at startup says, and turning that on or off never rewrites it. On, the keymap is the defaults with each entry's list in its action's place, an entry equal to the defaults meaning what none means; off, it is the entries alone, an action with none having no shortcut. An entry equal to its defaults is left out when written, but one whose shortcuts carry `default = true`: a shortcut a person assigns while loading is off that equals its default is written so, and is there after a restart:
+
+    ```toml
+    [keys]
+    show-log = ["Ctrl+Shift+L"]
+    undo = [{ keys = "Ctrl+Z", default = true }]   # assigned while loading defaults was off
+    tool-exposure-control-exposure = [{ keys = "E", move = "scroll" }, { keys = "Shift+E", effect = "edit" }]
+    fallbacks-value = [{ keys = "Ctrl", speed = 0.1 }, { keys = "Shift", speed = 10 }]   # in place of darktable's value fallbacks
+    ```
+
+  - An override is refused, with a warning, when it names no action, holds text that is no key, holds a key egui keeps for the clipboard (`actions::clipboard`: Ctrl+C, X and V, and on Windows Ctrl+Insert, Shift+Insert and Shift+Delete), or holds a key that one press can be with another action's where both work (`actions::conflict`: in one scope, or in the view's and the app's); planned (decision 98's step 1), the same whole-trigger test as the Shortcuts page, so two overrides on one key that differ in their move, click or presses, Right and Right with the wheel, are no clash. Both of two clashing overrides are refused. Planned (decision 98's step 1): an override that clashes only with another action's default wins, that default left out with a warning, as darktable's load does, so a person's key survives a later version's new default. A clash the defaults already have, Ctrl++ with Ctrl+1 on Czech keyboards, is not one.
   - Every override stays in the file as it was written until the user changes that action, so a Mac's `Ctrl+Meta+F` read on Linux stays one, and a file another platform or a later version wrote keeps it.
 - **Platform services sit behind small traits** (settings storage, `apertrust_base::settings::Storage`; files, clipboard, the engine connection), so the web browser build swaps in its own: an in-process engine on the desktop, a remote one on the web (decision 35). The web browser's storage is its own, written in place, since it has no threads.
 
@@ -4383,7 +4549,7 @@ Phase 2's interface, each step usable on its own. Steps 1 to 5 are built; steps 
 6. The tool renderer, from `apertrust-tools` definitions (decision 28), and the first pass's tools for the ported operations, darktable's (decision 2; `docs/roadmap.md`, Phase 2), the Tools panel's tabs by editing stage (decision 38). Built: the renderer, every tool listed in [the renderer](#the-renderer), and the tabs by editing stage. Left: RGB levels and RGB curve, then the rest.
 7. The actions registry, the keyboard map, settings, the window frame, the popup service and the menu bar ([the window frame and menus](#the-window-frame-and-menus); [what arrives when](#what-arrives-when)).
    - Built: the registry and the keyboard map; the Mac's frame and native menu bar; Linux's frame and its ☰ with the drawn menu, on the popup service's first piece (decisions 39 and 40); the popup service's native lists on the Mac; the settings file on the settings schema (decision 43), in its build plan's order: `apertrust-base` with the schema and its generator, the store, the user data folder, the engine's first settings with the CLI reading them, `--conf`, and an edit a newer Apertrust wrote opened for viewing only; the dialog host with Settings in it, on every platform (decision 41), its pages of rows drawn from the registry; context menus' first slice ([Context menus](#context-menus), decision 91): `Place`, `Section`, `MenuItem`, `MenuEntry` with tools' submenus, `ToolDefinition::menus`, the generated `tool-<tool>-<action>` actions, `Target` and `menus::context(place, target)`, the photo's menu and a thumbnail's, with History's Reset in both, and on the photo Background ▸ and Orientation ▸.
-   - Left: Windows' Alt pressed and released alone, then its native hit testing; Settings' hand-built pages, Shortcuts first, with rebinding keys; Linux's and Windows' native modality ([Dialogs and alerts](#still-to-build)). The Customise tabs dialog on fixed lists is not built: Phase 3's visual editor for workspaces takes its place (decision 96).
+   - Left: Windows' Alt pressed and released alone, then its native hit testing; Settings' hand-built pages, Shortcuts first, decision 98's steps 1 to 4 ([Shortcuts: the build, in steps](#shortcuts-the-build-in-steps)); Linux's and Windows' native modality ([Dialogs and alerts](#still-to-build)). The Customise tabs dialog on fixed lists is not built: Phase 3's visual editor for workspaces takes its place (decision 96).
 8. Scopes, from the engine's reductions. Built: the widget ([the scopes](#the-scopes)), the engine's counts for the histogram, the waveform, the vectorscope and the totals, sent as session events (engine.md, Scopes; decision 19), and the app's Scopes section, pinned in the editing tabs and drawing all four. Left: the photo's clipping overlays.
 9. Folder mode in one view (decision 37): the Photos tab first, with Collections' Folders; the Browser showing the folder, with the engine's thumbnails and its browser bar, never hidden, in one line or several, resized from its edge, at the bottom, left or right ([The Browser](#the-browser)); File › Open…, Open Folder… and Open Recent; the Viewer's empty states ([The Viewer's layouts](#the-viewers-layouts)). The library's side is its own build plan (decision 46; architecture, Implementation plan, The library's cards).
    - Built: File › Open Folder… and Open…, drag and drop onto the window, Open With and a double-click (macOS's open-documents event, and the registrations' command line), every photo opened, by any route, opening alone, several together, with Open This Folder (step 9d), View › Collections, the Photos tab with Collections, its top line listing the recents, ＋, ⋯ and its Folders as the tree of the folder opened, its root fixed, a click choosing the active folder ([The Tools panel](#the-tools-panel)), the Browser's cells with the camera's embedded pictures, its browser bar's Sort and Zoom, its edge in whole rows or columns and its position, and the Viewer's empty states.
@@ -4403,6 +4569,8 @@ Decision 96's workspaces are Phase 2's too, in its seven steps, each one pull re
 6. built: search: Find Tool… (Ctrl+Shift+F), the field in the tabs' place, the tabs disabled, the list empty until typing, hidden tools found too, Esc back to the tab;
 7. dragging a header, as decision 83 designs it: reorder, pin by a drop in the pinned area, move to another tab through its icon.
 
+Decision 98's actions and shortcuts are Phase 2's in their steps 1 to 4, the model, the tools' actions, Settings › Shortcuts, and tooltips and toasts, and Phase 3's in steps 5 to 9 ([Shortcuts: the build, in steps](#shortcuts-the-build-in-steps)).
+
 Decision 93's one tool model is Phase 2's too, in its steps 93.1 to 93.6, all built ([One tool model](#one-tool-model); [the roadmap](roadmap.md#the-window-and-the-shell)), the last Export's page as setting rows, before Import's sheet shares them.
 
 Phase 3 adds, for the interface:
@@ -4415,7 +4583,8 @@ Phase 3 adds, for the interface:
 - floating panels inside the window, with Float, Dock, Position, Dock All Floating Panels and their keys and actions (decision 83);
 - the toolbar (decision 92; [The Toolbar](#the-toolbar)): the Toolbar drawn from the workspace's list, kept in its file, in place of its fixed parts, with spaces, the guards, » and labels, the toolbar menu, and tools' items (`ToolDefinition::toolbar`, decision 93), Orientation's rotations first; the Customise Toolbar window much later;
 - Export, built as a section of the Photos tab on the session's export job (decision 56), then grown into the Export tool (decision 90) in [its steps' order](#the-build-in-steps): built on the Mac and on Windows and Linux, its setting rows built in decision 93's step 93.6; left: its keys and the preview's in-view rule, its presets with the presets API every tool shares, metadata, and the width spike;
-- the system's alerts: built on the Mac with Export's overwrite question and the quit alert; Delete Workspace… and the other platforms left.
+- the system's alerts: built on the Mac with Export's overwrite question and the quit alert; Delete Workspace… and the other platforms left;
+- shortcuts after darktable, decision 98's steps 5 to 9: the dispatcher with presses, clicks and moves, fallbacks, speed and slider precision, visual mapping, the files with Import extras and a darktable `shortcutsrc`, and darktable's defaults after the keymap's audit, with `<focused>` and the overview ([Shortcuts: the build, in steps](#shortcuts-the-build-in-steps)).
 
 ## Product choices
 
@@ -4461,7 +4630,7 @@ The decisions this design rests on, by area; each decision record has the option
 | Tool model | Every tool a processing tool or a utility, darktable's processing and utility modules; one `ToolDefinition` embedded in `ProcessingDefinition` and `UtilityDefinition`, the trait `ProcessingTool` in `apertrust-tools` and `UtilityTool` in the app; one header and ⋯ and one page drawer for every tool, a utility's page of the same rows, never one that edits, its widgets as custom rows (decision 93; built, Export's rows setting rows naming their keys in full; presets planned with one presets API every tool shares) |
 | Themes | Token sets named by role, in TOML; built-in themes compiled in; checked for contrast when they load; switched live (decision 36) |
 | Translation | Fluent, with ICU4X for numbers and dates (decision 36) |
-| Actions | One registry for buttons, menus, tooltips and shortcuts, all rebindable (decision 36) |
+| Actions | One registry for buttons, menus, tooltips and shortcuts, all rebindable (decision 36); darktable's action and shortcut framework ported whole, every control an action with darktable's elements and effects, darktable's shortcuts, fallbacks off by default, its Shortcuts page, visual mapping and accels window, by stable ids, `[keys]` holding the differences (decision 98, planned; [Actions after darktable](#actions-after-darktable)) |
 | Settings | One settings schema in TOML, each setting declared once, each owner's crate generating typed statics from it, which the file, the Settings dialog and the CLI read; the dialog's nine pages, General, Import, Photos, Editing, Processing, Storage, Shortcuts, Presets and AI, its rows drawn from the schema and Shortcuts, Storage, Presets and AI built by hand; the generator, the machinery and the user data and cache folders in `apertrust-base`, with the log; a user data folder of one's own by `--user-data-dir` or `APERTRUST_USER_DATA_DIR`, separating settings only; the library in another place, next to the images; an edit a newer Apertrust wrote never overwritten (decision 43) |
 | Window frame | The Toolbar from the window's top edge on every platform: the Mac's traffic lights in it, caption buttons drawn by the app on Windows and Linux, Windows' snap layouts flyout through native hit testing; the system's title bar as a setting there, off by default; a minimum width of 500 points (decision 39) |
 | Context menus | Only in named places, the photo, a thumbnail and a tool's ⋯ open to tools' items, the only places `apertrust-tools`' `Place` has, the surround and the rest the app's own; each item a registry action, a tool's own generated as `tool-<tool>-<action>`, declared as data (`MenuItem`: `ToolDefinition::menus`, the app's `APP_ITEMS`), at most two a tool on the photo and a thumbnail, a submenu of up to eight of its own actions one of them; the app building every menu, its items and the tools' sorted by `(section, order)`; no right-click on a tool; every item reachable without one; the first slice built, History's Reset and Orientation ▸ its items (decision 91; [Context menus](#context-menus)) |
@@ -4496,4 +4665,9 @@ What is still undecided in the interface. Each says what the app does meanwhile.
 - **A tool's action on a photo it cannot change** (decision 91): a processing tool's generated `tool-<tool>-<action>` is available while the photo takes edits, a utility's registry actions having their own availability (decision 93), live and not open for viewing only, and does not ask whether its own control can take a change on that photo, as its row in the panel may. Every built tool's buttons apply to every photo, so nothing differs yet. Settled when a tool's action first cannot run on a photo that takes edits, by an availability the tool declares or the app derives from its definition; meanwhile an item is shown wherever the photo takes edits.
 - [x] **Ctrl+F for Find Tool… and Search Photos…:** settled by decision 96, Ctrl+F kept for View › Search Photos…, the more important search, unassigned until it is built, and Find Tool… on Ctrl+Shift+F ([Finding a tool](#finding-a-tool), [View](#view)).
 - **Native popups' repaint** (decision 40): whether the window repaints while a native popup is open waits for a spike on the M4.
+- **The focused tool** (decision 98), darktable's `gui_module`, which the `focus` element, `<focused>` and the instance preference "prefer focused" need, and crop's and the masks' on-photo editing too. Recommended: defined with crop in Phase 3 as darktable's, the tool whose section a person last opened or whose header took the focus, a second click on its header unfocusing it. Meanwhile there is none, and those elements are listed and do nothing.
+- **A write per shortcut step** (decision 98): each step is a completed change, as each wheel notch over a row is, so held keys write the edit often. Recommended: measured with the wheel's build, writes coalesced in the writer if needed, never by changing the history's steps. Meanwhile each change is written as any other.
+- **A slider's Ctrl+Shift to `force`** (decision 98) waits on [Ctrl+Shift's steps past the soft range](#slider-values-still-open), and both are settled together. Meanwhile the fallback is left out.
+- **Scripts' action call** (decision 98), darktable's `dt.gui.action` by Apertrust's ids, is designed with scripting. Meanwhile scripts and MCP tools use the session protocol.
+- **Preset actions' ids carrying names** (decision 98), as darktable's do, a rename moving their shortcuts, is settled with the presets API's decision. Meanwhile no preset is an action.
 - **A small Import tool** (decision 90): a section of the Tools panel holding import's defaults, the metadata, rating and labels stamped at import and its presets, may earn its place beside Collections' Import…. Meanwhile there is none: Import's settings are the sheet's, and Settings › Import shows darktable's four preferences.

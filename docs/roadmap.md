@@ -106,7 +106,7 @@ Goal: open, edit, save and reopen a photo with the first pass's tools. Migration
 - [ ] Windows' Alt pressed and released alone, and native hit testing.
 - [x] Actions with a default keyboard map, shown in tooltips and menus; keys can be overridden in the settings file.
 - [x] Settings kept in a file, with `--user-data-dir` and darktable's `--conf` for one run; a Settings window for the theme and language.
-- [ ] The Settings window's other pages, key rebinding among them.
+- [ ] The Settings window's other pages, Shortcuts first, with decision 98's steps below.
 - [x] Hardware acceleration in Settings › Processing (decision 82): the Graphics API row and `--backend`, the graphics card as a list with CPU (no graphics card), the "In use" line and its warning, Restart now, a way back from a start that did not finish, and `--safe-mode`.
 - [x] A log window, Help › Show Log: this session's log kept in memory while Settings' Diagnostics says so, filtered, copied or saved as the terminal writes it ([gui.md](gui.md#the-log-window)).
 - [x] The photo's background: six neutral greys from black to white, chosen from the surround's right-click menu or the View menu, the theme's own the default, those for judging colour within ISO 12646.
@@ -150,6 +150,13 @@ Goal: open, edit, save and reopen a photo with the first pass's tools. Migration
 - [ ] 5. The tab bar's menu, on a right-click and in ⋮ beside step 3's Show Hidden Tools: Find Tool…, Show Hidden Tools, Workspace ▸, Reset Tab, Reset Workspace (deleting the workspace's file), Processing Order. Find Tool… and Workspace ▸ in ⋮ are built ahead of it.
 - [x] 6. Search: Find Tool… (Ctrl+Shift+F), the field in the tabs' place, the tabs disabled, the list empty until typing, hidden tools found too, Esc back to the tab.
 - [ ] 7. Dragging a header, as decision 83 designs it: reorder, pin by a drop in the pinned area, move to another tab through its icon.
+
+**Actions and shortcuts after darktable** (decision 98; [gui.md](gui.md#actions-after-darktable)): darktable's action and shortcut framework ported whole, by stable ids, `[keys]` keeping the differences. Phase 2's four steps, each one pull request usable on its own; steps 5 to 9 are [Phase 3's](#shortcuts):
+
+- [ ] 1. The model: the shortcut with darktable's trigger, element, effect, speed, instance and device, the kinds with darktable's elements and effects, the owned registry shown as a tree, `[keys]`' inline form, always compared with the built-in defaults, `default = true` keeping a shortcut assigned while defaults are not loaded, and a person's key winning over a clashing default.
+- [ ] 2. The tools' actions: every tool's node, tabs, controls (one action per control, acting on the row the current mode shows), preset rows, toggles, buttons, pickers and setting rows generated from its definition, a processing tool's effects sent as the session's commands and a utility's setting rows set through the app's settings store (decision 93); no `enable`, a tool never turned on or off explicitly (decision 32).
+- [ ] 3. Settings › Shortcuts, darktable's page: the actions tree, the grouped shortcuts list, both searches, recording a key with its modifiers, editing element, effect, speed and instance, the clash questions, Restore… and Load default shortcuts at startup; Help › Keyboard Shortcuts.
+- [ ] 4. Every shortcut in a control's tooltip, and darktable's toasts over the photo and to screen readers.
 
 ### Editing
 
@@ -314,6 +321,16 @@ The library's steps 10 to 20 and 15b, [listed below](#the-librarys-steps) (decis
 - [ ] Move, rename, copy and delete photos with their edits.
 - [ ] Import by copy, as darktable's copy and import: a sheet of the card's photos beside a column of tools, those already imported told by the destination (decision 85; [gui.md](gui.md#the-import-sheet)).
 
+### Shortcuts
+
+Decision 98's steps 5 to 9 ([gui.md](gui.md#shortcuts-the-build-in-steps)), after Phase 2's four:
+
+- [ ] 5. The dispatcher: keys at press or at release, double, triple and long presses, clicks and the six moves, the wheel and drags, with a key held, a move or a click with no key held left to the widget under the pointer, a key with a longer shortcut acting at release and a move or click cancelling its plain action; recording them on the Shortcuts page.
+- [ ] 6. Fallbacks, off by default, a person's own added, changed and deleted on the Shortcuts page's fallbacks branch, recorded with no key, modifiers alone with or without a click or a move, as darktable records them, through step 5's recording, the one place a keyless trigger is recorded; speed adjustments and slider precision.
+- [ ] 7. Visual mapping: Help › Map Shortcuts, a button on the Shortcuts page, and a Toolbar item outside the default list.
+- [ ] 8. The files: Export… and Import… by device, Import extras from darktable's sample shortcuts, and a darktable user's `shortcutsrc` imported for the tools ported, the rest listed.
+- [ ] 9. darktable's defaults: the default keyboard map audited against darktable's 247 default registrations, each difference moved to darktable's key or listed as a deviation; the tools' default keys as each lands, rotation's Ctrl+R, Ctrl+[ and Ctrl+] on Windows and Linux, where Alt with a letter is the menus', and darktable's Option+R, Option+[ and Option+] on the Mac; `<focused>` with the focused tool; the accels window, Help › Shortcuts Overview, with no default key, H staying the peek.
+
 ### The migration complete
 
 - [ ] Every tool of the first pass in the app and matching darktable's render in its golden comparisons. From here on, Apertrust's own renders are its baselines.
@@ -342,6 +359,7 @@ Goal: local editing.
 - [ ] Retouch layers, heal and clone, darktable's retouch ported from its master (decision 74), then AI erase.
 - [ ] AI masks for subject, sky, background, people and a clicked object, and a depth part, run locally through ONNX Runtime's WebGPU provider (decision 60), recomputed once per photo when copied.
 - [ ] The binary sidecar, `.apdata` (decision 49).
+- [ ] Shortcuts on layers (decision 98): a shortcut's instance, darktable's preferred-instance settings mapped onto layers, `<blending>` as the layers' and masks' actions, and visual mapping's instance.
 
 ## Phase 5: the library and projects
 
@@ -382,7 +400,8 @@ Goal: reach and polish.
 - [ ] Tethering and import from a camera.
 - [ ] More export formats as encoders allow.
 - [ ] The Customise Toolbar window, a dedicated window for arranging the toolbar, its menu item drawn disabled until then (decision 92).
-- [ ] Scripting.
+- [ ] Scripting, with darktable's action call by Apertrust's ids for the scripts the app runs (decision 98).
+- [ ] MIDI controllers and gamepads as input devices for shortcuts, on demand, through midir and gilrs (decision 98).
 
 ## The library's steps
 

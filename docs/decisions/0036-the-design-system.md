@@ -18,7 +18,7 @@ How is the interface built so that its parts are reused, it can be themed and tr
 
 **Also:**
 
-- one actions registry for buttons, menus, tooltips and rebindable shortcuts ([0039](0039-one-top-bar-native-menus-on-the-mac-one-menu-button-elsewhere.md)), an action with an icon a candidate for the toolbar ([0092](0092-the-toolbar.md), planned);
+- one actions registry for buttons, menus, tooltips and rebindable shortcuts ([0039](0039-one-top-bar-native-menus-on-the-mac-one-menu-button-elsewhere.md)), darktable's action and shortcut framework on it ([0098](0098-actions-and-shortcuts-after-darktable.md), planned), an action with an icon a candidate for the toolbar ([0092](0092-the-toolbar.md), planned);
 - AccessKit on, each component reporting its role, full name and value;
 - one versioned settings file for the interface (theme, language, scale, keyboard map, workspace), never edits ([0043](0043-settings-and-apertrusts-folders.md));
 - four rules for interface code, which keep Touch mode an add-on ([0094](0094-one-interface-standard-and-touch-modes.md)):
