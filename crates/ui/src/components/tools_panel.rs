@@ -661,7 +661,12 @@ pub(super) fn found_header(ui: &Ui, toggle: &Response) {
         None
     };
     if let Some(&to) = to {
-        ctx.memory_mut(|m| m.request_focus(to));
+        // egui's own move by the arrow is cancelled: a header that took the focus last frame
+        // has not yet kept the arrows from it, so it would move on again from `to`.
+        ctx.memory_mut(|m| {
+            m.request_focus(to);
+            m.move_focus(egui::FocusDirection::None);
+        });
         scroll_to_header(ctx, to);
     }
 }

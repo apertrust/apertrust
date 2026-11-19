@@ -12619,6 +12619,50 @@ mod tests {
         assert!(focused.rect.top() >= 0.0, "{:?}", focused.rect);
     }
 
+    /// ↓ twice in two frames in a row, as a held key does, goes from the field to the first
+    /// tool found, then to the second, never past it: the header that took the focus a
+    /// frame before moves it alone, egui's own move cancelled (decision 96).
+    #[test]
+    fn down_twice_in_a_row_goes_to_the_second_tool_found() {
+        let folder = settings::testing::Folder::new("find-tool-down-twice");
+        let mut harness = find_panel(&folder, egui::vec2(560.0, 900.0), Builtin::Dark);
+        harness.state_mut().shell.toggle_find();
+        harness.run();
+        find_field(&harness).type_text("o");
+        harness.run();
+        let order = &harness.state().shell.find.as_ref().unwrap().found().order;
+        let (first, second) = (find::title(order[0]), find::title(order[1]));
+        let (first, second) = (tr(&harness.ctx, &first), tr(&harness.ctx, &second));
+        // Each ↓'s press and release in one frame, the frames back to back.
+        let down = |harness: &mut Harness<'_, Editing>| {
+            let event = |pressed| egui::Event::Key {
+                key: Key::ArrowDown,
+                physical_key: None,
+                pressed,
+                repeat: false,
+                modifiers: Modifiers::NONE,
+            };
+            harness
+                .input_mut()
+                .events
+                .extend([event(true), event(false)]);
+            harness.step();
+        };
+        down(&mut harness);
+        assert!(
+            harness
+                .get_by_role_and_label(Role::Button, &first)
+                .is_focused()
+        );
+        down(&mut harness);
+        harness.run();
+        assert!(
+            harness
+                .get_by_role_and_label(Role::Button, &second)
+                .is_focused()
+        );
+    }
+
     /// ↓ from the field with the tools found scrolled down takes the focus to the first
     /// header and scrolls it back into view (decision 96).
     #[test]
