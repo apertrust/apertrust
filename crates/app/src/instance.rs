@@ -407,7 +407,7 @@ impl Post {
     /// None where it cannot be delivered, the inbox closed or gone as the app ends.
     pub fn open(&self, paths: Vec<PathBuf>, token: Token) -> Option<Instant> {
         let mut at = None;
-        self.send(|| {
+        let sent = self.send(|| {
             let now = Instant::now();
             at = Some(now);
             Arrival::Open {
@@ -416,7 +416,7 @@ impl Post {
                 token,
             }
         });
-        at
+        at.filter(|_| sent)
     }
 
     /// Delivers a start refused for its `flags`, with its `token`: false where it cannot be.

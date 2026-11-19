@@ -76,7 +76,7 @@ sequenceDiagram
 
 A start with flags for one run (`--safe-mode`, `--conf`, `-d`, a `--cache-dir` naming another folder than the instance's, and any such flag the app gains, an adapter or `--max-binding`) while an instance runs on its folder is **refused**:
 
-- on Windows and Linux, an alert in the instance's window, brought forward, saying Apertrust is already running with that folder and must be quit first, plus the same words on stderr and exit status 1; on Windows the alert waits for the app's alerts there, the window still brought forward and the words on stderr;
+- on Windows and Linux, an alert in the instance's window, brought forward, saying Apertrust is already running with that folder and must be quit first, plus the same words on stderr and exit status 1; on Windows the alert is planned, waiting for the app's alerts there, and until then the window is still brought forward and the words go to stderr;
 - on macOS, the stderr refusal above.
 
 Such a start is never handed off with its flags dropped, and never runs as a second writer.
