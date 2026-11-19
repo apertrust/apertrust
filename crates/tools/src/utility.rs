@@ -285,15 +285,10 @@ pub const UTILITIES: &[UtilityDefinition] = &[
             presets: false,
             open_at_first: true,
             menus: &[
-                // Reset in the photo's and a thumbnail's menus (decision 91).
+                // Reset in the photo's menu, not a thumbnail's, whose photo may not be the
+                // one open (decision 91).
                 MenuItem {
                     place: Place::Photo,
-                    section: Section::EDIT,
-                    order: 100,
-                    entry: MenuEntry::Action("reset"),
-                },
-                MenuItem {
-                    place: Place::Thumbnail,
                     section: Section::EDIT,
                     order: 100,
                     entry: MenuEntry::Action("reset"),
