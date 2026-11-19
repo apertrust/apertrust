@@ -1165,6 +1165,8 @@ mod tests {
                 // Where a moved tool went: its place among its tab's tools (decision 96).
                 args.set("at", 3);
                 args.set("of", 12);
+                // Which of its tab's lists a tool is in, as Move Tool Up's tip says.
+                args.set("list", "pinned");
                 args.set("text", "colour");
                 let mut errors = Vec::new();
                 bundle.format_pattern(pattern, Some(&args), &mut errors);

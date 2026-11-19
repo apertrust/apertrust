@@ -11902,7 +11902,9 @@ mod tests {
         assert!(menu_item(&harness, "Pin Tool"));
         assert!(menu_item(&harness, "Remove Tool"));
         let top = |h: &Harness<'_, Editing>, label: &str| h.get_by_label(label).rect().top();
-        assert!(top(&harness, "Pin Tool") < top(&harness, "Move Tool to Tab"));
+        assert!(top(&harness, "Pin Tool") < top(&harness, "Move Tool Up"));
+        assert!(top(&harness, "Move Tool Up") < top(&harness, "Move Tool Down"));
+        assert!(top(&harness, "Move Tool Down") < top(&harness, "Move Tool to Tab"));
         assert!(top(&harness, "Move Tool to Tab") < top(&harness, "Remove Tool"));
         harness.get_by_label("Remove Tool").hover();
         harness.run();
@@ -11938,6 +11940,112 @@ mod tests {
         harness.run();
         open_options(&mut harness, "Grain");
         assert!(menu_item(&harness, "Unpin Tool"));
+    }
+
+    /// Whether Move Tool Up and Move Tool Down in `tool`'s ⋯ are enabled, and their tips.
+    fn up_and_down(shell: &Shell, tool: &'static str) -> [(bool, Option<String>); 2] {
+        let ctx = egui::Context::default();
+        let state = shell.state(&ctx, false, false);
+        let head = shell.layout_head(&ctx, tool, &state);
+        ["Move Tool Up", "Move Tool Down"].map(|words| {
+            let item = head.options.iter().find_map(|entry| match entry {
+                popup::Entry::Item(item) if item.text == words => Some(item),
+                _ => None,
+            });
+            let item = item.expect(words);
+            (item.enabled, item.tip.clone())
+        })
+    }
+
+    /// Move Tool Up is disabled first in a tool's list and Move Tool Down last, the pinned
+    /// list and the scrolling one each its own, each saying why (decisions 91 and 96).
+    #[test]
+    fn move_tool_up_and_down_rest_at_their_list_s_ends() {
+        let folder = settings::testing::Folder::new("layout-up-down-ends");
+        let harness = effects_tab(&folder);
+        let shell = &harness.state().shell;
+        assert_eq!(effects_order(&harness), ["vignette", "grain", "soften"]);
+        let tip = |words: &str| Some(words.to_owned());
+        assert_eq!(
+            up_and_down(shell, "vignette"),
+            [
+                (false, tip("Vignetting is already at the top")),
+                (true, None),
+            ]
+        );
+        assert_eq!(up_and_down(shell, "grain"), [(true, None), (true, None)]);
+        assert_eq!(
+            up_and_down(shell, "soften"),
+            [
+                (true, None),
+                (false, tip("Soften is already at the bottom")),
+            ]
+        );
+        // Scopes, alone in the pinned list over them, moves neither way.
+        assert_eq!(
+            up_and_down(shell, "scopes"),
+            [
+                (
+                    false,
+                    tip("Scopes is already at the top of the pinned tools")
+                ),
+                (
+                    false,
+                    tip("Scopes is already at the bottom of the pinned tools")
+                ),
+            ]
+        );
+    }
+
+    /// Move Tool Up and Move Tool Down in ⋯ move a tool one place in its list as Alt+↑ and
+    /// Alt+↓ do, said the same to screen readers: no command reaches the session, the
+    /// edit's file stays byte for byte as it was, and the workspace's file is written
+    /// (decisions 83 and 96).
+    #[test]
+    fn move_tool_up_and_down_in_options_move_as_the_keys_do() {
+        let folder = settings::testing::Folder::new("layout-up-down-options");
+        let sidecar = folder.0.join("IMG_0001.CR3.apxmp");
+        let edit = b"<x:xmpmeta>the edit</x:xmpmeta>\n";
+        std::fs::write(&sidecar, edit).unwrap();
+        let mut by_menu = effects_tab(&folder);
+        let keys_folder = settings::testing::Folder::new("layout-up-down-keys");
+        let mut by_keys = effects_tab(&keys_folder);
+        by_keys
+            .get_by_role_and_label(Role::Button, "Vignetting")
+            .focus();
+        by_keys.run();
+        let before = effects_order(&by_menu);
+        let of = before.len() + 1;
+        open_options(&mut by_menu, "Vignetting");
+        (by_menu.get_by_role_and_label(Role::MenuItem, "Move Tool Down")).click();
+        by_menu.run();
+        by_keys.key_press_modifiers(Modifiers::ALT, Key::ArrowDown);
+        by_keys.run();
+        let moved = effects_order(&by_menu);
+        assert_eq!(moved, [before[1], "vignette", before[2]]);
+        assert_eq!(moved, effects_order(&by_keys));
+        let said = announced(&by_menu);
+        assert_eq!(said, format!("Vignetting moved to 3 of {of} in Effects"));
+        assert_eq!(said, announced(&by_keys));
+        by_menu.state_mut().shell.workspace_files.flush();
+        let file = folder.0.join("workspaces").join("default.toml");
+        let (written, _) = layout::read(&file);
+        let written = written.expect("the workspace's file");
+        assert_eq!(written.order["effects"], moved);
+        open_options(&mut by_menu, "Vignetting");
+        (by_menu.get_by_role_and_label(Role::MenuItem, "Move Tool Up")).click();
+        by_menu.run();
+        by_keys.key_press_modifiers(Modifiers::ALT, Key::ArrowUp);
+        by_keys.run();
+        assert_eq!(effects_order(&by_menu), before);
+        assert_eq!(effects_order(&by_keys), before);
+        let said = announced(&by_menu);
+        assert_eq!(said, format!("Vignetting moved to 2 of {of} in Effects"));
+        assert_eq!(said, announced(&by_keys));
+        by_menu.state_mut().shell.workspace_files.flush();
+        assert!(by_menu.state().sent.is_empty());
+        assert_eq!(std::fs::read(&sidecar).unwrap(), edit);
+        assert_eq!(folder.files(), ["IMG_0001.CR3.apxmp", "workspaces"]);
     }
 
     /// A tab the person emptied is listed under Move Tool to Tab ▸ enabled, as it takes a
@@ -12014,9 +12122,15 @@ mod tests {
         shell.choose_hidden();
         harness.run();
         open_options(&mut harness, "Vignetting");
-        assert!(harness.query_by_label("Pin Tool").is_none());
-        assert!(harness.query_by_label("Remove Tool").is_none());
-        assert!(harness.query_by_label("Move Tool to Tab").is_none());
+        for words in [
+            "Pin Tool",
+            "Move Tool Up",
+            "Move Tool Down",
+            "Move Tool to Tab",
+            "Remove Tool",
+        ] {
+            assert!(harness.query_by_label(words).is_none(), "{words}");
+        }
         harness.get_by_label("Show Tool in Tab").click();
         harness.run();
         assert!(menu_item(&harness, "Effects"));

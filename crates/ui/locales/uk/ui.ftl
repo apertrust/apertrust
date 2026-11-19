@@ -796,6 +796,16 @@ menu-section-move-to-tab = Перемістити інструмент на вк
 menu-section-show-in-tab = Показати інструмент на вкладці
 section-hide-tip = Прибирає інструмент «{ $tool }» із вкладок цього робочого простору. Його зміни лишаються; «Показувати приховані інструменти» показує його.
 section-hide-export = Експорт є в кожному робочому просторі
+section-move-up-first =
+    { $list ->
+        [pinned] Інструмент «{ $tool }» уже вгорі серед закріплених
+       *[other] Інструмент «{ $tool }» уже вгорі
+    }
+section-move-down-last =
+    { $list ->
+        [pinned] Інструмент «{ $tool }» уже внизу серед закріплених
+       *[other] Інструмент «{ $tool }» уже внизу
+    }
 menu-interface-size = Розмір інтерфейсу
 menu-sort-by = Сортувати за
 menu-thumbnail-size = Розмір мініатюр

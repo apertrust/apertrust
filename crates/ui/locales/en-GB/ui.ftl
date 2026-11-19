@@ -1039,6 +1039,19 @@ menu-section-show-in-tab = Show Tool in Tab
 # Remove Tool's tooltip; $tool is the tool's name. Export's is drawn disabled, saying why.
 section-hide-tip = Takes { $tool } out of this workspace's tabs. Its edit stays; Show Hidden Tools shows it.
 section-hide-export = Export stays in every workspace
+# Move Tool Up's tooltip where the tool is first in its list, and Move Tool Down's where
+# it is last; $tool is the tool's name, $list "pinned" for the tab's pinned list, else
+# "other".
+section-move-up-first =
+    { $list ->
+        [pinned] { $tool } is already at the top of the pinned tools
+       *[other] { $tool } is already at the top
+    }
+section-move-down-last =
+    { $list ->
+        [pinned] { $tool } is already at the bottom of the pinned tools
+       *[other] { $tool } is already at the bottom
+    }
 menu-interface-size = Interface Size
 menu-sort-by = Sort By
 menu-thumbnail-size = Thumbnail Size

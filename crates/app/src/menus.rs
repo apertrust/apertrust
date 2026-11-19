@@ -693,11 +693,13 @@ pub struct TabItem {
 
 /// The layout's items in `tool`'s ⋯ (decisions 83 and 96), last, after its own: where
 /// `state.section` says it is in a tab, Pin Tool, or Unpin Tool where it is pinned, Move
-/// Tool to Tab ▸ with each of `tabs` by name and Remove Tool; where it is hidden, Show Tool
-/// in Tab ▸ alone. Each item is its registry action's, enabled as it can run: a tab is
-/// disabled where it holds the tool or takes none, the latter saying it comes in a
-/// later version; Remove Tool says what it does, and for Export, which every workspace
-/// keeps, why it cannot. None where the tool has no place in the workspace.
+/// Tool Up and Move Tool Down, Move Tool to Tab ▸ with each of `tabs` by name and Remove
+/// Tool; where it is hidden, Show Tool in Tab ▸ alone. Each item is its registry action's,
+/// enabled as it can run: Move Tool Up is disabled first in its list, the pinned one or
+/// the scrolling one, and Move Tool Down last, each saying so; a tab is disabled where it
+/// holds the tool or takes none, the latter saying it comes in a later version; Remove
+/// Tool says what it does, and for Export, which every workspace keeps, why it cannot.
+/// None where the tool has no place in the workspace.
 pub fn layout_items(
     ctx: &egui::Context,
     tool: &str,
@@ -735,6 +737,32 @@ pub fn layout_items(
     if let Some(mut pin) = item(ActionId::SECTION_PIN) {
         pin.text = tr.text(actions::section_words(ActionId::SECTION_PIN, placing));
         entries.push(pin.into());
+    }
+    // Move Tool Up and Move Tool Down, each disabled at its end of the tool's list, saying so.
+    let list = if placing.pinned { "pinned" } else { "other" };
+    let ends = [
+        (
+            ActionId::SECTION_MOVE_UP,
+            placing.up,
+            "section-move-up-first",
+        ),
+        (
+            ActionId::SECTION_MOVE_DOWN,
+            placing.down,
+            "section-move-down-last",
+        ),
+    ];
+    for (id, can, why) in ends {
+        let Some(mut moves) = item(id) else {
+            continue;
+        };
+        if !can {
+            let mut args = Args::new();
+            args.set("tool", crate::tools::title(&tr, tool));
+            args.set("list", list);
+            moves = moves.tip(tr.text_with(why, Some(&args)));
+        }
+        entries.push(moves.into());
     }
     entries.push(submenu);
     if let Some(hide) = item(ActionId::SECTION_HIDE) {
