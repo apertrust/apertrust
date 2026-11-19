@@ -855,13 +855,28 @@ macOS only: the menu AppKit fills once it is the app's Windows menu.
 | Item | Action | Keys | Now |
 | --- | --- | --- | --- |
 | Search, macOS only, at the top | macOS's | Shift+Cmd+/ | macOS |
+| Apertrust Guide | `guide`: the Guide's start page ([Help and the Apertrust Guide](#help-and-the-apertrust-guide)) | — | Planned (decision 97) |
 | Show Log | `show-log`: the log window, logging on or off ([The log window](#the-log-window)) | — | Built, every platform |
 | — | | | |
 | Keyboard Shortcuts | `keyboard-shortcuts`: Settings, at its keys | Ctrl+? on Windows and Linux; none on macOS, where Cmd+? is the search | New, Phase 2, with rebinding (step 7) |
 | —, Windows and Linux | | | |
 | About Apertrust, Windows and Linux; in the app menu on macOS | `about` | — | Built; drawn on Windows and Linux with their menus |
 
-An Apertrust Help item joins once a user guide exists.
+#### Help and the Apertrust Guide
+
+Planned (decision 97). Help opens the Apertrust Guide, a website of its own at `guide.apertrust.org`, built from `apertrust/apertrust-guide`, in the system's browser.
+
+- **Topics.** The app names a topic, never a page: a tool's is `tools/<id>`, from its id, with nothing declared (`ToolDefinition::help` overrides it); every other place names its own, `browser`, `viewer`, `workspaces`, `settings/<page>`, `dialogs/<id>`. The Guide's pages claim topics, so a page moves without a change to the app; a topic in a release is never renamed.
+- **The URL:** `{help.url}/{version}/{language}/topic/{topic}/`, the version `X.Y` for a release build and `development` for any other, the language the interface's, `en` for both Englishes.
+- **Where:**
+  - Help, last in every tool's ⋯, after the layout's items, a line before it (`section-help`);
+  - Apertrust Guide in the Help menu (`guide`);
+  - Help last in the browser bar's options and in the Tools panel's ⋮;
+  - a Help button at the footer's start in Settings and in a dialog that needs one;
+  - the `help` action for what has the focus, with no default key, since F1 to F5 are the colour labels.
+
+  The photo's and a thumbnail's right-click menus have none.
+- **The first time,** the app asks whether to open the Guide online, naming its address, and remembers the answer for that address.
 
 #### About Apertrust
 
@@ -1040,7 +1055,7 @@ Native popup menus on the Mac for plain lists and context menus; drawn everywher
 - Every popup in the app goes through the service, as a plain list with no checkbox or other control inside, so that each can be drawn natively on the Mac:
   - ⋯ lists the folded actions with their keys, disabled where they cannot run;
   - » lists the tabs that do not fit, one that cannot be chosen disabled with its "to come" tip;
-  - ⋮ holds Find Tool… with its keys (decision 96, [Finding a tool](#finding-a-tool)), Show Hidden Tools ([Hidden tools](#hidden-tools)), then Workspace ▸, View › Workspace's submenu (the one shown checked, each running its `workspace-<id>`, disabled while `--conf` sets `workspace`), a line, then Show tab names, an item with a check mark, and Customise tabs…, drawn disabled until the visual editor. The app hands the component its items before the tab bar's own (`TabBar::items`, built by `menus::tools_panel` as the menus build theirs, a choice in them reported as `TabBarAction::Chosen` with its action's id), and a dot's words (`TabBar::dot`). Planned, the tab bar's menu's other items join them, Reset Tab, Reset Workspace and Processing Order (decision 96), and Dock All Floating Panels in Phase 3 (decision 83).
+  - ⋮ holds Find Tool… with its keys (decision 96, [Finding a tool](#finding-a-tool)), Show Hidden Tools ([Hidden tools](#hidden-tools)), then Workspace ▸, View › Workspace's submenu (the one shown checked, each running its `workspace-<id>`, disabled while `--conf` sets `workspace`), a line, then Show tab names, an item with a check mark, and Customise tabs…, drawn disabled until the visual editor. The app hands the component its items before the tab bar's own (`TabBar::items`, built by `menus::tools_panel` as the menus build theirs, a choice in them reported as `TabBarAction::Chosen` with its action's id), and a dot's words (`TabBar::dot`). Planned, the tab bar's menu's other items join them, Reset Tab, Reset Workspace and Processing Order (decision 96), and Dock All Floating Panels in Phase 3 (decision 83), and Help, last, opening the Guide at `workspaces` (decision 97).
 
   Each is opened by its button, or ↓ on it, and closed by a second press or Esc, with the focus back on the button, which stays lit while its menu is open (`components::pull_down`, `popup::button_menu`).
 - On the Mac, the native service, which shows every one of them, ⋯, », ⋮ and `Choice`'s list, as AppKit's menu, in the main window and in a dialog's (below). Windows and Linux keep the drawn ones.
@@ -1145,9 +1160,9 @@ Decision 91; its first slice is built. A right-click menu opens only in a named 
 | --- | --- | --- | --- |
 | The photo | Yes, at most two a tool; History's Reset first, Orientation ▸ | Export…; Background ▸ ([The background](#the-background)) | Built |
 | A thumbnail, in the Browser or a cell in Photo | Yes, at most two a tool; none that needs its photo open, so not History's Reset | Export…; Show in Folder once built | Built |
-| A tool's ⋯ (`Options`), its own section only | Yes, at most four | Reset, Copy Settings and Paste Settings (with Copy and Apply Parts, Phase 3) in `EDIT`; the layout's items, Pin Tool or Unpin Tool, Move Tool Up and Move Tool Down, Move Tool to Tab ▸ and Remove Tool, or Show Tool in Tab ▸ alone for a hidden tool ([Moving, pinning and floating sections](#moving-pinning-and-floating-sections)), in `LAYOUT`, last | Built: the layout's items (decision 96), added by the app after the tool's own (`menus::layout_items`) |
+| A tool's ⋯ (`Options`), its own section only | Yes, at most four | Reset, Copy Settings and Paste Settings (with Copy and Apply Parts, Phase 3) in `EDIT`; the layout's items, Pin Tool or Unpin Tool, Move Tool Up and Move Tool Down, Move Tool to Tab ▸ and Remove Tool, or Show Tool in Tab ▸ alone for a hidden tool ([Moving, pinning and floating sections](#moving-pinning-and-floating-sections)), in `LAYOUT`; then Help, last ([Help and the Apertrust Guide](#help-and-the-apertrust-guide)) | Built: the layout's items (decision 96), added by the app after the tool's own (`menus::layout_items`); Help planned (decision 97) |
 | The surround (`Surround`) | No | View › Background's items | Built |
-| The browser bar | No | Show Labels, Position ▸ | Built |
+| The browser bar | No | Show Labels, Position ▸; Help, last, planned (decision 97) | Built |
 | Collections' folder rows | No | Show in Folder, Open | Built |
 | The Browser's empty area | No | The browser bar's options, Select All, Select None | Later |
 | A History step | No | Go to Step, Show Tool, Compress up to Here, Truncate after Here | Later |
