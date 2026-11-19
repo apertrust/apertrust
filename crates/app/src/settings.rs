@@ -56,6 +56,7 @@
 //!
 //! [tools_panel]
 //! tab_names = false
+//! wheel_scrolls_panel = false
 //! show_hidden = true
 //! width = 480
 //!
@@ -203,6 +204,9 @@ pub struct Settings {
     pub log: Log,
     /// Whether the Tools panel's tabs show their names.
     pub tab_names: bool,
+    /// Whether the mouse wheel scrolls the Tools panel, a row taking it only with Ctrl
+    /// (Option on the Mac); off, darktable's default, a row under the pointer takes it.
+    pub wheel_scrolls_panel: bool,
     /// Whether the Tools panel shows the Hidden tab, Show Hidden Tools (decision 96).
     pub show_hidden: bool,
     /// The Tools panel's width in points, within `PANEL_WIDTHS`, as the user dragged it;
@@ -255,6 +259,7 @@ impl Default for Settings {
             jobs_window: None,
             log: Log::default(),
             tab_names: TOOLS_PANEL_TAB_NAMES.default(),
+            wheel_scrolls_panel: TOOLS_PANEL_WHEEL_SCROLLS_PANEL.default(),
             show_hidden: TOOLS_PANEL_SHOW_HIDDEN.default(),
             panel_width: None,
             viewer: Viewer::default(),
@@ -322,6 +327,7 @@ impl Settings {
                 folder: store.get(&LOG_WINDOW_FOLDER).map(PathBuf::from),
             },
             tab_names: store.get(&TOOLS_PANEL_TAB_NAMES),
+            wheel_scrolls_panel: store.get(&TOOLS_PANEL_WHEEL_SCROLLS_PANEL),
             show_hidden: store.get(&TOOLS_PANEL_SHOW_HIDDEN),
             panel_width: store.kept(&TOOLS_PANEL_WIDTH),
             viewer: Viewer {
@@ -426,6 +432,9 @@ impl Settings {
         }
         if s.tab_names != was.tab_names {
             store.set(&TOOLS_PANEL_TAB_NAMES, s.tab_names);
+        }
+        if s.wheel_scrolls_panel != was.wheel_scrolls_panel {
+            store.set(&TOOLS_PANEL_WHEEL_SCROLLS_PANEL, s.wheel_scrolls_panel);
         }
         if s.show_hidden != was.show_hidden {
             store.set(&TOOLS_PANEL_SHOW_HIDDEN, s.show_hidden);
@@ -1357,6 +1366,7 @@ mod tests {
                 folder: Some(PathBuf::from("/photos/logs")),
             },
             tab_names: false,
+            wheel_scrolls_panel: false,
             show_hidden: true,
             panel_width: Some(480.0),
             viewer: Viewer {
@@ -1521,6 +1531,7 @@ mod tests {
                     folder: None,
                 },
                 tab_names: true,
+                wheel_scrolls_panel: true,
                 show_hidden: false,
                 panel_width: None,
                 viewer: Viewer {
@@ -1733,6 +1744,7 @@ target = \"lightness\"
 [tools_panel]
 show_hidden = true
 tab_names = false
+wheel_scrolls_panel = false
 width = 480
 
 [viewer]
@@ -2351,6 +2363,34 @@ proof_margin = 0.3
         assert_eq!(settings.viewer.margin, 0.0);
         assert_eq!(settings.viewer.proof_margin, 0.12);
         assert!(conf(&["viewer.margin=wide"]).is_err());
+    }
+
+    /// Mouse wheel scrolls the Tools panel is on at first, kept off once turned off and read
+    /// so at the next start; `--conf` gives it for the run, its row's change refused and the
+    /// file keeping its own value.
+    #[test]
+    fn the_wheel_s_setting_is_kept_and_conf_gives_it_for_the_run() {
+        let folder = Folder::new("wheel-scrolls-panel");
+        let (_, settings) = Keeper::open(folder.storage());
+        assert!(settings.wheel_scrolls_panel);
+        let off = Settings {
+            wheel_scrolls_panel: false,
+            ..settings
+        };
+        change(&folder, &off);
+        assert!(folder.text().contains("wheel_scrolls_panel = false"));
+        let (_, settings) = Keeper::open(folder.storage());
+        assert!(!settings.wheel_scrolls_panel);
+
+        let overrides = conf(&["tools_panel.wheel_scrolls_panel=true"]).expect("read");
+        let (mut keeper, settings) = Keeper::open_with(folder.storage(), &overrides);
+        assert!(settings.wheel_scrolls_panel);
+        assert!(keeper.store.overridden(&TOOLS_PANEL_WHEEL_SCROLLS_PANEL));
+        let id = TOOLS_PANEL_WHEEL_SCROLLS_PANEL.id();
+        let updated = keeper.apply(&settings, id, Some(&Value::Boolean(false)));
+        assert!(updated.wheel_scrolls_panel);
+        keeper.flush();
+        assert!(folder.text().contains("wheel_scrolls_panel = false"));
     }
 
     /// A tool setting `--conf` gives keeps its value for the run: a change of its row and a

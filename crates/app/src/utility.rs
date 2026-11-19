@@ -125,6 +125,12 @@ pub trait UtilityTool {
     fn spacing(&self, _ui: &egui::Ui) -> Option<egui::Vec2> {
         None
     }
+
+    /// Where its page's slider and choice rows take the scroll wheel: under the pointer, as
+    /// a tool's, unless it says otherwise, as Export's only while focused (decision 90).
+    fn wheel(&self) -> parts::Wheel {
+        parts::Wheel::Pointer
+    }
 }
 
 /// What a utility's section did this frame: what its header asked the app for, its own
@@ -264,6 +270,10 @@ impl<T: UtilityTool> Rows for Page<'_, '_, T> {
 
     fn set_in(&self, rows: &[Row]) -> usize {
         self.count(rows)
+    }
+
+    fn wheel(&self) -> parts::Wheel {
+        self.drawn.borrow().0.wheel()
     }
 
     /// A custom row, by the utility's body; `UtilityDefinition::check` refuses every other

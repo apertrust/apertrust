@@ -81,7 +81,7 @@ use apertrust_ui::components::{
     self as parts, ActionRow, ButtonState, ButtonsAction, ButtonsRow, Choice, ChoiceAction,
     CollapsibleGroup, Curve, CurveAction, Equalizer, EqualizerAction, IconButton, PickerAction,
     PickerButton, ReadoutRow, Reference, ReferenceAction, ReferenceRow, Section, SectionAction,
-    Segmented, SliderAction, SliderRow, ToggleRow, WarningRow, group_label,
+    Segmented, SliderAction, SliderRow, ToggleRow, WarningRow, Wheel, group_label,
 };
 use apertrust_ui::i18n::Args;
 use apertrust_ui::{Translator, popup, translator};
@@ -1183,6 +1183,13 @@ pub trait Rows {
     /// says over (decision 77).
     fn on_edit(&self, _rect: egui::Rect) {}
 
+    /// Where its slider and choice rows take the scroll wheel: under the pointer, as a
+    /// tool's, unless a utility says otherwise, as Export's only while focused (decision
+    /// 90; `docs/gui.md`, The scroll wheel over a row).
+    fn wheel(&self) -> Wheel {
+        Wheel::Pointer
+    }
+
     /// Draws `row`, one of the rows its kind draws.
     fn own(&self, ui: &mut egui::Ui, row: &Row, changes: &mut Vec<Change>);
 
@@ -1723,6 +1730,7 @@ fn preset_row(ui: &mut egui::Ui, page: &Page, id: &'static str, changes: &mut Ve
         .name(&full)
         .promise(&promise)
         .style(parts::ChoiceStyle::Blended)
+        .wheel(page.wheel())
         .none_chosen(&custom)
         .disabled_options(&unavailable, &unavailable_tip)
         // A row with no option the photo can have can't run, so it is drawn disabled.
@@ -1796,6 +1804,7 @@ fn setting_row(
         let mut row = Choice::new(&label, &options, usize::from(*on))
             .name(&full)
             .style(parts::ChoiceStyle::Blended)
+            .wheel(page.wheel())
             .enabled(live);
         if let Some(promise) = &promise {
             row = row.promise(promise);
@@ -1823,6 +1832,7 @@ fn setting_row(
                 .default_value(widen(default))
                 .step(widen(step))
                 .decimals(usize::from(setting.decimals))
+                .wheel(page.wheel())
                 .enabled(live);
             if let Some(promise) = &promise {
                 row = row.promise(promise);
@@ -1885,6 +1895,7 @@ fn setting_row(
                 .disabled_options(&later, &later_tip)
                 .disabled_reasons(&reasons)
                 .style(parts::ChoiceStyle::Blended)
+                .wheel(page.wheel())
                 .enabled(live);
             if let Some(closed) = closed {
                 row = row.promise(closed);
@@ -2304,6 +2315,7 @@ fn slider_row(ui: &mut egui::Ui, page: &Page, slider: &Slider, changes: &mut Vec
             slider.track,
             shown.soft.or(slider.soft).unwrap_or((min, max)),
         ))
+        .wheel(page.wheel())
         .enabled(shown.available);
     if !slider.fill {
         row = row.no_fill();
@@ -2554,6 +2566,7 @@ fn choice_row(
                 .promise(&promise)
                 .style(parts::ChoiceStyle::Blended)
                 .mark(mark(shown.mark))
+                .wheel(Wheel::Pointer)
                 .enabled(shown.available)
                 .disabled_options(&later, &later_tip);
             if let Some(stored) = stored {
@@ -3443,6 +3456,39 @@ mod tests {
         assert_eq!(shown_as(0.0004, 3, -0.1, 0.1), 0.0);
         assert_eq!(shown_as(0.0126, 2, -4.0, 4.0), 0.01);
         assert_eq!(shown_as(9.0, 2, -4.0, 4.0), 4.0);
+    }
+
+    /// A run of notches over a tool's slider, Ctrl with the wheel while it scrolls the Tools
+    /// panel, is completed changes of one control, as its keys' are, which the session's
+    /// history merges into one step (decision 78; the engine's
+    /// `quick_changes_to_one_control_merge_into_one_step`); a plain scroll changes nothing.
+    #[test]
+    fn a_run_of_notches_is_completed_changes_of_one_control() {
+        let mut harness = panel(&Sample, untouched(&Sample));
+        harness.run();
+        harness
+            .get_by_role_and_label(Role::Slider, "tool-sample-control-brightness-full")
+            .hover();
+        harness.run();
+        let ctrl = Modifiers::CTRL | Modifiers::COMMAND;
+        for held in [Modifiers::NONE, ctrl, ctrl, ctrl] {
+            let event = egui::Event::MouseWheel {
+                unit: egui::MouseWheelUnit::Line,
+                delta: egui::vec2(0.0, 1.0),
+                phase: egui::TouchPhase::Move,
+                source: egui::MouseWheelSource::Wheel,
+                modifiers: held,
+            };
+            harness.event_modifiers(event, held);
+            harness.run_steps(4);
+        }
+        let set = |value| Change::Set {
+            tool: "sample",
+            control: "brightness",
+            value: ControlValue::Number(value),
+            done: true,
+        };
+        assert_eq!(harness.state().changes, [set(0.01), set(0.02), set(0.03)]);
     }
 
     #[test]

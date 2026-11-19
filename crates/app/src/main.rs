@@ -1655,6 +1655,9 @@ struct Shell {
     /// place and the tools found in the tab shown's, which stays as it was beneath.
     find: Option<find::Search>,
     tab_names: bool,
+    /// Whether the mouse wheel scrolls the Tools panel, a row taking it only with Ctrl,
+    /// Option on the Mac; off, a row under the pointer takes it plain.
+    wheel_scrolls_panel: bool,
     /// The Tools panel's width as the user dragged it, in points; None for the theme's.
     /// Kept while a narrower window shows the panel narrower ([`panel_widths`]).
     panel_width: Option<f32>,
@@ -1811,6 +1814,7 @@ impl Shell {
             hidden_for_now: false,
             find: None,
             tab_names: settings.tab_names,
+            wheel_scrolls_panel: settings.wheel_scrolls_panel,
             panel_width: settings.panel_width,
             guides: false,
             proof_margin: false,
@@ -2347,6 +2351,7 @@ impl Shell {
             jobs_window: self.jobs_window,
             log: self.log.clone(),
             tab_names: self.tab_names,
+            wheel_scrolls_panel: self.wheel_scrolls_panel,
             show_hidden: self.show_hidden,
             panel_width: self.panel_width,
             viewer: self.viewer,
@@ -3376,8 +3381,9 @@ impl Shell {
 
     /// Takes in what the Settings dialog's rows show of `settings` and shows it in the main
     /// window, `ctx`'s: the theme, the language, the interface's size, the sliders' marker,
-    /// the tab names, square thumbnails and whether Export asks before overwriting. The
-    /// engine's settings are the session's at its next start, and nothing of the shell's.
+    /// the tab names, what the wheel does over the Tools panel, square thumbnails and
+    /// whether Export asks before overwriting. The engine's settings are the session's at
+    /// its next start, and nothing of the shell's.
     fn follow(&mut self, settings: &Settings, ctx: &egui::Context) {
         if settings.theme != self.theme {
             self.theme = settings.theme;
@@ -3397,6 +3403,8 @@ impl Shell {
         self.marker = settings.marker;
         apertrust_ui::components::set_marker(ctx, self.marker);
         self.tab_names = settings.tab_names;
+        self.wheel_scrolls_panel = settings.wheel_scrolls_panel;
+        apertrust_ui::components::set_wheel_scrolls_panel(ctx, self.wheel_scrolls_panel);
         self.browser.square_thumbnails = settings.browser.square_thumbnails;
         self.log.keep = settings.log.keep;
         self.log.domains.clone_from(&settings.log.domains);
@@ -7550,6 +7558,7 @@ fn centred_note(ui: &mut egui::Ui, says: &str, middle: bool) {
 fn prepare(ctx: &egui::Context, shell: &Shell, scale: f32) {
     apertrust_ui::install(ctx, shell.look());
     apertrust_ui::components::set_marker(ctx, shell.marker);
+    apertrust_ui::components::set_wheel_scrolls_panel(ctx, shell.wheel_scrolls_panel);
     registry_keys_only(ctx);
     apertrust_ui::set_locale(ctx, shell.locale);
     ctx.options_mut(|o| o.zoom_factor = scale);
@@ -17544,9 +17553,10 @@ mod tests {
         assert_eq!(translator(&harness.ctx).locale(), Locale::Uk);
     }
 
-    /// Square thumbnails, the Photos page's, and the Tools panel's tab names, the Editing
-    /// page's, reach the shell at once; the engine's settings are kept for its next start
-    /// and the page shown for the dialog's next opening.
+    /// Square thumbnails, the Photos page's, and the Tools panel's tab names and what the
+    /// wheel does over it, the Editing page's, reach the shell at once; the engine's
+    /// settings are kept for its next start and the page shown for the dialog's next
+    /// opening.
     #[test]
     fn the_settings_window_s_other_rows_reach_the_grid_and_the_tools_panel_at_once() {
         use settings_dialog::Change;
@@ -17555,16 +17565,23 @@ mod tests {
         harness.run();
         press_action(&mut harness, ActionId::SETTINGS);
         assert!(!harness.state().shell.browser.square_thumbnails);
+        assert!(apertrust_ui::components::wheel_scrolls_panel(&harness.ctx));
         host.0.borrow_mut().outputs = vec![
             dialog_host::Output::Settings(Change::Set("settings_window.page", "photos".into())),
             dialog_host::Output::Settings(Change::Set("browser.square_thumbnails", true.into())),
             dialog_host::Output::Settings(Change::Set("tools_panel.tab_names", false.into())),
+            dialog_host::Output::Settings(Change::Set(
+                "tools_panel.wheel_scrolls_panel",
+                false.into(),
+            )),
             dialog_host::Output::Settings(Change::Set("engine.memory_budget", 4096.into())),
         ];
         harness.step();
         let d = harness.state();
         assert!(d.shell.browser.square_thumbnails);
         assert!(!d.shell.tab_names);
+        assert!(!d.shell.wheel_scrolls_panel);
+        assert!(!apertrust_ui::components::wheel_scrolls_panel(&harness.ctx));
         assert_eq!(d.keeper.engine().budget, 4096 << 20);
         assert_eq!(d.keeper.page(), apertrust_base::settings::Page::Photos);
         // And back to its default.

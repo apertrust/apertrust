@@ -2840,3 +2840,53 @@ fn renamed_options_are_held_under_the_settings_own_ids() {
         assert_eq!(UtilityTool::setting(&home(values), row), Some(chosen));
     }
 }
+
+/// One notch of the mouse wheel over the row `name` with `role`, `modifiers` held, up
+/// positive.
+fn wheel(
+    harness: &mut Harness<'_, Bench>,
+    role: Role,
+    name: &str,
+    notches: f32,
+    with: egui::Modifiers,
+) {
+    harness.get_by_role_and_label(role, name).hover();
+    settle(harness);
+    let event = egui::Event::MouseWheel {
+        unit: egui::MouseWheelUnit::Line,
+        delta: egui::vec2(0.0, notches),
+        phase: egui::TouchPhase::Move,
+        source: egui::MouseWheelSource::Wheel,
+        modifiers: with,
+    };
+    harness.event_modifiers(event, with);
+    settle(harness);
+}
+
+/// Only the focused row takes the wheel, never one under the pointer, whether the wheel
+/// scrolls the Tools panel, Option with it changing a row on the Mac, or changes a row
+/// plain (decision 90).
+#[test]
+fn only_the_focused_row_takes_the_wheel() {
+    use apertrust_ui::components::set_wheel_scrolls_panel;
+    let (alt, none) = (egui::Modifiers::ALT, egui::Modifiers::NONE);
+    for (scrolls, with) in [(true, alt), (false, none)] {
+        let mut harness = open();
+        set_wheel_scrolls_panel(&harness.ctx, scrolls);
+        let before = held(&mut harness);
+        wheel(&mut harness, Role::Slider, "Quality", 1.0, with);
+        wheel(&mut harness, Role::ComboBox, "Allow upscaling", -1.0, with);
+        assert_eq!(held(&mut harness), before, "{scrolls}");
+        harness
+            .get_by_role_and_label(Role::Slider, "Quality")
+            .focus();
+        settle(&mut harness);
+        wheel(&mut harness, Role::Slider, "Quality", 1.0, with);
+        assert_eq!(held(&mut harness).jpeg_quality, before.jpeg_quality + 1);
+        let row = "Allow upscaling";
+        harness.get_by_role_and_label(Role::ComboBox, row).focus();
+        settle(&mut harness);
+        wheel(&mut harness, Role::ComboBox, row, -1.0, with);
+        assert!(held(&mut harness).upscale, "{scrolls}");
+    }
+}

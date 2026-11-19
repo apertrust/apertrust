@@ -37,6 +37,10 @@
 //! - It is a combo box to screen readers, named by the control's full name, the chosen
 //!   option its value, and a focus stop before its marker and quad. Space, Enter or ↓
 //!   opens the list.
+//! - A row given a [`Wheel`] takes the scroll wheel as darktable's combobox does
+//!   (`_combobox_next_sensitive`): a notch down the next option that can be chosen, up the
+//!   one before, stopping at the ends, whatever modifier is held beyond the one the wheel
+//!   needs, and the focus with it ([`super::wheel`]); not while the list is open.
 //! - The list is the popup service's dropdown, [`popup::Kind::Dropdown`] (decision 42),
 //!   opened and answered by the row itself, which calls [`popup::show`] while it is open:
 //!   under the option, its end edge on the option's, the chosen option checked and
@@ -64,8 +68,9 @@ use egui::{
     Color32, FontId, Key, Modifiers, Rect, Role, Sense, Ui, UiBuilder, WidgetInfo, pos2, vec2,
 };
 
+use super::wheel::notches;
 use super::{
-    IconButton, Mark, Quad, field_inset, focus_ring, focus_ring_centred, paint_keep_marker,
+    IconButton, Mark, Quad, Wheel, field_inset, focus_ring, focus_ring_centred, paint_keep_marker,
     truncated,
 };
 use crate::popup::{self, Answer, Item, Request};
@@ -123,6 +128,7 @@ pub struct Choice<'a> {
     description: Option<&'a str>,
     /// The Boxed box's least width, so boxes in a column share one.
     min_box: f32,
+    wheel: Wheel,
 }
 
 impl<'a> Choice<'a> {
@@ -148,6 +154,7 @@ impl<'a> Choice<'a> {
             separator: None,
             description: None,
             min_box: 0.0,
+            wheel: Wheel::Off,
         }
     }
 
@@ -253,6 +260,48 @@ impl<'a> Choice<'a> {
     pub fn description(mut self, text: &'a str) -> Self {
         self.description = Some(text);
         self
+    }
+
+    /// Where the row takes the scroll wheel, a notch an option ([`Wheel`]): nowhere unless
+    /// given, as in the Settings dialog.
+    pub fn wheel(mut self, wheel: Wheel) -> Self {
+        self.wheel = wheel;
+        self
+    }
+
+    /// The option `count` notches of the wheel reach from `from`, up positive and back,
+    /// passing over those that cannot be chosen and stopping at the ends, as darktable's
+    /// `_combobox_next_sensitive`; from none chosen the first that can be going down and
+    /// the last going up. `from` where none can be reached.
+    fn stepped(&self, from: Option<usize>, count: i32) -> Option<usize> {
+        let n = self.options.len();
+        let down = count < 0;
+        let mut left = count.unsigned_abs();
+        let mut at = from.filter(|i| *i < n);
+        let first = match at {
+            Some(i) if down => Some(i + 1),
+            Some(i) => i.checked_sub(1),
+            None if down => Some(0),
+            None => n.checked_sub(1),
+        };
+        let Some(mut cur) = first else {
+            return at;
+        };
+        while left > 0 && cur < n {
+            if !self.disabled_now(cur) {
+                at = Some(cur);
+                left -= 1;
+            }
+            cur = if down {
+                cur + 1
+            } else {
+                match cur.checked_sub(1) {
+                    Some(before) => before,
+                    None => break,
+                }
+            };
+        }
+        at
     }
 
     /// The list under `anchor`, each option an item whose id is its index: the chosen one
@@ -512,6 +561,17 @@ impl<'a> Choice<'a> {
         // also move down into the list.
         let list = id.with("list");
         let open = popup::is_open(ui.ctx(), list);
+        // The wheel over the row, as darktable's combobox takes it: an option a notch.
+        if let Some(turned) = notches(ui, id, row, self.wheel, self.enabled && !open) {
+            // Each run of notches in the order it came, so notches in one frame reach the
+            // option the same notches in frames of their own would.
+            let reached = (turned.steps.iter())
+                .fold(self.selected, |at, &(notches, _)| self.stepped(at, notches));
+            if let Some(i) = reached.filter(|i| Some(*i) != self.selected) {
+                action = Some(ChoiceAction::Set(i));
+            }
+            ui.memory_mut(|m| m.request_focus(id));
+        }
         let down = self.enabled
             && response.has_focus()
             && !open

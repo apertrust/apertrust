@@ -55,10 +55,12 @@
 //! shown. Arrow keys step (Shift ten steps, Alt a tenth), Home and End go to the track's
 //! ends, Delete or a double-click on the label or the track resets, and Enter opens the
 //! value field until darktable's popup comes (planned: decision 42; `docs/gui.md`, The
-//! slider popup). Tab goes through the row as it reads: the marker, the quad, the value
-//! field while it is open, then the track. Screen readers hear the value as it is drawn,
-//! with its unit, and are told the range a value may hold, which a value they set may
-//! reach, and step inside the track's span, as the keys do.
+//! slider popup). A row given a [`Wheel`] takes the scroll wheel as darktable's slider
+//! does, a notch a key's step, each sent done as a key's is, and takes the focus with it
+//! ([`super::wheel`]). Tab goes through the row as it reads: the marker, the quad, the
+//! value field while it is open, then the track. Screen readers hear the value as it is
+//! drawn, with its unit, and are told the range a value may hold, which a value they set
+//! may reach, and step inside the track's span, as the keys do.
 
 use std::ops::RangeInclusive;
 
@@ -71,9 +73,10 @@ use egui::{
 };
 
 use super::value_field::number_char;
+use super::wheel::notches;
 use super::{
-    ButtonState, IconButton, PickerAction, PickerButton, ValueField, field_inset, focus_ring,
-    focus_ring_centred, marker, paint_keep_marker, truncated,
+    ButtonState, IconButton, PickerAction, PickerButton, ValueField, Wheel, field_inset,
+    focus_ring, focus_ring_centred, marker, paint_keep_marker, truncated,
 };
 use crate::{Icon, Theme, theme, translator};
 
@@ -178,6 +181,7 @@ pub struct SliderRow<'a> {
     picker: Option<PickerButton<'a>>,
     enabled: bool,
     unit: Option<&'a str>,
+    wheel: Wheel,
 }
 
 impl<'a> SliderRow<'a> {
@@ -204,6 +208,7 @@ impl<'a> SliderRow<'a> {
             picker: None,
             enabled: true,
             unit: None,
+            wheel: Wheel::Off,
         }
     }
 
@@ -298,6 +303,13 @@ impl<'a> SliderRow<'a> {
     /// its message less `-value` writes, `unit-ev`: "Exposure, in EV".
     pub fn unit(mut self, message: &'a str) -> Self {
         self.unit = Some(message);
+        self
+    }
+
+    /// Where the row takes the scroll wheel, a notch a step as its keys' ([`Wheel`]):
+    /// nowhere unless given, as in the Settings dialog.
+    pub fn wheel(mut self, wheel: Wheel) -> Self {
+        self.wheel = wheel;
         self
     }
 
@@ -461,6 +473,24 @@ impl<'a> SliderRow<'a> {
                     })
                 });
                 keyed_open = entered || typed;
+            }
+            // The wheel over the row, as darktable's `_widget_scroll`: a notch a step, as a
+            // key's, and the focus with it; none while the value field is open.
+            let field_open = ui.data(|d| d.get_temp::<Field>(open_id)) == Some(Field::Open);
+            if let Some(turned) = notches(ui, id, row, self.wheel, !field_open) {
+                // Each notch by its own steps and in the order it came, held to the range
+                // after each run, so notches in one frame move it as far as the same notches
+                // in frames of their own.
+                let value = (turned.steps.iter()).fold(shown, |value, &(notches, steps)| {
+                    (value + f64::from(notches) * nudge(steps * step)).clamp(low, high)
+                });
+                if value != shown {
+                    // One value a frame: a key's in the same frame is taken in, not lost.
+                    actions.retain(|a| !matches!(a, SliderAction::Set { .. }));
+                    shown = value;
+                    actions.push(SliderAction::Set { value, done: true });
+                }
+                ui.memory_mut(|m| m.request_focus(id));
             }
             let (more, less, set) = ui.input(|i| {
                 (
