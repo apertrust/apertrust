@@ -1089,6 +1089,18 @@ menu-recent-in = { $name } — { $parent }
 # Exposure", "Undo Go to Step". With nothing to name they read action-undo and action-redo.
 menu-undo-step = Undo { $step }
 menu-redo-step = Redo { $step }
+# File › Export… and Export Again while more than one photo is selected: how many they
+# export, $count, every selected photo.
+menu-export-photos =
+    { $count ->
+        [one] Export { $count } Photo…
+       *[other] Export { $count } Photos…
+    }
+menu-export-photos-again =
+    { $count ->
+        [one] Export { $count } Photo Again
+       *[other] Export { $count } Photos Again
+    }
 # The Mac's own items in the app menu and the Window menu, which macOS performs.
 menu-services = Services
 menu-hide-app = Hide { app-name }

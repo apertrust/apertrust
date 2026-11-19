@@ -835,6 +835,20 @@ menu-open-recent = Відкрити недавні
 menu-recent-in = { $name } — { $parent }
 menu-undo-step = Скасувати: { $step }
 menu-redo-step = Повторити: { $step }
+menu-export-photos =
+    { $count ->
+        [one] Експортувати { $count } знімок…
+        [few] Експортувати { $count } знімки…
+        [many] Експортувати { $count } знімків…
+       *[other] Експортувати { $count } знімка…
+    }
+menu-export-photos-again =
+    { $count ->
+        [one] Експортувати ще раз { $count } знімок
+        [few] Експортувати ще раз { $count } знімки
+        [many] Експортувати ще раз { $count } знімків
+       *[other] Експортувати ще раз { $count } знімка
+    }
 menu-services = Служби
 menu-hide-app = Приховати { app-name }
 menu-hide-others = Приховати інші

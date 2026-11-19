@@ -550,8 +550,8 @@ impl Mirror {
             Event::Values(values) => {
                 if let PhotoState::Open(photo) = &self.photo {
                     // The photo's cell and the Edited sort follow its edit at once.
-                    self.folder.edited(&photo.path, values.edited);
                     let editable = photo.view_only.is_none();
+                    self.folder.edited(&photo.path, values.edited, editable);
                     let live = values.live;
                     self.saving.reported(&values);
                     let image = self.photo.image();

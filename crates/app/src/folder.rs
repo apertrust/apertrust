@@ -425,11 +425,13 @@ impl FolderState {
         }
     }
 
-    /// The photo at `path`, open, has an edit or none now, as the session reports its
-    /// values: its place in the listing says so, and the Edited sort moves it, without a new
-    /// reading of the folder. An edit a newer Apertrust wrote, or a sidecar that could not
-    /// be read, stays as the reading found it.
-    pub fn edited(&mut self, path: &Path, edited: bool) {
+    /// The photo at `path`, open, `editable` or for viewing only, has an edit or none now,
+    /// as the session reports its values: its place in the listing says so, and the Edited
+    /// sort moves it, without a new reading of the folder. An edit a newer Apertrust wrote
+    /// stays as the reading found it, and so does a sidecar that could not be read while the
+    /// photo is open for viewing only; once it opens editable, its history repaired as
+    /// Discard History repairs it, its values say.
+    pub fn edited(&mut self, path: &Path, edited: bool, editable: bool) {
         let photo = match &mut self.folder {
             Folder::Open(listing) => listing.position(path).map(|i| &mut listing.photos[i]),
             Folder::Alone { paths, photos, .. } => {
@@ -446,11 +448,12 @@ impl FolderState {
         } else {
             library::EditState::None
         };
-        if matches!(
-            photo.edit,
-            library::EditState::None | library::EditState::Edited
-        ) && photo.edit != now
-        {
+        let follows = match photo.edit {
+            library::EditState::None | library::EditState::Edited => true,
+            library::EditState::Unreadable(_) => editable,
+            library::EditState::ViewOnly(_) => false,
+        };
+        if follows && photo.edit != now {
             photo.edit = now;
             self.reorder();
         }
@@ -1419,7 +1422,7 @@ mod tests {
         state.locate(None);
         assert_eq!(state.active_shown(), None);
         assert_eq!(active(&state), Some((y.clone(), folder(&y))));
-        state.edited(&z, true);
+        state.edited(&z, true, true);
         assert_eq!(state.photos()[2].edit, EditState::Edited);
         assert_eq!(state.photos()[0].edit, EditState::None);
     }
@@ -1530,6 +1533,28 @@ mod tests {
 
     fn by(key: SortKey, descending: bool) -> Sort {
         Sort { key, descending }
+    }
+
+    /// An unreadable sidecar stays so while its photo is open for viewing only; once it
+    /// opens editable, repaired, its values say whether it has an edit. A newer
+    /// Apertrust's edit stays as the reading found it.
+    #[test]
+    fn a_repaired_sidecar_s_photo_follows_its_values() {
+        let mut state = FolderState::default();
+        state.opening(PathBuf::from("/photos"), 1);
+        state.apply(&opened(1, "/photos"));
+        let unreadable = EditState::Unreadable("bad".to_owned());
+        let photos = vec![photo("a.ARW", unreadable.clone())];
+        state.apply(&Event::Library(LibraryEvent::Listed {
+            open: 1,
+            photos,
+            done: true,
+        }));
+        let a = PathBuf::from("/photos/a.ARW");
+        state.edited(&a, false, false);
+        assert_eq!(state.photos()[0].edit, unreadable);
+        state.edited(&a, false, true);
+        assert_eq!(state.photos()[0].edit, EditState::None);
     }
 
     #[test]

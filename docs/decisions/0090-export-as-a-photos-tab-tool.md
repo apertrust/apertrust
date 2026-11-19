@@ -2,7 +2,7 @@
 
 ## Context
 
-Export holds darktable's export module row for row ([0056](0056-export-as-an-engine-job.md)). It is built as a tool of the Photos tab acting on the active photo, its rows drawn with the Tools panel's controls in `crates/app/src/export.rs`, tested in `export/tests.rs`; its groups, Summary, warnings and button states are built; what is planned is the selection, the keys, the preview's in-view rule, presets and metadata.
+Export holds darktable's export module row for row ([0056](0056-export-as-an-engine-job.md)). It is built as a tool of the Photos tab acting on the selection, else the active photo, its rows drawn with the Tools panel's controls in `crates/app/src/export.rs`, tested in `export/tests.rs`; its groups, Summary, warnings and button states are built; what is planned is the keys, the preview of the whole selection, the preview's in-view rule, presets and metadata.
 
 darktable draws its export module in the lighttable's side panel, acting on the selected images, parted by the section labels storage options, format options and global options (`src/libs/export.c` at the reference release). Its copy & import is a dialog listing the source's files (`src/libs/import.c`), its import module only buttons. In Apertrust the Photos tab already holds what is about photos as items, and the Browser's selection already says which photos ([0037](0037-one-view-the-photos-tab.md), [0073](0073-the-photos-tabs-tools-browse-first-filters-in-folder-mode.md)); a sheet's checks would be a second way of choosing them.
 
@@ -10,7 +10,7 @@ The questions are where Export lives, what it acts on, what its keys do, what be
 
 ## Decision
 
-**Export is one tool of the Tools panel, a utility, last in the Photos tab:** darktable's export module, row for row, acting on the selection. Phase 3, its first parts built, for the active photo: the section with its groups, the path on one line, the header's ↺ and disabled presets button, the Summary, the warnings and the button in each of its states, which Export… and Ctrl+E reveal; the selection, the keys, the preview's rule and presets are planned.
+**Export is one tool of the Tools panel, a utility, last in the Photos tab:** darktable's export module, row for row, acting on the selection. Phase 3, its first parts built: the section with its groups, the path on one line, the header's ↺ and disabled presets button, the Summary, the warnings and the button in each of its states, which Export… and Ctrl+E reveal, and the export of the selection with its count; the keys, the preview's rule and presets are planned.
 
 ### The tool
 
@@ -30,7 +30,7 @@ The questions are where Export lives, what it acts on, what its keys do, what be
 
 ### What it acts on
 
-- **The window's selection, else the active photo;** the active photo alone until Phase 3 can select several. View-only photos, whose edits a newer Apertrust wrote or whose history cannot be read, are left out and counted in a warning; with only those, the button is disabled, saying why.
+- **The window's selection, else the active photo** (built), every selected photo of the folder in the Browser's order; photos opened alone are selected one at a time, the active one, so that one alone. View-only photos, whose edits a newer Apertrust wrote or whose history cannot be read, are left out and counted in a warning; with only those, the button is disabled, saying why.
 - **An export leaves the selection and the tab as they were,** the focus on the button; the jobs window opens without taking the focus ([0057](0057-jobs-as-darktables-control-jobs.md)), and a notice with Show in Finder says when each export ends (with the library's notices). Export Again exports the window's selection with the settings as they stand.
 - **The settings are taken when Export is pressed,** each photo's edit as it is then ([0056](0056-export-as-an-engine-job.md)); a change during a job reaches only the next.
 - **No per-photo destination marks** on the Browser: On conflict's note and the warning give the counts. Marks are revisited in the usability pass after Phase 3.
@@ -73,8 +73,8 @@ Nothing new: `Command::Export { photos, settings, places }` and `PreviewExport {
 ## Consequences
 
 - `crates/app/src/export.rs` is the Export tool's section. The dialog host serves Settings, the jobs and log windows, Linux's alerts and the prompts, and no Export.
-- `apertrust-export`, the `UserExport` job and the `export.*` settings are unchanged. Export Again gains its key, and with Phase 3's selection it sends the selected photos where it sends the open photo alone today. `PreviewExport` gains only its `focus`, planned since [0056](0056-export-as-an-engine-job.md).
+- `apertrust-export`, the `UserExport` job and the `export.*` settings are unchanged. Export Again gains its key, and sends the selected photos, else the photo open, as the tool does. `PreviewExport` gains only its `focus`, planned since [0056](0056-export-as-an-engine-job.md).
 - `apertrust-ui` gains the setting rows and a `Button` with its words centred; the header is every tool's, drawn from its `ToolDefinition` with the buttons it declares (93). The sheets' `export.column_width`, `export.order`, `export.keep_open` and `export.thumbnails` are never added.
 - [0084](0084-export-as-a-sheet-of-export-tools.md) is superseded. [0086](0086-import-as-a-full-window-sheet.md) is Import's alone; [0041](0041-dialogs-as-native-modal-windows.md) lists Import and Print as sheets and Export as a tool; [0056](0056-export-as-an-engine-job.md)'s `focus` is the active photo; [0073](0073-the-photos-tabs-tools-browse-first-filters-in-folder-mode.md) ends the Photos tab with Export; [0029](0029-a-tool-is-darktables-page.md) records Global options, open at first, as the one exception to "closed at first"; [0004](0004-tools-for-people-operations-for-algorithms.md), [0037](0037-one-view-the-photos-tab.md), [0042](0042-numbers-shown-typed-and-stored.md), [0083](0083-the-side-panels-layout-dragged-and-floating.md) and [0085](0085-import-in-folder-mode.md) follow; so do the scroll wheel's rule and the default keyboard map in [gui.md](../gui.md#the-scroll-wheel-over-a-row).
-- Built, for the active photo: the tool with its groups, the Summary, the warnings and the button's states at the tool's end, the rows with darktable's choices of No and Yes, the one-line size row, Default settings and Ctrl+E's reveal. Planned: the new keys, the preview's in-view rule, the selection, then presets, Multi-preset export, Metadata and Style ([gui.md](../gui.md#the-build-in-steps)).
+- Built: the tool with its groups, the Summary, the warnings and the button's states at the tool's end, the rows with darktable's choices of No and Yes, the one-line size row, Default settings, Ctrl+E's reveal, and the export of the selection, else the active photo, with its count. Planned: the new keys, the preview of the whole selection, the preview's in-view rule, then presets, Multi-preset export, Metadata and Style ([gui.md](../gui.md#the-build-in-steps)).
 - [gui.md](../gui.md#the-export-tool) describes the tool; the wireframe's Export board is redrawn as the tool, and the `ui-conventions` and `desktop-architecture` skills are to describe it.

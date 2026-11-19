@@ -838,6 +838,20 @@ menu-open-recent = Otwórz ostatnie
 menu-recent-in = { $name } — { $parent }
 menu-undo-step = Cofnij: { $step }
 menu-redo-step = Ponów: { $step }
+menu-export-photos =
+    { $count ->
+        [one] Eksportuj { $count } zdjęcie…
+        [few] Eksportuj { $count } zdjęcia…
+        [many] Eksportuj { $count } zdjęć…
+       *[other] Eksportuj { $count } zdjęcia…
+    }
+menu-export-photos-again =
+    { $count ->
+        [one] Eksportuj ponownie { $count } zdjęcie
+        [few] Eksportuj ponownie { $count } zdjęcia
+        [many] Eksportuj ponownie { $count } zdjęć
+       *[other] Eksportuj ponownie { $count } zdjęcia
+    }
 menu-services = Usługi
 menu-hide-app = Ukryj { app-name }
 menu-hide-others = Ukryj pozostałe
