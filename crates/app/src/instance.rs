@@ -620,7 +620,7 @@ mod channel {
     }
 
     /// One try to hand `hand_off` in format `format` to the instance on `canonical`, its
-    /// server checked to run as `user` first, the whole exchange over by `deadline`.
+    /// server checked to run as `user` first, the whole exchange, its connection included, over by `deadline`.
     pub fn attempt(
         canonical: &Path,
         hand_off: &HandOff,
@@ -628,18 +628,21 @@ mod channel {
         user: u32,
         deadline: Instant,
     ) -> Attempt {
-        let mut stream = match connect(canonical, user) {
-            Ok(Some(stream)) => stream,
-            Ok(None) => return Attempt::NotOwn,
-            Err(_) => return Attempt::Unreached,
-        };
-        let hand_off = hand_off.clone();
+        let (canonical, hand_off) = (canonical.to_owned(), hand_off.clone());
+        // The connection inside the deadline too: on Linux a full queue of connections
+        // waiting on an instance that does not accept them holds the connect.
         let exchanged = within(deadline, move |turn| {
+            let mut stream = match connect(&canonical, user) {
+                Ok(Some(stream)) => stream,
+                Ok(None) => return Err(Failed::NotOwn),
+                Err(_) => return Err(Failed::Unsent),
+            };
             exchange(&mut stream, &hand_off, format, turn)
         });
         match exchanged {
             Ok(answer) => Attempt::Answered(answer),
             Err(Failed::Unsent) => Attempt::Unreached,
+            Err(Failed::NotOwn) => Attempt::NotOwn,
             Err(Failed::Unconfirmed(error)) => Attempt::Unconfirmed(error),
         }
     }
@@ -707,11 +710,12 @@ mod channel {
     }
 
     /// How an exchange failed: before the hand-off was sent whole, which the instance
-    /// cannot have taken, since it reads only a whole message; or after, waiting for its
-    /// answer.
+    /// cannot have taken, since it reads only a whole message; at once, its server another
+    /// user's, nothing sent; or after, waiting for its answer.
     #[derive(Debug)]
     pub enum Failed {
         Unsent,
+        NotOwn,
         Unconfirmed(io::Error),
     }
 
