@@ -385,6 +385,110 @@ fn a_listing_cancelled_leaves_the_folder_with_no_photo() {
     remove(&elsewhere);
 }
 
+/// The job of the open numbered `open`, from the events that tell it added.
+fn job_of(events: &[Event], open: u64) -> Option<JobId> {
+    events.iter().find_map(|e| match e {
+        Event::Job {
+            event: JobEvent::Added { job, .. },
+            command: Some(c),
+        } if *c == open => Some(*job),
+        _ => None,
+    })
+}
+
+/// Waits for the answer to the selection command numbered `command`: its refusal, or a
+/// selection told through it, which this returns.
+fn answer(session: &Session, wakes: &Receiver<()>, command: u64) -> Result<Selection, ()> {
+    let refused = |e: &Event| matches!(e, Event::Failed(SessionError::Refused { command: c, .. }) if *c == command);
+    let told = |e: &Event| matches!(e, Event::Selection(s) if s.through >= command);
+    let events = until(session, wakes, |e| refused(e) || told(e));
+    match events.into_iter().find(|e| refused(e) || told(e)) {
+        Some(Event::Selection(selection)) => Ok(selection),
+        _ => Err(()),
+    }
+}
+
+/// The folder's reading cancelled once it has sent its last chunk, which the Browser keeps,
+/// but before that chunk reaches the engine thread: the cancel changes nothing, so the
+/// photos stay the collection, as the Browser shows them.
+#[test]
+fn a_cancel_after_the_last_chunk_was_sent_keeps_the_listing() {
+    let gpu = gpu();
+    let folder = three_photos("selection-cancel-late");
+    let (session, wakes) = start_with(&gpu, &[&Sample], synthetic);
+    session.send(Command::Resize {
+        width: 64,
+        height: 48,
+    });
+    // The reading held with its last chunk claimed, before it sends it.
+    let (hold, begun, permit) = export_job::testing::Hold::new();
+    session.send(Command::HoldFolder(hold.holding_last_chunk()));
+    let open = session.send(open_folder(&folder));
+    let added = |e: &Event| matches!(e, Event::Job { event: JobEvent::Added { .. }, command: Some(c) } if *c == open);
+    let events = until(&session, &wakes, added);
+    let job = job_of(&events, open).expect("its job");
+    begun
+        .recv_timeout(TEST_WAIT)
+        .expect("the last chunk is claimed");
+    session.send(Command::CancelJob { job });
+    // A refusal after it proves the cancel taken before the chunk is sent.
+    let elsewhere = scratch("selection-cancel-late-elsewhere");
+    let refused = session.send(select(SelectionCommand::Add(elsewhere.clone())));
+    assert!(answer(&session, &wakes, refused).is_err());
+    drop(permit);
+    let listed = |e: &Event| matches!(e, Event::Library(LibraryEvent::Listed { open: o, done: true, .. }) if *o == open);
+    let events = until(&session, &wakes, listed);
+    let ended = |e: &Event| matches!(e, Event::Job { event: JobEvent::Ended { job: j, .. }, .. } if *j == job);
+    if !events.iter().any(ended) {
+        until(&session, &wakes, ended);
+    }
+    // A, listed, is one of the collection's.
+    let set = session.send(select(SelectionCommand::Set(vec![folder.join("A.ARW")])));
+    let selection = answer(&session, &wakes, set).expect("A is in the collection");
+    assert_eq!(selection.photos, [folder.join("A.ARW")]);
+    drop(session);
+    remove(&folder.join("A.ARW"));
+    remove(&elsewhere);
+}
+
+/// A selection command sent before a chunk of the listing and taken in one batch with it
+/// is applied before it: B, not yet listed, is refused; sent after it, B is selected.
+#[test]
+fn a_command_and_a_chunk_in_one_batch_apply_in_the_order_sent() {
+    let gpu = gpu();
+    let folder = three_photos("selection-chunk-order");
+    let (session, wakes) = start_with(&gpu, &[&Sample], synthetic);
+    session.send(Command::Resize {
+        width: 64,
+        height: 48,
+    });
+    // A open, so the engine renders, and waits at the gate, as the test holds it.
+    let a = folder.join("A.ARW");
+    open_live(&session, &wakes, &a);
+    let (hold, begun, permit) = export_job::testing::Hold::new();
+    session.send(Command::HoldFolder(hold));
+    let open = session.send(open_folder(&folder));
+    begun.recv_timeout(TEST_WAIT).expect("the reading begins");
+    // Held at the gate, the engine takes the command and the chunk after it in one batch.
+    let held = one_batch(&gpu, &session, 60);
+    let b = folder.join("B.ARW");
+    let early = session.send(select(SelectionCommand::Add(b.clone())));
+    drop(permit);
+    // The chunk reaches the engine's inbox before the client.
+    let listed = |e: &Event| matches!(e, Event::Library(LibraryEvent::Listed { open: o, done: true, .. }) if *o == open);
+    until(&session, &wakes, listed);
+    drop(held);
+    assert!(
+        answer(&session, &wakes, early).is_err(),
+        "B, not yet listed, is refused"
+    );
+    let late = session.send(select(SelectionCommand::Add(b.clone())));
+    let selection = answer(&session, &wakes, late).expect("B, listed, is selected");
+    assert_eq!(selection.photos, [a.clone(), b]);
+    drop(session);
+    remove(&a);
+}
+
 /// A photo's change whose writes fail, at its close too, leaves it read as its sidecar
 /// holds it: `Unedited` selects it, as nothing was saved. On Unix, by a folder no write
 /// lands in, unless the tests run with the rights to write there anyway.
