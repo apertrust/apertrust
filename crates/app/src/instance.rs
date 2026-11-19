@@ -546,7 +546,7 @@ mod channel {
     use std::ffi::{OsStr, OsString};
     use std::io::{self, Read, Write};
     use std::path::{Path, PathBuf};
-    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
     use std::sync::{Arc, Mutex, mpsc};
     use std::thread::JoinHandle;
     use std::time::{Duration, Instant};
@@ -611,8 +611,8 @@ mod channel {
             Err(_) => return Attempt::Unreached,
         };
         let hand_off = hand_off.clone();
-        let exchanged = within(deadline, move |sending| {
-            exchange(&mut stream, &hand_off, format, sending)
+        let exchanged = within(deadline, move |turn| {
+            exchange(&mut stream, &hand_off, format, turn)
         });
         match exchanged {
             Ok(answer) => Attempt::Answered(answer),
@@ -623,15 +623,16 @@ mod channel {
 
     /// Runs `work`, an exchange, on a thread of its own, and waits for it no later than
     /// `deadline`: Windows' pipe has no timeouts, so an instance that never greets or never
-    /// answers would hold a read for ever. Past the deadline the exchange counts as unsent,
-    /// or, once `work` has marked the flag it is given, as sent without an answer; its
-    /// thread is left to end with the process.
+    /// answers would hold a read for ever. Past the deadline the exchange is given up as
+    /// unsent, `work` then never sending; or, once `work` has taken the [`Turn`] it is
+    /// given to send, counts as sent without an answer. Its thread is left to end with the
+    /// process.
     pub fn within(
         deadline: Instant,
-        work: impl FnOnce(&AtomicBool) -> Result<Answer, Failed> + Send + 'static,
+        work: impl FnOnce(&Turn) -> Result<Answer, Failed> + Send + 'static,
     ) -> Result<Answer, Failed> {
-        let sending = Arc::new(AtomicBool::new(false));
-        let marked = Arc::clone(&sending);
+        let turn = Arc::new(Turn(AtomicU8::new(Turn::WAITING)));
+        let marked = Arc::clone(&turn);
         let (answer, answered) = mpsc::channel();
         let spawned = std::thread::Builder::new()
             .name("hand-off".into())
@@ -643,10 +644,42 @@ mod channel {
         }
         match answered.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
             Ok(exchanged) => exchanged,
-            Err(_) if sending.load(Ordering::Acquire) => {
-                Err(Failed::Unconfirmed(io::ErrorKind::TimedOut.into()))
-            }
-            Err(_) => Err(Failed::Unsent),
+            Err(_) if turn.give_up() => Err(Failed::Unsent),
+            Err(_) => Err(Failed::Unconfirmed(io::ErrorKind::TimedOut.into())),
+        }
+    }
+
+    /// An exchange's one turn, taken by whichever comes first: its thread, to send the
+    /// hand-off, or the side waiting for it, to give it up at the deadline. So a hand-off
+    /// is never sent once its start has said it was not.
+    pub struct Turn(AtomicU8);
+
+    impl Turn {
+        const WAITING: u8 = 0;
+        const SENDING: u8 = 1;
+        const GIVEN_UP: u8 = 2;
+
+        /// Takes the turn to send: false where the exchange was given up, nothing to be
+        /// sent.
+        pub fn send(&self) -> bool {
+            let taken = self.0.compare_exchange(
+                Turn::WAITING,
+                Turn::SENDING,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            );
+            taken.is_ok()
+        }
+
+        /// Gives the exchange up, unless sending has begun: whether it was.
+        fn give_up(&self) -> bool {
+            let taken = self.0.compare_exchange(
+                Turn::WAITING,
+                Turn::GIVEN_UP,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            );
+            taken.is_ok()
         }
     }
 
@@ -661,20 +694,22 @@ mod channel {
 
     /// A second start's side of the exchange on `stream`: the instance's greeting, the
     /// foreground right handed to its process on Windows, `hand_off` sent in format
-    /// `format`, `sending` marked just before, then the answer.
+    /// `format` once `turn` is taken, then the answer.
     fn exchange(
         stream: &mut Stream,
         hand_off: &HandOff,
         format: u32,
-        sending: &AtomicBool,
+        turn: &Turn,
     ) -> Result<Answer, Failed> {
         let hello = read_frame(stream).map_err(|_| Failed::Unsent)?;
         let process = hello_process(&hello).map_err(|_| Failed::Unsent)?;
         // Before the hand-off, so the instance may come forward as it takes it.
         let _ = apertrust_display::instance::allow_foreground(process);
         // Before the first byte, so a deadline that passes while it is written never counts
-        // as unsent, to be sent again.
-        sending.store(true, Ordering::Release);
+        // as unsent, to be sent again; and never once the exchange was given up.
+        if !turn.send() {
+            return Err(Failed::Unsent);
+        }
         write_frame(stream, &request_fields(hand_off, format)).map_err(|_| Failed::Unsent)?;
         stream.flush().map_err(Failed::Unconfirmed)?;
         let answer = read_frame(stream).map_err(Failed::Unconfirmed)?;
@@ -1390,29 +1425,26 @@ mod tests {
     }
 
     /// An instance of the test's own on `fixture`, in this process: the lock held, the
-    /// socket of `user`'s name served by `serve` for each connection, whose count it gives.
-    /// Its thread runs until the test process ends.
+    /// socket of `user`'s name served by `serve` for each connection, what each served
+    /// sent on the receiver it gives. Its thread runs until the test process ends.
     #[cfg(target_os = "linux")]
     fn fake_instance(
         fixture: &Fixture,
         user: u32,
-        serve: fn(&mut channel::Stream),
-    ) -> (File, Arc<std::sync::atomic::AtomicUsize>) {
-        use std::sync::atomic::Ordering;
+        serve: fn(&mut channel::Stream) -> usize,
+    ) -> (File, mpsc::Receiver<usize>) {
         let Lock::Taken(lock) = try_lock(&fixture.user_data.join(LOCK)) else {
             panic!("not locked");
         };
         let address = channel::socket::address(&fixture.canonical(), user).unwrap();
         let listener = std::os::unix::net::UnixListener::bind_addr(&address).unwrap();
-        let count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
-        let counted = Arc::clone(&count);
+        let (served, each) = mpsc::channel();
         std::thread::spawn(move || {
             for stream in listener.incoming() {
-                counted.fetch_add(1, Ordering::SeqCst);
-                serve(&mut stream.unwrap());
+                let _ = served.send(serve(&mut stream.unwrap()));
             }
         });
-        (lock, count)
+        (lock, each)
     }
 
     /// The instance's greeting, as it writes it.
@@ -1434,17 +1466,17 @@ mod tests {
     #[test]
     fn a_hand_off_sent_whole_is_never_sent_again() {
         use std::io::Write as _;
-        use std::sync::atomic::Ordering;
         let fixture = Fixture::new("unanswered");
-        let (_lock, count) = fake_instance(&fixture, own_user(), |stream| {
+        let (_lock, served) = fake_instance(&fixture, own_user(), |stream| {
             stream.write_all(&greeting()).unwrap();
-            let _ = channel::read_frame(stream);
+            channel::read_frame(stream).map_or(0, |fields| fields.len())
         });
         let Start::Ended(why) = second(&fixture, photo()) else {
             panic!("not ended");
         };
         assert!(why.contains("answer did not come"), "{why}");
-        assert_eq!(count.load(Ordering::SeqCst), 1, "sent once");
+        assert!(served.recv_timeout(channel::RETRY).unwrap() > 0, "sent");
+        assert!(served.try_recv().is_err(), "sent once");
     }
 
     /// The two seconds bound the whole hand-off, not each read: an instance that greets a
@@ -1454,13 +1486,14 @@ mod tests {
     fn one_deadline_bounds_the_whole_hand_off() {
         use std::io::Write as _;
         let fixture = Fixture::new("slow");
-        let (_lock, _count) = fake_instance(&fixture, own_user(), |stream| {
+        let (_lock, _served) = fake_instance(&fixture, own_user(), |stream| {
             for byte in greeting() {
                 if stream.write_all(&[byte]).is_err() {
-                    return;
+                    break;
                 }
                 std::thread::sleep(Duration::from_millis(200));
             }
+            0
         });
         let began = Instant::now();
         let Start::Ended(why) = second(&fixture, photo()) else {
@@ -1481,15 +1514,17 @@ mod tests {
     fn a_second_start_sends_nothing_to_another_user() {
         let fixture = Fixture::new("other");
         let other = own_user().wrapping_add(1);
-        let (_lock, count) = fake_instance(&fixture, other, |stream| {
-            let _ = channel::read_frame(stream);
+        let (_lock, served) = fake_instance(&fixture, other, |stream| {
+            let mut received = Vec::new();
+            let _ = stream.read_to_end(&mut received);
+            received.len()
         });
         let Start::Ended(why) = start_as(&fixture.user_data, photo, taking(), other) else {
             panic!("sent");
         };
         assert!(why.contains("another user's"), "{why}");
-        // Connected, then nothing written: the server read nothing.
-        assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 1);
+        // Connected, then closed with nothing written.
+        assert_eq!(served.recv_timeout(channel::RETRY), Ok(0));
     }
 
     /// The instance drops a connection from another user unanswered: here an instance that
@@ -1518,25 +1553,29 @@ mod tests {
     }
 
     /// An exchange is waited for no later than its deadline, whatever its reads do, as on
-    /// Windows' pipe, which has no timeouts: unsent while nothing was being sent, then sent
-    /// without an answer; a quick one gives its answer.
+    /// Windows' pipe, which has no timeouts: given up as unsent while nothing was being
+    /// sent, its thread then sending nothing, or sent without an answer; a quick one gives
+    /// its answer.
     #[cfg(any(windows, target_os = "linux"))]
     #[test]
     fn an_exchange_is_waited_for_no_later_than_its_deadline() {
         use channel::{Failed, within};
-        use std::sync::atomic::Ordering;
         let slow = Duration::from_secs(5);
         let limit = Duration::from_millis(300);
         let began = Instant::now();
-        let greeting = within(began + limit, move |_| {
-            std::thread::sleep(slow);
+        let (late, told) = mpsc::channel();
+        let greeting = within(began + limit, move |turn| {
+            std::thread::sleep(limit * 2);
+            let _ = late.send(turn.send());
             Ok(Answer::Taken)
         });
         assert!(matches!(greeting, Err(Failed::Unsent)), "{greeting:?}");
-        assert!(began.elapsed() < limit + Duration::from_millis(500));
+        assert!(began.elapsed() < limit + Duration::from_millis(250));
+        let sent = told.recv_timeout(Duration::from_secs(2));
+        assert_eq!(sent, Ok(false), "nothing sent once given up");
         let began = Instant::now();
-        let answer = within(began + limit, move |sending| {
-            sending.store(true, Ordering::Release);
+        let answer = within(began + limit, move |turn| {
+            assert!(turn.send());
             std::thread::sleep(slow);
             Ok(Answer::Taken)
         });
