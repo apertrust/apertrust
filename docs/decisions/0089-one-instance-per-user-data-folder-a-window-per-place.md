@@ -8,7 +8,7 @@ The questions: how many processes run, and how a second start reaches the runnin
 
 ## Decision
 
-**One process per user data folder,** its canonical path ([0043](0043-settings-and-apertrusts-folders.md)), holding several main windows, one per open place. The CLI stays a separate process, with no instance lock. All of it is planned, in the build order below.
+**One process per user data folder,** its canonical path ([0043](0043-settings-and-apertrusts-folders.md)), holding several main windows, one per open place. The CLI stays a separate process, with no instance lock. Step 1 of the build order below, the hand-off, is built, but for its switch test on Windows; the rest is planned.
 
 ### The hand-off
 
@@ -91,7 +91,7 @@ A different `--user-data-dir` is a **separate instance, not a separate applicati
 
 Each step a pull request, reviewed before the next ([roadmap.md](../roadmap.md#the-window-and-the-shell)).
 
-1. **The single-instance hand-off,** still one window: the lock, the channel and its path in the lock file, the message, the hand-off before anything else, the joins while starting and the 500 ms join on Windows with the gaps between Explorer's starts measured, the activation token, the refusal of flags for one run; an open from outside replaces the window's place, as [0046](0046-sidecars-are-the-truth-folder-mode-library-and-project.md) does now.
+1. **The single-instance hand-off,** still one window: the lock, the channel and its path in the lock file, the message, the hand-off before anything else, the joins while starting and the 500 ms join on Windows with the gaps between Explorer's starts measured, the activation token, the refusal of flags for one run; an open from outside replaces the window's place, as [0046](0046-sidecars-are-the-truth-folder-mode-library-and-project.md) does now. Built, but the gaps between Explorer's starts, which wait for the switch test on Windows 11.
 2. **A spike:** the main window in the app's own host instead of eframe, AccessKit through its adapter, measured against eframe's on every platform.
 3. **Several sessions on one device,** sharing the engine thread, the budget, the kernels and one edit per photo.
 4. **The shell:** New Window, the Window menu, settings to every window, the closing and quitting rules, dialogs parented to their window, the start window on closing a place.

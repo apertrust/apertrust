@@ -25,7 +25,8 @@
 ; - the raw types are registered in Open With alone, never as their default: a ProgID,
 ;   each extension's OpenWithProgids naming it, and the app's Applications entry with its
 ;   SupportedTypes, in place of FileAssociation.nsh's APP_ASSOCIATE, which takes the
-;   extension's default;
+;   extension's default; each one's open verb has MultiSelectModel Player, so Open With
+;   is offered for any number of files;
 ; - Apertrust's own type, its edit (.apxmp, the ProgID Apertrust.Edit), is the one
 ;   default it takes, with the executable's second icon, the document's; Apertrust
 ;   Nightly's, Apertrust.Nightly.Edit, is in Open With alone;
@@ -556,6 +557,9 @@ Section Install
       WriteRegStr SHCTX "Software\Classes\\{{association.name}}\DefaultIcon" "" "$\"$INSTDIR\${MAINBINARYNAME}.exe$\",0"
     {{/if ~}}
     WriteRegStr SHCTX "Software\Classes\\{{association.name}}\shell\open\command" "" "$\"$INSTDIR\${MAINBINARYNAME}.exe$\" $\"%1$\""
+    ; Offered for any number of files, past the 15 Explorer's default model allows: each
+    ; start hands its file to the running app, which opens them together (decision 89).
+    WriteRegStr SHCTX "Software\Classes\\{{association.name}}\shell\open" "MultiSelectModel" "Player"
     {{#each association.extensions as |ext| ~}}
       WriteRegNone SHCTX "Software\Classes\.{{ext}}\OpenWithProgids" "{{association.name}}"
       WriteRegNone SHCTX "${APPKEY}\SupportedTypes" ".{{ext}}"
@@ -569,6 +573,7 @@ Section Install
   WriteRegStr SHCTX "${APPKEY}" "FriendlyAppName" "${PRODUCTNAME}"
   WriteRegStr SHCTX "${APPKEY}\DefaultIcon" "" "$\"$INSTDIR\${MAINBINARYNAME}.exe$\",0"
   WriteRegStr SHCTX "${APPKEY}\shell\open\command" "" "$\"$INSTDIR\${MAINBINARYNAME}.exe$\" $\"%1$\""
+  WriteRegStr SHCTX "${APPKEY}\shell\open" "MultiSelectModel" "Player"
   !insertmacro UPDATEFILEASSOC
 
   ; Register deep links

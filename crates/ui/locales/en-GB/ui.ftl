@@ -1540,6 +1540,12 @@ alert-refused-unknown = Only folders and raw photos open here.
 alert-refused-library = Libraries and projects come in a later version.
 alert-refused-no-photo = Its photo, { $photo }, isn’t in the same folder.
 alert-refused-button = OK
+# A second start of Apertrust on the same user data folder was given flags for one run
+# ($flags, as typed: --safe-mode, -d gpu, --conf KEY=VALUE, --cache-dir DIR), which the app
+# already running cannot take; this window, brought forward, says so.
+alert-running-title = Apertrust is already running with this folder
+alert-running-message = To start it with { $flags }, quit Apertrust first, then start it again.
+alert-running-button = OK
 # Discard History…, Cancel the default: darktable's "delete image's history?". Undo takes it
 # back while the photo is open.
 alert-discard-title = Discard this photo’s history?

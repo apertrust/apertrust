@@ -9,6 +9,8 @@ repository.workspace = true
 publish.workspace = true
 
 [dependencies]
+# The single-instance channel's name, the user data folder's hash (decision 89).
+blake3.workspace = true
 bytemuck.workspace = true
 directories.workspace = true
 eframe.workspace = true

@@ -38,7 +38,9 @@
 //!   the hidden [`NO_REOPEN_FLAG`], so the start window comes back.
 //!
 //! The new process is started as `main`'s last step, after the event loop has returned, so
-//! it never races this one for the settings file, the recents or a photo's edit.
+//! it never races this one for the settings file, the recents or a photo's edit, and after
+//! the instance lock and its channel are released (decision 89, `instance`), so it becomes
+//! the instance rather than handing its command line to this one.
 
 use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
