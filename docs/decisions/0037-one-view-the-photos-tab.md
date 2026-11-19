@@ -6,7 +6,7 @@ Raw editors usually split their window into views (a library, a darkroom, a map,
 
 ## Decision
 
-**The app is one view.** There is no Library, Edit, Map, Print or Slideshow view. Each main window is that one view of its place; with decision 89, planned, the app opens several windows, one per place, photos opened alone one place however many they are, never a window for each photo ([0089](0089-one-instance-per-user-data-folder-a-window-per-place.md)).
+**The app is one view.** There is no Library, Edit, Map, Print or Slideshow view.
 
 **The window's parts are named by their role** ([0095](0095-the-windows-parts-named-by-their-role.md)): the **Toolbar** along the top edge, the window's title bar; **Tools**, the Tools panel, with the workspace's tabs and their tools; the **Viewer**, showing the layout, with the **viewer bar** along its top; and the **Browser**, the thumbnails of the open folder, album or project, with the **browser bar**. The names stay true wherever a part sits: the Tools panel at the right or the left, the Browser at the bottom, the left or the right, and Touch mode's portrait layout ([0094](0094-one-interface-standard-and-touch-modes.md)).
 
@@ -22,12 +22,12 @@ Raw editors usually split their window into views (a library, a darkroom, a map,
 
 **The engine's side, planned until spike W1 measures it:**
 
-- one session per window, told the visible cells, each a photo id and a size; every window's session served by one engine thread per device, which holds one edit per photo for every session showing it ([0089](0089-one-instance-per-user-data-folder-a-window-per-place.md));
-- only the active photo of the key window has a live pipeline, a window that is not the key window showing stills only, its active photo live again once its window is; every other photo on screen is a still, rendered once from its saved edit by the same viewport pipe at its cell's size, its frame kept and its pipeline freed, so a still equals the live frame at that size byte for byte and activating a photo moves nothing;
+- one session per window, told the visible cells, each a photo id and a size;
+- only the active photo has a live pipeline; every other photo on screen is a still, rendered once from its saved edit by the same viewport pipe at its cell's size, its frame kept and its pipeline freed, so a still equals the live frame at that size byte for byte and activating a photo moves nothing;
 - commands name photos by id; an edit to a photo that is not live changes its edit and sidecar without the GPU, then renders its still again;
-- the engine thread takes every session's commands, renders the live frame if it changed, then makes one bounded submission of background work, a tile of a still, a `SystemForeground` job ([0057](0057-jobs-as-darktables-control-jobs.md)), so a change waits for one such submission at most;
+- the engine thread takes the commands, renders the live frame if it changed, then makes one bounded submission of background work, a tile of a still, a `SystemForeground` job ([0057](0057-jobs-as-darktables-control-jobs.md)), so a change waits for one such submission at most;
 - decoding runs on a job worker, never the engine thread, the active photo opening in stages ([0077](0077-a-photo-opens-in-stages.md));
-- compiled kernels live as long as the process, kept across photos from the staged open on ([0077](0077-a-photo-opens-in-stages.md)) and shared by every window's session; one memory budget covers the process, every window's stills dropped first; how many photos stay live is a setting, one in the process for now ([0089](0089-one-instance-per-user-data-folder-a-window-per-place.md)).
+- compiled kernels live as long as the session, kept across photos from the staged open on ([0077](0077-a-photo-opens-in-stages.md)); one memory budget covers the session, stills dropped first; how many photos stay live is a setting, one for now.
 
 ## Options considered
 
@@ -46,4 +46,4 @@ Raw editors usually split their window into views (a library, a darkroom, a map,
 - The Tools panel's tabs are [0038](0038-the-side-panels-tabs-by-editing-stage.md)'s; the Photos tab's tools are [0073](0073-the-photos-tabs-tools-browse-first-filters-in-folder-mode.md)'s.
 - Known costs of the name: the Mac's Photos app shares the word, and Photos is close to the Viewer's Photo layout. A library's `Photos/` folder, which holds the photos copied in ([0046](0046-sidecars-are-the-truth-folder-mode-library-and-project.md)), keeps its name: it is a folder on disk, shown in Collections' Folders as any folder is, not an interface label.
 - `apertrust-library` is built from Phase 2 for folder mode and reached through the session protocol, since a browser client's library lives on the server.
-- Stills, several photos in one session and commands by photo id are planned; spike W1 measures the mechanism before it is built. Several windows' sessions on one engine thread are [0089](0089-one-instance-per-user-data-folder-a-window-per-place.md)'s step 3.
+- Stills, several photos in one session and commands by photo id are planned; spike W1 measures the mechanism before it is built.

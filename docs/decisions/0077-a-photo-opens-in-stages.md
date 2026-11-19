@@ -32,7 +32,7 @@ Principle 2 constrains the picture: what is not the engine's render of the edit 
 
 **The engine thread's side.**
 
-- **Kernels.** As an open's decode starts, the engine thread plans its pipeline from the edit and the image context and compiles its kernels, so they are ready when the raw arrives. Kernels are kept across photos, keyed by kernel and entry point: decision 37's kernels for the session's life, built with this, and with several windows the process's, shared by every window's session ([0089](0089-one-instance-per-user-data-folder-a-window-per-place.md), planned).
+- **Kernels.** As an open's decode starts, the engine thread plans its pipeline from the edit and the image context and compiles its kernels, so they are ready when the raw arrives. Kernels are kept across photos, keyed by kernel and entry point: decision 37's kernels for the session's life, built with this.
 - **The first frame.** When the raw arrives for the latest open, it is uploaded and rendered. That batch sends `Values { live: true }`, then the `Frame` or the render's failure.
 - **The early image context equals the decode's.** A corpus test holds them equal for every sample. Where they differ on a file, the session takes the decode's, its live `Values` reports the values over it, and `-d raw` logs the difference.
 

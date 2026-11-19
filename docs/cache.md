@@ -136,7 +136,7 @@ The walk of 100,000 entries, warm, three processes of five walks each: 161.4 to 
 
 ## Two processes at once
 
-The app runs one instance per user data folder ([decision 89](decisions/0089-one-instance-per-user-data-folder-a-window-per-place.md)), however many windows it has. Each instance's cache folder is chosen as [The folder](#the-folder) says: `--cache-dir`, then `APERTRUST_CACHE_DIR`, then `<user data>/cache` for a user data folder given by flag or variable, then the platform's cache folder for the default one. So instances on different user data folders share a cache only when that order gives them the same folder, as the same `--cache-dir` or one `APERTRUST_CACHE_DIR` set for both does. The processes that may share one cache are the app and the CLI, and such instances. They share it with no lock for limited kinds:
+The app runs one instance per user data folder ([decision 89](decisions/0089-one-instance-and-one-window-per-user-data-folder.md)). Each instance's cache folder is chosen as [The folder](#the-folder) says: `--cache-dir`, then `APERTRUST_CACHE_DIR`, then `<user data>/cache` for a user data folder given by flag or variable, then the platform's cache folder for the default one. So instances on different user data folders share a cache only when that order gives them the same folder, as the same `--cache-dir` or one `APERTRUST_CACHE_DIR` set for both does. The processes that may share one cache are the app and the CLI, and such instances. They share it with no lock for limited kinds:
 
 - two processes writing one slot each rename a whole file, the last rename winning;
 - a removal that finds the file gone is ignored, and a reader whose file vanished renders again;

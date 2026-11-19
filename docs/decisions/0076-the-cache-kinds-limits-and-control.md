@@ -4,7 +4,7 @@
 
 Apertrust keeps on disk what it can compute again: thumbnails first (the library's step 6), then each library's cache ([0055](0055-the-librarys-cache.md)), local copies of raws ([0053](0053-finding-folders-and-photos.md), [0071](0071-a-self-hosted-server-with-sync.md)), later compiled pipelines, previews and AI results. darktable's disk cache has no lifecycle: its mipmaps grow without limit, and nothing shows their size or clears them. Apertrust's must show its size, take a limit, and be cleared by the person; it grows without bound only when the person chooses so.
 
-It is read and written by the app, the CLI and an app instance on another user data folder given the same cache folder at once ([0089](0089-one-instance-per-user-data-folder-a-window-per-place.md): one instance per user data folder), with no lock in the person's folders ([0053](0053-finding-folders-and-photos.md)). The engine and the library both use it, and the library never depends on the engine ([0065](0065-names-and-crates.md)). The engine's RAM and GPU caches, under its memory budget, are another thing and not covered here.
+It is read and written by the app, the CLI and an app instance on another user data folder given the same cache folder at once ([0089](0089-one-instance-and-one-window-per-user-data-folder.md): one instance per user data folder), with no lock in the person's folders ([0053](0053-finding-folders-and-photos.md)). The engine and the library both use it, and the library never depends on the engine ([0065](0065-names-and-crates.md)). The engine's RAM and GPU caches, under its memory budget, are another thing and not covered here.
 
 ## Decision
 

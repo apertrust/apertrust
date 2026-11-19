@@ -42,4 +42,4 @@ How does the engine turn an edit into GPU work, for a full-size export and for a
 
 - An exposure change at 2400×1600 costs about 5.5 ms of GPU time on the M4, at any raw size; a render restarting from any cache point equals a full render bit for bit.
 - A White balance drag restarts at the mosaic and reruns demosaic ([0027](0027-both-of-darktables-white-balances.md)).
-- With several photos (planned), kernels live for the process and one budget covers the live photo and the stills ([0037](0037-one-view-the-photos-tab.md)); with several windows, every window's session shares both, the budget and the kernel cache being the process's, not a window's ([0089](0089-one-instance-per-user-data-folder-a-window-per-place.md)).
+- With several photos (planned), kernels live for the session and one budget covers the live photo and the stills ([0037](0037-one-view-the-photos-tab.md)).
