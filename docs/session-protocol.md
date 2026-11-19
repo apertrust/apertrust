@@ -8,7 +8,7 @@ Every client reaches the engine through one session protocol: the desktop app, t
 
 - **The engine never depends on UI code** (AGENTS.md, Engineering rules). Every client, the desktop UI, the web UI, MCP and scripts, reaches it through the session protocol. Widgets only emit commands; they never touch engine state. This keeps undo, agents and the remote web mode behaving as the app does.
 - **Clients speak tools, not operations** (decisions 4 and 28). A client sets, resets and keeps a tool's controls by the tool's and the control's ids. The session turns tool values into operation parameters through each tool's binding. No client translates tool values itself, so the CLI and MCP see what the app sees. Operations never appear in the protocol, apart from `Set`, which leaves it before the first release.
-- **One session per window** (decision 37, planned until spike W1 measures it): the session holds every photo the window shows, each a still but the active one, which is live while its window is the key window, and serves the library's commands too, so every client sees one protocol. The app opens a window per place in one process per user data folder, every window's session served by one engine thread per device, one live photo in the process (decision 89, planned).
+- **One session per window** (decision 37, planned until spike W1 measures it): the session holds every photo the window shows, the active one live, and serves the library's commands too, so every client sees one protocol.
 
 ```mermaid
 flowchart TB

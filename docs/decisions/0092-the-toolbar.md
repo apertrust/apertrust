@@ -144,11 +144,10 @@ The toolbar is measured every frame at the current scale and language, and gives
 | A background-only tool while a layer is edited (Phase 4) | Enabled; it acts on the background, and the tooltip says so |
 | A tool or an action gone in a later build | Not drawn; its id kept in the file |
 
-### Keys, windows and scripts
+### Keys and scripts
 
 - **F6** into the toolbar lands on its first control: by default the ☰ on Windows and Linux and the mark on the Mac. With nothing focusable it skips the region.
 - **The ☰, shown, never folds.**
-- **Several windows** ([0089](0089-one-instance-per-user-data-folder-a-window-per-place.md)): each window draws its current workspace's toolbar, with its own enabled states. A change is a setting sent to every window showing that workspace, and the Mac's View menu acts on the key window. `jobs` shows the instance's jobs and `save-state` its window's edit.
 - **Scripts** see nothing new: an item sends the command its action sends.
 
 ## Options considered
