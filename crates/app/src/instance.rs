@@ -260,7 +260,7 @@ fn start_as(
             }
         }
         let hand_off = hand_off.get_or_insert_with(|| (request.take().expect("asked once"))());
-        match attempt(&lock, &canonical, hand_off, FORMAT, user) {
+        match attempt(&lock, &canonical, hand_off, FORMAT, user, deadline) {
             Attempt::Answered(Answer::Taken) => return Start::Taken,
             Attempt::Answered(Answer::Refused(why)) => return Start::Ended(why),
             Attempt::NotOwn => {
@@ -305,12 +305,23 @@ enum Attempt {
 
 /// One try to hand `hand_off` in format `format` to the instance on `canonical`, whose
 /// lock file `lock` names its socket on macOS and Linux, its server checked to run as
-/// `user` first.
-fn attempt(lock: &File, canonical: &Path, hand_off: &HandOff, format: u32, user: u32) -> Attempt {
+/// `user` first, every read and write over by `deadline`.
+fn attempt(
+    lock: &File,
+    canonical: &Path,
+    hand_off: &HandOff,
+    format: u32,
+    user: u32,
+    deadline: Instant,
+) -> Attempt {
     let mut stream = match connect(lock, canonical, user) {
         Ok(Some(stream)) => stream,
         Ok(None) => return Attempt::NotOwn,
         Err(_) => return Attempt::Unreached,
+    };
+    let mut stream = Timed {
+        stream: &mut stream,
+        deadline,
     };
     match exchange(&mut stream, hand_off, format) {
         Ok(answer) => Attempt::Answered(answer),
@@ -342,8 +353,6 @@ fn connect(lock: &File, _canonical: &Path, user: u32) -> io::Result<Option<Strea
     if apertrust_display::instance::peer_user(&stream)? != user {
         return Ok(None);
     }
-    stream.set_read_timeout(Some(RETRY))?;
-    stream.set_write_timeout(Some(RETRY))?;
     Ok(Some(stream))
 }
 
@@ -373,7 +382,11 @@ fn named_socket(mut lock: &File) -> io::Result<Option<PathBuf>> {
 /// A second start's side of the exchange on `stream`: the instance's greeting, the
 /// foreground right handed to its process on Windows, `hand_off` sent in format `format`,
 /// then the answer.
-fn exchange(stream: &mut Stream, hand_off: &HandOff, format: u32) -> Result<Answer, Failed> {
+fn exchange(
+    stream: &mut Timed<'_, Stream>,
+    hand_off: &HandOff,
+    format: u32,
+) -> Result<Answer, Failed> {
     let hello = read_frame(stream).map_err(|_| Failed::Unsent)?;
     let process = hello_process(&hello).map_err(|_| Failed::Unsent)?;
     // Before the hand-off, so the instance may come forward as it takes it.
@@ -489,9 +502,7 @@ impl Instance {
                         Ok(peer) if peer == user => {}
                         _ => continue,
                     }
-                    let _ = stream.set_read_timeout(Some(RETRY));
-                    let _ = stream.set_write_timeout(Some(RETRY));
-                    let _ = serve(&mut stream, &handler);
+                    let _ = serve(&mut stream, &handler, Instant::now() + RETRY);
                 }
             })
             .map_err(|e| format!("no thread: {e}"))?;
@@ -528,7 +539,7 @@ impl Instance {
                     let served = std::thread::Builder::new()
                         .name("instance start".into())
                         .spawn(move || {
-                            if serve(&mut pipe, &handler).is_ok() {
+                            if serve(&mut pipe, &handler, Instant::now() + RETRY).is_ok() {
                                 // Until the second start has read the answer.
                                 let _ = pipe.sync_all();
                             }
@@ -599,8 +610,9 @@ impl Drop for Instance {
 }
 
 /// The instance's side of one exchange on `stream`: its greeting with its process id,
-/// then the hand-off's answer, `handler`'s for one of its format.
-fn serve(stream: &mut (impl Read + Write), handler: &Handler) -> io::Result<()> {
+/// then the hand-off's answer, `handler`'s for one of its format, all over by `deadline`.
+fn serve(stream: &mut impl Limited, handler: &Handler, deadline: Instant) -> io::Result<()> {
+    let stream = &mut Timed { stream, deadline };
     write_frame(
         stream,
         &[
@@ -616,6 +628,63 @@ fn serve(stream: &mut (impl Read + Write), handler: &Handler) -> io::Result<()> 
     };
     write_frame(stream, &answer_fields(&answer))?;
     stream.flush()
+}
+
+/// A stream whose reads and writes can be given a time limit: a Unix socket's; Windows'
+/// pipe has none, so there [`Timed`] only checks its deadline before each.
+trait Limited: Read + Write {
+    fn limit(&self, left: Duration) -> io::Result<()>;
+}
+
+#[cfg(unix)]
+impl Limited for Stream {
+    fn limit(&self, left: Duration) -> io::Result<()> {
+        self.set_read_timeout(Some(left))?;
+        self.set_write_timeout(Some(left))
+    }
+}
+
+#[cfg(windows)]
+impl Limited for File {
+    fn limit(&self, _left: Duration) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+/// `stream` with every read and write over by `deadline`, one limit for a whole exchange
+/// however many reads and writes it takes, so a peer that answers slowly cannot stretch it.
+struct Timed<'a, S> {
+    stream: &'a mut S,
+    deadline: Instant,
+}
+
+impl<S: Limited> Timed<'_, S> {
+    /// The time left, the stream limited to it; an error once there is none.
+    fn left(&mut self) -> io::Result<()> {
+        let left = self.deadline.saturating_duration_since(Instant::now());
+        if left.is_zero() {
+            return Err(io::ErrorKind::TimedOut.into());
+        }
+        self.stream.limit(left)
+    }
+}
+
+impl<S: Limited> Read for Timed<'_, S> {
+    fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+        self.left()?;
+        self.stream.read(buffer)
+    }
+}
+
+impl<S: Limited> Write for Timed<'_, S> {
+    fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+        self.left()?;
+        self.stream.write(buffer)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.stream.flush()
+    }
 }
 
 /// The refusal of a hand-off of another format.
@@ -1393,6 +1462,7 @@ mod tests {
             &photo(),
             FORMAT + 1,
             own_user(),
+            Instant::now() + RETRY,
         );
         let Attempt::Answered(Answer::Refused(why)) = attempted else {
             panic!("not refused: {attempted:?}");
@@ -1564,6 +1634,32 @@ mod tests {
         };
         assert!(why.contains("answer did not come"), "{why}");
         assert_eq!(count.load(Ordering::SeqCst), 1, "sent once");
+    }
+
+    /// The two seconds bound the whole hand-off, not each read: an instance that greets a
+    /// byte at a time, each well inside the limit, is given up on once they have passed.
+    #[cfg(unix)]
+    #[test]
+    fn one_deadline_bounds_the_whole_hand_off() {
+        let fixture = Fixture::new("slow");
+        let (_lock, _count) = fake_instance(&fixture, |stream| {
+            for byte in greeting() {
+                if stream.write_all(&[byte]).is_err() {
+                    return;
+                }
+                std::thread::sleep(Duration::from_millis(200));
+            }
+        });
+        let began = Instant::now();
+        let Start::Ended(why) = second(&fixture, photo()) else {
+            panic!("not ended");
+        };
+        assert!(why.contains("not answering"), "{why}");
+        let took = began.elapsed();
+        assert!(
+            took >= RETRY && took < RETRY + Duration::from_secs(1),
+            "{took:?}"
+        );
     }
 
     /// A start refuses to send anything to a server that runs as another user.
