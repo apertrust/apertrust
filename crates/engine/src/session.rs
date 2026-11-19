@@ -439,7 +439,8 @@ pub enum Command {
     /// Holds the next export preview before it looks, for a test.
     #[cfg(test)]
     HoldPreview(export_job::testing::Hold),
-    /// Holds the next folder's reading before it begins, for a test.
+    /// Holds the next folder's reading before it begins, or the job of the next photos opened
+    /// alone once it has sent their edit states, for a test.
     #[cfg(test)]
     HoldFolder(export_job::testing::Hold),
     /// Holds the next tree's walk once its root is listed, before it walks, for a test.
@@ -535,6 +536,13 @@ pub(crate) enum Inbox {
     /// What the reading of a folder found of its photos, a `Listed` chunk or its failure,
     /// which the selection follows ([`selection`]), after the commands sent before it.
     Listing(LibraryEvent),
+    /// Edit states of the photos opened alone by the library command numbered `open`, as
+    /// their job reads them, each by its path as given ([`Engine::photos_alone`]), which the
+    /// selection follows as it follows a listing's chunks.
+    Classified {
+        open: u64,
+        photos: Vec<(PathBuf, library::EditState)>,
+    },
     Stop,
 }
 
@@ -1356,10 +1364,13 @@ impl Session {
                             Inbox::Listing(event) if batch.is_empty() => {
                                 engine.selection.listing(&event);
                             }
+                            Inbox::Classified { open, photos } if batch.is_empty() => {
+                                engine.selection.found(open, &photos);
+                            }
                             // Sent after the batch's commands, it is applied after them, as
                             // the next turn's first: the selection follows the listing and
                             // the commands in the order they were sent.
-                            listing @ Inbox::Listing(_) => {
+                            listing @ (Inbox::Listing(_) | Inbox::Classified { .. }) => {
                                 carried = Some(listing);
                                 break;
                             }
@@ -2104,6 +2115,9 @@ struct Engine {
     /// The job walking that tree for each folder's raw count ([`library::walk`]), which a
     /// new root or a close cancels, and an open inside the tree leaves running.
     walk: Option<JobId>,
+    /// The job reading the edit states of the photos opened alone, which the next open or
+    /// close cancels.
+    alone: Option<JobId>,
     /// The selection, of the folder open's photos, and the active photo (decision 37).
     selection: selection::State,
     /// When a frame is published, for a test of the history's merging; else when it is.
@@ -2582,6 +2596,7 @@ impl Engine {
             subfolders: Vec::new(),
             tree: None,
             walk: None,
+            alone: None,
             selection: selection::State::default(),
             #[cfg(test)]
             published_at: None,
@@ -3181,6 +3196,12 @@ impl Engine {
             if let Command::Library(LibraryCommand::Close) = &command {
                 self.applied += 1;
                 self.selection.folder_closed();
+                continue;
+            }
+            if let Command::Library(LibraryCommand::Open(library::Source::Photos(paths))) = &command
+            {
+                self.applied += 1;
+                self.selection.photos_alone(self.applied, paths);
                 continue;
             }
             // So does a folder's reading cancelled, as in a turn.
@@ -4255,10 +4276,11 @@ impl Engine {
     /// folder's reading before it and reads the new one as a job on darktable's
     /// `UserBackground` queue, a folder's reading as darktable's film import (decision 57),
     /// cancellable, its events going out as [`Event::Library`]. A close cancels the reading
-    /// and answers at once. Either cancels the thumbnails and subfolders asked for before it.
-    /// An open outside [`Self::tree`] becomes the tree's root, whose whole tree is walked
-    /// ([`Self::walk_tree`]); the root opened again is walked again; a folder inside it
-    /// keeps the tree and its walk.
+    /// and answers at once; photos opened alone close it too, answered by nothing, and are
+    /// the selection's collection ([`Self::photos_alone`]). Each cancels the thumbnails and
+    /// subfolders asked for before it. An open outside [`Self::tree`] becomes the tree's
+    /// root, whose whole tree is walked ([`Self::walk_tree`]); the root opened again is
+    /// walked again; a folder inside it keeps the tree and its walk.
     fn library(&mut self, command: LibraryCommand, events: &mut Vec<Event>) {
         let source = match command {
             LibraryCommand::Thumbnails { photos, size } => {
@@ -4286,22 +4308,32 @@ impl Engine {
         if let Some((older, _)) = self.folder.take() {
             self.jobs.control.cancel(older);
         }
+        if let Some(older) = self.alone.take() {
+            self.jobs.control.cancel(older);
+        }
         for job in self.thumbnails.drain(..).chain(self.subfolders.drain(..)) {
             self.jobs.control.cancel(job);
         }
         let open = self.applied;
         self.latest_library = open;
-        let Some(source) = source else {
-            self.shown = None;
-            self.selection.folder_closed();
-            self.tree = None;
-            if let Some(walk) = self.walk.take() {
-                self.jobs.control.cancel(walk);
+        let folder = match source {
+            Some(library::Source::Folder(folder)) => folder,
+            closing => {
+                self.shown = None;
+                self.tree = None;
+                if let Some(walk) = self.walk.take() {
+                    self.jobs.control.cancel(walk);
+                }
+                if let Some(library::Source::Photos(paths)) = closing {
+                    self.photos_alone(open, &paths);
+                } else {
+                    self.selection.folder_closed();
+                    events.push(Event::Library(LibraryEvent::Closed { open }));
+                }
+                return;
             }
-            events.push(Event::Library(LibraryEvent::Closed { open }));
-            return;
         };
-        let library::Source::Folder(path) = &source;
+        let path = &folder;
         self.shown = Some((open, path.clone()));
         self.selection.folder_opened(open, path);
         // A new root's walk starts once its own photos are listed, or its reading ends
@@ -4317,6 +4349,7 @@ impl Engine {
         }
         let message = jobs::Message::new("job-folder").with("folder", path.as_path());
         let description = format!("reading {}", path.display());
+        let source = library::Source::Folder(folder.clone());
         let outbox = self.jobs.outbox.clone();
         // The engine thread follows the photos listed, for the selection.
         let inbox = self.jobs.inbox.clone();
@@ -6531,6 +6564,7 @@ mod tests {
                     | Inbox::Saved
                     | Inbox::Newer
                     | Inbox::Listing(_)
+                    | Inbox::Classified { .. }
                     | Inbox::Stop => {}
                 }
             }

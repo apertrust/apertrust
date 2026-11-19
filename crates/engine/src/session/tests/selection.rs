@@ -199,6 +199,191 @@ fn a_session_keeps_the_selection_of_the_folder_s_photos() {
     remove(&elsewhere);
 }
 
+/// The command that tells the session the photos at `paths` opened alone.
+fn alone(paths: &[PathBuf]) -> Command {
+    Command::Library(LibraryCommand::Open(library::Source::Photos(
+        paths.to_vec(),
+    )))
+}
+
+/// The first selection the session tells through at least the command numbered `through`,
+/// which must be `photos`, with `active`: photos of any folders.
+fn told_paths(
+    session: &Session,
+    wakes: &Receiver<()>,
+    photos: &[&PathBuf],
+    active: Option<&PathBuf>,
+    through: u64,
+) {
+    let after = |e: &Event| matches!(e, Event::Selection(s) if s.through >= through);
+    let events = until(session, wakes, after);
+    let Some(Event::Selection(selection)) = events.into_iter().find(after) else {
+        unreachable!("`until` stops at it");
+    };
+    let photos: Vec<&PathBuf> = photos.to_vec();
+    assert_eq!(
+        selection.photos.iter().collect::<Vec<_>>(),
+        photos,
+        "{through}"
+    );
+    assert_eq!(selection.active.as_ref(), active, "{through}");
+}
+
+/// Photos opened alone, from two folders, are the collection, in the order given: each
+/// command acts on them as on a folder's photos, a photo of their folders not among them
+/// refused, and `Unedited` reads them by their sidecars, which their job reads.
+/// Photos opened alone again replace them, and a folder opened after replaces those.
+#[test]
+fn photos_opened_alone_are_the_collection() {
+    let gpu = gpu();
+    let here = three_photos("selection-alone");
+    let there = three_photos("selection-alone-there");
+    let (session, wakes) = start_with(&gpu, &[&Sample], synthetic);
+    session.send(Command::Resize {
+        width: 64,
+        height: 48,
+    });
+    let (c, a, b) = (here.join("C.ARW"), there.join("A.ARW"), here.join("B.ARW"));
+    let here_a = here.join("A.ARW");
+    let photos = [c.clone(), a.clone(), here_a.clone()];
+    session.send(alone(&photos));
+    // C opens, selected alone; inverted, the other two, and C closes.
+    open_live(&session, &wakes, &c);
+    let invert = session.send(select(SelectionCommand::Invert));
+    told_paths(&session, &wakes, &[&a, &here_a], None, invert);
+    let all = session.send(select(SelectionCommand::All));
+    told_paths(&session, &wakes, &[&c, &a, &here_a], None, all);
+    let removed = session.send(select(SelectionCommand::Remove(a.clone())));
+    told_paths(&session, &wakes, &[&c, &here_a], None, removed);
+    let given = session.send(select(SelectionCommand::Set(vec![a.clone()])));
+    told_paths(&session, &wakes, &[&a], None, given);
+    let add = session.send(select(SelectionCommand::Add(c.clone())));
+    told_paths(&session, &wakes, &[&c, &a], None, add);
+    // B, of their folder but not among them, is refused.
+    let refused = session.send(select(SelectionCommand::Add(b.clone())));
+    let events = until(&session, &wakes, |e| matches!(e, Event::Failed(_)));
+    assert!(
+        events.iter().any(|e| matches!(e,
+            Event::Failed(SessionError::Refused { command, error })
+                if *command == refused
+                    && matches!(&**error, SessionError::NotInCollection { photo } if *photo == b))),
+        "{events:?}"
+    );
+    // C, selected, opens keeping the selection; a range from it in the client's order, then
+    // Select None.
+    let open = session.send(Command::Open(c.clone()));
+    told_paths(&session, &wakes, &[&c, &a], Some(&c), open);
+    let order = vec![here_a.clone(), a.clone(), c.clone()];
+    let to = here_a.clone();
+    let range = session.send(select(SelectionCommand::Range { to, order }));
+    told_paths(&session, &wakes, &[&c, &a, &here_a], Some(&c), range);
+    let none = session.send(select(SelectionCommand::Clear));
+    told_paths(&session, &wakes, &[], None, none);
+
+    // C edited, saved; opened alone again with A of here, C reads as its sidecar holds it,
+    // once their job has read them, and A of there is no longer among them.
+    open_live(&session, &wakes, &c);
+    let edit = session.send(set("brightness", ControlValue::Number(0.2), true));
+    let saved = |e: &Event| matches!(e, Event::Saved { through, .. } if *through >= edit);
+    until(&session, &wakes, saved);
+    // Closed, C stays selected.
+    let close = session.send(Command::Close);
+    told_paths(&session, &wakes, &[&c], None, close);
+    let (hold, begun, permit) = export_job::testing::Hold::new();
+    session.send(Command::HoldFolder(hold));
+    session.send(alone(&[c.clone(), here_a.clone()]));
+    begun
+        .recv_timeout(TEST_WAIT)
+        .expect("their edit states are sent");
+    let unedited = session.send(select(SelectionCommand::Unedited));
+    told_paths(&session, &wakes, &[&here_a], None, unedited);
+    drop(permit);
+    let refused = session.send(select(SelectionCommand::Add(a.clone())));
+    let events = until(&session, &wakes, |e| matches!(e, Event::Failed(_)));
+    assert!(
+        events.iter().any(|e| matches!(e,
+            Event::Failed(SessionError::Refused { command, .. }) if *command == refused)),
+        "{events:?}"
+    );
+
+    // A folder opened after them is the collection in their place.
+    let open = session.send(open_folder(&there));
+    let listed = |e: &Event| matches!(e, Event::Library(LibraryEvent::Listed { open: o, done: true, .. }) if *o == open);
+    until(&session, &wakes, listed);
+    let all = session.send(select(SelectionCommand::All));
+    let every = ["A.ARW", "B.ARW", "C.ARW"];
+    told(&session, &wakes, &there, &every, None, all);
+    drop(session);
+    remove(&c);
+    remove(&a);
+}
+
+/// A photo opened alone whose sidecar's read is stuck leaves the others read: each state
+/// comes as it is read, so `Unedited` selects the unedited photo before it, the stuck one
+/// not known yet and left out.
+#[test]
+fn photos_alone_read_before_a_stuck_sidecar_count_at_once() {
+    use crate::session::selection::stall;
+
+    let gpu = gpu();
+    let folder = three_photos("selection-alone-partial");
+    let (a, b) = (folder.join("A.ARW"), folder.join("B.ARW"));
+    let reached = stall::hold(&b);
+    let (session, wakes) = start_with(&gpu, &[&Sample], synthetic);
+    let release = Release(b.clone());
+    session.send(alone(&[a.clone(), b.clone()]));
+    // A's state was sent before B's read began.
+    reached.recv_timeout(TEST_WAIT).expect("B's read is stuck");
+    let unedited = session.send(select(SelectionCommand::Unedited));
+    told_paths(&session, &wakes, &[&a], None, unedited);
+    drop(release);
+    drop(session);
+    remove(&a);
+}
+
+/// Releases a photo held by `selection::stall` as it drops.
+struct Release(PathBuf);
+
+impl Drop for Release {
+    fn drop(&mut self) {
+        crate::session::selection::stall::release(&self.0);
+    }
+}
+
+/// The job reading the edits of photos opened alone never holds the session's end: with a
+/// sidecar's read stuck, as on a share that does not answer, the session's end cancels the
+/// job, which returns at once, the read left to end on its own thread.
+#[test]
+fn a_session_ends_at_once_while_a_photo_alone_s_sidecar_read_is_stuck() {
+    use crate::session::selection::stall;
+
+    let gpu = gpu();
+    let photo = scratch("selection-alone-stuck");
+    let reached = stall::hold(&photo);
+    let (session, _wakes) = start_with(&gpu, &[&Sample], synthetic);
+    // Released before the session drops, should the test fail before the end is measured.
+    let _release = Release(photo.clone());
+    session.send(alone(std::slice::from_ref(&photo)));
+    reached.recv_timeout(TEST_WAIT).expect("the read is stuck");
+    // Should the end wait for the read after all, it ends once the photo is released, 20 s
+    // after the end began, and the test fails on the time rather than hanging.
+    let (done, finished) = std::sync::mpsc::channel::<()>();
+    let releaser = {
+        let photo = photo.clone();
+        std::thread::spawn(move || {
+            let _ = finished.recv_timeout(Duration::from_secs(20));
+            stall::release(&photo);
+        })
+    };
+    let started = Instant::now();
+    drop(session);
+    let took = started.elapsed();
+    assert!(took < Duration::from_secs(10), "ended after {took:?}");
+    drop(done);
+    releaser.join().unwrap();
+    remove(&photo);
+}
+
 /// The first selection the session tells through at least the command numbered `through`,
 /// which must be `photos`, in `folder`, with `active`.
 fn told_next(

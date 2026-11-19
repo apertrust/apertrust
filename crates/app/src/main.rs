@@ -6764,20 +6764,17 @@ type SendCommand<'a> = dyn FnMut(Command) -> u64 + 'a;
 /// photo), by any route: File › Open…, a drop, Open With, a double-click, the command line.
 /// No folder is listed, nothing enters the recents or what was open last, and the
 /// Browser holds just them; nothing is written but their edits, once something in one
-/// changes. A folder open, the one the photos came from among them, is closed first, so
-/// folder mode ends; the first photo opens in place of the photo open, the session saving
+/// changes. The session is told them, `Source::Photos`, so they are its collection for the
+/// selection; that closes a folder open, the one the photos came from among them, so
+/// folder mode ends. The first photo opens in place of the photo open, the session saving
 /// that one's edit as it saves any photo it leaves. No path, nothing.
 fn open_alone(paths: Vec<PathBuf>, mirror: &mut Mirror, send: &mut SendCommand<'_>) {
     let Some(first) = paths.first().cloned() else {
         return;
     };
-    if !matches!(
-        mirror.folder.folder,
-        folder::Folder::None | folder::Folder::Alone { .. }
-    ) {
-        let close = send(Command::Library(LibraryCommand::Close));
-        mirror.folder.closing(close);
-    }
+    let source = Source::Photos(paths.clone());
+    let alone = send(Command::Library(LibraryCommand::Open(source)));
+    mirror.folder.closing(alone);
     mirror.folder.alone(paths);
     let open = send(Command::Open(first.clone()));
     mirror.opening(first, open, Instant::now());
@@ -9243,7 +9240,11 @@ mod tests {
         assert!(harness.state().commands.is_empty());
         harness.state_mut().shell.about = about::About::default();
         harness.run();
-        assert_eq!(harness.state().commands, [Command::Open(raw.clone())]);
+        let sent = [
+            told_alone(std::slice::from_ref(&raw)),
+            Command::Open(raw.clone()),
+        ];
+        assert_eq!(harness.state().commands, sent);
         // The command line's folder, `.` and all.
         harness.state_mut().commands.clear();
         let ctx = harness.ctx.clone();
@@ -9281,23 +9282,24 @@ mod tests {
             resolved.join("Trip").join("IMG_2.CR3"),
             resolved.join("IMG_3.CR3"),
         ];
-        let close = Command::Library(LibraryCommand::Close);
         let first = Command::Open(photos[0].clone());
-        assert_eq!(harness.state().commands, [close, first]);
+        assert_eq!(harness.state().commands, [told_alone(&photos), first]);
         assert_eq!(harness.state().mirror.folder.alone_paths(), photos);
         harness.state_mut().commands.clear();
         opened(&mut harness, &[&three, &two]);
-        assert_eq!(harness.state().commands, [Command::Open(three.clone())]);
+        let again = [three.clone(), two.clone()];
+        let first = Command::Open(three.clone());
+        assert_eq!(harness.state().commands, [told_alone(&again), first]);
         assert_eq!(harness.state().mirror.folder.alone_paths(), [three, two]);
     }
 
-    /// Photos opened alone, by any route, from two folders: the first opened is the one
-    /// command, no library command is sent, so nothing is listed, and nothing of the photo's
+    /// Photos opened alone, by any route, from two folders: the session is told them, as its
+    /// collection, then the first opens; nothing is listed, and nothing of the photo's
     /// own events reaches the recents, which a folder's opening alone adds to
     /// (`Reaction::FolderOpened`); the recents' file stays as it was. The Browser holds
     /// just them, and a click on another opens it, the photos staying. With none, nothing.
     #[test]
-    fn photos_alone_send_no_library_command_and_leave_the_recents_untouched() {
+    fn photos_alone_are_told_the_session_and_leave_the_recents_untouched() {
         let scratch = settings::testing::Folder::new("alone-recents");
         let file = scratch.0.join("state.toml");
         let (mut recents, _) = Recents::open(file.clone(), Vec::new);
@@ -9310,9 +9312,15 @@ mod tests {
         );
         let mut sent = Vec::new();
         open_alone(vec![a.clone(), b.clone()], &mut m, &mut sender(&mut sent));
-        assert_eq!(sent, [Command::Open(a.clone())]);
-        let mut reactions = m.apply(Event::Opened(mirror::tests::photo(1)));
-        reactions.extend(m.apply(Event::Values(mirror::tests::report(1.0, 1))));
+        assert_eq!(
+            sent,
+            [
+                told_alone(&[a.clone(), b.clone()]),
+                Command::Open(a.clone())
+            ]
+        );
+        let mut reactions = m.apply(Event::Opened(mirror::tests::photo(2)));
+        reactions.extend(m.apply(Event::Values(mirror::tests::report(1.0, 2))));
         for reaction in reactions {
             if let Reaction::FolderOpened(path) = reaction {
                 recents.opened(recents::OpenKind::Folder, path);
@@ -9326,12 +9334,17 @@ mod tests {
         assert_eq!((m.folder.root(), m.folder.shown()), (None, None));
         assert_eq!(m.folder.active_shown(), Some(0));
         open_listed(b.clone(), &mut m, &mut sender(&mut sent));
-        assert_eq!(sent[1..], [Command::Open(b.clone())]);
+        assert_eq!(sent[2..], [Command::Open(b.clone())]);
         assert_eq!(m.folder.alone_paths(), [a, b]);
         assert_eq!(m.folder.active_shown(), Some(1));
         let mut none = Vec::new();
         open_alone(Vec::new(), &mut m, &mut sender(&mut none));
         assert!(none.is_empty());
+    }
+
+    /// The library command that tells the session the photos at `paths` opened alone.
+    fn told_alone(paths: &[PathBuf]) -> Command {
+        Command::Library(LibraryCommand::Open(Source::Photos(paths.to_vec())))
     }
 
     /// A list of the commands sent, numbered from 1, and what sends to it.
@@ -9888,10 +9901,10 @@ mod tests {
 
     /// A photo opened by File › Open…, a drop or Open With from the folder already open, or
     /// from inside its tree, or elsewhere, opens alone all the same (decision 46): the
-    /// folder is closed through the library, Collections loses its root and tree, the
-    /// Browser holds the photo by itself, and nothing reaches the recents, what was open
-    /// last staying as it was; what the folder's reading still sends changes nothing, nor
-    /// does its close.
+    /// folder is closed through the library, by the photos told the session, Collections
+    /// loses its root and tree, the Browser holds the photo by itself, and nothing reaches
+    /// the recents, what was open last staying as it was; what the folder's reading still
+    /// sends changes nothing.
     #[test]
     fn a_photo_opened_from_the_folder_open_opens_alone() {
         let joins = |reactions: Vec<Reaction>| {
@@ -9914,10 +9927,10 @@ mod tests {
             let before = sent.len();
             let raw = at.join(chosen);
             open_alone(vec![raw.clone()], &mut m, &mut sender(&mut sent));
-            let close = Command::Library(LibraryCommand::Close);
+            let told = told_alone(std::slice::from_ref(&raw));
             assert_eq!(
                 sent[before..],
-                [close, Command::Open(raw.clone())],
+                [told, Command::Open(raw.clone())],
                 "{chosen}"
             );
             assert_eq!((m.folder.root(), m.folder.shown()), (None, None));
@@ -9925,11 +9938,8 @@ mod tests {
             assert_eq!(photo_shown(&m), Some(raw.as_path()));
             let mut reactions = m.apply(listed(1, &["R0001177.DNG"], true));
             reactions.extend(m.apply(folder_opened(1, &at)));
-            // The close's own `Closed`, which the latest command's number lets through.
-            let closed = before as u64 + 1;
-            assert_eq!(m.folder.latest(), closed);
-            let closed = LibraryEvent::Closed { open: closed };
-            reactions.extend(m.apply(Event::Library(closed)));
+            // The thumbnails asked for from now on are the photos' command's.
+            assert_eq!(m.folder.latest(), before as u64 + 1);
             assert!(joins(reactions).is_empty(), "{chosen}");
             assert!(matches!(m.folder.folder, folder::Folder::Alone { .. }));
             assert_eq!(m.folder.photos().len(), 1);
@@ -10088,7 +10098,7 @@ mod tests {
         let alone = PathBuf::from("/photos/Other/x.ARW");
         let mut sent = Vec::new();
         open_alone(vec![alone], &mut m, &mut sender(&mut sent));
-        for reaction in m.apply(Event::Opened(mirror::tests::photo(1))) {
+        for reaction in m.apply(Event::Opened(mirror::tests::photo(2))) {
             if let Reaction::FolderOpened(path) = reaction {
                 shell.remember_folder(path);
             }
@@ -10622,8 +10632,11 @@ mod tests {
             let chosen = PathBuf::from(chosen);
             let others = PathBuf::from("/trips/c.ARW");
             let paths = vec![chosen.clone(), others.clone()];
-            open_alone(paths, &mut m, &mut sender(&mut sent));
-            assert_eq!(sent[1..], [Command::Open(chosen.clone())]);
+            open_alone(paths.clone(), &mut m, &mut sender(&mut sent));
+            assert_eq!(
+                sent[2..],
+                [told_alone(&paths), Command::Open(chosen.clone())]
+            );
             assert_eq!(m.folder.alone_paths(), [chosen, others]);
             assert_eq!(m.folder.shown(), None);
         }
@@ -20859,7 +20872,8 @@ mod tests {
             let raw = PathBuf::from("raws/IMG_2041.CR3");
             harness.state_mut().dialog.answer = Some(Some(vec![raw.clone()]));
             harness.run();
-            assert_eq!(harness.state().commands, vec![Command::Open(raw)], "{os:?}");
+            let opened = vec![told_alone(std::slice::from_ref(&raw)), Command::Open(raw)];
+            assert_eq!(harness.state().commands, opened, "{os:?}");
 
             // Of several, the first opens, the others alone with it (`open_alone`).
             harness.state_mut().commands.clear();
@@ -20869,7 +20883,11 @@ mod tests {
             harness.state_mut().dialog.answer = Some(Some(raws.to_vec()));
             harness.run();
             let first = Command::Open(raws[0].clone());
-            assert_eq!(harness.state().commands, vec![first], "{os:?}");
+            assert_eq!(
+                harness.state().commands,
+                vec![told_alone(&raws), first],
+                "{os:?}"
+            );
             let alone = harness.state().mirror.folder.alone_paths();
             assert_eq!(alone, raws, "{os:?}");
         }
@@ -20919,7 +20937,7 @@ mod tests {
             vec![
                 open_folder(&wedding),
                 open_folder(&portraits),
-                Command::Library(LibraryCommand::Close),
+                told_alone(&raws),
                 Command::Open(raws[0].clone())
             ]
         );
@@ -20951,7 +20969,11 @@ mod tests {
         );
         // A file that opens nothing beside a raw: the raw opens.
         drop_onto(&mut harness, &[&notes, &raw]);
-        assert_eq!(harness.state().commands, vec![Command::Open(raw.clone())]);
+        let opened = vec![
+            told_alone(std::slice::from_ref(&raw)),
+            Command::Open(raw.clone()),
+        ];
+        assert_eq!(harness.state().commands, opened);
 
         // Under Settings, a modal window on Windows, nothing is taken.
         harness.key_press_modifiers(Modifiers::COMMAND, Key::Comma);

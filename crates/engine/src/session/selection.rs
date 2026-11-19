@@ -20,8 +20,10 @@
 //! with the same commands as the app.
 //!
 //! - **The collection** is the folder open, as its reading lists it: the session follows
-//!   the reading's `Listed` chunks and its failure ([`super::Inbox::Listing`]). Photos
-//!   opened alone are a client's; with no folder open the collection is empty.
+//!   the reading's `Listed` chunks and its failure ([`super::Inbox::Listing`]). Or it is the
+//!   photos opened alone, as a client names them (`Source::Photos`), in its order, their
+//!   edit states read by a job of their own ([`super::Inbox::Classified`]). With neither,
+//!   the collection is empty.
 //! - **The active photo** is the photo open or opening. Opening one outside the selection
 //!   selects it alone; opening a selected one keeps the selection. A command whose result
 //!   leaves the active photo out closes it, as [`super::Command::Close`] does, so the
@@ -38,6 +40,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::sync::mpsc;
 
 use super::library::EditState;
 use super::{Engine, Event, LibraryEvent, SessionError};
@@ -117,8 +120,8 @@ pub(super) struct State {
 /// One of the folder's photos, as its listings and the edit writer last found it.
 #[derive(Debug)]
 struct Entry {
-    /// Its file's name in the folder.
-    name: String,
+    /// Its file's name in the folder; a photo opened alone's absolute path.
+    name: PathBuf,
     /// Its edit state: the latest listing's row, or the edit writer's classification
     /// where that is the later observation; none yet for a photo held as it opened.
     edit: Option<EditState>,
@@ -134,7 +137,8 @@ struct Entry {
 }
 
 /// The folder open, with its photos: the collection, one list, so every command, the fact
-/// and `Unedited` read the same photos.
+/// and `Unedited` read the same photos. The photos opened alone are one too, with an empty
+/// path, each named by its absolute path, listed once and done.
 #[derive(Debug)]
 struct Folder {
     /// The number of the library command that opened it, whose reading it follows.
@@ -172,6 +176,35 @@ impl Folder {
         }
     }
 
+    /// The photos at `paths`, opened alone by the library command numbered `open`, in their
+    /// order, each once, their edit states not yet known.
+    fn alone(open: u64, paths: &[PathBuf]) -> Folder {
+        let mut folder = Folder {
+            open,
+            path: PathBuf::new(),
+            absolute: PathBuf::new(),
+            listing: 1,
+            under_way: false,
+            brought: 0,
+            photos: Vec::new(),
+            places: HashMap::new(),
+        };
+        for path in paths {
+            let name = key(path);
+            if !folder.holds(&name) {
+                let rank = folder.photos.len();
+                folder.push(Entry {
+                    name,
+                    edit: None,
+                    seen: 1,
+                    rank,
+                    classified: 0,
+                });
+            }
+        }
+        folder
+    }
+
     /// The folder opened again: a new listing under way, its photos staying until it is
     /// done.
     fn list_again(&mut self) {
@@ -182,7 +215,7 @@ impl Folder {
 
     /// `photos`, a chunk of the listing under way: each in the collection, as that listing
     /// found it but where the edit writer classified it since that listing began.
-    fn extend(&mut self, photos: impl IntoIterator<Item = (String, EditState)>) {
+    fn extend(&mut self, photos: impl IntoIterator<Item = (PathBuf, EditState)>) {
         let listing = self.listing;
         for (name, edit) in photos {
             let rank = self.brought;
@@ -253,7 +286,7 @@ impl Folder {
         // A listing names its photos in UTF-8: one whose name is not is never brought.
         if let Some(name) = key.file_name().and_then(|name| name.to_str()) {
             self.push(Entry {
-                name: name.to_owned(),
+                name: name.into(),
                 edit: None,
                 seen: 0,
                 rank: 0,
@@ -291,11 +324,11 @@ impl Folder {
 
     /// Each photo's absolute path, name and edit state, none yet for one held as it
     /// opened, in the collection's order.
-    fn entries(&self) -> impl Iterator<Item = (PathBuf, &str, Option<&EditState>)> + '_ {
+    fn entries(&self) -> impl Iterator<Item = (PathBuf, &Path, Option<&EditState>)> + '_ {
         (self.photos.iter()).map(|entry| {
             (
                 self.absolute.join(&entry.name),
-                entry.name.as_str(),
+                entry.name.as_path(),
                 entry.edit.as_ref(),
             )
         })
@@ -332,6 +365,16 @@ impl State {
         }
     }
 
+    /// The photos at `paths` opened alone by the library command numbered `open`: the
+    /// collection in their order, in place of the folder or the photos before, the active
+    /// photo staying selected alone. Each one's edit state is unknown until their job reads
+    /// it ([`State::found`]).
+    pub(super) fn photos_alone(&mut self, open: u64, paths: &[PathBuf]) {
+        self.changed = true;
+        self.folder = Some(Folder::alone(open, paths));
+        self.selected.clear();
+    }
+
     /// The folder closed: the active photo stays selected alone.
     pub(super) fn folder_closed(&mut self) {
         self.changed = true;
@@ -352,7 +395,8 @@ impl State {
         self.changed = true;
         match event {
             LibraryEvent::Listed { photos, done, .. } => {
-                let listed = (photos.iter()).map(|photo| (photo.name.clone(), photo.edit.clone()));
+                let listed =
+                    (photos.iter()).map(|photo| (PathBuf::from(&photo.name), photo.edit.clone()));
                 folder.extend(listed);
                 if *done {
                     folder.done();
@@ -365,6 +409,25 @@ impl State {
         // keep or drop, which knows the active photo.
         let elsewhere = |photo: &PathBuf| photo.parent() != Some(folder.absolute.as_path());
         (self.selected).retain(|photo| folder.holds(photo) || elsewhere(photo));
+    }
+
+    /// The edit states of the photos opened alone by the library command numbered `open`, as
+    /// their job read them, each by its path: each its state, as a listing's row is, but
+    /// where the edit writer classified it since, the later observation; dropped where
+    /// another folder or photos have been opened since.
+    pub(super) fn found(&mut self, open: u64, photos: &[(PathBuf, EditState)]) {
+        let Some(folder) = (self.folder.as_mut()).filter(|folder| folder.open == open) else {
+            return;
+        };
+        self.changed = true;
+        for (path, edit) in photos {
+            if let Some(&at) = folder.places.get(&key(path)) {
+                let entry = &mut folder.photos[at];
+                if entry.classified != folder.listing {
+                    entry.edit = Some(edit.clone());
+                }
+            }
+        }
     }
 
     /// The photo at `path`, open, has an edit or none now, as its values say, so Unedited
@@ -512,7 +575,8 @@ impl State {
                 // The open photo as its values say, over its listed state; one whose edit
                 // state is not known yet, held as it opened, is not taken as unedited.
                 let live = self.live.as_ref();
-                let unedited = |(photo, _, edit): &(PathBuf, &str, Option<&EditState>)| match live {
+                let unedited = |(photo, _, edit): &(PathBuf, &Path, Option<&EditState>)| match live
+                {
                     Some((open, edited)) if open == photo => !edited,
                     _ => *edit == Some(&EditState::None),
                 };
@@ -618,6 +682,65 @@ impl Engine {
         self.selection.edited(&open.photo.path, edited);
     }
 
+    /// The photos at `paths` opened alone by the library command numbered `open`: the
+    /// selection's collection, their sidecars read as a listing reads them, by a job on
+    /// darktable's `SystemBackground` queue with no progress, never by the edit writer, so
+    /// an open or a save never waits for them; each state goes to the engine thread as it
+    /// is read ([`super::Inbox::Classified`]), and `Unedited` reads them as a listing's once
+    /// they have come, a photo whose state has not come being no unedited one. The reads run on a thread of their own that nothing joins, as a listing's
+    /// calls into its folder do: a sidecar on a share that does not answer holds neither
+    /// the job's worker nor the session's end, and a cancel returns at once, the thread
+    /// ending once its read returns.
+    pub(super) fn photos_alone(&mut self, open: u64, paths: &[PathBuf]) {
+        self.selection.photos_alone(open, paths);
+        let paths = paths.to_vec();
+        let inbox = self.jobs.inbox.clone();
+        let description = format!("reading the edits of {} photos alone", paths.len());
+        #[cfg(test)]
+        let hold = self.folder_hold.take();
+        let job = self.jobs.add(open, super::Queue::SystemBackground, |_| {
+            super::jobs::Job::new("alone", description, move |context| {
+                let count = paths.len();
+                let (read, reading) = mpsc::channel();
+                // Each state goes to the engine thread as it is read, so one sidecar that
+                // does not answer leaves only the photos after it unknown; the reader stops
+                // once the job has gone, or the engine thread.
+                let reader = std::thread::Builder::new()
+                    .name("photos alone".to_owned())
+                    .spawn(move || {
+                        for path in paths {
+                            #[cfg(test)]
+                            stall::wait(&path);
+                            let sidecar = super::sidecar::path_for(&path);
+                            let edit = super::library::sidecar_state(&sidecar);
+                            let photos = vec![(path, edit)];
+                            let sent = inbox.send(super::Inbox::Classified { open, photos });
+                            if sent.is_err() || read.send(()).is_err() {
+                                return;
+                            }
+                        }
+                    });
+                if let Err(error) = reader {
+                    // Their edit states stay unknown, so `Unedited` takes none of them.
+                    tracing::warn!(target: "control", "cannot read the photos' edits: {error}");
+                    return Ok(());
+                }
+                for _ in 0..count {
+                    if context.wait(&reading).is_err() {
+                        return Ok(());
+                    }
+                }
+                // Held for a test once every state is sent.
+                #[cfg(test)]
+                if let Some(hold) = &hold {
+                    hold.wait();
+                }
+                Ok(())
+            })
+        });
+        self.alone = Some(job);
+    }
+
     /// [`Command::CancelJob`](super::Command::CancelJob): the job cancelled where it can
     /// be; the folder's reading, queued or running, cancelled then, not one that had ended,
     /// leaves the folder with no photo, as one that failed, and the selection takes it so.
@@ -686,6 +809,47 @@ impl Engine {
         let active = self.active().map(Path::to_owned);
         let fact = self.selection.fact(active.as_deref(), self.applied);
         fact.map(Event::Selection)
+    }
+}
+
+/// A test's hook: a read of the sidecar of a photo held here stops before it reads, as a
+/// call into a share that does not answer would, until the photo is released.
+#[cfg(test)]
+pub(super) mod stall {
+    use std::path::{Path, PathBuf};
+    use std::sync::mpsc::{Receiver, Sender, channel};
+    use std::sync::{Condvar, Mutex, PoisonError};
+
+    /// Each photo held, and what hears a read reach it.
+    static HELD: Mutex<Vec<(PathBuf, Sender<()>)>> = Mutex::new(Vec::new());
+    static RELEASED: Condvar = Condvar::new();
+
+    /// Holds every read of `photo`'s sidecar until [`release`]; what this returns hears
+    /// each read that reaches it.
+    pub(in super::super) fn hold(photo: &Path) -> Receiver<()> {
+        let (reached, reaches) = channel();
+        HELD.lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push((photo.to_owned(), reached));
+        reaches
+    }
+
+    pub(in super::super) fn release(photo: &Path) {
+        HELD.lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .retain(|(held, _)| held != photo);
+        RELEASED.notify_all();
+    }
+
+    /// Waits while `photo` is held.
+    pub(super) fn wait(photo: &Path) {
+        let mut held = HELD.lock().unwrap_or_else(PoisonError::into_inner);
+        if let Some((_, reached)) = held.iter().find(|(held, _)| held == photo) {
+            let _ = reached.send(());
+        }
+        while held.iter().any(|(held, _)| held == photo) {
+            held = RELEASED.wait(held).unwrap_or_else(PoisonError::into_inner);
+        }
     }
 }
 

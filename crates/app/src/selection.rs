@@ -29,15 +29,16 @@
 //!
 //! Each command is shown at once in the mirror's selection, by the session's rules, until
 //! the session tells one that includes it ([`Mirror::selecting`]), so a gesture before that
-//! reads what the last one did. Photos opened alone are no collection of the session's, so
-//! there a click opens the photo and Ctrl and Shift-click do nothing.
+//! reads what the last one did. Among photos opened alone a click opens the photo and Ctrl
+//! and Shift-click do nothing yet.
 //!
 //! The Select menu's items run here too ([`edit`]): Select All, Select None, Invert
 //! Selection and Select Unedited, each drawn disabled where it would change nothing
-//! ([`selectable`]). So do Next Photo and Previous Photo ([`step`]): with several photos
-//! selected, the active photo moves through them in the Browser's order, the selection
-//! staying; else through the folder, the photo reached selected alone. And an export takes
-//! every selected photo ([`exported`]).
+//! ([`selectable`]), over the folder's photos or the photos opened alone, the session's
+//! collection either way. So do Next Photo and Previous Photo ([`step`]): with several
+//! photos selected, the active photo moves through them in the Browser's order, the
+//! selection staying; else through the folder, the photo reached selected alone. And an
+//! export takes every selected photo ([`exported`]).
 
 use std::path::{Path, PathBuf};
 
@@ -132,7 +133,9 @@ pub(crate) fn open_for_menu(
 /// Runs one of the Select menu's items, `command` (`All`, `Clear`, `Invert` or `Unedited`),
 /// as the session will (decision 37): Select All keeps the active photo; Select None
 /// closes it, as File › Close does, and opens none; Invert Selection closes it, and Select
-/// Unedited where it has an edit, as its cell's pencil says. Where those two close it,
+/// Unedited where it has an edit, as its cell's pencil says; among photos opened alone, whose
+/// edits the app does not know, Select Unedited leaves it to the session, whose selection
+/// closes it if it does. Where those two close it,
 /// `waiting` takes the command's number: once the session tells the selection through it,
 /// the first photo of the new selection in the Browser's order opens ([`open_first`]). A
 /// wait under way follows the newest command, so the photo opened is in the selection the
@@ -147,7 +150,10 @@ pub(crate) fn edit(
     let active = mirror.photo.asked().map(Path::to_owned);
     let leaves = active.is_some_and(|active| match &command {
         SelectionCommand::Clear | SelectionCommand::Invert => true,
-        SelectionCommand::Unedited => !listing(mirror).is_some_and(|l| unedited(l, &active)),
+        SelectionCommand::Unedited => match alone(mirror) {
+            Some(_) => edited(mirror),
+            None => !listing(mirror).is_some_and(|l| unedited(l, &active)),
+        },
         _ => false,
     });
     let clear = command == SelectionCommand::Clear;
@@ -193,24 +199,43 @@ pub(crate) fn open_first(
         return;
     }
     *waiting = None;
-    let first = listing(mirror).and_then(|listing| {
-        (mirror.folder.order().iter())
+    let order = mirror.folder.order().iter();
+    let first = match (listing(mirror), alone(mirror)) {
+        (Some(listing), _) => order
             .map(|&i| listing.path.join(&listing.photos[i].name))
-            .find(|photo| mirror.is_selected(photo))
-    });
+            .find(|photo| mirror.is_selected(photo)),
+        (None, Some(paths)) => order
+            .map(|&i| paths[i].clone())
+            .find(|photo| mirror.is_selected(photo)),
+        (None, None) => None,
+    };
     if let Some(first) = first {
         open_listed(first, mirror, send);
     }
 }
 
 /// What the Select menu's items would change, as the mirror shows the selection and the
-/// folder's photos: nothing to select, or to take out, without a folder open. Worked out
-/// for each frame's actions, so the folder's photos are looked up one by one only while
-/// as many are selected.
+/// folder's photos, or the photos opened alone: nothing to select, or to take out, with
+/// neither. Worked out for each frame's actions, so the folder's photos are looked up one
+/// by one only while as many are selected. The app knows no edit of the photos opened
+/// alone, so Select Unedited is the session's to decide with any of them.
 pub(crate) fn selectable(mirror: &Mirror) -> Selectable {
     let active = mirror.photo.asked();
-    let alone = active.is_some_and(|active| mirror.is_selected(active));
-    let none = mirror.selected_count() > usize::from(alone);
+    let alone_selected = active.is_some_and(|active| mirror.is_selected(active));
+    let none = mirror.selected_count() > usize::from(alone_selected);
+    if let Some(paths) = alone(mirror) {
+        let all = mirror.selected_count() < paths.len()
+            || paths.iter().any(|photo| !mirror.is_selected(photo));
+        // Whether Unedited leaves the active photo out is read from its values
+        // ([`edited`]), so it waits until the photo is live.
+        let settled = active.is_none() || mirror.live();
+        return Selectable {
+            all,
+            none,
+            invert: !paths.is_empty(),
+            unedited: !paths.is_empty() && settled,
+        };
+    }
     let Some(listing) = listing(mirror) else {
         return Selectable {
             none,
@@ -414,6 +439,26 @@ fn listing(mirror: &Mirror) -> Option<&Listing> {
     }
 }
 
+/// The photos opened alone, in the order opened, the session's collection; none with a
+/// folder or nothing open.
+fn alone(mirror: &Mirror) -> Option<&[PathBuf]> {
+    match &mirror.folder.folder {
+        Folder::Alone { paths, .. } => Some(paths),
+        _ => None,
+    }
+}
+
+/// Whether the open photo has an edit as the session's `Unedited` reads it among photos
+/// opened alone, which have no pencils: its edit as it stands, a view-only photo counting
+/// as edited. Select Unedited waits there until the photo is live ([`selectable`]), so the
+/// values read are its own.
+fn edited(mirror: &Mirror) -> bool {
+    match &mirror.photo {
+        PhotoState::Open(photo) => mirror.values.edited || photo.view_only.is_some(),
+        _ => false,
+    }
+}
+
 /// Whether the photo at `path` is one of `listing`'s with no edit, as its cell's pencil
 /// says, which the session's `Unedited` reads.
 fn unedited(listing: &Listing, path: &Path) -> bool {
@@ -443,7 +488,6 @@ fn nearest(order: &[PathBuf], from: &Path, selected: impl Fn(&Path) -> bool) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::mirror::PhotoState;
     use crate::mirror::tests::mirror;
     use apertrust_engine::session::library::Photo;
     use apertrust_engine::session::{Event, LibraryEvent, Selection, SessionError};
@@ -524,6 +568,13 @@ mod tests {
             self.m.apply(Event::Library(listed));
             let key = SortKey::FileName;
             self.m.folder.sort(Sort { key, descending });
+        }
+
+        /// The photos `names` opened alone in the mirror, in that order, the Browser's.
+        fn alone(&mut self, names: &[&str]) {
+            self.m
+                .folder
+                .alone(names.iter().map(|name| at(name)).collect());
         }
 
         /// What Edit's item sends for `command`.
@@ -820,8 +871,8 @@ mod tests {
         assert_eq!(f.m.selected_count(), 3);
     }
 
-    /// Photos opened alone are no collection of the session's: a click opens one, and
-    /// Ctrl and Shift-click send nothing, which the session would refuse.
+    /// Among photos opened alone a click opens one, and Ctrl and Shift-click send nothing
+    /// yet.
     #[test]
     fn photos_opened_alone_take_no_selection_gesture() {
         let mut f = Folder::new("a");
@@ -970,12 +1021,12 @@ mod tests {
 
     /// Each item is disabled where it would change nothing: Select All with every photo
     /// selected, Select None with none or the active photo alone, Invert Selection and
-    /// Select Unedited with no folder, Select Unedited with every photo edited.
+    /// Select Unedited with no collection, Select Unedited with every photo edited.
     #[test]
     fn edit_s_selection_items_rest_where_they_would_change_nothing() {
         let mut f = Folder::new("a");
         f.told(&["a"], Some("a"));
-        // No folder open, as with photos opened alone: no collection.
+        // No folder open and no photos alone: no collection.
         assert_eq!(selectable(&f.m), Selectable::default());
         f.listed(&[], false);
         let listed = Selectable {
@@ -1304,5 +1355,87 @@ mod tests {
         assert_eq!(again(&f.m), command(&["a", "c"]));
         f.browse(BrowserAction::ToggleSelected(3));
         assert_eq!(again(&f.m), command(&["a", "c", "d"]));
+    }
+
+    /// Among photos opened alone, the session's collection, Select's items are enabled as in a
+    /// folder: Select All while one is not selected, Invert Selection with any, and Select
+    /// Unedited with any once the active photo is live, whose values say whether it leaves.
+    #[test]
+    fn edit_s_selection_items_rest_among_photos_alone_as_in_a_folder() {
+        let mut f = Folder::new("a");
+        f.alone(&["c", "a", "b"]);
+        f.told(&["a"], Some("a"));
+        let alone = Selectable {
+            all: true,
+            none: false,
+            invert: true,
+            unedited: true,
+        };
+        // A still opening.
+        let opening = Selectable {
+            unedited: false,
+            ..alone
+        };
+        assert_eq!(selectable(&f.m), opening);
+        f.m.apply(Event::Opened(crate::mirror::tests::photo(1)));
+        f.m.apply(Event::Values(crate::mirror::tests::report(0.0, 1)));
+        assert_eq!(selectable(&f.m), alone);
+        f.told(&["a", "b", "c"], Some("a"));
+        let every = Selectable {
+            all: false,
+            none: true,
+            ..alone
+        };
+        assert_eq!(selectable(&f.m), every);
+        f.alone(&[]);
+        assert!(!selectable(&f.m).invert && !selectable(&f.m).unedited);
+    }
+
+    /// Among photos opened alone, each item sends its command. Select Unedited leaves the
+    /// active photo to the session, which knows their edits. Invert Selection closes it and
+    /// opens the first of the new selection in the Browser's order, the order opened.
+    #[test]
+    fn edit_s_selection_items_act_over_photos_alone() {
+        for command in [
+            SelectionCommand::All,
+            SelectionCommand::Clear,
+            SelectionCommand::Invert,
+            SelectionCommand::Unedited,
+        ] {
+            let mut f = Folder::new("a");
+            f.alone(&["c", "a", "b"]);
+            f.told(&["a"], Some("a"));
+            assert_eq!(f.edit(command.clone()), [selection(command)]);
+        }
+        let mut f = Folder::new("a");
+        f.alone(&["c", "a", "b"]);
+        f.told(&["a"], Some("a"));
+        f.edit(SelectionCommand::Unedited);
+        assert_eq!(f.m.photo.asked(), Some(at("a").as_path()));
+        assert_eq!(f.waiting, None);
+        // Open with an edit, the active photo is left out by Unedited: it closes, and the
+        // first of the new selection in the order opened opens once the session tells it.
+        let mut f = Folder::new("a");
+        f.alone(&["c", "a", "b"]);
+        f.told(&["a"], Some("a"));
+        f.m.apply(Event::Opened(crate::mirror::tests::photo(1)));
+        let edited = crate::mirror::tests::report(0.5, 1);
+        f.m.apply(Event::Values(apertrust_engine::session::Values {
+            edited: true,
+            ..edited
+        }));
+        f.edit(SelectionCommand::Unedited);
+        assert!(matches!(f.m.photo, PhotoState::None));
+        f.told(&["b", "c"], None);
+        assert_eq!(f.open_first(), [Command::Open(at("c"))]);
+        let mut f = Folder::new("a");
+        f.alone(&["c", "a", "b"]);
+        f.told(&["a"], Some("a"));
+        f.edit(SelectionCommand::Invert);
+        assert!(matches!(f.m.photo, PhotoState::None));
+        assert!(f.open_first().is_empty());
+        f.told(&["b", "c"], None);
+        assert_eq!(f.open_first(), [Command::Open(at("c"))]);
+        assert_eq!(f.waiting, None);
     }
 }
