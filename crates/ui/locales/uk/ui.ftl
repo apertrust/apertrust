@@ -16,6 +16,10 @@ action-redo = Повторити
 action-copy-edit = Копіювати обробку
 action-apply-edit = Застосувати обробку
 action-copy-apply-parts = Копіювати або застосувати частину
+action-select-all = Вибрати все
+action-select-none = Зняти вибір
+action-invert-selection = Інвертувати вибір
+action-select-unedited = Вибрати необроблені
 action-settings = Налаштування
 status-saved = Збережено
 

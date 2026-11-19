@@ -16,6 +16,10 @@ action-redo = Ponów
 action-copy-edit = Kopiuj edycję
 action-apply-edit = Zastosuj edycję
 action-copy-apply-parts = Kopiuj lub zastosuj część
+action-select-all = Zaznacz wszystko
+action-select-none = Odznacz wszystko
+action-invert-selection = Odwróć zaznaczenie
+action-select-unedited = Zaznacz nieedytowane
 action-settings = Ustawienia
 status-saved = Zapisano
 
