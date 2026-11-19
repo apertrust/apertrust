@@ -24,7 +24,7 @@ Decision 46. The library meets five requirements:
 
 ### The four modes
 
-The main window holds one of them at a time, its place, with one main window per user data folder ([decision 89](decisions/0089-one-instance-and-one-window-per-user-data-folder.md); [gui.md](gui.md#instances-and-windows)). The first rows are for choosing between them; the rest say how each is made.
+The main window holds one of them at a time, its place, with one main window per user data folder planned, each start an app of its own until then ([decision 89](decisions/0089-one-instance-and-one-window-per-user-data-folder.md); [gui.md](gui.md#instances-and-windows)). The first rows are for choosing between them; the rest say how each is made.
 
 | | One photo | Folder mode | A library | A project |
 | --- | --- | --- | --- | --- |
