@@ -3351,9 +3351,12 @@ impl Shell {
     }
 
     /// The tab shown changed: the headers drawn in the one left no longer count, so a layout
-    /// action later in the frame acts on none of its tools, and none is scrolled to.
+    /// action later in the frame acts on none of its tools, and none takes the focus or is
+    /// scrolled to, a move's earlier in the frame included: the tab shown may draw a header
+    /// of the same tool, as Scopes'.
     fn left_tab(&mut self) {
         self.headers.clear();
+        self.focus_section = None;
         self.reveal_header = None;
     }
 
@@ -11643,6 +11646,28 @@ mod tests {
         assert_eq!(harness.state().shell.reveal_header, None);
         let grain = harness.get_by_role_and_label(Role::Button, "Grain");
         assert!(!grain.accesskit_node().is_focused());
+    }
+
+    /// A tab chosen after Unpin Tool in the same frame cancels the focus the move asked
+    /// for: Scopes unpinned in Effects, then Adjust chosen, Adjust's own Scopes header takes
+    /// none.
+    #[test]
+    fn a_tab_chosen_after_a_pin_cancels_its_focus() {
+        let folder = settings::testing::Folder::new("layout-pin-then-tab");
+        let mut harness = effects_tab(&folder);
+        let ctx = harness.ctx.clone();
+        let state = harness.state().shell.state(&ctx, false, false);
+        let shell = &mut harness.state_mut().shell;
+        shell.run_on_section(scopes::ID, ActionId::SECTION_PIN, &state, &ctx);
+        assert_eq!(shell.focus_section, Some(scopes::ID));
+        let adjust = shell.workspace.position("adjust").unwrap();
+        shell.run(ActionId::PANEL_TABS[adjust], &state, &ctx, &[]);
+        assert_eq!(shell.panel_tab, adjust);
+        assert_eq!(shell.focus_section, None);
+        harness.run();
+        harness.run();
+        let scopes = harness.get_by_role_and_label(Role::Button, "Scopes");
+        assert!(!scopes.accesskit_node().is_focused());
     }
 
     /// F6 after a bound Pin in the same frame keeps the focus where F6 put it: the header
