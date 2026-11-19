@@ -667,6 +667,18 @@ fn main() -> eframe::Result {
     Ok(())
 }
 
+/// Raises the alerts `waiting`, oldest first, each with `ask`, until one finds an alert up
+/// already ([`dialog_host::Ask::Busy`]): it and those after it wait for the next call. One
+/// that is shown, or cannot be, is done.
+fn raise_in_turn<T>(waiting: &mut VecDeque<T>, mut ask: impl FnMut(&T) -> dialog_host::Ask) {
+    while let Some(next) = waiting.front() {
+        if ask(next) == dialog_host::Ask::Busy {
+            return;
+        }
+        waiting.pop_front();
+    }
+}
+
 /// The flags for one run among the command line's, as they were typed but `-d`'s long
 /// form: `--safe-mode`, each `-d DOMAIN` and each `--conf KEY=VALUE`. The cache folder's is
 /// handed over as the folder it names ([`hand_off`]).
@@ -1313,8 +1325,9 @@ struct App {
     /// The command line's paths and the hand-offs, joined into opens: none opens before the
     /// window shows, and on Windows those coming within 500 ms of each other open together.
     join: instance::Join,
-    /// The refused starts that came before the window showed, whose alerts wait for it.
-    refused_early: Vec<instance::Arrival>,
+    /// The refused starts whose alerts wait, each its flags and token: for the window to
+    /// show, or for the alert up before it to go (decision 89).
+    refusals: VecDeque<(Vec<OsString>, instance::Token)>,
     /// The Pictures folder, where the open dialog starts with no photo open; read once.
     pictures: Option<PathBuf>,
     /// The dialogs' windows (decision 41).
@@ -3874,7 +3887,7 @@ impl App {
             opened: dropped::Drops::default(),
             hand_offs: None,
             join: instance::Join::new(Vec::new(), Instant::now(), instance::Join::platform()),
-            refused_early: Vec::new(),
+            refusals: VecDeque::new(),
             pictures: paths::pictures(),
             dialogs,
             jobs_view: Vec::new(),
@@ -5614,9 +5627,9 @@ impl App {
 
     /// Takes what second starts handed over (decision 89): once the window has drawn a
     /// frame, each brings it forward with its token, through `window` where winit's own
-    /// request cannot, a refused one's alert raised in it; before, their paths join the
-    /// command line's and the alerts wait. Opens the paths [`instance::Join`] has joined
-    /// once they are due.
+    /// request cannot, a refused one's alert raised in it, in turn, each once the one
+    /// before has gone; before, their paths join the command line's and the alerts wait.
+    /// Opens the paths [`instance::Join`] has joined once they are due.
     fn take_hand_offs(
         &mut self,
         ctx: &egui::Context,
@@ -5626,14 +5639,8 @@ impl App {
             self.join.show();
         }
         let shown = self.join.shown();
-        let mut arrivals = std::mem::take(&mut self.refused_early);
-        arrivals.extend(
-            self.hand_offs
-                .as_ref()
-                .map(instance::Inbox::take)
-                .unwrap_or_default(),
-        );
-        for arrival in arrivals {
+        let arrivals = self.hand_offs.as_ref().map(instance::Inbox::take);
+        for arrival in arrivals.unwrap_or_default() {
             match arrival {
                 instance::Arrival::Open { paths, at, token } => {
                     self.join.arrive(paths, at);
@@ -5641,15 +5648,23 @@ impl App {
                         self.come_forward(ctx, window, &token);
                     }
                 }
-                instance::Arrival::Refused { .. } if !shown => self.refused_early.push(arrival),
                 instance::Arrival::Refused { flags, token } => {
-                    self.come_forward(ctx, window, &token);
-                    let line = instance::flags_line(&flags);
-                    let request = alerts::running_request(ctx, &line);
-                    let purpose = alerts::Purpose::Running;
-                    self.alerts.ask(&mut self.dialogs, purpose, &request, ctx);
+                    self.refusals.push_back((flags, token));
                 }
             }
+        }
+        if shown {
+            let mut waiting = std::mem::take(&mut self.refusals);
+            raise_in_turn(&mut waiting, |(flags, token)| {
+                if self.alerts.pending().is_some() {
+                    return dialog_host::Ask::Busy;
+                }
+                self.come_forward(ctx, window, token);
+                let request = alerts::running_request(ctx, &instance::flags_line(flags));
+                let purpose = alerts::Purpose::Running;
+                self.alerts.ask(&mut self.dialogs, purpose, &request, ctx)
+            });
+            self.refusals = waiting;
         }
         let now = Instant::now();
         // One open at a time: a look started over another under way replaces it.
@@ -5662,8 +5677,9 @@ impl App {
             // The look under way asks for the frame that takes the next once it is done.
             Some(_) if self.opened.looking() => {}
             Some(wait) => ctx.request_repaint_after(wait),
-            // The first frame drawn, for the paths waiting on it.
-            None if self.join.pending() || !self.refused_early.is_empty() => {
+            // The first frame drawn, for the paths and alerts waiting on it; once shown, an
+            // alert waits for the answer to the one up, which brings a frame of its own.
+            None if !shown && (self.join.pending() || !self.refusals.is_empty()) => {
                 ctx.request_repaint();
             }
             None => {}
@@ -8769,6 +8785,30 @@ mod tests {
             panic!("taken with no window to open it");
         };
         assert!(why.contains("quitting"), "{why}");
+    }
+
+    /// Refused starts' alerts come one at a time, in order: one that finds an alert up waits
+    /// for the next turn rather than being lost; one that cannot be shown is done.
+    #[test]
+    fn refused_starts_alerts_wait_their_turn() {
+        use dialog_host::Ask;
+        let mut waiting = VecDeque::from(["first", "second", "third"]);
+        let mut asked = Vec::new();
+        let mut up = false;
+        raise_in_turn(&mut waiting, |flags| {
+            if up {
+                return Ask::Busy;
+            }
+            asked.push(*flags);
+            up = true;
+            Ask::Shown
+        });
+        assert_eq!(asked, ["first"]);
+        assert_eq!(waiting, ["second", "third"]);
+        // The first answered: the second is shown, the third failing is done with.
+        let mut answers = vec![Ask::Shown, Ask::Failed].into_iter();
+        raise_in_turn(&mut waiting, |_| answers.next().unwrap());
+        assert!(waiting.is_empty());
     }
 
     /// The alert a refused start raises names its flags, in every language.
