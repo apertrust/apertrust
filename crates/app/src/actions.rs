@@ -50,7 +50,7 @@
 
 use std::collections::BTreeMap;
 
-use apertrust_engine::session::Command;
+use apertrust_engine::session::{Command, SelectionCommand};
 use apertrust_tools::{ProcessingDefinition, Row};
 use apertrust_ui::components::{BrowserBarAction, BrowserPosition, SortKey, ThumbnailSize};
 use apertrust_ui::{Background, Translator};
@@ -101,6 +101,13 @@ impl ActionId {
     pub const COPY_EDIT: ActionId = ActionId("copy-edit");
     pub const APPLY_EDIT: ActionId = ActionId("apply-edit");
     pub const COPY_APPLY_PARTS: ActionId = ActionId("copy-apply-parts");
+    /// Edit's selection items, darktable's select all, select none, invert selection and
+    /// select untouched: the session's `SelectionCommand`s `All`, `Clear`, `Invert` and
+    /// `Unedited` (decision 37; `selection::edit`).
+    pub const SELECT_ALL: ActionId = ActionId("select-all");
+    pub const SELECT_NONE: ActionId = ActionId("select-none");
+    pub const INVERT_SELECTION: ActionId = ActionId("invert-selection");
+    pub const SELECT_UNEDITED: ActionId = ActionId("select-unedited");
     pub const EDIT_VIEW: ActionId = ActionId("view-edit");
     /// View › Collections: the first tab holding Collections.
     pub const SHOW_COLLECTIONS: ActionId = ActionId("show-collections");
@@ -409,6 +416,8 @@ pub struct State {
     /// Whether a text field of the main window has the focus: Undo and Redo act on it, as
     /// the Mac's Edit menu does (decision 39), whatever the photo's history holds.
     pub text: bool,
+    /// What Edit's selection items would change, from the mirror (`selection::selectable`).
+    pub select: Selectable,
     /// The photos selected: the active one alone until several can be (decision 91 hides
     /// what acts on one photo alone from a thumbnail's menu while several are).
     pub photos: usize,
@@ -463,6 +472,20 @@ pub struct State {
     /// The background behind the photo, whose item is shown checked; None for a theme's
     /// own surround that is none of the six.
     pub background: Option<Background>,
+}
+
+/// Whether each of Edit's selection items would change the selection
+/// ([`State::select`]); one that would not is drawn disabled.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Selectable {
+    /// Select All: a photo of the folder open is not selected.
+    pub all: bool,
+    /// Select None: a photo other than the active one is selected.
+    pub none: bool,
+    /// Invert Selection: a folder is open with photos, the session's collection.
+    pub invert: bool,
+    /// Select Unedited: a photo of the folder open has no edit, as its cell's pencil says.
+    pub unedited: bool,
 }
 
 /// Whether each of the Tools panel's tabs can be chosen, by position, where the first
@@ -756,7 +779,7 @@ const fn to_tab<const I: usize>(message: &'static str) -> Action {
 
 /// Every action, in the order a keyboard map lists them (`docs/gui.md`, The default
 /// keyboard map). Slider keys are not here: they are the slider's own (`SliderRow`).
-pub static ACTIONS: [Action; 102] = [
+pub static ACTIONS: [Action; 106] = [
     // The Toolbar's mark, and About Apertrust in the menus once they come.
     Action {
         id: ActionId::ABOUT,
@@ -950,6 +973,49 @@ pub static ACTIONS: [Action; 102] = [
         trigger: Trigger::Repeat,
         available: |s| (s.redo || s.text) && on_main_window(s) && !s.modal,
         emits: Emit::Command(Command::Redo),
+    },
+    // darktable's Ctrl+A and Ctrl+Shift+A (`src/libs/select.c:142-147`). Select All is an editing
+    // item, as Undo is: a text field with the focus keeps Ctrl+A, and run from a menu there
+    // it hands the field its own ([`field_keys`]). Select None leaves no active photo, so
+    // with the active photo alone selected it would only close it, and rests.
+    Action {
+        id: ActionId::SELECT_ALL,
+        message: "action-select-all",
+        keys: &[command(Key::A)],
+        scope: Scope::App,
+        trigger: Trigger::Press,
+        available: |s| (s.select.all || s.text) && on_main_window(s) && !s.modal,
+        emits: Emit::Command(Command::Selection(SelectionCommand::All)),
+    },
+    Action {
+        id: ActionId::SELECT_NONE,
+        message: "action-select-none",
+        keys: &[command_shift(Key::A)],
+        scope: Scope::App,
+        trigger: Trigger::Press,
+        available: |s| s.select.none && on_main_window(s) && !s.modal,
+        emits: Emit::Command(Command::Selection(SelectionCommand::Clear)),
+    },
+    // No key by default: darktable's Ctrl+I (`src/libs/select.c:150-151`) is Import's here
+    // (`docs/gui.md`, File).
+    Action {
+        id: ActionId::INVERT_SELECTION,
+        message: "action-invert-selection",
+        keys: &[],
+        scope: Scope::App,
+        trigger: Trigger::Press,
+        available: |s| s.select.invert && on_main_window(s) && !s.modal,
+        emits: Emit::Command(Command::Selection(SelectionCommand::Invert)),
+    },
+    // No key, as darktable's select untouched has none (`src/libs/select.c:158-159`).
+    Action {
+        id: ActionId::SELECT_UNEDITED,
+        message: "action-select-unedited",
+        keys: &[],
+        scope: Scope::App,
+        trigger: Trigger::Press,
+        available: |s| s.select.unedited && on_main_window(s) && !s.modal,
+        emits: Emit::Command(Command::Selection(SelectionCommand::Unedited)),
     },
     Action {
         id: ActionId::COPY_EDIT,
@@ -2355,20 +2421,21 @@ pub fn read(ctx: &egui::Context, keymap: &Keymap, state: &State) -> Keys {
     keys
 }
 
-/// The keys a focused text field undoes or redoes with, egui's own whatever keys the
-/// actions have, as a press and its release: what Undo and Redo hand the field when chosen
-/// from a menu while it has the focus (decision 39), added to the next frame's input. None
-/// for any other action.
+/// The keys a focused text field undoes, redoes or selects all of its text with, egui's
+/// own whatever keys the actions have, as a press and its release: what Undo, Redo and
+/// Select All hand the field when chosen from a menu while it has the focus (decision 39),
+/// added to the next frame's input. None for any other action.
 pub fn field_keys(id: ActionId, os: OperatingSystem) -> Option<[egui::Event; 2]> {
-    let shift = match id {
-        ActionId::UNDO => Modifiers::NONE,
-        ActionId::REDO => Modifiers::SHIFT,
+    let (key, shift) = match id {
+        ActionId::UNDO => (Key::Z, Modifiers::NONE),
+        ActionId::REDO => (Key::Z, Modifiers::SHIFT),
+        ActionId::SELECT_ALL => (Key::A, Modifiers::NONE),
         _ => return None,
     };
     let modifiers = held(Modifiers::COMMAND.plus(shift), os == OperatingSystem::Mac);
     let key = |pressed| egui::Event::Key {
-        key: Key::Z,
-        physical_key: Some(Key::Z),
+        key,
+        physical_key: Some(key),
         pressed,
         repeat: false,
         modifiers,
@@ -2481,6 +2548,12 @@ pub(crate) mod tests {
             discard_why: None,
             exportable: true,
             text: false,
+            select: Selectable {
+                all: true,
+                none: true,
+                invert: true,
+                unedited: true,
+            },
             photos: 2,
             opened: true,
             recents: [Some(true); crate::recents::MOST],
@@ -2752,6 +2825,90 @@ pub(crate) mod tests {
             },
         ] {
             assert!(!undo.enabled(&rest) && !redo.enabled(&rest));
+        }
+    }
+
+    /// Edit's selection items send the session's selection commands, each disabled where
+    /// it would change nothing; Select All also runs for a focused text field, as Undo does.
+    #[test]
+    fn edit_s_selection_items_send_their_commands_and_rest_where_they_change_nothing() {
+        let all = everything().select;
+        // Each item, its command, and the state in which it alone would change nothing.
+        let items = [
+            (
+                ActionId::SELECT_ALL,
+                SelectionCommand::All,
+                Selectable { all: false, ..all },
+            ),
+            (
+                ActionId::SELECT_NONE,
+                SelectionCommand::Clear,
+                Selectable { none: false, ..all },
+            ),
+            (
+                ActionId::INVERT_SELECTION,
+                SelectionCommand::Invert,
+                Selectable {
+                    invert: false,
+                    ..all
+                },
+            ),
+            (
+                ActionId::SELECT_UNEDITED,
+                SelectionCommand::Unedited,
+                Selectable {
+                    unedited: false,
+                    ..all
+                },
+            ),
+        ];
+        for (id, command, rests) in items {
+            let item = action(id).expect("declared");
+            assert_eq!(item.emits, Emit::Command(Command::Selection(command)));
+            let mut state = everything();
+            assert!(item.enabled(&state), "{}", id.0);
+            state.select = rests;
+            assert!(!item.enabled(&state), "{}", id.0);
+            state.text = true;
+            assert_eq!(item.enabled(&state), id == ActionId::SELECT_ALL, "{}", id.0);
+            let modal = State {
+                modal: true,
+                ..everything()
+            };
+            assert!(!item.enabled(&modal), "{}", id.0);
+        }
+        // Darktable's keys, but Invert Selection's Ctrl+I, which is Import's.
+        let keymap = Keymap::defaults(OperatingSystem::Nix);
+        let keys = |id| keymap.keys(id).to_vec();
+        let ctrl = |modifiers, key| Shortcut { modifiers, key };
+        assert_eq!(
+            keys(ActionId::SELECT_ALL),
+            [ctrl(Modifiers::COMMAND, Key::A)]
+        );
+        let shift = Modifiers::COMMAND.plus(Modifiers::SHIFT);
+        assert_eq!(keys(ActionId::SELECT_NONE), [ctrl(shift, Key::A)]);
+        assert!(keys(ActionId::INVERT_SELECTION).is_empty());
+        assert!(keys(ActionId::SELECT_UNEDITED).is_empty());
+    }
+
+    /// Ctrl+A in a focused text field is the field's, selecting its text, never the
+    /// photos; chosen from a menu there, Select All hands the field egui's own Ctrl+A.
+    #[test]
+    fn ctrl_a_in_a_text_field_selects_its_text_not_the_photos() {
+        for os in PLATFORMS {
+            let mac = os == OperatingSystem::Mac;
+            let keymap = Keymap::defaults(os);
+            let state = everything();
+            let ctrl_a = || vec![key_event(Key::A, held(Modifiers::COMMAND, mac))];
+            let mut events = ctrl_a();
+            let pressed = take_presses(&mut events, &keymap, &state, Focus::Text, mac);
+            assert!(pressed.is_empty(), "{os:?}: {pressed:?}");
+            assert_eq!(events, ctrl_a(), "{os:?}: left to the field");
+            let mut events = ctrl_a();
+            let pressed = take_presses(&mut events, &keymap, &state, Focus::None, mac);
+            assert_eq!(pressed, [ActionId::SELECT_ALL], "{os:?}");
+            let [press, _] = field_keys(ActionId::SELECT_ALL, os).expect("Select All's");
+            assert_eq!(press, ctrl_a()[0], "{os:?}");
         }
     }
 

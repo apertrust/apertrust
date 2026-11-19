@@ -347,6 +347,13 @@ pub static MENUS: [Menu; 7] = [
         on: Platforms::All,
         groups: &[
             &[item(ActionId::UNDO), item(ActionId::REDO)],
+            // The selection's (decision 37), where Cut, Copy and Paste are to join them.
+            &[
+                item(ActionId::SELECT_ALL),
+                item(ActionId::SELECT_NONE),
+                item(ActionId::INVERT_SELECTION),
+                item(ActionId::SELECT_UNEDITED),
+            ],
             &[
                 item(ActionId::COPY_EDIT),
                 item(ActionId::APPLY_EDIT),
@@ -550,10 +557,10 @@ pub struct Shown {
 }
 
 /// Whether `id`'s item is one of the editing items (decision 39), which keep their keys
-/// while a text field has the focus and act on the field: Undo and Redo, which Cut, Copy,
-/// Paste and Select All are to join.
+/// while a text field has the focus and act on the field: Undo, Redo and Select All, which
+/// Cut, Copy and Paste are to join.
 pub fn edits_the_field(id: ActionId) -> bool {
-    id == ActionId::UNDO || id == ActionId::REDO
+    matches!(id, ActionId::UNDO | ActionId::REDO | ActionId::SELECT_ALL)
 }
 
 /// What `id`'s item shows with `keymap`, in `state`, while `focus` has the focus.
@@ -1759,6 +1766,12 @@ mod tests {
             discard_why: None,
             exportable: true,
             text: false,
+            select: actions::Selectable {
+                all: true,
+                none: true,
+                invert: true,
+                unedited: true,
+            },
             photos: 2,
             opened: true,
             recents: [Some(true); crate::recents::MOST],
@@ -2301,6 +2314,13 @@ mod tests {
             key: Key::Z,
         };
         assert_eq!(key(ActionId::REDO, Focus::Text), Some(shift));
+        // Select All keeps Cmd+A, which selects the field's text; Select None leaves the
+        // field Shift+Cmd+A.
+        assert_eq!(
+            key(ActionId::SELECT_ALL, Focus::Text),
+            Some(command(Key::A))
+        );
+        assert_eq!(key(ActionId::SELECT_NONE, Focus::Text), None);
         assert_eq!(key(ActionId::SHOW_COLLECTIONS, Focus::Text), None);
         assert_eq!(key(ActionId::NEXT_PHOTO, Focus::Text), None);
         assert_eq!(

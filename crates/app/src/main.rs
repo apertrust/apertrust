@@ -1495,6 +1495,10 @@ struct App {
     /// The photo last active in each folder this run, and the one the folder changed to
     /// waits to open ([`Remembered`]).
     remembered: Remembered,
+    /// The number of Edit's Invert Selection or Select Unedited that closed the active
+    /// photo, whose new selection's first photo opens once the session tells it
+    /// ([`selection::open_first`]).
+    opening_first: Option<u64>,
     /// The main window as the start window, with nothing open (`docs/gui.md`, The start
     /// window).
     start: start::Window,
@@ -3137,6 +3141,8 @@ impl Shell {
             // The app's, from the photo ([`App::shell_state`]).
             exportable: photo,
             text: Focus::of(ctx) == Focus::Text,
+            // The app's, from the mirror ([`App::shell_state`]).
+            select: actions::Selectable::default(),
             // One photo until the catalogue.
             photos: usize::from(photo),
             // The app's, from the folder and the photo it holds ([`App::shell_state`]).
@@ -4022,6 +4028,7 @@ impl App {
             marker,
             reopening: None,
             remembered: Remembered::default(),
+            opening_first: None,
             start: start::Window::new(false, settings.scale),
         };
         // The command line's paths, Finder's files at the launch, which macOS hands over as
@@ -4564,6 +4571,11 @@ impl App {
         self.remembered.remember(&self.mirror);
         self.remembered
             .restore(&mut self.mirror, &mut |command| session.send(command));
+        // In the Browser's sort as it is now, which a choice since the last frame changed.
+        self.mirror.folder.sort(self.shell.browser.sort);
+        selection::open_first(&mut self.opening_first, &mut self.mirror, &mut |command| {
+            session.send(command)
+        });
         // The spinner and the window show the jobs as they stand, in the language now.
         self.jobs_view = self.mirror.jobs.view(&translator(ctx));
         let place = self.shell.jobs_window;
@@ -4901,6 +4913,7 @@ impl App {
             unreadable: options.unreadable,
             discard_why: history::discard_why(options),
             exportable: open && !self.view_only(),
+            select: selection::selectable(&self.mirror),
             ..state
         }
     }
@@ -5004,7 +5017,13 @@ impl App {
                 let window = log_window::Window::new(self.kept.clone(), size);
                 self.dialogs.open_log(window, self.shell.log.window, ctx);
             }
-            if let Some(command) = command {
+            // Edit's selection items, shown in the mirror as the Browser's gestures are.
+            if let Some(Command::Selection(command)) = command {
+                let session = &self.session;
+                let send = &mut |command| session.send(command);
+                let waiting = &mut self.opening_first;
+                selection::edit(command, waiting, &mut self.mirror, send);
+            } else if let Some(command) = command {
                 // Everything goes back to its default, what is still pending included.
                 if command == Command::Reset {
                     self.mirror.pending.clear();
