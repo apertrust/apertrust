@@ -21,7 +21,8 @@
 //! values under the cursor, or while a colour picker is on, which picker it is and how to
 //! use it (`docs/pickers.md`, On the photo). On the right: the zoom, one button showing
 //! the scale, which opens darktable's zoom menu (`src/libs/navigation.c`): Small, Fit and
-//! Fill, the stops from 50 to 1600%, then Zoom in and Zoom out.
+//! Fill, the stops from 50 to 1600%, then Zoom in and Zoom out; before it, with more than
+//! one photo selected, how many are ("12 selected").
 
 use std::ops::RangeInclusive;
 
@@ -90,6 +91,7 @@ pub struct ViewerBar<'a> {
     values: Option<[u8; 3]>,
     status: Option<&'a str>,
     picker: Option<(&'a str, &'a str)>,
+    selected: usize,
     zoom: Zoom,
     zoom_enabled: bool,
     zoomable: bool,
@@ -139,6 +141,7 @@ impl<'a> ViewerBar<'a> {
             values: None,
             status: None,
             picker: None,
+            selected: 0,
             zoom,
             zoom_enabled: false,
             zoomable: false,
@@ -210,6 +213,13 @@ impl<'a> ViewerBar<'a> {
         self
     }
 
+    /// How many photos are selected: with more than one, the count stands before the zoom
+    /// (`docs/gui.md`, Selection and the active photo); none by default.
+    pub fn selected(mut self, count: usize) -> Self {
+        self.selected = count;
+        self
+    }
+
     /// The height [`Self::show`] takes, for laying out what goes under the bar before it.
     pub fn height(ctx: &egui::Context) -> f32 {
         BUTTON + 2.0 * theme(ctx).spacing.xs
@@ -240,8 +250,22 @@ impl<'a> ViewerBar<'a> {
         );
         let zoom_width =
             (ZOOM_START + zoom_galley.size().x + ZOOM_GAP + CHEVRON + ZOOM_END).max(ZOOM_LEAST);
+        // The count of the photos selected, before the zoom, its room kept from the left.
+        let count = (self.selected > 1).then(|| {
+            let mut args = Args::new();
+            args.set("count", self.selected);
+            let text = translator(&ctx).text_with("photo-selected-count", Some(&args));
+            let font = FontId::proportional(t.text.small);
+            let galley = ui
+                .painter()
+                .layout_no_wrap(text.clone(), font, t.colors.text);
+            (text, galley)
+        });
+        let count_width = count
+            .as_ref()
+            .map_or(0.0, |(_, galley)| galley.size().x + t.spacing.m);
         let mut left = inner;
-        left.max.x = (inner.right() - zoom_width - t.spacing.m).max(inner.left());
+        left.max.x = (inner.right() - zoom_width - count_width - t.spacing.m).max(inner.left());
 
         // The toggles, the layer and +.
         let left_end = ui
@@ -316,6 +340,14 @@ impl<'a> ViewerBar<'a> {
                 |ui| {
                     if let Some(chosen) = self.zoom_button(ui) {
                         action = Some(chosen);
+                    }
+                    // The count only where it fits beside the left's controls, which keep
+                    // their size at any width: a narrow bar leaves it out.
+                    if let Some((text, galley)) = count
+                        && ui.min_rect().left() - count_width >= left_end
+                    {
+                        ui.add_space(t.spacing.m);
+                        selected_label(ui, &text, galley);
                     }
                     ui.min_rect().left()
                 },
@@ -565,6 +597,15 @@ fn status_label(ui: &mut Ui, span: RangeInclusive<f32>, inner: Rect, status: &st
     let response = ui.interact(rect, ui.scope_id().with("status"), Sense::hover());
     response.widget_info(|| WidgetInfo::labeled(Role::Label, true, status));
     rect.right()
+}
+
+/// "12 selected", `text` laid out as `galley`, in the text colour: a label to screen
+/// readers.
+fn selected_label(ui: &mut Ui, text: &str, galley: std::sync::Arc<egui::Galley>) {
+    let colour = theme(ui.ctx()).colors.text;
+    let (rect, response) = ui.allocate_exact_size(galley.size(), Sense::hover());
+    ui.painter().galley(rect.min, galley, colour);
+    response.widget_info(|| WidgetInfo::labeled(Role::Label, true, text));
 }
 
 /// Draws a picker's `name`, then `how` a step quieter, from `span`'s start in `inner`'s

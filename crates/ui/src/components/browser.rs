@@ -25,13 +25,15 @@
 //! those on screen as it scrolls.
 //!
 //! A click on a photo's picture opens it; Shift-click selects a range, Ctrl or Cmd-click
-//! adds or removes one. A click on a caption or round a fitted picture does nothing. A
-//! right-click on a cell, a Control-click on the Mac, or the menu key, Shift+F10 or
-//! AccessKit's ShowContextMenu on the one focused, asks for its photo's menu, which the
-//! caller builds ([`BrowserOutput::menu`]). With a cell focused, ← and → move the focus to
-//! the next or previous photo, Home and End to the first and last, and Enter or Space opens
-//! the one focused; the panel scrolls to keep it in sight. The active photo's cell is
-//! scrolled into view when it changes. With no photos it is drawn empty and, where the app
+//! adds or removes one, as Ctrl+Space does the cell focused (Cmd+Space or Control+Space
+//! on the Mac). Each cell is marked as the caller says it is selected, and the list tells
+//! screen readers that several can be, where the caller says so ([`Browser::several`]). A click on a caption or round a fitted picture
+//! does nothing. A right-click on a cell, a Control-click on the Mac, or the menu key,
+//! Shift+F10 or AccessKit's ShowContextMenu on the one focused, asks for its photo's
+//! menu, which the caller builds ([`BrowserOutput::menu`]). With a cell focused, ← and →
+//! move the focus to the next or previous photo, Home and End to the first and last, and
+//! Enter or Space opens the one focused; the panel scrolls to keep it in sight. The active
+//! photo's cell is scrolled into view when it changes. With no photos it is drawn empty and, where the app
 //! gives one, says why: a struck-through photo over the message, and a hint under it where
 //! the app gives one too.
 //!
@@ -227,7 +229,8 @@ pub enum BrowserAction {
     Open(usize),
     /// Select the range from the active photo to this one.
     SelectRange(usize),
-    /// Add the photo to the selection, or take it out.
+    /// Add the photo to the selection, or take it out: Ctrl or Cmd-click on its picture, or
+    /// Ctrl+Space on its cell focused.
     ToggleSelected(usize),
 }
 
@@ -324,6 +327,7 @@ pub struct Browser<'a, F: Fn(usize) -> Thumb<'a>> {
     position: BrowserPosition,
     labels: bool,
     square: bool,
+    several: bool,
 }
 
 /// The space before the first line of cells and after the last, inside the panel, for
@@ -352,6 +356,7 @@ impl<'a, F: Fn(usize) -> Thumb<'a>> Browser<'a, F> {
             position: BrowserPosition::Bottom,
             labels: true,
             square: false,
+            several: true,
         }
     }
 
@@ -407,6 +412,13 @@ impl<'a, F: Fn(usize) -> Thumb<'a>> Browser<'a, F> {
         self
     }
 
+    /// Whether several photos can be selected, which the list tells screen readers; on by
+    /// default.
+    pub fn several(mut self, several: bool) -> Self {
+        self.several = several;
+        self
+    }
+
     pub fn show(self, ui: &mut Ui) -> BrowserOutput {
         let t = theme(ui.ctx());
         let column = self.position.is_column();
@@ -450,8 +462,13 @@ impl<'a, F: Fn(usize) -> Thumb<'a>> Browser<'a, F> {
         let name = tr(ui.ctx(), "browser");
         response.widget_info(|| WidgetInfo::labeled(Role::List, true, &name));
         // The node exists before its cells, so they hang under it (egui parents a node to the
-        // nearest ancestor that has one when it is made).
-        ui.ctx().accesskit_node_builder(response.id, |_| {});
+        // nearest ancestor that has one when it is made). Several of them can be selected,
+        // where the caller says so.
+        ui.ctx().accesskit_node_builder(response.id, |node| {
+            if self.several {
+                node.set_multiselectable();
+            }
+        });
         let list = response.id;
         // A row runs from the browser bar to the panel's end, inset at both; a column from
         // the browser bar to the bottom.
@@ -537,6 +554,10 @@ impl<'a, F: Fn(usize) -> Thumb<'a>> Browser<'a, F> {
                             if goto == Some(i) {
                                 ui.memory_mut(|m| m.request_focus(id));
                                 ui.data_mut(|d| d.remove::<usize>(pending_id));
+                            }
+                            // Before the cell takes its Space as a click.
+                            if ui.is_enabled() && ui.memory(|m| m.has_focus(id)) && toggled(ui) {
+                                action = Some(BrowserAction::ToggleSelected(i));
                             }
                             let cell = GridCell::new(thumb.name)
                                 .side(self.size.side())
@@ -899,6 +920,29 @@ fn keyed(ui: &Ui, id: Id, i: usize, cells: &Cells) -> Option<usize> {
         }
     })
     .filter(|target| *target != i)
+}
+
+/// Whether Ctrl+Space was pressed on the cell focused, taking the key, which toggles its
+/// photo's selection: with Ctrl, Cmd on the Mac, or the Mac's Control, since Spotlight holds
+/// Cmd+Space there. A key held toggles it once.
+fn toggled(ui: &Ui) -> bool {
+    ui.input_mut(|input| {
+        let mut pressed = false;
+        input.events.retain(|event| match event {
+            egui::Event::Key {
+                key: Key::Space,
+                pressed: true,
+                repeat,
+                modifiers,
+                ..
+            } if (modifiers.command || modifiers.ctrl) && !modifiers.alt && !modifiers.shift => {
+                pressed |= !repeat;
+                false
+            }
+            _ => true,
+        });
+        pressed
+    })
 }
 
 /// Where the cells lie in the scrolling strip: in a row, columns of `lines` cells, each

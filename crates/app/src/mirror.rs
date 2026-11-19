@@ -44,6 +44,7 @@
 //!   have started is not waited for by quitting. The values report that follows a refusal
 //!   in the same batch says what the edit holds.
 
+use std::collections::HashSet;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -51,7 +52,8 @@ use std::time::{Duration, Instant};
 use apertrust_engine::session::library::Thumbnail;
 use apertrust_engine::session::{
     ControlState, ControlValue, CoordinateState, Event, ExportPreview, Frame, History, OpenPreview,
-    Photo, PresetState, PreviewSource, Selection, SessionError, ToolState, Values,
+    Photo, PresetState, PreviewSource, Selection, SelectionCommand, SessionError, ToolState,
+    Values,
 };
 use apertrust_engine::{edit, sidecar};
 use apertrust_plugin::ImageContext;
@@ -180,6 +182,14 @@ pub struct Mirror {
     /// The selection and the active photo, the session's (decision 37), as it last told
     /// them, the latest by its `through`: empty before it tells any.
     pub selection: Selection,
+    /// The photos of `selection`.
+    selected: HashSet<PathBuf>,
+    /// The selection commands and the opens the app sent that no fact includes yet, in the
+    /// order sent ([`Mirror::selecting`]).
+    asked: Vec<Asked>,
+    /// `selected` with `asked` laid over it, as the session will make it: what the cells
+    /// mark ([`Mirror::is_selected`]).
+    selected_shown: HashSet<PathBuf>,
     /// The disk cache's latest sizes and the Clears under way, Settings › Storage's.
     pub cache: crate::storage::Mirror,
     /// The number of the first preview the Export tool asked for as it was shown, then of
@@ -225,6 +235,9 @@ impl Mirror {
             jobs,
             folder: FolderState::default(),
             selection: Selection::default(),
+            selected: HashSet::new(),
+            asked: Vec::new(),
+            selected_shown: HashSet::new(),
             cache: crate::storage::Mirror::default(),
             export_floor: 0,
             edit_changes: 0,
@@ -276,6 +289,8 @@ impl Mirror {
     /// one's values arrive, and the Viewer shows at once the largest thumbnail the
     /// folder holds of it, if any (decision 77).
     pub fn opening(&mut self, path: PathBuf, open: u64, now: Instant) {
+        // The session selects a photo opened from outside the selection alone.
+        self.ask(open, Ask::Open(path.clone()));
         let held = self.folder.largest_thumbnail(&path).cloned();
         self.photo = PhotoState::Opening { path, open };
         self.closed = false;
@@ -308,6 +323,77 @@ impl Mirror {
         self.live = false;
         self.asked_at = None;
         self.set_picture(None);
+    }
+
+    /// The photos selected: as the session last told them, with the app's commands it has
+    /// not told yet laid over them (decision 37).
+    fn shown_selection(&self) -> &HashSet<PathBuf> {
+        &self.selected_shown
+    }
+
+    /// Whether `path` is selected, as the Browser's cells mark it: with the app's selection
+    /// commands not yet told laid over the session's, as a value sent is ([`Mirror::selecting`]).
+    pub fn is_selected(&self, path: &Path) -> bool {
+        self.shown_selection().contains(path)
+    }
+
+    /// How many photos are selected, as [`Mirror::is_selected`] tells them: the viewer bar's
+    /// count.
+    pub fn selected_count(&self) -> usize {
+        self.shown_selection().len()
+    }
+
+    /// Whether `path` is selected alone, as [`Mirror::is_selected`] tells it.
+    pub fn selected_alone(&self, path: &Path) -> bool {
+        let photos = self.shown_selection();
+        photos.len() == 1 && photos.contains(path)
+    }
+
+    /// The app sent `command` as `number`: the selection is shown as the session will make
+    /// it, by its rules, laid over each fact until one includes the command, as a value
+    /// sent is, so a gesture before that fact reads what the last one did. A range runs
+    /// from the photo open or opening as it was sent, or from none should that open fail
+    /// first, as the session applies it; taking the active photo
+    /// out leaves the app to close it ([`Mirror::closing`]). All, Invert and Unedited, which
+    /// need the collection, change nothing shown until the session tells them.
+    pub fn selecting(&mut self, command: &SelectionCommand, number: u64) {
+        let active = (self.photo.asked().map(Path::to_owned)).zip(self.photo.open());
+        self.ask(number, Ask::Select(command.clone(), active));
+    }
+
+    /// The open numbered `open` failed: it selected nothing, and a range sent after it runs
+    /// from no photo, as the session, with none active then, applies it.
+    fn open_failed(&mut self, open: u64) {
+        let before = self.asked.len();
+        self.asked.retain(|asked| asked.number != open);
+        let mut changed = self.asked.len() != before;
+        // By the open's number, not its photo's: a later open of the same photo stands.
+        for asked in &mut self.asked {
+            if let Ask::Select(_, active) = &mut asked.ask
+                && active.as_ref().is_some_and(|(_, number)| *number == open)
+            {
+                *active = None;
+                changed = true;
+            }
+        }
+        if changed {
+            self.lay_over();
+        }
+    }
+
+    /// Lays `ask`, numbered `number`, over the selection until a fact includes it.
+    fn ask(&mut self, number: u64, ask: Ask) {
+        self.asked.push(Asked { number, ask });
+        self.lay_over();
+    }
+
+    /// `selected_shown`: the session's selection, each command not yet told applied in order.
+    fn lay_over(&mut self) {
+        let mut photos = self.selected.clone();
+        for asked in &self.asked {
+            asked.ask.apply(&mut photos);
+        }
+        self.selected_shown = photos;
     }
 
     /// Whether the photo is live, its controls taking changes and its frames coming.
@@ -411,6 +497,10 @@ impl Mirror {
     /// ([`PhotoState::stale`]), and returns what the app owes in reply.
     pub fn apply(&mut self, event: Event) -> Vec<Reaction> {
         let mut reactions = Vec::new();
+        // An open that failed selected nothing, stale or not: its own ask stops showing.
+        if let Event::Failed(SessionError::Open { open, .. }) = &event {
+            self.open_failed(*open);
+        }
         if self.photo.stale(&event) || self.closed && of_a_photo(&event) {
             return reactions;
         }
@@ -505,7 +595,11 @@ impl Mirror {
             // The session's selection, the latest by its `through`.
             Event::Selection(selection) => {
                 if selection.through >= self.selection.through {
+                    self.selected = selection.photos.iter().cloned().collect();
+                    // What it includes is the session's; the rest laid over it again.
+                    (self.asked).retain(|asked| asked.number > selection.through);
                     self.selection = selection;
+                    self.lay_over();
                 }
             }
             // The open photo's history, the latest by its `through`, which Undo and Redo
@@ -572,6 +666,11 @@ impl Mirror {
             self.pickers.refused(command);
             self.saving.refused(command);
             self.jobs.refused(command);
+            // A selection command refused changed nothing: the rest laid over without it.
+            if self.asked.iter().any(|asked| asked.number == command) {
+                self.asked.retain(|asked| asked.number != command);
+                self.lay_over();
+            }
         }
         // The app sends no change on the edit before the photo is live, its controls drawn
         // disabled, so it never causes this; should one come, nothing is said of it.
@@ -602,12 +701,14 @@ impl Mirror {
         }
         // A photo opening, its values come or not, until it is live.
         let opening = match &self.photo {
-            PhotoState::Opening { path, .. } => Some(path.clone()),
-            PhotoState::Open(photo) if !self.live => Some(photo.path.clone()),
+            PhotoState::Opening { path, open } => Some((path.clone(), *open)),
+            PhotoState::Open(photo) if !self.live => Some((photo.path.clone(), photo.open)),
             _ => None,
         };
         match opening {
-            Some(path) if ends_open => {
+            Some((path, open)) if ends_open => {
+                // An open that failed selected nothing; one the engine ended never reported.
+                self.open_failed(open);
                 let message = format!("{}: {error}", path.display());
                 self.photo = PhotoState::Failed { path, message };
                 // The session closed the photo left before it tried: none is open.
@@ -619,6 +720,63 @@ impl Mirror {
             // the photo.
             _ if matches!(error, SessionError::Scopes(_)) => {}
             _ => self.failure = Some(error.to_string()),
+        }
+    }
+}
+
+/// A command the app sent that changes the selection, laid over the session's until a
+/// fact includes it ([`Mirror::selecting`]).
+#[derive(Debug)]
+struct Asked {
+    /// Its number, as the session numbered it.
+    number: u64,
+    ask: Ask,
+}
+
+/// What a command does to the selection, by the session's rules.
+#[derive(Debug)]
+enum Ask {
+    /// A selection command, with the photo open or opening as it was sent and the number
+    /// of the open that asked for it, from which a range runs.
+    Select(SelectionCommand, Option<(PathBuf, u64)>),
+    /// An open: a photo outside the selection is selected alone.
+    Open(PathBuf),
+}
+
+impl Ask {
+    fn apply(&self, photos: &mut HashSet<PathBuf>) {
+        match self {
+            Ask::Open(path) => {
+                if !photos.contains(path) {
+                    *photos = HashSet::from([path.clone()]);
+                }
+            }
+            Ask::Select(SelectionCommand::Set(set), _) => *photos = set.iter().cloned().collect(),
+            Ask::Select(SelectionCommand::Add(photo), _) => {
+                photos.insert(photo.clone());
+            }
+            Ask::Select(SelectionCommand::Remove(photo), _) => {
+                photos.remove(photo);
+            }
+            Ask::Select(SelectionCommand::Range { to, order }, active) => {
+                let active = active.as_ref().map(|(photo, _)| photo.as_path());
+                let at = |photo: &Path| order.iter().position(|listed| listed == photo);
+                *photos = match active.and_then(at).zip(at(to)) {
+                    Some((from, to)) => {
+                        let (first, last) = (from.min(to), from.max(to));
+                        order[first..=last].iter().cloned().collect()
+                    }
+                    None => HashSet::new(),
+                };
+                photos.insert(to.clone());
+                photos.extend(active.map(Path::to_owned));
+            }
+            Ask::Select(SelectionCommand::Clear, _) => photos.clear(),
+            // They need the collection: as the session tells them.
+            Ask::Select(
+                SelectionCommand::All | SelectionCommand::Invert | SelectionCommand::Unedited,
+                _,
+            ) => {}
         }
     }
 }
@@ -2128,7 +2286,97 @@ pub(crate) mod tests {
     }
 
     /// The mirror keeps the session's latest selection by its `through`, one arriving late
-    /// dropped, whatever photo is opening or closed (decision 37).
+    /// dropped, whatever photo is opening or closed, and tells which photos it holds
+    /// (decision 37).
+    #[test]
+    fn an_earlier_open_failing_late_stops_showing_its_photo_selected() {
+        let a = PathBuf::from("/photos/a.ARW");
+        let b = PathBuf::from("/photos/b.ARW");
+        let mut m = mirror();
+        // A asked for, then B before A's failure: A's failure comes once B is opening.
+        m.opening(a.clone(), 1, Instant::now());
+        m.opening(b.clone(), 2, Instant::now());
+        assert!(m.is_selected(&b));
+        m.apply(Event::Failed(SessionError::Open {
+            open: 1,
+            error: Box::new(SessionError::NotAMosaic),
+        }));
+        // Stale for the photo, B still opening, but A's open selected nothing.
+        assert!(matches!(m.photo, PhotoState::Opening { open: 2, .. }));
+        assert!(!m.is_selected(&a));
+        assert!(m.is_selected(&b));
+    }
+
+    #[test]
+    fn a_range_sent_after_an_open_that_fails_runs_from_no_photo() {
+        let at = |name: &str| PathBuf::from("/photos").join(name);
+        let order: Vec<PathBuf> = ["a.ARW", "b.ARW", "c.ARW"].map(at).to_vec();
+        let mut m = mirror();
+        m.opening(at("a.ARW"), 1, Instant::now());
+        let range = SelectionCommand::Range {
+            to: at("c.ARW"),
+            order,
+        };
+        m.selecting(&range, 2);
+        assert!(m.is_selected(&at("b.ARW")));
+        // A's open fails before the session applies the range: none active, C alone.
+        m.apply(Event::Failed(SessionError::Open {
+            open: 1,
+            error: Box::new(SessionError::NotAMosaic),
+        }));
+        assert!(!m.is_selected(&at("a.ARW")));
+        assert!(!m.is_selected(&at("b.ARW")));
+        assert!(m.is_selected(&at("c.ARW")));
+    }
+
+    #[test]
+    fn a_range_keeps_its_anchor_when_an_earlier_open_of_the_same_photo_fails() {
+        let at = |name: &str| PathBuf::from("/photos").join(name);
+        let order: Vec<PathBuf> = ["a.ARW", "b.ARW", "c.ARW"].map(at).to_vec();
+        let mut m = mirror();
+        // A opened, A opened again, then a range from A: the first open's failure is not
+        // the second's.
+        m.opening(at("a.ARW"), 1, Instant::now());
+        m.opening(at("a.ARW"), 2, Instant::now());
+        let range = SelectionCommand::Range {
+            to: at("c.ARW"),
+            order,
+        };
+        m.selecting(&range, 3);
+        m.apply(Event::Failed(SessionError::Open {
+            open: 1,
+            error: Box::new(SessionError::NotAMosaic),
+        }));
+        assert!(m.is_selected(&at("b.ARW")));
+    }
+
+    #[test]
+    fn a_range_drops_its_anchor_when_its_open_fails_after_a_fact_told_the_open() {
+        use apertrust_engine::session::Selection;
+
+        let at = |name: &str| PathBuf::from("/photos").join(name);
+        let order: Vec<PathBuf> = ["a.ARW", "b.ARW", "c.ARW"].map(at).to_vec();
+        let mut m = mirror();
+        m.opening(at("a.ARW"), 1, Instant::now());
+        let range = SelectionCommand::Range {
+            to: at("c.ARW"),
+            order,
+        };
+        m.selecting(&range, 2);
+        // The session tells the open, A active, before the range and before A fails.
+        m.apply(Event::Selection(Selection {
+            photos: vec![at("a.ARW")],
+            active: Some(at("a.ARW")),
+            through: 1,
+        }));
+        m.apply(Event::Failed(SessionError::Open {
+            open: 1,
+            error: Box::new(SessionError::NotAMosaic),
+        }));
+        assert!(!m.is_selected(&at("b.ARW")));
+        assert!(m.is_selected(&at("c.ARW")));
+    }
+
     #[test]
     fn the_mirror_keeps_the_session_s_latest_selection() {
         use apertrust_engine::session::Selection;
@@ -2151,11 +2399,15 @@ pub(crate) mod tests {
         m.apply(told(&["a.ARW"], Some("a.ARW"), 2));
         assert_eq!(m.selection.photos.len(), 2);
         assert_eq!(m.selection.through, 3);
+        // As the Browser's cells mark them.
+        assert!(m.is_selected(Path::new("/photos/b.ARW")));
+        assert!(!m.is_selected(Path::new("/photos/c.ARW")));
         // The photo closed: the selection the session tells with no active photo.
         m.closing();
         m.apply(told(&["b.ARW"], None, 4));
         assert_eq!(m.selection.photos, [PathBuf::from("/photos/b.ARW")]);
         assert_eq!(m.selection.active, None);
+        assert!(!m.is_selected(Path::new("/photos/a.ARW")));
     }
 
     use apertrust_engine::jobs::{JobEvent, Message, Queue, State};

@@ -308,6 +308,13 @@ photo-layer = Warstwa: { $layer }. Zmień warstwę
 photo-new-layer = Nowa warstwa
 photo-values = Wartości pod kursorem
 photo-values-read = Czerwony { $red }, zielony { $green }, niebieski { $blue }, szary { $grey }
+photo-selected-count =
+    { $count ->
+        [one] { $count } zaznaczone zdjęcie
+        [few] { $count } zaznaczone zdjęcia
+        [many] { $count } zaznaczonych zdjęć
+       *[other] { $count } zaznaczonego zdjęcia
+    }
 photo-zoom = Powiększenie
 photo-zoom-small = Mały
 photo-zoom-fit = Dopasuj
