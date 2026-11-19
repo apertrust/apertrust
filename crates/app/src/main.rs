@@ -1615,7 +1615,9 @@ struct Shell {
     /// The workspaces whose file a write found a newer build's while another was shown:
     /// said as each is shown again (decision 96).
     newer_found: BTreeSet<String>,
-    /// Whether the workspace just shown is one of those, to be said at the next frame.
+    /// Whether the workspace shown keeps no change, its file a newer build's, is to be said
+    /// at the next frame, the first time this run ([`Shell::warn_newer`]): one of those just
+    /// shown again, or one a move was made in; never once another is shown.
     newer_shown: bool,
     /// The tab whose icon takes the focus at the next frame: where a section went.
     focus_tab: Option<usize>,
@@ -1959,15 +1961,23 @@ impl Shell {
     /// top of the Tools panel's sections: screen readers hear it as it changes, one message
     /// a frame, in the order the moves came. Under it, from the first move in a workspace
     /// whose file a newer Apertrust wrote, or as one a write found so is shown, until
-    /// another is shown, the one line saying its changes will not be kept (decision 96).
+    /// another is shown, the one line saying its changes will not be kept (decision 96),
+    /// said with the frame's message, never queued, so a switch after it says it no more.
     fn announce(&mut self, ui: &mut egui::Ui) {
-        if std::mem::take(&mut self.newer_shown)
-            && let Some(warning) = self.warn_newer(ui.ctx())
-        {
-            self.say(warning);
+        let warning = std::mem::take(&mut self.newer_shown)
+            .then(|| self.warn_newer(ui.ctx()))
+            .flatten();
+        let mut said = self.to_say.pop_front();
+        if let Some(warning) = warning {
+            let words = match said {
+                Some(next) => format!("{next}\n{warning}"),
+                None => warning,
+            };
+            self.announced.clone_from(&words);
+            said = Some(words);
         }
-        if let Some(next) = self.to_say.pop_front() {
-            self.said = next;
+        if let Some(said) = said {
+            self.said = said;
             ui.ctx().request_repaint();
         }
         if self.newer_warning {
@@ -2080,11 +2090,10 @@ impl Shell {
             return;
         }
         self.workspaces.keep(&self.workspace);
-        let mut said = self.announcement(&change, ctx);
-        if let Some(warning) = self.warn_newer(ctx) {
-            said = format!("{said}\n{warning}");
-        }
-        self.say(said);
+        self.say(self.announcement(&change, ctx));
+        // A newer build's workspace says it keeps no change with the move, as the next
+        // frame shows it: a switch in the same frame drops it, never said in another.
+        self.newer_shown |= self.workspace.newer;
         let left = self.shown_tab().is_none_or(|tab| !tab.holds(tool));
         if let Some(at) = was.iter().position(|t| *t == tool).filter(|_| left) {
             self.focus_left(&change, &was, at);
@@ -12010,6 +12019,54 @@ mod tests {
         harness.state_mut().shell.workspace_files.flush();
         let file = std::fs::read_to_string(files.join("default.toml")).unwrap();
         assert_eq!(file, newer);
+    }
+
+    /// The first move in a newer build's workspace, then a switch in the same frame: the
+    /// move is said, never that changes will not be kept, in the workspace shown now.
+    #[test]
+    fn a_newer_build_s_warning_is_never_said_in_another_workspace() {
+        let folder = settings::testing::Folder::new("layout-newer-switch");
+        let files = folder.0.join("workspaces");
+        std::fs::create_dir_all(&files).unwrap();
+        let newer = "version = 2\n[[tabs]]\nid = \"effects\"\nicon = \"effect\"\n\
+                     [order]\neffects = [\"vignette\", \"grain\"]\n";
+        std::fs::write(files.join("default.toml"), newer).unwrap();
+        let mut harness = tools_panel(&folder);
+        let (workspaces, _) = layout::Workspaces::read(Some(&files));
+        let (workspace, _) = workspaces.open(layout::DEFAULT);
+        let shell = &mut harness.state_mut().shell;
+        shell.workspaces = workspaces;
+        shell.workspace_files = layout::Files::new(files.clone());
+        shell.open_workspace(workspace);
+        harness.run();
+        let ctx = egui::Context::default();
+        let state = harness.state().shell.state(&ctx, false, false);
+        let shell = &mut harness.state_mut().shell;
+        shell.run_on_section("grain", ActionId::SECTION_PIN, &state, &ctx);
+        shell.switch_workspace(layout::ESSENTIALS);
+        harness.step();
+        harness.get_by_role_and_label(Role::Status, "Grain pinned in Effects");
+        harness.run();
+        let warning = "A newer Apertrust saved this layout, so changes to it won't be kept";
+        let shell = &harness.state().shell;
+        assert!(!shell.said.contains(warning), "{}", shell.said);
+        assert!(!shell.newer_warning);
+        assert!(harness.query_by_label(warning).is_none());
+        // Back, a move says it with the warning in one message, leaving nothing queued for
+        // a switch after it.
+        let shell = &mut harness.state_mut().shell;
+        shell.switch_workspace(layout::DEFAULT);
+        shell.run_on_section("vignette", ActionId::SECTION_PIN, &state, &ctx);
+        harness.step();
+        let said = format!("Vignetting pinned in Effects\n{warning}");
+        assert_eq!(harness.state().shell.said, said);
+        harness
+            .state_mut()
+            .shell
+            .switch_workspace(layout::ESSENTIALS);
+        harness.run();
+        assert_eq!(harness.state().shell.said, said);
+        assert!(harness.state().shell.to_say.is_empty());
     }
 
     /// A move is display order only (decisions 83 and 96): no command reaches the session,
