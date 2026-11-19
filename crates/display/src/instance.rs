@@ -49,6 +49,14 @@ pub fn allow_foreground(id: u32) -> io::Result<()> {
     }
 }
 
+/// Lets go of what `activate_with_token` keeps over winit's display, while that display is
+/// still connected: call it as the event loop ends, on its thread, before winit's display
+/// goes. Does nothing where nothing is kept, and off Linux.
+pub fn end_activation() {
+    #[cfg(target_os = "linux")]
+    linux::end_activation();
+}
+
 #[cfg(unix)]
 pub use unix::{acl_grants_others, peer_user, user_id};
 
@@ -331,6 +339,7 @@ mod acl {
 #[cfg(target_os = "linux")]
 mod linux {
     use std::cell::RefCell;
+    use std::mem::ManuallyDrop;
 
     use raw_window_handle::{HasDisplayHandle as _, HasWindowHandle as _};
     use raw_window_handle::{RawDisplayHandle, RawWindowHandle};
@@ -392,9 +401,9 @@ mod linux {
         }
     }
 
-    /// The activation global, bound once over winit's display and kept for the process,
-    /// with the queue its registry lives on: binding it each time would leave a registry
-    /// behind each time.
+    /// The activation global, bound once over winit's display and kept until the loop
+    /// ends ([`end_activation`]), with the queue its registry lives on: binding it each time
+    /// would leave a registry behind each time.
     struct Bound {
         display: usize,
         connection: Connection,
@@ -402,8 +411,22 @@ mod linux {
         _queue: EventQueue<Activation>,
     }
 
+    // Never dropped with the thread: by then winit's display may be gone, and dropping the
+    // proxies and queue kept over it would touch it. Only `end_activation` drops it; a
+    // start that ends without it leaves it to the process's end.
     thread_local! {
-        static BOUND: RefCell<Option<Bound>> = const { RefCell::new(None) };
+        static BOUND: RefCell<Option<ManuallyDrop<Bound>>> = const { RefCell::new(None) };
+    }
+
+    /// [`super::end_activation`] on Linux: the global destroyed and what was kept dropped,
+    /// while winit's display is connected.
+    pub(super) fn end_activation() {
+        let bound = BOUND.with_borrow_mut(Option::take);
+        if let Some(bound) = bound {
+            let bound = ManuallyDrop::into_inner(bound);
+            bound.activation.destroy();
+            let _ = bound.connection.flush();
+        }
     }
 
     /// Activates `window` with `token`, another process's activation token, as a second
@@ -420,8 +443,10 @@ mod linux {
         };
         let pointer = display.display.as_ptr() as usize;
         BOUND.with_borrow_mut(|bound| {
+            // One bound over another display, which winit never makes, is left as it is
+            // rather than dropped over a display that may be gone.
             if bound.as_ref().is_none_or(|bound| bound.display != pointer) {
-                *bound = bind(display.display.as_ptr())?;
+                *bound = bind(display.display.as_ptr())?.map(ManuallyDrop::new);
             }
             let Some(bound) = bound.as_ref() else {
                 return Ok(false);
@@ -448,8 +473,8 @@ mod linux {
     fn bind(display: *mut std::ffi::c_void) -> Result<Option<Bound>, Error> {
         // SAFETY: the `wl_display` is winit's, connected for as long as its event loop runs,
         // and this is called from inside it. The `Backend` is a guest on it; kept with the
-        // proxies made over it for the thread's life, it is only used from inside the loop,
-        // where the display is connected.
+        // proxies made over it until `end_activation`, called as the loop ends, it is only
+        // used and dropped from inside the loop, where the display is connected.
         let backend = unsafe { Backend::from_foreign_display(display.cast()) };
         let connection = Connection::from_backend(backend);
         let (globals, queue) = registry_queue_init::<Activation>(&connection)?;
@@ -764,6 +789,14 @@ mod tests {
         let others = [header, entry(0x01, 7, u32::MAX), entry(0x20, 1, u32::MAX)].concat();
         assert!(posix_acl_grants_others(&others));
         assert!(!posix_acl_grants_others(&[]));
+    }
+
+    /// Ending the activation with nothing bound, as on X11 or before any second start, does
+    /// nothing, however often; with a display it needs a compositor, tested by hand.
+    #[test]
+    fn ending_an_activation_never_bound_does_nothing() {
+        super::end_activation();
+        super::end_activation();
     }
 
     /// A directory the test makes, with no ACL, grants nothing; one the system has not

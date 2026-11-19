@@ -65,7 +65,8 @@
 //! does not say: the user a process runs as and the one at a Unix socket's other end, a
 //! directory's access-control list, Windows' named pipe and its server's user, the right
 //! to come forward handed to the instance, and on Wayland a window activated with another
-//! process's token (`instance`).
+//! process's token (`instance`), let go of as the event loop ends
+//! (`instance::end_activation`).
 
 #![allow(
     unsafe_code,

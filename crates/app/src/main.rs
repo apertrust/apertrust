@@ -6516,6 +6516,8 @@ impl eframe::App for App {
     }
 
     fn on_exit(&mut self) {
+        // What Wayland's activation keeps over winit's display, while it is connected.
+        apertrust_display::instance::end_activation();
         self.keeper.flush();
         // The moves made since the workspace's file was last written (decision 96).
         self.shell.workspace_files.flush();
