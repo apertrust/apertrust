@@ -226,11 +226,14 @@ fn arguments_in(
         } else if arg == restart::NO_REOPEN_FLAG {
             arguments.reopen = Some(false);
         } else if arg == "-d" || arg == "--debug" {
-            let domain = args.next();
-            let named = domain.as_ref().map(|d| d.to_string_lossy().into_owned());
-            arguments.domains.extend(named);
-            arguments.flags.push(arg);
-            arguments.flags.extend(domain);
+            // A `-d` with no domain after it is dropped, so that a hand-off or a restart
+            // never reads the path it puts next as the domain.
+            if let Some(domain) = args.next() {
+                arguments
+                    .domains
+                    .push(domain.to_string_lossy().into_owned());
+                arguments.flags.extend([arg, domain]);
+            }
         } else if arg == CONF_FLAG {
             let given = args
                 .next()
@@ -8765,6 +8768,11 @@ mod tests {
             assert_eq!(taken.paths, drive.paths);
             assert!(taken.paths[0].is_absolute(), "{:?}", taken.paths);
         }
+        let trailing = read(&["IMG_1.ARW", "-d"]).expect("read");
+        let sent = handed(&trailing.flags, trailing.safe_mode, &trailing.paths);
+        let taken = arguments_in(sent, Some(&elsewhere)).expect("read");
+        assert_eq!(taken.paths, trailing.paths);
+        assert!(taken.domains.is_empty(), "{:?}", taken.domains);
     }
 
     /// The flags for one run a second start hands over: `--safe-mode`, each domain and each
