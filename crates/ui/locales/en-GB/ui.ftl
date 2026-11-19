@@ -901,6 +901,10 @@ log-save-title = Save the Log
 action-about = About { app-name }
 # $version is the build's version, as 0.1.0+197~g9201df0.
 about-version = Version { $version }
+# The version line's tooltip: a click copies the version alone, as --version prints it.
+about-copy-version = Click to copy the version
+# At the version line for a moment after a click copied it, and what screen readers hear then.
+about-version-copied = Version copied
 about-copyright = Copyright © 2026 { app-name } developers.
 about-free-software = Free software under the GNU General Public License, version 3 or later.
 about-credits = Credits

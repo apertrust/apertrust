@@ -18875,8 +18875,10 @@ mod tests {
                 .is_some()
         );
         assert!(!focused(&harness, "Credits"));
-        // Tab goes between its buttons alone: the dialog itself is no Tab stop.
-        for button in ["Credits", "Licence", "Credits"] {
+        // Tab goes between the version line and its buttons alone: the dialog itself is no
+        // Tab stop.
+        let line = format!("Version {version}");
+        for button in [line.as_str(), "Credits", "Licence", line.as_str()] {
             harness.key_press(Key::Tab);
             harness.run();
             assert!(focused(&harness, button), "{button}");
@@ -18955,10 +18957,12 @@ mod tests {
         assert_eq!(page(&harness), Some(Page::About));
         assert!(!focused(&harness, "Credits"));
 
-        // By keyboard the focus follows: Tab to Credits, Enter goes in with Back focused,
-        // Esc comes back with Credits focused.
-        harness.key_press(Key::Tab);
-        harness.run();
+        // By keyboard the focus follows: Tab past the version line to Credits, Enter goes
+        // in with Back focused, Esc comes back with Credits focused.
+        for _ in 0..2 {
+            harness.key_press(Key::Tab);
+            harness.run();
+        }
         assert!(focused(&harness, "Credits"));
         harness.key_press(Key::Enter);
         harness.run();

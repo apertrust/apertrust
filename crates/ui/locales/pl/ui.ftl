@@ -689,6 +689,8 @@ log-save-title = Zapisz dziennik
 
 action-about = O programie { app-name }
 about-version = Wersja { $version }
+about-copy-version = Kliknij, aby skopiować wersję
+about-version-copied = Skopiowano wersję
 about-copyright = Prawa autorskie © 2026 twórcy { app-name }.
 about-free-software = Wolne oprogramowanie na licencji GNU General Public License w wersji 3 lub późniejszej.
 about-credits = Podziękowania
