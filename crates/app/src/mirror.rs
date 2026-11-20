@@ -344,6 +344,7 @@ impl Mirror {
     }
 
     /// Whether `path` is selected alone, as [`Mirror::is_selected`] tells it.
+    #[cfg(test)]
     pub fn selected_alone(&self, path: &Path) -> bool {
         let photos = self.shown_selection();
         photos.len() == 1 && photos.contains(path)

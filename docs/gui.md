@@ -2533,7 +2533,7 @@ With several photos selected, the rating, reject and label keys, Apply Edit and 
 - **The selection** is a set of the current folder's or album's photos, which holds the active photo whenever there is one. Selected photos are marked neutral, by a thin ring in the icons' grey, the active photo by a thicker one, never the accent ([The cell](#the-cell)).
 - **Both are the session's** (decision 37), not the interface's, so a script or an assistant reads and sets them with the same commands, and an assistant's note says how many photos it changed (principle 8).
 - **Built:** the session's half. `Command::Selection` sets the photos, adds or removes one, selects a range from the active photo in the client's sort, all, none, the inverse or the unedited photos; opening a photo outside the selection selects it alone, and a command that leaves the active photo out closes it; a folder listed again keeps the selection by photo. The session tells it as `Event::Selection`, which the app's mirror keeps (`Mirror::selection`; [session-protocol.md](session-protocol.md#the-selection), [events.md](events.md#the-selection)).
-- **Built in the Browser:** its pointer's rows below, Ctrl+Space, the cells' rings, the viewer bar's count and what screen readers hear. Ctrl-click on the active photo takes it out, which closes it as File › Close does, then opens the nearest selected photo in the Browser's order, the later of two as near; with none selected, no photo is active. Each gesture shows at once, before the session answers, and the next one reads what it did (`Mirror::selecting`). Among photos opened alone, which the session holds no collection of, Ctrl and Shift-click do nothing. Edit's Select items are built ([Edit](#edit)); the batch actions and the keys that move through the selection are not yet.
+- **Built in the Browser:** its pointer's rows below, Ctrl+Space, the cells' rings, the viewer bar's count and what screen readers hear. Ctrl-click on the active photo takes it out, which closes it as File › Close does, then opens the nearest selected photo in the Browser's order, the later of two as near; with none selected, no photo is active. Each gesture shows at once, before the session answers, and the next one reads what it did (`Mirror::selecting`). Among photos opened alone, which the session holds no collection of, Ctrl and Shift-click do nothing. Edit's Select items ([Edit](#edit)) and the keys that move through the selection are built; the batch actions are planned.
 
 | Action | Acts on | What it says |
 | --- | --- | --- |
@@ -2557,12 +2557,12 @@ With several photos selected, the rating, reject and label keys, Apply Edit and 
 
 | Input | In the Browser | On a cell in Photo |
 | --- | --- | --- |
-| A click on a photo's picture | Selects the photo alone and makes it active | Makes it active; the selection stays |
+| A click on a photo's picture | Makes it active; a photo of the selection keeps the selection, so a click moves through several selected, and any other is selected alone | Makes it active; the selection stays |
 | Ctrl-click (Cmd on a Mac) | Adds the photo to the selection, the active photo staying as it is, or removes it; removing the active photo makes the nearest selected one active, or none | Removes it from the selection, and so from the cells |
 | Shift-click | Selects the range from the active photo to it; the active photo stays, so the Viewer does not jump while a range grows | — |
-| Double-click, or Enter | As a click: that photo alone, active | That photo alone |
+| Double-click, or Enter | As a click: that photo active, the selection staying where it holds it | That photo alone |
 | A click on empty space: between the cells, on a caption, or in a cell's square round a fitted picture | Nothing: clearing the selection by accident would disable the Tools panel; Select None has its key and its item | Nothing |
-| Right-click | The context menu ([Context menus](#context-menus)) opens the photo first, keeping a selection that holds it where a click would narrow it, and acts on the selection | The same |
+| Right-click | The context menu ([Context menus](#context-menus)) opens the photo first, as a click does, and acts on the selection | The same |
 
 - **The keys,** the same in every layout:
   - → and Space, ← and Backspace: with several selected, the active photo moves through the selection in the Browser's sort, which stays; with one, to the next or previous photo of the folder or album, selected alone; at either end they stop, Next Photo or Previous Photo disabled, and with no active photo they open the first or the last (built for a folder);

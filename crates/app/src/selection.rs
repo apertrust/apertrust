@@ -17,7 +17,8 @@
 //! What the Browser's gestures do to the selection and the active photo, both the
 //! session's (decision 37; `docs/gui.md`, Selection and the active photo, The pointer):
 //!
-//! - **A click,** or Enter, selects the photo alone and makes it active, opening it.
+//! - **A click,** or Enter, makes the photo active, opening it: one of the selection keeps
+//!   it, so a click moves through several selected; any other is selected alone.
 //! - **Ctrl-click** (Cmd on the Mac), or Ctrl+Space on the cell focused, adds the photo to
 //!   the selection, the active photo staying as it is, or removes it. Removing the active
 //!   photo closes it, as File › Close does, and
@@ -68,13 +69,11 @@ pub(crate) fn browse(
     let active = mirror.photo.asked().map(Path::to_owned);
     match action {
         BrowserAction::Open(_) => {
-            // The photo open stays as it is when its own cell is pressed again.
+            // The photo open stays as it is when its own cell is pressed again. Its open
+            // keeps a selection that holds it and selects any other alone, as the
+            // session's does.
             if active.as_ref() != Some(&path) {
-                open_listed(path.clone(), mirror, send);
-            }
-            // Opening a selected photo keeps the selection, which a click narrows to it.
-            if !alone && !mirror.selected_alone(&path) {
-                select(SelectionCommand::Set(vec![path]), mirror, send);
+                open_listed(path, mirror, send);
             }
         }
         _ if alone => {}
@@ -102,7 +101,7 @@ pub(crate) fn browse(
 
 /// Opens the photo at `i` of `order`, the Browser's, as its cell's menu opens (decision
 /// 91), unless it is the active one: a photo in the selection keeps it, so the menu acts on
-/// the selection; one outside it is selected alone, as a click selects it.
+/// the selection; one outside it is selected alone, as a click does.
 pub(crate) fn open_for_menu(
     i: usize,
     order: &[PathBuf],
@@ -459,29 +458,29 @@ mod tests {
         SessionError::NotInCollection { photo: at(name) }
     }
 
-    /// A click opens the photo, selected alone: by the open where it was not selected, else
-    /// by `Set`, its own cell's click too, which opens nothing; with it alone, nothing.
+    /// A click opens the photo: one outside the selection is selected alone by its open,
+    /// one of several selected keeps the selection, and the active photo's own cell sends
+    /// nothing.
     #[test]
-    fn a_click_opens_the_photo_and_selects_it_alone() {
+    fn a_click_opens_the_photo_keeping_a_selection_that_holds_it() {
         let mut f = Folder::new("a");
         f.told(&["a"], Some("a"));
         // c, not selected, is selected alone by its open.
         assert_eq!(f.browse(BrowserAction::Open(2)), [Command::Open(at("c"))]);
         assert_eq!(f.m.photo.asked(), Some(at("c").as_path()));
         assert!(f.m.selected_alone(&at("c")));
+        // d, one of three selected: active, the three staying.
         f.told(&["b", "c", "d"], Some("c"));
-        let alone = selection(SelectionCommand::Set(vec![at("d")]));
-        let sent = f.browse(BrowserAction::Open(3));
-        assert_eq!(sent, [Command::Open(at("d")), alone.clone()]);
-        f.told(&["c", "d"], Some("d"));
-        assert_eq!(f.browse(BrowserAction::Open(3)), [alone]);
-        // The photo open, alone: nothing.
-        f.told(&["d"], Some("d"));
+        assert_eq!(f.browse(BrowserAction::Open(3)), [Command::Open(at("d"))]);
+        f.told(&["b", "c", "d"], Some("d"));
+        assert_eq!(f.m.selected_count(), 3);
+        // The active photo's own cell: nothing, however many are selected.
         assert!(f.browse(BrowserAction::Open(3)).is_empty());
+        assert_eq!(f.m.selected_count(), 3);
     }
 
-    /// A cell's menu opens its photo first: one in the selection keeps it, where a click
-    /// would narrow it; one outside it is selected alone; the active one opens nothing.
+    /// A cell's menu opens its photo first, as a click does: one in the selection keeps it;
+    /// one outside it is selected alone; the active one opens nothing.
     #[test]
     fn a_cell_s_menu_opens_its_photo_keeping_the_selection_that_holds_it() {
         let mut f = Folder::new("c");
@@ -539,18 +538,15 @@ mod tests {
     }
 
     /// Gestures before the session tells the selection read what the last ones did: a
-    /// click on the active photo after a Ctrl-click narrows the selection to it, and a
-    /// click on it again, selected alone, sends nothing.
+    /// click on a photo a Ctrl-click has just added opens it, the two staying selected.
     #[test]
-    fn a_click_after_a_ctrl_click_not_yet_told_selects_the_photo_alone() {
+    fn a_click_after_a_ctrl_click_not_yet_told_keeps_both_selected() {
         let mut f = Folder::new("a");
         f.told(&["a"], Some("a"));
         f.browse(BrowserAction::ToggleSelected(1));
         assert_eq!(f.m.selected_count(), 2);
-        let alone = selection(SelectionCommand::Set(vec![at("a")]));
-        assert_eq!(f.browse(BrowserAction::Open(0)), [alone]);
-        assert!(f.m.selected_alone(&at("a")));
-        assert!(f.browse(BrowserAction::Open(0)).is_empty());
+        assert_eq!(f.browse(BrowserAction::Open(1)), [Command::Open(at("b"))]);
+        assert_eq!(f.m.selected_count(), 2);
     }
 
     /// Ctrl-click twice on a selected photo before the session tells either: the first

@@ -556,7 +556,7 @@ In `src/folder.rs`, `src/library.rs`, `src/dialogs.rs`, `src/dropped.rs` and `sr
 
 **The selection.** The mirror keeps the session's latest `Event::Selection` by its `through` (`Mirror::selection`). Each selection command the app sends, and each open, is laid over it at once by the session's rules (`Mirror::selecting`), as a value sent is: kept in the order sent until a fact includes its number, and laid over each fact again until then; a refused command, or an open that fails, is taken out alone, the rest laid over without it. The Browser's cells are marked by that (`Mirror::is_selected`), the viewer bar counts it while more than one is (`Mirror::selected_count`, `ViewerBar::selected`), and the next gesture reads it, so two gestures before the session answers act as the person sees. The Browser's gestures go to the session through `selection::browse` (`src/selection.rs`), with the paths in the Browser's sort:
 
-- a click, or Enter, opens the photo and `Set`s the selection to it alone, unless it is selected alone already; a click on the active photo opens nothing;
+- a click, or Enter, opens the photo, whose open keeps a selection that holds it and selects any other alone, as the session's does; a click on the active photo opens nothing;
 - Ctrl-click (Cmd on the Mac), or Ctrl+Space on the focused cell, `Add`s a photo not selected, the active photo staying as it is, or `Remove`s a selected one;
 - on the active photo it `Remove`s it, closes it in the mirror as File › Close does (`Mirror::closing`), and opens the nearest selected photo in the Browser's order, the later of two as near, or none;
 - Shift-click sends `Range { to, order }`, the active photo staying;
