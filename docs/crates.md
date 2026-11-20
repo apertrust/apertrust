@@ -107,10 +107,10 @@ The groundwork for orientation:
 
 ### The zoomed view
 
-Planned (decision 99, [engine.md](engine.md#the-zoomed-view)), in seven steps:
+Decision 99, [engine.md](engine.md#the-zoomed-view), in seven steps, the first built:
 
-- `Command::View(View { scale, centre })`, `ViewScale` (`Small`, `Fit`, `Fill`, `Factor(f32)`), and `view::place(extent, bounds, &view) -> Placement`, a pure function the app uses too; `Event::View(ViewState { through, view, placement })`, the session's one view told to every client; `Frame::place` (`FramePlace { scale, origin, extent }`) and `Frame::overview`.
-- `Pipe::Detail { region, scale }`: the visible region with darktable's 1.2 margin at the zoom's scale, never above 1, planned as a tile up to its start and as the viewport after it; its source demosaic's full-resolution cache point borrowed from the fitted pipeline by key, or in a tiled viewport the raw stage's output; recorded with the fitted pipeline's passes in one encoder (`Pipeline::record`).
+- Built: `view` (`apertrust_engine::view`), with `View { scale, centre }`, `ViewScale` (`Small`, `Fit`, `Fill`, `Factor(f32)`, a factor clamped to Fit and 16) and `place(extent, bounds, &view) -> Placement`, a pure function the app uses too, agreeing with `pipeline::fit` at Fit; `Command::View`, view state off the edit, one view per session kept across photos, its centre clamped to each; `Event::View(ViewState { through, view, placement })`, the session's one view told to every client once in each batch that moved it or its placement; `Frame::place` (`FramePlace { scale, origin, extent }`), the whole photo at the fitted scale for now, so a view renders nothing yet. Planned: `Frame::overview`.
+- Planned: `Pipe::Detail { region, scale }`: the visible region with darktable's 1.2 margin at the zoom's scale, never above 1, planned as a tile up to its start and as the viewport after it; its source demosaic's full-resolution cache point borrowed from the fitted pipeline by key, or in a tiled viewport the raw stage's output; recorded with the fitted pipeline's passes in one encoder (`Pipeline::record`).
 - Whole-image results at the detail's scale from a round over the whole image, kept by the untiled plan's key; haze removal's full-resolution part borrowed by key.
 - The scopes, the colour pickers, the readouts and the rendered thumbnails reading the fitted pipeline at every zoom.
 - `apertrust-cli preview --zoom SCALE --at X,Y` for its tests and timings.
