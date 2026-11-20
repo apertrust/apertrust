@@ -135,9 +135,11 @@ impl Textures {
             return;
         }
         self.generation = Some(folder.generation());
+        // Another folder's names are other photos; a path is the same photo whatever opened
+        // it, so a photo alone kept among the next set keeps its texture.
         if self.open != folder.latest() {
             self.open = folder.latest();
-            self.textures.clear();
+            (self.textures).retain(|(key, _), _| matches!(key, CellKey::Path(_)));
         }
         self.textures.retain(|(key, size), (generation, _)| {
             folder
@@ -373,8 +375,7 @@ mod tests {
 
         let (x, y) = (PathBuf::from("/a/x.ARW"), PathBuf::from("/b/x.ARW"));
         let mut folder = FolderState::default();
-        folder.closing(2);
-        folder.alone(vec![x.clone(), y.clone()]);
+        folder.alone(2, vec![x.clone(), y.clone()]);
         let asked = asking.command(&folder, &[1, 0], 512);
         let paths = vec![y.clone(), x.clone()];
         assert_eq!(
@@ -398,13 +399,18 @@ mod tests {
         assert_eq!(drawn.size, egui::vec2(4.0, 3.0));
         assert!(textures.picture(&folder.key(0), 512).is_none());
 
-        // Opened alone again with y first: y's texture stays and nothing is asked again, x
-        // still on its way; then without y, its texture goes.
-        folder.alone(vec![y.clone(), x.clone()]);
+        // Opened alone again with y first, by command 3, which cancelled the reads not yet
+        // sent: y's texture stays, and x alone is asked for again; then without y, its
+        // texture goes.
+        folder.alone(3, vec![y.clone(), x.clone()]);
         textures.sync(&ctx, &folder);
         assert_eq!(textures.picture(&folder.key(0), 512), Some(drawn));
-        assert_eq!(asking.command(&folder, &[0, 1], 512), None);
-        folder.alone(vec![x]);
+        let again = Some(LibraryCommand::PhotoThumbnails {
+            paths: vec![x.clone()],
+            size: 512,
+        });
+        assert_eq!(asking.command(&folder, &[0, 1], 512), again);
+        folder.alone(4, vec![x]);
         textures.sync(&ctx, &folder);
         assert_eq!(textures.len(), 0);
         assert!(textures.picture(&CellKey::Path(y), 512).is_none());

@@ -572,9 +572,8 @@ mod tests {
 
         /// The photos `names` opened alone in the mirror, in that order, the Browser's.
         fn alone(&mut self, names: &[&str]) {
-            self.m
-                .folder
-                .alone(names.iter().map(|name| at(name)).collect());
+            let paths = names.iter().map(|name| at(name)).collect();
+            self.m.folder.alone(50, paths);
         }
 
         /// What Edit's item sends for `command`.

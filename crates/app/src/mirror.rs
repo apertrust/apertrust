@@ -3156,7 +3156,7 @@ pub(crate) mod tests {
     fn a_photo_alone_lists_nothing_and_its_folder_opens_with_it_active() {
         let mut m = mirror();
         let path = PathBuf::from("/photos/a.ARW");
-        m.folder.alone(vec![path.clone()]);
+        m.folder.alone(1, vec![path.clone()]);
         // No thumbnail until one is asked for and comes.
         let key = crate::folder::CellKey::Path(path.clone());
         assert_eq!(m.folder.thumbnail(&key, 128), None);
