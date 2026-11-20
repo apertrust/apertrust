@@ -1024,6 +1024,17 @@ action-zoom-in = Zoom in
 action-zoom-out = Zoom out
 action-zoom-fit = Zoom to fit
 action-zoom-100 = Zoom to 100%
+action-zoom-small = Zoom to small
+action-zoom-fill = Zoom to fill
+action-zoom-50 = Zoom to 50%
+action-zoom-200 = Zoom to 200%
+action-zoom-400 = Zoom to 400%
+action-zoom-800 = Zoom to 800%
+action-zoom-1600 = Zoom to 1600%
+action-zoom-in-all = Zoom in on every photo
+action-zoom-out-all = Zoom out on every photo
+action-zoom-fit-all = Fit every photo
+action-zoom-100-all = Every photo to 100%
 # The browser bar's menus, and View › Sort By and Thumbnail Size: the sort's key and
 # direction, and the thumbnails' size.
 action-sort-capture-time = Capture time

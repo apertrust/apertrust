@@ -35,7 +35,10 @@
 //! types `'` on the 4 key, so Ctrl+4 arrives as Ctrl+' and is taken as Ctrl+4. Letters
 //! under symbols are not read by their physical key, since Dvorak puts `'` where QWERTY has
 //! Q and Ctrl+' must not quit. Ctrl is Cmd on macOS ([`Modifiers::COMMAND`]). Alt and
-//! Shift must match, so Option letters on a Mac never fire a shortcut.
+//! Shift must match, so Option letters on a Mac never fire a shortcut, but for an extra
+//! Shift on a symbol that needs it on many layouts; a shortcut naming Shift exactly wins
+//! over that allowance, so Ctrl++ on a US keyboard, which is Ctrl+Shift+=, zooms every
+//! photo, and Ctrl+= one.
 //!
 //! **AltGr** is no modifier egui sees: winit drops Ctrl and Alt while it is held on Windows,
 //! and on Linux it is a modifier of its own. So AltGr+E, which types ę on a Polish
@@ -55,6 +58,8 @@ use apertrust_tools::{ProcessingDefinition, Row};
 use apertrust_ui::components::{BrowserBarAction, BrowserPosition, SortKey, ThumbnailSize};
 use apertrust_ui::{Background, Translator};
 use eframe::egui::{self, Key, Modifiers, os::OperatingSystem};
+
+use crate::zoom::{Scale, ZoomStep};
 
 /// An action's id, stable so that settings can keep the keys a user gives it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -192,6 +197,20 @@ impl ActionId {
     pub const ZOOM_OUT: ActionId = ActionId("zoom-out");
     pub const ZOOM_FIT: ActionId = ActionId("zoom-fit");
     pub const ZOOM_100: ActionId = ActionId("zoom-100");
+    /// The zoom menu's other scales, with no default keys.
+    pub const ZOOM_SMALL: ActionId = ActionId("zoom-small");
+    pub const ZOOM_FILL: ActionId = ActionId("zoom-fill");
+    pub const ZOOM_50: ActionId = ActionId("zoom-50");
+    pub const ZOOM_200: ActionId = ActionId("zoom-200");
+    pub const ZOOM_400: ActionId = ActionId("zoom-400");
+    pub const ZOOM_800: ActionId = ActionId("zoom-800");
+    pub const ZOOM_1600: ActionId = ActionId("zoom-1600");
+    /// The Shift forms, every photo shown together (Phase 3's cells); with one photo they
+    /// do what the plain ones do.
+    pub const ZOOM_IN_ALL: ActionId = ActionId("zoom-in-all");
+    pub const ZOOM_OUT_ALL: ActionId = ActionId("zoom-out-all");
+    pub const ZOOM_FIT_ALL: ActionId = ActionId("zoom-fit-all");
+    pub const ZOOM_100_ALL: ActionId = ActionId("zoom-100-all");
     /// The browser bar's Sort menu and View › Sort By: the key, then the direction.
     pub const SORT: [ActionId; 4] = [
         ActionId("sort-capture-time"),
@@ -268,7 +287,7 @@ pub enum Emit {
 }
 
 /// A change to the interface's own state (`docs/gui.md`, A frame).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Intent {
     About,
     /// The log window, opened or brought to the front (`log_window`).
@@ -333,6 +352,8 @@ pub enum Intent {
     BrowserBar(BrowserBarAction),
     /// The background behind the photo (`docs/gui.md`, The background).
     Background(Background),
+    /// A move of the photo's zoom (`docs/gui.md`, The zoom).
+    Zoom(ZoomStep),
     /// A tool's own action, run as pressing its button does ([`tool_actions`]).
     ToolAction {
         tool: &'static str,
@@ -452,6 +473,12 @@ pub struct State {
     pub show_hidden: bool,
     /// The interface's scale: egui's zoom factor.
     pub scale: f32,
+    /// Whether the photo's zoom has a scale to go to up, and down
+    /// ([`Zoomed::step`](crate::zoom::Zoomed::step)), and
+    /// whether it is at Fit, which Zoom to Fit's item shows checked.
+    pub zoom_in: bool,
+    pub zoom_out: bool,
+    pub fitted: bool,
     /// A modal dialog is open, or a dialog's window has the focus: the view's keys rest,
     /// and focus stays in the dialog.
     pub dialog: bool,
@@ -612,6 +639,9 @@ impl Action {
     /// the one chosen in `state`, which its menu item shows by a check mark: Full Screen,
     /// and the Tools panel's tabs. None for a command.
     pub fn checked(&self, state: &State) -> Option<bool> {
+        if self.id == ActionId::ZOOM_FIT {
+            return Some(state.fitted);
+        }
         match self.emits {
             Emit::Intent(Intent::FullScreen) => Some(state.full_screen),
             Emit::Intent(Intent::PanelTab(tab)) => {
@@ -635,6 +665,31 @@ pub const SCALES: std::ops::RangeInclusive<f32> = crate::settings::registry::SCA
 pub fn step_scale(scale: f32, up: bool) -> f32 {
     let tenths = (scale * 10.0).round() + if up { 1.0 } else { -1.0 };
     (tenths / 10.0).clamp(*SCALES.start(), *SCALES.end())
+}
+
+/// Whether the photo's zoom can move: a photo open and live (decision 77).
+fn zooms(state: &State) -> bool {
+    state.photo && !state.waiting
+}
+
+/// One of the photo's zoom actions, in Photo.
+const fn zoom(
+    id: ActionId,
+    message: &'static str,
+    keys: &'static [Binding],
+    trigger: Trigger,
+    available: fn(&State) -> bool,
+    emits: Emit,
+) -> Action {
+    Action {
+        id,
+        message,
+        keys,
+        scope: Scope::View(View::Edit),
+        trigger,
+        available,
+        emits,
+    }
 }
 
 fn always(_: &State) -> bool {
@@ -793,7 +848,7 @@ const fn to_tab<const I: usize>(message: &'static str) -> Action {
 
 /// Every action, in the order a keyboard map lists them (`docs/gui.md`, The default
 /// keyboard map). Slider keys are not here: they are the slider's own (`SliderRow`).
-pub static ACTIONS: [Action; 107] = [
+pub static ACTIONS: [Action; 118] = [
     // About Apertrust, in the app menu on the Mac and in Help on Windows and Linux.
     Action {
         id: ActionId::ABOUT,
@@ -1289,11 +1344,12 @@ pub static ACTIONS: [Action; 107] = [
         available: |s| section_can(s, |s| s.hidden && s.show),
         emits: Emit::Intent(Intent::Section(SectionMove::Show)),
     },
-    // Ctrl+= first: on most keyboards + needs Shift, and Ctrl++ matches with it held.
+    // No keys: the photo's zoom has them (`docs/gui.md`, The default keyboard map), and the
+    // interface's size, set once, keeps View › Interface Size and Settings.
     Action {
         id: ActionId::SCALE_UP,
         message: "action-scale-up",
-        keys: &[command(Key::Equals), command(Key::Plus)],
+        keys: &[],
         scope: Scope::App,
         trigger: Trigger::Repeat,
         available: |s| s.scale < *SCALES.end(),
@@ -1302,7 +1358,7 @@ pub static ACTIONS: [Action; 107] = [
     Action {
         id: ActionId::SCALE_DOWN,
         message: "action-scale-down",
-        keys: &[command(Key::Minus)],
+        keys: &[],
         scope: Scope::App,
         trigger: Trigger::Repeat,
         available: |s| s.scale > *SCALES.start(),
@@ -1311,7 +1367,7 @@ pub static ACTIONS: [Action; 107] = [
     Action {
         id: ActionId::SCALE_RESET,
         message: "action-scale-reset",
-        keys: &[command(Key::Num0)],
+        keys: &[],
         scope: Scope::App,
         trigger: Trigger::Press,
         available: |s| s.scale != 1.0,
@@ -1431,45 +1487,131 @@ pub static ACTIONS: [Action; 107] = [
         available: |s| s.previous && on_main_window(s) && !s.modal,
         emits: Emit::Intent(Intent::Step { next: false }),
     },
-    // The photo's zoom, not built until the viewport can zoom. Then Fit, in and out take
-    // Ctrl+0, Ctrl+= and Ctrl+− from the interface's size (`docs/gui.md`, The default
-    // keyboard map); until then those keys stay the size's.
-    Action {
-        id: ActionId::ZOOM_IN,
-        message: "action-zoom-in",
-        keys: &[],
-        scope: Scope::View(View::Edit),
-        trigger: Trigger::Repeat,
-        available: |s| s.photo,
-        emits: Emit::Later,
-    },
-    Action {
-        id: ActionId::ZOOM_OUT,
-        message: "action-zoom-out",
-        keys: &[],
-        scope: Scope::View(View::Edit),
-        trigger: Trigger::Repeat,
-        available: |s| s.photo,
-        emits: Emit::Later,
-    },
-    Action {
-        id: ActionId::ZOOM_FIT,
-        message: "action-zoom-fit",
-        keys: &[],
-        scope: Scope::View(View::Edit),
-        trigger: Trigger::Press,
-        available: |s| s.photo,
-        emits: Emit::Later,
-    },
-    Action {
-        id: ActionId::ZOOM_100,
-        message: "action-zoom-100",
-        keys: &[plain(Key::Z)],
-        scope: Scope::View(View::Edit),
-        trigger: Trigger::Press,
-        available: |s| s.photo,
-        emits: Emit::Later,
-    },
+    // The photo's zoom (`docs/gui.md`, The zoom), on a live photo: Small and Fit, which
+    // the fitted frame shows, and the steps between them; 100% and the other scales come
+    // with the engine's detail view. Ctrl+= first: on most keyboards + needs Shift, and
+    // Ctrl++ matches with it held, unless Ctrl+Shift+= names it exactly.
+    zoom(
+        ActionId::ZOOM_IN,
+        "action-zoom-in",
+        &[command(Key::Equals), command(Key::Plus)],
+        Trigger::Repeat,
+        |s| zooms(s) && s.zoom_in,
+        Emit::Intent(Intent::Zoom(ZoomStep::In)),
+    ),
+    zoom(
+        ActionId::ZOOM_OUT,
+        "action-zoom-out",
+        &[command(Key::Minus)],
+        Trigger::Repeat,
+        |s| zooms(s) && s.zoom_out,
+        Emit::Intent(Intent::Zoom(ZoomStep::Out)),
+    ),
+    zoom(
+        ActionId::ZOOM_FIT,
+        "action-zoom-fit",
+        &[command(Key::Num0)],
+        Trigger::Press,
+        zooms,
+        Emit::Intent(Intent::Zoom(ZoomStep::Fit)),
+    ),
+    zoom(
+        ActionId::ZOOM_100,
+        "action-zoom-100",
+        &[plain(Key::Z)],
+        Trigger::Press,
+        zooms,
+        Emit::Later,
+    ),
+    zoom(
+        ActionId::ZOOM_SMALL,
+        "action-zoom-small",
+        &[],
+        Trigger::Press,
+        zooms,
+        Emit::Intent(Intent::Zoom(ZoomStep::To(Scale::Small))),
+    ),
+    zoom(
+        ActionId::ZOOM_FILL,
+        "action-zoom-fill",
+        &[],
+        Trigger::Press,
+        zooms,
+        Emit::Later,
+    ),
+    zoom(
+        ActionId::ZOOM_50,
+        "action-zoom-50",
+        &[],
+        Trigger::Press,
+        zooms,
+        Emit::Later,
+    ),
+    zoom(
+        ActionId::ZOOM_200,
+        "action-zoom-200",
+        &[],
+        Trigger::Press,
+        zooms,
+        Emit::Later,
+    ),
+    zoom(
+        ActionId::ZOOM_400,
+        "action-zoom-400",
+        &[],
+        Trigger::Press,
+        zooms,
+        Emit::Later,
+    ),
+    zoom(
+        ActionId::ZOOM_800,
+        "action-zoom-800",
+        &[],
+        Trigger::Press,
+        zooms,
+        Emit::Later,
+    ),
+    zoom(
+        ActionId::ZOOM_1600,
+        "action-zoom-1600",
+        &[],
+        Trigger::Press,
+        zooms,
+        Emit::Later,
+    ),
+    // With Shift, every photo shown together; with one, as the plain ones.
+    zoom(
+        ActionId::ZOOM_IN_ALL,
+        "action-zoom-in-all",
+        &[command_shift(Key::Equals)],
+        Trigger::Repeat,
+        |s| zooms(s) && s.zoom_in,
+        Emit::Intent(Intent::Zoom(ZoomStep::In)),
+    ),
+    zoom(
+        ActionId::ZOOM_OUT_ALL,
+        "action-zoom-out-all",
+        &[command_shift(Key::Minus)],
+        Trigger::Repeat,
+        |s| zooms(s) && s.zoom_out,
+        Emit::Intent(Intent::Zoom(ZoomStep::Out)),
+    ),
+    zoom(
+        ActionId::ZOOM_FIT_ALL,
+        "action-zoom-fit-all",
+        &[command_shift(Key::Num0)],
+        Trigger::Press,
+        zooms,
+        Emit::Intent(Intent::Zoom(ZoomStep::Fit)),
+    ),
+    zoom(
+        ActionId::ZOOM_100_ALL,
+        "action-zoom-100-all",
+        &[bind(Modifiers::SHIFT, Key::Z)],
+        Trigger::Press,
+        zooms,
+        Emit::Later,
+    ),
     // The browser bar's menus and View's Sort By and Thumbnail Size (`docs/gui.md`, The
     // browser bar); no keys by default, so + and − stay free. Rating comes with the
     // ratings.
@@ -2066,6 +2208,34 @@ impl Shortcut {
     fn matches(self, key: Key, pressed: Modifiers, mac: bool) -> bool {
         self.key == key && same_modifiers(pressed, self.modifiers, key, mac)
     }
+
+    /// Whether a key pressed on `physical` with `pressed` held is this shortcut with Shift
+    /// exactly as it names it, + typed with Shift being the = key with Shift, as on a US
+    /// keyboard, where Ctrl++ is Ctrl+Shift+=. Such a shortcut wins over one the extra
+    /// Shift allows.
+    fn matches_exactly(
+        self,
+        key: Key,
+        physical: Option<Key>,
+        pressed: Modifiers,
+        mac: bool,
+    ) -> bool {
+        let keys = [key, under_plus(key, physical, pressed)];
+        keys.iter().any(|&key| self.matches(key, pressed, mac))
+            && pressed.shift == self.modifiers.shift
+    }
+}
+
+/// The key a press of `key` on `physical` with `pressed` held was made on, for a shortcut
+/// naming Shift exactly: the = key, where `key` is a + typed with Shift, as on the layouts
+/// where it needs Shift, the US, Dvorak and AZERTY among them; else `key` itself. The
+/// keypad's +, a key of its own that egui reports as the physical +, stays +.
+fn under_plus(key: Key, physical: Option<Key>, pressed: Modifiers) -> Key {
+    if key == Key::Plus && pressed.shift && physical != Some(Key::Plus) {
+        Key::Equals
+    } else {
+        key
+    }
 }
 
 fn same_modifiers(pressed: Modifiers, wanted: Modifiers, key: Key, mac: bool) -> bool {
@@ -2224,6 +2394,11 @@ const ON_DIGITS: [(Key, Key); 4] = [
     (Key::Plus, Key::Num1),
 ];
 
+/// Symbols that known layouts type on a digit key with Shift, with the digit: German's `=`
+/// on 0. A key bound to the symbol with Shift and one bound to the digit with Shift are then
+/// one press ([`conflict`]), the digit winning.
+const SHIFTED_ON_DIGITS: [(Key, Key); 1] = [(Key::Equals, Key::Num0)];
+
 /// Whether `typed`, what a press of the letter `key` typed, is another key's: a Latin
 /// letter not its own, as AltGr's ę, or no letter at all, as @ or €. A letter of another
 /// alphabet is the layout's own letter on that key, as у on a Ukrainian keyboard.
@@ -2263,10 +2438,25 @@ fn held(m: Modifiers, mac: bool) -> Modifiers {
 
 /// Whether one press can be both `a` and `b` on `os`, by the rules [`read`] matches with:
 /// the same key with modifiers each accepts of the other (on Windows, Ctrl and Command of
-/// one letter; Ctrl++ and Ctrl+Shift++), or a symbol a known layout types on the other's
-/// digit ([`ON_DIGITS`]), where the digit wins. [`Keymap::load`] refuses an override with
-/// it, and rebinding in Settings will warn with it.
+/// one letter; Ctrl++ and Ctrl+Shift++), + with Shift as the = key with Shift (Ctrl++ and
+/// Ctrl+Shift+= on a US keyboard, where the one naming Shift wins), or a symbol a known
+/// layout types on the other's digit ([`ON_DIGITS`], and with Shift [`SHIFTED_ON_DIGITS`]),
+/// where the digit wins. [`Keymap::load`] refuses an override with it, and rebinding in
+/// Settings will warn with it.
 pub fn conflict(a: Shortcut, b: Shortcut, os: OperatingSystem) -> bool {
+    // The = key with Shift types + on the layouts where + needs Shift.
+    let typed = |s: Shortcut| match s.key {
+        Key::Equals if s.modifiers.shift => Shortcut {
+            key: Key::Plus,
+            ..s
+        },
+        _ => s,
+    };
+    one_press(a, b, os) || one_press(typed(a), b, os) || one_press(a, typed(b), os)
+}
+
+/// Whether one press can be both `a` and `b` on `os`, the keys as typed ([`conflict`]).
+fn one_press(a: Shortcut, b: Shortcut, os: OperatingSystem) -> bool {
     let mac = os == OperatingSystem::Mac;
     let accepts = |pressed: Shortcut, wanted: Shortcut| {
         same_modifiers(
@@ -2276,9 +2466,10 @@ pub fn conflict(a: Shortcut, b: Shortcut, os: OperatingSystem) -> bool {
             mac,
         )
     };
-    let keys = a.key == b.key
-        || ON_DIGITS.contains(&(a.key, b.key))
-        || ON_DIGITS.contains(&(b.key, a.key));
+    let pair =
+        |pairs: &[(Key, Key)]| pairs.contains(&(a.key, b.key)) || pairs.contains(&(b.key, a.key));
+    let shifted = a.modifiers.shift && b.modifiers.shift;
+    let keys = a.key == b.key || pair(&ON_DIGITS) || (shifted && pair(&SHIFTED_ON_DIGITS));
     keys && (accepts(a, b) || accepts(b, a))
 }
 
@@ -2299,22 +2490,23 @@ fn scopes(state: &State) -> impl Iterator<Item = Scope> {
         .chain([Scope::App])
 }
 
-/// The narrowest action `key` belongs to, whether it can run or not.
+/// The narrowest action `key` belongs to, whether it can run or not. In a scope, a
+/// shortcut naming Shift exactly wins over one the extra Shift a symbol needs allows
+/// ([`Shortcut::matches_exactly`]), so Ctrl++ on a US keyboard is Ctrl+Shift+=.
 fn bound(
     keymap: &Keymap,
     state: &State,
-    key: Key,
+    (key, physical): (Key, Option<Key>),
     modifiers: Modifiers,
     mac: bool,
 ) -> Option<&'static Action> {
+    let exactly = |s: &Shortcut| s.matches_exactly(key, physical, modifiers, mac);
+    let allowed = |s: &Shortcut| s.matches(key, modifiers, mac);
+    let has =
+        |a: &Action, matches: &dyn Fn(&Shortcut) -> bool| keymap.keys(a.id).iter().any(matches);
     scopes(state).find_map(|scope| {
-        all().find(|a| {
-            a.scope == scope
-                && keymap
-                    .keys(a.id)
-                    .iter()
-                    .any(|s| s.matches(key, modifiers, mac))
-        })
+        let ours = || all().filter(move |a| a.scope == scope);
+        (ours().find(|a| has(a, &exactly))).or_else(|| ours().find(|a| has(a, &allowed)))
     })
 }
 
@@ -2342,8 +2534,16 @@ fn press_action(
         return None;
     }
     digit_under(press.key, press.physical)
-        .and_then(|digit| bound(keymap, state, digit, press.modifiers, mac))
-        .or_else(|| bound(keymap, state, press.key, press.modifiers, mac))
+        .and_then(|digit| bound(keymap, state, (digit, press.physical), press.modifiers, mac))
+        .or_else(|| {
+            bound(
+                keymap,
+                state,
+                (press.key, press.physical),
+                press.modifiers,
+                mac,
+            )
+        })
 }
 
 /// Takes out of `events` the presses that belong to an action, with `focus` the focused
@@ -2589,6 +2789,9 @@ pub(crate) mod tests {
             hidden_tab: Some(false),
             show_hidden: false,
             scale: 1.5,
+            zoom_in: true,
+            zoom_out: true,
+            fitted: true,
             dialog: false,
             modal: false,
             dialog_window: false,
@@ -2624,30 +2827,48 @@ pub(crate) mod tests {
         found
     }
 
+    /// The default keys that are one press on some keyboard, each settled by the matching
+    /// rules (`docs/gui.md`, The default keyboard map): on Czech and Slovak keyboards the 1
+    /// key types +, and the number row's digit wins, so Ctrl+1 chooses the first tab there,
+    /// and Ctrl+= zooms in; on a US keyboard Ctrl++ is Ctrl+Shift+=, and the key naming
+    /// Shift exactly wins, zooming every photo; on German keyboards Shift+0 types =, and the
+    /// digit wins, fitting every photo.
+    const ACCEPTED: [(ActionId, ActionId); 3] = [
+        (ActionId::PANEL_TABS[0], ActionId::ZOOM_IN),
+        (ActionId::ZOOM_IN, ActionId::ZOOM_IN_ALL),
+        (ActionId::ZOOM_IN_ALL, ActionId::ZOOM_FIT_ALL),
+    ];
+
+    /// The accepted overlaps between actions of `scopes`, either way round.
+    fn accepted(scopes: [Scope; 2]) -> HashSet<(ActionId, ActionId)> {
+        let scope = |id| action(id).expect("declared").scope;
+        ACCEPTED
+            .into_iter()
+            .filter(|&(a, b)| {
+                let theirs = [scope(a), scope(b)];
+                theirs == scopes || theirs == [scopes[1], scopes[0]]
+            })
+            .collect()
+    }
+
     #[test]
     fn no_two_default_keys_in_one_scope_are_one_press() {
-        // On Czech and Slovak keyboards the 1 key types +: the number row's digit wins, so
-        // Ctrl+1 chooses the first tab there, and Ctrl+= zooms in.
-        let accepted = HashSet::from([(ActionId::PANEL_TABS[0], ActionId::SCALE_UP)]);
         for os in PLATFORMS {
             for scope in [Scope::App, Scope::View(View::Edit)] {
                 let found = conflicts(os, [scope, scope]);
-                let expected = if scope == Scope::App {
-                    accepted.clone()
-                } else {
-                    HashSet::new()
-                };
-                assert_eq!(found, expected, "{os:?} in {scope:?}");
+                assert_eq!(found, accepted([scope, scope]), "{os:?} in {scope:?}");
             }
         }
     }
 
     #[test]
     fn no_view_key_hides_an_app_key_by_default() {
-        // The narrowest scope wins, so a view key that is one press with an app key hides it.
+        // The narrowest scope wins, so a view key that is one press with an app key hides
+        // it; but Ctrl+1 on a Czech keyboard, where the digit wins.
+        let scopes = [Scope::App, Scope::View(View::Edit)];
         for os in PLATFORMS {
-            let found = conflicts(os, [Scope::App, Scope::View(View::Edit)]);
-            assert!(found.is_empty(), "{os:?}: {found:?}");
+            let found = conflicts(os, scopes);
+            assert_eq!(found, accepted(scopes), "{os:?}");
         }
     }
 
@@ -2665,6 +2886,38 @@ pub(crate) mod tests {
         assert!(conflict(
             key(command, Key::Plus),
             key(command_shift, Key::Plus),
+            windows
+        ));
+        // + with Shift is the = key with Shift, where + needs Shift, but = alone is not +.
+        assert!(conflict(
+            key(command, Key::Plus),
+            key(command_shift, Key::Equals),
+            windows
+        ));
+        assert!(conflict(
+            key(command_shift, Key::Equals),
+            key(command, Key::Plus),
+            mac
+        ));
+        assert!(!conflict(
+            key(command, Key::Plus),
+            key(command, Key::Equals),
+            windows
+        ));
+        assert!(!conflict(
+            key(command, Key::Equals),
+            key(command_shift, Key::Equals),
+            windows
+        ));
+        // German types = on Shift+0, but not on 0 alone.
+        assert!(conflict(
+            key(command_shift, Key::Equals),
+            key(command_shift, Key::Num0),
+            windows
+        ));
+        assert!(!conflict(
+            key(command, Key::Equals),
+            key(command, Key::Num0),
             windows
         ));
         assert!(!conflict(
@@ -3190,7 +3443,7 @@ pub(crate) mod tests {
             Some("F11")
         );
         assert_eq!(
-            spell(ActionId::SCALE_DOWN, windows).as_deref(),
+            spell(ActionId::ZOOM_OUT, windows).as_deref(),
             Some("Ctrl+−")
         );
         assert_eq!(
@@ -3361,7 +3614,7 @@ pub(crate) mod tests {
         assert!(Focus::Control.keeps(Key::Plus, Modifiers::NONE));
         // + needs Shift on a US keyboard.
         assert!(Focus::Control.keeps(Key::Plus, Modifiers::SHIFT));
-        // Ctrl++ still scales the interface.
+        // Ctrl++ still zooms the photo.
         assert!(!Focus::Control.keeps(Key::Plus, Modifiers::COMMAND));
         // Czech and Slovak keyboards type + on the 1 key: the curve still gets it, and Ctrl
         // with it is still the first tab.
@@ -3385,6 +3638,153 @@ pub(crate) mod tests {
                 mac,
             );
             assert_eq!(tab.map(|a| a.id), Some(ActionId::PANEL_TABS[0]), "{os:?}");
+        }
+    }
+
+    /// The action a press of `key` with `modifiers` held, on the `physical` key, runs with a
+    /// photo open, as `os` matches it.
+    fn pressed(
+        os: OperatingSystem,
+        key: Key,
+        physical: Key,
+        modifiers: Modifiers,
+    ) -> Option<ActionId> {
+        let keymap = Keymap::defaults(os);
+        let mac = os == OperatingSystem::Mac;
+        let press = Press {
+            key,
+            physical: Some(physical),
+            modifiers: held(modifiers, mac),
+            typed: None,
+        };
+        press_action(&keymap, &everything(), Focus::None, &press, mac).map(|a| a.id)
+    }
+
+    #[test]
+    fn ctrl_equals_minus_and_zero_zoom_the_photo_not_the_interface() {
+        let command = Modifiers::COMMAND;
+        for os in PLATFORMS {
+            let keymap = Keymap::defaults(os);
+            for id in [
+                ActionId::SCALE_UP,
+                ActionId::SCALE_DOWN,
+                ActionId::SCALE_RESET,
+            ] {
+                assert!(keymap.keys(id).is_empty(), "{os:?}: {}", id.0);
+            }
+            let zooms = [
+                (Key::Equals, command, ActionId::ZOOM_IN),
+                (Key::Minus, command, ActionId::ZOOM_OUT),
+                (Key::Num0, command, ActionId::ZOOM_FIT),
+                // The Shift forms, every photo; with one, as the plain ones.
+                (
+                    Key::Minus,
+                    command.plus(Modifiers::SHIFT),
+                    ActionId::ZOOM_OUT_ALL,
+                ),
+                (
+                    Key::Num0,
+                    command.plus(Modifiers::SHIFT),
+                    ActionId::ZOOM_FIT_ALL,
+                ),
+                (Key::Z, Modifiers::SHIFT, ActionId::ZOOM_100_ALL),
+                (Key::Z, Modifiers::NONE, ActionId::ZOOM_100),
+            ];
+            for (key, modifiers, id) in zooms {
+                assert_eq!(
+                    pressed(os, key, key, modifiers),
+                    Some(id),
+                    "{os:?}: {}",
+                    id.0
+                );
+            }
+        }
+        // Each Shift form does what its plain action does.
+        for (all, one) in [
+            (ActionId::ZOOM_IN_ALL, ActionId::ZOOM_IN),
+            (ActionId::ZOOM_OUT_ALL, ActionId::ZOOM_OUT),
+            (ActionId::ZOOM_FIT_ALL, ActionId::ZOOM_FIT),
+            (ActionId::ZOOM_100_ALL, ActionId::ZOOM_100),
+        ] {
+            let emits = |id| &action(id).expect("declared").emits;
+            assert_eq!(emits(all), emits(one), "{}", all.0);
+        }
+    }
+
+    #[test]
+    fn ctrl_plus_on_a_us_keyboard_runs_zoom_in_all() {
+        // Shift and the = key type +: the shortcut naming Shift exactly wins over Ctrl++'s
+        // extra Shift.
+        let command_shift = Modifiers::COMMAND.plus(Modifiers::SHIFT);
+        for os in PLATFORMS {
+            let us = pressed(os, Key::Plus, Key::Equals, command_shift);
+            assert_eq!(us, Some(ActionId::ZOOM_IN_ALL), "{os:?}");
+            // As some platforms report it, the key under the +.
+            let equals = pressed(os, Key::Equals, Key::Equals, command_shift);
+            assert_eq!(equals, Some(ActionId::ZOOM_IN_ALL), "{os:?}");
+            // Ctrl+= is one photo's.
+            let one = pressed(os, Key::Equals, Key::Equals, Modifiers::COMMAND);
+            assert_eq!(one, Some(ActionId::ZOOM_IN), "{os:?}");
+            // German types = with Shift on the 0 key: the digit wins.
+            let german = pressed(os, Key::Equals, Key::Num0, command_shift);
+            assert_eq!(german, Some(ActionId::ZOOM_FIT_ALL), "{os:?}");
+        }
+    }
+
+    #[test]
+    fn ctrl_plus_where_plus_has_its_own_key_runs_zoom_in() {
+        // German, Spanish and Nordic keyboards type + on a key of its own, without Shift.
+        for os in PLATFORMS {
+            let own = pressed(os, Key::Plus, Key::CloseBracket, Modifiers::COMMAND);
+            assert_eq!(own, Some(ActionId::ZOOM_IN), "{os:?}");
+            // The numeric keypad's +, with Shift too: a key of its own, never the = key.
+            let keypad = pressed(os, Key::Plus, Key::Plus, Modifiers::COMMAND);
+            assert_eq!(keypad, Some(ActionId::ZOOM_IN), "{os:?}");
+            let shift = Modifiers::COMMAND.plus(Modifiers::SHIFT);
+            let keypad = pressed(os, Key::Plus, Key::Plus, shift);
+            assert_eq!(keypad, Some(ActionId::ZOOM_IN), "{os:?}");
+        }
+    }
+
+    #[test]
+    fn the_zoom_steps_only_where_it_has_somewhere_to_go() {
+        let state = State {
+            zoom_in: false,
+            zoom_out: true,
+            fitted: true,
+            ..everything()
+        };
+        let runs = |id, state: &State| action(id).expect("declared").can_run(state);
+        assert!(!runs(ActionId::ZOOM_IN, &state) && !runs(ActionId::ZOOM_IN_ALL, &state));
+        assert!(runs(ActionId::ZOOM_OUT, &state) && runs(ActionId::ZOOM_OUT_ALL, &state));
+        assert!(runs(ActionId::ZOOM_FIT, &state) && runs(ActionId::ZOOM_SMALL, &state));
+        let fit = action(ActionId::ZOOM_FIT).expect("declared");
+        assert_eq!(fit.checked(&state), Some(true));
+        assert_eq!(
+            fit.checked(&State {
+                fitted: false,
+                ..state
+            }),
+            Some(false)
+        );
+        // Nothing moves on a photo not yet live, nor with none.
+        for blocked in [
+            State {
+                waiting: true,
+                ..state
+            },
+            State {
+                photo: false,
+                ..state
+            },
+        ] {
+            for id in [ActionId::ZOOM_OUT, ActionId::ZOOM_FIT, ActionId::ZOOM_SMALL] {
+                assert!(!runs(id, &blocked), "{}", id.0);
+            }
+        }
+        // 100% and the other scales come with the detail view.
+        for id in [ActionId::ZOOM_100, ActionId::ZOOM_FILL, ActionId::ZOOM_1600] {
+            assert!(!runs(id, &state), "{}", id.0);
         }
     }
 
@@ -3638,10 +4038,10 @@ pub(crate) mod tests {
         );
 
         // Nor is a clash the defaults have: Ctrl++ with Ctrl+1 on Czech keyboards.
-        let wanted = overrides(&[("scale-up", &["Ctrl+Plus", "Ctrl+K"])]);
+        let wanted = overrides(&[("zoom-in", &["Ctrl+Plus", "Ctrl+K"])]);
         let (keymap, warnings) = Keymap::load(os, &wanted);
         assert!(warnings.is_empty(), "{warnings:?}");
-        assert_eq!(keymap.keys(ActionId::SCALE_UP).len(), 2);
+        assert_eq!(keymap.keys(ActionId::ZOOM_IN).len(), 2);
 
         // A refused override's action keeps its defaults, which another override then
         // clashes with: both are refused.
