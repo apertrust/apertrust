@@ -4321,11 +4321,12 @@ impl App {
     /// that was open then, goes to the session; the tool stays as it is.
     fn overwrite_confirmed(&mut self, ctx: &egui::Context) {
         if let Some((command, tool)) = self.again.confirmed_by() {
-            // The photo may have turned view-only while the question was open: nothing is
-            // sent for it, nothing noted, and the hold is gone.
-            if self.exports_view_only(&command) {
+            // The photo may have turned view-only while the question was open: it is taken
+            // out, and with no other photo nothing is sent, nothing noted, and the hold is
+            // gone.
+            let Some(command) = export_again::without(command, self.view_only_photo()) else {
                 return;
-            }
+            };
             self.send_job(command);
             // The tool says it started now, not when the question was asked: a no says
             // nothing, and a second press waits half a second from the yes.
@@ -4333,12 +4334,6 @@ impl App {
                 self.export.note_started(ctx.input(|i| i.time));
             }
         }
-    }
-
-    /// Whether `command` exports the photo open while it is open for viewing only, which no
-    /// export takes.
-    fn exports_view_only(&self, command: &Command) -> bool {
-        export_again::exports(command, self.view_only_photo())
     }
 
     /// The path of the photo open, if it is open for viewing only.
@@ -6746,16 +6741,19 @@ fn export_others(mirror: &Mirror) -> export::Others {
         PhotoState::Open(photo) => Some(photo),
         _ => None,
     };
-    // The tool counts the photo open itself where it can be exported, and leaves it out
+    // The tool counts the photo open itself where the export takes it, and leaves it out
     // where it is open for viewing only: the rest are the others. One the export passes
-    // over, the listing lacking it, takes the place of another, so the count stays the
-    // export's.
+    // over, the listing lacking it, it neither counts nor checks (`skips_open`).
     let ready = open.is_some_and(|open| open.view_only.is_none());
     let left_out = open.is_some_and(|open| open.view_only.is_some());
+    let pending = mirror.selection_pending();
+    let taken = open.is_some_and(|open| exported.photos.contains(&open.path));
+    let skips_open = !pending && ready && !taken;
     export::Others {
-        taken: (exported.photos.len()).saturating_sub(usize::from(ready)),
+        taken: (exported.photos.len()).saturating_sub(usize::from(taken)),
         left_out: (exported.left_out).saturating_sub(usize::from(left_out)),
-        pending: mirror.selection_pending(),
+        pending,
+        skips_open,
     }
 }
 
@@ -17524,9 +17522,9 @@ mod tests {
     fn overwrite_confirmed(d: &mut Dialogged) {
         if let Some((command, tool)) = d.again.confirmed_by() {
             let view_only = d.view_only.then_some(d.open.as_path());
-            if export_again::exports(&command, view_only) {
+            let Some(command) = export_again::without(command, view_only) else {
                 return;
-            }
+            };
             send_job(d, command);
             if tool {
                 d.export.note_started(NOW);

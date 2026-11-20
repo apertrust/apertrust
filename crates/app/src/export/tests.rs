@@ -2291,7 +2291,7 @@ fn several_selected_photos_are_counted_on_the_button_and_in_the_warning() {
     harness.state_mut().shown.others = Others {
         taken: 10,
         left_out: 1,
-        pending: false,
+        ..Others::default()
     };
     tell(&mut harness, newer, Jobs::default());
     assert!(says(&harness, "2 view-only photos left out"));
@@ -2324,6 +2324,33 @@ fn several_selected_photos_are_counted_on_the_button_and_in_the_warning() {
     p.problem = Some(PathProblem::Empty);
     answer(&mut harness, 3, p);
     assert!(disabled(&harness, Role::Button, "Export 10 photos"));
+    // The photo open ready but passed over, the listing lacking it: its problem holds
+    // nothing off either.
+    harness.state_mut().shown.others = Others {
+        taken: 10,
+        skips_open: true,
+        ..Others::default()
+    };
+    tell(&mut harness, ready(), Jobs::default());
+    let mut p = preview();
+    p.size = Some(ActiveSize {
+        source: PathBuf::from("/Users/anna/Pictures/IMG_2041.ARW"),
+        size: Err(SizeProblem::TooLarge {
+            format: "JPEG",
+            largest: 65535,
+            width: 70000,
+            height: 50000,
+        }),
+    });
+    answer(&mut harness, 4, p);
+    assert!(!disabled(&harness, Role::Button, "Export 10 photos"));
+    // Nothing else to export: no photo goes, and the button is disabled.
+    harness.state_mut().shown.others = Others {
+        skips_open: true,
+        ..Others::default()
+    };
+    tell(&mut harness, ready(), Jobs::default());
+    assert!(disabled(&harness, Role::Button, "Export 1 photo"));
     // Back to that photo alone, which the export takes: the words as before, and a
     // problem holds Export off.
     harness.state_mut().shown.others = Others::default();
