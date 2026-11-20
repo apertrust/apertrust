@@ -9277,9 +9277,9 @@ mod tests {
     }
 
     /// What Open With gave the app, and the command line's paths, open as a drop of them
-    /// would, once looked at: a raw as Open… opens it, a library's file refused with the
-    /// alert in the window, a folder, resolved, as Open Folder… opens it. Unlike a drop,
-    /// they wait for a modal dialog to go, and then open.
+    /// would, once looked at: a raw as Open… opens it, a library's file refused as any file
+    /// that is no raw, with the alert in the window, a folder, resolved, as Open Folder…
+    /// opens it. Unlike a drop, they wait for a modal dialog to go, and then open.
     #[test]
     fn open_with_s_files_open_as_a_drop_and_wait_for_a_modal_dialog() {
         let folder = settings::testing::Folder::new("open-with");
@@ -9297,7 +9297,7 @@ mod tests {
             harness.run();
         };
         opened(&mut harness, &[&library]);
-        let why = dropped::Refusal::Library;
+        let why = dropped::Refusal::Unknown;
         assert_eq!(harness.state().refused, [(library.clone(), why)]);
         harness.state_mut().alerts = alerts::Alerts::default();
         harness.run();
@@ -21156,13 +21156,14 @@ mod tests {
         let mut harness = bench(OperatingSystem::Windows);
         harness.run();
         drop_onto(&mut harness, &[&notes]);
-        drop_onto(&mut harness, &[&notes, &library]);
-        // The alert names the library, since it says libraries come later.
+        drop_onto(&mut harness, &[&library, &notes]);
+        // No file is a library (decision 101): the alert names the first, as for any file
+        // that is no raw.
         assert_eq!(
             harness.state().refused,
             vec![
                 (notes.clone(), dropped::Refusal::Unknown),
-                (library.clone(), dropped::Refusal::Library)
+                (library.clone(), dropped::Refusal::Unknown)
             ]
         );
         // A file that opens nothing beside a raw: the raw opens.
@@ -21253,7 +21254,7 @@ mod tests {
         let mut harness = bench(OperatingSystem::Windows);
         harness.run();
         for (typed, why) in [
-            ("/photos/Home.aplibrary", dropped::Refusal::Library),
+            ("/photos/Home.aplibrary", dropped::Refusal::Unknown),
             ("/photos/notes.txt", dropped::Refusal::Unknown),
         ] {
             harness.key_press_modifiers(Modifiers::COMMAND, Key::O);

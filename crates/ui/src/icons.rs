@@ -130,10 +130,9 @@ pub enum Icon {
     History,
     Folder,
     Metadata,
-    /// The open kinds that come with the library, beside `Folder`: a library, a project.
+    /// The open kind that comes with the library, beside `Folder`: a library.
     Library,
-    Project,
-    /// A magnifier: Browse…, which finds a library's or a project's file anywhere.
+    /// A magnifier: the Tools panel's search field and Find's tab.
     Search,
     /// One photo: Collections' top line while a photo is open alone.
     Photo,
@@ -197,7 +196,7 @@ pub enum Icon {
 }
 
 impl Icon {
-    pub const ALL: [Icon; 95] = [
+    pub const ALL: [Icon; 94] = [
         Icon::Chevron,
         Icon::ChevronDown,
         Icon::ChevronEnd,
@@ -251,7 +250,6 @@ impl Icon {
         Icon::Folder,
         Icon::Metadata,
         Icon::Library,
-        Icon::Project,
         Icon::Search,
         Icon::Photo,
         Icon::PhotoOff,
@@ -446,7 +444,6 @@ impl Icon {
             Icon::Folder => derived!("folder", "folder", 22.0),
             Icon::Metadata => derived!("metadata", "tag", 22.0),
             Icon::Library => derived!("library", "library", 16.0),
-            Icon::Project => derived!("project", "briefcase", 16.0),
             Icon::Search => derived!("search", "search", 16.0),
             Icon::Photo => derived!("photo", "image", 14.0),
             Icon::PhotoOff => derived!("photo-off", "image-off", 16.0),

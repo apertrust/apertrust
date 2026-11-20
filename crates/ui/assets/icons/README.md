@@ -54,7 +54,6 @@ The interface's icons, one SVG file each, drawn by `apertrust-ui` (`src/icons.rs
 | `process` | Lucide's `circle-dot` |
 | `output` | Lucide's `arrow-right-from-line` |
 | `library` | Lucide's `library`, its third book drawn as a face |
-| `project` | Lucide's `briefcase` |
 | `search` | Lucide's `search`, from Feather |
 | `photo` | Lucide's `image` |
 | `photo-off` | Lucide's `image-off` |

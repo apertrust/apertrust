@@ -24,8 +24,8 @@
 //! - Two columns. The first third, on `sunken`, a `divider` rule at its end, holds
 //!   what a splash screen would: the full logo, the version cut at its `~`, the copyright
 //!   and what the app is; then room for a start-up status, empty for now; and at its foot
-//!   the ways in, New Library…, New Project…, Open Folder… and Browse…, a quiet list of
-//!   icon and words, the library's two and Browse… disabled until Phase 5.
+//!   the ways in, New Library… and Open Folder…, a quiet list of icon and words, New
+//!   Library… disabled until Phase 5.
 //! - The other two thirds: the recents, newest first, each with its kind's icon, its name
 //!   and its path, the chosen one on `accent` with its icon and words in `text_on_accent`.
 //!   One found gone, or whose opening failed, is marked so, with Locate… and Remove from
@@ -294,14 +294,12 @@ pub fn show(
 
     // The ways in, at the first column's foot, the last ending level with Open, their icons
     // under the logo's edge. Drawn in reading order, the first column before the second, so
-    // Tab and screen readers meet them before the recents: the library's two and Browse…
-    // come with Phase 5, and have no action yet.
+    // Tab and screen readers meet them before the recents: New Library… comes with Phase 5,
+    // and has no action yet.
     let later = words.text("section-tab-later");
     let ways = [
         (Icon::Library, "action-new-library", None),
-        (Icon::Project, "action-new-project", None),
         (Icon::Folder, "action-open-folder", Some(Asked::OpenFolder)),
-        (Icon::Search, "start-browse", None),
     ];
     let gap = t.spacing.xxs;
     let height = ways.len() as f32 * (t.sizes.row + gap) - gap;

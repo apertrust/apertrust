@@ -586,8 +586,8 @@ browser-photo-count =
 ## Open kinds: what a window holds, named wherever a recent or what is open is
 
 # One of a kind by its name: Open Recent's items, and Collections' top line and its recents.
-# Libraries' and projects' join it here, open-kind-library and open-kind-project, with the
-# library, as start-kind-library and start-kind-project join the start window's.
+# A library's joins it here, open-kind-library, with the library, as start-kind-library
+# joins the start window's.
 open-kind-folder = Folder: { $name }
 
 ## Folder mode: File › Open Folder…, the Photos tab's Collections and the empty states
@@ -618,7 +618,6 @@ collections-locate-title = Locate Folder
 # ＋ beside the box, and its items that come with the library.
 collections-plus = New or open
 action-new-library = New Library…
-action-new-project = New Project…
 # The tree: a folder row's right-click menu, whose Show in Folder is named as the platform's
 # file manager is, and whose Open chooses the folder.
 collections-folder-menu = { $name } menu
@@ -660,8 +659,6 @@ start-recent-failed = Could not be opened
 # cannot be opened where it cannot.
 start-recent-about = { $kind }, { $path }
 start-recent-about-missing = { $kind }, { $path }. { $why }
-# Finds a library's or a project's file anywhere, as File › Open… does.
-start-browse = Browse…
 # The accent button, which opens the recent chosen.
 start-open = Open
 # The column at its start: the copyright under the version, and what the app is, on
@@ -1590,7 +1587,6 @@ alert-quit-anyway = Quit Anyway
 # photo, $photo (IMG.ARW), which no-photo says is not beside it.
 alert-refused-title = Can’t open { $name }
 alert-refused-unknown = Only folders and raw photos open here.
-alert-refused-library = Libraries and projects come in a later version.
 alert-refused-no-photo = Its photo, { $photo }, isn’t in the same folder.
 alert-refused-button = OK
 # A second start of Apertrust on the same user data folder was given flags for one run

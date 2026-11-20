@@ -25,9 +25,8 @@
 //!   edits the system opens with the app, Open With's and a double-click's.
 //! - The app's command line is taken as a drop is ([`Drops::look_given`]), each path
 //!   resolved first, a refusal's reason also written to stderr.
-//! - A library's or a project's file, `Name.aplibrary` or `Name.approject`, is refused with
-//!   a message until libraries and projects open (Phase 5), and so is anything else that
-//!   is neither a folder nor a raw the decoder reads.
+//! - Anything that is neither a folder nor a raw the decoder reads is refused with a
+//!   message, a `Name.aplibrary` among them: no file is a library (decision 101).
 //! - Nothing is taken while a modal dialog is up, the open dialog and an alert among them.
 //! - Whether a path is a folder is asked of the disk on a thread of its own, never the
 //!   interface's, as the recents are checked, so a slow share never holds a frame; what it
@@ -47,17 +46,12 @@ use apertrust_engine::{session, sidecar};
 use apertrust_ui::theme;
 use eframe::egui;
 
-/// The extensions of a library's and a project's file (decision 46).
-const LIBRARY_EXTENSIONS: [&str; 2] = ["aplibrary", "approject"];
-
 /// What a dropped path is.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Kind {
     Folder,
     /// A file whose extension the decoder reads.
     Raw,
-    /// A library's or a project's file.
-    Library,
     /// Anything else, or a path that cannot be asked about.
     Other,
 }
@@ -80,8 +74,6 @@ pub enum Dropped {
 /// Why nothing dropped opens.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Refusal {
-    /// A library's or a project's file was among them; they open from Phase 5.
-    Library,
     /// An edit was among them whose photo, named as a raw, is not beside it.
     NoPhoto,
     /// Nothing was a folder or a raw.
@@ -117,9 +109,8 @@ fn found(path: &Path) -> std::io::Result<Kind> {
 /// What dropping `paths` opens, each asked with `kind` in order until the first that
 /// opens, an edit standing for its photo ([`sidecar::photo_for`]): a folder; or a raw,
 /// with every raw dropped after it, from any folders, each once, an edit's photo where
-/// `kind` finds it a raw; or, where none opens, the first library's or project's file or
-/// edit without its photo refused, where one was among them, else the first path. None
-/// for nothing dropped.
+/// `kind` finds it a raw; or, where none opens, the first edit without its photo refused,
+/// where one was among them, else the first path. None for nothing dropped.
 pub fn opens(paths: &[PathBuf], mut kind: impl FnMut(&Path) -> Kind) -> Option<Dropped> {
     let photos: Vec<PathBuf> = paths.iter().map(|path| photo(path)).collect();
     let mut refused = None;
@@ -148,7 +139,6 @@ pub fn opens(paths: &[PathBuf], mut kind: impl FnMut(&Path) -> Kind) -> Option<D
                 let first = photo.clone();
                 return Some(Dropped::Raws { first, others });
             }
-            Kind::Library if !edit => refused = refused.or(Some((path, Refusal::Library))),
             // Named as a raw, yet no raw there: the photo is gone, or was never beside it.
             _ if edit && named_raw(photo) => refused = refused.or(Some((path, Refusal::NoPhoto))),
             _ => {}
@@ -166,8 +156,8 @@ fn photo(path: &Path) -> PathBuf {
 
 /// What Open…'s answer `paths` opens, told by their names alone, the dialog having shown
 /// only files: the raws chosen, together, the first active, or the first path refused as
-/// a drop of it would be, should a name typed into the dialog be a library's file or
-/// another that is no raw. None for no path.
+/// a drop of it would be, should a name typed into the dialog be a file that is no raw.
+/// None for no path.
 pub fn chosen(paths: &[PathBuf]) -> Option<Dropped> {
     opens(paths, file_kind)
 }
@@ -176,8 +166,6 @@ pub fn chosen(paths: &[PathBuf]) -> Option<Dropped> {
 fn file_kind(path: &Path) -> Kind {
     if named_raw(path) {
         Kind::Raw
-    } else if has_extension(path, &LIBRARY_EXTENSIONS) {
-        Kind::Library
     } else {
         Kind::Other
     }
@@ -266,7 +254,6 @@ pub fn refused_line(path: &Path, why: Refusal, missing: Option<&std::io::Error>)
         return format!("{given}: {error}");
     }
     match why {
-        Refusal::Library => format!("{given}: libraries and projects come in a later version"),
         Refusal::NoPhoto => {
             let photo = photo(path);
             let photo = crate::file_name(&photo);
@@ -522,20 +509,16 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn nothing_that_opens_is_refused_naming_the_first_or_the_first_library() {
+    fn nothing_that_opens_is_refused_naming_the_first() {
         let opens = |names: &[&str]| opens(&paths(names), by_name);
         assert_eq!(
             opens(&["/a/notes.txt", "/a/IMG_1.jpg"]),
             refused("/a/notes.txt", Refusal::Unknown)
         );
-        // The alert says libraries come later, so it names the library.
+        // No file is a library (decision 101): one is refused as any file that is no raw.
         assert_eq!(
-            opens(&["/a/notes.txt", "/a/Trip.approject", "/a/Home.aplibrary"]),
-            refused("/a/Trip.approject", Refusal::Library)
-        );
-        assert_eq!(
-            opens(&["/a/Home.APLIBRARY"]),
-            refused("/a/Home.APLIBRARY", Refusal::Library)
+            opens(&["/a/Home.aplibrary", "/a/notes.txt"]),
+            refused("/a/Home.aplibrary", Refusal::Unknown)
         );
     }
 
@@ -612,7 +595,7 @@ pub(crate) mod tests {
         );
         assert_eq!(
             opens(&["/a/Home.aplibrary", "/a/IMG_1.CR3.apxmp"]),
-            refused("/a/Home.aplibrary", Refusal::Library)
+            refused("/a/IMG_1.CR3.apxmp", Refusal::NoPhoto)
         );
     }
 
@@ -622,10 +605,10 @@ pub(crate) mod tests {
             chosen(&paths(&["/a/IMG_2.CR3", "/a/IMG_1.CR3"])),
             Some(raws("/a/IMG_2.CR3", &["/a/IMG_1.CR3"]))
         );
-        // Typed into the dialog: a library's file, a file that is no raw.
+        // Typed into the dialog: files that are no raw, a library's name among them.
         assert_eq!(
             chosen(&paths(&["/a/Home.aplibrary"])),
-            refused("/a/Home.aplibrary", Refusal::Library)
+            refused("/a/Home.aplibrary", Refusal::Unknown)
         );
         assert_eq!(
             chosen(&paths(&["/a/notes.txt"])),
@@ -670,7 +653,7 @@ pub(crate) mod tests {
         assert_eq!(kind(&dated), Kind::Folder);
         assert_eq!(kind(&folder.0.join("IMG_1.CR3")), Kind::Raw);
         assert_eq!(kind(&folder.0.join("notes.txt")), Kind::Other);
-        assert_eq!(kind(&folder.0.join("Home.aplibrary")), Kind::Library);
+        assert_eq!(kind(&folder.0.join("Home.aplibrary")), Kind::Other);
         // Gone, or never there: nothing to open.
         assert_eq!(kind(&folder.0.join("IMG_2.CR3")), Kind::Other);
         // An edit beside its photo opens the photo; one whose photo is gone is refused.
@@ -806,11 +789,6 @@ pub(crate) mod tests {
         assert_eq!(
             refused_line(edit, Refusal::NoPhoto, None),
             named(edit, "its photo, IMG_1.CR3, is not in the same folder")
-        );
-        let home = Path::new("/a/Home.aplibrary");
-        assert_eq!(
-            refused_line(home, Refusal::Library, None),
-            named(home, "libraries and projects come in a later version")
         );
         assert_eq!(
             refused_line(edit, Refusal::Unknown, None),

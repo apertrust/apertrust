@@ -27,8 +27,7 @@
 //! - **Why the edit is not saved** ([`Purpose::Save`]): the Toolbar's save warning
 //!   pressed, with Try Again.
 //! - **Why a drop opens nothing** ([`Purpose::Refused`]): what was dropped onto the window
-//!   is neither a folder nor a raw, or is a library's or a project's file, or an edit whose
-//!   photo is not beside it.
+//!   is neither a folder nor a raw, or is an edit whose photo is not beside it.
 //! - **Discard History** ([`Purpose::Discard`]): Edit › Discard History… and the History
 //!   section's ⋯ ask before the edit's history is cleared, as darktable does
 //!   (`ask_before_discard`).
@@ -332,7 +331,6 @@ pub fn refused_request(ctx: &egui::Context, name: &str, why: Refusal) -> Request
     args.set("name", name);
     let title = translator(ctx).text_with("alert-refused-title", Some(&args));
     let message = match why {
-        Refusal::Library => tr(ctx, "alert-refused-library"),
         Refusal::NoPhoto => {
             let photo = sidecar::photo_for(Path::new(name));
             let photo = photo.as_deref().and_then(Path::to_str).unwrap_or(name);
@@ -1055,11 +1053,6 @@ mod tests {
         assert_eq!(request.buttons.len(), 1);
         assert_eq!(request.buttons[0].label, "OK");
         assert_eq!((request.default, request.cancel()), (0, Some(0)));
-        let library = refused_request(&ctx, "Home.aplibrary", Refusal::Library);
-        assert_eq!(
-            library.message,
-            "Libraries and projects come in a later version."
-        );
         // An edit whose photo is not beside it names the photo.
         let edit = refused_request(&ctx, "IMG_2041.ARW.apxmp", Refusal::NoPhoto);
         assert_eq!(edit.title, "Can’t open IMG_2041.ARW.apxmp");
