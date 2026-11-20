@@ -936,9 +936,9 @@ fn tool_button<'a>(c: &'a Common, keys: Option<&'a str>) -> ToolButton<'a> {
 }
 
 /// The menu button drawn as the app's icon, then the caret, named `name`, with `keys` in
-/// its tooltip, as the Toolbar's icon buttons are coloured (decision 81): `text_secondary`
-/// at rest, `text_strong` under the pointer, on the hover plate, and while its menu is
-/// `open`, with no plate then.
+/// its tooltip, as the Toolbar's icon buttons are drawn (decision 81): no plate,
+/// `text_secondary` at rest, `text_strong` under the pointer and while its menu is `open`,
+/// and high contrast's `button_edge` round it under the pointer.
 fn app_icon_button(ui: &mut Ui, name: &str, keys: Option<&str>, open: bool) -> egui::Response {
     let t = theme(ui.ctx());
     let width = MenuButtonStyle::Icon.width();
@@ -946,17 +946,14 @@ fn app_icon_button(ui: &mut Ui, name: &str, keys: Option<&str>, open: bool) -> e
     if ui.is_rect_visible(rect) {
         let painter = &undimmed_painter(ui);
         let touch = Touch::of(ui.ctx(), &response, true, None);
-        if touch.hovered || touch.pressed {
-            painter.rect_filled(rect, t.shape.radius, t.colors.hover);
-            // High contrast outlines it too, as its icon buttons.
-            if t.colors.button_edge.a() > 0 {
-                painter.rect_stroke(
-                    rect,
-                    t.shape.radius,
-                    Stroke::new(t.shape.hairline, t.colors.button_edge),
-                    StrokeKind::Inside,
-                );
-            }
+        // No plate, as the icon buttons; high contrast outlines it under the pointer.
+        if (touch.hovered || touch.pressed) && t.colors.button_edge.a() > 0 {
+            painter.rect_stroke(
+                rect,
+                t.shape.radius,
+                Stroke::new(t.shape.hairline, t.colors.button_edge),
+                StrokeKind::Inside,
+            );
         }
         let colour = colour(&t, touch, open);
         let mut x = rect.left() + ICON_PADDING;
