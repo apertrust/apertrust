@@ -109,7 +109,7 @@ The groundwork for orientation:
 
 Planned (decision 99, [engine.md](engine.md#the-zoomed-view)), in seven steps:
 
-- `Command::View(View { scale, centre })`, `ViewScale` (`Fit`, `Fill`, `Factor(f32)`), and `view::place(extent, bounds, &view) -> Placement`, a pure function the app uses too; `Frame::place` (`FramePlace { scale, origin, extent }`) and `Frame::overview`.
+- `Command::View(View { scale, centre })`, `ViewScale` (`Fit`, `Fill`, `Factor(f32)`), and `view::place(extent, bounds, &view) -> Placement`, a pure function the app uses too; `Event::View(ViewState { through, view, placement })`, the session's one view told to every client; `Frame::place` (`FramePlace { scale, origin, extent }`) and `Frame::overview`.
 - `Pipe::Detail { region, scale }`: the visible region with darktable's 1.2 margin at the zoom's scale, never above 1, planned as a tile up to its start and as the viewport after it; its source demosaic's full-resolution cache point borrowed from the fitted pipeline by key, or in a tiled viewport the raw stage's output; recorded with the fitted pipeline's passes in one encoder (`Pipeline::record`).
 - Whole-image results at the detail's scale from a round over the whole image, kept by the untiled plan's key; haze removal's full-resolution part borrowed by key.
 - The scopes, the colour pickers, the readouts and the rendered thumbnails reading the fitted pipeline at every zoom.

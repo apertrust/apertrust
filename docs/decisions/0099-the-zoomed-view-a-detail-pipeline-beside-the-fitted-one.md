@@ -24,6 +24,7 @@ The Viewer only fits the photo. Zooming it, to 100% above all, where the screen 
 - `centre` is a point in the photo's coordinates, 0 to 1 across the photo as export renders it, the pickers' own ([0079](0079-colour-pickers-one-api-for-tools-and-the-colour-picker.md)), so a script or an MCP tool names a view without knowing the window.
 - The engine places the view from it and the last `Resize`'s bounds through one pure function the client uses too, `apertrust_engine::view::place(extent, bounds, &view) -> Placement`: the scale shown, the scale rendered (at most 1), the visible rectangle and the centre clamped so the view never passes the photo's edges. A resize at Fill stays Fill without a round trip.
 - The session keeps the view across photos, until a client sends another; another photo's frame takes the same view, its centre clamped.
+- **One view per session,** as `Resize`'s bounds are: the session renders one view for its window (one session per window, [0037](0037-one-view-the-photos-tab.md)), so every client of a session shares it and the last `View` any client sends wins. Every client learns it from `Event::View(ViewState { through, view, placement })`, a fact (topic `view`, [0059](0059-one-event-system.md)): the view as the session holds it, its centre clamped, and its `Placement`. It is sent once in each batch whose commands changed it or its placement (a `View`, a `Resize`, an `Open` of a photo of another extent, an edit that changes the extent), after the batch's `Values` and before its `Frame`, and to a client that syncs mid-session; a pan inside the rendered region, which renders no frame, still sends it, so a second client never shows an old view.
 
 **The frame.** `Frame` gains:
 
@@ -42,6 +43,7 @@ The Viewer only fits the photo. Zooming it, to 100% above all, where the screen 
 - **`Pipe::Viewport` generalised to a scale and a region:** churns every viewport plan and its fingerprints for the same behaviour.
 - **The client sending the visible rectangle, or the region in pixels:** a script would need the window's size, and the client and the engine could disagree on the clamping and the margin.
 - **A separate `Event::Overview`:** two facts that can carry different `through` for a turn.
+- **A view per client,** each client its own region rendered: one session renders for one window, and an assistant on the app's session should see and move what the person sees. **No view event,** clients learning the view from frames alone: a pan inside the rendered region sends no frame.
 - **Exactly the visible region:** a render, about 11 ms on the M4, on every step of a pan. **A tile cache,** as maps keep: every edit invalidates every tile, and tiles overlap by their reach.
 - **A small preview pipe of its own,** as darktable's: a third size whose values would differ from the fitted view's.
 

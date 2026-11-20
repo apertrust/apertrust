@@ -346,6 +346,7 @@ Kept from darktable:
 ## What is planned
 
 - **`Frame::place` and `Frame::overview`**, with the zoomed view's first and second steps (decision 99, [engine.md](engine.md#the-zoomed-view)).
+- **`View(ViewState { through, view, placement })`**, a fact of topic `view`, with the zoomed view's first step (decision 99): the session's one view, shared by its clients, its centre clamped, and its `Placement`, sent once in each batch whose commands changed it or its placement (a `View`, a `Resize`, an `Open` of a photo of another extent, an edit that changes the extent), after the batch's `Values` and before its `Frame`, and to a client that syncs mid-session. A pan inside the rendered region sends it with no frame.
 - **`CollectionChanged`**, with darktable's reason and property, with the first change to a collection ([Lower crates report through an observer](#lower-crates-report-through-an-observer)).
 - **Notices for the user**, `Event::Notice { message, photo }` and its place in the app, with the library's step 12 ([Notices for the user](#notices-for-the-user)).
 - **The remote protocol**, with the server or MCP, whichever comes first ([session-protocol.md](session-protocol.md#remote-clients)).

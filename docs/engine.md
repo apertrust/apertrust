@@ -699,7 +699,7 @@ flowchart LR
 - **One turn a frame:** a change records the fitted pipeline's passes, then the detail's, in one encoder (`Pipeline::record`) and one submission ([The submit gate](#the-submit-gate)); a pan or a zoom records the detail's alone.
 - **At Fit** the detail pipeline is kept, not rendered, given up first when memory runs short and freed with the photo, so going back to 100% compiles nothing and restarts where its keys still hold.
 
-**The view and the frame** ([session-protocol.md](session-protocol.md#commands), [events.md](events.md#the-events-the-session-sends)): `Command::View(View { scale, centre })`, `scale` a `ViewScale` (`Fit`, `Fill` or `Factor(f32)`, 1.0 being 100%, one photo pixel per physical pixel, clamped to Fit and 16) and `centre` in the photo's coordinates, 0 to 1. The engine places it with the last `Resize`'s bounds through `apertrust_engine::view::place(extent, bounds, &view)`, which the client uses too: the scale shown, the scale rendered, the visible rectangle and the centre clamped to the photo. The session keeps the view across photos. `Frame::place` (`FramePlace { scale, origin, extent }`) says where the frame lies, and `Frame::overview` carries the fitted frame while zoomed; each has its own pair of display buffers.
+**The view and the frame** ([session-protocol.md](session-protocol.md#commands), [events.md](events.md#the-events-the-session-sends)): `Command::View(View { scale, centre })`, `scale` a `ViewScale` (`Fit`, `Fill` or `Factor(f32)`, 1.0 being 100%, one photo pixel per physical pixel, clamped to Fit and 16) and `centre` in the photo's coordinates, 0 to 1. The engine places it with the last `Resize`'s bounds through `apertrust_engine::view::place(extent, bounds, &view)`, which the client uses too: the scale shown, the scale rendered, the visible rectangle and the centre clamped to the photo. The session keeps the view across photos. It is one view per session, as `Resize`'s bounds are, shared by every client, the last `View` winning; `Event::View(ViewState { through, view, placement })`, a fact, tells every client the view and its placement in each batch that changed them, a pan that renders nothing included, after the `Values` and before the `Frame`. `Frame::place` (`FramePlace { scale, origin, extent }`) says where the frame lies, and `Frame::overview` carries the fitted frame while zoomed; each has its own pair of display buffers.
 
 **Estimates** on the M4 for the 7R V's 61 MP raw at 2400×1600, to be measured: the region with its margin is 5.5 MP, about 1.9 ms a pass (2.4 ms on the Radeon 780M); entering 100% about 15 to 20 ms of GPU time with the default pipeline; an exposure change at 100%, both pipelines, 13 to 14 ms against 5.5 ms at Fit; a tone equalizer round about 0.1 s on an upstream change. The detail's buffers are about 88 MB each, about 530 MB with its display buffers, beside the fitted pipeline's and within the session's budget ([Budget](#budget)).
 
@@ -707,7 +707,7 @@ flowchart LR
 
 **Steps,** each a pull request:
 
-1. `Command::View`, `apertrust_engine::view::place` and `Frame::place`; frames still at Fit.
+1. `Command::View`, `apertrust_engine::view::place`, `Event::View` and `Frame::place`; frames still at Fit.
 2. The detail pipeline at 100%, untiled, without whole-image passes after demosaic (refused, Fit kept, until step 3); `Frame::overview`, the scopes and the Colour picker reading it; `apertrust-cli preview --zoom`.
 3. Whole-image results at 100%, from rounds kept by key.
 4. Pans: the margin and its reuse.
