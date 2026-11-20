@@ -1224,8 +1224,8 @@ fn empty_space<T>(harness: &Harness<'_, T>, last: usize) -> Vec<egui::Pos2> {
 
 /// A plain click on the Browser's empty space selects nothing (`docs/gui.md`, The
 /// pointer): a cell's margin round its picture or on its caption, a gap between cells, the
-/// area after the last cell to the panel's end; a gap too where the cells overflow the
-/// panel on a touch screen, which a drag scrolls them on.
+/// area after the last cell to the panel's end, the whole panel with no photos; a gap too
+/// where the cells overflow the panel on a touch screen, which a drag scrolls them on.
 #[test]
 fn a_click_on_the_browser_s_empty_space_reports_clear_selection() {
     let mut harness = pictured(3);
@@ -1237,6 +1237,12 @@ fn a_click_on_the_browser_s_empty_space_reports_clear_selection() {
         assert!(clicked.cells.is_empty(), "{at:?}: {:?}", clicked.cells);
         harness.state_mut().actions.clear();
     }
+    // With no photos, all the panel but its bar.
+    let mut harness = browser(0);
+    harness.run();
+    let list = harness.get_by_role_and_label(Role::List, "Browser").rect();
+    click_at(&mut harness, list.center(), egui::Modifiers::NONE);
+    assert_eq!(harness.state().actions, [BrowserAction::ClearSelection]);
     // On a touch screen, whose drag scrolls the cells under it.
     let mut harness = pictured(12);
     for phase in [egui::TouchPhase::Start, egui::TouchPhase::End] {

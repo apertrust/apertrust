@@ -485,17 +485,7 @@ impl<'a, F: Fn(usize) -> Thumb<'a>> Browser<'a, F> {
                 pos2(inner.right() - t.spacing.l, inner.bottom()),
             )
         };
-        if self.count == 0 {
-            if let Some(message) = self.empty {
-                empty(ui, area, message, self.hint);
-            }
-            return BrowserOutput {
-                bar: self.bar(ui, header, bar_id),
-                ..BrowserOutput::default()
-            };
-        }
-
-        // The panel's empty space, under the cells, outside the browser bar: a plain click
+        // The panel's empty space, under the cells, outside the browser bar, all of it with no photos: a plain click
         // there selects nothing. Inside the strip too, over the drag that scrolls it on a
         // touch screen.
         let background = list.with("background");
@@ -505,6 +495,17 @@ impl<'a, F: Fn(usize) -> Thumb<'a>> Browser<'a, F> {
             Rect::from_min_max(pos2(header.right(), inner.top()), inner.max)
         };
         let mut action = cleared(ui, around, background).then_some(BrowserAction::ClearSelection);
+        if self.count == 0 {
+            if let Some(message) = self.empty {
+                empty(ui, area, message, self.hint);
+            }
+            return BrowserOutput {
+                action,
+                bar: self.bar(ui, header, bar_id),
+                ..BrowserOutput::default()
+            };
+        }
+
         let cells = Cells {
             count: self.count,
             lines: self.lines,
