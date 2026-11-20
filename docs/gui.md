@@ -790,7 +790,7 @@ Phase 4: the menu appears with Layers, and its keys are set with their design. I
 | Photo, checked when shown | `layout-photo` | — (E is left free) | Declared as the Edit view's action, `view-edit`, with E, to be renamed and lose its key; in the menu with the Map, once there are two layouts |
 | Map, checked when shown; chosen again, back to Photo | `layout-map` | Shift+M | New, with the Map and its toggle on the viewer bar, after Phase 5 |
 | — | | | |
-| Zoom In | `zoom-in` | Ctrl+= (or Ctrl++) | Declared, drawn disabled until the viewport zooms, and in the viewer bar's zoom menu; no key until then, while Interface Size keeps Ctrl+= |
+| Zoom In | `zoom-in` | Ctrl+= (or Ctrl++ where + has its own key) | Declared, drawn disabled until the viewport zooms, and in the viewer bar's zoom menu; no key until then, while Interface Size keeps Ctrl+= |
 | Zoom Out | `zoom-out` | Ctrl+− | As Zoom In, Interface Size keeping Ctrl+− |
 | Zoom to Fit, checked while fitted | `zoom-fit` | Ctrl+0 | As Zoom In, Interface Size keeping Ctrl+0 |
 | Zoom to 100%, checked at 100%; chosen again, back to Fit | `zoom-100` | Z | Declared with Z, drawn disabled until the viewport zooms, and in the viewer bar's zoom menu |
@@ -829,7 +829,7 @@ Phase 4: the menu appears with Layers, and its keys are set with their design. I
 | — | | | |
 | Enter Full Screen and Exit Full Screen on macOS; Full Screen, checked, on Windows and Linux | `full-screen` | Ctrl+Cmd+F on macOS; F11 | Built |
 
-- **The photo's zoom** has the keys macOS and commercial raw editors give a document's zoom, and Zoom to 100%, the view where the screen is the export (principle 2), has the single key Z. Both act at the point under the pointer when the pointer is over the photo. In Photo they zoom the photo; with several shown, each cell keeps its own zoom, and they zoom the cell under the pointer, else the active photo's.
+- **The photo's zoom** has the keys macOS and commercial raw editors give a document's zoom, and Zoom to 100%, the view where the screen is the export (principle 2), has the single key Z. Both act at the point under the pointer when the pointer is over the photo. In Photo they zoom the photo; with several shown, each cell keeps its own zoom, and they zoom the cell under the pointer, else the active photo's. With Shift they zoom every cell together, at the same point of each photo: Shift+Z, Ctrl+Shift+0, Ctrl+Shift+− and Ctrl+Shift+=, which a US keyboard's Ctrl++ is ([Photo's cells](#photos-cells)).
 - **The layouts** join the menu with the Map and its toggle on the viewer bar, once there are two: a choice of one is no choice. Map, chosen again, goes back to Photo, as its toggle and Shift+M do and as Zoom to 100% goes back to Fit. Choosing one changes only the Viewer (decision 37).
 - **Collections** chooses the first tab holding Collections, as L does, wherever the workspace puts it; where no tab shown holds it, both reveal it in the Hidden tab, shown for the moment while Show Hidden Tools is off (decision 96, [Hidden tools](#hidden-tools)). L is darktable's key for its lighttable, whose part Collections plays.
 - **Workspace** switches the Tools panel's tabs, and from Phase 3 the toolbar's items (decisions 92 and 96), nothing else: Default and Essentials by their messages, then a person's own by its file's `name`, else its id, the one shown checked. Its items list the workspaces read as the app starts; the same list joins the tab bar's menu and the Tools panel's ⋮ with step 5.
@@ -2486,7 +2486,19 @@ The Toolbar has no layout switcher. A small Map toggle on the viewer bar, immedi
 - **Fewer photos take fewer, larger cells,** laid out to show the photos largest for their shapes and the Viewer's: two side by side, or one over the other in a tall Viewer; up to four in 2 by 2; up to six in 3 by 2; up to nine in 3 by 3; then the whole grid.
 - **Order and marks.** The cells follow the folder's or album's order. Each photo is fitted on the surround, its file name and stars under it, read only. The active photo's cell is outlined in the accent; the others are all selected, so they need no mark.
 - **More than 11 selected.** The cells show a page of 11, the one holding the active photo. They stay put while the active photo moves among them, and the page turns when → or ← takes the active photo past its end. The 12th cell says "N more photos", N those not shown. It is a label only and does nothing when clicked: → and ← reach the photos beyond it.
-- **Zoom.** Each cell keeps its own zoom: the scale and the zoom keys act on the cell under the pointer, else on the active photo's, and the other cells stay as they are.
+- **Zoom,** planned with the Viewer's zoom. Each cell keeps its own zoom: the scale and the zoom keys act on one photo, the cell under the pointer, else the active photo's, and the other cells stay as they are. With Shift the same zoom acts on every cell together, at the same point of each photo, so a burst's sharpness compares at 100%. Ctrl is Cmd on the Mac.
+
+  | Action | One photo | Every cell |
+  | --- | --- | --- |
+  | 100% | Z | Shift+Z |
+  | Fit | Ctrl+0 | Ctrl+Shift+0 |
+  | Zoom out | Ctrl+− | Ctrl+Shift+− |
+  | Zoom in | Ctrl+= | Ctrl+Shift+= |
+  | Pointer | A pinch, Ctrl+scroll | Shift+pinch, Ctrl+Shift+scroll |
+  | The viewer bar's zoom menu | An entry chosen | An entry chosen with Shift held |
+
+  - **Ctrl++** is Ctrl+Shift+= on a US keyboard, so there it zooms every cell, and one photo zooms in with Ctrl+=: a shortcut that names Shift exactly wins over the extra Shift a + allows ([Keyboard and actions](#keyboard-and-actions)). Where + has its own key, Ctrl++ zooms one photo.
+  - With one photo shown, Shift changes nothing: there is one cell.
 - **Live and still.** The active photo's cell is live; the others are stills rendered from their saved edits after it, so the active photo never waits for them (decision 37). Until its still arrives, a cell shows the photo's rendered thumbnail where the cache holds one, else the camera's embedded picture, else a placeholder with its file name, as principle 2 asks, unmarked (decision 77).
 - **Show all selected photos,** the viewer bar's toggle and View › Show All Selected: on, Photo shows the selected photos; off, the active photo alone however many are selected. On by default.
 
@@ -3117,13 +3129,14 @@ One button at the bar's end, `ViewerBar`'s zoom, showing the scale and a 10-poin
   - a separator;
   - Zoom in, Zoom out.
 
-  The scale shown is checked; a scale between them checks none. Each entry shows its action's keys from the keymap, as a menu item does: Z for 100% (`zoom-100`); Fit, Zoom in and Zoom out show Ctrl+0, Ctrl+= and Ctrl+− once the interface's size gives those keys up ([the default keyboard map](#the-default-keyboard-map)). Zoom in is disabled at 1600% and Zoom out at Small.
+  The scale shown is checked; a scale between them checks none. Each entry shows its action's keys from the keymap, as a menu item does: Z for 100% (`zoom-100`); Fit, Zoom in and Zoom out show Ctrl+0, Ctrl+= and Ctrl+− once the interface's size gives those keys up ([the default keyboard map](#the-default-keyboard-map)). Zoom in is disabled at 1600% and Zoom out at Small. With several photos shown, an entry chosen with Shift held acts on every cell together ([Photo's cells](#photos-cells)), so Zoom in and Zoom out stay enabled while any cell can still step that way.
 - **What it reports:** `ViewerBarAction::Zoom` with a `Zoom` (Small, Fit, Fill or a percentage), or `ZoomIn` and `ZoomOut`, which the app takes along the menu's list.
 - **While the viewport can only fit,** as now: it shows Fit, every entry but Fit is disabled, and its tooltip says zoom comes with the 100% view. With no photo shown it is disabled.
-- **Tooltip:** "Zoom: pinch or Ctrl+scroll; Z for 100%. Scroll moves a zoomed photo, Shift+scroll sideways", Cmd on the Mac. At 100% it starts "At 100% the screen shows exactly what the export will be."
+- **Tooltip:** "Zoom: pinch or Ctrl+scroll; Z for 100%. Scroll moves a zoomed photo, Shift+scroll sideways", Cmd on the Mac; with several photos shown it ends "With Shift, every photo together." At 100% it starts "At 100% the screen shows exactly what the export will be."
 - **Focus and screen readers:** a button with a menu named "Zoom", its value the scale. Enter, Space or ↓ opens the menu; the arrows move, Enter chooses, and Escape closes it and gives the focus back to the button.
 - **The gestures,** planned, built with the zoom (the rest of step 8):
   - a pinch, or Ctrl+scroll (Cmd+scroll on the Mac), zooms about the pointer;
+  - with several photos shown, Shift+pinch or Ctrl+Shift+scroll zooms every cell together, at the same point of each photo ([Photo's cells](#photos-cells));
   - a plain scroll moves a zoomed photo, and Shift+scroll moves it sideways;
   - a drag moves it too;
   - at Fit, scrolling does nothing;
@@ -4050,7 +4063,7 @@ Decision 19; engine.md's [Scopes](engine.md#scopes). Built for the histogram, th
 - **Which key is which.** Keys match egui's logical key, the character printed on the key, so Ctrl+Z is the key labelled Z on QWERTZ and AZERTY keyboards too.
   - A letter egui has no name for, every Cyrillic and Greek one, arrives as its physical key: egui-winit puts it in the logical key's place. So on a Ukrainian layout Ctrl+Я is Ctrl+Z with nothing remapped, and Polish layouts are Latin already.
   - On the number row the physical digit comes first, since layouts disagree about the symbols on it: AZERTY types `'` on the 4 key, and Ctrl+4 still chooses the fourth tab; Czech types `+` on the 1 key, and Ctrl+1 chooses the first. A letter under a symbol is not read, because Dvorak puts `'` where QWERTY has Q, and Ctrl+' must not quit.
-  - Alt and Shift must match exactly, so Option letters on a Mac never fire a shortcut. Only keys whose symbol needs Shift on many layouts (+ : ? ! | { }) allow an extra Shift: Ctrl++ is Ctrl+Shift+= on a US keyboard.
+  - Alt and Shift must match exactly, so Option letters on a Mac never fire a shortcut. Only keys whose symbol needs Shift on many layouts (+ : ? ! | { }) allow an extra Shift: Ctrl++ is Ctrl+Shift+= on a US keyboard. A shortcut that names Shift exactly wins over that allowance: on a US keyboard Ctrl++ is the Ctrl+Shift+= that zooms every cell, and one photo zooms in with Ctrl+=; where + has its own key, Ctrl++ still zooms one photo ([Photo's cells](#photos-cells)).
   - AltGr is no modifier egui sees: on Windows winit drops Ctrl and Alt while it is held, and on Linux it is a modifier of its own, so AltGr+E, ę on a Polish keyboard, arrives as a plain E, since egui-winit does not report AltGr. A letter's shortcut is skipped when the same press typed something else: a Latin letter not its own (ę, ł) or no letter at all (@, €). A letter of another alphabet, у on a Ukrainian keyboard, is that key's own and still runs it.
 - **Platforms.** Ctrl is Cmd on macOS (egui's `Modifiers::COMMAND`), and a few keys differ (below). Tooltips spell keys the platform's way, `Ctrl+Shift+Z`, and on macOS `Shift+Cmd+Z`, in Apple's order of Control, Option, Shift and Command. On macOS the modifiers are words, not ⌘ ⇧ ⌥ ⌃, which IBM Plex Sans lacks. Key names stay as printed on the keys (Ctrl, Shift, F6, and on a Mac Delete and Return); Space is translated. The keys also reach screen readers as the control's AccessKit shortcut.
 - **Focus order follows reading order:** Toolbar, viewer bar, the Viewer when it can take focus (Photo's cells with several selected), the Tools panel's tabs, then its sections, then the Browser. F6 moves the focus to the first focusable control of the next region that has one, in that order; Shift+F6 goes back. Screen readers hear each region by its part's name ([The shell](#the-names-of-the-parts)): "Toolbar", "Viewer bar", "Viewer", "Tools" (planned: until then they hear its tab list, "Tools panel tabs") and "Browser".
@@ -4118,8 +4131,8 @@ Ctrl means Cmd on macOS.
 | View | Next and previous photo | Space and →, Backspace and ← | With several selected, through the selection; else through the folder or album, the photo reached selected alone. Disabled with one photo |
 | View | Extend the selection | Shift with the arrows, in the Browser | Phase 3, with selecting several photos |
 | View | Add the focused cell's photo to the selection, the active photo staying, or take it out | Ctrl+Space, in the Browser; Control+Space too on the Mac, where Spotlight holds Cmd+Space | Built: the focused cell's own key, as Ctrl-click; no action of the registry |
-| View | Zoom the photo in and out, and to Fit | Ctrl+= (or Ctrl++), Ctrl+−; Ctrl+0 fits | Declared with no key, not yet available: the scale's zoom comes with the viewport's 100% view, and the keys with it; at the point under the pointer when it is over the photo. With several shown, the cell under the pointer, else the active photo's, each keeping its own zoom |
-| View | Zoom the photo to 100%, and back to Fit | Z | Declared with Z, not yet available, as above; in Photo only |
+| View | Zoom the photo in and out, and to Fit | Ctrl+= (or Ctrl++ where + has its own key), Ctrl+−; Ctrl+0 fits. With Shift, every cell: Ctrl+Shift+= (a US keyboard's Ctrl++), Ctrl+Shift+− and Ctrl+Shift+0 | Declared with no key, not yet available: the scale's zoom comes with the viewport's 100% view, and the keys with it; at the point under the pointer when it is over the photo. With several shown, the cell under the pointer, else the active photo's, each keeping its own zoom; with Shift every cell together, at the same point of each photo ([Photo's cells](#photos-cells)) |
+| View | Zoom the photo to 100%, and back to Fit | Z; Shift+Z, every cell | Declared with Z, not yet available, as above; in Photo only |
 | View | Find a tool (`find-tool`), the Tools panel's search | Ctrl+Shift+F, from a value field too, which does not keep it | Built, decision 96's step 6: in ⋮, and in the tab bar's menu with step 5 ([Finding a tool](#finding-a-tool)) |
 | View | Search the Browser by file name | Ctrl+F, from a value field too, which does not keep it; unassigned until it is built (decision 96) | Planned: View › Search Photos… alone ([The browser bar](#the-browser-bar)) |
 | View | The Browser's sort and its direction; the thumbnails' size; their captions; the panel's position | None by default: the browser bar's Sort and Zoom, its options menu's Show Labels and Position, and View's items; Ctrl+= and Ctrl+− stay the photo's | Phase 2, with the browser bar; Sort by Rating in Phase 3 |
@@ -4142,7 +4155,10 @@ Ctrl means Cmd on macOS.
 - **Kept free** for later features, as plain keys: `\`, J, O, W, B, S, C and M, M for the gradient shape, so the Map takes Shift+M; G and E are free too. On Polish keyboards AltGr with L types ł, which the AltGr rule above keeps from running Collections.
   - Most of them are darktable's own plain keys (decision 98): O raw overexposed, W the full preview held, B the collapsed controls, S the slideshow, C crop, M the map, G the guides and E exposure's slider, each coming with its feature where the map does not already give the feature another key; the Map is on Shift+M and the slideshow has no key today, which the audit below settles; `\` and J are not darktable's.
   - **The map is audited** against darktable's 247 default registrations before Phase 3's defaults land (decision 98's step 9): each difference moves to darktable's key or becomes a listed deviation with its reason, the Map on Shift+M, the slideshow with no key, Copy edit on Ctrl+Shift+C where darktable has Ctrl+C, and Collections on L among them.
-- **A test fails** if a default takes a key kept free, if two keys in one scope can be one press, or if a key of the view would hide an app's. One press is judged by the matching rules (`actions::conflict`): on Windows and Linux Ctrl and Command of one letter, Ctrl++ and Ctrl+Shift++, and a symbol that a known layout types on a digit key with that digit. The one overlap accepted is Ctrl++ with Ctrl+1 on Czech and Slovak keyboards, where the 1 key types `+`: the digit wins there, and Ctrl+= zooms the photo in.
+- **A test fails** if a default takes a key kept free, if two keys in one scope can be one press, or if a key of the view would hide an app's. One press is judged by the matching rules (`actions::conflict`): on Windows and Linux Ctrl and Command of one letter, Ctrl++ and Ctrl+Shift++, and a symbol that a known layout types on a digit key with that digit. Three overlaps are accepted:
+  - Ctrl++ with Ctrl+1 on Czech and Slovak keyboards, where the 1 key types `+`: the digit wins there, and Ctrl+= zooms the photo in.
+  - Ctrl++ with Ctrl+Shift+= on a US keyboard: the key naming Shift exactly wins and zooms every cell.
+  - Ctrl+Shift+= with Ctrl+Shift+0 on keyboards that type = on Shift+0, German among them: the digit wins and fits every cell, so there every cell zooms in by Shift+pinch, Ctrl+Shift+scroll or the zoom menu with Shift held.
 
 ### Actions after darktable
 
