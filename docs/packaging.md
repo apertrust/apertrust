@@ -156,7 +156,11 @@ APERTRUST_VERSION=0.2.0 tools/package.sh                  # a packager's version
 ```
 
 - **macOS**: Xcode's command-line tools (`lipo`, `codesign`, `hdiutil`). The script packages each Apple target installed, a disk image for Apple silicon and one for Intel (`rustup target add aarch64-apple-darwin x86_64-apple-darwin` installs both); `--target aarch64-apple-darwin` or `--target x86_64-apple-darwin` packages one. The disk image is made without driving Finder, its window laid out by the committed `.DS_Store` (above); `--finder-layout` also has create-dmg arrange it in Finder first, which needs a logged-in session and may ask to let the terminal control Finder, and the committed layout then replaces its own.
-- **Windows**: the MSVC toolchain with the Windows SDK, whose `rc.exe` compiles the resources, from Git Bash; the portable zip is written by PowerShell's `Compress-Archive`. An x64 or Arm system packages its own; `--target aarch64-pc-windows-msvc` names Arm's.
+- **Windows**: the MSVC toolchain with the Windows SDK, whose `rc.exe` compiles the resources, from Git Bash; the portable zip is written by PowerShell's `Compress-Archive`. An x64 or Arm system packages its own; `--target aarch64-pc-windows-msvc` names Arm's. From PowerShell, the script runs through Git's bash:
+
+  ```powershell
+  & "C:\Program Files\Git\bin\bash.exe" tools/package.sh --nightly
+  ```
 - **Linux**: an x86_64 or aarch64 system with `objdump` (binutils), which the `.deb`'s glibc is read with, and `ldd`, which cargo-generate-rpm finds the `.rpm`'s libraries with. The packages need the glibc they are built on or newer, so a build for others is made on the oldest system they are for, as the nightly builds are (above, Linux). The AppImage runs linuxdeploy without FUSE; in a container with no FUSE at all, `APPIMAGE_EXTRACT_AND_RUN=1` has linuxdeploy's AppImage plugin extract itself too.
 - **What cargo-packager downloads** into its tools folder the first time: the create-dmg script, pinned by its commit, on macOS; NSIS and its plugins, checked by SHA-1, on Windows; linuxdeploy, its AppImage plugin and AppRun on Linux.
 
