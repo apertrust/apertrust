@@ -1382,6 +1382,7 @@ fn a_file_already_there_is_a_warning_when_it_is_replaced_and_never_a_note_under_
     assert!(!says(&harness, "Replaces 1 file already there"));
     harness.state_mut().shown.others = Others::default();
     harness.run();
+    assert!(says(&harness, "Replaces 1 file already there"));
     // Nothing there, nothing said.
     answer(&mut harness, 4, preview());
     assert!(harness.query_by_label_contains("already there").is_none());
