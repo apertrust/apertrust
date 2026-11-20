@@ -17,7 +17,7 @@ Dropdowns, pull-downs and context menus appear everywhere in the interface. On t
 **How the drawn popups work:**
 
 - each open level is an egui `Area`, drawn from the tokens by `popup::show`, which the app calls once a frame; a popup the last pass neither opened nor drew closes, answering Dismissed;
-- an egui plugin takes the last popup's keys out of each frame's input before egui reads it: every press without Ctrl, Cmd or Alt except the F-keys, and all typed text; keys with a modifier and F-keys stay the app's, so F10 closes the ☰'s menu;
+- an egui plugin takes the last popup's keys out of each frame's input before egui reads it: every press without Ctrl, Cmd or Alt except the F-keys, and all typed text; keys with a modifier and F-keys stay the app's, so F10 closes the menu button's menu;
 - opening moves the focus to the chosen line, closing by keys or a choice gives it back; a press outside closes every level and is not swallowed;
 - a submenu opens once the pointer has rested 0.2 s on its line (`PAUSE`);
 - the drawn dropdown filters as darktable's does while letters are typed;
