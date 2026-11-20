@@ -98,6 +98,29 @@ pub(crate) fn browse(
     }
 }
 
+/// Opens the photo at `i` of `order`, the Browser's, as its cell's menu opens (decision
+/// 91), unless it is the active one: a photo in the selection keeps it, so the menu acts on
+/// the selection; one outside it is selected alone, as a click selects it.
+pub(crate) fn open_for_menu(
+    i: usize,
+    order: &[PathBuf],
+    alone: bool,
+    mirror: &mut Mirror,
+    send: &mut SendCommand<'_>,
+) {
+    let Some(path) = order.get(i) else {
+        return;
+    };
+    if mirror.photo.asked() == Some(path.as_path()) {
+        return;
+    }
+    if mirror.is_selected(path) {
+        open_listed(path.clone(), mirror, send);
+    } else {
+        browse(BrowserAction::Open(i), order, alone, mirror, send);
+    }
+}
+
 /// Runs one of Edit's selection items, `command` (`All`, `Clear`, `Invert` or `Unedited`),
 /// as the session will (decision 37): Select All keeps the active photo; Select None
 /// closes it, as File › Close does, and opens none; Invert Selection closes it, and Select
@@ -405,6 +428,26 @@ mod tests {
         // The photo open, alone: nothing.
         f.told(&["d"], Some("d"));
         assert!(f.browse(BrowserAction::Open(3)).is_empty());
+    }
+
+    /// A cell's menu opens its photo first: one in the selection keeps it, where a click
+    /// would narrow it; one outside it is selected alone; the active one opens nothing.
+    #[test]
+    fn a_cell_s_menu_opens_its_photo_keeping_the_selection_that_holds_it() {
+        let mut f = Folder::new("c");
+        f.listed(&[], false);
+        f.told(&["b", "c", "d"], Some("c"));
+        let menu = |f: &mut Folder, i: usize| {
+            let from = f.sent.len();
+            open_for_menu(i, &f.order, false, &mut f.m, &mut sender(&mut f.sent));
+            f.sent[from..].to_vec()
+        };
+        assert_eq!(menu(&mut f, 3), [Command::Open(at("d"))]);
+        f.told(&["b", "c", "d"], Some("d"));
+        assert!(menu(&mut f, 3).is_empty());
+        // Outside the selection, the open selects it alone, as the session does.
+        assert_eq!(menu(&mut f, 0), [Command::Open(at("a"))]);
+        assert!(f.m.selected_alone(&at("a")));
     }
 
     /// Ctrl-click adds a photo to the selection, the active photo staying as it is; on a
