@@ -1498,7 +1498,7 @@ struct App {
     /// The number of Edit's Invert Selection or Select Unedited that closed the active
     /// photo, whose new selection's first photo opens once the session tells it
     /// ([`selection::open_first`]).
-    opening_first: Option<u64>,
+    opening_first: Option<selection::Waiting>,
     /// The main window as the start window, with nothing open (`docs/gui.md`, The start
     /// window).
     start: start::Window,
