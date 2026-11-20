@@ -19803,6 +19803,31 @@ mod tests {
         harness.run();
     }
 
+    /// About chosen from the menu by Return, not a click, gives the focus back on closing to
+    /// the menu button that opened the menu, not to the menu's item, which is gone.
+    #[test]
+    fn about_chosen_by_return_gives_the_focus_back_to_the_menu_button() {
+        let mut harness = bench(OperatingSystem::Windows);
+        harness.run();
+        harness.get_by_role_and_label(Role::Button, "Menu").focus();
+        harness.run();
+        alt(&mut harness, Key::H, Some("h"));
+        // A letter moves to the next item starting with it, About Apertrust.
+        alt_with(&mut harness, Modifiers::NONE, Key::A, Some("a"));
+        harness.key_press(Key::Enter);
+        harness.run();
+        assert_eq!(harness.state().shell.about.page(), Some(about::Page::About));
+        harness.key_press(Key::Escape);
+        harness.run();
+        harness.run();
+        assert_eq!(harness.state().shell.about.page(), None);
+        assert!(
+            harness
+                .get_by_role_and_label(Role::Button, "Menu")
+                .is_focused()
+        );
+    }
+
     #[test]
     fn help_opens_about_and_its_pages_go_one_step_in_and_back() {
         use about::Page;
