@@ -41,12 +41,6 @@ jobs:
       PRE_COMMIT_COLOR: always
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Free disk space
-        if: needs.platforms.outputs.code == 'true'
-        # Toolchains this workflow never uses, about 20 GB, for clippy's three builds.
-        run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
-          df -h /
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       # The hooks' tools, cargo-deny built from source among them, as the config pins them.
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -63,6 +57,11 @@ jobs:
       - name: API docs
         if: needs.platforms.outputs.code == 'true'
         run: pre-commit run api-docs --hook-stage manual --all-files
+      # The disk left, failed or not: clippy's three builds and the caches take under
+      # 10 GB, on a runner that has had far more free, so nothing is cleared first.
+      - name: Disk space
+        if: always()
+        run: df -h /
 
   # Whether the code's checks run, and the runners the tests run on. The checks run on
   # main, and for a pull request that changes a file outside .github/docs-only-paths.txt
