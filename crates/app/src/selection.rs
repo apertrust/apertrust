@@ -55,11 +55,13 @@ use crate::mirror::{Mirror, PhotoState};
 use crate::{SendCommand, close_photo, open_listed};
 
 /// Does what `action` asks of the Browser's photos, `order` their paths in its sort, which
-/// its indices count; `alone` when they are photos opened alone.
+/// its indices count; `alone` when they are photos opened alone. A click on empty space
+/// ends the wait for a new selection's first photo, `waiting` ([`edit`]).
 pub(crate) fn browse(
     action: BrowserAction,
     order: &[PathBuf],
     alone: bool,
+    waiting: &mut Option<Waiting>,
     mirror: &mut Mirror,
     send: &mut SendCommand<'_>,
 ) {
@@ -68,7 +70,7 @@ pub(crate) fn browse(
         | BrowserAction::SelectRange(i)
         | BrowserAction::ToggleSelected(i) => i,
         BrowserAction::ClearSelection => {
-            clear(alone, mirror, send);
+            clear(alone, waiting, mirror, send);
             return;
         }
     };
@@ -117,16 +119,24 @@ pub(crate) fn browse(
 }
 
 /// A click on the Browser's empty space: selects nothing, closing the active photo as
-/// Select None does and opening none, even where it is the only one selected; with nothing
-/// selected and no photo open, nothing. Among photos opened alone, which the session
-/// selects nothing in, it closes the photo open, as File › Close does.
-fn clear(alone: bool, mirror: &mut Mirror, send: &mut SendCommand<'_>) {
+/// Select None does and opening none, even where it is the only one selected, and ends a
+/// wait for the first photo of a selection Invert or Unedited makes, so nothing opens
+/// after it. With nothing selected, no photo open and no All, Invert or Unedited waiting
+/// to be told, nothing. Among photos opened alone, which the session selects nothing in,
+/// it closes the photo open, as File › Close does.
+fn clear(
+    alone: bool,
+    waiting: &mut Option<Waiting>,
+    mirror: &mut Mirror,
+    send: &mut SendCommand<'_>,
+) {
     if alone {
         close_photo(mirror, send);
         return;
     }
+    *waiting = None;
     let active = mirror.photo.asked().is_some();
-    if !active && mirror.selected_count() == 0 {
+    if !active && mirror.selected_count() == 0 && !mirror.selection_pending() {
         return;
     }
     select(SelectionCommand::Clear, mirror, send);
@@ -155,7 +165,15 @@ pub(crate) fn open_for_menu(
     if mirror.is_selected(path) {
         open_listed(path.clone(), mirror, send);
     } else {
-        browse(BrowserAction::Open(i), order, alone, mirror, send);
+        // An open waits for nothing.
+        browse(
+            BrowserAction::Open(i),
+            order,
+            alone,
+            &mut None,
+            mirror,
+            send,
+        );
     }
 }
 
@@ -558,6 +576,7 @@ mod tests {
                 action,
                 &self.order,
                 alone,
+                &mut self.waiting,
                 &mut self.m,
                 &mut sender(&mut self.sent),
             );
@@ -941,6 +960,31 @@ mod tests {
         f.m.closing();
         f.told(&["b"], None);
         assert_eq!(f.browse(BrowserAction::ClearSelection), clear);
+        // Nothing shown selected while Select All waits to be told: it clears what All
+        // will select.
+        f.told(&[], None);
+        f.edit(SelectionCommand::All);
+        assert_eq!(f.m.selected_count(), 0);
+        assert_eq!(f.browse(BrowserAction::ClearSelection), clear);
+        f.told(&[], None);
+        assert_eq!(f.m.selected_count(), 0);
+    }
+
+    /// A click on empty space ends the wait for the first photo of Invert's selection, so a
+    /// Ctrl-click after it only adds its photo, opening none once Invert is told.
+    #[test]
+    fn a_click_on_empty_space_ends_the_wait_for_the_first_photo() {
+        let mut f = Folder::new("c");
+        f.listed(&[], false);
+        f.told(&["c"], Some("c"));
+        f.edit(SelectionCommand::Invert);
+        let invert = f.sent.len() as u64;
+        f.browse(BrowserAction::ClearSelection);
+        assert_eq!(f.waiting, None);
+        f.browse(BrowserAction::ToggleSelected(1));
+        f.fact(&["a", "b", "d", "e"], None, invert);
+        assert!(f.open_first().is_empty());
+        assert!(matches!(f.m.photo, PhotoState::None));
     }
 
     /// Among photos opened alone, which the session selects nothing in, a click on empty

@@ -5396,7 +5396,8 @@ impl App {
             let session = &self.session;
             let send = &mut |command| session.send(command);
             if let Some(action) = action {
-                selection::browse(action, &order, alone, &mut self.mirror, send);
+                let waiting = &mut self.opening_first;
+                selection::browse(action, &order, alone, waiting, &mut self.mirror, send);
             }
             if let Some(i) = opens {
                 selection::open_for_menu(i, &order, alone, &mut self.mirror, send);
