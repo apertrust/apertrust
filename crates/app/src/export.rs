@@ -83,6 +83,7 @@ use crate::tools::{Change, Head, Note, Pressed};
 use crate::utility::{Context, UtilityTool};
 
 mod end;
+pub mod folder;
 pub use end::{Jobs, Others, Photo, Shown, Why};
 
 /// The tool's id, as the shell keeps its section's state and Export… reveals it.
@@ -548,6 +549,10 @@ pub struct Asked {
     /// that does from the settings the export takes, once the frame's changes are in
     /// ([`press`]).
     pub pressed: bool,
+    /// The folder button was pressed: the app asks the platform's folder dialog where the
+    /// files go, opening it where the path is ([`folder::look`]), and hands the folder
+    /// chosen back ([`Export::choose_folder`]).
+    pub choose_folder: bool,
 }
 
 /// What a press of Export does with `values`, the settings the export takes, the frame's
@@ -577,6 +582,8 @@ pub enum Page {
     Pressed,
     /// Show jobs was pressed.
     ShowJobs,
+    /// The folder button at the path's end was pressed.
+    ChooseFolder,
 }
 
 /// What the tool's section did this frame.
@@ -644,7 +651,8 @@ impl UtilityTool for Export {
         let t = theme(ui.ctx());
         match widget {
             Widget::ExportStorage => Export::target_storage(ui),
-            Widget::ExportPath => self.path_line(ui, &t),
+            Widget::ExportPath if self.path_line(ui, &t) => return vec![Page::ChooseFolder],
+            Widget::ExportPath => {}
             Widget::ExportSize => self.size_line(ui, &t),
             Widget::ExportLater => Export::later_groups(ui),
             Widget::ExportEnd => return self.summary_and_end(ui, &t),
@@ -892,6 +900,27 @@ impl Export {
         }
     }
 
+    /// Takes the folder chosen in the folder button's dialog: the path becomes `folder`
+    /// followed by `file`, the file part kept from the path as the button was pressed
+    /// ([`folder::destination`]), the person's home written `~`. Nothing where `--conf`
+    /// gives the path. Returns whether the path changed, for the app to keep it and ask
+    /// for a new preview, as a path typed is.
+    pub fn choose_folder(&mut self, folder: &Path, file: &str) -> bool {
+        if self.path_given() {
+            return false;
+        }
+        let path = folder::destination(folder, file, self.home.as_deref(), folder::WINDOWS);
+        let changed = path != self.values.path;
+        self.values.path = path;
+        changed
+    }
+
+    /// The person's home, which paths are shown relative to and the folder button opens
+    /// at where the path names no folder.
+    pub fn home(&self) -> Option<&Path> {
+        self.home.as_deref()
+    }
+
     /// Drops the answer held, which was for another photo or an earlier showing.
     pub fn forget(&mut self) {
         self.preview = None;
@@ -953,6 +982,7 @@ impl Export {
             asked: Asked {
                 changed: self.values != before,
                 pressed,
+                choose_folder: has(Page::ChooseFolder) && !self.path_given(),
             },
             changes: drawn.changes,
         }
@@ -1014,8 +1044,10 @@ impl Export {
     /// label, as darktable's; to screen readers it is named "Path", and the file name the
     /// session resolved is its tooltip and its description, with the variables with no value
     /// here and the sequence rule. A problem that stops Export (D8), with its fix, is the
-    /// note under it ([`UtilityTool::note`]), outlining the field in `error`.
-    fn path_line(&mut self, ui: &mut Ui, t: &Theme) {
+    /// note under it ([`UtilityTool::note`]), outlining the field in `error`. The folder
+    /// button, "Choose folder", is drawn disabled as the field is while `--conf` gives the
+    /// path. Returns whether it was pressed, by a click or by Return or Space while focused.
+    fn path_line(&mut self, ui: &mut Ui, t: &Theme) -> bool {
         let ctx = ui.ctx().clone();
         let words = translator(&ctx);
         let name = tr(&ctx, "export-path");
@@ -1028,14 +1060,13 @@ impl Export {
             .collect();
         let problem = self.path_problem(&words);
         let choose = tr(&ctx, "export-choose-folder");
-        let later = tr(&ctx, "export-later");
         let tip = self.path_tip(&words);
         let given = self.path_given();
         // As high as the field and centred on its line, a square beside it.
         let folder = IconButton::new(Icon::Folder, &choose)
             .size(t.sizes.field)
-            .enabled(false)
-            .tip(&later);
+            .enabled(!given);
+        let mut chosen = false;
         // The field's width is the row's less the button and the gap, never the text's. The
         // field and the button share one line; the list of variables comes under it.
         let field = (ui.available_width() - folder.side(ui) - t.spacing.s).max(80.0);
@@ -1049,7 +1080,7 @@ impl Export {
         .error(problem.is_some())
         .enabled(!given)
         .beside(|ui| {
-            folder.show(ui);
+            chosen = folder.show(ui).clicked();
         })
         .show(ui);
         if let Some(text) = output.text {
@@ -1074,6 +1105,7 @@ impl Export {
                     .on_disabled_hover_text(tip),
             );
         }
+        chosen
     }
 
     /// What the path field's tooltip says, from the session's answer: the first photo's

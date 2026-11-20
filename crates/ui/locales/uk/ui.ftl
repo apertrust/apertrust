@@ -1139,7 +1139,9 @@ export-storage-disk = Файл на диску
 export-storage-email = Надіслати поштою
 export-storage-gallery = Вебгалерея
 export-path = Шлях
-export-choose-folder = Вибрати…
+export-choose-folder = Вибрати теку
+export-choose-folder-title = Виберіть теку
+export-choose-folder-accept = Вибрати як теку для експорту
 # Як екранні читачі називають список у полі шляху.
 path-variables = Змінні
 export-on-conflict = У разі конфлікту

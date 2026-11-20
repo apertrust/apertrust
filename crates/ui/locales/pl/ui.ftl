@@ -1140,7 +1140,9 @@ export-storage-disk = Plik na dysku
 export-storage-email = Wyślij e-mailem
 export-storage-gallery = Galeria internetowa
 export-path = Ścieżka
-export-choose-folder = Wybierz…
+export-choose-folder = Wybierz folder
+export-choose-folder-title = Wybierz folder
+export-choose-folder-accept = Wybierz jako miejsce docelowe
 # Jak czytniki ekranu nazywają listę w polu ścieżki.
 path-variables = Zmienne
 export-on-conflict = W razie konfliktu

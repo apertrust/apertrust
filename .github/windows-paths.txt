@@ -28,6 +28,7 @@ crates/engine/src/export_job.rs
 crates/app/build.rs
 crates/app/src/main.rs
 crates/app/src/dialogs.rs
+crates/app/src/export/folder.rs
 crates/app/src/dialog_host.rs
 crates/app/src/dialog_host/**
 crates/app/src/paths.rs

@@ -1449,7 +1449,11 @@ export-storage-disk = File on disk
 export-storage-email = Send as email
 export-storage-gallery = Website gallery
 export-path = Path
-export-choose-folder = Choose…
+export-choose-folder = Choose folder
+# The folder button's dialog: its title, and its accept button where the platform lets the
+# app name it (darktable's "select directory" and "select as output destination").
+export-choose-folder-title = Select Folder
+export-choose-folder-accept = Select as Output Destination
 # What the path field's list is called, for screen readers.
 path-variables = Variables
 export-on-conflict = On conflict

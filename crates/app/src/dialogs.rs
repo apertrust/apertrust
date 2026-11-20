@@ -15,8 +15,9 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 //! The platform's file dialogs (`docs/gui.md`, The menu bar, File): File › Open…'s, which
-//! asks for one or more raws, and File › Open Folder…'s, which asks for a folder; and the
-//! log window's save dialog ([`Saving`]).
+//! asks for one or more raws, and File › Open Folder…'s, which asks for a folder; the
+//! Export tool's folder button's, which asks for the folder its files go to; and the log
+//! window's save dialog ([`Saving`]).
 //!
 //! Open… shows the raws the decoder reads and nothing else, so a library's or a project's
 //! file is greyed out in it until libraries and projects open (Phase 5).
@@ -52,6 +53,9 @@ pub enum Pick {
     Folder,
     /// The folder the missing recent at this path went to, for Locate….
     Locate(PathBuf),
+    /// The folder the Export tool's files go to, for its folder button, with the file part
+    /// the path keeps after it (`export::folder`).
+    Destination(String),
 }
 
 /// What the person chose: one path or more for [`Pick::Files`], in the dialog's order, and
@@ -62,8 +66,8 @@ pub struct Chosen {
     pub paths: Vec<PathBuf>,
 }
 
-/// The dialog that asks for raws or a folder to open: the platform's ([`Native`]), or a
-/// test's.
+/// The dialog that asks for raws or a folder to open, or the folder to export to: the
+/// platform's ([`Native`]), or a test's.
 pub trait OpenDialog {
     /// Whether it is asking now, between [`OpenDialog::ask`] and the answer.
     fn asking(&self) -> bool;
@@ -157,9 +161,15 @@ impl OpenDialog for Native<'_> {
                 }
                 Box::pin(dialog.pick_files())
             }
-            Pick::Folder | Pick::Locate(_) => {
+            Pick::Folder | Pick::Locate(_) | Pick::Destination(_) => {
                 let title = match pick {
                     Pick::Locate(_) => "collections-locate-title",
+                    // rfd names no accept button, so `export-choose-folder-accept`, darktable's
+                    // "select as output destination", waits for a platform it can reach.
+                    Pick::Destination(_) => {
+                        dialog = dialog.set_can_create_directories(true);
+                        "export-choose-folder-title"
+                    }
                     _ => "open-folder-title",
                 };
                 dialog = dialog.set_title(tr(self.ctx, title));
