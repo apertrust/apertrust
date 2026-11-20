@@ -64,6 +64,8 @@ struct Bench {
     bottom: f32,
     /// The folder button's dialog, in place of the platform's.
     picker: Picker,
+    /// Whether Export… reveals the tool this frame, as the Photos tab tells it.
+    reveal: bool,
 }
 
 /// A stand-in for the folder button's dialog and the disk under it: `folders` are the
@@ -155,6 +157,10 @@ fn tool_of(export: Export, which: Builtin, locale: Locale, width: f32) -> Harnes
                     ..crate::tools::Head::default()
                 };
                 let (mut changes, mut asked) = (Vec::new(), Asked::default());
+                // As the Photos tab tells it Export… revealed it.
+                if std::mem::take(&mut bench.reveal) {
+                    bench.content.reveal(ui.ctx());
+                }
                 PanelBody::new().show(ui, |ui| {
                     let section = ui.scope(|ui| bench.content.show(ui, head, &shown, &mut cx));
                     bench.bottom = section.response.rect.bottom();
@@ -242,6 +248,7 @@ fn tool_of(export: Export, which: Builtin, locale: Locale, width: f32) -> Harnes
                 opened: Some(photo),
                 bottom: 0.0,
                 picker: Picker::default(),
+                reveal: false,
             },
         );
     harness.run();
@@ -1733,6 +1740,7 @@ fn return_exports_nothing_of_its_own_and_leaves_the_rows_their_keys() {
     let mut harness = open();
     harness.key_press(egui::Key::Enter);
     harness.run();
+    // Ctrl+Return is the tool's only while the focus is in it.
     harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Enter);
     harness.run();
     assert!(harness.state().asked.is_empty());
@@ -1745,6 +1753,111 @@ fn return_exports_nothing_of_its_own_and_leaves_the_rows_their_keys() {
     settle(&mut harness);
     assert!(harness.query_by_role(Role::Menu).is_some());
     assert!(harness.state().asked.is_empty());
+}
+
+fn focused(harness: &Harness<'_, Bench>, role: Role, label: &str) -> bool {
+    harness.get_by_role_and_label(role, label).is_focused()
+}
+
+#[test]
+fn ctrl_return_exports_from_a_row_as_the_button_would() {
+    let mut harness = open();
+    answer(&mut harness, 1, preview());
+    harness
+        .get_by_role_and_label(Role::ComboBox, "On conflict")
+        .focus();
+    harness.run();
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Enter);
+    settle(&mut harness);
+    assert!(harness.state().asked.last().is_some_and(|a| a.start));
+    // The row's own Return, its list, does not open; the focus is on the button, as a
+    // click leaves it.
+    assert!(harness.query_by_role(Role::Menu).is_none());
+    assert!(focused(&harness, Role::Button, "Export 1 photo"));
+    // A value being typed is given first, and exported.
+    let mut harness = open();
+    answer(&mut harness, 1, preview());
+    type_into(&mut harness, Role::TextInput, "Width, in px", "2048");
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Enter);
+    settle(&mut harness);
+    let pressed = harness.state().asked.iter().find(|a| a.start).cloned();
+    assert_eq!(pressed.and_then(|a| a.values).map(|v| v.width), Some(2048));
+}
+
+#[test]
+fn ctrl_return_does_nothing_while_export_is_held_off() {
+    let values = Values {
+        path: "$(FILE_FOLDER)/apertrust_exported/$(FILE_NAM)".to_owned(),
+        ..Values::default()
+    };
+    let mut harness = tool(values, Builtin::Dark, Locale::EnGb, PANEL);
+    let mut stopped = preview();
+    stopped.problem = Some(PathProblem::Pattern(PatternError::Unknown {
+        name: "FILE_NAM".to_owned(),
+        at: 36..44,
+        suggestion: Some("FILE_NAME"),
+    }));
+    stopped.names.clear();
+    answer(&mut harness, 1, stopped);
+    harness
+        .get_by_role_and_label(Role::ComboBox, "On conflict")
+        .focus();
+    harness.run();
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Enter);
+    settle(&mut harness);
+    assert!(harness.state().asked.is_empty());
+}
+
+#[test]
+fn the_reveal_focuses_the_button_and_escape_gives_the_focus_back() {
+    // Nothing focused before: Esc gives the focus back to the Viewer, letting it go.
+    let mut harness = open();
+    answer(&mut harness, 1, preview());
+    harness.state_mut().reveal = true;
+    harness.run();
+    harness.run();
+    assert!(focused(&harness, Role::Button, "Export 1 photo"));
+    // Return then presses it.
+    harness.key_press(egui::Key::Enter);
+    settle(&mut harness);
+    assert!(harness.state().asked.last().is_some_and(|a| a.start));
+    harness.key_press(egui::Key::Escape);
+    settle(&mut harness);
+    assert!(harness.ctx.memory(|m| m.focused()).is_none());
+    // A row focused before: Esc gives it the focus back, from anywhere in the tool.
+    let mut harness = open();
+    harness
+        .get_by_role_and_label(Role::ComboBox, "Target storage")
+        .focus();
+    harness.run();
+    harness.state_mut().reveal = true;
+    harness.run();
+    harness.run();
+    assert!(focused(&harness, Role::Button, "Export 1 photo"));
+    harness
+        .get_by_role_and_label(Role::ComboBox, "On conflict")
+        .focus();
+    harness.run();
+    harness.key_press(egui::Key::Escape);
+    settle(&mut harness);
+    assert!(focused(&harness, Role::ComboBox, "Target storage"));
+    // Given back once: Esc again lets it go, to the Viewer.
+    harness.key_press(egui::Key::Escape);
+    settle(&mut harness);
+    assert!(harness.ctx.memory(|m| m.focused()).is_none());
+}
+
+#[test]
+fn escape_on_a_row_never_revealed_gives_the_focus_to_the_viewer() {
+    let mut harness = open();
+    harness
+        .get_by_role_and_label(Role::ComboBox, "On conflict")
+        .focus();
+    harness.run();
+    harness.key_press(egui::Key::Escape);
+    settle(&mut harness);
+    assert!(harness.ctx.memory(|m| m.focused()).is_none());
+    assert!(harness.state().open && harness.state().toggled == 0);
 }
 
 #[test]

@@ -7808,7 +7808,7 @@ fn utility_setting(
 /// Draws `id`, Collections or the Export tool, where the tab shown holds it: Collections
 /// through its `UtilityTool`, its header from its declaration with its own ⋯ items, placed
 /// in the layout as `shown` says, and Export as `shown` has it, taken as it is drawn,
-/// scrolled into view where Export… asked. What either asked for goes into `out`.
+/// scrolled into view and its button focused where Export… asked. What either asked for goes into `out`.
 fn photos_tool(
     ui: &mut egui::Ui,
     id: &str,
@@ -7840,6 +7840,10 @@ fn photos_tool(
     } else if id == export::ID
         && let Some(shown) = shown.export.take()
     {
+        // Export… revealed it: its button takes the focus, which Esc gives back.
+        if shown.reveal {
+            export.reveal(ui.ctx());
+        }
         let tool = ui.push_id(export::ID, |ui| {
             export.show(ui, shown.head, &shown.shown, cx)
         });
@@ -20452,6 +20456,44 @@ mod tests {
             );
             assert!(collections.bottom() <= header.top(), "{os:?}");
         }
+    }
+
+    /// Ctrl+E's reveal leaves the focus on the Export button, so Return exports; Esc gives
+    /// it back. Ctrl+Shift+E (Cmd+Shift+E) runs Export Again, its key shown in File.
+    #[test]
+    fn ctrl_e_focuses_the_export_button_and_ctrl_shift_e_runs_export_again() {
+        for os in [
+            OperatingSystem::Mac,
+            OperatingSystem::Windows,
+            OperatingSystem::Nix,
+        ] {
+            let mut harness = bench(os);
+            harness.run();
+            harness.key_press_modifiers(Modifiers::COMMAND, Key::E);
+            harness.run_steps(4);
+            let button = harness.get_by_role_and_label(Role::Button, "Export 1 photo");
+            assert!(button.is_focused(), "{os:?}");
+            harness.key_press(Key::Escape);
+            harness.run_steps(4);
+            assert_eq!(harness.ctx.memory(|m| m.focused()), None, "{os:?}");
+            harness.key_press_modifiers(Modifiers::COMMAND | Modifiers::SHIFT, Key::E);
+            harness.run_steps(4);
+            let state = harness.state();
+            assert_eq!(
+                state.pressed.last(),
+                Some(&ActionId::EXPORT_AGAIN),
+                "{os:?}"
+            );
+            assert!(state.shell.export_again, "{os:?}");
+        }
+        let mut harness = bench(OperatingSystem::Nix);
+        harness.run();
+        alt(&mut harness, Key::F, Some("f"));
+        let item = harness.get_by_role_and_label(Role::MenuItem, "Export Again");
+        assert_eq!(
+            item.accesskit_node().data().keyboard_shortcut(),
+            Some("Ctrl+Shift+E")
+        );
     }
 
     /// File › Export… does the same from the menu button's menu, with its key shown, and

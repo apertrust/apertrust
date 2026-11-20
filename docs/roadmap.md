@@ -283,7 +283,7 @@ Goal: usable for daily editing, and the editor sets the sliders for a goal. Migr
 
 - [x] On the command line: JPEG and PNG with darktable's sRGB profile, at darktable's sizes and resampling, file names from darktable's variables, several files at once.
 - [x] Exports run as background jobs beside live editing, with a jobs window for progress and cancel.
-- [x] The Export tool's first section, last in the Photos tab, in place of the dialog, on the Mac, Windows and Linux: File on disk, JPEG and PNG, darktable's four size modes, high-quality resampling, ↺ for Default settings, and Export… and Ctrl+E revealing it (decisions 56 and 90; [gui.md](gui.md#as-built)). The overwrite question is asked on the Mac and Linux; on Windows Overwrite is listed disabled until its alert is built. Export Again is built, with no key yet; its key, Ctrl+Shift+E, is planned.
+- [x] The Export tool's first section, last in the Photos tab, in place of the dialog, on the Mac, Windows and Linux: File on disk, JPEG and PNG, darktable's four size modes, high-quality resampling, ↺ for Default settings, and Export… and Ctrl+E revealing it (decisions 56 and 90; [gui.md](gui.md#as-built)). The overwrite question is asked on the Mac and Linux; on Windows Overwrite is listed disabled until its alert is built. Export Again is built, on Ctrl+Shift+E.
 - [ ] The setting rows Import's sheet and the Export tool share: a slider with no kept marker, the path row (labelled for Import, label-less for Export), note, field and size rows, an indented toggle (decisions 86 and 90).
 - [ ] The rest of the Export tool, a utility last in the Photos tab (decision 90; [gui.md](gui.md#the-export-tool)), its page declared as setting rows in decision 93's step 93.6 ([The window and the shell](#the-window-and-the-shell)):
   - [ ] a spike measuring every export row at the Tools panel's 320 points in British English, Ukrainian, Polish and the pseudo-locale;
@@ -291,7 +291,8 @@ Goal: usable for daily editing, and the editor sets the sliders for a goal. Migr
   - [x] its page as setting rows naming the `export.*` keys, bound to `apertrust-export`'s settings, its snapshots unchanged (decision 93's step 93.6);
   - [x] the path's folder button, darktable's "select directory": the system's folder chooser, opening where the path is, the folder chosen put before the path's file part;
   - [ ] its presets, Default settings, For sharing and Full size JPEG built in, then the person's own, with the presets API every tool shares, processing and utility alike, whose decision comes first;
-  - [ ] the keys: Export Again on Ctrl+Shift+E, Ctrl+Return, Esc, the focus on the button after the reveal, and the wheel on the focused row; the preview sent only while the tool is in view, with `focus`, and an answer shown only for its latest request;
+  - [x] the keys: Export Again on Ctrl+Shift+E, Ctrl+Return, Esc, the focus on the button after the reveal, and the wheel on the focused row;
+  - [ ] the preview sent only while the tool is in view, with `focus`, and an answer shown only for its latest request;
   - [ ] Select › Previous Selection on Ctrl+Shift+D, with Phase 3's selection;
   - [ ] Collections' Import…, opening the Import sheet.
 - [ ] The Import sheet's frame (decision 86; [gui.md](gui.md#sheets)): the sheet bar, a grid of photos checked to go, a column of tools on the Tools panel's side, the footer with Keep open, Close and the primary button, its keys and modality, each tool kept to its place; then Import's first slice (the library's step 20a).
