@@ -1141,7 +1141,8 @@ modules_of() {
   local metric=()
   header=(Module)
   for path in "${paths_here[@]}"; do
-    warm=$(compgen -G "$values/$raw.$path.warmop.*" || true)
+    # From inside the folder, so its name is never read as a pattern.
+    warm=$(cd "$values" && compgen -G "$raw.$path.warmop.*" || true)
     if [[ $path == dt-* ]]; then
       header+=("$(path_label "$path")")
       metric+=(op)
