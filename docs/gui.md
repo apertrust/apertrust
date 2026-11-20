@@ -3160,7 +3160,7 @@ One button at the bar's end, `ViewerBar`'s zoom, showing the scale and a 10-poin
 - **Fit** shows the whole photo in the room the photo frame gives it ([The photo frame](#the-photo-frame)); a photo smaller than that room shows at 100%, still called Fit, since the engine never renders larger than the photo. **Fill** covers the room, the slot less the margin and the caption, and what overflows pans. **Small** is half of Fit.
 - **Modes follow the room, percentages stay:** Fit, Fill and Small are worked out again whenever the room changes; a percentage keeps its scale.
 - **Above 100%** the engine renders at 100% at most (decision 99), and the Viewer enlarges its frame: smoothly from 100% to 200%, where a pinch can stop, and in square pixels from 200%, each photo pixel a sharp square of the screen's.
-- **The range** is Small to 1600%.
+- **The range** is Small to 1600%, Fill included: where Fill would need more, as for a photo of 100 by 100 pixels in a room of 2000 by 1000, it stops at 1600% and the photo is centred in the room with the surround round it, its label still Fill.
 - **The label** names the mode, or the percentage rounded to a whole number, except that only 1:1 exactly reads "100%": a scale just under or over it reads "99%" or "101%", so the label never claims the exact view the screen is not showing.
 
 ##### Zooming
@@ -3215,7 +3215,7 @@ One button at the bar's end, `ViewerBar`'s zoom, showing the scale and a 10-poin
 ##### Where the view is
 
 - **Position marks** (planned): while the photo is zoomed past Fit, a 2-point bar in `text_secondary` lies in the margin along the photo area's bottom and another along its end, each the visible part of that axis against the whole photo, only on an axis that overflows. They are on the surround, never on the photo, and do nothing when clicked. They show while the view zooms or moves and for a second after, fading over the motion token, and not at all while the margin is under 4 points. Each is a component of the design system, in the gallery.
-- **The label** says the scale, and Ctrl+0 or Z brings the whole photo back at once.
+- **The label** says the scale, and Ctrl+0 brings the whole photo back at once from any scale, as Z does from 100%.
 - **No navigator in Phase 2.** darktable's navigation module, its thumbnail with the view's rectangle, comes in Phase 3 as the Navigation utility tool in the Tools panel, never over the photo: a click or a drag there centres the view, a scroll or a pinch over it zooms about that point, and with the focus its arrows move the rectangle.
 
 ##### The zoom by keyboard and to screen readers
