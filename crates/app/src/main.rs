@@ -5990,9 +5990,9 @@ impl App {
         } else {
             None
         };
-        // The folder button's look is kept until its dialog can ask: none asking, and Open…
-        // and Open Folder… first.
-        let destination = (open.is_none() && self.asking.is_none())
+        // The folder button's look is kept until its dialog can ask: no dialog asking and no
+        // alert waiting (`asking_modal`), and Open… and Open Folder… first.
+        let destination = (open.is_none() && !self.asking_modal())
             .then(|| self.export_folder.looked())
             .flatten();
         let asked = open
