@@ -2870,7 +2870,7 @@ pub(crate) fn fit(image: (u32, u32), bounds: (u32, u32)) -> (u32, u32) {
 }
 
 /// The scale at which `image` fits in `bounds`, at most 1.
-fn fit_scale(image: (u32, u32), bounds: (u32, u32)) -> f64 {
+pub(crate) fn fit_scale(image: (u32, u32), bounds: (u32, u32)) -> f64 {
     (bounds.0 as f64 / image.0 as f64)
         .min(bounds.1 as f64 / image.1 as f64)
         .min(1.0)
@@ -2878,7 +2878,7 @@ fn fit_scale(image: (u32, u32), bounds: (u32, u32)) -> f64 {
 
 /// An image of `extent` at `scale`, each side rounded and at least a pixel: the viewport
 /// [`fit`] makes, and with geometry every stage at the viewport's scale (decision 16).
-fn at_scale(extent: [u32; 2], scale: f64) -> [u32; 2] {
+pub(crate) fn at_scale(extent: [u32; 2], scale: f64) -> [u32; 2] {
     extent.map(|side| ((side as f64 * scale).round() as u32).max(1))
 }
 
