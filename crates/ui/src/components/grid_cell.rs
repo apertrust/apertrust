@@ -39,9 +39,10 @@
 //!   which the library has yet to keep), the first line is not drawn and the name takes its
 //!   place.
 //! - **The click that picks the photo** is taken over the picture alone, or the name's box
-//!   until it comes ([`GridCellOutput::clicked`]): the caption and the square round a
-//!   fitted picture are empty space. The cell stays one widget, so a right-click anywhere
-//!   on it, its focus and its keys are the whole cell's.
+//!   until it comes ([`GridCellOutput::clicked`]). The square round a fitted picture and
+//!   the caption outside its first line and its name are empty space, a click there
+//!   reported apart ([`GridCellOutput::empty`]). The cell stays one widget, so a
+//!   right-click anywhere on it, its focus and its keys are the whole cell's.
 //! - **The first line's clicks**, reported as a [`CellAction`]: a star rates the photo, the
 //!   reject mark turns its reject on or off, and the circle opens the list of the five
 //!   labels through the popup service (AppKit's menu on the Mac), each checked while on,
@@ -214,8 +215,8 @@ fn released_at(ui: &Ui) -> Option<Pos2> {
     })
 }
 
-/// What a cell reported: its response, for its focus and right-click, whether the photo was
-/// clicked, and what the user did on its first line.
+/// What a cell reported: its response, for its focus and right-click, whether the photo or
+/// the cell's empty space was clicked, and what the user did on its first line.
 pub struct GridCellOutput {
     /// The whole cell's, its square and caption: its own `clicked` counts a click anywhere
     /// on it.
@@ -223,6 +224,9 @@ pub struct GridCellOutput {
     /// The photo was clicked: by the pointer on its picture, or on the name's box while it
     /// has none, or by Enter, Space or a screen reader.
     pub clicked: bool,
+    /// The pointer clicked the cell's empty space: the square round a fitted picture, or the
+    /// caption outside its first line and its name.
+    pub empty: bool,
     pub action: Option<CellAction>,
 }
 
@@ -445,8 +449,10 @@ impl<'a> GridCell<'a> {
         let caption = Self::caption_height(self.side, self.labels);
         let strip = Rect::from_min_size(square.left_bottom(), vec2(self.side, caption));
         let mut action = None;
+        // What of the caption is no empty space: its first line, and the name.
+        let mut taken = [Rect::NOTHING; 2];
         if caption == CAPTION_SMALL {
-            self.paint_name(&painter, &t, strip, None);
+            taken[1] = self.paint_name(&painter, &t, strip, None);
         } else if caption > 0.0 {
             let line = Rect::from_min_size(
                 pos2(strip.left() + t.spacing.xs, strip.top() + CLEAR),
@@ -457,9 +463,10 @@ impl<'a> GridCell<'a> {
                     let build = UiBuilder::new().max_rect(strip).accessibility_parent(id);
                     let mut child = ui.new_child(build);
                     action = first_line(&mut child, &painter, &t, id, line, rating);
-                    self.paint_name(&painter, &t, strip, Some(line.bottom() + STEP));
+                    taken[0] = line;
+                    taken[1] = self.paint_name(&painter, &t, strip, Some(line.bottom() + STEP));
                 }
-                None => self.paint_name(&painter, &t, strip, Some(line.top())),
+                None => taken[1] = self.paint_name(&painter, &t, strip, Some(line.top())),
             }
         }
 
@@ -467,8 +474,12 @@ impl<'a> GridCell<'a> {
         // released: a move after it in the same frame moves `interact_pointer_pos` on. The
         // keys' and screen readers' click the whole cell.
         let pointer = response.clicked_by(PointerButton::Primary);
-        let clicked = response.clicked()
-            && (!pointer || released_at(ui).is_some_and(|at| picture.contains(at)));
+        let released = released_at(ui).filter(|_| pointer);
+        let clicked =
+            response.clicked() && (!pointer || released.is_some_and(|at| picture.contains(at)));
+        // Anywhere else, but on the first line and the name, is the cell's empty space.
+        let empty = released
+            .is_some_and(|at| !picture.contains(at) && !taken.iter().any(|r| r.contains(at)));
 
         // What screen readers and the tooltip say of the marks; whether it is selected as a
         // list's item says it, which egui's `selected` alone tells as toggled.
@@ -491,13 +502,20 @@ impl<'a> GridCell<'a> {
         GridCellOutput {
             response: response.on_hover_text(tip),
             clicked,
+            empty,
             action,
         }
     }
 
     /// The file name under the picture, cut in its middle to the caption's width: at `top`
-    /// in a caption of two lines, or at the bottom of a Small one's.
-    fn paint_name(&self, painter: &egui::Painter, t: &Theme, strip: Rect, top: Option<f32>) {
+    /// in a caption of two lines, or at the bottom of a Small one's. Returns where it lies.
+    fn paint_name(
+        &self,
+        painter: &egui::Painter,
+        t: &Theme,
+        strip: Rect,
+        top: Option<f32>,
+    ) -> Rect {
         let font = match top {
             Some(_) => FontId::proportional(t.text.small),
             None => FontId::proportional(t.text.caption),
@@ -511,7 +529,9 @@ impl<'a> GridCell<'a> {
         let galley = painter.layout_no_wrap(text, font, colour);
         let y = top.unwrap_or(strip.bottom() - galley.size().y);
         let at = pos2(strip.center().x - galley.size().x / 2.0, y);
+        let place = Rect::from_min_size(at, galley.size());
         painter.galley(at, galley, colour);
+        place
     }
 
     /// The marks, the rating, the reject and the labels, in words.

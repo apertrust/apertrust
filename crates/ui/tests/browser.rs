@@ -15,11 +15,12 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 //! The Browser's browser bar, driven through AccessKit and photographed (`docs/gui.md`,
-//! The browser bar).
+//! The browser bar), and what its clicks report (The pointer).
 
 use apertrust_ui::components::{
     Browser, BrowserAction, BrowserBarAction, BrowserEdge, BrowserEdgeAction, BrowserPosition,
-    CellMenu, Sort, SortKey, Thumb, ThumbnailSize, browser_height, browser_width,
+    CellAction, CellMenu, CellPicture, CellRating, Sort, SortKey, Thumb, ThumbnailSize,
+    browser_height, browser_width,
 };
 use apertrust_ui::{Icon, Theme};
 use egui::accesskit::{HasPopup, Role, Toggled};
@@ -1122,5 +1123,202 @@ fn an_empty_panel_says_why_under_its_icon_in_a_row_and_a_column() {
             );
         }
         results.add(harness.try_snapshot(name));
+    }
+}
+
+/// What the Browser with pictures reported: what was done to the photos, and on their
+/// captions' first lines.
+#[derive(Default)]
+struct Clicked {
+    actions: Vec<BrowserAction>,
+    cells: Vec<(usize, CellAction)>,
+}
+
+/// The Browser with `count` rated photos, each with a portrait picture, a third of its
+/// square empty round it, and what it reported.
+fn pictured(count: usize) -> Harness<'static, Clicked> {
+    let texture = std::sync::Arc::new(std::sync::OnceLock::<egui::TextureHandle>::new());
+    Harness::builder()
+        .with_size(egui::vec2(900.0, 360.0))
+        .with_context_setup(install)
+        .build_ui_state(
+            move |ui, clicked: &mut Clicked| {
+                let portrait = texture.get_or_init(|| {
+                    let image = egui::ColorImage::new([2, 3], vec![egui::Color32::RED; 6]);
+                    (ui.ctx()).load_texture("thumbnail", image, egui::TextureOptions::LINEAR)
+                });
+                let names: Vec<String> = (0..count).map(|i| format!("IMG_{i:04}.ARW")).collect();
+                let thumb = |i: usize| Thumb {
+                    name: &names[i],
+                    edited: false,
+                    status: None,
+                    selected: i < 2,
+                    picture: Some(CellPicture {
+                        texture: portrait.id(),
+                        size: portrait.size_vec2(),
+                    }),
+                    rating: Some(CellRating::default()),
+                };
+                let output = Browser::new(count, Some(0), thumb).show(ui);
+                clicked.actions.extend(output.action);
+                clicked.cells.extend(output.cell);
+            },
+            Clicked::default(),
+        )
+}
+
+/// A click of the primary button at `pos` with `modifiers` held, in frames of their own.
+fn click_at<T>(harness: &mut Harness<'_, T>, pos: egui::Pos2, modifiers: egui::Modifiers) {
+    click_letting_go(harness, pos, modifiers, false);
+}
+
+/// [`click_at`], `modifiers` let go in the frame the button comes up, after it, where
+/// `together`, else in the next.
+fn click_letting_go<T>(
+    harness: &mut Harness<'_, T>,
+    pos: egui::Pos2,
+    modifiers: egui::Modifiers,
+    together: bool,
+) {
+    harness.event(egui::Event::ModifiersChanged(modifiers));
+    harness.hover_at(pos);
+    harness.step();
+    let button = |pressed| egui::Event::PointerButton {
+        pos,
+        button: egui::PointerButton::Primary,
+        pressed,
+        modifiers,
+    };
+    harness.event(button(true));
+    harness.step();
+    harness.event(button(false));
+    if !together {
+        harness.step();
+    }
+    harness.event(egui::Event::ModifiersChanged(egui::Modifiers::NONE));
+    harness.step();
+    harness.step();
+}
+
+/// The Browser's empty space in `harness`: inside the second cell, beside its picture and
+/// on its caption above the first line; between the first two cells; after the last, and
+/// at the panel's end.
+fn empty_space<T>(harness: &Harness<'_, T>, last: usize) -> Vec<egui::Pos2> {
+    let cell = harness.get_by_label("IMG_0001.ARW").rect();
+    let first = harness.get_by_label("IMG_0000.ARW").rect();
+    let end = harness
+        .get_by_label(&format!("IMG_{last:04}.ARW"))
+        .rect()
+        .right();
+    let list = harness.get_by_role_and_label(Role::List, "Browser").rect();
+    // The square's bottom, the caption's top.
+    let square = cell.top() + cell.width();
+    vec![
+        egui::pos2(cell.left() + 8.0, cell.top() + 60.0),
+        egui::pos2(cell.center().x, square + 4.0),
+        egui::pos2(first.right() + 4.0, first.center().y),
+        egui::pos2(end + 40.0, cell.center().y),
+        egui::pos2(list.right() - 2.0, cell.center().y),
+    ]
+}
+
+/// A plain click on the Browser's empty space selects nothing (`docs/gui.md`, The
+/// pointer): a cell's margin round its picture or on its caption, a gap between cells, the
+/// area after the last cell to the panel's end, the whole panel with no photos; a gap too
+/// where the cells overflow the panel on a touch screen, which a drag scrolls them on.
+#[test]
+fn a_click_on_the_browser_s_empty_space_reports_clear_selection() {
+    let mut harness = pictured(3);
+    harness.run();
+    for at in empty_space(&harness, 2) {
+        click_at(&mut harness, at, egui::Modifiers::NONE);
+        let clicked = harness.state();
+        assert_eq!(clicked.actions, [BrowserAction::ClearSelection], "{at:?}");
+        assert!(clicked.cells.is_empty(), "{at:?}: {:?}", clicked.cells);
+        harness.state_mut().actions.clear();
+    }
+    // With no photos, all the panel but its bar.
+    let mut harness = browser(0);
+    harness.run();
+    let list = harness.get_by_role_and_label(Role::List, "Browser").rect();
+    click_at(&mut harness, list.center(), egui::Modifiers::NONE);
+    assert_eq!(harness.state().actions, [BrowserAction::ClearSelection]);
+    // On a touch screen, whose drag scrolls the cells under it.
+    let mut harness = pictured(12);
+    for phase in [egui::TouchPhase::Start, egui::TouchPhase::End] {
+        harness.event(egui::Event::Touch {
+            device_id: egui::TouchDeviceId(0),
+            id: egui::TouchId(0),
+            phase,
+            pos: egui::pos2(890.0, 350.0),
+            force: None,
+        });
+    }
+    harness.run();
+    assert!(harness.ctx.input(|input| input.has_touch_screen()));
+    let first = harness.get_by_label("IMG_0000.ARW").rect();
+    click_at(
+        &mut harness,
+        egui::pos2(first.right() + 4.0, first.center().y),
+        egui::Modifiers::NONE,
+    );
+    assert_eq!(harness.state().actions, [BrowserAction::ClearSelection]);
+}
+
+/// Ctrl or Cmd-click and Shift-click on empty space do nothing, so a missed Ctrl-click
+/// never drops a selection, Ctrl let go as the button comes up included.
+#[test]
+fn ctrl_and_shift_clicks_on_empty_space_report_nothing() {
+    let mut harness = pictured(3);
+    harness.run();
+    for modifiers in [
+        egui::Modifiers::COMMAND,
+        egui::Modifiers::CTRL,
+        egui::Modifiers::SHIFT,
+    ] {
+        for (at, together) in empty_space(&harness, 2)
+            .into_iter()
+            .flat_map(|at| [(at, false), (at, true)])
+        {
+            click_letting_go(&mut harness, at, modifiers, together);
+            let actions = &harness.state().actions;
+            assert!(
+                actions.is_empty(),
+                "{at:?} {modifiers:?}, let go together {together}: {actions:?}"
+            );
+        }
+    }
+}
+
+/// The picture keeps its click, which opens the photo, and so do Ctrl and Shift-click on
+/// it; a star rates, and the rest of the rating's row and the file name select nothing.
+#[test]
+fn a_click_on_a_picture_its_rating_or_its_name_keeps_its_own() {
+    let mut harness = pictured(3);
+    harness.run();
+    let cell = harness.get_by_label("IMG_0001.ARW");
+    let picture = egui::pos2(cell.rect().center().x, cell.rect().top() + 60.0);
+    let star = cell
+        .get_by_role_and_label(Role::Button, "Rate 2 stars")
+        .rect();
+    let reject = cell.get_by_role_and_label(Role::Button, "Reject").rect();
+    let name = egui::pos2(cell.rect().center().x, cell.rect().bottom() - 6.0);
+    // The rating's row between the reject mark and the stars.
+    let row = egui::pos2((reject.right() + star.left()) / 2.0 - 10.0, star.center().y);
+    for (modifiers, action) in [
+        (egui::Modifiers::NONE, BrowserAction::Open(1)),
+        (egui::Modifiers::COMMAND, BrowserAction::ToggleSelected(1)),
+        (egui::Modifiers::SHIFT, BrowserAction::SelectRange(1)),
+    ] {
+        click_at(&mut harness, picture, modifiers);
+        assert_eq!(harness.state().actions, [action]);
+        harness.state_mut().actions.clear();
+    }
+    click_at(&mut harness, star.center(), egui::Modifiers::NONE);
+    assert_eq!(harness.state().cells, [(1, CellAction::Rate(2))]);
+    for at in [row, name] {
+        click_at(&mut harness, at, egui::Modifiers::NONE);
+        let actions = &harness.state().actions;
+        assert!(actions.is_empty(), "{at:?}: {actions:?}");
     }
 }

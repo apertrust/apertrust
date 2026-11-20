@@ -109,11 +109,11 @@ use apertrust_engine::session::{
 use apertrust_engine::sidecar::Reason;
 use apertrust_tools::ToolDefinition;
 use apertrust_ui::components::{
-    ActivityAction, Available, Browser, BrowserEdge, BrowserEdgeAction, BrowserPosition, CellMenu,
-    CellRating, FindBar, FindBarAction, Jobs, Margin, Marker, MenuButtonStyle, PanelBody,
-    PanelEdge, PanelEdgeAction, PanelTab, PhotoCaption, PhotoFrame, PickerAction, Placed,
-    SaveState, ScopeView, TabBar, TabBarAction, Thumb, Toggle, Toolbar, ToolbarAction, ViewerBar,
-    ViewerBarAction, Zoom, browser_lines, browser_thickness,
+    ActivityAction, Available, Browser, BrowserAction, BrowserEdge, BrowserEdgeAction,
+    BrowserPosition, CellMenu, CellRating, FindBar, FindBarAction, Jobs, Margin, Marker,
+    MenuButtonStyle, PanelBody, PanelEdge, PanelEdgeAction, PanelTab, PhotoCaption, PhotoFrame,
+    PickerAction, Placed, SaveState, ScopeView, TabBar, TabBarAction, Thumb, Toggle, Toolbar,
+    ToolbarAction, ViewerBar, ViewerBarAction, Zoom, browser_lines, browser_thickness,
 };
 use apertrust_ui::{
     Background, Builtin, Locale, Theme, Translator, components, popup, theme, tr, translator,
@@ -5396,7 +5396,11 @@ impl App {
             let session = &self.session;
             let send = &mut |command| session.send(command);
             if let Some(action) = action {
-                selection::browse(action, &order, alone, &mut self.mirror, send);
+                if action == BrowserAction::ClearSelection {
+                    stay_closed(&mut self.reopening, &mut self.remembered);
+                }
+                let waiting = &mut self.opening_first;
+                selection::browse(action, &order, alone, waiting, &mut self.mirror, send);
             }
             if let Some(i) = opens {
                 selection::open_for_menu(i, &order, alone, &mut self.mirror, send);
@@ -6830,6 +6834,17 @@ fn close_photo(mirror: &mut Mirror, send: &mut SendCommand<'_>) {
         send(Command::Close);
         mirror.closing();
     }
+}
+
+/// A click on the Browser's empty space leaves no photo active, so the photo waited for
+/// opens no more: what was open last, at the start ([`reopened`]), or the one last active
+/// in a folder chosen again ([`Remembered::restore`]). A folder still to be chosen on the
+/// way back is chosen all the same.
+fn stay_closed(reopening: &mut Option<Reopening>, remembered: &mut Remembered) {
+    if let Some(reopening) = reopening {
+        reopening.photo = None;
+    }
+    remembered.waiting = None;
 }
 
 /// The photo last active in each folder this run, by the folder's path, kept in memory
@@ -10088,6 +10103,40 @@ mod tests {
         let root = Command::Library(LibraryCommand::Open(Source::Folder(kept.path.clone())));
         assert_eq!(sent[2..], [root]);
         assert_eq!(reopening, None);
+    }
+
+    /// A click on the Browser's empty space while a photo waits to reopen leaves it closed:
+    /// what was open last, its folder still read, and the photo last active in a folder
+    /// chosen again.
+    #[test]
+    fn a_click_on_empty_space_leaves_the_photo_waited_for_closed() {
+        let kept = last(Some("b.ARW"));
+        let (mut m, mut sent) = (mirror::tests::mirror(), Vec::new());
+        let mut reopening = reopen(Some(&kept), true, &mut m, &mut sender(&mut sent));
+        m.apply(folder_opened(1, &kept.path));
+        m.apply(listed(1, &["a.ARW"], false));
+        reopened(&mut reopening, &mut m, &mut sender(&mut sent));
+        stay_closed(&mut reopening, &mut Remembered::default());
+        m.apply(listed(1, &["b.ARW"], true));
+        reopened(&mut reopening, &mut m, &mut sender(&mut sent));
+        assert_eq!(sent.len(), 1);
+        assert_eq!(reopening, None);
+
+        let (mut m, mut sent, mut remembered, at) = at_with_its_photo();
+        let new = at.join("New 1");
+        for folder in [new, at.clone()] {
+            let change = FolderChange::Choose;
+            let send = &mut sender(&mut sent);
+            change_folder(folder, change, None, &mut remembered, &mut m, send);
+        }
+        assert!(remembered.waiting.is_some());
+        let before = sent.len();
+        stay_closed(&mut None, &mut remembered);
+        m.apply(folder_opened(5, &at));
+        m.apply(listed(5, &["R0001176.DNG"], true));
+        remembered.restore(&mut m, &mut sender(&mut sent));
+        assert_eq!(sent.len(), before);
+        assert_eq!(photo_shown(&m), None);
     }
 
     /// Quitting while what was open last still reopens keeps it whole: the root's opening

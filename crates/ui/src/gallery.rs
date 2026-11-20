@@ -1207,7 +1207,7 @@ struct Demo {
     guides: bool,
     proof: bool,
     zoom: Zoom,
-    active: usize,
+    active: Option<usize>,
     selected: Vec<usize>,
     /// The slider markers' rows: Exposure at its minimum, its default, its maximum, and
     /// one for the snapshot tests to drag.
@@ -1301,7 +1301,7 @@ impl Default for Demo {
             guides: false,
             proof: false,
             zoom: Zoom::Percent(400.0),
-            active: 5,
+            active: Some(5),
             selected: vec![5, 6],
             markers: [-4.0, 0.0, 4.0, 1.28],
         }
@@ -2680,11 +2680,11 @@ fn shell(ui: &mut Ui, t: &Theme, demo: &mut Demo) {
         picture: None,
         rating: None,
     };
-    let panel = Browser::new(names.len(), Some(demo.active), thumb).show(ui);
+    let panel = Browser::new(names.len(), demo.active, thumb).show(ui);
     if let Some(action) = panel.action {
         match action {
             BrowserAction::Open(i) => {
-                demo.active = i;
+                demo.active = Some(i);
                 demo.selected = vec![i];
             }
             BrowserAction::ToggleSelected(i) => {
@@ -2695,8 +2695,12 @@ fn shell(ui: &mut Ui, t: &Theme, demo: &mut Demo) {
                 }
             }
             BrowserAction::SelectRange(i) => {
-                let (a, b) = (demo.active.min(i), demo.active.max(i));
-                demo.selected = (a..=b).collect();
+                let from = demo.active.unwrap_or(i);
+                demo.selected = (from.min(i)..=from.max(i)).collect();
+            }
+            BrowserAction::ClearSelection => {
+                demo.active = None;
+                demo.selected.clear();
             }
         }
     }

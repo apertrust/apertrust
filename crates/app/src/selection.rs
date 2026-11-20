@@ -26,11 +26,14 @@
 //!   near, or none.
 //! - **Shift-click** selects the range from the active photo to it in the Browser's sort,
 //!   the active photo staying.
+//! - **A click on the Browser's empty space** selects nothing, as Select None does, closing
+//!   the active photo and opening none; with the active photo alone selected too.
 //!
 //! Each command is shown at once in the mirror's selection, by the session's rules, until
 //! the session tells one that includes it ([`Mirror::selecting`]), so a gesture before that
-//! reads what the last one did. Among photos opened alone a click opens the photo and Ctrl
-//! and Shift-click do nothing yet.
+//! reads what the last one did. Among photos opened alone a click opens the photo and a
+//! click on empty space selects nothing, as in a folder; Ctrl and Shift-click do nothing
+//! yet.
 //!
 //! The Select menu's items run here too ([`edit`]): Select All, Select None, Invert
 //! Selection and Select Unedited, each drawn disabled where it would change nothing
@@ -54,11 +57,13 @@ use crate::mirror::{Mirror, PhotoState};
 use crate::{SendCommand, open_listed};
 
 /// Does what `action` asks of the Browser's photos, `order` their paths in its sort, which
-/// its indices count; `alone` when they are photos opened alone.
+/// its indices count; `alone` when they are photos opened alone. A click on empty space
+/// ends the wait for a new selection's first photo, `waiting` ([`edit`]).
 pub(crate) fn browse(
     action: BrowserAction,
     order: &[PathBuf],
     alone: bool,
+    waiting: &mut Option<Waiting>,
     mirror: &mut Mirror,
     send: &mut SendCommand<'_>,
 ) {
@@ -66,6 +71,10 @@ pub(crate) fn browse(
         BrowserAction::Open(i)
         | BrowserAction::SelectRange(i)
         | BrowserAction::ToggleSelected(i) => i,
+        BrowserAction::ClearSelection => {
+            clear(waiting, mirror, send);
+            return;
+        }
     };
     let Some(path) = order.get(i).cloned() else {
         return;
@@ -106,6 +115,27 @@ pub(crate) fn browse(
             // Added to the selection; the active photo stays as it is.
             select(SelectionCommand::Add(path), mirror, send);
         }
+        // Done above, with no photo of its own.
+        BrowserAction::ClearSelection => {}
+    }
+}
+
+/// A click on the Browser's empty space: selects nothing, closing the active photo as
+/// Select None does and opening none, even where it is the only one selected, and ends a
+/// wait for the first photo of a selection Invert or Unedited makes, so nothing opens
+/// after it. With nothing selected, no photo open and no All, Invert or Unedited waiting
+/// to be told, nothing. The same in a folder and among photos opened alone, the session's
+/// collection either way.
+fn clear(waiting: &mut Option<Waiting>, mirror: &mut Mirror, send: &mut SendCommand<'_>) {
+    *waiting = None;
+    let active = mirror.photo.asked().is_some();
+    if !active && mirror.selected_count() == 0 && !mirror.selection_pending() {
+        return;
+    }
+    select(SelectionCommand::Clear, mirror, send);
+    // The session closes the photo it leaves out (`Mirror::closing`).
+    if active {
+        mirror.closing();
     }
 }
 
@@ -128,7 +158,15 @@ pub(crate) fn open_for_menu(
     if mirror.is_selected(path) {
         open_listed(path.clone(), mirror, send);
     } else {
-        browse(BrowserAction::Open(i), order, alone, mirror, send);
+        // An open waits for nothing.
+        browse(
+            BrowserAction::Open(i),
+            order,
+            alone,
+            &mut None,
+            mirror,
+            send,
+        );
     }
 }
 
@@ -589,6 +627,7 @@ mod tests {
                 action,
                 &self.order,
                 alone,
+                &mut self.waiting,
                 &mut self.m,
                 &mut sender(&mut self.sent),
             );
@@ -944,6 +983,79 @@ mod tests {
         }
         let open = BrowserAction::Open(1);
         assert_eq!(f.browse_in(open, true), [Command::Open(at("b"))]);
+    }
+
+    /// A click on the Browser's empty space selects nothing as Select None does, closing the
+    /// active photo and opening none: with several selected, and with the active photo alone
+    /// selected too, which Select None leaves to File › Close. With nothing selected and no
+    /// photo open it sends nothing.
+    #[test]
+    fn a_click_on_empty_space_clears_the_selection_and_closes_the_photo() {
+        let clear = [selection(SelectionCommand::Clear)];
+        for photos in [&["a", "b", "c"][..], &["a"]] {
+            let mut f = Folder::new("a");
+            f.listed(&[], false);
+            f.told(photos, Some("a"));
+            assert_eq!(f.browse(BrowserAction::ClearSelection), clear, "{photos:?}");
+            assert!(matches!(f.m.photo, PhotoState::None), "{photos:?}");
+            assert_eq!(f.m.selected_count(), 0);
+            f.told(&[], None);
+            assert!(f.open_first().is_empty());
+            assert!(matches!(f.m.photo, PhotoState::None));
+            // Nothing selected and no photo open: nothing to clear.
+            assert!(f.browse(BrowserAction::ClearSelection).is_empty());
+        }
+        // Selected with none open, as a Ctrl-click on the active photo leaves one.
+        let mut f = Folder::new("a");
+        f.listed(&[], false);
+        f.m.closing();
+        f.told(&["b"], None);
+        assert_eq!(f.browse(BrowserAction::ClearSelection), clear);
+        // Nothing shown selected while Select All waits to be told: it clears what All
+        // will select.
+        f.told(&[], None);
+        f.edit(SelectionCommand::All);
+        assert_eq!(f.m.selected_count(), 0);
+        assert_eq!(f.browse(BrowserAction::ClearSelection), clear);
+        f.told(&[], None);
+        assert_eq!(f.m.selected_count(), 0);
+    }
+
+    /// A click on empty space ends the wait for the first photo of Invert's selection, so a
+    /// Ctrl-click after it only adds its photo, opening none once Invert is told.
+    #[test]
+    fn a_click_on_empty_space_ends_the_wait_for_the_first_photo() {
+        let mut f = Folder::new("c");
+        f.listed(&[], false);
+        f.told(&["c"], Some("c"));
+        f.edit(SelectionCommand::Invert);
+        let invert = f.sent.len() as u64;
+        f.browse(BrowserAction::ClearSelection);
+        assert_eq!(f.waiting, None);
+        f.browse(BrowserAction::ToggleSelected(1));
+        f.fact(&["a", "b", "d", "e"], None, invert);
+        assert!(f.open_first().is_empty());
+        assert!(matches!(f.m.photo, PhotoState::None));
+    }
+
+    /// Among photos opened alone, the session's collection, a click on empty space selects
+    /// nothing as in a folder, closing the active photo and opening none, with it alone
+    /// selected too; with nothing selected and no photo open, nothing.
+    #[test]
+    fn a_click_on_empty_space_among_photos_opened_alone_clears_their_selection() {
+        let clear = [selection(SelectionCommand::Clear)];
+        let click = BrowserAction::ClearSelection;
+        for photos in [&["c", "a"][..], &["a"]] {
+            let mut f = Folder::new("a");
+            f.alone(&["c", "a", "b"]);
+            f.told(photos, Some("a"));
+            assert_eq!(f.browse_in(click, true), clear, "{photos:?}");
+            assert!(matches!(f.m.photo, PhotoState::None), "{photos:?}");
+            assert_eq!(f.m.selected_count(), 0);
+            f.told(&[], None);
+            assert!(f.open_first().is_empty());
+            assert!(f.browse_in(click, true).is_empty());
+        }
     }
 
     /// Each of the Select menu's items sends its command; Select All keeps the active photo.
