@@ -684,7 +684,7 @@ macOS only: the app menu, which macOS titles with the app's name.
 | Import library… | `import-library` | — | Phase 5, in a library (decision 46) |
 | Export as Project… | `export-as-project` | — | Phase 5, after the library, on an album (decision 46) |
 | Add Folder… | `add-folder` | — | Phase 5, in a library or project (decision 46) |
-| Export…; Export 12 Photos… with several selected | `export` | Ctrl+E | Built on the Mac, Windows and Linux, revealing the Export tool, whose button exports every selected photo, else the active one ([As built](#as-built)); planned, with its button focused ([The Export tool](#the-export-tool), decision 90) |
+| Export…; Export 12 Photos… with several selected | `export` | Ctrl+E | Built on the Mac, Windows and Linux, revealing the Export tool, whose button exports every selected photo, else the active one, and focusing that button ([As built](#as-built); decision 90) |
 | Export Again; Export 12 Photos Again with several selected: the current export settings, at once, as darktable's Ctrl+E does | `export-again` | Ctrl+Shift+E (decision 90) | Built, for every selected photo, else the active one ([Export Again](#export-again)) |
 | Print… | `print` | Ctrl+P | New, with the Print sheet, after Phase 5 (decision 37) |
 | — | | | |

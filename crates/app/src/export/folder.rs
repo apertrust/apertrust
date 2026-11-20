@@ -78,7 +78,8 @@ pub fn look(
 /// `path` at its last separator: the folder part before it, none where there is no
 /// separator, and the file part after it. A separator inside a variable, as in
 /// `$(FILE_NAME/a/b)`, is the variable's; elsewhere than Windows a `\` escapes the
-/// character after it. The root's own separator is kept with it, `/` for `/IMG`.
+/// character after it. The root's own separator is kept with it, `/` for `/IMG`, and on
+/// Windows a drive's, `C:/` for `C:/IMG`, since `C:` alone is the drive's working folder.
 fn split(path: &str, windows: bool) -> (Option<&str>, &str) {
     let mut last = None;
     let (mut depth, mut chars) = (0usize, path.char_indices().peekable());
@@ -100,7 +101,8 @@ fn split(path: &str, windows: bool) -> (Option<&str>, &str) {
     let Some(at) = last else {
         return (None, path);
     };
-    let folder = if at == 0 { &path[..1] } else { &path[..at] };
+    let root = at == 0 || (windows && path[..at].ends_with(':'));
+    let folder = if root { &path[..=at] } else { &path[..at] };
     (Some(folder), &path[at + 1..])
 }
 
@@ -241,6 +243,10 @@ mod tests {
         assert_eq!(
             split("C:\\out\\$(FILE_NAME)", true),
             (Some("C:\\out"), "$(FILE_NAME)")
+        );
+        assert_eq!(
+            split("C:/$(FILE_NAME)", true),
+            (Some("C:/"), "$(FILE_NAME)")
         );
         assert_eq!(split("a\\b", false), (None, "a\\b"));
     }
