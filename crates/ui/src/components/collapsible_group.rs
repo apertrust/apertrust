@@ -18,8 +18,8 @@
 //! tool that shows or hides the controls under it (`docs/gui.md`, Tool panels from
 //! definitions).
 //!
-//! - Its row is darktable's form, not a section header's: the title in [`group_label`]'s
-//!   type, a `divider` hairline from just after it to a chevron at the row's end, on the
+//! - Its row is darktable's form, not a section header's: the title in a plain group's
+//!   type ([`PlainGroup`]), a `divider` hairline from just after it to a chevron at the row's end, on the
 //!   value fields' end edge, pointing to the end while closed and down while open. While
 //!   closed, a dot after the title says controls in it are set, as the caller counts them.
 //! - The whole row is the target and one focus stop, with the hover band across it under
@@ -30,19 +30,21 @@
 //!   the children of a group named by the title.
 //! - Whether it is open is the caller's, kept in settings, never in the edit: the group
 //!   reports a toggle and keeps nothing.
-//! - The row is a panel line (`sizes.panel_line`, 24 points) with 4 points above it, and
-//!   while the group is open 4 points follow its last row.
+//! - The row is a panel line (`sizes.panel_line`, 24 points) with 4 points above it, none
+//!   where it is the first row of its container, a tool's body, a tab or a group
+//!   ([`CollapsibleGroup::first`], decision 100), and while the group is open 4 points follow
+//!   its last row.
 //! - A group with nothing behind it yet, AgX's Show curve before its graph, is drawn
 //!   disabled, as a tab with no rows is ([`CollapsibleGroup::disabled`]): its title and
 //!   chevron dimmed, closed whatever the caller keeps, its tooltip saying it is to come,
 //!   reporting no toggle, and to screen readers a disabled button.
 //!
-//! [`group_label`]: super::group_label
+//! [`PlainGroup`]: super::PlainGroup
 
-use egui::{Rect, Role, Sense, Stroke, Ui, UiBuilder, WidgetInfo, pos2, vec2};
+use egui::{Rect, Role, Sense, Stroke, Ui, WidgetInfo, pos2, vec2};
 
 use super::focus_ring;
-use super::tabs::group_label_text;
+use super::group::{group_label_text, group_scope};
 use crate::i18n::Args;
 use crate::{Icon, theme, translator};
 
@@ -55,6 +57,7 @@ pub struct CollapsibleGroup<'a> {
     set: usize,
     /// The tooltip of a group with nothing behind it yet, drawn disabled.
     disabled: Option<&'a str>,
+    first: bool,
 }
 
 impl<'a> CollapsibleGroup<'a> {
@@ -65,7 +68,16 @@ impl<'a> CollapsibleGroup<'a> {
             open,
             set: 0,
             disabled: None,
+            first: false,
         }
+    }
+
+    /// Whether the group is the first row its container draws, a tool's body, a tab or a
+    /// group: then no space comes above it (decision 100). The container says so, never
+    /// the tool.
+    pub fn first(mut self, first: bool) -> Self {
+        self.first = first;
+        self
     }
 
     /// Draws the group disabled, with nothing behind it yet: dimmed, closed, `tip` its
@@ -91,7 +103,9 @@ impl<'a> CollapsibleGroup<'a> {
         let id = ui.make_persistent_id(("collapsible group", self.title));
         let enabled = self.disabled.is_none();
         let open = self.open && enabled;
-        ui.add_space(t.spacing.xs);
+        if !self.first {
+            ui.add_space(t.spacing.xs);
+        }
         let (row, _) = ui.allocate_exact_size(
             vec2(ui.available_width(), t.sizes.panel_line),
             Sense::hover(),
@@ -170,13 +184,7 @@ impl<'a> CollapsibleGroup<'a> {
             response.clone().on_hover_text(tip);
         }
         if open {
-            ui.scope_builder(
-                UiBuilder::new()
-                    .id_salt(("collapsible group rows", title))
-                    .accessibility_role(Role::Group)
-                    .accessibility_label(title),
-                rows,
-            );
+            group_scope(ui, ("collapsible group rows", title), title, rows);
             // The group's end shows: 4 points after its last row while it is open.
             ui.add_space(t.spacing.xs);
         }

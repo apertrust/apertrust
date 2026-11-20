@@ -775,10 +775,11 @@ fn w9_temperature_and_tint_need_the_camera_s_matrix() {
     );
     assert!(matches!(
         definition.tool.tabs[0].rows.last(),
-        Some(Row::Group {
+        Some(Row::Group(apertrust_tools::Group {
             id: "channel_coefficients",
+            kind: apertrust_tools::GroupKind::Collapsible,
             ..
-        })
+        }))
     ));
 }
 

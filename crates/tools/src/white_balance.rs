@@ -55,7 +55,7 @@ use apertrust_plugin::{Camera, ImageContext, Value};
 
 use crate::about::{Fact, Facts, Purpose};
 use crate::definition::{
-    ChoiceStyle, Control, ControlKind, Coordinate, Picker, PickerKind, PresetRow,
+    ChoiceStyle, Control, ControlKind, Coordinate, Group, GroupKind, Picker, PickerKind, PresetRow,
     ProcessingDefinition, Reset, Row, Slider, Space, Tab, ToolDefinition, Unit, View,
 };
 use crate::pick::{PickKeys, Picked, Reading, Shown};
@@ -164,19 +164,23 @@ static DEFINITION: ProcessingDefinition = ProcessingDefinition {
                     preset: SETTINGS_ROW,
                     style: ChoiceStyle::List,
                 },
-                Row::Label {
+                Row::Group(Group {
                     id: "scene_illuminant_temp",
-                },
-                Row::Slider(Slider::new("temperature").decimals(0)),
-                Row::Slider(Slider::new("tint").decimals(3)),
-                Row::Group {
+                    kind: GroupKind::Plain,
+                    rows: &[
+                        Row::Slider(Slider::new("temperature").decimals(0)),
+                        Row::Slider(Slider::new("tint").decimals(3)),
+                    ],
+                }),
+                Row::Group(Group {
                     id: "channel_coefficients",
+                    kind: GroupKind::Collapsible,
                     rows: &[
                         coefficient_row("red"),
                         coefficient_row("green"),
                         coefficient_row("blue"),
                     ],
-                },
+                }),
             ],
         }],
         before: &[],

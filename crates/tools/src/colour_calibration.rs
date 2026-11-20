@@ -54,8 +54,8 @@ use apertrust_plugin::{ImageContext, Value};
 
 use crate::about::{Fact, Facts, Purpose};
 use crate::definition::{
-    ChoiceStyle, Control, ControlKind, Coordinate, ProcessingDefinition, Reset, Row, SettingRow,
-    Slider, Tab, ToolDefinition, Track, Unit, View,
+    ChoiceStyle, Control, ControlKind, Coordinate, Group, GroupKind, ProcessingDefinition, Reset,
+    Row, SettingRow, Slider, Tab, ToolDefinition, Track, Unit, View,
 };
 use crate::{Base, ControlValue, Controls, Owned, ProcessingTool, Setting, ToolValues};
 
@@ -292,8 +292,9 @@ const fn list(control: &'static str) -> Row {
 /// `lightness`, `hue` and `chroma` in its darktablerc, and an area mode `gui_update` resets
 /// to correction), at their defaults there. The input's and the target's patches, the
 /// input's L, h and c readout and the title's "(active)" come with the picker.
-const MAPPING: Row = Row::Group {
+const MAPPING: Row = Row::Group(Group {
     id: "area_colour_mapping",
+    kind: GroupKind::Collapsible,
     rows: &[
         Row::Setting(SettingRow {
             id: "area_mode",
@@ -315,48 +316,53 @@ const MAPPING: Row = Row::Group {
             key: None,
             words: None,
         }),
-        Row::Label { id: "target" },
-        Row::Setting(SettingRow {
-            id: "target_lightness",
-            kind: ControlKind::Number {
-                min: 0.0,
-                max: 100.0,
-                step: 1.0,
-                default: 50.0,
-            },
-            decimals: 1,
-            track: Track::Plain,
-            key: None,
-            words: None,
-        }),
-        Row::Setting(SettingRow {
-            id: "target_hue",
-            kind: ControlKind::Number {
-                min: 0.0,
-                max: 360.0,
-                step: 1.0,
-                default: 0.0,
-            },
-            decimals: 1,
-            track: Track::Plain,
-            key: None,
-            words: None,
-        }),
-        Row::Setting(SettingRow {
-            id: "target_chroma",
-            kind: ControlKind::Number {
-                min: 0.0,
-                max: 128.0,
-                step: 1.0,
-                default: 0.0,
-            },
-            decimals: 1,
-            track: Track::Plain,
-            key: None,
-            words: None,
+        Row::Group(Group {
+            id: "target",
+            kind: GroupKind::Plain,
+            rows: &[
+                Row::Setting(SettingRow {
+                    id: "target_lightness",
+                    kind: ControlKind::Number {
+                        min: 0.0,
+                        max: 100.0,
+                        step: 1.0,
+                        default: 50.0,
+                    },
+                    decimals: 1,
+                    track: Track::Plain,
+                    key: None,
+                    words: None,
+                }),
+                Row::Setting(SettingRow {
+                    id: "target_hue",
+                    kind: ControlKind::Number {
+                        min: 0.0,
+                        max: 360.0,
+                        step: 1.0,
+                        default: 0.0,
+                    },
+                    decimals: 1,
+                    track: Track::Plain,
+                    key: None,
+                    words: None,
+                }),
+                Row::Setting(SettingRow {
+                    id: "target_chroma",
+                    kind: ControlKind::Number {
+                        min: 0.0,
+                        max: 128.0,
+                        step: 1.0,
+                        default: 0.0,
+                    },
+                    decimals: 1,
+                    track: Track::Plain,
+                    key: None,
+                    words: None,
+                }),
+            ],
         }),
     ],
-};
+});
 
 /// The CAT tab, as darktable's `gui_init` builds it and `_update_illuminants` shows it:
 /// the adaptation; with any but none, the illuminant, then the F source for F, the LED
@@ -480,8 +486,9 @@ const OPTIMISATIONS: [&str; 8] = [
 /// its darktablerc (`darkroom/modules/channelmixerrgb/colorchecker`, `optimization` and
 /// `safety`), at their defaults there. Its ΔE readout and its Validate, Recompute and Accept
 /// buttons, with the chart's frame on the photo, come with the colour checker.
-static CHECKER: [Row; 1] = [Row::Group {
+static CHECKER: [Row; 1] = [Row::Group(Group {
     id: "colour_checker",
+    kind: GroupKind::Collapsible,
     rows: &[
         Row::Setting(SettingRow {
             id: "chart",
@@ -521,7 +528,7 @@ static CHECKER: [Row; 1] = [Row::Group {
             words: None,
         }),
     ],
-}];
+})];
 
 static DEFINITION: ProcessingDefinition = ProcessingDefinition {
     tool: ToolDefinition {

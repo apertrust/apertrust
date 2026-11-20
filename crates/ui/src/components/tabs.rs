@@ -18,16 +18,12 @@
 //! room at each end, one after another from the row's start, the chosen one SemiBold and
 //! underlined (a tool's content tabs, a scope's views). When the row is too narrow for
 //! them, that room shrinks first, then the names in proportion to their widths, each cut
-//! at its end with an ellipsis, on one line. And the small all-caps label that groups rows
-//! inside a tab.
+//! at its end with an ellipsis, on one line.
 
-use egui::text::LayoutJob;
-use egui::{
-    Color32, FontFamily, FontId, Rect, Role, Sense, TextFormat, Ui, WidgetInfo, pos2, vec2,
-};
+use egui::{Color32, FontFamily, FontId, Rect, Role, Sense, Ui, WidgetInfo, pos2, vec2};
 
 use super::{focus_ring, truncated};
-use crate::{Theme, fonts, theme};
+use crate::{fonts, theme};
 
 pub struct Tabs<'a> {
     name: &'a str,
@@ -184,41 +180,4 @@ impl<'a> Tabs<'a> {
         }
         chosen
     }
-}
-
-/// The small all-caps label over a group of rows inside a tab: ILLUMINANT, SHOULDER.
-pub fn group_label(ui: &mut Ui, text: &str) {
-    let t = theme(ui.ctx());
-    ui.add_space(t.spacing.m);
-    let colour = t.colors.text_secondary;
-    let galley = ui
-        .painter()
-        .layout_job(group_label_text(&t, text, f32::INFINITY, colour));
-    let (rect, response) = ui.allocate_exact_size(
-        vec2(ui.available_width(), galley.size().y + t.spacing.xxs),
-        Sense::hover(),
-    );
-    response.widget_info(|| WidgetInfo::labeled(Role::Label, true, text));
-    ui.painter().galley(rect.min, galley, colour);
-}
-
-/// A group label's text, as [`group_label`] and a collapsible group's row draw it: caption
-/// sized Medium capitals, a little apart, on one line at most `width` wide, cut at its
-/// end with … when longer.
-pub(super) fn group_label_text(t: &Theme, text: &str, width: f32, colour: Color32) -> LayoutJob {
-    let mut job = LayoutJob::default();
-    job.append(
-        &text.to_uppercase(),
-        0.0,
-        TextFormat {
-            font_id: FontId::new(t.text.caption, FontFamily::Name(fonts::MEDIUM.into())),
-            color: colour,
-            extra_letter_spacing: 0.55,
-            ..Default::default()
-        },
-    );
-    job.wrap.max_width = width;
-    job.wrap.max_rows = 1;
-    job.wrap.break_anywhere = true;
-    job
 }

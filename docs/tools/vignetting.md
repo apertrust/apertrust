@@ -35,7 +35,7 @@ Control ids are the operation's parameter names, darktable's but for the centre'
 | Fall-off radius (`falloff_scale`) | `falloff_scale` | % | 0 % to 200 % | 1 % | 2 | 50 % |
 | Brightness (`brightness`) | `brightness` | a number | −1 to 1 | 0.01 | 3 | −0.5 |
 | Saturation (`saturation`) | `saturation` | a number | −1 to 1 | 0.01 | 3 | −0.5 |
-| *Position / form*, a group label | | | | | | |
+| *Position / form*, a plain group holding the rows after it | | | | | | |
 | Horizontal centre (`center_x`) | `center_x` | a number, half widths from the middle, right positive | −1 to 1 | 0.01 | 3 | 0 |
 | Vertical centre (`center_y`) | `center_y` | a number, half heights from the middle, down positive | −1 to 1 | 0.01 | 3 | 0 |
 | Shape (`shape`) | `shape` | a number: 0 a rectangle, 1 an ellipse, 2 a diamond, above a star | 0 to 5 | 0.05 | 2 | 1 |
@@ -112,7 +112,7 @@ Measured on the Apple M4 (Metal) by `crates/tools/tests/vignetting.rs`. The synt
 
 ## In the panel
 
-- **No tabs and no collapsible groups:** darktable's controls one under another in its order, the group label Position / form, darktable's section label, after Saturation (`vignetting_draws_darktable_s_page_in_order`).
+- **No tabs and no collapsible groups:** darktable's controls one under another in its order, the plain group Position / form, darktable's section label, after Saturation, holding the rest (`vignetting_draws_darktable_s_page_in_order`).
 - **Values** show darktable's digits, the radii with their unit, in the language's number format: "80.00%", the shape "1.00", the ratio "1.000". A slider whose range spans zero is signed, as darktable's is, zero included: brightness and saturation "−0.500" at rest, the centres "+0.000".
 - **Automatic ratio** is a toggle row, **Dithering** a list, its two noises listed disabled.
 - **The width/height ratio** is drawn disabled while automatic ratio is on, its value kept.

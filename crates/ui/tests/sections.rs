@@ -18,8 +18,8 @@
 //! AccessKit (`docs/gui.md`, Testing).
 
 use apertrust_ui::components::{
-    PanelBody, PanelTab, Section, SectionAction, SliderRow, TabBar, TabBarAction, section_body,
-    section_list,
+    CollapsibleGroup, PanelBody, PanelTab, PlainGroup, Section, SectionAction, SliderRow, TabBar,
+    TabBarAction, section_body, section_list,
 };
 use apertrust_ui::icons::STROKE;
 use apertrust_ui::popup::{Item, Submenu};
@@ -91,6 +91,89 @@ fn the_header_opens_and_closes_the_section() {
             .query_by_role_and_label(Role::Slider, "Tint")
             .is_some()
     );
+}
+
+/// The first row a section's body draws.
+#[derive(Clone, Copy, Debug)]
+enum First {
+    Plain,
+    Collapsible,
+    Slider,
+}
+
+/// An open section, with tabs or none, whose body's first row is `first`; its state is
+/// where the body's rows start.
+fn first_row(first: First, tabs: bool) -> Harness<'static, f32> {
+    Harness::builder()
+        .with_size(egui::vec2(400.0, 200.0))
+        .with_context_setup(|ctx| apertrust_ui::install(ctx, Theme::default()))
+        .build_ui_state(
+            move |ui, start: &mut f32| {
+                // Rows stack with no spacing, as in the Tools panel.
+                ui.spacing_mut().item_spacing.y = 0.0;
+                let mut section = Section::new("White balance", true).edits();
+                if tabs {
+                    section = section.tabs(&["Basic", "Advanced"], 0);
+                }
+                section.show(ui, |ui| {
+                    *start = ui.cursor().top();
+                    let slider = |ui: &mut egui::Ui| {
+                        SliderRow::new("Tint", 0.0, -100.0..=100.0).show(ui);
+                    };
+                    match first {
+                        First::Plain => {
+                            PlainGroup::new("Look").first(true).show(ui, slider);
+                        }
+                        First::Collapsible => {
+                            CollapsibleGroup::new("Look", true)
+                                .first(true)
+                                .show(ui, slider);
+                        }
+                        First::Slider => slider(ui),
+                    }
+                });
+            },
+            0.0,
+        )
+}
+
+/// The first-row rule (decision 100): a group first in its tab draws no space above
+/// itself, so the gap from the header to the first row is the body's 4 points for a plain
+/// group, a collapsible group and a slider alike, and, under a tab strip, the same for all
+/// three too.
+#[test]
+fn a_group_first_in_a_tab_draws_no_space_above_it() {
+    let t = Theme::default();
+    for tabs in [false, true] {
+        let mut gaps = Vec::new();
+        for first in [First::Plain, First::Collapsible, First::Slider] {
+            let mut harness = first_row(first, tabs);
+            harness.run();
+            let start = *harness.state();
+            let top = |role, name| harness.get_by_role_and_label(role, name).rect().top();
+            let top = match first {
+                First::Plain => top(Role::Group, "Look"),
+                First::Collapsible => top(Role::Button, "Look"),
+                // A slider row carries its own padding inside it, from where it starts.
+                First::Slider => start,
+            };
+            assert_eq!(
+                top, start,
+                "{first:?} draws no space above it, tabs: {tabs}"
+            );
+            let header = harness
+                .get_by_role_and_label(Role::Button, "White balance")
+                .rect();
+            gaps.push(top - header.bottom());
+        }
+        assert!(
+            gaps.iter().all(|gap| *gap == gaps[0]),
+            "{gaps:?}, tabs: {tabs}"
+        );
+        if !tabs {
+            assert_eq!(gaps[0], t.spacing.xs, "{gaps:?}");
+        }
+    }
 }
 
 #[test]

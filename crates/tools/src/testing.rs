@@ -23,7 +23,7 @@
 use apertrust_plugin::{Camera, ImageContext, Pattern, Value};
 
 use crate::definition::{
-    ChoiceStyle, Control, ControlKind, Coordinate, Picker, PickerKind, PresetRow,
+    ChoiceStyle, Control, ControlKind, Coordinate, Group, GroupKind, Picker, PickerKind, PresetRow,
     ProcessingDefinition, Quad, Range, Row, SettingRow, Slider, Space, Tab, ToolDefinition, Unit,
     View, slider_step,
 };
@@ -80,8 +80,8 @@ use crate::{Base, ControlValue, Controls, Owned, ProcessingTool, Setting, ToolVa
 ///   patch, as RGB curve's show colour.
 ///
 /// The look's row and brightness's are before every tab's, shown whichever is open. The
-/// Grain tab holds grain, size and coarseness under a group label, then the spread and
-/// show pickers' buttons on a row of their own; the Shape tab, the Midtones collapsible
+/// Grain tab is a plain group holding grain, size and coarseness, then the spread and show
+/// pickers' buttons on a row of their own; the Shape tab, the Midtones collapsible
 /// group with method and bias, then the pair's coordinates, the sum's track over a soft
 /// range of 50 to 150 %, as darktable's sliders have one.
 pub struct Sample;
@@ -100,24 +100,28 @@ static DEFINITION: ProcessingDefinition = ProcessingDefinition {
             &[
                 Tab {
                     id: Some("grain"),
-                    rows: &[
-                        Row::Label { id: "grain" },
-                        Row::Slider(Slider::new("grain").decimals(0)),
-                        Row::Choice {
-                            control: "size",
-                            style: ChoiceStyle::Segmented,
-                        },
-                        Row::Slider(Slider::new("coarseness").decimals(0)),
-                        Row::Pickers {
-                            label: Some("measure"),
-                            pickers: &["spread", "show"],
-                        },
-                    ],
+                    rows: &[Row::Group(Group {
+                        id: "grain",
+                        kind: GroupKind::Plain,
+                        rows: &[
+                            Row::Slider(Slider::new("grain").decimals(0)),
+                            Row::Choice {
+                                control: "size",
+                                style: ChoiceStyle::Segmented,
+                            },
+                            Row::Slider(Slider::new("coarseness").decimals(0)),
+                            Row::Pickers {
+                                label: Some("measure"),
+                                pickers: &["spread", "show"],
+                            },
+                        ],
+                    })],
                 },
                 Tab {
                     id: Some("shape"),
-                    rows: &[Row::Group {
+                    rows: &[Row::Group(Group {
                         id: "midtones",
+                        kind: GroupKind::Collapsible,
                         rows: &[
                             Row::Choice {
                                 control: "method",
@@ -131,7 +135,7 @@ static DEFINITION: ProcessingDefinition = ProcessingDefinition {
                             Row::Slider(Slider::new("sum").decimals(0).soft(50.0, 150.0)),
                             Row::Slider(Slider::new("difference").decimals(0)),
                         ],
-                    }],
+                    })],
                 },
             ],
         )

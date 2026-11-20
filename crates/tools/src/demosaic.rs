@@ -44,7 +44,8 @@ use apertrust_plugin::{ImageContext, Value};
 
 use crate::about::{Fact, Facts, Purpose};
 use crate::definition::{
-    ChoiceStyle, Control, ControlKind, ProcessingDefinition, Row, Slider, Tab, ToolDefinition, Unit,
+    ChoiceStyle, Control, ControlKind, Group, GroupKind, ProcessingDefinition, Row, Slider, Tab,
+    ToolDefinition, Unit,
 };
 use crate::{Base, ControlValue, Controls, Owned, ProcessingTool, Setting, ToolValues};
 
@@ -273,8 +274,9 @@ static CONTROLS: [Control; 12] = [
 /// sharpen is on. darktable shows sharp centre only while corner boost is off 0, which a
 /// row cannot follow, since rows follow a choice or a toggle: it stays in the group,
 /// which never shows while capture sharpen is not ported.
-const CAPTURE: Row = Row::Group {
+const CAPTURE: Row = Row::Group(Group {
     id: "capture_sharpen_controls",
+    kind: GroupKind::Collapsible,
     rows: &[
         Row::Slider(Slider::new("cs_iter").decimals(0)),
         Row::Slider(Slider::new("cs_radius")),
@@ -282,7 +284,7 @@ const CAPTURE: Row = Row::Group {
         Row::Slider(Slider::new("cs_boost")),
         Row::Slider(Slider::new("cs_center").decimals(0)),
     ],
-};
+});
 
 static DEFINITION: ProcessingDefinition = ProcessingDefinition {
     tool: ToolDefinition::processing(
@@ -596,10 +598,13 @@ mod tests {
         assert_eq!(controls, order);
         // Capture sharpening's five in darktable's collapsible section.
         let group = DEFINITION.rows().find_map(|row| match row {
-            Row::Group { id, rows } => Some((*id, rows.len())),
+            Row::Group(group) => Some((group.id, group.kind, group.rows.len())),
             _ => None,
         });
-        assert_eq!(group, Some(("capture_sharpen_controls", 5)));
+        assert_eq!(
+            group,
+            Some(("capture_sharpen_controls", GroupKind::Collapsible, 5))
+        );
     }
 
     #[test]

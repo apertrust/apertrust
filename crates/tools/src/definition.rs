@@ -19,9 +19,9 @@
 //! stores, are kept apart from rows, how a tab shows them, so validation, edits and MCP
 //! read the controls without walking the panel.
 //!
-//! The rows are darktable's page as darktable has it (decision 29): its tabs,
-//! its collapsible sections as [`Row::Group`]s, the rows it shows only in some modes as
-//! [`Row::When`], the rows it draws outside its notebook in [`ToolDefinition::before`] and
+//! The rows are darktable's page as darktable has it (decision 29): its tabs, its section
+//! labels and collapsible sections as [`Row::Group`]s, plain and collapsible (decision 100),
+//! the rows it shows only in some modes as [`Row::When`], the rows it draws outside its notebook in [`ToolDefinition::before`] and
 //! [`ToolDefinition::after`], every option of a choice, those not ported marked, its own
 //! settings, which no edit stores, as [`Row::Setting`], and its buttons,
 //! actions no edit stores either, as [`Row::Action`]. Which rows show
@@ -607,8 +607,8 @@ pub struct Tab {
     pub rows: &'static [Row],
 }
 
-/// How a tab shows one control, a label between them, rows darktable groups or shows only
-/// in some modes, a preset row, a lossless view's coordinate, one of darktable's settings
+/// How a tab shows one control, a group of rows, plain or collapsible, rows darktable shows
+/// only in some modes, a preset row, a lossless view's coordinate, one of darktable's settings
 /// for the tool, or a row of picker buttons. Each control is in exactly one row, or in one
 /// row per mode where darktable labels it differently by mode ([`Slider::label`]) or shows
 /// it under conditions one [`Row::When`] cannot join, as highlight reconstruction's Noise
@@ -628,19 +628,9 @@ pub enum Row {
     Toggle {
         control: &'static str,
     },
-    /// A label over the rows that follow, by its id: darktable's section label.
-    Label {
-        id: &'static str,
-    },
-    /// darktable's collapsible section, a collapsible group (decision 29): its rows
-    /// under its title, closed at first, its open state the app's. It holds controls,
-    /// never another group. One with no rows has nothing behind it yet, as AgX's Show
-    /// curve until a read-only graph row exists: the panel draws it disabled, closed, as a
-    /// titled tab with no rows is, saying it is to come.
-    Group {
-        id: &'static str,
-        rows: &'static [Row],
-    },
+    /// A titled set of rows, darktable's section label or its collapsible section
+    /// (decision 100): a [`Group`] of either kind, holding its rows.
+    Group(Group),
     /// Rows darktable shows only while another control of the tool, a choice or a
     /// toggle, holds one of the values `is` names as that control writes them
     /// ([`Control::text`]): option ids, or `true` or `false`. Otherwise they are hidden,
@@ -697,8 +687,8 @@ pub enum Row {
     /// darktable's picker buttons packed in a box, one line: a label at its start, if any,
     /// by its id, and the buttons of pickers of [`ProcessingDefinition::pickers`] at its
     /// end, as AgX's Auto tune levels and RGB levels' black, grey and white. It is no
-    /// control. The label is a group label's: its words are [`crate::messages::group`]'s,
-    /// and its id is unique among the tool's group labels.
+    /// control. The label is a plain group's title: its words are
+    /// [`crate::messages::group`]'s, and its id is unique among the tool's groups.
     Pickers {
         label: Option<&'static str>,
         pickers: &'static [&'static str],
@@ -761,6 +751,34 @@ pub enum Row {
     Guides,
 }
 
+/// A titled set of rows inside a tool's tab (decision 100), of one of two kinds, as a tool
+/// is a processing tool or a utility (decision 93): darktable's section label, a plain
+/// group, or its collapsible section, a collapsible group. Both hold their rows, so changing
+/// a group's kind is a one-word change to its `kind`. A plain group may sit inside a
+/// collapsible one; a collapsible group never sits inside another group, and a plain group
+/// never inside a plain one. Its id is unique among the tool's groups of both kinds and
+/// its rows of pickers' labels; its title is a message its id and kind imply
+/// ([`crate::messages::group_title`]).
+#[derive(Debug, Clone, Copy)]
+pub struct Group {
+    pub id: &'static str,
+    pub kind: GroupKind,
+    pub rows: &'static [Row],
+}
+
+/// A [`Group`]'s kind (decision 100).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GroupKind {
+    /// darktable's section label: a title over its rows, always open, with no chevron. It
+    /// has rows.
+    Plain,
+    /// darktable's collapsible section (decision 29): its title with a chevron, its rows
+    /// under it, closed at first, its open state the app's. One with no rows has nothing
+    /// behind it yet, as AgX's Show curve until a read-only graph row exists: the panel
+    /// draws it disabled, closed, as a titled tab with no rows is, saying it is to come.
+    Collapsible,
+}
+
 /// A [`Row::Computed`]: its id, unique among the tool's computed values, whose words are
 /// `tool-<tool>-computed-<id>-label` and `-promise`, the operation that computes it
 /// ([`apertrust_plugin::Operation::computed`], asked with the same id), one whose
@@ -806,8 +824,7 @@ impl Row {
             Row::Choice { control, .. }
             | Row::Toggle { control }
             | Row::Buttons { control, .. } => std::slice::from_ref(control),
-            Row::Label { .. }
-            | Row::Group { .. }
+            Row::Group(_)
             | Row::When { .. }
             | Row::WhenSetting { .. }
             | Row::Setting(_)
@@ -841,9 +858,9 @@ impl Row {
     /// other row.
     pub fn rows(&self) -> &'static [Row] {
         match self {
-            Row::Group { rows, .. } | Row::When { rows, .. } | Row::WhenSetting { rows, .. } => {
-                rows
-            }
+            Row::Group(Group { rows, .. })
+            | Row::When { rows, .. }
+            | Row::WhenSetting { rows, .. } => rows,
             _ => &[],
         }
     }
@@ -1259,12 +1276,14 @@ pub enum DefinitionError {
     Row(&'static str),
     #[error("{0} has options not ported, which only a list draws disabled")]
     Segmented(&'static str),
-    #[error("two group labels are called {0}")]
-    DuplicateLabel(&'static str),
-    #[error("two collapsible groups are called {0}")]
+    #[error("two groups, or a group and a row of pickers' label, are called {0}")]
     DuplicateGroup(&'static str),
-    #[error("the collapsible group {0} is inside another; a group holds controls, never a group")]
+    #[error(
+        "the group {0} is inside a group it cannot be in: only a plain group sits inside another group, a collapsible one"
+    )]
     GroupInGroup(&'static str),
+    #[error("the plain group {0} has no rows")]
+    EmptyGroup(&'static str),
     #[error("two settings are called {0}")]
     DuplicateSetting(&'static str),
     #[error(
@@ -1374,10 +1393,10 @@ pub enum DefinitionError {
     SettingWords(&'static str),
     #[error("the setting {0} names a key or words of its own, which only a utility's do")]
     ToolSettingKey(&'static str),
-    #[error("{0} is titled or opens at first, but is no label or group of the utility's page")]
+    #[error(
+        "{0} is titled but is no group of the utility's page, or opens at first but is no collapsible group of it"
+    )]
     UnknownTitle(&'static str),
-    #[error("a label and a group of the utility's page are both called {0}")]
-    LabelAndGroup(&'static str),
     #[error("{0} is given more than one title")]
     DuplicateTitle(&'static str),
     #[error("the group {0} opens at first, but has no rows, so it is drawn closed")]
@@ -1483,10 +1502,11 @@ impl ProcessingDefinition {
         self.tool.placed()
     }
 
-    /// Whether the definition holds together: ids, ranges, options, tabs, groups that
-    /// hold no group, modes of a choice or a toggle with rows of their own, each
+    /// Whether the definition holds together: ids, ranges, options, tabs, groups inside
+    /// a group only as [`Group`] allows, each plain group with rows, modes of a choice or a
+    /// toggle with rows of their own, each
     /// where the control it follows is sure to show, or following a control that another
-    /// tab shows outside any group or mode, each control in exactly one row
+    /// tab shows outside any collapsible group or mode, each control in exactly one row
     /// that can show it, or in one per mode, no two of them shown at once, or in none
     /// and only in the rows of the views covering it or of a preset row writing it,
     /// besides, for a number, in one equalizer's row at most, the one widget allowed
@@ -1572,8 +1592,7 @@ impl ProcessingDefinition {
             return Err(DefinitionError::Id(id));
         }
         let placed = self.placed();
-        let (mut labels, mut groups, mut settings, mut actions, mut computed) = (
-            BTreeSet::new(),
+        let (mut groups, mut settings, mut actions, mut computed) = (
             BTreeSet::new(),
             BTreeSet::new(),
             BTreeSet::new(),
@@ -1601,28 +1620,25 @@ impl ProcessingDefinition {
                 return Err(DefinitionError::Widget(*widget));
             }
             match row {
-                // A row of pickers' label shares a group label's words, so its id is one.
-                Row::Label { id }
-                | Row::Pickers {
+                // A row of pickers' label shares a plain group's words, so its id is one.
+                Row::Pickers {
                     label: Some(id), ..
                 } => {
-                    if !is_id(id) {
-                        return Err(DefinitionError::Id(id));
-                    }
-                    if !labels.insert(*id) {
-                        return Err(DefinitionError::DuplicateLabel(id));
-                    }
-                }
-                Row::Group { id, rows } => {
                     if !is_id(id) {
                         return Err(DefinitionError::Id(id));
                     }
                     if !groups.insert(*id) {
                         return Err(DefinitionError::DuplicateGroup(id));
                     }
-                    if let Some(inner) = group_in(rows) {
-                        return Err(DefinitionError::GroupInGroup(inner));
+                }
+                Row::Group(group) => {
+                    if !is_id(group.id) {
+                        return Err(DefinitionError::Id(group.id));
                     }
+                    if !groups.insert(group.id) {
+                        return Err(DefinitionError::DuplicateGroup(group.id));
+                    }
+                    group.check()?;
                 }
                 Row::When { control, is, rows } => {
                     self.check_mode(control, is, rows)?;
@@ -2061,7 +2077,7 @@ struct Placed<'d> {
 }
 
 /// Where a row shows: its tab, `None` for the rows before and after every tab's; its
-/// collapsible group; each mode it shows in, as the control it follows and the values it
+/// collapsible group, a plain one being always open; each mode it shows in, as the control it follows and the values it
 /// shows for, outermost first; and each setting's options it shows for
 /// ([`Row::WhenSetting`]), kept apart, as settings and controls are.
 #[derive(Clone, Default)]
@@ -2130,7 +2146,12 @@ fn place<'d>(rows: &'d [Row], at: &Where, placed: &mut Vec<Placed<'d>>) {
         });
         let mut inside = at.clone();
         match row {
-            Row::Group { id, .. } => inside.group = Some(id),
+            // A plain group is always open, so only a collapsible one hides its rows.
+            Row::Group(Group {
+                id,
+                kind: GroupKind::Collapsible,
+                ..
+            }) => inside.group = Some(id),
             Row::When { control, is, .. } => inside.modes.push((control, is)),
             Row::WhenSetting { setting, is, .. } => inside.settings.push((setting, is)),
             _ => {}
@@ -2139,11 +2160,28 @@ fn place<'d>(rows: &'d [Row], at: &Where, placed: &mut Vec<Placed<'d>>) {
     }
 }
 
-/// The first group among `rows` or inside them.
-fn group_in(rows: &[Row]) -> Option<&'static str> {
+impl Group {
+    /// Whether the group holds together (decision 100): a plain one with rows, and no group
+    /// inside it that cannot be there, any group in a plain one and a collapsible one in a
+    /// collapsible one.
+    pub(crate) fn check(&self) -> Result<(), DefinitionError> {
+        if self.kind == GroupKind::Plain && self.rows.is_empty() {
+            return Err(DefinitionError::EmptyGroup(self.id));
+        }
+        match misplaced(self.kind, self.rows) {
+            Some(inner) => Err(DefinitionError::GroupInGroup(inner)),
+            None => Ok(()),
+        }
+    }
+}
+
+/// The first group among `rows` or inside them that cannot sit in a group of `kind`.
+fn misplaced(kind: GroupKind, rows: &[Row]) -> Option<&'static str> {
     rows.iter().find_map(|row| match row {
-        Row::Group { id, .. } => Some(*id),
-        _ => group_in(row.rows()),
+        Row::Group(inner) if kind == GroupKind::Plain || inner.kind == GroupKind::Collapsible => {
+            Some(inner.id)
+        }
+        _ => misplaced(kind, row.rows()),
     })
 }
 
@@ -2441,18 +2479,23 @@ mod tests {
 
     static ROWS: &[Row] = &[
         Row::Slider(Slider::new("exposure")),
-        Row::Label { id: "look" },
-        Row::Choice {
-            control: "mode",
-            style: ChoiceStyle::Segmented,
-        },
-        Row::Toggle {
-            control: "preserve",
-        },
-        Row::Custom {
-            widget: Widget::Curve,
-            controls: &["curve"],
-        },
+        Row::Group(Group {
+            id: "look",
+            kind: GroupKind::Plain,
+            rows: &[
+                Row::Choice {
+                    control: "mode",
+                    style: ChoiceStyle::Segmented,
+                },
+                Row::Toggle {
+                    control: "preserve",
+                },
+                Row::Custom {
+                    widget: Widget::Curve,
+                    controls: &["curve"],
+                },
+            ],
+        }),
     ];
 
     static DEFINITION: ProcessingDefinition = ProcessingDefinition {
@@ -2554,8 +2597,9 @@ mod tests {
         },
     ];
 
-    const FINE_TUNING: Row = Row::Group {
+    const FINE_TUNING: Row = Row::Group(Group {
         id: "fine_tuning",
+        kind: GroupKind::Collapsible,
         rows: &[
             Row::Toggle { control: "smooth" },
             Row::When {
@@ -2564,7 +2608,7 @@ mod tests {
                 rows: &[Row::Slider(Slider::new("radius"))],
             },
         ],
-    };
+    });
 
     static PAGE_TABS: &[Tab] = &[
         Tab {
@@ -2833,7 +2877,7 @@ mod tests {
             Row::When {
                 control: "mask",
                 is: &["true"],
-                rows: &[Row::Label { id: "masked" }],
+                rows: &[Row::Action { id: "masked" }],
             },
         ];
         assert_eq!(
@@ -2926,10 +2970,11 @@ mod tests {
         // A group with nothing behind it yet, as AgX's Show curve before its graph.
         const EMPTY_GROUP: &[Row] = &[
             Row::Slider(Slider::new("contrast")),
-            Row::Group {
+            Row::Group(Group {
                 id: "empty",
+                kind: GroupKind::Collapsible,
                 rows: &[],
-            },
+            }),
         ];
         assert_eq!(page(with_mode(EMPTY_GROUP)).check(), Ok(()));
         const EMPTY_MODE: &[Row] = &[
@@ -2946,46 +2991,107 @@ mod tests {
         );
     }
 
+    /// A group of `kind` called `id`, holding `rows`.
+    fn group(id: &'static str, kind: GroupKind, rows: &[Row]) -> Row {
+        Row::Group(Group {
+            id,
+            kind,
+            rows: Box::leak(rows.to_vec().into_boxed_slice()),
+        })
+    }
+
     #[test]
-    fn a_group_holds_no_group_and_groups_and_labels_have_ids_of_their_own() {
-        let inner = Row::Group {
-            id: "inner",
-            rows: CONTRAST,
+    fn a_group_holds_its_rows_whatever_its_kind() {
+        for kind in [GroupKind::Plain, GroupKind::Collapsible] {
+            let held = group("tuning", kind, CONTRAST);
+            assert_eq!(held.rows().len(), 1, "{kind:?}");
+            assert!(held.controls().is_empty(), "{kind:?}");
+            let definition = page(with_mode(std::slice::from_ref(&held)));
+            assert_eq!(definition.check(), Ok(()), "{kind:?}");
+            // Its rows are listed after it, the control shown once, inside it.
+            let rows: Vec<&Row> = definition.rows().collect();
+            let at = rows
+                .iter()
+                .position(|row| matches!(row, Row::Group(Group { id: "tuning", .. })))
+                .unwrap();
+            assert_eq!(rows[at + 1].controls(), ["contrast"], "{kind:?}");
+        }
+    }
+
+    #[test]
+    fn a_collapsible_group_inside_another_is_refused() {
+        // At any depth, as inside a mode's rows, and inside a plain group too.
+        let inner = group("inner", GroupKind::Collapsible, CONTRAST);
+        let mode = Row::When {
+            control: "mode",
+            is: &["bilateral"],
+            rows: Box::leak(Box::new([inner.clone()])),
         };
-        let outer = Row::Group {
-            id: "outer",
-            rows: Box::leak(Box::new([Row::When {
-                control: "mode",
-                is: &["bilateral"],
-                rows: Box::leak(Box::new([inner])),
-            }])),
-        };
+        for kind in [GroupKind::Collapsible, GroupKind::Plain] {
+            let outer = group("outer", kind, std::slice::from_ref(&mode));
+            assert_eq!(
+                page(with_mode(&[outer])).check(),
+                Err(DefinitionError::GroupInGroup("inner")),
+                "{kind:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_plain_group_inside_a_collapsible_one_is_allowed() {
+        // As Colour calibration's Target in its area colour mapping.
+        let plain = group("target", GroupKind::Plain, CONTRAST);
+        let outer = group(
+            "mapping",
+            GroupKind::Collapsible,
+            std::slice::from_ref(&plain),
+        );
+        assert_eq!(page(with_mode(&[outer])).check(), Ok(()));
+        // Two plain groups never nest.
+        let outer = group("mapping", GroupKind::Plain, &[plain]);
         assert_eq!(
             page(with_mode(&[outer])).check(),
-            Err(DefinitionError::GroupInGroup("inner"))
+            Err(DefinitionError::GroupInGroup("target"))
         );
-        let again = Row::Group {
-            id: "fine_tuning",
-            rows: CONTRAST,
-        };
-        assert_eq!(
-            page(with_mode(&[again])).check(),
-            Err(DefinitionError::DuplicateGroup("fine_tuning"))
-        );
-        // A label may share a group's id: their messages differ.
-        let labels = [
-            Row::Label { id: "fine_tuning" },
+    }
+
+    #[test]
+    fn an_empty_plain_group_is_refused() {
+        // A collapsible one with no rows has nothing behind it yet; a plain one is only its
+        // rows' title.
+        let rows = [
             Row::Slider(Slider::new("contrast")),
+            group("empty", GroupKind::Plain, &[]),
         ];
-        assert_eq!(page(with_mode(&labels)).check(), Ok(()));
+        assert_eq!(
+            page(with_mode(&rows)).check(),
+            Err(DefinitionError::EmptyGroup("empty"))
+        );
+    }
+
+    #[test]
+    fn groups_have_ids_of_their_own_whatever_their_kind() {
+        // FINE_TUNING is on the page's other tab.
+        for kind in [GroupKind::Collapsible, GroupKind::Plain] {
+            let again = group("fine_tuning", kind, CONTRAST);
+            assert_eq!(
+                page(with_mode(&[again])).check(),
+                Err(DefinitionError::DuplicateGroup("fine_tuning")),
+                "{kind:?}"
+            );
+        }
         let twice = [
-            Row::Label { id: "look" },
-            Row::Slider(Slider::new("contrast")),
-            Row::Label { id: "look" },
+            group("look", GroupKind::Plain, CONTRAST),
+            group("look", GroupKind::Plain, &[Row::Action { id: "auto" }]),
         ];
         assert_eq!(
             page(with_mode(&twice)).check(),
-            Err(DefinitionError::DuplicateLabel("look"))
+            Err(DefinitionError::DuplicateGroup("look"))
+        );
+        let named = group("Look", GroupKind::Plain, CONTRAST);
+        assert_eq!(
+            page(with_mode(&[named])).check(),
+            Err(DefinitionError::Id("Look"))
         );
         let words = [Row::Slider(Slider::new("contrast").label("High lights"))];
         assert_eq!(
@@ -3047,8 +3153,9 @@ mod tests {
     fn a_tool_s_settings_are_rows_of_no_control_each_once_and_whole() {
         // In a group of their own, as darktable's colour checker: a group of settings
         // alone holds, and the settings show no control.
-        let checker = Row::Group {
+        let checker = Row::Group(Group {
             id: "checker",
+            kind: GroupKind::Collapsible,
             rows: Box::leak(Box::new([
                 Row::Setting(CHART),
                 Row::Setting(SettingRow {
@@ -3065,7 +3172,7 @@ mod tests {
                     words: None,
                 }),
             ])),
-        };
+        });
         let rows = [Row::Slider(Slider::new("contrast")), checker];
         assert_eq!(page(with_mode(&rows)).check(), Ok(()));
         assert!(Row::Setting(CHART).controls().is_empty());
@@ -3444,11 +3551,15 @@ mod tests {
             picking(&[LEVEL], &[CONTRAST, buttons(Some("Auto"), &["level"])]),
             Err(DefinitionError::Id("Auto"))
         );
-        // Its label is a group label, sharing its words, so never one's id twice.
-        let label = Row::Label { id: "auto_tune" };
+        // Its label is a plain group's title, sharing its words, so never a group's id.
+        let label = Row::Group(Group {
+            id: "auto_tune",
+            kind: GroupKind::Plain,
+            rows: &[CONTRAST],
+        });
         assert_eq!(
-            picking(&[LEVEL], &[CONTRAST, label, row]),
-            Err(DefinitionError::DuplicateLabel("auto_tune"))
+            picking(&[LEVEL], &[label, row]),
+            Err(DefinitionError::DuplicateGroup("auto_tune"))
         );
     }
 
@@ -3575,10 +3686,11 @@ mod tests {
         // For several options, and in a mode or a group with its setting.
         let both = when_chart(&["classic", "passport"], &scale);
         assert_eq!(following(&[both]), Ok(()));
-        let grouped = Row::Group {
+        let grouped = Row::Group(Group {
             id: "checker",
+            kind: GroupKind::Collapsible,
             rows: Box::leak(Box::new([Row::Setting(CHART), row.clone()])),
-        };
+        });
         let rows = [Row::Slider(Slider::new("contrast")), grouped];
         assert_eq!(page(with_mode(&rows)).check(), Ok(()));
 
@@ -3618,10 +3730,11 @@ mod tests {
             Err(DefinitionError::Empty("chart"))
         );
         // Where its setting is not sure to show: in a group it is outside, or in a mode.
-        let grouped = Row::Group {
+        let grouped = Row::Group(Group {
             id: "checker",
+            kind: GroupKind::Collapsible,
             rows: Box::leak(Box::new([Row::Setting(CHART)])),
-        };
+        });
         let rows = [
             Row::Slider(Slider::new("contrast")),
             grouped,

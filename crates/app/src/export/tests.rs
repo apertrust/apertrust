@@ -1981,12 +1981,34 @@ fn expanded(harness: &Harness<'_, Bench>, title: &str) -> bool {
     node.accesskit_node().data().is_expanded() == Some(true)
 }
 
+/// Storage options is the tool's first row, so it draws no space above it (decision 100):
+/// it starts the 4 points under the header every tool's first row starts, a slider's
+/// included (`crates/ui/tests/sections.rs`), not 12.
+#[test]
+fn the_gap_under_the_header_is_every_tool_s() {
+    let harness = open();
+    let header = harness.get_by_role_and_label(Role::Button, "Export").rect();
+    let storage = harness
+        .get_by_role_and_label(Role::Group, "Storage options")
+        .rect();
+    let t = Theme::builtin(Builtin::Dark);
+    // The bench keeps the theme's item spacing, 4, after the header, which the Tools panel
+    // sets to 0; past it, the group starts where the body's 4-point margin ends.
+    let item_spacing = t.spacing.xs;
+    assert_eq!(storage.top() - header.bottom(), item_spacing + t.spacing.xs);
+}
+
 #[test]
 fn storage_and_format_options_are_plain_groups_and_global_options_folds() {
     let mut harness = open();
-    // The two plain groups are titles, never buttons, and their rows are always there.
-    for title in ["Storage options", "Format options"] {
-        harness.get_by_role_and_label(Role::Label, title);
+    // The two plain groups are groups named by their titles, never buttons, and their rows,
+    // inside them, are always there (decision 100).
+    for (title, row) in [
+        ("Storage options", "On conflict"),
+        ("Format options", "File format"),
+    ] {
+        let group = harness.get_by_role_and_label(Role::Group, title);
+        group.get_by_role_and_label(Role::ComboBox, row);
         assert!(
             harness
                 .query_by_role_and_label(Role::Button, title)
@@ -1994,8 +2016,6 @@ fn storage_and_format_options_are_plain_groups_and_global_options_folds() {
             "{title} has no fold"
         );
     }
-    harness.get_by_role_and_label(Role::ComboBox, "On conflict");
-    harness.get_by_role_and_label(Role::ComboBox, "File format");
     // Global options folds and starts open.
     assert!(expanded(&harness, "Global options"));
     harness.get_by_role_and_label(Role::ComboBox, "Set size");

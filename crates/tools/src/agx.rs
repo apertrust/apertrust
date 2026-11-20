@@ -58,8 +58,8 @@ use apertrust_plugin::{ImageContext, Value};
 
 use crate::about::{Fact, Facts, Purpose};
 use crate::definition::{
-    ChoiceStyle, Control, ControlKind, Picker, PickerKind, ProcessingDefinition, Quad, Range,
-    Reset, Row, Slider, Space, Tab, ToolDefinition, Unit, slider_step,
+    ChoiceStyle, Control, ControlKind, Group, GroupKind, Picker, PickerKind, ProcessingDefinition,
+    Quad, Range, Reset, Row, Slider, Space, Tab, ToolDefinition, Unit, slider_step,
 };
 use crate::{Base, Controls, Owned, ProcessingTool, Setting, ToolValues};
 
@@ -408,39 +408,51 @@ const fn rotation_row(control: &'static str) -> Row {
     Row::Slider(Slider::new(control).decimals(1).no_fill())
 }
 
-/// darktable's Settings page: the exposure box, the basic curve box, then its three
-/// collapsible sections, as `gui_init` builds them without the optional curve tab.
-static SETTINGS: [Row; 15] = [
-    Row::Label {
+/// darktable's Settings page: the exposure box and the basic curve box under their section
+/// labels, then its three collapsible sections, as `gui_init` builds them without the
+/// optional curve tab.
+static SETTINGS: [Row; 5] = [
+    Row::Group(Group {
         id: "input_exposure_range",
-    },
-    picked(WHITE, "white", (1.0, 10.0)),
-    picked(BLACK, "black", (-20.0, -1.0)),
-    // darktable sets only its soft maximum, 0.5; its soft minimum is its hard one.
-    soft(SCALING, -50.0, 50.0),
-    // darktable's picker setting both exposures, and its camera button on the same line.
-    Row::Action {
-        id: "auto_tune_levels",
-    },
-    Row::Action {
-        id: "read_exposure",
-    },
-    Row::Label {
+        kind: GroupKind::Plain,
+        rows: &[
+            picked(WHITE, "white", (1.0, 10.0)),
+            picked(BLACK, "black", (-20.0, -1.0)),
+            // darktable sets only its soft maximum, 0.5; its soft minimum is its hard one.
+            soft(SCALING, -50.0, 50.0),
+            // darktable's picker setting both exposures, and its camera button on the same
+            // line.
+            Row::Action {
+                id: "auto_tune_levels",
+            },
+            Row::Action {
+                id: "read_exposure",
+            },
+        ],
+    }),
+    Row::Group(Group {
         id: "basic_curve_parameters",
-    },
-    // The pivot's track spans the input range, here its default (`Agx::range`).
-    picked(PIVOT, "pivot", (-10.0, 6.5)),
-    Row::Slider(Slider::new("curve_pivot_y_linear_output").quad(Quad::Picker("pivot_output"))),
-    soft("curve_contrast_around_pivot", 0.1, 5.0),
-    soft("curve_shoulder_power", 1.0, 5.0),
-    soft("curve_toe_power", 1.0, 5.0),
+        kind: GroupKind::Plain,
+        rows: &[
+            // The pivot's track spans the input range, here its default (`Agx::range`).
+            picked(PIVOT, "pivot", (-10.0, 6.5)),
+            Row::Slider(
+                Slider::new("curve_pivot_y_linear_output").quad(Quad::Picker("pivot_output")),
+            ),
+            soft("curve_contrast_around_pivot", 0.1, 5.0),
+            soft("curve_shoulder_power", 1.0, 5.0),
+            soft("curve_toe_power", 1.0, 5.0),
+        ],
+    }),
     // darktable's read-only graph of the curve, once a definition can name one.
-    Row::Group {
+    Row::Group(Group {
         id: "show_curve",
+        kind: GroupKind::Collapsible,
         rows: &[],
-    },
-    Row::Group {
+    }),
+    Row::Group(Group {
         id: "advanced_curve_parameters",
+        kind: GroupKind::Collapsible,
         rows: &[
             slider("curve_linear_ratio_above_pivot"),
             soft("curve_target_display_white_ratio", 50.0, 100.0),
@@ -456,9 +468,10 @@ static SETTINGS: [Row; 15] = [
                 rows: &[soft("curve_gamma", 1.0, 5.0)],
             },
         ],
-    },
-    Row::Group {
+    }),
+    Row::Group(Group {
         id: "look",
+        kind: GroupKind::Collapsible,
         rows: &[
             soft("look_slope", 0.0, 2.0),
             soft("look_lift", -0.5, 0.5),
@@ -466,7 +479,7 @@ static SETTINGS: [Row; 15] = [
             soft("look_saturation", 0.0, 200.0),
             slider("look_original_hue_mix_ratio"),
         ],
-    },
+    }),
 ];
 
 /// darktable's Primaries page: the base and Disable adjustments, then, while adjustments
@@ -488,39 +501,45 @@ static PRIMARIES_PAGE: [Row; 3] = [
             Row::Action {
                 id: "reset_primaries",
             },
-            Row::Label {
+            Row::Group(Group {
                 id: "before_tone_mapping",
-            },
-            purity_row("red_inset"),
-            rotation_row("red_rotation"),
-            purity_row("green_inset"),
-            rotation_row("green_rotation"),
-            purity_row("blue_inset"),
-            rotation_row("blue_rotation"),
-            Row::Label {
-                id: "after_tone_mapping",
-            },
-            Row::Toggle {
-                control: "completely_reverse_primaries",
-            },
-            // darktable's button on Reverse all's line, insensitive while it is on.
-            Row::Action {
-                id: "set_from_above",
-            },
-            Row::When {
-                control: "completely_reverse_primaries",
-                is: &["false"],
+                kind: GroupKind::Plain,
                 rows: &[
-                    slider("master_outset_ratio"),
-                    slider("master_unrotation_ratio"),
-                    purity_row("red_outset"),
-                    rotation_row("red_unrotation"),
-                    purity_row("green_outset"),
-                    rotation_row("green_unrotation"),
-                    purity_row("blue_outset"),
-                    rotation_row("blue_unrotation"),
+                    purity_row("red_inset"),
+                    rotation_row("red_rotation"),
+                    purity_row("green_inset"),
+                    rotation_row("green_rotation"),
+                    purity_row("blue_inset"),
+                    rotation_row("blue_rotation"),
                 ],
-            },
+            }),
+            Row::Group(Group {
+                id: "after_tone_mapping",
+                kind: GroupKind::Plain,
+                rows: &[
+                    Row::Toggle {
+                        control: "completely_reverse_primaries",
+                    },
+                    // darktable's button on Reverse all's line, insensitive while it is on.
+                    Row::Action {
+                        id: "set_from_above",
+                    },
+                    Row::When {
+                        control: "completely_reverse_primaries",
+                        is: &["false"],
+                        rows: &[
+                            slider("master_outset_ratio"),
+                            slider("master_unrotation_ratio"),
+                            purity_row("red_outset"),
+                            rotation_row("red_unrotation"),
+                            purity_row("green_outset"),
+                            rotation_row("green_unrotation"),
+                            purity_row("blue_outset"),
+                            rotation_row("blue_unrotation"),
+                        ],
+                    },
+                ],
+            }),
         ],
     },
 ];
@@ -694,14 +713,26 @@ mod tests {
         assert_eq!(controls, shown);
         let tabs: Vec<Option<&str>> = DEFINITION.tool.tabs.iter().map(|tab| tab.id).collect();
         assert_eq!(tabs, [Some("settings"), Some("primaries")]);
-        let groups: Vec<&str> = DEFINITION
+        let groups: Vec<(&str, GroupKind)> = DEFINITION
             .rows()
             .filter_map(|row| match row {
-                Row::Group { id, .. } => Some(*id),
+                Row::Group(group) => Some((group.id, group.kind)),
                 _ => None,
             })
             .collect();
-        assert_eq!(groups, ["show_curve", "advanced_curve_parameters", "look"]);
+        let (plain, collapsible) = (GroupKind::Plain, GroupKind::Collapsible);
+        assert_eq!(
+            groups,
+            [
+                ("input_exposure_range", plain),
+                ("basic_curve_parameters", plain),
+                ("show_curve", collapsible),
+                ("advanced_curve_parameters", collapsible),
+                ("look", collapsible),
+                ("before_tone_mapping", plain),
+                ("after_tone_mapping", plain),
+            ]
+        );
         let actions: Vec<&str> = DEFINITION
             .rows()
             .filter_map(|row| match row {

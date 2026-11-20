@@ -31,7 +31,8 @@
 //!   come and the tool's end, the Summary with the Export button.
 
 use crate::{
-    ControlKind, Reset, Row, SettingRow, SettingWords, Tab, ToolDefinition, Track, Widget, Word,
+    ControlKind, Group, GroupKind, Reset, Row, SettingRow, SettingWords, Tab, ToolDefinition,
+    Track, Widget, Word,
 };
 
 use super::UtilityDefinition;
@@ -236,67 +237,74 @@ pub const EXPORT: UtilityDefinition = UtilityDefinition {
         tabs: &[Tab {
             id: None,
             rows: &[
-                Row::Label {
+                Row::Group(Group {
                     id: "storage_options",
-                },
-                custom(Widget::ExportStorage),
-                custom(Widget::ExportPath),
-                setting(
-                    "on_conflict",
-                    Some("export.disk.on_conflict"),
-                    choice(
-                        &[
-                            "create_unique_filename",
-                            "overwrite",
-                            "overwrite_if_changed",
-                            "skip",
-                        ],
-                        0,
-                    ),
-                    &ON_CONFLICT,
-                ),
-                Row::Label {
+                    kind: GroupKind::Plain,
+                    rows: &[
+                        custom(Widget::ExportStorage),
+                        custom(Widget::ExportPath),
+                        setting(
+                            "on_conflict",
+                            Some("export.disk.on_conflict"),
+                            choice(
+                                &[
+                                    "create_unique_filename",
+                                    "overwrite",
+                                    "overwrite_if_changed",
+                                    "skip",
+                                ],
+                                0,
+                            ),
+                            &ON_CONFLICT,
+                        ),
+                    ],
+                }),
+                Row::Group(Group {
                     id: "format_options",
-                },
-                setting("format", Some("export.format"), choice(FORMATS, 2), &FORMAT),
-                Row::WhenSetting {
-                    setting: "format",
-                    is: &["jpeg"],
+                    kind: GroupKind::Plain,
                     rows: &[
-                        setting(
-                            "jpeg_quality",
-                            Some("export.jpeg.quality"),
-                            whole(5.0, 100.0, 95.0),
-                            &QUALITY,
-                        ),
-                        setting(
-                            "jpeg_subsample",
-                            Some("export.jpeg.subsample"),
-                            choice(&["auto", "yuv444", "yuv440", "yuv422", "yuv420"], 0),
-                            &SUBSAMPLE,
-                        ),
+                        setting("format", Some("export.format"), choice(FORMATS, 2), &FORMAT),
+                        Row::WhenSetting {
+                            setting: "format",
+                            is: &["jpeg"],
+                            rows: &[
+                                setting(
+                                    "jpeg_quality",
+                                    Some("export.jpeg.quality"),
+                                    whole(5.0, 100.0, 95.0),
+                                    &QUALITY,
+                                ),
+                                setting(
+                                    "jpeg_subsample",
+                                    Some("export.jpeg.subsample"),
+                                    choice(&["auto", "yuv444", "yuv440", "yuv422", "yuv420"], 0),
+                                    &SUBSAMPLE,
+                                ),
+                            ],
+                        },
+                        Row::WhenSetting {
+                            setting: "format",
+                            is: &["png"],
+                            rows: &[
+                                setting(
+                                    "png_bit_depth",
+                                    Some("export.png.bit_depth"),
+                                    choice(&["bits_8", "bits_16"], 0),
+                                    &BIT_DEPTH,
+                                ),
+                                setting(
+                                    "png_compression",
+                                    Some("export.png.compression"),
+                                    whole(0.0, 9.0, 5.0),
+                                    &COMPRESSION,
+                                ),
+                            ],
+                        },
                     ],
-                },
-                Row::WhenSetting {
-                    setting: "format",
-                    is: &["png"],
-                    rows: &[
-                        setting(
-                            "png_bit_depth",
-                            Some("export.png.bit_depth"),
-                            choice(&["bits_8", "bits_16"], 0),
-                            &BIT_DEPTH,
-                        ),
-                        setting(
-                            "png_compression",
-                            Some("export.png.compression"),
-                            whole(0.0, 9.0, 5.0),
-                            &COMPRESSION,
-                        ),
-                    ],
-                },
-                Row::Group {
+                }),
+                Row::Group(Group {
                     id: "global",
+                    kind: GroupKind::Collapsible,
                     rows: &[
                         setting(
                             "size_mode",
@@ -341,7 +349,7 @@ pub const EXPORT: UtilityDefinition = UtilityDefinition {
                         ),
                         setting("style", None, choice(&["none"], 0), &STYLE),
                     ],
-                },
+                }),
                 custom(Widget::ExportLater),
                 custom(Widget::ExportEnd),
             ],

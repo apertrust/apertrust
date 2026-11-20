@@ -31,11 +31,11 @@ use crate::components::{
     FindBar, FindBarAction, GridCell, Histogram, HistogramBins, IconButton, Job, JobFailure,
     JobMessage, JobPhase, Jobs, Margin, Mark, Marker, MaskHistogram, MenuButtonStyle, PanelBody,
     PanelEdge, PanelEdgeAction, PanelTab, Patch, Patches, PhotoCaption, PhotoFrame, PickerButton,
-    PickerMarks, PickerPlace, Place, Quad, Rail, RailLine, RailNode, ReadoutRow, Reference,
-    ReferenceRow, SaveState, Scale, Scope, ScopeView, Section, SectionAction, Segmented,
+    PickerMarks, PickerPlace, Place, PlainGroup, Quad, Rail, RailLine, RailNode, ReadoutRow,
+    Reference, ReferenceRow, SaveState, Scale, Scope, ScopeView, Section, SectionAction, Segmented,
     SliderAction, SliderRow, Swatch, SwatchFill, Swatches, Switch, TabBar, TabBarAction, Thumb,
     Toggle, ToggleRow, ToolButton, Toolbar, ToolbarAction, Track, VectorscopeBins, ViewerBar,
-    ViewerBarAction, WarningRow, WaveformBins, Zoom, group_label,
+    ViewerBarAction, WarningRow, WaveformBins, Zoom,
 };
 use crate::fonts::{MEDIUM, SEMIBOLD};
 use crate::i18n::{Args, Locale, Translator};
@@ -1709,18 +1709,19 @@ const GROUPS: [(&str, [GroupRow; 2]); 3] = [
     ),
 ];
 
-/// A static group label over its row, then collapsible groups: one closed, one closed with
-/// a control in it set, which shows the dot, one open, and one disabled, with nothing
-/// behind it yet. A group counts as set the
-/// sliders in it off their defaults, as the app reads them from the session's mirror.
+/// A plain group holding its row, then collapsible groups: one closed, one closed with a
+/// control in it set, which shows the dot, one open, and one disabled, with nothing behind
+/// it yet. A group counts as set the sliders in it off their defaults, as the app reads them
+/// from the session's mirror.
 fn groups(ui: &mut Ui, demo: &mut Demo) {
-    group_label(ui, "Basic curve parameters");
-    SliderRow::new("Contrast", 3.0, 0.1..=5.0)
-        .name("AgX contrast")
-        .default_value(3.0)
-        .decimals(2)
-        .no_fill()
-        .show(ui);
+    PlainGroup::new("Basic curve parameters").show(ui, |ui| {
+        SliderRow::new("Contrast", 3.0, 0.1..=5.0)
+            .name("AgX contrast")
+            .default_value(3.0)
+            .decimals(2)
+            .no_fill()
+            .show(ui);
+    });
     for (g, (title, rows)) in GROUPS.iter().enumerate() {
         let sliders = &mut demo.group_sliders[2 * g..2 * g + 2];
         let set = sliders.iter().filter(|s| s.value != s.default).count();
@@ -2349,14 +2350,16 @@ fn exposure_body(ui: &mut Ui, tab: usize) {
             .unit(PERCENT)
             .show(ui);
     } else {
-        group_label(ui, "Contrast");
-        SliderRow::new("Pivot", 18.0, 1.0..=50.0)
-            .name("Contrast pivot")
-            .default_value(18.0)
-            .decimals(1)
-            .unit(PERCENT)
-            .no_fill()
-            .show(ui);
+        // The tab's first row, so no space above it.
+        PlainGroup::new("Contrast").first(true).show(ui, |ui| {
+            SliderRow::new("Pivot", 18.0, 1.0..=50.0)
+                .name("Contrast pivot")
+                .default_value(18.0)
+                .decimals(1)
+                .unit(PERCENT)
+                .no_fill()
+                .show(ui);
+        });
     }
 }
 

@@ -88,7 +88,7 @@ What changes the frame and corrects the lens: where the pixels land.
 | Chromatic aberrations | chromatic aberrations | `cacorrectrgb`, camera RGB 13.5 | Background only | Planned (Phase 3) | — |
 
 - **Crop** has no angle of its own, as darktable's crop has none: its straighten line writes Rotate and perspective's rotation.
-- **Chromatic aberrations** keeps darktable's advanced parameters on its main page, under a group label (decision 29).
+- **Chromatic aberrations** keeps darktable's advanced parameters on its main page, in a plain group (decisions 29 and 100).
 
 ### Effects
 
@@ -157,8 +157,9 @@ Port specs, tool pages and code cite these by number.
    - Nothing else shows that it is off: no dimming, no power button. Its reset is available only once it is on, and screen readers hear "Not applied".
 5. **darktable's page, as darktable has it** (decisions 2 and 29). There is no Advanced controls toggle in the first pass.
    - A processing tool starts closed, as darktable's processing modules start collapsed, and so does Export, while Collections, Scopes and History start open, each declared in its `ToolDefinition` (`open_at_first`, decision 93); a tool's open state, once the person changes it, is kept in settings, never in the edit.
-   - darktable's section labels are group labels.
-   - Each of darktable's collapsible sections is a **collapsible group**, closed at first, its open state kept in settings, never in the edit. A group never holds another.
+   - darktable's section labels are **plain groups**, each a title over the rows it holds, always open (decision 100).
+   - Each of darktable's collapsible sections is a **collapsible group**, closed at first, but for a group a utility declares open at first, as the Export tool's Global options (decision 90), its open state kept in settings, never in the edit. A plain group may sit inside a collapsible one; no other group sits inside a group.
+   - A group that is the first row of a tool's body, a tab or a group draws no space above it, so every tool's first row is 4 points under its header, or 8 under its tab strip, whatever the row (decision 100).
    - **Every darktable tab is a content tab**, in darktable's order, masking, masks, options and advanced included. Rows darktable shows under every tab show whichever tab is chosen.
    - **Rows follow darktable's conditions.** A row darktable shows only in one mode is hidden otherwise. A control that cannot act in the current state is drawn disabled, never hidden (decision 30), but for Exposure's two camera rows, hidden where the photo gives them nothing to do (`ProcessingTool::visible`, decision 88); hiding any other row needs a decision of its own. One parameter shown under two labels by mode has one row per mode.
    - **Exposure is the one exception** (decision 88): its page is redesigned. A Manual | Automatic switch replaces the Mode list, and Picker target with a reference replaces Area exposure mapping and measure mode; it adds Last pick with its warnings and labels with the camera's value, and drops Auto, while its controls, bindings and processing stay darktable's ([exposure.md](exposure.md#the-page-as-redesigned)).

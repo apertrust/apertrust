@@ -20,8 +20,8 @@
 
 use apertrust_ui::components::{
     ActionRow, Button, Checkbox, Choice, ChoiceAction, ChoiceBox, ChoiceStyle, CollapsibleGroup,
-    IconButton, Mark, Marker, Quad, ReadoutRow, Segmented, SliderAction, SliderRow, Swatch,
-    SwatchFill, Swatches, ToggleRow, WarningRow,
+    IconButton, Mark, Marker, PlainGroup, Quad, ReadoutRow, Segmented, SliderAction, SliderRow,
+    Swatch, SwatchFill, Swatches, ToggleRow, WarningRow,
 };
 use apertrust_ui::{Builtin, Icon, Locale, Theme, Translator};
 use egui::accesskit::Role;
@@ -3653,6 +3653,100 @@ fn collapsible_groups_focused_and_under_the_pointer() {
         });
     assert!(band, "no hover band across Margins");
     harness.snapshot("collapsible-groups-focused-hovered");
+}
+
+/// A closed collapsible group's row, a panel line, then a group of `kind`, plain or
+/// collapsible and open, after it, as a tool panel stacks them: what is drawn between them
+/// is the second group's own space.
+fn after_a_row(collapsible: bool) -> Harness<'static> {
+    Harness::builder()
+        .with_size(egui::vec2(344.0, 160.0))
+        .with_context_setup(|ctx| apertrust_ui::install(ctx, Theme::builtin(Builtin::Dark)))
+        .build_ui(move |ui| {
+            ui.spacing_mut().item_spacing.y = 0.0;
+            CollapsibleGroup::new("Margins", false)
+                .first(true)
+                .show(ui, |_| {});
+            let slider = |ui: &mut egui::Ui| {
+                SliderRow::new("Lift", 0.0, -1.0..=1.0).show(ui);
+            };
+            if collapsible {
+                CollapsibleGroup::new("Look", true).show(ui, slider);
+            } else {
+                PlainGroup::new("Look").show(ui, slider);
+            }
+        })
+}
+
+/// Not the first row of its container, a group keeps its separation (decision 100): 8
+/// points above a plain group and 4 above a collapsible one.
+#[test]
+fn a_group_after_other_rows_keeps_its_separation() {
+    let t = Theme::builtin(Builtin::Dark);
+    for (collapsible, gap) in [(false, t.spacing.m), (true, t.spacing.xs)] {
+        let mut harness = after_a_row(collapsible);
+        harness.run();
+        let above = harness
+            .get_by_role_and_label(Role::Button, "Margins")
+            .rect();
+        let role = if collapsible {
+            Role::Button
+        } else {
+            Role::Group
+        };
+        let group = harness.get_by_role_and_label(role, "Look").rect();
+        assert_eq!(
+            group.top() - above.bottom(),
+            gap,
+            "collapsible: {collapsible}"
+        );
+    }
+}
+
+/// Both kinds are a group named by its title to screen readers, its rows inside it
+/// (decision 100): a plain group's title is no node of its own, the group's name saying
+/// it, and it is no button; a collapsible group's row is its button, its rows a group while
+/// it is open.
+#[test]
+fn both_kinds_are_groups_to_screen_readers() {
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(344.0, 200.0))
+        .with_context_setup(|ctx| apertrust_ui::install(ctx, Theme::builtin(Builtin::Dark)))
+        .build_ui(|ui| {
+            ui.spacing_mut().item_spacing.y = 0.0;
+            PlainGroup::new("Storage options")
+                .first(true)
+                .show(ui, |ui| {
+                    SliderRow::new("Lift", 0.0, -1.0..=1.0).show(ui);
+                });
+            CollapsibleGroup::new("Look", true).show(ui, |ui| {
+                SliderRow::new("Shift", 0.0, -1.0..=1.0).show(ui);
+            });
+        });
+    harness.run();
+    let plain = harness.get_by_role_and_label(Role::Group, "Storage options");
+    plain.get_by_role_and_label(Role::Slider, "Lift");
+    assert!(
+        plain
+            .query_by_role_and_label(Role::Slider, "Shift")
+            .is_none()
+    );
+    assert!(
+        harness
+            .query_by_role_and_label(Role::Button, "Storage options")
+            .is_none()
+    );
+    assert!(harness.query_by_role(Role::Label).is_none());
+    let collapsible = harness.get_by_role_and_label(Role::Group, "Look");
+    collapsible.get_by_role_and_label(Role::Slider, "Shift");
+    assert!(
+        collapsible
+            .query_by_role_and_label(Role::Slider, "Lift")
+            .is_none()
+    );
+    // Each group's bounds hold its rows, so a screen reader shows where it is.
+    let lift = harness.get_by_role_and_label(Role::Slider, "Lift").rect();
+    assert!(plain.rect().contains_rect(lift), "{:?}", plain.rect());
 }
 
 /// A checkbox, a text button and an icon button inside a disabled parent are disabled as

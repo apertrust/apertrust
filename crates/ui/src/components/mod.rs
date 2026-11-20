@@ -41,6 +41,7 @@ mod collapsible_group;
 mod curve;
 mod equalizer;
 mod grid_cell;
+mod group;
 mod histogram;
 mod icon_button;
 mod jobs;
@@ -86,6 +87,7 @@ pub use grid_cell::{
     CellAction, CellPicture, CellRating, CellStatus, ColourLabel, ColourLabels, GridCell,
     GridCellOutput,
 };
+pub use group::PlainGroup;
 pub use histogram::{
     Channel, Clipped, Histogram, HistogramAction, HistogramBins, Scale, Scope, ScopeView,
     VectorscopeBins, WaveformBins,
@@ -111,7 +113,7 @@ pub use segmented::Segmented;
 pub use slider::{Mark, Quad, SliderAction, SliderRow, Track};
 pub use swatches::{Swatch, SwatchFill, Swatches};
 pub use switch::Switch;
-pub use tabs::{Tabs, group_label};
+pub use tabs::Tabs;
 pub use text_field::{PathField, PathOutput, TextField, Variable};
 pub use toggle_row::ToggleRow;
 pub use toolbar::{Available, MenuButtonStyle, SaveState, Toolbar, ToolbarAction, caption_button};
