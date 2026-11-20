@@ -628,9 +628,8 @@ pub enum Target {
     /// pickers take them (`apertrust_tools::pick::Region::Point`, 0 to 1 across the photo
     /// as export renders it), none when the menu opens from the keys.
     Photo { point: Option<[f32; 2]> },
-    /// The selection, a thumbnail's menu's: its items act on the selection, the active
-    /// photo alone until several can be selected, and opening the menu changes neither
-    /// the selection nor the photo in the Viewer.
+    /// A thumbnail's photo, which its menu selects as it opens: the selection, the active
+    /// photo alone until several can be selected.
     Selection,
     /// The tool or utility whose ⋯ it is, by its id: only its own items join the menu.
     Tool(&'static str),
@@ -925,7 +924,8 @@ fn added(
 
 /// [`context`]'s menu with the app's items at `place` and `added`, sorted by section and
 /// order, a line wherever the section changes. An action the registry does not declare is
-/// left out, and so is a submenu left with none.
+/// left out, and in a thumbnail's menu one that acts on one photo alone while several are
+/// selected ([`ONE_PHOTO`]); so is a submenu left with none.
 #[expect(
     clippy::too_many_arguments,
     reason = "the menu's place, target and state"
@@ -946,9 +946,10 @@ fn built(
         let entries = drawn(&BACKGROUND, os, keymap, state, lists, &steps, tr).entries;
         return popup::Request::pull_down(anchor, name(place, target, tr), entries);
     };
+    let several = *target == Target::Selection && state.photos > 1;
     let options = open == apertrust_tools::Place::Options;
     let item = |id: &String| {
-        let id = chosen(id)?;
+        let id = chosen(id).filter(|id| !(several && ONE_PHOTO.contains(id)))?;
         let item = action_item(id, keymap, state, &steps, os, tr)?;
         // In ⋯ an item says what it does, as a pull-down's items do (decision 93).
         Some(match actions::options_tip(id, state).filter(|_| options) {
@@ -988,6 +989,11 @@ fn built(
     }
     popup::Request::pull_down(anchor, name(place, target, tr), entries)
 }
+
+/// The actions a thumbnail's menu hides while several photos are selected, since they act
+/// on one photo alone (decision 91): Reset, whose `Command::Reset` resets the open photo
+/// only, until resetting several is decided.
+const ONE_PHOTO: [ActionId; 1] = [ActionId::RESET];
 
 /// What screen readers call the menu at `place`: the surround's is Background, as View ›
 /// Background's submenu is; ⋯'s its tool's or utility's options, as its button is.
@@ -2833,8 +2839,8 @@ mod tests {
                 }
             }
         }
-        // History adds Reset alone to the photo's menu, nothing to a thumbnail's, and its
-        // ⋯ holds its four.
+        // History adds Reset alone to the photo's and a thumbnail's menus, and its ⋯ holds
+        // its four.
         let history = apertrust_tools::utility::utility("history").unwrap();
         let at = |place| {
             (history.tool.menus.iter())
@@ -2842,8 +2848,13 @@ mod tests {
                 .map(|item| item.entry)
                 .collect::<Vec<_>>()
         };
-        assert_eq!(at(Open::Photo), [MenuEntry::Action(ActionId::RESET.0)]);
-        assert_eq!(at(Open::Thumbnail), []);
+        for place in [Open::Photo, Open::Thumbnail] {
+            assert_eq!(
+                at(place),
+                [MenuEntry::Action(ActionId::RESET.0)],
+                "{place:?}"
+            );
+        }
         let options = [
             ActionId::COMPRESS_HISTORY,
             ActionId::TRUNCATE_HISTORY,
@@ -2851,7 +2862,7 @@ mod tests {
             ActionId::DISCARD_HISTORY,
         ];
         assert_eq!(at(Open::Options), options.map(|id| MenuEntry::Action(id.0)));
-        assert_eq!(history.tool.menus.len(), 5);
+        assert_eq!(history.tool.menus.len(), 6);
         for tool in definitions() {
             for action in tool.tool.menus.iter().flat_map(|item| item.entry.actions()) {
                 let id = format!("tool-{}-{action}", tool.tool.id);
@@ -3203,11 +3214,11 @@ mod tests {
     }
 
     /// The photo's and a thumbnail's menus as the app opens them (decision 91), by section:
-    /// on the photo History's Reset in Edit's, the app's Export… in Export's and
-    /// Background ▸ in View's; on a thumbnail Export… alone, Reset left out since its photo
-    /// may not be the one open.
+    /// History's Reset in Edit's, the app's Export… in Export's and, on the photo,
+    /// Background ▸ in View's. Reset is hidden from a thumbnail's while several photos are
+    /// selected, since it acts on one photo alone.
     #[test]
-    fn the_photo_s_and_a_thumbnail_s_menus_hold_their_items_in_order() {
+    fn the_photo_s_and_a_thumbnail_s_menus_hold_reset_export_and_background_in_order() {
         let ctx = egui::Context::default();
         ctx.set_os(OperatingSystem::Nix);
         apertrust_ui::set_locale(&ctx, Locale::EnGb);
@@ -3282,9 +3293,9 @@ mod tests {
         assert_eq!(words(&menu), ["Export…", "-", "Background ▸"]);
         let menu = open(Open::Thumbnail, Target::Selection, &one);
         assert_eq!(menu.name, "Thumbnail");
-        assert_eq!(words(&menu), ["Export…"]);
-        // Several selected: a thumbnail's acts on them; the photo's on the active photo, as
-        // Edit › Reset does.
+        assert_eq!(words(&menu), ["Reset", "-", "Export…"]);
+        // Several selected: a thumbnail's acts on them, and Reset on one alone; the photo's
+        // on the active photo, as Edit › Reset does.
         let several = State { photos: 2, ..one };
         let menu = open(Open::Thumbnail, Target::Selection, &several);
         assert_eq!(words(&menu), ["Export…"]);

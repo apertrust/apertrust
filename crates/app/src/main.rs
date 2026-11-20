@@ -5294,7 +5294,8 @@ impl App {
     /// active one's cell active. Each cell draws its thumbnail once it has come, and those
     /// in sight without one are asked for (`thumbnails.rs`), a photo alone's from its own
     /// file, nothing of its folder read. A cell's right-click, or its menu keys, opens its
-    /// photo's menu, opening no photo ([`App::thumbnail_menu`]). Returns the action a choice in the browser bar's menus,
+    /// photo's menu, the photo made active first unless it is already
+    /// ([`App::thumbnail_menu`]). Returns the action a choice in the browser bar's menus,
     /// its Labels or the cell's menu runs.
     fn browser(&mut self, ui: &mut egui::Ui, lines: usize) -> Option<ActionId> {
         self.thumbnails.sync(ui.ctx(), &self.mirror.folder);
@@ -5351,12 +5352,14 @@ impl App {
                 panel = panel.empty_hint(hint);
             }
             let output = panel.show(ui);
-            // The photos' paths in the Browser's order, which a gesture's index counts.
-            let picked = output.action.map(|action| {
-                let paths: Vec<PathBuf> = (0..order.len()).filter_map(path).collect();
-                (action, paths, listing.is_none())
-            });
+            // The photos' paths in the Browser's order, which a gesture's index counts. A
+            // cell's menu opens its photo first unless it is the active one (decision 91).
             let menu = output.menu;
+            let opens = (menu.as_ref()).and_then(|menu| made_active(menu.photo, active));
+            let picked = (output.action.is_some() || opens.is_some()).then(|| {
+                let paths: Vec<PathBuf> = (0..order.len()).filter_map(path).collect();
+                (output.action, opens, paths, listing.is_none())
+            });
             let shown = order.get(output.shown).unwrap_or_default();
             let asked = (self.thumbnails_asked).command(&mirror.folder, shown, size);
             (picked, asked, output.bar, menu)
@@ -5364,10 +5367,15 @@ impl App {
         if let Some(asked) = asked {
             self.session.send(Command::Library(asked));
         }
-        if let Some((action, order, alone)) = picked {
+        if let Some((action, opens, order, alone)) = picked {
             let session = &self.session;
             let send = &mut |command| session.send(command);
-            selection::browse(action, &order, alone, &mut self.mirror, send);
+            if let Some(action) = action {
+                selection::browse(action, &order, alone, &mut self.mirror, send);
+            }
+            if let Some(i) = opens {
+                selection::open_for_menu(i, &order, alone, &mut self.mirror, send);
+            }
         }
         let id = ui.make_persistent_id("thumbnail menu");
         let chosen = self.thumbnail_menu(ui.ctx(), id, menu);
@@ -5375,8 +5383,9 @@ impl App {
     }
 
     /// A thumbnail's menu (decision 91), the popup `id`, asked for on a cell this frame by
-    /// `asked`: opened as the photo's menu is, leaving the photo in the Viewer and the
-    /// selection as they are, drawn while open; returns the action of the item chosen in it.
+    /// `asked`, its photo opened first by [`App::browser`] where it was not the active one:
+    /// opened as the photo's menu is, Reset hidden while several photos are selected, drawn
+    /// while open; returns the action of the item chosen in it.
     fn thumbnail_menu(
         &mut self,
         ctx: &egui::Context,
@@ -6187,6 +6196,13 @@ fn tool_action_change(values: &Values, tool: &'static str, action: &'static str)
         action,
         values: controls,
     }
+}
+
+/// The photo a thumbnail's menu makes active as it opens, by a right-click or its keys
+/// (decision 91): its cell's, `photo`, unless it is the `active` one, opened as a click on
+/// its cell opens it, so the menu acts on the photo it was opened on.
+fn made_active(photo: usize, active: Option<usize>) -> Option<usize> {
+    (active != Some(photo)).then_some(photo)
 }
 
 /// The point `at` in the coordinates of the photo drawn at `photo`, as pickers take them: 0
@@ -14690,8 +14706,18 @@ mod tests {
         assert_eq!((writes[0].0, writes[0].2), ("orientation", true));
     }
 
-    /// A frame with a thumbnail's menu opened on a right-click anywhere while the photo
-    /// `asked` for is open, `live` or still opening, and what was chosen in it.
+    /// A thumbnail's menu makes its cell's photo active first, unless it is already: the
+    /// menu never acts on another photo than the one it opened on.
+    #[test]
+    fn a_thumbnail_s_menu_makes_its_photo_active_first() {
+        assert_eq!(made_active(3, Some(1)), Some(3));
+        assert_eq!(made_active(3, None), Some(3));
+        assert_eq!(made_active(3, Some(3)), None);
+    }
+
+    /// A frame with a thumbnail's menu opened on a right-click anywhere for the photo
+    /// `asked` for, `live` or still opening, as one a right-click has just made active is,
+    /// and what was chosen in it.
     struct Thumbnail {
         shell: Shell,
         asked: PathBuf,
@@ -14777,8 +14803,8 @@ mod tests {
         }
     }
 
-    /// Decision 91: a thumbnail's menu opened while the photo open is still opening shows
-    /// Export… disabled, waiting; once the photo is live it is enabled in the menu still
+    /// Decision 91: a thumbnail's menu opened on a photo still opening shows Reset and
+    /// Export… disabled, waiting; once the photo is live they are enabled in the menu still
     /// open, built again in place of itself, with no reopening.
     #[test]
     fn a_thumbnail_s_menu_enables_what_waited_once_its_photo_is_live() {
@@ -14788,10 +14814,10 @@ mod tests {
             let menu = harness.get_by_role_and_label(Role::Menu, "Thumbnail");
             !menu.get_by_label(name).accesskit_node().is_disabled()
         };
-        assert!(!enabled(&harness, "Export…"));
+        assert!(!enabled(&harness, "Reset") && !enabled(&harness, "Export…"));
         harness.state_mut().live = true;
         harness.run();
-        assert!(enabled(&harness, "Export…"));
+        assert!(enabled(&harness, "Reset") && enabled(&harness, "Export…"));
     }
 
     /// Decision 91: the menu acts on the photo it opened for. Another photo made active
