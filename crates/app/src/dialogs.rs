@@ -19,8 +19,7 @@
 //! Export tool's folder button's, which asks for the folder its files go to; and the log
 //! window's save dialog ([`Saving`]).
 //!
-//! Open… shows the raws the decoder reads and nothing else, so a library's or a project's
-//! file is greyed out in it until libraries and projects open (Phase 5).
+//! Open… shows the raws the decoder reads and nothing else.
 //!
 //! They are rfd's asynchronous dialogs, so the window keeps drawing and the engine keeps
 //! rendering while one is open: a blocking dialog would run its modal loop inside an

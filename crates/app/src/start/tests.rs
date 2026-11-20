@@ -224,7 +224,7 @@ fn the_ways_in_are_in_the_first_column_ending_level_with_open() {
     let harness = window(sample());
     let split = SIZE.x / 3.0;
     let button = |name: &str| harness.get_by_role_and_label(Role::Button, name).rect();
-    let ways = ["New Library…", "New Project…", "Open Folder…", "Browse…"].map(button);
+    let ways = ["New Library…", "Open Folder…"].map(button);
     for pair in ways.windows(2) {
         assert!(pair[0].bottom() <= pair[1].top(), "{pair:?}");
     }
@@ -234,7 +234,7 @@ fn the_ways_in_are_in_the_first_column_ending_level_with_open() {
     }
     let open = button("Open");
     assert!(open.left() >= split, "{open:?}");
-    assert!((ways[3].bottom() - open.bottom()).abs() < 0.5, "{open:?}");
+    assert!((ways[1].bottom() - open.bottom()).abs() < 0.5, "{open:?}");
     for row in harness.get_all_by_role(Role::ListBoxOption) {
         let row = row.rect();
         assert!(row.left() >= split, "{row:?}");
@@ -382,15 +382,13 @@ fn a_missing_recent_offers_locate_and_remove_and_never_opens() {
     assert!(harness.state().asked.is_empty());
 }
 
-/// Libraries, projects and Browse… come later: their buttons are there, disabled, saying
-/// so; with nothing opened yet, the list says so and Open is disabled.
+/// Libraries come later: New Library… is there, disabled, saying so; with nothing opened
+/// yet, the list says so and Open is disabled.
 #[test]
 fn what_comes_later_is_disabled_and_an_empty_list_says_nothing_opened_yet() {
     let harness = window(Vec::new());
-    for later in ["New Library…", "New Project…", "Browse…"] {
-        let button = harness.get_by_role_and_label(Role::Button, later);
-        assert!(button.accesskit_node().is_disabled(), "{later}");
-    }
+    let new_library = harness.get_by_role_and_label(Role::Button, "New Library…");
+    assert!(new_library.accesskit_node().is_disabled());
     harness.get_by_label("Nothing opened yet");
     let open = harness.get_by_role_and_label(Role::Button, "Open");
     assert!(open.accesskit_node().is_disabled());

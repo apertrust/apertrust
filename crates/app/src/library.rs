@@ -478,8 +478,8 @@ fn top_line(ui: &mut egui::Ui, collections: &Collections<'_>, actions: &mut Vec<
     });
 }
 
-/// ＋'s menu, in the wireframe's order: the library and the project, which come later,
-/// drawn disabled, then the ways to open, with their keys.
+/// ＋'s menu, in the wireframe's order: New Library…, which comes later, drawn disabled,
+/// then the ways to open, with their keys.
 fn plus_menu(ctx: &egui::Context, keys: &Keys) -> Vec<Entry> {
     let words = translator(ctx);
     let later = words.text("section-tab-later");
@@ -490,11 +490,6 @@ fn plus_menu(ctx: &egui::Context, keys: &Keys) -> Vec<Entry> {
     vec![
         Entry::Item(
             Item::new("new-library", words.text("action-new-library"))
-                .enabled(false)
-                .tip(later.clone()),
-        ),
-        Entry::Item(
-            Item::new("new-project", words.text("action-new-project"))
                 .enabled(false)
                 .tip(later),
         ),
@@ -1973,8 +1968,8 @@ mod tests {
         assert!(clear.accesskit_node().is_disabled());
     }
 
-    /// ＋ holds the two ways to open with their keys, and the library and the project to
-    /// come, drawn disabled.
+    /// ＋ holds the two ways to open with their keys, and New Library… to come, drawn
+    /// disabled.
     #[test]
     fn plus_opens_a_folder_or_a_photo_and_offers_what_comes_later_disabled() {
         let mut harness = wedding_collections();
@@ -1983,10 +1978,8 @@ mod tests {
             .get_by_role_and_label(Role::Button, "New or open")
             .click();
         harness.run();
-        for later in ["New Library…", "New Project…"] {
-            let item = harness.get_by_role_and_label(Role::MenuItem, later);
-            assert!(item.accesskit_node().is_disabled(), "{later}");
-        }
+        let later = harness.get_by_role_and_label(Role::MenuItem, "New Library…");
+        assert!(later.accesskit_node().is_disabled());
         let folder = harness.get_by_role_and_label(Role::MenuItem, "Open Folder…");
         assert!(!folder.accesskit_node().is_disabled());
         harness.get_by_role_and_label(Role::MenuItem, "Open…");
