@@ -21,7 +21,7 @@
 use apertrust_ui::components::{
     Available, Browser, BrowserAction, Jobs, Margin, MenuButtonStyle, PanelEdge, PanelEdgeAction,
     PhotoCaption, PhotoFrame, SaveState, Thumb, Toggle, Toolbar, ToolbarAction, ViewerBar,
-    ViewerBarAction, Zoom,
+    ViewerBarAction, Zoom, ZoomChoices,
 };
 use apertrust_ui::{Builtin, Locale, Theme, Translator};
 use egui::accesskit::{Action, Role};
@@ -1120,15 +1120,19 @@ fn a_popup_over_the_bar_takes_its_presses() {
 struct Photo {
     guides: bool,
     zoom: Zoom,
-    zoomable: bool,
+    choices: ZoomChoices,
     actions: Vec<ViewerBarAction>,
 }
 
 fn viewer_bar() -> Harness<'static, Photo> {
-    viewer_bar_in(Theme::default(), egui::vec2(1000.0, 420.0), true)
+    viewer_bar_in(
+        Theme::default(),
+        egui::vec2(1000.0, 420.0),
+        ZoomChoices::All,
+    )
 }
 
-fn viewer_bar_in(theme: Theme, size: egui::Vec2, zoomable: bool) -> Harness<'static, Photo> {
+fn viewer_bar_in(theme: Theme, size: egui::Vec2, choices: ZoomChoices) -> Harness<'static, Photo> {
     Harness::builder()
         .with_size(size)
         .with_context_setup(move |ctx| apertrust_ui::install(ctx, theme.clone()))
@@ -1146,7 +1150,7 @@ fn viewer_bar_in(theme: Theme, size: egui::Vec2, zoomable: bool) -> Harness<'sta
                     )
                     .values(Some([142, 128, 113]))
                     .zoom_enabled(true)
-                    .zoomable(state.zoomable)
+                    .zoom_choices(state.choices)
                     .shortcut(ViewerBarAction::Zoom(Zoom::Fit), "Ctrl+0")
                     .shortcut(ViewerBarAction::Zoom(Zoom::Percent(100.0)), "Z")
                     .shortcut(ViewerBarAction::ZoomIn, "Ctrl+=")
@@ -1164,7 +1168,7 @@ fn viewer_bar_in(theme: Theme, size: egui::Vec2, zoomable: bool) -> Harness<'sta
             Photo {
                 guides: false,
                 zoom: Zoom::Fit,
-                zoomable,
+                choices,
                 actions: Vec::new(),
             },
         )
@@ -1311,7 +1315,8 @@ fn an_in_between_scale_shows_rounded_and_checks_nothing() {
 
 #[test]
 fn while_the_viewport_only_fits_every_entry_but_fit_is_disabled() {
-    let mut harness = viewer_bar_in(Theme::default(), egui::vec2(1000.0, 420.0), false);
+    let size = egui::vec2(1000.0, 420.0);
+    let mut harness = viewer_bar_in(Theme::default(), size, ZoomChoices::Fit);
     harness.run();
     let button = harness.get_by_role_and_label(Role::Button, "Zoom");
     assert_eq!(button.accesskit_node().value().as_deref(), Some("Fit"));
@@ -1339,6 +1344,74 @@ fn while_the_viewport_only_fits_every_entry_but_fit_is_disabled() {
         .click();
     harness.run();
     assert_eq!(harness.state().actions, [ViewerBarAction::Zoom(Zoom::Fit)]);
+}
+
+#[test]
+fn small_and_fit_are_enabled_while_the_view_only_fits() {
+    let size = egui::vec2(1000.0, 420.0);
+    let mut harness = viewer_bar_in(Theme::default(), size, ZoomChoices::SmallAndFit);
+    harness.run();
+    // The button says how far zoom goes for now.
+    harness.get_by_role_and_label(Role::Button, "Zoom").hover();
+    harness.run();
+    assert!(
+        harness
+            .query_by_label("Zoom comes with the 100% view")
+            .is_some()
+    );
+    // At Fit: Small, Fit and Zoom out; the rest carry the tooltip.
+    let later = |harness: &Harness<'_, Photo>, name: &str| {
+        harness
+            .get_by(|node| {
+                matches!(node.role(), Role::MenuItem | Role::MenuItemCheckBox)
+                    && node.label().as_deref() == Some(name)
+            })
+            .accesskit_node()
+            .description()
+            .is_some_and(|tip| tip == "Zoom comes with the 100% view")
+    };
+    for (zoom, step) in [(Zoom::Fit, "Zoom out"), (Zoom::Small, "Zoom in")] {
+        harness.state_mut().zoom = zoom;
+        harness.run();
+        harness.get_by_role_and_label(Role::Button, "Zoom").click();
+        harness.run();
+        for name in zoom_lines(&harness) {
+            let (enabled, checked) = zoom_line(&harness, &name);
+            let offered = ["Small", "Fit", step].contains(&name.as_str());
+            assert_eq!(enabled, offered, "{zoom:?}: {name}");
+            assert_eq!(later(&harness, &name), !offered, "{zoom:?}: {name}");
+            let shown = matches!(
+                (zoom, name.as_str()),
+                (Zoom::Fit, "Fit") | (Zoom::Small, "Small")
+            );
+            if checked.is_some() {
+                assert_eq!(checked, Some(shown), "{zoom:?}: {name}");
+            }
+        }
+        harness.key_press(Key::Escape);
+        harness.run();
+    }
+    // Small chosen, and Zoom in from it back to Fit.
+    harness.state_mut().zoom = Zoom::Fit;
+    harness.run();
+    harness.get_by_role_and_label(Role::Button, "Zoom").click();
+    harness.run();
+    harness
+        .get_by_role_and_label(Role::MenuItemCheckBox, "Small")
+        .click();
+    harness.run();
+    let button = harness.get_by_role_and_label(Role::Button, "Zoom");
+    assert_eq!(button.accesskit_node().value().as_deref(), Some("Small"));
+    button.click();
+    harness.run();
+    harness
+        .get_by_role_and_label(Role::MenuItem, "Zoom in")
+        .click();
+    harness.run();
+    assert_eq!(
+        harness.state().actions,
+        [ViewerBarAction::Zoom(Zoom::Small), ViewerBarAction::ZoomIn]
+    );
 }
 
 #[test]
@@ -1406,7 +1479,7 @@ fn the_zoom_menu_opens_and_closes_by_keys_and_gives_the_focus_back() {
 /// The zoom's button at rest and its menu open, at 100%, in `which` theme.
 fn photograph_the_zoom(which: Builtin, name: &str) {
     let size = egui::vec2(420.0, 400.0);
-    let mut harness = viewer_bar_in(Theme::builtin(which), size, true);
+    let mut harness = viewer_bar_in(Theme::builtin(which), size, ZoomChoices::All);
     harness.state_mut().zoom = Zoom::Percent(100.0);
     harness.run();
     harness.snapshot(format!("viewer-bar-zoom-{name}"));
@@ -1423,6 +1496,35 @@ fn the_zoom_is_photographed_in_the_dark_theme() {
 #[test]
 fn the_zoom_is_photographed_in_the_light_theme() {
     photograph_the_zoom(Builtin::Light, "light");
+}
+
+/// The zoom's button at Small, the fitted frame shown at half, in `which` theme.
+fn photograph_the_zoom_at_small(which: Builtin, name: &str) {
+    let size = egui::vec2(420.0, 40.0);
+    let mut harness = viewer_bar_in(Theme::builtin(which), size, ZoomChoices::SmallAndFit);
+    harness.state_mut().zoom = Zoom::Small;
+    harness.run();
+    harness.snapshot(format!("viewer-bar-zoom-small-{name}"));
+}
+
+#[test]
+fn the_zoom_at_small_is_photographed_in_the_dark_theme() {
+    photograph_the_zoom_at_small(Builtin::Dark, "dark");
+}
+
+#[test]
+fn the_zoom_at_small_is_photographed_in_the_grey_theme() {
+    photograph_the_zoom_at_small(Builtin::Grey, "grey");
+}
+
+#[test]
+fn the_zoom_at_small_is_photographed_in_the_light_theme() {
+    photograph_the_zoom_at_small(Builtin::Light, "light");
+}
+
+#[test]
+fn the_zoom_at_small_is_photographed_in_high_contrast() {
+    photograph_the_zoom_at_small(Builtin::HighContrast, "high-contrast");
 }
 
 /// The Browser with `count` photos, wide enough to show the first six cells whole, and what
