@@ -24,6 +24,9 @@
 # own in target/, about 2 GB. The machine's own platform is checked without --target, so
 # it shares cargo's usual build. With --all every platform is checked, and the script
 # fails if any of them has a warning.
+# A build script is compiled for this machine, whatever --target says, so its code for
+# another platform is not checked: crates/app/build.rs's Windows resources (winresource)
+# are first compiled on Windows, by the nightly packages or a Windows machine.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."

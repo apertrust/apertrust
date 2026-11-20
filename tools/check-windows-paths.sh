@@ -19,7 +19,7 @@
 # (decision 70).
 #
 #   tools/check-windows-paths.sh                  fails if a file with a platform cfg is
-#                                                 not covered by the list (CI's lint)
+#                                                 not covered by the list
 #   tools/check-windows-paths.sh FILE...          the same for the files given, from the
 #                                                 repository's root, as pre-commit passes
 #                                                 them; for every file when the list is
