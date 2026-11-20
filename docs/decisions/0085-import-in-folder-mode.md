@@ -60,7 +60,7 @@ No record is kept and nothing is written on the source.
 - **A copy named otherwise than its source,** by a pattern or with `_01` added, keeps its camera name in `xmpMM:PreservedFileName` in its `.apxmp`, as darktable writes it, which is what "already imported" finds it by: one sidecar for each such photo. Otherwise Import writes no sidecar unless Metadata sets something, written as ordinary steps noted Import. The initial rating is none by default, where darktable's is 1 star.
 - **Failures,** as [0056](0056-export-as-an-engine-job.md)'s for export: a photo's own failure is that photo's and the import goes on; the source or the destination failing (the card removed, the disk full, a share dropped) stops it. The copies made stay. Try again (`RetryJob`) copies what is left. Cancel leaves the copies made and no temporary.
 - **Problems are shown before Import,** each disabling it with its reason: an unknown variable, a folder that cannot be made or written, a destination that is the source or lies inside it, not enough space, a date darktable cannot read.
-- **The destination opens** as the first photo lands (After import's default): as a way in, a root and a recent, with no photo opened. Where the patterns make several subfolders, their deepest common folder opens as the root, the first subfolder chosen in its tree as a click chooses it, and the others list as they are chosen, so the one-folder listing holds. The session adds each photo copied into the folder the Browser shows to its index, so the Browser fills as they land, never reading the folder again. At the end, a notice: "Imported 214 photos into 20261115_Wedding" (step 12). There is no Undo; copies are removed with Delete (step 19).
+- **The destination opens** as the first photo lands (After import's default): as a way in and a recent, the folder Collections opens, with no photo opened. Where the patterns make several subfolders, their deepest common folder is the one opened, the first subfolder chosen in Collections' tree as a click chooses it, and the others list as they are chosen, each listing its own photos as any folder does. The session adds each photo copied into the folder the Browser shows to its index, so the Browser fills as they land, never reading the folder again. At the end, a notice: "Imported 214 photos into 20261115_Wedding" (step 12). There is no Undo; copies are removed with Delete (step 19).
 
 ### A card coming in
 
@@ -79,8 +79,7 @@ A card is a mounted volume with a `DCIM` folder at its top. While one with photo
 | **20a** | The ways in, Collections' Import… among them ([0090](0090-export-as-a-photos-tab-tool.md)); the Import sheet on the frame; the grid with its bar, embedded thumbnails, the mark, Select all, none and new, Checked only, Sort and Zoom; Import from, Import to, Naming and After import, with the first view above and the notes on what is not done yet; the destination check; `PreviewImport`; the copy job with its failures and Try again; the destination opened and filled as photos land; raws only; the column in its default order, ⋯ disabled; `apertrust-cli import` | Step 12's notices; step 19's copy job; the setting rows and the sheet frame ([0086](0086-import-as-a-full-window-sheet.md)) |
 | **20b** | Metadata; Filters; a heading over each capture day with a check box for its photos; a raw and its JPEG as one cell, a JPEG left behind imported beside its raw; non-raws listed and copied | Steps 14, 15 and 17 |
 | **20c** | The sheet's presets, the three built in; reordering the column; the card's dot and its setting; a larger look at one photo | Presets; [0083](0083-the-side-panels-layout-dragged-and-floating.md)'s moving |
-| After Phase 3 | Verify the copies; Eject the card; Backup to; Adjustments with styles; Filters' Date taken | — |
-| Phase 5 | Into a library (Copy or Add in place, its `Photos/`) and a project (its Capture and the job's settings), steps 29, 37 and 38 | The library and the project |
+| After Phase 3 | Verify the copies, through Move to…'s checked copy ([0101](0101-folders-first-libraries-optional.md)); Eject the card; Backup to; Adjustments with styles; Filters' Date taken | Step 19 |
 | Later | Cameras and phones through libgphoto2, once its exception to [0005](0005-rust-and-no-c-or-c-unless-no-rust-option-exists.md) is decided | — |
 | Never | Erasing a card, moving the photos, overwriting a file | Principle 3 |
 
@@ -93,6 +92,7 @@ A sheet of tools beside a grid, not a list in a dialog; thumbnails always, for t
 - **A record on each computer** of what was imported, in the user data folder: a second truth beside the files, unknown to another computer and lost with the user data folder, while the destination says what is really there.
 - **A hidden file written on the card:** writes on the person's card (principle 3), and cameras may object to it.
 - **darktable's database field,** the file name and time: folder mode has no database ([0046](0046-sidecars-are-the-truth-folder-mode-library-and-project.md)).
+- **Import into a library or a project's capture folder:** no file is a library, so Import… copies into a folder in every case, and a Library adds a folder as it is ([0101](0101-folders-first-libraries-optional.md)).
 - **Only the path the pattern would give:** a card put back on another day goes to another dated subfolder and looks new.
 - **Fingerprinting every raw in the base folder's tree:** 128 KiB of every photo read on every import; the size and name narrow it first.
 - **Whole files compared for the mark:** a 30 MB read of each candidate on both sides on every opening; the mark leaves the photo shown and checkable, and the copy compares whole files where it would skip.
@@ -111,7 +111,7 @@ A sheet of tools beside a grid, not a list in a dialog; thumbnails always, for t
 
 ## Consequences
 
-- `apertrust-library` gains the import: the source's listing, the destination check, the preview and the copy, through `apertrust_base::fs` and then the storage interface (step 21b); `ops` gains the commands and events above, served by the session as jobs.
+- `apertrust-library` gains the import: the source's listing, the destination check, the preview and the copy, through `apertrust_base::fs`; `ops` gains the commands and events above, served by the session as jobs.
 - The fingerprint is also computed for the destination check's candidates ([0053](0053-finding-folders-and-photos.md)); the jobs gain the kinds `import-source` and `import` ([0057](0057-jobs-as-darktables-control-jobs.md)).
 - The settings schema gains the owner `import` and the `import.*` keys with step 20a, and Settings' Import page its rows; `presets/import.toml` its three built in with 20c.
 - The app gains the Import sheet on [0086](0086-import-as-a-full-window-sheet.md)'s frame; `apertrust-display` the volumes and, later, eject.
