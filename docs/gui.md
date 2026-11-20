@@ -2502,6 +2502,7 @@ The Toolbar has no layout switcher. A small Map toggle on the viewer bar, immedi
 
   - **Ctrl++** is Ctrl+Shift+= on a US keyboard, so there it zooms every cell, and one photo zooms in with Ctrl+=: a shortcut that names Shift exactly wins over the extra Shift a + allows ([Keyboard and actions](#keyboard-and-actions)). Where + has its own key, Ctrl++ zooms one photo.
   - With one photo shown, Shift changes nothing: there is one cell.
+  - **Shift+Z** goes back to Fit only when every cell is at 100%; otherwise it takes every cell to 100%, so the cells always end at one scale.
 - **Live and still.** The active photo's cell is live; the others are stills rendered from their saved edits after it, so the active photo never waits for them (decision 37). Until its still arrives, a cell shows the photo's rendered thumbnail where the cache holds one, else the camera's embedded picture, else a placeholder with its file name, as principle 2 asks, unmarked (decision 77).
 - **Show all selected photos,** the viewer bar's toggle and View › Show All Selected: on, Photo shows the selected photos; off, the active photo alone however many are selected. On by default.
 
@@ -3167,7 +3168,7 @@ One button at the bar's end, `ViewerBar`'s zoom, showing the scale and a 10-poin
 
 | The person | Does |
 | --- | --- |
-| Chooses an entry of the zoom menu | That scale, about the view's centre, kept inside the photo's edges ([Panning](#panning)); Fit and Small centre the photo. The 100% entry runs `zoom-100` as Z and View › Zoom to 100% do, so chosen at 100% it goes back to Fit |
+| Chooses an entry of the zoom menu | That scale, about the view's centre, kept inside the photo's edges ([Panning](#panning)); Fit and Small centre the photo. The 100% entry runs `zoom-100` as Z and View › Zoom to 100% do, so chosen at 100% it goes back to Fit. "At 100%" means the 100% scale is the one chosen, its label "100%": a small photo that Fit shows pixel for pixel is at Fit, and the entry or Z there chooses 100% |
 | Presses Z | 100% at the photo's point under the pointer when the pointer is over the photo, else at the view's centre; at 100%, back to Fit |
 | Presses Ctrl+0 | Fit |
 | Presses Ctrl+= or Ctrl+− | The next scale of the menu up or down, about the point Z uses; repeats while held |
