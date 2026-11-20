@@ -110,9 +110,9 @@ use apertrust_engine::sidecar::Reason;
 use apertrust_tools::ToolDefinition;
 use apertrust_ui::components::{
     ActivityAction, Available, Browser, BrowserEdge, BrowserEdgeAction, BrowserPosition, CellMenu,
-    CellRating, FindBar, FindBarAction, Jobs, Margin, Marker, PanelBody, PanelEdge,
-    PanelEdgeAction, PanelTab, PhotoCaption, PhotoFrame, PickerAction, Placed, SaveState,
-    ScopeView, TabBar, TabBarAction, Thumb, Toggle, Toolbar, ToolbarAction, ViewerBar,
+    CellRating, FindBar, FindBarAction, Jobs, Margin, Marker, MenuButtonStyle, PanelBody,
+    PanelEdge, PanelEdgeAction, PanelTab, PhotoCaption, PhotoFrame, PickerAction, Placed,
+    SaveState, ScopeView, TabBar, TabBarAction, Thumb, Toggle, Toolbar, ToolbarAction, ViewerBar,
     ViewerBarAction, Zoom, browser_lines, browser_thickness,
 };
 use apertrust_ui::{
@@ -1991,6 +1991,9 @@ struct Shell {
     theme: Builtin,
     /// The marker on the sliders' tracks and the curve's handles (decision 75).
     marker: Marker,
+    /// How the Toolbar's menu button is drawn where the menus are drawn, on Windows and
+    /// Linux: the app's icon or ☰, as `toolbar.menu_button` says.
+    menu_button: MenuButtonStyle,
     /// The interface's language: the user's choice, or the system's.
     locale: Locale,
     /// The language settings keep: none until the user chooses one, so the interface
@@ -2105,6 +2108,7 @@ impl Shell {
             field_keys: Vec::new(),
             theme: settings.theme,
             marker: settings.marker,
+            menu_button: settings.menu_button,
             locale,
             kept_locale: settings.locale,
             system_locale: system,
@@ -2602,6 +2606,7 @@ impl Shell {
             locale: self.kept_locale,
             scale: ctx.zoom_factor(),
             marker: self.marker,
+            menu_button: self.menu_button,
             window: self.window,
             settings_window: self.settings_window,
             jobs_window: self.jobs_window,
@@ -3318,6 +3323,7 @@ impl Shell {
             .collect();
         let mut bar = Toolbar::new()
             .menu_button(self.drawn_menus)
+            .menu_button_style(self.menu_button)
             .available(available)
             .jobs(Jobs::new(jobs).file_manager(jobs::FILE_MANAGER))
             .saved(saved);
@@ -3642,9 +3648,9 @@ impl Shell {
 
     /// Takes in what the Settings dialog's rows show of `settings` and shows it in the main
     /// window, `ctx`'s: the theme, the language, the interface's size, the sliders' marker,
-    /// the tab names, what the wheel does over the Tools panel, square thumbnails and
-    /// whether Export asks before overwriting. The engine's settings are the session's at
-    /// its next start, and nothing of the shell's.
+    /// the menu button, the tab names, what the wheel does over the Tools panel, square
+    /// thumbnails and whether Export asks before overwriting. The engine's settings are the
+    /// session's at its next start, and nothing of the shell's.
     fn follow(&mut self, settings: &Settings, ctx: &egui::Context) {
         if settings.theme != self.theme {
             self.theme = settings.theme;
@@ -3663,6 +3669,7 @@ impl Shell {
         }
         self.marker = settings.marker;
         apertrust_ui::components::set_marker(ctx, self.marker);
+        self.menu_button = settings.menu_button;
         self.tab_names = settings.tab_names;
         self.wheel_scrolls_panel = settings.wheel_scrolls_panel;
         apertrust_ui::components::set_wheel_scrolls_panel(ctx, self.wheel_scrolls_panel);
@@ -18198,7 +18205,8 @@ mod tests {
         assert_eq!(shell.settings_window, Some(left));
     }
 
-    /// The theme, the language and the sliders' marker reach the main window at once.
+    /// The theme, the language, the sliders' marker and the menu button reach the main
+    /// window at once.
     #[test]
     fn what_the_settings_window_changes_reaches_the_shell_and_the_main_window() {
         use settings_dialog::Change;
@@ -18210,11 +18218,13 @@ mod tests {
             dialog_host::Output::Settings(Change::Set("theme", "light".into())),
             dialog_host::Output::Settings(Change::Set("locale", "uk".into())),
             dialog_host::Output::Settings(Change::Set("sliders.marker", "circle".into())),
+            dialog_host::Output::Settings(Change::Set("toolbar.menu_button", "menu".into())),
         ];
         harness.step();
         let shell = &harness.state().shell;
         assert_eq!(shell.theme, Builtin::Light);
         assert_eq!(shell.marker, Marker::Circle);
+        assert_eq!(shell.menu_button, MenuButtonStyle::Menu);
         assert_eq!(
             apertrust_ui::components::marker(&harness.ctx),
             Marker::Circle
@@ -21258,6 +21268,47 @@ mod tests {
         harness.run();
         alt(&mut harness, Key::F, Some("f"));
         assert!(!menu_open(&harness, "Menu"));
+    }
+
+    /// The menu button setting draws the app's icon, by default, or ☰, from the next frame,
+    /// the button the same to screen readers either way.
+    #[test]
+    fn the_menu_button_setting_draws_the_app_s_icon_or_the_menu_at_once() {
+        let width = |harness: &Harness<'_, Bench>| {
+            harness
+                .get_by_role_and_label(Role::Button, "Menu")
+                .rect()
+                .width()
+        };
+        let mut harness = bench(OperatingSystem::Windows);
+        harness.run();
+        assert_eq!(harness.state().shell.menu_button, MenuButtonStyle::Icon);
+        assert_eq!(width(&harness), 41.0);
+        let menu = Settings {
+            menu_button: MenuButtonStyle::Menu,
+            ..Settings::default()
+        };
+        let ctx = harness.ctx.clone();
+        harness.state_mut().shell.follow(&menu, &ctx);
+        harness.run();
+        assert_eq!(width(&harness), 30.0);
+        let button = harness.get_by_role_and_label(Role::Button, "Menu");
+        assert_eq!(
+            button.accesskit_node().data().has_popup(),
+            Some(egui::accesskit::HasPopup::Menu)
+        );
+        assert_eq!(
+            button.accesskit_node().data().keyboard_shortcut(),
+            Some("F10")
+        );
+        // Kept as the shell reports it, and read back so at the next start.
+        assert_eq!(
+            harness.state().shell.to_settings(&ctx).menu_button,
+            MenuButtonStyle::Menu
+        );
+        let mut again = bench_with(OperatingSystem::Nix, &menu);
+        again.run();
+        assert_eq!(width(&again), 30.0);
     }
 
     #[test]

@@ -54,6 +54,9 @@
 //! [sliders]
 //! marker = "triangle"
 //!
+//! [toolbar]
+//! menu_button = "menu"
+//!
 //! [tools_panel]
 //! tab_names = false
 //! wheel_scrolls_panel = false
@@ -145,7 +148,8 @@ use apertrust_engine::session::ControlValue;
 use apertrust_engine::settings as engine;
 use apertrust_tools::{ControlKind, Row, SettingRow, TOOLS};
 use apertrust_ui::components::{
-    BrowserBarAction, BrowserPosition, Channel, Marker, ScopeView, Sort, ThumbnailSize,
+    BrowserBarAction, BrowserPosition, Channel, Marker, MenuButtonStyle, ScopeView, Sort,
+    ThumbnailSize,
 };
 use apertrust_ui::{Builtin, Locale};
 
@@ -194,6 +198,8 @@ pub struct Settings {
     pub scale: f32,
     /// The marker on the sliders' tracks and the curve's handles (decision 75).
     pub marker: Marker,
+    /// How the Toolbar's menu button is drawn on Windows and Linux, `toolbar.menu_button`.
+    pub menu_button: MenuButtonStyle,
     pub window: Window,
     /// Where Settings' own window was last left, on the Mac; None opens it centred over
     /// the main window.
@@ -250,6 +256,7 @@ impl Default for Settings {
             locale: None,
             scale: SCALE.default(),
             marker: SLIDERS_MARKER.default(),
+            menu_button: TOOLBAR_MENU_BUTTON.default(),
             window: Window {
                 size: None,
                 position: None,
@@ -312,6 +319,7 @@ impl Settings {
             locale: store.kept(&LOCALE),
             scale: store.get(&SCALE),
             marker: store.get(&SLIDERS_MARKER),
+            menu_button: store.get(&TOOLBAR_MENU_BUTTON),
             window: Window {
                 size: store.kept(&WINDOW_SIZE),
                 position: window,
@@ -384,6 +392,9 @@ impl Settings {
         }
         if s.marker != was.marker {
             store.set(&SLIDERS_MARKER, s.marker);
+        }
+        if s.menu_button != was.menu_button {
+            store.set(&TOOLBAR_MENU_BUTTON, s.menu_button);
         }
         if s.window.size != was.window.size {
             keep(store, &WINDOW_SIZE, s.window.size);
@@ -1336,6 +1347,7 @@ mod tests {
             locale: Some(Locale::Pl),
             scale: 1.3,
             marker: Marker::Triangle,
+            menu_button: MenuButtonStyle::Menu,
             window: Window {
                 size: Some([1280.0, 800.0]),
                 position: Some(Position {
@@ -1514,6 +1526,7 @@ mod tests {
                 locale: None,
                 scale: 1.0,
                 marker: Marker::Square,
+                menu_button: MenuButtonStyle::Icon,
                 window: Window {
                     size: None,
                     position: None,
@@ -1734,6 +1747,9 @@ scale_factor = 2.0
 
 [sliders]
 marker = \"triangle\"
+
+[toolbar]
+menu_button = \"menu\"
 
 [tools.exposure]
 lightness = 42.5
