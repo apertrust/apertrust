@@ -1,8 +1,8 @@
 # The cache
 
-Apertrust keeps on disk what it can compute again, so that a folder's thumbnails, a library's index and later previews come back at once instead of being made again. This document describes the cache: where it lives, what it holds, how it stays within its limit, and how the person sees and clears it. The settings it reads are in [settings.md](settings.md), the thumbnails and the library's caches themselves in [library.md](library.md).
+Apertrust keeps on disk what it can compute again, so that a folder's thumbnails, a folder tree's index and later previews come back at once instead of being made again. This document describes the cache: where it lives, what it holds, how it stays within its limit, and how the person sees and clears it. The settings it reads are in [settings.md](settings.md), the thumbnails and the indexes themselves in [library.md](library.md).
 
-**Status.** [Decision 76](decisions/0076-the-cache-kinds-limits-and-control.md) records the design, with the options considered. Base's `cache` module is built: the kinds, a limited entry's write and read with its last use, its version read alone, the walk, the tidy of old temporaries, eviction past a limit to 90% of it and clearing a limited kind, on a folder its caller gives. So are the folder's choice in `Folders`, with `--cache-dir` (or darktable's `--cachedir`) in the app and the CLI, and the three settings, on Settings › Storage as rows, with the engine's `settings::cache_limit` turning the first two into a `Limit`. The app opens the cache as it starts and hands it to its session, which tidies and walks it as it starts and keeps it within the limit by eviction, as background jobs ([Through the session](#through-the-session)). The thumbnails kind is built for the camera's embedded pictures: read from the cache first, written to it on a miss ([Thumbnails](#thumbnails)). So are the session's sizes and Clear, `CacheCommand::Sizes` and `Clear { kind }` answered by `Event::Cache` ([Through the session](#through-the-session)), and `apertrust-cli cache info` and `cache clear` ([The CLI](#the-cli)). So is Settings › Storage's hand-built part: the folders, each kind's size with its Clear, and the total against the limit ([Settings › Storage](#settings--storage)). The live photo's rendered thumbnails are built too. The rest is planned: rendered thumbnails of the other photos with the library's step 6, the photo's fingerprint as their slot with step 8, library caches, each listed with its Remove, with step 27, and local copies with step 31 ([roadmap.md](roadmap.md#the-librarys-steps)).
+**Status.** [Decision 76](decisions/0076-the-cache-kinds-limits-and-control.md) records the design, with the options considered. Base's `cache` module is built: the kinds, a limited entry's write and read with its last use, its version read alone, the walk, the tidy of old temporaries, eviction past a limit to 90% of it and clearing a limited kind, on a folder its caller gives. So are the folder's choice in `Folders`, with `--cache-dir` (or darktable's `--cachedir`) in the app and the CLI, and the three settings, on Settings › Storage as rows, with the engine's `settings::cache_limit` turning the first two into a `Limit`. The app opens the cache as it starts and hands it to its session, which tidies and walks it as it starts and keeps it within the limit by eviction, as background jobs ([Through the session](#through-the-session)). The thumbnails kind is built for the camera's embedded pictures: read from the cache first, written to it on a miss ([Thumbnails](#thumbnails)). So are the session's sizes and Clear, `CacheCommand::Sizes` and `Clear { kind }` answered by `Event::Cache` ([Through the session](#through-the-session)), and `apertrust-cli cache info` and `cache clear` ([The CLI](#the-cli)). So is Settings › Storage's hand-built part: the folders, each kind's size with its Clear, and the total against the limit ([Settings › Storage](#settings--storage)). The live photo's rendered thumbnails are built too. The rest is planned: rendered thumbnails of the other photos with the library's step 6, the photo's fingerprint as their slot with step 8, the indexes, the kept ones each listed with its Remove, with step 23, and the offline thumbnails with step 27 ([roadmap.md](roadmap.md#the-librarys-steps)). The built `KINDS` still lists `libraries` and `copies`, empty, which `indexes` and `offline` replace with those steps ([decision 101](decisions/0101-folders-first-libraries-optional.md)).
 
 ## What goes in it
 
@@ -33,22 +33,28 @@ flowchart TD
     limited --> thumbs["thumbnails/<br/>the library"]
     limited --> pipes["pipelines/<br/>the engine, if measured worthwhile"]
     limited --> later["later: previews, AI results"]
-    kept --> libs["libraries/&lt;library id&gt;/<br/>the library"]
-    kept --> copies["copies/<br/>the library"]
+    cache --> both["Kept or limited by its folder"]
+    both --> idx["indexes/&lt;tree id&gt;/<br/>the library"]
+    kept --> offline["offline/<br/>the library"]
 ```
 
 | Kind | Folder | Policy | Owner | An entry |
 | --- | --- | --- | --- | --- |
 | Thumbnails | `thumbnails/` | limited | the library | a photo, virtual copy and size |
 | Pipelines | `pipelines/` | limited | the engine | wgpu's pipeline cache for one adapter, Vulkan only, if measured worthwhile |
-| Library caches | `libraries/<library id>/` | kept | the library | one library ([A library's cache](library.md#a-librarys-cache)) |
-| Local copies | `copies/` | kept | the library | one raw by fingerprint, for offline drives and server roots |
+| Indexes | `indexes/<tree id>/` | kept while a folder it covers has a record, limited otherwise | the library | one folder tree ([The saved index](library.md#the-saved-index)) |
+| Offline thumbnails | `offline/` | kept | the library | one 256 px thumbnail per photo and virtual copy of a folder kept offline or in a Library ([Keep Available Offline](library.md#keep-available-offline)) |
 | Later: previews, AI results such as depth maps | their own | limited | their owners | |
+| Later, if asked: local copies | `copies/` | kept | the library | one raw by fingerprint, to edit a photo whose folder is away |
 
 - **Limited** kinds count together against one limit and lose their oldest entries first, unless the person makes the cache unlimited.
 - **Kept** kinds are removed only by the person, or by their own step's rule.
+- **Indexes** are kept or limited by the folders they cover: an index is kept while its tree's folder or any folder inside it has a record (in a Library, kept offline, keeping its edits here), since a recorded subfolder reads the enclosing tree's index; any other counts against the limit and is removed oldest first with the limited kinds, never while a process has it open. The index's folder notes the records it covers, which eviction reads.
+- **An index is one entry, a folder:** the walk lists it once, its size the sum of its files'; its last use is its `lock` file's modified time, set as it is opened, at most once a day; it is removed whole, renamed first to a hidden temporary beside it so no reader finds half of one, the start's tidy removing what a crash leaves.
+- **Its lock:** a process with an index open, the app or the CLI, holds a shared lock on its `lock` file (`File::lock_shared`); Clear, Remove and eviction take an exclusive one with `try_lock` and pass over an index they cannot lock. Its files are replaced whole through the safe write, the last rename winning, since every process builds it from the same files; an engine with a writer lock of its own, as `tantivy` has, keeps it (spike L2).
+- **Offline thumbnails** are one size, 256 px, 25.3 kB each ([below](#timing-the-walk)), so 100,000 photos take about 2.5 GB; the grid reads one as the thumbnails kind's 256 px slot. They go once their folder is neither marked Keep Available Offline nor in any Library, or by the person's Clear.
 - **Thumbnails** are stored as JPEG at quality 90, through the JPEG encoder export uses ([Thumbnails](#thumbnails)).
-- **Elsewhere:** embeddings for search live inside a library's cache (decision 55). AI models are the AI page's downloads, not cache. Drivers' own shader caches (macOS's, Mesa's, the GPU vendors') are outside Apertrust's folder and not counted.
+- **Elsewhere:** embeddings for search live inside a folder tree's index (decision 55). AI models are the AI page's downloads, not cache. Drivers' own shader caches (macOS's, Mesa's, the GPU vendors') are outside Apertrust's folder and not counted.
 
 ## Entries
 
@@ -56,7 +62,7 @@ flowchart TD
 - **The version inside.** The file holds its version: a thumbnail's is the edit's hash and the render version, or the embedded picture's mark, which is how the picture was read (`apertrust_raw::PREVIEW_VERSION`, rawler's version and the reading's own) and the raw's size and modified time. A reader wanting another version renders again, and may show the stale picture meanwhile.
 - **A write replaces the slot's file whole,** through a hidden temporary and a rename (base's `fs`), so a newer version removes the stale one at once and stale entries never pile up.
 - **Last use is the file's modified time,** which Apertrust sets as it writes the entry and as it reads it, at most once a day an entry. Access times are never read: many systems record them lazily or not at all.
-- **A kept entry** is a folder or a file of its own. A library's cache records the library's name, its last path and when it was last opened on this machine.
+- **A kept entry** is a folder or a file of its own. An index records its folder tree's name, its last path, its folder record where it has one, and when it was last opened on this machine.
 
 ## Sizes and the walk
 
@@ -142,7 +148,7 @@ The app runs one instance per user data folder ([decision 89](decisions/0089-one
 - a removal that finds the file gone is ignored, and a reader whose file vanished renders again;
 - a crash leaves at most a temporary, which the start's tidy removes.
 
-A library's cache is locked: a process that has it open holds an OS lock on its `lock` file (`std::fs::File::lock`), and no clear removes it then.
+An index is locked: a process that has it open, the app or the CLI, holds a shared lock on its `lock` file (`File::lock_shared`), and clear and eviction, which take an exclusive one with `try_lock`, pass over it then ([Kinds](#kinds)).
 
 ## The limit and Unlimited
 
@@ -166,10 +172,10 @@ While `cache.limited` is on, a `SystemBackground` job of kind `cache-evict`, wit
 
 Nothing in the cache is removed by age.
 
-- **A library's cache** unopened on this machine for `cache.unused_after` (30, 90, 180 or 365 days, or Never; 90 by default), or whose library was not found at its last path, is marked on the Storage page and offered for removal. It is never removed without the person, and the open library's is rebuilt by Rebuild Cache, not removed.
-- **Local copies** are never removed by size or age; how they are cleared, and when one is no longer needed, is decided with the library's step 31.
+- **A kept index** unopened on this machine for `cache.unused_after` (30, 90, 180 or 365 days, or Never; 90 by default) is marked on the Storage page and offered for removal; once the last record of a folder it covers is removed, the tree's or a subfolder's, it is no longer kept, but limited, as any other index. It is never removed without the person, and the open tree's is rebuilt by Rebuild Index, not removed.
+- **Offline thumbnails** are never removed by size or age; they go once their folder is neither marked Keep Available Offline nor in any Library.
 
-**With Unlimited and Never, nothing in the cache is ever removed except by the person's Clear or Remove,** and by a write replacing its own slot's stale version.
+**With Unlimited and Never, nothing in the cache is ever removed except by the person's Clear or Remove,** by a write replacing its own slot's stale version, and, for offline thumbnails, once their folder is neither kept offline nor in any Library, as the person's own change of those.
 
 ## What is not in the cache
 
@@ -177,9 +183,10 @@ What clearing would lose, or would make the person do again, lives in the user d
 
 | What | Where | Why not the cache |
 | --- | --- | --- |
-| A library's root map on this machine (decision 53) | `<user data>/libraries/<library id>/` | its loss would ask the person to locate roots again |
-| The last copy of each sidecar this machine wrote, for silent winners (decision 52) | `<user data>/libraries/<library id>/` | it may be the only copy of an edit a sync service overwrote |
-| A server root's sidecars with the changes the server has not taken yet (decision 71) | `<user data>/libraries/<library id>/` | the changes are nowhere else |
+| The folder records (decisions 53 and 101) | `<user data>/folders/<id>.toml` | their loss would ask the person to locate folders again |
+| A folder's changes waiting while its drive is away, and the edits kept on this computer | `<user data>/folders/<id>/pending/` and `edits/` | they are nowhere else |
+| The Libraries kept on this computer, their folders and albums, and the last copy read of one saved in a folder (decision 101) | `<user data>/libraries/<id>/` | they are nowhere else |
+| The last copy of each sidecar this machine wrote, for silent winners (decision 52, planned) | `<user data>/last-written/`, by the sidecar's path, its folder's record where it has one, with the photo's fingerprint | it may be the only copy of an edit a sync service overwrote |
 | Conflict copies, once compared (decision 52) | `<user data>/conflict-copies/`, removed 30 days later | each is the only copy of what it held |
 
 ## Through the session
@@ -194,13 +201,13 @@ The engine opens no folder: a binary opens the cache and hands `Session::start` 
 - **Thumbnails** ([below](#thumbnails)), read from the cache by the thumbnail jobs and written on a miss.
 - **`CacheCommand::Sizes`,** answered by `Event::Cache`: at once with the sizes the handle counts, once a walk has run, then by a `cache-walk` of its own, which counts what other processes did meanwhile and answers again, its answer always the later. One such walk at a time, as eviction runs: a `Sizes` while it is queued is answered by its first pass, and one while it runs by a pass more, so every `Sizes` has a walk begun after it. A walk that fails is `SessionError::CacheWalk`, once for each command its pass answers.
 - **`CacheCommand::Clear { kind }`,** a limited kind's entries removed by a `cache-clear` job (below), base's `Cache::clear` with its progress and cancel; as it ends, cancelled or not, `Event::Cache` again. Refused: a kept kind (`SessionError::CacheKept`), a kind a Clear is clearing already until its job has ended (`CacheClearing`), and a session with no cache (`NoCache`).
-- **`Event::Cache(CacheEvent)`,** a fact, the whole cache: each kind's entries and bytes, the limited kinds' together and the limit (`CacheEvent::Sizes`), or `CacheEvent::NoCache` for a session handed none, which answers `Sizes` too. The libraries' caches count as one kind, `libraries`, their items and bytes.
+- **`Event::Cache(CacheEvent)`,** a fact, the whole cache: each kind's entries and bytes, the limited kinds' together and the limit (`CacheEvent::Sizes`), or `CacheEvent::NoCache` for a session handed none, which answers `Sizes` too. The libraries' caches count as one kind, `libraries`, their items and bytes, until `indexes` replaces it with step 23.
 - **Their types** are base's `cache`, `CacheCommand`, `CacheEvent`, `Kind`, `Sizes` and `Usage`, as the jobs' events are its `jobs`.
 - **Logging:** `-d perf`, the walk's sizes, the temporaries tidied and its time (each kind's under `verbose`), each walk for the sizes with its time, each eviction's and each Clear's entries and bytes removed, its failures and its time; for each `LibraryCommand::Thumbnails`, once its last job has ended, how many came from the cache and how many were read, each with their time, and how many were written, each thumbnail under `verbose`; a cache that cannot be tidied, walked, evicted or cleared is a warning, as is a folder that cannot be created or written as the program starts.
 
 **A Clear's row** in the jobs window, as every job's is its own (decision 72): its title `job-cache-clear` ("Clearing the thumbnail cache"), the line under its bar `job-cache-clear-now` ("1,200 of 2,104 removed"), its bar the entries done of those listed as it started, its ✕ `CancelJob`; as it ends, its title `job-cache-cleared` ("Cleared 2,104 thumbnails, 138 MB") or `job-cache-clear-cancelled` ("Clearing cancelled: 1,200 thumbnails removed, 72 MB"). Each names the kind, `$kind`, and the outcome the entries and their size, `$size` in `$unit`, `kb`, `mb` or `gb` of disks' powers of ten, one decimal below 10. Entries it could not remove fail the job, `job-cause-cache-remove`, the rest removed; a kind's folder that cannot be listed fails it, `job-cause-cache-read`.
 
-**Planned** with step 27: `CacheCommand::Remove { library }`, one library's cache removed by a `cache-clear` job, skipped and said so while another process has it open; and `Event::Cache` listing each library's cache with its name, last path and last opening, which the walk does not read.
+**Planned** with step 23: `CacheCommand::Remove { index }`, one kept index removed by a `cache-clear` job, skipped and said so while another process has it open; and `Event::Cache` listing each kept index with its folder's name, last path and last opening, which the walk does not read.
 
 **The jobs** (decision 57):
 
@@ -208,8 +215,8 @@ The engine opens no folder: a binary opens the cache and hands `Session::start` 
 | --- | --- | --- | --- |
 | `cache-walk`, the start's tidy and walk, and the walk for `Sizes` | `SystemBackground` | no | built |
 | `cache-evict` | `SystemBackground` | no | built |
-| `cache-clear`: Clear | `UserBackground`, cancellable, as Rebuild Cache | with a progress | built |
-| `cache-clear`: Remove | the same | with a progress | step 27 |
+| `cache-clear`: Clear | `UserBackground`, cancellable, as Rebuild Index | with a progress | built |
+| `cache-clear`: Remove | the same | with a progress | step 23 |
 | Conflict copies past 30 days removed, as the app starts | `SystemBackground` | no | step 13 |
 
 ## Settings › Storage
@@ -222,14 +229,14 @@ A page of rows from the schema with a hand-built part around them ([gui.md](gui.
 | --- | --- |
 | Folders, hand-built, first | The user data folder and the cache folder, each in full with the home as `~`, cut in its middle where the page is narrow, how it was chosen under it (the flag, the variable, inside the user data folder, or the system's), and Show in Finder (Explorer, Files), read-only, since a folder is chosen before the app starts |
 | Cache, the schema's | `cache.limited`, `cache.limit` (disabled while unlimited) and `cache.unused_after` |
-| In the cache, hand-built, last | Thumbnails and Pipelines, each with its entries and size in the language's numbers and its Clear; Library caches, one read-only line with their entries and size; the limited kinds' total against the limit, or with "unlimited" |
+| In the cache, hand-built, last | Thumbnails and Pipelines, each with its entries and size in the language's numbers and its Clear; Library caches, one read-only line with their entries and size, the kept indexes' from step 23; the limited kinds' total against the limit, or with "unlimited" |
 
 - **The sizes** are `CacheCommand::Sizes`, sent each time the page is shown and each time its window comes back to the front on it, and again after a limit Settings changed is sent, so the total and the limit agree. The app's mirror keeps the latest `Event::Cache` (`storage::Mirror`) and hands Settings the page's view as it changes, through the dialog host, the window open or only asked for. Before the first answer each line says "Counting…", and Clear waits.
 - **Clear** sends `CacheCommand::Clear { kind }`. Its button is disabled from the press, by the page itself until the app hands it the view, then until that job's `Ended`, whether it finished, was cancelled or failed, or until the engine stops; not until the next sizes. A `cache-clear` job the page did not send, as a Try again, disables its kind too, told by its job's kind and the cache kind its title names. The job's row is the jobs window's, which it does not open. A refusal is worded under the lines, "These are being cleared already.", "There is no disk cache to clear.", or "They could not be cleared." for any other, until the next sizes or the end of a Clear.
 - **With no cache** the In the cache group says so plainly, with no Clear; the folders still show.
 - **Its words** are `settings-storage-…` messages in every language; sizes take the Clear's `$size` and `$unit` (`session::size_in_unit`), the unit chosen after rounding and a size below 10 written with its decimal in the language's numbers, as the Clear's messages write it: 999,800 bytes read "1.0 MB", 5 MB "5.0 MB", and in Ukrainian 1.5 MB "1,5 МБ". The limit is written as its row writes it, "4.0 GB".
 
-**Planned:** with step 27, each library's cache on a line of its own with the library's name, its last path, when it was last opened and its size, those unopened for `cache.unused_after` or not found marked, each with Remove; with step 13, the conflict copies' count and size, with Show in Finder, and no Clear.
+**Planned:** with step 23, each kept index on a line of its own with its folder's name, its last path, when it was last opened and its size, those unopened for `cache.unused_after` marked, each with Remove; with step 27, the offline thumbnails' entries and size; with step 13, the conflict copies' count and size, with Show in Finder, and no Clear.
 
 ## The CLI
 
@@ -238,7 +245,7 @@ A page of rows from the schema with a hand-built part around them ([gui.md](gui.
 Built (`crates/cli/src/cache.rs`). It opens the cache with `Cache::open`, creating nothing, so a missing folder is an empty cache; with no cache folder at all, on a system with no home folder, it stops, naming `--cache-dir`. Its output is one item to a line, as `library scan`'s:
 
 - **`cache info`:** the folder, `(not created yet)` where it is missing, and how it was chosen (`chosen by: --cache-dir`, `APERTRUST_CACHE_DIR`, `the user data folder` or `the platform`); the limit, `cache.limit`'s gigabytes or `unlimited`; the limited kinds' total; each kind's entries and size, kB, MB or GB to one decimal; `cache.unused_after` by its id. The settings are the user data folder's, `--conf` over them, read and never written. It walks and writes nothing.
-- **`cache clear [KIND...]`:** the limited kinds named, `thumbnails` or `pipelines`, or every limited kind with none named, each kind once however often it is named: on stdout a line of what it removed, on stderr what it could not and a folder that cannot be listed. A kept kind, `libraries` or `copies`, or one that does not exist, is refused by name as a usage error, exit status 2, before anything is removed. An entry that cannot be removed is passed over and said so, and the exit status is then 1.
+- **`cache clear [KIND...]`:** the limited kinds named, `thumbnails` or `pipelines`, or every limited kind with none named, each kind once however often it is named: on stdout a line of what it removed, on stderr what it could not and a folder that cannot be listed. A kept kind, `libraries` or `copies` as built, or one that does not exist, is refused by name as a usage error, exit status 2, before anything is removed. An entry that cannot be removed is passed over and said so, and the exit status is then 1.
 
 ```text
 $ apertrust-cli cache info
@@ -253,7 +260,7 @@ copies: 0 entries, 0.0 kB
 cache.unused_after: days_90
 ```
 
-**Planned** with step 27: `cache info` listing each library's cache with its id, name, last path, last opened and size, marked as on the Storage page; `cache clear libraries`, every library's cache no process has open, and `cache clear --library ID`, one, saying what it skipped. Local copies wait for step 31.
+**Planned** with step 23: `cache info` listing each kept index with its id, name, last path, last opened and size, marked as on the Storage page; `cache clear` taking the indexes without a record with the limited kinds, `cache clear indexes`, every index no process has open, and `cache clear --index ID`, one, saying what it skipped; with step 27, `cache clear offline`.
 
 ## Where the code lives
 
@@ -266,7 +273,7 @@ cache.unused_after: days_90
 
 The CLI reads no thumbnails: `library scan` lists a folder, and only its `cache` commands touch the cache, walking and clearing it.
 
-Owners name their slots and versions: the library its thumbnails, library caches and local copies, the engine its pipelines.
+Owners name their slots and versions: the library its thumbnails, indexes and offline thumbnails, the engine its pipelines.
 
 ## Open questions
 
