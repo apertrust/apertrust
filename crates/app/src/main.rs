@@ -5034,7 +5034,7 @@ impl App {
                 let window = log_window::Window::new(self.kept.clone(), size);
                 self.dialogs.open_log(window, self.shell.log.window, ctx);
             }
-            // Edit's selection items, shown in the mirror as the Browser's gestures are.
+            // The Select menu's items, shown in the mirror as the Browser's gestures are.
             if let Some(Command::Selection(command)) = command {
                 let session = &self.session;
                 let send = &mut |command| session.send(command);
@@ -20703,6 +20703,57 @@ mod tests {
         harness.input_mut().events.extend(keys);
         harness.run();
         assert_eq!(harness.state().text, "photo");
+        assert!(harness.state().commands.is_empty());
+    }
+
+    /// Select › Select All, chosen with a text field focused, selects the field's text and
+    /// never the photos: from the Mac's menu bar, and from the ☰'s menu opened by F10, whose
+    /// Select is its third menu.
+    #[test]
+    fn select_s_select_all_from_its_menu_selects_the_focused_field_s_text() {
+        // The Mac's: a choice handed in before the frame, as the menu bar's are.
+        for os in [OperatingSystem::Mac, OperatingSystem::Windows] {
+            let mut harness = field(os);
+            harness.run();
+            harness.run();
+            choose(&mut harness, ActionId::SELECT_ALL);
+            // What is typed next takes the place of the whole text.
+            harness
+                .input_mut()
+                .events
+                .push(egui::Event::Text("y".to_owned()));
+            harness.run();
+            assert_eq!(harness.state().text, "y", "{os:?}");
+            assert!(harness.state().commands.is_empty(), "{os:?}");
+        }
+        // The ☰'s: F10, then down to Select and into it.
+        let mut harness = field(OperatingSystem::Nix);
+        harness.run();
+        harness.run();
+        harness.key_press(Key::F10);
+        harness.run();
+        harness.key_press(Key::ArrowDown);
+        harness.key_press(Key::ArrowDown);
+        harness.key_press(Key::ArrowRight);
+        harness.run();
+        let select_all = harness.get_by_role_and_label(Role::MenuItem, "Select all");
+        assert!(!select_all.accesskit_node().is_disabled());
+        assert_eq!(
+            select_all.accesskit_node().data().keyboard_shortcut(),
+            Some("Ctrl+A")
+        );
+        select_all.click();
+        harness.run();
+        let keys = std::mem::take(&mut harness.state_mut().shell.field_keys);
+        assert_eq!(keys.len(), 2);
+        harness.input_mut().events.extend(keys);
+        harness.run();
+        harness
+            .input_mut()
+            .events
+            .push(egui::Event::Text("y".to_owned()));
+        harness.run();
+        assert_eq!(harness.state().text, "y");
         assert!(harness.state().commands.is_empty());
     }
 

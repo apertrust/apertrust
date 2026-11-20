@@ -19,12 +19,14 @@ action-redo = Redo
 action-copy-edit = Copy edit
 action-apply-edit = Apply edit
 action-copy-apply-parts = Copy or apply parts
-# Edit's selection items, darktable's select all, select none, invert selection and select
+# The Select menu's items, darktable's select all, select none, invert selection and select
 # untouched: they act on the Browser's photos, the folder open's.
 action-select-all = Select all
 action-select-none = Select none
 action-invert-selection = Invert selection
 action-select-unedited = Select unedited
+# Goes back to the selection as it was before its last change, one level.
+action-previous-selection = Previous selection
 action-settings = Settings
 # Heard once the edit is saved again after a failed write (the Toolbar's save state).
 status-saved = Saved
@@ -1043,6 +1045,7 @@ key-space = Space
 -file-menu = File
 menu-file = &{ -file-menu }
 menu-edit = &Edit
+menu-select = &Select
 menu-photo = &Photo
 menu-view = &View
 menu-window = &Window

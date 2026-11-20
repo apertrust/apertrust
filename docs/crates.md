@@ -562,7 +562,7 @@ In `src/folder.rs`, `src/library.rs`, `src/dialogs.rs`, `src/dropped.rs` and `sr
 - Shift-click sends `Range { to, order }`, the active photo staying;
 - among photos opened alone, which the session has no collection of, Ctrl and Shift-click send nothing.
 
-Edit's selection items, darktable's select all, select none, invert selection and select untouched, are registry actions sending the session's commands (`select-all`, Ctrl+A, `All`; `select-none`, Ctrl+Shift+A, `Clear`; `invert-selection`, no key, darktable's Ctrl+I being Import's, `Invert`; `select-unedited`, no key, `Unedited`), which `run_actions` hands to `selection::edit` to be laid over the mirror as the gestures are:
+The Select menu's items, darktable's select all, select none, invert selection and select untouched, are registry actions sending the session's commands (`select-all`, Ctrl+A, `All`; `select-none`, Ctrl+Shift+A, `Clear`; `invert-selection`, Ctrl+Shift+I, darktable's Ctrl+I being Import's, `Invert`; `select-unedited`, no key, `Unedited`), Previous Selection (`previous-selection`, Ctrl+Shift+D) declared after a line and drawn disabled until Phase 3, which `run_actions` hands to `selection::edit` to be laid over the mirror as the gestures are:
 
 - Select None closes the active photo in the mirror and opens none; Invert Selection closes it, and Select Unedited where its cell's pencil says it has an edit, and once the session tells the selection through that command the first selected photo in the Browser's order opens (`selection::open_first`, after each frame's events, `App::opening_first`), none with nothing selected; a later item moves the wait to its own command, and a photo opened meanwhile ends it.
 - Each is disabled where it would change nothing (`selection::selectable`, `State::select`): Select All with every photo of the folder selected, Select None with none selected, Invert Selection with no folder of photos open, Select Unedited with none of its photos unedited. Select None is disabled with the active photo alone too, where it would only close it, which is File › Close's.
@@ -658,7 +658,7 @@ Photo › Next Photo (`next-photo`, Space and →) and Previous Photo (`previous
 
 **The Mac's menu bar** (`src/menus.rs`, decision 39):
 
-- One model, `MENUS`, holds the actions the registry declares and the system's own items. It is built with muda (a macOS-only dependency) in place of winit's default menu once the window exists.
+- One model, `MENUS`, holds the actions the registry declares and the system's own items, in the app menu, File, Edit, Select, Photo, View, Window and Help; Windows and Linux have all but the app menu and Window. It is built with muda (a macOS-only dependency) in place of winit's default menu once the window exists.
 - Each frame gives it what changed: words in the language, Undo's and Redo's naming their step, enabled when the action can run in its scope, and the keymap's first key unless the focused widget keeps it.
 - Its choices go down a channel and run through `Shell::run` in `App::logic`, so they run while the window is minimised too. A press action's choice by a held key's repeat is dropped.
 - AppKit's own full-screen item is kept out.
@@ -860,7 +860,7 @@ The session's events enter the app in one place (decision 59, `src/mirror.rs`): 
 - **Colour pickers** (decision 79; [pickers.md](pickers.md)): each other tool's pickers drawn as its pick lands; and the Colour picker section, hidden by default, its place to be decided.
 - **One tool model** (decision 93; [docs/gui.md](gui.md#one-tool-model)): a utility's presets, with the presets API every tool shares, its decision first; `overlay` and `pointer`, provided as no-ops, when a utility draws over the photo.
 - **The Import sheet** (decision 86; [docs/gui.md](gui.md#sheets)): its modality, the view's keys and the Toolbar resting under it; each tool's place, the Tools panel or Import, declared and tested.
-- **The Export tool** (decision 90; [docs/gui.md](gui.md#the-export-tool)): Export Again on Ctrl+Shift+E and the tool's other keys, the preview's in-view rule; Edit › Previous Selection with Phase 3's selection; Collections' Import….
+- **The Export tool** (decision 90; [docs/gui.md](gui.md#the-export-tool)): Export Again on Ctrl+Shift+E and the tool's other keys, the preview's in-view rule; Select › Previous Selection with Phase 3's selection; Collections' Import….
 
 ## apertrust-ui
 
