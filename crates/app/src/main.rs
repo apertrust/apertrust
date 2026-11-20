@@ -5398,9 +5398,16 @@ impl App {
             anchor: egui::Rect::from_min_size(menu.at, egui::Vec2::ZERO),
             opener: Some(menu.cell),
         });
-        let state = self.state(ctx);
+        // The menu acts on the selection, so it counts the photos selected, where the shell's
+        // state counts the active photo alone.
+        let selected = self.mirror.selected_count();
+        let state = State {
+            photos: selected,
+            ..self.state(ctx)
+        };
         let asked = self.mirror.photo.asked();
-        context_popup(ctx, id, opened, &self.shell.keymap, &state, asked)
+        let chosen = context_popup(ctx, id, opened, &self.shell.keymap, &state, asked);
+        chosen.and_then(|chosen| menus::chosen_on_thumbnail(chosen, selected))
     }
 
     /// The viewer bar, the photo and its caption. Returns the viewer bar's rectangle, a
