@@ -16,7 +16,7 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 # Fails if a source file lacks the GPLv3 licence header described in AGENTS.md.
-#   tools/check-license-headers.sh           every source file (CI's lint)
+#   tools/check-license-headers.sh           every source file
 #   tools/check-license-headers.sh FILE...   the source files among those given, from the
 #                                            repository's root, as pre-commit passes them
 set -euo pipefail

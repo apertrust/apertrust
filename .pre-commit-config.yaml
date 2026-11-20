@@ -147,7 +147,7 @@ repos:
         require_serial: true
 
       # The long checks, in the manual stage.
-      # Linux, Windows and macOS, as CI's clippy jobs check them; tools/clippy.sh says how.
+      # Linux, Windows and macOS, the platforms CI checks; tools/clippy.sh says how.
       - id: clippy
         name: cargo clippy
         entry: tools/clippy.sh --all
