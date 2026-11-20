@@ -25,6 +25,8 @@ cargo test --workspace
 tools/check-license-headers.sh
 tools/check-ui-strings.sh
 tools/check-windows-paths.sh
+tools/check-docs-paths.sh
+tools/credits.sh --check
 tools/build-kernels.sh --check
 tools/build-api-docs.sh
 ```
