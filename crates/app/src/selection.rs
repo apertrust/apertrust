@@ -17,7 +17,8 @@
 //! What the Browser's gestures do to the selection and the active photo, both the
 //! session's (decision 37; `docs/gui.md`, Selection and the active photo, The pointer):
 //!
-//! - **A click,** or Enter, selects the photo alone and makes it active, opening it.
+//! - **A click,** or Enter, makes the photo active, opening it: one of the selection keeps
+//!   it, so a click moves through several selected; any other is selected alone.
 //! - **Ctrl-click** (Cmd on the Mac), or Ctrl+Space on the cell focused, adds the photo to
 //!   the selection, the active photo staying as it is, or removes it. Removing the active
 //!   photo closes it, as File › Close does, and
@@ -33,7 +34,9 @@
 //!
 //! Edit's selection items run here too ([`edit`]): Select All, Select None, Invert
 //! Selection and Select Unedited, each drawn disabled where it would change nothing
-//! ([`selectable`]).
+//! ([`selectable`]). So do Next Photo and Previous Photo ([`step`]): with several photos
+//! selected, the active photo moves through them in the Browser's order, the selection
+//! staying; else through the folder, the photo reached selected alone.
 
 use std::path::{Path, PathBuf};
 
@@ -66,13 +69,17 @@ pub(crate) fn browse(
     let active = mirror.photo.asked().map(Path::to_owned);
     match action {
         BrowserAction::Open(_) => {
-            // The photo open stays as it is when its own cell is pressed again.
+            // The photo open stays as it is when its own cell is pressed again. Its open
+            // keeps a selection that holds it and selects any other alone, as the
+            // session's does.
             if active.as_ref() != Some(&path) {
+                let outside = !mirror.is_selected(&path);
                 open_listed(path.clone(), mirror, send);
-            }
-            // Opening a selected photo keeps the selection, which a click narrows to it.
-            if !alone && !mirror.selected_alone(&path) {
-                select(SelectionCommand::Set(vec![path]), mirror, send);
+                // All, Invert or Unedited not yet told may select it before the open
+                // comes: a photo shown outside the selection is selected alone all the same.
+                if outside && mirror.selection_pending() {
+                    select(SelectionCommand::Set(vec![path]), mirror, send);
+                }
             }
         }
         _ if alone => {}
@@ -100,7 +107,7 @@ pub(crate) fn browse(
 
 /// Opens the photo at `i` of `order`, the Browser's, as its cell's menu opens (decision
 /// 91), unless it is the active one: a photo in the selection keeps it, so the menu acts on
-/// the selection; one outside it is selected alone, as a click selects it.
+/// the selection; one outside it is selected alone, as a click does.
 pub(crate) fn open_for_menu(
     i: usize,
     order: &[PathBuf],
@@ -219,6 +226,47 @@ pub(crate) fn selectable(mirror: &Mirror) -> Selectable {
         invert: !listing.photos.is_empty(),
         unedited: (listing.photos.iter()).any(|photo| photo.edit == EditState::None),
     }
+}
+
+/// Next Photo, or Previous Photo where `next` is false: opens the photo [`stepped`] finds,
+/// which a selected one keeps the selection with and any other is selected alone by, as
+/// the session's `Open` does; at the end, nothing.
+pub(crate) fn step(next: bool, mirror: &mut Mirror, send: &mut SendCommand<'_>) {
+    if let Some(photo) = stepped(next, mirror) {
+        open_listed(photo, mirror, send);
+    }
+}
+
+/// The photo Next Photo (`next`) or Previous Photo reaches from the active one, in the
+/// Browser's order: the next or previous selected photo while several are selected, else
+/// the next or previous of the folder; with no active photo, the first, or the last. None
+/// at the end, where the keys stop rather than wrap round, with no folder open, and while
+/// All, Invert or Unedited waits for the session to tell what it selected, so a step never
+/// reads the selection before them ([`Mirror::selection_pending`]).
+/// Worked out for each frame's actions, so only the photos up to the one reached are
+/// looked up.
+pub(crate) fn stepped(next: bool, mirror: &Mirror) -> Option<PathBuf> {
+    if mirror.selection_pending() {
+        return None;
+    }
+    let listing = listing(mirror)?;
+    let order = mirror.folder.order();
+    let path = |i: usize| listing.path.join(&listing.photos[i].name);
+    let several = mirror.selected_count() > 1;
+    let reached = |i: &usize| !several || mirror.is_selected(&path(*i));
+    // From the photo asked for last, one that failed to open included, so the keys move on
+    // past it rather than back to the start.
+    let at = (mirror.photo.path())
+        .and_then(|active| listing.position(active))
+        .and_then(|active| order.iter().position(|&i| i == active));
+    let found = if next {
+        let from = at.map_or(0, |at| at + 1);
+        order[from..].iter().copied().find(reached)
+    } else {
+        let to = at.unwrap_or(order.len());
+        order[..to].iter().rev().copied().find(reached)
+    };
+    found.map(path)
 }
 
 /// The folder open, the session's collection; none with no folder or photos opened alone.
@@ -353,6 +401,13 @@ mod tests {
             self.sent[from..].to_vec()
         }
 
+        /// What Next Photo (`next`) or Previous Photo sends.
+        fn step(&mut self, next: bool) -> Vec<Command> {
+            let from = self.sent.len();
+            step(next, &mut self.m, &mut sender(&mut self.sent));
+            self.sent[from..].to_vec()
+        }
+
         /// What waiting for the new selection's first photo sends, as after each event.
         fn open_first(&mut self) -> Vec<Command> {
             let from = self.sent.len();
@@ -409,29 +464,50 @@ mod tests {
         SessionError::NotInCollection { photo: at(name) }
     }
 
-    /// A click opens the photo, selected alone: by the open where it was not selected, else
-    /// by `Set`, its own cell's click too, which opens nothing; with it alone, nothing.
+    /// A click opens the photo: one outside the selection is selected alone by its open,
+    /// one of several selected keeps the selection, and the active photo's own cell sends
+    /// nothing.
     #[test]
-    fn a_click_opens_the_photo_and_selects_it_alone() {
+    fn a_click_opens_the_photo_keeping_a_selection_that_holds_it() {
         let mut f = Folder::new("a");
         f.told(&["a"], Some("a"));
         // c, not selected, is selected alone by its open.
         assert_eq!(f.browse(BrowserAction::Open(2)), [Command::Open(at("c"))]);
         assert_eq!(f.m.photo.asked(), Some(at("c").as_path()));
         assert!(f.m.selected_alone(&at("c")));
+        // d, one of three selected: active, the three staying.
         f.told(&["b", "c", "d"], Some("c"));
-        let alone = selection(SelectionCommand::Set(vec![at("d")]));
-        let sent = f.browse(BrowserAction::Open(3));
-        assert_eq!(sent, [Command::Open(at("d")), alone.clone()]);
-        f.told(&["c", "d"], Some("d"));
-        assert_eq!(f.browse(BrowserAction::Open(3)), [alone]);
-        // The photo open, alone: nothing.
-        f.told(&["d"], Some("d"));
+        assert_eq!(f.browse(BrowserAction::Open(3)), [Command::Open(at("d"))]);
+        f.told(&["b", "c", "d"], Some("d"));
+        assert_eq!(f.m.selected_count(), 3);
+        // The active photo's own cell: nothing, however many are selected.
         assert!(f.browse(BrowserAction::Open(3)).is_empty());
+        assert_eq!(f.m.selected_count(), 3);
     }
 
-    /// A cell's menu opens its photo first: one in the selection keeps it, where a click
-    /// would narrow it; one outside it is selected alone; the active one opens nothing.
+    /// A click on a photo shown outside the selection selects it alone though Select All,
+    /// sent before it and not yet told, would select it first and the open keep them all.
+    #[test]
+    fn a_click_outside_the_selection_before_select_all_is_told_selects_the_photo_alone() {
+        let mut f = Folder::new("a");
+        f.listed(&[], false);
+        f.told(&["a"], Some("a"));
+        f.edit(SelectionCommand::All);
+        let all = f.sent.len() as u64;
+        let alone = selection(SelectionCommand::Set(vec![at("c")]));
+        let sent = f.browse(BrowserAction::Open(2));
+        assert_eq!(sent, [Command::Open(at("c")), alone]);
+        assert!(f.m.selected_alone(&at("c")));
+        // Select All told, the click not yet: still c alone, as the session will make it.
+        f.fact(&["a", "b", "c", "d", "e"], Some("a"), all);
+        assert!(f.m.selected_alone(&at("c")));
+        // With nothing pending, a click outside the selection sends the open alone.
+        f.told(&["c"], Some("c"));
+        assert_eq!(f.browse(BrowserAction::Open(3)), [Command::Open(at("d"))]);
+    }
+
+    /// A cell's menu opens its photo first, as a click does: one in the selection keeps it;
+    /// one outside it is selected alone; the active one opens nothing.
     #[test]
     fn a_cell_s_menu_opens_its_photo_keeping_the_selection_that_holds_it() {
         let mut f = Folder::new("c");
@@ -489,18 +565,15 @@ mod tests {
     }
 
     /// Gestures before the session tells the selection read what the last ones did: a
-    /// click on the active photo after a Ctrl-click narrows the selection to it, and a
-    /// click on it again, selected alone, sends nothing.
+    /// click on a photo a Ctrl-click has just added opens it, the two staying selected.
     #[test]
-    fn a_click_after_a_ctrl_click_not_yet_told_selects_the_photo_alone() {
+    fn a_click_after_a_ctrl_click_not_yet_told_keeps_both_selected() {
         let mut f = Folder::new("a");
         f.told(&["a"], Some("a"));
         f.browse(BrowserAction::ToggleSelected(1));
         assert_eq!(f.m.selected_count(), 2);
-        let alone = selection(SelectionCommand::Set(vec![at("a")]));
-        assert_eq!(f.browse(BrowserAction::Open(0)), [alone]);
-        assert!(f.m.selected_alone(&at("a")));
-        assert!(f.browse(BrowserAction::Open(0)).is_empty());
+        assert_eq!(f.browse(BrowserAction::Open(1)), [Command::Open(at("b"))]);
+        assert_eq!(f.m.selected_count(), 2);
     }
 
     /// Ctrl-click twice on a selected photo before the session tells either: the first
@@ -791,5 +864,102 @@ mod tests {
         let mut f = Folder::new("a");
         f.listed(&["a", "b", "c", "d", "e"], false);
         assert!(!selectable(&f.m).unedited);
+    }
+
+    /// With several selected, Next Photo and Previous Photo move the active photo through
+    /// them in the Browser's order, the selection staying; at either end they stop.
+    #[test]
+    fn next_and_previous_move_through_the_selection_which_stays() {
+        let mut f = Folder::new("b");
+        f.listed(&[], false);
+        f.told(&["b", "d", "e"], Some("b"));
+        assert_eq!(f.step(true), [Command::Open(at("d"))]);
+        assert_eq!(f.step(true), [Command::Open(at("e"))]);
+        assert_eq!(f.m.selected_count(), 3);
+        // The last selected: nothing further, the item disabled.
+        assert_eq!(stepped(true, &f.m), None);
+        assert!(f.step(true).is_empty());
+        assert_eq!(f.step(false), [Command::Open(at("d"))]);
+        assert_eq!(f.step(false), [Command::Open(at("b"))]);
+        assert!(f.step(false).is_empty());
+        assert_eq!(f.m.selected_count(), 3);
+        assert_eq!(f.m.photo.asked(), Some(at("b").as_path()));
+    }
+
+    /// With one selected, they go to the next or previous photo of the folder, selected
+    /// alone; at the folder's ends they stop.
+    #[test]
+    fn with_one_selected_next_and_previous_go_through_the_folder() {
+        let mut f = Folder::new("b");
+        f.listed(&[], false);
+        f.told(&["b"], Some("b"));
+        assert_eq!(f.step(true), [Command::Open(at("c"))]);
+        assert!(f.m.selected_alone(&at("c")));
+        assert_eq!(f.step(false), [Command::Open(at("b"))]);
+        assert_eq!(f.step(false), [Command::Open(at("a"))]);
+        assert!(f.step(false).is_empty());
+        let mut f = Folder::new("e");
+        f.listed(&[], false);
+        f.told(&["e"], Some("e"));
+        assert!(f.step(true).is_empty());
+        assert_eq!(f.step(false), [Command::Open(at("d"))]);
+    }
+
+    /// They follow the Browser's sort: in descending file names, → from c is a among the
+    /// selected and b in the folder.
+    #[test]
+    fn next_and_previous_follow_the_browser_s_sort() {
+        let mut f = Folder::new("c");
+        // e, d, c, b, a.
+        f.listed(&[], true);
+        f.told(&["a", "c", "e"], Some("c"));
+        assert_eq!(stepped(true, &f.m), Some(at("a")));
+        assert_eq!(stepped(false, &f.m), Some(at("e")));
+        f.told(&["c"], Some("c"));
+        assert_eq!(f.step(true), [Command::Open(at("b"))]);
+        assert_eq!(f.step(false), [Command::Open(at("c"))]);
+        assert_eq!(f.step(false), [Command::Open(at("d"))]);
+    }
+
+    /// With no active photo, Next Photo opens the first selected and Previous Photo the
+    /// last; with no folder open, neither has a photo to go to.
+    #[test]
+    fn with_no_active_photo_next_and_previous_open_the_first_and_the_last() {
+        let mut f = Folder::new("c");
+        f.listed(&[], false);
+        f.m.closing();
+        f.told(&["b", "d"], None);
+        assert_eq!(stepped(true, &f.m), Some(at("b")));
+        assert_eq!(stepped(false, &f.m), Some(at("d")));
+        let mut f = Folder::new("c");
+        f.told(&["c"], Some("c"));
+        assert_eq!((stepped(true, &f.m), stepped(false, &f.m)), (None, None));
+    }
+
+    /// A photo that fails to open is still where the keys go on from: Next Photo moves past
+    /// it, not back to the first.
+    #[test]
+    fn next_photo_moves_on_past_a_photo_that_failed_to_open() {
+        let mut f = Folder::new("a");
+        f.listed(&[], false);
+        f.told(&["a"], Some("a"));
+        assert_eq!(f.step(true), [Command::Open(at("b"))]);
+        let open = f.sent.len() as u64;
+        let error = Box::new(SessionError::Gpu("unreadable".to_owned()));
+        f.m.apply(Event::Failed(SessionError::Open { open, error }));
+        assert_eq!(stepped(true, &f.m), Some(at("c")));
+    }
+
+    /// Next and Previous Photo wait for Invert Selection's answer: before it they would read
+    /// the selection Invert replaces, and their open would undo it.
+    #[test]
+    fn next_and_previous_wait_for_what_invert_selected() {
+        let mut f = Folder::new("c");
+        f.listed(&[], false);
+        f.told(&["a", "c", "e"], Some("c"));
+        f.edit(SelectionCommand::Invert);
+        assert_eq!((stepped(true, &f.m), stepped(false, &f.m)), (None, None));
+        f.told(&["b", "d"], None);
+        assert_eq!(stepped(true, &f.m), Some(at("b")));
     }
 }

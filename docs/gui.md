@@ -553,7 +553,7 @@ Through muda: built once the window exists, on the main thread, and handed to Ap
   - View with Collections, Tools Panel Tab (tabs 1 to 5), Workspace (Default, Essentials, then a person's own, the one shown checked), Interface Size (Larger, Smaller, Normal Size), Jobs and Full Screen;
   - Window; Help, with AppKit's search.
 
-  Disabled until built: Import, Copy Edit, Apply Edit, Copy or Apply Parts, Next Photo and Previous Photo. Not placed, on purpose: the Edit view's action, which joins the menus as Photo's once there is a second layout, F6's two actions, H's peek and Restart, which Settings' Restart now and the start notice's Try again run (decision 82). An item's words are its action's message for now, so "Settings", "Quit", "Reset", "Copy edit" and "Tools panel tab 1", but for Undo and Redo, which name their step ("Undo Exposure"); the `.menu` and `.mac` attributes, title case and the tabs' own names, and check marks come later.
+  Disabled until built: Import, Copy Edit, Apply Edit and Copy or Apply Parts. Not placed, on purpose: the Edit view's action, which joins the menus as Photo's once there is a second layout, F6's two actions, H's peek and Restart, which Settings' Restart now and the start notice's Try again run (decision 82). An item's words are its action's message for now, so "Settings", "Quit", "Reset", "Copy edit" and "Tools panel tab 1", but for Undo and Redo, which name their step ("Undo Exposure"); the `.menu` and `.mac` attributes, title case and the tabs' own names, and check marks come later.
 - **The app menu's title.** Run without a bundle, macOS titles it with the binary's name, "apertrust". The build embeds `crates/app/assets/macos/Info.plist`, whose `CFBundleName` is Apertrust, in the binary's `__TEXT,__info_plist` section (`crates/app/build.rs`), so the menu bar reads Apertrust.
   - The Dock and the app switcher keep "apertrust" until the app runs from a bundle, and no public API renames it: LaunchServices names an unbundled app after its executable's file and reads nothing of the embedded plist. `CFBundleDisplayName` or `CFBundleIdentifier` there, `NSProcessInfo.setProcessName`, `setprogname` and argv[0] change nothing, before the app starts or once its window is open; a symlink named Apertrust renames LaunchServices' entry but not the Dock's, which follows the link to the file.
   - Run from inside a minimal `Apertrust.app`, its Info.plist naming Apertrust and its `Contents/MacOS/apertrust` a symlink to the built binary, the same binary reads Apertrust in LaunchServices, the Dock and the menu bar, its stderr still the terminal's. The packaged Apertrust.app names it for users; in development only such a bundle would.
@@ -755,8 +755,8 @@ macOS only: the app menu, which macOS titles with the app's name.
 
 | Item | Action | Keys | Now |
 | --- | --- | --- | --- |
-| Next Photo | `next-photo` | Space, → | Declared; Phase 2, with the Browser |
-| Previous Photo | `previous-photo` | Backspace, ← | Declared; Phase 2 |
+| Next Photo | `next-photo` | Space, → | Built: with several selected, the next selected photo in the Browser's sort; else the folder's next, selected alone. Disabled at the end |
+| Previous Photo | `previous-photo` | Backspace, ← | Built, as Next Photo the other way |
 | — | | | |
 | Auto → each tool that has Auto, by its title | `auto-<module>` | — | New; each item drawn disabled until its tool's Auto runs |
 | Take Snapshot | `snapshot` | — | New, with snapshots (principle 3; no phase yet) |
@@ -1035,13 +1035,14 @@ Keep each slice to what exists.
 
 | When | Items |
 | --- | --- |
-| Built on the Mac, with its native bar | The app menu; About; Settings; Quit; Close Window; Open… (`open`, Ctrl+O, first in File: raws, opened alone together with the first active, closing the folder); Open Folder…; Export… and Export Again; Reset Edit; Collections; Tools Panel Tab; Workspace, its items check items, filled afresh as Open Recent is; Interface Size; Jobs; Full Screen; the Window menu; Help's search. Drawn disabled: Import, Copy Edit, Apply Edit, Copy or Apply Parts, Next Photo and Previous Photo, and View's zoom items |
+| Built on the Mac, with its native bar | The app menu; About; Settings; Quit; Close Window; Open… (`open`, Ctrl+O, first in File: raws, opened alone together with the first active, closing the folder); Open Folder…; Export… and Export Again; Reset Edit; Collections; Tools Panel Tab; Workspace, its items check items, filled afresh as Open Recent is; Interface Size; Jobs; Full Screen; the Window menu; Help's search. Drawn disabled: Import, Copy Edit, Apply Edit, Copy or Apply Parts, and View's zoom items |
 | Built on Windows and Linux | The ☰ and its drawn menu, holding what the Mac's menus hold but the Mac's own items and its Window menu, with check marks on Full Screen, the Tools panel's tabs and the workspace shown; the `menu` action, F10 |
 | Still in step 7 | Cut, Copy and Paste for value fields; Guides; Proof Margin; Panels › Tab Names; Customise Tabs, drawn disabled until Phase 3's visual editor (decision 96); new actions `cut`, `copy`, `paste`, `guides`, `proof-margin`, `panel-tab-names` and `customise-tabs`, with the platforms' keys kept from actions; Windows' Alt pressed and released alone |
 | Built in step 9c | Open Recent with Clear Menu, and Close, on the Mac's bar and in the ☰ |
 | Built in the library's step 9.4 | Undo and Redo, naming the step, on the Mac's bar and in the ☰ |
 | Built with selecting several photos | Select All, for a value field and for the photos, Select None, Invert Selection and Select Unedited, on the Mac's bar and in the ☰ |
-| Later in Phase 2 | Show in Folder, with folder mode; Search Photos, Sort By and Thumbnail Size, with the browser bar (step 9); Next and Previous Photo, with the Browser; the zoom items, with the scale's zoom; Clipping Warnings, with the overlays (step 8) |
+| Built with moving through the selection | Next Photo and Previous Photo, on the Mac's bar and in the ☰ |
+| Later in Phase 2 | Show in Folder, with folder mode; Search Photos, Sort By and Thumbnail Size, with the browser bar (step 9); the zoom items, with the scale's zoom; Clipping Warnings, with the overlays (step 8) |
 | Built in decision 96's step 2 | View › Workspace with its workspaces, on the Mac's bar and in the ☰ |
 | Phase 2, decision 96's steps | Reset Workspace (step 5) |
 | Phase 3 | Save as, Rename and Delete Workspace, with the visual editor for workspaces; Sort By › Rating; Export on Windows and Linux; Copy Edit, Apply Edit, Copy or Apply Parts; Save Edit as Style; Before and After; Show All Selected; Rotate and Flip; Panels › Tools Panel and the side; Rotate and perspective's Auto; Rating and Colour Label, with the caption's controls; Import, a sheet, by copy in folder mode, with step 20a (decisions 46 and 85) |
@@ -2544,7 +2545,7 @@ With several photos selected, the rating, reject and label keys, Apply Edit and 
 - **The selection** is a set of the current folder's or album's photos, which holds the active photo whenever there is one. Selected photos are marked neutral, by a thin ring in the icons' grey, the active photo by a thicker one, never the accent ([The cell](#the-cell)).
 - **Both are the session's** (decision 37), not the interface's, so a script or an assistant reads and sets them with the same commands, and an assistant's note says how many photos it changed (principle 8).
 - **Built:** the session's half. `Command::Selection` sets the photos, adds or removes one, selects a range from the active photo in the client's sort, all, none, the inverse or the unedited photos; opening a photo outside the selection selects it alone, and a command that leaves the active photo out closes it; a folder listed again keeps the selection by photo. The session tells it as `Event::Selection`, which the app's mirror keeps (`Mirror::selection`; [session-protocol.md](session-protocol.md#the-selection), [events.md](events.md#the-selection)).
-- **Built in the Browser:** its pointer's rows below, Ctrl+Space, the cells' rings, the viewer bar's count and what screen readers hear. Ctrl-click on the active photo takes it out, which closes it as File › Close does, then opens the nearest selected photo in the Browser's order, the later of two as near; with none selected, no photo is active. Each gesture shows at once, before the session answers, and the next one reads what it did (`Mirror::selecting`). Among photos opened alone, which the session holds no collection of, Ctrl and Shift-click do nothing. Edit's Select items are built ([Edit](#edit)); the batch actions and the keys that move through the selection are not yet.
+- **Built in the Browser:** its pointer's rows below, Ctrl+Space, the cells' rings, the viewer bar's count and what screen readers hear. Ctrl-click on the active photo takes it out, which closes it as File › Close does, then opens the nearest selected photo in the Browser's order, the later of two as near; with none selected, no photo is active. Each gesture shows at once, before the session answers, and the next one reads what it did (`Mirror::selecting`). Among photos opened alone, which the session holds no collection of, Ctrl and Shift-click do nothing. Edit's Select items ([Edit](#edit)) and the keys that move through the selection are built; the batch actions are planned.
 
 | Action | Acts on | What it says |
 | --- | --- | --- |
@@ -2568,15 +2569,15 @@ With several photos selected, the rating, reject and label keys, Apply Edit and 
 
 | Input | In the Browser | On a cell in Photo |
 | --- | --- | --- |
-| A click on a photo's picture | Selects the photo alone and makes it active | Makes it active; the selection stays |
+| A click on a photo's picture | Makes it active; a photo of the selection keeps the selection, so a click moves through several selected, and any other is selected alone | Makes it active; the selection stays |
 | Ctrl-click (Cmd on a Mac) | Adds the photo to the selection, the active photo staying as it is, or removes it; removing the active photo makes the nearest selected one active, or none | Removes it from the selection, and so from the cells |
 | Shift-click | Selects the range from the active photo to it; the active photo stays, so the Viewer does not jump while a range grows | — |
-| Double-click, or Enter | As a click: that photo alone, active | That photo alone |
+| Double-click, or Enter | As a click: that photo active, the selection staying where it holds it | That photo alone |
 | A click on empty space: between the cells, on a caption, or in a cell's square round a fitted picture | Nothing: clearing the selection by accident would disable the Tools panel; Select None has its key and its item | Nothing |
-| Right-click | The context menu ([Context menus](#context-menus)) opens the photo first, keeping a selection that holds it where a click would narrow it, and acts on the selection | The same |
+| Right-click | The context menu ([Context menus](#context-menus)) opens the photo first, as a click does, and acts on the selection | The same |
 
 - **The keys,** the same in every layout:
-  - → and Space, ← and Backspace: with several selected, the active photo moves through the selection, which stays; with one, to the next or previous photo of the folder or album, selected alone;
+  - → and Space, ← and Backspace: with several selected, the active photo moves through the selection in the Browser's sort, which stays; with one, to the next or previous photo of the folder or album, selected alone; at either end they stop, Next Photo or Previous Photo disabled, and with no active photo they open the first or the last (built for a folder);
   - Shift with the arrows extends the selection in the Browser;
   - Ctrl+Space (Cmd+Space or Control+Space on a Mac, since Spotlight holds Cmd+Space) adds the focused cell's photo, the active photo staying, or removes it, as Ctrl-click does;
   - Ctrl+A selects every photo the folder or album shows, Ctrl+Shift+A none, which leaves no active photo; Edit › Invert Selection and Select Unedited have no key by default ([The menu bar](#edit); built);
@@ -4128,7 +4129,7 @@ Ctrl means Cmd on macOS.
 | View | The layouts: Photo, and Map toggled on and off, as its toggle on the viewer bar is | Shift+M toggles Map, pressed again back to Photo; Photo has no key of its own, and E is left free | The Edit view's action, built with E, is to become Photo's, with no key; Shift+M comes with the Map and its toggle |
 | View | Collections (`show-collections`): the first tab holding Collections | L; pressed again, nothing | Built, on the main window; a click chooses the tab too, and Ctrl+1 where Collections is in the first tab, as in the Default workspace |
 | View | See the photo without the section under the pointer | Hold H | In Photo. The section shows that it peeks, a tool's section too; rendering the photo without that tool is not built: H will send the same `Hide` the History tab's eye sends while held |
-| View | Next and previous photo | Space and →, Backspace and ← | With several selected, through the selection; else through the folder or album, the photo reached selected alone. Disabled with one photo |
+| View | Next and previous photo | Space and →, Backspace and ← | Built for a folder: with several selected, through the selection in the Browser's sort; else through the folder or album, the photo reached selected alone; with no active photo, the first or the last. Disabled at the end, so with one photo once it is active |
 | View | Extend the selection | Shift with the arrows, in the Browser | Phase 3, with selecting several photos |
 | View | Add the focused cell's photo to the selection, the active photo staying, or take it out | Ctrl+Space, in the Browser; Control+Space too on the Mac, where Spotlight holds Cmd+Space | Built: the focused cell's own key, as Ctrl-click; no action of the registry |
 | View | Zoom the photo in and out, and to Fit | Ctrl+= (or Ctrl++ where + has its own key), Ctrl+−; Ctrl+0 fits. With Shift, every cell: Ctrl+Shift+= (a US keyboard's Ctrl++), Ctrl+Shift+− and Ctrl+Shift+0 | Declared with no key, not yet available: the scale's zoom comes with the viewport's 100% view, and the keys with it; at the point under the pointer when it is over the photo. With several shown, the cell under the pointer, else the active photo's, each keeping its own zoom; with Shift every cell together, at the same point of each photo ([Photo's cells](#photos-cells)) |

@@ -344,6 +344,7 @@ impl Mirror {
     }
 
     /// Whether `path` is selected alone, as [`Mirror::is_selected`] tells it.
+    #[cfg(test)]
     pub fn selected_alone(&self, path: &Path) -> bool {
         let photos = self.shown_selection();
         photos.len() == 1 && photos.contains(path)
@@ -359,6 +360,20 @@ impl Mirror {
     pub fn selecting(&mut self, command: &SelectionCommand, number: u64) {
         let active = (self.photo.asked().map(Path::to_owned)).zip(self.photo.open());
         self.ask(number, Ask::Select(command.clone(), active));
+    }
+
+    /// Whether a selection command that needs the collection, All, Invert or Unedited, is
+    /// sent and not yet told: what the selection is waits for the session until then.
+    pub fn selection_pending(&self) -> bool {
+        self.asked.iter().any(|asked| {
+            matches!(
+                asked.ask,
+                Ask::Select(
+                    SelectionCommand::All | SelectionCommand::Invert | SelectionCommand::Unedited,
+                    _
+                )
+            )
+        })
     }
 
     /// The open numbered `open` failed: it selected nothing, and a range sent after it runs
