@@ -3136,7 +3136,7 @@ One button at the bar's end, `ViewerBar`'s zoom, showing the scale and a 10-poin
   - Zoom in, Zoom out.
 
   The scale shown is checked; a scale between them checks none. Each entry shows its action's keys from the keymap, as a menu item does: Z for 100% (`zoom-100`); Fit, Zoom in and Zoom out show Ctrl+0, Ctrl+= and Ctrl+− once those keys move from the interface's size to the zoom ([the default keyboard map](#the-default-keyboard-map)). Zoom in is disabled at 1600% and Zoom out at Small. With several photos shown, an entry chosen with Shift held acts on every cell together ([Photo's cells](#photos-cells)), so Zoom in and Zoom out stay enabled while any cell can still step that way.
-- **Every entry is an action** (planned), so a key can be given to any of them: `zoom-small`, `zoom-fit`, `zoom-fill`, `zoom-50`, `zoom-100`, `zoom-200`, `zoom-400`, `zoom-800`, `zoom-1600`, `zoom-in` and `zoom-out`. The Shift forms are actions of their own, `zoom-in-all`, `zoom-out-all`, `zoom-fit-all` and `zoom-100-all`, which act as the plain ones while one photo is shown ([Photo's cells](#photos-cells)). Only `zoom-fit`, `zoom-100`, `zoom-in` and `zoom-out` and their Shift forms have default keys; decision 98's audit of the keymap weighs darktable's Alt+2 for Fill and Alt+3 for Fit.
+- **Every entry is an action** (planned), so a key can be given to any of them: `zoom-small`, `zoom-fit`, `zoom-fill`, `zoom-50`, `zoom-100`, `zoom-200`, `zoom-400`, `zoom-800`, `zoom-1600`, `zoom-in` and `zoom-out`. The Shift forms are actions of their own, `zoom-in-all`, `zoom-out-all`, `zoom-fit-all` and `zoom-100-all`, which act as the plain ones while one photo is shown ([Photo's cells](#photos-cells)). Only `zoom-fit`, `zoom-100`, `zoom-in`, `zoom-out` and their Shift forms have default keys; decision 98's audit of the keymap weighs darktable's Alt+2 for Fill and Alt+3 for Fit.
 - **What it reports:** `ViewerBarAction::Zoom` with a `Zoom` (Small, Fit, Fill or a percentage), or `ZoomIn` and `ZoomOut`, which the app takes [in order of scale](#zooming).
 - **While the viewport can only fit,** as now: it shows Fit, every entry but Fit is disabled, and its tooltip says zoom comes with the 100% view.
 - **States** (planned):
@@ -3167,7 +3167,7 @@ One button at the bar's end, `ViewerBar`'s zoom, showing the scale and a 10-poin
 
 | The person | Does |
 | --- | --- |
-| Chooses an entry of the zoom menu | That scale, about the view's centre, kept inside the photo's edges ([Panning](#panning)); Fit and Small centre the photo |
+| Chooses an entry of the zoom menu | That scale, about the view's centre, kept inside the photo's edges ([Panning](#panning)); Fit and Small centre the photo. The 100% entry runs `zoom-100` as Z and View › Zoom to 100% do, so chosen at 100% it goes back to Fit |
 | Presses Z | 100% at the photo's point under the pointer when the pointer is over the photo, else at the view's centre; at 100%, back to Fit |
 | Presses Ctrl+0 | Fit |
 | Presses Ctrl+= or Ctrl+− | The next scale of the menu up or down, about the point Z uses; repeats while held |
