@@ -1161,7 +1161,7 @@ impl Export {
         let tip = self.path_tip(&words);
         let given = self.path_given();
         // As high as the field and centred on its line, a square beside it.
-        let folder = IconButton::new(Icon::Folder, &choose)
+        let folder = IconButton::new(Icon::ChooseFolder, &choose)
             .size(t.sizes.field)
             .enabled(!given);
         let mut chosen = false;

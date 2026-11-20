@@ -52,6 +52,10 @@ pub enum Icon {
     Wand,
     Reset,
     Presets,
+    /// A field's button that chooses a folder, as the Export tool's path has: an open
+    /// folder at the header's buttons' 14 points, told apart from [`Icon::Folder`], the
+    /// Photos tab's and Collections' closed folder.
+    ChooseFolder,
     /// A section's ⋯ options.
     Options,
     /// The tab bar's ⋮ options.
@@ -193,7 +197,7 @@ pub enum Icon {
 }
 
 impl Icon {
-    pub const ALL: [Icon; 94] = [
+    pub const ALL: [Icon; 95] = [
         Icon::Chevron,
         Icon::ChevronDown,
         Icon::ChevronEnd,
@@ -202,6 +206,7 @@ impl Icon {
         Icon::Wand,
         Icon::Reset,
         Icon::Presets,
+        Icon::ChooseFolder,
         Icon::Options,
         Icon::OptionsVertical,
         Icon::More,
@@ -387,6 +392,7 @@ impl Icon {
             Icon::Wand => derived!("wand", "wand", 14.0),
             Icon::Reset => derived!("reset", "rotate-ccw", 14.0),
             Icon::Presets => derived!("presets", "menu", 14.0),
+            Icon::ChooseFolder => derived!("folder-open", "folder-open", 14.0),
             Icon::Options => derived!("options", "ellipsis", 14.0),
             Icon::OptionsVertical => derived!("options-vertical", "ellipsis-vertical", 14.0),
             Icon::More => derived!("more", "chevrons-right", 14.0),

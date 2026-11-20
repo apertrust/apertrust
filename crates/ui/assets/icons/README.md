@@ -46,6 +46,7 @@ The interface's icons, one SVG file each, drawn by `apertrust-ui` (`src/icons.rs
 | `flip-horizontal`, `flip-vertical` | Lucide's `triangles-centerline-dashed-vertical` and `triangles-centerline-dashed-horizontal` |
 | `history`, `history-filled` | Lucide's `rotate-ccw-clock`, its arrow removed |
 | `folder`, `folder-filled` | Lucide's `folder` |
+| `folder-open` | Lucide's `folder-open` |
 | `metadata`, `metadata-filled`, `kind` | Lucide's `tag` |
 | `works-on` | Lucide's `sun` |
 | `measures` | Lucide's `chart-column` |
