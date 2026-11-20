@@ -210,7 +210,7 @@ Details: [pickers.md](pickers.md).
 
 ### Export
 
-An export is a job of the engine's session, beside live editing: darktable's sizes, resample, formats, variables and file-on-disk rules, written by `apertrust-export`, which has no GPU (decision 56). Export is one utility, the last tool of the Photos tab, holding darktable's export module row for row, its sections as groups, and acting on the selection, else the active photo; Export… and Ctrl+E reveal it, and Export Again exports at once, its key Ctrl+Shift+E planned (decision 90). The tool is built with its groups, Summary, warnings and button states, and exports the selection with its count; the button's focus, the keys, the preview's in-view rule and presets are planned.
+An export is a job of the engine's session, beside live editing: darktable's sizes, resample, formats, variables and file-on-disk rules, written by `apertrust-export`, which has no GPU (decision 56). Export is one utility, the last tool of the Photos tab, holding darktable's export module row for row, its sections as groups, and acting on the selection, else the active photo; Export… and Ctrl+E reveal it, and Export Again exports at once, on Ctrl+Shift+E (decision 90). The tool is built with its groups, Summary, warnings, button states, folder button and keys, and exports the selection with its count; the preview's in-view rule and presets are planned.
 
 Details: [engine.md, Export jobs](engine.md#export-jobs), [gui.md, The Export tool](gui.md#the-export-tool).
 

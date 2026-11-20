@@ -627,6 +627,19 @@ pub struct Export {
     reset: bool,
     /// The keys of its settings `--conf` gives for this run.
     given: BTreeSet<String>,
+    /// Whether the tool had the focus as its last frame ended, and in a field typed in,
+    /// which keeps Esc: what takes its keys ([`Export::keys`]). egui lets go of the focus
+    /// as Esc's frame starts, so Esc is the tool's by where the focus stood before it.
+    holds: Option<Holds>,
+    /// The Export button's id the last frame, while it could take the focus.
+    button: Option<egui::Id>,
+    /// Whether the button takes the focus as it is next drawn: Export… revealed the tool.
+    focus_button: bool,
+    /// What had the focus as Export… revealed the tool, which Esc gives it back to; none
+    /// for the Viewer, as for nothing focused. Kept while the focus stays in the tool.
+    before: Option<egui::Id>,
+    /// Whether Ctrl+Return pressed Export this frame, as the button would be.
+    keyed: bool,
 }
 
 /// Export's declaration, in `UTILITIES` (decision 93).
@@ -817,6 +830,25 @@ impl UtilityTool for Export {
     }
 }
 
+/// The focus in the tool as a frame of it ends ([`Export::keys`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Holds {
+    /// Whether a field is being typed in, which keeps Esc for its own.
+    typing: bool,
+}
+
+impl Holds {
+    /// Where the focus stands, `ctx`'s, with the tool drawn in `area`: on a widget there,
+    /// or none.
+    fn now(ctx: &egui::Context, area: egui::Rect) -> Option<Holds> {
+        let focused = ctx.memory(|m| m.focused())?;
+        let at = ctx.read_response(focused)?;
+        area.contains_rect(at.rect).then(|| Holds {
+            typing: ctx.text_edit_focused(),
+        })
+    }
+}
+
 /// What the cm and inch fields hold, as darktable's print entries do, with the pixels they
 /// gave at the resolution `dpi`: while the pixels and the resolution are still those, the
 /// lengths are the physical size.
@@ -844,6 +876,11 @@ impl Export {
             summary: SUMMARY_OPEN,
             reset: false,
             given: BTreeSet::new(),
+            holds: None,
+            button: None,
+            focus_button: false,
+            before: None,
+            keyed: false,
         }
     }
 
@@ -960,7 +997,18 @@ impl Export {
         // button, drawn disabled until presets come, then its options, which hold nothing
         // yet.
         let resettable = self.values != self.defaults();
+        self.keys(&ctx);
+        let top = ui.cursor().top();
         let mut drawn = crate::utility::section(ui, self, cx, head, resettable);
+        let area = egui::Rect::from_x_y_ranges(ui.max_rect().x_range(), top..=ui.cursor().top());
+        self.holds = Holds::now(&ctx, area);
+        // The focus gone elsewhere: Esc has nothing to give back to.
+        if self.holds.is_none() {
+            self.before = None;
+        }
+        // Asked of the button as it was drawn this frame, or nowhere where it was not.
+        self.keyed = false;
+        self.focus_button = false;
         // Its ↺ pressed in this frame: Default settings is what was asked for last, so an
         // edit its rows commit in the same frame, a number typed and left by the click,
         // goes, a setting row's or a custom row's; groups opened or closed stay.
@@ -985,6 +1033,45 @@ impl Export {
                 choose_folder: has(Page::ChooseFolder) && !self.path_given(),
             },
             changes: drawn.changes,
+        }
+    }
+
+    /// Export… revealed the tool: the Export button takes the focus as it is drawn, so
+    /// Return presses it, and Esc gives the focus back to what had it, `ctx`'s now. Called
+    /// before [`Export::show`] in the frame that scrolls to the tool.
+    pub fn reveal(&mut self, ctx: &egui::Context) {
+        self.before = ctx.memory(|m| m.focused());
+        self.focus_button = true;
+    }
+
+    /// The tool's keys while the focus is in it, but in an open list, whose keys are its
+    /// own, before its rows see them: Ctrl+Return (Cmd+Return) presses Export as the button
+    /// would, the focus moving to the button as a click there takes it, so a value being
+    /// typed is given first; Esc, but in a field typed in, gives the focus back to what had
+    /// it before Export… revealed the tool, or to the Viewer, letting it go.
+    fn keys(&mut self, ctx: &egui::Context) {
+        let Some(holds) = self.holds else {
+            return;
+        };
+        if apertrust_ui::popup::any_open(ctx) {
+            return;
+        }
+        if ctx.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, egui::Key::Enter)) {
+            self.keyed = true;
+            if let Some(button) = self.button {
+                ctx.memory_mut(|m| m.request_focus(button));
+            }
+        }
+        let escape = !holds.typing
+            && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape));
+        if escape {
+            // egui has let go of it already; where it was before goes back there.
+            let focused = ctx.memory(|m| m.focused());
+            match (self.before.take(), focused) {
+                (Some(before), _) => ctx.memory_mut(|m| m.request_focus(before)),
+                (None, Some(focused)) => ctx.memory_mut(|m| m.surrender_focus(focused)),
+                (None, None) => {}
+            }
         }
     }
 

@@ -894,11 +894,11 @@ pub static ACTIONS: [Action; 107] = [
         available: |s| (s.photo || s.exportable) && no_modal_dialog(s),
         emits: Emit::Intent(Intent::Export),
     },
-    // darktable's Ctrl+E: no key by default, so anyone used to it can bind one.
+    // darktable's Ctrl+E, on Ctrl+Shift+E (Cmd+Shift+E), Ctrl+E revealing the tool (decision 90).
     Action {
         id: ActionId::EXPORT_AGAIN,
         message: "action-export-again",
-        keys: &[],
+        keys: &[command_shift(Key::E)],
         scope: Scope::App,
         trigger: Trigger::Press,
         available: |s| s.exportable && no_modal_dialog(s),
@@ -3258,10 +3258,15 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn export_again_has_no_key_by_default_and_needs_a_photo_to_export() {
+    fn export_again_is_ctrl_shift_e_and_needs_a_photo_to_export() {
         let en = Translator::new(Locale::EnGb);
         for os in PLATFORMS {
-            assert!(Keymap::defaults(os).keys(ActionId::EXPORT_AGAIN).is_empty());
+            let keys = Keymap::defaults(os).keys(ActionId::EXPORT_AGAIN).to_vec();
+            let ctrl_shift_e = Shortcut {
+                modifiers: Modifiers::COMMAND | Modifiers::SHIFT,
+                key: Key::E,
+            };
+            assert_eq!(keys, [ctrl_shift_e], "{os:?}");
         }
         let again = action(ActionId::EXPORT_AGAIN).expect("declared");
         assert_eq!(en.text(again.message), "Export Again");

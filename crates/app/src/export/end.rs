@@ -490,7 +490,14 @@ impl Export {
         if let Some(why) = &reason {
             button = button.tip(why);
         }
-        button.show_pressed(ui)
+        let response = button.show(ui);
+        // Disabled with nothing to export, it takes no focus.
+        self.button = (!idle).then_some(response.id);
+        if self.focus_button && !idle {
+            response.request_focus();
+        }
+        // Ctrl+Return presses it as a click does, never while it is held off or disabled.
+        (response.clicked() || self.keyed) && reason.is_none() && !idle
     }
 
     /// The line under the button: the last export's failure, in `error`, with Show jobs,
