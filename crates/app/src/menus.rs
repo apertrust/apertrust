@@ -3288,10 +3288,11 @@ mod tests {
             discard_why: Some("history-discard-no-alert"),
             ..one
         };
-        // While the photo just made active opens.
+        // While the photo just made active opens, which no export takes yet.
         let waiting = State {
             photo: false,
             waiting: true,
+            exportable: false,
             ..cannot
         };
         let none = State {

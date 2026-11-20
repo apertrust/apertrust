@@ -50,13 +50,17 @@ pub struct Again {
     asked: Option<(Command, bool)>,
 }
 
-/// Whether `command` is an export of `photo`, the photo open for viewing only if there is
-/// one: a held export of it is dropped rather than sent, the engine not refusing it.
-pub fn exports(command: &Command, photo: Option<&Path>) -> bool {
-    match (command, photo) {
-        (Command::Export { photos, .. }, Some(photo)) => photos.iter().any(|p| p == photo),
-        _ => false,
+/// `command`, a held export, without `photo`, the photo open for viewing only if there is
+/// one, which no export takes, the engine not refusing it: none where no photo is left to
+/// send.
+pub fn without(mut command: Command, photo: Option<&Path>) -> Option<Command> {
+    if let (Command::Export { photos, .. }, Some(photo)) = (&mut command, photo) {
+        photos.retain(|p| p != photo);
+        if photos.is_empty() {
+            return None;
+        }
     }
+    Some(command)
 }
 
 impl Again {
@@ -115,6 +119,21 @@ pub(crate) mod tests {
             jpeg_quality: 71,
             ..Values::default()
         }
+    }
+
+    /// A held export loses only the photo that turned view-only; with none left, nothing
+    /// is sent.
+    #[test]
+    fn a_held_export_keeps_its_other_photos_when_one_turns_view_only() {
+        let other = PathBuf::from("/Users/anna/Pictures/IMG_2042.ARW");
+        let kept = values(OnConflict::Overwrite);
+        let both = vec![PathBuf::from(PHOTO), other.clone()];
+        let held = export(both, &kept, &places());
+        let left = without(held.clone(), Some(Path::new(PHOTO)));
+        assert_eq!(left, Some(export(vec![other], &kept, &places())));
+        assert_eq!(without(held.clone(), None), Some(held));
+        let alone = export(vec![PathBuf::from(PHOTO)], &kept, &places());
+        assert_eq!(without(alone, Some(Path::new(PHOTO))), None);
     }
 
     #[test]

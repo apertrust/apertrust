@@ -68,11 +68,14 @@ pub struct Jobs {
 /// how many the export takes, and how many it leaves out, open for viewing only. None
 /// with one photo. `pending` while a selection command the session has not told yet
 /// leaves the photos to export unknown: Export waits, drawn disabled.
+/// `skips_open` where the export passes the photo open over, the listing lacking it: its
+/// preview's checks then hold nothing off.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Others {
     pub taken: usize,
     pub left_out: usize,
     pub pending: bool,
+    pub skips_open: bool,
 }
 
 /// What the app tells the tool each frame besides its header, which is the shell's
@@ -420,9 +423,11 @@ impl Export {
         }
         // The path's own problems are every photo's; its folder's checks are the photo
         // open's folder's, no reason where the export leaves that photo out.
-        let problem = match self.photo {
-            Photo::Ready { .. } => self.path_problem(&translator(ctx)),
-            _ => self.pattern_problem(&translator(ctx)),
+        let takes_open = matches!(self.photo, Photo::Ready { .. }) && !self.others.skips_open;
+        let problem = if takes_open {
+            self.path_problem(&translator(ctx))
+        } else {
+            self.pattern_problem(&translator(ctx))
         };
         if let Some(problem) = problem {
             return Some(say("export-why-path", &problem.text));
@@ -433,7 +438,7 @@ impl Export {
         }
         // The preview's names and size are the photo open's: no reason where the export
         // leaves it out.
-        if !matches!(self.photo, Photo::Ready { .. }) {
+        if !takes_open {
             return None;
         }
         let (_, preview) = self.preview.as_ref()?;
@@ -462,10 +467,13 @@ impl Export {
     fn button(&mut self, ui: &mut Ui) -> bool {
         let ctx = ui.ctx().clone();
         let reason = self.cannot_export(&ctx);
-        let none = matches!(self.photo, Photo::None) && self.others.taken == 0;
-        let idle = none || self.others.pending;
-        // The photos it exports; with none, the words as for one.
-        let count = usize::from(matches!(self.photo, Photo::Ready { .. })) + self.others.taken;
+        // The photos it exports, the photo open among them unless the export passes it
+        // over; with none, the words as for one. Nothing to export is plainly disabled, but
+        // for a photo open for viewing only, which says why.
+        let takes_open = matches!(self.photo, Photo::Ready { .. }) && !self.others.skips_open;
+        let count = usize::from(takes_open) + self.others.taken;
+        let view_only = matches!(self.photo, Photo::ViewOnly { .. });
+        let idle = (count == 0 && !view_only) || self.others.pending;
         let mut args = Args::new();
         args.set("count", count.max(1) as f64);
         let words = translator(&ctx).text_with("export-button", Some(&args));

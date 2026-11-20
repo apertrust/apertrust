@@ -891,7 +891,7 @@ pub static ACTIONS: [Action; 107] = [
         keys: &[command(Key::E)],
         scope: Scope::App,
         trigger: Trigger::Press,
-        available: |s| s.photo && no_modal_dialog(s),
+        available: |s| (s.photo || s.exportable) && no_modal_dialog(s),
         emits: Emit::Intent(Intent::Export),
     },
     // darktable's Ctrl+E: no key by default, so anyone used to it can bind one.
@@ -3241,6 +3241,20 @@ pub(crate) mod tests {
         // Over the Settings dialog too.
         state.dialog = true;
         assert!(open.enabled(&state));
+    }
+
+    /// Export… reveals the tool with a photo open, view-only included, so the tool can say
+    /// why, or with a selection to export and none open.
+    #[test]
+    fn export_reveals_the_tool_with_a_photo_open_or_a_selection_to_export() {
+        let export = action(ActionId::EXPORT).expect("declared");
+        let mut state = everything();
+        (state.photo, state.exportable) = (true, false);
+        assert!(export.enabled(&state));
+        (state.photo, state.exportable) = (false, true);
+        assert!(export.enabled(&state));
+        state.exportable = false;
+        assert!(!export.enabled(&state));
     }
 
     #[test]
