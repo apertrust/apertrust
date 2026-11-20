@@ -571,7 +571,7 @@ In `src/folder.rs`, `src/library.rs`, `src/dialogs.rs`, `src/dropped.rs` and `sr
 - on the active photo it `Remove`s it, closes it in the mirror as File › Close does (`Mirror::closing`), and opens the nearest selected photo in the Browser's order, the later of two as near, or none;
 - Shift-click sends `Range { to, order }`, the active photo staying;
 - a click on the Browser's empty space (`BrowserAction::ClearSelection`) sends `Clear` and closes the active photo in the mirror, as Select None does, opening none and ending a wait for Invert's or Unedited's first photo; with the active photo alone selected too, where Select None is disabled; with nothing selected, no photo open and no All, Invert or Unedited waiting to be told, nothing;
-- among photos opened alone, the session's collection too, Ctrl and Shift-click send nothing yet, and a click on empty space closes the photo open as File › Close does (`close_photo`).
+- among photos opened alone, the session's collection too, a click on empty space sends `Clear` as in a folder, and Ctrl and Shift-click send nothing yet.
 
 The Select menu's items, darktable's select all, select none, invert selection and select untouched, are registry actions sending the session's commands (`select-all`, Ctrl+A, `All`; `select-none`, Ctrl+Shift+A, `Clear`; `invert-selection`, Ctrl+Shift+I, darktable's Ctrl+I being Import's, `Invert`; `select-unedited`, no key, `Unedited`), Previous Selection (`previous-selection`, Ctrl+Shift+D) declared after a line and drawn disabled until Phase 3, which `run_actions` hands to `selection::edit` to be laid over the mirror as the gestures are:
 
