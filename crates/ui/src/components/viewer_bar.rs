@@ -62,6 +62,20 @@ pub enum Zoom {
     Percent(f64),
 }
 
+/// Which of the zoom menu's scales can be chosen, as far as the Viewer can show them
+/// (`docs/gui.md`, The zoom, in steps).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ZoomChoices {
+    /// Fit alone: a viewport that only fits.
+    #[default]
+    Fit,
+    /// Small and Fit, the scales the fitted frame shows; Zoom in at Small and Zoom out at
+    /// Fit step between them.
+    SmallAndFit,
+    /// Every scale.
+    All,
+}
+
 /// What the user did to the viewer bar this frame.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum ViewerBarAction {
@@ -92,7 +106,7 @@ pub struct ViewerBar<'a> {
     picker: Option<(&'a str, &'a str)>,
     zoom: Zoom,
     zoom_enabled: bool,
-    zoomable: bool,
+    zoom_choices: ZoomChoices,
     shortcuts: Vec<(ViewerBarAction, &'a str)>,
 }
 
@@ -141,7 +155,7 @@ impl<'a> ViewerBar<'a> {
             picker: None,
             zoom,
             zoom_enabled: false,
-            zoomable: false,
+            zoom_choices: ZoomChoices::Fit,
             shortcuts: Vec::new(),
         }
     }
@@ -152,10 +166,11 @@ impl<'a> ViewerBar<'a> {
         self
     }
 
-    /// Whether the scale can change. A viewport that only fits cannot zoom, so its menu
-    /// offers Fit alone, the rest drawn disabled.
-    pub fn zoomable(mut self, zoomable: bool) -> Self {
-        self.zoomable = zoomable;
+    /// Which scales the menu offers, the rest drawn disabled with a tooltip saying zoom
+    /// comes with the 100% view: Fit alone, by default, for a viewport that only fits. The
+    /// button's own tooltip says how to zoom only once every scale can be chosen.
+    pub fn zoom_choices(mut self, choices: ZoomChoices) -> Self {
+        self.zoom_choices = choices;
         self
     }
 
@@ -402,7 +417,8 @@ impl<'a> ViewerBar<'a> {
             node.set_has_popup(HasPopup::Menu);
         });
         let later = tr(&ctx, "photo-zoom-later");
-        let tip = if self.zoomable {
+        let every = self.zoom_choices == ZoomChoices::All;
+        let tip = if every {
             let mut args = Args::new();
             // The pointer's modifier as the app spells its shortcuts.
             let mac = ctx.os() == OperatingSystem::Mac;
@@ -435,7 +451,7 @@ impl<'a> ViewerBar<'a> {
                         if let Some((_, keys)) = self.shortcuts.iter().find(|(e, _)| e == entry) {
                             item = item.shortcut(*keys);
                         }
-                        if !can && !self.zoomable {
+                        if !can && !every {
                             item = item.tip(later.clone());
                         }
                         item.into()
@@ -451,15 +467,20 @@ impl<'a> ViewerBar<'a> {
         })
     }
 
-    /// Whether the zoom menu's `entry` can be chosen: Fit always, the rest only while the
-    /// scale can change, Zoom in short of the largest scale and Zoom out above Small.
+    /// Whether the zoom menu's `entry` can be chosen: Fit always, the rest as far as the
+    /// choices go, Zoom in short of the largest scale they offer and Zoom out above Small.
     fn can_choose(&self, entry: ViewerBarAction) -> bool {
-        match entry {
-            ViewerBarAction::Zoom(Zoom::Fit) => true,
-            _ if !self.zoomable => false,
-            ViewerBarAction::ZoomIn => !matches!(self.zoom, Zoom::Percent(p) if p >= MOST),
-            ViewerBarAction::ZoomOut => self.zoom != Zoom::Small,
-            _ => true,
+        use ViewerBarAction::{Zoom as To, ZoomIn, ZoomOut};
+        match (self.zoom_choices, entry) {
+            (_, To(Zoom::Fit)) => true,
+            (ZoomChoices::Fit, _) => false,
+            (ZoomChoices::SmallAndFit, To(Zoom::Small)) => true,
+            (ZoomChoices::SmallAndFit, ZoomIn) => self.zoom == Zoom::Small,
+            (ZoomChoices::SmallAndFit, ZoomOut) => self.zoom == Zoom::Fit,
+            (ZoomChoices::SmallAndFit, _) => false,
+            (ZoomChoices::All, ZoomIn) => !matches!(self.zoom, Zoom::Percent(p) if p >= MOST),
+            (ZoomChoices::All, ZoomOut) => self.zoom != Zoom::Small,
+            (ZoomChoices::All, _) => true,
         }
     }
 }

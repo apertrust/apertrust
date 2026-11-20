@@ -35,7 +35,7 @@ use crate::components::{
     Reference, ReferenceRow, SaveState, Scale, Scope, ScopeView, Section, SectionAction, Segmented,
     SliderAction, SliderRow, Swatch, SwatchFill, Swatches, Switch, TabBar, TabBarAction, Thumb,
     Toggle, ToggleRow, ToolButton, Toolbar, ToolbarAction, Track, VectorscopeBins, ViewerBar,
-    ViewerBarAction, WarningRow, WaveformBins, Zoom,
+    ViewerBarAction, WarningRow, WaveformBins, Zoom, ZoomChoices,
 };
 use crate::fonts::{MEDIUM, SEMIBOLD};
 use crate::i18n::{Args, Locale, Translator};
@@ -2635,7 +2635,7 @@ fn shell(ui: &mut Ui, t: &Theme, demo: &mut Demo) {
         .layers(true)
         .values(Some([142, 128, 113]))
         .zoom_enabled(true)
-        .zoomable(true)
+        .zoom_choices(ZoomChoices::All)
         .shortcut(ViewerBarAction::Zoom(Zoom::Fit), "Ctrl+0")
         .shortcut(ViewerBarAction::Zoom(Zoom::Percent(100.0)), "Z")
         .shortcut(ViewerBarAction::ZoomIn, "Ctrl+=")
