@@ -313,13 +313,6 @@ photo-layer = Warstwa: { $layer }. Zmień warstwę
 photo-new-layer = Nowa warstwa
 photo-values = Wartości pod kursorem
 photo-values-read = Czerwony { $red }, zielony { $green }, niebieski { $blue }, szary { $grey }
-photo-selected-count =
-    { $count ->
-        [one] { $count } zaznaczone zdjęcie
-        [few] { $count } zaznaczone zdjęcia
-        [many] { $count } zaznaczonych zdjęć
-       *[other] { $count } zaznaczonego zdjęcia
-    }
 photo-zoom = Powiększenie
 photo-zoom-small = Mały
 photo-zoom-fit = Dopasuj
@@ -441,6 +434,26 @@ grid-thumbnail-size-tip =
         [medium] średnie
         [large] duże
        *[extra-large] bardzo duże
+    }
+browser-count =
+    { $selected ->
+        [0] { $total }
+       *[other] { $selected }/{ $total }
+    }
+browser-count-thousands = { $thousands }k
+browser-selected-count =
+    { $total ->
+        [one] Zaznaczono { $selected } z { $total } zdjęcia
+        [few] Zaznaczono { $selected } z { $total } zdjęć
+        [many] Zaznaczono { $selected } z { $total } zdjęć
+       *[other] Zaznaczono { $selected } z { $total } zdjęcia
+    }
+browser-photo-count =
+    { $total ->
+        [one] { $total } zdjęcie
+        [few] { $total } zdjęcia
+        [many] { $total } zdjęć
+       *[other] { $total } zdjęcia
     }
 
 ## Co jest otwarte, według rodzaju

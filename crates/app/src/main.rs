@@ -5370,6 +5370,8 @@ impl App {
                 .square(browser.square_thumbnails)
                 // Photos opened alone are no collection the session selects in.
                 .several(listing.is_some());
+            let (selected, total) = browser_count(mirror);
+            panel = panel.count(selected, total);
             if let Some(says) = &says {
                 panel = panel.empty(says);
             }
@@ -5534,8 +5536,7 @@ impl App {
                 Toggle::new(self.shell.guides, open),
             )
             .zoom_enabled(open)
-            .status(rendering.as_deref())
-            .selected(self.mirror.selected_count());
+            .status(rendering.as_deref());
         if let Some((name, how)) = &picker_words {
             bar = bar.picker(name, how);
         }
@@ -6758,6 +6759,12 @@ fn export_others(mirror: &Mirror) -> export::Others {
         pending,
         skips_open,
     }
+}
+
+/// What the browser bar counts (`Browser::count`): the photos selected, as the cells mark
+/// them, and the photos the Browser shows, as many as its cells.
+fn browser_count(mirror: &Mirror) -> (usize, usize) {
+    (mirror.selected_count(), mirror.folder.order().len())
 }
 
 /// Sends a command to the session, returning its number: the app's session, or a test's
@@ -9470,6 +9477,36 @@ mod tests {
         let mut remembered = Remembered::default();
         remembered.remember(&m);
         (m, sent, remembered, at)
+    }
+
+    /// The browser bar counts the photos selected, as the cells mark them, over the photos
+    /// the Browser shows: the folder's as its listing comes, then the photos opened alone.
+    #[test]
+    fn the_browser_bar_counts_the_selection_over_the_photos_shown() {
+        use apertrust_engine::session::Selection;
+
+        let (mut m, mut sent) = (mirror::tests::mirror(), Vec::new());
+        assert_eq!(browser_count(&m), (0, 0));
+        let at = PathBuf::from("/photos/AT");
+        open_folder(at.clone(), &mut m, &mut sender(&mut sent));
+        m.apply(folder_opened(1, &at));
+        m.apply(listed(1, &["a.ARW", "b.ARW"], false));
+        assert_eq!(browser_count(&m), (0, 2));
+        m.apply(listed(1, &["c.ARW"], true));
+        assert_eq!(browser_count(&m), (0, 3));
+        // A photo opening is selected at once, before the session says so.
+        open_listed(at.join("a.ARW"), &mut m, &mut sender(&mut sent));
+        assert_eq!(browser_count(&m), (1, 3));
+        m.apply(Event::Selection(Selection {
+            photos: vec![at.join("a.ARW"), at.join("c.ARW")],
+            active: Some(at.join("a.ARW")),
+            through: sent.len() as u64,
+        }));
+        assert_eq!(browser_count(&m), (2, 3));
+        // Photos opened alone: just them, the first opening.
+        let alone = ["/trips/x.ARW", "/trips/y.ARW"].map(PathBuf::from).to_vec();
+        open_alone(alone, &mut m, &mut sender(&mut sent));
+        assert_eq!(browser_count(&m), (1, 2));
     }
 
     /// The photo the Viewer shows, open or opening.

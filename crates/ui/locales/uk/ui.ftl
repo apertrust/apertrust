@@ -311,13 +311,6 @@ photo-layer = Шар: { $layer }. Змінити шар
 photo-new-layer = Новий шар
 photo-values = Значення під курсором
 photo-values-read = Червоний { $red }, зелений { $green }, синій { $blue }, сірий { $grey }
-photo-selected-count =
-    { $count ->
-        [one] { $count } вибраний знімок
-        [few] { $count } вибрані знімки
-        [many] { $count } вибраних знімків
-       *[other] { $count } вибраного знімка
-    }
 photo-zoom = Масштаб
 photo-zoom-small = Малий
 photo-zoom-fit = За розміром
@@ -439,6 +432,26 @@ grid-thumbnail-size-tip =
         [medium] середні
         [large] великі
        *[extra-large] дуже великі
+    }
+browser-count =
+    { $selected ->
+        [0] { $total }
+       *[other] { $selected }/{ $total }
+    }
+browser-count-thousands = { $thousands }к
+browser-selected-count =
+    { $total ->
+        [one] Вибрано { $selected } із { $total } знімка
+        [few] Вибрано { $selected } із { $total } знімків
+        [many] Вибрано { $selected } із { $total } знімків
+       *[other] Вибрано { $selected } із { $total } знімка
+    }
+browser-photo-count =
+    { $total ->
+        [one] { $total } знімок
+        [few] { $total } знімки
+        [many] { $total } знімків
+       *[other] { $total } знімка
     }
 
 ## Що відкрито, за видом

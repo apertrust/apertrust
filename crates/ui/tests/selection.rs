@@ -16,7 +16,7 @@
 
 //! Several photos selected in the Browser (`docs/gui.md`, Selection and the active photo):
 //! the keys that select, what screen readers hear of the selection, and the marks and the
-//! viewer bar's count, photographed in every theme.
+//! browser bar's count, photographed in every theme.
 
 use apertrust_ui::components::{Browser, BrowserAction, CellRating, Thumb, ViewerBar, Zoom};
 use apertrust_ui::{Builtin, Theme};
@@ -164,27 +164,30 @@ fn a_disabled_browser_takes_no_ctrl_space() {
     assert_eq!(harness.state().1, []);
 }
 
-/// A bar too narrow for the count beside its left's controls leaves the count out.
+/// The viewer bar counts no photos: the browser bar does (`docs/gui.md`, The browser bar).
 #[test]
-fn a_narrow_viewer_bar_leaves_the_count_out() {
-    let bar = |width: f32| {
-        let mut harness = Harness::builder()
-            .with_size(egui::vec2(width, 40.0))
-            .with_context_setup(|ctx| apertrust_ui::install(ctx, Theme::default()))
-            .build_ui(|ui| {
-                ViewerBar::new("Image", Zoom::Fit)
-                    .zoom_enabled(true)
-                    .selected(12)
-                    .show(ui);
-            });
-        harness.run();
-        harness.query_by_label("12 selected").is_some()
-    };
-    assert!(bar(760.0));
-    assert!(!bar(240.0));
+fn the_viewer_bar_shows_no_count() {
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(760.0, 40.0))
+        .with_context_setup(|ctx| apertrust_ui::install(ctx, Theme::default()))
+        .build_ui(|ui| {
+            ViewerBar::new("Image", Zoom::Fit)
+                .zoom_enabled(true)
+                .show(ui);
+        });
+    harness.run();
+    let toolbar = harness.get_by_role_and_label(Role::Toolbar, "Viewer bar");
+    assert!(toolbar.query_by_role(Role::Label).is_none());
+    let drawn: Vec<String> = (harness.output().shapes.iter())
+        .filter_map(|clipped| match &clipped.shape {
+            egui::Shape::Text(text) => Some(text.galley.text().to_owned()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(drawn, ["Image", "Fit"]);
 }
 
-/// The viewer bar saying "3 selected" over the Browser, the three photos' cells ringed,
+/// The viewer bar over the Browser, whose bar says "3/5", the three photos' cells ringed,
 /// the middle one, active, thicker, in each theme.
 #[test]
 fn a_selection_is_photographed_in_every_theme() {
@@ -199,7 +202,6 @@ fn a_selection_is_photographed_in_every_theme() {
                     .rect_filled(ui.ctx().content_rect(), 0.0, panel);
                 ViewerBar::new("Image", Zoom::Fit)
                     .zoom_enabled(true)
-                    .selected(3)
                     .show(ui);
                 let names: Vec<String> =
                     (0..5).map(|i| format!("IMG_{:04}.ARW", 2041 + i)).collect();
@@ -211,7 +213,7 @@ fn a_selection_is_photographed_in_every_theme() {
                     picture: None,
                     rating: Some(CellRating::default()),
                 };
-                Browser::new(5, Some(2), thumb).show(ui);
+                Browser::new(5, Some(2), thumb).count(3, 5).show(ui);
             });
         harness.run();
         harness.snapshot(format!("selection-{}", which.id()));

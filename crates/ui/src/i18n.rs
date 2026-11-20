@@ -1170,6 +1170,10 @@ mod tests {
                 args.set("text", "colour");
                 // A second start's flags for one run, which the app running refuses.
                 args.set("flags", "--safe-mode");
+                // The browser bar's count: the photos selected of its total, and a number
+                // in thousands.
+                args.set("selected", 3);
+                args.set("thousands", "123");
                 let mut errors = Vec::new();
                 bundle.format_pattern(pattern, Some(&args), &mut errors);
                 assert!(errors.is_empty(), "{} {id}: {errors:?}", locale.id());

@@ -395,13 +395,6 @@ photo-layer = Layer: { $layer }. Change layer
 photo-new-layer = New layer
 photo-values = Values under the cursor
 photo-values-read = Red { $red }, green { $green }, blue { $blue }, grey { $grey }
-# Before the zoom while more than one photo is selected: how many are, $count, which
-# English says the same way whatever the number (decision 37).
-photo-selected-count =
-    { $count ->
-        [one] { $count } selected
-       *[other] { $count } selected
-    }
 photo-zoom = Zoom
 photo-zoom-small = Small
 photo-zoom-fit = Fit
@@ -566,6 +559,28 @@ grid-thumbnail-size-tip =
         [medium] medium
         [large] large
        *[extra-large] extra large
+    }
+# The browser bar's count, between Sort and Zoom: how many photos are selected, $selected,
+# of the $total the Browser shows, "3/120", or the total alone with none selected, "120".
+browser-count =
+    { $selected ->
+        [0] { $total }
+       *[other] { $selected }/{ $total }
+    }
+# In the column at the Browser's left end, a number over 99,999 in thousands, $thousands:
+# a letter or two, as the column is 36 points wide.
+browser-count-thousands = { $thousands }k
+# The count's tooltip, and what screen readers hear of it: with photos selected, and with
+# none.
+browser-selected-count =
+    { $total ->
+        [one] { $selected } of { $total } photo selected
+       *[other] { $selected } of { $total } photos selected
+    }
+browser-photo-count =
+    { $total ->
+        [one] { $total } photo
+       *[other] { $total } photos
     }
 
 ## Open kinds: what a window holds, named wherever a recent or what is open is
