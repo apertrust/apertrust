@@ -25,8 +25,12 @@
 ; - the raw types are registered in Open With alone, never as their default: a ProgID,
 ;   each extension's OpenWithProgids naming it, and the app's Applications entry with its
 ;   SupportedTypes, in place of FileAssociation.nsh's APP_ASSOCIATE, which takes the
-;   extension's default; each one's open verb has MultiSelectModel Player, so Open With
-;   is offered for up to 100 files, Windows' limit for a verb that runs a command line;
+;   extension's default; each one's open verb has MultiSelectModel Document, so where the
+;   person makes Apertrust a type's default, Open on several files starts the app once
+;   per file, each start handing its file to the running app (Explorer offers Open With
+;   for one file alone);
+; - a Send To shortcut, through which several files reach the app on one command line
+;   without changing a default; Windows 11 shows Send To under Show more options;
 ; - Apertrust's own type, its edit (.apxmp, the ProgID Apertrust.Edit), is the one
 ;   default it takes, with the executable's second icon, the document's; Apertrust
 ;   Nightly's, Apertrust.Nightly.Edit, is in Open With alone;
@@ -557,9 +561,10 @@ Section Install
       WriteRegStr SHCTX "Software\Classes\\{{association.name}}\DefaultIcon" "" "$\"$INSTDIR\${MAINBINARYNAME}.exe$\",0"
     {{/if ~}}
     WriteRegStr SHCTX "Software\Classes\\{{association.name}}\shell\open\command" "" "$\"$INSTDIR\${MAINBINARYNAME}.exe$\" $\"%1$\""
-    ; Offered for up to 100 files, past the 15 Explorer's default model allows: each
-    ; start hands its file to the running app, which opens them together (decision 89).
-    WriteRegStr SHCTX "Software\Classes\\{{association.name}}\shell\open" "MultiSelectModel" "Player"
+    ; Open on several files, where Apertrust is the type's default, starts one process per
+    ; file (Document), each handing its file to the running app, which opens them together
+    ; (decision 89). Player would start one, passing "%1", the first file alone.
+    WriteRegStr SHCTX "Software\Classes\\{{association.name}}\shell\open" "MultiSelectModel" "Document"
     {{#each association.extensions as |ext| ~}}
       WriteRegNone SHCTX "Software\Classes\.{{ext}}\OpenWithProgids" "{{association.name}}"
       WriteRegNone SHCTX "${APPKEY}\SupportedTypes" ".{{ext}}"
@@ -573,7 +578,7 @@ Section Install
   WriteRegStr SHCTX "${APPKEY}" "FriendlyAppName" "${PRODUCTNAME}"
   WriteRegStr SHCTX "${APPKEY}\DefaultIcon" "" "$\"$INSTDIR\${MAINBINARYNAME}.exe$\",0"
   WriteRegStr SHCTX "${APPKEY}\shell\open\command" "" "$\"$INSTDIR\${MAINBINARYNAME}.exe$\" $\"%1$\""
-  WriteRegStr SHCTX "${APPKEY}\shell\open" "MultiSelectModel" "Player"
+  WriteRegStr SHCTX "${APPKEY}\shell\open" "MultiSelectModel" "Document"
   !insertmacro UPDATEFILEASSOC
 
   ; Register deep links
@@ -611,6 +616,15 @@ Section Install
   !insertmacro MUI_STARTMENU_WRITE_BEGIN Application
     Call CreateStartMenuShortcut
   !insertmacro MUI_STARTMENU_WRITE_END
+
+  ; Send To: Explorer offers Open With for one file alone, so several raws reach the app
+  ; through Send To, every file on one command line, with no default app changed. Part of
+  ; the file types, not a shortcut /NS or the Start menu page leaves out. $SENDTO is the
+  ; person's own whatever SetShellVarContext says, there being no Send To for all users,
+  ; so only a per-user install adds it.
+  !if "${INSTALLMODE}" == "currentUser"
+    Call CreateSendToShortcut
+  !endif
 
   ; Create shortcuts for silent and passive installers, which
   ; can be disabled by passing `/NS` flag
@@ -714,6 +728,11 @@ Section Uninstall
   ; Remove desktop shortcuts
   Delete "$DESKTOP\${PRODUCTNAME}.lnk"
 
+  ; Remove the Send To shortcut, which only a per-user install adds
+  !if "${INSTALLMODE}" == "currentUser"
+    Delete "$SENDTO\${PRODUCTNAME}.lnk"
+  !endif
+
   ; Remove registry information for add/remove programs
   !if "${INSTALLMODE}" == "both"
     DeleteRegKey SHCTX "${UNINSTKEY}"
@@ -759,6 +778,13 @@ Function CreateDesktopShortcut
   CreateShortcut "$DESKTOP\${PRODUCTNAME}.lnk" "$INSTDIR\${MAINBINARYNAME}.exe"
   ApplicationID::Set "$DESKTOP\${PRODUCTNAME}.lnk" "${IDENTIFIER}"
 FunctionEnd
+
+!if "${INSTALLMODE}" == "currentUser"
+Function CreateSendToShortcut
+  CreateShortcut "$SENDTO\${PRODUCTNAME}.lnk" "$INSTDIR\${MAINBINARYNAME}.exe"
+  ApplicationID::Set "$SENDTO\${PRODUCTNAME}.lnk" "${IDENTIFIER}"
+FunctionEnd
+!endif
 
 Function CreateStartMenuShortcut
   CreateDirectory "$SMPROGRAMS\$AppStartMenuFolder"

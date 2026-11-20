@@ -363,12 +363,13 @@ fn open_with_passes_the_files_alone() {
     }
 }
 
-/// Open With is offered for up to 100 files on Windows (decision 89): each open verb
-/// that passes a file, the ProgIDs' and the app's entry's, has `MultiSelectModel` =
-/// `Player`, past the 15 files Explorer's default model allows; each start then hands its
-/// file to the running app. The uninstaller removes the keys that hold them.
+/// Open on several files, where Apertrust is a type's default on Windows, starts the app
+/// once per file, each start handing its file to the running app (decision 89): each open
+/// verb that passes a file, the ProgIDs' and the app's entry's, has `MultiSelectModel` =
+/// `Document`. The uninstaller removes the keys that hold them, and the Send To shortcut,
+/// through which several files arrive in one start.
 #[test]
-fn open_with_takes_any_number_of_files() {
+fn open_on_several_files_starts_one_app_per_file() {
     let template = read("packaging/windows/installer.nsi");
     let lines: Vec<&str> = template.lines().map(str::trim).collect();
     let verbs = |suffix: &str| -> BTreeSet<String> {
@@ -390,7 +391,7 @@ fn open_with_takes_any_number_of_files() {
     );
     let models = lines
         .iter()
-        .filter(|line| line.ends_with(r#"\shell\open" "MultiSelectModel" "Player""#))
+        .filter(|line| line.ends_with(r#"\shell\open" "MultiSelectModel" "Document""#))
         .filter_map(|line| line.split('"').nth(1)?.strip_suffix(r"\shell\open"))
         .map(str::to_owned)
         .collect::<BTreeSet<_>>();
@@ -401,6 +402,22 @@ fn open_with_takes_any_number_of_files() {
     ] {
         assert!(lines.contains(&removed), "{removed}");
     }
+
+    let send_to = r#""$SENDTO\${PRODUCTNAME}.lnk""#;
+    assert!(
+        template.contains(&format!("CreateShortcut {send_to}")),
+        "the Send To shortcut"
+    );
+    let uninstall = template
+        .split_once("\nSection Uninstall\n")
+        .and_then(|(_, rest)| rest.split_once("\nSectionEnd"))
+        .expect("the uninstaller")
+        .0;
+    let removed = format!("Delete {send_to}");
+    assert!(
+        uninstall.lines().map(str::trim).any(|line| line == removed),
+        "{removed}"
+    );
 }
 
 /// The extensions of the association named `name` in `config`, `Packager.toml`.
