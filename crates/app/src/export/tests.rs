@@ -2268,10 +2268,22 @@ fn several_selected_photos_are_counted_on_the_button_and_in_the_warning() {
     let mut harness = open();
     harness.state_mut().shown.others = Others {
         taken: 11,
-        left_out: 0,
+        ..Others::default()
     };
     tell(&mut harness, ready(), Jobs::default());
     assert!(!disabled(&harness, Role::Button, "Export 12 photos"));
+    // A selection command not yet told: the photos to export unknown, Export waits.
+    harness.state_mut().shown.others = Others {
+        pending: true,
+        ..Others::default()
+    };
+    tell(&mut harness, ready(), Jobs::default());
+    assert!(disabled(&harness, Role::Button, "Export 1 photo"));
+    harness.state_mut().shown.others = Others {
+        taken: 11,
+        ..Others::default()
+    };
+    tell(&mut harness, ready(), Jobs::default());
     let newer = Photo::ViewOnly {
         name: "IMG_2041.ARW".to_owned(),
         why: Why::Newer,
@@ -2279,6 +2291,7 @@ fn several_selected_photos_are_counted_on_the_button_and_in_the_warning() {
     harness.state_mut().shown.others = Others {
         taken: 10,
         left_out: 1,
+        pending: false,
     };
     tell(&mut harness, newer, Jobs::default());
     assert!(says(&harness, "2 view-only photos left out"));

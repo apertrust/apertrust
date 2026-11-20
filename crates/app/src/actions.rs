@@ -432,6 +432,9 @@ pub struct State {
     /// The photos selected: the active one alone until several can be (decision 91 hides
     /// what acts on one photo alone from a thumbnail's menu while several are).
     pub photos: usize,
+    /// How many photos an export takes, which Export… and Export Again name while more
+    /// than one (`selection::exported_count`).
+    pub exported: usize,
     /// Whether anything is open, a folder or a photo, opening, open or failed: File ›
     /// Close's to close.
     pub opened: bool,
@@ -898,7 +901,7 @@ pub static ACTIONS: [Action; 107] = [
         keys: &[],
         scope: Scope::App,
         trigger: Trigger::Press,
-        available: |s| s.photo && s.exportable && no_modal_dialog(s),
+        available: |s| s.exportable && no_modal_dialog(s),
         emits: Emit::Intent(Intent::ExportAgain),
     },
     // No key by default, as darktable's discard history has none: its button is registered
@@ -2579,6 +2582,7 @@ pub(crate) mod tests {
             next: true,
             previous: true,
             photos: 2,
+            exported: 2,
             opened: true,
             recents: [Some(true); crate::recents::MOST],
             tabs: first_tabs(7),
@@ -3240,7 +3244,7 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn export_again_has_no_key_by_default_and_needs_a_photo_and_the_dialog_s_platform() {
+    fn export_again_has_no_key_by_default_and_needs_a_photo_to_export() {
         let en = Translator::new(Locale::EnGb);
         for os in PLATFORMS {
             assert!(Keymap::defaults(os).keys(ActionId::EXPORT_AGAIN).is_empty());
@@ -3250,7 +3254,7 @@ pub(crate) mod tests {
         assert_eq!(again.emits, Emit::Intent(Intent::ExportAgain));
         let mut state = everything();
         assert!(again.enabled(&state));
-        state.photo = false;
+        state.exportable = false;
         assert!(!again.enabled(&state));
     }
 

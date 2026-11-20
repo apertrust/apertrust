@@ -3155,6 +3155,8 @@ impl Shell {
             previous: false,
             // One photo until the catalogue.
             photos: usize::from(photo),
+            // The app's, from the selection ([`App::shell_state`]).
+            exported: usize::from(photo),
             // The app's, from the folder and the photo it holds ([`App::shell_state`]).
             opened: false,
             recents,
@@ -4929,6 +4931,7 @@ impl App {
             // The photos selected, the active one at least while there is one.
             photos: (self.mirror.selected_count())
                 .max(usize::from(self.mirror.photo.asked().is_some())),
+            exported: selection::exported_count(&self.mirror),
             select: selection::selectable(&self.mirror),
             next: selection::stepped(true, &self.mirror).is_some(),
             previous: selection::stepped(false, &self.mirror).is_some(),
@@ -6743,12 +6746,16 @@ fn export_others(mirror: &Mirror) -> export::Others {
         PhotoState::Open(photo) => Some(photo),
         _ => None,
     };
-    // The photo open is the tool's own: taken where it can be, else left out.
-    let taken = open.is_some_and(|open| exported.photos.contains(&open.path));
+    // The tool counts the photo open itself where it can be exported, and leaves it out
+    // where it is open for viewing only: the rest are the others. One the export passes
+    // over, the listing lacking it, takes the place of another, so the count stays the
+    // export's.
+    let ready = open.is_some_and(|open| open.view_only.is_none());
     let left_out = open.is_some_and(|open| open.view_only.is_some());
     export::Others {
-        taken: (exported.photos.len()).saturating_sub(usize::from(taken)),
+        taken: (exported.photos.len()).saturating_sub(usize::from(ready)),
         left_out: (exported.left_out).saturating_sub(usize::from(left_out)),
+        pending: mirror.selection_pending(),
     }
 }
 

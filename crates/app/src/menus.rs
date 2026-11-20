@@ -146,13 +146,13 @@ pub fn words(action: &Action, steps: &Steps, state: &State, tr: &Translator) -> 
     let (step, message) = match action.id {
         ActionId::UNDO => (&steps.undo, "menu-undo-step"),
         ActionId::REDO => (&steps.redo, "menu-redo-step"),
-        ActionId::EXPORT | ActionId::EXPORT_AGAIN if state.photos > 1 => {
+        ActionId::EXPORT | ActionId::EXPORT_AGAIN if state.exported > 1 => {
             let message = match action.id {
                 ActionId::EXPORT => "menu-export-photos",
                 _ => "menu-export-photos-again",
             };
             let mut args = Args::new();
-            args.set("count", state.photos as f64);
+            args.set("count", state.exported as f64);
             return tr.text_with(message, Some(&args));
         }
         _ => return tr.text(action.message),
@@ -1813,6 +1813,7 @@ mod tests {
             next: true,
             previous: true,
             photos: 2,
+            exported: 2,
             opened: true,
             recents: [Some(true); crate::recents::MOST],
             tabs: actions::first_tabs(5),
@@ -2463,12 +2464,14 @@ mod tests {
     }
 
     /// Export… and Export Again say how many photos they export while several are
-    /// selected, in each language's plural; with one, their own words.
+    /// selected, in each language's plural; with one, their own words. The count is what
+    /// the export takes, not what is selected: a view-only photo left out is not counted.
     #[test]
     fn export_and_export_again_name_the_photos_while_several_are_selected() {
-        let named = |locale, photos, id| {
+        let named = |locale, exported, id| {
             let state = State {
-                photos,
+                photos: 12,
+                exported,
                 ..everything()
             };
             let action = actions::action(id).expect("declared");
@@ -3435,6 +3438,7 @@ mod tests {
         };
         let one = State {
             photos: 1,
+            exported: 1,
             ..everything()
         };
         let photo = Target::Photo {
@@ -3494,7 +3498,11 @@ mod tests {
         assert_eq!(words(&menu), ["Reset", "-", "Export…"]);
         // Several selected: a thumbnail's acts on them, and Reset on one alone; the photo's
         // on the active photo, as Edit › Reset does.
-        let several = State { photos: 2, ..one };
+        let several = State {
+            photos: 2,
+            exported: 2,
+            ..one
+        };
         let menu = open(Open::Thumbnail, Target::Selection, &several);
         assert_eq!(words(&menu), ["Export 2 Photos…"]);
         let menu = open(Open::Photo, photo, &several);
