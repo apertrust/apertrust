@@ -42,8 +42,19 @@ fn counted(
     total: usize,
     locale: Locale,
 ) -> Harness<'static, Counted> {
+    counted_in(600.0, position, selected, total, locale)
+}
+
+/// [`counted`] in a window `width` points wide.
+fn counted_in(
+    width: f32,
+    position: BrowserPosition,
+    selected: usize,
+    total: usize,
+    locale: Locale,
+) -> Harness<'static, Counted> {
     Harness::builder()
-        .with_size(egui::vec2(600.0, 300.0))
+        .with_size(egui::vec2(width, 300.0))
         .with_context_setup(move |ctx| {
             apertrust_ui::install(ctx, Theme::default());
             apertrust_ui::set_locale(ctx, locale);
@@ -251,4 +262,25 @@ fn the_column_s_count_is_photographed() {
     harness.set_size(egui::vec2(360.0, 200.0));
     harness.run();
     harness.snapshot("browser-count-column");
+}
+
+/// A count too wide for a narrow row, so not drawn, still has its words as a tooltip, so a
+/// pointer can read it there.
+#[test]
+fn a_count_too_wide_to_draw_still_has_its_tooltip() {
+    let mut harness = counted_in(120.0, BrowserPosition::Left, 3, 120, Locale::EnGb);
+    harness.run();
+    let bar = bar(&harness);
+    let words = "3 of 120 photos selected";
+    assert!(
+        !texts(&harness, bar).iter().any(|(t, _)| t.contains('/')),
+        "the count should not fit this row: {:?}",
+        texts(&harness, bar)
+    );
+    let label = harness.get_by_role_and_label(Role::Label, words);
+    harness.hover_at(label.rect().center());
+    harness.run();
+    harness.run();
+    let tips = texts(&harness, Rect::EVERYTHING);
+    assert!(tips.iter().any(|(t, _)| t == words), "{tips:?}");
 }

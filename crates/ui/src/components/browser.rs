@@ -890,9 +890,8 @@ fn count(ui: &Ui, room: Rect, id: Id, selected: usize, total: usize, stacked: bo
     response.widget_info(|| WidgetInfo::labeled(Role::Label, true, &said));
     ui.ctx()
         .accesskit_node_builder(response.id, |node| node.set_live(Live::Polite));
-    if drawn.is_some() {
-        response.on_hover_text(said);
-    }
+    // The words are the tooltip too, so a count too wide to draw can still be read.
+    response.on_hover_text(said);
 }
 
 /// `lines`, one number or two, centred in `room` one over another, a thin rule between
