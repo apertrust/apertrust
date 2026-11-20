@@ -484,7 +484,7 @@ What the menus hold is [the menu bar](#the-menu-bar)'s. Built: the frames of the
 The engine's photo is not rendered for each step of a resize: the app holds the size it sends until the window has kept its size for 150 ms (`Bounds`, decision 18), since a render each step could not keep up. It holds it the same way while the Tools panel's edge moves, dragged or held under a key ([The Tools panel](#the-tools-panel)).
 
 - **Meanwhile the last frame is shown scaled,** bilinearly, to the size the next will have (`Values::viewport_size`, the photo as its edit shows it, turned where its orientation turns it), so the photo follows the window and the sharp frame then takes its place with nothing moving.
-- **Zoomed** (planned; [The zoom](#when-the-room-or-the-photo-changes)): Fit, Fill and Small are worked out again for the new room; a percentage keeps its scale and the photo's point at the view's centre, kept inside the photo's edges. Meanwhile the last frame keeps its scale and moves with that centre, and an edge the room uncovers is drawn from the overview, the whole photo's small frame, scaled up, until the size is sent and the sharp frame arrives.
+- **Zoomed** (planned; [The zoom](#when-the-room-or-the-photo-changes)): Fit, Fill and Small are worked out again for the new room; a percentage keeps its scale and the photo's point at the view's centre, kept inside the photo's edges. Meanwhile the last frame is shown at the scale the next will have, a mode's worked out again for the new room and a percentage's unchanged, about that centre, and an edge the room uncovers is drawn from the overview, the whole photo's small frame, scaled up, until the size is sent and the sharp frame arrives.
 - **The submit gate.** Each step reconfigures the window's surface, which wgpu-core 30 fails, with a panic, should another thread submit meanwhile. What is guaranteed (decision 18): no submission of the engine's overlaps a reconfigure of the window's surface, on any platform, the one eframe makes at the first event after a resize included. Every reconfigure is inside an eframe callback, and the app holds the engine's submit gate round each (`Gated`).
 - **What is not guaranteed:** the holds take turns in the order asked (`SubmitGate`), so each thread waits for the other.
   - A submission of the engine's waits for the eframe callback under way, however long it runs. A loop of its own inside a callback, a modal one included, would stop the engine's frames until it returned, so such loops run from the run loop, outside eframe's callbacks, as the Mac's popups do (decision 40).
@@ -3054,7 +3054,7 @@ The Viewer's photo is for looking: nothing is drawn on it, and its marks and con
   4. the caption is exactly as wide as the photo, never as the slot;
   5. the block, photo and caption together, is centred in the slot, the photo's corner on the physical pixel grid.
 
-  A narrow panel leaves the photo what remains of the width, and a margin larger than the slot leaves it nothing. The messages over the photo (no photo, opening, a failed render) are centred in the slot. Zoomed past Fit (planned; [The zoom](#the-zoom)), the photo fills the slot less the margin and the caption, which stays under it at the photo area's width; at Small the block is centred as at Fit, the caption as wide as the smaller photo. While zoomed, the margin holds the position marks ([Where the view is](#where-the-view-is)).
+  A narrow panel leaves the photo what remains of the width, and a margin larger than the slot leaves it nothing. The messages over the photo (no photo, opening, a failed render) are centred in the slot. Zoomed past Fit (planned; [The zoom](#the-zoom)), the photo area, the part of the photo shown, fills the slot less the margin and the caption on each axis where the photo is larger than that room, the rest of the photo outside it; the caption stays under it at the photo area's width; at Small the block is centred as at Fit, the caption as wide as the smaller photo. While zoomed, the margin holds the position marks ([Where the view is](#where-the-view-is)).
 - **The margin** round the block is a setting kept only in `settings.toml`, with no page in the Settings dialog (decision 45's `page`-less settings, as the window's place is). It is live on the next frame, and settable for one run by `--conf viewer.margin=16`:
 
   | Key, in `[viewer]` | Default | Range | darktable's |
@@ -3157,7 +3157,7 @@ One button at the bar's end, `ViewerBar`'s zoom, showing the scale and a 10-poin
 ##### The scale
 
 - **What it is:** a mode, Small, Fit or Fill, or a percentage, with the view's centre in the photo's coordinates, 0 to 1 across the photo as export renders it ([pickers.md](pickers.md)). It is interface state: never a step of the history, never in the edit or in settings, and undo does not touch it. The engine is told only the view to render (decision 99).
-- **100%** is one photo pixel to one physical pixel of the screen, whatever the system's scale or the interface's size, as darktable's 100% is. At 100% and above the photo's offset is a whole number of physical pixels, so nothing is resampled between the render and the screen (principle 2).
+- **100%** is one photo pixel to one physical pixel of the screen, whatever the system's scale or the interface's size, as darktable's 100% is. At 100% nothing is resampled between the render and the screen (principle 2): the photo's offset is a whole number of physical pixels, as it is at every scale above 100%, where the Viewer enlarges the 100% render as below.
 - **Fit** shows the whole photo in the room the photo frame gives it ([The photo frame](#the-photo-frame)); a photo smaller than that room shows at 100%, still called Fit, since the engine never renders larger than the photo. **Fill** covers the room, the slot less the margin and the caption, and what overflows pans. **Small** is half of Fit.
 - **Modes follow the room, percentages stay:** Fit, Fill and Small are worked out again whenever the room changes; a percentage keeps its scale.
 - **Above 100%** the engine renders at 100% at most (decision 99), and the Viewer enlarges its frame: smoothly from 100% to 200%, where a pinch can stop, and in square pixels from 200%, each photo pixel a sharp square of the screen's.
@@ -4638,7 +4638,7 @@ show_selected = false       # from Phase 3
   - a high-contrast theme;
   - warnings and overlays that use patterns as well as colour (the principles' quality bar);
   - overlay colours the user can choose.
-- **Motion** reduced on request. The zoom and pan are never animated, so only the position marks' fade goes ([The zoom](#reduce-motion)).
+- **Motion** reduced on request. The zoom and pan are never animated, so of the zoom only the position marks' fade goes; a photo turning live cuts in place of its fade ([The zoom](#reduce-motion)).
 - **In the web browser**, accessibility is weaker, a cost decision 35 accepted; the desktop app is where it is complete.
 
 ## Testing
