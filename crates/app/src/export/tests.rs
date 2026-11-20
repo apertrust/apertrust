@@ -545,6 +545,53 @@ fn the_newest_answer_is_kept_and_an_older_one_never_replaces_it() {
     ));
 }
 
+#[test]
+fn an_answer_to_an_older_request_arriving_after_a_newer_one_is_dropped() {
+    let mut harness = open();
+    let named = |file: &str| {
+        let mut p = preview();
+        p.names[0].fate = Fate::File {
+            file: PathBuf::from(file),
+            exists: false,
+            action: Action::Write,
+        };
+        p
+    };
+    harness.state_mut().export().sent(5);
+    answer(
+        &mut harness,
+        5,
+        named("/Users/anna/Pictures/five/IMG_2041.jpg"),
+    );
+    assert!(tip_says(
+        &harness,
+        "IMG_2041.ARW → ~/Pictures/five/IMG_2041.jpg"
+    ));
+    // Two changes asked again; the first's answer, finished before it was cancelled, comes
+    // after the second was sent, for settings no longer in place.
+    harness.state_mut().export().sent(6);
+    harness.state_mut().export().sent(7);
+    answer(
+        &mut harness,
+        6,
+        named("/Users/anna/Pictures/six/IMG_2041.jpg"),
+    );
+    assert!(tip_says(
+        &harness,
+        "IMG_2041.ARW → ~/Pictures/five/IMG_2041.jpg"
+    ));
+    assert!(!tip_says(&harness, "six"));
+    answer(
+        &mut harness,
+        7,
+        named("/Users/anna/Pictures/seven/IMG_2041.jpg"),
+    );
+    assert!(tip_says(
+        &harness,
+        "IMG_2041.ARW → ~/Pictures/seven/IMG_2041.jpg"
+    ));
+}
+
 // Every row.
 
 #[test]
