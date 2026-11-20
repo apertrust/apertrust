@@ -5984,16 +5984,23 @@ impl App {
         self.shell.open_menu(ctx, &state);
         // Open…'s, Open Folder…'s and the Export tool's folder button's dialog, over the
         // window; what is chosen opens a later frame, or becomes the export's path.
-        let destination = self.export_folder.looked();
-        let asked = if std::mem::take(&mut self.shell.open) {
+        let open = if std::mem::take(&mut self.shell.open) {
             Some(dialogs::Pick::Files)
         } else if std::mem::take(&mut self.shell.open_folder) {
             Some(dialogs::Pick::Folder)
-        } else if let Some(look) = &destination {
-            Some(dialogs::Pick::Destination(look.file.clone()))
         } else {
-            self.shell.locate.take().map(dialogs::Pick::Locate)
+            None
         };
+        // The folder button's look is kept until its dialog can ask: none asking, and Open…
+        // and Open Folder… first.
+        let destination = (open.is_none() && self.asking.is_none())
+            .then(|| self.export_folder.looked())
+            .flatten();
+        let asked = open
+            .or_else(|| {
+                (destination.as_ref()).map(|look| dialogs::Pick::Destination(look.file.clone()))
+            })
+            .or_else(|| self.shell.locate.take().map(dialogs::Pick::Locate));
         let (photo, pictures) = (&self.mirror.photo, self.pictures.as_deref());
         let shown = self.mirror.folder.shown();
         let mut dialog = dialogs::Native {
