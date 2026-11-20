@@ -1372,6 +1372,16 @@ fn a_file_already_there_is_a_warning_when_it_is_replaced_and_never_a_note_under_
     };
     answer(&mut harness, 3, there);
     assert!(says(&harness, "Replaces 1 file already there"));
+    // The export passing the photo open over, its file is none of the export's.
+    harness.state_mut().shown.others = Others {
+        taken: 2,
+        skips_open: true,
+        ..Others::default()
+    };
+    harness.run();
+    assert!(!says(&harness, "Replaces 1 file already there"));
+    harness.state_mut().shown.others = Others::default();
+    harness.run();
     // Nothing there, nothing said.
     answer(&mut harness, 4, preview());
     assert!(harness.query_by_label_contains("already there").is_none());
