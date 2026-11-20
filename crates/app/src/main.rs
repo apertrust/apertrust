@@ -20828,12 +20828,13 @@ mod tests {
             assert_eq!(harness.state().text, "y", "{os:?}");
             assert!(harness.state().commands.is_empty(), "{os:?}");
         }
-        // The ☰'s: F10, then down to Select and into it.
+        // The ☰'s: F10, then down past File, Edit and Photo to Select, and into it.
         let mut harness = field(OperatingSystem::Nix);
         harness.run();
         harness.run();
         harness.key_press(Key::F10);
         harness.run();
+        harness.key_press(Key::ArrowDown);
         harness.key_press(Key::ArrowDown);
         harness.key_press(Key::ArrowDown);
         harness.key_press(Key::ArrowRight);

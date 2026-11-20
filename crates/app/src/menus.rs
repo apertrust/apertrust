@@ -372,6 +372,12 @@ pub static MENUS: [Menu; 8] = [
             &[Entry::Action(ActionId::SETTINGS, Platforms::NotMac)],
         ],
     },
+    Menu {
+        title: "menu-photo",
+        role: Role::Plain,
+        on: Platforms::All,
+        groups: &[&[item(ActionId::NEXT_PHOTO), item(ActionId::PREVIOUS_PHOTO)]],
+    },
     // The selection's (decision 37), darktable's select tool. Select All is an editing
     // item all the same, acting on a focused text field ([`edits_the_field`]).
     Menu {
@@ -387,12 +393,6 @@ pub static MENUS: [Menu; 8] = [
             ],
             &[item(ActionId::PREVIOUS_SELECTION)],
         ],
-    },
-    Menu {
-        title: "menu-photo",
-        role: Role::Plain,
-        on: Platforms::All,
-        groups: &[&[item(ActionId::NEXT_PHOTO), item(ActionId::PREVIOUS_PHOTO)]],
     },
     Menu {
         title: "menu-view",
@@ -2287,8 +2287,8 @@ mod tests {
                 "app-name",
                 "menu-file",
                 "menu-edit",
-                "menu-select",
                 "menu-photo",
+                "menu-select",
                 "menu-view",
                 "menu-window",
                 "menu-help"
@@ -2300,8 +2300,8 @@ mod tests {
                 [
                     "menu-file",
                     "menu-edit",
-                    "menu-select",
                     "menu-photo",
+                    "menu-select",
                     "menu-view",
                     "menu-help"
                 ]
@@ -2698,8 +2698,8 @@ mod tests {
             [
                 ("menu-file", "&File"),
                 ("menu-edit", "&Edit"),
-                ("menu-select", "&Select"),
                 ("menu-photo", "&Photo"),
+                ("menu-select", "&Select"),
                 ("menu-view", "&View"),
                 ("menu-help", "&Help"),
             ]
@@ -2779,11 +2779,11 @@ mod tests {
         assert!(!next.enabled);
     }
 
-    /// Select, between Edit and Photo on every platform, holds the selection's items, a
+    /// Select, between Photo and View on every platform, holds the selection's items, a
     /// line, then Previous Selection, with their keys and enabled states as the registry
     /// has them; Edit holds none of them.
     #[test]
-    fn select_holds_the_selection_s_items_between_edit_and_photo() {
+    fn select_holds_the_selection_s_items_between_photo_and_view() {
         const SELECTION: [ActionId; 4] = [
             ActionId::SELECT_ALL,
             ActionId::SELECT_NONE,
@@ -2794,8 +2794,8 @@ mod tests {
             let titles: Vec<&str> = menus(os).map(|m| m.title).collect();
             let at = |title| titles.iter().position(|t| *t == title);
             let select = at("menu-select").expect("Select");
-            assert_eq!(at("menu-edit"), Some(select - 1), "{os:?}");
-            assert_eq!(at("menu-photo"), Some(select + 1), "{os:?}");
+            assert_eq!(at("menu-photo"), Some(select - 1), "{os:?}");
+            assert_eq!(at("menu-view"), Some(select + 1), "{os:?}");
             let menu = menus(os).find(|m| m.title == "menu-select").expect("there");
             let groups: Vec<Vec<ActionId>> = groups(menu, os)
                 .iter()
@@ -2847,7 +2847,7 @@ mod tests {
         };
         for (state, built) in [(everything(), true), (rests, false)] {
             let menu = drawn_menu(Locale::EnGb, &state);
-            let select = tops(&menu)[2];
+            let select = tops(&menu)[3];
             assert_eq!(
                 (select.id.as_str(), select.text.as_str()),
                 ("menu-select", "&Select")

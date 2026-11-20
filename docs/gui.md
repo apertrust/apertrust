@@ -571,7 +571,7 @@ One menu button at the very start of the Toolbar (decision 39), with the look an
   - **Apertrust icon,** the default, on the UI wireframe's board "Toolbar · the menu button as the app's icon": the app's icon, the macOS icon's rounded square in one colour with the Slider A cut out of it (`Icon::AppIcon`, `app-icon.svg`), 20 points, then 3 points and a caret ▾, an 8-point chevron of 1.3-point lines (`Icon::Caret`), in a button 30 points high with 5 points each side, 41 wide. It is drawn as the Toolbar's icon buttons are (decision 81), with no plate: `text_secondary` at rest, `text_strong` under the pointer and while its menu is open, `accent_text` while held down, and high contrast's `button_edge` round it under the pointer.
   - **Menu icon:** ☰, an icon button like the Toolbar's others, 30 points square (`Icon::Menu`, `menu.svg`).
   - Either way it is the same button: named Menu to screen readers, with its menu popup, expanded or not, its tooltip "Menu (F10)", its keys, its place and its anchor. From Phase 3 a person may hide it from the toolbar (decision 92, [The Toolbar](#the-toolbar)): F10, Alt alone on Windows and Alt with an access key still open the menu, hung from the toolbar's start, and View › Panels and the toolbar menu offer Show Menu Button. `Toolbar` draws it and reports `Menu`, as it reports its caption buttons.
-- **The menu:** one, drawn in the theme, listing the top-level menus of `MENUS` (File, Edit, Select, Photo, Layer from Phase 4, View, Help) as submenus, with items, a shortcut column, check marks, separators, submenus and disabled items. AccessKit's menu roles, so Narrator and Orca read them as menus.
+- **The menu:** one, drawn in the theme, listing the top-level menus of `MENUS` (File, Edit, Photo, Select, Layer from Phase 4, View, Help) as submenus, with items, a shortcut column, check marks, separators, submenus and disabled items. AccessKit's menu roles, so Narrator and Orca read them as menus.
   - It is a pull-down from a button through [the popup service](#popups) (decision 40), drawn on Windows and Linux as every popup is there, so one drawn menu serves it and every other pull-down; there is no `MenuBar` component.
   - The popup service knows nothing of actions: the app turns `MENUS` into a request of entries with string ids and gets back the id chosen.
   - The web browser draws the same.
@@ -644,7 +644,7 @@ The Toolbar's groups map onto the menus: Import and Export to File; Reset, Undo,
 
 ### The tree
 
-The menus: Apertrust (macOS), File, Edit, Select, Photo, Layer (Phase 4), View, Window (macOS), Help. They are the same whatever the Viewer shows. macOS first; [Windows and Linux](#windows-and-linux) differ only where their table says. In the tables:
+The menus: Apertrust (macOS), File, Edit, Photo, Select, Layer (Phase 4), View, Window (macOS), Help. They are the same whatever the Viewer shows. macOS first; [Windows and Linux](#windows-and-linux) differ only where their table says. In the tables:
 
 - **Item:** the English words, in title case, as English menus are on every platform (sentence case everywhere else in the interface); → opens a submenu; a row of — is a separator. Only the top-level menus carry access keys (decision 39): on Windows and Linux Alt with one opens the menu button's menu with that menu expanded.
 - **Action:** the registry id the item runs, or "macOS's" for an item macOS performs itself.
@@ -922,7 +922,7 @@ A dialog of Apertrust's own on every platform (decision 39): a modal over a scri
 
 ### Windows and Linux
 
-The menus open from one menu button at the very start of the Toolbar, the app's icon or ☰ (decision 39; the Toolbar is the window's title bar). It opens one menu whose items are the menus, **File, Edit, Select, Photo, Layer (from Phase 4), View, Help**, each a submenu, with the access keys &File, &Edit, &Select, &Photo, &Layer, &View and &Help in English: Alt with one opens the menu with that submenu expanded. There are no titles. Built on Windows and Linux, the menu button and F10 opening it, but for Windows' Alt pressed and released alone ([The menu button on Windows and Linux](#the-menu-button-on-windows-and-linux)). Each menu holds what macOS's does, except:
+The menus open from one menu button at the very start of the Toolbar, the app's icon or ☰ (decision 39; the Toolbar is the window's title bar). It opens one menu whose items are the menus, **File, Edit, Photo, Select, Layer (from Phase 4), View, Help**, each a submenu, with the access keys &File, &Edit, &Photo, &Select, &Layer, &View and &Help in English: Alt with one opens the menu with that submenu expanded. There are no titles. Built on Windows and Linux, the menu button and F10 opening it, but for Windows' Alt pressed and released alone ([The menu button on Windows and Linux](#the-menu-button-on-windows-and-linux)). Each menu holds what macOS's does, except:
 
 | | macOS | Windows | Linux |
 | --- | --- | --- | --- |
@@ -1028,7 +1028,7 @@ Tab closes an open menu, giving the focus back. The focus is on the chosen item,
   - Ukrainian's are Cyrillic, and Alt with the key that types the letter on the current layout opens the menu button's menu at that menu (egui reports a Cyrillic key as its physical key, so the app recovers the letter).
   - A Polish access key is a letter typed without AltGr, never ą, ć, ę, ł, ń, ó, ś, ź or ż.
   - Items inside have none; the type-ahead works on their words.
-  - Built: &File, &Edit, &Select, &Photo, &View, &Window and &Help; &Файл, &Редагування, В&ибір, &Знімок, &Перегляд, &Вікно and &Довідка, since Вікно has В; &Plik, &Edycja, Z&aznaczenie, &Zdjęcie, &Widok, &Okno and Po&moc, since Zdjęcie has Z and Plik P.
+  - Built: &File, &Edit, &Photo, &Select, &View, &Window and &Help; &Файл, &Редагування, &Знімок, В&ибір, &Перегляд, &Вікно and &Довідка, since Вікно has В; &Plik, &Edycja, &Zdjęcie, Z&aznaczenie, &Widok, &Okno and Po&moc, since Zdjęcie has Z and Plik P.
   - Tests fail when a top-level menu has no access key, when two share one in any language, Window's included, when one needs AltGr in Polish, or when a translation lacks an attribute English has; `crates/ui/locales/README.md` tells translators.
 - **The menu button's name** for screen readers and its tooltip, with F10 beside it, whichever way it is drawn: Menu, the message `toolbar-menu`, beside ⋯'s `toolbar-more`; Меню in Ukrainian and Menu in Polish.
 - **Switching the language** renames the menus at once (decision 39). macOS writes its own items (Services' contents, Dictation, Emoji & Symbols, the tiling items, the Help search) in the language it picks for the app from those the bundle declares, en-GB, uk and pl (`CFBundleLocalizations` in `packaging/macos/Info.plist`). When the user chooses a language in Settings, Apertrust also sets its own `AppleLanguages`, so macOS's items match from the next start; until then they may differ.
@@ -1058,7 +1058,7 @@ Keep each slice to what exists.
 | Built in step 9c | Open Recent with Clear Menu, and Close, on the Mac's bar and in the menu button's menu |
 | Built in the library's step 9.4 | Undo and Redo, naming the step, on the Mac's bar and in the menu button's menu |
 | Built with selecting several photos | Select All, for a value field and for the photos, Select None, Invert Selection and Select Unedited, on the Mac's bar and in the menu button's menu |
-| Built with the Select menu | Select, between Edit and Photo, holding those four items, moved from Edit, then Previous Selection, declared and drawn disabled; Invert Selection on Ctrl+Shift+I |
+| Built with the Select menu | Select, between Photo and View, holding those four items, moved from Edit, then Previous Selection, declared and drawn disabled; Invert Selection on Ctrl+Shift+I |
 | Built with moving through the selection | Next Photo and Previous Photo, on the Mac's bar and in the menu button's menu |
 | Later in Phase 2 | Show in Folder, with folder mode; Search Photos, Sort By and Thumbnail Size, with the browser bar (step 9); the zoom items, with the scale's zoom; Clipping Warnings, with the overlays (step 8) |
 | Built in decision 96's step 2 | View › Workspace with its workspaces, on the Mac's bar and in the menu button's menu |
