@@ -1435,6 +1435,9 @@ struct App {
     export: export::Export,
     /// When the session is asked for the Export tool's preview ([`App::preview_export`]).
     export_previews: export::Previews,
+    /// The Export tool's folder button, while whether its path is a folder is asked of the
+    /// disk before the folder dialog opens.
+    export_folder: export::folder::Looking,
     /// The photo Discard History was asked for, until its question is answered.
     discarding: Option<alerts::Discarding>,
     /// Whether Quit waits for the open dialog's answer ([`hold_for_panel`]).
@@ -4017,6 +4020,7 @@ impl App {
             again: export_again::Again::default(),
             export,
             export_previews: export::Previews::default(),
+            export_folder: export::folder::Looking::default(),
             discarding: None,
             quit_held: false,
             alerts: alerts::Alerts::default(),
@@ -4141,6 +4145,13 @@ impl App {
         if asked.changed {
             self.shell.export = self.export.values().clone();
         }
+        // The folder dialog opens a later frame, once the disk has said where
+        // ([`App::finish_frame`]).
+        if asked.choose_folder {
+            let (path, home) = (self.export.values().path.clone(), self.export.home());
+            self.export_folder
+                .start(path, home.map(Path::to_owned), ctx);
+        }
         if !asked.pressed {
             return;
         }
@@ -4157,6 +4168,22 @@ impl App {
             }
             export::Press::Confirm => self.ask_export(ctx, true),
         }
+    }
+
+    /// Takes the folder dialog's answer where it is the Export tool's folder button's: the
+    /// export's path becomes the folder chosen and the file part kept, kept by the shell as
+    /// a path typed is, so the preview, the Summary and the warnings follow. Returns any
+    /// other answer, for Open… and the rest.
+    fn export_destination(&mut self, chosen: dialogs::Chosen) -> Option<dialogs::Chosen> {
+        let dialogs::Pick::Destination(file) = &chosen.pick else {
+            return Some(chosen);
+        };
+        if let Some(folder) = chosen.paths.first()
+            && self.export.choose_folder(folder, file)
+        {
+            self.shell.export = self.export.values().clone();
+        }
+        None
     }
 
     /// Whether the app is quitting, or waits for an alert's answer to quit: no export
@@ -5953,12 +5980,15 @@ impl App {
         self.show_notice(ctx);
         let state = self.state(ctx);
         self.shell.open_menu(ctx, &state);
-        // Open…'s and Open Folder…'s dialog, over the window; what is chosen opens a later
-        // frame.
+        // Open…'s, Open Folder…'s and the Export tool's folder button's dialog, over the
+        // window; what is chosen opens a later frame, or becomes the export's path.
+        let destination = self.export_folder.looked();
         let asked = if std::mem::take(&mut self.shell.open) {
             Some(dialogs::Pick::Files)
         } else if std::mem::take(&mut self.shell.open_folder) {
             Some(dialogs::Pick::Folder)
+        } else if let Some(look) = &destination {
+            Some(dialogs::Pick::Destination(look.file.clone()))
         } else {
             self.shell.locate.take().map(dialogs::Pick::Locate)
         };
@@ -5969,11 +5999,15 @@ impl App {
             ctx,
             asking: &mut self.asking,
         };
-        let start = dialogs::locate_start(asked.as_ref());
+        let start = match &asked {
+            Some(dialogs::Pick::Destination(_)) => destination.map(|look| look.start),
+            asked => dialogs::locate_start(asked.as_ref()),
+        };
         let chosen = dialogs::open(&mut dialog, asked, || match start {
             Some(parent) => parent,
             None => dialogs::folder(shown, photo.path(), pictures),
         });
+        let chosen = chosen.and_then(|chosen| self.export_destination(chosen));
         // Quit, held while the dialog asked, runs once it has answered, opening nothing.
         let overwrite = self.alerts.pending() == Some(alerts::Purpose::Overwrite);
         if self.quit_held && self.asking.is_none() && !overwrite {
@@ -7167,6 +7201,8 @@ type Opening = Result<Opens, (PathBuf, dropped::Refusal)>;
 fn answered(shell: &mut Shell, chosen: dialogs::Chosen) -> Option<Opening> {
     let dialogs::Chosen { pick, paths } = chosen;
     match pick {
+        // The Export tool's, which opens nothing ([`App::export_destination`]).
+        dialogs::Pick::Destination(_) => None,
         dialogs::Pick::Files => dropped::chosen(&paths).map(dropped_opens),
         dialogs::Pick::Folder => paths.into_iter().next().map(|p| Ok(Opens::Folder(p))),
         dialogs::Pick::Locate(from) => {

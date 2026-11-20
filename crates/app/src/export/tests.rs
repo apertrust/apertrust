@@ -62,6 +62,44 @@ struct Bench {
     opened: Option<PathBuf>,
     /// Where the section ended at the last frame.
     bottom: f32,
+    /// The folder button's dialog, in place of the platform's.
+    picker: Picker,
+}
+
+/// A stand-in for the folder button's dialog and the disk under it: `folders` are the
+/// folders there, `answer` what the person will choose, a folder or None to cancel; `asked`
+/// holds each dialog asked for, with the folder it opened at.
+#[derive(Default)]
+struct Picker {
+    folders: Vec<PathBuf>,
+    answer: Option<Option<PathBuf>>,
+    asked: Vec<(crate::dialogs::Pick, Option<PathBuf>)>,
+    asking: bool,
+}
+
+impl crate::dialogs::OpenDialog for Picker {
+    fn asking(&self) -> bool {
+        self.asking
+    }
+
+    fn ask(&mut self, pick: crate::dialogs::Pick, folder: Option<&Path>) {
+        self.asking = true;
+        self.asked.push((pick, folder.map(Path::to_owned)));
+    }
+
+    fn chosen(&mut self) -> Option<crate::dialogs::Chosen> {
+        if !self.asking {
+            return None;
+        }
+        let answer = self.answer.take()?;
+        self.asking = false;
+        let (pick, _) = self.asked.last().cloned()?;
+        let folder = answer?;
+        Some(crate::dialogs::Chosen {
+            pick,
+            paths: vec![folder],
+        })
+    }
 }
 
 impl Bench {
@@ -151,6 +189,28 @@ fn tool_of(export: Export, which: Builtin, locale: Locale, width: f32) -> Harnes
                         _ => {}
                     }
                 }
+                // The folder button, as the app looks at the disk and asks its dialog
+                // (`App::export`, `App::finish_frame`), the disk and the dialog the bench's.
+                let look = asked.choose_folder.then(|| {
+                    let folders = &bench.picker.folders;
+                    let is_dir = |path: &Path| folders.iter().any(|f| f == path);
+                    let (path, home) = (&bench.content.values().path, bench.content.home());
+                    folder::look(path, home, false, is_dir)
+                });
+                let pick =
+                    (look.as_ref()).map(|l| crate::dialogs::Pick::Destination(l.file.clone()));
+                let start = look.and_then(|look| look.start);
+                let chosen = crate::dialogs::open(&mut bench.picker, pick, || start);
+                if let Some(chosen) = chosen
+                    && let crate::dialogs::Pick::Destination(file) = &chosen.pick
+                    && bench.content.choose_folder(&chosen.paths[0], file)
+                {
+                    bench.asked.push(Seen {
+                        values: Some(bench.content.values().clone()),
+                        ..Seen::default()
+                    });
+                    ui.ctx().request_repaint();
+                }
                 if asked.changed || asked.pressed {
                     let press = asked.pressed.then(|| press(bench.content.values()));
                     if press == Some(Press::Start) {
@@ -181,6 +241,7 @@ fn tool_of(export: Export, which: Builtin, locale: Locale, width: f32) -> Harnes
                 previews,
                 opened: Some(photo),
                 bottom: 0.0,
+                picker: Picker::default(),
             },
         );
     harness.run();
@@ -1056,13 +1117,8 @@ fn every_row_not_built_is_drawn_disabled() {
             .as_deref(),
         Some("No")
     );
-    harness.get_by_label("Choose…");
-    assert!(
-        harness
-            .get_by_label("Choose…")
-            .accesskit_node()
-            .is_disabled()
-    );
+    // The folder button is built: enabled.
+    assert!(!disabled(&harness, Role::Button, "Choose folder"));
     // The groups, closed, that come later.
     for group in ["Metadata", "Multi-preset export"] {
         assert!(
@@ -1285,7 +1341,9 @@ fn a_row_not_built_says_why_in_its_tooltip() {
         harness.query_by_label_contains("no ICC files").is_some(),
         "Intent says it waits for ICC files"
     );
-    let row = harness.get_by_label("Choose…").rect();
+    let row = harness
+        .get_by_role_and_label(Role::Button, "Metadata")
+        .rect();
     harness.hover_at(row.center());
     harness.run_steps(40);
     assert!(
@@ -1851,8 +1909,7 @@ fn the_path_is_one_line_with_no_visible_label_and_the_folder_button_at_its_end()
     let field = harness
         .get_by_role_and_label(Role::TextInput, "Path")
         .rect();
-    let folder = harness.get_by_label("Choose…").rect();
-    assert!(disabled(&harness, Role::Button, "Choose…"));
+    let folder = harness.get_by_label("Choose folder").rect();
     assert!(folder.left() >= field.right(), "{folder:?} {field:?}");
     assert!((folder.center().y - field.center().y).abs() < 4.0);
     // The resolved file name is its description, not a note.
@@ -1874,6 +1931,147 @@ fn the_path_is_one_line_with_no_visible_label_and_the_folder_button_at_its_end()
             .rect();
         assert!(field.height() < 26.0, "{width}: {field:?}");
     }
+}
+
+/// The tool over `path`, the disk holding `folders`, and the person choosing `answer` in
+/// the folder button's dialog, None to cancel.
+fn choosing(path: &str, folders: &[&str], answer: Option<&str>) -> Harness<'static, Bench> {
+    let values = Values {
+        path: path.to_owned(),
+        ..Values::default()
+    };
+    let mut harness = tool(values, Builtin::Dark, Locale::EnGb, PANEL);
+    let picker = &mut harness.state_mut().picker;
+    picker.folders = folders.iter().map(PathBuf::from).collect();
+    picker.answer = Some(answer.map(PathBuf::from));
+    harness
+}
+
+/// Clicks the folder button, and returns the dialog it asked for and where it opened.
+fn choose_folder(harness: &mut Harness<'_, Bench>) -> (crate::dialogs::Pick, Option<PathBuf>) {
+    harness
+        .get_by_role_and_label(Role::Button, "Choose folder")
+        .click();
+    settle(harness);
+    let asked = &harness.state().picker.asked;
+    assert_eq!(asked.len(), 1, "one dialog");
+    asked[0].clone()
+}
+
+#[test]
+fn the_folder_button_puts_the_folder_chosen_before_the_pattern_s_file_name() {
+    // darktable's example: the pattern's folder has variables, so the dialog opens at home.
+    let mut harness = choosing(
+        "$(FILE_FOLDER)/darktable_exported/$(FILE_NAME)",
+        &["/Users/anna"],
+        Some("/Volumes/Photos/Out"),
+    );
+    let (pick, start) = choose_folder(&mut harness);
+    assert_eq!(
+        pick,
+        crate::dialogs::Pick::Destination("$(FILE_NAME)".to_owned())
+    );
+    assert_eq!(start, Some(PathBuf::from("/Users/anna")));
+    assert_eq!(held(&mut harness).path, "/Volumes/Photos/Out/$(FILE_NAME)");
+    // Through the path's value: the app keeps it and asks for its preview, and the
+    // Summary's Destination follows at once.
+    let kept = harness.state().asked.last().cloned().expect("kept");
+    assert_eq!(
+        kept.values.map(|v| v.path).as_deref(),
+        Some("/Volumes/Photos/Out/$(FILE_NAME)")
+    );
+    assert!(summary_says(&harness, "Destination /Volumes/Photos/Out"));
+}
+
+#[test]
+fn the_folder_button_keeps_a_file_part_of_the_person_s_own_and_writes_home_as_tilde() {
+    let mut harness = choosing(
+        "/Users/anna/Pictures/$(FILE_NAME)_web",
+        &["/Users/anna", "/Users/anna/Pictures"],
+        Some("/Users/anna/Desktop"),
+    );
+    let (pick, start) = choose_folder(&mut harness);
+    assert_eq!(
+        pick,
+        crate::dialogs::Pick::Destination("$(FILE_NAME)_web".to_owned())
+    );
+    // It opens at the path's folder.
+    assert_eq!(start, Some(PathBuf::from("/Users/anna/Pictures")));
+    assert_eq!(held(&mut harness).path, "~/Desktop/$(FILE_NAME)_web");
+    assert!(summary_says(&harness, "Destination ~/Desktop"));
+}
+
+#[test]
+fn a_path_that_is_a_folder_alone_takes_the_file_name_after_the_folder_chosen() {
+    let mut harness = choosing(
+        "~/Pictures",
+        &["/Users/anna", "/Users/anna/Pictures"],
+        Some("/Volumes/Photos/Out"),
+    );
+    let (pick, start) = choose_folder(&mut harness);
+    assert_eq!(
+        pick,
+        crate::dialogs::Pick::Destination("$(FILE_NAME)".to_owned())
+    );
+    // At the path itself, `~` expanded.
+    assert_eq!(start, Some(PathBuf::from("/Users/anna/Pictures")));
+    assert_eq!(held(&mut harness).path, "/Volumes/Photos/Out/$(FILE_NAME)");
+}
+
+#[test]
+fn a_cancelled_folder_dialog_changes_nothing() {
+    let path = "$(FILE_FOLDER)/apertrust_exported/$(FILE_NAME)";
+    let mut harness = choosing(path, &["/Users/anna"], None);
+    choose_folder(&mut harness);
+    assert_eq!(held(&mut harness).path, path);
+    assert!(harness.state().asked.is_empty());
+    assert!(summary_says(
+        &harness,
+        "Destination $(FILE_FOLDER)/apertrust_exported"
+    ));
+}
+
+#[test]
+fn return_or_space_on_the_focused_folder_button_opens_the_dialog() {
+    for key in [egui::Key::Enter, egui::Key::Space] {
+        let mut harness = choosing("$(FILE_NAME)", &[], Some("/Volumes/Out"));
+        harness
+            .get_by_role_and_label(Role::Button, "Choose folder")
+            .focus();
+        harness.run();
+        harness.key_press(key);
+        settle(&mut harness);
+        assert_eq!(harness.state().picker.asked.len(), 1, "{key:?}");
+        assert_eq!(
+            held(&mut harness).path,
+            "/Volumes/Out/$(FILE_NAME)",
+            "{key:?}"
+        );
+    }
+}
+
+#[test]
+fn the_folder_button_is_disabled_while_conf_gives_the_path() {
+    let mut harness = given(Values {
+        path: "/Users/anna/out/$(FILE_NAME)".to_owned(),
+        ..Values::default()
+    });
+    harness.state_mut().picker.answer = Some(Some(PathBuf::from("/Volumes/Out")));
+    assert!(disabled(&harness, Role::Button, "Choose folder"));
+    assert!(disabled(&harness, Role::TextInput, "Path"));
+    harness
+        .get_by_role_and_label(Role::Button, "Choose folder")
+        .click();
+    settle(&mut harness);
+    assert!(harness.state().picker.asked.is_empty());
+    assert_eq!(held(&mut harness).path, "/Users/anna/out/$(FILE_NAME)");
+    // Nor does an answer that comes all the same change it.
+    assert!(
+        !harness
+            .state_mut()
+            .export()
+            .choose_folder(Path::new("/Volumes/Out"), "IMG")
+    );
 }
 
 #[test]
@@ -2672,7 +2870,7 @@ fn path_layout(harness: &Harness<'_, Bench>) -> [egui::Rect; 4] {
         harness
             .get_by_role_and_label(Role::TextInput, "Path")
             .rect(),
-        harness.get_by_label("Choose…").rect(),
+        harness.get_by_label("Choose folder").rect(),
         across(
             harness
                 .get_by_role_and_label(Role::Button, "Export 1 photo")
