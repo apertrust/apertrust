@@ -41,19 +41,21 @@
 //! the app gives one too.
 //!
 //! The browser bar holds Sort at its start and Zoom at its end, each opening its menu
-//! through the popup service, the one in use checked; its options menu, on a right-click,
-//! shows or hides the cells' captions. The panel reports what was chosen ([`BrowserBarAction`])
-//! and knows no photos, so the caller sorts them and sizes the cells. A cell's height
-//! counts its caption while labels show, and so do the panel's rows; what the user did on a
-//! caption's first line is reported with its photo ([`BrowserOutput::cell`]).
+//! through the popup service, the one in use checked, and between them how many photos are
+//! selected of those shown, where the caller says ([`Browser::count`]); its options menu,
+//! on a right-click, shows or hides the cells' captions. The panel reports what was chosen
+//! ([`BrowserBarAction`]) and knows no photos, so the caller sorts them, sizes the cells
+//! and counts them. A cell's height counts its caption while labels show, and so do the
+//! panel's rows; what the user did on a caption's first line is reported with its photo
+//! ([`BrowserOutput::cell`]).
 
 use std::ops::Range;
 
 use apertrust_base::settings::Choice;
-use egui::accesskit::HasPopup;
+use egui::accesskit::{HasPopup, Live};
 use egui::{
-    Align, EventFilter, Id, Key, Layout, Modifiers, Rect, Response, Role, ScrollArea, Sense,
-    Stroke, Ui, UiBuilder, WidgetInfo, pos2, vec2,
+    Align, EventFilter, FontId, Galley, Id, Key, Layout, Modifiers, Rect, Response, Role,
+    ScrollArea, Sense, Stroke, Ui, UiBuilder, WidgetInfo, pos2, vec2,
 };
 
 use super::tools_panel::{restore, scroll_area};
@@ -333,6 +335,8 @@ pub struct Browser<'a, F: Fn(usize) -> Thumb<'a>> {
     labels: bool,
     square: bool,
     several: bool,
+    /// The photos selected and those shown, which the browser bar counts.
+    tally: Option<(usize, usize)>,
 }
 
 /// The space before the first line of cells and after the last, inside the panel, for
@@ -362,6 +366,7 @@ impl<'a, F: Fn(usize) -> Thumb<'a>> Browser<'a, F> {
             labels: true,
             square: false,
             several: true,
+            tally: None,
         }
     }
 
@@ -421,6 +426,15 @@ impl<'a, F: Fn(usize) -> Thumb<'a>> Browser<'a, F> {
     /// default.
     pub fn several(mut self, several: bool) -> Self {
         self.several = several;
+        self
+    }
+
+    /// How many photos are selected of the `total` it shows, which the browser bar shows
+    /// between Sort and Zoom: "3/120", or "120" alone with none selected, and nothing with
+    /// none shown; to screen readers and in its tooltip in words, "3 of 120 photos
+    /// selected" (`docs/gui.md`, The browser bar). Not shown by default.
+    pub fn count(mut self, selected: usize, total: usize) -> Self {
+        self.tally = Some((selected, total));
         self
     }
 
@@ -648,10 +662,10 @@ impl<'a, F: Fn(usize) -> Thumb<'a>> Browser<'a, F> {
     }
 
     /// The browser bar in `header`, its toolbar's id `id`: Sort and Zoom, drawn disabled
-    /// with no photos, and its options menu, Show Labels and Position, on a right-click
-    /// anywhere on it. At a side it is a row across the panel's top, the viewer bar's
-    /// separator under it, so the two bars' lines meet, Sort at its left end and Zoom at
-    /// its right; at the bottom a column at the panel's left end, the same separator
+    /// with no photos, the count between them where the caller gives it, and its options
+    /// menu, Show Labels and Position, on a right-click anywhere on it. At a side it is a
+    /// row across the panel's top, the viewer bar's separator under it, so the two bars'
+    /// lines meet, Sort at its left end and Zoom at its right; at the bottom a column at the panel's left end, the same separator
     /// between it and the cells, Sort at its top and Zoom at its bottom. Returns what was
     /// chosen in their menus.
     fn bar(&self, ui: &mut Ui, header: Rect, id: Id) -> Option<BrowserBarAction> {
@@ -740,6 +754,24 @@ impl<'a, F: Fn(usize) -> Thumb<'a>> Browser<'a, F> {
             } else {
                 ui.available_width()
             };
+            // The count in the room between the two, the column's width or the row's height.
+            if let Some((selected, total)) = self.tally.filter(|(_, total)| *total > 0) {
+                let after = ui.min_rect();
+                let between = if stacked {
+                    let across = header.x_range();
+                    let right = across.max - t.shape.separator_width;
+                    Rect::from_x_y_ranges(
+                        across.min..=right,
+                        after.bottom() + t.spacing.xs..=inner.bottom() - BUTTON - t.spacing.xs,
+                    )
+                } else {
+                    Rect::from_x_y_ranges(
+                        after.right() + t.spacing.xs..=inner.right() - BUTTON - t.spacing.xs,
+                        inner.y_range(),
+                    )
+                };
+                count(ui, between, id.with("count"), selected, total, stacked);
+            }
             ui.add_space((room - BUTTON).max(0.0));
             let zoom_name = tr(&ctx, "grid-thumbnail-size");
             let zoomed = menu(
@@ -784,6 +816,118 @@ impl<'a, F: Fn(usize) -> Thumb<'a>> Browser<'a, F> {
             _ => None,
         }
     }
+}
+
+/// The browser bar's count, `selected` of the `total` photos shown, centred in `room`, in
+/// `text_secondary`: in a row "3/120" on one line, in the column a stacked fraction, 3 over
+/// a thin rule over 120, each number shrinking to fit the column's width, down to the
+/// smallest text size, with no digit grouping, and over 99,999 in thousands ("123k"); "120"
+/// alone with none selected. To screen readers a label, `id`, named in words and polite as
+/// it changes, whose words are its tooltip too. Not drawn where it does not fit.
+fn count(ui: &Ui, room: Rect, id: Id, selected: usize, total: usize, stacked: bool) {
+    let t = theme(ui.ctx());
+    let words = translator(ui.ctx());
+    let mut args = Args::new();
+    args.set("selected", selected);
+    args.set("total", total);
+    let said = if selected > 0 {
+        words.text_with("browser-selected-count", Some(&args))
+    } else {
+        words.text_with("browser-photo-count", Some(&args))
+    };
+    let colour = t.colors.text_secondary;
+    let (largest, smallest) = (t.text.small, t.text.caption);
+    // `text` at the largest size that fits `width`, in quarter points, never under the
+    // smallest; none where even that is too wide.
+    let fit = |text: String, width: f32| -> Option<std::sync::Arc<Galley>> {
+        let painter = ui.painter();
+        let at = |size| painter.layout_no_wrap(text.clone(), FontId::proportional(size), colour);
+        let mut size = largest;
+        loop {
+            let galley = at(size);
+            if galley.size().x <= width {
+                return Some(galley);
+            }
+            if size <= smallest {
+                return None;
+            }
+            size = (size - 0.25).max(smallest);
+        }
+    };
+    let drawn = if stacked {
+        // A number as the column writes it: no grouping, and in thousands past 99,999.
+        let number = |n: usize| {
+            let digits = |n: usize| words.format_number(n as f64, 0, false);
+            if n > 99_999 {
+                let mut args = Args::new();
+                args.set("thousands", digits(n / 1000));
+                words.text_with("browser-count-thousands", Some(&args))
+            } else {
+                digits(n)
+            }
+        };
+        // The column's whole width, short of its separator: 99,999 needs it.
+        let width = room.width();
+        let lines: Option<Vec<_>> = if selected > 0 {
+            [selected, total]
+                .into_iter()
+                .map(|n| fit(number(n), width))
+                .collect()
+        } else {
+            fit(number(total), width).map(|galley| vec![galley])
+        };
+        lines.and_then(|lines| fraction(ui, room, lines, colour))
+    } else {
+        let shown = words.text_with("browser-count", Some(&args));
+        fit(shown, room.width()).map(|galley| {
+            let rect = Rect::from_center_size(room.center(), galley.size());
+            ui.painter().galley(rect.min, galley, colour);
+            rect
+        })
+    };
+    // A label whose words screen readers hear, wherever it is drawn or would be.
+    let response = ui.interact(drawn.unwrap_or(room), id, Sense::hover());
+    response.widget_info(|| WidgetInfo::labeled(Role::Label, true, &said));
+    ui.ctx()
+        .accesskit_node_builder(response.id, |node| node.set_live(Live::Polite));
+    if drawn.is_some() {
+        response.on_hover_text(said);
+    }
+}
+
+/// `lines`, one number or two, centred in `room` one over another, a thin rule between
+/// two as a fraction's; where they lie, or nothing where they are taller than `room`.
+fn fraction(
+    ui: &Ui,
+    room: Rect,
+    lines: Vec<std::sync::Arc<Galley>>,
+    colour: egui::Color32,
+) -> Option<Rect> {
+    let t = theme(ui.ctx());
+    let gap = t.spacing.xxs;
+    let rule = t.shape.hairline;
+    let wide = lines.iter().map(|g| g.size().x).fold(0.0, f32::max);
+    let between = gap + rule + gap;
+    let height = lines.iter().map(|g| g.size().y).sum::<f32>()
+        + between * (lines.len().saturating_sub(1)) as f32;
+    if height > room.height() {
+        return None;
+    }
+    let rect = Rect::from_center_size(room.center(), vec2(wide, height));
+    let mut y = rect.top();
+    for (i, galley) in lines.into_iter().enumerate() {
+        if i > 0 {
+            let at = y + gap + rule / 2.0;
+            let line = Stroke::new(rule, colour);
+            ui.painter().hline(rect.x_range(), at, line);
+            y += between;
+        }
+        let x = room.center().x - galley.size().x / 2.0;
+        let below = galley.size().y;
+        ui.painter().galley(pos2(x, y), galley, colour);
+        y += below;
+    }
+    Some(rect)
 }
 
 /// The panel's empty state, centred in `area`: a struck-through photo, `message` under it

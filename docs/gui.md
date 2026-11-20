@@ -1844,7 +1844,7 @@ It scrolls with the tool, never pinned. The Summary is a group after Multi-prese
 
 - **The wheel:** only a focused export row takes it, never another under the pointer, by the setting's rule: while the wheel scrolls the Tools panel, Option+scroll (Ctrl+scroll on Windows and Linux) over the focused row, otherwise a plain scroll there too ([The scroll wheel over a row](#the-scroll-wheel-over-a-row)).
 - **Stale settings:** the Summary sits over the button, open at first, its first row the preset in use; Ctrl+E reveals the tool rather than exporting; Storage options and Format options never close, and a closed collapsible group shows the dot of a setting off its default; the settings are taken as Export is pressed.
-- **A stray click dropping the selection:** the count is in the button, the viewer bar says "12 selected", and Select › Previous Selection, planned with Phase 3's selection, takes the selection back one level ([Select](#select)).
+- **A stray click dropping the selection:** the count is in the button, the browser bar says "12/212", and Select › Previous Selection, planned with Phase 3's selection, takes the selection back one level ([Select](#select)).
 
 ### darktable's controls and where they live
 
@@ -2443,7 +2443,7 @@ The parts are named by their role, not by where they sit, so a name stays true w
 - **Viewer:** the active photo, the selected photos side by side, or the map.
 - **Browser:** the current folder's or album's thumbnails, along the bottom or in a column at the left or right. "Browser" alone is the part; a web browser is written "web browser".
 - **Viewer bar:** the thin bar along the Viewer's top.
-- **Browser bar:** two icon buttons, Sort at its start and Zoom at its end, and nothing else: at the bottom a narrow column at the Browser's left end, the buttons stacked; at the left or right a row across the panel's top ([The browser bar](#the-browser-bar)). No name or count of the folder shows in it.
+- **Browser bar:** two icon buttons, Sort at its start and Zoom at its end, and between them how many photos are selected of those shown, "3/120": at the bottom a narrow column at the Browser's left end, the buttons stacked and the count a stacked fraction; at the left or right a row across the panel's top ([The browser bar](#the-browser-bar)). No name of the folder shows in it.
 - The **caption** under the photo in the Viewer, and the Tools panel's **tab bar** and **sections**. The Browser is a grid of **cells**.
 - **Floating panel:** a section floating over the Viewer, belonging to no tab (decision 83, planned).
 - **Collections:** the Photos tab's first tool, choosing what the Browser shows ([Collections](#collections)). The start window's Browse… is a verb, to find a library's or a project's file (planned, Phase 5), and keeps its word.
@@ -2565,7 +2565,7 @@ With several photos selected, the rating, reject and label keys, Apply Edit and 
 - **The selection** is a set of the session's collection, the current folder's or album's photos or the photos opened alone, which holds the active photo whenever there is one. Selected photos are marked neutral, by a thin ring in the icons' grey, the active photo by a thicker one, never the accent ([The cell](#the-cell)).
 - **Both are the session's** (decision 37), not the interface's, so a script or an assistant reads and sets them with the same commands, and an assistant's note says how many photos it changed (principle 8).
 - **Built:** the session's half. `Command::Selection` sets the photos, adds or removes one, selects a range from the active photo in the client's sort, all, none, the inverse or the unedited photos; opening a photo outside the selection selects it alone, and a command that leaves the active photo out closes it; a folder listed again keeps the selection by photo. The session tells it as `Event::Selection`, which the app's mirror keeps (`Mirror::selection`; [session-protocol.md](session-protocol.md#the-selection), [events.md](events.md#the-selection)).
-- **Built in the Browser:** its pointer's rows below, Ctrl+Space, the cells' rings, the viewer bar's count and what screen readers hear. Ctrl-click on the active photo takes it out, which closes it as File › Close does, then opens the nearest selected photo in the Browser's order, the later of two as near; with none selected, no photo is active. Each gesture shows at once, before the session answers, and the next one reads what it did (`Mirror::selecting`). Among photos opened alone, the session's collection too, a click on empty space selects nothing as in a folder, and Ctrl and Shift-click do nothing yet. Select's Select All, Select None, Invert Selection and Select Unedited ([Select](#select)) and the keys that move through the selection are built; the batch actions are planned.
+- **Built in the Browser:** its pointer's rows below, Ctrl+Space, the cells' rings, the browser bar's count and what screen readers hear. Ctrl-click on the active photo takes it out, which closes it as File › Close does, then opens the nearest selected photo in the Browser's order, the later of two as near; with none selected, no photo is active. Each gesture shows at once, before the session answers, and the next one reads what it did (`Mirror::selecting`). Among photos opened alone, the session's collection too, a click on empty space selects nothing as in a folder, and Ctrl and Shift-click do nothing yet. Select's Select All, Select None, Invert Selection and Select Unedited ([Select](#select)) and the keys that move through the selection are built; the batch actions are planned.
 
 | Action | Acts on | What it says |
 | --- | --- | --- |
@@ -2578,7 +2578,7 @@ With several photos selected, the rating, reject and label keys, Apply Edit and 
 | Print… | Every selected photo | The sheet's title |
 | Show in Folder | The active photo | — |
 
-- **The count shows before anything acts:** the viewer bar says "12 selected" whenever more than one is, and the batch items name the count in their words and tooltips, so nothing acts on more photos than the person can see they chose.
+- **The count shows before anything acts:** the browser bar shows how many are selected of the photos shown, "12/212" ([The browser bar](#the-browser-bar)), and the batch items name the count in their words and tooltips, so nothing acts on more photos than the person can see they chose.
 - **One Undo** takes a batch back: applying an edit to 12 photos, or rating them, is one batch, its steps listed in each photo's History ("Applied from IMG_2041", "Rating: 3 stars, 12 photos"). Once another photo is active:
   - Undo acts on the active photo's history, as History shows it. When the step it reaches is a batch's, it takes the batch back on every photo of it where that step is still the last, whichever of them is active, so right after a batch one Undo takes it all back.
   - A photo edited since keeps the batch under its own steps, and the notice says so: "Rating taken back on 11 of 12 photos; IMG_2045 has changed since". Undo on that photo takes back its own steps first, then the batch on it alone.
@@ -3109,7 +3109,7 @@ Built. The surround behind the photo is one of six neutral greys (`Background`),
 
 The thin bar along the Viewer's top, `ViewerBar` in the code. Up to the Map toggle it is the same in every layout, the photo's toggles and the Map toggle staying where they are; after it, it is the layout's. Its parts in Photo are built; the Map toggle and Guides' own icon are not.
 
-- **In Photo,** at its start the photo's toggles: Show all selected photos, Proof margin, Before and after and Guides, then the Map toggle (later); then the layer being edited and + for a new one; in its middle the values under the cursor; at its end the zoom, one button showing the scale ([The zoom](#the-zoom)). With more than one photo selected, the count, "12 selected", stands before the zoom, in the text colour, a label to screen readers (built, `ViewerBar::selected`).
+- **In Photo,** at its start the photo's toggles: Show all selected photos, Proof margin, Before and after and Guides, then the Map toggle (later); then the layer being edited and + for a new one; in its middle the values under the cursor; at its end the zoom, one button showing the scale ([The zoom](#the-zoom)). It counts no photos: the browser bar does ([The browser bar](#the-browser-bar)).
   - **Show all selected photos:** on, Photo shows the selected photos side by side; off, the active photo alone ([The Viewer's layouts](#the-viewers-layouts)). On by default. It is enabled whenever a photo is active, since it sets what Photo does once several are selected; View › Show All Selected is the same toggle.
   - **Guides,** the composition guides drawn over the photo in the `guides` token. Its message is `photo-guides`, and its action `guides` (View › Guides) comes with the menus. It is to take an icon of its own, thirds over a frame; until then it shows the icon `grid`. Which guides it draws is chosen with Crop's composition guides once Crop exists.
   - **The values under the cursor:** four numbers 0–255, with no swatch. Red, green and blue each in its channel's colour token and grey in the text colour, with no letters; their full names for screen readers.
@@ -3406,9 +3406,9 @@ With a cell focused the arrows move as the cells lie:
 
 #### The browser bar
 
-Two icon buttons, **Sort** at its start and **Zoom** at its end, and nothing else: no name or count of the folder or album, and no search. Its place follows the panel's: **at the bottom**, a narrow column at the Browser's left end, as tall as the panel, the buttons stacked; **at the left or right**, a row across the panel's top, the buttons side by side.
+Two icon buttons, **Sort** at its start and **Zoom** at its end, and between them **the count** of the photos selected over those shown; no name of the folder or album, and no search. Its place follows the panel's: **at the bottom**, a narrow column at the Browser's left end, as tall as the panel, the buttons stacked; **at the left or right**, a row across the panel's top, the buttons side by side.
 
-- **Layout.** Drawn by `Browser`, told the sort, the size, whether labels show and the position, reporting what was chosen and knowing no photos.
+- **Layout.** Drawn by `Browser`, told the sort, the size, whether labels show, the position and the count's two numbers (`Browser::count`), reporting what was chosen and knowing no photos.
   - At the bottom, a column 36 points wide on the Browser's background, with the 2-point separator between it and the thumbnails, as the viewer bar has under it, Sort at its top and Zoom at its bottom, with room between them; with more rows the space before Zoom grows.
   - At a side, a row as tall as the viewer bar, with the viewer bar's 2-point separator under it, so the two lines meet, Sort at its left end and Zoom at its right. It never folds: the narrowest column, one Small cell, still holds both.
   - The two buttons are the viewer bar's 28-point `IconButton`s, Sort then Zoom: the bar is at the panel's start, the left in a left-to-right language, mirrored in a right-to-left one.
@@ -3419,6 +3419,20 @@ Two icon buttons, **Sort** at its start and **Zoom** at its end, and nothing els
   - the button's icon shows the direction (`sort-ascending`, `sort-descending`); its tooltip and its value for screen readers name the order: "Sort: capture time, ascending";
   - a choice re-sorts the panel on that frame, with no animation. The active photo and the selection stay as they are, and the active photo stays in view;
   - **the capture times** are read by the folder's reading job once the photos are listed, from each raw's header and not its pixels, so the photos show at once by their files' modified times and are sorted once when the times are in, the active photo kept in view, never re-sorted piece by piece. The sort is the app's mirror's: the order the grid draws, never a new reading of the folder.
+- **The count**, "X/Y": X the photos selected, Y the photos the Browser shows, the folder's or the photos opened alone, growing as a folder's listing comes. One open is "1/120", since the active photo is always selected; with none selected it is "120" alone, and with no photos nothing.
+
+  | State | Shows | Tooltip and screen readers |
+  | --- | --- | --- |
+  | 3 of 120 selected | `3/120` | "3 of 120 photos selected" |
+  | One photo open | `1/120` | "1 of 120 photos selected" |
+  | None selected, none active | `120` | "120 photos" |
+  | Photos opened alone, 2 of 5 selected | `2/5` | "2 of 5 photos selected" |
+  | A folder with no raws | nothing | — |
+
+  - **In the row,** at a side, "X/Y" on one line in the small text, `text_secondary`, centred between Sort and Zoom, the numbers in the language's format with its digit grouping (`browser-count`); left out where it does not fit, the smallest text size counted.
+  - **In the column,** at the bottom, 36 points wide, a stacked fraction centred between Sort and Zoom: X over a thin rule over Y, each centred, in `text_secondary`. Each number shrinks to fit the column, down to the smallest text size; the column groups no digits, and writes a number over 99,999 in thousands, "123k" (`browser-count-thousands`). "Y" alone is one centred line.
+  - **It is text, not a button:** no click (a right-click is the bar's, its options menu) and no Tab stop; its tooltip, on hover, says it in words.
+  - The app gives the mirror's selection, as the cells mark it (`Mirror::selected_count`), and the number of cells.
 - **Zoom** opens a menu of the thumbnails' sizes through the popup service, as Sort does, the one in use checked, with the same items as View › Thumbnail Size: Small, Medium, Large and Extra Large, squares of 84, 120, 176 and 256 points, each with its caption under it while labels show, 20 points at Small and 40 at the others ([The cell](#the-cell)). Medium is the default.
   - The panel keeps its number of lines, so it grows and shrinks with the size, up to half the window; beyond that it shows fewer lines without changing the number kept, as a smaller window does.
   - A choice lays the panel out again on that frame, the active photo kept in view. A cell shows the thumbnail cache's nearest size at least as large as itself and, until that one is rendered, a smaller one scaled up, never an empty cell.
@@ -3428,10 +3442,10 @@ Two icon buttons, **Sort** at its start and **Zoom** at its end, and nothing els
   - **Position ›** Left, Right, Bottom, the one in use checked ([Its position](#its-position)).
 - **States:**
 
-  | State | Sort | Zoom |
-  | --- | --- | --- |
-  | A folder with no raws | Drawn disabled | Drawn disabled |
-  | Photos shown | Enabled | Enabled |
+  | State | Sort | Zoom | Count |
+  | --- | --- | --- | --- |
+  | A folder with no raws | Drawn disabled | Drawn disabled | Not drawn |
+  | Photos shown | Enabled | Enabled | "X/Y", or "Y" with none selected |
 
   Under the pointer, a button's icon in `text_strong` with no plate (decision 81), and its tooltip; with keyboard focus, the focus ring; while its menu is open, Sort's icon in `text_strong`, as it has no filled form. The options menu opens in every state.
 - **Keys and focus.**
@@ -3440,13 +3454,14 @@ Two icon buttons, **Sort** at its start and **Zoom** at its end, and nothing els
 - **Screen readers.** The browser bar is a toolbar named "Browser bar", in either form.
   - Sort is a button with a menu, named "Sort", its value the order ("Capture time, ascending").
   - Zoom is a button with a menu, named "Thumbnail size", its value the size.
+  - The count is a label between them, named in words, "3 of 120 photos selected" (`browser-selected-count`) or "120 photos" (`browser-photo-count`), each language's plural, and a polite live region, so a change is heard without moving the focus.
   - The thumbnails' list is named by the folder or album and its count ("Wedding 2026-10, 212 photos"), so landing in the Browser says what it shows.
 - **Undo:** none. The sort, the size, the labels and the position change what is shown, not a photo, as the viewer bar's toggles do.
 - **Kept** in settings, under `[browser]`: the sort as `sort` (`capture-time`, `file-name`, `edited`, `rating`) and `descending`, the size by name as `thumbnails` (`small` to `extra-large`), so its points can be retuned, and Show Labels as `labels`. They are one for every folder and album, the same in every layout and workspace, and written only once changed; not per folder, since settings hold no folder ([Settings and workspace](#settings-and-workspace)).
 - **What a script sees:** the sort is to be the session's, as the selection is (decision 37), since → and ←, Shift's ranges and Select All follow it; a script would read the order the person sees and set a sort with the same commands. How the protocol carries it is still to be designed; until then the app's mirror sorts. The size is interface state, which the session never sees.
 - **Search Photos** (Ctrl+F) is planned, in the menu bar alone ([View](#view)): searching the folder or album by file name, then from Phase 5 by metadata. The browser bar has no button for it.
 - **When:**
-  - Phase 2, step 9, with the Browser: the browser bar; Sort by capture time, file name and Edited; Zoom; the options menu's Show Labels and Position; their View items.
+  - Phase 2, step 9, with the Browser: the browser bar; Sort by capture time, file name and Edited; Zoom; the count; the options menu's Show Labels and Position; their View items.
   - Phase 3: Sort by Rating, with the ratings.
   - Phase 5, with the Library's index: any further sort key the index makes cheap, if one is asked for.
 
