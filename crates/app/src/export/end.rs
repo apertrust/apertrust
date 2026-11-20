@@ -370,7 +370,10 @@ impl Export {
                 words.text_with("export-view-only-left-out", Some(&args)),
             );
         }
-        if !matches!(self.photo, Photo::Ready { .. }) || self.path_problem(&words).is_some() {
+        // The preview's files are the photo open's: nothing to say where the export passes
+        // it over.
+        let takes_open = matches!(self.photo, Photo::Ready { .. }) && !self.others.skips_open;
+        if !takes_open || self.path_problem(&words).is_some() {
             return;
         }
         let Some((_, preview)) = &self.preview else {

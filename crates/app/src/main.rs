@@ -6739,13 +6739,12 @@ fn export_others(mirror: &Mirror) -> export::Others {
     // where it is open for viewing only: the rest are the others. One the export passes
     // over, the listing lacking it, it neither counts nor checks (`skips_open`).
     let ready = open.is_some_and(|open| open.view_only.is_none());
-    let left_out = open.is_some_and(|open| open.view_only.is_some());
     let pending = mirror.selection_pending();
     let taken = open.is_some_and(|open| exported.photos.contains(&open.path));
     let skips_open = !pending && ready && !taken;
     export::Others {
         taken: (exported.photos.len()).saturating_sub(usize::from(taken)),
-        left_out: (exported.left_out).saturating_sub(usize::from(left_out)),
+        left_out: (exported.left_out).saturating_sub(usize::from(exported.open_left_out)),
         pending,
         skips_open,
     }

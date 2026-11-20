@@ -277,6 +277,8 @@ pub(crate) struct Exported {
     pub photos: Vec<PathBuf>,
     /// The selected photos open for viewing only, which the export leaves out.
     pub left_out: usize,
+    /// Whether the photo open is one of `left_out`, which the Export tool counts itself.
+    pub open_left_out: bool,
 }
 
 /// What Export and Export Again take (decision 90): with several selected, every selected
@@ -293,10 +295,12 @@ pub(crate) fn exported(mirror: &Mirror) -> Exported {
     }
     match several(mirror) {
         Some(listing) => {
+            let open = mirror.photo.asked().map(Path::to_owned);
             for (photo, takes) in selected(mirror, listing) {
                 if takes {
                     exported.photos.push(photo);
                 } else {
+                    exported.open_left_out |= open.as_ref() == Some(&photo);
                     exported.left_out += 1;
                 }
             }
@@ -305,7 +309,10 @@ pub(crate) fn exported(mirror: &Mirror) -> Exported {
             PhotoState::Open(photo) if photo.view_only.is_none() => {
                 exported.photos.push(photo.path.clone());
             }
-            PhotoState::Open(_) => exported.left_out = 1,
+            PhotoState::Open(_) => {
+                exported.left_out = 1;
+                exported.open_left_out = true;
+            }
             _ => {}
         },
     }
@@ -1124,6 +1131,7 @@ mod tests {
         let one = Exported {
             photos: vec![at("a")],
             left_out: 0,
+            open_left_out: false,
         };
         assert_eq!(exported(&f.m), one);
         assert!(exportable(&f.m));
@@ -1134,6 +1142,7 @@ mod tests {
         let none = Exported {
             photos: Vec::new(),
             left_out: 1,
+            open_left_out: true,
         };
         assert_eq!(exported(&f.m), none);
         assert!(!exportable(&f.m));
@@ -1151,6 +1160,7 @@ mod tests {
         let all = Exported {
             photos: vec![at("e"), at("c"), at("a")],
             left_out: 0,
+            open_left_out: false,
         };
         assert_eq!(exported(&f.m), all);
         assert!(exportable(&f.m));
@@ -1189,6 +1199,7 @@ mod tests {
         let e = Exported {
             photos: vec![at("e")],
             left_out: 2,
+            open_left_out: true,
         };
         assert_eq!(exported(&f.m), e);
         assert!(exportable(&f.m));
@@ -1246,6 +1257,7 @@ mod tests {
         let c = Exported {
             photos: vec![at("c")],
             left_out: 0,
+            open_left_out: false,
         };
         assert_eq!(exported(&f.m), c);
         assert!(exportable(&f.m));
