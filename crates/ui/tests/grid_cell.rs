@@ -729,8 +729,9 @@ fn click_at<T>(harness: &mut Harness<'_, T>, pos: egui::Pos2, modifiers: egui::M
 }
 
 /// Only a click on a photo's picture, or on the name's box until the picture comes, picks
-/// it (`docs/gui.md`, The pointer): the caption and the square round a fitted picture are
-/// empty space, where a click, Ctrl or Cmd-click, Shift-click or double-click does nothing.
+/// it (`docs/gui.md`, The pointer): the square round a fitted picture is empty space, where
+/// a click or a double-click selects nothing and Ctrl or Cmd-click and Shift-click do
+/// nothing; a click on the name does nothing.
 #[test]
 fn only_a_click_on_a_photo_s_picture_selects_it() {
     let mut harness = pictured_panel();
@@ -748,26 +749,30 @@ fn only_a_click_on_a_photo_s_picture_selects_it() {
     let command = egui::Modifiers::COMMAND;
     let shift = egui::Modifiers::SHIFT;
     let none = egui::Modifiers::NONE;
-    for (at, modifiers) in [
-        (beside[0], none),
-        (beside[1], none),
-        (name, none),
-        (beside[0], command),
-        (name, command),
-        (beside[1], shift),
-        (name, shift),
+    let clear = [BrowserAction::ClearSelection];
+    for (at, modifiers, reported) in [
+        (beside[0], none, &clear[..]),
+        (beside[1], none, &clear),
+        (name, none, &[]),
+        (beside[0], command, &[]),
+        (name, command, &[]),
+        (beside[1], shift, &[]),
+        (name, shift, &[]),
     ] {
         click_at(&mut harness, at, modifiers);
-        assert!(
-            harness.state().is_empty(),
+        assert_eq!(
+            harness.state(),
+            reported,
             "{at:?} {modifiers:?}: {:?}",
             harness.state()
         );
+        harness.state_mut().clear();
     }
-    // A double-click beside the picture.
+    // A double-click beside the picture: each click selects nothing.
     click_at(&mut harness, beside[0], none);
     click_at(&mut harness, beside[0], none);
-    assert!(harness.state().is_empty(), "{:?}", harness.state());
+    assert_eq!(*harness.state(), [clear, clear].concat());
+    harness.state_mut().clear();
 
     // On the picture, a click opens the photo, and so does one on the name's box of a photo
     // whose picture has yet to come.
@@ -790,8 +795,8 @@ fn only_a_click_on_a_photo_s_picture_selects_it() {
 }
 
 /// The picture is judged where the button was released, not where the pointer went after
-/// it in the same frame: released beside the picture and moved onto it picks nothing;
-/// released on it and moved off it picks the photo.
+/// it in the same frame: released beside the picture and moved onto it picks nothing,
+/// selecting nothing; released on it and moved off it picks the photo.
 #[test]
 fn a_click_is_judged_where_the_button_was_released() {
     let mut harness = pictured_panel();
@@ -823,9 +828,12 @@ fn a_click_is_judged_where_the_button_was_released() {
         harness.step();
     };
     click_then_move(&mut harness, beside, on);
-    assert!(harness.state().is_empty(), "{:?}", harness.state());
+    assert_eq!(*harness.state(), [BrowserAction::ClearSelection]);
     click_then_move(&mut harness, on, beside);
-    assert_eq!(*harness.state(), [BrowserAction::Open(1)]);
+    assert_eq!(
+        *harness.state(),
+        [BrowserAction::ClearSelection, BrowserAction::Open(1)]
+    );
 }
 
 #[test]

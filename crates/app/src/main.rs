@@ -6825,7 +6825,7 @@ fn close(remembered: &mut Remembered, mirror: &mut Mirror, send: &mut SendComman
 /// The photo open, or opening, closed with the folder left open: the session saves its
 /// edit as it saves any photo it leaves and frees it, and the Tools panel shows no photo.
 /// With none, nothing.
-fn close_photo(mirror: &mut Mirror, send: &mut SendCommand<'_>) {
+pub(crate) fn close_photo(mirror: &mut Mirror, send: &mut SendCommand<'_>) {
     if !matches!(mirror.photo, PhotoState::None) {
         send(Command::Close);
         mirror.closing();

@@ -27,8 +27,11 @@
 //! A click on a photo's picture opens it; Shift-click selects a range, Ctrl or Cmd-click
 //! adds or removes one, as Ctrl+Space does the cell focused (Cmd+Space or Control+Space
 //! on the Mac). Each cell is marked as the caller says it is selected, and the list tells
-//! screen readers that several can be, where the caller says so ([`Browser::several`]). A click on a caption or round a fitted picture
-//! does nothing. A right-click on a cell, a Control-click on the Mac, or the menu key,
+//! screen readers that several can be, where the caller says so ([`Browser::several`]). A
+//! plain click on the panel's empty space selects nothing
+//! ([`BrowserAction::ClearSelection`]): between the cells, after the last, round a fitted
+//! picture or on a caption outside its first line and its name; with Ctrl, Cmd or Shift
+//! it does nothing. A right-click on a cell, a Control-click on the Mac, or the menu key,
 //! Shift+F10 or AccessKit's ShowContextMenu on the one focused, asks for its photo's
 //! menu, which the caller builds ([`BrowserOutput::menu`]). With a cell focused, ← and →
 //! move the focus to the next or previous photo, Home and End to the first and last, and
@@ -232,6 +235,8 @@ pub enum BrowserAction {
     /// Add the photo to the selection, or take it out: Ctrl or Cmd-click on its picture, or
     /// Ctrl+Space on its cell focused.
     ToggleSelected(usize),
+    /// Select nothing, no photo active: a click with no modifier on the panel's empty space.
+    ClearSelection,
 }
 
 /// What was chosen in the browser bar's menus. Each is an action of the app's registry,
@@ -490,6 +495,16 @@ impl<'a, F: Fn(usize) -> Thumb<'a>> Browser<'a, F> {
             };
         }
 
+        // The panel's empty space, under the cells, outside the browser bar: a plain click
+        // there selects nothing. Inside the strip too, over the drag that scrolls it on a
+        // touch screen.
+        let background = list.with("background");
+        let around = if column {
+            area
+        } else {
+            Rect::from_min_max(pos2(header.right(), inner.top()), inner.max)
+        };
+        let mut action = cleared(ui, around, background).then_some(BrowserAction::ClearSelection);
         let cells = Cells {
             count: self.count,
             lines: self.lines,
@@ -514,7 +529,6 @@ impl<'a, F: Fn(usize) -> Thumb<'a>> Browser<'a, F> {
         let changed = seen != Some(now);
         ui.data_mut(|d| d.insert_temp(seen_id, now));
 
-        let mut action = None;
         let mut cell_action = None;
         let mut menu = None;
         let mut moved = None;
@@ -536,6 +550,11 @@ impl<'a, F: Fn(usize) -> Thumb<'a>> Browser<'a, F> {
                     restore(ui, |ui| {
                         let (all, _) = ui.allocate_exact_size(cells.size(), Sense::hover());
                         let origin = all.min;
+                        // The part of the strip in sight, where its clip may reach past it.
+                        let seen = viewport.translate(origin.to_vec2());
+                        if cleared(ui, seen, background.with("strip")) {
+                            action = Some(BrowserAction::ClearSelection);
+                        }
                         // Room round a cell scrolled to, for its rings.
                         let room = if column {
                             vec2(0.0, GAP)
@@ -587,6 +606,9 @@ impl<'a, F: Fn(usize) -> Thumb<'a>> Browser<'a, F> {
                                     at,
                                     cell: id,
                                 });
+                            }
+                            if cell.empty && !clicked && plain(ui) {
+                                action = Some(BrowserAction::ClearSelection);
                             }
                             if picked && !clicked {
                                 let modifiers = ui.input(|input| input.modifiers);
@@ -920,6 +942,30 @@ fn keyed(ui: &Ui, id: Id, i: usize, cells: &Cells) -> Option<usize> {
         }
     })
     .filter(|target| *target != i)
+}
+
+/// Whether the primary button clicked `rect`, the widget `id` under the cells, with no
+/// modifier held: the panel's empty space, which takes no focus and has no node of its own,
+/// Select None being the keys' way.
+fn cleared(ui: &Ui, rect: Rect, id: Id) -> bool {
+    ui.interact(rect, id, Sense::CLICK).clicked() && plain(ui)
+}
+
+/// Whether the primary button last came up this frame with no modifier held, as the event
+/// says: Ctrl or Shift let go in the same frame still counts.
+fn plain(ui: &Ui) -> bool {
+    ui.input(|input| {
+        input.events.iter().rev().find_map(|event| match event {
+            egui::Event::PointerButton {
+                button: egui::PointerButton::Primary,
+                pressed: false,
+                modifiers,
+                ..
+            } => Some(modifiers.is_none()),
+            _ => None,
+        })
+    })
+    .unwrap_or(false)
 }
 
 /// Whether Ctrl+Space was pressed on the cell focused, taking the key, which toggles its
