@@ -61,14 +61,17 @@ pub fn look(
     is_dir: impl Fn(&Path) -> bool,
 ) -> Look {
     let expanded = home_for_tilde(path, home);
-    if !expanded.is_empty() && is_dir(Path::new(&expanded)) {
+    let whole = PathBuf::from(literal(&expanded, windows));
+    if !expanded.is_empty() && is_dir(&whole) {
         return Look {
-            start: Some(PathBuf::from(expanded)),
+            start: Some(whole),
             file: FILE_NAME.to_owned(),
         };
     }
     let (folder, file) = split(&expanded, windows);
-    let folder = folder.map(PathBuf::from).filter(|folder| is_dir(folder));
+    let folder = folder
+        .map(|folder| PathBuf::from(literal(folder, windows)))
+        .filter(|folder| is_dir(folder));
     Look {
         start: folder.or_else(|| home.map(Path::to_owned)),
         file: file.to_owned(),
@@ -109,6 +112,24 @@ fn split(path: &str, windows: bool) -> (Option<&str>, &str) {
 /// The path once `folder` is chosen, with `file` the file part kept ([`look`]): under
 /// `home` written `~/`, as the Summary shows it; on Windows (`windows`) its backslashes
 /// `/`, elsewhere each backslash escaped as `\\`.
+/// `text`, a folder part of a path pattern, as the pattern reads it off Windows: a
+/// backslash takes the character after it as it is, as `apertrust_export::variables`
+/// parses it. On Windows, where the backslash is a separator, `text` as it is. The
+/// filesystem is asked about this, never the escaped text.
+fn literal(text: &str, windows: bool) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut chars = text.chars().peekable();
+    while let Some(c) = chars.next() {
+        let escaped = !windows && c == '\\' && chars.peek().is_some();
+        if escaped {
+            out.extend(chars.next());
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
 pub fn destination(folder: &Path, file: &str, home: Option<&Path>, windows: bool) -> String {
     let under = home.and_then(|home| folder.strip_prefix(home).ok());
     let text = under.unwrap_or(folder).to_string_lossy();
@@ -116,6 +137,14 @@ pub fn destination(folder: &Path, file: &str, home: Option<&Path>, windows: bool
         text.replace('\\', "/")
     } else {
         text.replace('\\', "\\\\")
+    };
+    // Off Windows, a `$` the folder's name holds is escaped too, so `$(` there is never
+    // read as a variable. On Windows the backslash is a separator, so there is no escape,
+    // as darktable has none.
+    let text = if windows {
+        text
+    } else {
+        text.replace('$', "\\$")
     };
     let folder = match under {
         Some(_) if text.is_empty() => "~".to_owned(),
@@ -187,6 +216,26 @@ mod tests {
             start: Some(PathBuf::from(start)),
             file: file.to_owned(),
         }
+    }
+
+    /// A folder chosen with a backslash or `$(` in its name is written escaped, and found
+    /// again under its own name the next time the button is pressed.
+    #[test]
+    fn a_folder_with_a_backslash_or_a_dollar_is_found_again() {
+        let home = Some(Path::new(HOME));
+        for folder in ["/srv/a\\b", "/srv/$(YEAR)"] {
+            let path = destination(Path::new(folder), FILE_NAME, home, false);
+            assert_eq!(look_at(&path, &[folder]), at(folder, FILE_NAME), "{path}");
+        }
+        assert_eq!(
+            destination(Path::new("/srv/$(YEAR)"), FILE_NAME, home, false),
+            "/srv/\\$(YEAR)/$(FILE_NAME)"
+        );
+        // On Windows the backslash is a separator, so a `$` is written as it is.
+        assert_eq!(
+            destination(Path::new("D:\\$(x)"), FILE_NAME, None, true),
+            "D:/$(x)/$(FILE_NAME)"
+        );
     }
 
     #[test]
