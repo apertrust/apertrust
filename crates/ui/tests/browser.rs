@@ -181,7 +181,7 @@ fn show_labels_shows_the_captions_and_counts_them_in_the_cells_and_the_panel() {
     assert_eq!(
         browser_height(&ctx, ThumbnailSize::Medium, true, 2)
             - browser_height(&ctx, ThumbnailSize::Medium, true, 1),
-        120.0 + 40.0 + 8.0
+        120.0 + 40.0 + 12.0
     );
     // Chosen, it reports itself; the caller turns the captions off, and the cells and the
     // panel lose them.
@@ -416,10 +416,12 @@ fn drag_edge(harness: &mut Harness<'_, Bottom>, by: f32) {
 }
 
 /// From one column's start to the next's: a Small cell and the gap.
-const PITCH: f32 = 84.0 + 8.0;
+const PITCH: f32 = 84.0 + 12.0;
 /// From one row's start to the next's: a Small cell, its caption of the name alone and the
 /// gap.
-const ROW: f32 = 84.0 + 20.0 + 8.0;
+const ROW: f32 = 84.0 + 20.0 + 12.0;
+/// The same down a column at a side, where the gap is wider.
+const COLUMN_ROW: f32 = 84.0 + 20.0 + 16.0;
 
 #[test]
 fn dragging_the_browser_s_edge_adds_and_takes_whole_rows() {
@@ -821,7 +823,10 @@ fn at_a_side_the_cells_fill_rows_of_the_columns_and_the_bar_is_on_top() {
     let at = |harness: &Harness<'_, Column>, name: &str| harness.get_by_label(name).rect().min;
     let first = at(&harness, "IMG_0000.ARW");
     assert_eq!(at(&harness, "IMG_0001.ARW"), first + egui::vec2(PITCH, 0.0));
-    assert_eq!(at(&harness, "IMG_0002.ARW"), first + egui::vec2(0.0, ROW));
+    assert_eq!(
+        at(&harness, "IMG_0002.ARW"),
+        first + egui::vec2(0.0, COLUMN_ROW)
+    );
     let bar = harness
         .get_by_role_and_label(Role::Toolbar, "Browser bar")
         .rect();
@@ -1008,7 +1013,8 @@ fn the_wheel_scrolls_the_strip_a_vertical_one_a_row_of_cells_too() {
     // A plain wheel turns up and down; a row scrolls sideways with it.
     wheel(&mut harness, at, egui::vec2(0.0, -2400.0));
     assert!(harness.query_by_label("IMG_0000.ARW").is_none());
-    assert!(harness.query_by_label("IMG_0020.ARW").is_some());
+    // The pointer rests on it, so its tooltip may name it too.
+    assert!(harness.query_all_by_label("IMG_0020.ARW").next().is_some());
     // And a trackpad's sideways swipe as well, back towards the start.
     wheel(&mut harness, at, egui::vec2(2400.0, 0.0));
     assert!(harness.query_by_label("IMG_0000.ARW").is_some());
