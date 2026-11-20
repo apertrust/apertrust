@@ -164,7 +164,8 @@ Each operation's kernel lives in its own crate, `crates/op/<module>` (decision 2
 ```sh
 tools/fetch-slang.sh             # pinned slangc into external/ (git-ignored), checksum-verified
 tools/build-kernels.sh           # slang/*.slang -> generated/*.wgsl; commit the output
-tools/build-kernels.sh --check   # lists stale or orphaned generated files; changes nothing
+tools/build-kernels.sh --check [FILE...]   # lists stale or orphaned generated files, of the crates
+                                           # FILE is in (none: every crate); changes nothing
 cargo run --release -p apertrust-golden -- run CASE --repeat 32   # speed comparison
 WGPU_POWER_PREF=low cargo run --release -p apertrust-golden -- run CASE   # on an integrated GPU
 ```

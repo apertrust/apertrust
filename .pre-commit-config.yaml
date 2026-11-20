@@ -134,14 +134,15 @@ repos:
         language: system
         files: ((^|/)Cargo\.(toml|lock)|^CREDITS\.md|^tools/credits\.sh)$
         pass_filenames: false
-      # Every kernel, since each imports the shared Slang libraries. Its first run downloads
-      # the pinned slangc (tools/fetch-slang.sh).
+      # The kernels of the crates whose Slang or WGSL changed; every kernel once a shared
+      # library or the scripts change. Its first run downloads the pinned slangc
+      # (tools/fetch-slang.sh). One run for all the files, so the kernels compile once.
       - id: kernels
         name: Generated WGSL
         entry: tools/build-kernels.sh --check
         language: system
         files: (\.slang|/generated/[^/]+\.wgsl|^tools/(build-kernels|fetch-slang)\.sh)$
-        pass_filenames: false
+        require_serial: true
 
       # The long checks, in the manual stage.
       - id: clippy
