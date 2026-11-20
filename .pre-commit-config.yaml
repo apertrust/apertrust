@@ -13,6 +13,8 @@
 # take no files. They skip what CI skips: documentation alone, as
 # .github/docs-only-paths.txt matches it. `docs-only` below mirrors that list; change both
 # together.
+#
+# Each repository below is pinned to a release tag; `pre-commit autoupdate` moves them.
 
 repos:
   # pre-commit's own checks of the configuration.
@@ -21,10 +23,9 @@ repos:
       - id: check-hooks-apply
       - id: check-useless-excludes
 
-  # pre-commit's general file checks, pinned by commit; `pre-commit autoupdate --freeze`
-  # moves it.
+  # pre-commit's general file checks.
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: 3e8a8703264a2f4a69428a0aa4dcb512790b2c8c # frozen: v6.0.0
+    rev: v6.0.0
     hooks:
       # Raws and models are never committed (AGENTS.md); the interface's snapshots reach
       # 1.1 MB.
@@ -62,7 +63,7 @@ repos:
 
   # The shell scripts.
   - repo: https://github.com/shellcheck-py/shellcheck-py
-    rev: 745eface02aef23e168a8afb6b5737818efbea95 # frozen: v0.11.0.1
+    rev: v0.11.0.1
     hooks:
       # Warnings and errors; its style and information notes are left out.
       - id: shellcheck
@@ -70,13 +71,13 @@ repos:
 
   # The GitHub workflows.
   - repo: https://github.com/rhysd/actionlint
-    rev: 914e7df21a07ef503a81201c76d2b11c789d3fca # frozen: v1.7.12
+    rev: v1.7.12
     hooks:
       - id: actionlint
 
   # Spelling, in the code and the documents, as typos.toml sets it.
   - repo: https://github.com/crate-ci/typos
-    rev: 276087d9a4f06398b3e04825487805e2d7375888 # frozen: v1.52.2
+    rev: v1.52.2
     hooks:
       # It reports, never writes: its corrections would rename files and change
       # identifiers, hashes and translations. `typos --write-changes` applies them.
@@ -85,7 +86,7 @@ repos:
 
   # The dependencies' licences, advisories and sources, as deny.toml sets them.
   - repo: https://github.com/EmbarkStudios/cargo-deny
-    rev: bca0dde53651ee946720e4540b5ce2610bec8f06 # frozen: 0.20.2
+    rev: 0.20.2
     hooks:
       - id: cargo-deny
 
