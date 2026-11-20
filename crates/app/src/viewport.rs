@@ -19,7 +19,8 @@
 //! inside egui's render pass, one frame pixel per physical pixel. Nothing is copied
 //! into an egui texture, and the shader can later encode for float16 or EDR surfaces.
 //! A frame rendered for another size, as while the window resizes, is shown scaled to
-//! the size its successor will have, until that arrives.
+//! the size its successor will have, until that arrives. At Small the fitted frame is
+//! shown at half, each physical pixel the mean of a 2×2 block of it (decision 99).
 
 use apertrust_engine::session::Frame;
 use eframe::egui;
@@ -38,6 +39,43 @@ struct Resources {
     bound: Vec<(wgpu::Buffer, wgpu::BindGroup)>,
 }
 
+/// How the frame's pixels become the window's.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Filter {
+    /// Each physical pixel its own frame pixel: the frame shown at the size it was rendered
+    /// for, nothing resampled.
+    Exact,
+    /// Between the four frame pixels round where each physical pixel falls: a frame shown at
+    /// another size, as while the window resizes.
+    Smooth,
+    /// The mean of each 2×2 block of frame pixels, a lone row or column at an odd edge
+    /// counted twice: the fitted frame shown at half, at Small.
+    Box2,
+}
+
+impl Filter {
+    /// The filter for a frame of `size` shown at `shown`: this one where it fits them,
+    /// Exact the same size and Box2 half of it rounded up, else Smooth, as for a frame
+    /// rendered for the size before a resize.
+    fn fitting(self, size: [u32; 2], shown: [u32; 2]) -> Filter {
+        let fits = match self {
+            Filter::Exact => shown == size,
+            Filter::Box2 => shown == size.map(|side| side.div_ceil(2)),
+            Filter::Smooth => true,
+        };
+        if fits { self } else { Filter::Smooth }
+    }
+
+    /// The shader's number for it (`viewport.wgsl`).
+    fn code(self) -> u32 {
+        match self {
+            Filter::Exact => 0,
+            Filter::Smooth => 1,
+            Filter::Box2 => 2,
+        }
+    }
+}
+
 /// The shader's `View`.
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
@@ -46,7 +84,7 @@ struct View {
     size: [u32; 2],
     shown: [u32; 2],
     decode: u32,
-    _pad: u32,
+    sampling: u32,
 }
 
 /// Makes the pipeline for the window's format; once, before the first frame.
@@ -125,23 +163,22 @@ impl Resources {
         }
     }
 
-    /// Writes where the frame in `buffer` goes, its size and the size it is shown at, and
-    /// binds the buffer if it is new.
-    fn prepare(
-        &mut self,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        buffer: &wgpu::Buffer,
-        origin: [i32; 2],
-        size: [u32; 2],
-        shown: [u32; 2],
-    ) {
-        let view = View {
+    /// Writes where `photo`'s frame goes, its size, the size it is shown at and how it is
+    /// filtered, and binds its buffer if it is new.
+    fn prepare(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, photo: &Photo) {
+        let Photo {
+            buffer,
             origin,
             size,
             shown,
+            filter,
+        } = photo;
+        let view = View {
+            origin: *origin,
+            size: *size,
+            shown: *shown,
             decode: u32::from(self.decode),
-            _pad: 0,
+            sampling: filter.fitting(*size, *shown).code(),
         };
         queue.write_buffer(&self.view, 0, bytemuck::bytes_of(&view));
         if !self.bound.iter().any(|(bound, _)| bound == buffer) {
@@ -177,10 +214,10 @@ impl Resources {
     }
 }
 
-/// Draws `frame` over `rect`, whose corners lie on the physical pixel grid: pixel for
-/// pixel where `rect` is the frame's size, scaled to it otherwise. `painter`'s clip rect
-/// cuts it.
-pub fn paint(painter: &egui::Painter, rect: egui::Rect, frame: &Frame) {
+/// Draws `frame` over `rect`, whose corners lie on the physical pixel grid, through
+/// `filter` where it fits their sizes, else smoothly scaled to `rect`: Exact where `rect`
+/// is the frame's size, Box2 where it is half of it. `painter`'s clip rect cuts it.
+pub fn paint(painter: &egui::Painter, rect: egui::Rect, frame: &Frame, filter: Filter) {
     let ppp = painter.pixels_per_point();
     let pixels = |v: f32| (v * ppp).round();
     let callback = Photo {
@@ -191,15 +228,18 @@ pub fn paint(painter: &egui::Painter, rect: egui::Rect, frame: &Frame) {
             pixels(rect.width()).max(1.0) as u32,
             pixels(rect.height()).max(1.0) as u32,
         ],
+        filter,
     };
     painter.add(egui_wgpu::Callback::new_paint_callback(rect, callback));
 }
 
+/// The frame drawn, where and how: the paint callback.
 struct Photo {
     buffer: wgpu::Buffer,
     origin: [i32; 2],
     size: [u32; 2],
     shown: [u32; 2],
+    filter: Filter,
 }
 
 impl CallbackTrait for Photo {
@@ -212,14 +252,7 @@ impl CallbackTrait for Photo {
         resources: &mut CallbackResources,
     ) -> Vec<wgpu::CommandBuffer> {
         if let Some(r) = resources.get_mut::<Resources>() {
-            r.prepare(
-                device,
-                queue,
-                &self.buffer,
-                self.origin,
-                self.size,
-                self.shown,
-            );
+            r.prepare(device, queue, self);
         }
         Vec::new()
     }
@@ -273,6 +306,7 @@ mod tests {
                 ("size", std::mem::offset_of!(View, size) as u32),
                 ("shown", std::mem::offset_of!(View, shown) as u32),
                 ("decode", std::mem::offset_of!(View, decode) as u32),
+                ("sampling", std::mem::offset_of!(View, sampling) as u32),
             ]
         );
     }
@@ -293,10 +327,22 @@ mod tests {
         shown: [u32; 2],
         pixel: impl Fn(u32, u32) -> [f32; 4],
     ) -> Vec<[u8; 4]> {
+        render_frame(format, [5, 4], shown, Filter::Exact, pixel)
+    }
+
+    /// Renders a frame of `size` whose pixels `pixel` gives at (3, 2) into a 12×10 target,
+    /// shown at `shown` through `filter`, as egui's pass would, with the callback's
+    /// viewport, and reads every pixel back.
+    fn render_frame(
+        format: wgpu::TextureFormat,
+        [width, height]: [u32; 2],
+        shown: [u32; 2],
+        filter: Filter,
+        pixel: impl Fn(u32, u32) -> [f32; 4],
+    ) -> Vec<[u8; 4]> {
         let gpu = pollster::block_on(apertrust_engine::gpu::GpuContext::new(&Default::default()))
             .expect("a GPU adapter, hardware or software");
         let (device, queue) = (&gpu.device, &gpu.queue);
-        let (width, height) = (5u32, 4u32);
         let pixels: Vec<[f32; 4]> = (0..height)
             .flat_map(|y| (0..width).map(move |x| (x, y)))
             .map(|(x, y)| pixel(x, y))
@@ -324,7 +370,14 @@ mod tests {
             view_formats: &[],
         });
         let mut resources = Resources::new(device, format);
-        resources.prepare(device, queue, &frame, [3, 2], [width, height], shown);
+        let photo = Photo {
+            buffer: frame.clone(),
+            origin: [3, 2],
+            size: [width, height],
+            shown,
+            filter,
+        };
+        resources.prepare(device, queue, &photo);
         let mut encoder = device.create_command_encoder(&Default::default());
         {
             let view = target.create_view(&Default::default());
@@ -409,7 +462,7 @@ mod tests {
     }
 
     #[test]
-    fn each_window_pixel_shows_its_own_frame_pixel() {
+    fn exact_still_reads_one_pixel_per_pixel() {
         let target = render(wgpu::TextureFormat::Rgba8Unorm);
         let unorm = |v: f32| (v * 255.0).round() as u8;
         for y in 0..10 {
@@ -429,6 +482,47 @@ mod tests {
                 assert_eq!(target[y * 12 + x], expected, "({x}, {y})");
             }
         }
+    }
+
+    #[test]
+    fn box2_averages_each_two_by_two_block() {
+        // A 4×4 frame of distinct values, whose blocks' means fall on 8-bit steps.
+        let value = |x: u32, y: u32| (x + 4 * y) as f32 * 4.0 / 255.0;
+        let pixel = |x, y| [value(x, y), 1.0 - value(x, y), 0.5, 1.0];
+        let target = render_frame(
+            wgpu::TextureFormat::Rgba8Unorm,
+            [4, 4],
+            [2, 2],
+            Filter::Box2,
+            pixel,
+        );
+        let unorm = |v: f32| (v * 255.0).round() as u8;
+        for y in 0..10 {
+            for x in 0..12 {
+                let inside = (3..5).contains(&x) && (2..4).contains(&y);
+                let expected = if inside {
+                    let (bx, by) = (2 * (x - 3) as u32, 2 * (y - 2) as u32);
+                    let block = [(bx, by), (bx + 1, by), (bx, by + 1), (bx + 1, by + 1)];
+                    let mean = block.iter().map(|&(x, y)| value(x, y)).sum::<f32>() / 4.0;
+                    [unorm(mean), unorm(1.0 - mean), unorm(0.5), 255]
+                } else {
+                    [0, 0, 0, 255]
+                };
+                assert_eq!(target[y * 12 + x], expected, "({x}, {y})");
+            }
+        }
+    }
+
+    #[test]
+    fn a_filter_that_does_not_fit_the_sizes_falls_back_to_smooth() {
+        assert_eq!(Filter::Exact.fitting([5, 4], [5, 4]), Filter::Exact);
+        assert_eq!(Filter::Exact.fitting([5, 4], [8, 7]), Filter::Smooth);
+        // Half, an odd side rounded up.
+        assert_eq!(Filter::Box2.fitting([5, 4], [3, 2]), Filter::Box2);
+        assert_eq!(Filter::Box2.fitting([4, 4], [2, 2]), Filter::Box2);
+        // A frame rendered for the room before a resize.
+        assert_eq!(Filter::Box2.fitting([6, 4], [2, 2]), Filter::Smooth);
+        assert_eq!(Filter::Smooth.fitting([5, 4], [5, 4]), Filter::Smooth);
     }
 
     /// The shader decodes, the target encodes again, and the GPU's encoding rounds its

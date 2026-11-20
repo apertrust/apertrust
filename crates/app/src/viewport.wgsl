@@ -17,8 +17,9 @@
 // Draws the engine's latest frame inside egui's render pass (viewport.rs): each
 // physical pixel reads its own pixel of the frame, so nothing is resampled, unless the
 // frame was rendered for another size, as while the window resizes, when it is shown at
-// the size it will be rendered at until that render arrives. A render shader of the
-// window's, not a kernel: it has no derivatives and stays WGSL.
+// the size it will be rendered at until that render arrives, or is shown at half, at
+// Small, when each physical pixel is the mean of a 2×2 block of it. A render shader of
+// the window's, not a kernel: it has no derivatives and stays WGSL.
 
 struct View {
     // Where the frame is shown, in the window's physical pixels: its top-left corner,
@@ -28,6 +29,9 @@ struct View {
     shown: vec2<u32>,
     // 1 when the window's format encodes to sRGB itself, so the frame is decoded first.
     decode: u32,
+    // How frame pixels become the window's: 0 one for one, 1 between the four round
+    // where a pixel falls, 2 the mean of each 2×2 block (viewport.rs, `Filter`).
+    sampling: u32,
 }
 
 @group(0) @binding(0) var<uniform> view: View;
@@ -59,8 +63,14 @@ fn fs_main(@builtin(position) position: vec4<f32>) -> @location(0) vec4<f32> {
         discard;
     }
     var rgb: vec3<f32>;
-    if all(view.shown == view.size) {
+    if view.sampling == 0u {
         rgb = texel(p);
+    } else if view.sampling == 2u {
+        // The block's far row and column stay inside the frame at an odd edge.
+        let last = vec2<i32>(view.size) - vec2<i32>(1);
+        let a = min(p * 2, last);
+        let b = min(p * 2 + vec2<i32>(1), last);
+        rgb = (texel(a) + texel(vec2<i32>(b.x, a.y)) + texel(vec2<i32>(a.x, b.y)) + texel(b)) * 0.25;
     } else {
         // Between the four frame pixels round where this one falls.
         let s = (vec2<f32>(p) + 0.5) * vec2<f32>(view.size) / vec2<f32>(view.shown) - 0.5;

@@ -88,6 +88,7 @@ mod thumbnails;
 mod tools;
 mod utility;
 mod viewport;
+mod zoom;
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::ffi::{OsStr, OsString};
@@ -113,7 +114,7 @@ use apertrust_ui::components::{
     BrowserPosition, CellMenu, CellRating, FindBar, FindBarAction, Jobs, Margin, Marker,
     MenuButtonStyle, PanelBody, PanelEdge, PanelEdgeAction, PanelTab, PhotoCaption, PhotoFrame,
     PickerAction, Placed, SaveState, ScopeView, TabBar, TabBarAction, Thumb, Toggle, Toolbar,
-    ToolbarAction, ViewerBar, ViewerBarAction, Zoom, browser_lines, browser_thickness,
+    ToolbarAction, ViewerBar, ViewerBarAction, Zoom, ZoomChoices, browser_lines, browser_thickness,
 };
 use apertrust_ui::{
     Background, Builtin, Locale, Theme, Translator, components, popup, theme, tr, translator,
@@ -1833,7 +1834,8 @@ const TOOLBAR: [(ToolbarAction, ActionId); 8] = [
 ];
 
 /// The viewer bar's zoom menu entries that are actions too, whose keys they show.
-const ZOOM_MENU: [(ViewerBarAction, ActionId); 4] = [
+const ZOOM_MENU: [(ViewerBarAction, ActionId); 5] = [
+    (ViewerBarAction::Zoom(Zoom::Small), ActionId::ZOOM_SMALL),
     (ViewerBarAction::Zoom(Zoom::Fit), ActionId::ZOOM_FIT),
     (
         ViewerBarAction::Zoom(Zoom::Percent(100.0)),
@@ -1918,6 +1920,8 @@ struct Shell {
     panel_width: Option<f32>,
     guides: bool,
     proof_margin: bool,
+    /// The photo's zoom, Fit as the app starts and never kept (`docs/gui.md`, The zoom).
+    zoom: zoom::Zoomed,
     /// The Viewer's margins, from the settings (`[viewer]`).
     viewer: settings::Viewer,
     /// Whether Settings… ran, for the app to open it in the dialog host after the action.
@@ -2079,6 +2083,7 @@ impl Shell {
             panel_width: settings.panel_width,
             guides: false,
             proof_margin: false,
+            zoom: zoom::Zoomed::FIT,
             viewer: settings.viewer,
             settings: false,
             show_log: false,
@@ -3172,6 +3177,9 @@ impl Shell {
             hidden_tab: (self.find.is_none() && self.hidden_shown()).then_some(self.hidden_chosen),
             show_hidden: self.show_hidden,
             scale: ctx.zoom_factor(),
+            zoom_in: self.zoom.step(zoom::ZoomStep::In).is_some(),
+            zoom_out: self.zoom.step(zoom::ZoomStep::Out).is_some(),
+            fitted: self.zoom == zoom::Zoomed::FIT,
             dialog: self.about.is_open(),
             // About is modal over the window; the open dialog and the host's dialogs are the
             // app's ([`with_dialogs`]).
@@ -3615,8 +3623,16 @@ impl Shell {
                 self.viewer.background = Some(background);
                 apertrust_ui::set_theme(ctx, self.look());
             }
+            Intent::Zoom(step) => self.zoom_to(step),
         }
         ctx.request_repaint();
+    }
+
+    /// Moves the photo's zoom by `step`, where it has somewhere to go.
+    fn zoom_to(&mut self, step: zoom::ZoomStep) {
+        if let Some(zoomed) = self.zoom.step(step) {
+            self.zoom = zoomed;
+        }
     }
 
     /// Shows the Tools panel's tab `tab`, chosen by the user: kept in `state.toml` as the
@@ -5554,9 +5570,9 @@ impl App {
                     mac,
                 )
             });
-        // The viewport only fits the photo for now: the zoom shows Fit, and its menu
-        // offers Fit alone, which it already is.
-        let mut bar = ViewerBar::new(&layer, Zoom::Fit)
+        // The viewport shows the fitted frame, at Fit or at half of it, Small, until the
+        // engine's detail view (`docs/gui.md`, The zoom, in steps).
+        let mut bar = ViewerBar::new(&layer, self.shell.zoom.label())
             .toggles(
                 Toggle::new(false, false),
                 Toggle::new(self.shell.proof_margin, open),
@@ -5564,6 +5580,7 @@ impl App {
                 Toggle::new(self.shell.guides, open),
             )
             .zoom_enabled(open)
+            .zoom_choices(ZoomChoices::SmallAndFit)
             .status(rendering.as_deref());
         if let Some((name, how)) = &picker_words {
             bar = bar.picker(name, how);
@@ -5572,13 +5589,20 @@ impl App {
             bar = bar.shortcut(*entry, keys);
         }
         match bar.show(ui) {
-            // The area was laid out before the bar, so the margin shows from the next frame.
+            // The area was laid out before the bar, so the margin shows from the next frame,
+            // and so does a zoom.
             Some(ViewerBarAction::ProofMargin) => {
                 self.shell.proof_margin = !self.shell.proof_margin;
                 ui.ctx().request_repaint();
             }
             Some(ViewerBarAction::Guides) => self.shell.guides = !self.shell.guides,
-            _ => {}
+            Some(chosen) => {
+                if let Some(step) = zoom::chosen(chosen) {
+                    self.shell.zoom_to(step);
+                    ui.ctx().request_repaint();
+                }
+            }
+            None => {}
         }
         let viewer_bar =
             egui::Rect::from_min_max(top, egui::pos2(ui.max_rect().right(), ui.cursor().top()));
@@ -5604,7 +5628,8 @@ impl App {
             PhotoState::Open(photo) => (!live && picture.is_none()).then(|| opening(&photo.path)),
         };
         let values = photo.map(|_| &self.mirror.values);
-        let placed = place_photo(&block, bounds, ppp, values, picture.map(|(p, _)| p));
+        let small = self.shell.zoom.small();
+        let placed = place_photo(&block, bounds, ppp, small, values, picture.map(|(p, _)| p));
         // A failed save says so until a write succeeds; a failed render until the next
         // frame. The edit of a photo left, which could not be written, is said over
         // whatever follows, until another photo is asked for.
@@ -6133,16 +6158,22 @@ impl App {
         }
     }
 
-    /// Draws `frame` where the block `placed` puts the photo, with Proof margin's white
-    /// border under it and the guides over it. A frame rendered for another size, as while
-    /// the window resizes, is shown at the size the next will have: `placed`'s.
+    /// Draws `frame` where the block `placed` puts the photo, with the guides over it:
+    /// pixel for pixel at Fit, each 2×2 block's mean at Small. A frame rendered for another
+    /// size, as while the window resizes, is shown smoothly at the size the next will have:
+    /// `placed`'s.
     fn photo_at(&self, ui: &egui::Ui, slot: egui::Rect, placed: &Placed, frame: &Frame) {
         let ppp = ui.pixels_per_point();
         let rect = placed.photo;
         let snap = |v: f32| (v * ppp).round() / ppp;
         // Cut to the slot, should a frame still be larger than it.
         let painter = ui.painter_at(slot);
-        viewport::paint(&painter, rect, frame);
+        let filter = if self.shell.zoom.small() {
+            viewport::Filter::Box2
+        } else {
+            viewport::Filter::Exact
+        };
+        viewport::paint(&painter, rect, frame, filter);
         if self.shell.guides {
             // Thirds, one physical pixel wide.
             let stroke = egui::Stroke::new(1.0 / ppp, theme(ui.ctx()).colors.guides);
@@ -6185,12 +6216,14 @@ fn same_shape((width, height): (u32, u32), (place_width, place_height): (u32, u3
 /// at the size the engine renders the edit at, so a frame rendered for it is shown pixel
 /// for pixel and one rendered for another size, as while the window resizes, scaled to the
 /// size its successor will have; before them, an opening photo's `picture` in its own
-/// shape, scaled to fit `bounds` as the live frame will be (decision 77). `None` with
-/// neither.
+/// shape, scaled to fit `bounds` as the live frame will be (decision 77). `small`: at half
+/// that size, each side rounded up, Small's exact 2:1 of the fitted frame (decision 99),
+/// the block centred as at Fit. `None` with neither.
 fn place_photo(
     block: &PhotoFrame,
     bounds: (u32, u32),
     ppp: f32,
+    small: bool,
     values: Option<&Values>,
     picture: Option<&Picture>,
 ) -> Option<Placed> {
@@ -6199,6 +6232,11 @@ fn place_photo(
         (Some(values), _) => values.viewport_size(bounds),
         (None, Some(picture)) => fit_scaled((picture.image.width, picture.image.height), bounds),
         (None, None) => return None,
+    };
+    let (width, height) = if small {
+        (width.div_ceil(2), height.div_ceil(2))
+    } else {
+        (width, height)
     };
     Some(block.place(egui::vec2(width as f32, height as f32) / ppp, ppp))
 }
@@ -14256,7 +14294,7 @@ mod tests {
                         // As `App::viewer` places and draws it.
                         let (picture, generation) = scene.mirror.picture().expect("the picture");
                         let values = Some(&scene.mirror.values);
-                        let placed = place_photo(&block, bounds, ppp, values, Some(picture))
+                        let placed = place_photo(&block, bounds, ppp, false, values, Some(picture))
                             .expect("a place");
                         let painter = ui.painter_at(slot);
                         paint_picture(&painter, &placed, picture, generation, &mut scene.picture);
@@ -14342,7 +14380,7 @@ mod tests {
                     let values = open.then_some(&scene.mirror.values);
                     let picture = scene.mirror.picture();
                     scene.placed =
-                        place_photo(&block, bounds, ppp, values, picture.map(|(p, _)| p));
+                        place_photo(&block, bounds, ppp, false, values, picture.map(|(p, _)| p));
                     let painter = ui.painter_at(slot);
                     scene.drawn = match (picture, &scene.placed) {
                         (Some((shown, generation)), Some(placed)) => Some(paint_picture(
@@ -14410,6 +14448,58 @@ mod tests {
                 apart.abs().max_elem() <= 1.0,
                 "{width} by {height}: {apart:?}"
             );
+        }
+    }
+
+    /// Where a 6000 by 4000 photo is placed in `slot`, at twice the scale with the usual
+    /// margin, as `App::viewer` places it, at Small or at Fit.
+    fn placed_in(slot: egui::Rect, small: bool) -> Placed {
+        let block = PhotoFrame::new(slot, Margin::Points(10.0));
+        let ppp = 2.0;
+        let room = block.bounds() * ppp;
+        let bounds = (room.x.floor() as u32, room.y.floor() as u32);
+        let values = Values {
+            extent: [6000, 4000],
+            ..photo_values(0.0, 0)
+        };
+        place_photo(&block, bounds, ppp, small, Some(&values), None).expect("a place")
+    }
+
+    #[test]
+    fn small_centres_the_block_at_half_with_its_caption() {
+        let slot = egui::Rect::from_min_size(egui::pos2(0.0, 40.0), egui::vec2(1000.0, 700.0));
+        let (fit, small) = (placed_in(slot, false), placed_in(slot, true));
+        // Half the fitted frame in physical pixels, an odd side rounded up.
+        assert_eq!(fit.photo.size() * 2.0, egui::vec2(1960.0, 1307.0));
+        assert_eq!(small.photo.size() * 2.0, egui::vec2(980.0, 654.0));
+        // The block centred in the slot as at Fit, its corner on the physical pixel grid.
+        let block = |p: &Placed| p.photo.union(p.caption);
+        let apart = block(&small).center() - slot.center();
+        assert!(apart.abs().max_elem() <= 0.5, "{apart:?}");
+        let corner = small.photo.min * 2.0;
+        assert_eq!(corner, corner.round());
+        // The caption as wide as the smaller photo, under it.
+        assert_eq!(small.caption.width(), small.photo.width());
+        assert_eq!(small.caption.left(), small.photo.left());
+        assert!(small.caption.top() > small.photo.bottom());
+        assert_eq!(
+            small.caption.top() - small.photo.bottom(),
+            fit.caption.top() - fit.photo.bottom()
+        );
+    }
+
+    #[test]
+    fn small_and_fit_hold_through_a_resize() {
+        let narrow = egui::Rect::from_min_size(egui::pos2(0.0, 40.0), egui::vec2(800.0, 700.0));
+        let wide = egui::Rect::from_min_size(egui::pos2(0.0, 40.0), egui::vec2(1400.0, 700.0));
+        for slot in [narrow, wide, narrow] {
+            let (fit, small) = (placed_in(slot, false), placed_in(slot, true));
+            // Each worked out again for the room: Fit fills it on one side, Small is half.
+            let room = PhotoFrame::new(slot, Margin::Points(10.0)).bounds();
+            let fills = room - fit.photo.size();
+            assert!(fills.min_elem() < 0.5, "{slot:?}: {fills:?}");
+            let half = (fit.photo.size() * 2.0 / 2.0).ceil() / 2.0;
+            assert_eq!(small.photo.size(), half, "{slot:?}");
         }
     }
 
@@ -20236,7 +20326,7 @@ mod tests {
         let (_, warnings) = Keymap::load(OperatingSystem::Windows, &given("Ctrl+6").keys);
         assert_eq!(
             warnings,
-            ["keys.panel-tab-7: Ctrl+6 clashes with scale-down; default keys kept"]
+            ["keys.panel-tab-7: Ctrl+6 clashes with zoom-out; default keys kept"]
         );
         let settings = given("Ctrl+Shift+Y");
         let (_, warnings) = Keymap::load(OperatingSystem::Windows, &settings.keys);
@@ -20656,15 +20746,16 @@ mod tests {
             (Modifiers::COMMAND, Key::Y),
             (Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::C),
             (Modifiers::NONE, Key::Space),
-            // Can't run now: Edit is showing, the scale is already 100%.
+            // Can't run now: Edit is showing, the photo is at Fit, the largest scale yet.
             (Modifiers::NONE, Key::E),
-            (Modifiers::COMMAND, Key::Num0),
+            (Modifiers::COMMAND, Key::Equals),
         ] {
             harness.key_press_modifiers(modifiers, key);
             harness.run();
         }
         assert!(harness.state().pressed.is_empty());
         assert!(harness.state().commands.is_empty());
+        assert_eq!(harness.state().shell.zoom, zoom::Zoomed::FIT);
         assert_eq!(harness.ctx.zoom_factor(), 1.0);
         // And their buttons are drawn disabled.
         for name in ["Undo", "Reset"] {
@@ -21292,22 +21383,64 @@ mod tests {
     }
 
     #[test]
-    fn ctrl_plus_and_minus_scale_the_interface_and_ctrl_0_resets_it() {
-        let mut harness = bench(OperatingSystem::Windows);
+    fn ctrl_minus_equals_and_0_zoom_the_photo_between_small_and_fit() {
+        for os in [OperatingSystem::Windows, OperatingSystem::Mac] {
+            let mut harness = bench(os);
+            harness.run();
+            let zoom = |harness: &Harness<'_, Bench>| harness.state().shell.zoom.scale;
+            let command = Modifiers::COMMAND;
+            for (modifiers, key, scale) in [
+                (command, Key::Minus, zoom::Scale::Small),
+                (command, Key::Equals, zoom::Scale::Fit),
+                (command, Key::Minus, zoom::Scale::Small),
+                (command, Key::Num0, zoom::Scale::Fit),
+                // With Shift, every photo, which with one is the same; Ctrl++ on a US
+                // keyboard is Ctrl+Shift+=.
+                (
+                    command.plus(Modifiers::SHIFT),
+                    Key::Minus,
+                    zoom::Scale::Small,
+                ),
+                (command.plus(Modifiers::SHIFT), Key::Plus, zoom::Scale::Fit),
+            ] {
+                harness.key_press_modifiers(modifiers, key);
+                harness.run();
+                assert_eq!(zoom(&harness), scale, "{os:?}: {modifiers:?} {key:?}");
+            }
+            // The interface keeps its size.
+            assert_eq!(harness.ctx.zoom_factor(), 1.0, "{os:?}");
+        }
+    }
+
+    #[test]
+    fn interface_size_keeps_its_menu_items_without_keys() {
+        let mut harness = bench(OperatingSystem::Nix);
         harness.run();
-        harness.key_press_modifiers(Modifiers::COMMAND, Key::Equals);
+        alt(&mut harness, Key::V, Some("v"));
+        harness
+            .get_by_role_and_label(Role::MenuItem, "Interface Size")
+            .click();
+        harness.run();
+        assert!(menu_open(&harness, "Interface Size"));
+        let item = Role::MenuItem;
+        assert_eq!(
+            menu_line(&harness, item, "Larger interface"),
+            (true, None, None)
+        );
+        assert_eq!(
+            menu_line(&harness, item, "Smaller interface"),
+            (true, None, None)
+        );
+        // At its normal size already.
+        assert_eq!(
+            menu_line(&harness, item, "Normal interface size"),
+            (false, None, None)
+        );
+        harness
+            .get_by_role_and_label(item, "Larger interface")
+            .click();
         harness.run();
         assert_eq!(harness.ctx.zoom_factor(), 1.1);
-        // Ctrl++ is Ctrl+Shift+= on a US keyboard.
-        harness.key_press_modifiers(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::Plus);
-        harness.run();
-        assert_eq!(harness.ctx.zoom_factor(), 1.2);
-        harness.key_press_modifiers(Modifiers::COMMAND, Key::Minus);
-        harness.run();
-        assert_eq!(harness.ctx.zoom_factor(), 1.1);
-        harness.key_press_modifiers(Modifiers::COMMAND, Key::Num0);
-        harness.run();
-        assert_eq!(harness.ctx.zoom_factor(), 1.0);
     }
 
     #[test]
@@ -21667,9 +21800,16 @@ mod tests {
                 .iter()
                 .map(|(_, id)| keymap.tip(*id, os, &tr))
                 .collect();
-            // Z for 100%; Ctrl+0, Ctrl+= and Ctrl+− stay the interface's size's until the
-            // viewport can zoom.
-            assert_eq!(keys, [None, Some("Z".to_owned()), None, None], "{os:?}");
+            // Small has none; Fit, Zoom in and Zoom out have Ctrl+0, Ctrl+= and Ctrl+−,
+            // Cmd on the Mac; Z for 100%.
+            let command = if os == OperatingSystem::Mac {
+                "Cmd"
+            } else {
+                "Ctrl"
+            };
+            let ctrl = |key: &str| Some(format!("{command}+{key}"));
+            let expected = [None, ctrl("0"), Some("Z".to_owned()), ctrl("="), ctrl("−")];
+            assert_eq!(keys, expected, "{os:?}");
         }
     }
 
@@ -21700,8 +21840,20 @@ mod tests {
             menu_line(&harness, check, "Full screen"),
             (true, keys("F11"), Some(Toggled::False))
         );
-        // The photo's zoom first, declared but not built: disabled, with its keys.
-        assert_eq!(menu_line(&harness, item, "Zoom in"), (false, None, None));
+        // The photo's zoom first, with its keys: at Fit, Zoom out and Fit, checked; Zoom
+        // in has nowhere to go, and 100% waits for the detail view.
+        assert_eq!(
+            menu_line(&harness, item, "Zoom in"),
+            (false, keys("Ctrl+="), None)
+        );
+        assert_eq!(
+            menu_line(&harness, item, "Zoom out"),
+            (true, keys("Ctrl+−"), None)
+        );
+        assert_eq!(
+            menu_line(&harness, check, "Zoom to fit"),
+            (true, keys("Ctrl+0"), Some(Toggled::True))
+        );
         assert_eq!(
             menu_line(&harness, item, "Zoom to 100%"),
             (false, keys("Z"), None)
