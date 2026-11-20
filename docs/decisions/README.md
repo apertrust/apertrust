@@ -96,7 +96,7 @@ All major technology choices are made; one waits on a spike to be confirmed, the
 | Names and crates | Apertrust, its parts prefixed `apertrust-`; few crates (65) | — |
 | Decision records | One file per decision, with its options and reasons, stating what is decided now; a record wholly replaced kept as a stub naming its successor (66) | Records amended or superseded in a chain; a replaced record deleted |
 | Repository | `github.com/apertrust/apertrust` and apertrust.org; every commit signed off (DCO); AI help disclosed once, in the README and the AI policy; the agent kit in `apertrust/agent-kit`, the hooks in the main repository (67) | An `Assisted-by:` trailer on every commit |
-| CI | Every pull request: pre-commit's checks, cargo-deny and clippy for Linux, Windows and macOS among them, and the tests on Linux (lavapipe) and macOS; Windows' tests when a listed Windows path changes, Windows' and macOS's with the `full-ci` label; every platform's tests each night, a failure opening an issue; a guard keeping the path list current (70) | Every platform's tests on every pull request; building only; paid GPU runners |
+| CI | Every pull request: pre-commit's checks, cargo-deny and clippy for Linux, Windows and macOS among them, and the tests on Linux (lavapipe) and macOS; Windows' tests off for now, to run again when a listed Windows path changes or with the `full-ci` label; Linux's and macOS's tests each night, Windows' once they run again, a failure opening an issue; a guard keeping the path list current (70) | Every platform's tests on every pull request; building only; paid GPU runners; a list of checks of CI's own beside pre-commit's; clippy on Windows and macOS runners |
 
 ## Foundations and principles
 
