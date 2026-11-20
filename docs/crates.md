@@ -671,7 +671,7 @@ Photo › Next Photo (`next-photo`, Space and →) and Previous Photo (`previous
 
 **The Mac's menu bar** (`src/menus.rs`, decision 39):
 
-- One model, `MENUS`, holds the actions the registry declares and the system's own items, in the app menu, File, Edit, Select, Photo, View, Window and Help; Windows and Linux have all but the app menu and Window. It is built with muda (a macOS-only dependency) in place of winit's default menu once the window exists.
+- One model, `MENUS`, holds the actions the registry declares and the system's own items, in the app menu, File, Edit, Photo, Select, View, Window and Help; Windows and Linux have all but the app menu and Window. It is built with muda (a macOS-only dependency) in place of winit's default menu once the window exists.
 - Each frame gives it what changed: words in the language, Undo's and Redo's naming their step, enabled when the action can run in its scope, and the keymap's first key unless the focused widget keeps it.
 - Its choices go down a channel and run through `Shell::run` in `App::logic`, so they run while the window is minimised too. A press action's choice by a held key's repeat is dropped.
 - AppKit's own full-screen item is kept out.
