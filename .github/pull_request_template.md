@@ -8,15 +8,8 @@
 
 ## Checks
 
-- [ ] `cargo fmt --all --check`
-- [ ] `cargo clippy --workspace --all-targets -- -D warnings`
+- [ ] `pre-commit run --hook-stage manual --all-files`, every check CI runs but the tests (CONTRIBUTING.md, Checks)
 - [ ] `cargo test --workspace`
-- [ ] `tools/check-license-headers.sh`
-- [ ] `tools/check-ui-strings.sh`
-- [ ] `tools/check-windows-paths.sh`, when a file gained a platform cfg
-- [ ] `tools/build-kernels.sh --check`, when a Slang file changed (the generated WGSL is committed)
-- [ ] `tools/build-api-docs.sh`
-- [ ] `cargo deny check` and `tools/credits.sh --check`, when a dependency changed
 
 For a kernel or a port, paste the results of `apertrust-golden run` (the ΔE2000 numbers) and `apertrust-golden gradient`:
 
