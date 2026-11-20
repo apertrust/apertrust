@@ -368,6 +368,7 @@ One language for every mark drawn on the photo: pickers and their samples, masks
 - **The focus ring** is the only interface colour on the photo: the theme's ring round the mark that has the keyboard's focus, as on any control.
 - **Labels** on the photo, a guide's or a shape's, keep to the same rule: white over the line's black, no interface colour.
 - **Sizes are in points,** darktable's logical pixels (`darkroom.c:434`, `:795`, `:4375`), the same at every zoom, except where a mark measures the frame's own pixels in points, as a point picker's half-pixel does ([pickers.md](pickers.md#on-the-photo)). This is the one place the overlay's sizes are stated.
+- **At every zoom** (planned with [the zoom](#the-zoom)): marks and guides are placed in the photo's coordinates, so they stay on the same part of the photo as it zooms and moves; their lines and handles keep their sizes in points, as above. The app clips them to the part of the photo shown, never drawing on the surround or the caption. A key that moves a focused mark out of the part shown moves the view just enough to show it again, as a focused control is scrolled into view.
 - **Tests:** snapshots of each weight and handle over light, dark and busy photos in every theme, the line's contrast held by a test over white and black.
 
 **Built** in `apertrust_ui::overlay`, painting only, with no clip of its own:
@@ -483,6 +484,7 @@ What the menus hold is [the menu bar](#the-menu-bar)'s. Built: the frames of the
 The engine's photo is not rendered for each step of a resize: the app holds the size it sends until the window has kept its size for 150 ms (`Bounds`, decision 18), since a render each step could not keep up. It holds it the same way while the Tools panel's edge moves, dragged or held under a key ([The Tools panel](#the-tools-panel)).
 
 - **Meanwhile the last frame is shown scaled,** bilinearly, to the size the next will have (`Values::viewport_size`, the photo as its edit shows it, turned where its orientation turns it), so the photo follows the window and the sharp frame then takes its place with nothing moving.
+- **Zoomed** (planned; [The zoom](#when-the-room-or-the-photo-changes)): Fit, Fill and Small are worked out again for the new room; a percentage keeps its scale and the photo's point at the view's centre, kept inside the photo's edges. Meanwhile the last frame keeps its scale and moves with that centre, and an edge the room uncovers is drawn from the overview, the whole photo's small frame, scaled up, until the size is sent and the sharp frame arrives.
 - **The submit gate.** Each step reconfigures the window's surface, which wgpu-core 30 fails, with a panic, should another thread submit meanwhile. What is guaranteed (decision 18): no submission of the engine's overlaps a reconfigure of the window's surface, on any platform, the one eframe makes at the first event after a resize included. Every reconfigure is inside an eframe callback, and the app holds the engine's submit gate round each (`Gated`).
 - **What is not guaranteed:** the holds take turns in the order asked (`SubmitGate`), so each thread waits for the other.
   - A submission of the engine's waits for the eframe callback under way, however long it runs. A loop of its own inside a callback, a modal one included, would stop the engine's frames until it returned, so such loops run from the run loop, outside eframe's callbacks, as the Mac's popups do (decision 40).
@@ -829,7 +831,7 @@ Phase 4: the menu appears with Layers, and its keys are set with their design. I
 | — | | | |
 | Enter Full Screen and Exit Full Screen on macOS; Full Screen, checked, on Windows and Linux | `full-screen` | Ctrl+Cmd+F on macOS; F11 | Built |
 
-- **The photo's zoom** has the keys macOS and commercial raw editors give a document's zoom, and Zoom to 100%, the view where the screen is the export (principle 2), has the single key Z. Both act at the point under the pointer when the pointer is over the photo. In Photo they zoom the photo; with several shown, each cell keeps its own zoom, and they zoom the cell under the pointer, else the active photo's. With Shift they zoom every cell together, at the same point of each photo: Shift+Z, Ctrl+Shift+0, Ctrl+Shift+− and Ctrl+Shift+=, which a US keyboard's Ctrl++ is ([Photo's cells](#photos-cells)).
+- **The photo's zoom** has the keys macOS and commercial raw editors give a document's zoom, and Zoom to 100%, the view where the screen is the export (principle 2), has the single key Z. Both act at the point under the pointer when the pointer is over the photo. In Photo they zoom the photo; with several shown, each cell keeps its own zoom, and they zoom the cell under the pointer, else the active photo's. With Shift they zoom every cell together, at the same point of each photo: Shift+Z, Ctrl+Shift+0, Ctrl+Shift+− and Ctrl+Shift+=, which a US keyboard's Ctrl++ is ([Photo's cells](#photos-cells)). The zoom menu's other scales, Small, Fill and 50% to 1600%, are actions of the viewer bar's menu alone, with no default keys, and moving a zoomed photo is Alt with the arrows, in no menu (planned; [The zoom](#the-zoom)).
 - **The layouts** join the menu with the Map and its toggle on the viewer bar, once there are two: a choice of one is no choice. Map, chosen again, goes back to Photo, as its toggle and Shift+M do and as Zoom to 100% goes back to Fit. Choosing one changes only the Viewer (decision 37).
 - **Collections** chooses the first tab holding Collections, as L does, wherever the workspace puts it; where no tab shown holds it, both reveal it in the Hidden tab, shown for the moment while Show Hidden Tools is off (decision 96, [Hidden tools](#hidden-tools)). L is darktable's key for its lighttable, whose part Collections plays.
 - **Workspace** switches the Tools panel's tabs, and from Phase 3 the toolbar's items (decisions 92 and 96), nothing else: Default and Essentials by their messages, then a person's own by its file's `name`, else its id, the one shown checked. Its items list the workspaces read as the app starts; the same list joins the tab bar's menu and the Tools panel's ⋮ with step 5.
@@ -2521,10 +2523,11 @@ The app never opens with nothing loaded: it reopens what was open last, or shows
 | --- | --- | --- | --- | --- | --- |
 | A folder with no raws | "No photo selected", one line in the middle with no card, as with photos and none active | Hidden | Empty | Sections drawn disabled; Collections' Folders as in folder mode | "No photos available" under a struck-through photo, and "Choose a subfolder in Collections." where the folder has subfolders, at its height, its edge still working |
 | Photos, none active | "No photo selected", one line in the middle with no card | Drawn disabled, but for the Map toggle (later), since the map needs no active photo | Empty | Tools at their defaults, drawn disabled, under one line, "Select a photo to edit" (the line to come); Scopes as it was, open or closed, its graph empty and drawn disabled | Shown |
-| The active photo opening | In the click's frame, the largest thumbnail the app already holds for it; then the session's picture (`OpenPreview`): its rendered thumbnail, else the camera's embedded picture, else "Opening IMG_2041.ARW". Each picture is scaled to the place the photo takes: from the photo's values on, the place the live frame covers, letterboxed where its shape differs; before them, the picture's own shape fitted to the room. A 128 or 256 pixel thumbnail held from the click may then step as the values arrive, by up to about 23 or 8 pixels, and a photo smaller than the room shrinks to its own size then; the swap to the live frame never moves it. The picture's shape is the photo's within a pixel only from 1024 pixels on; no mark over it; no scopes graph, clipping overlays, values under the cursor, zoom past fit or on-photo controls until it is live; never a progress bar (decision 77; built: the mirror's `Picture`, drawn by the Viewer, Rendering… as the viewer bar's status) | Shown; only if the photo is still not live about 1 second after the click, a quiet "Rendering…" beside its other contents, gone with the live frame | Its name, then its shooting data with its values | As with none active from the click on; then, milliseconds later, its values from its sidecar, drawn disabled, read-only; never blank | Shown |
+| The active photo opening | In the click's frame, the largest thumbnail the app already holds for it; then the session's picture (`OpenPreview`): its rendered thumbnail, else the camera's embedded picture, else "Opening IMG_2041.ARW". Each picture is scaled to the place the photo takes: from the photo's values on, the place the live frame covers, letterboxed where its shape differs; before them, the picture's own shape fitted to the room. A 128 or 256 pixel thumbnail held from the click may then step as the values arrive, by up to about 23 or 8 pixels, and a photo smaller than the room shrinks to its own size then; the swap to the live frame never moves it. The picture's shape is the photo's within a pixel only from 1024 pixels on; no mark over it; no scopes graph, clipping overlays, values under the cursor, zoom or on-photo controls until it is live. A zoom carried from the photo before (planned, [The zoom](#when-the-room-or-the-photo-changes)) shows the picture at that zoom and centre, scaled up, kept inside the photo's edges as the live frame will be, so the swap still moves nothing; never a progress bar (decision 77; built: the mirror's `Picture`, drawn by the Viewer, Rendering… as the viewer bar's status) | Shown; only if the photo is still not live about 1 second after the click, a quiet "Rendering…" beside its other contents, gone with the live frame | Its name, then its shooting data with its values | As with none active from the click on; then, milliseconds later, its values from its sidecar, drawn disabled, read-only; never blank | Shown |
 | It turns live | The live frame replaces the picture in one swap, with nothing moving: drawn at full strength from its first frame, the scopes, values and on-photo controls on at once, the picture fading out over it in 120 ms (`fade::FADE`), eased out, its texture dropped as it ends; with the system's reduce motion on (read on macOS and Windows, not on Linux) or the theme's motion tokens at zero, as for the spinner, a cut. Only this swap fades: an edit, a resize, a re-render, a failed render and one photo replaced by another are cuts, and a new photo asked for ends a fade at once; then the scopes and the overlays | Shown | Its name and shooting data | Its values, enabled in the same frame as the swap | Shown |
 | It fails to open | Its message over the Viewer | Shown | Its name | As with none active | Its thumbnail marked |
 | It fails to render | Its message over the last frame | Shown | Its name | Its values, live | Shown |
+| Zoomed, its view on its way (planned) | The last sharp frame scaled to the new zoom, and the overview scaled up where it does not reach, at once; then the view's frame in one cut ([While the view renders](#while-the-view-renders)) | Shown; only if the view is still not sharp about 1 second after the input, "Rendering…" | Its name and shooting data | Its values, live | Shown |
 
 **Built** in `crates/app/src/library.rs` (`empty_state`): the states as a card in the middle of the slot, but nothing open, a folder with no raws and no photo chosen, each one quiet line.
 
@@ -3050,7 +3053,7 @@ The Viewer's photo is for looking: nothing is drawn on it, and its marks and con
   4. the caption is exactly as wide as the photo, never as the slot;
   5. the block, photo and caption together, is centred in the slot, the photo's corner on the physical pixel grid.
 
-  A narrow panel leaves the photo what remains of the width, and a margin larger than the slot leaves it nothing. The messages over the photo (no photo, opening, a failed render) are centred in the slot. Zoomed past fit (not built: the viewport only fits), the photo will fill the slot less the margin and the caption, which stays under it at the photo area's width.
+  A narrow panel leaves the photo what remains of the width, and a margin larger than the slot leaves it nothing. The messages over the photo (no photo, opening, a failed render) are centred in the slot. Zoomed past Fit (planned; [The zoom](#the-zoom)), the photo fills the slot less the margin and the caption, which stays under it at the photo area's width; at Small the block is centred as at Fit, the caption as wide as the smaller photo. While zoomed, the margin holds the position marks ([Where the view is](#where-the-view-is)).
 - **The margin** round the block is a setting kept only in `settings.toml`, with no page in the Settings dialog (decision 45's `page`-less settings, as the window's place is). It is live on the next frame, and settable for one run by `--conf viewer.margin=16`:
 
   | Key, in `[viewer]` | Default | Range | darktable's |
@@ -3123,6 +3126,8 @@ A small icon toggle immediately right of Guides that shows the map in the Viewer
 
 One button at the bar's end, `ViewerBar`'s zoom, showing the scale and a 10-point chevron: "Small", "Fit", "Fill" or a percentage rounded to a whole number, such as "100%" or "137%". It is the bar's height and 64 points wide or more, as its words need, the scale and the chevron at its end; `hover` behind it under the pointer and while its menu is open.
 
+**Built:** the button, its menu and what it reports, with every entry but Fit disabled while the viewport can only fit. **Planned,** in Phase 2 on decision 99's view in the engine: everything else in this section, in [five steps](#the-zoom-in-steps). Its jobs are developing a photo and trusting the result (principle 2): 100% is the view where the screen is the export.
+
 - **Its menu** opens under it through the popup service, as the other pull-downs do: native on the Mac, drawn elsewhere ([Popups](#popups), decision 40). Its entries are darktable's zoom menu (`src/libs/navigation.c`), then the two steps:
   - Small (half of Fit), Fit, Fill;
   - a separator;
@@ -3130,18 +3135,124 @@ One button at the bar's end, `ViewerBar`'s zoom, showing the scale and a 10-poin
   - a separator;
   - Zoom in, Zoom out.
 
-  The scale shown is checked; a scale between them checks none. Each entry shows its action's keys from the keymap, as a menu item does: Z for 100% (`zoom-100`); Fit, Zoom in and Zoom out show Ctrl+0, Ctrl+= and Ctrl+− once the interface's size gives those keys up ([the default keyboard map](#the-default-keyboard-map)). Zoom in is disabled at 1600% and Zoom out at Small. With several photos shown, an entry chosen with Shift held acts on every cell together ([Photo's cells](#photos-cells)), so Zoom in and Zoom out stay enabled while any cell can still step that way.
-- **What it reports:** `ViewerBarAction::Zoom` with a `Zoom` (Small, Fit, Fill or a percentage), or `ZoomIn` and `ZoomOut`, which the app takes along the menu's list.
-- **While the viewport can only fit,** as now: it shows Fit, every entry but Fit is disabled, and its tooltip says zoom comes with the 100% view. With no photo shown it is disabled.
-- **Tooltip:** "Zoom: pinch or Ctrl+scroll; Z for 100%. Scroll moves a zoomed photo, Shift+scroll sideways", Cmd on the Mac; with several photos shown it ends "With Shift, every photo together." At 100% it starts "At 100% the screen shows exactly what the export will be."
+  The scale shown is checked; a scale between them checks none. Each entry shows its action's keys from the keymap, as a menu item does: Z for 100% (`zoom-100`); Fit, Zoom in and Zoom out show Ctrl+0, Ctrl+= and Ctrl+− once those keys move from the interface's size to the zoom ([the default keyboard map](#the-default-keyboard-map)). Zoom in is disabled at 1600% and Zoom out at Small. With several photos shown, an entry chosen with Shift held acts on every cell together ([Photo's cells](#photos-cells)), so Zoom in and Zoom out stay enabled while any cell can still step that way.
+- **Every entry is an action** (planned), so a key can be given to any of them: `zoom-small`, `zoom-fit`, `zoom-fill`, `zoom-50`, `zoom-100`, `zoom-200`, `zoom-400`, `zoom-800`, `zoom-1600`, `zoom-in` and `zoom-out`. Only `zoom-fit`, `zoom-100`, `zoom-in` and `zoom-out` have default keys; decision 98's audit of the keymap weighs darktable's Alt+2 for Fill and Alt+3 for Fit.
+- **What it reports:** `ViewerBarAction::Zoom` with a `Zoom` (Small, Fit, Fill or a percentage), or `ZoomIn` and `ZoomOut`, which the app takes [in order of scale](#zooming).
+- **While the viewport can only fit,** as now: it shows Fit, every entry but Fit is disabled, and its tooltip says zoom comes with the 100% view.
+- **States** (planned):
+
+  | State | The button |
+  | --- | --- |
+  | No photo shown; the photo failed to open | Disabled |
+  | The photo opening, not yet live | Disabled, showing the zoom it opens at: Fit, or the zoom carried from the photo before ([below](#when-the-room-or-the-photo-changes)); the zoom's keys and gestures do nothing |
+  | Live | Enabled; Zoom in disabled at 1600%, Zoom out at Small |
+  | The render failed, a last frame shown | Enabled: a zoom scales the last frame, and the message stays over it |
+  | Open for viewing only | Enabled, since a zoom is no edit |
+  | Map (later) | Not shown: Map's own controls take the bar's end |
+
+- **Tooltip:** "Zoom: pinch or Ctrl+scroll; Z for 100%; middle-click cycles 100%, 200% and Fit. Scroll moves a zoomed photo, Shift+scroll sideways", Cmd on the Mac; with several photos shown it ends "With Shift, every photo together." At 100% it starts "At 100% the screen shows exactly what a full-size export will be."
 - **Focus and screen readers:** a button with a menu named "Zoom", its value the scale. Enter, Space or ↓ opens the menu; the arrows move, Enter chooses, and Escape closes it and gives the focus back to the button.
-- **The gestures,** planned, built with the zoom (the rest of step 8):
-  - a pinch, or Ctrl+scroll (Cmd+scroll on the Mac), zooms about the pointer;
-  - with several photos shown, Shift+pinch or Ctrl+Shift+scroll zooms every cell together, at the same point of each photo ([Photo's cells](#photos-cells));
-  - a plain scroll moves a zoomed photo, and Shift+scroll moves it sideways;
-  - a drag moves it too;
-  - at Fit, scrolling does nothing;
-  - Zoom in and Zoom out step along the menu's list.
+
+##### The scale
+
+- **What it is:** a mode, Small, Fit or Fill, or a percentage, with the view's centre in the photo's coordinates, 0 to 1 across the photo as export renders it ([pickers.md](pickers.md)). It is interface state: never a step of the history, never in the edit or in settings, and undo does not touch it. The engine is told only the view to render (decision 99).
+- **100%** is one photo pixel to one physical pixel of the screen, whatever the system's scale or the interface's size, as darktable's 100% is. At 100% and above the photo's offset is a whole number of physical pixels, so nothing is resampled between the render and the screen (principle 2).
+- **Fit** shows the whole photo in the room the photo frame gives it ([The photo frame](#the-photo-frame)); a photo smaller than that room shows at 100%, still called Fit, since the engine never renders larger than the photo. **Fill** covers the room, the slot less the margin and the caption, and what overflows pans. **Small** is half of Fit.
+- **Modes follow the room, percentages stay:** Fit, Fill and Small are worked out again whenever the room changes; a percentage keeps its scale.
+- **Above 100%** the engine renders at 100% at most (decision 99), and the Viewer enlarges its frame: smoothly from 100% to 200%, where a pinch can stop, and in square pixels from 200%, each photo pixel a sharp square of the screen's.
+- **The range** is Small to 1600%.
+- **The label** names the mode, or the percentage rounded to a whole number, except that only 1:1 exactly reads "100%": a scale just under or over it reads "99%" or "101%", so the label never claims the exact view the screen is not showing.
+
+##### Zooming
+
+| The person | Does |
+| --- | --- |
+| Chooses an entry of the zoom menu | That scale, about the view's centre, kept inside the photo's edges ([Panning](#panning)); Fit and Small centre the photo |
+| Presses Z | 100% at the photo's point under the pointer when the pointer is over the photo, else at the view's centre; at 100%, back to Fit |
+| Presses Ctrl+0 | Fit |
+| Presses Ctrl+= or Ctrl+− | The next scale of the menu up or down, about the point Z uses; repeats while held |
+| Ctrl+scroll (Cmd+scroll on the Mac) | Zooms keeping the photo's point under the pointer still: a mouse wheel's notch by 1.1 times under 200% and 2 times from 200%; a trackpad's smooth scroll continuously |
+| Pinches | As a smooth Ctrl+scroll, about the pinch's centre |
+| Middle-clicks the photo | darktable's cycle at the pointer: under 100% to 100%, from 100% to 200%, from 200% on to Fit |
+| Holds Shift with any of these | With several photos shown, every cell together ([Photo's cells](#photos-cells)); with one, the same as without Shift |
+
+- **Zoom in and Zoom out step in order of scale,** not of the menu's list, since Fill, Fit and 50% fall in a different order for each photo and room: with a photo of 6000 by 4000 pixels in a room of 4800 by 2700, Fit is 68% and Fill 80%, so Zoom in from Small goes to 50%, then Fit, then Fill, then 100%. Entries within 1% of each other count as one.
+- **Snap points:** Fit, 100% and 200%. A notch never passes one, and a smooth zoom or a pinch rests on one within 4% of it, so 100% is reached exactly.
+- **Gestures stop at Fit:** a scroll or a pinch never zooms out past Fit; Small is reached only by its entry and by Zoom out.
+- **The pointer over the surround** anchors a gesture as over the photo, the edges then deciding where the photo stays.
+- **A click or a double-click** on the photo zooms nothing.
+
+##### Panning
+
+- **A plain scroll** moves a zoomed photo up and down, **Shift+scroll** sideways, and a trackpad's two-finger scroll both ways at once, the system's momentum carrying on after the fingers lift. At Fit, scrolling does nothing.
+- **A drag** with the primary button moves the photo with the pointer. The pointer is an open hand over a photo that can move and a closed hand while dragging; at Fit it stays the arrow.
+- **Alt with the arrows** (Option on the Mac) moves the view a fifth of its width or height, and with Shift as well a whole view; they repeat while held. The arrows alone stay Next Photo and Previous Photo, and a focused widget keeps the keys it keeps, a section header its Alt+↑ and Alt+↓ and a text field all of them ([Who owns the keys](#who-owns-the-keys)). Their actions are `pan-left`, `pan-right`, `pan-up` and `pan-down`, and `pan-page-left` to `pan-page-down` with Shift, disabled at Fit.
+- **The edges:** on an axis where the photo is larger than the room, its edge never comes inside the room's edge; on an axis where it is smaller, it is centred. Nothing goes past the edge and springs back, and momentum stops there.
+- **While a colour picker is on,** a drag on the photo is the picker's and does not pan; a drag past the view's edge scrolls it ([pickers.md](pickers.md#on-the-photo)), and scrolling, the zoom's keys and gestures and Alt with the arrows work as ever.
+
+##### While the view renders
+
+- **Something at once:** a zoom or a pan shows on the frame of the input. The app draws its last sharp frame scaled to the new zoom about its anchor, and where that frame does not reach, the whole photo's small frame, the overview the zoomed view keeps for the scopes (decision 99), scaled up. Never an empty area, a spinner or a progress bar.
+- **Then sharp:** the frame for the new view replaces it in one cut. Only a photo turning live fades ([The Viewer's states](#the-viewers-states)).
+- **Slow:** only if the view is not sharp about 1 second after the input, the viewer bar's quiet "Rendering…", as while opening, gone with the frame.
+- **An edit while zoomed** keeps the last frame until the new one arrives, as at Fit.
+- **The values under the cursor** read the sharp frame and show nothing over a part still drawn from the overview, so they never report a scaled guess.
+
+##### When the room or the photo changes
+
+| Change | The zoom |
+| --- | --- |
+| The window resizes; the Tools panel's or the Browser's edge moves; Proof margin turns on or off | A mode is worked out again; a percentage keeps its scale and the photo's point at the view's centre, kept inside the edges ([The photo while the window resizes](#the-photo-while-the-window-resizes)) |
+| Orientation turns or flips the photo | A mode is worked out again; the centre stays on the same part of the photo, turned with it |
+| Another photo becomes active: Next and Previous Photo, a click in the Browser | The mode or the scale and the centre carry over, kept inside the new photo's edges, so a burst is checked at 100% at one place by pressing → ([The Viewer's states](#the-viewers-states)) |
+| A folder is opened, File › Open…, the app starts | Fit |
+| Before and after (Phase 3) | One zoom and one centre for both, a pan moving both |
+| H, held | Nothing: the zoom stays |
+
+- **Guides and the marks on the photo** follow the zoom ([On-photo overlays](#on-photo-overlays)).
+- **The scopes** measure the whole photo at every zoom ([The scopes](#the-scopes)).
+
+##### Where the view is
+
+- **Position marks** (planned): while the photo is zoomed past Fit, a 2-point bar in `text_secondary` lies in the margin along the photo area's bottom and another along its end, each the visible part of that axis against the whole photo, only on an axis that overflows. They are on the surround, never on the photo, and do nothing when clicked. They show while the view zooms or moves and for a second after, fading over the motion token, and not at all while the margin is under 4 points. Each is a component of the design system, in the gallery.
+- **The label** says the scale, and Ctrl+0 or Z brings the whole photo back at once.
+- **No navigator in Phase 2.** darktable's navigation module, its thumbnail with the view's rectangle, comes in Phase 3 as the Navigation utility tool in the Tools panel, never over the photo: a click or a drag there centres the view, a scroll or a pinch over it zooms about that point, and with the focus its arrows move the rectangle.
+
+##### The zoom by keyboard and to screen readers
+
+- **The photo is a focus stop** (planned) while it is zoomed past Fit, in the Viewer's F6 region after the viewer bar ([Keyboard and actions](#keyboard-and-actions)): a group named by the photo, "Photo, IMG_2041.ARW", its value the scale and the part shown, "100%, 31 to 58% across, 20 to 45% down". It keeps no keys of its own: Alt with the arrows moves it as anywhere.
+- **A polite live region** says the new scale, "100%" or "Fit", after a key, a gesture or a middle click; a menu's choice needs none, its item already read.
+- **By keyboard alone:** Z or Ctrl+= zooms, Alt with the arrows moves, Ctrl+0 fits; nothing needs the pointer.
+
+##### Reduce motion
+
+No zoom or pan is animated: each is a cut, as in darktable, so reduced motion changes nothing there. The system's momentum after a trackpad scroll is the system's input and stays. The position marks appear and go without their fade.
+
+##### The zoom and scripts
+
+Nothing of the zoom: it is interface state. The session sees the view it is asked to render (decision 99), and the `zoom-*` and `pan-*` actions are registry actions, which scripts reach once they can call actions (decision 98).
+
+##### The zoom's deviations from darktable
+
+| | Apertrust | darktable |
+| --- | --- | --- |
+| 1 | A plain scroll moves the photo; Ctrl+scroll zooms | The wheel zooms about the pointer; a trackpad's two-finger scroll moves it |
+| 2 | Gestures stop at Fit, with snap points at Fit, 100% and 200% | `darkroom/ui/constrain_zoom` keeps the wheel between Fit and 100%, Ctrl lifting it |
+| 3 | Z goes from 100% back to Fit | Alt+1 goes from 100% on to 200% |
+| 4 | Alt with the arrows moves a zoomed photo; the arrows alone change the photo | The arrows move it |
+| 5 | Small follows the room as Fit and Fill do | Small is a scale worked out once |
+| 6 | From 100% to 200% the Viewer enlarges the 100% render | The pipeline renders upsampled |
+| 7 | No navigator until Phase 3's Navigation utility tool | The navigation module |
+
+##### The zoom, in steps
+
+Phase 2, each one pull request usable on its own, after the engine's part of decision 99 that it needs:
+
+1. **The model, Small and Fit:** the zoom's state, the menu's Small and Fit, the label, Ctrl+=, Ctrl+− and Ctrl+0 moved from Interface Size, the Shift forms bound, a shortcut naming Shift exactly winning over the extra Shift a + allows, and the `zoom-*` actions.
+2. **100%, the menu's scales and panning:** Fill and 50% to 1600%, Z, Zoom in and Zoom out about the centre, scrolling, dragging, the edges, whole physical pixels from 100%, the enlargement past 100%, the stand-in, a resize while zoomed, the marks and guides at every zoom.
+3. **About the pointer:** the keys at the pointer, Ctrl+scroll, the pinch, the snap points and middle-click's cycle.
+4. **Where the view is, and the keyboard:** the position marks, the photo as a focus stop, Alt with the arrows, the live region, a focused mark kept in view.
+5. **Across photos and turns:** the zoom carried to the next photo and onto its stand-in picture, Fit on opening a folder, the centre kept through Orientation.
 
 ### The caption under the photo
 
@@ -3836,7 +3947,7 @@ A slider row or a choice row in the Tools panel takes the mouse wheel as darktab
 - **On the Mac** Option takes Ctrl's place in both, Ctrl+scroll being the system's screen zoom, as it does with the arrows ([Keyboard and actions](#keyboard-and-actions)).
 - **On by default is a deviation** from darktable (decision 2): a new user's scroll down a long panel would otherwise change every slider passing under the pointer.
 - **Either way:**
-  - What is under the pointer decides: over the photo, Ctrl+scroll (Cmd+scroll on the Mac) never reaches a row; it is to be the photo's zoom, which is planned.
+  - What is under the pointer decides: over the photo, Ctrl+scroll (Cmd+scroll on the Mac) never reaches a row; it is the photo's zoom (planned, [The zoom](#zooming)), and a plain scroll there moves a zoomed photo. While the slider popup is open the wheel is the popup's wherever the pointer is.
   - **In the Export tool** only a focused row takes the wheel, while the pointer is over it, never another row the pointer is over, so a scroll through its settings never changes a row that has no focus, where or what it writes among them (decision 90).
   - A disabled row takes none, and the panel scrolls instead; nor does a choice whose list is open, or a slider whose value field is.
   - A choice steps one option a notch whatever else is held, passing over those that cannot be chosen and stopping at the ends, as darktable's `_combobox_next_sensitive`.
@@ -4067,7 +4178,7 @@ Decision 19; engine.md's [Scopes](engine.md#scopes). Built for the histogram, th
   - Alt and Shift must match exactly, so Option letters on a Mac never fire a shortcut. Only keys whose symbol needs Shift on many layouts (+ : ? ! | { }) allow an extra Shift: Ctrl++ is Ctrl+Shift+= on a US keyboard. A shortcut that names Shift exactly is to win over that allowance, planned with the zoom: on a US keyboard Ctrl++ is the Ctrl+Shift+= that zooms every cell, and one photo zooms in with Ctrl+=; where + has its own key, Ctrl++ still zooms one photo ([Photo's cells](#photos-cells)).
   - AltGr is no modifier egui sees: on Windows winit drops Ctrl and Alt while it is held, and on Linux it is a modifier of its own, so AltGr+E, ę on a Polish keyboard, arrives as a plain E, since egui-winit does not report AltGr. A letter's shortcut is skipped when the same press typed something else: a Latin letter not its own (ę, ł) or no letter at all (@, €). A letter of another alphabet, у on a Ukrainian keyboard, is that key's own and still runs it.
 - **Platforms.** Ctrl is Cmd on macOS (egui's `Modifiers::COMMAND`), and a few keys differ (below). Tooltips spell keys the platform's way, `Ctrl+Shift+Z`, and on macOS `Shift+Cmd+Z`, in Apple's order of Control, Option, Shift and Command. On macOS the modifiers are words, not ⌘ ⇧ ⌥ ⌃, which IBM Plex Sans lacks. Key names stay as printed on the keys (Ctrl, Shift, F6, and on a Mac Delete and Return); Space is translated. The keys also reach screen readers as the control's AccessKit shortcut.
-- **Focus order follows reading order:** Toolbar, viewer bar, the Viewer when it can take focus (Photo's cells with several selected), the Tools panel's tabs, then its sections, then the Browser. F6 moves the focus to the first focusable control of the next region that has one, in that order; Shift+F6 goes back. Screen readers hear each region by its part's name ([The shell](#the-names-of-the-parts)): "Toolbar", "Viewer bar", "Viewer", "Tools" (planned: until then they hear its tab list, "Tools panel tabs") and "Browser".
+- **Focus order follows reading order:** Toolbar, viewer bar, the Viewer when it can take focus (Photo's cells with several selected, or the photo while it is zoomed past Fit, planned: [The zoom](#the-zoom-by-keyboard-and-to-screen-readers)), the Tools panel's tabs, then its sections, then the Browser. F6 moves the focus to the first focusable control of the next region that has one, in that order; Shift+F6 goes back. Screen readers hear each region by its part's name ([The shell](#the-names-of-the-parts)): "Toolbar", "Viewer bar", "Viewer", "Tools" (planned: until then they hear its tab list, "Tools panel tabs") and "Browser".
 
 **Slider keys:**
 
@@ -4134,6 +4245,8 @@ Ctrl means Cmd on macOS.
 | View | Add the focused cell's photo to the selection, the active photo staying, or take it out | Ctrl+Space, in the Browser; Control+Space too on the Mac, where Spotlight holds Cmd+Space | Built: the focused cell's own key, as Ctrl-click; no action of the registry |
 | View | Zoom the photo in and out, and to Fit | Ctrl+= (or Ctrl++ where + has its own key), Ctrl+−; Ctrl+0 fits. With Shift, every cell: Ctrl+Shift+= (a US keyboard's Ctrl++), Ctrl+Shift+− and Ctrl+Shift+0 | Declared with no key, not yet available: the scale's zoom comes with the viewport's 100% view, and the keys with it; at the point under the pointer when it is over the photo. With several shown, the cell under the pointer, else the active photo's, each keeping its own zoom; with Shift every cell together, at the same point of each photo ([Photo's cells](#photos-cells)) |
 | View | Zoom the photo to 100%, and back to Fit | Z; Shift+Z, every cell | Declared with Z, not yet available, as above; in Photo only |
+| View | Zoom the photo to Small, Fill, 50%, 200%, 400%, 800% or 1600% | None | Planned with the zoom: `zoom-small`, `zoom-fill`, `zoom-50`, `zoom-200`, `zoom-400`, `zoom-800`, `zoom-1600`, in the viewer bar's zoom menu ([The zoom](#the-zoom)) |
+| View | Move a zoomed photo a fifth of the view; with Shift, a whole view | Alt with ←, →, ↑ and ↓, Option on the Mac; Shift+Alt with them | Planned with the zoom: `pan-left`, `pan-right`, `pan-up`, `pan-down` and `pan-page-left` to `pan-page-down`, disabled at Fit. A focused section header keeps Alt+↑ and Alt+↓, a text field all of them. darktable's plain arrows move the photo; here they stay Next and Previous Photo ([Panning](#panning)) |
 | View | Find a tool (`find-tool`), the Tools panel's search | Ctrl+Shift+F, from a value field too, which does not keep it | Built, decision 96's step 6: in ⋮, and in the tab bar's menu with step 5 ([Finding a tool](#finding-a-tool)) |
 | View | Search the Browser by file name | Ctrl+F, from a value field too, which does not keep it; unassigned until it is built (decision 96) | Planned: View › Search Photos… alone ([The browser bar](#the-browser-bar)) |
 | View | The Browser's sort and its direction; the thumbnails' size; their captions; the panel's position | None by default: the browser bar's Sort and Zoom, its options menu's Show Labels and Position, and View's items; Ctrl+= and Ctrl+− stay the photo's | Phase 2, with the browser bar; Sort by Rating in Phase 3 |
@@ -4147,7 +4260,7 @@ Ctrl means Cmd on macOS.
 | View | Slideshow | None: S stays free for a tool | Not declared yet: no phase |
 
 - **The photo's zoom** has the keys macOS and commercial raw editors give a document's zoom, since it is used every minute; the interface's size is set once, so it keeps View › Interface Size and Settings with no default keys.
-- **Repeat:** Undo, Redo, zooming the photo in and out, F6 and the next and previous photo repeat while their keys are held, and so does the interface's scale on keys a user gives it; the rest run once a press.
+- **Repeat:** Undo, Redo, zooming the photo in and out, moving a zoomed photo, F6 and the next and previous photo repeat while their keys are held, and so does the interface's scale on keys a user gives it; the rest run once a press.
 - **The rating's keys clash with nothing in the map:** no default takes a plain digit, X or F1 to F5.
   - Ctrl+0 to Ctrl+5 (the zoom's Fit, the Tools panel's tabs) and Ctrl+X (Cut) are other presses, since modifiers must match exactly; F6, F10 and F11 are their neighbours.
   - The number row is matched by its physical key, as Ctrl's digits are, so AZERTY's unshifted & é " ' ( still rate.
@@ -4515,6 +4628,7 @@ show_selected = false       # from Phase 3
   - the popup (planned) a SpinButton with a description of its keys and a polite live region for each step, the focus back on the slider when it closes;
   - an exact value by keyboard: Tab to the slider, type "6.5", Enter; the popup without a mouse: Enter, Shift+F10, the Menu key or ShowContextMenu.
 - **A colour picker** ([pickers.md](pickers.md#accessibility)): its button a toggle button described by its tooltip; while it is on, its point or area on the photo a group named "Picker area, Exposure", its value the region in percent of the photo, Increment and Decrement moving it along x and the custom actions Move up and Move down along y, the keys its own while it has the focus; and a polite live region reading out what a pick changed once it has rested half a second.
+- **The zoom** (planned, [The zoom](#the-zoom-by-keyboard-and-to-screen-readers)): the zoom button a button with a menu named "Zoom", its value the scale; while zoomed past Fit the photo a focus stop named "Photo, IMG_2041.ARW", its value the scale and the part shown; a polite live region saying the new scale after a key, a gesture or a middle click; Z, Ctrl+=, Ctrl+−, Ctrl+0 and Alt with the arrows doing by keyboard what the pointer does.
 - **Custom actions** are in the AccessKit tree, as the tests read them, but AccessKit 0.25's platform adapters do not hand them to VoiceOver, NVDA or Orca yet; they reach screen readers once the adapters do. Meanwhile a picker's ↑ and ↓, a section's Alt+↑ and Alt+↓ and its ⋯ do the same for a screen reader's user.
 - **A section's place** (decisions 83 and 96; built: ⋯'s items, the keys, the custom actions, the live region and Find Tool…'s field; planned: the drag and floating panels): every drag has a key and a menu item, a reorder within a tab ⋯'s Move Tool Up and Move Tool Down, as WCAG 2.2's 2.5.7 asks ([Moving, pinning and floating sections](#moving-pinning-and-floating-sections)); the header, a Button, has the custom actions Move Tool Up, Move Tool Down, Pin Tool or Unpin Tool, Remove Tool or Show Tool in Tab, Float and Dock; after a move a polite live region says where it went ("Exposure moved to 3 of 12 in Adjust", "Vignetting hidden"); each floating panel is a pane named by its section, in the region Floating panels. Find Tool's field is a search box named "Find a tool", the count of tools found said politely; the dot on ⋮ is its description.
 - **Keyboard** as above, with a visible focus ring from the theme. The ring shows after a key or a screen reader's request moves focus, not after a click or a drag, as web browsers' `:focus-visible` does (`apertrust-ui`'s `FocusVisible`): a slider being dragged has focus, and a ring around it only distracts.
@@ -4523,7 +4637,7 @@ show_selected = false       # from Phase 3
   - a high-contrast theme;
   - warnings and overlays that use patterns as well as colour (the principles' quality bar);
   - overlay colours the user can choose.
-- **Motion** reduced on request.
+- **Motion** reduced on request. The zoom and pan are never animated, so only the position marks' fade goes ([The zoom](#reduce-motion)).
 - **In the web browser**, accessibility is weaker, a cost decision 35 accepted; the desktop app is where it is complete.
 
 ## Testing
