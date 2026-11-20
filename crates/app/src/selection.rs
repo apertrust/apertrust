@@ -324,9 +324,52 @@ pub(crate) fn exportable(mirror: &Mirror) -> bool {
     }
 }
 
-/// The folder open, while several of its photos are selected.
+/// The folder open, while an export takes its selection: several photos selected, or one
+/// with no photo open or opening, as a Ctrl-click with none active leaves it.
 fn several(mirror: &Mirror) -> Option<&Listing> {
-    listing(mirror).filter(|_| mirror.selected_count() > 1)
+    let selected = mirror.selected_count();
+    let open = mirror.photo.asked().is_some();
+    listing(mirror).filter(|_| selected > 1 || selected == 1 && !open)
+}
+
+/// How many photos an export takes ([`exported`]), for each frame's words: the photos
+/// selected less those left out, only the folder's view-only photos and the one open
+/// looked up. While the folder is listed, a photo selected may not be listed yet, which
+/// the export passes over: the photos it takes are counted one by one then.
+pub(crate) fn exported_count(mirror: &Mirror) -> usize {
+    if mirror.selection_pending() {
+        return 0;
+    }
+    let Some(listing) = several(mirror) else {
+        return usize::from(exportable(mirror));
+    };
+    if !listing.done {
+        return exported(mirror).photos.len();
+    }
+    let open = match &mirror.photo {
+        PhotoState::Open(photo) => Some(photo),
+        _ => None,
+    };
+    let view_only =
+        |edit: &EditState| matches!(edit, EditState::ViewOnly(_) | EditState::Unreadable(_));
+    // The folder's view-only photos selected, but the one open, which its own state says.
+    let listed = (listing.photos.iter())
+        .filter(|photo| view_only(&photo.edit))
+        .map(|photo| listing.path.join(&photo.name))
+        .filter(|path| mirror.is_selected(path))
+        .filter(|path| open.is_none_or(|open| open.path != *path))
+        .count();
+    // The active photo, which the selection keeps where the listing lacks it, is no photo
+    // of the Browser's order, so the export passes it over.
+    let active = mirror
+        .photo
+        .asked()
+        .filter(|active| mirror.is_selected(active));
+    let unlisted = active.is_some_and(|active| listing.position(active).is_none());
+    let open = !unlisted
+        && open.is_some_and(|open| open.view_only.is_some() && mirror.is_selected(&open.path));
+    let left_out = listed + usize::from(unlisted) + usize::from(open);
+    mirror.selected_count().saturating_sub(left_out)
 }
 
 /// The selected photos of `listing`, in the Browser's order, each with whether an export
@@ -1111,6 +1154,7 @@ mod tests {
         };
         assert_eq!(exported(&f.m), all);
         assert!(exportable(&f.m));
+        assert_eq!(exported_count(&f.m), 3);
         assert_eq!(f.m.selected_count(), 3);
         // c's sidecar unreadable, the open a view-only: e alone.
         let mut f = Folder::new("a");
@@ -1148,6 +1192,68 @@ mod tests {
         };
         assert_eq!(exported(&f.m), e);
         assert!(exportable(&f.m));
+        assert_eq!(exported_count(&f.m), 1);
+    }
+
+    /// While the folder is listed, a photo selected that the listing has not brought yet
+    /// is passed over, and the count says what the export takes.
+    #[test]
+    fn while_the_folder_is_listed_the_count_is_what_the_export_takes() {
+        let mut f = Folder::new("a");
+        let folder = PathBuf::from("/photos");
+        f.m.folder.opening(folder.clone(), 100);
+        let name = "photos".to_owned();
+        f.m.apply(Event::Library(LibraryEvent::Opened {
+            open: 100,
+            name,
+            folder,
+        }));
+        let a = Photo {
+            name: "a.ARW".to_owned(),
+            size: 1,
+            modified: None,
+            edit: EditState::None,
+        };
+        f.m.apply(Event::Library(LibraryEvent::Listed {
+            open: 100,
+            photos: vec![a],
+            done: false,
+        }));
+        f.told(&["a", "c"], Some("a"));
+        assert_eq!(exported(&f.m).photos, [at("a")]);
+        assert_eq!(exported_count(&f.m), 1);
+    }
+
+    /// The active photo, kept selected though the listing lacks it, is no photo of the
+    /// Browser's order: the export passes it over, and the count with it.
+    #[test]
+    fn an_active_photo_the_listing_lacks_is_not_counted() {
+        let mut f = Folder::new("z");
+        f.listed(&[], false);
+        f.told(&["a", "b", "z"], Some("z"));
+        assert_eq!(exported(&f.m).photos, [at("a"), at("b")]);
+        assert_eq!(exported_count(&f.m), 2);
+    }
+
+    /// A photo selected alone with none open, as a Ctrl-click with none active leaves it,
+    /// is what an export takes; the count follows what it takes.
+    #[test]
+    fn an_export_takes_a_photo_selected_with_none_open() {
+        let mut f = Folder::new("a");
+        f.listed(&[], false);
+        f.m.closing();
+        f.told(&["c"], None);
+        let c = Exported {
+            photos: vec![at("c")],
+            left_out: 0,
+        };
+        assert_eq!(exported(&f.m), c);
+        assert!(exportable(&f.m));
+        assert_eq!(exported_count(&f.m), 1);
+        // Nothing selected and none open: nothing.
+        f.told(&[], None);
+        assert_eq!(exported(&f.m), Exported::default());
+        assert_eq!(exported_count(&f.m), 0);
     }
 
     /// While Select All is not yet told an export takes nothing, as the selection it reads

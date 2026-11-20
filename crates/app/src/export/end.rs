@@ -66,11 +66,13 @@ pub struct Jobs {
 
 /// The selected photos besides the one open, while several are selected (decision 90):
 /// how many the export takes, and how many it leaves out, open for viewing only. None
-/// with one photo.
+/// with one photo. `pending` while a selection command the session has not told yet
+/// leaves the photos to export unknown: Export waits, drawn disabled.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Others {
     pub taken: usize,
     pub left_out: usize,
+    pub pending: bool,
 }
 
 /// What the app tells the tool each frame besides its header, which is the shell's
@@ -460,7 +462,8 @@ impl Export {
     fn button(&mut self, ui: &mut Ui) -> bool {
         let ctx = ui.ctx().clone();
         let reason = self.cannot_export(&ctx);
-        let idle = matches!(self.photo, Photo::None) && self.others.taken == 0;
+        let none = matches!(self.photo, Photo::None) && self.others.taken == 0;
+        let idle = none || self.others.pending;
         // The photos it exports; with none, the words as for one.
         let count = usize::from(matches!(self.photo, Photo::Ready { .. })) + self.others.taken;
         let mut args = Args::new();
