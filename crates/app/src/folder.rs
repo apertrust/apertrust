@@ -253,11 +253,12 @@ impl FolderState {
     }
 
     /// The photos at `paths`, absolute, are opened alone, together, the first active
-    /// (`docs/library.md`, One photo), with no folder open or after the folder open was
-    /// closed ([`FolderState::closing`]): nothing is listed, and the Browser holds just
-    /// them, each once, in the order given, until a folder opens. The thumbnails of photos
-    /// alone before that are among them still are kept.
-    pub fn alone(&mut self, paths: Vec<PathBuf>) {
+    /// (`docs/library.md`, One photo), by the library command numbered `number`, which
+    /// closes what was open as [`FolderState::closing`] does: nothing is listed, and the
+    /// Browser holds just them, each once, in the order given, until a folder opens. The
+    /// thumbnails of photos alone before that are among them still are kept, as their
+    /// thumbnails from now on come in `number`.
+    pub fn alone(&mut self, number: u64, paths: Vec<PathBuf>) {
         let mut unique: Vec<PathBuf> = Vec::with_capacity(paths.len());
         for path in paths {
             if !unique.contains(&path) {
@@ -273,7 +274,9 @@ impl FolderState {
             edit: library::EditState::None,
         };
         let photos = unique.iter().map(cell).collect();
-        let mut thumbnails = match std::mem::take(&mut self.folder) {
+        let before = std::mem::take(&mut self.folder);
+        self.closing(number);
+        let mut thumbnails = match before {
             Folder::Alone { thumbnails, .. } => thumbnails,
             _ => HashMap::new(),
         };
@@ -1397,8 +1400,7 @@ mod tests {
         let mut state = FolderState::default();
         state.opening(absolute("/photos/a"), 1);
         state.apply(&opened(1, "/photos/a"));
-        state.closing(2);
-        state.alone(vec![x.clone(), y.clone(), x.clone(), z.clone()]);
+        state.alone(2, vec![x.clone(), y.clone(), x.clone(), z.clone()]);
         assert_eq!(state.alone_paths(), [x.clone(), y.clone(), z.clone()]);
         let names: Vec<&str> = state.photos().iter().map(|p| p.name.as_str()).collect();
         assert_eq!(names, ["x.ARW", "y.ARW", "z.ARW"]);
@@ -1457,8 +1459,7 @@ mod tests {
         );
         let at = |path: &PathBuf| CellKey::Path(path.clone());
         let mut state = FolderState::default();
-        state.closing(2);
-        state.alone(vec![x.clone(), y.clone()]);
+        state.alone(2, vec![x.clone(), y.clone()]);
         let generation = state.generation();
         state.apply(&alone_thumbnail(2, &x));
         assert!(state.generation() > generation);
@@ -1479,23 +1480,25 @@ mod tests {
         let largest = state.largest_thumbnail(&x).expect("x's");
         assert_eq!((largest.width, largest.height), (4, 3));
         assert!(state.largest_thumbnail(&y).is_none());
-        // Others opened alone: x's stays, among them still, and shows as x opens again; one
-        // of y, no longer among them, is dropped.
-        state.alone(vec![z.clone(), x.clone()]);
+        // Others opened alone, by command 3: x's stays, among them still, and shows as x
+        // opens again; one of y, no longer among them, is dropped, and one of command 2.
+        state.alone(3, vec![z.clone(), x.clone()]);
         assert!(state.thumbnail(&at(&x), 256).is_some());
         assert!(state.largest_thumbnail(&x).is_some());
-        state.apply(&alone_thumbnail(2, &y));
+        state.apply(&alone_thumbnail(3, &y));
         state.apply(&alone_thumbnail(2, &z));
+        assert_eq!(state.thumbnails().count(), 1);
+        state.apply(&alone_thumbnail(3, &z));
         assert_eq!(state.thumbnails().count(), 2);
         assert!(state.thumbnail(&at(&z), 256).is_some());
         // Without x, its thumbnail goes.
-        state.alone(vec![z.clone()]);
+        state.alone(4, vec![z.clone()]);
         assert_eq!(state.thumbnail(&at(&x), 256), None);
         assert_eq!(state.thumbnails().count(), 1);
         // A folder opens: they go, and a photo alone's that comes after is dropped.
-        state.opening(PathBuf::from("/photos/a"), 3);
-        state.apply(&opened(3, "/photos/a"));
-        state.apply(&alone_thumbnail(3, &z));
+        state.opening(PathBuf::from("/photos/a"), 5);
+        state.apply(&opened(5, "/photos/a"));
+        state.apply(&alone_thumbnail(5, &z));
         assert_eq!(state.thumbnails().count(), 0);
     }
 

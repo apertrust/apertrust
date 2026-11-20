@@ -6774,8 +6774,7 @@ fn open_alone(paths: Vec<PathBuf>, mirror: &mut Mirror, send: &mut SendCommand<'
     };
     let source = Source::Photos(paths.clone());
     let alone = send(Command::Library(LibraryCommand::Open(source)));
-    mirror.folder.closing(alone);
-    mirror.folder.alone(paths);
+    mirror.folder.alone(alone, paths);
     let open = send(Command::Open(first.clone()));
     mirror.opening(first, open, Instant::now());
 }
@@ -9291,6 +9290,32 @@ mod tests {
         let first = Command::Open(three.clone());
         assert_eq!(harness.state().commands, [told_alone(&again), first]);
         assert_eq!(harness.state().mirror.folder.alone_paths(), [three, two]);
+    }
+
+    /// Photos opened alone again keep the thumbnails that came for those still among them,
+    /// and take the new set's in its command's number.
+    #[test]
+    fn photos_alone_opened_again_keep_the_thumbnails_of_those_still_among_them() {
+        let mut m = mirror::tests::mirror();
+        let mut sent = Vec::new();
+        let [a, b, c] = ["/photos/a.ARW", "/photos/b.ARW", "/trips/c.ARW"].map(PathBuf::from);
+        open_alone(vec![a, b.clone()], &mut m, &mut sender(&mut sent));
+        let thumbnail = |open, path: &PathBuf| {
+            Event::Library(LibraryEvent::PhotoThumbnail {
+                open,
+                path: path.clone(),
+                size: 256,
+                image: None,
+            })
+        };
+        m.apply(thumbnail(m.folder.latest(), &b));
+        let key = folder::CellKey::Path(b.clone());
+        assert!(m.folder.thumbnail(&key, 256).is_some());
+        open_alone(vec![b, c.clone()], &mut m, &mut sender(&mut sent));
+        assert!(m.folder.thumbnail(&key, 256).is_some(), "b's stays");
+        assert_eq!(m.folder.latest(), sent.len() as u64 - 1);
+        m.apply(thumbnail(m.folder.latest(), &c));
+        assert!(m.folder.thumbnail(&folder::CellKey::Path(c), 256).is_some());
     }
 
     /// Photos opened alone, by any route, from two folders: the session is told them, as its
