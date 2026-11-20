@@ -89,7 +89,9 @@ repos:
   - repo: https://github.com/EmbarkStudios/cargo-deny
     rev: 0.20.2
     hooks:
+      # Its policy too: the hook's own files are the manifests and the lock file alone.
       - id: cargo-deny
+        files: ((^|/)Cargo\.(toml|lock)|^deny\.toml)$
 
   # Apertrust's checks.
   - repo: local
