@@ -2248,6 +2248,53 @@ fn a_name_only_a_decode_gives_is_never_shown_as_exact() {
 }
 
 #[test]
+fn with_several_photos_a_name_only_a_decode_gives_stays_the_pattern() {
+    // The first photo named is another selected one, not the open one: its name needs a
+    // decode, so its guess is never shown, and the others are summed up.
+    let mut harness = open();
+    let mut p = preview();
+    let open_one = p.names[0].clone();
+    p.names[0] = PhotoName {
+        source: PathBuf::from("/Users/anna/Pictures/IMG_2040.ARW"),
+        exact: false,
+        fate: Fate::File {
+            file: PathBuf::from("/Users/anna/Pictures/apertrust_exported/IMG_2040.jpg"),
+            exists: false,
+            action: Action::Write,
+        },
+    };
+    p.names.push(open_one);
+    answer(&mut harness, 1, p);
+    assert!(tip_says(
+        &harness,
+        "IMG_2040.ARW → $(FILE_FOLDER)/apertrust_exported/$(FILE_NAME), filled in as it is exported"
+    ));
+    assert!(tip_says(&harness, "and 1 more, the same way"));
+    assert!(!tip_says(&harness, "IMG_2040.jpg"));
+    // The Summary's file name is the pattern's, as the tooltip has it.
+    assert!(summary_says(&harness, "File name $(FILE_NAME).jpg"));
+    // The open photo first, its name exact, the next one's guess never in view.
+    let mut harness = open();
+    let mut p = preview();
+    let mut guessed = p.names[0].clone();
+    guessed.source = PathBuf::from("/Users/anna/Pictures/IMG_2042.ARW");
+    guessed.exact = false;
+    guessed.fate = Fate::File {
+        file: PathBuf::from("/Users/anna/Pictures/apertrust_exported/IMG_2042.jpg"),
+        exists: false,
+        action: Action::Write,
+    };
+    p.names.push(guessed);
+    answer(&mut harness, 1, p);
+    assert!(tip_says(
+        &harness,
+        "IMG_2041.ARW → ~/Pictures/apertrust_exported/IMG_2041.jpg"
+    ));
+    assert!(!tip_says(&harness, "IMG_2042"));
+    assert!(summary_says(&harness, "File name IMG_2041.jpg"));
+}
+
+#[test]
 fn no_explanation_is_a_line_inside_the_tool_it_is_a_tooltip() {
     let mut harness = open();
     answer(&mut harness, 1, preview());
