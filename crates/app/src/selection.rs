@@ -73,7 +73,13 @@ pub(crate) fn browse(
             // keeps a selection that holds it and selects any other alone, as the
             // session's does.
             if active.as_ref() != Some(&path) {
-                open_listed(path, mirror, send);
+                let outside = !mirror.is_selected(&path);
+                open_listed(path.clone(), mirror, send);
+                // All, Invert or Unedited not yet told may select it before the open
+                // comes: a photo shown outside the selection is selected alone all the same.
+                if outside && mirror.selection_pending() {
+                    select(SelectionCommand::Set(vec![path]), mirror, send);
+                }
             }
         }
         _ if alone => {}
@@ -477,6 +483,27 @@ mod tests {
         // The active photo's own cell: nothing, however many are selected.
         assert!(f.browse(BrowserAction::Open(3)).is_empty());
         assert_eq!(f.m.selected_count(), 3);
+    }
+
+    /// A click on a photo shown outside the selection selects it alone though Select All,
+    /// sent before it and not yet told, would select it first and the open keep them all.
+    #[test]
+    fn a_click_outside_the_selection_before_select_all_is_told_selects_the_photo_alone() {
+        let mut f = Folder::new("a");
+        f.listed(&[], false);
+        f.told(&["a"], Some("a"));
+        f.edit(SelectionCommand::All);
+        let all = f.sent.len() as u64;
+        let alone = selection(SelectionCommand::Set(vec![at("c")]));
+        let sent = f.browse(BrowserAction::Open(2));
+        assert_eq!(sent, [Command::Open(at("c")), alone]);
+        assert!(f.m.selected_alone(&at("c")));
+        // Select All told, the click not yet: still c alone, as the session will make it.
+        f.fact(&["a", "b", "c", "d", "e"], Some("a"), all);
+        assert!(f.m.selected_alone(&at("c")));
+        // With nothing pending, a click outside the selection sends the open alone.
+        f.told(&["c"], Some("c"));
+        assert_eq!(f.browse(BrowserAction::Open(3)), [Command::Open(at("d"))]);
     }
 
     /// A cell's menu opens its photo first, as a click does: one in the selection keeps it;
