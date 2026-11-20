@@ -937,7 +937,7 @@ The menus open from one menu button at the very start of the Toolbar, the app's 
 | Showing the photo's file | Show in Finder | Show in Folder | Show in Folder |
 | Redo's key shown | Shift+Cmd+Z | Ctrl+Y, listed first on Windows | Ctrl+Shift+Z |
 | Keyboard Shortcuts | No key | Ctrl+? | Ctrl+? |
-| Reaching the menus by keyboard | Ctrl+F2 (the system's), or VoiceOver | F10; Alt pressed and released alone, as Windows does; Alt and a top-level menu's letter, the menu opening at it; the menu button by F6 and Tab | F10, as GNOME's apps have it; Alt and a top-level menu's letter; the menu button by F6 and Tab |
+| Reaching the menus by keyboard | Ctrl+F2 (the system's), or VoiceOver | F10; Alt pressed and released alone, as Windows does (planned); Alt and a top-level menu's letter, the menu opening at it; the menu button by F6 and Tab | F10, as GNOME's apps have it; Alt and a top-level menu's letter; the menu button by F6 and Tab |
 | Access keys | None | On the top-level menus in the menu button's menu, underlined while Alt is held | The same as Windows |
 | Keys spelt | By macOS, with its glyphs: ⌘⇧Z | As the tooltips spell them | As the tooltips spell them |
 
@@ -980,7 +980,7 @@ The menus open from one menu button at the very start of the Toolbar, the app's 
 - A menu shows an action's first key for the platform, as its tooltip does, and follows a change in Settings at once; planned, only a plain key at the action's default element and effect that acts at press ([Who owns the keys](#who-owns-the-keys), decision 98).
 - Showing a key never takes it from a narrower scope: with a button focused, Space presses the button and not Next Photo; in a value field, Ctrl+Z undoes typing. On the Mac the native menu holds no key the focused widget keeps; on Windows and Linux the registry reads every key and the menus only show them.
 - Keys kept from actions (decision 39): on the Mac Cmd+H, Option+Cmd+H and Cmd+M, which the system's items hold, and Shift+Cmd+/ (the Help search), Ctrl+Cmd+Space (Emoji & Symbols) and Cmd+\`, which macOS acts on; on Windows and Linux F10, which opens the menu button's menu, Alt with a letter, which opens it with the top-level menu of that access key expanded (decision 39), and Alt+F4 and Alt+Space, which the system acts on.
-- On Windows, Alt pressed and released with nothing else opens the menu button's menu, as F10 does, where Windows would focus a menu bar's first title; Alt held with another key never does this: Alt with a menu title's letter is that menu's access key, as Alt+F opens File, and Alt with any other key, as a header's Alt+↑, opens nothing.
+- On Windows (planned), Alt pressed and released with nothing else opens the menu button's menu, as F10 does, where Windows would focus a menu bar's first title; Alt held with another key never does this: Alt with a menu title's letter is that menu's access key, as Alt+F opens File, and Alt with any other key, as a header's Alt+↑, opens nothing.
 - macOS's menus draw keys with its glyphs in the system font, so they differ from the tooltips' words, which IBM Plex Sans needs. The menus look as every Mac menu does; the tooltips stay readable.
 
 **Feedback, undo and focus.** An item gives the feedback its button or key gives, and is undone as they are: Reset Edit is a history step once history exists, and a batch (a rating or Apply Edit on several photos) is one change, which one Undo takes back. The viewer bar's toggles, the layouts and the workspaces change only what is shown and are not steps. A menu never waits for the engine: Undo's step and every enabled state come from the session mirror. When a menu closes, focus returns to the control that had it.
@@ -1078,7 +1078,7 @@ Native popup menus on the Mac for plain lists and context menus; drawn everywher
 
 **Built:**
 
-- The drawn service's pull-down, for the menu button's menu on Linux, the Toolbar's ⋯ and the Tools panel's » and ⋮; and the dropdown, `Choice`'s list, drawn with darktable's type-to-filter (decision 42).
+- The drawn service's pull-down, for the menu button's menu on Windows and Linux, the Toolbar's ⋯ and the Tools panel's » and ⋮; and the dropdown, `Choice`'s list, drawn with darktable's type-to-filter (decision 42).
 - Every popup in the app goes through the service, as a plain list with no checkbox or other control inside, so that each can be drawn natively on the Mac:
   - ⋯ lists the folded actions with their keys, disabled where they cannot run;
   - » lists the tabs that do not fit, one that cannot be chosen disabled with its "to come" tip;
@@ -2718,7 +2718,7 @@ Where each step starts is measured by a test in every language. The status slots
 | The actions go under ⋯ | 482 | 607 | 596 | 509 | 497 |
 | Undo and Redo go under ⋯ | 282 | 407 | 396 | 282 | 282 |
 
-Linux needs 125 points more than the Mac: the menu button and the 8 points after it, 49 (38 with ☰, which is 11 narrower than the app's icon and its caret), and at the end the caption buttons with the 16 points before them, 154, in place of the Mac's 8-point margin; less the 70 points by which the traffic lights' room, 78, is wider than the start's 8-point margin. The test (`the_toolbar_folds_where_gui_md_says`) holds these numbers, the jobs spinner's slot counted as the app draws it, and the narrowing test checks at every width, in every language, that 24 points of empty panel are left, the menu button included.
+Linux needs 125 points more than the Mac, 49 + 146 − 70: the menu button and the 8 points after it, 49 (38 with ☰, which is 11 narrower than the app's icon and its caret); at the end the caption buttons with the 16 points before them, 154, less the Mac's 8-point end margin they replace, 146; less the 70 points by which the traffic lights' room, 78, is wider than the start's 8-point margin. The test (`the_toolbar_folds_where_gui_md_says`) holds these numbers, the jobs spinner's slot counted as the app draws it, and the narrowing test checks at every width, in every language, that 24 points of empty panel are left, the menu button included.
 
 Never folded: the menu button on Windows and Linux, the save warning's sign, an assistant's connection, the caption buttons, and 24 points of empty panel to move the window by.
 
