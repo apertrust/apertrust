@@ -136,7 +136,7 @@ cargo run --release -p apertrust -- photo.ARW                                   
 
 - **Diagnostics:** add `-d perf`, or `-d all`, for timings and other diagnostics.
 - **Kernels:** the generated WGSL is committed, so building needs no Slang compiler. `tools/build-kernels.sh` regenerates it after a kernel changes.
-- **Checks:** [CONTRIBUTING.md](CONTRIBUTING.md#checks) lists the checks a change must pass. [pre-commit](https://pre-commit.com) runs them: install it with `pipx install pre-commit` (or `uv tool install pre-commit`, or `brew install pre-commit`), then run `pre-commit run --all-files`.
+- **Checks:** [CONTRIBUTING.md](CONTRIBUTING.md#checks) lists the checks a change must pass. [pre-commit](https://pre-commit.com) runs all but the tests: install it with `pipx install pre-commit` (or `uv tool install pre-commit`, or `brew install pre-commit`), then run `pre-commit run --all-files` for the quick checks and `pre-commit run --hook-stage manual --all-files` for every check, clippy and the API docs too. The tests run with `cargo test --workspace`.
 - **API docs:** `tools/build-api-docs.sh --open` builds the API docs from the code into `target/doc`.
 
 ## Contributing
