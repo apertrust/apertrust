@@ -526,7 +526,7 @@ The engine's photo is not rendered for each step of a resize: the app holds the 
   - its key, the first one the keymap gives it, as `Shortcut::spell` writes it;
   - enabled when the action can run and its scope is active, so the view's items rest while a dialog or a sheet is open, and while a dialog is open so does every item that opens a dialog, a file dialog or About, Quit staying (decision 41, [Dialogs and alerts](#dialogs-and-alerts));
   - a check mark for a toggle and for the chosen one of a set, from state the registry gains for them.
-- **The registry also gains Cut, Copy, Paste and Select All** (`cut`, `copy`, `paste`, `select-all`) for the Edit menu: the first three available only while a text field has focus, Select All also while a photo of the folder open is not selected (built for Select All). Their keys are the clipboard's, which egui takes on Windows and Linux before any action sees them. They are actions rather than the Mac's predefined editing items, which send `cut:`, `copy:` and the rest to the first responder: winit's view answers none of them.
+- **The registry also gains Cut, Copy, Paste and Select All** (`cut`, `copy`, `paste`, `select-all`): the first three for the Edit menu, available only while a text field has focus, and Select All for the Select menu, available while a text field has focus and while a photo of the folder open is not selected (built for Select All). Their keys are the clipboard's, which egui takes on Windows and Linux before any action sees them. They are actions rather than the Mac's predefined editing items, which send `cut:`, `copy:` and the rest to the first responder: winit's view answers none of them.
 - **Kept up to date** each frame: the app works out what every item should show from the keymap, the `State`, the focus and the locale, and on the Mac calls muda only for what changed (`set_text`, `set_enabled`, `set_checked`, `set_accelerator`). Choosing a language in Settings renames every menu at once.
 - **A choice comes back** through muda's event handler on the Mac, a closure that sends the item's id down a channel and calls `request_repaint`, so it wakes egui as an engine event does; elsewhere as the popup service's answer to the ☰'s menu. The app runs them through `Shell::run`, as it runs clicks and keys, checking that each can still run: on the Mac in `App::logic`, which eframe calls before each frame and alone while the window is minimised or hidden, so a choice runs then too.
 
@@ -550,12 +550,13 @@ Through muda: built once the window exists, on the main thread, and handed to Ap
 - **What it holds now,** the actions the registry declares ([what arrives when](#what-arrives-when) lists what is still to come):
   - the app menu, titled Apertrust, with About, Settings, Services, Hide, Hide Others, Show All and Quit;
   - File with Open…, Open Folder…, Open Recent, Import, Export…, Export Again, Close and Close Window;
-  - Edit with Undo and Redo, Select All, Select None, Invert Selection and Select Unedited, Copy Edit, Apply Edit and Copy or Apply Parts, then Reset Edit;
+  - Edit with Undo and Redo, Copy Edit, Apply Edit and Copy or Apply Parts, then Reset Edit and Discard History…;
+  - Select with Select All, Select None, Invert Selection and Select Unedited, then Previous Selection;
   - Photo with Next Photo and Previous Photo;
   - View with Collections, Tools Panel Tab (tabs 1 to 5), Workspace (Default, Essentials, then a person's own, the one shown checked), Interface Size (Larger, Smaller, Normal Size), Jobs and Full Screen;
   - Window; Help, with AppKit's search.
 
-  Disabled until built: Import, Copy Edit, Apply Edit and Copy or Apply Parts. Not placed, on purpose: the Edit view's action, which joins the menus as Photo's once there is a second layout, F6's two actions, H's peek and Restart, which Settings' Restart now and the start notice's Try again run (decision 82). An item's words are its action's message for now, so "Settings", "Quit", "Reset", "Copy edit" and "Tools panel tab 1", but for Undo and Redo, which name their step ("Undo Exposure"); the `.menu` and `.mac` attributes, title case and the tabs' own names, and check marks come later.
+  Disabled until built: Import, Copy Edit, Apply Edit, Copy or Apply Parts and Previous Selection. Not placed, on purpose: the Edit view's action, which joins the menus as Photo's once there is a second layout, F6's two actions, H's peek and Restart, which Settings' Restart now and the start notice's Try again run (decision 82). An item's words are its action's message for now, so "Settings", "Quit", "Reset", "Copy edit" and "Tools panel tab 1", but for Undo and Redo, which name their step ("Undo Exposure"); the `.menu` and `.mac` attributes, title case and the tabs' own names, and check marks come later.
 - **The app menu's title.** Run without a bundle, macOS titles it with the binary's name, "apertrust". The build embeds `crates/app/assets/macos/Info.plist`, whose `CFBundleName` is Apertrust, in the binary's `__TEXT,__info_plist` section (`crates/app/build.rs`), so the menu bar reads Apertrust.
   - The Dock and the app switcher keep "apertrust" until the app runs from a bundle, and no public API renames it: LaunchServices names an unbundled app after its executable's file and reads nothing of the embedded plist. `CFBundleDisplayName` or `CFBundleIdentifier` there, `NSProcessInfo.setProcessName`, `setprogname` and argv[0] change nothing, before the app starts or once its window is open; a symlink named Apertrust renames LaunchServices' entry but not the Dock's, which follows the link to the file.
   - Run from inside a minimal `Apertrust.app`, its Info.plist naming Apertrust and its `Contents/MacOS/apertrust` a symlink to the built binary, the same binary reads Apertrust in LaunchServices, the Dock and the menu bar, its stderr still the terminal's. The packaged Apertrust.app names it for users; in development only such a bundle would.
@@ -567,11 +568,11 @@ Through muda: built once the window exists, on the main thread, and handed to Ap
 One menu button, ☰, at the very start of the Toolbar, before the mark (decision 39), with the look and keys [the menu bar](#the-menu-bar) gives it. The Mac has no ☰: its menus are the native menu bar's.
 
 - **The button:** an icon button like the Toolbar's others, 30 points square, which never folds while shown, so the menus cost neither height nor a line of their own. From Phase 3 a person may hide it from the toolbar (decision 92, [The Toolbar](#the-toolbar)): F10, Alt alone on Windows and Alt with an access key still open the menu, hung from the toolbar's start, and View › Panels and the toolbar menu offer Show Menu Button. `Toolbar` draws it and reports `Menu`, as it reports its caption buttons.
-- **The menu:** one, drawn in the theme, listing the top-level menus of `MENUS` (File, Edit, Photo, Layer from Phase 4, View, Help) as submenus, with items, a shortcut column, check marks, separators, submenus and disabled items. AccessKit's menu roles, so Narrator and Orca read them as menus.
+- **The menu:** one, drawn in the theme, listing the top-level menus of `MENUS` (File, Edit, Select, Photo, Layer from Phase 4, View, Help) as submenus, with items, a shortcut column, check marks, separators, submenus and disabled items. AccessKit's menu roles, so Narrator and Orca read them as menus.
   - It is a pull-down from a button through [the popup service](#popups) (decision 40), drawn on Windows and Linux as every popup is there, so one drawn menu serves it and every other pull-down; there is no `MenuBar` component.
   - The popup service knows nothing of actions: the app turns `MENUS` into a request of entries with string ids and gets back the id chosen.
   - The web browser draws the same.
-- **Keys:** F10 opens it at its top, as GNOME's apps open theirs, and on Windows Alt pressed and released with nothing else too. Alt with a top-level menu's access key opens the ☰'s menu with that menu expanded (Alt+F at File, Alt+E at Edit), as apps with a hidden menu bar do. The items inside have no access keys, and a letter moves to the next item starting with it.
+- **Keys:** F10 opens it at its top, as GNOME's apps open theirs, and on Windows Alt pressed and released with nothing else too. Alt with a top-level menu's access key opens the ☰'s menu with that menu expanded (Alt+F at File, Alt+E at Edit, Alt+S at Select), as apps with a hidden menu bar do. The items inside have no access keys, and a letter moves to the next item starting with it.
 - **Built on Windows and Linux,** but for Windows' Alt pressed and released alone:
   - `Toolbar::menu_button` draws the ☰ first, an icon button (`Icon::Menu`, `menu.svg`) drawn on while its menu hangs from it, in `text_strong`, ☰ having no filled form, reported to AccessKit as a button with a menu popup, expanded or not, its tooltip and shortcut F10. It reports `ToolbarAction::Menu` on a press, or on ↓ while focused, and a press while the menu is open closes it. `Toolbar::menu_popup` is the popup's id and `menu_anchor` the ☰'s rectangle as last drawn.
   - The app turns `MENUS` into the request each time the menu opens (`menus::request`): the menus Windows and Linux have, each a submenu titled by its message with its `&`. Its items are as the Mac's: the action's words, enabled exactly when it can run where it is, the keymap's first key as the platform spells it whatever has the focus, since the registry reads every key there. Full Screen and the Tools panel's tabs carry check marks (`Action::checked`, from `State`'s `full_screen` and `panel_tab`). The Mac's own items are left out, and with them the Window menu.
@@ -631,7 +632,7 @@ Apertrust has full application menus on every platform. How they work, one model
 | --- | --- |
 | 1. Develop a photo | File › Open; Photo › Next Photo and Previous Photo; View's zoom; Edit › Undo and Redo |
 | 2. Fix one part | Layer › New Layer, the same list as the viewer bar's and the Layers panel's (Phase 4) |
-| 3. Make a series consistent | Edit › Copy Edit, Apply Edit on every selected photo, Copy or Apply Parts, Select All |
+| 3. Make a series consistent | Edit › Copy Edit, Apply Edit on every selected photo, Copy or Apply Parts; Select › Select All, Select Unedited, Previous Selection |
 | 4. Reproduce a look | Edit › Save Edit as Style; Photo › Match a Photo |
 | 5. Trust the result | View › Zoom to 100% (the exact view, principle 2), Clipping Warnings, Before and After; File › Export |
 | 6. Hand off the routine | Photo › Auto |
@@ -640,7 +641,7 @@ The Toolbar's groups map onto the menus: Import and Export to File; Reset, Undo,
 
 ### The tree
 
-The menus: Apertrust (macOS), File, Edit, Photo, Layer (Phase 4), View, Window (macOS), Help. They are the same whatever the Viewer shows. macOS first; [Windows and Linux](#windows-and-linux) differ only where their table says. In the tables:
+The menus: Apertrust (macOS), File, Edit, Select, Photo, Layer (Phase 4), View, Window (macOS), Help. They are the same whatever the Viewer shows. macOS first; [Windows and Linux](#windows-and-linux) differ only where their table says. In the tables:
 
 - **Item:** the English words, in title case, as English menus are on every platform (sentence case everywhere else in the interface); → opens a submenu; a row of — is a separator. Only the top-level menus carry access keys (decision 39): on Windows and Linux Alt with one opens the ☰'s menu with that menu expanded.
 - **Action:** the registry id the item runs, or "macOS's" for an item macOS performs itself.
@@ -729,11 +730,6 @@ macOS only: the app menu, which macOS titles with the app's name.
 | Cut | `cut` | Ctrl+X | New, with the menu bar (decision 39) |
 | Copy | `copy` | Ctrl+C | New, with the menu bar |
 | Paste | `paste` | Ctrl+V | New, with the menu bar |
-| Select All | `select-all` | Ctrl+A, darktable's | Built: a focused field's text; else every photo of the folder open, the active photo staying (`All`) |
-| Select None | `select-none` | Ctrl+Shift+A, darktable's | Built: no photo, the active one closed and none opened (`Clear`) |
-| Invert Selection | `invert-selection` | None: darktable's Ctrl+I is Import's | Built: the folder's photos not selected (`Invert`) |
-| Select Unedited | `select-unedited` | None, as darktable's select untouched has none | Built: the folder's photos with no edit, as their cells' pencils say (`Unedited`) |
-| Previous Selection | `previous-selection` | Ctrl+Shift+D (decision 90) | New, Phase 3, with selecting several photos |
 | — | | | |
 | Copy Edit | `copy-edit` | Ctrl+Shift+C | Declared; Phase 3 |
 | Apply Edit; Apply Edit to 12 Photos with several selected | `apply-edit` | Ctrl+Shift+V | Declared; Phase 3 |
@@ -745,13 +741,28 @@ macOS only: the app menu, which macOS titles with the app's name.
 | —, Windows and Linux | | | |
 | Settings…, Windows and Linux | `settings` | Ctrl+, | Built |
 
-- **The editing items follow focus** (decision 39): while a value field has focus, Undo, Redo, Cut, Copy, Paste and Select All act on it, and Undo and Redo read Undo and Redo alone. Otherwise Undo and Redo name the step as History names it ("Undo Exposure · Sky") and read Undo, disabled, when there is none; Select All selects the photos once photos can be selected; and Cut, Copy and Paste are disabled, since copying an edit is Copy Edit's, with its own keys, so Ctrl+C never has two meanings.
-- **The selection's items** are darktable's select all, select none, invert selection and select untouched, the session's commands (decision 37), each disabled where it would change nothing: Select All with every photo selected, Select None with none selected, Invert Selection with no folder of photos open, Select Unedited with every photo edited. Select None is disabled with the active photo alone too, where it would only close it, which is File › Close's. Select None leaves no active photo. Invert Selection always leaves the active photo out, and Select Unedited where it has an edit: it closes, and once the session tells the new selection its first photo in the Browser's order opens, or none where nothing is selected.
-- **Previous Selection** (decision 90) goes back one level, to the selection as it was before its last change, with its active photo: the way back from a stray click that drops a large selection, beyond darktable. One level only. It is disabled while there is no earlier selection, and it is no history step; the earlier selection is the session's, as the selection is (decision 37).
+- **The editing items follow focus** (decision 39): while a value field has focus, Undo, Redo, Cut, Copy, Paste and Select › Select All act on it, and Undo and Redo read Undo and Redo alone. Otherwise Undo and Redo name the step as History names it ("Undo Exposure · Sky") and read Undo, disabled, when there is none; Select All selects the photos once photos can be selected ([Select](#select)); and Cut, Copy and Paste are disabled, since copying an edit is Copy Edit's, with its own keys, so Ctrl+C never has two meanings.
 - **What the edit's items act on** (decision 37): Copy Edit copies the active photo's edit; Apply Edit and Copy or Apply Parts… apply to every selected photo, one batch that one Undo takes back; Reset Edit resets the active photo alone.
 - **Reset Edit and Discard History…** (decision 78; [history.md](history.md#what-makes-a-step)): Reset Edit, like the Toolbar's Reset and the History header's ↺, is one step that resets the edit, holding every tool it reset, the log kept. Discard History…, built with the library's step 9.8, is darktable's discard: it clears the history and resets the edit, asking first with Don't ask again (darktable's `ask_before_discard`, kept as `history.ask_before_discard`), and is undone within the session. Where the host shows no alert yet, on Windows ([Dialogs and alerts](#still-to-build)), it is drawn disabled wherever it would ask, its tooltip saying why and that turning the setting off discards without asking, as Export's On conflict › Overwrite is; with the setting off on an edit that reads whole it runs. It is in Edit and the History section's ⋯ options menu, never a button in the History header nor in the photo's right-click menu, and it is the one history command an edit view-only because part of its history cannot be read allows.
 - **What counts as edited,** for Reset Edit, the Toolbar's Reset and the grid cell's pencil: values off their defaults, and kept or Auto marks. Reset clears the marks too, and a photo with only marks shows the pencil. Planned: today only values count, so a kept mark alone leaves Reset unavailable.
 - macOS adds AutoFill, Start Dictation… and Emoji & Symbols at the end; they stay, since Dictation is an input method some people need.
+
+#### Select
+
+The selection's items, a menu of their own named after darktable's select tool, so Edit holds what changes the photo's edit.
+
+| Item | Action | Keys | Now |
+| --- | --- | --- | --- |
+| Select All | `select-all` | Ctrl+A, darktable's | Built: a focused field's text; else every photo of the folder open, the active photo staying (`All`) |
+| Select None | `select-none` | Ctrl+Shift+A, darktable's | Built: no photo, the active one closed and none opened (`Clear`) |
+| Invert Selection | `invert-selection` | Ctrl+Shift+I, since darktable's Ctrl+I is Import's | Built: the folder's photos not selected (`Invert`) |
+| Select Unedited | `select-unedited` | None, as darktable's select untouched has none | Built: the folder's photos with no edit, as their cells' pencils say (`Unedited`) |
+| — | | | |
+| Previous Selection | `previous-selection` | Ctrl+Shift+D (decision 90) | Declared; Phase 3, with selecting several photos |
+
+- **Select All follows focus,** as Edit's editing items do (decision 39): while a value field has focus it selects the field's text. The Mac's item keeps Cmd+A, and Windows and Linux leave Ctrl+A to the field; chosen from the Mac's bar or from the ☰ opened by F10, it hands the field that key (`menus::edits_the_field`, `actions::field_keys`). Otherwise it selects the photos. The ☰ opened by a click remembering the field is planned ([Who owns the keys](#who-owns-the-keys)).
+- **The selection's items** are darktable's select all, select none, invert selection and select untouched, the session's commands (decision 37), each disabled where it would change nothing: Select All with every photo selected, Select None with none selected, Invert Selection with no folder of photos open, Select Unedited with every photo edited. Select None is disabled with the active photo alone too, where it would only close it, which is File › Close's. Select None leaves no active photo. Invert Selection always leaves the active photo out, and Select Unedited where it has an edit: it closes, and once the session tells the new selection its first photo in the Browser's order opens, or none where nothing is selected.
+- **Previous Selection** (decision 90) goes back one level, to the selection as it was before its last change, with its active photo: the way back from a stray click that drops a large selection, beyond darktable. One level only. It is disabled while there is no earlier selection, and it is no history step; the earlier selection is the session's, as the selection is (decision 37). Declared now, drawn disabled until Phase 3.
 
 #### Photo
 
@@ -908,7 +919,7 @@ A dialog of Apertrust's own on every platform (decision 39): a modal over a scri
 
 ### Windows and Linux
 
-The menus open from one menu button, ☰, at the very start of the Toolbar, before the mark (decision 39; the Toolbar is the window's title bar). It opens one menu whose items are the menus, **File, Edit, Photo, Layer (from Phase 4), View, Help**, each a submenu, with the access keys &File, &Edit, &Photo, &Layer, &View and &Help in English: Alt with one opens the menu with that submenu expanded. There are no titles. Built on Windows and Linux, ☰ and F10 opening it, but for Windows' Alt pressed and released alone ([The ☰ on Windows and Linux](#the--on-windows-and-linux)). Each menu holds what macOS's does, except:
+The menus open from one menu button, ☰, at the very start of the Toolbar, before the mark (decision 39; the Toolbar is the window's title bar). It opens one menu whose items are the menus, **File, Edit, Select, Photo, Layer (from Phase 4), View, Help**, each a submenu, with the access keys &File, &Edit, &Select, &Photo, &Layer, &View and &Help in English: Alt with one opens the menu with that submenu expanded. There are no titles. Built on Windows and Linux, ☰ and F10 opening it, but for Windows' Alt pressed and released alone ([The ☰ on Windows and Linux](#the--on-windows-and-linux)). Each menu holds what macOS's does, except:
 
 | | macOS | Windows | Linux |
 | --- | --- | --- | --- |
@@ -997,7 +1008,7 @@ Tab closes an open menu, giving the focus back. The focus is on the chosen item,
 
 #### Translation
 
-- **The top-level menus' names** are messages of their own, each with its `&`, never shown, and `&&` an ampersand that is: `menu-file`, `menu-edit`, `menu-photo`, `menu-layer`, `menu-view`, `menu-window`, `menu-help`. Submenus need none: `menu-open-recent`, `menu-auto`, `menu-rating`, `menu-colour-label`, `menu-new-layer`, `menu-tools-panel-tab`, `menu-workspace`, `menu-panels`, `menu-interface-size`, `menu-sort-by`, `menu-thumbnail-size` and `menu-background`. The items macOS performs but Apertrust names are messages too: `menu-services`, `menu-hide-app`, `menu-hide-others`, `menu-show-all`, `menu-minimise`, `menu-zoom-window` and `menu-bring-all-to-front`.
+- **The top-level menus' names** are messages of their own, each with its `&`, never shown, and `&&` an ampersand that is: `menu-file`, `menu-edit`, `menu-select`, `menu-photo`, `menu-layer`, `menu-view`, `menu-window`, `menu-help`. Submenus need none: `menu-open-recent`, `menu-auto`, `menu-rating`, `menu-colour-label`, `menu-new-layer`, `menu-tools-panel-tab`, `menu-workspace`, `menu-panels`, `menu-interface-size`, `menu-sort-by`, `menu-thumbnail-size` and `menu-background`. The items macOS performs but Apertrust names are messages too: `menu-services`, `menu-hide-app`, `menu-hide-others`, `menu-show-all`, `menu-minimise`, `menu-zoom-window` and `menu-bring-all-to-front`.
 - **An item that runs an action** reads the action's message (`action-<id>`), with attributes where a menu says it differently: `.menu`, the menu's words; `.mac` where macOS's differ; `.windows` where Windows' differ from Linux's. A missing attribute falls back to the next, then to the message, so translators keep one message per action in step. Undo and Redo use `menu-undo-step` and `menu-redo-step`, with `$step`. Auto's items are the tools' titles, and its action's name for the keyboard map is `action-auto`, "Auto: { $tool }", which no language has to decline.
 
   ```ftl
@@ -1014,7 +1025,7 @@ Tab closes an open menu, giving the focus back. The focus is on the chosen item,
   - Ukrainian's are Cyrillic, and Alt with the key that types the letter on the current layout opens the ☰'s menu at that menu (egui reports a Cyrillic key as its physical key, so the app recovers the letter).
   - A Polish access key is a letter typed without AltGr, never ą, ć, ę, ł, ń, ó, ś, ź or ż.
   - Items inside have none; the type-ahead works on their words.
-  - Built: &File, &Edit, &Photo, &View, &Window and &Help; &Файл, &Редагування, &Знімок, &Перегляд, &Вікно and &Довідка; &Plik, &Edycja, &Zdjęcie, &Widok, &Okno and Po&moc, since Plik has P.
+  - Built: &File, &Edit, &Select, &Photo, &View, &Window and &Help; &Файл, &Редагування, В&ибір, &Знімок, &Перегляд, &Вікно and &Довідка, since Вікно has В; &Plik, &Edycja, Z&aznaczenie, &Zdjęcie, &Widok, &Okno and Po&moc, since Zdjęcie has Z and Plik P.
   - Tests fail when a top-level menu has no access key, when two share one in any language, Window's included, when one needs AltGr in Polish, or when a translation lacks an attribute English has; `crates/ui/locales/README.md` tells translators.
 - **The ☰'s name** for screen readers and its tooltip, with F10 beside it: Menu, the message `toolbar-menu`, beside ⋯'s `toolbar-more`; Меню in Ukrainian and Menu in Polish.
 - **Switching the language** renames the menus at once (decision 39). macOS writes its own items (Services' contents, Dictation, Emoji & Symbols, the tiling items, the Help search) in the language it picks for the app from those the bundle declares, en-GB, uk and pl (`CFBundleLocalizations` in `packaging/macos/Info.plist`). When the user chooses a language in Settings, Apertrust also sets its own `AppleLanguages`, so macOS's items match from the next start; until then they may differ.
@@ -1024,6 +1035,7 @@ Tab closes an open menu, giving the focus back. The focus is on the chosen item,
   | --- | --- | --- | --- |
   | File | File | Файл | Plik |
   | Edit | Edit | Редагування | Edycja |
+  | Select | Select | Вибір, as Select All's Вибрати все says it | Zaznaczenie, as Select All's Zaznacz wszystko says it |
   | Photo | Photo | Знімок, as the interface says photo | Zdjęcie |
   | Layer | Layer | Шар | Warstwa |
   | View | View | Перегляд, macOS's word; Windows says Вигляд | Widok |
@@ -1043,11 +1055,12 @@ Keep each slice to what exists.
 | Built in step 9c | Open Recent with Clear Menu, and Close, on the Mac's bar and in the ☰ |
 | Built in the library's step 9.4 | Undo and Redo, naming the step, on the Mac's bar and in the ☰ |
 | Built with selecting several photos | Select All, for a value field and for the photos, Select None, Invert Selection and Select Unedited, on the Mac's bar and in the ☰ |
+| Built with the Select menu | Select, between Edit and Photo, holding those four items, moved from Edit, then Previous Selection, declared and drawn disabled; Invert Selection on Ctrl+Shift+I |
 | Built with moving through the selection | Next Photo and Previous Photo, on the Mac's bar and in the ☰ |
 | Later in Phase 2 | Show in Folder, with folder mode; Search Photos, Sort By and Thumbnail Size, with the browser bar (step 9); the zoom items, with the scale's zoom; Clipping Warnings, with the overlays (step 8) |
 | Built in decision 96's step 2 | View › Workspace with its workspaces, on the Mac's bar and in the ☰ |
 | Phase 2, decision 96's steps | Reset Workspace (step 5) |
-| Phase 3 | Save as, Rename and Delete Workspace, with the visual editor for workspaces; Sort By › Rating; Export on Windows and Linux; Copy Edit, Apply Edit, Copy or Apply Parts; Save Edit as Style; Before and After; Show All Selected; Rotate and Flip; Panels › Tools Panel and the side; Rotate and perspective's Auto; Rating and Colour Label, with the caption's controls; Import, a sheet, by copy in folder mode, with step 20a (decisions 46 and 85) |
+| Phase 3 | Save as, Rename and Delete Workspace, with the visual editor for workspaces; Sort By › Rating; Export on Windows and Linux; Copy Edit, Apply Edit, Copy or Apply Parts; Save Edit as Style; Previous Selection; Before and After; Show All Selected; Rotate and Flip; Panels › Tools Panel and the side; Rotate and perspective's Auto; Rating and Colour Label, with the caption's controls; Import, a sheet, by copy in folder mode, with step 20a (decisions 46 and 85) |
 | Phase 2, decision 98's step 3 | Help › Keyboard Shortcuts, opening Settings at Shortcuts |
 | Phase 3, decision 98's steps 7 and 9 | Help › Map Shortcuts and Help › Shortcuts Overview |
 | Phase 4 | The Layer menu |
@@ -1828,7 +1841,7 @@ It scrolls with the tool, never pinned. The Summary is a group after Multi-prese
 
 - **The wheel:** only a focused export row takes it, never another under the pointer, by the setting's rule: while the wheel scrolls the Tools panel, Option+scroll (Ctrl+scroll on Windows and Linux) over the focused row, otherwise a plain scroll there too ([The scroll wheel over a row](#the-scroll-wheel-over-a-row)).
 - **Stale settings:** the Summary sits over the button, open at first, its first row the preset in use; Ctrl+E reveals the tool rather than exporting; Storage options and Format options never close, and a closed collapsible group shows the dot of a setting off its default; the settings are taken as Export is pressed.
-- **A stray click dropping the selection:** the count is in the button, the viewer bar says "12 selected", and Edit › Previous Selection takes the selection back one level ([Edit](#edit)).
+- **A stray click dropping the selection:** the count is in the button, the viewer bar says "12 selected", and Select › Previous Selection, planned with Phase 3's selection, takes the selection back one level ([Select](#select)).
 
 ### darktable's controls and where they live
 
@@ -2584,7 +2597,7 @@ With several photos selected, the rating, reject and label keys, Apply Edit and 
   - → and Space, ← and Backspace: with several selected, the active photo moves through the selection in the Browser's sort, which stays; with one, to the next or previous photo of the folder or album, selected alone; at either end they stop, Next Photo or Previous Photo disabled, and with no active photo they open the first or the last (built for a folder);
   - Shift with the arrows extends the selection in the Browser;
   - Ctrl+Space (Cmd+Space or Control+Space on a Mac, since Spotlight holds Cmd+Space) adds the focused cell's photo, the active photo staying, or removes it, as Ctrl-click does;
-  - Ctrl+A selects every photo the folder or album shows, Ctrl+Shift+A none, which leaves no active photo; Edit › Invert Selection and Select Unedited have no key by default ([The menu bar](#edit); built);
+  - Ctrl+A selects every photo the folder or album shows, Ctrl+Shift+A none, which leaves no active photo; Select › Invert Selection is Ctrl+Shift+I, and Select Unedited has no key by default ([The menu bar](#select); built);
   - with the Browser focused, it keeps its arrows, Home, End, Space and Enter, as a focused control does.
 - **Screen readers:** the Browser's thumbnails are a list that allows several to be selected (built). Each item is named by its file name, its rating, labels and whether it is edited in its description ("IMG_2041.ARW"; "3 stars, red label, edited"; [The cell](#the-cell)), reports whether it is selected, and the active photo is the current one. A cell in Photo is named the same way.
 - **When:** selecting several in the Browser is built; Photo's cells and the batch actions arrive in Phase 3, with the ratings.
@@ -4251,8 +4264,9 @@ Ctrl means Cmd on macOS.
 | View | Find a tool (`find-tool`), the Tools panel's search | Ctrl+Shift+F, from a value field too, which does not keep it | Built, decision 96's step 6: in ⋮, and in the tab bar's menu with step 5 ([Finding a tool](#finding-a-tool)) |
 | View | Search the Browser by file name | Ctrl+F, from a value field too, which does not keep it; unassigned until it is built (decision 96) | Planned: View › Search Photos… alone ([The browser bar](#the-browser-bar)) |
 | View | The Browser's sort and its direction; the thumbnails' size; their captions; the panel's position | None by default: the browser bar's Sort and Zoom, its options menu's Show Labels and Position, and View's items; Ctrl+= and Ctrl+− stay the photo's | Phase 2, with the browser bar; Sort by Rating in Phase 3 |
-| View | Select every photo, or none | Ctrl+A, Ctrl+Shift+A | Built: Edit's Select All and Select None; Ctrl+A is a focused field's own |
-| View | Invert the selection; select the photos with no edit | None by default: darktable's Ctrl+I is Import's | Built: Edit's Invert Selection and Select Unedited |
+| View | Select every photo, or none | Ctrl+A, Ctrl+Shift+A | Built: Select's Select All and Select None; Ctrl+A is a focused field's own |
+| View | Invert the selection | Ctrl+Shift+I, since darktable's Ctrl+I is Import's | Built: Select's Invert Selection |
+| View | Select the photos with no edit | None, as darktable's select untouched has none | Built: Select's Select Unedited |
 | View | Previous Selection | Ctrl+Shift+D (decision 90) | Phase 3, with selecting several photos. darktable gives this key to "duplicate virgin", New Virtual Copy from Original here, which gets another key when virtual copies are designed |
 | View | Rate the selected photos: no stars, or 1 to 5 | 0 to 5, on the number row and the keypad, as darktable's | Not built: Phase 3, with ratings ([the caption](#the-caption-under-the-photo)); on every selected photo (decision 37) |
 | View | Reject, or clear it | X | Not built, as above |

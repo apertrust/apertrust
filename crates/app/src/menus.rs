@@ -298,7 +298,7 @@ static BROWSER_POSITION: Menu = Menu {
 
 /// The menus as `docs/gui.md` (The tree) places them, macOS first, with only the actions
 /// the registry declares; the few it declares that no menu holds are the tests' `LEFT_OUT`.
-pub static MENUS: [Menu; 7] = [
+pub static MENUS: [Menu; 8] = [
     // The app menu, macOS only.
     Menu {
         title: "app-name",
@@ -346,14 +346,9 @@ pub static MENUS: [Menu; 7] = [
         role: Role::Plain,
         on: Platforms::All,
         groups: &[
+            // Cut, Copy and Paste are to follow as a group of their own.
             &[item(ActionId::UNDO), item(ActionId::REDO)],
-            // The selection's (decision 37), where Cut, Copy and Paste are to join them.
-            &[
-                item(ActionId::SELECT_ALL),
-                item(ActionId::SELECT_NONE),
-                item(ActionId::INVERT_SELECTION),
-                item(ActionId::SELECT_UNEDITED),
-            ],
+            // Save Edit as Style is to join them.
             &[
                 item(ActionId::COPY_EDIT),
                 item(ActionId::APPLY_EDIT),
@@ -361,6 +356,22 @@ pub static MENUS: [Menu; 7] = [
             ],
             &[item(ActionId::RESET), item(ActionId::DISCARD_HISTORY)],
             &[Entry::Action(ActionId::SETTINGS, Platforms::NotMac)],
+        ],
+    },
+    // The selection's (decision 37), darktable's select tool. Select All is an editing
+    // item all the same, acting on a focused text field ([`edits_the_field`]).
+    Menu {
+        title: "menu-select",
+        role: Role::Plain,
+        on: Platforms::All,
+        groups: &[
+            &[
+                item(ActionId::SELECT_ALL),
+                item(ActionId::SELECT_NONE),
+                item(ActionId::INVERT_SELECTION),
+                item(ActionId::SELECT_UNEDITED),
+            ],
+            &[item(ActionId::PREVIOUS_SELECTION)],
         ],
     },
     Menu {
@@ -2261,6 +2272,7 @@ mod tests {
                 "app-name",
                 "menu-file",
                 "menu-edit",
+                "menu-select",
                 "menu-photo",
                 "menu-view",
                 "menu-window",
@@ -2273,6 +2285,7 @@ mod tests {
                 [
                     "menu-file",
                     "menu-edit",
+                    "menu-select",
                     "menu-photo",
                     "menu-view",
                     "menu-help"
@@ -2639,6 +2652,7 @@ mod tests {
             [
                 ("menu-file", "&File"),
                 ("menu-edit", "&Edit"),
+                ("menu-select", "&Select"),
                 ("menu-photo", "&Photo"),
                 ("menu-view", "&View"),
                 ("menu-help", "&Help"),
@@ -2716,6 +2730,106 @@ mod tests {
         assert!(!next.enabled);
     }
 
+    /// Select, between Edit and Photo on every platform, holds the selection's items, a
+    /// line, then Previous Selection, with their keys and enabled states as the registry
+    /// has them; Edit holds none of them.
+    #[test]
+    fn select_holds_the_selection_s_items_between_edit_and_photo() {
+        const SELECTION: [ActionId; 4] = [
+            ActionId::SELECT_ALL,
+            ActionId::SELECT_NONE,
+            ActionId::INVERT_SELECTION,
+            ActionId::SELECT_UNEDITED,
+        ];
+        for os in PLATFORMS {
+            let titles: Vec<&str> = menus(os).map(|m| m.title).collect();
+            let at = |title| titles.iter().position(|t| *t == title);
+            let select = at("menu-select").expect("Select");
+            assert_eq!(at("menu-edit"), Some(select - 1), "{os:?}");
+            assert_eq!(at("menu-photo"), Some(select + 1), "{os:?}");
+            let menu = menus(os).find(|m| m.title == "menu-select").expect("there");
+            let groups: Vec<Vec<ActionId>> = groups(menu, os)
+                .iter()
+                .map(|group| {
+                    (group.iter())
+                        .map(|entry| match entry {
+                            Entry::Action(id, _) => *id,
+                            _ => panic!("{os:?}: Select holds actions alone"),
+                        })
+                        .collect()
+                })
+                .collect();
+            assert_eq!(
+                groups,
+                [SELECTION.to_vec(), vec![ActionId::PREVIOUS_SELECTION]],
+                "{os:?}"
+            );
+            let edit = menus(os).find(|m| m.title == "menu-edit").expect("Edit");
+            let mut in_edit = Vec::new();
+            placed_in(edit, os, &mut in_edit);
+            assert!(
+                (SELECTION.iter().chain([&ActionId::PREVIOUS_SELECTION]))
+                    .all(|id| !in_edit.contains(id)),
+                "{os:?}: {in_edit:?}"
+            );
+        }
+        // The Mac's: the registry's keys and enabled states, Previous Selection disabled
+        // until Phase 3.
+        let mac = Keymap::defaults(OperatingSystem::Mac);
+        let state = everything();
+        let shift = Modifiers::COMMAND.plus(Modifiers::SHIFT);
+        let key = |modifiers, key| Some(Shortcut { modifiers, key });
+        let mac_items = [
+            (ActionId::SELECT_ALL, key(Modifiers::COMMAND, Key::A), true),
+            (ActionId::SELECT_NONE, key(shift, Key::A), true),
+            (ActionId::INVERT_SELECTION, key(shift, Key::I), true),
+            (ActionId::SELECT_UNEDITED, None, true),
+            (ActionId::PREVIOUS_SELECTION, key(shift, Key::D), false),
+        ];
+        for (id, key, enabled) in mac_items {
+            let shown = shown(id, &mac, &state, Focus::None);
+            assert_eq!(shown, Shown { enabled, key }, "{}", id.0);
+        }
+        // The ☰'s: Select, third, its items and line as the Mac's, its keys spelt as Linux
+        // spells them; each item disabled where it would change nothing.
+        let rests = State {
+            select: actions::Selectable::default(),
+            ..everything()
+        };
+        for (state, built) in [(everything(), true), (rests, false)] {
+            let menu = drawn_menu(Locale::EnGb, &state);
+            let select = tops(&menu)[2];
+            assert_eq!(
+                (select.id.as_str(), select.text.as_str()),
+                ("menu-select", "&Select")
+            );
+            let line = |e: &popup::Entry| -> (String, Option<String>, bool) {
+                match e {
+                    popup::Entry::Item(item) => {
+                        (item.text.clone(), item.shortcut.clone(), item.enabled)
+                    }
+                    popup::Entry::Separator => ("—".to_owned(), None, false),
+                    popup::Entry::Submenu(s) => panic!("a submenu in Select: {}", s.id),
+                }
+            };
+            let lines: Vec<_> = select.entries.iter().map(line).collect();
+            let at = |text: &str, key: Option<&str>, enabled| {
+                (text.to_owned(), key.map(str::to_owned), enabled)
+            };
+            assert_eq!(
+                lines,
+                [
+                    at("Select all", Some("Ctrl+A"), built),
+                    at("Select none", Some("Ctrl+Shift+A"), built),
+                    at("Invert selection", Some("Ctrl+Shift+I"), built),
+                    at("Select unedited", None, built),
+                    at("—", None, false),
+                    at("Previous selection", Some("Ctrl+Shift+D"), false),
+                ]
+            );
+        }
+    }
+
     #[test]
     fn each_top_level_menu_has_an_access_key_of_its_own_in_every_language() {
         let state = everything();
@@ -2747,6 +2861,17 @@ mod tests {
             drawn_menu(Locale::Pl, &state).access_key('M'),
             Some("menu-help")
         );
+        // Select's: S in English, и in Ukrainian (В being Window's), a in Polish (Z being
+        // Photo's).
+        for (locale, key) in [
+            (Locale::EnGb, 's'),
+            (Locale::EnUs, 's'),
+            (Locale::Uk, 'и'),
+            (Locale::Pl, 'a'),
+        ] {
+            let menu = drawn_menu(locale, &state);
+            assert_eq!(menu.access_key(key), Some("menu-select"), "{}", locale.id());
+        }
         // The file's word as a term has no `&`: only the menu's title carries it.
         let en = Translator::new(Locale::EnGb);
         assert_eq!(en.text("menu-file"), "&File");

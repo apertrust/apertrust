@@ -20,6 +20,7 @@ action-select-all = Zaznacz wszystko
 action-select-none = Odznacz wszystko
 action-invert-selection = Odwróć zaznaczenie
 action-select-unedited = Zaznacz nieedytowane
+action-previous-selection = Poprzednie zaznaczenie
 action-settings = Ustawienia
 status-saved = Zapisano
 
@@ -802,6 +803,8 @@ key-space = Spacja
 -file-menu = Plik
 menu-file = &{ -file-menu }
 menu-edit = &Edycja
+# Z is Zdjęcie's.
+menu-select = Z&aznaczenie
 menu-photo = &Zdjęcie
 menu-view = &Widok
 menu-window = &Okno

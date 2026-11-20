@@ -32,7 +32,7 @@
 //! reads what the last one did. Photos opened alone are no collection of the session's, so
 //! there a click opens the photo and Ctrl and Shift-click do nothing.
 //!
-//! Edit's selection items run here too ([`edit`]): Select All, Select None, Invert
+//! The Select menu's items run here too ([`edit`]): Select All, Select None, Invert
 //! Selection and Select Unedited, each drawn disabled where it would change nothing
 //! ([`selectable`]). So do Next Photo and Previous Photo ([`step`]): with several photos
 //! selected, the active photo moves through them in the Browser's order, the selection
@@ -128,7 +128,7 @@ pub(crate) fn open_for_menu(
     }
 }
 
-/// Runs one of Edit's selection items, `command` (`All`, `Clear`, `Invert` or `Unedited`),
+/// Runs one of the Select menu's items, `command` (`All`, `Clear`, `Invert` or `Unedited`),
 /// as the session will (decision 37): Select All keeps the active photo; Select None
 /// closes it, as File › Close does, and opens none; Invert Selection closes it, and Select
 /// Unedited where it has an edit, as its cell's pencil says. Where those two close it,
@@ -202,7 +202,7 @@ pub(crate) fn open_first(
     }
 }
 
-/// What Edit's selection items would change, as the mirror shows the selection and the
+/// What the Select menu's items would change, as the mirror shows the selection and the
 /// folder's photos: nothing to select, or to take out, without a folder open. Worked out
 /// for each frame's actions, so the folder's photos are looked up one by one only while
 /// as many are selected.
@@ -699,7 +699,7 @@ mod tests {
         assert_eq!(f.browse_in(open, true), [Command::Open(at("b"))]);
     }
 
-    /// Each of Edit's selection items sends its command; Select All keeps the active photo.
+    /// Each of the Select menu's items sends its command; Select All keeps the active photo.
     #[test]
     fn edit_s_selection_items_send_their_commands() {
         for command in [

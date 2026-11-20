@@ -20,6 +20,7 @@ action-select-all = Вибрати все
 action-select-none = Зняти вибір
 action-invert-selection = Інвертувати вибір
 action-select-unedited = Вибрати необроблені
+action-previous-selection = Попередній вибір
 action-settings = Налаштування
 status-saved = Збережено
 
@@ -800,6 +801,8 @@ key-space = Пробіл
 -file-menu = Файл
 menu-file = &{ -file-menu }
 menu-edit = &Редагування
+# В is Вікно's.
+menu-select = В&ибір
 menu-photo = &Знімок
 menu-view = &Перегляд
 menu-window = &Вікно

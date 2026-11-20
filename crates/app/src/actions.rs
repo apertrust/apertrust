@@ -101,13 +101,16 @@ impl ActionId {
     pub const COPY_EDIT: ActionId = ActionId("copy-edit");
     pub const APPLY_EDIT: ActionId = ActionId("apply-edit");
     pub const COPY_APPLY_PARTS: ActionId = ActionId("copy-apply-parts");
-    /// Edit's selection items, darktable's select all, select none, invert selection and
+    /// The Select menu's items, darktable's select all, select none, invert selection and
     /// select untouched: the session's `SelectionCommand`s `All`, `Clear`, `Invert` and
     /// `Unedited` (decision 37; `selection::edit`).
     pub const SELECT_ALL: ActionId = ActionId("select-all");
     pub const SELECT_NONE: ActionId = ActionId("select-none");
     pub const INVERT_SELECTION: ActionId = ActionId("invert-selection");
     pub const SELECT_UNEDITED: ActionId = ActionId("select-unedited");
+    /// Select › Previous Selection: the selection as it was before its last change, one
+    /// level back (decision 90); drawn disabled until Phase 3.
+    pub const PREVIOUS_SELECTION: ActionId = ActionId("previous-selection");
     pub const EDIT_VIEW: ActionId = ActionId("view-edit");
     /// View › Collections: the first tab holding Collections.
     pub const SHOW_COLLECTIONS: ActionId = ActionId("show-collections");
@@ -421,7 +424,7 @@ pub struct State {
     /// Whether a text field of the main window has the focus: Undo and Redo act on it, as
     /// the Mac's Edit menu does (decision 39), whatever the photo's history holds.
     pub text: bool,
-    /// What Edit's selection items would change, from the mirror (`selection::selectable`).
+    /// What the Select menu's items would change, from the mirror (`selection::selectable`).
     pub select: Selectable,
     /// Whether Next Photo, and Previous Photo, have a photo to go to (`selection::stepped`).
     pub next: bool,
@@ -482,7 +485,7 @@ pub struct State {
     pub background: Option<Background>,
 }
 
-/// Whether each of Edit's selection items would change the selection
+/// Whether each of the Select menu's items would change the selection
 /// ([`State::select`]); one that would not is drawn disabled.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Selectable {
@@ -787,7 +790,7 @@ const fn to_tab<const I: usize>(message: &'static str) -> Action {
 
 /// Every action, in the order a keyboard map lists them (`docs/gui.md`, The default
 /// keyboard map). Slider keys are not here: they are the slider's own (`SliderRow`).
-pub static ACTIONS: [Action; 106] = [
+pub static ACTIONS: [Action; 107] = [
     // The Toolbar's mark, and About Apertrust in the menus once they come.
     Action {
         id: ActionId::ABOUT,
@@ -1004,12 +1007,12 @@ pub static ACTIONS: [Action; 106] = [
         available: |s| s.select.none && on_main_window(s) && !s.modal,
         emits: Emit::Command(Command::Selection(SelectionCommand::Clear)),
     },
-    // No key by default: darktable's Ctrl+I (`src/libs/select.c:150-151`) is Import's here
-    // (`docs/gui.md`, File).
+    // Ctrl+Shift+I, since darktable's Ctrl+I (`src/libs/select.c:150-151`) is Import's here
+    // (`docs/gui.md`, File), as is its copy & import's Ctrl+Shift+I.
     Action {
         id: ActionId::INVERT_SELECTION,
         message: "action-invert-selection",
-        keys: &[],
+        keys: &[command_shift(Key::I)],
         scope: Scope::App,
         trigger: Trigger::Press,
         available: |s| s.select.invert && on_main_window(s) && !s.modal,
@@ -1024,6 +1027,17 @@ pub static ACTIONS: [Action; 106] = [
         trigger: Trigger::Press,
         available: |s| s.select.unedited && on_main_window(s) && !s.modal,
         emits: Emit::Command(Command::Selection(SelectionCommand::Unedited)),
+    },
+    // Ctrl+Shift+D (decision 90), darktable's duplicate virgin's key there; drawn disabled
+    // until Phase 3's selection.
+    Action {
+        id: ActionId::PREVIOUS_SELECTION,
+        message: "action-previous-selection",
+        keys: &[command_shift(Key::D)],
+        scope: Scope::App,
+        trigger: Trigger::Press,
+        available: never,
+        emits: Emit::Later,
     },
     Action {
         id: ActionId::COPY_EDIT,
@@ -2838,10 +2852,10 @@ pub(crate) mod tests {
         }
     }
 
-    /// Edit's selection items send the session's selection commands, each disabled where
+    /// The Select menu's items send the session's selection commands, each disabled where
     /// it would change nothing; Select All also runs for a focused text field, as Undo does.
     #[test]
-    fn edit_s_selection_items_send_their_commands_and_rest_where_they_change_nothing() {
+    fn select_s_items_send_their_commands_and_rest_where_they_change_nothing() {
         let all = everything().select;
         // Each item, its command, and the state in which it alone would change nothing.
         let items = [
@@ -2887,7 +2901,7 @@ pub(crate) mod tests {
             };
             assert!(!item.enabled(&modal), "{}", id.0);
         }
-        // Darktable's keys, but Invert Selection's Ctrl+I, which is Import's.
+        // Darktable's keys, but Invert Selection's Ctrl+I, which is Import's: Ctrl+Shift+I.
         let keymap = Keymap::defaults(OperatingSystem::Nix);
         let keys = |id| keymap.keys(id).to_vec();
         let ctrl = |modifiers, key| Shortcut { modifiers, key };
@@ -2897,8 +2911,13 @@ pub(crate) mod tests {
         );
         let shift = Modifiers::COMMAND.plus(Modifiers::SHIFT);
         assert_eq!(keys(ActionId::SELECT_NONE), [ctrl(shift, Key::A)]);
-        assert!(keys(ActionId::INVERT_SELECTION).is_empty());
+        assert_eq!(keys(ActionId::INVERT_SELECTION), [ctrl(shift, Key::I)]);
         assert!(keys(ActionId::SELECT_UNEDITED).is_empty());
+        // Previous Selection is declared with its key, and waits for Phase 3.
+        let previous = action(ActionId::PREVIOUS_SELECTION).expect("declared");
+        assert_eq!(previous.emits, Emit::Later);
+        assert!(!previous.enabled(&everything()));
+        assert_eq!(keys(ActionId::PREVIOUS_SELECTION), [ctrl(shift, Key::D)]);
     }
 
     /// Next Photo and Previous Photo move the active photo, each disabled with no photo to
