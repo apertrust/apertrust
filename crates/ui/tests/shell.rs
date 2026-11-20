@@ -1425,9 +1425,11 @@ fn the_zoom_is_photographed_in_the_light_theme() {
     photograph_the_zoom(Builtin::Light, "light");
 }
 
+/// The Browser with `count` photos, wide enough to show the first six cells whole, and what
+/// was done to them.
 fn browser(count: usize) -> Harness<'static, Vec<BrowserAction>> {
     Harness::builder()
-        .with_size(egui::vec2(800.0, 200.0))
+        .with_size(egui::vec2(900.0, 200.0))
         .with_context_setup(install)
         .build_ui_state(
             move |ui, actions: &mut Vec<BrowserAction>| {

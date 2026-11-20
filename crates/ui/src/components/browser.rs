@@ -339,13 +339,17 @@ pub struct Browser<'a, F: Fn(usize) -> Thumb<'a>> {
     tally: Option<(usize, usize)>,
 }
 
-/// The space before the first line of cells and after the last, inside the panel, for
-/// their outlines and focus rings.
+/// The space round the cells inside the strip, for their outlines and focus rings: before
+/// the first line of cells and after the last, and at the strip's two ends.
 const TOP: f32 = 8.0;
-/// Between cells: room for the active one's ring and the focus ring.
-pub(super) const GAP: f32 = 8.0;
-/// After the cells: the scroll bar and the room round it.
-const SCROLL_BAR: f32 = 8.0 + 6.0;
+/// Between cells: room for the active one's ring and a selected neighbour's, with the panel
+/// showing between them. A row's cells are this far apart both ways, a column's side by side.
+pub(super) const GAP: f32 = 12.0;
+/// Between cells one above another in a column, so each caption reads as its own picture's.
+const COLUMN_GAP: f32 = 16.0;
+/// The scroll bar's lane at the strip's far edge, after the space round the cells: the bar
+/// alone, with no room round it.
+const SCROLL_BAR: f32 = 8.0;
 
 impl<'a, F: Fn(usize) -> Thumb<'a>> Browser<'a, F> {
     /// `active` is the photo being edited, if it is in the panel.
@@ -555,6 +559,12 @@ impl<'a, F: Fn(usize) -> Thumb<'a>> Browser<'a, F> {
         let mut child = ui.new_child(build);
         // A plain wheel scrolls a row of cells sideways, as it does a column up and down.
         child.style_mut().always_scroll_the_only_direction = true;
+        // The scroll bar in its own lane at the far edge, so the space round the cells is the
+        // same on its side as on the other.
+        let bar = &mut child.spacing_mut().scroll;
+        bar.bar_width = SCROLL_BAR;
+        bar.bar_inner_margin = 0.0;
+        bar.bar_outer_margin = 0.0;
         // The Tools panel's quiet scroll bar, along the strip's far edge while the cells
         // overflow the panel.
         scroll_area(&mut child, &t, |ui| {
@@ -570,11 +580,12 @@ impl<'a, F: Fn(usize) -> Thumb<'a>> Browser<'a, F> {
                         if cleared(ui, seen, background.with("strip")) {
                             action = Some(BrowserAction::ClearSelection);
                         }
-                        // Room round a cell scrolled to, for its rings.
+                        // Room round a cell scrolled to, for its rings: the strip's own at
+                        // either end, so the first and last are never cut.
                         let room = if column {
-                            vec2(0.0, GAP)
+                            vec2(0.0, TOP)
                         } else {
-                            vec2(GAP, 0.0)
+                            vec2(TOP, 0.0)
                         };
                         if changed && let Some(active) = self.active.filter(|a| *a < self.count) {
                             ui.scroll_to_rect(cells.rect(origin, active).expand2(room), None);
@@ -970,16 +981,17 @@ fn empty(ui: &Ui, area: Rect, message: &str, hint: Option<&str>) {
 }
 
 /// The Browser's height with `lines` rows of thumbnails of `size`, their captions counted
-/// while `labels` show: the separator, the cells with room for their rings above and below,
-/// and the scroll bar. The browser bar, a column at its left end, fits beside the cells of
-/// one Small row.
+/// while `labels` show: the separator, the cells with the same room for their rings above
+/// and below, and the scroll bar's lane. The browser bar, a column at its left end, fits
+/// beside the cells of one Small row.
 pub fn browser_height(ctx: &egui::Context, size: ThumbnailSize, labels: bool, lines: usize) -> f32 {
     let t = theme(ctx);
     t.shape.separator_width + lines_across(size.cell(labels).y, lines.max(1)) + SCROLL_BAR
 }
 
 /// The Browser's width at a side with `lines` columns of thumbnails of `size`: the
-/// separator, the cells with room for their rings either side, and the scroll bar.
+/// separator, the cells with the same room for their rings either side, and the scroll
+/// bar's lane.
 pub fn browser_width(ctx: &egui::Context, size: ThumbnailSize, lines: usize) -> f32 {
     theme(ctx).shape.separator_width + lines_across(size.side(), lines.max(1)) + SCROLL_BAR
 }
@@ -1157,22 +1169,29 @@ impl Cells {
         }
     }
 
+    /// Between one cell and the next along the strip: wider down a column, so a caption
+    /// sits nearer its own picture than the next one.
+    fn gap(&self) -> f32 {
+        if self.column { COLUMN_GAP } else { GAP }
+    }
+
     /// From one cell's start to the next's, along the strip and across it.
     fn pitch(&self) -> (f32, f32) {
         let (along, across) = self.extents();
-        (along + GAP, across + GAP)
+        (along + self.gap(), across + GAP)
     }
 
-    /// Before the first line along the strip: a row's area is inset at its ends already,
-    /// a column's top under the browser bar is not.
+    /// Before the first line along the strip and after the last, so the first and last
+    /// cells' rings stay inside it, as across it.
     fn lead(&self) -> f32 {
-        if self.column { TOP } else { 0.0 }
+        TOP
     }
 
-    /// The strip's content: every line along it, and the lines across with room before
-    /// and after.
+    /// The strip's content: every line along it and the lines across, each with room
+    /// before and after.
     fn size(&self) -> egui::Vec2 {
-        let along = self.lead() * 2.0 + self.count.div_ceil(self.lines) as f32 * self.pitch().0;
+        let majors = self.count.div_ceil(self.lines) as f32;
+        let along = self.lead() * 2.0 + majors * self.pitch().0 - self.gap();
         let across = lines_across(self.extents().1, self.lines);
         if self.column {
             vec2(across, along)
