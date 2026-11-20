@@ -13,7 +13,7 @@ Some of what an edit depends on is binary and cannot be recomputed: painted brus
 - **Entries never change.** A changed mask is a new entry; each history step, virtual copy and snapshot names the entries it uses, so undo and snapshots find their masks. Readers ignore entries they do not know, and writers keep them, so an older build never drops what a newer one wrote.
 - **Writes:** the whole zip rewritten through the safe write ([0053](0053-finding-folders-and-photos.md)); a zip that cannot be read to its end is never rewritten, swept or merged from.
 - **Cleanup is darktable's sweep:** an entry goes only when no saved step, virtual copy or snapshot names it, decided once the history is final (the photo left, Compress History), never on reset or undo, and only for kinds a built-in producer registers; the file goes once it is empty.
-- **It follows the `.apxmp` everywhere** ([0047](0047-where-edits-live-and-what-the-sidecar-holds.md)): where it lives, and through Move, Rename, Copy, Delete, import, Import library… and Export as Project…; pasting an edit copies the entries its references need, as darktable's `dt_dtdata_merge`.
+- **It follows the `.apxmp` everywhere** ([0047](0047-where-edits-live-and-what-the-sidecar-holds.md)): where it lives, and through Move to…, Rename, Copy to…, Delete and import; pasting an edit copies the entries its references need, as darktable's `dt_dtdata_merge`.
 - **Two copies combine** by taking every entry either holds, which loses nothing, since entries are named by their bytes ([0052](0052-comparing-two-copies-of-a-sidecar.md)).
 - **Planned:** with the first raster mask, in Phase 4.
 

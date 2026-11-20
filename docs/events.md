@@ -99,7 +99,7 @@ Last, `live` (decision 77): whether the photo is live and commands on the edit a
 
 Jobs with no progress, the export preview among them, send no `Job` events.
 
-Planned events: `Samples`, the stored samples' readings, after the frame they measured (decision 79; [pickers.md](pickers.md#events)); `Readout`, what an operation measured for its tool's panel, after a render whose readout key changed, `None` while the tool's operation is not planned (decision 19; [engine.md](engine.md#readouts)); the library's other events, `CollectionChanged` first ([below](#lower-crates-report-through-an-observer)); each library's cache in `Event::Cache`, with its name, last path and last opening, with the library's step 27 (decision 76); `Notice { message, photo }` for the user ([below](#notices-for-the-user)); and, with several photos, each cell's still (decision 37).
+Planned events: `Samples`, the stored samples' readings, after the frame they measured (decision 79; [pickers.md](pickers.md#events)); `Readout`, what an operation measured for its tool's panel, after a render whose readout key changed, `None` while the tool's operation is not planned (decision 19; [engine.md](engine.md#readouts)); the library's other events, `CollectionChanged` first ([below](#lower-crates-report-through-an-observer)); each kept index in `Event::Cache`, with its folder's name, last path and last opening, with the library's step 23 (decisions 76 and 101); `Notice { message, photo }` for the user ([below](#notices-for-the-user)); and, with several photos, each cell's still (decision 37).
 
 ## A job's events
 
@@ -182,7 +182,7 @@ Every thread of the session sends through one `Outbox` (`session/outbox.rs`), ea
 - the edit writer;
 - the job control's observer;
 - the job bodies that report themselves: an export's `Export`, a preview's `ExportPreview`, and a folder's reading's `Library`, through the library's observer;
-- later, the library's root queues.
+- later, the library's queues, one per folder tree.
 
 No code in the session keeps a channel or a `wake` of its own.
 
@@ -241,7 +241,7 @@ The others stand alone:
 | Engine | its batch's events, scopes readings and colour picker readings, readouts later, through the outbox | commands, its jobs' GPU tasks and what an open's job read (the inbox) |
 | Edit writer | `Saved`, a failed save | the edits handed to it |
 | Job workers | `Job` events through the control's observer; their bodies' own (an export's `Export`, a preview's `ExportPreview`, a folder's reading's `Library` events, the cache's walk's and Clear's `Cache`, an open's `OpenPreview`) through the outbox | `Context::wait`'s answers, later |
-| Library's threads, a root's queue (decision 53; planned) | `Library` events through its observer | its calls |
+| Library's threads, a folder tree's queue (decision 53; planned) | `Library` events through its observer | its calls |
 | UI | commands | every event, drained in `App::logic` ([gui.md](gui.md#a-frame)) |
 | Server, tokio (later) | each connection's commands | the events, fanned out per connection ([session-protocol.md](session-protocol.md#remote-clients)) |
 

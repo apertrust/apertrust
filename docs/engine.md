@@ -1235,7 +1235,7 @@ The app is one view: its centre shows the active photo or the selected photos si
 - **Kernels for the session's life,** keyed by kernel and entry point across photos, built with the staged open (decision 77) for the live photo, the stills to share them: without them each new pipeline compiles 23 to 25 kernels in 43 to 303 ms on the M4, and WARP the viewport's 24 in 0.9 s on a Ryzen 7 8845HS (decision 80).
 - **One budget for the session** ([Caching](#caching)). The cells' stills are RGBA f32, exact, at most the centre's area together, 61 MB at 2400×1600; thumbnails kept by `apertrust-library` may be half floats or 8 bits.
 - **How many cells:** the limit is the time to fill them, 2 to 4 stills a second from Bayer raws and 1.5 to 2 from X-Trans on the M4, 12 cells in 3 to 8 s cold and none from cached stills.
-- **The library's commands** (choose a folder or album, select, activate, ratings on photos by id), `LibraryCommand` and `LibraryEvent` (decision 54), go through the same session. It serves them from `apertrust-library`, the long ones as jobs of its control on darktable's queues: a folder's reading `UserBackground` and thumbnails `SystemForeground`, each call into a root on that root's queue (decisions 53 and 57). Events add the folder's or album's photos, sent in chunks as a slow folder is scanned, and each cell's still. In process a still is a display buffer, as a frame is; a remote client receives an encoded image.
+- **The library's commands** (choose a folder or album, select, activate, ratings on photos by id), `LibraryCommand` and `LibraryEvent` (decision 54), go through the same session. It serves them from `apertrust-library`, the long ones as jobs of its control on darktable's queues: a folder's reading `UserBackground` and thumbnails `SystemForeground`, each call into a folder tree on its queue (decisions 53 and 57). Events add the folder's or album's photos, sent in chunks as a slow folder is scanned, and each cell's still. In process a still is a display buffer, as a frame is; a remote client receives an encoded image.
 - **Before a still's render,** a cell shows the photo's rendered thumbnail where the cache holds one, else the camera's embedded picture, else its file name (decision 77). On a software GPU background stills are off if the same-machine comparison confirms they take too long ([Software GPUs](#software-gpus)).
 - **Still open:** the stills' display colour when the window moves to another screen ([Open questions](#open-questions)).
 
@@ -1258,7 +1258,7 @@ Behind a `jobs` feature, as `log`, `build`, `folders` and `codegen` are, turned 
   | --- | --- | --- | --- | --- |
   | `UserForeground` | `DT_JOB_QUEUE_USER_FG` | the user's actions: import, move, copy, rename, delete, Apply edit, styles, virtual copies; an export's preview lines | 4 | FIFO |
   | `SystemForeground` | `DT_JOB_QUEUE_SYSTEM_FG` | thumbnails and stills of what is on screen | 4 | a stack of 30, deduplicated |
-  | `UserBackground` | `DT_JOB_QUEUE_USER_BG` | a folder's listing and index, Rebuild Cache, clearing the cache (decision 76); later AI batches and tethering | 0 | FIFO |
+  | `UserBackground` | `DT_JOB_QUEUE_USER_BG` | a folder's listing and index, Rebuild Index, clearing the cache (decision 76); later AI batches and tethering | 0 | FIFO |
   | `UserExport` | `DT_JOB_QUEUE_USER_EXPORT` | export; later print | 0 | FIFO, one running at a time |
   | `SystemBackground` | `DT_JOB_QUEUE_SYSTEM_BG` | the thumbnail crawler, rescans, conflict copies, the cache's walk and eviction (decision 76); later scripts' storage | 0 | FIFO |
 
@@ -1270,7 +1270,7 @@ Behind a `jobs` feature, as `log`, `build`, `folders` and `codegen` are, turned 
 - **`Context`,** what the body is handed: `cancelled()`, darktable's `_job_cancelled`; everything its row shows (decision 72), each a no-op for a job without a progress:
   - `set_progress(done, total)`, darktable's `dt_control_job_set_progress` as items done of an optional total (J18); `set_title(Message)`, its `dt_control_job_set_progress_message`; `set_detail(Option<Message>)`, `None` clearing the line; `set_destination(Destination)`; each through the throttle;
   - `set_outcome(Message)`, the last set kept, and `offer(Offer)`, each offer kept in order, both held until `Ended`;
-  - `wait(&Receiver<T>) -> Result<T, Interrupted>`, which waits for another thread's answer and returns at cancel, or when the other side hangs up: the engine's GPU steps, a root's queue (decision 53).
+  - `wait(&Receiver<T>) -> Result<T, Interrupted>`, which waits for another thread's answer and returns at cancel, or when the other side hangs up: the engine's GPU steps, a folder tree's queue (decision 53).
 - **The body** returns `Ok(())` or `Err(Failure)`: `Failure { cause, item, file, reason }`, its cause a code, the item it failed on, the file it could not write and the error in plain words. A panic in it is caught and ends the job as failed, cause `panicked` (`Failure::PANICKED`), its text the reason. What it produced for a script travels in its caller's own events (an export's files, a listing's chunks), as darktable's jobs raise signals.
 - **`Message`:** an id and named arguments (numbers, text, paths), which the client translates with Fluent (`job-…`, decision 36); base writes no English.
 - **`JobEvent`,** darktable's proxy (`added`, `updated`, `message_updated`, `cancellable`, `destroyed`) as plain events to the observer, for jobs with a progress, everything a job's row shows (decision 72): `Added` with its `kind`, `queue`, `title`, `cancellable`, `destination`, `detail`, first `progress` (`done` 0, the builder's total) and the job it `retries`; `Progress { done, total }`; `Title`; `Detail`; `Destination`; `State`; and `Ended` with its `state`, `outcome`, `failure`, the time it ended (`at`, the wall clock as the control ends the job) and its `offers`. The fields are in [events.md](events.md#a-jobs-events); `JobEvent::job()` names the job of any.
@@ -2293,10 +2293,10 @@ Decision 43 ([settings.md](settings.md#edits-in-another-user-data-folder)). Read
 
 ### Where edits are kept
 
-Decision 47. Beside the photo by default, as built, or, for a library that keeps its edits in its own folder, in `.apertrust/edits/<root id>/<path>.apxmp` there, mirrored by path, as the root's id file says; never decided by the user data folder.
+Decisions 47 and 101. Beside the photo by default, as built, or, for a folder set to Keep Edits on This Computer (planned, Phase 5), in its folder record's `<user data>/folders/<id>/edits/<path>.apxmp`, the path relative to that folder, the nearest folder above the photo whose record keeps edits here deciding; a record a subfolder has for another reason changes nothing.
 
 - The session is to take the sidecar's path from `apertrust-library` (planned); until then it reads and writes every sidecar beside its photo.
-- Folder mode on a root whose edits a library keeps reads and writes them there, saying so, and opens the photos view-only when that library cannot be found ([library.md](library.md#where-edits-live)).
+- A folder whose edits are kept on this computer has them read and written there, by every Library holding it and in folder mode alike; another user data folder sees none of them ([library.md](library.md#where-edits-live)).
 
 ### What a save may drop
 

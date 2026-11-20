@@ -14,7 +14,7 @@ What Apertrust is building, in the order it is building it, from the first commi
 ```mermaid
 flowchart LR
     p0["Phase 0<br/>foundations"] --> p1["Phase 1<br/>engine and CLI"] --> p2["Phase 2<br/>desktop app"] --> p3["Phase 3<br/>core editing,<br/>migration complete"]
-    p3 --> ux["UX pass"] --> p4["Phase 4<br/>layers and masks"] --> p5["Phase 5<br/>library and projects"] --> p6["Phase 6<br/>agents and AI"] --> p7["Phase 7<br/>remote, HDR,<br/>packaging"]
+    p3 --> ux["UX pass"] --> p4["Phase 4<br/>layers and masks"] --> p5["Phase 5<br/>libraries and the index<br/>across folders"] --> p6["Phase 6<br/>agents and AI"] --> p7["Phase 7<br/>remote, HDR,<br/>packaging"]
     p3 --> mobile["Mobile"]
 ```
 
@@ -33,7 +33,7 @@ Thin vertical slices, each ending in something usable and testable, with early g
 | UX pass, after 3 | Controls people find and predict | The usability tests meet the principles' first targets | Not estimated yet | — |
 | Mobile, after 3 | Edit on phones and tablets | Set when the phase is planned | Not estimated yet | — |
 | 4. Layers and masks | Local editing | Sky and subject edits work as designed, range masks evaluated on the background included | 5–7 weeks | — |
-| 5. Library | Manage thousands of photos, on any storage and several computers | Fast browsing and search of a real archive, a query under 50 ms and an open under 1 s at 100,000 photos (spike L2's targets); the cache rebuilt from the files alone; a library copied to another computer and system opening with its edits, albums and roots | 5–7 weeks | — |
+| 5. Libraries and the index across folders | Manage hundreds of thousands of photos across folders, drives and computers | A query under 50 ms and an open under 1 s at 100,000 photos (spike L2's targets); the index rebuilt from the files alone; a folder copied to another computer and system opening with its edits and albums; a Library of 500,000 photos over five folders searched; a folder kept offline browsed after the cache has passed its limit, with no row lost; with step 27b, unless it moves to Later, a Library saved in a folder opened on a second computer with its albums, and changed on both, every change kept | 5–7 weeks | — |
 | 6. Agents and AI | The signature features | An agent can edit a photo; "match this look" produces editable settings | Ongoing | — |
 | 7. Remote, HDR, packaging | Reach and polish | Editing from a browser on the home server; installers for all three platforms | Ongoing | — |
 
@@ -237,7 +237,7 @@ Folders first, before any library: a folder of raws opens as it is, with nothing
 - [x] One photo from a terminal, writing nothing but its edit and never in the recents, with Collections' Open This Folder; a folder from a terminal in folder mode (decision 46).
 - [x] Open With and a double-click from the system, on macOS through its open-documents event and on Windows and Linux through the registrations, which pass the files alone (decision 46).
 - [x] Every photo opened, by any route, opening alone (decision 46): Open With, a double-click on a raw or its edit, File › Open…, raws dropped and `apertrust FILE`, never in the recents and with no folder tree, Open This Folder the one way to its folder; several opened together held together, from any folders, Windows' among them, where Open With takes one file and several come through Send To, one start with every file, or through Open where Apertrust is the type's default, one start per file, each handing off to the instance above, which joins the starts (step 9d).
-- [x] The start window: what was open last reopened at the start, File › Close, and the recent folders with the ways to open one, libraries and projects joining it with the library (step 22; [gui.md](gui.md#the-start-window)).
+- [x] The start window: what was open last reopened at the start, File › Close, and the recent folders with the ways to open one, Libraries joining it in Phase 5 (step 24; [gui.md](gui.md#the-start-window)).
 
 ### The jobs window and the job API
 
@@ -303,7 +303,7 @@ Goal: usable for daily editing, and the editor sets the sliders for a goal. Migr
 
 ### Culling, metadata and several computers, in folder mode
 
-The library's steps 10 to 20 and 15b, [listed below](#the-librarys-steps) (decisions 46, 47, 52 and 53), and metadata through the XMP layer (decision 50).
+The library's steps 10 to 20, 15b, 19b, 19c and 19d, [listed below](#the-librarys-steps) (decisions 46, 47, 52, 53 and 101), and metadata through the XMP layer (decision 50).
 
 - [ ] Ratings, a reject and colour labels, set from the caption under the photo and its keys and written to the `.apxmp`, so photos can be culled in folder mode before the Library ([gui.md](gui.md#the-caption-under-the-photo)).
 - [ ] Keywords and darktable's metadata fields, in the Keywords and Metadata tools; darktable's ratings, labels and keywords read from its XMP files.
@@ -318,7 +318,9 @@ The library's steps 10 to 20 and 15b, [listed below](#the-librarys-steps) (decis
 - [ ] Virtual copies.
 - [ ] Two computers editing the same photo: both versions kept, never one lost.
 - [ ] Snapshots, and photo groups (raw and JPEG together).
-- [ ] Move, rename, copy and delete photos with their edits.
+- [ ] Move to… and Copy to… between any two folders, a checked copy across volumes, verified before the original is removed; rename and delete, with their edits.
+- [ ] Include subfolders: a folder's photos with its subfolders', remembered per folder, search and filters following what the Browser shows.
+- [ ] A folder's own albums and smart albums, kept in a hidden `.apertrust/` at its top and travelling with it; Save as Smart Album.
 - [ ] Import by copy, as darktable's copy and import: a sheet of the card's photos beside a column of tools, those already imported told by the destination (decision 85; [gui.md](gui.md#the-import-sheet)).
 
 ### Shortcuts
@@ -361,15 +363,16 @@ Goal: local editing.
 - [ ] The binary sidecar, `.apdata` (decision 49).
 - [ ] Shortcuts on layers (decision 98): a shortcut's instance, darktable's preferred-instance settings mapped onto layers, `<blending>` as the layers' and masks' actions, and visual mapping's instance.
 
-## Phase 5: the library and projects
+## Phase 5: libraries and the index across folders
 
-Goal: manage thousands of photos, on any storage and several computers: the Library (decisions 46, 47 and 52 to 55), the library's steps 21 to 35, then the Project, steps 36 to 42 ([listed below](#the-librarys-steps)). Culling is Phase 3's, in the Photo layout, and the thumbnails come in Phase 2 (decision 37). Exit criteria: fast browsing and search of a real archive, with a query under 50 ms and an open under a second at 100,000 photos (spike L2's targets); the library's cache rebuilt from its files alone; and a library copied to another computer, on another operating system too, opening with its edits, albums and roots (the folders it holds).
+Goal: manage hundreds of thousands of photos across folders, drives and computers: the saved index per folder tree, and the optional Library, a named collection of folders (decisions 46, 47, 52 to 55 and 101), the library's steps 21 to 33 with 27b ([listed below](#the-librarys-steps)). Folders, their albums and Move to… are Phase 3's, culling Phase 3's in the Photo layout, and the thumbnails come in Phase 2 (decision 37). Exit criteria: a query under 50 ms and an open under a second at 100,000 photos (spike L2's targets); the index rebuilt from the files alone; a folder copied to another computer, on another operating system too, opening with its edits and albums; a Library of 500,000 photos over five folders searched; a folder kept offline browsed after the cache has passed its limit, with no row lost; and, with step 27b unless it moves to Later, a Library saved in a folder opened on a second computer with its albums, and changed on both, every change kept.
 
-- [ ] A library file kept wherever you choose, with its folders found again when drives move.
-- [ ] Albums and smart albums, with darktable's filters and sorts; keywords; full-text search.
-- [ ] Import into a library, in place or by copy.
-- [ ] Offline drives, local copies and cloud folders.
-- [ ] Projects: a shoot's folders with roles (capture, selects, output), a watched capture folder and templates.
+- [ ] A saved index per folder tree, built in the background, the open folder first, that never drops a photo.
+- [ ] Libraries: named collections of folders from any drive, kept on this computer, with search, albums and smart albums across them; folders found again when drives move.
+- [ ] Keep Available Offline: a folder browsed, rated and tagged while its drive is away.
+- [ ] A Library saved in one of its folders, so a second computer opens it with its albums.
+- [ ] Keep Edits on This Computer, for folders where nothing may be written.
+- [ ] Cloud folders; full-text search.
 - [ ] The library on the command line.
 
 ## Phase 6: agents and AI
@@ -384,7 +387,6 @@ Goal: the signature features.
 
 Goal: reach and polish.
 
-- [ ] A self-hosted server with sync, after Phase 5's library (decision 71; [library.md](library.md#a-server)): a Docker container on a NAS, amd64 and arm64, that the app optionally connects to; the originals and their sidecars in its folders, the desktop editing local copies and sending back only what changed; server roots in a library beside folders; listing from the server's index. The server does no processing: thumbnails are the desktop's.
 - [ ] `apertrust-cli serve` and a web client with frame streaming, editing from a browser on a home server, from the same server.
 - [ ] HDR display, managed by the system.
 - [ ] Signed installers: a notarised macOS app with a Developer ID, a code-signed Windows installer and MSIX, and Flatpak.
@@ -397,7 +399,8 @@ Goal: reach and polish.
 - [ ] A map of where photos were taken, with geotags and GPX tracks.
 - [ ] Print, first as a print-ready file through the printer's profile.
 - [ ] A slideshow.
-- [ ] Tethering and import from a camera.
+- [ ] Tethering and import from a camera; later, if asked, a watched folder.
+- [ ] Later, if asked: a self-hosted server with sync (decision 71; [library.md](library.md#a-server)), a container on a NAS that the app optionally connects to, the originals and their sidecars in its folders, the desktop editing local copies and sending back only what changed; editable previews and local copies of raws kept elsewhere; cloud storage folders, behind a spike; a presence note; album entries carried by Move to…; videos listed.
 - [ ] More export formats as encoders allow.
 - [ ] The Customise Toolbar window, a dedicated window for arranging the toolbar, its menu item drawn disabled until then (decision 92).
 - [ ] Scripting, with darktable's action call by Apertrust's ids for the scripts the app runs (decision 98).
@@ -405,7 +408,7 @@ Goal: reach and polish.
 
 ## The library's steps
 
-Decisions 46, 47, 52 to 55, 71 and 76. Each step delivers one thing and is reviewed before the next starts. Folder mode comes first, twenty steps in Phases 2 and 3 before any library exists; then the library, then the project.
+Decisions 46, 47, 52 to 55, 71, 76 and 101. Each step delivers one thing and is reviewed before the next starts. Folders come first, in Phases 2 and 3, their albums, Include subfolders and Move to… among them; then Libraries and the index across folders in Phase 5.
 
 **Built, in Phase 2:**
 
@@ -432,11 +435,11 @@ Decisions 46, 47, 52 to 55, 71 and 76. Each step delivers one thing and is revie
   - `CacheCommand::Sizes`, answered by `Event::Cache`, a fact: at once with the session's own count, then again after a walk that counts other processes' writes; `NoCache` for a session with none;
   - `CacheCommand::Clear { kind }`, a limited kind cleared by a cancellable `UserBackground` job whose row's title, detail and outcome are its own messages in every language, the sizes sent again as it ends; a kept kind, a Clear under way and no cache refused;
   - `apertrust-cli cache info` and `cache clear [KIND...]`, on base's `cache` with no session and no GPU, creating nothing.
-- [x] Settings › Storage (step 6b's second part, decision 76; [cache.md](cache.md#settings--storage)): the user data and cache folders, each with how it was chosen and Show in Finder; each limited kind's entries and size with its Clear, disabled until its job ends; the libraries' caches as one line until their Remove with step 27; the total against the limit; the sizes asked each time the page is shown and after the limit changes.
+- [x] Settings › Storage (step 6b's second part, decision 76; [cache.md](cache.md#settings--storage)): the user data and cache folders, each with how it was chosen and Show in Finder; each limited kind's entries and size with its Clear, disabled until its job ends; the libraries' caches as one line, the kept indexes' with their Remove from step 23; the total against the limit; the sizes asked each time the page is shown and after the limit changes.
 
 **Remaining, in Phase 2:**
 
-- [ ] **Step 5.** (Its later part) The calls into a root on that root's queue (decisions 53 and 57), with step 10, when a folder is listed again while other calls into it run; `CollectionChanged` with darktable's reason and property, with the first change to a collection.
+- [ ] **Step 5.** (Its later part) A folder tree's calls on its own queue (decisions 53 and 57), with step 10, when a folder is listed again while other calls into it run; `CollectionChanged` with darktable's reason and property, with the first change to a collection.
 - [x] **Step 6, live-photo renders.** A thumbnail of the live photo's saved edit, after a one-second settle and when it stops being live, through its viewport pipe with no second decode or pipeline; a 1024 sRGB render and box averages for the three smaller slots, versioned by the sidecar bytes' hash and the render version. The grid's requested sizes update through thumbnail events, and the next open shows the cached render first. Default edits keep the embedded picture; quitting starts no render.
 - [ ] **Step 6.** Its remaining parts: a cold walk timed on Windows and a hard disk (decision 76; [cache.md](cache.md#timing-the-walk)); rendering the other photos and refreshing their stale thumbnails, with their own decode and memory budget; their slots keyed by the photo's fingerprint rather than its path; nothing for cloud files not on the disk.
 - [ ] **Step 7.** Bulk listing (`getattrlistbulk`, `FindFirstFileExW`, `statx`; in an `apertrust-fs` crate only if it needs FFI that safe crates do not cover), timed against step 1 on the NAS; spike L1 folded in.
@@ -454,13 +457,13 @@ Decisions 46, 47, 52 to 55, 71 and 76. Each step delivers one thing and is revie
   - [x] 9.7: its eye, `Hide`: held, a peek at the photo without a tool, as if reset, with no step and nothing saved;
   - [x] 9.8: Compress History, Truncate History, an item of its own (decision 93), and Discard History…, asking first with Don't ask again, in the History section's ⋯ and Edit, their commands in the engine;
   - [x] 9.9: `apertrust-cli edit --note`, and `apertrust-cli history` listing the history in words and moving it: `--undo`, `--redo`, `--go-to`, `--compress`, `--truncate` and `--discard`.
-- [x] **Step 9b.** The ways in (decisions 37, 46 and 73). Built: Open With and a double-click (macOS's open-documents event, a drop on the Dock icon among them; the installer's and the desktop entry's registrations, [packaging.md](packaging.md#opening-a-raw-from-the-system)), looked at off the interface's thread and refused with the alert in the window as a drop is; `apertrust FILE` opening one photo alone, nothing written but its edit, never in the recents, the Browser holding it and Collections' Folders holding Open This Folder, and `apertrust FOLDER` opening folder mode, a library's or project's file refused until Phase 5; the tab `photos`; Collections in folder mode, its top line listing the recents with Locate… and Remove from the List, ＋, ⋯ with Show in Finder, and Folders as the tree of the folder opened, its root fixed and a click choosing the active folder, each row's Show in Folder and a subfolder's own subfolders listed as it opens (`LibraryCommand::Subfolders`); File › Open… for one or more raws, a library's or project's file greyed out in its dialog until Phase 5, and Collections' ＋ running it; drag and drop onto the window, a folder as Open Folder…, raws as Open…, anything else refused with an alert, nothing under a modal dialog, the photo and the Browser outlined while something hovers; View › Collections (`show-collections`, L) choosing the first tab holding Collections. Every photo these ways open opens alone, several together (step 9d).
-- [x] **Step 9c.** The start window: what was open last reopened at the start (`library.reopen_last`, on by default), the start window with its recents and buttons, File › Close, Open Recent listing the same ([gui.md](gui.md#the-start-window)). Built: the recents' state file, `state.toml`, the one list Open Recent, Collections and the start window read (`crates/app/src/recents.rs`); File › Open Recent with Clear Menu, on the Mac's bar and in the menu button's menu; File › Close; what was open last reopened at the start, its photo active once listed (`library.reopen_last`); the start window, the main window in its start state at the start window's size whenever nothing is open (`crates/app/src/start.rs`), with the recents, missing ones offering Locate… and Remove from the List, Open Folder… and Open, the library's buttons and Browse… disabled until step 22, its keys, closing it hiding the app on the Mac until a click on the Dock icon and quitting elsewhere, and Close Window doing what Close does on the Mac's main window.
+- [x] **Step 9b.** The ways in (decisions 37, 46 and 73). Built: Open With and a double-click (macOS's open-documents event, a drop on the Dock icon among them; the installer's and the desktop entry's registrations, [packaging.md](packaging.md#opening-a-raw-from-the-system)), looked at off the interface's thread and refused with the alert in the window as a drop is; `apertrust FILE` opening one photo alone, nothing written but its edit, never in the recents, the Browser holding it and Collections' Folders holding Open This Folder, and `apertrust FOLDER` opening folder mode, anything that is no raw, edit or folder refused; the tab `photos`; Collections in folder mode, its top line listing the recents with Locate… and Remove from the List, ＋, ⋯ with Show in Finder, and Folders as the tree of the folder opened, its root fixed and a click choosing the active folder, each row's Show in Folder and a subfolder's own subfolders listed as it opens (`LibraryCommand::Subfolders`); File › Open… for one or more raws, and Collections' ＋ running it; drag and drop onto the window, a folder as Open Folder…, raws as Open…, anything else refused with an alert, nothing under a modal dialog, the photo and the Browser outlined while something hovers; View › Collections (`show-collections`, L) choosing the first tab holding Collections. Every photo these ways open opens alone, several together (step 9d).
+- [x] **Step 9c.** The start window: what was open last reopened at the start (`library.reopen_last`, on by default), the start window with its recents and buttons, File › Close, Open Recent listing the same ([gui.md](gui.md#the-start-window)). Built: the recents' state file, `state.toml`, the one list Open Recent, Collections and the start window read (`crates/app/src/recents.rs`); File › Open Recent with Clear Menu, on the Mac's bar and in the menu button's menu; File › Close; what was open last reopened at the start, its photo active once listed (`library.reopen_last`); the start window, the main window in its start state at the start window's size whenever nothing is open (`crates/app/src/start.rs`), with the recents, missing ones offering Locate… and Remove from the List, Open Folder… and Open, New Library… disabled until Phase 5, its keys, closing it hiding the app on the Mac until a click on the Dock icon and quitting elsewhere, and Close Window doing what Close does on the Mac's main window.
 - [x] **Step 9d.** A photo opens alone (decision 46; [library.md](library.md#one-photo)): Open With, a double-click on a raw or its edit, File › Open…, raws dropped onto the window or the Dock icon and `apertrust FILE...` all opening one photo, with nothing in the recents or `state.toml`'s `[last]` and no folder tree, Collections' Open This Folder the one way into folder mode; several files opened together held together in one photo, from any folders, the Browser showing just them, the first active, each cell's thumbnail read from its own file or the cache by path (`LibraryCommand::PhotoThumbnails`), Open This Folder opening the active photo's folder; the app's command line taken as a drop's, after the window opens, refusals the alert in the window with their reason on stderr, so `apertrust IMG.ARW.apxmp` opens its photo; the registrations passing the files alone (`packaging/linux/org.apertrust.Apertrust.desktop`, `packaging/windows/installer.nsi`, `packaging/nightly-identity.txt`, `crates/app/tests/packaging.rs`), and `--in-folder` accepted and ignored, out of `--help`, until the first release is tagged.
 
-**Phase 3, several computers, virtual copies, metadata and Import, in folder mode:**
+**Phase 3, several computers, virtual copies, metadata, albums, Move to… and Import, in folder mode:**
 
-- [ ] **Step 10.** Outside changes: the open folder listed again on focus and every 30 s on network roots, watchers as hints; a copy only older replaced, the active photo taking the newer edit; every write a read first; until step 12 a diverged sidecar opens view-only.
+- [ ] **Step 10.** Outside changes: the open folder listed again on focus and every 30 s on network folders, watchers as hints; a copy only older replaced, the active photo taking the newer edit; every write a read first; until step 12 a diverged sidecar opens view-only.
 - [ ] **Step 11.** Virtual copies: New Virtual Copy and New Virtual Copy from Original, in the photo's one sidecar, named and numbered, deleted with a tombstone; darktable's duplicate manager's actions. New Virtual Copy from Original takes a key other than darktable's Ctrl+Shift+D, which is Previous Selection's (decision 90).
 - [ ] **Step 12.** Two virtual copies on divergence, named after the computer and time; spike L4's harness. Notices that are not jobs (`Event::Notice`) come with it, shown as darktable's `dt_control_log` shows its messages ([gui.md](gui.md#the-jobs-window)).
 - [ ] **Step 13.** Conflict copies found by content, handled by step 12's rule, moved into the user data folder's `conflict-copies/` and removed 30 days later, never in the cache (decision 76); their count and size on Settings › Storage.
@@ -470,44 +473,35 @@ Decisions 46, 47, 52 to 55, 71 and 76. Each step delivers one thing and is revie
 - [ ] **Step 16.** Snapshots saved in the sidecar, each its edit whole, with History's Snapshots section ([history.md](history.md)).
 - [ ] **Step 17.** Photo groups: raw and JPEG by base name, groups made by hand by id in the sidecars, the G toggle.
 - [ ] **Step 18.** Renames outside Apertrust: orphan sidecars re-paired by fingerprint; Edits without a photo.
-- [ ] **Step 19.** Move, Rename, Copy and Delete with their sidecars, `.apdata` and attached files, each a `UserForeground` job as darktable's: move, copy and rename cancellable, delete with a bar and not cancellable (decision 57).
+- [ ] **Step 19.** Move to…, Rename, Copy to… and Delete with their sidecars, `.apdata` and attached files, between any two folders (decision 101; [library.md](library.md#move-to-and-copy-to)), each a `UserForeground` job as darktable's: move, copy and rename cancellable, delete to the system's trash with a bar and not cancellable (decision 57); on one volume a move a rename, across volumes the checked copy, a photo moving whole or staying through a cancel, a crash or a write from elsewhere, its procedure settled in the step's spec; its spike, reading past the system's cache on each platform (`F_NOCACHE`, `O_DIRECT`, unbuffered reads) and its cost.
+- [ ] **Step 19b.** Include subfolders, from the tree's walk, the index in memory over the tree; off by default and remembered per folder; search and filters following what the Browser shows, "37 more photos in subfolders", the tree's walk's count, with the switch beside it.
+- [ ] **Step 19c.** A folder's albums in its `.apertrust/` (decision 101): one file each, nested, combining entry by entry, cycles resolved; nested `.apertrust/` folders shown under their folder's name; the Albums section; Add to Album; the album entries counted on Move to….
+- [ ] **Step 19d.** A folder's smart albums, after step 15b's Filters: darktable's collect rules, filters and sorts, and "in album"; the Smart albums section; Filters' Save as Smart Album into the folder's `.apertrust/`.
 - [ ] **Step 20.** Import… by copy in folder mode, darktable's copy & import on the Import sheet (decisions 85 and 86; [gui.md](gui.md#the-import-sheet), [library.md](library.md#import-in-folder-mode)), after steps 12 and 19 and the sheet frame, in three slices:
   - [ ] 20a: Ctrl+I, File, the Toolbar's Import…, Collections' and the start window's; the Import sheet on the frame; the grid with its bar, the embedded thumbnails, the already-imported mark, Select all, none and new, Checked only, Sort and Zoom; Import from (places, folders, Include subfolders, a card's `DCIM` whole, the note sending photos already on the computer to Open Folder…), Import to (Shoot name first, base folder, subfolder, the sample path, the space, the clashes, date override), Naming and After import (Open the destination); the first view for a card, Import from and After import closed; the counts of files not imported yet; already imported told by the base folder's tree less the source, by size and camera name then fingerprint, nothing written on the card; `PreviewImport`; a cancellable `UserForeground` job, "Importing 120 of 214 photos", as darktable's `dt_control_import` (decision 57), copying in path order, whole or not at all and never overwriting, the sidecars and darktable's `.xmp` carried, with its failures and Try again; the destination opened as the first photo lands and filled as they land; raws only; the column in its default order; `apertrust-cli import`;
   - [ ] 20b: Metadata, with no initial rating by default; Filters; a heading over each capture day; a raw and its JPEG as one cell, a JPEG left behind imported beside its raw; non-raws listed and copied (after steps 14, 15 and 17);
   - [ ] 20c: presets of the whole sheet, Original names and By capture date built in; reordering the column (decision 83's moving); the card's dot on the Toolbar's Import… and When a card is connected; a larger look at one photo.
 
-**Phase 5, the library:**
+**Phase 5, Libraries and the index across folders:**
 
-- [ ] **Step 21.** Spike L2, the cache's engine, on the M4.
-- [ ] **Step 21b.** The storage interface (decision 54): every call into a root's files, the listing and the safe write among them, through one interface with the local-files backend, so the server's backend (decision 71) comes in beside it with nothing above it changing; in place before step 22 builds on the file system.
-- [ ] **Step 22.** The library file: New Library…, Open… of its file, Open Recent and the start window, a double-click; `.apertrust/`; a library made from the open folder in place; its model built from its files; a newer format view-only.
-- [ ] **Step 23.** Roots: Add Folder… with the root's id file, the root map per machine in the user data folder (decision 76), finding by relative path then mounted volumes, Locate…; every root's tree in Folders, offline roots marked.
-- [ ] **Step 24.** Albums: one file each, nested, combining entry by entry, cycles resolved; the Albums section; Add to Album.
-- [ ] **Step 25.** Smart albums: darktable's collect rules, filters and sorts, and "in album"; the Smart albums section; Filters' Save as Smart Album.
-- [ ] **Step 26.** The library's keyword list: darktable's hierarchy, synonyms and flags in `keywords.toml`, merging by path, used inside the library in place of the user data folder's.
-- [ ] **Step 27.** The per-machine cache, by spike L2: the `Index` saved and reopened, background rescans, Rebuild Cache, roots away browsed with their marks; each library's cache on Settings › Storage and in `apertrust-cli cache`, those unopened for `cache.unused_after` (90 days by default, or never) or not found offered for removal, locked while open (decision 76).
-- [ ] **Step 28.** Full-text search.
-- [ ] **Step 29.** Import… into a library: in place as a root, or by copy into `Photos/`.
-- [ ] **Step 30.** Edits kept in the library: the setting, `.apertrust/edits/` mirrored by path, the root's id file naming the library; folder mode following it and saying so.
-- [ ] **Step 31.** Offline drives: changes waiting in the library; local copies, the cache's kept kind `copies/`, and how they are cleared (decision 76).
-- [ ] **Step 32.** Import library… of a library: one album with its albums inside, by copy or reference, keywords by path, Keep both or Link, the cost first, the notice on the old one.
-- [ ] **Step 33.** Cloud files, after spike L3: the flags on Windows and macOS, materialisation off on macOS, cloud marks, Make Available Offline.
-- [ ] **Step 34.** Silent winners: each machine's last-written copy of each sidecar in the user data folder (decision 76); iCloud's hidden versions through `NSFileVersion`.
-- [ ] **Step 35.** The whole of `LibraryCommand` and `LibraryEvent` in the session protocol, and `apertrust-cli library`'s commands; MCP tools in Phase 6.
+- [ ] **Step 21.** Spike L2, widened, on the M4: the index's engine; one tree of 500,000 photos on SMB, built in the background, darktable's XMPs read; five folders totalling 500,000 queried together.
+- [ ] **Step 22.** Folder records (decision 53): the user data folder's `folders/`, volume ids from the platform's volume list as a hint, Locate… confirmed by fingerprints, a clone told apart.
+- [ ] **Step 23.** The saved index per folder tree (decision 55): the open folder first, rescans that never block nor drop a row, Rebuild Index; the kept indexes on Settings › Storage and in `apertrust-cli cache`, those unopened for `cache.unused_after` (90 days by default, or never) offered for removal, an index whose record is removed becoming limited, locked while open (decision 76).
+- [ ] **Step 24.** Libraries: New Library…, Add Folder…, Add to Library…, Remove from Library, Remove Library…, Collections listing each with its folders' trees, those away marked; the recents and the start window holding a Library by its id; a newer format view-only.
+- [ ] **Step 25.** Search and filters across a Library's folders.
+- [ ] **Step 26.** Albums and smart albums spanning a Library's folders.
+- [ ] **Step 27.** Keep Available Offline: one 256 px thumbnail per photo in the cache's kept kind `offline/`, the away mark, pending changes in the folder record written back through decision 52.
+- [ ] **Step 27b.** A Library that travels: Save Library in a Folder… and Keep Library on This Computer, the offer on opening its home folder, its folders found, away or located per computer, decision 52 over its files, the last copy for while its home is away. The last Library step, so it moves to Later alone if Phase 5 runs long.
+- [ ] **Step 28.** Keep Edits on This Computer, routed to a Library, with `library.keep_edits_here` and its `--conf`; the known limit said on the setting.
+- [ ] **Step 29.** Synced folders, after spike L3: the flags on Windows and macOS, materialisation off on macOS, cloud marks, Make Available Offline.
+- [ ] **Step 30.** Full-text search.
+- [ ] **Step 31.** Ratings, labels and keywords in standard XMP where digiKam and Immich read them.
+- [ ] **Step 32.** Silent winners: each machine's last-written copy of each sidecar in the user data folder's `last-written/` (decision 76); iCloud's hidden versions through `NSFileVersion`.
+- [ ] **Step 33.** The whole of `LibraryCommand` and `LibraryEvent` in the session protocol, and `apertrust-cli library`'s commands; MCP tools in Phase 6.
 
-**Phase 5, after the library, the project:**
+**Later:** the tool-by-tool merge, as a setting; tethering and import from a camera through libgphoto2, an exception to decision 5 decided when they are planned; the map, geotags and GPX, with the Photos tab's Location; scripting. **Later, if asked:** editable previews and local copies of raws kept elsewhere; cloud storage folders, behind a spike; the server with sync (decision 71), with changes pushed and merged tool by tool; the presence note, written only into an existing `.apertrust/`; carrying album entries on Move to…; videos listed; the watched folder, with tethering.
 
-- [ ] **Step 36.** Projects: New Project…, `Name.approject`, the roles made at its top or given to folders inside, marked in the Folders tree.
-- [ ] **Step 37.** The roles at work: Import… into Capture, Move to Selects, Delete to the project's Trash and Empty Trash, Export's default destination Output; Output kept out of smart albums.
-- [ ] **Step 38.** The job's settings: the next capture's folder, name pattern and job code; the start adjustments in `.apertrust/start.apxmp`, applied on import; the default Output folder and export preset.
-- [ ] **Step 39.** The watched Capture folder.
-- [ ] **Step 40.** Import library… of a project: Selects an album inside, Output and Trash left behind and counted.
-- [ ] **Step 41.** Export as Project…, by copy or reference.
-- [ ] **Step 42.** Project templates, saved into the user data folder and offered by New Project….
-
-**Later:** the tool-by-tool merge, as a setting; tethering and import from a camera through libgphoto2, an exception to decision 5 decided when they are planned; a full merge on Import library… and importing the same one again; Move Edits…; the map, geotags and GPX, with the Photos tab's Location; presence notes; the server with sync (Phase 7, decision 71); Shared Project for a studio shoot, hosted on the server or on the tethering computer, with changes pushed and merged tool by tool (decision 71); scripting.
-
-**Spikes:** L1, listing, folded into step 7; L2, the cache's engine, step 21; L3, cloud folders on macOS and Windows, before step 33; L4, two versions, the convergence harness built with step 12.
+**Spikes:** L1, listing, folded into step 7; L2, the index's engine, step 21; L3, cloud folders on macOS and Windows, before step 29; L4, two versions, the convergence harness built with step 12; the checked copy's read-back, with step 19.
 
 ## The migrated tools
 
