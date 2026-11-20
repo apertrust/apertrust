@@ -105,10 +105,11 @@ pub(crate) fn browse(
 /// `waiting` takes the command's number: once the session tells the selection through it,
 /// the first photo of the new selection in the Browser's order opens ([`open_first`]). A
 /// wait under way follows the newest command, so the photo opened is in the selection the
-/// session ends with.
+/// session ends with. A wait ends with the folder it was sent in: another folder, or a
+/// close, opens nothing.
 pub(crate) fn edit(
     command: SelectionCommand,
-    waiting: &mut Option<u64>,
+    waiting: &mut Option<Waiting>,
     mirror: &mut Mirror,
     send: &mut SendCommand<'_>,
 ) {
@@ -124,27 +125,40 @@ pub(crate) fn edit(
     if leaves {
         mirror.closing();
     }
-    if (leaves && !clear) || waiting.is_some() {
-        *waiting = Some(number);
+    let folder = mirror.folder.latest();
+    if (leaves && !clear) || waiting.is_some_and(|waiting| waiting.folder == folder) {
+        *waiting = Some(Waiting {
+            command: number,
+            folder,
+        });
     }
+}
+
+/// What [`edit`] waits for: the command whose new selection's first photo is to open, and
+/// the folder's open or close it was sent after (`FolderState::latest`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Waiting {
+    command: u64,
+    folder: u64,
 }
 
 /// Opens the first selected photo in the Browser's order once the session has told the
 /// selection through `waiting`, the number [`edit`] left there, and stops waiting; with
-/// none selected, nothing. A photo asked for meanwhile ends the wait, opening nothing.
+/// none selected, nothing. A photo asked for meanwhile, or another folder or a close,
+/// ends the wait, opening nothing.
 pub(crate) fn open_first(
-    waiting: &mut Option<u64>,
+    waiting: &mut Option<Waiting>,
     mirror: &mut Mirror,
     send: &mut SendCommand<'_>,
 ) {
-    let Some(number) = *waiting else {
+    let Some(Waiting { command, folder }) = *waiting else {
         return;
     };
-    if mirror.photo.asked().is_some() {
+    if mirror.photo.asked().is_some() || mirror.folder.latest() != folder {
         *waiting = None;
         return;
     }
-    if mirror.selection.through < number {
+    if mirror.selection.through < command {
         return;
     }
     *waiting = None;
@@ -234,7 +248,7 @@ mod tests {
         order: Vec<PathBuf>,
         sent: Vec<Command>,
         /// The command whose new selection's first photo is to open ([`edit`]).
-        waiting: Option<u64>,
+        waiting: Option<Waiting>,
     }
 
     impl Folder {
@@ -272,15 +286,16 @@ mod tests {
         /// The folder listed in the mirror, as the Browser shows it, sorted by file name
         /// with `descending` order: the photos `edited` have an edit, the rest none.
         fn listed(&mut self, edited: &[&str], descending: bool) {
+            self.listed_by(100, edited, descending);
+        }
+
+        /// The folder listed as [`Folder::listed`] does, by the open numbered `open`.
+        fn listed_by(&mut self, open: u64, edited: &[&str], descending: bool) {
             let folder = PathBuf::from("/photos");
-            self.m.folder.opening(folder.clone(), 100);
+            self.m.folder.opening(folder.clone(), open);
             let name = "photos".to_owned();
-            let open = LibraryEvent::Opened {
-                open: 100,
-                name,
-                folder,
-            };
-            self.m.apply(Event::Library(open));
+            let opened = LibraryEvent::Opened { open, name, folder };
+            self.m.apply(Event::Library(opened));
             let photos = ["a", "b", "c", "d", "e"]
                 .map(|name| Photo {
                     name: format!("{name}.ARW"),
@@ -294,7 +309,7 @@ mod tests {
                 })
                 .to_vec();
             let listed = LibraryEvent::Listed {
-                open: 100,
+                open,
                 photos,
                 done: true,
             };
@@ -673,6 +688,29 @@ mod tests {
         f.edit(SelectionCommand::Invert);
         f.browse(BrowserAction::Open(1));
         f.told(&["b"], Some("b"));
+        assert!(f.open_first().is_empty());
+        assert_eq!(f.waiting, None);
+    }
+
+    /// The wait ends with its folder: a close, or the folder opened anew, before the
+    /// session tells the selection opens nothing, there or after Select All in the next.
+    #[test]
+    fn the_first_photo_waits_only_while_its_folder_stays_open() {
+        let mut f = Folder::new("c");
+        f.listed(&[], false);
+        f.told(&["c"], Some("c"));
+        f.edit(SelectionCommand::Invert);
+        f.m.folder.closing(200);
+        f.told(&["a", "b", "d", "e"], None);
+        assert!(f.open_first().is_empty());
+        assert_eq!(f.waiting, None);
+        let mut f = Folder::new("c");
+        f.listed(&[], false);
+        f.told(&["c"], Some("c"));
+        f.edit(SelectionCommand::Invert);
+        f.listed_by(300, &[], false);
+        f.edit(SelectionCommand::All);
+        f.told(&["a", "b", "c", "d", "e"], None);
         assert!(f.open_first().is_empty());
         assert_eq!(f.waiting, None);
     }
