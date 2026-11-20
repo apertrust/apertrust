@@ -37,7 +37,7 @@ use std::cell::RefCell;
 
 use apertrust_engine::session::{Command, ControlValue};
 use apertrust_tools::utility::UtilityDefinition;
-use apertrust_tools::{Reset, Row, SettingRow, ToolDefinition, Widget, messages};
+use apertrust_tools::{GroupKind, Reset, Row, SettingRow, ToolDefinition, Widget, messages};
 use apertrust_ui::components as parts;
 use apertrust_ui::{Translator, translator};
 use eframe::egui;
@@ -285,8 +285,8 @@ impl<T: UtilityTool> Rows for Page<'_, '_, T> {
         }
     }
 
-    fn title(&self, id: &str, collapsible: bool) -> String {
-        self.words.text(&self.utility.title(id, collapsible))
+    fn title(&self, id: &str, kind: GroupKind) -> String {
+        self.words.text(&self.utility.title(id, kind))
     }
 
     /// A setting naming its key in full as the utility keeps it, live but where `--conf`
@@ -389,7 +389,7 @@ fn titles(words: &Translator, definition: &ToolDefinition) -> [String; 4] {
 #[cfg(test)]
 mod tests {
     use apertrust_tools::utility::UTILITIES;
-    use apertrust_tools::{ControlKind, Reset, TOOLS, Tab, Track, Word};
+    use apertrust_tools::{ControlKind, Group, Reset, TOOLS, Tab, Track, Word};
     use egui_kittest::Harness;
     use egui_kittest::kittest::Queryable;
 
@@ -420,26 +420,30 @@ mod tests {
         }
     }
 
-    /// A utility whose page is a label, a custom row, then a collapsible group holding
-    /// another custom row.
+    /// A utility whose page is a plain group holding a custom row, then a collapsible group
+    /// holding another.
     static SAMPLE: UtilityDefinition = UtilityDefinition {
         tool: ToolDefinition {
             id: "sample",
             tabs: &[Tab {
                 id: None,
                 rows: &[
-                    Row::Label { id: "first" },
-                    Row::Custom {
-                        widget: Widget::Scopes,
-                        controls: &[],
-                    },
-                    Row::Group {
+                    Row::Group(Group {
+                        id: "first",
+                        kind: GroupKind::Plain,
+                        rows: &[Row::Custom {
+                            widget: Widget::Scopes,
+                            controls: &[],
+                        }],
+                    }),
+                    Row::Group(Group {
                         id: "more",
+                        kind: GroupKind::Collapsible,
                         rows: &[Row::Custom {
                             widget: Widget::History,
                             controls: &[],
                         }],
-                    },
+                    }),
                 ],
             }],
             before: &[],
@@ -537,30 +541,34 @@ mod tests {
     };
 
     /// A utility whose settings it keeps itself under keys in full, with words of its
-    /// own: a label and a group titled by it, the group open at first, holding a choice, a
-    /// boolean of No and Yes and a custom row with a note under it.
+    /// own: a plain group titled by it holding a choice, and a collapsible group titled by it,
+    /// open at first, holding a boolean of No and Yes and a custom row with a note under it.
     static KEEPER: UtilityDefinition = UtilityDefinition {
         tool: ToolDefinition {
             id: "keeper",
             tabs: &[Tab {
                 id: None,
                 rows: &[
-                    Row::Label { id: "first" },
-                    Row::Group {
+                    Row::Group(Group {
+                        id: "first",
+                        kind: GroupKind::Plain,
+                        rows: &[Row::Setting(SettingRow {
+                            id: "conflict",
+                            kind: ControlKind::Choice {
+                                options: &["unique", "overwrite", "skip", "keep"],
+                                default: 0,
+                                unported: &["keep"],
+                            },
+                            decimals: 0,
+                            track: Track::Plain,
+                            key: Some("keeper.conflict"),
+                            words: Some(&CONFLICT),
+                        })],
+                    }),
+                    Row::Group(Group {
                         id: "more",
+                        kind: GroupKind::Collapsible,
                         rows: &[
-                            Row::Setting(SettingRow {
-                                id: "conflict",
-                                kind: ControlKind::Choice {
-                                    options: &["unique", "overwrite", "skip", "keep"],
-                                    default: 0,
-                                    unported: &["keep"],
-                                },
-                                decimals: 0,
-                                track: Track::Plain,
-                                key: Some("keeper.conflict"),
-                                words: Some(&CONFLICT),
-                            }),
                             Row::Setting(SettingRow {
                                 id: "upscale",
                                 kind: ControlKind::Bool { default: false },
@@ -574,7 +582,7 @@ mod tests {
                                 controls: &[],
                             },
                         ],
-                    },
+                    }),
                 ],
             }],
             before: &[],
@@ -764,7 +772,7 @@ mod tests {
             })
             .collect();
         assert_eq!(keys, ["keeper.conflict", "keeper.upscale"]);
-        // Closed, the group counts its two settings set and its custom row's one.
+        // Closed, the group counts its setting set and its custom row's one.
         harness
             .get_by_role_and_label(Role::Button, "Global options")
             .click();
@@ -772,7 +780,7 @@ mod tests {
         let group = harness.get_by_role_and_label(Role::Button, "Global options");
         assert_eq!(
             group.accesskit_node().description().as_deref(),
-            Some("3 set")
+            Some("2 set")
         );
         // A setting `--conf` gives for the run is drawn disabled at its value, saying so;
         // the other stays live.

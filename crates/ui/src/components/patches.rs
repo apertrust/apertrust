@@ -22,7 +22,7 @@
 
 use egui::{Color32, Rect, Role, Sense, Stroke, StrokeKind, Ui, WidgetInfo, vec2};
 
-use super::tabs::group_label_text;
+use super::group::group_label_text;
 use crate::theme;
 
 /// One of the two patches.

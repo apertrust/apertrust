@@ -24,7 +24,7 @@
 use std::collections::BTreeSet;
 
 use crate::definition::{
-    ControlKind, ProcessingDefinition, Reset, Row, SettingRow, Slider, Unit, Word,
+    ControlKind, GroupKind, ProcessingDefinition, Reset, Row, SettingRow, Slider, Unit, Word,
 };
 use crate::utility::UtilityDefinition;
 
@@ -71,7 +71,7 @@ pub fn tab(tool: &str, tab: &str) -> String {
     format!("tool-{tool}-tab-{tab}")
 }
 
-/// A group label: `tool-<tool>-group-<group>`.
+/// A plain group's title, or a row of pickers' label: `tool-<tool>-group-<group>`.
 pub fn group(tool: &str, group: &str) -> String {
     format!("tool-{tool}-group-{group}")
 }
@@ -79,6 +79,15 @@ pub fn group(tool: &str, group: &str) -> String {
 /// A collapsible group's title: `tool-<tool>-collapsible-<group>`.
 pub fn collapsible(tool: &str, group: &str) -> String {
     format!("tool-{tool}-collapsible-{group}")
+}
+
+/// The title of the group `group` of the kind `kind` (decision 100): a plain group's
+/// ([`group`]) or a collapsible one's ([`collapsible`]).
+pub fn group_title(tool: &str, group: &str, kind: GroupKind) -> String {
+    match kind {
+        GroupKind::Plain => self::group(tool, group),
+        GroupKind::Collapsible => collapsible(tool, group),
+    }
 }
 
 /// A control's short label: `tool-<tool>-control-<control>-label`.
@@ -412,8 +421,8 @@ pub fn unit_value(unit: Unit) -> String {
 }
 
 /// Every message the definition implies, each once: its title, its description, Auto's
-/// tooltip if it has Auto, each titled tab, each group label, a row of pickers' label among
-/// them, each collapsible group's title, the words of each row that has its own, each
+/// tooltip if it has Auto, each titled tab, each group's title, plain or collapsible, a row
+/// of pickers' label among the plain ones', the words of each row that has its own, each
 /// setting's words and options, with each option's promise where a picker's words follow
 /// the setting, each action's words, each control's label, full name and promise, each
 /// option, each view's coordinate's label, full name and promise, as a control's, each
@@ -438,11 +447,10 @@ pub fn of(definition: &ProcessingDefinition) -> Vec<String> {
     );
     for row in definition.rows() {
         match row {
-            Row::Label { id }
-            | Row::Pickers {
+            Row::Group(found) => ids.push(group_title(tool, found.id, found.kind)),
+            Row::Pickers {
                 label: Some(id), ..
             } => ids.push(group(tool, id)),
-            Row::Group { id, .. } => ids.push(collapsible(tool, id)),
             Row::Slider(Slider {
                 control,
                 label: Some(words),
@@ -534,8 +542,7 @@ pub fn utility_presets(utility: &str) -> [String; 2] {
 }
 
 /// Every message a utility's header and rows imply, each once, as [`of`] lists a
-/// processing tool's: its own ↺'s name, its presets button's words, each group label's,
-/// each collapsible group's title, and each setting's words and options, those it
+/// processing tool's: its own ↺'s name, its presets button's words, each group's title, and each setting's words and options, those it
 /// declares where it does, a name an option declares needing none. Its custom rows' words
 /// are its widgets' own.
 pub fn of_utility(utility: &UtilityDefinition) -> Vec<String> {
@@ -543,8 +550,7 @@ pub fn of_utility(utility: &UtilityDefinition) -> Vec<String> {
         let tool = utility.tool.id;
         for row in list {
             match row {
-                Row::Label { id } => ids.push(utility.title(id, false)),
-                Row::Group { id, .. } => ids.push(utility.title(id, true)),
+                Row::Group(group) => ids.push(utility.title(group.id, group.kind)),
                 Row::Setting(setting) => {
                     ids.extend(setting_row(tool, setting).into_iter().flatten());
                     ids.extend(

@@ -1023,7 +1023,7 @@ mod tests {
         assert!(
             !DEFINITION
                 .rows()
-                .any(|row| matches!(row, Row::Group { .. } | Row::Patches { .. }))
+                .any(|row| matches!(row, Row::Group(_) | Row::Patches { .. }))
         );
         // Lightness on darktable's ramp of greys.
         let lightness = DEFINITION.rows().find_map(|row| match row {

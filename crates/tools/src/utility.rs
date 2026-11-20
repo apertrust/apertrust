@@ -29,7 +29,7 @@ use std::collections::BTreeSet;
 use crate::about::WorksOn;
 use crate::definition::{is_id, shows_setting};
 use crate::{
-    ControlKind, DefinitionError, MenuEntry, MenuItem, Place, Reset, Row, Section, Tab,
+    ControlKind, DefinitionError, GroupKind, MenuEntry, MenuItem, Place, Reset, Row, Section, Tab,
     ToolDefinition, Widget, check_menus,
 };
 
@@ -46,9 +46,9 @@ pub struct UtilityDefinition {
     /// it ([`Section`]).
     pub tool: ToolDefinition,
     pub measures: Option<WorksOn>,
-    /// Its group labels' and collapsible groups' titles where it declares its own, by
-    /// their ids, as Export's `export-storage-options` (decision 93); the others' follow
-    /// from their ids ([`crate::messages::group`], [`crate::messages::collapsible`]).
+    /// Its groups' titles where it declares its own, by their ids, as Export's
+    /// `export-storage-options` (decision 93); the others' follow from their ids and kinds
+    /// ([`crate::messages::group`], [`crate::messages::collapsible`]).
     pub titles: &'static [(&'static str, &'static str)],
     /// Its collapsible groups open at first, as Export's Global options (decision 90);
     /// every other is closed at first (decision 29).
@@ -60,14 +60,14 @@ impl UtilityDefinition {
     /// action's, its own or none, never a processing tool's, a presets button allowed, drawn
     /// disabled until its presets come with the presets API every tool shares (planned); its
     /// page one untitled tab, since
-    /// its header draws no tab strip; no row that edits, so its rows are settings, labels,
-    /// groups, rows following a setting and custom rows naming no control, each a utility's
-    /// own widget; no action row until a utility's are bound to the registry; each label,
-    /// group and setting once by its id, a group holding no group, each setting's kind as a
-    /// control's; rows following a setting following a choice setting of its own, shown
-    /// outside them and wherever they show, for options it has, with rows of their own;
-    /// what it titles a label or group of its page, and what opens at first a group with
-    /// rows; and
+    /// its header draws no tab strip; no row that edits, so its rows are settings, groups,
+    /// rows following a setting and custom rows naming no control, each a utility's own
+    /// widget; no action row until a utility's are bound to the registry; each group and
+    /// setting once by its id, groups inside a group only as [`crate::Group`] allows, each
+    /// plain group with rows, each setting's kind as a control's; rows following a setting
+    /// following a choice setting of its own, shown outside them and wherever they show,
+    /// for options it has, with rows of their own; what it titles a group of its page, and
+    /// what opens at first a collapsible group with rows; and
     /// its context menu items held to a tool's limits ([`check_menus`]).
     pub fn check(&self) -> Result<(), DefinitionError> {
         let tool = &self.tool;
@@ -82,26 +82,19 @@ impl UtilityDefinition {
         }
         let mut seen = Seen::default();
         for rows in [tool.before, tool.tabs[0].rows, tool.after] {
-            self.check_rows(rows, false, &mut seen)?;
-        }
-        // A label and a group never share an id, as a title is found by its id alone.
-        if let Some(id) = seen.labels.intersection(&seen.groups).next() {
-            return Err(DefinitionError::LabelAndGroup(id));
+            self.check_rows(rows, &mut seen)?;
         }
         // Each id is titled once, as a title is found by its id alone.
         let mut titled_once = std::collections::BTreeSet::new();
         if let Some((id, _)) = self.titles.iter().find(|(id, _)| !titled_once.insert(*id)) {
             return Err(DefinitionError::DuplicateTitle(id));
         }
-        // What it titles is a label or a group of its page, and what opens at first a group.
+        // What it titles is a group of its page, and what opens at first a collapsible one.
         let titled = self.titles.iter().map(|(id, _)| id);
-        if let Some(id) = titled
-            .copied()
-            .find(|id| !seen.labels.contains(id) && !seen.groups.contains(id))
-        {
+        if let Some(id) = titled.copied().find(|id| !seen.groups.contains(id)) {
             return Err(DefinitionError::UnknownTitle(id));
         }
-        if let Some(id) = self.open.iter().find(|id| !seen.groups.contains(*id)) {
+        if let Some(id) = self.open.iter().find(|id| !seen.collapsible.contains(*id)) {
             return Err(DefinitionError::UnknownTitle(id));
         }
         // A group with no rows is drawn closed and disabled, so it never opens at first.
@@ -115,26 +108,21 @@ impl UtilityDefinition {
         check_menus(tool.menus)
     }
 
-    /// Checks `rows`, `grouped` while inside a group, as [`Self::check`] says.
-    fn check_rows(
-        &self,
-        rows: &'static [Row],
-        grouped: bool,
-        seen: &mut Seen,
-    ) -> Result<(), DefinitionError> {
+    /// Checks `rows` and the rows inside them, as [`Self::check`] says.
+    fn check_rows(&self, rows: &'static [Row], seen: &mut Seen) -> Result<(), DefinitionError> {
         for row in rows {
             if let Some(by) = edits(row) {
                 return Err(DefinitionError::Edits(by));
             }
             match row {
-                Row::Label { id } => once(&mut seen.labels, id, DefinitionError::DuplicateLabel)?,
-                Row::Group { id, rows } => {
-                    if grouped {
-                        return Err(DefinitionError::GroupInGroup(id));
-                    }
-                    once(&mut seen.groups, id, DefinitionError::DuplicateGroup)?;
-                    if rows.is_empty() {
-                        seen.empty.insert(id);
+                Row::Group(group) => {
+                    once(&mut seen.groups, group.id, DefinitionError::DuplicateGroup)?;
+                    group.check()?;
+                    if group.kind == GroupKind::Collapsible {
+                        seen.collapsible.insert(group.id);
+                        if group.rows.is_empty() {
+                            seen.empty.insert(group.id);
+                        }
                     }
                 }
                 Row::Setting(setting) => {
@@ -166,8 +154,7 @@ impl UtilityDefinition {
                 Row::Action { id } => return Err(DefinitionError::UtilityAction(id)),
                 _ => {}
             }
-            let grouped = grouped || matches!(row, Row::Group { .. });
-            self.check_rows(row.rows(), grouped, seen)?;
+            self.check_rows(row.rows(), seen)?;
         }
         Ok(())
     }
@@ -177,8 +164,8 @@ impl UtilityDefinition {
 /// control it names, a slider's, a choice's, a toggle's, the one rows follow, a button
 /// row's or a custom row's; a preset row, which writes controls; a picker's rows, a row of
 /// pickers whatever it holds; a computed value, which an operation computes; and the
-/// guides, a processing tool's. None for a setting, a label, a group, rows following a
-/// setting, an action and a custom row naming no control.
+/// guides, a processing tool's. None for a setting, a group, rows following a setting, an
+/// action and a custom row naming no control.
 fn edits(row: &Row) -> Option<&'static str> {
     match row {
         Row::Slider(slider) => Some(slider.control),
@@ -194,19 +181,16 @@ fn edits(row: &Row) -> Option<&'static str> {
         }
         Row::Computed(computed) => Some(computed.id),
         Row::Guides => Some("guides"),
-        Row::Label { .. }
-        | Row::Group { .. }
-        | Row::WhenSetting { .. }
-        | Row::Setting(_)
-        | Row::Action { .. } => None,
+        Row::Group(_) | Row::WhenSetting { .. } | Row::Setting(_) | Row::Action { .. } => None,
     }
 }
 
 /// The ids a utility's page has used, by kind, each once.
 #[derive(Default)]
 struct Seen {
-    labels: BTreeSet<&'static str>,
+    /// Its groups of both kinds.
     groups: BTreeSet<&'static str>,
+    collapsible: BTreeSet<&'static str>,
     /// The groups with no rows yet, placeholders drawn disabled and closed.
     empty: BTreeSet<&'static str>,
     settings: BTreeSet<&'static str>,
@@ -345,14 +329,13 @@ pub fn utility(id: &str) -> Option<&'static UtilityDefinition> {
 }
 
 impl UtilityDefinition {
-    /// The message id of its group label `id`'s title, or its collapsible group's where
-    /// `collapsible`: its own where it declares one ([`Self::titles`]), else the one the
-    /// id implies.
-    pub fn title(&self, id: &str, collapsible: bool) -> String {
+    /// The message id of the title of its group `id` of the kind `kind`: its own where it
+    /// declares one ([`Self::titles`]), else the one the id and kind imply
+    /// ([`crate::messages::group_title`]).
+    pub fn title(&self, id: &str, kind: GroupKind) -> String {
         match self.titles.iter().find(|(titled, _)| *titled == id) {
             Some((_, title)) => (*title).to_owned(),
-            None if collapsible => crate::messages::collapsible(self.tool.id, id),
-            None => crate::messages::group(self.tool.id, id),
+            None => crate::messages::group_title(self.tool.id, id, kind),
         }
     }
 
@@ -371,7 +354,13 @@ pub fn opens(tool: &str, group: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{ChoiceStyle, Computed, SettingRow, Slider, Track, Word};
+    use crate::{ChoiceStyle, Computed, Group, SettingRow, Slider, Track, Word};
+
+    /// A row that edits nothing, Scopes' graph.
+    const GRAPH_ROW: Row = Row::Custom {
+        widget: Widget::Scopes,
+        controls: &[],
+    };
 
     /// A utility whose page is `rows`, on one untitled tab.
     fn with(rows: &'static [Row]) -> UtilityDefinition {
@@ -451,24 +440,29 @@ mod tests {
         assert_eq!(open, expected);
     }
 
-    /// Settings, labels, groups, rows following a setting shown beside them, and custom
-    /// rows of a utility's widgets naming no control: what a utility holds.
+    /// Settings, groups of both kinds, rows following a setting shown beside them, and
+    /// custom rows of a utility's widgets naming no control: what a utility holds.
     #[test]
-    fn a_utility_holds_settings_labels_groups_and_custom_rows() {
+    fn a_utility_holds_settings_groups_and_custom_rows() {
         let utility = with(&[
             Row::Setting(GRAPH),
             Row::WhenSetting {
                 setting: "graph",
                 is: &["lines"],
-                rows: &[Row::Label { id: "lines" }],
+                rows: &[Row::Group(Group {
+                    id: "lines",
+                    kind: GroupKind::Plain,
+                    rows: &[GRAPH_ROW],
+                })],
             },
-            Row::Group {
+            Row::Group(Group {
                 id: "more",
+                kind: GroupKind::Collapsible,
                 rows: &[Row::Custom {
                     widget: Widget::Scopes,
                     controls: &[],
                 }],
-            },
+            }),
         ]);
         assert_eq!(utility.check(), Ok(()));
     }
@@ -526,7 +520,7 @@ mod tests {
                 &[Row::When {
                     control: "mode",
                     is: &["fast"],
-                    rows: &[Row::Label { id: "fast" }],
+                    rows: &[GRAPH_ROW],
                 }],
                 "mode",
             ),
@@ -585,10 +579,11 @@ mod tests {
             (&[Row::Computed(COMPUTED)], "level"),
             (&[Row::Guides], "guides"),
             (
-                &[Row::Group {
+                &[Row::Group(Group {
                     id: "more",
+                    kind: GroupKind::Collapsible,
                     rows: &[Row::Toggle { control: "on" }],
-                }],
+                })],
                 "on",
             ),
         ];
@@ -597,8 +592,8 @@ mod tests {
         }
     }
 
-    /// Its page is one untitled tab; its labels, groups and settings each once, a group
-    /// holding none; rows following a setting follow an option of one it has; its menus
+    /// Its page is one untitled tab; its groups and settings each once, a collapsible group
+    /// holding no collapsible one; rows following a setting follow an option of one it has; its menus
     /// are a tool's.
     #[test]
     fn its_page_is_one_untitled_tab_its_ids_once_and_its_menus_a_tool_s() {
@@ -608,15 +603,28 @@ mod tests {
             rows: &[],
         }];
         assert_eq!(titled.check(), Err(DefinitionError::Tabs));
-        let twice = with(&[Row::Label { id: "one" }, Row::Label { id: "one" }]);
-        assert_eq!(twice.check(), Err(DefinitionError::DuplicateLabel("one")));
-        let nested = with(&[Row::Group {
+        const ONE: Row = Row::Group(Group {
+            id: "one",
+            kind: GroupKind::Plain,
+            rows: &[GRAPH_ROW],
+        });
+        let twice = with(&[ONE, ONE]);
+        assert_eq!(twice.check(), Err(DefinitionError::DuplicateGroup("one")));
+        let empty = with(&[Row::Group(Group {
+            id: "empty",
+            kind: GroupKind::Plain,
+            rows: &[],
+        })]);
+        assert_eq!(empty.check(), Err(DefinitionError::EmptyGroup("empty")));
+        let nested = with(&[Row::Group(Group {
             id: "outer",
-            rows: &[Row::Group {
+            kind: GroupKind::Collapsible,
+            rows: &[Row::Group(Group {
                 id: "inner",
+                kind: GroupKind::Collapsible,
                 rows: &[],
-            }],
-        }]);
+            })],
+        })]);
         assert_eq!(nested.check(), Err(DefinitionError::GroupInGroup("inner")));
         let settings = with(&[Row::Setting(GRAPH), Row::Setting(GRAPH)]);
         let twice = Err(DefinitionError::DuplicateSetting("graph"));
@@ -625,7 +633,7 @@ mod tests {
         let unknown = with(&[Row::WhenSetting {
             setting: "graph",
             is: &["lines"],
-            rows: &[Row::Label { id: "lines" }],
+            rows: &[GRAPH_ROW],
         }]);
         assert_eq!(unknown.check(), follows);
         let no_option = with(&[
@@ -633,7 +641,7 @@ mod tests {
             Row::WhenSetting {
                 setting: "graph",
                 is: &["dots"],
-                rows: &[Row::Label { id: "dots" }],
+                rows: &[GRAPH_ROW],
             },
         ]);
         assert_eq!(no_option.check(), follows);
@@ -641,10 +649,11 @@ mod tests {
         let hides_itself = with(&[Row::WhenSetting {
             setting: "graph",
             is: &["lines"],
-            rows: &[Row::Group {
+            rows: &[Row::Group(Group {
                 id: "more",
+                kind: GroupKind::Collapsible,
                 rows: &[Row::Setting(GRAPH)],
-            }],
+            })],
         }]);
         assert_eq!(hides_itself.check(), follows);
         // Two settings, each among the rows the other hides, both at their defaults
@@ -678,7 +687,7 @@ mod tests {
                     Row::WhenSetting {
                         setting: "lines",
                         is: &["lines"],
-                        rows: &[Row::Label { id: "both" }],
+                        rows: &[GRAPH_ROW],
                     },
                 ],
             },
@@ -689,7 +698,7 @@ mod tests {
         beside.tool.after = &[Row::WhenSetting {
             setting: "graph",
             is: &["lines"],
-            rows: &[Row::Label { id: "lines" }],
+            rows: &[GRAPH_ROW],
         }];
         assert_eq!(beside.check(), Ok(()));
         let mut menus = with(&[]);
@@ -758,22 +767,33 @@ mod tests {
     #[test]
     fn its_titles_and_open_groups_are_its_page_s() {
         const ROWS: &[Row] = &[
-            Row::Label { id: "first" },
-            Row::Group {
+            Row::Group(Group {
+                id: "first",
+                kind: GroupKind::Plain,
+                rows: &[GRAPH_ROW],
+            }),
+            Row::Group(Group {
                 id: "more",
+                kind: GroupKind::Collapsible,
                 rows: &[Row::Setting(GRAPH)],
-            },
+            }),
         ];
         let mut titled = with(ROWS);
         titled.titles = &[("first", "sample-first"), ("more", "sample-more")];
         titled.open = &["more"];
         assert_eq!(titled.check(), Ok(()));
-        assert_eq!(titled.title("first", false), "sample-first");
-        assert_eq!(titled.title("more", true), "sample-more");
+        assert_eq!(titled.title("first", GroupKind::Plain), "sample-first");
+        assert_eq!(titled.title("more", GroupKind::Collapsible), "sample-more");
         assert!(titled.opens("more"));
         let plain = with(ROWS);
-        assert_eq!(plain.title("first", false), "tool-sample-group-first");
-        assert_eq!(plain.title("more", true), "tool-sample-collapsible-more");
+        assert_eq!(
+            plain.title("first", GroupKind::Plain),
+            "tool-sample-group-first"
+        );
+        assert_eq!(
+            plain.title("more", GroupKind::Collapsible),
+            "tool-sample-collapsible-more"
+        );
         assert!(!plain.opens("more"));
         let mut unknown = with(ROWS);
         unknown.titles = &[("last", "sample-last")];
@@ -781,28 +801,39 @@ mod tests {
         let mut twice = with(ROWS);
         twice.titles = &[("more", "sample-more"), ("more", "sample-other")];
         assert_eq!(twice.check(), Err(DefinitionError::DuplicateTitle("more")));
-        let mut label = with(ROWS);
-        label.open = &["first"];
-        assert_eq!(label.check(), Err(DefinitionError::UnknownTitle("first")));
+        // A plain group is always open, so never opens at first.
+        let mut plain_open = with(ROWS);
+        plain_open.open = &["first"];
+        assert_eq!(
+            plain_open.check(),
+            Err(DefinitionError::UnknownTitle("first"))
+        );
         // A group with no rows yet is a placeholder, drawn closed: it may be on the page,
         // but never open at first.
-        const PLACEHOLDER: &[Row] = &[Row::Group {
+        const PLACEHOLDER: &[Row] = &[Row::Group(Group {
             id: "later",
+            kind: GroupKind::Collapsible,
             rows: &[],
-        }];
+        })];
         assert_eq!(with(PLACEHOLDER).check(), Ok(()));
         let mut empty = with(PLACEHOLDER);
         empty.open = &["later"];
         assert_eq!(empty.check(), Err(DefinitionError::OpensEmpty("later")));
-        // A title is found by its id alone, so a label and a group never share one.
+        // A title is found by its id alone, so two groups never share one, whatever their
+        // kinds.
         let shared = with(&[
-            Row::Label { id: "more" },
-            Row::Group {
+            Row::Group(Group {
                 id: "more",
+                kind: GroupKind::Plain,
+                rows: &[GRAPH_ROW],
+            }),
+            Row::Group(Group {
+                id: "more",
+                kind: GroupKind::Collapsible,
                 rows: &[Row::Setting(GRAPH)],
-            },
+            }),
         ]);
-        assert_eq!(shared.check(), Err(DefinitionError::LabelAndGroup("more")));
+        assert_eq!(shared.check(), Err(DefinitionError::DuplicateGroup("more")));
     }
 
     /// Every key a utility's setting names in full is a setting of the settings schema

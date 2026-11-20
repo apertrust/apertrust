@@ -976,7 +976,7 @@ fn shown(values: &Controls) -> Vec<&'static str> {
                         walk(rows, values, out);
                     }
                 }
-                Row::Group { .. } => {}
+                Row::Group(_) => {}
                 row => out.extend(row.controls()),
             }
         }
@@ -1004,10 +1004,11 @@ fn c7_the_cat_tab_shows_its_rows_as_darktable_does() {
     assert_eq!(definition.tool.tabs[0].id, Some("cat"));
     assert!(matches!(
         definition.tool.tabs[0].rows.last(),
-        Some(Row::Group {
+        Some(Row::Group(apertrust_tools::Group {
             id: "area_colour_mapping",
+            kind: apertrust_tools::GroupKind::Collapsible,
             ..
-        })
+        }))
     ));
     let image = raw_context(8, 8, 0.0);
     for adaptation in [

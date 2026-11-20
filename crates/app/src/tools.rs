@@ -25,8 +25,10 @@
 //!   darktable's soft range where the definition gives one, a choice a `Choice` in its
 //!   Blended style, darktable's combobox, with its kept marker (decision 42), or
 //!   `Segmented`, every option drawn and those the photo does not list disabled with
-//!   their reasons (decision 88), a toggle a `ToggleRow`, a label a `group_label`, a
-//!   collapsible group a `CollapsibleGroup`, a curve of points a `Curve`, drawn through
+//!   their reasons (decision 88), a toggle a `ToggleRow`, a plain group a `PlainGroup`, a
+//!   collapsible group a `CollapsibleGroup` (decision 100), a group first in its container,
+//!   a tool's body, a tab or a group, drawing no space above it, a curve of points a
+//!   `Curve`, drawn through
 //!   the curve the tool says it renders, and the tone equalizer's graph of its bands an
 //!   `Equalizer`, drawn through the curve the tool says it renders through them. The
 //!   closed registry's other painted widgets join with the tools that use them.
@@ -73,15 +75,15 @@ use apertrust_plugin::ImageContext;
 use apertrust_tools::about::{self, Facts};
 use apertrust_tools::utility;
 use apertrust_tools::{
-    Button, ButtonIcon, ChoiceStyle, Computed, ControlKind, Controls, MAX_POINTS, PickerKind,
-    ProcessingDefinition, ProcessingTool, Quad, Reset, Row, SettingRow, Slider, ToolDefinition,
-    Track, Unit, View, Widget, Word, check, messages,
+    Button, ButtonIcon, ChoiceStyle, Computed, ControlKind, Controls, Group, GroupKind, MAX_POINTS,
+    PickerKind, ProcessingDefinition, ProcessingTool, Quad, Reset, Row, SettingRow, Slider,
+    ToolDefinition, Track, Unit, View, Widget, Word, check, messages,
 };
 use apertrust_ui::components::{
     self as parts, ActionRow, ButtonState, ButtonsAction, ButtonsRow, Choice, ChoiceAction,
     CollapsibleGroup, Curve, CurveAction, Equalizer, EqualizerAction, IconButton, PickerAction,
-    PickerButton, ReadoutRow, Reference, ReferenceAction, ReferenceRow, Section, SectionAction,
-    Segmented, SliderAction, SliderRow, ToggleRow, WarningRow, Wheel, group_label,
+    PickerButton, PlainGroup, ReadoutRow, Reference, ReferenceAction, ReferenceRow, Section,
+    SectionAction, Segmented, SliderAction, SliderRow, ToggleRow, WarningRow, Wheel,
 };
 use apertrust_ui::i18n::Args;
 use apertrust_ui::{Translator, popup, translator};
@@ -1193,16 +1195,11 @@ pub trait Rows {
     /// Draws `row`, one of the rows its kind draws.
     fn own(&self, ui: &mut egui::Ui, row: &Row, changes: &mut Vec<Change>);
 
-    /// The title of its group label `id`, or of its collapsible group's where
-    /// `collapsible`: the one its id implies, unless a utility declares its own
-    /// (decision 93).
-    fn title(&self, id: &str, collapsible: bool) -> String {
+    /// The title of its group `id` of the kind `kind`: the one its id and kind imply,
+    /// unless a utility declares its own (decision 93).
+    fn title(&self, id: &str, kind: GroupKind) -> String {
         let tool = self.definition().id;
-        self.words().text(&if collapsible {
-            messages::collapsible(tool, id)
-        } else {
-            messages::group(tool, id)
-        })
+        self.words().text(&messages::group_title(tool, id, kind))
     }
 
     /// The value its setting row `row` shows, and whether it can be changed: the tools'
@@ -1257,15 +1254,24 @@ pub struct Note {
 }
 
 /// The one page drawer (decision 93): draws the page of `rows`' tool, the rows before its
-/// tabs', its tab `tab`'s, then those after, every tool's alike. Returns what the user did
-/// in `changes`.
+/// tabs', its tab `tab`'s, then those after, every tool's alike, one container, the tool's
+/// body. Returns what the user did in `changes`.
 pub fn page(ui: &mut egui::Ui, rows: &dyn Rows, tab: usize, changes: &mut Vec<Change>) {
     let definition = rows.definition();
     let tab = definition.tabs.get(tab).map_or(&[][..], |tab| tab.rows);
+    let top = ui.cursor().top();
     for list in [definition.before, tab, definition.after] {
         for row in list {
-            draw_row(ui, rows, row, changes);
+            draw_row(ui, rows, row, top, changes);
         }
+    }
+}
+
+/// Draws `list`, the rows of one container, a group's, from where `ui` is now.
+fn draw_rows(ui: &mut egui::Ui, rows: &dyn Rows, list: &[Row], changes: &mut Vec<Change>) {
+    let top = ui.cursor().top();
+    for row in list {
+        draw_row(ui, rows, row, top, changes);
     }
 }
 
@@ -1402,8 +1408,7 @@ impl Rows for Page<'_> {
             }
             Row::Guides => guides_row(ui, words),
             // The page drawer's own.
-            Row::Label { .. }
-            | Row::Group { .. }
+            Row::Group(_)
             | Row::When { .. }
             | Row::WhenSetting { .. }
             | Row::Setting(_)
@@ -1432,7 +1437,10 @@ pub(crate) fn follows_setting(rows: &dyn Rows, setting: &str, is: &[&str]) -> bo
     }
 }
 
-fn draw_row(ui: &mut egui::Ui, rows: &dyn Rows, row: &Row, changes: &mut Vec<Change>) {
+/// Draws `row` of the container whose rows start at `top`: a group with nothing drawn
+/// above it there is its first row (decision 100), whatever rows before it the photo hides
+/// or a mode leaves out.
+fn draw_row(ui: &mut egui::Ui, rows: &dyn Rows, row: &Row, top: f32, changes: &mut Vec<Change>) {
     // A row the photo gives nothing to do is not drawn, and screen readers find no node
     // for it (decision 88).
     if rows.hidden(row) {
@@ -1441,8 +1449,7 @@ fn draw_row(ui: &mut egui::Ui, rows: &dyn Rows, row: &Row, changes: &mut Vec<Cha
     // Where a row of controls on the edit is drawn, for a photo opening's tip.
     let on_edit = !matches!(
         row,
-        Row::Label { .. }
-            | Row::Group { .. }
+        Row::Group(_)
             | Row::When { .. }
             | Row::WhenSetting { .. }
             | Row::Setting(_)
@@ -1454,13 +1461,13 @@ fn draw_row(ui: &mut egui::Ui, rows: &dyn Rows, row: &Row, changes: &mut Vec<Cha
             | Row::LastPick { .. }
             | Row::Guides
     );
-    let top = ui.cursor().top();
-    draw_kind(ui, rows, row, changes);
+    let start = ui.cursor().top();
+    draw_kind(ui, rows, row, top, changes);
     if on_edit {
-        let bottom = ui.min_rect().bottom().max(top);
+        let bottom = ui.min_rect().bottom().max(start);
         rows.on_edit(egui::Rect::from_x_y_ranges(
             ui.max_rect().x_range(),
-            top..=bottom,
+            start..=bottom,
         ));
     }
     if let Some(note) = rows.note(row) {
@@ -1483,13 +1490,17 @@ fn note_row(ui: &mut egui::Ui, rows: &dyn Rows, row: &Row, note: &Note) {
     }
 }
 
-/// Draws `row`: the rows any tool may hold here, the others by `rows`' kind.
-fn draw_kind(ui: &mut egui::Ui, rows: &dyn Rows, row: &Row, changes: &mut Vec<Change>) {
+/// Draws `row` of the container whose rows start at `top`: the rows any tool may hold
+/// here, the others by `rows`' kind. A mode's rows are its container's.
+fn draw_kind(ui: &mut egui::Ui, rows: &dyn Rows, row: &Row, top: f32, changes: &mut Vec<Change>) {
     let words = rows.words();
     let tool = rows.definition().id;
     match row {
-        Row::Label { id } => group_label(ui, &rows.title(id, false)),
-        Row::Group { id, rows: inside } => group_row(ui, rows, id, inside, changes),
+        Row::Group(group) => {
+            // Nothing drawn in its container yet: its first row.
+            let first = ui.cursor().top() <= top;
+            group_row(ui, rows, group, first, changes);
+        }
         Row::When {
             control,
             is,
@@ -1497,7 +1508,7 @@ fn draw_kind(ui: &mut egui::Ui, rows: &dyn Rows, row: &Row, changes: &mut Vec<Ch
         } => {
             if rows.follows(control, is) {
                 for row in *inside {
-                    draw_row(ui, rows, row, changes);
+                    draw_row(ui, rows, row, top, changes);
                 }
             }
         }
@@ -1508,7 +1519,7 @@ fn draw_kind(ui: &mut egui::Ui, rows: &dyn Rows, row: &Row, changes: &mut Vec<Ch
         } => {
             if follows_setting(rows, setting, is) {
                 for row in *inside {
-                    draw_row(ui, rows, row, changes);
+                    draw_row(ui, rows, row, top, changes);
                 }
             }
         }
@@ -2167,16 +2178,24 @@ fn colour(srgb: [f32; 3]) -> egui::Color32 {
 fn group_row(
     ui: &mut egui::Ui,
     page: &dyn Rows,
-    id: &'static str,
-    rows: &[Row],
+    group: &Group,
+    first: bool,
     changes: &mut Vec<Change>,
 ) {
     let tool = page.definition().id;
-    let title = page.title(id, true);
+    let Group { id, kind, rows } = *group;
+    let title = page.title(id, kind);
+    if kind == GroupKind::Plain {
+        PlainGroup::new(&title)
+            .first(first)
+            .show(ui, |ui| draw_rows(ui, page, rows, changes));
+        return;
+    }
     // A group with no rows has nothing behind it yet: drawn disabled, as a tab with none.
     if rows.is_empty() {
         let later = page.words().text("section-tab-later");
         CollapsibleGroup::new(&title, false)
+            .first(first)
             .disabled(&later)
             .show(ui, |_| {});
         return;
@@ -2185,11 +2204,10 @@ fn group_row(
     let set = page.set_in(rows);
     // A scope, whose response is the group's row while it is closed, carries the tooltip.
     let group = ui.scope(|ui| {
-        CollapsibleGroup::new(&title, open).set(set).show(ui, |ui| {
-            for row in rows {
-                draw_row(ui, page, row, changes);
-            }
-        })
+        CollapsibleGroup::new(&title, open)
+            .first(first)
+            .set(set)
+            .show(ui, |ui| draw_rows(ui, page, rows, changes))
     });
     if !open && set > 0 {
         let mut args = Args::new();
@@ -3925,7 +3943,7 @@ mod tests {
 
     #[test]
     fn a_choice_row_sets_its_control() {
-        // Sample's size, segments under a group label. Sample has no messages, so its
+        // Sample's size, segments in a plain group. Sample has no messages, so its
         // words are its message ids.
         let mut harness = panel(&Sample, untouched(&Sample));
         harness.run();
@@ -3954,6 +3972,54 @@ mod tests {
         });
         harness.run();
         harness
+    }
+
+    /// Every collapsible group keeps the id the app keeps its open state by
+    /// (`edit.groups`), so one opened stays open (decision 100): each tool's and utility's,
+    /// in its page's order, and none of its plain groups among them.
+    #[test]
+    fn every_collapsible_group_keeps_its_id() {
+        let definitions = apertrust_tools::TOOLS
+            .iter()
+            .map(|tool| &tool.definition().tool)
+            .chain(apertrust_tools::utility::UTILITIES.iter().map(|u| &u.tool));
+        let mut kept = Vec::new();
+        for tool in definitions {
+            let mut rows: Vec<&Row> = Vec::new();
+            fn walk<'r>(list: &'r [Row], into: &mut Vec<&'r Row>) {
+                for row in list {
+                    into.push(row);
+                    walk(row.rows(), into);
+                }
+            }
+            for tab in tool.tabs {
+                walk(tab.rows, &mut rows);
+            }
+            walk(tool.before, &mut rows);
+            walk(tool.after, &mut rows);
+            kept.extend(rows.into_iter().filter_map(|row| match row {
+                Row::Group(Group {
+                    id,
+                    kind: GroupKind::Collapsible,
+                    ..
+                }) => Some((tool.id, *id)),
+                _ => None,
+            }));
+        }
+        kept.sort_unstable();
+        assert_eq!(
+            kept,
+            [
+                ("agx", "advanced_curve_parameters"),
+                ("agx", "look"),
+                ("agx", "show_curve"),
+                ("channelmixerrgb", "area_colour_mapping"),
+                ("channelmixerrgb", "colour_checker"),
+                ("demosaic", "capture_sharpen_controls"),
+                ("export", "global"),
+                ("temperature", "channel_coefficients"),
+            ]
+        );
     }
 
     /// Sample's Midtones group's row. Sample has no messages, so its words are its
@@ -5436,7 +5502,7 @@ mod tests {
             let tab = harness.get_by_role_and_label(Role::Tab, name);
             assert!(!tab.accesskit_node().is_disabled(), "{name}");
         }
-        // Master first, its sliders under darktable's group labels.
+        // Master first, its sliders in darktable's plain groups.
         harness.get_by_role_and_label(Role::Slider, "Hue shift");
         harness.get_by_role_and_label(Role::Slider, "Contrast");
         harness.get_by_label("Linear chroma grading");
@@ -5738,9 +5804,11 @@ mod tests {
             .map(|&(name, role)| top(name, role))
             .collect();
         assert!(tops.is_sorted(), "{tops:?}");
-        // darktable's "position / form" after the strengths.
-        let label = harness.get_by_label("Position / form").rect().top();
+        // darktable's "position / form" after the strengths, a plain group holding the rest.
+        let group = harness.get_by_role_and_label(Role::Group, "Position / form");
+        let label = group.rect().top();
         assert!(tops[3] < label && label < tops[4], "{label} among {tops:?}");
+        group.get_by_role_and_label(Role::ComboBox, "Dithering");
         // Each value as darktable's slider writes it, with its digits, in the page's
         // order; brightness and saturation at darktable's −0.5, signed as their ranges span
         // zero, as the centres' do. The radii are in percent, the rest numbers.
@@ -6040,8 +6108,9 @@ mod tests {
                 ui.scope_builder(inside, |ui| {
                     ui.spacing_mut().item_spacing.y = 0.0;
                     let rows = Sample.definition().rows();
+                    let top = ui.cursor().top();
                     for row in rows.filter(|row| !row.pickers().is_empty()) {
-                        draw_row(ui, &page, row, &mut Vec::new());
+                        draw_row(ui, &page, row, top, &mut Vec::new());
                     }
                 });
                 // A sky over a pale wall over earth, as the wireframe's photo.

@@ -41,8 +41,8 @@ use apertrust_plugin::{ImageContext, Value};
 
 use crate::about::{Fact, Facts, Purpose};
 use crate::definition::{
-    ChoiceStyle, Control, ControlKind, ProcessingDefinition, Reset, Row, Slider, Tab,
-    ToolDefinition, Unit,
+    ChoiceStyle, Control, ControlKind, Group, GroupKind, ProcessingDefinition, Reset, Row, Slider,
+    Tab, ToolDefinition, Unit,
 };
 use crate::{
     Base, ControlValue, Controls, Owned, ProcessingTool, Setting, ToolValues, switched_from,
@@ -131,20 +131,23 @@ static DEFINITION: ProcessingDefinition = ProcessingDefinition {
                 Row::Slider(Slider::new("falloff_scale")),
                 Row::Slider(Slider::new("brightness").decimals(3)),
                 Row::Slider(Slider::new("saturation").decimals(3)),
-                Row::Label {
+                Row::Group(Group {
                     id: "position_form",
-                },
-                Row::Slider(Slider::new("center_x").decimals(3)),
-                Row::Slider(Slider::new("center_y").decimals(3)),
-                Row::Slider(Slider::new("shape")),
-                Row::Toggle {
-                    control: "autoratio",
-                },
-                Row::Slider(Slider::new("whratio").decimals(3)),
-                Row::Choice {
-                    control: "dithering",
-                    style: ChoiceStyle::List,
-                },
+                    kind: GroupKind::Plain,
+                    rows: &[
+                        Row::Slider(Slider::new("center_x").decimals(3)),
+                        Row::Slider(Slider::new("center_y").decimals(3)),
+                        Row::Slider(Slider::new("shape")),
+                        Row::Toggle {
+                            control: "autoratio",
+                        },
+                        Row::Slider(Slider::new("whratio").decimals(3)),
+                        Row::Choice {
+                            control: "dithering",
+                            style: ChoiceStyle::List,
+                        },
+                    ],
+                }),
             ],
         }],
         before: &[],
@@ -303,13 +306,17 @@ mod tests {
         assert_eq!(shown, order);
         let controls: Vec<&str> = CONTROLS.iter().map(|c| c.id).collect();
         assert_eq!(controls, order);
-        // The group label after saturation, darktable's "position / form".
+        // The plain group after saturation, darktable's section label "position / form",
+        // holding the rest.
         let rows = DEFINITION.tool.tabs[0].rows;
+        assert_eq!(rows.len(), 5);
         assert!(matches!(
             rows[4],
-            Row::Label {
-                id: "position_form"
-            }
+            Row::Group(Group {
+                id: "position_form",
+                kind: GroupKind::Plain,
+                rows,
+            }) if rows.len() == 6
         ));
     }
 

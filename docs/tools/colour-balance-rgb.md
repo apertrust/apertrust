@@ -30,7 +30,7 @@ Each control is one `colorbalancergb` parameter, shown as darktable's slider sho
 
 Control ids are darktable's parameter names in snake_case.
 
-| Tab | Group label | Control | Parameter | Range | Soft range: the track's span | Step | Default | Track |
+| Tab | Plain group | Control | Parameter | Range | Soft range: the track's span | Step | Default | Track |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | Master | — | Hue shift (`hue_angle`) | `hue_angle` | −180° to 180° | the range | 1° | 0 | plain |
 | Master | — | Global vibrance (`vibrance`) | `vibrance` | −100 % to 100 % | ±50 % | 0.5 % | 0 | plain |
@@ -50,7 +50,7 @@ Control ids are darktable's parameter names in snake_case.
 | Masks | Threshold | White fulcrum (`white_fulcrum`) | `white_fulcrum` | −16 to 16 EV | ±2 EV | 0.01 EV | 0 EV | plain |
 | Masks | Threshold | Contrast grey fulcrum (`grey_fulcrum`) | `grey_fulcrum` | 0 % to 100 % | 10 % to 50 % | 0.5 % | 18.45 % | plain |
 
-The group labels are darktable's section labels, plain labels: darktable has no collapsible section in this module. A full name, what screen readers say, adds the group to a short label that repeats ("Shadows chroma", "Global offset hue"), as darktable's shortcuts do.
+The plain groups are darktable's section labels, each holding the rows under it (decision 100): darktable has no collapsible section in this module. A full name, what screen readers say, adds the group to a short label that repeats ("Shadows chroma", "Global offset hue"), as darktable's shortcuts do.
 
 The promises, the tooltips, are darktable's tooltips in British English; the per-range saturation and brilliance tooltips, which darktable words alike, name their range.
 

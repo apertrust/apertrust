@@ -45,8 +45,8 @@ use apertrust_plugin::{ImageContext, Value};
 
 use crate::about::{Fact, Facts, Purpose};
 use crate::definition::{
-    ChoiceStyle, Control, ControlKind, Picker, PickerKind, ProcessingDefinition, Quad, Reset, Row,
-    Slider, Space, Tab, ToolDefinition, Track, Unit,
+    ChoiceStyle, Control, ControlKind, Group, GroupKind, Picker, PickerKind, ProcessingDefinition,
+    Quad, Reset, Row, Slider, Space, Tab, ToolDefinition, Track, Unit,
 };
 use crate::{Base, Owned, ProcessingTool, Setting, ToolValues, switched_from};
 
@@ -294,53 +294,78 @@ static DEFINITION: ProcessingDefinition = ProcessingDefinition {
                     slider("hue_angle"),
                     soft("vibrance", -50.0, 50.0),
                     soft("contrast", -50.0, 50.0),
-                    Row::Label {
+                    Row::Group(Group {
                         id: "linear_chroma_grading",
-                    },
-                    soft("chroma_global", -50.0, 50.0),
-                    slider("chroma_shadows"),
-                    slider("chroma_midtones"),
-                    slider("chroma_highlights"),
-                    Row::Label {
+                        kind: GroupKind::Plain,
+                        rows: &[
+                            soft("chroma_global", -50.0, 50.0),
+                            slider("chroma_shadows"),
+                            slider("chroma_midtones"),
+                            slider("chroma_highlights"),
+                        ],
+                    }),
+                    Row::Group(Group {
                         id: "perceptual_saturation_grading",
-                    },
-                    slider("saturation_global"),
-                    slider("saturation_shadows"),
-                    slider("saturation_midtones"),
-                    slider("saturation_highlights"),
-                    Row::Label {
+                        kind: GroupKind::Plain,
+                        rows: &[
+                            slider("saturation_global"),
+                            slider("saturation_shadows"),
+                            slider("saturation_midtones"),
+                            slider("saturation_highlights"),
+                        ],
+                    }),
+                    Row::Group(Group {
                         id: "perceptual_brilliance_grading",
-                    },
-                    slider("brilliance_global"),
-                    slider("brilliance_shadows"),
-                    slider("brilliance_midtones"),
-                    slider("brilliance_highlights"),
+                        kind: GroupKind::Plain,
+                        rows: &[
+                            slider("brilliance_global"),
+                            slider("brilliance_shadows"),
+                            slider("brilliance_midtones"),
+                            slider("brilliance_highlights"),
+                        ],
+                    }),
                 ],
             },
             Tab {
                 id: Some("four_ways"),
                 rows: &[
-                    Row::Label {
+                    Row::Group(Group {
                         id: "global_offset",
-                    },
-                    luminance_row("global_y", (-5.0, 5.0)),
-                    hue_row("global_h", "global_hue"),
-                    chroma_row("global_c", (0.0, 1.0)),
-                    Row::Label { id: "shadows_lift" },
-                    // darktable sets the shadows' soft range to the whole range.
-                    luminance_row("shadows_y", (-100.0, 100.0)),
-                    hue_row("shadows_h", "shadows_hue"),
-                    chroma_row("shadows_c", (0.0, 50.0)),
-                    Row::Label {
+                        kind: GroupKind::Plain,
+                        rows: &[
+                            luminance_row("global_y", (-5.0, 5.0)),
+                            hue_row("global_h", "global_hue"),
+                            chroma_row("global_c", (0.0, 1.0)),
+                        ],
+                    }),
+                    Row::Group(Group {
+                        id: "shadows_lift",
+                        kind: GroupKind::Plain,
+                        rows: &[
+                            // darktable sets the shadows' soft range to the whole range.
+                            luminance_row("shadows_y", (-100.0, 100.0)),
+                            hue_row("shadows_h", "shadows_hue"),
+                            chroma_row("shadows_c", (0.0, 50.0)),
+                        ],
+                    }),
+                    Row::Group(Group {
                         id: "highlights_gain",
-                    },
-                    luminance_row("highlights_y", (-50.0, 50.0)),
-                    hue_row("highlights_h", "highlights_hue"),
-                    chroma_row("highlights_c", (0.0, 20.0)),
-                    Row::Label { id: "power" },
-                    luminance_row("midtones_y", (-25.0, 25.0)),
-                    hue_row("midtones_h", "midtones_hue"),
-                    chroma_row("midtones_c", (0.0, 10.0)),
+                        kind: GroupKind::Plain,
+                        rows: &[
+                            luminance_row("highlights_y", (-50.0, 50.0)),
+                            hue_row("highlights_h", "highlights_hue"),
+                            chroma_row("highlights_c", (0.0, 20.0)),
+                        ],
+                    }),
+                    Row::Group(Group {
+                        id: "power",
+                        kind: GroupKind::Plain,
+                        rows: &[
+                            luminance_row("midtones_y", (-25.0, 25.0)),
+                            hue_row("midtones_h", "midtones_hue"),
+                            chroma_row("midtones_c", (0.0, 10.0)),
+                        ],
+                    }),
                 ],
             },
             Tab {
@@ -352,15 +377,23 @@ static DEFINITION: ProcessingDefinition = ProcessingDefinition {
                     },
                     // darktable's graph of the three ranges comes first, once a widget
                     // draws it.
-                    Row::Label {
+                    Row::Group(Group {
                         id: "luminance_ranges",
-                    },
-                    slider("shadows_weight"),
-                    slider("mask_grey_fulcrum"),
-                    slider("highlights_weight"),
-                    Row::Label { id: "threshold" },
-                    fulcrum_row("white_fulcrum", (-2.0, 2.0)),
-                    fulcrum_row("grey_fulcrum", (10.0, 50.0)),
+                        kind: GroupKind::Plain,
+                        rows: &[
+                            slider("shadows_weight"),
+                            slider("mask_grey_fulcrum"),
+                            slider("highlights_weight"),
+                        ],
+                    }),
+                    Row::Group(Group {
+                        id: "threshold",
+                        kind: GroupKind::Plain,
+                        rows: &[
+                            fulcrum_row("white_fulcrum", (-2.0, 2.0)),
+                            fulcrum_row("grey_fulcrum", (10.0, 50.0)),
+                        ],
+                    }),
                 ],
             },
         ],
