@@ -99,6 +99,11 @@
 //! numbers [`Session::send`] gives them, a refused command as
 //! [`SessionError::Refused`].
 //!
+//! The view, the zoom and its centre ([`Command::View`], decision 99; [`crate::view`]), is
+//! view state, one per session, which every client shares and learns from [`Event::View`];
+//! it is kept across photos, its centre clamped to each. Each frame says where it lies in
+//! the photo ([`Frame::place`]). The session still renders every frame at Fit.
+//!
 //! These types stand in for the session protocol's until `apertrust-protocol` exists.
 
 mod cache;
@@ -156,6 +161,7 @@ use crate::scopes::Meter;
 pub use crate::scopes::{Graphs, Reading};
 use crate::sidecar;
 pub use crate::sidecar::ViewOnly;
+pub use crate::view::{FramePlace, Placement, View, ViewScale};
 use cache::Upkeep;
 pub use cache::{CACHE_READ, CACHE_REMOVE, CacheOptions, size_in_unit};
 pub(crate) use open::Load;
@@ -182,6 +188,17 @@ pub enum Command {
     Close,
     /// The most physical pixels the photo may be shown in.
     Resize { width: u32, height: u32 },
+    /// The zoom and its centre (decision 99; [`crate::view`]). View state, as
+    /// [`Command::Resize`] is, never a command on the edit: it ends no gesture, makes no
+    /// history step, writes nothing and sends no values, and is taken while the photo opens
+    /// and while it is open for viewing only. One view per session, which every client
+    /// shares: the last `View` any client sends wins, within a batch too. It is kept across
+    /// photos, another photo taking the same view, its centre clamped to it
+    /// ([`crate::view::place`]). A factor not finite or not above 0 is Fit, one above 16 is
+    /// 16 ([`View::normalized`]). Answered by [`Event::View`] where the view or its
+    /// placement changed. The session renders the whole photo at Fit at every view for now,
+    /// so a view changes no frame.
+    View(View),
     /// Set a tool's control, which keeps it. `done` on the last change of a gesture (a
     /// drag released, a click, a typed value), which saves the edit.
     ///
@@ -468,6 +485,7 @@ fn on_edit(command: &Command) -> bool {
         Command::Open(_)
         | Command::Close
         | Command::Resize { .. }
+        | Command::View(_)
         | Command::Scopes(_)
         | Command::Hide { .. }
         | Command::Picker(_)
@@ -625,6 +643,10 @@ pub enum Event {
     /// The selection and the active photo (decision 37): once a turn in which either
     /// changed, after its other events.
     Selection(Selection),
+    /// The session's one view and where it places the open photo (decision 99), once in
+    /// each batch whose commands changed either, after the batch's values and before its
+    /// frame, and as a photo opens or turns live where its placement differs.
+    View(ViewState),
     Failed(SessionError),
 }
 
@@ -669,6 +691,8 @@ pub enum Fact {
     History,
     /// The selection and the active photo: [`Event::Selection`].
     Selection,
+    /// The session's view and its placement: [`Event::View`].
+    View,
 }
 
 impl Event {
@@ -684,6 +708,7 @@ impl Event {
             Event::Cache(_) => Fact::Cache,
             Event::History(_) => Fact::History,
             Event::Selection(_) => Fact::Selection,
+            Event::View(_) => Fact::View,
             // Each of a job's values is a topic of its own, since each event carries only
             // its own (decision 72); its adding and its end each happen once.
             Event::Job { event, .. } => match *event {
@@ -923,6 +948,23 @@ pub struct Frame {
     pub timings: Timings,
     /// From the first command it answers reaching the session to its publication.
     pub latency_ms: f64,
+    /// Where it lies in the photo (decision 99): the whole photo at the fitted scale for
+    /// the bounds it was rendered for, its origin (0, 0), as every frame is for now.
+    pub place: FramePlace,
+}
+
+/// The session's one view, as every client of it shares it (decision 99): [`Event::View`].
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ViewState {
+    /// How many commands it includes, as [`Values::through`] counts them.
+    pub through: u64,
+    /// The view as the session holds it, its centre clamped to the open photo.
+    pub view: View,
+    /// [`crate::view::place`] of it for the open photo and the last bounds; `None` with no
+    /// photo or no bounds as it is told. A photo closing tells nothing, so the latest fact
+    /// keeps the closed photo's placement until another photo's differs or the view
+    /// changes.
+    pub placement: Option<Placement>,
 }
 
 #[derive(Debug, Error)]
@@ -2054,6 +2096,12 @@ struct Engine {
     limits: Limits,
     load: Load,
     size: Option<(u32, u32)>,
+    /// The view (decision 99): one per session, kept across photos, its centre clamped to
+    /// the open photo as it is placed ([`Self::view_event`]).
+    view: View,
+    /// The view and its placement last told as [`Event::View`], which the next is compared
+    /// with; the default view and none before any.
+    view_told: (View, Option<Placement>),
     /// The open under way, from its `Open` until its photo is live or it fails (decision
     /// 77), while every command on the edit is refused.
     opening: Option<Opening>,
@@ -2406,6 +2454,9 @@ struct Open {
     input: Option<GpuImage>,
     /// The mosaic, from the raw's metadata until it is uploaded.
     sensor: ImageDesc,
+    /// The output image at full resolution as the live frame shows it, as the last values
+    /// reported it ([`Values::extent`]), which the view is placed on.
+    extent: [u32; 2],
     /// What an export's variables read of the raw, so that its export needs no decode.
     shot: Shot,
     edit: Edit,
@@ -2571,6 +2622,8 @@ impl Engine {
             limits,
             load: open::files(),
             size: None,
+            view: View::default(),
+            view_told: (View::default(), None),
             opening: None,
             decodes: Arc::default(),
             kernels: Kernels::default(),
@@ -2956,6 +3009,14 @@ impl Engine {
                     self.tell_live_frame();
                     Ok(())
                 }
+                // The view, the last of the batch's winning; told after the batch's values.
+                // Every frame is the whole photo at Fit until the detail pipeline renders
+                // the zoomed region (decision 99), so no view moves the frame's place, and
+                // none renders.
+                Command::View(view) => {
+                    self.view = view.normalized();
+                    Ok(())
+                }
                 Command::Scopes(graphs) => {
                     recount |= match (graphs, self.graphs) {
                         (Some(asked), Some(counted)) => asked.adds_to(counted),
@@ -3114,6 +3175,9 @@ impl Engine {
             // Once a batch, after its values and before its frame.
             events.extend(self.history_event());
         }
+        // Where the batch changed the view or its placement, after its values and history
+        // and before its frame.
+        events.extend(self.view_event());
         let needs_save = self.needs_save();
         if save && needs_save {
             self.save();
@@ -3175,6 +3239,31 @@ impl Engine {
         } else {
             open.hidden.remove(id)
         })
+    }
+
+    /// The view's fact (decision 99), where the view or its placement on the open photo
+    /// changed since the last told: a `View`, a `Resize`, a photo of another extent, an edit
+    /// that turns the photo. The view's centre is clamped to the photo as it is placed, and
+    /// held so. A photo closing, which leaves no placement, tells nothing of its own: the
+    /// last placement told stands until a photo's differs, so another photo of the same
+    /// extent tells nothing either.
+    fn view_event(&mut self) -> Option<Event> {
+        let placement = (self.open.as_ref())
+            .zip(self.size)
+            .map(|(open, bounds)| crate::view::place(open.extent, bounds, &self.view));
+        if let Some(placement) = &placement {
+            self.view.centre = placement.centre;
+        }
+        let (told, told_placement) = self.view_told;
+        if self.view == told && (placement.is_none() || placement == told_placement) {
+            return None;
+        }
+        self.view_told = (self.view, placement);
+        Some(Event::View(ViewState {
+            through: self.applied,
+            view: self.view,
+            placement,
+        }))
     }
 
     /// Applies the edit commands of a batch that arrived after the client dropped its
@@ -3400,6 +3489,7 @@ impl Engine {
             Command::Open(_)
             | Command::Close
             | Command::Resize { .. }
+            | Command::View(_)
             | Command::Scopes(_)
             | Command::Hide { .. }
             | Command::Picker(_)
@@ -3820,6 +3910,11 @@ impl Engine {
             self.applied,
         )));
         events.extend(self.history_event());
+        // An edit taken in may turn the photo; as it closes, its events but failures are
+        // dropped, so nothing is told, nor taken as told.
+        if !closing {
+            events.extend(self.view_event());
+        }
         if self.needs_save() {
             self.save();
         }
@@ -3898,6 +3993,9 @@ impl Engine {
                 events.push(Event::Opened(photo));
                 events.extend(values.map(Event::Values));
                 events.extend(self.history_event());
+                // The view placed on the photo, where its extent or the bounds since the
+                // last photo differ.
+                events.extend(self.view_event());
                 let ms = started.elapsed().as_secs_f64() * 1e3;
                 tracing::debug!(target: "perf", "open {name}: values, at {ms:.0} ms");
                 None
@@ -4013,6 +4111,7 @@ impl Engine {
             image,
             input: None,
             sensor: metadata.sensor,
+            extent: [photo.width, photo.height],
             shot: metadata.shot,
             edit,
             view_only,
@@ -4139,6 +4238,8 @@ impl Engine {
         let values = photo.values(self.operations, &self.tools, self.applied);
         events.push(Event::Values(values));
         events.extend(self.history_event());
+        // The decode's image context may size the photo otherwise than its metadata.
+        events.extend(self.view_event());
         match self.render(started, events) {
             Ok(Some(frame)) => events.push(Event::Frame(frame)),
             Ok(None) => {}
@@ -4757,6 +4858,7 @@ impl Engine {
                 self.applied,
             )));
         }
+        events.extend(self.view_event());
         match self.render(Instant::now(), &mut events) {
             Ok(Some(frame)) => events.push(Event::Frame(frame)),
             Ok(None) => {}
@@ -4824,6 +4926,8 @@ impl Engine {
         open.failing = failing;
         let limits = viewport_limits(&self.limits, [width, height], &open.sensor);
         let plan = pipeline::plan(&bound.instances, &open.image, open.sensor, pipe, &limits)?;
+        // The whole photo at Fit, whatever the view, until the detail pipeline (decision 99).
+        let place = FramePlace::fitted(plan.extent(), (width, height));
         let probing = probe
             .then(|| {
                 let image = &open.image;
@@ -4930,6 +5034,7 @@ impl Engine {
             through: self.applied,
             timings,
             latency_ms: since.elapsed().as_secs_f64() * 1e3,
+            place,
         }))
     }
 }
@@ -5194,6 +5299,7 @@ impl Open {
         let instances = edit::instances(&self.shown(), operations, tools, &self.image).instances;
         let extent = pipeline::extent(&instances, &self.image)
             .unwrap_or([self.image.width, self.image.height]);
+        self.extent = extent;
         for (at, row, shown) in shown_computed {
             let value = computed(&instances, &self.image, self.sensor, &shown);
             tools_state[at].computed[row].value = value;
@@ -5380,6 +5486,7 @@ pub(crate) const TEST_WAIT: Duration = Duration::from_secs(600);
 mod tests {
     mod history;
     mod selection;
+    mod view;
 
     use std::sync::mpsc::Receiver;
 
@@ -11592,6 +11699,7 @@ mod tests {
             },
             Event::History(_) => Topic::Fact(Fact::History),
             Event::Selection(_) => Topic::Fact(Fact::Selection),
+            Event::View(_) => Topic::Fact(Fact::View),
             Event::Failed(_) => Topic::Notice,
         }
     }
@@ -11730,9 +11838,9 @@ mod tests {
             };
             assert!(line.ends_with(kind), "{line}");
         }
-        // Every variant, the ones a session sent among them, the selection as the photo
-        // opened, and every job event.
-        assert_eq!(seen.len(), 15, "{events:?}");
+        // Every variant, the ones a session sent among them, the selection and the view as
+        // the photo opened, and every job event.
+        assert_eq!(seen.len(), 16, "{events:?}");
         assert_eq!(jobs.len(), 7, "{jobs:?}");
         // Each job's progress, title, detail, destination and state are facts of their
         // own.
@@ -11781,16 +11889,22 @@ mod tests {
         remove(&path);
     }
 
-    /// Over a drag, the values, the frames, their scopes readings and the saves each name
-    /// a number that never decreases, and the last of each includes the drag's end.
+    /// Over a drag, panning the view as it goes, the values, the views, the frames, their
+    /// scopes readings and the saves each name a number that never decreases, and the last
+    /// of each includes the drag's end, the view's its last pan.
     #[test]
     fn through_never_decreases_over_a_drag() {
         let gpu = gpu();
         let path = scratch("drag-through");
         let (session, wakes) = beside_a_viewport(&gpu, &path);
         session.send(Command::Scopes(Some(Graphs::default())));
-        let mut last = 0;
+        let (mut last, mut panned) = (0, 0);
         for step in 0..=40 {
+            // 84 × 62 at 100% in 64 × 48: a centre from 0.4 to 0.6 across is never clamped.
+            panned = session.send(Command::View(crate::view::View {
+                scale: ViewScale::Factor(1.0),
+                centre: [0.4 + 0.005 * step as f32, 0.5],
+            }));
             let value = -1.0 + 0.05 * step as f32;
             last = session.send(set("brightness", ControlValue::Number(value), step == 40));
         }
@@ -11804,6 +11918,7 @@ mod tests {
         for event in &events {
             let (kind, through) = match event {
                 Event::Values(values) => ("values", values.through),
+                Event::View(state) => ("view", state.through),
                 Event::Frame(frame) => ("frame", frame.through),
                 Event::Scopes(reading) => ("scopes", reading.through),
                 Event::Saved { through, .. } => ("saved", *through),
@@ -11811,10 +11926,16 @@ mod tests {
             };
             seen.entry(kind).or_default().push(through);
         }
-        assert_eq!(seen.len(), 4, "{seen:?}");
+        assert_eq!(seen.len(), 5, "{seen:?}");
         for (kind, throughs) in &seen {
             assert!(throughs.is_sorted(), "{kind}: {throughs:?}");
-            assert_eq!(throughs.last(), Some(&last), "{kind}: {throughs:?}");
+            if *kind == "view" {
+                // The last pan's batch may end before the last change's.
+                let told = throughs.last().copied().unwrap_or_default();
+                assert!((panned..=last).contains(&told), "{kind}: {throughs:?}");
+            } else {
+                assert_eq!(throughs.last(), Some(&last), "{kind}: {throughs:?}");
+            }
         }
         drop(session);
         remove(&path);

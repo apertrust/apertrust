@@ -45,3 +45,4 @@ pub mod scopes;
 pub mod session;
 pub mod settings;
 pub mod sidecar;
+pub mod view;

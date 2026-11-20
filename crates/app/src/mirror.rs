@@ -53,7 +53,7 @@ use apertrust_engine::session::library::Thumbnail;
 use apertrust_engine::session::{
     ControlState, ControlValue, CoordinateState, Event, ExportPreview, Frame, History, OpenPreview,
     Photo, PresetState, PreviewSource, Selection, SelectionCommand, SessionError, ToolState,
-    Values,
+    Values, ViewState,
 };
 use apertrust_engine::{edit, sidecar};
 use apertrust_plugin::ImageContext;
@@ -184,6 +184,10 @@ pub struct Mirror {
     pub selection: Selection,
     /// The photos of `selection`.
     selected: HashSet<PathBuf>,
+    /// The session's view and its placement (decision 99), shared by every client of the
+    /// session, as it last told them, the latest by its `through`: none before it tells any.
+    /// Not a photo's: another photo keeps it.
+    pub view: Option<ViewState>,
     /// The selection commands and the opens the app sent that no fact includes yet, in the
     /// order sent ([`Mirror::selecting`]).
     asked: Vec<Asked>,
@@ -236,6 +240,7 @@ impl Mirror {
             folder: FolderState::default(),
             selection: Selection::default(),
             selected: HashSet::new(),
+            view: None,
             asked: Vec::new(),
             selected_shown: HashSet::new(),
             cache: crate::storage::Mirror::default(),
@@ -615,6 +620,13 @@ impl Mirror {
                     (self.asked).retain(|asked| asked.number > selection.through);
                     self.selection = selection;
                     self.lay_over();
+                }
+            }
+            // The session's view, the latest by its `through`; one numbered lower arrived
+            // late.
+            Event::View(state) => {
+                if (self.view.as_ref()).is_none_or(|view| state.through >= view.through) {
+                    self.view = Some(state);
                 }
             }
             // The open photo's history, the latest by its `through`, which Undo and Redo
@@ -1620,6 +1632,7 @@ pub(crate) mod tests {
     fn a_frame_replaces_the_last_and_clears_the_failure() {
         use apertrust_engine::compute::Timings;
         use apertrust_engine::gpu::{GpuContext, GpuOptions};
+        use apertrust_engine::session::FramePlace;
         let Ok(gpu) = pollster::block_on(GpuContext::new(&GpuOptions::default())) else {
             eprintln!("no GPU adapter: a frame needs a buffer");
             return;
@@ -1636,6 +1649,11 @@ pub(crate) mod tests {
             through,
             timings: Timings::default(),
             latency_ms: 0.0,
+            place: FramePlace {
+                scale: 1.0,
+                origin: [0, 0],
+                extent: [2, 2],
+            },
         };
         let mut m = mirror();
         m.apply(Event::Opened(photo(1)));
@@ -2392,6 +2410,36 @@ pub(crate) mod tests {
         assert!(m.is_selected(&at("c.ARW")));
     }
 
+    /// The mirror keeps the session's latest view by its `through`, one arriving late
+    /// dropped, and keeps it as another photo opens (decision 99).
+    #[test]
+    fn the_mirror_keeps_the_session_s_latest_view() {
+        use apertrust_engine::session::{View, ViewScale, ViewState};
+        use apertrust_engine::view::place;
+
+        let told = |scale, centre, through| {
+            let view = View { scale, centre };
+            Event::View(ViewState {
+                through,
+                view,
+                placement: Some(place([6000, 4000], (2400, 1600), &view)),
+            })
+        };
+        let mut m = mirror();
+        assert_eq!(m.view, None);
+        m.apply(told(ViewScale::Factor(1.0), [0.3, 0.4], 2));
+        m.apply(told(ViewScale::Factor(2.0), [0.6, 0.5], 4));
+        // An earlier one, late.
+        m.apply(told(ViewScale::Fit, [0.5, 0.5], 3));
+        let view = m.view.expect("the session's view");
+        assert_eq!(view.through, 4);
+        assert_eq!(view.view.scale, ViewScale::Factor(2.0));
+        assert_eq!(view.placement.map(|p| p.render), Some(1.0));
+        // Not a photo's: another photo opening keeps it.
+        m.opening(PathBuf::from("/photos/b.ARW"), 5, Instant::now());
+        assert_eq!(m.view.map(|v| v.through), Some(4));
+    }
+
     #[test]
     fn the_mirror_keeps_the_session_s_latest_selection() {
         use apertrust_engine::session::Selection;
@@ -2592,6 +2640,7 @@ pub(crate) mod tests {
     fn gpu_frame(through: u64) -> Option<Frame> {
         use apertrust_engine::compute::Timings;
         use apertrust_engine::gpu::{GpuContext, GpuOptions};
+        use apertrust_engine::session::FramePlace;
         let gpu = pollster::block_on(GpuContext::new(&GpuOptions::default())).ok()?;
         Some(Frame {
             buffer: gpu.device.create_buffer(&eframe::wgpu::BufferDescriptor {
@@ -2605,6 +2654,11 @@ pub(crate) mod tests {
             through,
             timings: Timings::default(),
             latency_ms: 0.0,
+            place: FramePlace {
+                scale: 1.0,
+                origin: [0, 0],
+                extent: [2, 2],
+            },
         })
     }
 
