@@ -995,6 +995,13 @@ fn built(
 /// only, until resetting several is decided.
 const ONE_PHOTO: [ActionId; 1] = [ActionId::RESET];
 
+/// The item `chosen` in a thumbnail's menu, unless `selected` photos are several and it
+/// acts on one alone: a menu opened on one photo can outlast a selection grown while it was
+/// open, and its stale Reset must not run.
+pub(crate) fn chosen_on_thumbnail(chosen: ActionId, selected: usize) -> Option<ActionId> {
+    (selected <= 1 || !ONE_PHOTO.contains(&chosen)).then_some(chosen)
+}
+
 /// What screen readers call the menu at `place`: the surround's is Background, as View ›
 /// Background's submenu is; ⋯'s its tool's or utility's options, as its button is.
 fn name(place: Place, target: &Target, tr: &Translator) -> String {
@@ -3211,6 +3218,21 @@ mod tests {
             .unwrap();
         assert!(discard.tip.is_some());
         assert_eq!(menu.name, "History options");
+    }
+
+    /// A thumbnail's menu opened on one photo, chosen once several are selected, runs no
+    /// item that acts on one photo alone; the rest run, and Reset with one selected.
+    #[test]
+    fn a_stale_reset_from_a_thumbnail_s_menu_runs_not_once_several_are_selected() {
+        assert_eq!(chosen_on_thumbnail(ActionId::RESET, 3), None);
+        assert_eq!(
+            chosen_on_thumbnail(ActionId::RESET, 1),
+            Some(ActionId::RESET)
+        );
+        assert_eq!(
+            chosen_on_thumbnail(ActionId::EXPORT, 3),
+            Some(ActionId::EXPORT)
+        );
     }
 
     /// The photo's and a thumbnail's menus as the app opens them (decision 91), by section:
