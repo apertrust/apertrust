@@ -18,7 +18,7 @@
 # Fails if interface code passes an English literal to a label, button, heading or
 # tooltip, instead of a translated message (docs/gui.md, Translation). Test modules are
 # skipped, from their `#[cfg(test)]` on.
-#   tools/check-ui-strings.sh           every interface source (CI's lint)
+#   tools/check-ui-strings.sh           every interface source
 #   tools/check-ui-strings.sh FILE...   the interface sources among those given, from the
 #                                       repository's root, as pre-commit passes them
 set -euo pipefail

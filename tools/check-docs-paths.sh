@@ -20,7 +20,7 @@
 #
 #   tools/check-docs-paths.sh                fails if a file the list matches is read by
 #                                            code: named in a string in crates/, include_str!
-#                                            among them, or in tools/ (CI's lint)
+#                                            among them, or in tools/ (pre-commit)
 #   tools/check-docs-paths.sh --code REVS    prints the files `git diff REVS` changes that
 #                                            the list does not match: none, docs only
 set -euo pipefail
