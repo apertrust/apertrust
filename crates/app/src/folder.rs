@@ -770,7 +770,7 @@ pub fn alone_active(folder: &Folder) -> Option<(&Path, &Path)> {
 }
 
 /// Whether `alone`, an absolute path, is the photo at `photo`, which may be relative.
-fn same(alone: &Path, photo: &Path) -> bool {
+pub(crate) fn same(alone: &Path, photo: &Path) -> bool {
     std::path::absolute(photo).is_ok_and(|photo| photo == alone)
 }
 

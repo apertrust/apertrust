@@ -37,8 +37,10 @@
 //! ([`selectable`]), over the folder's photos or the photos opened alone, the session's
 //! collection either way. So do Next Photo and Previous Photo ([`step`]): with several
 //! photos selected, the active photo moves through them in the Browser's order, the
-//! selection staying; else through the folder, the photo reached selected alone. And an
-//! export takes every selected photo ([`exported`]).
+//! selection staying; else through the folder or the photos opened alone, the photo
+//! reached selected alone. And an export takes every selected photo ([`exported`]). Each
+//! reads the collection as the Browser shows it ([`Collection`]), so a folder and photos
+//! opened alone take one path.
 
 use std::path::{Path, PathBuf};
 
@@ -47,7 +49,7 @@ use apertrust_engine::session::{Command, SelectionCommand};
 use apertrust_ui::components::BrowserAction;
 
 use crate::actions::Selectable;
-use crate::folder::{Folder, Listing};
+use crate::folder::{self, Folder, Listing};
 use crate::mirror::{Mirror, PhotoState};
 use crate::{SendCommand, open_listed};
 
@@ -199,16 +201,11 @@ pub(crate) fn open_first(
         return;
     }
     *waiting = None;
-    let order = mirror.folder.order().iter();
-    let first = match (listing(mirror), alone(mirror)) {
-        (Some(listing), _) => order
-            .map(|&i| listing.path.join(&listing.photos[i].name))
-            .find(|photo| mirror.is_selected(photo)),
-        (None, Some(paths)) => order
-            .map(|&i| paths[i].clone())
-            .find(|photo| mirror.is_selected(photo)),
-        (None, None) => None,
-    };
+    let first = collection(mirror).and_then(|collection| {
+        (mirror.folder.order().iter())
+            .map(|&i| collection.path(i))
+            .find(|photo| mirror.is_selected(photo))
+    });
     if let Some(first) = first {
         open_listed(first, mirror, send);
     }
@@ -265,25 +262,24 @@ pub(crate) fn step(next: bool, mirror: &mut Mirror, send: &mut SendCommand<'_>) 
 
 /// The photo Next Photo (`next`) or Previous Photo reaches from the active one, in the
 /// Browser's order: the next or previous selected photo while several are selected, else
-/// the next or previous of the folder; with no active photo, the first, or the last. None
-/// at the end, where the keys stop rather than wrap round, with no folder open, and while
-/// All, Invert or Unedited waits for the session to tell what it selected, so a step never
-/// reads the selection before them ([`Mirror::selection_pending`]).
-/// Worked out for each frame's actions, so only the photos up to the one reached are
-/// looked up.
+/// the next or previous of the folder, or of the photos opened alone; with no active photo,
+/// the first, or the last. None at the end, where the keys stop rather than wrap round,
+/// with neither open, and while All, Invert or Unedited waits for the session to tell what
+/// it selected, so a step never reads the selection before them
+/// ([`Mirror::selection_pending`]). Worked out for each frame's actions, so only the
+/// photos up to the one reached are looked up.
 pub(crate) fn stepped(next: bool, mirror: &Mirror) -> Option<PathBuf> {
     if mirror.selection_pending() {
         return None;
     }
-    let listing = listing(mirror)?;
+    let collection = collection(mirror)?;
     let order = mirror.folder.order();
-    let path = |i: usize| listing.path.join(&listing.photos[i].name);
     let several = mirror.selected_count() > 1;
-    let reached = |i: &usize| !several || mirror.is_selected(&path(*i));
+    let reached = |i: &usize| !several || mirror.is_selected(&collection.path(*i));
     // From the photo asked for last, one that failed to open included, so the keys move on
     // past it rather than back to the start.
     let at = (mirror.photo.path())
-        .and_then(|active| listing.position(active))
+        .and_then(|active| collection.position(active))
         .and_then(|active| order.iter().position(|&i| i == active));
     let found = if next {
         let from = at.map_or(0, |at| at + 1);
@@ -292,7 +288,7 @@ pub(crate) fn stepped(next: bool, mirror: &Mirror) -> Option<PathBuf> {
         let to = at.unwrap_or(order.len());
         order[..to].iter().rev().copied().find(reached)
     };
-    found.map(path)
+    found.map(|i| collection.path(i))
 }
 
 /// The photos an export takes, and how many it leaves out ([`exported`]).
@@ -307,11 +303,14 @@ pub(crate) struct Exported {
 }
 
 /// What Export and Export Again take (decision 90): with several selected, every selected
-/// photo of the folder in the Browser's order, the selection staying as it is; else the
-/// photo open. Nothing while All, Invert or Unedited is not yet told, as Next Photo waits
-/// for them ([`Mirror::selection_pending`]). A photo open for viewing only is left out, as the Export tool leaves it out:
-/// the open one by its own state, the folder's others by their listed edit, a newer
-/// Apertrust's or an unreadable one.
+/// photo of the folder, or of the photos opened alone, in the Browser's order, the
+/// selection staying as it is; else the photo open. Nothing while All, Invert or Unedited
+/// is not yet told, as Next Photo waits for them ([`Mirror::selection_pending`]). A photo
+/// open for viewing only is left out, as the Export tool leaves it out: the open one by its
+/// own state, the folder's others by their listed edit, a newer Apertrust's or an
+/// unreadable one ([`Collection::view_only`]). The other photos alone have no edit the app
+/// knows, so none is left out: the export job exports one for viewing only as this build
+/// reads its edit, its result saying so, or fails it where the edit cannot be read.
 pub(crate) fn exported(mirror: &Mirror) -> Exported {
     let mut exported = Exported::default();
     // All, Invert or Unedited not yet told: what is selected waits for the session.
@@ -319,9 +318,9 @@ pub(crate) fn exported(mirror: &Mirror) -> Exported {
         return exported;
     }
     match several(mirror) {
-        Some(listing) => {
+        Some(collection) => {
             let open = mirror.photo.asked().map(Path::to_owned);
-            for (photo, takes) in selected(mirror, listing) {
+            for (photo, takes) in selected(mirror, collection) {
                 if takes {
                     exported.photos.push(photo);
                 } else {
@@ -351,43 +350,42 @@ pub(crate) fn exportable(mirror: &Mirror) -> bool {
         return false;
     }
     match several(mirror) {
-        Some(listing) => selected(mirror, listing).any(|(_, takes)| takes),
+        Some(collection) => selected(mirror, collection).any(|(_, takes)| takes),
         None => matches!(&mirror.photo, PhotoState::Open(photo) if photo.view_only.is_none()),
     }
 }
 
-/// The folder open, while an export takes its selection: several photos selected, or one
+/// The collection, while an export takes its selection: several photos selected, or one
 /// with no photo open or opening, as a Ctrl-click with none active leaves it.
-fn several(mirror: &Mirror) -> Option<&Listing> {
+fn several(mirror: &Mirror) -> Option<Collection<'_>> {
     let selected = mirror.selected_count();
     let open = mirror.photo.asked().is_some();
-    listing(mirror).filter(|_| selected > 1 || selected == 1 && !open)
+    collection(mirror).filter(|_| selected > 1 || selected == 1 && !open)
 }
 
 /// How many photos an export takes ([`exported`]), for each frame's words: the photos
 /// selected less those left out, only the folder's view-only photos and the one open
-/// looked up. While the folder is listed, a photo selected may not be listed yet, which
-/// the export passes over: the photos it takes are counted one by one then.
+/// looked up; among photos opened alone, whose edits the app does not know, only the one
+/// open. While the folder is listed, a photo selected may not be listed yet, which the
+/// export passes over: the photos it takes are counted one by one then.
 pub(crate) fn exported_count(mirror: &Mirror) -> usize {
     if mirror.selection_pending() {
         return 0;
     }
-    let Some(listing) = several(mirror) else {
+    let Some(collection) = several(mirror) else {
         return usize::from(exportable(mirror));
     };
-    if !listing.done {
+    if !collection.done() {
         return exported(mirror).photos.len();
     }
     let open = match &mirror.photo {
         PhotoState::Open(photo) => Some(photo),
         _ => None,
     };
-    let view_only =
-        |edit: &EditState| matches!(edit, EditState::ViewOnly(_) | EditState::Unreadable(_));
     // The folder's view-only photos selected, but the one open, which its own state says.
-    let listed = (listing.photos.iter())
-        .filter(|photo| view_only(&photo.edit))
-        .map(|photo| listing.path.join(&photo.name))
+    let listed = (0..collection.len())
+        .filter(|&i| collection.view_only(i))
+        .map(|i| collection.path(i))
         .filter(|path| mirror.is_selected(path))
         .filter(|path| open.is_none_or(|open| open.path != *path))
         .count();
@@ -397,38 +395,100 @@ pub(crate) fn exported_count(mirror: &Mirror) -> usize {
         .photo
         .asked()
         .filter(|active| mirror.is_selected(active));
-    let unlisted = active.is_some_and(|active| listing.position(active).is_none());
+    let unlisted = active.is_some_and(|active| collection.position(active).is_none());
     let open = !unlisted
         && open.is_some_and(|open| open.view_only.is_some() && mirror.is_selected(&open.path));
     let left_out = listed + usize::from(unlisted) + usize::from(open);
     mirror.selected_count().saturating_sub(left_out)
 }
 
-/// The selected photos of `listing`, in the Browser's order, each with whether an export
-/// takes it ([`exported`]).
+/// The selected photos of `collection`, in the Browser's order, each with whether an
+/// export takes it ([`exported`]).
 fn selected<'a>(
     mirror: &'a Mirror,
-    listing: &'a Listing,
+    collection: Collection<'a>,
 ) -> impl Iterator<Item = (PathBuf, bool)> + 'a {
     let open = match &mirror.photo {
         PhotoState::Open(photo) => Some(photo),
         _ => None,
     };
     mirror.folder.order().iter().filter_map(move |&i| {
-        let photo = &listing.photos[i];
-        let path = listing.path.join(&photo.name);
+        let path = collection.path(i);
         if !mirror.is_selected(&path) {
             return None;
         }
         let takes = match open.filter(|open| open.path == path) {
             Some(open) => open.view_only.is_none(),
-            None => !matches!(
-                photo.edit,
-                EditState::ViewOnly(_) | EditState::Unreadable(_)
-            ),
+            None => !collection.view_only(i),
         };
         Some((path, takes))
     })
+}
+
+/// The session's collection as the Browser shows it (decision 37): the folder open's
+/// photos, or the photos opened alone, each by its place there, which the Browser's order
+/// (`FolderState::order`) sorts.
+#[derive(Clone, Copy)]
+enum Collection<'a> {
+    Folder(&'a Listing),
+    Alone(&'a [PathBuf]),
+}
+
+impl Collection<'_> {
+    /// How many photos it holds so far.
+    fn len(self) -> usize {
+        match self {
+            Collection::Folder(listing) => listing.photos.len(),
+            Collection::Alone(paths) => paths.len(),
+        }
+    }
+
+    /// The path of the photo at `i`, as the Browser names it.
+    fn path(self, i: usize) -> PathBuf {
+        match self {
+            Collection::Folder(listing) => listing.path.join(&listing.photos[i].name),
+            Collection::Alone(paths) => paths[i].clone(),
+        }
+    }
+
+    /// The place of the photo at `path`, if it is one of the collection's.
+    fn position(self, path: &Path) -> Option<usize> {
+        match self {
+            Collection::Folder(listing) => listing.position(path),
+            Collection::Alone(paths) => paths.iter().position(|alone| folder::same(alone, path)),
+        }
+    }
+
+    /// Whether the photo at `i` is known to be open for viewing only, which an export
+    /// leaves out: a folder's by its listed edit, a newer Apertrust's or an unreadable one.
+    /// None of the photos opened alone is, their edits unknown to the app.
+    fn view_only(self, i: usize) -> bool {
+        match self {
+            Collection::Folder(listing) => matches!(
+                listing.photos[i].edit,
+                EditState::ViewOnly(_) | EditState::Unreadable(_)
+            ),
+            Collection::Alone(_) => false,
+        }
+    }
+
+    /// Whether every photo has come: a folder's once listed, the photos alone at once.
+    fn done(self) -> bool {
+        match self {
+            Collection::Folder(listing) => listing.done,
+            Collection::Alone(_) => true,
+        }
+    }
+}
+
+/// The session's collection, the folder open or the photos opened alone; none with
+/// neither.
+fn collection(mirror: &Mirror) -> Option<Collection<'_>> {
+    match &mirror.folder.folder {
+        Folder::Open(listing) => Some(Collection::Folder(listing)),
+        Folder::Alone { paths, .. } => Some(Collection::Alone(paths)),
+        _ => None,
+    }
 }
 
 /// The folder open, the session's collection; none with no folder or photos opened alone.
@@ -1436,5 +1496,88 @@ mod tests {
         f.told(&["b", "c"], None);
         assert_eq!(f.open_first(), [Command::Open(at("c"))]);
         assert_eq!(f.waiting, None);
+    }
+
+    /// Among photos opened alone, Next Photo and Previous Photo move through the selection
+    /// with several selected, the selection staying, and through the photos alone in the
+    /// order opened with one, the photo reached selected alone; at either end they stop,
+    /// and while Invert Selection is not yet told they wait.
+    #[test]
+    fn next_and_previous_move_through_photos_opened_alone() {
+        let mut f = Folder::new("a");
+        f.alone(&["c", "a", "b"]);
+        f.told(&["a"], Some("a"));
+        assert_eq!(f.step(true), [Command::Open(at("b"))]);
+        assert!(f.m.selected_alone(&at("b")));
+        // The last opened: nothing further, the item disabled.
+        assert_eq!(stepped(true, &f.m), None);
+        assert!(f.step(true).is_empty());
+        assert_eq!(f.step(false), [Command::Open(at("a"))]);
+        assert_eq!(f.step(false), [Command::Open(at("c"))]);
+        assert!(f.step(false).is_empty());
+        // c and b of three selected: a passed over, the two staying.
+        f.told(&["c", "b"], Some("c"));
+        assert_eq!(f.step(true), [Command::Open(at("b"))]);
+        assert!(f.step(true).is_empty());
+        assert_eq!(f.step(false), [Command::Open(at("c"))]);
+        assert!(f.step(false).is_empty());
+        assert_eq!(f.m.selected_count(), 2);
+        f.edit(SelectionCommand::Invert);
+        assert_eq!((stepped(true, &f.m), stepped(false, &f.m)), (None, None));
+        f.told(&["a", "b"], None);
+        assert_eq!(stepped(true, &f.m), Some(at("a")));
+    }
+
+    /// With several of the photos opened alone selected, an export takes every one in the
+    /// order opened, the selection staying, whatever is open; the open photo, open for
+    /// viewing only, is left out and counted, the others' edits unknown to the app.
+    #[test]
+    fn an_export_of_several_photos_opened_alone_takes_every_selected_one() {
+        let mut f = Folder::new("a");
+        f.alone(&["c", "d", "a", "b"]);
+        f.told(&["a", "b", "c"], Some("a"));
+        let all = Exported {
+            photos: vec![at("c"), at("a"), at("b")],
+            left_out: 0,
+            open_left_out: false,
+        };
+        assert_eq!(exported(&f.m), all);
+        assert!(exportable(&f.m));
+        assert_eq!(f.m.selected_count(), 3);
+        opened_a(&mut f, true);
+        let others = Exported {
+            photos: vec![at("c"), at("b")],
+            left_out: 1,
+            open_left_out: true,
+        };
+        assert_eq!(exported(&f.m), others);
+        assert!(exportable(&f.m));
+        assert_eq!(f.m.selected_count(), 3);
+    }
+
+    /// The count of an export among photos opened alone is the photos selected, less the
+    /// open one where it is for viewing only; with one selected, the photo open.
+    #[test]
+    fn exported_count_counts_the_photos_opened_alone_selected() {
+        let mut f = Folder::new("a");
+        f.alone(&["e", "a", "c"]);
+        f.told(&["a"], Some("a"));
+        // Still opening: nothing to export yet.
+        assert_eq!(exported_count(&f.m), 0);
+        opened_a(&mut f, false);
+        assert_eq!(exported_count(&f.m), 1);
+        f.told(&["a", "c", "e"], Some("a"));
+        assert_eq!(exported_count(&f.m), 3);
+        assert_eq!(exported_count(&f.m), exported(&f.m).photos.len());
+        let mut f = Folder::new("a");
+        f.alone(&["e", "a", "c"]);
+        f.told(&["a", "c", "e"], Some("a"));
+        opened_a(&mut f, true);
+        assert_eq!(exported_count(&f.m), 2);
+        // One selected with none open, as Select None then a Ctrl-click would leave it.
+        f.m.closing();
+        f.told(&["c"], None);
+        assert_eq!(exported_count(&f.m), 1);
+        assert_eq!(exported(&f.m).photos, [at("c")]);
     }
 }
