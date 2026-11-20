@@ -14,16 +14,16 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! The Toolbar (`docs/gui.md`, The Toolbar): at its start, on Windows and Linux, the
-//! menu button, ☰, which opens the menus ([`Toolbar::menu_button`], decision 39), then the
-//! mark, a button that opens About, and the common actions, Import, Export, Reset, Undo
-//! and Redo, then after a gap Copy edit and Apply edit; at its end, when the app asks, the
-//! jobs spinner ([`Toolbar::jobs`]), then the edit's save state ([`SaveState`]), which
-//! shows only when a save goes wrong. Each sits in a slot of its own, as wide as its widest
-//! form at the fold, kept whether it shows anything or not, so neither ever moves anything.
-//! Each tooltip carries its action's keys, which the app's actions registry gives.
-//! As it narrows it gives way one step at a time ([`Fold`]), always keeping empty panel to
-//! move the window by.
+//! The Toolbar (`docs/gui.md`, The Toolbar): at its start, on Windows and Linux, the menu
+//! button, which opens the menus ([`Toolbar::menu_button`], decision 39), drawn as the
+//! app's icon with a caret or as ☰ ([`MenuButtonStyle`]), then the common actions, Import,
+//! Export, Reset, Undo and Redo, then after a gap Copy edit and Apply edit; at its end,
+//! when the app asks, the jobs spinner ([`Toolbar::jobs`]), then the edit's save state
+//! ([`SaveState`]), which shows only when a save goes wrong. Each sits in a slot of its
+//! own, as wide as its widest form at the fold, kept whether it shows anything or not, so
+//! neither ever moves anything. Each tooltip carries its action's keys, which the app's
+//! actions registry gives. As it narrows it gives way one step at a time ([`Fold`]), always
+//! keeping empty panel to move the window by.
 //!
 //! It runs to the window's top edge and is the window's title bar ([`Toolbar::title_bar`];
 //! `docs/gui.md`, The window frame and menus, decision 39): it keeps room at its start for
@@ -36,12 +36,15 @@
 //! platforms: the app says whether it is the title bar, how much room the system's
 //! buttons take, whether to draw its own and whether the window is maximised.
 
+use apertrust_base::settings::Choice;
 use egui::accesskit::{HasPopup, Live};
 use egui::{
-    Align, FocusDirection, FontId, Id, Key, Layout, Modifiers, Pos2, Rect, Role, Sense, Stroke, Ui,
-    UiBuilder, Vec2, WidgetInfo, pos2, vec2,
+    Align, FocusDirection, FontId, Id, Key, Layout, Modifiers, Pos2, Rect, Role, Sense, Stroke,
+    StrokeKind, Ui, UiBuilder, Vec2, WidgetInfo, pos2, vec2,
 };
 
+use super::icon_button::colour;
+use super::plate::{Touch, paint_focus, undimmed_painter};
 use super::{IconButton, Jobs, ToolButton, focus_ring, pull_down, report_shortcut};
 use crate::i18n::Args;
 use crate::{Icon, popup, theme, tr, translator};
@@ -49,12 +52,10 @@ use crate::{Icon, popup, theme, tr, translator};
 /// What the user did to the Toolbar this frame.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ToolbarAction {
-    /// The ☰ ([`Toolbar::menu_button`]), pressed or given ↓ while its menu is closed: the
-    /// menus should open, hung from [`Toolbar::menu_anchor`] as the popup
+    /// The menu button ([`Toolbar::menu_button`]), pressed or given ↓ while its menu is
+    /// closed: the menus should open, hung from [`Toolbar::menu_anchor`] as the popup
     /// [`Toolbar::menu_popup`].
     Menu,
-    /// The mark: About Apertrust.
-    About,
     Import,
     Export,
     Reset,
@@ -129,6 +130,38 @@ pub enum SaveState<'a> {
     Failed(&'a str),
 }
 
+/// How the menu button is drawn, as the menu button setting chooses on Windows and Linux
+/// (`toolbar.menu_button`; `docs/gui.md`, The Toolbar).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum MenuButtonStyle {
+    /// The app's icon in one colour, then a caret: the default.
+    #[default]
+    Icon,
+    /// ☰.
+    Menu,
+}
+
+/// The menu button setting's options (decision 43).
+impl Choice for MenuButtonStyle {
+    const OPTIONS: &'static [(MenuButtonStyle, &'static str)] = &[
+        (MenuButtonStyle::Icon, "icon"),
+        (MenuButtonStyle::Menu, "menu"),
+    ];
+}
+
+impl MenuButtonStyle {
+    /// The button's width, in points: ☰ in the Toolbar's square, or the app's icon and its
+    /// caret with their padding.
+    fn width(self) -> f32 {
+        match self {
+            MenuButtonStyle::Menu => BUTTON,
+            MenuButtonStyle::Icon => {
+                2.0 * ICON_PADDING + Icon::AppIcon.size() + CARET_GAP + Icon::Caret.size()
+            }
+        }
+    }
+}
+
 #[derive(Default)]
 pub struct Toolbar<'a> {
     available: Available,
@@ -138,12 +171,17 @@ pub struct Toolbar<'a> {
     shortcuts: Vec<(ToolbarAction, &'a str)>,
     start_inset: f32,
     menu: bool,
+    menu_style: MenuButtonStyle,
     title_bar: bool,
     caption_buttons: bool,
     maximised: bool,
 }
 
 const BUTTON: f32 = 30.0;
+/// The room each side of the menu button's app icon and caret.
+const ICON_PADDING: f32 = 5.0;
+/// Between the menu button's app icon and its caret.
+const CARET_GAP: f32 = 3.0;
 /// A caption button's width, as Windows 11's; it is as tall as the panel.
 const CAPTION_BUTTON: f32 = 46.0;
 /// What the folded "Saving…" shows.
@@ -154,7 +192,7 @@ const EMPTY: f32 = 24.0;
 const SPARE: f32 = 16.0;
 
 /// How far the panel gives way to its width, one step at a time (`docs/gui.md`, The
-/// Toolbar, Narrowing). The ☰ and the mark never fold.
+/// Toolbar, Narrowing). The menu button never folds.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum Fold {
     /// Everything shown: Import, Export and Reset with their words.
@@ -223,23 +261,31 @@ impl<'a> Toolbar<'a> {
         self
     }
 
-    /// Draws the menu button, ☰, first, before the mark, where the system has no menu bar:
-    /// on Windows and Linux (decision 39). It never folds. Pressed, or given ↓, it reports
-    /// [`ToolbarAction::Menu`] for the app to open the menus as the popup
-    /// [`Toolbar::menu_popup`]; it is drawn on while that popup hangs from it, and a press
-    /// then closes it. Off by default.
+    /// Draws the menu button first, where the system has no menu bar: on Windows and Linux
+    /// (decision 39), as [`Toolbar::menu_button_style`] says. It never folds. Pressed, or
+    /// given ↓, it reports [`ToolbarAction::Menu`] for the app to open the menus as the
+    /// popup [`Toolbar::menu_popup`]; it is drawn on while that popup hangs from it, and a
+    /// press then closes it. Off by default.
     pub fn menu_button(mut self, on: bool) -> Self {
         self.menu = on;
         self
     }
 
-    /// The popup the ☰'s menu opens as ([`popup::open`]).
+    /// How the menu button is drawn: the app's icon with a caret, the default, or ☰.
+    /// Everything else about it is the same either way: its name, its popup, its tooltip
+    /// and its keys.
+    pub fn menu_button_style(mut self, style: MenuButtonStyle) -> Self {
+        self.menu_style = style;
+        self
+    }
+
+    /// The popup the menu button's menu opens as ([`popup::open`]).
     pub fn menu_popup() -> Id {
         Id::unique("apertrust-ui toolbar menu")
     }
 
-    /// The ☰'s rectangle as last drawn, for the menu to hang from; None before a Toolbar
-    /// has drawn one.
+    /// The menu button's rectangle as last drawn, for the menu to hang from; None before a
+    /// Toolbar has drawn one.
     pub fn menu_anchor(ctx: &egui::Context) -> Option<Rect> {
         ctx.data(|d| d.get_temp(menu_anchor_id()))
     }
@@ -247,8 +293,8 @@ impl<'a> Toolbar<'a> {
     /// Makes the panel the window's title bar: a drag that starts on an empty part of it
     /// reports [`ToolbarAction::MoveWindow`] once it has moved, never on the press, so a
     /// double-click stays one and reports [`ToolbarAction::TitleBarDoubleClick`]. Its
-    /// buttons, the mark among them, take their presses as before; the status slots count
-    /// as empty but for the save warning and the spinner.
+    /// buttons take their presses as before; the status slots count as empty but for the
+    /// save warning and the spinner.
     /// A right-click on an empty part reports [`ToolbarAction::WindowMenu`].
     pub fn title_bar(mut self, on: bool) -> Self {
         self.title_bar = on;
@@ -394,10 +440,12 @@ impl<'a> Toolbar<'a> {
         // the current scale and language as egui lays them out, `gap` apart.
         let gap = t.spacing.xxs;
         let start = |fold: Fold| {
-            // The ☰, where there is one, and the mark.
-            let mut parts = vec![BUTTON; if self.menu { 2 } else { 1 }];
-            // After the mark, and after the ☰ the same.
-            let mut spaces = t.spacing.s * if self.menu { 2.0 } else { 1.0 };
+            // The menu button, where there is one, and a space after it.
+            let (mut parts, mut spaces) = if self.menu {
+                (vec![self.menu_style.width()], t.spacing.s)
+            } else {
+                (Vec::new(), 0.0)
+            };
             for c in common.iter().filter(|c| !fold.hides(c.action)) {
                 if c.action == ToolbarAction::CopyEdit {
                     spaces += t.spacing.xl - gap;
@@ -433,7 +481,7 @@ impl<'a> Toolbar<'a> {
             .unwrap_or(Fold::Undo);
         ui.data_mut(|d| d.insert_temp(id, fold));
 
-        // At the start: the mark and the common actions, the folded ones under ⋯.
+        // At the start: the menu button and the common actions, the folded ones under ⋯.
         ui.scope_builder(
             UiBuilder::new()
                 .max_rect(inner)
@@ -441,23 +489,16 @@ impl<'a> Toolbar<'a> {
             |ui| {
                 ui.spacing_mut().item_spacing.x = gap;
                 if self.menu {
-                    let (button, press) = menu_button(ui, keys(ToolbarAction::Menu));
+                    let (button, press) =
+                        menu_button(ui, self.menu_style, keys(ToolbarAction::Menu));
                     pressed(button);
                     match press {
                         Some(MenuPress::Open) => action = Some(ToolbarAction::Menu),
                         Some(MenuPress::Close) => popup::close(&ctx, Toolbar::menu_popup()),
                         None => {}
                     }
-                    // As far from the mark as the mark is from Import.
                     ui.add_space(t.spacing.s);
                 }
-                // The mark, in secondary text so it isn't read as the first of the actions.
-                let about = tr(&ctx, "action-about");
-                let mark = mark(ui, &about, keys(ToolbarAction::About));
-                if pressed(mark) {
-                    action = Some(ToolbarAction::About);
-                }
-                ui.add_space(t.spacing.s);
                 for c in common.iter().filter(|c| !fold.hides(c.action)) {
                     // Copy edit and Apply edit are a group of their own.
                     if c.action == ToolbarAction::CopyEdit {
@@ -725,7 +766,7 @@ fn announce(ui: &Ui, state: SaveState<'_>, because: &dyn Fn(&str) -> String) -> 
     said
 }
 
-/// What a press of the ☰ asks for.
+/// What a press of the menu button asks for.
 enum MenuPress {
     Open,
     /// Its menu is open, hung from it.
@@ -736,21 +777,30 @@ fn menu_anchor_id() -> Id {
     Id::unique("apertrust-ui toolbar menu anchor")
 }
 
-/// The ☰, with `keys` in its tooltip: a button that opens a menu, drawn on while the menu
-/// hangs from it. Pressed, or given ↓ while focused, it asks for the menu to open, or
-/// to close where it is open.
-fn menu_button(ui: &mut Ui, keys: Option<&str>) -> (egui::Response, Option<MenuPress>) {
+/// The menu button in `style`, with `keys` in its tooltip: a button that opens a menu,
+/// drawn on while the menu hangs from it. Pressed, or given ↓ while focused, it asks for
+/// the menu to open, or to close where it is open.
+fn menu_button(
+    ui: &mut Ui,
+    style: MenuButtonStyle,
+    keys: Option<&str>,
+) -> (egui::Response, Option<MenuPress>) {
     let ctx = ui.ctx().clone();
     // Where the button goes, the next in its row, as the menu was hung from it.
     let room = ui.available_rect_before_wrap();
-    let centre = pos2(room.left() + BUTTON / 2.0, room.center().y);
+    let centre = pos2(room.left() + style.width() / 2.0, room.center().y);
     let open = popup::anchor(&ctx, Toolbar::menu_popup()).is_some_and(|a| a.contains(centre));
     let name = tr(&ctx, "toolbar-menu");
-    let mut button = icon_button(Icon::Menu, &name, keys).size(BUTTON);
-    if open {
-        button = button.toggled(true);
-    }
-    let response = button.show(ui);
+    let response = match style {
+        MenuButtonStyle::Menu => {
+            let mut button = icon_button(Icon::Menu, &name, keys).size(BUTTON);
+            if open {
+                button = button.toggled(true);
+            }
+            button.show(ui)
+        }
+        MenuButtonStyle::Icon => app_icon_button(ui, &name, keys, open),
+    };
     ctx.data_mut(|d| d.insert_temp(menu_anchor_id(), response.rect));
     // A button that opens a menu, never a toggle.
     ctx.accesskit_node_builder(response.id, |node| {
@@ -885,31 +935,51 @@ fn tool_button<'a>(c: &'a Common, keys: Option<&'a str>) -> ToolButton<'a> {
     }
 }
 
-/// An icon button, with `keys` in its tooltip when it has any.
-/// The mark, which a click turns into About: drawn plain, with no hover and no tooltip,
-/// so it reads as the app's mark rather than a button. Screen readers hear it as a button
-/// named `name`, with `keys`, and a key can focus and press it.
-fn mark(ui: &mut Ui, name: &str, keys: Option<&str>) -> egui::Response {
+/// The menu button drawn as the app's icon, then the caret, named `name`, with `keys` in
+/// its tooltip, as the Toolbar's icon buttons are coloured (decision 81): `text_secondary`
+/// at rest, `text_strong` under the pointer, on the hover plate, and while its menu is
+/// `open`, with no plate then.
+fn app_icon_button(ui: &mut Ui, name: &str, keys: Option<&str>, open: bool) -> egui::Response {
     let t = theme(ui.ctx());
-    let (rect, response) = ui.allocate_exact_size(vec2(BUTTON, BUTTON), Sense::click());
+    let width = MenuButtonStyle::Icon.width();
+    let (rect, response) = ui.allocate_exact_size(vec2(width, BUTTON), Sense::click());
     if ui.is_rect_visible(rect) {
-        let size = Icon::Mark.size();
-        Icon::Mark.paint(
-            ui.painter(),
-            Rect::from_center_size(rect.center(), vec2(size, size)),
-            t.colors.text_secondary,
-        );
-        if response.has_focus() {
-            focus_ring(ui.painter(), rect, &t);
+        let painter = &undimmed_painter(ui);
+        let touch = Touch::of(ui.ctx(), &response, true, None);
+        if touch.hovered || touch.pressed {
+            painter.rect_filled(rect, t.shape.radius, t.colors.hover);
+            // High contrast outlines it too, as its icon buttons.
+            if t.colors.button_edge.a() > 0 {
+                painter.rect_stroke(
+                    rect,
+                    t.shape.radius,
+                    Stroke::new(t.shape.hairline, t.colors.button_edge),
+                    StrokeKind::Inside,
+                );
+            }
         }
+        let colour = colour(&t, touch, open);
+        let mut x = rect.left() + ICON_PADDING;
+        for (icon, gap) in [(Icon::AppIcon, CARET_GAP), (Icon::Caret, 0.0)] {
+            let size = icon.size();
+            let at = pos2(x, rect.center().y - size / 2.0);
+            icon.paint(painter, Rect::from_min_size(at, vec2(size, size)), colour);
+            x += size + gap;
+        }
+        paint_focus(painter, rect, t.shape.radius, touch, &t);
     }
     response.widget_info(|| WidgetInfo::labeled(Role::Button, true, name));
-    if let Some(keys) = keys {
-        report_shortcut(ui, response.id, keys);
-    }
-    response
+    let tip = match keys {
+        Some(keys) => {
+            report_shortcut(ui, response.id, keys);
+            format!("{name} ({keys})")
+        }
+        None => name.to_owned(),
+    };
+    response.on_hover_text(tip)
 }
 
+/// An icon button, with `keys` in its tooltip when it has any.
 fn icon_button<'a>(icon: Icon, name: &'a str, keys: Option<&'a str>) -> IconButton<'a> {
     let button = IconButton::new(icon, name);
     match keys {

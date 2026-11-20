@@ -29,13 +29,13 @@ use crate::components::{
     CellRating, CellStatus, Checkbox, Choice, ChoiceAction, ChoiceStyle, Clipped, CollapsibleGroup,
     ColourLabel, ColourLabels, Curve, CurveAction, Equalizer, EqualizerAction, FileManager,
     FindBar, FindBarAction, GridCell, Histogram, HistogramBins, IconButton, Job, JobFailure,
-    JobMessage, JobPhase, Jobs, Margin, Mark, Marker, MaskHistogram, PanelBody, PanelEdge,
-    PanelEdgeAction, PanelTab, Patch, Patches, PhotoCaption, PhotoFrame, PickerButton, PickerMarks,
-    PickerPlace, Place, Quad, Rail, RailLine, RailNode, ReadoutRow, Reference, ReferenceRow,
-    SaveState, Scale, Scope, ScopeView, Section, SectionAction, Segmented, SliderAction, SliderRow,
-    Swatch, SwatchFill, Swatches, Switch, TabBar, TabBarAction, Thumb, Toggle, ToggleRow,
-    ToolButton, Toolbar, ToolbarAction, Track, VectorscopeBins, ViewerBar, ViewerBarAction,
-    WarningRow, WaveformBins, Zoom, group_label,
+    JobMessage, JobPhase, Jobs, Margin, Mark, Marker, MaskHistogram, MenuButtonStyle, PanelBody,
+    PanelEdge, PanelEdgeAction, PanelTab, Patch, Patches, PhotoCaption, PhotoFrame, PickerButton,
+    PickerMarks, PickerPlace, Place, Quad, Rail, RailLine, RailNode, ReadoutRow, Reference,
+    ReferenceRow, SaveState, Scale, Scope, ScopeView, Section, SectionAction, Segmented,
+    SliderAction, SliderRow, Swatch, SwatchFill, Swatches, Switch, TabBar, TabBarAction, Thumb,
+    Toggle, ToggleRow, ToolButton, Toolbar, ToolbarAction, Track, VectorscopeBins, ViewerBar,
+    ViewerBarAction, WarningRow, WaveformBins, Zoom, group_label,
 };
 use crate::fonts::{MEDIUM, SEMIBOLD};
 use crate::i18n::{Args, Locale, Translator};
@@ -69,8 +69,9 @@ impl Gallery {
         }
     }
 
-    /// Opens the ☰'s menu on the first frame, with View expanded, as the snapshot tests
-    /// photograph it. The gallery run by hand opens it only when the ☰ is pressed.
+    /// Opens the menu button's menu on the first frame, with View expanded, as the snapshot
+    /// tests photograph it. The gallery run by hand opens it only when the menu button is
+    /// pressed.
     pub fn with_menu_open(mut self) -> Self {
         self.demo.open_menu = true;
         self
@@ -1200,8 +1201,8 @@ struct Demo {
     clipping: Measured,
     scopes: ScopeView,
     in_use: [ScopeView; 5],
-    /// The shell: whether the ☰'s menu is to open by itself ([`Gallery::with_menu_open`]),
-    /// the viewer bar's toggles and scale, and the Browser.
+    /// The shell: whether the menu button's menu is to open by itself
+    /// ([`Gallery::with_menu_open`]), the viewer bar's toggles and scale, and the Browser.
     open_menu: bool,
     guides: bool,
     proof: bool,
@@ -2359,8 +2360,9 @@ fn exposure_body(ui: &mut Ui, tab: usize) {
     }
 }
 
-/// A sample of the menus as the ☰ opens them, with access keys at the top, submenus,
-/// keys, check marks, separators and disabled items. The words stand in for the app's.
+/// A sample of the menus as the menu button opens them, with access keys at the top,
+/// submenus, keys, check marks, separators and disabled items. The words stand in for the
+/// app's.
 fn sample_menu(anchor: egui::Rect) -> Request {
     let entries = vec![
         Submenu::new(
@@ -2574,16 +2576,22 @@ fn shell(ui: &mut Ui, t: &Theme, demo: &mut Demo) {
     {
         demo.last = format!("Toolbar: {action:?}");
     }
-    // As the title bar on Windows and Linux, with the ☰ at its start and the window's
-    // caption buttons at its end: the window as it is, its menu open at first with View
-    // expanded where the snapshots photograph it, then maximised. Without Saved, as with no
-    // photo open.
+    // As the title bar on Windows and Linux, with the menu button at its start and the
+    // window's caption buttons at its end: the window as it is, the button the app's icon,
+    // its menu open at first with View expanded where the snapshots photograph it, then
+    // maximised, the button ☰. Without Saved, as with no photo open.
     let menu = Toolbar::menu_popup();
     for maximised in [false, true] {
         ui.add_space(t.spacing.s);
+        let style = if maximised {
+            MenuButtonStyle::Menu
+        } else {
+            MenuButtonStyle::Icon
+        };
         let action = Toolbar::new()
             .available(available)
             .menu_button(true)
+            .menu_button_style(style)
             .title_bar(true)
             .caption_buttons(true)
             .maximised(maximised)

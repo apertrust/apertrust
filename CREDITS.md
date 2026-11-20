@@ -24,7 +24,7 @@ Most icons are derived from [Lucide](https://lucide.dev), © Lucide Icons and Co
 
 - Derived from Lucide, under the ISC licence: Lucide's arrow-down-wide-narrow, arrow-right-from-line, arrow-right-to-line, arrow-up-narrow-wide, briefcase, camera, chart-column, chevrons-up-down, circle-dot, circle-x, ellipsis, ellipsis-vertical, eye, eye-off, folder, grid-3x3, image, image-off, layout-grid, library, menu, pencil, pipette, redo-2, rotate-ccw, rotate-ccw-clock, rotate-ccw-square, rotate-cw-square, settings, settings-2, square-split-horizontal, star, sun, tag, triangle-exclamation-point, triangles-centerline-dashed-horizontal, triangles-centerline-dashed-vertical, undo-2 and wand.
 - Derived from Lucide's icons from Feather, under the MIT licence: Lucide's check, chevron-down, chevron-left, chevron-right, chevrons-right, download, lock, plus, search, upload, zoom-in and zoom-out.
-- Drawn for Apertrust: apply, base, clip-highlights, clip-shadows, close, color, copy, correct, detail, effect, histogram, line, log-scale, mark, maximise, minimise, parade, proof-margin, restore, vectorscope and waveform, with the filled forms of base, color, correct, detail, effect, line and proof-margin.
+- Drawn for Apertrust: app-icon, apply, base, caret, clip-highlights, clip-shadows, close, color, copy, correct, detail, effect, histogram, line, log-scale, maximise, minimise, parade, proof-margin, restore, vectorscope and waveform, with the filled forms of base, color, correct, detail, effect, line and proof-margin.
 
 > ISC License
 >

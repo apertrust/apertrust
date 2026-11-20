@@ -24,16 +24,16 @@
 //! answers; their keys are theirs before the frame begins, whatever has the focus.
 //!
 //! Every popup in the app goes through it, as a plain list with no control inside: the
-//! Toolbar's ☰ and ⋯ and the Tools panel's » and ⋮ are pull-downs, `Choice`'s list a
-//! dropdown.
+//! Toolbar's menu button and ⋯ and the Tools panel's » and ⋮ are pull-downs, `Choice`'s
+//! list a dropdown.
 //!
-//! Built so far: the pull-down, drawn from the theme's tokens, which the Toolbar's ☰
-//! opens on Windows and Linux (decision 39), and the dropdown, `Choice`'s list, drawn with
-//! darktable's type-to-filter (decision 42). A [`Service`] the app installs shows the
-//! requests it takes itself, on the Mac AppKit's menus, and answers them through
-//! [`answered`]; the drawn popups show the rest, and every request where none is
-//! installed: on Windows and Linux, in the gallery and in the tests. A context menu comes
-//! later, as the docs give it.
+//! Built so far: the pull-down, drawn from the theme's tokens, which the Toolbar's menu
+//! button opens on Windows and Linux (decision 39), and the dropdown, `Choice`'s list,
+//! drawn with darktable's type-to-filter (decision 42). A [`Service`] the app installs
+//! shows the requests it takes itself, on the Mac AppKit's menus, and answers them through
+//! [`answered`]; the drawn popups show the rest, and every request where none is installed:
+//! on Windows and Linux, in the gallery and in the tests. A context menu comes later, as
+//! the docs give it.
 
 mod drawn;
 mod filter;
@@ -175,7 +175,7 @@ impl From<Submenu> for Entry {
 /// What kind of popup a request is.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Kind {
-    /// A menu from a button, opening under it: the Toolbar's ☰.
+    /// A menu from a button, opening under it: the Toolbar's menu button.
     PullDown,
     /// A list of options for a value, opening under its control with its end edge on the
     /// control's and at least as wide: `Choice`'s. Its entries are items, the chosen one
@@ -203,7 +203,8 @@ pub struct Request {
     pub name: String,
     pub entries: Vec<Entry>,
     /// The submenu at its top shown open as it opens, its first line chosen, by id: Alt
-    /// with a menu's access key opens the ☰'s menu at that menu. None opens it at its top.
+    /// with a menu's access key opens the menu button's menu at that menu. None opens it at
+    /// its top.
     pub expanded: Option<String>,
     /// The control that opened it, which the focus goes back to as it closes. None gives
     /// it back to what had the focus as it opened, which a press leaves with nothing.

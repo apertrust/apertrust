@@ -37,8 +37,9 @@ const WIDTH: f32 = 600.0;
 const PART: f32 = 8000.0;
 const OVERLAP: f32 = 40.0;
 
-/// Photographs the whole gallery on the panel's colour: `name`, its top, with the ☰'s menu
-/// open, and where the page is taller than [`PART`], `name-end`, the rest down to Spacing.
+/// Photographs the whole gallery on the panel's colour: `name`, its top, with the menu
+/// button's menu open, and where the page is taller than [`PART`], `name-end`, the rest
+/// down to Spacing.
 fn photograph(which: Builtin, locale: Locale, name: &str) {
     let height = page_height(which, locale);
     // Both parts' results in one, as kittest asks of several harnesses in a test.

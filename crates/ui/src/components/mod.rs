@@ -114,7 +114,7 @@ pub use switch::Switch;
 pub use tabs::{Tabs, group_label};
 pub use text_field::{PathField, PathOutput, TextField, Variable};
 pub use toggle_row::ToggleRow;
-pub use toolbar::{Available, SaveState, Toolbar, ToolbarAction, caption_button};
+pub use toolbar::{Available, MenuButtonStyle, SaveState, Toolbar, ToolbarAction, caption_button};
 pub use tools_panel::{
     FindBar, FindBarAction, PanelBody, PanelEdge, PanelEdgeAction, PanelTab, TabBar, TabBarAction,
     quiet_scroll, quiet_scroll_rows,
@@ -134,12 +134,12 @@ use egui::{
 use crate::Theme;
 use crate::popup::{self, Answer, Entry, Request};
 
-/// A pull-down menu hung from `button`, the popup service's (decision 40): the button, or
-/// ↓ while it has the focus, opens it, and a second press closes it. `entries` is built
-/// only as it opens. The button says to screen readers that it has a menu and whether it
-/// is open, as the ☰ does. Returns the id of the item chosen this frame; the focus goes
-/// back to the button as the service gives it. Drawn, and answered, in the frame it opens
-/// in.
+/// A pull-down menu hung from `button`, the popup service's (decision 40): the button, or ↓
+/// while it has the focus, opens it, and a second press closes it. `entries` is built only
+/// as it opens. The button says to screen readers that it has a menu and whether it is
+/// open, as the menu button does. Returns the id of the item chosen this frame; the focus
+/// goes back to the button as the service gives it. Drawn, and answered, in the frame it
+/// opens in.
 pub fn pull_down(
     ui: &egui::Ui,
     button: &Response,

@@ -151,7 +151,8 @@ pub enum Icon {
     Maximise,
     Restore,
     Close,
-    /// The Toolbar's ☰ on Windows and Linux, which opens the menus.
+    /// The Toolbar's ☰ on Windows and Linux, which opens the menus where the menu button
+    /// setting asks for it.
     Menu,
     /// A section header's tooltip's rows (`docs/gui.md`, The header's tooltip): a tag for
     /// Kind, a sun for Works on, columns for a utility's Measures, and darktable's input,
@@ -163,9 +164,12 @@ pub enum Icon {
     Input,
     Process,
     Output,
-    /// The app's mark, the Slider A with its cut, at the Toolbar's start: filled shapes,
-    /// not lines, the one icon drawn so (`assets/icons/README.md`).
-    Mark,
+    /// The app's icon in one colour, its rounded square with the Slider A cut out of it:
+    /// the Toolbar's menu button on Windows and Linux, the one icon of a filled shape, not
+    /// lines (`assets/icons/README.md`).
+    AppIcon,
+    /// The small ▾ after the app's icon on the menu button.
+    Caret,
     /// Filled forms, drawn only to show a state: the chosen Tools panel tab, an icon
     /// button that is on, a rating's points (`Icon::filled`).
     AdjustFilled,
@@ -189,7 +193,7 @@ pub enum Icon {
 }
 
 impl Icon {
-    pub const ALL: [Icon; 93] = [
+    pub const ALL: [Icon; 94] = [
         Icon::Chevron,
         Icon::ChevronDown,
         Icon::ChevronEnd,
@@ -264,7 +268,8 @@ impl Icon {
         Icon::Input,
         Icon::Process,
         Icon::Output,
-        Icon::Mark,
+        Icon::AppIcon,
+        Icon::Caret,
         Icon::AdjustFilled,
         Icon::DetailFilled,
         Icon::RawFilled,
@@ -319,8 +324,8 @@ impl Icon {
     }
 
     /// The side of the square it is drawn in by default, in points. Its file's design box
-    /// is Lucide's 24 units, but for the mark's and the caption buttons', which are their
-    /// size.
+    /// is Lucide's 24 units, but for the app icon's, the caret's and the caption buttons',
+    /// which are their size.
     pub fn size(self) -> f32 {
         self.file().size
     }
@@ -330,11 +335,17 @@ impl Icon {
     }
 
     /// Whether the icon keeps a design box and stroke of its own rather than Lucide's: the
-    /// mark and the window's caption buttons, drawn as the systems draw theirs.
+    /// app's icon and its caret, and the window's caption buttons, drawn as the systems
+    /// draw theirs.
     fn keeps_its_box(self) -> bool {
         matches!(
             self,
-            Icon::Mark | Icon::Minimise | Icon::Maximise | Icon::Restore | Icon::Close
+            Icon::AppIcon
+                | Icon::Caret
+                | Icon::Minimise
+                | Icon::Maximise
+                | Icon::Restore
+                | Icon::Close
         )
     }
 
@@ -451,7 +462,8 @@ impl Icon {
             Icon::Input => derived!("input", "arrow-right-to-line", 12.0),
             Icon::Process => derived!("process", "circle-dot", 12.0),
             Icon::Output => derived!("output", "arrow-right-from-line", 12.0),
-            Icon::Mark => own!("mark", 20.0),
+            Icon::AppIcon => own!("app-icon", 20.0),
+            Icon::Caret => own!("caret", 8.0),
             Icon::AdjustFilled => derived!("adjust-filled", "settings-2", 22.0),
             Icon::DetailFilled => own!("detail-filled", 22.0),
             Icon::RawFilled => derived!("raw-filled", "camera", 22.0),
@@ -498,7 +510,7 @@ impl Icon {
 
 /// The width of every icon's lines, in points, whatever size it is drawn at: Lucide's
 /// `absoluteStrokeWidth`, set as each icon is rendered, so a 10-point chevron is as heavy
-/// as a 22-point tab. The mark and the caption buttons keep their own.
+/// as a 22-point tab. The app's icon, its caret and the caption buttons keep their own.
 pub const STROKE: f32 = 1.25;
 
 /// An icon's file and how it is drawn (`Icon::file`).
@@ -651,8 +663,8 @@ mod tests {
             let source = icon.source();
             let tree = usvg::Tree::from_str(source, &usvg::Options::default())
                 .unwrap_or_else(|e| panic!("{name}.svg: {e}"));
-            // Lucide's 24-unit box, but for the mark's and the caption buttons', which are
-            // their size.
+            // Lucide's 24-unit box, but for the app icon's, the caret's and the caption
+            // buttons', which are their size.
             let side = if icon.keeps_its_box() {
                 icon.size()
             } else {
@@ -683,9 +695,9 @@ mod tests {
                 );
             }
             // One colour: no colour but currentColor is named. Only a filled form, and the
-            // mark's cut, may cut lines out, with the one mask their rules allow.
+            // app icon's cut, may cut shapes out, with the one mask their rules allow.
             let filled = Icon::ALL.iter().any(|&i| i != icon && i.filled() == icon);
-            let masked = filled || icon == Icon::Mark;
+            let masked = filled || icon == Icon::AppIcon;
             let source = if masked {
                 source.replace("url(#cut)", "")
             } else {
@@ -722,6 +734,21 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// The app's icon is its rounded square filled, with the Slider A, its marker among it,
+    /// cut out of it, as the macOS app icon places the A.
+    #[test]
+    fn the_app_icon_is_its_square_with_the_a_cut_out() {
+        let image = render(Icon::AppIcon, 256, 20.0).unwrap();
+        let alpha = |x: usize, y: usize| image.pixels[y * 256 + x].a();
+        // The rounded corner, the A's left leg and its marker are cut; the square beside
+        // the A is ink.
+        assert_eq!(alpha(2, 2), 0);
+        assert_eq!(alpha(113, 93), 0);
+        assert_eq!(alpha(126, 156), 0);
+        assert_eq!(alpha(40, 128), 255);
+        assert_eq!(alpha(128, 240), 255);
     }
 
     #[test]

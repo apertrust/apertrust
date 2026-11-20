@@ -1818,9 +1818,8 @@ fn resize_hover(ctx: &egui::Context, band: f32) {
 }
 
 /// The Toolbar's buttons and the actions they run.
-const TOOLBAR: [(ToolbarAction, ActionId); 9] = [
+const TOOLBAR: [(ToolbarAction, ActionId); 8] = [
     (ToolbarAction::Menu, ActionId::MENU),
-    (ToolbarAction::About, ActionId::ABOUT),
     (ToolbarAction::Import, ActionId::IMPORT),
     (ToolbarAction::Export, ActionId::EXPORT),
     (ToolbarAction::Reset, ActionId::RESET),
@@ -1974,11 +1973,11 @@ struct Shell {
     /// A tool's own action that ran, by its tool and action, for the app to run as its
     /// button does ([`App::tool_action`]).
     tool_action: Option<(&'static str, &'static str)>,
-    /// Whether the menus are the ☰'s, drawn: on Windows and Linux (decision 39), where the
-    /// frameless window has no menu bar. The Mac has its own.
+    /// Whether the menus are the menu button's, drawn: on Windows and Linux (decision 39),
+    /// where the frameless window has no menu bar. The Mac has its own.
     drawn_menus: bool,
-    /// Whether the ☰ or F10 asked for its menu, opened after the frame, or closed there
-    /// where it is open ([`Shell::open_menu`]).
+    /// Whether the menu button or F10 asked for its menu, opened after the frame, or closed
+    /// there where it is open ([`Shell::open_menu`]).
     menu: bool,
     /// Whether a key ran an action while the menu was open, so it closes after the frame
     /// ([`Shell::close_menu`]).
@@ -2780,8 +2779,8 @@ impl Shell {
     }
 
     /// Open Recent's items as a menu shows them from now ([`Shell::recent_items`]), their
-    /// paths kept for its choices: as the ☰'s menu is built, and as each frame fills the
-    /// Mac's bar.
+    /// paths kept for its choices: as the menu button's menu is built, and as each frame
+    /// fills the Mac's bar.
     fn show_recents(&mut self, ctx: &egui::Context) -> Vec<menus::Recent> {
         let items = self.recent_items(ctx);
         self.menu_recents = items.iter().map(|item| item.path.clone()).collect();
@@ -3184,8 +3183,8 @@ impl Shell {
     }
 
     /// Alt with a top-level menu's access key, pressed this frame where the menus are
-    /// drawn: opens the ☰'s menu with that menu expanded, before any widget sees the press
-    /// (decision 39), unless a dialog is open.
+    /// drawn: opens the menu button's menu with that menu expanded, before any widget sees
+    /// the press (decision 39), unless a dialog is open.
     fn access_key(&mut self, ctx: &egui::Context, state: &State) {
         if !self.drawn_menus || state.dialog {
             return;
@@ -3221,7 +3220,7 @@ impl Shell {
     }
 
     /// Draws the open popups, once a frame on every platform, as the popup service needs,
-    /// and returns the action chosen in the ☰'s menu, if one was this frame.
+    /// and returns the action chosen in the menu button's menu, if one was this frame.
     fn popups(&self, ctx: &egui::Context) -> Option<ActionId> {
         popup::show(ctx);
         match popup::answer(ctx, Toolbar::menu_popup())? {
@@ -3230,20 +3229,20 @@ impl Shell {
         }
     }
 
-    /// Asks for the ☰'s menu to close after the frame ([`Shell::open_menu`]) when the
-    /// frame's keys ran an action, `pressed`, but its own: the menu, built as it opened,
-    /// would show what that action changed as it was before.
+    /// Asks for the menu button's menu to close after the frame ([`Shell::open_menu`]) when
+    /// the frame's keys ran an action, `pressed`, but its own: the menu, built as it
+    /// opened, would show what that action changed as it was before.
     fn close_menu(&mut self, pressed: &[ActionId]) {
         if pressed.iter().any(|id| *id != ActionId::MENU) {
             self.close_menu = true;
         }
     }
 
-    /// After the frame's actions, with `state` as they left it: closes the ☰'s menu where
-    /// a key ran an action, giving the focus back to what had it, and whenever a dialog is
-    /// open, leaving the dialog the focus. Then opens it at its top, as the ☰ or F10 asked
-    /// during the frame, under the ☰ as last drawn and with what can run in `state`; F10
-    /// closes it where it is open.
+    /// After the frame's actions, with `state` as they left it: closes the menu button's
+    /// menu where a key ran an action, giving the focus back to what had it, and whenever a
+    /// dialog is open, leaving the dialog the focus. Then opens it at its top, as the menu
+    /// button or F10 asked during the frame, under the menu button as last drawn and with
+    /// what can run in `state`; F10 closes it where it is open.
     fn open_menu(&mut self, ctx: &egui::Context, state: &State) {
         let id = Toolbar::menu_popup();
         let close = std::mem::take(&mut self.close_menu);
@@ -3481,9 +3480,9 @@ impl Shell {
     }
 
     /// Runs `id` if it can run where it is in `state`: applies its intent, or returns its
-    /// command for the session. Keys, clicks and the ☰'s menu's choices arrive here after
-    /// the frame, the Mac's menus' choices before it (`App::logic`); `regions` are the
-    /// frame's Toolbar, viewer bar, Tools panel and Browser, for F6. Undo and Redo
+    /// command for the session. Keys, clicks and the menu button's menu's choices arrive
+    /// here after the frame, the Mac's menus' choices before it (`App::logic`); `regions`
+    /// are the frame's Toolbar, viewer bar, Tools panel and Browser, for F6. Undo and Redo
     /// act on a text field with the focus, handing it its own keys for the next frame
     /// (decision 39).
     fn run(
@@ -5929,11 +5928,11 @@ impl App {
         self.finish_frame(&ctx, frame, ui.max_rect(), gesture);
     }
 
-    /// The end of each frame, the main window's or the start window's: the ☰'s menu, the
-    /// open dialog and what it chose, drops and what the system opened, over `target`, the
-    /// title bar's `gesture`, the bands that resize the window, the menus, the Mac's popup
-    /// menus and the settings kept. Where what ran changed whether the start window shows,
-    /// the frame is drawn again before it is shown.
+    /// The end of each frame, the main window's or the start window's: the menu button's
+    /// menu, the open dialog and what it chose, drops and what the system opened, over
+    /// `target`, the title bar's `gesture`, the bands that resize the window, the menus,
+    /// the Mac's popup menus and the settings kept. Where what ran changed whether the
+    /// start window shows, the frame is drawn again before it is shown.
     fn finish_frame(
         &mut self,
         ctx: &egui::Context,
@@ -16449,7 +16448,7 @@ mod tests {
         pressed: Vec<ActionId>,
         /// The hold actions held in the last frame.
         held: Vec<ActionId>,
-        /// Every action chosen in the ☰'s menu.
+        /// Every action chosen in the menu button's menu.
         chosen: Vec<ActionId>,
         /// The commands sent to the session.
         commands: Vec<Command>,
@@ -19735,7 +19734,7 @@ mod tests {
     }
 
     #[test]
-    fn a_double_click_on_the_mark_or_back_leaves_about_open() {
+    fn a_double_click_on_about_s_item_or_back_leaves_about_open() {
         use about::Page;
         let mut harness = bench(OperatingSystem::Windows);
         harness.run();
@@ -19759,11 +19758,13 @@ mod tests {
             harness.input_mut().time = None;
             harness.run();
         };
-        let mark = harness
-            .get_by_role_and_label(Role::Button, "About Apertrust")
+        // Help › About Apertrust, in the menu button's menu.
+        alt(&mut harness, Key::H, Some("h"));
+        let item = harness
+            .get_by_role_and_label(Role::MenuItem, "About Apertrust")
             .rect()
             .center();
-        double_click(&mut harness, mark);
+        double_click(&mut harness, item);
         assert_eq!(harness.state().shell.about.page(), Some(Page::About));
         // Back's second click lands outside About, narrower than Credits.
         harness
@@ -19793,14 +19794,19 @@ mod tests {
     }
 
     #[test]
-    fn the_mark_opens_about_and_its_pages_go_one_step_in_and_back() {
+    fn help_opens_about_and_its_pages_go_one_step_in_and_back() {
         use about::Page;
         let mut harness = bench(OperatingSystem::Windows);
         harness.run();
         let page = |harness: &Harness<'_, Bench>| harness.state().shell.about.page();
+        // Help › About Apertrust, the menu opened by its keys with the menu button focused,
+        // which gets the focus back as the menu closes.
         let open = |harness: &mut Harness<'_, Bench>| {
+            harness.get_by_role_and_label(Role::Button, "Menu").focus();
+            harness.run();
+            alt(harness, Key::H, Some("h"));
             harness
-                .get_by_role_and_label(Role::Button, "About Apertrust")
+                .get_by_role_and_label(Role::MenuItem, "About Apertrust")
                 .click();
             harness.run();
         };
@@ -19809,8 +19815,8 @@ mod tests {
                 .get_by_role_and_label(Role::Button, name)
                 .is_focused()
         };
-        // The mark runs the action: About opens, named for screen readers, its version
-        // the banner's, nothing focused, so no button is drawn highlighted.
+        // The item runs the action: About opens, named for screen readers, its version the
+        // banner's, nothing focused, so no button is drawn highlighted.
         open(&mut harness);
         assert_eq!(page(&harness), Some(Page::About));
         harness.get_by_role_and_label(Role::Dialog, "About Apertrust");
@@ -19840,21 +19846,22 @@ mod tests {
         harness.key_press(Key::Escape);
         harness.run();
         assert_eq!(page(&harness), None);
-        // Closed, it gives the focus back to the mark that opened it.
-        assert!(focused(&harness, "About Apertrust"));
+        // Closed, it gives the focus back to what had it as it opened: the menu button the
+        // menu gave it back to.
+        assert!(focused(&harness, "Menu"));
 
         // A click outside it closes it, and so does a click on it off its buttons.
         open(&mut harness);
         click_at(&mut harness, egui::pos2(20.0, 580.0));
         assert_eq!(page(&harness), None);
-        assert!(focused(&harness, "About Apertrust"));
+        assert!(focused(&harness, "Menu"));
         open(&mut harness);
         let logo = harness
             .get_by_role_and_label(Role::Image, "Apertrust")
             .rect();
         click_at(&mut harness, logo.center());
         assert_eq!(page(&harness), None);
-        assert!(focused(&harness, "About Apertrust"));
+        assert!(focused(&harness, "Menu"));
 
         // Credits and Licence go one step in; a click there moves no focus, so no button is
         // drawn highlighted. A click inside stays, and Esc comes back, the button they were
@@ -20218,7 +20225,7 @@ mod tests {
         harness.run();
         assert_eq!(harness.state().shell.panel_tab, COLLECTIONS);
         assert_eq!(harness.state().pressed, vec![ActionId::SHOW_COLLECTIONS; 2]);
-        // From the ☰'s menu too, View › Collections, with its key.
+        // From the menu button's menu too, View › Collections, with its key.
         harness.state_mut().shell.panel_tab = 3;
         alt(&mut harness, Key::V, Some("v"));
         let item = harness.get_by_role_and_label(Role::MenuItem, "Collections");
@@ -20267,8 +20274,8 @@ mod tests {
         }
     }
 
-    /// File › Export… does the same from the ☰'s menu, with its key shown, and closed it
-    /// leaves the tool open for the next time.
+    /// File › Export… does the same from the menu button's menu, with its key shown, and
+    /// closed it leaves the tool open for the next time.
     #[test]
     fn export_in_the_menu_reveals_the_tool_and_the_tool_stays_open_until_it_is_closed() {
         let mut harness = bench(OperatingSystem::Nix);
@@ -20554,7 +20561,7 @@ mod tests {
 
     /// The shell beside a text field, as a value field or a dialog's name field has one:
     /// the keys read first, the Toolbar and the field, then what the keys and the menus
-    /// ran, and the ☰'s menu opened where it is drawn.
+    /// ran, and the menu button's menu opened where it is drawn.
     struct Field {
         shell: Shell,
         text: String,
@@ -20671,8 +20678,8 @@ mod tests {
         }
     }
 
-    /// The ☰'s menu opened by F10 gives the focus back to the field before Edit › Undo
-    /// runs, which hands the field its own key.
+    /// The menu button's menu opened by F10 gives the focus back to the field before Edit ›
+    /// Undo runs, which hands the field its own key.
     #[test]
     fn edit_s_undo_from_the_menu_f10_opened_acts_on_the_focused_field() {
         let mut harness = field(OperatingSystem::Nix);
@@ -21038,7 +21045,7 @@ mod tests {
                 .iter()
                 .position(|r| r.contains(centre))
         };
-        // Into the Toolbar, on its first control: the ☰.
+        // Into the Toolbar, on its first control: the menu button.
         harness.key_press(Key::F6);
         harness.run();
         assert_eq!(region_of_focus(&harness), Some(0));
@@ -21056,6 +21063,19 @@ mod tests {
         harness.key_press_modifiers(Modifiers::SHIFT, Key::F6);
         harness.run();
         assert_eq!(region_of_focus(&harness), Some(1));
+        // On the Mac, with no menu button and no mark, on the first action that can run.
+        let mut harness = bench(OperatingSystem::Mac);
+        harness.run();
+        harness.key_press(Key::F6);
+        harness.run();
+        let bar = harness.get_by_role(Role::Toolbar).rect();
+        let first = harness
+            .get_all_by_role(Role::Button)
+            .filter(|b| bar.contains(b.rect().center()) && !b.accesskit_node().is_disabled())
+            .min_by(|a, b| a.rect().left().total_cmp(&b.rect().left()))
+            .expect("an action");
+        assert!(first.is_focused());
+        assert!(["Import…", "Export…"].contains(&focused_name(&harness).as_str()));
     }
 
     /// Presses and releases a key in a frame of its own, and says whether that frame asked
@@ -21179,9 +21199,16 @@ mod tests {
         for os in [OperatingSystem::Windows, OperatingSystem::Nix] {
             let mut harness = bench(os);
             harness.run();
+            // First, and then Import: no mark between them.
             let button = harness.get_by_role_and_label(Role::Button, "Menu");
-            let mark = harness.get_by_role_and_label(Role::Button, "About Apertrust");
-            assert!(button.rect().right() < mark.rect().left(), "{os:?}");
+            let import = harness.get_by_role_and_label(Role::Button, "Import…");
+            assert!(button.rect().right() < import.rect().left(), "{os:?}");
+            assert!(
+                harness
+                    .query_by_role_and_label(Role::Button, "About Apertrust")
+                    .is_none(),
+                "{os:?}"
+            );
             // Its tooltip and screen readers give F10 with it.
             assert_eq!(
                 button.accesskit_node().data().keyboard_shortcut(),
@@ -21202,12 +21229,12 @@ mod tests {
                 );
             }
             assert!(harness.query_by_label("Window").is_none(), "{os:?}");
-            // A press of the ☰ closes it.
+            // A press of the menu button closes it.
             harness.get_by_role_and_label(Role::Button, "Menu").click();
             harness.run();
             assert!(!menu_open(&harness, "Menu"), "{os:?}");
         }
-        // The Mac keeps its native menu bar.
+        // The Mac keeps its native menu bar: no menu button and no mark, Import first.
         let mut harness = bench(OperatingSystem::Mac);
         harness.run();
         assert!(
@@ -21215,6 +21242,18 @@ mod tests {
                 .query_by_role_and_label(Role::Button, "Menu")
                 .is_none()
         );
+        assert!(
+            harness
+                .query_by_role_and_label(Role::Button, "About Apertrust")
+                .is_none()
+        );
+        let bar = harness.get_by_role(Role::Toolbar);
+        let first = harness
+            .get_all_by_role(Role::Button)
+            .filter(|b| bar.rect().contains(b.rect().center()))
+            .min_by(|a, b| a.rect().left().total_cmp(&b.rect().left()))
+            .expect("a button");
+        assert_eq!(first.accesskit_node().label().as_deref(), Some("Import…"));
         harness.key_press(Key::F10);
         harness.run();
         alt(&mut harness, Key::F, Some("f"));
@@ -21390,8 +21429,8 @@ mod tests {
         assert!(!menu_line(&harness, item, "Reset").0);
     }
 
-    /// File › Close: Ctrl+W on Windows and Linux, and the ☰'s File › Close, with something
-    /// open; with nothing open both rest.
+    /// File › Close: Ctrl+W on Windows and Linux, and the menu button's File › Close, with
+    /// something open; with nothing open both rest.
     #[test]
     fn close_runs_by_ctrl_w_and_from_the_drawn_file_menu_with_something_open() {
         for os in [OperatingSystem::Windows, OperatingSystem::Nix] {
@@ -21419,9 +21458,9 @@ mod tests {
         }
     }
 
-    /// The ☰'s File › Open Recent: the recents by label, a choice asking for its folder, a
-    /// missing one disabled, and Clear Menu emptying the list, after which Clear Menu alone
-    /// is there, disabled.
+    /// The menu button's File › Open Recent: the recents by label, a choice asking for its
+    /// folder, a missing one disabled, and Clear Menu emptying the list, after which Clear
+    /// Menu alone is there, disabled.
     #[test]
     fn the_drawn_open_recent_opens_a_recent_and_clear_menu_empties_it() {
         let mut harness = bench(OperatingSystem::Nix);
@@ -21467,8 +21506,8 @@ mod tests {
         );
     }
 
-    /// The ☰'s Open Recent, open while the recents reorder, as a slow open landing does:
-    /// its first item opens the folder it shows, not the one now first.
+    /// The menu button's Open Recent, open while the recents reorder, as a slow open
+    /// landing does: its first item opens the folder it shows, not the one now first.
     #[test]
     fn a_choice_in_the_drawn_open_recent_opens_what_it_showed_though_the_list_changed() {
         let mut harness = bench(OperatingSystem::Nix);
@@ -21549,17 +21588,15 @@ mod tests {
         harness.run();
         assert!(!harness.state().settings_open());
         // F11 runs Full screen and closes it too, giving the focus back to what had it.
-        harness
-            .get_by_role_and_label(Role::Button, "About Apertrust")
-            .focus();
+        harness.get_by_role_and_label(Role::Button, "Menu").focus();
         harness.run();
         alt(&mut harness, Key::V, Some("v"));
         assert!(menu_open(&harness, "View"));
-        assert_ne!(focused_name(&harness), "About Apertrust");
+        assert_ne!(focused_name(&harness), "Menu");
         harness.key_press(Key::F11);
         harness.run();
         assert!(!menu_open(&harness, "Menu"));
-        assert_eq!(focused_name(&harness), "About Apertrust");
+        assert_eq!(focused_name(&harness), "Menu");
         // A dialog however opened closes it.
         harness.key_press(Key::F10);
         harness.run();

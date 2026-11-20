@@ -19,8 +19,9 @@
 //! is compact (`docs/gui.md`, Testing).
 
 use apertrust_ui::components::{
-    Available, Browser, BrowserAction, Margin, PanelEdge, PanelEdgeAction, PhotoCaption,
-    PhotoFrame, SaveState, Thumb, Toggle, Toolbar, ToolbarAction, ViewerBar, ViewerBarAction, Zoom,
+    Available, Browser, BrowserAction, Jobs, Margin, MenuButtonStyle, PanelEdge, PanelEdgeAction,
+    PhotoCaption, PhotoFrame, SaveState, Thumb, Toggle, Toolbar, ToolbarAction, ViewerBar,
+    ViewerBarAction, Zoom,
 };
 use apertrust_ui::{Builtin, Locale, Theme, Translator};
 use egui::accesskit::{Action, Role};
@@ -65,11 +66,6 @@ const ACTIONS: [&str; 7] = [
 fn the_toolbar_reports_its_actions() {
     let mut harness = toolbar(Available::default());
     harness.run();
-    // The mark first, a button named for what it opens.
-    harness
-        .get_by_role_and_label(Role::Button, "About Apertrust")
-        .click();
-    harness.run();
     for name in ACTIONS {
         harness.get_by_label(name).click();
         harness.run();
@@ -77,7 +73,6 @@ fn the_toolbar_reports_its_actions() {
     assert_eq!(
         *harness.state(),
         vec![
-            ToolbarAction::About,
             ToolbarAction::Import,
             ToolbarAction::Export,
             ToolbarAction::Reset,
@@ -87,8 +82,10 @@ fn the_toolbar_reports_its_actions() {
             ToolbarAction::ApplyEdit,
         ]
     );
-    // No Settings button: Settings is in the menus and on its keys.
+    // No Settings button: Settings is in the menus and on its keys. No mark either: About
+    // is in the menus.
     assert!(harness.query_by_label("Settings").is_none());
+    assert!(harness.query_by_label("About Apertrust").is_none());
 }
 
 #[test]
@@ -99,13 +96,14 @@ fn the_actions_come_first_in_order_and_saved_last() {
     for pair in ACTIONS.windows(2) {
         assert!(rect(pair[0]).right() < rect(pair[1]).left(), "{pair:?}");
     }
-    // The mark at the start, after the panel's margin, a button as large as the icon
-    // buttons, 8 points before Import.
+    // Import at the start, after the panel's margin: no mark before it.
     let bar = harness.get_by_role(Role::Toolbar).rect();
-    let mark = rect("About Apertrust");
-    assert_eq!(mark.left() - bar.left(), 8.0);
-    assert_eq!(mark.size(), vec2(30.0, 30.0));
-    assert_eq!(rect("Import…").left() - mark.right(), 8.0);
+    assert_eq!(rect("Import…").left() - bar.left(), 8.0);
+    assert!(
+        harness
+            .query_by_role_and_label(Role::Button, "Menu")
+            .is_none()
+    );
     // Copy edit and Apply edit are a group of their own, 16 points on, with no line.
     assert_eq!(rect("Copy edit").left() - rect("Redo").right(), 16.0);
     assert_eq!(rect("Export…").left() - rect("Import…").right(), 2.0);
@@ -133,8 +131,8 @@ fn unavailable_actions_do_nothing() {
 }
 
 /// The Toolbar `width` points wide, with the save state `saved`, and as on the Mac, the
-/// window's buttons' room at its start, or as on Windows and Linux, the ☰ at its start and
-/// the caption buttons at its end; and Export's keys.
+/// window's buttons' room at its start, or as on Windows and Linux, the menu button at its
+/// start and the caption buttons at its end; and Export's keys.
 fn narrow(
     width: f32,
     saved: SaveState<'static>,
@@ -371,6 +369,67 @@ fn a_narrowing_toolbar_always_leaves_room_to_move_the_window() {
                 }
             }
         }
+    }
+}
+
+/// Where each of the narrowing's steps starts, in points, in `locale`: as on the Mac,
+/// with the traffic lights' room, where `menu` is None, else as on Windows and Linux, the
+/// menu button drawn as `menu` says and the caption buttons at the end; with the jobs
+/// spinner's slot, as the app draws it. Each is the widest Toolbar that has taken the step,
+/// plus one: the words folded, the actions under ⋯, Undo and Redo under ⋯.
+fn fold_widths(locale: Locale, menu: Option<MenuButtonStyle>) -> [u32; 3] {
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 120.0))
+        .with_context_setup(move |ctx| {
+            install(ctx);
+            apertrust_ui::set_locale(ctx, locale);
+        })
+        .build_ui(move |ui| {
+            let inset = if menu.is_some() { 0.0 } else { 78.0 };
+            Toolbar::new()
+                .saved(SaveState::Saved)
+                .jobs(Jobs::new(&[]))
+                .start_inset(inset)
+                .title_bar(true)
+                .menu_button(menu.is_some())
+                .menu_button_style(menu.unwrap_or_default())
+                .caption_buttons(menu.is_some())
+                .show(ui);
+        });
+    let words = Translator::new(locale);
+    let [import, more, undo] =
+        ["action-import", "toolbar-more", "action-undo"].map(|id| words.text(id));
+    let mut starts = [0; 3];
+    for width in (150..=1400).rev() {
+        harness.set_size(egui::vec2(width as f32, 120.0));
+        harness.run();
+        let taken = [
+            (harness.query_by_label(&import)).is_none_or(|node| node.rect().width() == 30.0),
+            harness.query_by_label(&more).is_some(),
+            harness.query_by_label(&undo).is_none(),
+        ];
+        for (start, taken) in starts.iter_mut().zip(taken) {
+            if taken && *start == 0 {
+                *start = width + 1;
+            }
+        }
+    }
+    starts
+}
+
+/// The widths `docs/gui.md`'s Narrowing table gives, each step's start as the window
+/// narrows: on the Mac in each language, and on Linux with either menu button.
+#[test]
+fn the_toolbar_folds_where_gui_md_says() {
+    for (locale, menu, expected) in [
+        (Locale::EnGb, None, [638, 482, 282]),
+        (Locale::EnGb, Some(MenuButtonStyle::Icon), [763, 607, 407]),
+        (Locale::EnGb, Some(MenuButtonStyle::Menu), [752, 596, 396]),
+        (Locale::Uk, None, [692, 509, 282]),
+        (Locale::Pl, None, [691, 497, 282]),
+    ] {
+        let measured = fold_widths(locale, menu);
+        assert_eq!(measured, expected, "{locale:?}, {menu:?}");
     }
 }
 
@@ -662,12 +721,6 @@ fn tooltips_carry_the_keys_and_screen_readers_hear_them() {
     harness.get_by_label("Undo").hover();
     harness.run();
     assert!(harness.query_by_label_contains("Undo (").is_none());
-    // The mark has no tooltip: hovered, only its own name says About Apertrust.
-    harness
-        .get_by_role_and_label(Role::Button, "About Apertrust")
-        .hover();
-    harness.run();
-    assert_eq!(harness.query_all_by_label("About Apertrust").count(), 1);
 }
 
 /// The Toolbar as the window's title bar, or not, with room for the window's buttons at
@@ -770,14 +823,14 @@ fn the_title_bar_moves_and_zooms_the_window_from_its_empty_areas_only() {
     drag(&mut harness, empty);
     assert_eq!(*harness.state(), vec![ToolbarAction::MoveWindow]);
 
-    // On a button, a double-click is two clicks, and a drag neither clicks nor moves. The
-    // mark is a button too, after the window's buttons' room.
+    // On a button, a double-click is two clicks, and a drag neither clicks nor moves.
+    // Import, the first, starts after the window's buttons' room.
     harness.state_mut().clear();
-    let mark = harness.get_by_label("About Apertrust").rect();
+    let import = harness.get_by_label("Import…").rect();
     let bar = harness.get_by_role(Role::Toolbar).rect();
-    assert_eq!(mark.left() - bar.left(), 90.0);
-    double_click(&mut harness, mark.center());
-    assert_eq!(*harness.state(), vec![ToolbarAction::About; 2]);
+    assert_eq!(import.left() - bar.left(), 90.0);
+    double_click(&mut harness, import.center());
+    assert_eq!(*harness.state(), vec![ToolbarAction::Import; 2]);
     harness.state_mut().clear();
     let reset = harness.get_by_label("Reset").rect().center();
     double_click(&mut harness, reset);
@@ -787,7 +840,7 @@ fn the_title_bar_moves_and_zooms_the_window_from_its_empty_areas_only() {
     drag(&mut harness, undo);
     let apply = harness.get_by_label("Apply edit").rect();
     drag(&mut harness, apply.center());
-    drag(&mut harness, mark.center());
+    drag(&mut harness, import.center());
     assert!(harness.state().is_empty());
 }
 
@@ -863,7 +916,7 @@ fn a_right_click_on_the_empty_areas_asks_for_the_window_s_menu() {
     assert_eq!(*harness.state(), vec![ToolbarAction::WindowMenu]);
     // On a control, enabled or not, it is not the title bar's, and it clicks nothing.
     harness.state_mut().clear();
-    for name in ["About Apertrust", "Reset", "Undo", "Apply edit"] {
+    for name in ["Import…", "Reset", "Undo", "Apply edit"] {
         let control = harness.get_by_label(name).rect().center();
         right_click(&mut harness, control);
     }
