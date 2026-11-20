@@ -78,7 +78,7 @@ tools/build-api-docs.sh [--open]           # API docs into target/doc; a rustdoc
 cargo deny check                           # licences, advisories; before adding a dependency
                                            # (install: cargo install --locked cargo-deny)
 pre-commit run --all-files                 # the quick checks of .pre-commit-config.yaml (CONTRIBUTING.md, Checks)
-pre-commit run --hook-stage manual --all-files   # every check, clippy, the API docs and the tests too
+pre-commit run --hook-stage manual --all-files   # every check, clippy and the API docs too; never the tests
                                            # (install: pipx install pre-commit, or uv tool install pre-commit)
 tools/check-ui-strings.sh                  # fails on an English literal in interface code (CI)
 tools/check-windows-paths.sh [--changed REVS]   # a platform cfg missing from .github/windows-paths.txt (CI)

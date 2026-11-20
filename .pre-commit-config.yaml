@@ -1,8 +1,9 @@
 # CONTRIBUTING.md's checks and pre-commit's general file checks, for pre-commit
-# (https://pre-commit.com), run when asked:
+# (https://pre-commit.com), run when asked.
 #   pre-commit run                                  the quick checks, on the staged files
 #   pre-commit run --all-files                      the quick checks, on every file
 #   pre-commit run --hook-stage manual --all-files  every check, the long ones too
+#
 # The quick checks run in every stage, so they also run as git hooks for whoever installs
 # them (`pre-commit install`); pre-commit-hooks keeps its fixers and executable checks to
 # the commit, push and manual stages, off the commit message. The long ones, which take
@@ -153,13 +154,6 @@ repos:
       - id: api-docs
         name: API docs
         entry: tools/build-api-docs.sh
-        language: system
-        exclude: *docs-only
-        pass_filenames: false
-        stages: [manual]
-      - id: cargo-test
-        name: cargo test
-        entry: cargo test --workspace
         language: system
         exclude: *docs-only
         pass_filenames: false
