@@ -152,9 +152,10 @@ fn a_view_is_kept_across_photos() {
     assert_eq!(values(&events).extent, [62, 84]);
     let state = told(&events);
     let placed = crate::view::place([62, 84], (40, 40), &kept);
-    assert_eq!(state.placement, Some(placed));
     assert_eq!(state.view.scale, ViewScale::Factor(1.0));
     assert_eq!(state.view.centre, placed.centre);
+    let told = crate::view::place([62, 84], (40, 40), &state.view);
+    assert_eq!(state.placement, Some(told));
     assert!(placed.centre[0] > 0.3 && placed.centre[1] == 0.6);
     assert_eq!(driven.engine.view, state.view);
     // Closed, the view stays the session's, and nothing is told of it.
@@ -222,6 +223,26 @@ fn a_resize_that_moves_the_placement_sends_the_view_fact() {
     assert_eq!(state.view.scale, ViewScale::Fill);
     let shown = state.placement.expect("a placement").shown;
     assert_eq!(shown, 100.0 / 62.0);
+    remove(&path);
+}
+
+#[test]
+fn a_centre_clamped_at_an_edge_is_told_once() {
+    let path = scratch("view-edge");
+    let mut driven = Driven::new(&[]);
+    driven.open(&path);
+    // At 100% in 40 × 40, the corner clamps the centre to where the view touches the
+    // photo's edges, which an `f32` holds only to its rounding.
+    let events = driven.run([zoom(ViewScale::Factor(1.0), [0.0, 0.0])]);
+    let state = *told(&events);
+    let placement = state.placement.expect("a placement");
+    assert_eq!(
+        placement,
+        crate::view::place([84, 62], (40, 40), &state.view)
+    );
+    // A batch that moves nothing tells nothing.
+    let events = driven.run([Command::Scopes(None)]);
+    assert!(views(&events).is_empty(), "{events:?}");
     remove(&path);
 }
 

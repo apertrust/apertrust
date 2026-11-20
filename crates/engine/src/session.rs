@@ -3248,11 +3248,18 @@ impl Engine {
     /// last placement told stands until a photo's differs, so another photo of the same
     /// extent tells nothing either.
     fn view_event(&mut self) -> Option<Event> {
-        let placement = (self.open.as_ref())
-            .zip(self.size)
-            .map(|(open, bounds)| crate::view::place(open.extent, bounds, &self.view));
-        if let Some(placement) = &placement {
-            self.view.centre = placement.centre;
+        let place = |engine: &Engine| {
+            (engine.open.as_ref())
+                .zip(engine.size)
+                .map(|(open, bounds)| crate::view::place(open.extent, bounds, &engine.view))
+        };
+        let mut placement = place(self);
+        if let Some(clamped) = &placement {
+            // Placed again from the centre as held, an `f32`, so the placement told is
+            // `place` of the view told and the next batch's, from the same centre, is the
+            // same, though the clamp's own centre rounds as it is held.
+            self.view.centre = clamped.centre;
+            placement = place(self);
         }
         let (told, told_placement) = self.view_told;
         if self.view == told && (placement.is_none() || placement == told_placement) {
