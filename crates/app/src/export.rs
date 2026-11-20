@@ -47,7 +47,10 @@
 //! **The feedback under the rows** comes from the session (`PreviewExport`,
 //! `Event::ExportPreview`): the app asks for a preview whenever the settings or the photo
 //! change while the tool is open and shown, and hands the answer back with
-//! [`Export::receive`], which keeps the one with the highest `through`. The tool exports the
+//! [`Export::receive`], which shows one only where it answers the latest request or a later
+//! one ([`Export::sent`]), so a slow answer to an earlier request never replaces it. The
+//! request names the photo open alone, the first of the answer's names and the one its size
+//! is for, so it needs no `focus` photo until it covers the whole selection. The tool exports the
 //! active photo, since nothing selects photos yet; exporting closes nothing.
 
 use std::collections::BTreeSet;
@@ -607,6 +610,9 @@ pub struct Export {
     values: Values,
     /// The newest answer of the session, with the number of the command it answers.
     preview: Option<(u64, ExportPreview)>,
+    /// The number of the latest preview the app asked for: an answer to an earlier one is
+    /// stale ([`Export::receive`]).
+    sent: u64,
     /// The person's home, which paths are shown relative to as `~`.
     home: Option<PathBuf>,
     /// The print lengths last entered, which a change of resolution keeps ([`Print`]).
@@ -866,6 +872,7 @@ impl Export {
         Export {
             values,
             preview: None,
+            sent: 0,
             home: places().home,
             print: None,
             alerts: true,
@@ -924,15 +931,19 @@ impl Export {
         }
     }
 
-    /// Takes the session's answer for the command numbered `through`, if it is newer than
-    /// the one held: a preview cancelled in time sends nothing, but one that had finished
-    /// sends its answer, so a client keeps the highest.
+    /// Notes that the app asked the session for the preview numbered `number`: an answer to
+    /// an earlier request that arrives after it is for settings no longer in place.
+    pub fn sent(&mut self, number: u64) {
+        self.sent = self.sent.max(number);
+    }
+
+    /// Takes the session's answer for the command numbered `through` where it answers the
+    /// latest request or a later one ([`Export::sent`]), and is not older than the one held:
+    /// a preview cancelled in time sends nothing, but one that had finished sends its
+    /// answer, which may come after a newer request and is dropped.
     pub fn receive(&mut self, through: u64, preview: ExportPreview) {
-        if self
-            .preview
-            .as_ref()
-            .is_none_or(|(held, _)| through >= *held)
-        {
+        let older = (self.preview.as_ref()).is_some_and(|(held, _)| through < *held);
+        if through >= self.sent && !older {
             self.preview = Some((through, preview));
         }
     }

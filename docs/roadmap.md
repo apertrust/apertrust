@@ -292,7 +292,8 @@ Goal: usable for daily editing, and the editor sets the sliders for a goal. Migr
   - [x] the path's folder button, darktable's "select directory": the system's folder chooser, opening where the path is, the folder chosen put before the path's file part;
   - [ ] its presets, Default settings, For sharing and Full size JPEG built in, then the person's own, with the presets API every tool shares, processing and utility alike, whose decision comes first;
   - [x] the keys: Export Again on Ctrl+Shift+E, Ctrl+Return, Esc, the focus on the button after the reveal, and the wheel on the focused row;
-  - [ ] the preview sent only while the tool is in view, with `focus`, and an answer shown only for its latest request;
+  - [x] the preview's answer shown only for its latest request;
+  - [ ] the preview sent only while the tool is in view, with `focus` once it covers the whole selection;
   - [ ] Select › Previous Selection on Ctrl+Shift+D, with Phase 3's selection;
   - [ ] Collections' Import…, opening the Import sheet.
 - [ ] The Import sheet's frame (decision 86; [gui.md](gui.md#sheets)): the sheet bar, a grid of photos checked to go, a column of tools on the Tools panel's side, the footer with Keep open, Close and the primary button, its keys and modality, each tool kept to its place; then Import's first slice (the library's step 20a).

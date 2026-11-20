@@ -4294,6 +4294,7 @@ impl App {
         let number = self
             .session
             .send(export::preview_command(path, values, &self.places));
+        self.export.sent(number);
         if matches!(ask, export::Ask::Fresh(..)) {
             self.mirror.previews_from(number);
             self.export.forget();
