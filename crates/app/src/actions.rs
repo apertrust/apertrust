@@ -172,7 +172,7 @@ impl ActionId {
     pub const SCALE_RESET: ActionId = ActionId("scale-reset");
     pub const NEXT_REGION: ActionId = ActionId("next-region");
     pub const PREVIOUS_REGION: ActionId = ActionId("previous-region");
-    /// The ☰'s menu, where the menus are drawn (decision 39).
+    /// The menu button's menu, where the menus are drawn (decision 39).
     pub const MENU: ActionId = ActionId("menu");
     pub const FULL_SCREEN: ActionId = ActionId("full-screen");
     /// File › Close: the folder or photo open.
@@ -316,7 +316,7 @@ pub enum Intent {
     ScaleReset,
     NextRegion,
     PreviousRegion,
-    /// The ☰'s menu, opened at its top, or closed where it is open.
+    /// The menu button's menu, opened at its top, or closed where it is open.
     Menu,
     FullScreen,
     /// The main window, which ends the app as Quit does; a dialog's own window is the
@@ -791,7 +791,7 @@ const fn to_tab<const I: usize>(message: &'static str) -> Action {
 /// Every action, in the order a keyboard map lists them (`docs/gui.md`, The default
 /// keyboard map). Slider keys are not here: they are the slider's own (`SliderRow`).
 pub static ACTIONS: [Action; 107] = [
-    // The Toolbar's mark, and About Apertrust in the menus once they come.
+    // About Apertrust, in the app menu on the Mac and in Help on Windows and Linux.
     Action {
         id: ActionId::ABOUT,
         message: "action-about",
@@ -1332,8 +1332,8 @@ pub static ACTIONS: [Action; 107] = [
         available: |s| !s.dialog,
         emits: Emit::Intent(Intent::PreviousRegion),
     },
-    // F10 opens the ☰'s menu on Windows and Linux, as GNOME's apps open theirs (decision
-    // 39). Its name is the ☰'s, and the menu it opens never holds it.
+    // F10 opens the menu button's menu on Windows and Linux, as GNOME's apps open theirs
+    // (decision 39). Its name is the menu button's, and the menu it opens never holds it.
     Action {
         id: ActionId::MENU,
         message: "toolbar-menu",
@@ -1758,13 +1758,13 @@ impl Keymap {
     }
 
     /// The defaults on `os` with the keys settings keep in their place, by action id, and
-    /// why any was refused. An override is refused when it names no action, holds text
-    /// that is no key, holds a key egui keeps for the clipboard ([`clipboard`]) or one that
-    /// opens the ☰'s menu (F10, or Alt with a letter: [`opens_menu`]), or holds a key that one
-    /// press can be with another action's where both work: in one scope, or in a view and
-    /// the app ([`conflict`]). Two overrides that clash are both refused;
-    /// a clash the defaults already have stays, as Ctrl++ with Ctrl+1 on a Czech keyboard.
-    /// A refused override leaves its action its default keys. Every override stays in
+    /// why any was refused. An override is refused when it names no action, holds text that
+    /// is no key, holds a key egui keeps for the clipboard ([`clipboard`]) or one that
+    /// opens the menu button's menu (F10, or Alt with a letter: [`opens_menu`]), or holds a
+    /// key that one press can be with another action's where both work: in one scope, or in
+    /// a view and the app ([`conflict`]). Two overrides that clash are both refused; a
+    /// clash the defaults already have stays, as Ctrl++ with Ctrl+1 on a Czech keyboard. A
+    /// refused override leaves its action its default keys. Every override stays in
     /// [`Keymap::overrides`] as it was read, so that a file another platform or version
     /// wrote keeps it until the user changes the action.
     pub fn load(
@@ -1930,16 +1930,16 @@ pub fn clipboard(key: Shortcut, os: OperatingSystem) -> bool {
         || (windows && m.shift && matches!(key.key, Key::Insert | Key::Delete))
 }
 
-/// Whether a press of `key` opens the ☰'s menu at a top-level menu on `os`, and so is kept
-/// from every action: on Windows and Linux, Alt alone with a letter, which is a top-level
-/// menu's access key or may be one in another language (decision 39).
+/// Whether a press of `key` opens the menu button's menu at a top-level menu on `os`, and
+/// so is kept from every action: on Windows and Linux, Alt alone with a letter, which is a
+/// top-level menu's access key or may be one in another language (decision 39).
 pub fn opens_menu(key: Shortcut, os: OperatingSystem) -> bool {
     os != OperatingSystem::Mac && alt_only(key.modifiers) && is_letter(key.key)
 }
 
 /// Why `id` may not have `key` on `os`, if it is kept from it: the clipboard's keys, and
-/// the keys that open the ☰'s menu, Alt with a letter and the menu action's own, F10 on
-/// Linux, whatever keys that action is given.
+/// the keys that open the menu button's menu, Alt with a letter and the menu action's own,
+/// F10 on Linux, whatever keys that action is given.
 fn kept(id: ActionId, key: Shortcut, os: OperatingSystem) -> Option<&'static str> {
     let menu_key = || {
         let defaults = Keymap::defaults(os);
@@ -2467,14 +2467,14 @@ pub fn field_keys(id: ActionId, os: OperatingSystem) -> Option<[egui::Event; 2]>
 
 /// Takes out of the frame's input the first press of Alt with a letter, and the text it
 /// typed, if `menu` finds a menu for that letter, and returns what it found: on Linux, Alt
-/// with a top-level menu's access key opens the ☰'s menu at that menu, from anywhere
-/// (decision 39). The letter is the one the press typed on the current layout, as ф on a
-/// Ukrainian keyboard, which egui reports as its physical key, A; where `menu` finds
+/// with a top-level menu's access key opens the menu button's menu at that menu, from
+/// anywhere (decision 39). The letter is the one the press typed on the current layout, as
+/// ф on a Ukrainian keyboard, which egui reports as its physical key, A; where `menu` finds
 /// nothing for it, or nothing was typed, the key's own Latin letter, so an English
-/// interface's Alt+F opens File on a Cyrillic layout too. Only
-/// Alt counts, so AltGr, which egui never sees as Alt, never opens a menu, and a key's
-/// repeat opens none again. A press `menu` finds nothing for is left alone. `menu` runs
-/// outside egui's lock, so it may read the context.
+/// interface's Alt+F opens File on a Cyrillic layout too. Only Alt counts, so AltGr, which
+/// egui never sees as Alt, never opens a menu, and a key's repeat opens none again. A press
+/// `menu` finds nothing for is left alone. `menu` runs outside egui's lock, so it may read
+/// the context.
 pub fn access_key<T>(ctx: &egui::Context, mut menu: impl FnMut(char) -> Option<T>) -> Option<T> {
     let (at, typed, own) = ctx.input(|input| {
         input.events.iter().enumerate().find_map(|(i, event)| {

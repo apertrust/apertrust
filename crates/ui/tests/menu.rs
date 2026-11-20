@@ -14,22 +14,23 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! The Toolbar's ☰ and the drawn menu it opens through the popup service (`docs/gui.md`,
-//! The menu bar, The drawn menus; decision 39), driven by the pointer and the keys and
-//! read through AccessKit, as a screen reader reads them.
+//! The Toolbar's menu button, the app's icon or ☰, and the drawn menu it opens through the
+//! popup service (`docs/gui.md`, The menu bar, The drawn menus; decision 39), driven by the
+//! pointer and the keys and read through AccessKit, as a screen reader reads them.
 
-use apertrust_ui::components::{Toolbar, ToolbarAction};
+use apertrust_ui::components::{MenuButtonStyle, Toolbar, ToolbarAction};
 use apertrust_ui::popup::{self, Answer, Entry, Item, Request, Submenu};
-use apertrust_ui::{Locale, Theme};
+use apertrust_ui::{Builtin, Locale, Theme};
 use egui::accesskit::{HasPopup, Role, Toggled};
 use egui::{Event, Key, vec2};
 use egui_kittest::Harness;
 use egui_kittest::kittest::{NodeT as _, Queryable as _};
 
-/// The Toolbar with or without the ☰, opening the menu as the app would, and what came
-/// back.
+/// The Toolbar with or without the menu button, drawn as `style` says, opening the menu as
+/// the app would, and what came back.
 struct App {
     menu_button: bool,
+    style: MenuButtonStyle,
     actions: Vec<ToolbarAction>,
     answers: Vec<Answer>,
     /// Open the menu on the next frame, at its top or with this menu expanded, as F10 and
@@ -134,6 +135,7 @@ fn app_in(locale: Locale, menu_button: bool) -> Harness<'static, App> {
                 }));
                 let action = Toolbar::new()
                     .menu_button(app.menu_button)
+                    .menu_button_style(app.style)
                     .title_bar(true)
                     .caption_buttons(true)
                     .shortcut(ToolbarAction::Menu, "F10")
@@ -166,6 +168,7 @@ fn app_in(locale: Locale, menu_button: bool) -> Harness<'static, App> {
             },
             App {
                 menu_button,
+                style: MenuButtonStyle::default(),
                 actions: Vec::new(),
                 answers: Vec::new(),
                 open_at: None,
@@ -200,35 +203,89 @@ fn key(harness: &mut Harness<'_, App>, key: Key) {
     harness.run();
 }
 
+/// The menu button's width in each style: the app's icon, 3 points and the caret with 5
+/// points each side, or ☰ in the Toolbar's square.
+fn width(style: MenuButtonStyle) -> f32 {
+    match style {
+        MenuButtonStyle::Icon => 5.0 + 20.0 + 3.0 + 8.0 + 5.0,
+        MenuButtonStyle::Menu => 30.0,
+    }
+}
+
 #[test]
 fn the_menu_button_comes_first_and_reports_menu() {
+    for style in [MenuButtonStyle::Icon, MenuButtonStyle::Menu] {
+        let mut harness = app(true);
+        harness.state_mut().style = style;
+        harness.run();
+        let bar = harness.get_by_role(Role::Toolbar).rect();
+        let button = harness.get_by_role_and_label(Role::Button, "Menu");
+        let rect = button.rect();
+        // At the panel's start, 30 points high as the others, 8 points before Import: no
+        // mark between them.
+        assert_eq!(rect.left() - bar.left(), 8.0, "{style:?}");
+        assert_eq!(rect.size(), vec2(width(style), 30.0), "{style:?}");
+        let import = harness.get_by_label("Import…").rect();
+        assert_eq!(import.left() - rect.right(), 8.0, "{style:?}");
+        assert!(harness.query_by_label("About Apertrust").is_none());
+        // A button named Menu that opens a menu, with its keys, and its name in its
+        // tooltip with them, whichever way it is drawn.
+        let node = button.accesskit_node();
+        assert_eq!(node.data().has_popup(), Some(HasPopup::Menu), "{style:?}");
+        assert_eq!(node.data().is_expanded(), Some(false), "{style:?}");
+        assert_eq!(node.toggled(), None, "{style:?}");
+        assert_eq!(node.data().keyboard_shortcut(), Some("F10"), "{style:?}");
+        button.hover();
+        harness.run();
+        assert!(harness.query_by_label("Menu (F10)").is_some(), "{style:?}");
+        harness.get_by_role_and_label(Role::Button, "Menu").click();
+        harness.run();
+        assert_eq!(
+            harness.state().actions,
+            vec![ToolbarAction::Menu],
+            "{style:?}"
+        );
+        // Open, it says so, in either style.
+        let node = harness.get_by_role_and_label(Role::Button, "Menu");
+        assert_eq!(
+            node.accesskit_node().data().is_expanded(),
+            Some(true),
+            "{style:?}"
+        );
+        assert_eq!(node.accesskit_node().toggled(), None, "{style:?}");
+    }
+}
+
+/// The setting changes the drawing on the next frame, the button keeping its name, its
+/// keys and its place, and the actions after it moving with its width.
+#[test]
+fn the_style_switches_the_drawing_at_once() {
     let mut harness = app(true);
     harness.run();
-    let bar = harness.get_by_role(Role::Toolbar).rect();
-    let button = harness.get_by_role_and_label(Role::Button, "Menu");
-    let rect = button.rect();
-    let mark = harness
-        .get_by_role_and_label(Role::Button, "About Apertrust")
-        .rect();
-    // At the panel's start, a button as large as the others, as far from the mark as the
-    // mark is from Import.
-    assert_eq!(rect.left() - bar.left(), 8.0);
-    assert_eq!(rect.size(), vec2(30.0, 30.0));
-    let import = harness.get_by_label("Import…").rect();
-    assert_eq!(mark.left() - rect.right(), 8.0);
-    assert_eq!(import.left() - mark.right(), 8.0);
-    // A button that opens a menu, with its keys, and its name in its tooltip with them.
-    let node = button.accesskit_node();
-    assert_eq!(node.data().has_popup(), Some(HasPopup::Menu));
-    assert_eq!(node.data().is_expanded(), Some(false));
-    assert_eq!(node.toggled(), None);
-    assert_eq!(node.data().keyboard_shortcut(), Some("F10"));
-    button.hover();
+    let import = |harness: &Harness<'_, App>| harness.get_by_label("Import…").rect().left();
+    let button =
+        |harness: &Harness<'_, App>| harness.get_by_role_and_label(Role::Button, "Menu").rect();
+    let icon = button(&harness);
+    assert_eq!(icon.width(), width(MenuButtonStyle::Icon));
+    let after_icon = import(&harness);
+    harness.state_mut().style = MenuButtonStyle::Menu;
     harness.run();
-    assert!(harness.query_by_label("Menu (F10)").is_some());
-    harness.get_by_role_and_label(Role::Button, "Menu").click();
+    let menu = button(&harness);
+    assert_eq!(menu.width(), width(MenuButtonStyle::Menu));
+    assert_eq!(menu.left(), icon.left());
+    assert_eq!(after_icon - import(&harness), 11.0);
+    let node = harness.get_by_role_and_label(Role::Button, "Menu");
+    assert_eq!(
+        node.accesskit_node().data().keyboard_shortcut(),
+        Some("F10")
+    );
+    assert_eq!(
+        node.accesskit_node().data().has_popup(),
+        Some(HasPopup::Menu)
+    );
+    harness.state_mut().style = MenuButtonStyle::Icon;
     harness.run();
-    assert_eq!(harness.state().actions, vec![ToolbarAction::Menu]);
+    assert_eq!(button(&harness), icon);
 }
 
 #[test]
@@ -240,11 +297,11 @@ fn without_the_option_there_is_no_menu_button() {
             .query_by_role_and_label(Role::Button, "Menu")
             .is_none()
     );
+    // Import comes first, as on the Mac: no mark.
     let bar = harness.get_by_role(Role::Toolbar).rect();
-    let mark = harness
-        .get_by_role_and_label(Role::Button, "About Apertrust")
-        .rect();
-    assert_eq!(mark.left() - bar.left(), 8.0);
+    let import = harness.get_by_label("Import…").rect();
+    assert_eq!(import.left() - bar.left(), 8.0);
+    assert!(harness.query_by_label("About Apertrust").is_none());
 }
 
 #[test]
@@ -841,4 +898,56 @@ fn an_answer_is_read_once() {
         vec![open_image.clone(), open_image, Answer::Dismissed]
     );
     assert_eq!(harness.state().twice, vec![]);
+}
+
+/// The Toolbar's start as on Windows and Linux in the theme `which`: the menu button as the
+/// app's icon over one drawn as ☰, and nothing after Redo.
+fn menu_buttons(which: Builtin) -> Harness<'static> {
+    Harness::builder()
+        .with_size(vec2(320.0, 92.0))
+        .with_context_setup(move |ctx| apertrust_ui::install(ctx, Theme::builtin(which)))
+        .build_ui(|ui| {
+            for style in [MenuButtonStyle::Icon, MenuButtonStyle::Menu] {
+                ui.push_id(style, |ui| {
+                    Toolbar::new()
+                        .menu_button(true)
+                        .menu_button_style(style)
+                        .show(ui);
+                });
+            }
+        })
+}
+
+/// Both menu buttons at rest in each theme, the app's icon in `text_secondary` with its
+/// cut showing the bar through it.
+#[test]
+fn the_menu_buttons_are_photographed_in_each_theme() {
+    let mut results = egui_kittest::SnapshotResults::new();
+    for which in Builtin::ALL {
+        let mut harness = menu_buttons(which);
+        harness.run();
+        harness.snapshot(format!("toolbar-menu-button-{}", which.id()));
+        results.extend(harness.take_snapshot_results());
+    }
+}
+
+/// The app's icon under the pointer, in `text_strong` on the hover plate, and with its menu
+/// open, in `text_strong` with no plate, in the dark theme.
+#[test]
+fn the_app_icon_is_photographed_under_the_pointer_and_open() {
+    let mut harness = app(true);
+    harness.set_size(vec2(320.0, 300.0));
+    harness.run();
+    let button = harness.get_by_role_and_label(Role::Button, "Menu").rect();
+    // Off the icon's middle, at the caret's foot, so the pointer hides little.
+    harness.hover_at(egui::pos2(button.right() - 2.0, button.bottom() - 2.0));
+    harness.run();
+    harness.snapshot("toolbar-menu-button-hover");
+    harness.get_by_role_and_label(Role::Button, "Menu").click();
+    harness.run();
+    // The pointer away, so only the open menu lights the button.
+    harness.hover_at(egui::pos2(300.0, 290.0));
+    harness.run();
+    assert!(menu_open(&harness, "Menu"));
+    harness.snapshot("toolbar-menu-button-open");
 }

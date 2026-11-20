@@ -2,7 +2,7 @@
 
 ## Context
 
-The Toolbar is each main window's title bar ([0039](0039-one-top-bar-native-menus-on-the-mac-one-menu-button-elsewhere.md)). Today it holds a fixed set of parts, from a constant in the app (`TOOLBAR`): the ☰ on Windows and Linux, the mark, Import…, Export…, Reset, Undo, Redo, Copy edit and Apply edit, the jobs spinner and the save state. Under 960 points it folds them into ⋯ More actions.
+The Toolbar is each main window's title bar ([0039](0039-one-top-bar-native-menus-on-the-mac-one-menu-button-elsewhere.md)). Today it holds a fixed set of parts, from a constant in the app (`TOOLBAR`): the menu button on Windows and Linux, Import…, Export…, Reset, Undo, Redo, Copy edit and Apply edit, the jobs spinner and the save state. Under 960 points it folds them into ⋯ More actions.
 
 People want the actions they use on every photo within reach, and tools want buttons of their own there, such as Orientation's rotations. Several things constrain how:
 
@@ -22,7 +22,7 @@ There is one ordered list of item ids for each workspace. The caption buttons an
 
 | Platform | The default list, today's order |
 | --- | --- |
-| macOS | (the traffic lights) `mark`, `import`, `export`, `cull` (Phase 3), `reset`, `undo`, `redo`, `space`, `copy-edit`, `apply-edit`, `flexible-space`, `jobs`, `assistant` (Phase 6), `save-state` |
+| macOS | (the traffic lights) `import`, `export`, `cull` (Phase 3), `reset`, `undo`, `redo`, `space`, `copy-edit`, `apply-edit`, `flexible-space`, `jobs`, `assistant` (Phase 6), `save-state` |
 | Windows, Linux | `menu-button`, then the same, then 16 points (`spacing.xl`) before minimise, maximise and close |
 
 - There is one list for every platform. The Mac never shows `menu-button` and never takes it out of the list.
@@ -32,14 +32,14 @@ There is one ordered list of item ids for each workspace. The caption buttons an
 
 | Kind | Ids | How many |
 | --- | --- | --- |
-| Parts | `menu-button` (Windows and Linux), `mark`, `jobs`, `save-state`, `assistant` (Phase 6) | One each |
+| Parts | `menu-button` (Windows and Linux, drawn as the app's icon or ☰ as the setting Menu button says, [0039](0039-one-top-bar-native-menus-on-the-mac-one-menu-button-elsewhere.md)), `jobs`, `save-state`, `assistant` (Phase 6) | One each |
 | The app's actions | A registry action that is pressed or toggled and has an icon: Import…, Export…, Export Again, Cull, Reset, Undo, Redo, Copy edit, Apply edit, Copy or Apply Parts…, Open…, Open Folder…, Before and After, Clipping Warnings, Zoom to 100%, Zoom to Fit, Full Screen, Jobs, Collections, Show in Folder, Next Photo, Previous Photo, Settings… | One each |
 | Tools' actions | A processing tool's `tool-<tool>-<action>`, generated from its own actions as decision 91 built them, or the registry action a utility names, as History's `reset`, that its tool offers for the toolbar; the item's id is the action's | One each |
 | Spacing | `space`, 16 points; `flexible-space`, sharing what is left | Any number; the overflow removes fixed spaces as it narrows |
 
 - **Never placeable:** hold actions (H), focus moves (F6), the members of a set (the backgrounds, the workspaces), and the platform's own items.
 - **No separator line:** groups are told apart by space alone.
-- **Parts' ids are their own.** A test fails if a part's id is a registry action's id, as `menu-button` is not the `menu` action and `mark` is not `about`.
+- **Parts' ids are their own.** A test fails if a part's id is a registry action's id, as `menu-button` is not the `menu` action.
 
 **Tools' items.**
 
@@ -54,11 +54,10 @@ There is one ordered list of item ids for each workspace. The caption buttons an
 
 | Hidden | What still holds |
 | --- | --- |
-| The ☰ | F10, Alt alone on Windows and Alt with an access key still open the menus, hung from the toolbar's start; View › Panels and the toolbar menu gain Show Menu Button, so the keys restore it |
+| The menu button | F10, Alt alone on Windows and Alt with an access key still open the menus, hung from the toolbar's start; View › Panels and the toolbar menu gain Show Menu Button, so the keys restore it |
 | The save state | A failed write still shows its warning and Not saved at the toolbar's end; the message over the photo, the live region and the quit alert are unchanged |
 | The jobs | The spinner shows while a failed job is left; View › Jobs and Ctrl+Shift+J still work |
 | The assistant | It shows whenever an assistant is connected |
-| The mark | About stays in Help on Windows and Linux and in the app menu on the Mac |
 | Everything | The toolbar is all empty area and still moves the window |
 
 **Moving the window.** These are empty areas: they move the window and take a double-click, as the Toolbar's empty areas do (39):
@@ -74,12 +73,12 @@ The overflow always keeps 24 points of them. On Windows the hit map's `HTCAPTION
 **A right-click anywhere on the toolbar opens the toolbar menu,** on an item or on empty space, on every platform, as does Shift+F10 or the Menu key on a focused item. It is an app-only place of decision 91's, `Place::Toolbar`. It holds:
 
 1. Hide "Undo", on an item;
-2. Show Menu Button, while the ☰ is hidden;
+2. Show Menu Button, while the menu button is hidden;
 3. a separator;
 4. Toolbar Labels, checked while on;
 5. Customise Toolbar…, drawn disabled until its window is built, its tip "Customise Toolbar comes in a later version".
 
-**Every item is reachable from the keys,** as decision 91 asks, whatever the toolbar shows: Hide "Undo" from Shift+F10 or the Menu key on that item, which is focusable while it is shown; the others in View › Panels, which F10 opens while the ☰ is hidden. Show Menu Button is there on Windows and Linux only, the Mac never showing the ☰. A toolbar with nothing focusable needs no keyboard route of its own, since nothing in its menu acts on it alone.
+**Every item is reachable from the keys,** as decision 91 asks, whatever the toolbar shows: Hide "Undo" from Shift+F10 or the Menu key on that item, which is focusable while it is shown; the others in View › Panels, which F10 opens while the menu button is hidden. Show Menu Button is there on Windows and Linux only, the Mac never showing the menu button. A toolbar with nothing focusable needs no keyboard route of its own, since nothing in its menu acts on it alone.
 
 **The system's window menu** is no longer on a right-click on the toolbar on Windows and Linux. It stays on the system's own key, Alt+Space on Windows and GNOME; X11 still has none, and the Mac's conventions are unchanged.
 
@@ -90,7 +89,7 @@ The overflow always keeps 24 points of them. On Windows the hit map's `HTCAPTION
   ```toml
   # workspaces/default.toml: the toolbar is one key of the workspace's whole file, beside its tabs
   version = 1
-  toolbar = ["menu-button", "mark", "import", "export", "reset", "undo", "redo", "space",
+  toolbar = ["menu-button", "import", "export", "reset", "undo", "redo", "space",
              "copy-edit", "apply-edit", "flexible-space", "jobs", "save-state"]
 
   [[tabs]]
@@ -146,8 +145,8 @@ The toolbar is measured every frame at the current scale and language, and gives
 
 ### Keys and scripts
 
-- **F6** into the toolbar lands on its first control: by default the ☰ on Windows and Linux and the mark on the Mac. With nothing focusable it skips the region.
-- **The ☰, shown, never folds.**
+- **F6** into the toolbar lands on its first control: by default the menu button on Windows and Linux and the first action that can run on the Mac, Import… where it can. With nothing focusable it skips the region.
+- **The menu button, shown, never folds,** in either of its drawings.
 - **Scripts** see nothing new: an item sends the command its action sends.
 
 ## Options considered
@@ -167,7 +166,7 @@ The toolbar is measured every frame at the current scale and language, and gives
 - **Decision 39:**
   - a right-click on the Toolbar's empty areas opens the toolbar menu on every platform, and the system's window menu stays on the system's own key;
   - `Toolbar` reports the right-click with what is under it;
-  - the ☰ may be hidden, never folds while shown, and F6 lands on the toolbar's first control.
+  - the menu button may be hidden, never folds while shown, and F6 lands on the toolbar's first control.
 - **Decision 91:** the Toolbar is an app-only place, `Toolbar`, holding the toolbar menu.
 - **Decisions 83 and 96:** a workspace also holds its `toolbar` list, in its file.
 - **Decision 36:** a registry action may carry an icon, which makes it a candidate, and its message a `.toolbar` word.

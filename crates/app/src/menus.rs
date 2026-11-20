@@ -33,8 +33,8 @@
 //! muda only for what changed; a choice comes back through muda's event handler, down a
 //! channel, and runs in `App::logic`, before the next frame or, while the window is
 //! minimised or hidden, without one ([`runs`] says when). On Windows and Linux the same
-//! model is the one menu of the Toolbar's ☰ (decision 39), drawn by the popup service
-//! ([`request`]); the id chosen in it runs as the Mac's choices do.
+//! model is the one menu of the Toolbar's menu button (decision 39), drawn by the popup
+//! service ([`request`]); the id chosen in it runs as the Mac's choices do.
 
 // Off the Mac the Mac's own parts are read only by the tests.
 #![cfg_attr(
@@ -596,7 +596,7 @@ pub fn runs(id: ActionId, repeat: bool) -> bool {
     actions::action(id).is_some_and(|a| !repeat || a.trigger == Trigger::Repeat)
 }
 
-/// The ☰'s menu, hung from `anchor` (decision 39): the menus [`MENUS`] has on the
+/// The menu button's menu, hung from `anchor` (decision 39): the menus [`MENUS`] has on the
 /// context's platform, each a submenu whose words carry its access key, and their items as
 /// the Mac's show them ([`shown`]): the action's words, enabled exactly when it can run
 /// where it is, and the keymap's first key as the platform spells it, whatever has the
@@ -652,11 +652,11 @@ pub enum Target {
 /// right-clicked for a right-click (decision 91): the app's items there ([`APP_ITEMS`]) and
 /// those tools and utilities add ([`added`]) together, by section and order, a line
 /// wherever the section changes ([`built`]). The surround, the app's alone, holds View ›
-/// Background's items. Each item is its action's, as the ☰'s ([`shown`]); in the photo's
-/// and a thumbnail's menus an item that cannot run is hidden, but shown disabled while only
-/// the photo's not yet being live stops it, and no item shows its key ([`pared`]). In ⋯
-/// an item that cannot run is drawn disabled with its tip, as in a pull-down. Its items'
-/// ids are their actions' ([`chosen`]).
+/// Background's items. Each item is its action's, as the menu button's ([`shown`]); in the
+/// photo's and a thumbnail's menus an item that cannot run is hidden, but shown disabled
+/// while only the photo's not yet being live stops it, and no item shows its key
+/// ([`pared`]). In ⋯ an item that cannot run is drawn disabled with its tip, as in a
+/// pull-down. Its items' ids are their actions' ([`chosen`]).
 pub fn context(
     ctx: &egui::Context,
     place: Place,
@@ -797,12 +797,12 @@ pub fn layout_items(
 }
 
 /// The app's items first in the Tools panel's ⋮ (decision 96), before the tab bar's own:
-/// Find Tool…, with its keys, and Show Hidden Tools, as the ☰'s menu draws an item
-/// ([`shown`]), Show Hidden Tools' tip `tip` where the
-/// dot on ⋮ or `--conf` says why ("Hidden tools change this photo: Exposure"); then
-/// Workspace ▸, View › Workspace's submenu with `workspaces`, the one shown checked, each
-/// item its `workspace-<id>`, so a choice runs as the menu's does ([`chosen`]). The tab
-/// bar's menu's other items join them with that menu.
+/// Find Tool…, with its keys, and Show Hidden Tools, as the menu button's menu draws an
+/// item ([`shown`]), Show Hidden Tools' tip `tip` where the dot on ⋮ or `--conf` says why
+/// ("Hidden tools change this photo: Exposure"); then Workspace ▸, View › Workspace's
+/// submenu with `workspaces`, the one shown checked, each item its `workspace-<id>`, so a
+/// choice runs as the menu's does ([`chosen`]). The tab bar's menu's other items join them
+/// with that menu.
 pub fn tools_panel(
     ctx: &egui::Context,
     keymap: &Keymap,
@@ -1100,8 +1100,8 @@ fn action_item(
     Some(item)
 }
 
-/// `menu` as a submenu of the ☰'s menu, its id its title's message id; one that lists what
-/// the app hands in holds `lists` ([`listed`]), and Undo and Redo name `steps`.
+/// `menu` as a submenu of the menu button's menu, its id its title's message id; one that
+/// lists what the app hands in holds `lists` ([`listed`]), and Undo and Redo name `steps`.
 fn drawn(
     menu: &'static Menu,
     os: OperatingSystem,
@@ -1159,7 +1159,7 @@ fn drawn(
     popup::Submenu::new(menu.title, tr.text(menu.title), entries)
 }
 
-/// The action of the item chosen in the ☰'s menu, by its id.
+/// The action of the item chosen in the menu button's menu, by its id.
 pub fn chosen(id: &str) -> Option<ActionId> {
     actions::named(id).map(|a| a.id)
 }
@@ -1681,11 +1681,11 @@ mod tests {
 
     /// The actions the registry declares that no menu holds, on purpose (`docs/gui.md`, The
     /// menu bar, Rules): the Edit view's, since the layouts' items join only once there are
-    /// two layouts; F6's, which move the focus as Tab does; and H's peek, held, while a menu
-    /// item is a press; the ☰'s menu's own, which opens the menu it would be in; and
-    /// Restart, Settings' Restart now's for now (decision 82); and the eighth to the
-    /// twelfth tab's, which only a workspace of more tabs than the Default's has, until Tools
-    /// Panel Tab lists the tabs a workspace shows (decision 96).
+    /// two layouts; F6's, which move the focus as Tab does; and H's peek, held, while a
+    /// menu item is a press; the menu button's menu's own, which opens the menu it would be
+    /// in; and Restart, Settings' Restart now's for now (decision 82); and the eighth to
+    /// the twelfth tab's, which only a workspace of more tabs than the Default's has, until
+    /// Tools Panel Tab lists the tabs a workspace shows (decision 96).
     const LEFT_OUT: [ActionId; 33] = [
         ActionId::EDIT_VIEW,
         ActionId::NEXT_REGION,
@@ -1961,7 +1961,7 @@ mod tests {
             action.emits,
             actions::Emit::Intent(actions::Intent::ShowJobs)
         );
-        // In the ☰'s menu, under View, with its words in every language.
+        // In the menu button's menu, under View, with its words in every language.
         for locale in Locale::ALL {
             let menu = drawn_menu(locale, &everything());
             let view = tops(&menu)
@@ -2112,7 +2112,7 @@ mod tests {
 
     /// View › Workspace the same on every platform, after Tools Panel Tab: the workspaces the
     /// app hands in, each its action, `workspace-<id>`, with its words, the one shown
-    /// checked, as the Mac's bar fills it and the ☰ draws it.
+    /// checked, as the Mac's bar fills it and the menu button draws it.
     #[test]
     fn view_workspace_lists_the_workspaces_the_one_shown_checked() {
         let travel = actions::workspace("travel");
@@ -2201,8 +2201,8 @@ mod tests {
         );
     }
 
-    /// The ☰'s Open Recent: the recents' words with their paths in the tips, a missing one
-    /// disabled, each chosen by its place's action.
+    /// The menu button's Open Recent: the recents' words with their paths in the tips, a
+    /// missing one disabled, each chosen by its place's action.
     #[test]
     fn the_drawn_open_recent_holds_the_recents_with_their_paths() {
         let mut state = everything();
@@ -2576,13 +2576,13 @@ mod tests {
         assert_eq!(equivalent(Modifiers::NONE, Key::BrowserBack), None);
     }
 
-    /// The ☰'s menu as Linux draws it, in `locale`, with `state`.
+    /// The menu button's menu as Linux draws it, in `locale`, with `state`.
     fn drawn_menu(locale: Locale, state: &State) -> popup::Request {
         drawn_menu_naming(locale, state, &Steps::default())
     }
 
-    /// The ☰'s menu as Linux draws it, in `locale`, with `state`, Undo and Redo naming
-    /// `steps`.
+    /// The menu button's menu as Linux draws it, in `locale`, with `state`, Undo and Redo
+    /// naming `steps`.
     fn drawn_menu_naming(locale: Locale, state: &State, steps: &Steps) -> popup::Request {
         let ctx = egui::Context::default();
         ctx.set_os(OperatingSystem::Nix);

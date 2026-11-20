@@ -98,6 +98,19 @@ applies = "at-once"
 page = "general"
 group = "interface"
 
+# How the Toolbar's menu button is drawn where the app draws the menus, on Windows and
+# Linux (decision 39): the app's icon with a caret, or ☰. The Mac has the system's menu
+# bar and no menu button.
+[toolbar.menu_button]
+owner = "app"
+kind = "choice"
+type = "apertrust_ui::components::MenuButtonStyle"
+default = "icon"
+applies = "at-once"
+page = "general"
+group = "interface"
+platforms = ["windows", "linux"]
+
 # The window's inner size in logical pixels, as it last stood while neither maximised nor
 # full screen, kept in whole pixels; each part more than 0, and never under the shell's
 # smallest, 960 by 600. The default is the size at the first start.

@@ -56,7 +56,7 @@ const DOT: f32 = 6.0;
 /// The colour of an icon-only button's icon (decision 81): `text_secondary` at rest and
 /// focused, `text_strong` under the pointer and while on, `accent_text` while held down,
 /// as feedback and never a state, and `text_disabled` disabled.
-fn colour(t: &Theme, touch: Touch, on: bool) -> Color32 {
+pub(super) fn colour(t: &Theme, touch: Touch, on: bool) -> Color32 {
     let c = &t.colors;
     if !touch.enabled {
         c.text_disabled

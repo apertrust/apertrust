@@ -15,10 +15,10 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 //! About Apertrust (`docs/gui.md`, Help): a modal dialog of Apertrust's own, which the
-//! `about` action opens, from the Toolbar's mark among others. Its page shows the full
-//! logo, the version as the startup banner gives it, the copyright and the licence, with
-//! two buttons, Credits and Licence, each a page one step in: `CREDITS.md` drawn as
-//! Markdown, and the GNU GPL's text.
+//! `about` action opens, from the app menu on the Mac and from Help on Windows and Linux.
+//! Its page shows the full logo, the version as the startup banner gives it, the copyright
+//! and the licence, with two buttons, Credits and Licence, each a page one step in:
+//! `CREDITS.md` drawn as Markdown, and the GNU GPL's text.
 //!
 //! On About a click anywhere but on its buttons and its version line closes it, and so does
 //! Esc; on Credits and Licence only a click outside closes it, and Esc or the back button
@@ -72,8 +72,9 @@ pub struct About {
     /// Licence, as it opens, its back button. Nothing takes it as the dialog opens or after
     /// a click, so no button is drawn highlighted there.
     focus: Option<Page>,
-    /// The control that opened the dialog, which gets the keyboard focus back as it
-    /// closes: the Toolbar's mark.
+    /// The control that had the keyboard focus as the dialog opened, which gets it back as
+    /// the dialog closes: what had it before the menu the dialog was chosen from opened,
+    /// which gives it back as it closes.
     opener: Option<egui::Id>,
     /// The version with the commit, as the startup banner gives it.
     version: String,
@@ -98,15 +99,16 @@ impl Default for About {
 }
 
 impl About {
-    /// Opens the dialog on About, nothing focused, and remembers what opened it: the
-    /// control clicked this frame, else the one focused.
+    /// Opens the dialog on About, nothing focused, and remembers what to give the focus
+    /// back to: the control focused, which a menu the dialog was chosen from has given it
+    /// back to, else the control clicked this frame, a menu's line aside.
     pub fn open(&mut self, ctx: &egui::Context) {
         self.page = Some(Page::About);
         self.focus = None;
         self.copied = None;
         self.opener = ctx
-            .viewport(|v| v.interact_widgets.clicked)
-            .or_else(|| ctx.memory(|m| m.focused()));
+            .memory(|m| m.focused())
+            .or_else(|| ctx.viewport(|v| v.interact_widgets.clicked));
     }
 
     pub fn is_open(&self) -> bool {

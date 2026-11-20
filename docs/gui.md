@@ -33,7 +33,7 @@ Steps 1 to 5 of the [build order](#build-order) are built, step 6 has its render
 - The tool panel renderer (`crates/app/src/tools.rs`), which draws any processing tool's section from its definition, with every tool of the first pass built so far; every tool's header and ⋯ drawn from its `ToolDefinition`, and each utility's page by its `UtilityTool` ([one tool model](#one-tool-model), decision 93), Export's section still by `export.rs`.
 - The actions registry and the [default keyboard map](#the-default-keyboard-map) in `crates/app/src/actions.rs`.
 - [The settings file](#settings-and-workspace), `settings.toml`, in the user data folder (decision 43).
-- The Mac's [window frame](#the-frame) and native [menu bar](#the-menus), and the frames of Windows and Linux with the ☰ and its drawn menu (decision 39), on the first piece of [the popup service](#popups) (decision 40).
+- The Mac's [window frame](#the-frame) and native [menu bar](#the-menus), and the frames of Windows and Linux with the menu button and its drawn menu (decision 39), on the first piece of [the popup service](#popups) (decision 40).
 - The dialog host, with Settings, the jobs window, the log window and the system's alerts ([Dialogs and alerts](#dialogs-and-alerts), [The log window](#the-log-window)); the Export tool, a section of the Photos tab ([The Export tool, as built](#as-built)).
 - Folder mode's first parts: File › Open Folder… and Open…, drag and drop onto the window, View › Collections, Collections' Folders in the Photos tab, the Browser's cells and the Viewer's empty states ([File](#file), [The Browser](#the-browser), [The Viewer's layouts](#the-viewers-layouts)); Open Recent, File › Close, reopening what was open last and [the start window](#the-start-window); selecting several photos in the Browser and Select's Select All, Select None, Invert Selection and Select Unedited ([Selection and the active photo](#selection-and-the-active-photo), [Select](#select)).
 
@@ -245,7 +245,7 @@ An interface for photo editing must not be too contrasty, so:
 - **IBM Plex Sans** is compiled in (decision 36), in Regular, Medium and SemiBold. It has every letter of the Ukrainian and Polish alphabets. Fonts for other scripts are in [Translation](#translation).
 - **IBM Plex Mono** Regular is compiled in for the log window's lines alone ([The log window](#the-log-window)), in a family of its own (`fonts::MONO`); egui's monospace family stays Plex Sans. It has Latin and Cyrillic, and Plex Sans draws the Greek it lacks.
 - **Icons are SVG files**, one colour (`currentColor`), in `crates/ui/assets/icons`, whose README gives the rules. They are rendered with resvg, pure Rust, at the exact pixel size they are drawn at, cached, and tinted with a token colour, so they follow the theme and stay sharp at any scale. A designer can edit or replace them in any vector tool.
-  - **Lucide is their foundation** ([lucide.dev](https://lucide.dev), release 1.70.0): most are Apertrust's own files derived from Lucide's icons, each naming its source and licence in its first line, ISC or, for those Lucide derived from Feather, MIT, with Lucide's notices in `LICENSE-Lucide` beside them (decision 64). They are adapted where needed: the zoom magnifiers are mirrored, the lens at the top right and the handle at the bottom left. Where Lucide has no icon that reads as the thing, one is drawn for Apertrust in Lucide's style on its 24-unit grid: the four darktable group tabs, the quads' line, Copy edit's and Apply edit's arrows out and in, the scopes' graphs, log scale and clipping overlays, and the filled forms of the group tabs. `Icon::file` maps each of Apertrust's icon names to its file in one place. The window's caption buttons and the mark keep their own drawing.
+  - **Lucide is their foundation** ([lucide.dev](https://lucide.dev), release 1.70.0): most are Apertrust's own files derived from Lucide's icons, each naming its source and licence in its first line, ISC or, for those Lucide derived from Feather, MIT, with Lucide's notices in `LICENSE-Lucide` beside them (decision 64). They are adapted where needed: the zoom magnifiers are mirrored, the lens at the top right and the handle at the bottom left. Where Lucide has no icon that reads as the thing, one is drawn for Apertrust in Lucide's style on its 24-unit grid: the four darktable group tabs, the quads' line, Copy edit's and Apply edit's arrows out and in, the scopes' graphs, log scale and clipping overlays, and the filled forms of the group tabs. `Icon::file` maps each of Apertrust's icon names to its file in one place. The window's caption buttons, the app's icon on the menu button and its caret keep their own drawing.
   - **Their weight:** every line is 1.25 points wide at every size (`icons::STROKE`, Lucide's `absoluteStrokeWidth`), the files' 2-unit stroke set as each icon is rendered, so a 10-point chevron is as heavy as a 22-point tab, since Lucide's own 2 units, scaled with the icon, leave the 10- and 12-point icons faint. Round caps and joins, outlines at rest, and a filled form (`*-filled.svg`) only where an icon shows a state: the Tools panel's chosen tab and a toggle of the viewer bar that is on, its outline's shapes filled with the lines that cross them cut out.
   - **Binary only:** every part of an icon is solid or an outline at full opacity, never a half-tone.
   - **One colour:** every icon is drawn in one colour, the tab icons among them, darktable's module-group shapes too ([The tabs](#the-tabs-by-editing-stage)).
@@ -436,9 +436,9 @@ The Toolbar runs to the window's top edge on every platform and is the window's 
 
 - one menu model built from the actions registry;
 - native in the Mac's menu bar;
-- drawn by egui on Windows and Linux, opened from one menu button, ☰, at the Toolbar's very start, before the mark, with no row of titles.
+- drawn by egui on Windows and Linux, opened from one menu button at the Toolbar's very start, the app's icon or ☰, with no row of titles.
 
-What the menus hold is [the menu bar](#the-menu-bar)'s. Built: the frames of the Mac, Windows and Linux, the Mac's menu bar, and the ☰ of Windows and Linux with its drawn menu. Windows' Alt pressed and released alone and its native hit testing are still to come.
+What the menus hold is [the menu bar](#the-menu-bar)'s. Built: the frames of the Mac, Windows and Linux, the Mac's menu bar, and the menu button of Windows and Linux with its drawn menu. Windows' Alt pressed and released alone and its native hit testing are still to come.
 
 ### The frame
 
@@ -457,7 +457,7 @@ What the menus hold is [the menu bar](#the-menu-bar)'s. Built: the frames of the
 - **The window keeps its title,** hidden in the Mac's frame, for Mission Control, the Window menu, the taskbar and screen readers. With a user data folder other than the default, it ends with the folder's name, "Apertrust — work" (decision 89; [Instances and windows](#instances-and-windows)).
 - **Scale.** Everything the frame draws is in points, so it follows a monitor's scale; on Windows winit applies the system's suggested rectangle on `WM_DPICHANGED`.
 - **The minimum window size** is 500 by 600 points on every platform, so Windows 11's half and third snap zones take the window (Microsoft asks for 500 effective pixels or less), and macOS's and the Linux desktops' tiling gain too. The quarter zones need a height of about 520 on a 1080-pixel screen, which 600 keeps out.
-  - Below 960 points the shell gives way: the Toolbar drops its words, the ☰ of Windows and Linux never folding while shown (decisions 39 and 92), in the order [the Toolbar](#the-toolbar) gives, down to Undo, Redo and ⋯ (» with the toolbar).
+  - Below 960 points the shell gives way: the Toolbar drops its words, the menu button of Windows and Linux never folding while shown (decisions 39 and 92), in the order [the Toolbar](#the-toolbar) gives, down to Undo, Redo and ⋯ (» with the toolbar).
   - How the Tools panel narrows, hides or lies over the photo in a narrow window is an open design item.
   - The minimum is lowered in code (`WINDOW_MIN`) only once the shell gives way, so no window ever shows a broken layout.
 
@@ -514,7 +514,7 @@ The engine's photo is not rendered for each step of a resize: the app holds the 
   - The resize bands, `RESIZE_BAND` (6 points) inside each edge and a corner where two meet, are off while the window is maximised or in full screen. A press in one is taken from egui's input before the frame (`resize_press`), so no control under the band sees it, and sends `BeginResize`. Over them, with no button down, the resize cursor replaces any a widget asked for.
   - Checked by hand on GNOME on Wayland; not yet on KDE or an X11 window manager.
 - **Linux's later steps:** the desktop's button layout and title-bar actions read from the settings portal (GNOME shows close alone by default, elementary puts it at the start); X11's window menu through `_GTK_SHOW_WINDOW_MENU`, which Mutter and KWin answer.
-- **The system's title bar as a setting,** Use the system's title bar, on Windows and Linux, off by default: decorations back on, live (`ViewportCommand::Decorations`), the caption buttons gone, the ☰ still at the Toolbar's start. It serves tiling window managers, where caption buttons mean nothing, and anyone the drawn frame fails. It is kept in settings.
+- **The system's title bar as a setting,** Use the system's title bar, on Windows and Linux, off by default: decorations back on, live (`ViewportCommand::Decorations`), the caption buttons gone, the menu button still at the Toolbar's start. It serves tiling window managers, where caption buttons mean nothing, and anyone the drawn frame fails. It is kept in settings.
   - GNOME on Wayland draws no decorations, so with the setting on it gets winit's Adwaita frame instead of the bare fallback frame from smithay-client-toolkit. That is the frame's variant without a title, `wayland-csd-adwaita-notitle`, a Linux-only feature of winit that unifies into eframe's: five crates (sctk-adwaita, tiny-skia, tiny-skia-path, arrayref, strict-num), MIT and BSD, which `cargo deny` accepts.
   - The full frame, `wayland-csd-adwaita`, draws the title with ab_glyph, whose font parser ttf-parser `cargo deny` refuses as unmaintained (RUSTSEC-2026-0192, no fixed release); the Toolbar shows the title anyway.
 
@@ -528,7 +528,7 @@ The engine's photo is not rendered for each step of a resize: the app holds the 
   - a check mark for a toggle and for the chosen one of a set, from state the registry gains for them.
 - **The registry also gains Cut, Copy, Paste and Select All** (`cut`, `copy`, `paste`, `select-all`): the first three for the Edit menu, available only while a text field has focus, and Select All for the Select menu, available while a text field has focus and while a photo of the folder open is not selected (built for Select All). Their keys are the clipboard's, which egui takes on Windows and Linux before any action sees them. They are actions rather than the Mac's predefined editing items, which send `cut:`, `copy:` and the rest to the first responder: winit's view answers none of them.
 - **Kept up to date** each frame: the app works out what every item should show from the keymap, the `State`, the focus and the locale, and on the Mac calls muda only for what changed (`set_text`, `set_enabled`, `set_checked`, `set_accelerator`). Choosing a language in Settings renames every menu at once.
-- **A choice comes back** through muda's event handler on the Mac, a closure that sends the item's id down a channel and calls `request_repaint`, so it wakes egui as an engine event does; elsewhere as the popup service's answer to the ☰'s menu. The app runs them through `Shell::run`, as it runs clicks and keys, checking that each can still run: on the Mac in `App::logic`, which eframe calls before each frame and alone while the window is minimised or hidden, so a choice runs then too.
+- **A choice comes back** through muda's event handler on the Mac, a closure that sends the item's id down a channel and calls `request_repaint`, so it wakes egui as an engine event does; elsewhere as the popup service's answer to the menu button's menu. The app runs them through `Shell::run`, as it runs clicks and keys, checking that each can still run: on the Mac in `App::logic`, which eframe calls before each frame and alone while the window is minimised or hidden, so a choice runs then too.
 
 #### The Mac's native menu bar
 
@@ -563,18 +563,21 @@ Through muda: built once the window exists, on the main thread, and handed to Ap
 - **macOS adds its own items,** as [what the platforms provide](#windows-and-linux) expects: AutoFill, Start Dictation… and Emoji & Symbols in Edit, and the tiling items in Window. It would add Enter Full Screen (Globe+F) to View too, beside the app's Full Screen: `apertrust_display::no_system_full_screen_item`, called in `main` before the event loop exists, registers its `NSFullScreenMenuItemEverywhere` default as false for the run, never written to the app's defaults, and it stays out.
 - **Checked on the M4** (macOS 27.2) through System Events: every menu and item in place, keys and enabled states as the registry has them, Next Photo and Previous Photo losing Space and Delete once F6 gave a tab the focus, View holding no second full-screen item, and Quit, pressed through accessibility with the window minimised, quitting at once. A held key is not checked yet.
 
-#### The ☰ on Windows and Linux
+#### The menu button on Windows and Linux
 
-One menu button, ☰, at the very start of the Toolbar, before the mark (decision 39), with the look and keys [the menu bar](#the-menu-bar) gives it. The Mac has no ☰: its menus are the native menu bar's.
+One menu button at the very start of the Toolbar (decision 39), with the look and keys [the menu bar](#the-menu-bar) gives it. The Mac has no menu button: its menus are the native menu bar's, and its Toolbar starts with Import… after the traffic lights.
 
-- **The button:** an icon button like the Toolbar's others, 30 points square, which never folds while shown, so the menus cost neither height nor a line of their own. From Phase 3 a person may hide it from the toolbar (decision 92, [The Toolbar](#the-toolbar)): F10, Alt alone on Windows and Alt with an access key still open the menu, hung from the toolbar's start, and View › Panels and the toolbar menu offer Show Menu Button. `Toolbar` draws it and reports `Menu`, as it reports its caption buttons.
+- **The button** never folds while shown, so the menus cost neither height nor a line of their own. It is drawn one of two ways, as the setting Menu button chooses (`toolbar.menu_button`, Settings › General › Interface, Windows and Linux only, applied at once; [Settings and workspace](#settings-and-workspace)):
+  - **Apertrust icon,** the default, on the UI wireframe's board "Toolbar · the menu button as the app's icon": the app's icon, the macOS icon's rounded square in one colour with the Slider A cut out of it (`Icon::AppIcon`, `app-icon.svg`), 20 points, then 3 points and a caret ▾, an 8-point chevron of 1.3-point lines (`Icon::Caret`), in a button 30 points high with 5 points each side, 41 wide. It is drawn as the Toolbar's icon buttons are (decision 81), with no plate: `text_secondary` at rest, `text_strong` under the pointer and while its menu is open, `accent_text` while held down, and high contrast's `button_edge` round it under the pointer.
+  - **Menu icon:** ☰, an icon button like the Toolbar's others, 30 points square (`Icon::Menu`, `menu.svg`).
+  - Either way it is the same button: named Menu to screen readers, with its menu popup, expanded or not, its tooltip "Menu (F10)", its keys, its place and its anchor. From Phase 3 a person may hide it from the toolbar (decision 92, [The Toolbar](#the-toolbar)): F10, Alt alone on Windows and Alt with an access key still open the menu, hung from the toolbar's start, and View › Panels and the toolbar menu offer Show Menu Button. `Toolbar` draws it and reports `Menu`, as it reports its caption buttons.
 - **The menu:** one, drawn in the theme, listing the top-level menus of `MENUS` (File, Edit, Select, Photo, Layer from Phase 4, View, Help) as submenus, with items, a shortcut column, check marks, separators, submenus and disabled items. AccessKit's menu roles, so Narrator and Orca read them as menus.
   - It is a pull-down from a button through [the popup service](#popups) (decision 40), drawn on Windows and Linux as every popup is there, so one drawn menu serves it and every other pull-down; there is no `MenuBar` component.
   - The popup service knows nothing of actions: the app turns `MENUS` into a request of entries with string ids and gets back the id chosen.
   - The web browser draws the same.
-- **Keys:** F10 opens it at its top, as GNOME's apps open theirs, and on Windows Alt pressed and released with nothing else too. Alt with a top-level menu's access key opens the ☰'s menu with that menu expanded (Alt+F at File, Alt+E at Edit, Alt+S at Select), as apps with a hidden menu bar do. The items inside have no access keys, and a letter moves to the next item starting with it.
+- **Keys:** F10 opens it at its top, as GNOME's apps open theirs, and on Windows Alt pressed and released with nothing else too. Alt with a top-level menu's access key opens the menu button's menu with that menu expanded (Alt+F at File, Alt+E at Edit, Alt+S at Select), as apps with a hidden menu bar do. The items inside have no access keys, and a letter moves to the next item starting with it.
 - **Built on Windows and Linux,** but for Windows' Alt pressed and released alone:
-  - `Toolbar::menu_button` draws the ☰ first, an icon button (`Icon::Menu`, `menu.svg`) drawn on while its menu hangs from it, in `text_strong`, ☰ having no filled form, reported to AccessKit as a button with a menu popup, expanded or not, its tooltip and shortcut F10. It reports `ToolbarAction::Menu` on a press, or on ↓ while focused, and a press while the menu is open closes it. `Toolbar::menu_popup` is the popup's id and `menu_anchor` the ☰'s rectangle as last drawn.
+  - `Toolbar::menu_button` draws the menu button first, as `Toolbar::menu_button_style` says (`MenuButtonStyle::Icon` or `Menu`, the app passing the setting each frame), drawn on while its menu hangs from it, in `text_strong`, neither drawing having a filled form, reported to AccessKit as a button with a menu popup, expanded or not, its tooltip and shortcut F10. It reports `ToolbarAction::Menu` on a press, or on ↓ while focused, and a press while the menu is open closes it. `Toolbar::menu_popup` is the popup's id and `menu_anchor` the button's rectangle as last drawn.
   - The app turns `MENUS` into the request each time the menu opens (`menus::request`): the menus Windows and Linux have, each a submenu titled by its message with its `&`. Its items are as the Mac's: the action's words, enabled exactly when it can run where it is, the keymap's first key as the platform spells it whatever has the focus, since the registry reads every key there. Full Screen and the Tools panel's tabs carry check marks (`Action::checked`, from `State`'s `full_screen` and `panel_tab`). The Mac's own items are left out, and with them the Window menu.
   - The id chosen names its action (`menus::chosen`) and runs after the frame through `Shell::run`, as clicks do.
   - The `menu` action, F10 on Windows and Linux (`Platforms::NotMac`), opens the menu at its top, or closes it where it is open, and is in no menu itself.
@@ -595,12 +598,12 @@ One menu button, ☰, at the very start of the Toolbar, before the mark (decisio
   - Undo, Redo, Cut, Copy, Paste and Select All keep their keys while a text field has focus and act on the field: egui's `RequestCut`, `RequestCopy` and `RequestPaste`, and Cmd+Z, Shift+Cmd+Z and Cmd+A added to the next frame's input through `raw_input_hook`.
   - Without a focused field, Undo and Redo act on the photo's history and Select All on the photos once they can be selected, while Cut, Copy and Paste are disabled. Copying an edit is Copy Edit's, with its own keys, so Ctrl+C never has two meanings.
   - The drawn menus do the same when an editing item is chosen with a field focused. The app remembers the field when a menu opens, since opening it moves egui's focus, and gives focus back when it closes.
-  - Built for Undo and Redo (step 9.4), and Select All: while a text field has the focus they keep their keys on the Mac's items (`menus::edits_the_field`), and Undo and Redo read Undo and Redo; performed by AppKit or chosen from a menu, they add egui's own Cmd+Z, Shift+Cmd+Z or Cmd+A to the next frame's input through `raw_input_hook` (`actions::field_keys`). On Windows and Linux the registry leaves the field its keys. The ☰'s menu opened by F10 gives the field the focus back before its choice runs. Still to do, with Cut, Copy and Paste in step 7: the ☰ opened by a click remembering the field, since the press takes the focus from it first.
+  - Built for Undo and Redo (step 9.4), and Select All: while a text field has the focus they keep their keys on the Mac's items (`menus::edits_the_field`), and Undo and Redo read Undo and Redo; performed by AppKit or chosen from a menu, they add egui's own Cmd+Z, Shift+Cmd+Z or Cmd+A to the next frame's input through `raw_input_hook` (`actions::field_keys`). On Windows and Linux the registry leaves the field its keys. The menu button's menu opened by F10 gives the field the focus back before its choice runs. Still to do, with Cut, Copy and Paste in step 7: the menu button's menu opened by a click remembering the field, since the press takes the focus from it first.
 - **A change** on Settings › Shortcuts or by visual mapping (decision 98, planned) changes the keymap, and the native menu follows on the next frame. A key muda cannot express stays with the registry, and its item shows none.
 - **An item will show a key equivalent** (decision 98, planned) only for a plain key at its action's default element and effect, and only where the key acts at press: a key that waits for a double, triple or long press, or for a click or a move, is the dispatcher's alone, and its item shows none ([Which shortcut runs](#which-shortcut-runs)).
 - **Keys kept from actions,** as [the menu bar's rules](#rules) list them. `Keymap::load` and the Settings dialog refuse them, as they refuse the clipboard's keys.
   - On the Mac: Cmd+H, Option+Cmd+H and Cmd+M, which the system's menu items hold, and Shift+Cmd+/, Ctrl+Cmd+Space and Cmd+\`, which macOS acts on.
-  - On Windows and Linux: F10, which opens the ☰'s menu; Alt with a letter, which opens it at the top-level menu whose access key that is (decision 39); and Alt+F4 and Alt+Space.
+  - On Windows and Linux: F10, which opens the menu button's menu; Alt with a letter, which opens it at the top-level menu whose access key that is (decision 39); and Alt+F4 and Alt+Space.
   - Built on Windows and Linux: `Keymap::load` refuses Alt with a letter for every action (`opens_menu`, "opens the menus") and keeps F10 from every action but the menu's.
 - **AltGr and the exact-modifier rules** hold on Windows and Linux. AltGr arrives without Alt, so it never opens a menu by an access key, nor counts on Windows as Alt pressed and released alone. The Mac has no AltGr, and its native menu's keys follow AppKit's matching.
 - **A hold action is a menu item only at its toggle effect:** Help › Shortcuts Overview toggles the overview (decision 98); H's peek, which means something only while held, is in no menu. Repeat actions repeat from a key equivalent as from the registry.
@@ -608,7 +611,7 @@ One menu button, ☰, at the very start of the Toolbar, before the mark (decisio
 ### Checks
 
 - **Unit tests:** the tree against the registry (every id in it, none twice, no hold action but the overview, every press action placed or listed as left out); every default key as muda's accelerator; the keys suspended for each kind of focus equal to `Focus::keeps`; the editing actions' routing with and without a focused field; the refused keys on each platform.
-- **Interaction tests** with `egui_kittest`: the ☰ and its menu through AccessKit (F10, and on Windows Alt alone; Alt with an access key opening the menu at its top-level menu, in each language; the arrows into and out of a submenu, Enter running the action, a disabled item doing nothing, a check mark, focus back on close), built for Linux in `crates/ui/tests/menu.rs` and the app's tests, Alt alone waiting for Windows; `Toolbar`'s caption buttons and the reports from its empty areas; snapshots in every theme and the pseudo-locale.
+- **Interaction tests** with `egui_kittest`: the menu button, drawn either way, and its menu through AccessKit (F10, and on Windows Alt alone; Alt with an access key opening the menu at its top-level menu, in each language; the arrows into and out of a submenu, Enter running the action, a disabled item doing nothing, a check mark, focus back on close), built for Linux in `crates/ui/tests/menu.rs` and the app's tests, Alt alone waiting for Windows; `Toolbar`'s caption buttons and the reports from its empty areas; snapshots in every theme and the pseudo-locale.
 - **On the M4 by hand,** since native menus do not run headless: L, Space and the arrows typed into a value field with every menu in place; Cmd+Z in a field undoes its text, and outside one does what the registry says; Cmd+Q and the Dock's Quit write the settings and the edit; Cmd+H hides; AppKit adds no second full-screen item; Cmd+Z and Cmd+1 on Ukrainian and French layouts; a language switch renames the menus; the photo while a menu is open.
 - **On a Mac by hand, for its frame,** since AppKit's drags and layouts do not run headless:
   - dragging from empty areas at every height of the bar, upwards and downwards, with a mouse and with a Force Touch trackpad, with `-d gpu` on, and never from a button, the margin round one, or a disabled one;
@@ -620,7 +623,7 @@ One menu button, ☰, at the very start of the Toolbar, before the mark (decisio
   - full screen and back, and a move to a second display of another scale;
   - the oldest macOS the app will support, once one is set.
 - **On Windows 10 and 11 by hand:** dragging, Aero Snap at the edges, Win+arrows, Win+Z, the double-click, the right-click menu, Alt+Space, Alt+F4, resizing at every edge and corner, a move between monitors at 100% and 150%, a maximised window on a second monitor, an auto-hidden taskbar; with the second step, the flyout.
-- **On GNOME on Wayland, KDE on Wayland and an X11 desktop by hand:** no title bar drawn by the desktop; dragging, with the desktop's edge tiling; Super-key snapping; the double-click; the window menu; resizing; the ☰ and its menu by the pointer, F10 and Alt with the access keys. GNOME on Wayland passes the frame and the ☰'s menu; KDE and X11 are not checked yet.
+- **On GNOME on Wayland, KDE on Wayland and an X11 desktop by hand:** no title bar drawn by the desktop; dragging, with the desktop's edge tiling; Super-key snapping; the double-click; the window menu; resizing; the menu button and its menu by the pointer, F10 and Alt with the access keys. GNOME on Wayland passes the frame and the menu button's menu; KDE and X11 are not checked yet.
 
 ## The menu bar
 
@@ -643,7 +646,7 @@ The Toolbar's groups map onto the menus: Import and Export to File; Reset, Undo,
 
 The menus: Apertrust (macOS), File, Edit, Select, Photo, Layer (Phase 4), View, Window (macOS), Help. They are the same whatever the Viewer shows. macOS first; [Windows and Linux](#windows-and-linux) differ only where their table says. In the tables:
 
-- **Item:** the English words, in title case, as English menus are on every platform (sentence case everywhere else in the interface); → opens a submenu; a row of — is a separator. Only the top-level menus carry access keys (decision 39): on Windows and Linux Alt with one opens the ☰'s menu with that menu expanded.
+- **Item:** the English words, in title case, as English menus are on every platform (sentence case everywhere else in the interface); → opens a submenu; a row of — is a separator. Only the top-level menus carry access keys (decision 39): on Windows and Linux Alt with one opens the menu button's menu with that menu expanded.
 - **Action:** the registry id the item runs, or "macOS's" for an item macOS performs itself.
 - **Keys:** the defaults, as in [the keyboard map](#the-default-keyboard-map), where Ctrl means Cmd on macOS. A menu shows the first one for its platform.
 - **Now:** *built* runs today; *declared* is in the registry and drawn disabled until it is built; *new* is an action the registry gains, with when it arrives.
@@ -672,7 +675,7 @@ macOS only: the app menu, which macOS titles with the app's name.
 | --- | --- | --- | --- |
 | Open… | `open` | Ctrl+O | Built for raws in folder mode; a library's or a project's file in Phase 5 |
 | Open Folder… | `open-folder` | Ctrl+Shift+O | Built, after Open…: the platform's folder dialog, asynchronous as the open dialog is, starting in the open folder, else the open photo's, else Pictures; the folder chosen goes to the session as `Command::Library(Open(Folder))` |
-| Open Recent → the last ten folders, and from Phase 5 libraries and projects, opened, newest first, the start window's list; —; Clear Menu | `open-recent-1` to `open-recent-10`, by place; `clear-recent` | — | Built, on the Mac's bar and in the ☰ (`crates/app/src/recents.rs`, `menus.rs`'s `Entry::Recents`) |
+| Open Recent → the last ten folders, and from Phase 5 libraries and projects, opened, newest first, the start window's list; —; Clear Menu | `open-recent-1` to `open-recent-10`, by place; `clear-recent` | — | Built, on the Mac's bar and in the menu button's menu (`crates/app/src/recents.rs`, `menus.rs`'s `Entry::Recents`) |
 | — | | | |
 | New Library… | `new-library` | — | Phase 5, with the library (decision 46) |
 | New Project… | `new-project` | — | Phase 5, after the library (decision 46) |
@@ -710,7 +713,7 @@ macOS only: the app menu, which macOS titles with the app's name.
   - Built: the photo closes through the session (`Command::Close`, which saves what its edit still needs, as any photo left is saved), the folder through the library (`LibraryCommand::Close`), and the main window becomes the start window in the same frame, never drawn with nothing open. It is disabled with nothing open, on a dialog's own window and under a modal dialog.
 - **Only a root enters the recents:** a folder opened as a way in, the folder the person opened, Open This Folder's among them. A folder chosen in Collections' tree is a view inside the root and never does, and a photo opened alone never does (decision 46).
 - **Open Recent** lists the last ten folders opened, and from Phase 5 libraries and projects, newest first, never holding an edit: the start window's list, never one photo opened alone. They are the recents, kept in `state.toml` beside `settings.toml`, since the settings hold no photo ([settings.md](settings.md#the-settings-schema)), the one list Collections' recent folders and the start window read too. Whether each is there is checked off the interface's thread as the main window shows and again as it gains the focus. Each is named by its label, its open kind and its name, "Folder: 2026-10 Lisbon", as Collections names it, where the start window shows its name with its kind at the row's end. Folders, libraries and projects are the open kinds, what a window holds, which one photo opened alone is not. Clear Menu empties it, leaving what was open last. Entries are not checked as the menu opens, since a NAS can be slow: one a check has found gone is drawn disabled; one whose opening failed this run stays enabled, its tooltip saying why, so choosing it tries again. With none, it holds only Clear Menu, disabled. A choice opens the folder its item showed, even where the list has changed since the menu was drawn.
-  - Built the same on the Mac's bar and in the ☰: each item is the folder's label, its name with the folders it is in, nearest first, as far up as it takes to tell it from another recent ("Folder: Selects — Lisbon", "Folder: Selects — Shoot — a"), from one function for every open kind (`OpenKind::label`); the ☰'s tooltip gives its path, after why it cannot be opened where it cannot, and the Mac's menus show no path. A choice opens the folder as Open Folder… does, the one its item showed: the paths are kept as the ☰'s menu is built and as each frame fills the Mac's bar. The registry holds an action for each place, `open-recent-1` to `open-recent-10`, with no keys by default; on the Mac the submenu is built afresh only when what it shows changes.
+  - Built the same on the Mac's bar and in the menu button's menu: each item is the folder's label, its name with the folders it is in, nearest first, as far up as it takes to tell it from another recent ("Folder: Selects — Lisbon", "Folder: Selects — Shoot — a"), from one function for every open kind (`OpenKind::label`); the menu button's menu's tooltip gives its path, after why it cannot be opened where it cannot, and the Mac's menus show no path. A choice opens the folder as Open Folder… does, the one its item showed: the paths are kept as the menu button's menu is built and as each frame fills the Mac's bar. The registry holds an action for each place, `open-recent-1` to `open-recent-10`, with no keys by default; on the Mac the submenu is built afresh only when what it shows changes.
 - **Open…** opens photos alone and **Open Folder…** folder mode. A library or project opens by Open…, Open Recent, the start window or a double-click on its `Name.aplibrary` or `Name.approject` file; a window holds one photo, folder, library or project at a time (decision 46).
 - **New Library…** asks for a name, a place and where its edits live, beside the photos or in the library's folder (decision 47); with a folder open, it offers to make that folder a library, in place, by writing the library's file at its top.
 - **New Project…** makes a small library for one job, `Name.approject`, with its Capture, Selects, Output and Trash folders, from a project template or not.
@@ -830,7 +833,7 @@ Phase 4: the menu appears with Layers, and its keys are set with their design. I
 | Tools | `tools-panel` | — | New, Phase 3, proposed. No item hides the Browser |
 | Tab Names | `panel-tab-names` | — | Built in the tab bar's ⋮; the action is new |
 | Customise Tabs… | `customise-tabs` | — | New, drawn disabled until Phase 3's visual editor for workspaces, which it opens (decision 96) |
-| Show Menu Button, while the ☰ is hidden, on Windows and Linux | `show-menu-button` | — | New, Phase 3 (decision 92); also in the toolbar menu, and F10 reaches it with the ☰ hidden |
+| Show Menu Button, while the menu button is hidden, on Windows and Linux | `show-menu-button` | — | New, Phase 3 (decision 92); also in the toolbar menu, and F10 reaches it with the menu button hidden |
 | Toolbar Labels, checked while on | `toolbar-labels` | — | New, Phase 3 (decision 92); also in the toolbar menu and Settings › General |
 | Customise Toolbar… | `customise-toolbar` | — | New, Phase 3, drawn disabled, "Customise Toolbar comes in a later version", until its window is built (decision 92) |
 | Dock All Floating Panels | `dock-all` | — | New, with the floating panels in Phase 3 (decisions 83 and 96); also in the Tools panel's ⋮ |
@@ -908,22 +911,22 @@ A dialog of Apertrust's own on every platform (decision 39): a modal over a scri
 
   No Close button, no Copy Details, no GPU and no component on this page.
 - **Closing it.** A click anywhere but on the version line and the two buttons closes it, on the dialog or outside it, and so does Esc, but never the second click of a double-click, whose first opened it or went back to it.
-- **Focus.** Nothing has the focus as it opens, so no button is drawn highlighted; Tab reaches the version line first, then Credits, and the control that opened it, the mark, has it back when it closes. Screen readers hear a dialog named About Apertrust.
+- **Focus.** Nothing has the focus as it opens, so no button is drawn highlighted; Tab reaches the version line first, then Credits, and the control that had the focus as it opened has it back when it closes: what the menu it was chosen from gave the focus back to (`About::open`). Screen readers hear a dialog named About Apertrust.
 - **Credits and Licence** are one step in, about 560 points wide: a back button (a left chevron) and the title, over text scrolling in about 440 points.
   - `CREDITS.md` is drawn as Markdown by `egui_commonmark`, its title left out, since the header gives it, its links opening in the system's web browser. The repository's `LICENSE` is drawn in the body font with its line breaks kept: Plex Mono is the log window's alone.
   - Both texts are compiled in; `tools/credits.sh` writes `CREDITS.md`'s list of components from `Cargo.lock`, and CI checks it is current.
   - There a click outside closes the dialog and a click inside does not; Esc or the back button goes back to About.
   - The focus follows a step taken by keyboard, to the page's back button and back to the button that opened the page, and never a click.
 - **In a smaller window** every page shrinks to fit it, with a margin round it.
-- **The `about` action** opens it, from the Toolbar's mark ([The Toolbar](#the-toolbar)), from the app menu on macOS and from Help on Windows and Linux.
+- **The `about` action** opens it, from the app menu on macOS and from Help on Windows and Linux; the Toolbar has no button for it ([The Toolbar](#the-toolbar)).
 
 ### Windows and Linux
 
-The menus open from one menu button, ☰, at the very start of the Toolbar, before the mark (decision 39; the Toolbar is the window's title bar). It opens one menu whose items are the menus, **File, Edit, Select, Photo, Layer (from Phase 4), View, Help**, each a submenu, with the access keys &File, &Edit, &Select, &Photo, &Layer, &View and &Help in English: Alt with one opens the menu with that submenu expanded. There are no titles. Built on Windows and Linux, ☰ and F10 opening it, but for Windows' Alt pressed and released alone ([The ☰ on Windows and Linux](#the--on-windows-and-linux)). Each menu holds what macOS's does, except:
+The menus open from one menu button at the very start of the Toolbar, the app's icon or ☰ (decision 39; the Toolbar is the window's title bar). It opens one menu whose items are the menus, **File, Edit, Select, Photo, Layer (from Phase 4), View, Help**, each a submenu, with the access keys &File, &Edit, &Select, &Photo, &Layer, &View and &Help in English: Alt with one opens the menu with that submenu expanded. There are no titles. Built on Windows and Linux, the menu button and F10 opening it, but for Windows' Alt pressed and released alone ([The menu button on Windows and Linux](#the-menu-button-on-windows-and-linux)). Each menu holds what macOS's does, except:
 
 | | macOS | Windows | Linux |
 | --- | --- | --- | --- |
-| The menus | The system's menu bar, at the top of the screen | Drawn by Apertrust, opened from ☰ at the start of the Toolbar, before the mark | The same as Windows |
+| The menus | The system's menu bar, at the top of the screen | Drawn by Apertrust, opened from the menu button at the start of the Toolbar | The same as Windows |
 | About | The app menu | Help, last | Help, last |
 | Settings… | The app menu | Edit, last | Edit, last |
 | Quit | The app menu: Quit Apertrust | File, last: Exit | File, last: Quit |
@@ -934,11 +937,11 @@ The menus open from one menu button, ☰, at the very start of the Toolbar, befo
 | Showing the photo's file | Show in Finder | Show in Folder | Show in Folder |
 | Redo's key shown | Shift+Cmd+Z | Ctrl+Y, listed first on Windows | Ctrl+Shift+Z |
 | Keyboard Shortcuts | No key | Ctrl+? | Ctrl+? |
-| Reaching the menus by keyboard | Ctrl+F2 (the system's), or VoiceOver | F10; Alt pressed and released alone, as Windows does; Alt and a top-level menu's letter, the menu opening at it; the ☰ by F6 and Tab | F10, as GNOME's apps have it; Alt and a top-level menu's letter; the ☰ by F6 and Tab |
-| Access keys | None | On the top-level menus in the ☰'s menu, underlined while Alt is held | The same as Windows |
+| Reaching the menus by keyboard | Ctrl+F2 (the system's), or VoiceOver | F10; Alt pressed and released alone, as Windows does (planned); Alt and a top-level menu's letter, the menu opening at it; the menu button by F6 and Tab | F10, as GNOME's apps have it; Alt and a top-level menu's letter; the menu button by F6 and Tab |
+| Access keys | None | On the top-level menus in the menu button's menu, underlined while Alt is held | The same as Windows |
 | Keys spelt | By macOS, with its glyphs: ⌘⇧Z | As the tooltips spell them | As the tooltips spell them |
 
-- **A narrow Toolbar:** the ☰ never folds while shown, and the menus need no room of their own, so the Toolbar gives way only by its actions and words ([the Toolbar](#the-toolbar)); every app action hidden under ⋯ (» with the toolbar, decision 92) is also in the menus; a tool's action folded into » is always in its tool, and in a menu where the tool declares one (decision 91). This matters since the window's minimum width is 500 points, for Windows' snap zones (decision 39; how the Tools panel gives way in a narrow window is an open design item, [Open questions](#open-questions)).
+- **A narrow Toolbar:** the menu button never folds while shown, and the menus need no room of their own, so the Toolbar gives way only by its actions and words ([the Toolbar](#the-toolbar)); every app action hidden under ⋯ (» with the toolbar, decision 92) is also in the menus; a tool's action folded into » is always in its tool, and in a menu where the tool declares one (decision 91). This matters since the window's minimum width is 500 points, for Windows' snap zones (decision 39; how the Tools panel gives way in a narrow window is an open design item, [Open questions](#open-questions)).
 - **Inside an open menu,** typing a letter moves to the next item whose name starts with it, and Enter runs it, as menus without item access keys do on Windows; screen readers announce the item.
 
 **What the platforms provide.** macOS performs Services, Hide, Hide Others, Show All, Minimise, Zoom, its tiling items, Bring All to Front, the window list and the Help search, and adds AutoFill, Start Dictation… and Emoji & Symbols to Edit; these stay, Dictation included. It can also add full-screen and tab-bar items of its own to View: the menu has its own full-screen item, and Apertrust's windows have no tabs, so neither may appear (decision 39's checks). Windows keeps the window menu, Alt+Space, outside the menus. On Linux Apertrust draws everything.
@@ -976,8 +979,8 @@ The menus open from one menu button, ☰, at the very start of the Toolbar, befo
 
 - A menu shows an action's first key for the platform, as its tooltip does, and follows a change in Settings at once; planned, only a plain key at the action's default element and effect that acts at press ([Who owns the keys](#who-owns-the-keys), decision 98).
 - Showing a key never takes it from a narrower scope: with a button focused, Space presses the button and not Next Photo; in a value field, Ctrl+Z undoes typing. On the Mac the native menu holds no key the focused widget keeps; on Windows and Linux the registry reads every key and the menus only show them.
-- Keys kept from actions (decision 39): on the Mac Cmd+H, Option+Cmd+H and Cmd+M, which the system's items hold, and Shift+Cmd+/ (the Help search), Ctrl+Cmd+Space (Emoji & Symbols) and Cmd+\`, which macOS acts on; on Windows and Linux F10, which opens the ☰'s menu, Alt with a letter, which opens it with the top-level menu of that access key expanded (decision 39), and Alt+F4 and Alt+Space, which the system acts on.
-- On Windows, Alt pressed and released with nothing else opens the ☰'s menu, as F10 does, where Windows would focus a menu bar's first title; Alt held with another key never does this: Alt with a menu title's letter is that menu's access key, as Alt+F opens File, and Alt with any other key, as a header's Alt+↑, opens nothing.
+- Keys kept from actions (decision 39): on the Mac Cmd+H, Option+Cmd+H and Cmd+M, which the system's items hold, and Shift+Cmd+/ (the Help search), Ctrl+Cmd+Space (Emoji & Symbols) and Cmd+\`, which macOS acts on; on Windows and Linux F10, which opens the menu button's menu, Alt with a letter, which opens it with the top-level menu of that access key expanded (decision 39), and Alt+F4 and Alt+Space, which the system acts on.
+- On Windows (planned), Alt pressed and released with nothing else opens the menu button's menu, as F10 does, where Windows would focus a menu bar's first title; Alt held with another key never does this: Alt with a menu title's letter is that menu's access key, as Alt+F opens File, and Alt with any other key, as a header's Alt+↑, opens nothing.
 - macOS's menus draw keys with its glyphs in the system font, so they differ from the tooltips' words, which IBM Plex Sans needs. The menus look as every Mac menu does; the tooltips stay readable.
 
 **Feedback, undo and focus.** An item gives the feedback its button or key gives, and is undone as they are: Reset Edit is a history step once history exists, and a batch (a rating or Apply Edit on several photos) is one change, which one Undo takes back. The viewer bar's toggles, the layouts and the workspaces change only what is shown and are not steps. A menu never waits for the engine: Undo's step and every enabled state come from the session mirror. When a menu closes, focus returns to the control that had it.
@@ -988,19 +991,19 @@ The menus open from one menu button, ☰, at the very start of the Toolbar, befo
 
 #### The drawn menus
 
-The ☰'s menu on Windows and Linux, drawn by the popup service as its pull-downs are (decisions 39 and 40), and later the web browser's. The ☰ is an icon button like the Toolbar's others; its menu opens under it on `raised` with 8-point corners, a half-point `menu_edge` (a full point in the high-contrast theme) and the soft `menu_shadow`, and scales with the interface, which native menus do not. A submenu opens beside its line, towards the end where it fits, else towards the start. Built on Windows and Linux.
+The menu button's menu on Windows and Linux, drawn by the popup service as its pull-downs are (decisions 39 and 40), and later the web browser's. The menu button takes the Toolbar's icon buttons' colours, the app's icon or ☰ ([The menu button on Windows and Linux](#the-menu-button-on-windows-and-linux)); its menu opens under it on `raised` with 8-point corners, a half-point `menu_edge` (a full point in the high-contrast theme) and the soft `menu_shadow`, and scales with the interface, which native menus do not. A submenu opens beside its line, towards the end where it fits, else towards the start. Built on Windows and Linux.
 
 | State | Looks | Does |
 | --- | --- | --- |
-| The ☰ at rest, under the pointer, focused | As the Toolbar's other icon buttons | Opens the menu on a click, Enter, Space, ↓ or F10; while it is open, a click or F10 closes it |
-| Open | The ☰ marked as pressed; the menu under it, listing the menus as submenus | ↓ and ↑ move through its items, wrapping round, separators skipped; → opens a submenu and ← closes it; Esc closes a level, and the last returns focus to what had it; plain keys and typed text are the menu's alone (decision 40); a key with a modifier or an F-key that runs an action closes it, and so does a dialog opening |
+| The menu button at rest, under the pointer, focused | As the Toolbar's other icon buttons: no plate, the app's icon in `text_strong` under the pointer | Opens the menu on a click, Enter, Space, ↓ or F10; while it is open, a click or F10 closes it |
+| Open | The menu button in `text_strong`, with no plate; the menu under it, listing the menus as submenus | ↓ and ↑ move through its items, wrapping round, separators skipped; → opens a submenu and ← closes it; Esc closes a level, and the last returns focus to what had it; plain keys and typed text are the menu's alone (decision 40); a key with a modifier or an F-key that runs an action closes it, and so does a dialog opening |
 | Item under the pointer or keys | A 5-point-cornered `menu_hover` band, never the accent, which the popup service's lists, a choice's included, share with its text; its words, key and marks in `text_on_menu_hover`, which is `text_strong` in the dark, grey and light themes; the high-contrast theme's band is white with black text, as the system's own high-contrast mode draws it, a disabled line on it in `text_disabled` (3.4:1) | A click, Enter or Space runs it; a letter moves to the next item starting with it |
 | Disabled | Disabled text | Still reached by the keys and read as unavailable, so screen-reader users learn it exists; does nothing |
 | Checked | The `check` icon at its start, since IBM Plex Sans may lack ✓ | Read as checked |
 | Submenu | A chevron at its end | Opens on →, Enter or Space, or once the pointer has rested 0.2 s on its line, which also closes another level's submenu, so the pointer can cross other lines on its way; ← closes it. The pause is a constant (`PAUSE`), not a motion token: it reads intent, and nothing moves |
 | Key | At its end, in 12-point secondary text | — |
 | Separator | `menu_edge`, with 5 points above and below and an 8-point inset | Skipped by the keys and never focused, but read as a separator, so screen-reader users learn it exists |
-| A top-level menu's access key | Underlined while Alt is held | Alt with the letter, from anywhere, opens the ☰'s menu with that menu expanded |
+| A top-level menu's access key | Underlined while Alt is held | Alt with the letter, from anywhere, opens the menu button's menu with that menu expanded |
 | An item with an alternate (`popup::Item::alternate`): none in the app's menus now, History's Truncate History being an item of its own (decision 93) | The alternate's words, state and tip in its place while Alt (Option on the Mac) is held, the line keeping the focus and the menu as wide as either, as macOS's alternate items; on the Mac AppKit's own (`NSMenuItem.alternate`) | A click or Enter with it held chooses the alternate; Alt+Enter is the way where an X11 window manager takes Alt with a press to move the window |
 | A press outside | — | Closes every level, gives no focus back, since the press goes on to what it landed on, which takes the focus itself; the press is not swallowed |
 
@@ -1022,12 +1025,12 @@ Tab closes an open menu, giving the focus back. The focus is on the chosen item,
 - **The app's name is never translated:** About, Hide and Quit take `{ app-name }`.
 - **File's word is also a Fluent term,** `-file-menu`, and `menu-file` is `&{ -file-menu }`, so a sentence that names the menu uses the term and shows no `&`. Fluent keeps terms and messages under one name, so the term's is another.
 - **The top-level menus' access keys** are each language's own letters, as Windows and KDE use them.
-  - Ukrainian's are Cyrillic, and Alt with the key that types the letter on the current layout opens the ☰'s menu at that menu (egui reports a Cyrillic key as its physical key, so the app recovers the letter).
+  - Ukrainian's are Cyrillic, and Alt with the key that types the letter on the current layout opens the menu button's menu at that menu (egui reports a Cyrillic key as its physical key, so the app recovers the letter).
   - A Polish access key is a letter typed without AltGr, never ą, ć, ę, ł, ń, ó, ś, ź or ż.
   - Items inside have none; the type-ahead works on their words.
   - Built: &File, &Edit, &Select, &Photo, &View, &Window and &Help; &Файл, &Редагування, В&ибір, &Знімок, &Перегляд, &Вікно and &Довідка, since Вікно has В; &Plik, &Edycja, Z&aznaczenie, &Zdjęcie, &Widok, &Okno and Po&moc, since Zdjęcie has Z and Plik P.
   - Tests fail when a top-level menu has no access key, when two share one in any language, Window's included, when one needs AltGr in Polish, or when a translation lacks an attribute English has; `crates/ui/locales/README.md` tells translators.
-- **The ☰'s name** for screen readers and its tooltip, with F10 beside it: Menu, the message `toolbar-menu`, beside ⋯'s `toolbar-more`; Меню in Ukrainian and Menu in Polish.
+- **The menu button's name** for screen readers and its tooltip, with F10 beside it, whichever way it is drawn: Menu, the message `toolbar-menu`, beside ⋯'s `toolbar-more`; Меню in Ukrainian and Menu in Polish.
 - **Switching the language** renames the menus at once (decision 39). macOS writes its own items (Services' contents, Dictation, Emoji & Symbols, the tiling items, the Help search) in the language it picks for the app from those the bundle declares, en-GB, uk and pl (`CFBundleLocalizations` in `packaging/macos/Info.plist`). When the user chooses a language in Settings, Apertrust also sets its own `AppleLanguages`, so macOS's items match from the next start; until then they may differ.
 - **The menus' names,** as drafts for the native review (`crates/ui/locales/README.md`), with the platforms' own words; the access keys are the translators':
 
@@ -1050,15 +1053,15 @@ Keep each slice to what exists.
 | When | Items |
 | --- | --- |
 | Built on the Mac, with its native bar | The app menu; About; Settings; Quit; Close Window; Open… (`open`, Ctrl+O, first in File: raws, opened alone together with the first active, closing the folder); Open Folder…; Export… and Export Again; Reset Edit; Collections; Tools Panel Tab; Workspace, its items check items, filled afresh as Open Recent is; Interface Size; Jobs; Full Screen; the Window menu; Help's search. Drawn disabled: Import, Copy Edit, Apply Edit, Copy or Apply Parts, and View's zoom items |
-| Built on Windows and Linux | The ☰ and its drawn menu, holding what the Mac's menus hold but the Mac's own items and its Window menu, with check marks on Full Screen, the Tools panel's tabs and the workspace shown; the `menu` action, F10 |
+| Built on Windows and Linux | The menu button and its drawn menu, holding what the Mac's menus hold but the Mac's own items and its Window menu, with check marks on Full Screen, the Tools panel's tabs and the workspace shown; the `menu` action, F10 |
 | Still in step 7 | Cut, Copy and Paste for value fields; Guides; Proof Margin; Panels › Tab Names; Customise Tabs, drawn disabled until Phase 3's visual editor (decision 96); new actions `cut`, `copy`, `paste`, `guides`, `proof-margin`, `panel-tab-names` and `customise-tabs`, with the platforms' keys kept from actions; Windows' Alt pressed and released alone |
-| Built in step 9c | Open Recent with Clear Menu, and Close, on the Mac's bar and in the ☰ |
-| Built in the library's step 9.4 | Undo and Redo, naming the step, on the Mac's bar and in the ☰ |
-| Built with selecting several photos | Select All, for a value field and for the photos, Select None, Invert Selection and Select Unedited, on the Mac's bar and in the ☰ |
+| Built in step 9c | Open Recent with Clear Menu, and Close, on the Mac's bar and in the menu button's menu |
+| Built in the library's step 9.4 | Undo and Redo, naming the step, on the Mac's bar and in the menu button's menu |
+| Built with selecting several photos | Select All, for a value field and for the photos, Select None, Invert Selection and Select Unedited, on the Mac's bar and in the menu button's menu |
 | Built with the Select menu | Select, between Edit and Photo, holding those four items, moved from Edit, then Previous Selection, declared and drawn disabled; Invert Selection on Ctrl+Shift+I |
-| Built with moving through the selection | Next Photo and Previous Photo, on the Mac's bar and in the ☰ |
+| Built with moving through the selection | Next Photo and Previous Photo, on the Mac's bar and in the menu button's menu |
 | Later in Phase 2 | Show in Folder, with folder mode; Search Photos, Sort By and Thumbnail Size, with the browser bar (step 9); the zoom items, with the scale's zoom; Clipping Warnings, with the overlays (step 8) |
-| Built in decision 96's step 2 | View › Workspace with its workspaces, on the Mac's bar and in the ☰ |
+| Built in decision 96's step 2 | View › Workspace with its workspaces, on the Mac's bar and in the menu button's menu |
 | Phase 2, decision 96's steps | Reset Workspace (step 5) |
 | Phase 3 | Save as, Rename and Delete Workspace, with the visual editor for workspaces; Sort By › Rating; Export on Windows and Linux; Copy Edit, Apply Edit, Copy or Apply Parts; Save Edit as Style; Previous Selection; Before and After; Show All Selected; Rotate and Flip; Panels › Tools Panel and the side; Rotate and perspective's Auto; Rating and Colour Label, with the caption's controls; Import, a sheet, by copy in folder mode, with step 20a (decisions 46 and 85) |
 | Phase 2, decision 98's step 3 | Help › Keyboard Shortcuts, opening Settings at Shortcuts |
@@ -1066,7 +1069,7 @@ Keep each slice to what exists.
 | Phase 4 | The Layer menu |
 | Phase 5 | New Library, Add Folder, Import library, then New Project and Export as Project, with the library and the project (decision 46); Open… opening a library's or a project's file |
 | Phase 6 | Match a Photo; an assistant's connection, placed with its design |
-| Phase 7 | The web browser's menus: the ☰ and its drawn menu, without Quit, Close, Close Window, Show in Folder or Open Recent, and with no default key the web browser keeps (Ctrl+W, Ctrl+N, Ctrl+T, Ctrl+Q) |
+| Phase 7 | The web browser's menus: the menu button and its drawn menu, without Quit, Close, Close Window, Show in Folder or Open Recent, and with no default key the web browser keeps (Ctrl+W, Ctrl+N, Ctrl+T, Ctrl+Q) |
 | No phase yet | Photo and Map, with the viewer bar's Map toggle; Slideshow; Print… (decision 37) |
 
 ## Popups
@@ -1075,7 +1078,7 @@ Native popup menus on the Mac for plain lists and context menus; drawn everywher
 
 **Built:**
 
-- The drawn service's pull-down, for the ☰'s menu on Linux, the Toolbar's ⋯ and the Tools panel's » and ⋮; and the dropdown, `Choice`'s list, drawn with darktable's type-to-filter (decision 42).
+- The drawn service's pull-down, for the menu button's menu on Windows and Linux, the Toolbar's ⋯ and the Tools panel's » and ⋮; and the dropdown, `Choice`'s list, drawn with darktable's type-to-filter (decision 42).
 - Every popup in the app goes through the service, as a plain list with no checkbox or other control inside, so that each can be drawn natively on the Mac:
   - ⋯ lists the folded actions with their keys, disabled where they cannot run;
   - » lists the tabs that do not fit, one that cannot be chosen disabled with its "to come" tip;
@@ -1096,7 +1099,7 @@ Context menus are built as a pull-down at the pointer, or under the control from
 | Anything with controls, colour, thumbnails or a search field: colour pickers, swatches, a filtered list | Drawn | Drawn |
 | Tooltips | Drawn | Drawn |
 
-- **The ☰'s menu** on Windows and Linux is a pull-down from a button too, its items the menus as submenus, drawn as every popup is there (decision 39). The Mac has no ☰, its menus being the native menu bar's.
+- **The menu button's menu** on Windows and Linux is a pull-down from a button too, its items the menus as submenus, drawn as every popup is there (decision 39). The Mac has no menu button, its menus being the native menu bar's.
 - **Customise tabs, Phase 3's visual editor for workspaces (decision 96), is a dialog,** not a popup: its menu item ends in "…", since it asks for more before it acts, so it is a native modal window (decision 41).
 - **Inside a dialog's window** popups work as in the main window: a drawn one stays inside the dialog's window, so a long list there scrolls; on the Mac a native one opens over it.
 - **A native popup is a plain list:** items of text, enabled or not, a check mark when one is on or chosen, an action's shortcut from the keymap, separators and submenus. Anything else is drawn.
@@ -1260,7 +1263,7 @@ A place opens to tools' items only by a decision of its own, which adds it to `a
 - `egui_kittest` with the drawn service.
 - A recording service for the requests components make and their answers (`crates/ui/tests/service.rs`), and the request's conversion to AppKit's menu as unit tests (`crates/app/src/popups.rs`).
 - On the M4 by hand, since the menu cannot be shown headless: a dropdown's placement, Boxed and Blended, a pull-down (⋯, », ⋮), a context menu at the pointer, Escape, type-select, a disabled item's tip, check marks and key equivalents, a choice in the Export tool and in Settings, VoiceOver in and out, each theme and Increase Contrast, a language switch, the interface's scale, and an engine frame arriving while a popup is open.
-- On Linux, the ☰ and every popup still drawn.
+- On Linux, the menu button's menu and every popup still drawn.
 
 ## Dialogs and alerts
 
@@ -2414,7 +2417,7 @@ So neither the Tools panel's tabs nor what a key or a button acts on changes wit
 
 ```mermaid
 flowchart TB
-    top["Toolbar: ☰ (Windows, Linux) · mark · common actions · … · jobs · save state"]
+    top["Toolbar: menu button (Windows, Linux) · common actions · … · jobs · save state"]
     subgraph middle [" "]
         direction LR
         subgraph centre ["Viewer"]
@@ -2470,7 +2473,7 @@ The model's words:
 
 | Region | Holds |
 | --- | --- |
-| Toolbar | The window's title bar, from its top edge ([The window frame and menus](#the-window-frame-and-menus)). At its start: the traffic lights' place on the Mac; the menu button, ☰, on Windows and Linux; Apertrust's mark; the common actions (Import, Export, Cull, Reset, Undo, Redo, Copy, Apply). At its end: the jobs spinner, an assistant's connection and the save state; the caption buttons on Windows and Linux. No layout switcher and no Settings button ([below](#the-toolbar)) |
+| Toolbar | The window's title bar, from its top edge ([The window frame and menus](#the-window-frame-and-menus)). At its start: the traffic lights' place on the Mac; the menu button, the app's icon or ☰, on Windows and Linux; the common actions (Import, Export, Cull, Reset, Undo, Redo, Copy, Apply). At its end: the jobs spinner, an assistant's connection and the save state; the caption buttons on Windows and Linux. No layout switcher and no Settings button ([below](#the-toolbar)) |
 | Viewer | The current layout ([below](#the-viewers-layouts)): in Photo, the active photo or the selected photos side by side; later in Map, the photos on a map. "No photo selected" when no photo is active. Floating panels lie over it (decision 83, planned) |
 | Viewer bar | The thin bar along the Viewer's top ([below](#the-viewer-bar)). In Photo: the photo's toggles, ending with Guides; immediately after Guides the Map toggle (later); the layer menu, the values under the cursor, the scale. In Map: the photo's toggles where they are, drawn disabled, the Map toggle where it is, then Map's own controls |
 | Caption | One line under the photo, on the surround, as wide as the photo and part of its block in the Viewer's slot ([below](#the-photo-frame)): the file name with its marks at its start; the photo's reject, rating and colour labels in its middle; the exposure at its end ([below](#the-caption-under-the-photo)) |
@@ -2620,7 +2623,7 @@ A workspace is its tabs, each tab's tools, the tools it hides and the toolbar's 
   name = "Portraits"                  # a person's own; a built-in's is its message
   hidden = ["vignette", "grain"]
   seen = ["collections", "export", "scopes", "history", "temperature", "exposure", "…"]
-  toolbar = ["mark", "import", "export", "undo", "redo"]   # Phase 3
+  toolbar = ["import", "export", "undo", "redo"]   # Phase 3
 
   [[tabs]]
   id = "photos"
@@ -2675,27 +2678,26 @@ Import and Print are full-window sheets and the slideshow an action (decisions 3
 
 ### The Toolbar
 
-`Toolbar` in `apertrust-ui`, drawn on the [UI wireframe](https://claude.ai/artifact/V4r2xReSqn344AQstUgeiK)'s board for the Toolbar, whose tweaks show both platforms, both themes and the narrow widths. Built: the order, the groups and the narrowing's steps; the mark at its start, which never folds, and before it the ☰ where the app asks for it (`menu_button`, drawn on Windows and Linux), which never folds either.
+`Toolbar` in `apertrust-ui`, drawn on the [UI wireframe](https://claude.ai/artifact/V4r2xReSqn344AQstUgeiK)'s board for the Toolbar, whose tweaks show both platforms, both themes and the narrow widths. Built: the order, the groups and the narrowing's steps; the menu button at its start where the app asks for it (`menu_button`, drawn on Windows and Linux), the app's icon or ☰ (`menu_button_style`), which never folds.
 
-**A toolbar a person customises** (decision 92, planned for Phase 3). The order below becomes the default of one list of item ids kept for each workspace, `toolbar` in its file (decision 96). Everything but the caption buttons and the Mac's traffic lights may be moved or hidden: the ☰, the mark, the save state, the jobs, an assistant's connection and every action ([Customising the Toolbar](#customising-the-toolbar)).
+**A toolbar a person customises** (decision 92, planned for Phase 3). The order below becomes the default of one list of item ids kept for each workspace, `toolbar` in its file (decision 96). Everything but the caption buttons and the Mac's traffic lights may be moved or hidden: the menu button, the save state, the jobs, an assistant's connection and every action ([Customising the Toolbar](#customising-the-toolbar)).
 
 - **Order.**
-  - macOS: the traffic lights and the mark; Import…, Export…, Cull, Reset, Undo, Redo; Copy edit and Apply edit, as icons; the empty strip that moves the window; the jobs spinner ([The jobs window](#the-jobs-window), decision 57), an assistant's connection and the save state ([The edit, saved](#the-edit-saved)).
-  - Windows and Linux: the menu button, ☰, and the mark, with no menu titles (decision 39); the same actions; the empty strip and the same end; minimise, maximise or restore, close.
-  - The common actions sit at the start, right after the mark; at the end stand only the save state, the jobs and an assistant's connection, which report rather than act. The actions keep their words, titles and availability. Export and Apply edit act on every selected photo and say how many in their tooltips ([Selection and the active photo](#selection-and-the-active-photo)). Export… reveals the Export tool in the Tools panel and focuses its button, as Ctrl+E does, rather than opening anything over the photo ([The Export tool](#the-export-tool), decision 90).
+  - macOS: the traffic lights; Import…, Export…, Cull, Reset, Undo, Redo; Copy edit and Apply edit, as icons; the empty strip that moves the window; the jobs spinner ([The jobs window](#the-jobs-window), decision 57), an assistant's connection and the save state ([The edit, saved](#the-edit-saved)).
+  - Windows and Linux: the menu button, the app's icon or ☰, with no menu titles (decision 39); the same actions; the empty strip and the same end; minimise, maximise or restore, close.
+  - The common actions sit at the start, right after the traffic lights or the menu button; at the end stand only the save state, the jobs and an assistant's connection, which report rather than act. The actions keep their words, titles and availability. Export and Apply edit act on every selected photo and say how many in their tooltips ([Selection and the active photo](#selection-and-the-active-photo)). Export… reveals the Export tool in the Tools panel and focuses its button, as Ctrl+E does, rather than opening anything over the photo ([The Export tool](#the-export-tool), decision 90).
   - **Fixed slots.** The jobs spinner and the save state each keep a slot of fixed width, the width of its widest form at the current fold step (the save state's: Saving… or the warning with its word, folded "…" or the sign alone; the spinner's: one button), in that order, reserved whether it shows anything or not. So the spinner coming or going, or the save state changing between nothing, Saving… and Not saved, moves neither the other nor anything else in the panel. While a slot shows nothing it is part of the strip that moves the window.
   - Slideshow and Copy or Apply Parts are not in the Toolbar: they are in View › Slideshow and Edit › Copy or Apply Parts…. Cull arrives with culling in Phase 3, where what it opens is still to be designed; until then it is drawn on the wireframe only.
 - **No layout switcher:** the viewer bar's Map toggle switches the Viewer between Photo and the map ([The viewer bar](#the-viewer-bar)).
-- **No Settings button** in the default: Settings is in the app menu on the Mac and on Ctrl+, (⌘,); on Windows and Linux also last in Edit in the ☰'s menu ([the menu bar](#the-menu-bar)). Settings… is offered for the toolbar (decision 92).
-- **Groups** are told apart by space, never a separator line: `spacing.xl`, 16 points, between Redo and Copy edit and, on Windows and Linux, before the caption buttons, against the usual gap between buttons. The ☰ and the mark stand at the usual gap between buttons, as the mark and Import do.
-- **The mark**, in a 20-point square: the app icon's own mark, the Slider A, in its simplified drawing, alone and in one colour (`crates/ui/assets/icons/mark.svg`, drawn by resvg like the icons and tinted `text_secondary`).
-  - Amber marks what is chosen (the tab underline, the active photo's outline, the active curve point), and the Toolbar is part of the photo's surround, so the mark stays neutral, its marker in the A's colour; the cut round the marker still shows it without colour. It takes `text_secondary` rather than `text`, so it is not read as the first of the actions.
-  - A click on it opens About ([Help](#help)). It is not drawn as a button: no hover and no tooltip, the mark alone at 20 points in a 30-point square, the other icon buttons' size. Screen readers hear a button named About Apertrust, and a key can focus and press it, with the focus ring. Being a control, it is not part of the area that moves the window.
-  - No name beside it: the Mac's app menu, the window's title and About carry the name. The colour mark, the app icon and the full logo are for where the logo stands alone, away from the photo.
-- **Keys and screen readers.** F6 into the Toolbar lands on its first control: the mark on the Mac, the ☰ on Windows and Linux; with the toolbar, whatever item is first, and with nothing focusable F6 skips the region. The ☰ is in the Tab order like the other buttons, also opens on F10, and with a top-level menu expanded on Alt and that menu's access key (decision 39). The caption buttons are last. Map's key, Shift+M, goes with the viewer bar's Map toggle ([The viewer bar](#the-viewer-bar)); Photo has none.
+- **No Settings button** in the default: Settings is in the app menu on the Mac and on Ctrl+, (⌘,); on Windows and Linux also last in Edit in the menu button's menu ([the menu bar](#the-menu-bar)). Settings… is offered for the toolbar (decision 92).
+- **Groups** are told apart by space, never a separator line: `spacing.xl`, 16 points, between Redo and Copy edit and, on Windows and Linux, before the caption buttons, against the usual gap between buttons. The menu button stands 8 points before Import, as the actions' groups stand apart.
+- **The menu button** on Windows and Linux ([The menu button on Windows and Linux](#the-menu-button-on-windows-and-linux)): the app's icon, its rounded square in one colour with the Slider A cut out of it, and a caret, or ☰, as the setting Menu button chooses.
+  - Amber marks what is chosen (the tab underline, the active photo's outline, the active curve point), and the Toolbar is part of the photo's surround, so the app's icon stays neutral, in the icons' colours; the cut shows the A and its marker without colour.
+  - No mark of its own and no name beside it: About is in the app menu on the Mac and in Help on Windows and Linux ([Help](#help)), and the Mac's app menu, the window's title and About carry the name. The colour mark, the app icon in colour and the full logo are for where the logo stands alone, away from the photo.
+- **Keys and screen readers.** F6 into the Toolbar lands on its first control: the first action that can run on the Mac, Import… where it can, the menu button on Windows and Linux; with the toolbar, whatever item is first, and with nothing focusable F6 skips the region. The menu button is in the Tab order like the other buttons, also opens on F10, and with a top-level menu expanded on Alt and that menu's access key (decision 39). The caption buttons are last. Map's key, Shift+M, goes with the viewer bar's Map toggle ([The viewer bar](#the-viewer-bar)); Photo has none.
 - **What a script sees:** nothing new: the actions send the commands their buttons send.
 - **A card coming in** (planned, step 20c; decision 85): while a card with photos not imported is in, Import… gains a dot, `accent`, 6 points, at its icon's top end, and keeps it when the words fold; its tooltip names the card and its new photos ("EOS_DIGITAL: 214 new photos"), and screen readers hear it once, politely. Import then opens with the card chosen. Settings › Import's When a card is connected can make Import open by itself instead ([The Import sheet](#the-import-sheet)). Collections' Import… carries the same dot and tooltip (decision 90).
-- **When.** Built: the mark as About's button, the order and the narrowing's steps; the traffic lights' inset on the Mac ([The frame](#the-frame)); the ☰ and its menu and the caption buttons on Windows and Linux.
+- **When.** Built: the order and the narrowing's steps; the traffic lights' inset on the Mac ([The frame](#the-frame)); the menu button, in either drawing, and its menu and the caption buttons on Windows and Linux.
 
 #### Narrowing
 
@@ -2706,19 +2708,19 @@ As built, before the toolbar, whose overflow takes its place in Phase 3 ([Custom
 3. the save warning and Saving… lose their words, to the sign and "…", and the assistant's connection its (the jobs spinner has none);
 4. Undo and Redo join ⋯, and the assistant's connection becomes one button whose menu holds Disconnect.
 
-On Windows and Linux the ☰ holds the menus at every width.
+On Windows and Linux the menu button holds the menus at every width.
 
 Where each step starts is measured by a test in every language. The status slots are measured at their widest at each step, shown or not, so neither a save nor a job moves the fold:
 
-| Step starts below | Mac, English | Linux, English | Mac, Ukrainian | Mac, Polish |
-| --- | --- | --- | --- | --- |
-| The words fold | 676 points | 790 | 730 | 729 |
-| The actions go under ⋯ | 520 | 634 | 547 | 535 |
-| Undo and Redo go under ⋯ | 320 | 434 | 320 | 320 |
+| Step starts below | Mac, English | Linux, English, the app's icon | Linux, English, ☰ | Mac, Ukrainian | Mac, Polish |
+| --- | --- | --- | --- | --- | --- |
+| The words fold | 638 points | 763 | 752 | 692 | 691 |
+| The actions go under ⋯ | 482 | 607 | 596 | 509 | 497 |
+| Undo and Redo go under ⋯ | 282 | 407 | 396 | 282 | 282 |
 
-Linux needs 38 points more for the ☰, its 30 points and the 8-point gap after it. The narrowing test checks at every width, in every language, that 24 points of empty panel are left, the ☰ included.
+Linux needs 125 points more than the Mac, 49 + 146 − 70: the menu button and the 8 points after it, 49 (38 with ☰, which is 11 narrower than the app's icon and its caret); at the end the caption buttons with the 16 points before them, 154, less the Mac's 8-point end margin they replace, 146; less the 70 points by which the traffic lights' room, 78, is wider than the start's 8-point margin. The test (`the_toolbar_folds_where_gui_md_says`) holds these numbers, the jobs spinner's slot counted as the app draws it, and the narrowing test checks at every width, in every language, that 24 points of empty panel are left, the menu button included.
 
-Never folded: the ☰ on Windows and Linux, the mark, the save warning's sign, an assistant's connection, the caption buttons, and 24 points of empty panel to move the window by.
+Never folded: the menu button on Windows and Linux, the save warning's sign, an assistant's connection, the caption buttons, and 24 points of empty panel to move the window by.
 
 #### Customising the Toolbar
 
@@ -2728,12 +2730,12 @@ Planned (decision 92): Phase 3 builds the toolbar, its menu, tools' items, the o
 
 | Platform | The default, today's order |
 | --- | --- |
-| macOS | (the traffic lights) `mark`, `import`, `export`, `cull` (Phase 3), `reset`, `undo`, `redo`, `space`, `copy-edit`, `apply-edit`, `flexible-space`, `jobs`, `assistant` (Phase 6), `save-state` |
+| macOS | (the traffic lights) `import`, `export`, `cull` (Phase 3), `reset`, `undo`, `redo`, `space`, `copy-edit`, `apply-edit`, `flexible-space`, `jobs`, `assistant` (Phase 6), `save-state` |
 | Windows, Linux | `menu-button`, then the same, then 16 points (`spacing.xl`) before minimise, maximise and close |
 
 - One list for every platform: the Mac never shows `menu-button` and never takes it out of the list.
 - **What can be placed:**
-  - the parts `menu-button` (Windows and Linux), `mark`, `jobs`, `save-state` and `assistant`, one each;
+  - the parts `menu-button` (Windows and Linux, drawn as the setting Menu button says), `jobs`, `save-state` and `assistant`, one each;
   - the app's actions that are pressed or toggled and have an icon, one each: Import…, Export…, Export Again, Cull, Reset, Undo, Redo, Copy edit, Apply edit, Copy or Apply Parts…, Open…, Open Folder…, Before and After, Clipping Warnings, Zoom to 100%, Zoom to Fit, Full Screen, Jobs, Collections, Show in Folder, Next Photo, Previous Photo, Settings… and Map Shortcuts (decision 98, [Visual mapping](#visual-mapping)); Before and After, Clipping Warnings, Zoom to 100%, Settings… and Map Shortcuts are not in the default;
   - tools' actions, a processing tool's `tool-<tool>-<action>` actions decision 91 built ([Context menus](#context-menus)) or the registry action a utility names, as History's `reset`, the item's id the action's, that a tool offers in `ToolDefinition::toolbar` (`ToolbarItem { action, icon }`, at most two a tool), a processing tool's or a utility's ([One tool model](#one-tool-model), decision 93); the icon one of `apertrust-ui`'s by name, a `Row::Buttons` action taking its button's; Orientation's Rotate 90° anticlockwise and clockwise first;
   - `space`, 16 points, and `flexible-space`, sharing what is left, any number; the overflow removes fixed spaces as it narrows.
@@ -2744,23 +2746,22 @@ Planned (decision 92): Phase 3 builds the toolbar, its menu, tools' items, the o
 
 | Hidden | What still holds |
 | --- | --- |
-| The ☰ | F10, Alt alone on Windows and Alt with an access key open the menus, hung from the toolbar's start; View › Panels and the toolbar menu gain Show Menu Button, so the keys restore it |
+| The menu button | F10, Alt alone on Windows and Alt with an access key open the menus, hung from the toolbar's start; View › Panels and the toolbar menu gain Show Menu Button, so the keys restore it |
 | The save state | A failed write still shows its warning and Not saved at the toolbar's end; the message over the photo, the live region and the quit alert unchanged |
 | The jobs | The spinner shows while a failed job is left; View › Jobs and Ctrl+Shift+J still work |
 | The assistant | It shows whenever an assistant is connected |
-| The mark | About stays in Help on Windows and Linux and in the app menu on the Mac |
 | Everything | The toolbar is all empty area and still moves the window |
 
-**The toolbar menu,** `Place::Toolbar`, the app's alone ([Context menus](#context-menus)): a right-click anywhere on the toolbar, on an item or on empty space, on every platform, or Shift+F10 or the Menu key on a focused item, opens it. It holds Hide "Undo" (on an item); Show Menu Button (while the ☰ is hidden); a separator; Toolbar Labels, checked while on; Customise Toolbar…, drawn disabled with "Customise Toolbar comes in a later version" until its window is built. The system's window menu stays on the system's own key, Alt+Space on Windows and GNOME; X11 has none.
+**The toolbar menu,** `Place::Toolbar`, the app's alone ([Context menus](#context-menus)): a right-click anywhere on the toolbar, on an item or on empty space, on every platform, or Shift+F10 or the Menu key on a focused item, opens it. It holds Hide "Undo" (on an item); Show Menu Button (while the menu button is hidden); a separator; Toolbar Labels, checked while on; Customise Toolbar…, drawn disabled with "Customise Toolbar comes in a later version" until its window is built. The system's window menu stays on the system's own key, Alt+Space on Windows and GNOME; X11 has none.
 
-Every item of the toolbar menu is reachable from the keys whatever the toolbar shows: Hide "Undo" from Shift+F10 or the Menu key on that focused item, the others in View › Panels, which F10 opens while the ☰ is hidden. A toolbar with nothing focusable, which F6 skips, has nothing in its menu that only it reaches.
+Every item of the toolbar menu is reachable from the keys whatever the toolbar shows: Hide "Undo" from Shift+F10 or the Menu key on that focused item, the others in View › Panels, which F10 opens while the menu button is hidden. A toolbar with nothing focusable, which F6 skips, has nothing in its menu that only it reaches.
 
 **Customising.** The workspace's file is the full way until the Customise Toolbar window, a dedicated window of the dialog host built much later, from the toolbar menu and View › Panels; there is no palette inside the main window. The labels are app-wide, in `settings.toml`.
 
 ```toml
 # workspaces/default.toml: the toolbar is one key of the workspace's whole file, beside its tabs
 version = 1
-toolbar = ["menu-button", "mark", "import", "export", "reset", "undo", "redo", "space",
+toolbar = ["menu-button", "import", "export", "reset", "undo", "redo", "space",
            "copy-edit", "apply-edit", "flexible-space", "jobs", "save-state"]
 
 [[tabs]]
@@ -2773,7 +2774,7 @@ labels = false
 ```
 
 - A built-in workspace with no file follows each build's default toolbar; once its file is written, whole, `toolbar` is the list as it was then. An id this build does not know, a tool or action removed or a newer build's, is skipped and kept; a new workspace from the visual editor copies the list, and Reset Workspace, deleting a built-in's file, puts the default back.
-- A test fails if a part's id is a registry action's id (`menu-button` is not the `menu` action, nor `mark` `about`).
+- A test fails if a part's id is a registry action's id (`menu-button` is not the `menu` action).
 
 **The overflow,** measured every frame at the current scale and language, a step undone only once 16 points are spare:
 
@@ -4228,7 +4229,7 @@ Ctrl means Cmd on macOS.
 
 | Scope | Action | Keys | Now |
 | --- | --- | --- | --- |
-| App | About Apertrust | None | Opens the dialog; the Toolbar's mark runs it |
+| App | About Apertrust | None | Opens the dialog; the app menu's About on the Mac and Help's on Windows and Linux run it |
 | App | Settings | Ctrl+, | Opens the dialog, or brings it to the front |
 | App | Open… | Ctrl+O | Opens the platform's open dialog: raws, opened alone (decision 46); a library's or project's file in Phase 5 |
 | App | Open Folder… | Ctrl+Shift+O | Opens the platform's folder dialog |
@@ -4246,7 +4247,7 @@ Ctrl means Cmd on macOS.
 | App | Close Window | Cmd+W, macOS only | Closes the key window: a dialog's own window when it has the focus, the start window, else the main window, where it does what Close does, and quits as Quit does with nothing open. Rests under a modal dialog over the main window, unless a dialog's own window has the focus |
 | App | Quit | Ctrl+Q | Closes the window |
 | App | Restart | None, and in no menu | Quits as Quit does, then starts the app again with what is open; Settings' Restart now and the start notice's Try again run it (decision 82) |
-| App | The menu | F10, Windows and Linux | Opens the ☰'s menu at its top |
+| App | The menu | F10, Windows and Linux | Opens the menu button's menu at its top |
 | App | Keyboard Shortcuts (`keyboard-shortcuts`) | Ctrl+? on Windows and Linux; none on macOS, where Cmd+? is the search | Opens Settings at Shortcuts; Phase 2, decision 98's step 3 |
 | App | Shortcuts Overview (`shortcuts-overview`), darktable's accels window, while held, or toggled from Help | None: H stays the peek (decision 98) | Phase 3, decision 98's step 9 |
 | App | Map Shortcuts (`map-shortcuts`), visual mapping on and off | None | Phase 3, decision 98's step 7 |
@@ -4516,7 +4517,7 @@ The schema is one file in TOML, `data/settings.schema.toml` (decisions 43 and 45
 
 | Page | Group | Rows |
 | --- | --- | --- |
-| General | Interface | Theme (Dark, Grey, Light or High contrast), Language, Interface size (`scale`, in per cent), Slider marker (`sliders.marker`, Triangle, Circle or Square, a dropdown of their names until it can show their pictures; decision 75); Toolbar Labels (`toolbar.labels`, off) from Phase 3 (decision 92) |
+| General | Interface | Theme (Dark, Grey, Light or High contrast), Language, Interface size (`scale`, in per cent), Slider marker (`sliders.marker`, Triangle, Circle or Square, a dropdown of their names until it can show their pictures; decision 75); Menu button on Windows and Linux (`toolbar.menu_button`, Apertrust icon or Menu icon, the app's icon by default; decision 39); Toolbar Labels (`toolbar.labels`, off) from Phase 3 (decision 92) |
 | General | Start | Reopen what was open last (`library.reopen_last`, on), its help in its tooltip ([The start window](#the-start-window)) |
 | General | Confirmations | Ask before overwriting an exported file (`export.ask_before_overwrite`), Ask before discarding a photo’s history (`history.ask_before_discard`) |
 | General | Diagnostics | Keep a log of this session (`log.keep`, off), Log (`log.domains`, a list of the `-d` domains and Verbose, all but Memory and Verbose ticked); each with its help in its tooltip ([The log window](#the-log-window)) |
@@ -4689,7 +4690,7 @@ Phase 2's interface, each step usable on its own. Steps 1 to 5 are built; steps 
 5. The shell: Toolbar, viewer bar, the viewport's paint callback, Browser. No Map toggle on the viewer bar, since Photo is the only layout until the Map (decision 37), and no switcher in the Toolbar.
 6. The tool renderer, from `apertrust-tools` definitions (decision 28), and the first pass's tools for the ported operations, darktable's (decision 2; `docs/roadmap.md`, Phase 2), the Tools panel's tabs by editing stage (decision 38). Built: the renderer, every tool listed in [the renderer](#the-renderer), and the tabs by editing stage. Left: RGB levels and RGB curve, then the rest.
 7. The actions registry, the keyboard map, settings, the window frame, the popup service and the menu bar ([the window frame and menus](#the-window-frame-and-menus); [what arrives when](#what-arrives-when)).
-   - Built: the registry and the keyboard map; the Mac's frame and native menu bar; Linux's frame and its ☰ with the drawn menu, on the popup service's first piece (decisions 39 and 40); the popup service's native lists on the Mac; the settings file on the settings schema (decision 43), in its build plan's order: `apertrust-base` with the schema and its generator, the store, the user data folder, the engine's first settings with the CLI reading them, `--conf`, and an edit a newer Apertrust wrote opened for viewing only; the dialog host with Settings in it, on every platform (decision 41), its pages of rows drawn from the registry; context menus' first slice ([Context menus](#context-menus), decision 91): `Place`, `Section`, `MenuItem`, `MenuEntry` with tools' submenus, `ToolDefinition::menus`, the generated `tool-<tool>-<action>` actions, `Target` and `menus::context(place, target)`, the photo's menu and a thumbnail's, with History's Reset in both, and on the photo Background ▸ and Orientation ▸.
+   - Built: the registry and the keyboard map; the Mac's frame and native menu bar; Linux's frame and its menu button with the drawn menu, on the popup service's first piece (decisions 39 and 40); the popup service's native lists on the Mac; the settings file on the settings schema (decision 43), in its build plan's order: `apertrust-base` with the schema and its generator, the store, the user data folder, the engine's first settings with the CLI reading them, `--conf`, and an edit a newer Apertrust wrote opened for viewing only; the dialog host with Settings in it, on every platform (decision 41), its pages of rows drawn from the registry; context menus' first slice ([Context menus](#context-menus), decision 91): `Place`, `Section`, `MenuItem`, `MenuEntry` with tools' submenus, `ToolDefinition::menus`, the generated `tool-<tool>-<action>` actions, `Target` and `menus::context(place, target)`, the photo's menu and a thumbnail's, with History's Reset in both, and on the photo Background ▸ and Orientation ▸.
    - Left: Windows' Alt pressed and released alone, then its native hit testing; Settings' hand-built pages, Shortcuts first, decision 98's steps 1 to 4 ([Shortcuts: the build, in steps](#shortcuts-the-build-in-steps)); Linux's and Windows' native modality ([Dialogs and alerts](#still-to-build)). The Customise tabs dialog on fixed lists is not built: Phase 3's visual editor for workspaces takes its place (decision 96).
 8. Scopes, from the engine's reductions. Built: the widget ([the scopes](#the-scopes)), the engine's counts for the histogram, the waveform, the vectorscope and the totals, sent as session events (engine.md, Scopes; decision 19), and the app's Scopes section, pinned in the editing tabs and drawing all four. Left: the photo's clipping overlays.
 9. Folder mode in one view (decision 37): the Photos tab first, with Collections' Folders; the Browser showing the folder, with the engine's thumbnails and its browser bar, never hidden, in one line or several, resized from its edge, at the bottom, left or right ([The Browser](#the-browser)); File › Open…, Open Folder… and Open Recent; the Viewer's empty states ([The Viewer's layouts](#the-viewers-layouts)). The library's side is its own build plan (decision 46; architecture, Implementation plan, The library's cards).
@@ -4782,7 +4783,7 @@ The decisions this design rests on, by area; each decision record has the option
 | Sheets | Import as a full-window sheet inside the main window, drawn the same on every platform: the sheet bar with the presets row over the column, a grid of the Browser's cells checked to go, a column of tools on the Tools panel's side, 440 points by default, each with the tool panel's header, ↺ and ⋯ for Move Up and Move Down, every row a setting row; whole-sheet presets; a footer with a two-line summary, Keep open, Close and the primary button, which Return presses; a tool in one place (decision 86, planned; [Sheets](#sheets)) |
 | Export | darktable's export module row for row as one utility, last in the Photos tab: Storage and Format options always open, Global options collapsible and open at first, Metadata and Multi-preset export closed; presets in its header, the preset in use starting the summary; the selection, else the active photo; Ctrl+E revealing it, Export Again on Ctrl+Shift+E; D1 to D18, For sharing and Full size JPEG built in (decision 90), built so far as the Photos tab's last section for the active photo, with no presets; its feedback lines, the jobs window (decision 57); built on the session's export job, a `UserExport` job of darktable's control jobs (decision 57), darktable's size and resample, JPEG and PNG in Rust, each file written beside its name and renamed into place, its settings `export.*` settings and its presets `presets/export.toml` (decision 56; [The Export tool](#the-export-tool)) |
 | The engine and the window | eframe on the app's own event loop, the engine's submit gate held round each of its callbacks (`Gated`), so the window's surface is never reconfigured while the engine submits; during a resize the last frame scaled, the photo's new size sent once the window has kept it for 150 ms (decision 18) |
-| Menus | One model from the registry: the Mac's native menu bar through muda; on Windows and Linux one menu button, ☰, at the Toolbar's very start, before the mark, opening the menus drawn by egui through the popup service; the registry owns every key (decision 39) |
+| Menus | One model from the registry: the Mac's native menu bar through muda; on Windows and Linux one menu button at the Toolbar's very start, the app's icon or ☰ as a setting chooses, opening the menus drawn by egui through the popup service; the registry owns every key (decision 39) |
 | Icons | SVG files rendered by resvg at their pixel size, their lines 1.25 points wide, and tinted with a theme colour (decision 36); derived from Lucide's, with its ISC and MIT notices, or drawn in its style where it has none (decision 64) |
 | Accessibility | AccessKit on, every component reporting its role, label and value (decision 36) |
 | UI tests | Interaction tests with `egui_kittest` through AccessKit; gallery snapshots per theme and in the pseudo-locale (decision 36) |

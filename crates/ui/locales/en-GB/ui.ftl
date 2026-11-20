@@ -203,7 +203,8 @@ unit-iso-value = { $value } ISO
 ## The Toolbar
 
 toolbar = Toolbar
-# ☰ at the Toolbar's start on Windows and Linux, which opens the menus.
+# The menu button at the Toolbar's start on Windows and Linux, the app's icon or ☰, which opens
+# the menus.
 toolbar-menu = Menu
 # ⋯, holding the common actions a narrow Toolbar has no room for.
 toolbar-more = More actions
@@ -722,6 +723,9 @@ setting-sliders-marker-label = Slider marker
 setting-sliders-marker-option-triangle = Triangle
 setting-sliders-marker-option-circle = Circle
 setting-sliders-marker-option-square = Square
+setting-toolbar-menu-button-label = Menu button
+setting-toolbar-menu-button-option-icon = { app-name } icon
+setting-toolbar-menu-button-option-menu = Menu icon
 setting-library-reopen-last-label = Reopen what was open last
 setting-library-reopen-last-help = Opens the folder you were working in when { app-name } closed, with its photo. A file or folder opened from the file manager or a terminal opens instead.
 setting-export-ask-before-overwrite-label = Ask before overwriting an exported file
@@ -912,7 +916,7 @@ log-save-title = Save the Log
 
 ## About Apertrust
 
-# The action, the Toolbar's mark that runs it, and the dialog's name for screen readers.
+# The action, its item in the menus, and the dialog's name for screen readers.
 action-about = About { app-name }
 # $version is the build's version, as 0.1.0+197~g9201df0.
 about-version = Version { $version }
