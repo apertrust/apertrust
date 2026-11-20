@@ -9,7 +9,7 @@ The Scopes section shows what the viewport's frame holds (a histogram, a wavefor
 **Scopes: each viewport frame counted after it, outside the plan, once a client asks.**
 
 - `Command::Scopes(Option<Graphs>)`: `None` until a client first asks, so a client without scopes pays nothing; `Some(Graphs { histogram, waveform, vectorscope })` the three totals (pixels counted, those with any channel at or below 0, those with any at or above 1) and the graphs named. Asking for what the frame shown was not counted for counts it again at once, without rendering.
-- One pass of the engine's own kernel, `crates/engine/slang/scopes.slang`, over the frame in its display buffer, after colorout and before any rounding, a uniform flag per graph, so the frame is read once. Integer atomics in workgroup memory, then added to the counts buffer; the larger waveform and vectorscope straight into it.
+- One pass of the engine's own kernel, `crates/engine/slang/scopes.slang`, over the frame in its display buffer (the fitted one, `Frame::overview`, while zoomed), after colorout and before any rounding, a uniform flag per graph, so the frame is read once. Integer atomics in workgroup memory, then added to the counts buffer; the larger waveform and vectorscope straight into it.
 - Bins `⌊v × 256⌋` limited to the ends, exact on every GPU. Luminance is Rec. 709's of the frame's linear light read as sRGB, encoded again with sRGB's curve, a grey its own value.
 - The vectorscope is darktable's default: CIE 1976 u\*v\* against D50 through sRGB, its logarithmic scale, 128 × 128 cells, each with darktable's colour, turned as darktable shows it.
 - Submitted on its own after the frame's copy, so a scopes failure never costs the frame ([0018](0018-one-submit-gate-for-the-engine-and-the-window.md)).
@@ -37,5 +37,6 @@ The Scopes section shows what the viewport's frame holds (a histogram, a wavefor
 ## Consequences
 
 - On the M4 at 2400×1600 the count takes 0.64 to 0.67 ms of GPU time with the totals or histogram, 1.25 ms with the waveform.
-- Open: scopes and readouts of a zoomed viewport, which need a small whole-image pipe; a readout with an argument (the cursor); how a reading drives an Auto. A reading over an area is a picker's, the engine's own reduction rather than an operation's readout, read back through the same staging pair ([0079](0079-colour-pickers-one-api-for-tools-and-the-colour-picker.md)), which also restricts the scopes' count to the Colour picker's selection on request.
+- While zoomed, the scopes count the fitted viewport pipeline's frame, `Frame::overview`, and readouts are planned in that pipeline, so both are the same at every zoom ([0099](0099-the-zoomed-view-a-detail-pipeline-beside-the-fitted-one.md)).
+- Open: a readout with an argument (the cursor); how a reading drives an Auto. A reading over an area is a picker's, the engine's own reduction rather than an operation's readout, read back through the same staging pair ([0079](0079-colour-pickers-one-api-for-tools-and-the-colour-picker.md)), which also restricts the scopes' count to the Colour picker's selection on request.
 - A reading never feeds processing here. The one read that does, once per photo, is the raw's histogram an operation reads in `prepare` ([0087](0087-the-raws-histogram-counted-once-for-an-operation-that-reads-it.md)).
