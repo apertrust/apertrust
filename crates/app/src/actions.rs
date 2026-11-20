@@ -292,7 +292,7 @@ pub enum Intent {
     /// The export with the settings as last kept, with no dialog (`export_again`).
     ExportAgain,
     /// Next Photo, or Previous Photo where false: the active photo moves through the
-    /// selection, or the folder (`selection::step`).
+    /// selection, or the folder or the photos opened alone (`selection::step`).
     Step {
         next: bool,
     },

@@ -771,7 +771,7 @@ The selection's items, a menu of their own named after darktable's select tool, 
 
 | Item | Action | Keys | Now |
 | --- | --- | --- | --- |
-| Next Photo | `next-photo` | Space, → | Built: with several selected, the next selected photo in the Browser's sort; else the folder's next, selected alone. Disabled at the end |
+| Next Photo | `next-photo` | Space, → | Built: with several selected, the next selected photo in the Browser's sort; else the folder's next, or the next of the photos opened alone in the order opened, selected alone. Disabled at the end |
 | Previous Photo | `previous-photo` | Backspace, ← | Built, as Next Photo the other way |
 | — | | | |
 | Auto → each tool that has Auto, by its title | `auto-<module>` | — | New; each item drawn disabled until its tool's Auto runs |
@@ -1705,7 +1705,7 @@ sequenceDiagram
 
 - **The Photos tab's last section,** id `export`, after Collections, Filters, Keywords, Metadata and Styles (decision 73). A person moves, pins and floats it as any section (decision 83), but **every workspace keeps it, never hidden:** the visual editor, a drag and Move Tool to Tab may move it to another tab, where it then is, but none leaves it in no tab: ⋯ › Remove Tool is disabled for it, and the editor removes no tab while it is Export's only one; a workspace's file that leaves it out, `export` in its `hidden` included, gets it back at the end of the Photos tab where the Photos tab is among the tabs shown, else of the first tab shown that holds tools, else of the first tab (decision 96). So Ctrl+E always has a place to reveal it.
 - **A utility:** no on switch, no kept markers, no history step; a change is a setting written at once, Cmd+Z in a field undoing typing only.
-- **It exports the window's selection, else the active photo** (built): with several selected, every one in the Browser's order, the selection staying as it was. A view-only photo, whose edit a newer Apertrust wrote or whose history cannot be read, is left out and counted in a warning.
+- **It exports the window's selection, else the active photo** (built): with several selected, every one in the Browser's order, the folder's or the photos opened alone in the order opened, the selection staying as it was. A view-only photo, whose edit a newer Apertrust wrote or whose history cannot be read, is left out and counted in a warning: the photo open by its own state, a folder's other photos by their pencils. The other photos opened alone have no pencils, their edits unknown to the app, so none of them is left out: the export job exports one that is view-only as this build reads its edit, its result saying so, or fails it where the edit cannot be read ([engine.md](engine.md), Export jobs).
 - **No per-photo marks** on the Browser: the warning gives the counts. Marks are revisited in the usability pass after Phase 3.
 
 ### The tool's layout
@@ -2597,7 +2597,7 @@ With several photos selected, the rating, reject and label keys, Apply Edit and 
 | Right-click | The context menu ([Context menus](#context-menus)) opens the photo first, as a click does, and acts on the selection | The same |
 
 - **The keys,** the same in every layout:
-  - → and Space, ← and Backspace: with several selected, the active photo moves through the selection in the Browser's sort, which stays; with one, to the next or previous photo of the folder or album, selected alone; at either end they stop, Next Photo or Previous Photo disabled, and with no active photo they open the first or the last (built for a folder);
+  - → and Space, ← and Backspace: with several selected, the active photo moves through the selection in the Browser's sort, which stays; with one, to the next or previous photo of the folder or album, selected alone; at either end they stop, Next Photo or Previous Photo disabled, and with no active photo they open the first or the last (built for a folder and for photos opened alone, in the order opened);
   - Shift with the arrows extends the selection in the Browser;
   - Ctrl+Space (Cmd+Space or Control+Space on a Mac, since Spotlight holds Cmd+Space) adds the focused cell's photo, the active photo staying, or removes it, as Ctrl-click does;
   - Ctrl+A selects every photo the folder or album shows, Ctrl+Shift+A none, which leaves no active photo; Select › Invert Selection is Ctrl+Shift+I, and Select Unedited has no key by default ([The menu bar](#select); built);
@@ -4255,7 +4255,7 @@ Ctrl means Cmd on macOS.
 | View | The layouts: Photo, and Map toggled on and off, as its toggle on the viewer bar is | Shift+M toggles Map, pressed again back to Photo; Photo has no key of its own, and E is left free | The Edit view's action, built with E, is to become Photo's, with no key; Shift+M comes with the Map and its toggle |
 | View | Collections (`show-collections`): the first tab holding Collections | L; pressed again, nothing | Built, on the main window; a click chooses the tab too, and Ctrl+1 where Collections is in the first tab, as in the Default workspace |
 | View | See the photo without the section under the pointer | Hold H | In Photo. The section shows that it peeks, a tool's section too; rendering the photo without that tool is not built: H will send the same `Hide` the History tab's eye sends while held |
-| View | Next and previous photo | Space and →, Backspace and ← | Built for a folder: with several selected, through the selection in the Browser's sort; else through the folder or album, the photo reached selected alone; with no active photo, the first or the last. Disabled at the end, so with one photo once it is active |
+| View | Next and previous photo | Space and →, Backspace and ← | Built for a folder and for photos opened alone: with several selected, through the selection in the Browser's sort; else through the folder or album, or the photos opened alone in the order opened, the photo reached selected alone; with no active photo, the first or the last. Disabled at the end, so with one photo once it is active |
 | View | Extend the selection | Shift with the arrows, in the Browser | Phase 3, with selecting several photos |
 | View | Add the focused cell's photo to the selection, the active photo staying, or take it out | Ctrl+Space, in the Browser; Control+Space too on the Mac, where Spotlight holds Cmd+Space | Built: the focused cell's own key, as Ctrl-click; no action of the registry |
 | View | Zoom the photo in and out, and to Fit | Ctrl+= (or Ctrl++ where + has its own key), Ctrl+−; Ctrl+0 fits. With Shift, every cell: Ctrl+Shift+= (a US keyboard's Ctrl++), Ctrl+Shift+− and Ctrl+Shift+0 | Declared with no key, not yet available: the scale's zoom comes with the viewport's 100% view, and the keys with it; at the point under the pointer when it is over the photo. With several shown, the cell under the pointer, else the active photo's, each keeping its own zoom; with Shift every cell together, at the same point of each photo ([Photo's cells](#photos-cells)) |
