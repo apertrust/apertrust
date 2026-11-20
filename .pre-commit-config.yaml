@@ -145,9 +145,10 @@ repos:
         require_serial: true
 
       # The long checks, in the manual stage.
+      # Linux, Windows and macOS, as CI's clippy jobs check them; tools/clippy.sh says how.
       - id: clippy
         name: cargo clippy
-        entry: cargo clippy --workspace --all-targets -- -D warnings
+        entry: tools/clippy.sh --all
         language: system
         exclude: &docs-only ^(docs/.*|(?!CREDITS\.md$)[^/]+\.md|\.github/ISSUE_TEMPLATE/.*|\.github/pull_request_template\.md)$
         pass_filenames: false
