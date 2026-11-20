@@ -48,15 +48,13 @@ jobs:
           path: ~/.cache/pre-commit
           key: pre-commit-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml') }}
       - run: pipx install pre-commit==4.7.0
-      # rustup installs the toolchain pinned in rust-toolchain.toml on first use.
-      - name: Quick checks
-        run: pre-commit run --all-files --show-diff-on-failure
-      - name: Clippy, Linux, Windows and macOS
-        if: needs.platforms.outputs.code == 'true'
-        run: pre-commit run clippy --hook-stage manual --all-files
-      - name: API docs
-        if: needs.platforms.outputs.code == 'true'
-        run: pre-commit run api-docs --hook-stage manual --all-files
+      # Every check, the manual stage's too, as CONTRIBUTING.md's command runs them; a
+      # change to documentation alone skips the long ones. rustup installs the toolchain
+      # pinned in rust-toolchain.toml on first use.
+      - name: Checks
+        env:
+          SKIP: ${{ needs.platforms.outputs.code != 'true' && 'clippy,api-docs' || '' }}
+        run: pre-commit run --hook-stage manual --all-files --show-diff-on-failure
       # The disk left, failed or not: clippy's three builds and the caches take under
       # 10 GB, on a runner that has had far more free, so nothing is cleared first.
       - name: Disk space
