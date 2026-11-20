@@ -26,9 +26,9 @@
 ;   each extension's OpenWithProgids naming it, and the app's Applications entry with its
 ;   SupportedTypes, in place of FileAssociation.nsh's APP_ASSOCIATE, which takes the
 ;   extension's default; each one's open verb has MultiSelectModel Document, so where the
-;   person makes Apertrust a type's default, Open on several files starts the app once
-;   per file, each start handing its file to the running app (Explorer offers Open With
-;   for one file alone);
+;   person makes Apertrust a type's default, Open on up to 15 files, Windows' limit for
+;   this model, starts the app once per file, each start handing its file to the running
+;   app (Explorer offers Open With for one file alone);
 ; - a Send To shortcut, through which several files reach the app on one command line
 ;   without changing a default; Windows 11 shows Send To under Show more options;
 ; - Apertrust's own type, its edit (.apxmp, the ProgID Apertrust.Edit), is the one
@@ -563,7 +563,8 @@ Section Install
     WriteRegStr SHCTX "Software\Classes\\{{association.name}}\shell\open\command" "" "$\"$INSTDIR\${MAINBINARYNAME}.exe$\" $\"%1$\""
     ; Open on several files, where Apertrust is the type's default, starts one process per
     ; file (Document), each handing its file to the running app, which opens them together
-    ; (decision 89). Player would start one, passing "%1", the first file alone.
+    ; (decision 89); Windows shows the verb for up to 15, more going through Send To.
+    ; Player would start one, passing "%1", the first file alone.
     WriteRegStr SHCTX "Software\Classes\\{{association.name}}\shell\open" "MultiSelectModel" "Document"
     {{#each association.extensions as |ext| ~}}
       WriteRegNone SHCTX "Software\Classes\.{{ext}}\OpenWithProgids" "{{association.name}}"
