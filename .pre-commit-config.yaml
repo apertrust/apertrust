@@ -118,6 +118,21 @@ repos:
         entry: tools/check-windows-paths.sh
         language: system
         files: (\.(rs|toml)|^\.github/windows-paths\.txt)$
+      # The documentation that skips CI's code checks, none of it read by code: the list,
+      # the files it matches, and the code and tools that could name them.
+      - id: docs-paths
+        name: Documentation paths
+        entry: tools/check-docs-paths.sh
+        language: system
+        files: (\.(md|rs)$|^(docs|tools|\.github/ISSUE_TEMPLATE)/|^\.github/(docs-only-paths\.txt|pull_request_template\.md)$)
+        pass_filenames: false
+      # CREDITS.md's list of components, as Cargo.lock has them.
+      - id: credits
+        name: CREDITS.md's components
+        entry: tools/credits.sh --check
+        language: system
+        files: ((^|/)Cargo\.(toml|lock)|^CREDITS\.md|^tools/credits\.sh)$
+        pass_filenames: false
       # Every kernel, since each imports the shared Slang libraries. Its first run downloads
       # the pinned slangc (tools/fetch-slang.sh).
       - id: kernels
