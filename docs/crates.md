@@ -105,6 +105,16 @@ The groundwork for orientation:
 - A tile's RGBA input after a split past a geometry is in that geometry's stage.
 - The viewport's edit cache is sized for the largest image after its start and holds any image by its bytes, so a quarter turn keeps it.
 
+### The zoomed view
+
+Planned (decision 99, [engine.md](engine.md#the-zoomed-view)), in seven steps:
+
+- `Command::View(View { scale, centre })`, `ViewScale` (`Fit`, `Fill`, `Factor(f32)`), and `view::place(extent, bounds, &view) -> Placement`, a pure function the app uses too; `Frame::place` (`FramePlace { scale, origin, extent }`) and `Frame::overview`.
+- `Pipe::Detail { region, scale }`: the visible region with darktable's 1.2 margin at the zoom's scale, never above 1, planned as a tile up to its start and as the viewport after it; its source demosaic's full-resolution cache point borrowed from the fitted pipeline by key, or in a tiled viewport the raw stage's output; recorded with the fitted pipeline's passes in one encoder (`Pipeline::record`).
+- Whole-image results at the detail's scale from a round over the whole image, kept by the untiled plan's key; haze removal's full-resolution part borrowed by key.
+- The scopes, the colour pickers, the readouts and the rendered thumbnails reading the fitted pipeline at every zoom.
+- `apertrust-cli preview --zoom SCALE --at X,Y` for its tests and timings.
+
 ### Edits and sidecars
 
 - **`edit`**: an edit's tool values and the parameters no tool owns. `edit::instances` is the one function every builder of instances uses: a tool at its defaults adds nothing, and a misbehaving one is left out (decision 28). A tool the history's end leaves before its default step, of those darktable has off until its workflow applies them, is not applied: the edit holds it so, derived from the log and never stored, `instances` leaves out each operation it owns a parameter of, and `Edit::is_on` reports it off (decision 78).

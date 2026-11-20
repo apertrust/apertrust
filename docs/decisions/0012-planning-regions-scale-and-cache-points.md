@@ -6,9 +6,9 @@ How does the engine turn an edit into GPU work, for a full-size export and for a
 
 ## Decision
 
-**A plan is made for a pipe**, an export (or its tile) or the viewport. Planning is a pure function of the edit's structure, the image context, the pipe and the GPU's limits (`pipeline::Limits`: the largest binding and buffer, the offset alignment, the budget), and returns plain data, so it is tested without a GPU.
+**A plan is made for a pipe**, an export (or its tile), the fitted viewport or, while zoomed, the viewport's detail ([0099](0099-the-zoomed-view-a-detail-pipeline-beside-the-fitted-one.md)). Planning is a pure function of the edit's structure, the image context, the pipe and the GPU's limits (`pipeline::Limits`: the largest binding and buffer, the offset alignment, the budget), and returns plain data, so it is tested without a GPU.
 
-**Regions propagate backwards** at planning, as darktable's `modify_roi_in` does: a per-pixel pass keeps the region, a spatial pass grows it by its reach ([0013](0013-tiled-exports-equal-to-untiled-ones.md)), a whole-image pass covers the whole image at the pipe's scale ([0015](0015-whole-image-passes.md)), a geometry maps it ([0016](0016-geometry-for-operations-that-move-pixels.md)). Raw-stage regions align to the colour pattern: 2×2 for Bayer, 6×6 for X-Trans. Export tiles need regions, and the 100% view will.
+**Regions propagate backwards** at planning, as darktable's `modify_roi_in` does: a per-pixel pass keeps the region, a spatial pass grows it by its reach ([0013](0013-tiled-exports-equal-to-untiled-ones.md)), a whole-image pass covers the whole image at the pipe's scale ([0015](0015-whole-image-passes.md)), a geometry maps it ([0016](0016-geometry-for-operations-that-move-pixels.md)). Raw-stage regions align to the colour pattern: 2×2 for Bayer, 6×6 for X-Trans. Export tiles need regions, and so does the zoomed view's detail pipeline, a plan of its own for the visible region at the zoom's scale beside the fitted viewport ([0099](0099-the-zoomed-view-a-detail-pipeline-beside-the-fitted-one.md)).
 
 **The viewport is an exact downscale of the export.** The raw stage and demosaic run at full resolution; the planner inserts the engine's own downscale, a box filter on integer footprints, where they end, and every later operation is prepared at the viewport's size with the image context's scale. Demosaic is never run at a reduced size.
 
@@ -21,6 +21,7 @@ How does the engine turn an edit into GPU work, for a full-size export and for a
 | Its viewport version | About 60 MB at 2400×1600 | The above, or a new viewport size |
 | The edited operation's input, at viewport size | About 60 MB | Anything upstream of it |
 | Whole-image results, in their operation's scratch | Bytes to megabytes | Their input or their own passes ([0015](0015-whole-image-passes.md)) |
+| While zoomed, the detail's start: the region copied or downscaled from demosaic's image | About 88 MB at 2400×1600 with the margin | Its source, its region or its scale ([0099](0099-the-zoomed-view-a-detail-pipeline-beside-the-fitted-one.md)) |
 
 **Keys** chain each instance's operation id, version, scale, region, output image and the bytes `prepare` produced (uniforms and tables) onto the previous key, never the parameters, so a change of image context invalidates what it should and parameter sets with the same effect share an entry. A render restarts after the newest cache point whose key still matches, or at the edited operation when its copy does.
 
