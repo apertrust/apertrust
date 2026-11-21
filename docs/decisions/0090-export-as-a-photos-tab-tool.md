@@ -50,8 +50,8 @@ Nothing new: `Command::Export { photos, settings, places }` and `PreviewExport {
 
 ### Import
 
-- **Import stays a full-window sheet** ([0085](0085-import-in-folder-mode.md), [0086](0086-import-as-a-full-window-sheet.md)), with no Import tool. Collections' top line gains **Import…** after ＋, which opens the sheet; where the Tools panel is too narrow for it, it becomes ＋'s first item.
-- **Open:** a small Import tool holding import's defaults (the metadata, rating and labels stamped at import, its presets) may earn its place later.
+- **Import stays a full-window sheet** ([0085](0085-import-in-folder-mode.md), [0086](0086-import-as-a-full-window-sheet.md)), its one tool, Import, in the sheet, with no Import tool in the Tools panel. Collections' top line gains **Import…** after ＋, which opens the sheet; where the Tools panel is too narrow for it, it becomes ＋'s first item.
+- **Open:** a small Tools panel tool holding import's defaults (the metadata, rating and labels stamped at import, its presets) may earn its place later.
 - **The sheet frame serves Import alone,** and a tool's place is the Tools panel or Import ([0004](0004-tools-for-people-operations-for-algorithms.md)).
 
 ## Options considered
@@ -63,7 +63,7 @@ Nothing new: `Command::Export { photos, settings, places }` and `PreviewExport {
 - **Ctrl+E exporting at once,** darktable's: a key that writes files with the settings out of sight. Export Again keeps darktable's behaviour on its own key.
 - **A one-line summary over the button, with a list behind a disclosure:** a line cut by its parts is hard to read in a narrow panel and still hides what an export writes; **no summary:** the preset in use, the file name, the size and where the files go would be read only from rows that may be scrolled away.
 - **The end pinned at the Tools panel's foot:** about 120 points of the panel taken in every tab, and a second scrolling region; Ctrl+E brings the end into view anyway.
-- **An Import tool now,** holding the sheet's defaults: settings the sheet already shows; left open.
+- **An Import tool in the Tools panel now,** holding the sheet's defaults: settings the sheet's Import tool already shows; left open.
 - **Every group collapsible,** closed at first as [0029](0029-a-tool-is-darktables-page.md) has it, or open at first: closed, the first look shows headers only and where the files go is out of sight; open but collapsible, a closed Storage or Format options hides the settings an export can least afford to get wrong.
 - **No group collapsible,** darktable's section labels for all five: Metadata and Multi-preset export, long and rarely changed, would always take the panel's height.
 - **A Preset row at the tool's top** as well as the header's menu: a second control for one choice, and a row's height; the Summary over the button already names the preset in use where the export is pressed.

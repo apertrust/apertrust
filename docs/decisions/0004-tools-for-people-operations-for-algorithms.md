@@ -10,7 +10,7 @@ Apertrust ports darktable's processing, and darktable calls both what a person w
 
 - A **tool** is what a person sees and works with: in the Tools panel, or in the Import sheet's column, with one header, one page and one ⋯, under one name ([0028](0028-tools-bound-to-operations.md)). It is the parent of two kinds, as darktable's module is of its processing and utility modules ([0093](0093-one-tool-model-processing-tools-and-utility-tools.md)).
   - **Everything in the Tools panel is a tool:** the tools that edit the photo, such as Exposure or Colour calibration, and Collections, Filters, Keywords, Metadata, Export, Scopes, History, Snapshots and the Colour picker.
-  - **A tool has one place:** the Tools panel, Export among its utilities ([0090](0090-export-as-a-photos-tab-tool.md)), or the Import sheet (import tools), and appears nowhere else ([0086](0086-import-as-a-full-window-sheet.md)).
+  - **A tool has one place:** the Tools panel, Export among its utilities ([0090](0090-export-as-a-photos-tab-tool.md)), or the Import sheet, whose one tool is Import, and appears nowhere else ([0086](0086-import-as-a-full-window-sheet.md)).
   - **A processing tool** edits the photo through operations it binds, as darktable's processing modules (iop) do.
   - **A utility tool,** "utility" for short, edits nothing of its own, with no controls and no operation, such as Collections, Scopes, History, Export or the Colour picker, as darktable's utility modules (lib). "Utility" names only that kind of tool, never a second level beside tools.
   - **"Section" names only the Tools panel's block,** a header with its body, in which a tool is shown, never the tool itself.

@@ -265,7 +265,7 @@ An interface for photo editing must not be too contrasty, so:
 - **Rows and frames:**
   - the slider row, in two lines ([how the rows are laid out](#how-the-rows-are-laid-out)): the label and marker, the row's buttons and the value, read-only with its unit at rest and a field while edited (decision 42), over a track the content's full width. Its handle is the marker the user chooses, Triangle, Circle or Square, Square by default, and stays whole at the track's ends (decision 75); under the pointer it brightens, and while dragged it keeps its fill and size with an accent border just inside its edge (`slider_handle_hover`, `slider_handle_active`), the circle and the square adding a short centre line in the accent, while the value stays in the text colour; the cursor stays the arrow; the curve's handles look the same. It shows the kept and Auto markers, the fill from the default, colour tracks and the Match tick, and spans darktable's soft range where it has one, widening to show a value beyond it;
   - the boolean's row (`ToggleRow`), one line: its label, the photo's value after it, and the design system's `Switch` at the end, the whole row the target; the action row (`ActionRow`), one text button;
-  - the dropdown row, always one line, Blended in tool panels, the Export tool and the Import sheet's tools and Boxed elsewhere (decisions 42, 86 and 90, [Choice rows: two styles](#choice-rows-two-styles));
+  - the dropdown row, always one line, Blended in tool panels, the Export tool and the Import tool and Boxed elsewhere (decisions 42, 86 and 90, [Choice rows: two styles](#choice-rows-two-styles));
   - the section frame (`Section`): a header 30 points high with chevron, title and action icons, centred vertically, and no summary when closed; underlined `Tabs`, each as wide as its name, their padding and then their names shrinking when they do not fit; groups, one parent of two kinds holding their rows (decision 100): plain groups (`PlainGroup`), darktable's section labels, and collapsible groups (`CollapsibleGroup`), darktable's collapsible sections (decision 29), a group first in its container drawing no space above it; the body; peeking while H is held (`Section::peek`);
   - the Tools panel's `TabBar` (icon tabs, a tab with nothing behind it yet drawn disabled, never chosen, saying it is to come, » and ⋮ menus), `PanelBody` (pinned sections, a band, scrolling sections, a quiet scroll bar, `quiet_scroll`, and a section's header kept over its scrolling body, `PanelBody::header`, with a hairline and a soft shadow under it while the body scrolls under it) and `PanelEdge`; a section's header drawn apart, `Section::show_header`, its body with `section_body`, laid out as `Section::show` lays them. Planned with the Tools panel's layout (decision 83, [Moving, pinning and floating sections](#moving-pinning-and-floating-sections)): the draggable header (`Section::draggable`), the drop targets of `PanelBody` and `TabBar` with the insertion line, and the floating panel's frame.
 - **Painted widgets:** colour wheels (ring, puck, saturation and luminance arcs), [the curve](#the-curve), [the equalizer](#the-equalizer)'s bands, hue curve, [the scopes](#the-scopes) (histogram, waveform, parade, vectorscope, with their controls on hover), the Browser's thumbnails (`GridCell`), layer rows.
@@ -890,7 +890,7 @@ Planned (decision 97). Help opens the Apertrust Guide, a website of its own at `
 - **Topics.** The app names a topic, never a page: a tool's is `tools/<id>`, from its id, with nothing declared (`ToolDefinition::help` overrides it); every other place names its own, `browser`, `viewer`, `workspaces`, `settings/<page>`, `dialogs/<id>`. The Guide's pages claim topics, so a page moves without a change to the app; a topic in a release is never renamed.
 - **The URL:** `{help.url}/{version}/{language}/topic/{topic}/` for a topic and `{help.url}/{version}/{language}/` for the start page, the version `X.Y` for a release build and `development` for any other, the language the interface's, `en` for both Englishes.
 - **Where:**
-  - Help, last in every Tools panel tool's ⋯, after the layout's items, a line before it (`section-help`); the Import sheet's tools take none until the sheet is designed again;
+  - Help, last in every Tools panel tool's ⋯, after the layout's items, a line before it (`section-help`); the Import tool's ⋯ takes none, the sheet's Help being the button at its footer's start ([Sheets](#the-footer));
   - Apertrust Guide in the Help menu (`guide`);
   - Help last in the browser bar's options and in the Tools panel's ⋮;
   - a Help button at the footer's start in Settings and in a dialog that needs one;
@@ -1492,103 +1492,116 @@ Import and Print are full-window sheets inside the main window, drawn by the des
 
 ## Sheets
 
-Import… opens a sheet, full-window inside the main window (decision 86, planned): a sheet bar, a grid of photos with check boxes, a column of tools beside it and a footer. Its content is [the Import sheet](#the-import-sheet)'s; the frame is general, so Print may take it when it is designed. Export is not a sheet but a tool of the Photos tab ([The Export tool](#the-export-tool), decision 90). The wireframe is to gain a Sheets board drawn from this section, with Import's board on it.
+Import… opens a sheet, full-window inside the main window (decision 86, planned): a sheet bar, the Browser's grid with check boxes, a column holding one tool, Import, and a footer. Its content is [the Import sheet](#the-import-sheet)'s; the frame is general, so Print may take it when it is designed. Export is not a sheet but a tool of the Photos tab ([The Export tool](#the-export-tool), decision 90). The wireframe's Import sheet board draws it.
 
 - **Drawn by the design system** on `panel`, the same on every platform: never one of AppKit's sheets, nor a window of the dialog host. It covers the window below the Toolbar.
-- **Built in this order** ([roadmap.md](roadmap.md#export)): the setting rows, shared with the Export tool; the sheet frame; then Import's first slice; then the rest, presets, reordering and a larger look at one photo among them.
+- **Built in this order** ([roadmap.md](roadmap.md#export)): the setting rows, shared with the Export tool; the sheet frame; then Import's first slice; then the rest, presets and the larger look among them.
 
 ```text
-┌ Toolbar: its actions at rest; the jobs spinner and the window's controls live ─────────────────┐
-├ sheet bar ──────────────────────────────────────────────────┬────────────────────────────────────┤
-│ Import  EOS_DIGITAL · 412 photos, 3 imported before         │ Presets               Custom ▾  ⋯  │
-│ [Select all] [Select none] [Select new]  Checked only  ⇅  ⊕ │                                    │
-├ grid ───────────────────────────────────────────────────────┼ tools column, 440 ─────────────────┤
-│ ┌────┐ ┌────┐ ┌────┐ ┌────┐                                 │ ▾ Import from               ↺  ⋯   │
-│ │    │ │  ✓ │ │    │ │    │  an unchecked picture at half   │ ▾ Import to                 ↺  ⋯   │
-│ └────┘ └────┘ └────┘ └────┘  strength; a mark at its corner │   setting rows, path rows, notes   │
-│ ☑ DSCF1033 ☐ DSCF1034 ☑ …                                   │ ▸ Metadata                  ↺  ⋯   │
-├ footer, 52 ─────────────────────────────────────────────────┴────────────────────────────────────┤
-│ 209 of 412 photos · 6.2 GB → ~/Pictures/Apertrust/20261115_Wedding                               │
-│ Copies only; nothing on EOS_DIGITAL is changed.        ☐ Keep open   [Close] [Import 209 photos] │
-└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌ Toolbar: its actions at rest; the jobs spinner and the window's controls live ─────────────────────┐
+├ sheet bar ─────────────────────────────────────────────────────────────────────────────────────────┤
+│ Import · EOS_DIGITAL  412 photos, 198 imported before  Select new  Select all  Select none         │
+│                                          Checked only   Sort: Capture time ⌄  Zoom ⌄  Hold W …     │
+├ grid ───────────────────────────────────────────────────────┬ column, 440 ─────────────────────────┤
+│ ☐ Saturday 8 November · 8 photos, imported before           │ ▾ Import                ↺  ☰  ⋯      │
+│ ┌────┐ ┌────┐ ┌────┐  dimmed, with their mark               │   SOURCE ────────── Card: EOS_DIGITAL│
+│ ☑ Saturday 15 November · 16 photos, 14 checked              │   DESTINATION ─────────────────────  │
+│ ┌────┐ ┌────┐ ┌────┐ ┌────┐                                 │   Import name   [Wedding         ]   │
+│ │  ✓ │ │  ✓ │ │    │ │  ✓ │                                 │   Folder                             │
+│ └────┘ └────┘ └────┘ └────┘                                 │   [$(PICTURES_FOLDER)/Apertrust] ⌄ ▢ │
+│ ☑ DSCF1029  ☑ DSCF1030  ☐ DSCF1031  ☑ …                     │   Subfolder                          │
+│                                                             │   [$(YEAR)$(MONTH)$(DAY)_$(JOB…]  ⌄  │
+│                                                             │   NAMING, METADATA, FILTERS, …       │
+├ footer, 52 ─────────────────────────────────────────────────┴──────────────────────────────────────┤
+│ ?  209 of 412 photos · 6.2 GB of 412 GB free → …/20261115_Wedding, a new folder                    │
+│    Copies only; nothing on EOS_DIGITAL is changed.     ☐ Keep open   [Close] [Import 209 photos]   │
+└────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### A sheet's regions
 
 | Region | Where and how big | Holds |
 | --- | --- | --- |
-| **The sheet bar** | Across the sheet, as tall as the viewer bar, its 2-point separator under it; parted at the column's edge | Over the grid: the heading, the sheet's name in 16-point Medium then its source and its counts in `text_secondary`; the Select buttons; Checked only; Sort; Zoom. Over the column: the presets row ([Presets](#presets-whole-sheet-only)) |
-| **The grid** | The rest of the sheet's width, between the bar and the footer | The Browser's `GridCell`s with a check-box caption |
-| **The tools column** | 440 points by default, resizable at its edge (`PanelEdge`) from 296 to 600, and to no more than half the sheet where that leaves more than 296: 296 is the floor, below a 592-point sheet too; kept (`import.column_width`, owner `app`) | The sheet's tools, scrolling with the quiet scroll bar in its end margin |
-| **The footer** | 52 points across the sheet, a hairline above | The summary on two lines at its start; Keep open, Close and the primary button at its end |
+| **The sheet bar** | Across the whole sheet, as tall as the viewer bar, its 2-point separator under it | The heading, the sheet's name and its source ("Import · EOS_DIGITAL") in 16-point Medium, then its counts in `text_secondary`; the Select buttons; Checked only; Sort; Zoom; the hint "Hold W to look closer", whose tooltip says it in full |
+| **The grid** | The rest of the sheet's width, between the bar and the footer | The Browser's grid component ([The cell](#the-cell)), its cells, Sort, Zoom and keys, with check boxes as its choosing, and day headings |
+| **The column** | 440 points by default, resizable at its edge (`PanelEdge`) from 296 to 600, and to no more than half the sheet where that leaves more than 296: 296 is the floor, below a 592-point sheet too; kept (`import.column_width`, owner `app`) | The Import tool, scrolling with the quiet scroll bar in its end margin |
+| **The footer** | 52 points across the sheet, a hairline above | A Help button at its start, as Settings' footer has ([Help and the Apertrust Guide](#help-and-the-apertrust-guide)); the summary on two lines; Keep open, Close and the primary button at its end |
 
-- **The column sits on the Tools panel's side,** the right or the left as the Tools panel is ([Its position](#its-position)), the grid taking the rest of the window beside it: opening a sheet, tools appear where tools were, and reading down the column ends above the primary button. With the Browser at the right or the bottom, the column still follows the Tools panel.
-- **Why 440:** the export rows were measured at 415 points (the path row, the notes, Polish's print size row at 407), and Import's path rows and sample-path notes are the same rows; at 320 the default paths are cut and every note wraps in Ukrainian and Polish. A 1280-point window still leaves the grid about 840 points, seven Medium cells across.
+- **The column sits on the Tools panel's side,** the right or the left as the Tools panel is ([Its position](#its-position)), the grid taking the rest of the window beside it: opening a sheet, a tool appears where tools were, and reading down the column ends above the primary button. With the Browser at the right or the bottom, the column still follows the Tools panel.
+- **Why 440:** the export rows were measured at 415 points (the path row, Polish's print size row at 407), and Import's path rows, their labels above their fields, are as wide; at 320 the default patterns are cut, Subfolder's `$(YEAR)$(MONTH)$(DAY)_$(JOBCODE)` losing the part that varies. A 1280-point window still leaves the grid about 840 points, seven Medium cells across.
 - **The interface scale** multiplies all of it.
 
 ### Choosing photos
 
 **The checks are what goes,** not the window's selection, in which a plain click selects one alone and would drop hundreds of chosen photos; the Browser's gestures do the analogous, safe thing instead.
 
-| Input | On the picture | On the check box |
-| --- | --- | --- |
-| Click | Makes it the sheet's active photo, the notes following; the checks unchanged | Turns its check on or off; makes it the last touched |
-| Ctrl-click (Cmd on a Mac) | Turns its check on or off and makes it active | As a click |
-| Shift-click | Checks every photo from the active one to it; never unchecks; the active photo stays | Sets every cell from the last touched to it as the last touched was set |
-| Double-click | Nothing until the larger look comes | — |
-| Drag, right-click | Nothing | — |
+| Input | On the picture | On the check box | On a day heading's check box |
+| --- | --- | --- | --- |
+| Click | Makes it the sheet's active photo, the rows' tooltips following; the checks unchanged | Turns its check on or off; makes it the last touched | Checks every photo of that day, or unchecks them all when all are checked |
+| Ctrl-click (Cmd on a Mac) | Turns its check on or off and makes it active | As a click | As a click |
+| Shift-click | Checks every photo from the active one to it; never unchecks; the active photo stays | Sets every cell from the last touched to it as the last touched was set | As a click |
+| Double-click | Nothing; the larger look is W held | — | — |
+| Drag, right-click | Nothing | — | — |
 
-- **The sheet's active photo is its own:** it never changes the window's active photo or selection. The grid scrolls to it as the sheet opens.
-- **The checks are made fresh at each opening,** from the listing, and dropped on Close; with Keep open on, the sheet clears them as its copies are now imported.
-- **The Select buttons,** quiet text buttons as darktable has them, act on the cells shown: **Select all**, **Select none**, then **Select new**, exactly the photos not imported before, darktable's "select new". Below about 520 points of grid width they fold into one **Select ▾** pull-down holding the same items.
+- **At opening** the new photos are checked, or all of them with Select only new photos off ([The Import sheet](#the-import-sheet)), and the first of them is the sheet's active photo, the grid scrolled to it; with none checked, the first photo listed is. The checks are dropped on Close; with Keep open on, the sheet clears them as its copies are now imported.
+- **The sheet's active photo is its own:** it never changes the window's active photo or selection.
+- **The Select buttons,** quiet text buttons as darktable has them, act on the cells shown: **Select new**, exactly the photos not imported before, darktable's "select new"; **Select all**; **Select none**. Below about 520 points of grid width they fold into one **Select ▾** pull-down holding the same items.
 - **Checked only,** a toggle (Lucide's `list-checks`, filled while on), hides the unchecked cells to review exactly what goes, off at each opening.
+- **Day headings,** while sorted by capture time: one over each capture day, its date in Medium and its counts in `text_secondary` ("Saturday 15 November · 16 photos, 14 checked", "8 photos, imported before"), with a three-state check box at its start, checked, unchecked or a dash for some.
 - **The model** is plain data in `apertrust-ui`, `Checks`: the checked set, the active photo and the last touched, unit-tested.
+
+### The larger look
+
+While **W** is held with no text field being typed in and no list or menu open, or the bar's "Hold W to look closer" is held down by the pointer or a finger (the same action in Touch mode, decision 94), darktable's lighttable preview, the active photo's embedded picture fills the grid's area, its line under it: "DSCF1037.RAF · 15 Nov 14:02 · checked · Space toggles".
+
+- **← and →** move to the previous and the next photo, as the grid's order has them; **Space** turns the photo's check on or off.
+- **Letting go** shows the grid at the photo last shown, now the sheet's active photo.
+- **Return stays Import,** and the sheet's other keys rest while W is held.
 
 ### A sheet's cell
 
 The Browser's `GridCell` ([The cell](#the-cell)), at the sheet's Zoom (`import.thumbnails`, Medium by default, the Browser's four sizes):
 
-- **The picture,** fitted in its square, at half strength while unchecked, so what stays behind reads at a glance and never by colour alone.
+- **The picture,** fitted in its square; a photo imported before is at half strength while unchecked, with its mark, so what was imported before reads at a glance and never by colour alone.
 - **The caption,** always shown: the check box at its start, then the file name cut in its middle. A cell is at least as tall as its caption needs.
 - **The rings:** the sheet's active photo's 3-point `frame_ring`; no selected ring, the checks being the choice here; the focus ring outside.
 - **The marks,** at the picture's bottom right on `thumb_scrim`: the destination mark, a photo imported before.
-- **The tooltip:** the file name, the capture time, the file's modified time, the size and the camera.
+- **The tooltip:** the file name, the capture time, the file's modified time, the size and the camera, and where a photo imported before is.
 - **Only the cells in sight are drawn,** so 5,000 photos cost what a screenful does.
 
-### The tools column
+### The column
 
-Each tool is a section with the tool panel's header and rows ([How the rows are laid out](#how-the-rows-are-laid-out)), so a row looks and behaves in a sheet as in the Tools panel.
+The column holds one tool, Import, drawn by every tool's header and page drawer from its `UtilityDefinition` (decision 93; [One tool model](#one-tool-model)), so a row looks and behaves in the sheet as in the Tools panel ([How the rows are laid out](#how-the-rows-are-laid-out)).
 
-- **The header,** 30 points: the chevron, the title, ↺ and ⋯; a click anywhere on it but ↺ and ⋯ opens or closes the tool, its open state kept per sheet as a Tools panel section's is. No on switch and no peeking with H: nothing in a sheet edits a photo.
-  - **↺** sets every setting the tool owns to darktable's default, those of a storage or a format not shown included, written at once; drawn at rest when they are all at their defaults.
-  - **⋯** holds only Move Up and Move Down, opened from its button alone, the header taking no right-click ([Context menus](#context-menus), decision 91). It is drawn disabled until reordering is built, its tooltip saying so. A tool has no presets of its own ([Presets](#presets-whole-sheet-only)).
-- **Reordering only:** dragging a header, ⋯'s Move Up and Move Down, and Alt+↑ and Alt+↓ on a focused header, decision 83's operations and announcements on a list of the sheet's own (`import.order`, owner `app`), the default order the sheet's. No pinning, no floating and no other tab. Until reordering is built the order is the default.
-- **A tool belongs to one place** (decisions 86 and 90): the Tools panel's tools and utilities, Export among them, or Import's import tools, declared with each tool. Import tools never appear in the Tools panel: no workspace, visual editor, drag, Move Tool to Tab or drop on a tab's icon can put one there, neither the Hidden tab nor Find Tool… lists one, and a workspace's file naming one skips it ([Workspaces](#workspaces), [Moving, pinning and floating sections](#moving-pinning-and-floating-sections)). None of the Tools panel's tools appears in the sheet. The two Metadata tools, the Tools panel's and Import's, are two tools, their ids apart and their titles' tooltips saying which. A test walks every tool and checks each list holds only its place's.
-- **A tool's states:**
+- **The header,** 30 points, as every tool's: the title, ↺, the presets button and ⋯. No on switch and no peeking with H: nothing in a sheet edits a photo.
+  - **↺** applies Default settings, written at once: every setting the tool owns but Source's place and folder, which it leaves as they are, to darktable's default, Folder to the default folder (`import.default_folder`, Settings › Import's Base folder); drawn at rest when they are all at their defaults.
+  - **The presets button** holds the tool's presets ([Presets: the Import tool's](#presets-the-import-tools)).
+  - **⋯** holds the tool's own items, `ToolDefinition::menus`, opened from its button alone, the header taking no right-click ([Context menus](#context-menus), decision 91); drawn disabled while none applies.
+- **Its parts are collapsible groups** (`CollapsibleGroup`), each opening and closing on its own, their open state kept as a tool's groups are; a closed group shows a short summary after its title, in `text_secondary` ("Card: EOS_DIGITAL", "No rating").
+- **A tool belongs to one place** (decisions 86 and 90): the Tools panel's tools and utilities, Export among them, or the Import sheet, whose one tool is Import, declared with each tool. The Import tool never appears in the Tools panel: no workspace, visual editor, drag, Move Tool to Tab or drop on a tab's icon can put it there, neither the Hidden tab nor Find Tool… lists it, and a workspace's file naming it skips it ([Workspaces](#workspaces), [Moving, pinning and floating sections](#moving-pinning-and-floating-sections)). None of the Tools panel's tools appears in the sheet. The Import tool's Metadata is a group of it, not a tool. A test walks every tool and checks each list holds only its place's.
+- **Its states:**
 
 | State | Shows |
 | --- | --- |
-| Closed | The header alone |
-| Open | The header and its rows |
-| Hover on the header | The `hover` band; ↺ and ⋯ in `text_strong` under the pointer |
-| Focused header | The focus ring round the header |
+| A group closed | Its title, its line and its summary |
+| A group open | Its title and its rows |
 | At its defaults | ↺ at rest |
-| A problem in its rows | Its field outlined, the note in `error`; a closed tool with a problem opens and scrolls into view once, as the problem appears |
-| Not built yet | Its header drawn disabled and closed, "Comes in a later version" in its tooltip |
-| A preset pointed at | The preset's values in its rows, the banner on the first tool |
-| Being dragged (with reordering) | The lifted header and the insertion line |
+| A problem in a row | Its field outlined and its warning button; a closed group with a problem opens and scrolls into view once, as the problem appears |
+| A group not built yet | Drawn disabled and closed, "Comes in a later version" in its tooltip |
+| A preset pointed at | The preset's values in its rows, the banner under the header |
 
 #### A sheet's rows
 
 - **Every row is a tool setting's row** (`Row::Setting`, [Tool panels from definitions](#tool-panels-from-definitions)), since the sheet's settings are kept in `settings.toml` and never in an edit, which is what a tool's own settings are; the Export tool's rows are the same ([Its layout](#the-tools-layout)):
-  - choices Blended ([Choice rows: two styles](#choice-rows-two-styles)), unbuilt options and rows disabled, saying why, never hidden;
+  - choices Blended ([Choice rows: two styles](#choice-rows-two-styles)), unbuilt options and rows disabled, saying why in their tooltips, never hidden;
   - a boolean a switch row (`ToggleRow`, 24 points, its switch at the row's end where a choice's chevron ends; [Switches and boolean rows](#switches-and-boolean-rows)); the Export tool's own booleans are darktable's choices of No and Yes;
   - no kept marker on any row, nothing here being an edit: a slider's marker place stays empty, so its label, value, track and handle stay where a tool's are, with no ○ under the pointer, no marker focus stop and no `ToggleKeep`;
   - no history and no Undo step: a change is a setting written at once; Cmd+Z in a field undoes typing only;
   - a slider's reset as a tool's: a double-click on its label or track, or Delete on it, puts back darktable's default (the Export tool's Quality 95); a choice is reset by its tool's ↺. Delete in a size field sets 0, in Scale 1.
-- **Plain groups** where darktable has section labels inside a tool (Import's Metadata, the Export tool's Metadata group), drawn as a tool panel draws them (`PlainGroup`: 8 points above, none as its container's first row, and 2 between its title and its rows; decision 100).
+- **No free text in the Import tool:** no note rows. What the session says about a row, the sample path, a new folder or an existing one with its count, the date used, the clashes, is the row's tooltip and its accessible description; a disabled row's reason is its tooltip; a problem is the row's warning button. The footer's summary shows the free space, the destination and whether its folder is new, so nothing is in a tooltip alone.
+- **Plain groups** where darktable has section labels inside a group (Import's Metadata, the Export tool's Metadata group), drawn as a tool panel draws them (`PlainGroup`: 8 points above, none as its container's first row, and 2 between its title and its rows; decision 100).
 - **A focused Blended choice** takes Return to open its list, and a focused slider its fine-control popup (decision 42), as in a tool; the sheet's Return presses the primary button only where neither, nor a button, is focused.
-- **To screen readers and the keyboard** each row and header is what it is in a tool panel: a header a Button with its expanded state, a choice a ComboBox, a slider a Slider with no marker stop, a boolean a Switch with its checked state, a note row a label read after its row, a problem announced once as it appears.
+- **To screen readers and the keyboard** each row and header is what it is in a tool panel: a header a Button, a group's title a Button with its expanded state, a choice a ComboBox, a slider a Slider with no marker stop, a boolean a Switch with its checked state, a row's tooltip its description, a warning button a menu button named by its problem, a problem announced once as it appears.
 
 #### The rows the tool panel lacks
 
@@ -1597,53 +1610,55 @@ Each is built from what the tool panel already draws and added to the design sys
 | Row | Drawn as |
 | --- | --- |
 | A slider with no kept marker | The tool's slider row, its marker's place left empty; a tool's settings' sliders use it too |
-| Path | One 24-point line: the label at the start; 12 points; `PathField` taking the rest, in the value field's look (`sunken`, 18 high, the small radius, the small text, 5 points inset); 4 points; the folder `IconButton`, 18 × 18 with no plate (decision 81), where a quad sits. The variable list hangs under the field, part of the row. The Export tool's form, darktable's, has no visible label: `PathField` the content's width less the folder button at its end, centred on the line. `PathField` is one line everywhere: a path longer than it scrolls inside it and never wraps ([The tool's layout](#the-tools-layout)) |
-| Note | A line the session says under a row: the small text, 12 points on 16-point lines, from the content's start edge, wrapping at its width and anywhere in a path; `text_secondary`, `warning` for what may surprise and `error` for what stops the job, those two with the 12-point warning sign at the start and the text hanging after it; 0 above, 4 below. A problem's fix is an `ActionRow` under it, such as **Use $(FILE_NAME)** |
+| Path | One 24-point line: the label at the start; 12 points; `PathField` taking the rest, in the value field's look (`sunken`, 18 high, the small radius, the small text, 5 points inset); then, where the row has them, 4 points and its warning button, its ⌄ of choices, an `IconButton` 18 × 18 with no plate opening a menu, and the folder `IconButton`, 18 × 18 with no plate (decision 81), where a quad sits. The variable list hangs under the field, part of the row. **The Import tool's form,** the wireframe's: the label on a line of its own, then the next line `PathField` taking the content's width less, after it, its warning button, its ⌄ and its folder button where it has them, so a long pattern keeps its varying part in sight at 296 points; the Import tool's other rows stay one line. The Export tool's form, darktable's, has no visible label: `PathField` the content's width less the folder button at its end, centred on the line. `PathField` is one line everywhere: a path longer than it scrolls inside it and never wraps ([The tool's layout](#the-tools-layout)) |
+| Warning button | The 12-point warning sign as an `IconButton`, 18 × 18 with no plate, at the row's end before its other buttons, in `warning`, or `error` where the problem stops the job; its tooltip says the problem, and its menu holds the fix, such as **Use $(MONTH)** or **Date the names by the day taken too**. The Import tool's form of a problem |
+| Note | The Export tool's: a line the session says under a row, the small text, 12 points on 16-point lines, from the content's start edge, wrapping at its width and anywhere in a path; `text_secondary`, `warning` for what may surprise and `error` for what stops the job, those two with the 12-point warning sign at the start and the text hanging after it; 0 above, 4 below. A problem's fix is an `ActionRow` under it, such as **Use $(FILE_NAME)**. The Import tool has none |
 | Field | One 24-point line: the label at the start, the field's end on the content's end edge: a number in a value field (54 points, wider only when its text needs it, right-aligned), a text in a 180-point field; the label cut first, never the field |
 | Size | One 24-point line: the label at the start; at the end `ValueField` (54) · 4 · × · 4 · `ValueField` (54) · 4 · the unit, and in the print modes · 8 · @ · 8 · `ValueField` (54) · 4 · dpi; ×, @ and the units in the small text, `text_secondary`; the last unit's ink ending 5 points from the row's end, where slider values and choice chevrons end. Over the format's limit the field is outlined in `error`. Where the row is narrower than it needs, its label goes on a line above the fields |
 | Indented toggle | `ToggleRow` with its label 20 points in, so it lines up under its parent's label, its switch at the row's end as any |
 
-- **The tools' bodies have the tool panel's 12-point sides,** the header's chevron at 8, so at 440 points the rows are 415 wide and stretch with the column, as a tool's rows do in a widened Tools panel: labels at the start, values, options and chevrons on one end column 5 points in. The scroll bar lies in the end margin, so rows never move when it appears.
-- **Rows stack with no spacing,** each carrying its own padding, as in the Tools panel: 4 under each header, 8 at an open tool's end, then its hairline; 8 before a plain group, none as the first row under a header, and 2 between its title and its rows. The hover band runs 4 points past the content at each end, and the focus ring goes round the whole row.
-- **Before the session's first answer,** a note keeps one line's height, empty, so nothing below it moves when it arrives.
+- **The tool's body has the tool panel's 12-point sides,** the header's chevron at 8, so at 440 points the rows are 415 wide and stretch with the column, as a tool's rows do in a widened Tools panel: labels at the start, values, options and chevrons on one end column 5 points in. The scroll bar lies in the end margin, so rows never move when it appears.
+- **Rows stack with no spacing,** each carrying its own padding, as in the Tools panel: 4 under the header, 4 above each collapsible group's row, none where it is the first; 8 before a plain group, none as the first row under a group, and 2 between its title and its rows. The hover band runs 4 points past the content at each end, and the focus ring goes round the whole row.
 
-### Presets: whole-sheet only
+### Presets: the Import tool's
 
-The sheet has presets of all its tools' settings, as darktable's import module has, never of one tool's alone. A preset never holds the source (Import from's place and folder) or the checks.
+The Import tool's presets hold the settings the tool owns, as darktable's import module's presets do; a preset never holds the source (Source's place and folder) or the checks, nor the sheet's own settings, Keep open, the column's width and the grid's zoom.
 
-- **The presets row,** in the column's part of the sheet bar, drawn as the Tools panel's preset row (`Row::Preset`'s look, a Blended choice): **Presets** at its start, the matching preset's name or Custom at its end with the chevron, cut at its end and whole in its tooltip; then ⋯ with Save as Preset…, Update "Wedding card", Rename… and Delete…, darktable's "delete preset?" and "update preset?" as alerts, and later Import and Export of preset files.
-- **Its list,** drawn on every platform since it previews on hover, opens from the row towards the grid, so the column stays in view: **Default settings** first, built in, setting every tool to darktable's defaults; then the built-in presets (decision 85); then the person's own, a ✓ on the one matching.
-- **Pointing at a preset** shows its settings in the column, with a banner on the first tool ("Showing By capture date. Click to use it."), and the footer's summary follows, until the pointer leaves the list (the quality bar: presets preview on hover). ↑ and ↓ preview from the keyboard; Return or Space chooses; F2 renames.
-- **Where they are kept:** `presets/import.toml` in the user data folder, read by the client, so the CLI reads the ones the sheet stores.
-- **Until presets are built,** the row is drawn disabled, showing Default settings, its tooltip "Presets come in a later version".
+- **The presets button** in the tool's header, as every tool's: its list, then Save as Preset…, Update "Wedding card", Rename… and Delete…, darktable's "delete preset?" and "update preset?" as alerts, and later Import and Export of preset files.
+- **Its list,** drawn on every platform since it previews on hover: **Default settings** first, built in, setting the tool to darktable's defaults; then the built-in presets (decision 85); then the person's own, a ✓ on the one matching.
+- **Pointing at a preset** shows its settings in the tool, with a banner under its header ("Showing By capture date. Click to use it."), and the footer's summary follows, until the pointer leaves the list (the quality bar: presets preview on hover). ↑ and ↓ preview from the keyboard; Return or Space chooses; F2 renames.
+- **Where they are kept:** `presets/import.toml` in the user data folder, read by the client, so the CLI reads the ones the sheet stores; with the presets API every tool shares, processing and utility alike, whose decision comes first.
+- **Until presets are built,** the presets button is drawn disabled, its tooltip "Presets come in a later version".
 
 ### The footer
 
-- **The summary,** two lines at its start:
-  - the first in `text`: the count, then the size or the format and size, then the destination cut in its middle, home as `~` ("209 of 412 photos · 6.2 GB → ~/Pictures/Apertrust/20261115_Wedding"); with nothing checked, "No photos checked";
-  - the second, smaller, says what may surprise before anything happens: in `warning` with the warning sign, photos imported before that will be copied again ("380 of these were imported before; they will be copied again."); else, while the primary button is disabled, why ("Still listing EOS_DIGITAL", "Import to: Unknown variable $(MONT)."); else the sheet's reassurance ("Copies only; nothing on EOS_DIGITAL is changed.").
+- **A Help button** at its start, the round ? as Settings' footer has, opening the topic `import` in the Apertrust Guide (decision 97).
+- **The summary,** two lines:
+  - the first in `text`: the count, then the size or the format and size, then the destination cut in its middle, home as `~` ("209 of 412 photos · 6.2 GB of 412 GB free → ~/Pictures/Apertrust/20261115_Wedding, a new folder"), so what a tooltip says is never the only way to see it (decision 94's Touch mode): the free space, the destination with the date it carries, and whether it is a new folder, several (", 2 new folders by the day taken") or an existing one (", already there: 86 photos"); its tooltip the destination whole and the disk ("6.2 GB of 412 GB free on Macintosh HD", on a share "on Photos NAS"); with nothing checked, "No photos checked";
+  - the second, smaller: while the primary button is disabled, why ("Still listing EOS_DIGITAL", "Subfolder: unknown variable $(MONT)."); else what may surprise before anything happens, in `warning` with the warning sign, photos imported before that will be copied again ("380 of these were imported before; they will be copied again."); else the sheet's reassurance ("Copies only; nothing on EOS_DIGITAL is changed.").
 - **Keep open** (`ToggleRow`; `import.keep_open`, owner `app`, off by default and kept), before the buttons, as darktable's import dialog has "keep this window open" by its buttons: with it on, the sheet stays after the job starts, and the second line confirms each start ("Started: 40 photos → …/client") until the next change.
 - **Close and the primary button,** in the platform's order (`dialog_host::buttons`): the Mac and GNOME Close then the primary, Windows and KDE the primary first. Close, not Cancel, since the settings were kept as they changed and Cancel would read as cancelling a job a press started.
-- **The primary button** ("Import 209 photos"), the accent button, is disabled while nothing is checked, while Import's listing or check runs, or while a problem stands. It stays focusable; its reason is in its tooltip, in the footer's second line and its accessible description, naming the tool it comes from.
+- **The primary button** ("Import 209 photos"), the accent button, is disabled while nothing is checked, while Import's listing or check runs, or while a problem stands. It stays focusable; its reason is in its tooltip, in the footer's second line and its accessible description, naming the row it comes from.
 
 ### Keys
 
 | Key | Where | Does |
 | --- | --- | --- |
 | Ctrl+I (Cmd+I on a Mac) | The window, nothing modal up | Opens Import… |
-| ←, →, ↑, ↓, Home, End | A cell focused | Move the focus and the sheet's active photo, the notes following, the grid scrolling to keep it in sight |
+| ←, →, ↑, ↓, Home, End | A cell focused | The Browser's: move the focus and the sheet's active photo, the rows' tooltips following, the grid scrolling to keep it in sight |
 | Space | A cell focused | Turns its check on or off |
 | Shift+Space | A cell focused | Sets every cell from the last touched to it as the last touched was set |
 | Shift with the arrows | A cell focused | Moves and checks the cells passed |
 | Ctrl+A, Ctrl+Shift+A | The grid focused | Select all, Select none |
-| Return | Anywhere but a text field being typed in, an open list, or a focused button, choice or slider, which take it themselves: a button presses itself, Close among them | The primary button, when enabled; a focused cell included, so the larger look of one photo takes another key when it comes |
+| W, held | Anywhere but a text field being typed in or an open list or menu, whose keys come first | The larger look; ← and → move, Space checks, letting go returns to the grid |
+| Return | Anywhere but a text field being typed in, an open list, or a focused button, choice or slider, which take it themselves: a button presses itself, Close among them | The primary button, when enabled; a focused cell included |
 | Ctrl+Return (Cmd+Return) | Anywhere in the sheet but an open list, whose keys are its own | The primary button, when enabled |
-| Esc, Cmd+., Cmd+W | The sheet | The innermost first (a list, the variable list, a field being typed in), then the sheet, keeping its settings and dropping its checks |
-| F6, Shift+F6 | The sheet | Three regions: the bar and the grid, landing on the active cell; the presets row and the column; the footer |
-| Alt+↑, Alt+↓ | A tool's header focused | Moves it in the column, once reordering is built |
+| Esc, Cmd+., Cmd+W | The sheet | The innermost first (a list, a menu, the variable list, a field being typed in), then the sheet, keeping its settings and dropping its checks |
+| Alt+↓ | A path field focused | Opens its ⌄ |
+| F6, Shift+F6 | The sheet | Three regions: the bar and the grid, landing on the active cell; the column; the footer |
 
-- **The sheet opens** with the keyboard focus on the grid's active cell and no focus ring until a key is pressed, so the arrows, Space and Return work at once. Tab and F6 stay inside the sheet.
-- **Access keys,** on Windows and Linux: &Import, &Close, &Presets, &Keep open.
+- **The sheet opens** with the keyboard focus on the grid's active cell and no focus ring until a key is pressed, so the arrows, Space and Return work at once; with a card as its source, the focus is in Import name, its text selected, unless Import name is disabled, when it stays on the grid's active cell ([The Import sheet](#the-import-sheet)). Tab and F6 stay inside the sheet.
+- **Access keys,** on Windows and Linux: &Import, &Close, &Keep open.
 
 ### Modality
 
@@ -1654,9 +1669,10 @@ The sheet has presets of all its tools' settings, as darktable's import module h
 
 ### Screen readers
 
-- The sheet is a region named by its heading, "Import", under a dialog-role node.
-- The grid is a list named by its source, count and checks ("EOS_DIGITAL, 412 photos, 209 checked"); each cell a list item named by its file, its check box a CheckBox "Import DSCF1033.RAF", described by the destination mark's words.
-- The bar's grid part is a toolbar ("Import grid bar"), Checked only a toggle button; the tools are sections, as in the Tools panel.
+- The sheet is a region named by its heading, "Import, EOS_DIGITAL", under a dialog-role node.
+- The grid is a list named by its source, count and checks ("EOS_DIGITAL, 412 photos, 209 checked"); each day heading a group named by its day, its check box "Check every photo of Saturday 15 November" with its mixed state; each cell a list item named by its file, its check box a CheckBox "Import DSCF1033.RAF", described by the destination mark's words.
+- The larger look is announced politely as each photo shows: its name, its capture time and whether it is checked.
+- The bar is a toolbar ("Import grid bar"), Checked only a toggle button; the Import tool is a section, as in the Tools panel.
 - A problem is announced once, assertively; the checked count politely, at most every 0.5 s.
 
 ### Sizes and small windows
@@ -1667,7 +1683,7 @@ The sheet has presets of all its tools' settings, as darktable's import module h
 | 1280 × 720, Windows at 150 % | About 540 high | 440; the column scrolls | About 840: seven Medium cells |
 | 960 wide | — | 440 | About 520: four Medium cells; the Select buttons fold into Select ▾ |
 | 800 wide | — | Narrows from 440 towards 296 once the grid is down to two cells | Two cells or more |
-| 500 × 600, the least window | About 468 high | 296; notes wrap | The 204 left: two Small cells, shown at Small without changing the kept Zoom; Checked only, Sort and Zoom as icons |
+| 500 × 600, the least window | About 468 high | 296 | The 204 left: two Small cells, shown at Small without changing the kept Zoom; Checked only, Sort and Zoom as icons, the W hint an icon button (Lucide's `scan-eye`) held as the hint is |
 
 - **The column and the grid scroll on their own;** the bar and the footer always stay in view.
 - **The footer narrows** by cutting the summary's path, keeping its count and size; Keep open, Close and the primary button are never cut, and Keep open keeps its words.
@@ -2195,104 +2211,146 @@ No test can make these:
 
 ## The Import sheet
 
-Planned, Phase 3's step 20 in slices 20a to 20c (decision 85; [roadmap.md](roadmap.md#the-librarys-steps)). darktable's copy & import (`src/libs/import.c` at the reference release), row for row under Apertrust's words, on the sheets' frame ([Sheets](#sheets), decision 86): the source's photos in a grid, checked to import, beside a column of import tools. Its library side, the listing, the check against the destination and the copy job, is [library.md](library.md#import-in-folder-mode)'s. The wireframe's Import board is to be drawn on the Sheets board's frame.
+Planned, Phase 3's step 20 in slices 20a to 20c (decision 85; [roadmap.md](roadmap.md#the-librarys-steps)). darktable's copy & import (`src/libs/import.c` at the reference release), row for row under Apertrust's words, on the sheets' frame ([Sheets](#sheets), decision 86): the source's photos in the Browser's grid, checked to import, beside one tool, Import. Its library side, the listing, the check against the destination and the copy job, is [library.md](library.md#import-in-folder-mode)'s. The wireframe's Import sheet board draws it.
 
-- **Opened by** Ctrl+I (Cmd+I), File › Import…, the Toolbar's Import…, Collections' Import… (decision 90) and [the start window](#the-start-window)'s Import…, while no dialog or sheet is up. There is no Import tool: the sheet holds Import's settings (an Import tool holding its defaults is an [open question](#open-questions)). One photo and folder mode alike: Import never acts on what is open, and opens the destination as After import says, by default as the first photo lands.
+- **Opened by** Ctrl+I (Cmd+I), File › Import…, the Toolbar's Import…, Collections' Import… (decision 90), [the start window](#the-start-window)'s Import… and a camera card's banner ([A card opened as a folder](#a-card-opened-as-a-folder)), while no dialog or sheet is up. The Import tool lives in the sheet alone; the Tools panel has none (a Tools panel tool holding import's defaults is an [open question](#open-questions)). One photo and folder mode alike: Import never acts on what is open, and opens the destination as After import says, by default as the first photo lands.
 
 ```text
-┌ sheet bar ───────────────────────────────────────────────────┬──────────────────────────────────┐
-│ Import  EOS_DIGITAL · 412 photos, 3 imported before          │ Presets            Custom ▾  ⋯   │
-│ [Select all] [Select none] [Select new]  Checked only  ⇅  ⊕  │                                  │
-├──────────────────────────────────────────────────────────────┼──────────────────────────────────┤
-│ the source's photos: the picture, ☑ and the name;            │ ▸ Import from             ↺  ⋯   │
-│ ✓ on a photo imported before, left unchecked                 │ ▾ Import to               ↺  ⋯   │
-│                                                              │   Shoot name    Wedding          │
-│                                                              │   → the sample path, the space   │
-│                                                              │ ▾ Naming                  ↺  ⋯   │
-│                                                              │ ▸ Metadata                ↺  ⋯   │
-│                                                              │ ▸ Filters                 ↺  ⋯   │
-│                                                              │ ▸ After import            ↺  ⋯   │
-├──────────────────────────────────────────────────────────────┴──────────────────────────────────┤
-│ 209 of 412 photos · 6.2 GB → ~/Pictures/Apertrust/20261115_Wedding                              │
-│ Copies only; nothing on EOS_DIGITAL is changed.       ☐ Keep open   [Close] [Import 209 photos] │
-└─────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌ sheet bar ───────────────────────────────────────────────────────────────────────────────────────┐
+│ Import · EOS_DIGITAL  412 photos, 198 imported before   Select new  Select all  Select none  …   │
+├──────────────────────────────────────────────────────────────┬───────────────────────────────────┤
+│ ☐ Saturday 8 November · 8 photos, imported before            │ ▾ Import                ↺  ☰  ⋯   │
+│   dimmed cells, each with its mark                           │   SOURCE ─────── Card: EOS_DIGITAL│
+│ ☑ Saturday 15 November · 16 photos, 14 checked               │   DESTINATION ────────────────────│
+│   the new photos: the picture, ☑ and the name                │   Import name   [Wedding        ] │
+│                                                              │   Folder                          │
+│                                                              │   [$(PICTURES_FOLDER)/Apertr…] ⌄ ▢│
+│                                                              │   Subfolder                       │
+│                                                              │   [$(YEAR)$(MONTH)$(DAY)_$(JO…] ⌄ │
+│                                                              │   NAMING ─────────────────────────│
+│                                                              │   METADATA ─────────── No rating  │
+│                                                              │   FILTERS ─────── Show imported   │
+│                                                              │   AFTER IMPORT ───────────────────│
+├──────────────────────────────────────────────────────────────┴───────────────────────────────────┤
+│ ?  209 of 412 photos · 6.2 GB of 412 GB free → …/20261115_Wedding, a new folder                  │
+│    Copies only; nothing on EOS_DIGITAL is changed.     ☐ Keep open   [Close] [Import 209 photos] │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Its grid
 
-- **The bar:** the heading "Import" then the source and its counts ("EOS_DIGITAL · 412 photos, 3 imported before"; while listing, "Listing EOS_DIGITAL… 1,240 so far", then "Checking against ~/Pictures/Apertrust… 2,400 of 5,000"); Select all, Select none and **Select new**, darktable's; Checked only; **Sort**, by capture time (the default, ascending, as darktable sorts) or file name; **Zoom**.
+- **The bar:** the heading "Import · EOS_DIGITAL" then its counts ("412 photos, 198 imported before"; while listing, "Listing EOS_DIGITAL… 1,240 so far", then "Checking against ~/Pictures/Apertrust… 2,400 of 5,000"); **Select new**, darktable's, Select all and Select none; Checked only; **Sort**, by capture time (the default, ascending, as darktable sorts) or file name; **Zoom**; "Hold W to look closer".
 - **The cells** are the sheets' ([A sheet's cell](#a-sheets-cell)): the camera's embedded picture, upright, asked for only for the cells in sight and kept in the cache by fingerprint, the file name in a box until it comes; the caption's check box and file name; a tooltip with the file name, the capture time, the file's modified time (darktable's column, with its warning that they may differ), the size and the camera.
-- **Imported before:** Lucide's `circle-check` at the picture's bottom right on the thumbnail scrim, in `text_on_thumb_scrim`, as the pencil sits in the Browser; its tooltip names where the copy is, "Already in ~/Pictures/Apertrust/20261114_Wedding as 20261114_0001.RAF". Such a photo is left unchecked; checked by hand, it is copied again, unless the same file is at its destination, where it is skipped, as the clashes say; the footer counts only those copied again. Where its candidate is a cloud file not on the disk, the mark says "Probably in …", unchecked, until that file is there.
-- **Once the listing and the check end,** the photos not imported before are checked, or all of them with Select only new photos off.
-- **What is not done yet:** in 20a only raws are listed, and the heading counts what is left out, "40 raws · 860 other files not imported in this version".
-- **Date headings** (20b): a heading over each capture day, "Saturday 14 November · 182 photos, 120 checked", with a three-state check box for its photos. A raw and its JPEG (20b, with photo groups) are one cell marked "+JPEG", checked together; one whose raw was imported before and JPEG not is marked "JPEG not imported", checked as new, and only its JPEG is copied.
+- **Day headings** (20a), while sorted by capture time: "Saturday 15 November · 16 photos, 14 checked", with a three-state check box for its photos.
+- **Imported before:** Lucide's `circle-check` at the picture's bottom right on the thumbnail scrim, in `text_on_thumb_scrim`, as the pencil sits in the Browser, the picture dimmed while unchecked; its tooltip names where the copy is, "Imported before: 20261108_Studio/20261108_0042.CR3". Such a photo is left unchecked; checked by hand, it is copied again, unless the same file is at its destination, where it is skipped, as Folder's tooltip says; the footer counts only those copied again. Where its candidate is a cloud file not on the disk, the mark says "Probably in …", unchecked, until that file is there.
+- **At opening,** once the listing and the check end, the photos not imported before are checked, or all of them with Select only new photos off, and the first of them is the sheet's active photo, or with none checked the first photo listed.
+- **The larger look** (20b): W held, as [Sheets](#the-larger-look) has it, the embedded picture filling the grid's area.
+- **What is not done yet:** in 20a only raws are listed, and the heading counts what is left out, "40 raws · 860 other files not imported in this version". A raw and its JPEG (20b, with photo groups) are one cell marked "+JPEG", checked together; one whose raw was imported before and JPEG not is marked "JPEG not imported", checked as new, and only its JPEG is copied.
 
-### Its tools
+### The Import tool
 
-Every row is a sheet's setting row ([A sheet's rows](#a-sheets-rows)), each boolean a switch row; a change is an `import.*` setting written at once. Import from and After import start closed while a card is the source, so a card's first view opens on Shoot name and the sample path.
+One tool, Import, its header the title, ↺, the presets button and ⋯ ([The column](#the-column)), its parts collapsible groups in this order. Every row is a sheet's setting row ([A sheet's rows](#a-sheets-rows)), each boolean a switch row; a change is an `import.*` setting written at once. No row has a note under it: what a note would say is the row's tooltip, and a problem is its warning button.
 
-| Tool | Row | Default | Setting | Slice |
+| Group | Row | Default | Setting | Slice |
 | --- | --- | --- | --- | --- |
-| **Import from** (open; closed while a card is the source) | Places: Cards and drives first, each mounted volume by its name, a card with the card icon; then Pictures, Home and the person's own places; darktable's ＋, − and ↺ under the list | The card, where one is in; else the place last used | `import.place`, `import.places`, `import.show_home`, `import.show_pictures`, `import.show_mounted` | 20a |
-| | Folders: Collections' tree of the chosen place, at most 8 rows tall; a card's shows `DCIM` chosen | The folder last used | `import.folder` | 20a |
-| | Include subfolders (darktable's "recursive directory"); on and disabled for a card: "A card's DCIM is always listed whole." | Off | `import.include_subfolders` | 20a |
+| **Source** (open; closed, "Card: EOS_DIGITAL") | Places: Cards and drives first, each mounted volume by its name, a card with the card icon; then Pictures, Home and the person's own places; darktable's ＋, − and ↺ by the list's label | The card, where one is in; else the place last used | `import.place`, `import.places`, `import.show_home`, `import.show_pictures`, `import.show_mounted` | 20a |
+| | Folders: Collections' tree of the chosen place, at most 8 rows tall; a card's shows `DCIM` chosen. A folder on a fixed disk: its tooltip "These photos are already on this computer", and ⋯'s Open Folder Instead | The folder last used | `import.folder` | 20a |
+| | Include subfolders (darktable's "recursive directory"); on and disabled for a card, its tooltip "A card's DCIM is always listed whole" | Off | `import.include_subfolders` | 20a |
 | | Select only new photos (darktable's "select only new images") | On | `import.select_new` | 20a |
-| | On a fixed disk, a note: "These photos are already on this computer. To edit them where they are, use Open Folder…", and **Open Folder…**, which opens that folder and closes the sheet | — | — | 20a |
-| **Import to** (open) | Shoot name (darktable's "import job"), its hint "Name of this shoot", its tooltip naming `$(JOBCODE)` and darktable's term | `no_name` | `import.job_code` | 20a |
-| | Base folder: the path row with its folder button | `$(PICTURES_FOLDER)/Apertrust` | `import.base_folder` | 20a |
-| | Subfolder (darktable's "filmroll name"): the path row without the button | `$(YEAR)$(MONTH)$(DAY)_$(JOBCODE)` | `import.subfolder` | 20a |
-| | Notes under the patterns: the sample path, "DSCF1033.RAF → ~/Pictures/Apertrust/20261115_Wedding/20261115_0001.RAF" and "and 213 more into 20261115_Wedding"; the space, "104.7 GB free on Macintosh HD; this import takes 6.2 GB"; the clashes | — | — | 20a |
-| | Override today's date, last: a field, its hint "YYYY:MM:DD hh:mm:ss", cleared after each import | Empty | `import.date_override` | 20a |
+| **Destination** (open) | Import name (darktable's "import job") | `no_name` | `import.job_code` | 20a |
+| | Folder (darktable's base folder): the path row, its label above the field, with its ⌄ and folder button | `$(PICTURES_FOLDER)/Apertrust` | `import.base_folder` | 20a; the ⌄'s recents 20c |
+| | Subfolder (darktable's "filmroll name"): the path row, its label above the field, with its ⌄ | `$(YEAR)$(MONTH)$(DAY)_$(JOBCODE)` | `import.subfolder` | 20a; the ⌄'s recents 20c |
 | **Naming** (open) | Keep original file name | Off | `import.keep_original_name` | 20a |
-| | File name pattern; disabled while the original name is kept | `$(YEAR)$(MONTH)$(DAY)_$(SEQUENCE).$(FILE_EXTENSION)` | `import.file_name` | 20a |
-| | Note: the sample name, "DSCF1033.RAF → 20261115_0001.RAF" | — | — | 20a |
-| **Metadata** (closed) | Initial rating: No rating, 1 to 5 stars | No rating, where darktable's is 1 star | `import.initial_rating` | 20b |
+| | File name: disabled while the original name is kept, its tooltip saying so; else its tooltip the sample name, "DSCF1033.RAF → 20261115_0001.RAF", and how a taken name is continued | `$(YEAR)$(MONTH)$(DAY)_$(SEQUENCE).$(FILE_EXTENSION)` | `import.file_name` | 20a |
+| **Metadata** (closed, "No rating") | Initial rating: No rating, 1 to 5 stars | No rating, where darktable's is 1 star | `import.initial_rating` | 20b |
 | | Ignore EXIF rating | Off | `import.ignore_exif_rating` | 20b |
 | | Apply metadata; the rows below disabled while off | Off | `import.apply_metadata` | 20b |
 | | darktable's metadata fields, each a field row with "from XMP" as a small check box at its end | Empty; from XMP as darktable's | `import.metadata.<field>`, `import.metadata.<field>_from_xmp` | 20b |
 | | Keywords, comma-separated, with the Keywords tool's completion and "from XMP" | Empty; from XMP on | `import.keywords`, `import.keywords_from_xmp` | 20b |
-| **Filters** (closed) | Ignore non-raw files, with the count it leaves out; in 20a on and disabled, "Non-raw files come in a later version" | Off, darktable's | `import.ignore_non_raws` | 20b |
+| **Filters** (closed, "Show imported") | Ignore non-raw files, with the count it leaves out in its tooltip; in 20a on and disabled, its tooltip "Non-raw files come in a later version" | Off, darktable's | `import.ignore_non_raws` | 20b |
 | | Show already imported | On | `import.show_imported` | 20b |
 | | Date taken, from and to | Empty | — | After Phase 3 |
-| **After import** (open; closed while a card is the source) | Open the destination: When the import starts (darktable's), When it ends, No | When the import starts | `import.open_destination` | 20a |
+| **After import** (open) | Open the destination: When the import starts (darktable's), When it ends, No | When the import starts | `import.open_destination` | 20a |
 | | Eject the card; Verify the copies | Off | `import.eject`, `import.verify` | After Phase 3 |
 
-- **Presets** (20c), the sheet bar's ([Presets](#presets-whole-sheet-only)): Default settings, then **Original names** and **By capture date** (darktable's own patterns are Default settings), which sets the subfolder to `$(EXIF.YEAR)$(EXIF.MONTH)$(EXIF.DAY)_$(JOBCODE)` and the file name to `$(EXIF.YEAR)$(EXIF.MONTH)$(EXIF.DAY)_$(SEQUENCE).$(FILE_EXTENSION)`; then the person's own. None holds the place, the folder or the checks.
-- **Clashes,** before anything is copied: "Continues after 20261115_0214, already there"; under original names "3 names are taken in 20261115_Wedding; those get _01 added"; "2 are already there, unchanged; they are skipped."; "2 are already there with an edit of their own; their edits on EOS_DIGITAL stay there."; from 20b "1 has a different JPEG there; it stays as it is."
-- **Problems,** in `error` with the warning sign, each disabling Import with its reason: an unknown variable, outlined, with "Did you mean $(MONTH)?" and Use $(MONTH); a folder that cannot be made or written; a destination that is the source or lies inside it; "Needs 6.2 GB; 4.1 GB is free on Macintosh HD."; a date darktable cannot read, "Type a date as 2026:11:14, or 2026:11:14 18:30:00."
+- **Until 20b,** Metadata and Filters are drawn disabled and closed, "Comes in a later version" in their tooltips.
+- **⋯** holds **Open Folder Instead** (20a), enabled while the source is a folder on a fixed disk: it opens that folder where it is and closes the sheet.
+- **Presets** (20c), the tool's ([Presets: the Import tool's](#presets-the-import-tools)): Default settings, then **Original names** and **By capture date** (darktable's own patterns are Default settings), which sets Subfolder to One for each day taken and the file name to `$(EXIF.YEAR)$(EXIF.MONTH)$(EXIF.DAY)_$(SEQUENCE).$(FILE_EXTENSION)`; then the person's own. None holds the place, the folder or the checks.
 - **Never offered:** erasing the card, moving the photos or overwriting a file (principle 3).
-- **Later tools,** after Phase 3: Backup to, a second destination; Adjustments, a style applied to each photo as it lands.
-- **The sheet's own settings** (places, the folder, and the column's width and order, Keep open and Zoom) are the app's, never shown in Settings. Settings › Import shows darktable's four preferences, the base folder, the subfolder, the file name pattern and Keep original file name, and **When a card is connected** (`import.card_connected`: Do nothing, Mark Import, the default, or Open Import; 20c).
+- **Later groups,** after Phase 3: **Backup**, after Destination, the same subfolders and names under another folder, each copy checked with Move to…'s verified copy (step 19); **Adjustments**, a style applied to each photo as it lands.
+- **The sheet's own settings** (places, the folder, the folder last imported into, the menus' recents, the column's width, Keep open and Zoom) are the app's, never shown in Settings. Settings › Import shows darktable's four preferences, Base folder (`import.default_folder`, the default folder), Subfolder, File name pattern and Keep original file name, and **When a card is connected** (`import.card_connected`: Do nothing, Mark Import, the default, or Open Import; 20c).
+
+### Destination
+
+Three rows, darktable's import job, base folder and subfolder, in that order, each a value that changes from import to import.
+
+- **Import name** first, darktable's import job, `$(JOBCODE)`: the value that changes on almost every import. With a card as the source, the sheet opens with the cursor here, its text selected. Its tooltip: "Fills $(JOBCODE) in the folder and file names". Disabled when no folder or file name pattern uses `$(JOBCODE)`, its tooltip "No folder or file name uses the import name".
+- **Folder,** darktable's base folder, a path row with its ⌄ and the folder button. Its tooltip: the sample path, "DSCF1033.RAF → ~/Pictures/Apertrust/20261115_Wedding/20261115_0001.RAF"; a new folder or an existing one with its count, "A new folder in Apertrust", "2 new folders in Apertrust", "Into 2026-10 Lisbon, already there: 86 photos"; that nothing is replaced, "Never replaces a file: a name taken gets _01; a photo already there is skipped"; and the clashes, "2 are already there with an edit of their own; their edits on EOS_DIGITAL stay there", from 20b "1 has a different JPEG there; it stays as it is". Its ⌄ sets Folder, and changes Subfolder only where an item below says so:
+
+  | Heading | Items | Slice |
+  | --- | --- | --- |
+  | New subfolders in | The default folder, `import.default_folder`, Settings › Import's Base folder, "Apertrust · ~/Pictures · default"; then the recent base folders, each with its place ("Studio share · NAS"). Picking one while Subfolder is empty also puts back One for each import | 20a; the recents 20c |
+  | Into an existing folder, no subfolder | The folder open now, "2026-10 Lisbon · open", where one is; the folder last imported into, "20261108_Studio · imported into · 8 Nov"; then the recent folders. Picking one also empties Subfolder, which its accessible name says: "2026-10 Lisbon, into an existing folder, empties Subfolder" | 20a; the recents 20c |
+  | — | Choose a folder…, the system's folder chooser | 20a |
+
+- **Subfolder,** darktable's subfolder pattern, worked out for each photo, so `$(EXIF.YEAR)` and its kin make one folder for each day taken; empty is straight into the folder, its hint "None: straight into the folder". Its tooltip says which date it uses: "One folder for this import, dated today, 15 November", or "One folder for each day taken". Its ⌄, radio items each with its pattern under its name, sets Subfolder alone:
+  - **One for each import**, "default", `$(YEAR)$(MONTH)$(DAY)_$(JOBCODE)`, dated today as darktable's;
+  - **One for each day taken**, `$(EXIF.YEAR)$(EXIF.MONTH)$(EXIF.DAY)_$(JOBCODE)`;
+  - **Named after the import**, `$(JOBCODE)`;
+  - **None: straight into the folder**;
+  - then, under Recent, the patterns last typed (20c).
+- **The dates mixed:** while Subfolder dates its folders by the day taken and File name its names by today, Subfolder carries a warning button, its tooltip "Folders are dated by the day taken, names by today", its menu one item, **Date the names by the day taken too**, which puts `$(EXIF.YEAR)`, `$(EXIF.MONTH)` and `$(EXIF.DAY)` in File name for today's.
+- **No Override today's date row:** One for each day taken dates the folders from the photos themselves. `import.date_override` and the CLI's `--date` stay for scripts; the sheet never shows or sends it (decision 85).
+- **The menus only set the rows:** a script sees `import.job_code`, `import.base_folder`, `import.subfolder` and `import.date_override`, and the CLI's flags.
+- **The destination stays as it was** between imports, as darktable's; the footer always names it.
+- **No folder is made** until a photo is about to land in it, just before its first photo's temporary is written there, and one the import made that is left empty is removed, as darktable removes an empty film roll's folder.
+
+### Problems
+
+Each is a warning button on its row, its tooltip saying what is wrong and its menu holding the fix; one that stops the job is in `error`, outlines its field and disables Import with its reason, the footer's second line naming the row.
+
+| Problem | Row | Its fix |
+| --- | --- | --- |
+| An unknown variable, "Unknown variable $(MONT). Did you mean $(MONTH)?" | Folder, Subfolder or File name | **Use $(MONTH)** |
+| A folder that cannot be made or written | Folder | Choose a folder… |
+| A destination that is the source, lies inside it, or is anywhere on a card the source is on | Folder | Choose a folder… |
+| Not enough space, "Needs 6.2 GB; 4.1 GB is free on Macintosh HD." | Folder | Choose a folder… |
+| The dates mixed, in `warning`, not stopping the job | Subfolder | **Date the names by the day taken too** |
 
 ### Starting it, and after
 
 - **Import 209 photos** (Return, Ctrl+Return) sends the checked photos; the copy takes them in the order of their paths, as darktable's does. The sheet closes, unless Keep open is on, when its checks clear, each photo of the listed source is marked imported as it lands, from the `Imported` events of the imports the sheet sent from that listing alone, by their numbers, another import's changing nothing, a card of the same name included, the source is checked again when the job ends, and the next card is listed as one comes in; a photo of an import queued or running shows "Being imported", its check box disabled and left out of Select new and Select all until its job ends, so a second press never copies it twice. The jobs window opens itself, as for every job the person starts ([The jobs window](#the-jobs-window)).
-- **The job's row:** "Importing 214 photos", "120 of 214", "now DSCF1120.RAF", the destination with Show in Finder; at its end "214 photos imported", or "Import stopped: EOS_DIGITAL was removed. 120 of 214 photos imported." with Try again, or "Import cancelled: 120 of 214 photos imported". A notice says "Imported 214 photos into 20261115_Wedding" (step 12).
-- **The destination opens** as the first photo lands, by default, as a way in with no photo opened, and its Browser fills as the photos land. Where the patterns make several subfolders, their deepest common folder is the one opened, with the first subfolder chosen in Collections' tree.
+- **The job's row:** "Importing 214 photos", "120 of 214", "now DSCF1120.RAF", the destination with Show in Finder; at its end "214 photos imported", or "Import stopped: EOS_DIGITAL was removed. 120 of 214 photos imported." with Try again, or "Import cancelled: 120 of 214 photos imported".
+- **The destination opens** as the first photo lands, by default, as a way in with no photo opened, and the Browser fills as the photos land in the folder it shows; the photo being edited has its edit saved, as every change is, and closes. Where the patterns make several subfolders, their deepest common folder is the one opened, with the first subfolder chosen in Collections' tree: the folder the Browser shows fills as its photos land, and each other subfolder lists its photos when chosen, as any folder does.
+- **At the end, a notice** (step 12): "Imported 214 photos into 20261115_Wedding", with **Back to 2026-10 Lisbon** where the import replaced what was open, which opens it again with its active photo, IMG_2041.
+
+### A card opened as a folder
+
+A card, a volume with a `DCIM` folder at its top, opened with Open Folder…, a drop or Collections, or any folder inside one, opens view-only: no rating, label, edit or sidecar is written, so a card browsed as a folder is never written to, not only in Import. A banner says "EOS_DIGITAL is a camera card: shown for viewing only. To work on these photos, import them.", with **Import…**, which opens the sheet with the card chosen.
 
 ### States
 
 | State | Grid | Footer's second line |
 | --- | --- | --- |
-| No source | "Choose where to import from.", Import from open; "A phone connected by cable doesn't show here yet: copy its photos to a folder first." | "Choose where to import from."; Import disabled |
+| No source | "Choose where to import from.", Source open; "A phone connected by cable doesn't show here yet: copy its photos to a folder first." | "Choose where to import from."; Import disabled |
 | Listing, then checking | Cells arriving; the bar's progress words, then the marks appearing | "Still listing EOS_DIGITAL"; Import disabled |
-| Ready | The new photos checked, those imported before marked | "Copies only; nothing on EOS_DIGITAL is changed." |
+| Ready | The new photos checked, the first active, those imported before dimmed with their mark | "Copies only; nothing on EOS_DIGITAL is changed." |
 | Photos imported before checked | Their marks on checked cells | In `warning`: "380 of these were imported before; they will be copied again.", counting only those not skipped as already at their destination |
 | An empty card or folder | "No photos on EOS_DIGITAL."; with subfolders and Include subfolders off, "Turn on Include subfolders to list its 3 folders." | Import disabled |
 | All already imported | Every cell marked, none checked, "All 412 photos on EOS_DIGITAL are already imported." over the grid | "No photos checked"; Import disabled |
 | A share waiting | "Waiting for Photos NAS…" with the seconds, and Choose another place (decision 53) | Import disabled |
 | The source gone | "EOS_DIGITAL was removed."; the place leaves the list | Import disabled |
-| A problem | The row's note in `error` | The reason, naming the tool |
+| A problem | The row's warning button and, where it stops the job, its field outlined | The reason, naming the row |
 | Keep open, just started | The checks cleared, the copies marked as they land | "Started: 209 photos → …/20261115_Wedding" |
 
 ### Keys and screen readers
 
-- **Keys:** the sheets' ([Keys](#keys)); Ctrl+I opens it, and Ctrl+A and Ctrl+Shift+A are darktable's select all and none.
-- **Screen readers:** the sheets' ([Screen readers](#screen-readers)): the grid named "EOS_DIGITAL, 412 photos, 209 checked", each check box "Import DSCF1033.RAF", described by its capture time and, where it is, "imported before". Places and Folders are lists, Folders a tree as Collections'. The sample path is the description of Base folder, Subfolder and File name pattern. Polite live regions: the listing's end ("412 photos listed, 209 new, checked"), the card's arrival.
+- **Keys:** the sheets' ([Keys](#keys)); Ctrl+I opens it, Ctrl+A and Ctrl+Shift+A are darktable's select all and none, and W held is darktable's preview.
+- **Screen readers:** the sheets' ([Screen readers](#screen-readers)): the grid named "EOS_DIGITAL, 412 photos, 209 checked", each check box "Import DSCF1033.RAF", described by its capture time and, where it is, "imported before". Places and Folders are lists, Folders a tree as Collections'. Each row's tooltip is its description: the sample path Folder's, the date used Subfolder's, the sample name File name's. Polite live regions: the listing's end ("412 photos listed, 209 new, checked"), the card's arrival.
 
 ### darktable's words
 
-darktable's labels in sentence case and British English; "image" becomes "photo", "film roll" and "directory" become "folder" (decision 46), and "import job" becomes Shoot name, `$(JOBCODE)` kept. Its copy & import (Ctrl+Shift+I) is Import… (Ctrl+I); its "add to library…" is Open Folder… in folder mode and Import's Add in place in a library (Phase 5); its camera import, tethering and mounting are later, with libgphoto2 (decision 5). Its first-time alert about the base folder is left out, since the sample path is always shown; its Lua widgets are left out with Lua. The deliberate differences are decision 85's.
+darktable's labels in sentence case and British English; "image" becomes "photo", "film roll" and "directory" become "folder" (decision 46), "base directory" Folder, and "import job" becomes Import name, `$(JOBCODE)` kept. Its copy & import (Ctrl+Shift+I) is Import… (Ctrl+I); its "add to library…" is Open Folder…, and Add Folder… with a Library (Phase 5, decision 101); its camera import, tethering and mounting are later, with libgphoto2 (decision 5). Its first-time alert about the base folder is left out, since the footer always names the destination; its Override today's date row is left out, as above; its Lua widgets are left out with Lua. The deliberate differences are decision 85's.
 
 ## Instances and windows
 
@@ -2675,7 +2733,7 @@ Import and Print are full-window sheets and the slideshow an action (decisions 3
 - **A confirmation** (Export's overwrite question, the quit alert, Delete Workspace… in Phase 3) is the system's alert: on the Mac an `NSAlert`, on Windows the task dialog. Linux has none for an app outside GTK and Qt, so there it is Apertrust's own alert in a dialog window ([Dialogs and alerts](#dialogs-and-alerts)). An alert a sheet asks is the main window's.
 - **About** stays Apertrust's own modal over the window ([Help](#help)), and so will a splash screen while the app loads, once one is designed.
 - **A sheet** covers the window below the Toolbar, whose actions rest while it is open ([Sheets](#sheets)). Esc or Close closes it and keeps its settings for next time; F6 moves between its regions. It is drawn inside the main window, the same on every platform, not one of AppKit's sheets, which [Dialogs and alerts](#dialogs-and-alerts) calls the Mac's sheets. Import and Print are such sheets, since each takes the window's whole size for its thumbnails or its preview and is a place to work rather than a dialog.
-  - **Import** (by copy into a folder in Phase 3, decision 85): the card's or folder's photos, each with a check box that chooses whether it is imported, beside a column of import tools. It runs in the background, in the Toolbar's jobs.
+  - **Import** (by copy into a folder in Phase 3, decision 85): the card's or folder's photos, each with a check box that chooses whether it is imported, beside the Import tool. It runs in the background, in the Toolbar's jobs.
   - **Print** (File › Print…, Ctrl+P; after Phase 5, no phase yet): the page preview at its start, with page navigation; at its end a settings column as wide as the Tools panel (printer, paper, layout, margins, size, sharpening, colour, copies, presets); Cancel and Print… at the bottom. Below about 800 points wide, the settings move under the preview.
     - As decision 37 plans it, Print… first writes a print-ready file on every platform (a PDF or TIFF at size, through the printer's profile), and the system's print path follows platform by platform.
     - The preview is the engine's render through the printer profile, its out-of-gamut warning in patterns as well as colour.
@@ -2880,7 +2938,7 @@ Collections, the Photos tab's first tool, chooses what the Browser shows, one na
   - **Its height is fixed.** The top line has a tool's margins, 4 points under the header and 12 at the sides, as a tool's first row has, and stays in place; under it the groups scroll in a tool list (`section_list`, [above](#the-tools-panel)) whatever the tree holds, so Collections never grows with it. A tree row that takes the focus from the keys is scrolled into sight.
   - **Its top line** is a box saying what is open, a Boxed choice's box (`ChoiceBox` in `apertrust-ui`, its list hung from it with `components::pull_down`), the folder icon and the folder's label, "Folder: 2026-10 Lisbon", as Open Recent names it, "Reading 2026-10 Lisbon…" until its last chunk, or "No folder open" with none open or after a way in failed, the name cut in its middle. It names the folder opened, the tree's root, whichever folder in the tree is active; the root's count is on its row in the tree, and screen readers hear it with the box, a combo box named "What is open". The box lists the recents by their labels, ten at most, newest first, the root checked, a choice opening it ([File](#file), Open Recent's list, kept in `state.toml`). After them, past a separator, Clear Menu, File › Open Recent's own (`clear-recent`, run as its item runs), which empties the one list both show; with no recent it is there, disabled, as Open Recent's is. The list keeps the folders it was built for while it is open, so a recent added meanwhile changes nothing chosen. A missing one is marked "Folder: Name, not found", a submenu whose first line says why, disabled, then Try Again where its opening failed this run, Locate…, and Remove from the List. Locate… is the platform's folder dialog, starting in the folder's parent, which points the entry to the folder chosen and opens it.
   - **＋ after it,** after it in the focus order too, holds, in the wireframe's order, New Library…, drawn disabled until Phase 5, saying it comes later, then Open Folder… and Open…, File's own, with their keys.
-  - **Import… after ＋** (planned, decision 90), in the focus order too, opens [the Import sheet](#the-import-sheet): a default text `Button`, 22 points with its plate, its words `action-import` ("Import…", "Імпорт…", "Importuj…", 50 to 62 points), leaving the box about 200 points at the Tools panel's 320. Where the box would drop below about 140 points, at 240, Import… becomes ＋'s first item instead. It carries the Toolbar's accent dot and tooltip while a card is in ([The Toolbar](#the-toolbar)). Until the Import sheet is built it is drawn disabled, its tooltip "Import comes in a later version". There is no Import tool.
+  - **Import… after ＋** (planned, decision 90), in the focus order too, opens [the Import sheet](#the-import-sheet): a default text `Button`, 22 points with its plate, its words `action-import` ("Import…", "Імпорт…", "Importuj…", 50 to 62 points), leaving the box about 200 points at the Tools panel's 320. Where the box would drop below about 140 points, at 240, Import… becomes ＋'s first item instead. It carries the Toolbar's accent dot and tooltip while a card is in ([The Toolbar](#the-toolbar)). Until the Import sheet is built it is drawn disabled, its tooltip "Import comes in a later version". The Tools panel has no Import tool; Import's is the sheet's.
   - **⋯, its options,** holds Show in Finder (Explorer on Windows, Files on Linux), which shows the folder opened, the tree's root, in the file manager, as the top line names it, the active folder having its row's own Show in Folder; for a photo alone it shows the photo in its folder. Keep Available Offline, Keep Edits on This Computer and Add to Library… join it in Phase 5, each with its step (decision 101).
   - **Folders,** a collapsible group (`collections-folders`), open by default and kept in `edit.groups` as `collections.folders`, is the tree of the folder opened. Its root is at the top, with nothing above it and no way up, its count at the row's end once every photo is listed, and its subfolders under it 12 points in, in the listing's order (the file browser's). A click on a row, or its menu's Open, chooses that folder: the library lists it for the Browser (`LibraryCommand::Open`), its row is chosen on `list_chosen` with its own count once listed, and the root, the folders listed and those opened or closed stay as they were; a way in opens a new root. The photo shown follows the folder (When the folder changes, below). Its chevron, or ← and →, hides and shows its subfolders, for this run. Each row has the folder icon, its count in the language's number format, and a right-click, the menu key or Shift+F10 holds Show in Folder, named as the platform's file manager is (Show in Finder on the Mac), and Open. The tooltips write the home folder as `~`.
   - To screen readers the tree is a tree named Folders, each row a tree item with its level, the root's 0, the active folder selected, with their open states, and the counts known.
@@ -2904,7 +2962,7 @@ Decided with the library (decisions 46, 52, 53 and 101; [library.md](library.md#
 - **Away:** a photo on a drive that is not connected, and its folder in Folders, for a folder kept offline or in a Library. The thumbnail stays, with an away mark, never darktable's skulls. Its rating, reject, labels, keywords and metadata can still change, and are written once the drive returns; editing says the drive is not connected. Locate… points a folder or a photo to its new place. A folder with neither shows nothing of a drive that is not there.
 - **In the cloud:** a photo in a cloud folder that is not on the disk. It shows its name, its size and a cloud mark, and no thumbnail until it is local: opening it, or Make Available Offline, downloads it; nothing downloads one in the background. A folder not yet on the disk shows as In the cloud (after spike L3).
 - **Missing:** a photo an album names that is not found, not synced yet or deleted elsewhere; it stays in the album with a missing mark until it arrives or is removed. A sidecar whose photo is gone, and which no renamed photo matches, shows under **Edits without a photo**.
-- **View only:** a photo whose edit a newer Apertrust wrote (decision 43, built); an album, smart album or Library of a newer format opens view-only, saying which version wrote it.
+- **View only:** a photo whose edit a newer Apertrust wrote (decision 43, built); an album, smart album or Library of a newer format opens view-only, saying which version wrote it; a camera card, or a folder inside one, opened as a folder, its banner offering Import… (decision 85, planned; [A card opened as a folder](#a-card-opened-as-a-folder)).
 - **A diverged photo:** where two computers changed one edit, the second virtual copy's name says where it came from, "From another computer, 5 Nov 14:02", and a notice says so (where notices show is still open, [The jobs window](#the-jobs-window)).
 - **A slow share:** the folder says "Waiting for Main-Storage…" after 2 s and "Not responding" after 30 s, and the interface never waits (decision 53).
 - **For screen readers** each mark is in the thumbnail's or the folder's description: "away", "in the cloud", "missing", "view only".
@@ -3643,7 +3701,7 @@ Compact rows, from the wireframe's ModulePanel board, with darktable's sliders t
   - **Focused by the keyboard,** the row shows the focus ring round all of it, centred on its edge and 4 points beyond the content at its start and end, as far as a dropdown row's hover band, so it runs into neither the top line nor the next row.
 - **Every one-line row in a tool panel is 24 points** (`sizes.panel_line`): the Blended dropdown row and the preset row, the boolean's row, the action row, the button row, a computed value's row, a tool's setting, and a collapsible group's row, with their text centred, so stacked choices read as separate rows, as darktable's do beside its sliders. `sizes.row` (26) stays for popups, text fields, segments and the dialogs, and the sheets' rows are a tool's (decision 86, planned), and a Boxed dropdown row stays 20. The slider row is 37.
 - **A boolean's row** is one line, 24 points: its label at the start and its switch at the end ([Switches and boolean rows](#switches-and-boolean-rows)). Clicking anywhere on the row toggles it.
-- **A dropdown row** (`Choice`) is always one line, in one of two styles (decisions 42, 86 and 90, [Choice rows: two styles](#choice-rows-two-styles)): **Blended**, darktable's combobox, in tool panels, the Export tool, the Import sheet's tools, its option right-aligned in the small text with a small chevron ending where slider values end and no box; **Boxed** everywhere else. Both put the label at the start and the row's buttons, such as the picker, before the option or the box.
+- **A dropdown row** (`Choice`) is always one line, in one of two styles (decisions 42, 86 and 90, [Choice rows: two styles](#choice-rows-two-styles)): **Blended**, darktable's combobox, in tool panels, the Export tool, the Import tool, its option right-aligned in the small text with a small chevron ending where slider values end and no box; **Boxed** everywhere else. Both put the label at the start and the row's buttons, such as the picker, before the option or the box.
   - Boxed, the box is styled as the value fields, 18 points high, its text 5 points from its start and followed by ⌄, 4 points from its end, as the web browser draws the wireframe. It is as wide as its widest option, a preset row's Custom counted as one, and at least a value field's width, so a choice never changes its size and it lines up with the fields around it.
   - The whole row opens it, the label, the gap and the box but not the buttons, and under the pointer a neutral band in `hover`, never the accent, runs across it, so a short label and its value read as one at 600 points. It is one focus stop, the box, reported to AccessKit as a combo box named by the control's full name, the chosen option its value.
   - When the label, a 12-point gap, the buttons and the box at its widest option do not fit, the row stays one line, as darktable's do: the label and the box share what the gap and the buttons leave in proportion to their widths, darktable's `label / (label + value)`, and each is cut at its end with …, never in its middle, since an option's start tells it from the others ("Fluorescent F11 (narrow tri-band)" cut in the middle loses F11). The widest option decides the share, not the chosen one, so a choice never changes the layout. The tooltip shows whatever is cut whole, before the promise, and screen readers hear the whole label and option.
@@ -3938,7 +3996,7 @@ darktable's fine control, nothing removed (`_popup_show`, `_popup_draw`, `_windo
 
 `Choice::style(ChoiceStyle::Blended | ChoiceStyle::Boxed)`, Boxed by default. The design system's `apertrust_ui::components::ChoiceStyle` sits beside the definitions' `apertrust_tools::ChoiceStyle` (a list or segments), and the renderer names the design system's by its path (`parts::ChoiceStyle`).
 
-- **Blended,** darktable's combobox (`_widget_draw` for `DT_BAUHAUS_COMBOBOX`), in tool panels: tool choice rows, preset rows such as White balance's Settings, and the choices of darktable's settings for a tool; and in the Export tool and the Import sheet's tools, whose rows are all settings (decisions 86 and 90, planned; [A sheet's rows](#a-sheets-rows), [The Export tool](#the-tools-layout)). One row, 24 points high (`sizes.panel_line`, as every one-line row of a tool panel):
+- **Blended,** darktable's combobox (`_widget_draw` for `DT_BAUHAUS_COMBOBOX`), in tool panels: tool choice rows, preset rows such as White balance's Settings, and the choices of darktable's settings for a tool; and in the Export tool and the Import tool, whose rows are all settings (decisions 86 and 90, planned; [A sheet's rows](#a-sheets-rows), [The Export tool](#the-tools-layout)). One row, 24 points high (`sizes.panel_line`, as every one-line row of a tool panel):
   - the label at the start, in the body text;
   - the kept marker after the label, as a slider row's, drawn by the same function: ● while the session reports the control kept, ○ under the pointer or focus, a click on it releasing or keeping it (`Choice::mark`, `ChoiceAction::ToggleKeep`, sent as `Keep`). Its place is the row's, kept or not, so keeping moves nothing. A preset row and a tool's setting, which store nothing, have none;
   - the row's buttons, a picker, before the option;
@@ -4793,10 +4851,10 @@ Phase 3 adds, for the interface:
 - **Compact tool rows,** darktable's sliders the example of density ([How the rows are laid out](#how-the-rows-are-laid-out)), built:
   - a slider row of two lines, 37 points, its label, marker, buttons and value over a full-width track, about 296 points at 320; its value 54 by 18 while edited, so "−180.00" fits whole; its buttons and kept marker 18 high; its track's strip 16 with the track 6 points into it; the handle never shrinks, its tip and base 5.5 points each way of the track's middle;
   - a boolean's row of one line, its label at the start and its switch at the end;
-  - a dropdown row of one line, Blended in tool panels, the Export tool and the Import sheet's tools and Boxed elsewhere; a label and options too long share the line in darktable's proportion, each cut at its end;
+  - a dropdown row of one line, Blended in tool panels, the Export tool and the Import tool and Boxed elsewhere; a label and options too long share the line in darktable's proportion, each cut at its end;
   - section headers of 30 points with the title centred.
 - **Slider values the darktable way** (decision 42, [Slider values and choices](#slider-values-and-choices)): read-only at rest with their unit, in 12 points; a click on the value or a digit makes it a field with the number alone; darktable's popup for fine control, Enter on a focused slider opening it as in darktable.
-- **Choice rows in two styles:** Blended, darktable's combobox, in tool panels, the Export tool and the Import sheet's tools; Boxed everywhere else; darktable's type-to-filter in the drawn dropdowns on Windows and Linux, the Mac's native menus with AppKit's type-select.
+- **Choice rows in two styles:** Blended, darktable's combobox, in tool panels, the Export tool and the Import tool; Boxed everywhere else; darktable's type-to-filter in the drawn dropdowns on Windows and Linux, the Mac's native menus with AppKit's type-select.
 
 ## Choices
 
@@ -4816,14 +4874,14 @@ The decisions this design rests on, by area; each decision record has the option
 | Touch | One interface in two modes, Standard and Touch, Touch changing sizes, spacing and gestures, with two layout adaptations presenting the same parts (the portrait bottom sheet, Photos' Select mode); Interface in Settings › General and View › Touch Mode, Standard on the desktop, Touch on Android; no literal sizes, nothing only on hover, right-click, double-click or a modifier, sliders and pickers only through their components (decision 94) |
 | Popups | Native `NSMenu`s on the Mac for plain lists and context menus, from `apertrust-display`; drawn for what previews or holds controls, and on Windows and Linux; one popup service; the drawn ones on egui `Area`s, owning their plain keys while open through an egui plugin, drawn by `popup::show` once a frame (decision 40) |
 | Dialogs and alerts | Every dialog a native window of its own, modal to the window it rises from, hosted by the app beside eframe's window with its own egui context, AccessKit adapter and surface on the engine's device; made modal as each platform does it (on the Mac a sheet, and Settings alone modeless, a native window of its own; an owned window with its owner disabled on Windows; transient-for and the modal state on X11; a parent on Wayland, with modality kept by the app); confirmations the system's alerts through one alert service, `NSAlert` and the task dialog, Linux's Apertrust's own in a dialog window; About and a future splash screen Apertrust's own over the window (decision 41) |
-| Sheets | Import as a full-window sheet inside the main window, drawn the same on every platform: the sheet bar with the presets row over the column, a grid of the Browser's cells checked to go, a column of tools on the Tools panel's side, 440 points by default, each with the tool panel's header, ↺ and ⋯ for Move Up and Move Down, every row a setting row; whole-sheet presets; a footer with a two-line summary, Keep open, Close and the primary button, which Return presses; a tool in one place (decision 86, planned; [Sheets](#sheets)) |
+| Sheets | Import as a full-window sheet inside the main window, drawn the same on every platform: the sheet bar across it, the Browser's grid with check boxes as its choosing and day headings, W held for a larger look, a column on the Tools panel's side, 440 points by default, holding one tool, Import, its header with ↺, presets and ⋯ and its parts collapsible groups, every row a setting row, no free text, a problem a warning button with its fix; a footer with Help, a two-line summary, Keep open, Close and the primary button, which Return presses; a tool in one place (decision 86, planned; [Sheets](#sheets)) |
 | Export | darktable's export module row for row as one utility, last in the Photos tab: Storage and Format options always open, Global options collapsible and open at first, Metadata and Multi-preset export closed; presets in its header, the preset in use starting the summary; the selection, else the active photo; Ctrl+E revealing it, Export Again on Ctrl+Shift+E; D1 to D18, For sharing and Full size JPEG built in (decision 90), built so far as the Photos tab's last section for the active photo, with no presets; its feedback lines, the jobs window (decision 57); built on the session's export job, a `UserExport` job of darktable's control jobs (decision 57), darktable's size and resample, JPEG and PNG in Rust, each file written beside its name and renamed into place, its settings `export.*` settings and its presets `presets/export.toml` (decision 56; [The Export tool](#the-export-tool)) |
 | The engine and the window | eframe on the app's own event loop, the engine's submit gate held round each of its callbacks (`Gated`), so the window's surface is never reconfigured while the engine submits; during a resize the last frame scaled, the photo's new size sent once the window has kept it for 150 ms (decision 18) |
 | Menus | One model from the registry: the Mac's native menu bar through muda; on Windows and Linux one menu button at the Toolbar's very start, the app's icon or ☰ as a setting chooses, opening the menus drawn by egui through the popup service; the registry owns every key (decision 39) |
 | Icons | SVG files rendered by resvg at their pixel size, their lines 1.25 points wide, and tinted with a theme colour (decision 36); derived from Lucide's, with its ISC and MIT notices, or drawn in its style where it has none (decision 64) |
 | Accessibility | AccessKit on, every component reporting its role, label and value (decision 36) |
 | UI tests | Interaction tests with `egui_kittest` through AccessKit; gallery snapshots per theme and in the pseudo-locale (decision 36) |
-| Slider values and choices | darktable's: the value read-only at rest with its unit and sign, a click or a digit making it a field that takes a number, for now (darktable's expressions waiting until there is a need), darktable's popup for fine control on Enter, a right-click, Shift+F10 or the Menu key, drawn on every platform, a cancel put back by the session with no history step; choice rows Blended, darktable's combobox, in tool panels, the Export tool, the Import sheet's tools and the Export tool, and Boxed elsewhere, the drawn dropdown filtering as darktable's (decisions 42, 86 and 90; [Slider values and choices](#slider-values-and-choices)) |
+| Slider values and choices | darktable's: the value read-only at rest with its unit and sign, a click or a digit making it a field that takes a number, for now (darktable's expressions waiting until there is a need), darktable's popup for fine control on Enter, a right-click, Shift+F10 or the Menu key, drawn on every platform, a cancel put back by the session with no history step; choice rows Blended, darktable's combobox, in tool panels, the Export tool and the Import tool, and Boxed elsewhere, the drawn dropdown filtering as darktable's (decisions 42, 86 and 90; [Slider values and choices](#slider-values-and-choices)) |
 | Workspaces | A workspace its tabs with id, title and icon, each tab's tools, the tools it hides and its toolbar, each in `<user data>/workspaces/<id>.toml` with its own version; Default and Essentials built in, data files in `data/workspaces/`, written whole once changed (step 4), Workspace ▸'s Restore Defaults deleting the file (planned, step 5); a person's own by a file; switched from View › Workspace; a new tool in its default tab, else hidden; the Hidden tab, Show Hidden Tools and the dot; Find Tool…; the tab bar's menu (decision 96; built: the files read and written, both built-in workspaces, switching, the Hidden tab, Show Hidden Tools and the dot, ⋯'s layout items with their keys and screen readers' actions, and Find Tool…; [Workspaces](#workspaces)) |
 | The Tools panel's layout | Each tab's pinned and scrolling sections and which float, the workspace's, in its file; changed by dragging a header, its ⋯, keys and the file; display order only, never the processing order; floating panels inside the window, belonging to no tab (decision 83; [Moving, pinning and floating sections](#moving-pinning-and-floating-sections)) |
 | The view | One view: the Photos tab choosing the photos; the Viewer's layouts, Photo and later Map, switched only when asked, with no Grid; one set of tabs, kept as workspaces; the rating keys, Apply Edit and Export on every selected photo, the sliders and Reset on the active one; Export a tool of the Photos tab, Import and Print sheets, the slideshow an action (decisions 37 and 90; [The shell](#the-shell)) |
@@ -4847,4 +4905,4 @@ What is still undecided in the interface. Each says what the app does meanwhile.
 - **A slider's Ctrl+Shift to `force`** (decision 98) waits on [Ctrl+Shift's steps past the soft range](#slider-values-still-open), and both are settled together. Meanwhile the fallback is left out.
 - **Scripts' action call** (decision 98), darktable's `dt.gui.action` by Apertrust's ids, is designed with scripting. Meanwhile scripts and MCP tools use the session protocol.
 - **Preset actions' ids carrying names** (decision 98), as darktable's do, a rename moving their shortcuts, is settled with the presets API's decision. Meanwhile no preset is an action.
-- **A small Import tool** (decision 90): a section of the Tools panel holding import's defaults, the metadata, rating and labels stamped at import and its presets, may earn its place beside Collections' Import…. Meanwhile there is none: Import's settings are the sheet's, and Settings › Import shows darktable's four preferences.
+- **An import tool in the Tools panel** (decision 90): a section of the Tools panel holding import's defaults, the metadata, rating and labels stamped at import and its presets, may earn its place beside Collections' Import…. Meanwhile there is none: Import's settings are the Import sheet's Import tool's, and Settings › Import shows darktable's four preferences.

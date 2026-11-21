@@ -33,7 +33,7 @@ Apertrust needs help a person can reach from where they are: every tool, and the
 | Settings, and a dialog that needs explaining | A Help button, an icon at the footer's start, "Help" its tooltip and its name for screen readers | `settings/<page>`, `dialogs/<id>` |
 | What has the focus | The action `help`, no key by default: F1 to F5 are the colour labels, as darktable has them ([the default keyboard map](../gui.md#the-default-keyboard-map)), so a person binds one | Its own topic, a Tools panel tool's header its tool's, `tools/<id>` or its override, as its ⋯'s Help; an Import sheet tool's header none, as its ⋯ |
 
-The photo's and a thumbnail's right-click menus hold no Help: they act on photos, and decision 91 bounds them to 16 items. The Import sheet's tools, whose ⋯ holds Move Up and Move Down alone (decision 86), take no Help until the sheet is designed again; their topics would be `tools/<id>` too.
+The photo's and a thumbnail's right-click menus hold no Help: they act on photos, and decision 91 bounds them to 16 items. The Import sheet's Help is a button at its footer's start, as Settings' is, opening the topic `import` ([0086](0086-import-as-a-full-window-sheet.md)); its Import tool's ⋯ holds no Help.
 
 **The Guide's repository** (planned):
 

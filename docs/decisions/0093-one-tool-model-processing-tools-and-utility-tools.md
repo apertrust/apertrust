@@ -12,9 +12,9 @@ Everything in the Tools panel is a tool ([0004](0004-tools-for-people-operations
 
 | Term | Is | darktable's |
 | --- | --- | --- |
-| **Tool** | The parent: everything a person works with in the Tools panel, with one header, one page and one ⋯ | module |
+| **Tool** | The parent: everything a person works with in the Tools panel, and the Import sheet's Import tool, with one header, one page and one ⋯ | module |
 | **Processing tool** | A tool that edits the photo through operations: Exposure, AgX, Colour calibration… | processing module (iop) |
-| **Utility tool**, "utility" for short | A tool that edits nothing of its own, with no controls and no operation: Collections, Filters, Keywords, Metadata, Styles, Export, Scopes, History, Snapshots, the Colour picker, and the Import sheet's import tools ([0086](0086-import-as-a-full-window-sheet.md)) | utility module (lib) |
+| **Utility tool**, "utility" for short | A tool that edits nothing of its own, with no controls and no operation: Collections, Filters, Keywords, Metadata, Styles, Export, Scopes, History, Snapshots, the Colour picker, and the Import sheet's Import tool ([0086](0086-import-as-a-full-window-sheet.md)) | utility module (lib) |
 
 - **What a utility holds is what it is** ([0004](0004-tools-for-people-operations-for-algorithms.md)): settings, view state or the photo's metadata, never controls in the edit. A utility may send the session's commands, as History's `Reset`, `GoTo` and `Compress` do ([0078](0078-undo-redo-and-the-edits-history.md)), but binds no operation.
 - **"Section" no longer names the concept.** It stays only for the Tools panel's block, a header with its body: `apertrust-ui`'s `Section` component and the layout's section ids ([0083](0083-the-side-panels-layout-dragged-and-floating.md)). The menus' `Section` constants ([0091](0091-context-menus-places-and-tools-items-as-actions.md)) name a menu's section and keep their name.
@@ -139,7 +139,7 @@ Each step is reviewed before the next.
 
 ## Options considered
 
-- **Two models, as today:** each utility draws its own header and page, so ↺, presets and ⋯ drift apart, Collections is in no list, and Export's setting rows, presets and the Import sheet's tools, all settings, would each be drawn by code of their own.
+- **Two models, as today:** each utility draws its own header and page, so ↺, presets and ⋯ drift apart, Collections is in no list, and Export's setting rows, presets and the Import sheet's Import tool, all settings, would each be drawn by code of their own.
 - **Each app module's own default for its section's open state,** a constant beside each utility and one for every processing tool: the defaults drift apart from the declaration that names the tool, and a client other than the app could not read them.
 - **One flat definition for both,** a utility leaving the editing fields empty: a utility would carry a version, layers, Auto, switched, controls and pickers that mean nothing for it, each needing a check that it is empty; darktable keeps the two apart.
 - **One trait for both kinds,** in `apertrust-tools`: a utility's behaviour is its widgets, which needs egui there, against [0028](0028-tools-bound-to-operations.md); the processing half is what the engine runs, which a utility never is.
