@@ -268,7 +268,9 @@ On the corpus each raw is developed up to haze removal by an export and measured
 - A drag of strength or distance runs `main` alone, not the whole-image passes, which only a change of the strength's sign runs again, since it orders the transmission's filters. On the M4 at 2400×1600 from the 7R V's 61 MP raw, a strength drag runs 6 passes instead of 29: 12.6 to 16.1 ms from submission to done, against 33 to 40.
 - A resize of the 7R V's viewport runs `plane_downscale` and `main`: 22 to 34 ms from submission to done in place, against 395 to 463 ms for the whole estimate.
 
-**Planned:** an operation ported between demosaic and haze removal reaches the estimate through the 100% view's round, an engine change made before the first of their tools ships; orientation offers it with geometry after haze removal. Until each is built, the viewport estimates at its own scale there, logged under `-d pipe`, as it does in a tiled viewport.
+**The 100% view** binds the fitted viewport's estimate, plane A and the statistics, in place, running no pass of it; where the fitted viewport estimates at its own scale, with geometry after haze removal, the detail estimates at full resolution in a round of its own over the whole image (decision 99; `docs/engine.md`, The zoomed view).
+
+**Planned:** an operation ported between demosaic and haze removal reaches the fitted viewport's estimate through the 100% view's round, an engine change made before the first of their tools ships; orientation offers it with geometry after haze removal. Until each is built, the fitted viewport estimates at its own scale there, logged under `-d pipe`, as it does in a tiled viewport.
 
 ### At the viewport's own scale
 
