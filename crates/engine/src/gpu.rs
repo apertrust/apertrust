@@ -253,6 +253,12 @@ impl SubmitGate {
         Held(gate, std::marker::PhantomData)
     }
 
+    /// How many turns the gate has handed out, for a test counting submissions.
+    #[cfg(test)]
+    pub(crate) fn turns(&self) -> u64 {
+        self.0.lock().next
+    }
+
     /// Runs `f` with the gate free, if this thread holds it, then holds it again as
     /// often as before, also when `f` panics: for waiting on a thread that submits, such
     /// as the engine's when its session ends, from inside a toolkit's callback that holds

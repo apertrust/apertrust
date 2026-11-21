@@ -1179,6 +1179,7 @@ impl Engine {
             self.pickers_fail(error, events);
             if let Some(open) = &mut self.open {
                 open.pipeline = None;
+                open.detail = None;
             }
             return;
         }

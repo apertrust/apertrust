@@ -194,6 +194,17 @@ pub enum Pipe {
         region: [u32; 4],
         resample: Option<Resample>,
     },
+    /// The zoomed view's detail (decision 99; `docs/engine.md`, The zoomed view): `region`,
+    /// x, y, width and height of the output image at `scale`, after every geometry, from
+    /// an input that is demosaic's image at full resolution, which another pipeline holds
+    /// and the plan reads in place ([`Plan::keyed_on`]). Up to its start it is planned as
+    /// a tile of an export, its region walked back through every geometry and cut out by
+    /// the engine's `region` copy, a cache point; after it, as the viewport, with an edit
+    /// cache and whole-image keys. Its operations see [`PipeKind::Viewport`]. The raw
+    /// stage's instances are left out, as its input is past them. Only at `scale` 1 so
+    /// far, and refused ([`PlanError::Detail`]) with an operation after demosaic that has
+    /// whole-image passes or reaches past its pixel.
+    Detail { region: [u32; 4], scale: f32 },
 }
 
 /// Which image buffer an operation reads or writes: the pipe's input, or a working
@@ -368,6 +379,29 @@ impl Plan {
         self.operations
             .last()
             .map_or([self.image.width, self.image.height], |op| op.extent)
+    }
+
+    /// The plan of a pipe whose input another pipeline holds, a detail's demosaic image
+    /// (decision 99), its keys chained from `source`, the key of what that input holds:
+    /// every operation's, and every whole-image result's. A plan is made from
+    /// descriptions alone, which say nothing of what an image holds, so without it a
+    /// change of the raw stage would leave the detail's cache points looking valid.
+    pub fn keyed_on(mut self, source: u64) -> Self {
+        let chained = |key: u64| {
+            let mut hasher = DefaultHasher::new();
+            (source, key).hash(&mut hasher);
+            hasher.finish()
+        };
+        for op in &mut self.operations {
+            op.key = chained(op.key);
+            if let Some(whole) = &mut op.whole_image {
+                whole.key = chained(whole.key);
+                if let Some(part) = &mut whole.full_resolution {
+                    part.key = chained(part.key);
+                }
+            }
+        }
+        self
     }
 
     /// Every pass of every operation, in dispatch order.
@@ -620,6 +654,10 @@ impl Plan {
                 width: 0,
                 height: 0,
             },
+            Pipe::Detail { scale, .. } => Pipe::Detail {
+                region: [0; 4],
+                scale,
+            },
             Pipe::Export | Pipe::Resampled(_) => pipe,
         };
         pipe(self.pipe) == pipe(other.pipe)
@@ -716,6 +754,14 @@ pub enum PlanError {
         /// makes smaller.
         smaller_fits: bool,
     },
+    /// A detail the zoomed view cannot render yet (decision 99): an operation after
+    /// demosaic with whole-image passes, or one that reaches past its pixel, or a scale
+    /// other than 1.
+    #[error("{operation}: {what}")]
+    Detail {
+        operation: &'static str,
+        what: &'static str,
+    },
 }
 
 /// Plans the instances in pipeline order for `pipe` (decisions 20 and 21): each
@@ -744,13 +790,16 @@ pub fn plan(
             .slot
             .pipeline_order(&b.operation.manifest().slot)
     });
+    if let Pipe::Detail { scale, .. } = pipe {
+        ordered = after_demosaic(ordered, &input, scale)?;
+    }
     // The profile is `prepare`'s alone (decision 26): neither the instances' defaults
     // nor their geometry see it. The pipe's kind every instance sees (decision 16).
     let bare = ImageContext {
         output_profile: None,
         pipe: match pipe {
             Pipe::Export | Pipe::Resampled(_) | Pipe::Tile { .. } => PipeKind::Export,
-            Pipe::Viewport { .. } => PipeKind::Viewport,
+            Pipe::Viewport { .. } | Pipe::Detail { .. } => PipeKind::Viewport,
         },
         ..image.clone()
     };
@@ -783,9 +832,20 @@ pub fn plan(
             };
             (split, full, fitted)
         }),
-        Pipe::Export | Pipe::Resampled(_) | Pipe::Tile { .. } => None,
+        Pipe::Export | Pipe::Resampled(_) | Pipe::Tile { .. } | Pipe::Detail { .. } => None,
     };
     let Some((split, full, (fitted_width, fitted_height))) = viewport else {
+        if let Pipe::Detail { .. } = pipe
+            && let Some(op) = whole
+                .operations
+                .iter()
+                .find(|op| has_whole_image_passes(op))
+        {
+            return Err(PlanError::Detail {
+                operation: op.id,
+                what: "whole-image passes after demosaic are not rendered past Fit yet",
+            });
+        }
         log(&whole, &lines);
         log_full_resolution(&whole, limits);
         return Ok(whole);
@@ -879,6 +939,39 @@ pub fn plan(
         }
         edge /= 2;
     }
+}
+
+/// The instances a detail at `scale` from `input`, demosaic's image, runs (decision 99):
+/// those after the raw stage, which made its input, refused where it cannot render them
+/// yet: at a scale other than 1, from an input that is not demosaic's RGBA image, or with
+/// an operation that reaches past its pixel, whose region would have to grow by its reach
+/// and be cut back after it. Whole-image passes are refused once they are planned.
+fn after_demosaic<'a, 'b>(
+    ordered: Vec<&'b Instance<'a>>,
+    input: &ImageDesc,
+    scale: f32,
+) -> Result<Vec<&'b Instance<'a>>, PlanError> {
+    let refuse = |operation, what| Err(PlanError::Detail { operation, what });
+    if scale != 1.0 {
+        return refuse("the detail", "a scale other than 1 is not planned yet");
+    }
+    if input.format != Format::Rgba || input.extent.contains(&0) {
+        return refuse("the detail", "its input is not demosaic's image");
+    }
+    let after: Vec<&Instance> = ordered
+        .into_iter()
+        .filter(|instance| instance.operation.manifest().slot.stage != Stage::Raw)
+        .collect();
+    if let Some(reaching) = after
+        .iter()
+        .find(|instance| instance.operation.manifest().radius > 0)
+    {
+        return refuse(
+            reaching.operation.manifest().id,
+            "an operation after demosaic that reaches past its pixel is not rendered past Fit yet",
+        );
+    }
+    Ok(after)
 }
 
 /// Logs, under `-d memory`, a viewport whose buffers come to more than the budget with
@@ -997,6 +1090,10 @@ fn log(plan: &Plan, lines: &[String]) {
             region: [x, y, width, height],
             ..
         } => format!("tile {width}×{height} at {x},{y}"),
+        Pipe::Detail {
+            region: [x, y, width, height],
+            scale,
+        } => format!("detail {width}×{height} at {x},{y}, scale {scale}"),
     };
     // A viewport's tiles run their operations once a tile.
     let mut ids: Vec<&str> = plan.operations.iter().map(|op| op.id).collect();
@@ -1345,6 +1442,7 @@ fn regions(
             [0, 0, resample.output[0], resample.output[1]],
         ),
         Pipe::Tile { region, resample } => (1.0, resample.map_or(1.0, |r| r.scale), region),
+        Pipe::Detail { region, scale } => (1.0, scale, region),
         Pipe::Viewport { width, height } => {
             let fitted = fit_scale((extent[0], extent[1]), (width, height));
             let [width, height] = at_scale(extent, fitted);
@@ -1523,9 +1621,11 @@ fn build(
                 .as_ref()
                 .map_or(region, |at_size| at_size.input_region()),
         ),
-        (Pipe::Export | Pipe::Resampled(_) | Pipe::Tile { .. }, Some(regions)) => {
-            Some(regions.region)
-        }
+        (Pipe::Detail { region, .. }, None) => Some(region),
+        (
+            Pipe::Export | Pipe::Resampled(_) | Pipe::Tile { .. } | Pipe::Detail { .. },
+            Some(regions),
+        ) => Some(regions.region),
     };
     let mut builder = Builder {
         plan: Plan {
@@ -1579,13 +1679,35 @@ fn build(
         builder.scaled_origin = Some([x, y]);
         builder.plan.resample = Some(0..0);
     }
-    if let (Pipe::Tile { .. }, Some(region)) = (pipe, region) {
+    // A detail's region lies inside its input, which its copy cuts it from whole: with no
+    // reach to grow it by, the copy is the region itself, which one past the image's edge
+    // would leave clipped or one before the input's corner shifted (decision 99).
+    if let (Pipe::Detail { .. }, Some([x, y, width, height])) = (pipe, region) {
+        let [left, top] = input.origin;
+        let inside = |start: u32, length: u32, from: u32, size: u32| {
+            let end = start.checked_add(length);
+            length > 0 && start >= from && end.is_some_and(|end| end - from <= size)
+        };
+        if !(inside(x, width, left, input.width) && inside(y, height, top, input.height)) {
+            return Err(PlanError::Detail {
+                operation: "the detail",
+                what: "its region is empty or not inside its input",
+            });
+        }
+    }
+    if let (Pipe::Tile { .. } | Pipe::Detail { .. }, Some(region)) = (pipe, region) {
         // The tile's operations need the region grown by their radii.
         let border: u32 = ordered
             .iter()
             .map(|instance| instance.operation.manifest().radius)
             .sum();
         builder.tile_input(region, border)?;
+    }
+    // A detail's copy of its region is its first cache point, and the edit cache starts
+    // after it, as the viewport's start after its downscale (decision 99).
+    if let Pipe::Detail { .. } = pipe {
+        builder.cache_current();
+        builder.plan.edit_cache = Some(builder.current_desc);
     }
     // The raw-stage instances the viewport's tiles run, from the tiling's split on.
     let mut tiled = Vec::new();
@@ -1678,7 +1800,10 @@ impl AtSize {
                 region,
                 resample: Some(resample),
             } => (resample, region),
-            Pipe::Export | Pipe::Viewport { .. } | Pipe::Tile { resample: None, .. } => {
+            Pipe::Export
+            | Pipe::Viewport { .. }
+            | Pipe::Tile { resample: None, .. }
+            | Pipe::Detail { .. } => {
                 return Ok(None);
             }
         };
@@ -2089,7 +2214,8 @@ impl Builder {
         let scale = self.context.scale;
         let key = key(self.key, id, version, scale, origin, &output_desc, &passes);
         // Kept by key in the viewport, outside its tiles, whose operations share buffers.
-        let keeps = matches!(plan.pipe, Pipe::Viewport { .. }) && self.slot.is_none();
+        let keeps =
+            matches!(plan.pipe, Pipe::Viewport { .. } | Pipe::Detail { .. }) && self.slot.is_none();
         let whole_image = keeps
             .then(|| {
                 whole_image(
@@ -3480,6 +3606,16 @@ struct Submitted {
     copied: Option<wgpu::Buffer>,
 }
 
+/// A render recorded into a caller's encoder ([`Pipeline::record`]): what its timings
+/// need once the GPU has done the caller's submission.
+pub(crate) struct Recording {
+    first: usize,
+    runs: Vec<bool>,
+    names: Vec<&'static str>,
+    copied: Option<wgpu::Buffer>,
+    start: Instant,
+}
+
 /// A tool's colour picker's measurement at its operation in a live render (decision
 /// 79): recorded right after the operation's last pass, given the buffers of its input
 /// and its output, while both are intact ([`Pipeline::render_probing`]).
@@ -4277,6 +4413,104 @@ impl Pipeline {
         tracing::trace!(target: "perf", "submitted {passes}{from}");
     }
 
+    /// [`Self::render_probing`]'s passes and timestamps recorded into `encoder`, a
+    /// caller's, which it submits through [`GpuContext::submit`] with what else it
+    /// records, so that several pipelines' renders and their copies take one turn at the
+    /// submit gate (decisions 18 and 99); and whether `probe` was recorded. The cache
+    /// points, the edit cache and the scratch's results are taken as the recording leaves
+    /// them, which the caller's submission makes so, as [`Self::submit_then`] takes them.
+    /// Once the GPU has done the submission, [`Self::timings`] reads its timings.
+    pub(crate) fn record(
+        &mut self,
+        gpu: &GpuContext,
+        encoder: &mut wgpu::CommandEncoder,
+        probe: Option<Probe>,
+    ) -> (Recording, bool) {
+        let start = Instant::now();
+        let (submitted, probed) = self.record_into(gpu, encoder, probe, true);
+        self.settle(&submitted);
+        let Submitted {
+            first,
+            runs,
+            names,
+            copied,
+            ..
+        } = submitted;
+        let recording = Recording {
+            first,
+            runs,
+            names,
+            copied,
+            start,
+        };
+        (recording, probed)
+    }
+
+    /// The timings of `recording`, once the GPU has done the submission it went into,
+    /// logged as a render's: its passes' GPU times, and the time since it was recorded.
+    pub(crate) fn timings(
+        &self,
+        gpu: &GpuContext,
+        recording: Recording,
+    ) -> Result<Timings, ComputeError> {
+        let Recording {
+            first,
+            runs,
+            names,
+            copied,
+            start,
+        } = recording;
+        let ticks = self.timer.as_ref().zip(copied.as_ref());
+        let timings = Timings::read(gpu, ticks, &names, start)?;
+        self.log_render(first, &runs, &names, &timings);
+        Ok(timings)
+    }
+
+    /// Forgets that the last render rendered the plan, so [`Self::rendered`] is false until
+    /// the next: for a caller that could not see a recorded render's submission end, and so
+    /// never copied its output. Its cache points and results stay as recorded.
+    pub(crate) fn forget_render(&mut self) {
+        self.rendered.clear();
+    }
+
+    /// Whether the last render rendered the plan as it is: the output holds it, and a
+    /// render now would only run the passes after the newest cache point again.
+    pub(crate) fn rendered(&self) -> bool {
+        (self.rendered.iter()).eq(self.plan.operations.iter().map(|op| &op.key))
+    }
+
+    /// Demosaic's image at full resolution, the plan's first cache point, where it is an
+    /// RGBA image in an untiled viewport's plan, with the key it holds once the plan is
+    /// rendered: what a detail reads in place (decision 99), whose plan is keyed on it
+    /// ([`Plan::keyed_on`]). `None` in a plan without one, as a tiled viewport, whose
+    /// first cache point is the raw stage's mosaic. Its description is the cache point's
+    /// image's.
+    pub fn demosaiced(&self) -> Option<(GpuImage, u64)> {
+        // A viewport's alone: a detail's first cache point is its region's copy.
+        if !matches!(self.plan.pipe, Pipe::Viewport { .. }) || self.plan.tiled.is_some() {
+            return None;
+        }
+        let &op = self.plan.cached.first()?;
+        let planned = &self.plan.operations[op];
+        if planned.output_desc.format != Format::Rgba {
+            return None;
+        }
+        let mut image = self.image(planned.output).clone();
+        image.set_desc(planned.output_desc);
+        Some((image, planned.key))
+    }
+
+    /// Whether `image`, in the same buffer and of the same description, is its input.
+    pub(crate) fn reads(&self, image: &GpuImage) -> bool {
+        self.input.buffer() == image.buffer() && self.input.desc() == image.desc()
+    }
+
+    /// Its compiled kernels, which another pipeline over the same photo takes, so it
+    /// compiles only what they lack.
+    pub(crate) fn shared_kernels(&self) -> Kernels {
+        self.kernels.clone()
+    }
+
     /// Records the passes from the newest valid cache point to the end, the timestamps
     /// where `timed` and the device has them, `probe` after its operation's last pass,
     /// then `then`, and submits them; and whether `probe` was recorded.
@@ -4285,6 +4519,23 @@ impl Pipeline {
         gpu: &GpuContext,
         probe: Option<Probe>,
         then: impl FnOnce(&mut wgpu::CommandEncoder),
+        timed: bool,
+    ) -> (Submitted, bool) {
+        let mut encoder = gpu.device.create_command_encoder(&Default::default());
+        let recorded = self.record_into(gpu, &mut encoder, probe, timed);
+        then(&mut encoder);
+        gpu.submit([encoder.finish()]);
+        recorded
+    }
+
+    /// Records into `encoder` the passes from the newest valid cache point to the end, the
+    /// timestamps where `timed` and the device has them, and `probe` after its operation's
+    /// last pass, for the caller to submit; and whether `probe` was recorded.
+    fn record_into(
+        &self,
+        gpu: &GpuContext,
+        encoder: &mut wgpu::CommandEncoder,
+        probe: Option<Probe>,
         timed: bool,
     ) -> (Submitted, bool) {
         let keys: Vec<u64> = self.plan.operations.iter().map(|op| op.key).collect();
@@ -4311,16 +4562,13 @@ impl Pipeline {
             }
         }
         let runs = self.runs_from(first);
-        let mut encoder = gpu.device.create_command_encoder(&Default::default());
         let copies = Copies { restore, capture };
-        let (names, probed) = self.record_passes(&mut encoder, &runs, copies, timed, probe);
+        let (names, probed) = self.record_passes(encoder, &runs, copies, timed, probe);
         let copied = self
             .timer
             .as_ref()
             .filter(|_| timed)
-            .map(|timer| timer.copy_out(gpu, &mut encoder, names.len() as u32));
-        then(&mut encoder);
-        gpu.submit([encoder.finish()]);
+            .map(|timer| timer.copy_out(gpu, encoder, names.len() as u32));
         let submitted = Submitted {
             keys,
             first,
@@ -4710,6 +4958,10 @@ impl Pipeline {
             (0, _) => {}
             (_, true) => rendered.push_str(&named),
             (n, false) => rendered.push_str(&format!(", kept: {}", count(n, "op", "ops"))),
+        }
+        // The zoomed view's detail named, beside the fitted viewport's render.
+        if let Pipe::Detail { .. } = self.plan.pipe {
+            rendered.insert_str(0, "detail: ");
         }
         // An export's tiles at trace level, since the export sums them up.
         if matches!(self.plan.pipe, Pipe::Tile { .. }) {

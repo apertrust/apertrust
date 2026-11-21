@@ -102,7 +102,9 @@
 //! The view, the zoom and its centre ([`Command::View`], decision 99; [`crate::view`]), is
 //! view state, one per session, which every client shares and learns from [`Event::View`];
 //! it is kept across photos, its centre clamped to each. Each frame says where it lies in
-//! the photo ([`Frame::place`]). The session still renders every frame at Fit.
+//! the photo ([`Frame::place`]). From 100% on the frame is the detail pipeline's, the
+//! visible region at scale 1, with the fitted frame beside it ([`Frame::overview`]), both
+//! rendered in one submission; below 100% every frame is the whole photo at Fit for now.
 //!
 //! These types stand in for the session protocol's until `apertrust-protocol` exists.
 
@@ -196,8 +198,11 @@ pub enum Command {
     /// photos, another photo taking the same view, its centre clamped to it
     /// ([`crate::view::place`]). A factor not finite or not above 0 is Fit, one above 16 is
     /// 16 ([`View::normalized`]). Answered by [`Event::View`] where the view or its
-    /// placement changed. The session renders the whole photo at Fit at every view for now,
-    /// so a view changes no frame.
+    /// placement changed. From 100% on it renders the visible region through the detail
+    /// pipeline, a view that moves the region rendering it alone; below 100% the frame
+    /// stays at Fit for now. Where the detail cannot render yet, in a tiled viewport or
+    /// with an operation it refuses, the view is still the session's, its frame stays at
+    /// Fit, and the command is refused with [`SessionError::Zoom`].
     View(View),
     /// Set a tool's control, which keeps it. `done` on the last change of a gesture (a
     /// drag released, a click, a typed value), which saves the edit.
@@ -948,9 +953,34 @@ pub struct Frame {
     pub timings: Timings,
     /// From the first command it answers reaching the session to its publication.
     pub latency_ms: f64,
-    /// Where it lies in the photo (decision 99): the whole photo at the fitted scale for
-    /// the bounds it was rendered for, its origin (0, 0), as every frame is for now.
+    /// Where it lies in the photo (decision 99): at Fit, the whole photo at the fitted scale
+    /// for the bounds it was rendered for, its origin (0, 0); zoomed to 100% or above, the
+    /// detail's region at scale 1, its origin the region's corner.
     pub place: FramePlace,
+    /// Zoomed past Fit, the fitted viewport's frame, the whole photo at the fitted scale,
+    /// which a client draws, enlarged to the zoom, wherever the detail does not reach,
+    /// and which the scopes count and the Colour picker samples (decision 99); `None` at
+    /// Fit, where the frame is that.
+    pub overview: Option<Overview>,
+}
+
+/// The fitted viewport's frame beside a zoomed one ([`Frame::overview`]): RGBA `f32`, as a
+/// frame is, in a storage buffer the session never writes again while it is the latest
+/// frame's overview.
+#[derive(Debug, Clone)]
+pub struct Overview {
+    pub buffer: wgpu::Buffer,
+    pub width: u32,
+    pub height: u32,
+}
+
+impl Frame {
+    /// Its pixels, read back, which waits for the GPU: rows top to bottom.
+    pub fn download(&self, gpu: &GpuContext) -> Result<Vec<[f32; 4]>, ComputeError> {
+        let bytes = u64::from(self.width) * u64::from(self.height) * 16;
+        let read = crate::compute::read_buffer(gpu, &self.buffer, bytes)?;
+        Ok(bytemuck::pod_collect_to_vec(&read))
+    }
 }
 
 /// The session's one view, as every client of it shares it (decision 99): [`Event::View`].
@@ -1070,6 +1100,12 @@ pub enum SessionError {
     /// the rest of the session.
     #[error("the scopes are off: {0}")]
     Scopes(String),
+    /// A [`Command::View`] past Fit that the session cannot render yet, as the reason
+    /// says: a tiled viewport, an operation or a region the detail's plan refuses, or a
+    /// detail pipeline the GPU cannot build. The view is the session's all the same, and
+    /// its frames stay at Fit, as [`Frame::place`] says (decision 99).
+    #[error("the photo stays at Fit: {0}")]
+    Zoom(String),
     /// [`PickerCommand::On`] named a picker no tool declares, or one whose operation
     /// the plan lacks once its tool is on.
     #[error("no tool has that colour picker")]
@@ -2102,6 +2138,12 @@ struct Engine {
     /// The view and its placement last told as [`Event::View`], which the next is compared
     /// with; the default view and none before any.
     view_told: (View, Option<Placement>),
+    /// Why the last render stayed at Fit where the view asks for the detail (decision 99),
+    /// which the `View` still to be answered is refused with.
+    zoom_refused: Option<SessionError>,
+    /// The number of the last `View` no render has answered yet: one sent while the photo
+    /// opens is answered as it goes live ([`Self::answer_view`]).
+    view_asked: Option<u64>,
     /// The open under way, from its `Open` until its photo is live or it fails (decision
     /// 77), while every command on the edit is refused.
     opening: Option<Opening>,
@@ -2495,6 +2537,9 @@ struct Open {
     /// for the photo.
     views_failed: BTreeSet<&'static str>,
     pipeline: Option<Pipeline>,
+    /// The zoomed view's detail pipeline, from the first frame zoomed to 100% or above
+    /// (decision 99).
+    detail: Option<Detail>,
     /// The edit's history in memory, and its undo records (decision 78).
     history: history::PhotoHistory,
     /// Each tool's memory of the photo, as darktable's panel keeps one, which no edit
@@ -2574,6 +2619,56 @@ struct Display {
     through: u64,
 }
 
+impl Display {
+    /// `old` where it holds frames of `size`, else a new pair of `bytes` each, with
+    /// whether it is new, holding no frame yet.
+    fn for_frames(
+        gpu: &GpuContext,
+        old: Option<Display>,
+        size: (u32, u32),
+        bytes: u64,
+    ) -> (Display, bool) {
+        match old {
+            Some(display) if display.size == size => (display, false),
+            old => {
+                drop(old);
+                let buffer = |label| {
+                    gpu.device.create_buffer(&wgpu::BufferDescriptor {
+                        label: Some(label),
+                        size: bytes,
+                        usage: wgpu::BufferUsages::STORAGE
+                            | wgpu::BufferUsages::COPY_DST
+                            | wgpu::BufferUsages::COPY_SRC,
+                        mapped_at_creation: false,
+                    })
+                };
+                let display = Display {
+                    buffers: [buffer("display 0"), buffer("display 1")],
+                    size,
+                    published: 1,
+                    through: 0,
+                };
+                (display, true)
+            }
+        }
+    }
+}
+
+/// The zoomed view's detail pipeline (decision 99; `docs/engine.md`, The zoomed view):
+/// built on the first frame zoomed to 100% or above, kept while its photo is open, not
+/// rendered at Fit, and dropped with the photo.
+struct Detail {
+    /// Its plan's, `Pipe::Detail`, reading the fitted pipeline's demosaic image in place.
+    pipeline: Pipeline,
+    /// Its own pair of display buffers, sized to its region.
+    display: Display,
+    /// The output image's region it last rendered, at `scale`.
+    region: [u32; 4],
+    scale: f32,
+    /// Whether the frame published last is its.
+    shown: bool,
+}
+
 /// What an edit command did: whether the image may have changed, whether it completes a
 /// change, which saves the edit, and whether it is a cancel, which the writer reports
 /// saved, without writing, where the file holds the edit.
@@ -2624,6 +2719,8 @@ impl Engine {
             size: None,
             view: View::default(),
             view_told: (View::default(), None),
+            zoom_refused: None,
+            view_asked: None,
             opening: None,
             decodes: Arc::default(),
             kernels: Kernels::default(),
@@ -2792,6 +2889,7 @@ impl Engine {
             events.retain(|event| !matches!(event, Event::Frame(_)));
             if let Some(open) = &mut self.open {
                 open.pipeline = None;
+                open.detail = None;
             }
             self.display = None;
             if let Some(meter) = &mut self.meter {
@@ -2976,6 +3074,9 @@ impl Engine {
         let mut recount = false;
         // Whether the active colour picker's region changed, to be measured on the frame.
         let mut resample = false;
+        // The batch's last `View`, by its number: its refusal is told where the frame
+        // stays at Fit (decision 99).
+        let mut viewed = None;
         for (at, command) in batch {
             self.applied += 1;
             // Values follow every change asked for, failed or not, so a client's own
@@ -3017,12 +3118,12 @@ impl Engine {
                     self.tell_live_frame();
                     Ok(())
                 }
-                // The view, the last of the batch's winning; told after the batch's values.
-                // Every frame is the whole photo at Fit until the detail pipeline renders
-                // the zoomed region (decision 99), so no view moves the frame's place, and
-                // none renders.
+                // The view, the last of the batch's winning; told after the batch's values,
+                // and rendered after the loop where it moves the frame (decision 99).
                 Command::View(view) => {
                     self.view = view.normalized();
+                    viewed = Some(self.applied);
+                    self.view_asked = Some(self.applied);
                     Ok(())
                 }
                 Command::Scopes(graphs) => {
@@ -3169,6 +3270,9 @@ impl Engine {
                 })),
             }
         }
+        // Where the batch's commands' failures end and its facts begin: a `View`'s refusal,
+        // which only its render finds, goes there.
+        let facts = events.len();
         if values {
             self.count_raw_histogram(&mut events);
         }
@@ -3197,8 +3301,19 @@ impl Engine {
         }
         // Whether the batch published a frame, which the colour picker measured as it did.
         let mut published = false;
+        // A view that moves the frame renders: to or from the detail, or the detail's
+        // region elsewhere (decision 99). One the session cannot render past Fit renders
+        // the fitted frame, and is refused.
+        render |= viewed.is_some() && self.zoom_wanted() != self.zoom_shown();
+        // A `View` of the frame shown, on a live photo, is answered as it is: nothing is
+        // left for a later render to refuse it for.
+        if viewed.is_some() && !render && (self.open.as_ref()).is_some_and(|o| o.input.is_some()) {
+            self.view_asked = None;
+        }
         if render {
-            match self.render(since, &mut events) {
+            let rendered = self.render(since, &mut events);
+            self.answer_view(&rendered, &mut events, facts);
+            match rendered {
                 Ok(Some(frame)) => {
                     published = true;
                     events.push(Event::Frame(frame));
@@ -3226,6 +3341,46 @@ impl Engine {
         // a sample-only render after the frame.
         self.probe_alone(&mut events);
         events
+    }
+
+    /// After a render, `rendered`, the `View` still to be answered ([`Self::view_asked`]):
+    /// answered once a render published a frame or found the detail it asks for
+    /// refused, the refusal inserted at `facts`, where the render's path ends its
+    /// commands' failures and begins its facts (decision 99). A render that had nothing
+    /// to show, a photo still opening, leaves it to the next.
+    fn answer_view(
+        &mut self,
+        rendered: &Result<Option<Frame>, SessionError>,
+        events: &mut Vec<Event>,
+        facts: usize,
+    ) {
+        let refused = self.zoom_refused.take();
+        if refused.is_none() && !matches!(rendered, Ok(Some(_))) {
+            return;
+        }
+        let Some(command) = self.view_asked.take() else {
+            return;
+        };
+        if let Some(error) = refused {
+            let error = Box::new(error);
+            let refused = Event::Failed(SessionError::Refused { command, error });
+            events.insert(facts.min(events.len()), refused);
+        }
+    }
+
+    /// The detail's region and scale the view asks of the open photo in the last bounds
+    /// (decision 99; [`crate::view::detail_region`]), placed on its extent as its values
+    /// last reported it; `None` where it asks for Fit.
+    fn zoom_wanted(&self) -> Option<([u32; 4], f32)> {
+        let (open, bounds) = self.open.as_ref().zip(self.size)?;
+        let region = crate::view::detail_region(open.extent, bounds, &self.view)?;
+        Some((region, 1.0))
+    }
+
+    /// The detail's region and scale the frame published last shows; `None` at Fit.
+    fn zoom_shown(&self) -> Option<([u32; 4], f32)> {
+        let detail = self.open.as_ref()?.detail.as_ref()?;
+        detail.shown.then_some((detail.region, detail.scale))
     }
 
     /// Whether the History tab's eye hides any tool of the open photo, while which a
@@ -3914,6 +4069,7 @@ impl Engine {
             open.held.prune(&open.edit);
             open.unsaved = true;
         }
+        let facts = events.len();
         self.count_raw_histogram(&mut events);
         let Some(open) = &mut self.open else {
             return events;
@@ -3934,7 +4090,9 @@ impl Engine {
             self.save();
         }
         if changed && !closing && self.open.as_ref().is_some_and(|open| open.input.is_some()) {
-            match self.render(Instant::now(), &mut events) {
+            let rendered = self.render(Instant::now(), &mut events);
+            self.answer_view(&rendered, &mut events, facts);
+            match rendered {
                 Ok(Some(frame)) => events.push(Event::Frame(frame)),
                 Ok(None) => {}
                 Err(error) => events.push(Event::Failed(error)),
@@ -4143,6 +4301,7 @@ impl Engine {
             gesture: None,
             views_failed: BTreeSet::new(),
             pipeline: None,
+            detail: None,
             history,
             memories: BTreeMap::new(),
             hidden: BTreeSet::new(),
@@ -4251,11 +4410,15 @@ impl Engine {
             return Ok(());
         };
         let values = photo.values(self.operations, &self.tools, self.applied);
+        let facts = events.len();
         events.push(Event::Values(values));
         events.extend(self.history_event());
         // The decode's image context may size the photo otherwise than its metadata.
         events.extend(self.view_event());
-        match self.render(started, events) {
+        // A `View` sent while the photo opened is answered by its first frame.
+        let rendered = self.render(started, events);
+        self.answer_view(&rendered, events, facts);
+        match rendered {
             Ok(Some(frame)) => events.push(Event::Frame(frame)),
             Ok(None) => {}
             Err(error) => events.push(Event::Failed(error)),
@@ -4754,6 +4917,7 @@ impl Engine {
         let start_over = |engine: &mut Self| {
             if let Some(open) = &mut engine.open {
                 open.pipeline = None;
+                open.detail = None;
             }
             engine.display = None;
             if let Some(meter) = &mut engine.meter {
@@ -4874,7 +5038,9 @@ impl Engine {
             )));
         }
         events.extend(self.view_event());
-        match self.render(Instant::now(), &mut events) {
+        let rendered = self.render(Instant::now(), &mut events);
+        self.answer_view(&rendered, &mut events, 0);
+        match rendered {
             Ok(Some(frame)) => events.push(Event::Frame(frame)),
             Ok(None) => {}
             Err(error) => events.push(Event::Failed(error)),
@@ -4921,6 +5087,7 @@ impl Engine {
         probe: bool,
         reduced: &mut bool,
     ) -> Result<Option<Frame>, SessionError> {
+        self.zoom_refused = None;
         let (Some(open), Some((width, height))) = (&mut self.open, self.size) else {
             return Ok(None);
         };
@@ -4941,8 +5108,44 @@ impl Engine {
         open.failing = failing;
         let limits = viewport_limits(&self.limits, [width, height], &open.sensor);
         let plan = pipeline::plan(&bound.instances, &open.image, open.sensor, pipe, &limits)?;
-        // The whole photo at Fit, whatever the view, until the detail pipeline (decision 99).
-        let place = FramePlace::fitted(plan.extent(), (width, height));
+        let extent = plan.extent();
+        // Zoomed to 100% or above, the detail's plan of the region the view shows, over the
+        // fitted pipeline's demosaic image (decision 99). Where it cannot render yet, in a
+        // tiled viewport or with an operation it refuses, the frame stays at Fit, and why
+        // is kept for the batch's `View` to be refused with.
+        let refuse = |why: String| {
+            tracing::debug!(target: "pipe", "zoom: stays at Fit: {why}");
+            Some(SessionError::Zoom(why))
+        };
+        let detail = match crate::view::detail_region(extent, (width, height), &self.view) {
+            None => None,
+            Some(_) if plan.tiled.is_some() => {
+                self.zoom_refused = refuse(
+                    "the fitted viewport renders in tiles, which the detail does not read from yet"
+                        .to_owned(),
+                );
+                None
+            }
+            Some(region) => {
+                let source = (plan.cached.first()).map(|&op| plan.operations[op].output_desc);
+                let detail = Pipe::Detail { region, scale: 1.0 };
+                let image = &open.image;
+                let planned = source
+                    .map(|source| pipeline::plan(&bound.instances, image, source, detail, &limits));
+                match planned {
+                    Some(Ok(planned)) => Some((region, planned)),
+                    Some(Err(error)) => {
+                        self.zoom_refused = refuse(error.to_string());
+                        None
+                    }
+                    None => {
+                        self.zoom_refused =
+                            refuse("the viewport keeps no demosaic image".to_owned());
+                        None
+                    }
+                }
+            }
+        };
         let probing = probe
             .then(|| {
                 let image = &open.image;
@@ -4985,33 +5188,194 @@ impl Engine {
 
         // Into the display buffer the client was not sent last, copied in the render's
         // submission, which is the frame's one turn at the submit gate.
-        let display = match self.display.take() {
-            Some(display) if display.size == (desc.width, desc.height) => display,
-            old => {
-                drop(old);
-                let buffer = |label| {
-                    self.gpu.device.create_buffer(&wgpu::BufferDescriptor {
-                        label: Some(label),
-                        size: bytes,
-                        usage: wgpu::BufferUsages::STORAGE
-                            | wgpu::BufferUsages::COPY_DST
-                            | wgpu::BufferUsages::COPY_SRC,
-                        mapped_at_creation: false,
-                    })
-                };
-                Display {
-                    buffers: [buffer("display 0"), buffer("display 1")],
-                    size: (desc.width, desc.height),
-                    published: 1,
-                    through: 0,
-                }
-            }
-        };
+        let size = (desc.width, desc.height);
+        let (display, fresh) = Display::for_frames(&self.gpu, self.display.take(), size, bytes);
         let display = self.display.insert(display);
         let next = 1 - display.published;
         // A tool's colour picker measured at its operation while what it reads changes,
         // in the same submission, right after the operation's last pass.
         let mut recorded = None;
+        'detail: {
+            let Some((region, planned)) = detail else {
+                break 'detail;
+            };
+            // The fitted frame, rendered where the edit or the size changed it; else the
+            // one published, which the overview shows again.
+            let fitted_due = fresh || !pipeline.rendered();
+            let (source, key) =
+                (pipeline.demosaiced()).expect("an untiled viewport's demosaic image");
+            let planned = planned.keyed_on(key);
+            // The detail pipeline over that image, taking the fitted pipeline's kernels
+            // the first time; rebuilt from its own where the fitted pipeline holds the
+            // image in another buffer, or describes it otherwise, as a new white balance
+            // does.
+            // What the frame shown last is, kept should this render not publish one.
+            let was_shown = (open.detail.as_ref()).map_or((region, false), |d| (d.region, d.shown));
+            let (old, old_display) = match open.detail.take() {
+                Some(old) => (Some(old.pipeline), Some(old.display)),
+                None => (None, None),
+            };
+            #[cfg(test)]
+            let had = old
+                .as_ref()
+                .map_or_else(|| pipeline.kernels(), Pipeline::kernels);
+            // Its buffers and its display pair made under a scope of their own: a detail the
+            // GPU has no memory for leaves the frame at Fit, as a refused one does, rather
+            // than failing the frame and the fitted pipeline with it.
+            let memory = (self.gpu.device).push_error_scope(wgpu::ErrorFilter::OutOfMemory);
+            let built = match old {
+                Some(old) if old.reads(&source) => {
+                    pollster::block_on(old.update(&self.gpu, planned))
+                }
+                Some(old) => {
+                    let kernels = old.into_kernels();
+                    let built = Pipeline::with_kernels(&self.gpu, planned, source, kernels);
+                    pollster::block_on(built)
+                }
+                None => {
+                    let kernels = pipeline.shared_kernels();
+                    let built = Pipeline::with_kernels(&self.gpu, planned, source, kernels);
+                    pollster::block_on(built)
+                }
+            };
+            let built = built.map(|built| {
+                let output = built.output().desc();
+                let size = (output.width, output.height);
+                let bytes = output.buffer_size();
+                let (display, _) = Display::for_frames(&self.gpu, old_display, size, bytes);
+                (built, display)
+            });
+            let out_of_memory = pollster::block_on(memory.pop());
+            // Nothing of the fitted pipeline's is recorded yet, so the frame stays at Fit;
+            // the next render that wants the detail builds it afresh.
+            let (built, mut detail_display) = match (built, out_of_memory) {
+                (Ok(built), None) => built,
+                (Err(error), _) => {
+                    tracing::error!(target: "pipe", "zoom: stays at Fit: the detail pipeline: {error}");
+                    self.zoom_refused = Some(SessionError::Zoom(error.to_string()));
+                    break 'detail;
+                }
+                (Ok(_), Some(error)) => {
+                    tracing::error!(target: "pipe", "zoom: stays at Fit: the detail's buffers: {error}");
+                    self.zoom_refused = Some(SessionError::Zoom(error.to_string()));
+                    break 'detail;
+                }
+            };
+            #[cfg(test)]
+            {
+                self.compiled += built.kernels() - had;
+            }
+            let mut detail = built;
+            let detail_output = detail.output();
+            let detail_desc = detail_output.desc();
+            let detail_bytes = detail_desc.buffer_size();
+            let detail_next = 1 - detail_display.published;
+            // One encoder and one turn at the submit gate (decisions 18 and 99): the fitted
+            // pipeline's passes and copy where due, then the detail's.
+            let start = Instant::now();
+            let mut encoder = self.gpu.device.create_command_encoder(&Default::default());
+            let fitted = if fitted_due {
+                let probe = Self::probe(
+                    self.pickers.probe_mut(),
+                    &self.gpu,
+                    probing.as_ref(),
+                    &mut recorded,
+                );
+                let fitted = pipeline.record(&self.gpu, &mut encoder, probe);
+                let into = &display.buffers[next];
+                encoder.copy_buffer_to_buffer(output.buffer(), 0, into, 0, bytes);
+                Some(fitted)
+            } else {
+                None
+            };
+            let (recording, _) = detail.record(&self.gpu, &mut encoder, None);
+            let into = &detail_display.buffers[detail_next];
+            encoder.copy_buffer_to_buffer(detail_output.buffer(), 0, into, 0, detail_bytes);
+            self.gpu.submit([encoder.finish()]);
+            *reduced = recorded.is_some();
+            #[cfg(test)]
+            Self::poison(self.poison.as_ref(), &self.gpu, *reduced);
+            let probed = fitted.as_ref().is_some_and(|(_, probed)| *probed);
+            let probing = probing.filter(|probing| probing.missed() || probed);
+            let rendered_fitted = fitted.is_some();
+            // Both pipelines' passes, the fitted one's first, timed over the submission.
+            let read = self.gpu.wait().and_then(|()| {
+                let mut timings = match fitted {
+                    Some((fitted, _)) => pipeline.timings(&self.gpu, fitted)?,
+                    None => Timings::default(),
+                };
+                let detail_timings = detail.timings(&self.gpu, recording)?;
+                timings.passes.extend(detail_timings.passes);
+                Ok(timings)
+            });
+            // A submission whose end was not seen publishes neither frame: the fitted
+            // pipeline, taken as rendered once recorded, renders again into its display,
+            // and the detail is kept, the frame shown still the one published last.
+            let mut timings = match read {
+                Ok(timings) => timings,
+                Err(error) => {
+                    if rendered_fitted {
+                        pipeline.forget_render();
+                    }
+                    let (region, shown) = was_shown;
+                    open.detail = Some(Detail {
+                        pipeline: detail,
+                        display: detail_display,
+                        region,
+                        scale: 1.0,
+                        shown,
+                    });
+                    return Err(error.into());
+                }
+            };
+            timings.wall_ms = start.elapsed().as_secs_f64() * 1e3;
+            // The fitted frame published renders the edit as it is, rendered now or not.
+            if rendered_fitted {
+                display.published = next;
+            }
+            display.through = self.applied;
+            detail_display.published = detail_next;
+            detail_display.through = self.applied;
+            let overview = Overview {
+                buffer: display.buffers[display.published].clone(),
+                width: desc.width,
+                height: desc.height,
+            };
+            let buffer = detail_display.buffers[detail_next].clone();
+            open.detail = Some(Detail {
+                pipeline: detail,
+                display: detail_display,
+                region,
+                scale: 1.0,
+                shown: true,
+            });
+            #[cfg(not(test))]
+            let published = Instant::now();
+            #[cfg(test)]
+            let published = self.published_at.unwrap_or_else(Instant::now);
+            open.history.published(published);
+            // The scopes and the Colour picker read the fitted frame, so they give the
+            // same values at every zoom (decisions 19, 79 and 99).
+            let whole = [desc.width, desc.height];
+            self.probed(probing, recorded, events);
+            self.count(&overview.buffer, whole, self.applied, events);
+            self.sample(&overview.buffer, whole, events);
+            return Ok(Some(Frame {
+                buffer,
+                width: detail_desc.width,
+                height: detail_desc.height,
+                through: self.applied,
+                timings,
+                latency_ms: since.elapsed().as_secs_f64() * 1e3,
+                place: FramePlace::detail(extent, region),
+                overview: Some(overview),
+            }));
+        }
+        // At Fit the detail pipeline is kept, not rendered.
+        if let Some(detail) = &mut open.detail {
+            detail.shown = false;
+        }
+        let place = FramePlace::fitted(extent, (width, height));
         let probe = Self::probe(
             self.pickers.probe_mut(),
             &self.gpu,
@@ -5050,6 +5414,7 @@ impl Engine {
             timings,
             latency_ms: since.elapsed().as_secs_f64() * 1e3,
             place,
+            overview: None,
         }))
     }
 }

@@ -21,11 +21,15 @@
 //! stopped there before: "a 9568×6376 image needs 244022272 bytes, more than the GPU
 //! allows".
 
+mod common;
+
+use common::X_TRANS;
+
 use apertrust_engine::edit::{self, Edit};
 use apertrust_engine::export::BUDGET;
 use apertrust_engine::pipeline::{self, Instance, Limits, Pipe, Plan};
 use apertrust_operations::OPERATIONS;
-use apertrust_plugin::{Camera, Format, ImageContext, ImageDesc, ParamValues, Pattern};
+use apertrust_plugin::{Format, ImageContext, ImageDesc, ParamValues, Pattern};
 use apertrust_tools::TOOLS;
 
 /// lavapipe's limits: 128 MiB in one binding, buffers up to 2 GiB as wgpu caps them on
@@ -89,15 +93,7 @@ impl Geometry {
             cfa: Pattern {
                 width: 6,
                 height: 6,
-                #[rustfmt::skip]
-                values: vec![
-                    1, 1, 0, 1, 1, 2,
-                    1, 1, 2, 1, 1, 0,
-                    2, 0, 1, 0, 2, 1,
-                    1, 1, 2, 1, 1, 0,
-                    1, 1, 0, 1, 1, 2,
-                    0, 2, 1, 2, 0, 1,
-                ],
+                values: X_TRANS.to_vec(),
             },
             readout: (7872, 5196),
             crop: [0, 5, 7752, 5184],
@@ -106,39 +102,22 @@ impl Geometry {
     }
 
     fn image(&self) -> ImageContext {
-        let (width, height) = self.readout;
-        ImageContext {
-            camera: Some(Camera {
-                make: String::new(),
-                model: String::new(),
-                alias: String::new(),
-                width,
-                height,
-                cfa: Some(self.cfa.clone()),
-                black: Pattern {
-                    width: 1,
-                    height: 1,
-                    values: vec![512.0],
-                },
-                white: 15360.0,
-                white_balance: Some(vec![2.48, 1.0, 1.74]),
-                xyz_to_camera: Some([
-                    [0.82, -0.2976, -0.0719],
-                    [-0.4296, 1.2053, 0.2532],
-                    [-0.0429, 0.1282, 0.5774],
-                ]),
-                embedded_matrix: false,
-                crop: self.crop,
-                declared: self.declared,
-                exposure_bias: 0.0,
-                iso: 0.0,
-                linear_response_limit: 1.0,
-                lens_correction: None,
-                highlight_preservation: 0.0,
-                orientation: 0,
-            }),
-            ..ImageContext::full(self.declared[2], self.declared[3])
-        }
+        let mut image = common::image(self.readout, &self.cfa, self.crop, self.declared);
+        // The X-T5's own levels, multipliers and matrix.
+        let camera = image.camera.as_mut().expect("a raw's camera");
+        camera.black = Pattern {
+            width: 1,
+            height: 1,
+            values: vec![512.0],
+        };
+        camera.white = 15360.0;
+        camera.white_balance = Some(vec![2.48, 1.0, 1.74]);
+        camera.xyz_to_camera = Some([
+            [0.82, -0.2976, -0.0719],
+            [-0.4296, 1.2053, 0.2532],
+            [-0.0429, 0.1282, 0.5774],
+        ]);
+        image
     }
 
     fn sensor(&self) -> ImageDesc {

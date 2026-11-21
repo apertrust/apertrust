@@ -23,12 +23,13 @@
 //! before it, with its keys, and one without an export's resample as before its stage at
 //! the pipe's scale (decision 15).
 
+mod common;
+
 use std::fmt::Write as _;
-use std::hash::{DefaultHasher, Hash, Hasher};
 
 use apertrust_engine::compute::GpuImage;
 use apertrust_engine::edit::{self, Edit};
-use apertrust_engine::export::{Exported, Tiling, export, export_at};
+use apertrust_engine::export::{Tiling, export, export_at};
 use apertrust_engine::gpu::{GpuContext, GpuOptions};
 use apertrust_engine::pipeline::{self, Instance, Limits, Pipe, Pipeline, Plan, PlanError};
 use apertrust_operations::OPERATIONS;
@@ -39,10 +40,12 @@ use apertrust_operations::soften::Soften;
 use apertrust_operations::toneequal::{self, ToneEqual};
 use apertrust_operations::vignette::Vignette;
 use apertrust_plugin::{
-    Camera, Domain, Extent, Format, Geometry, ImageContext, ImageDesc, Kernel, Manifest, NotPorted,
-    Operation, OutputProfile, ParamValues, Pass, PassKind, Pattern, PipeKind, Prepared, Schema,
-    Slot, Stage, Strips, Value,
+    Domain, Extent, Format, Geometry, ImageContext, ImageDesc, Kernel, Manifest, NotPorted,
+    Operation, OutputProfile, ParamValues, Pass, PassKind, PipeKind, Prepared, Schema, Slot, Stage,
+    Strips, Value,
 };
+use common::fingerprint::{fnv, keys_before_geometry, structure};
+use common::raw::Raw;
 
 static NO_PARAMS: Schema = Schema {
     version: 1,
@@ -242,128 +245,6 @@ fn instance(operation: &dyn Operation) -> Instance<'_> {
     Instance {
         operation,
         params: ParamValues::new(),
-    }
-}
-
-/// A raw `sensor` photosites across and down, its active area `crop` and its declared
-/// image `declared`: a colour gradient with a highlight that clips.
-struct Raw {
-    cfa: Pattern<u32>,
-    sensor: (u32, u32),
-    crop: [u32; 4],
-    declared: [u32; 4],
-}
-
-impl Raw {
-    fn bayer(sensor: (u32, u32), crop: [u32; 4], declared: [u32; 4]) -> Self {
-        Self {
-            cfa: Pattern {
-                width: 2,
-                height: 2,
-                values: vec![0, 1, 1, 2],
-            },
-            sensor,
-            crop,
-            declared,
-        }
-    }
-
-    #[rustfmt::skip]
-    fn x_trans(sensor: (u32, u32), crop: [u32; 4], declared: [u32; 4]) -> Self {
-        Self {
-            cfa: Pattern {
-                width: 6,
-                height: 6,
-                values: vec![
-                    1, 1, 0, 1, 1, 2,
-                    1, 1, 2, 1, 1, 0,
-                    2, 0, 1, 0, 2, 1,
-                    1, 1, 2, 1, 1, 0,
-                    1, 1, 0, 1, 1, 2,
-                    0, 2, 1, 2, 0, 1,
-                ],
-            },
-            sensor,
-            crop,
-            declared,
-        }
-    }
-
-    fn values(&self) -> Vec<u16> {
-        let (width, height) = self.sensor;
-        let cfa = &self.cfa;
-        (0..width * height)
-            .map(|i| {
-                let (x, y) = (i % width, i / width);
-                let c = cfa.values[((y % cfa.height) * cfa.width + x % cfa.width) as usize];
-                let (fx, fy) = (x as f32 / width as f32, y as f32 / height as f32);
-                let r2 = (fx - 0.6).powi(2) + (fy - 0.4).powi(2);
-                let level = 0.15 + 0.5 * fx + 0.1 * c as f32 + 0.2 * fy + 1.2 * (-r2 / 0.01).exp();
-                (level.min(1.0) * 4000.0).round() as u16
-            })
-            .collect()
-    }
-
-    fn image(&self) -> ImageContext {
-        let (width, height) = self.sensor;
-        ImageContext {
-            camera: Some(Camera {
-                make: String::new(),
-                model: String::new(),
-                alias: String::new(),
-                width,
-                height,
-                cfa: Some(self.cfa.clone()),
-                black: Pattern {
-                    width: 1,
-                    height: 1,
-                    values: vec![0.0],
-                },
-                white: 4000.0,
-                white_balance: Some(vec![2.0, 1.0, 1.5]),
-                xyz_to_camera: Some([
-                    [3.2406, -1.5372, -0.4986],
-                    [-0.9689, 1.8758, 0.0415],
-                    [0.0557, -0.2040, 1.0570],
-                ]),
-                embedded_matrix: false,
-                crop: self.crop,
-                declared: self.declared,
-                exposure_bias: 0.0,
-                iso: 0.0,
-                linear_response_limit: 1.0,
-                lens_correction: None,
-                highlight_preservation: 0.0,
-                orientation: 0,
-            }),
-            ..ImageContext::full(self.declared[2], self.declared[3])
-        }
-    }
-
-    fn sensor(&self) -> ImageDesc {
-        ImageDesc::new(self.sensor.0, self.sensor.1, Format::Mosaic16)
-    }
-
-    fn upload(&self, gpu: &GpuContext) -> GpuImage {
-        GpuImage::upload_mosaic(gpu, self.sensor.0, self.sensor.1, &self.values()).unwrap()
-    }
-
-    /// The default pipeline an unedited photo runs.
-    fn instances(&self) -> Vec<Instance<'static>> {
-        edit::instances(&Edit::default(), OPERATIONS, &[], &self.image())
-            .all()
-            .unwrap()
-    }
-
-    fn export(&self, gpu: &GpuContext, instances: &[Instance], tiling: Tiling) -> Exported {
-        pollster::block_on(export(
-            gpu,
-            instances,
-            &self.image(),
-            self.upload(gpu),
-            tiling,
-        ))
-        .unwrap()
     }
 }
 
@@ -1363,77 +1244,6 @@ fn a_vignette_after_orientation_frames_the_turned_image() {
     }
 }
 
-/// FNV-1a, 64 bits: a hash that no Rust release changes.
-fn fnv(text: &str) -> u64 {
-    text.bytes().fold(0xcbf2_9ce4_8422_2325, |hash, byte| {
-        (hash ^ u64::from(byte)).wrapping_mul(0x0100_0000_01b3)
-    })
-}
-
-/// What a plan dispatches and binds, but for the bytes `prepare` gave its passes, which
-/// may differ between platforms' maths libraries in their last bits, and the keys,
-/// which hash them.
-fn structure(plan: &Plan) -> String {
-    let desc = |d: &ImageDesc| {
-        format!(
-            "{}x{} {:?} {:?}",
-            d.width, d.height, d.format, d.sensor_origin
-        )
-    };
-    // A tile's pipe as it printed before an export at a size gave tiles a resample
-    // (decision 56), so a tile at full size keeps its fingerprint.
-    let pipe = match plan.pipe {
-        Pipe::Tile {
-            region,
-            resample: None,
-        } => format!("Tile {{ region: {region:?} }}"),
-        pipe => format!("{pipe:?}"),
-    };
-    let mut text = format!("{pipe} {}\n", desc(&plan.input));
-    for op in &plan.operations {
-        writeln!(
-            text,
-            "{} {:?}->{:?} {} {:?} {} {:?} {:?}",
-            op.id,
-            op.input,
-            op.output,
-            desc(&op.output_desc),
-            op.scratch,
-            op.scale.to_bits(),
-            op.origin,
-            op.whole_image.map(|whole| whole.passes),
-        )
-        .unwrap();
-        for (pass, dispatches) in op.passes.iter().zip(&op.dispatches) {
-            let tables: Vec<usize> = pass.tables.iter().map(Vec::len).collect();
-            writeln!(
-                text,
-                " {} {:?} {:?} {:?} {:?} {} {tables:?} {dispatches:?}",
-                pass.entry_point,
-                pass.kind,
-                pass.size,
-                pass.strips,
-                pass.bindings,
-                pass.params.len(),
-            )
-            .unwrap();
-        }
-    }
-    let work: Vec<String> = plan.work.iter().map(desc).collect();
-    let used: Vec<String> = plan.work_used.iter().map(desc).collect();
-    writeln!(
-        text,
-        "{work:?} {used:?} {:?} {:?} {:?} {:?} {:?}",
-        plan.scratch,
-        plan.scratch_used,
-        plan.cached,
-        plan.edit_cache.as_ref().map(desc),
-        plan.tiled
-    )
-    .unwrap();
-    text
-}
-
 /// The plans of the default pipeline without geometry: an export whole and one of its
 /// tiles, and the viewport, whole and, on a GPU that binds little, in tiles; an X-Trans
 /// export; and an export whose raw stage runs in row strips.
@@ -1495,89 +1305,6 @@ fn plans_without_geometry() -> Vec<(&'static str, Plan)> {
             plan(&large, Pipe::Export, &binding_little),
         ),
     ]
-}
-
-/// `hash_desc` in the pipeline, as it was before geometry: an image's size, format,
-/// place on the sensor and colour bookkeeping, never its region of its stage.
-fn hash_desc(desc: &ImageDesc, hasher: &mut DefaultHasher) {
-    let format = match desc.format {
-        Format::Mosaic16 => 0u8,
-        Format::Mosaic => 1,
-        Format::Rgba => 2,
-    };
-    (
-        desc.width,
-        desc.height,
-        format,
-        desc.sensor_origin,
-        desc.late_correction,
-    )
-        .hash(hasher);
-    for value in desc.maximum.iter().chain(&desc.white_balance) {
-        value.to_bits().hash(hasher);
-    }
-}
-
-/// Each operation's key and whole-image key as the pipeline made them before geometry:
-/// the previous key, its ID, version, scale and origin, its output image and its passes'
-/// prepared bytes; and for the whole-image passes, their input's key and their own.
-fn keys_before_geometry(plan: &Plan) -> Vec<(u64, Option<u64>)> {
-    let version = |id: &str| {
-        OPERATIONS
-            .iter()
-            .find(|op| op.manifest().id == id)
-            .map_or(1, |op| op.manifest().version)
-    };
-    let mut hasher = DefaultHasher::new();
-    hash_desc(&plan.input, &mut hasher);
-    let mut previous = hasher.finish();
-    let mut keys = Vec::new();
-    for op in &plan.operations {
-        let mut hasher = DefaultHasher::new();
-        (
-            previous,
-            op.id,
-            version(op.id),
-            op.scale.to_bits(),
-            op.origin,
-        )
-            .hash(&mut hasher);
-        hash_desc(&op.output_desc, &mut hasher);
-        for pass in &op.passes {
-            (pass.entry_point, pass.size, &pass.params, &pass.tables).hash(&mut hasher);
-        }
-        let key = hasher.finish();
-        let whole_image = op.whole_image.map(|whole| {
-            let scratch: Vec<u64> = op.scratch.iter().map(|&i| plan.scratch[i]).collect();
-            let mut hasher = DefaultHasher::new();
-            (
-                previous,
-                op.id,
-                version(op.id),
-                op.scale.to_bits(),
-                whole.passes,
-                scratch,
-            )
-                .hash(&mut hasher);
-            hash_desc(&op.output_desc, &mut hasher);
-            for pass in &op.passes[..whole.passes] {
-                let Pass {
-                    entry_point,
-                    kind,
-                    params,
-                    tables,
-                    bindings,
-                    size,
-                    strips: _,
-                } = pass;
-                (entry_point, kind, params, tables, bindings, size).hash(&mut hasher);
-            }
-            hasher.finish()
-        });
-        keys.push((key, whole_image));
-        previous = key;
-    }
-    keys
 }
 
 /// Every plan with no geometry is planned as the fingerprints below record: the same
