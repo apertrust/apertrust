@@ -63,7 +63,7 @@ The skills, agents and commands live in the agent kit, [apertrust/agent-kit](htt
 
 - a Rust file Claude writes or edits is formatted with rustfmt;
 - an edit to a `.slang` file regenerates the WGSL and validates every kernel with naga; an edit to generated WGSL is refused with a pointer to its source;
-- at the end of a turn that changed Rust, the kernels, the engine or the golden harness: `cargo fmt --check`, clippy, then the golden checks, ΔE and gradients where `APERTRUST_TEST_IMAGES` is set (put it in `.claude/settings.local.json`), otherwise `gradient --synthetic`. Failures send Claude back to fix them; changes made before the turn never trigger them.
+- at the end of a turn, pre-commit's quick checks on the files it changed (`pre-commit run --files`; without pre-commit, `cargo fmt --check` where Rust changed); where it changed Rust, the kernels, the engine or the golden harness, clippy for this platform, then the golden checks, ΔE and gradients where `APERTRUST_TEST_IMAGES` is set (put it in `.claude/settings.local.json`), otherwise `gradient --synthetic`. Failures send Claude back to fix them; changes made before the turn never trigger them.
 
 The agent kit adds DeepWiki's public MCP server for questions about darktable, wgpu, Slang, egui and rawler (its README says how). It indexes their current branches, so it is for orientation only: a port reads darktable's source at the reference release's tag. Apertrust's own MCP server, `apertrust-cli mcp`, is planned.
 
