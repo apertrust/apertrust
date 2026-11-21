@@ -191,6 +191,32 @@ impl Zoomed {
         Zoomed { scale, centre }
     }
 
+    /// The zoom after the keys moved the view a `fraction` of the part shown in `direction`
+    /// in `room` ([`panned`]), its centre kept inside the edges; the same where the photo
+    /// does not overflow the room.
+    pub fn stepped(self, direction: Direction, fraction: f32, room: &Room) -> Zoomed {
+        let placed = room.place(&self);
+        if !overflows(&placed) {
+            return self;
+        }
+        self.centred(panned(&placed, direction, fraction), room)
+    }
+
+    /// The zoom moved just enough in `room` to show `mark`, in the photo's coordinates
+    /// ([`revealed`]), its centre kept inside the edges.
+    pub fn revealing(self, mark: egui::Rect, room: &Room) -> Zoomed {
+        self.centred(revealed(&room.place(&self), mark), room)
+    }
+
+    /// The zoom with its centre at `centre`, kept inside the edges in `room` as the session
+    /// keeps it.
+    fn centred(self, centre: [f32; 2], room: &Room) -> Zoomed {
+        Zoomed {
+            centre: room.place(&Zoomed { centre, ..self }).centre,
+            ..self
+        }
+    }
+
     /// The zoom after the photo moved by `delta` physical pixels in `room`, its centre kept
     /// inside the edges; the same where the photo does not overflow the room, as at Fit.
     pub fn panned(self, delta: egui::Vec2, room: &Room) -> Zoomed {
@@ -199,11 +225,112 @@ impl Zoomed {
             return self;
         }
         let centre = moved(placed.centre, delta, room.extent, placed.shown as f32);
-        let moved = Zoomed { centre, ..self };
-        Zoomed {
-            centre: room.place(&moved).centre,
-            ..self
+        self.centred(centre, room)
+    }
+}
+
+/// A way the keys move a zoomed view (`docs/gui.md`, Panning).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Direction {
+    Left,
+    Right,
+    Up,
+    Down,
+}
+
+/// How far Alt with an arrow moves the view: a fifth of the part shown, darktable's
+/// `move horizontal` and `move vertical` (`darkroom.c`, `_action_process_move`).
+pub const PAN_STEP: f32 = 0.2;
+
+/// The centre moved a `fraction` of the visible part in `direction` where `placement`
+/// places the photo: the view, not the photo, moves that way. Not clamped:
+/// [`Room::place`] keeps it inside the edges.
+pub fn panned(placement: &Placement, direction: Direction, fraction: f32) -> [f32; 2] {
+    let shown = |axis: usize| {
+        let side = f64::from(placement.size[axis].max(1));
+        (placement.visible[axis + 2] / side) as f32 * fraction
+    };
+    let [x, y] = placement.centre;
+    match direction {
+        Direction::Left => [x - shown(0), y],
+        Direction::Right => [x + shown(0), y],
+        Direction::Up => [x, y - shown(1)],
+        Direction::Down => [x, y + shown(1)],
+    }
+}
+
+/// The part of the photo `placement` shows on each axis, across then down, 0 to 1 across
+/// the photo: the whole of it on an axis that fits.
+pub fn visible(placement: &Placement) -> [egui::Rangef; 2] {
+    [0, 1].map(|axis| {
+        let side = f64::from(placement.size[axis].max(1));
+        let start = placement.visible[axis];
+        let end = start + placement.visible[axis + 2];
+        egui::Rangef::new((start / side) as f32, (end / side) as f32)
+    })
+}
+
+/// The centre that brings `mark`, in the photo's coordinates, inside the part of the photo
+/// `placement` shows, moving it the least on each axis: a mark larger than the part shown
+/// is centred on it. Not clamped: [`Room::place`] keeps it inside the edges.
+pub fn revealed(placement: &Placement, mark: egui::Rect) -> [f32; 2] {
+    let shown = visible(placement);
+    let marks = [mark.x_range(), mark.y_range()];
+    [0, 1].map(|axis| {
+        let (part, mark) = (shown[axis], marks[axis]);
+        let by = if mark.span() >= part.span() {
+            mark.center() - part.center()
+        } else if mark.min < part.min {
+            mark.min - part.min
+        } else if mark.max > part.max {
+            mark.max - part.max
+        } else {
+            0.0
+        };
+        placement.centre[axis] + by
+    })
+}
+
+/// The part of the photo `placement` shows on each axis where the photo overflows the room,
+/// across then down, as the position marks span it: none on an axis that fits.
+pub fn spans(placement: &Placement) -> [Option<egui::Rangef>; 2] {
+    let parts = visible(placement);
+    [0, 1].map(|axis| {
+        let whole = placement.visible[axis + 2] >= f64::from(placement.size[axis]);
+        (!whole).then_some(parts[axis])
+    })
+}
+
+/// The id of the photo's focus stop while it is zoomed past Fit (`docs/gui.md`, The zoom
+/// by keyboard and to screen readers), which keeps no keys of its own
+/// ([`Focus::of`](crate::actions::Focus::of)).
+pub fn photo_view_id() -> egui::Id {
+    egui::Id::unique("photo-view")
+}
+
+/// When the position marks show (`docs/gui.md`, Where the view is): from a zoom or a move
+/// of the view until [`Marks::LINGER`] after the last one.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Marks {
+    /// The zoom at the last frame.
+    seen: Option<Zoomed>,
+    /// When they go, in egui's time, seconds.
+    until: f64,
+}
+
+impl Marks {
+    /// How long they stay after the view last changed, in seconds.
+    pub const LINGER: f64 = 1.0;
+
+    /// Takes the zoom of the frame at `now`, egui's time in seconds, and returns how long
+    /// the marks still show, None once they have gone. A zoom or a move since the frame
+    /// before shows them again for [`Self::LINGER`]; the first frame's view shows none.
+    pub fn update(&mut self, zoom: Zoomed, now: f64) -> Option<f64> {
+        if self.seen.is_some_and(|seen| seen != zoom) {
+            self.until = now + Self::LINGER;
         }
+        self.seen = Some(zoom);
+        (now < self.until).then_some(self.until - now)
     }
 }
 
@@ -641,6 +768,49 @@ mod tests {
         assert!(close(two.centre, expected), "{:?}", two.centre);
         let far = at(Scale::Factor(1.0)).panned(egui::vec2(1e6, 0.0), &ROOM);
         assert!((far.centre[0] - 2400.0 / 6000.0).abs() < 1e-6, "{far:?}");
+    }
+
+    #[test]
+    fn a_key_moves_the_view_a_share_of_the_part_shown() {
+        // At 100% the room shows 4800 of 6000 across and 2700 of 4000 down.
+        let hundred = at(Scale::Factor(1.0));
+        let placed = ROOM.place(&hundred);
+        let [x, y] = panned(&placed, Direction::Left, PAN_STEP);
+        assert!((x - (0.5 - 0.2 * 0.8)).abs() < 1e-6 && y == 0.5, "{x} {y}");
+        let [x, y] = panned(&placed, Direction::Down, 1.0);
+        assert!(x == 0.5 && (y - (0.5 + 0.675)).abs() < 1e-6, "{x} {y}");
+        // Kept inside the edges, and at Fit nothing moves.
+        let right = hundred.stepped(Direction::Right, 1.0, &ROOM);
+        assert!((right.centre[0] - 0.6).abs() < 1e-6, "{right:?}");
+        assert_eq!(Zoomed::FIT.stepped(Direction::Up, 1.0, &ROOM), Zoomed::FIT);
+    }
+
+    #[test]
+    fn a_mark_out_of_view_moves_the_view_just_enough() {
+        // At 200% the room shows 0.4 of the width and 0.3375 of the height about the centre.
+        let two = at(Scale::Factor(2.0));
+        let placed = ROOM.place(&two);
+        let inside = egui::Rect::from_min_max(egui::pos2(0.4, 0.4), egui::pos2(0.6, 0.6));
+        assert_eq!(revealed(&placed, inside), [0.5, 0.5]);
+        // Past the right edge by 0.05, and above the top by 0.01.
+        let mark = egui::Rect::from_min_max(egui::pos2(0.6, 0.32), egui::pos2(0.75, 0.4));
+        let [x, y] = revealed(&placed, mark);
+        let top = 0.5 - 0.3375 / 2.0;
+        assert!(
+            (x - 0.55).abs() < 1e-5 && (y - (0.5 - (top - 0.32))).abs() < 1e-5,
+            "{x} {y}"
+        );
+        // Larger than the part shown: centred on it.
+        let wide = egui::Rect::from_min_max(egui::pos2(0.1, 0.45), egui::pos2(0.7, 0.55));
+        assert!((revealed(&placed, wide)[0] - 0.4).abs() < 1e-5);
+        // And kept inside the photo's edges.
+        let corner = egui::Rect::from_min_max(egui::pos2(0.97, 0.97), egui::pos2(1.02, 1.02));
+        let moved = two.revealing(corner, &ROOM);
+        let [x, y] = moved.centre;
+        assert!(
+            (x - 0.8).abs() < 1e-5 && (y - (1.0 - 0.3375 / 2.0)).abs() < 1e-5,
+            "{x} {y}"
+        );
     }
 
     #[test]

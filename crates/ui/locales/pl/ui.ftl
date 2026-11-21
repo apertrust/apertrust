@@ -322,6 +322,8 @@ photo-zoom-in = Powiększ
 photo-zoom-out = Pomniejsz
 photo-zoom-tip = Powiększenie: uszczypnięcie lub { $command }+przewijanie; Z – 100%; środkowy przycisk przełącza 100%, 200% i Dopasuj. Przewijanie przesuwa powiększone zdjęcie, Shift+przewijanie – w bok
 photo-zoom-tip-exact = Przy 100% ekran pokazuje dokładnie to, czym będzie eksport w pełnym rozmiarze. Powiększenie: uszczypnięcie lub { $command }+przewijanie; Z – 100%; środkowy przycisk przełącza 100%, 200% i Dopasuj. Przewijanie przesuwa powiększone zdjęcie, Shift+przewijanie – w bok
+photo-view = Zdjęcie, { $name }
+photo-view-value = { $scale }, { $left }–{ $right }% w poziomie, { $top }–{ $bottom }% w pionie
 layer-image = Obraz
 
 ## Podgląd
@@ -806,6 +808,14 @@ action-zoom-in-all = Powiększ wszystkie zdjęcia
 action-zoom-out-all = Pomniejsz wszystkie zdjęcia
 action-zoom-fit-all = Dopasuj wszystkie zdjęcia
 action-zoom-100-all = Wszystkie zdjęcia na 100%
+action-pan-left = Przesuń widok w lewo
+action-pan-right = Przesuń widok w prawo
+action-pan-up = Przesuń widok w górę
+action-pan-down = Przesuń widok w dół
+action-pan-page-left = Przesuń widok o ekran w lewo
+action-pan-page-right = Przesuń widok o ekran w prawo
+action-pan-page-up = Przesuń widok o ekran w górę
+action-pan-page-down = Przesuń widok o ekran w dół
 action-sort-capture-time = Data wykonania
 action-sort-file-name = Nazwa pliku
 action-sort-edited = Edytowane

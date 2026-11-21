@@ -320,6 +320,8 @@ photo-zoom-in = Збільшити
 photo-zoom-out = Зменшити
 photo-zoom-tip = Масштаб: зведення пальців або { $command }+прокручування; Z — 100%; клацання середньою кнопкою — по черзі 100%, 200% і «За розміром». Прокручування рухає збільшений знімок, Shift+прокручування — убік
 photo-zoom-tip-exact = На 100% екран показує саме те, яким буде експорт у повному розмірі. Масштаб: зведення пальців або { $command }+прокручування; Z — 100%; клацання середньою кнопкою — по черзі 100%, 200% і «За розміром». Прокручування рухає збільшений знімок, Shift+прокручування — убік
+photo-view = Знімок, { $name }
+photo-view-value = { $scale }, { $left }–{ $right }% по ширині, { $top }–{ $bottom }% по висоті
 layer-image = Знімок
 
 ## Переглядач
@@ -804,6 +806,14 @@ action-zoom-in-all = Збільшити всі знімки
 action-zoom-out-all = Зменшити всі знімки
 action-zoom-fit-all = Усі знімки за розміром
 action-zoom-100-all = Усі знімки на 100%
+action-pan-left = Зсунути вигляд ліворуч
+action-pan-right = Зсунути вигляд праворуч
+action-pan-up = Зсунути вигляд угору
+action-pan-down = Зсунути вигляд униз
+action-pan-page-left = Зсунути вигляд на екран ліворуч
+action-pan-page-right = Зсунути вигляд на екран праворуч
+action-pan-page-up = Зсунути вигляд на екран угору
+action-pan-page-down = Зсунути вигляд на екран униз
 action-sort-capture-time = Час зйомки
 action-sort-file-name = Назва файлу
 action-sort-edited = Оброблені

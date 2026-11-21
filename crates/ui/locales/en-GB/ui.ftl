@@ -407,6 +407,10 @@ photo-zoom-out = Zoom out
 # the Mac, "Ctrl" elsewhere.
 photo-zoom-tip = Zoom: pinch or { $command }+scroll; Z for 100%; middle-click cycles 100%, 200% and Fit. Scroll moves a zoomed photo, Shift+scroll sideways
 photo-zoom-tip-exact = At 100% the screen shows exactly what a full-size export will be. Zoom: pinch or { $command }+scroll; Z for 100%; middle-click cycles 100%, 200% and Fit. Scroll moves a zoomed photo, Shift+scroll sideways
+# The photo as a focus stop while zoomed past Fit: its name, and its value, the scale and
+# the part shown in whole percentages.
+photo-view = Photo, { $name }
+photo-view-value = { $scale }, { $left } to { $right }% across, { $top } to { $bottom }% down
 layer-image = Image
 
 ## The Viewer
@@ -1042,6 +1046,16 @@ action-zoom-in-all = Zoom in on every photo
 action-zoom-out-all = Zoom out on every photo
 action-zoom-fit-all = Fit every photo
 action-zoom-100-all = Every photo to 100%
+# Alt with the arrows: a zoomed photo's view moved a fifth of the part shown, or with
+# Shift a whole view.
+action-pan-left = Move the view left
+action-pan-right = Move the view right
+action-pan-up = Move the view up
+action-pan-down = Move the view down
+action-pan-page-left = Move the view a screen left
+action-pan-page-right = Move the view a screen right
+action-pan-page-up = Move the view a screen up
+action-pan-page-down = Move the view a screen down
 # The browser bar's menus, and View › Sort By and Thumbnail Size: the sort's key and
 # direction, and the thumbnails' size.
 action-sort-capture-time = Capture time
