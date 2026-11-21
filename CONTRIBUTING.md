@@ -13,6 +13,8 @@ Thank you for your interest. Apertrust is in early development, so the way to co
 - One small change per pull request, scoped to its issue. Link the issue.
 - Say what changed and how you checked it, in your own words.
 - Keep unrelated clean-ups for a pull request of their own.
+- Split a pull request into one commit per separate piece of work (a command, its CLI, its docs), each building on its own, so the pull request is ready to merge as it stands.
+- Fix review comments in the commit they belong to, not in a new commit on top: `git commit --fixup=<sha>`, then `git rebase -i --autosquash origin/main` (save the list unchanged; a stacked pull request names its parent branch instead of `origin/main`), and force-push with `--force-with-lease`.
 
 ## Checks
 
