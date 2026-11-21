@@ -2,16 +2,17 @@
 
 ## Context
 
-Edits are sidecars ([0046](0046-sidecars-are-the-truth-folder-mode-library-and-project.md)). Beside the photo is the natural place, but a read-only folder, a share others own or a library that wants its photos' folders clean needs another. And the sidecar must hold more than today's tool values: history that survives a restart, virtual copies, snapshots, and what two machines need to compare copies ([0052](0052-comparing-two-copies-of-a-sidecar.md)).
+Edits are sidecars ([0046](0046-sidecars-are-the-truth-folder-mode-library-and-project.md)). Beside the photo is the natural place, but a person trying the app, an archive that must never be touched or a share others own needs another. And the sidecar must hold more than today's tool values: history that survives a restart, virtual copies, snapshots, and what two machines need to compare copies ([0052](0052-comparing-two-copies-of-a-sidecar.md)).
 
 ## Decision
 
-**Edits live beside the photos by default, or per library in the library's own folder, mirrored by path; one place per root, named by the root's id file.**
+**Edits live beside the photos by default, or, for a folder that asks it, on this computer; a folder's setting decides, kept in this user data folder.**
 
-- Beside: `DSCF0001.RAF.apxmp`. In a library: `Family/.apertrust/edits/<root id>/<path>.apxmp`, the same format byte for byte.
-- `.apertrust/root.toml` at a root's top names beside, or one library by id, name and a path hint. Every library holding the root reads and writes there, folder mode too: it looks in the folder and its parents, one look each, says "Edits for these photos are kept in the library Family" and uses them; if that library cannot be found it opens the photos view-only with Locate…, writing nothing beside them.
-- The library's setting covers photos copied in and folders added without sidecars; a folder added with sidecars keeps them. A read-only root's edits are always its library's.
-- **A user data folder never decides where edits go** ([0043](0043-settings-and-apertrusts-folders.md)).
+- Beside: `DSCF0001.RAF.apxmp`.
+- **Keep Edits on This Computer** (planned, Phase 5, [0101](0101-folders-first-libraries-optional.md)), a folder's setting in Collections' ⋯, and `library.keep_edits_here` for every folder not yet edited: the edits of every photo in its tree go to the folder record's `<user data>/folders/<id>/edits/<path>.apxmp`, the path relative to that folder, the same format byte for byte; a photo's are looked for under the nearest folder above it, the folder itself included, whose record keeps edits here. A record a subfolder gains for another reason, Keep Available Offline or a Library, changes nothing of where its photos' edits live. The first change in such a folder adds it to a Library, asking once which, or making one, so nothing is left unsaved; every Library holding the folder uses the same edits, and the folder is then only read.
+- Turning it on or off for a folder that has edits asks first, then moves them from where they are now, beside the photos or a record above, into the record, or back beside the photos, by Move to…'s checked copy, a copy already at the new place combined with it by [0052](0052-comparing-two-copies-of-a-sidecar.md)'s rule; a subfolder of a folder that keeps its edits here takes the setting from it ([0101](0101-folders-first-libraries-optional.md)).
+- **A known limit:** another computer, or another user data folder on this one, sees none of those edits and would write sidecars beside the photos; the docs and the setting's help say so.
+- Where a folder's edits are is its folder record's setting, in this user data folder ([0043](0043-settings-and-apertrusts-folders.md)), never a file in the photo's folder.
 
 **`.apxmp` version 2** (built, the engine writing it with the edit's history; version 1 is [0048](0048-the-apxmp-format.md)'s and stays read, as one virtual copy with a step of each tool):
 
@@ -30,7 +31,7 @@ Edits are sidecars ([0046](0046-sidecars-are-the-truth-folder-mode-library-and-p
 
 **Snapshots** are saved per virtual copy, each its edit whole as one compressed step, so Compress cannot break one; Restore Snapshot is a step.
 
-**Clocks:** hybrid logical clocks (UTC milliseconds, a counter, the machine id) on every step, snapshot, tombstone and library-file entry, and a clock vector per virtual copy. The machine id is a hash of the system's machine id and the user, never kept in the user data folder; machine names live only in a library's `.apertrust/machines/`.
+**Clocks:** hybrid logical clocks (UTC milliseconds, a counter, the machine id) on every step, snapshot, tombstone and entry of an album or Library file, and a clock vector per virtual copy. The machine id is a hash of the system's machine id and the user, never kept in the user data folder; no machine's name is kept anywhere.
 
 - **A machine moves its clock past each clock it reads, within a bound:** another machine's clock read more than 5 minutes past this machine's wall clock (`clock::MAX_DRIFT`, Kerberos's default skew) is ignored, not clamped, by `Clock::observe`. The file is still read and the clock kept as written; this machine's clock does not follow it. So one sidecar dated 9999, or written by a computer whose date or time zone is wrong, never pins every reader's clock, and no other machine's file moves a machine's clocks more than 5 minutes past its wall clock.
 - **A machine's own clocks are always followed,** however far past its wall clock: after its wall clock is set back, a step it makes still orders after the steps it made before, so comparing copies machine by machine ([0052](0052-comparing-two-copies-of-a-sidecar.md)) never takes its later step for an earlier one.
@@ -41,7 +42,9 @@ Edits are sidecars ([0046](0046-sidecars-are-the-truth-folder-mode-library-and-p
 
 ## Options considered
 
-- A central folder of edits per machine: edits no longer travel with the photos.
+- A central folder of edits per machine for every folder: edits no longer travel with the photos; kept for the folders that ask it alone.
+- Edits kept in a library's own folder, named by an id file at each folder's top: an id file written into every folder, and a library to find before a photo's edits are.
+- Telling other user data folders of edits kept here, by a registry outside them or a marker file in the folder: [0101](0101-folders-first-libraries-optional.md)'s options.
 - A database as the edits' truth: against [0046](0046-sidecars-are-the-truth-folder-mode-library-and-project.md).
 - History in memory only: lost on a crash, against principle 3.
 - The edit's state stored beside its log: two truths to keep equal.

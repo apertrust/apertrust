@@ -126,17 +126,17 @@ The selection and the active photo are the session's (decision 37; [gui.md](gui.
 - **`Samples(SamplesCommand)`**, the stored samples, answered by the `Samples` fact; and a pick's writes the session's own changes of source Auto, with history (decision 79; [pickers.md](pickers.md#through-the-session)).
 - **`Show(cells)`**, the cells on screen, each a photo id and a size, with commands naming photos by id, the selection and the active photo the session's (decision 37).
 - **The library's commands**, `Command::Library(LibraryCommand)` (decision 54). `LibraryCommand`, about forty commands in the end, is layer 4 of the library's API, served by the session from `apertrust-library`.
-  - The long ones run as jobs of the session's control on darktable's queues: a folder's reading on `UserBackground`; thumbnails on `SystemForeground`; move, copy, rename, delete and Import… on `UserForeground`. Each call into a root runs on that root's queue (decisions 53 and 57).
+  - The long ones run as jobs of the session's control on darktable's queues: a folder's reading on `UserBackground`; thumbnails on `SystemForeground`; Move to…, Copy to…, Rename, Delete and Import… on `UserForeground`. Each call into a folder tree runs on that tree's queue (decisions 53 and 57).
   - The first five, `Open(Source::Folder)` and `Open(Source::Photos)`, `Close`, `Thumbnails`, `PhotoThumbnails` and `Subfolders`, are built ([Commands](#commands)). `Show` and `Page` are planned; meanwhile the client keeps the photos listed and asks for the thumbnails of the cells it draws.
   - Clients see `PhotoRef`, `Target` and `Rules`, never the library's lower layers ([library.md](library.md#planned)). Its events are `Event::Library(LibraryEvent)` ([events.md](events.md#lower-crates-report-through-an-observer)).
-- **A library's cache removed**, `CacheCommand::Remove { library }`, with the library's step 27 (decision 76): a `cache-clear` job as Clear's, skipping a library's cache another process has open, and `Event::Cache` listing each library's cache. The cache's types are `apertrust-base`'s `cache`, as the jobs' are its `jobs`.
+- **A kept index removed**, `CacheCommand::Remove { index }`, with the library's step 23 (decisions 76 and 101): a `cache-clear` job as Clear's, skipping an index another process has open, and `Event::Cache` listing each kept index. The cache's types are `apertrust-base`'s `cache`, as the jobs' are its `jobs`.
 - **`Sync`** and the handshake, for remote clients ([below](#remote-clients)).
 - **Masks and layers**, later phases.
 
 ## Transports
 
 - **In process**, built: the app and the CLI, as above. A second in-process client, the app's MCP endpoint, is to get a receiver of its own from the session's outbox (decision 59).
-- **IPC, WebSocket or WebTransport**, later: `apertrust-cli serve` for web and tablet clients on a home server (`apertrust-server`; [architecture.md](architecture.md#programs)). The engine is the same; only the transport differs. It is the server that first syncs the desktop app's photos (decision 71), whose sync is the library's storage protocol, not this one ([library.md](library.md#a-server)).
+- **IPC, WebSocket or WebTransport**, later: `apertrust-cli serve` for web and tablet clients on a home server (`apertrust-server`; [architecture.md](architecture.md#programs)). The engine is the same; only the transport differs. The same server may later, if asked, sync the desktop app's photos (decision 71), through the library's storage protocol, not this one ([library.md](library.md#a-server)).
 - **MCP**, later: `apertrust-cli mcp` over stdio and the app's endpoint (`apertrust-mcp`, through `rmcp`), a thin adapter over the protocol. Its MCP tools are generated from the tools' definitions and `LibraryCommand`'s schema, off until the person allows them and read-only unless writes are allowed (principle 8; decision 54).
 
 ## Web, tablets and remote access

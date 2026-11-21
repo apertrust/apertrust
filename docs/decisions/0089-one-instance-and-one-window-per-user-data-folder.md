@@ -89,7 +89,7 @@ Another `--user-data-dir` is a **separate instance of the same application**: it
 - **On macOS** an instance on another folder takes an open-documents event LaunchServices delivers to it, as any instance does. It starts from a terminal (`open -n -a Apertrust --args --user-data-dir DIR`, or the binary).
 - **Its window's title ends with the folder's name,** "Apertrust — work", and the default folder's shows none. The default is the platform's folder, compared by canonical path.
 - **A truly separate application** is Apertrust Nightly's model, its own identity and folder ([0043](0043-settings-and-apertrusts-folders.md), [0068](0068-packages-built-by-cargo-packager.md)).
-- **Two instances opening one library or folder** rely on the library cache's lock and the sidecars' rules ([0052](0052-comparing-two-copies-of-a-sidecar.md), [0054](0054-four-layers-for-the-librarys-code.md), [0076](0076-the-cache-kinds-limits-and-control.md)), as the CLI does.
+- **Two instances opening one folder** rely on its index's lock and the sidecars' rules ([0052](0052-comparing-two-copies-of-a-sidecar.md), [0054](0054-four-layers-for-the-librarys-code.md), [0076](0076-the-cache-kinds-limits-and-control.md)), as the CLI does.
 
 ## Options considered
 

@@ -1,141 +1,177 @@
 # Library
 
-The library is how Apertrust finds photos and keeps what is known about them: one photo, folder mode, the Library and the Project. This document describes its design and its API: what each mode holds, the code's layers, the commands and events clients use, how a folder is listed and indexed, the sidecars, how photos are found again on several computers, the cache and the thumbnails.
+The library is how Apertrust finds photos and keeps what is known about them: one photo, folders, and optional Libraries. This document describes its design and its API: what each place holds and where each feature keeps its data, the code's layers, the commands and events clients use, how a folder is listed and indexed, the sidecars, how folders and photos are found again on several computers and drives, the saved index and the thumbnails.
 
-[decisions/](decisions/README.md) holds the decisions it rests on, 46 to 55, 71 and 85 above all, [architecture.md](architecture.md) the design around it, and [roadmap.md](roadmap.md#the-librarys-steps) the library's steps. How events in general are sent and taken in is [events.md](events.md), and how a client sends commands is the [session protocol](session-protocol.md). The crate's state is in [crates.md](crates.md#apertrust-library).
+[decisions/](decisions/README.md) holds the decisions it rests on, 46 to 55, 71, 85 and 101 above all, [architecture.md](architecture.md) the design around it, and [roadmap.md](roadmap.md#the-librarys-steps) the library's steps. How events in general are sent and taken in is [events.md](events.md), and how a client sends commands is the [session protocol](session-protocol.md). The crate's state is in [crates.md](crates.md#apertrust-library).
 
 **Status.**
 
 - **Built:** folder mode's first part. A folder is listed and its sidecars read into an index in memory, opened through the session as a job, and shown in Collections' Folders, in the Tools panel's Photos tab, and in the Browser. The `.apxmp`, version 2, the one the engine writes, with its history ([Version 2](#version-2)), version 1 still read, and the XMP layer under it are built, as are the safe write and `apertrust-cli library scan`. The code is in `crates/library/src/`: `listing`, `index`, `sidecar`, `xmp` and `ops`. The ways in to it are built in the app: one photo from a terminal, Open With and a double-click, each opening the photo alone ([One photo](#one-photo)), Open Recent, what was open last reopened at the start, and the start window in place of the main window with nothing open ([gui.md](gui.md#the-start-window)).
 - **In progress:** thumbnails ([Thumbnails](#thumbnails)): the camera's embedded pictures, the cache and the live photo's own renders are built; the other photos' renders remain.
-- **Planned:** the rest of folder mode in Phases 2 and 3; the Library and the Project in Phase 5; the server in Phase 7 ([The steps](#the-steps), [A server](#a-server)).
+- **Planned:** the rest of folder mode in Phases 2 and 3, Include subfolders, a folder's albums and Move to… and Copy to… among it; Libraries and the index across folders in Phase 5 ([The steps](#the-steps)); the server later, if asked ([A server](#a-server)).
 
 ## What the library is
 
-Decision 46. The library meets five requirements:
+Decisions 46 and 101. The library meets five requirements:
 
-1. **One concept,** the Library, of any size, and a small one for one job, the Project.
-2. **Folder mode first:** sidecar files only, with no database.
-3. **Libraries move** between computers and systems.
-4. **Libraries live anywhere:** a NAS, external drives, cloud folders.
-5. **No trouble when one library is edited on several computers,** which darktable's library has.
+1. **Folders are the unit:** any folder opens and is worked in as it is, with nothing to import, make or find first.
+2. **Sidecar files only,** with no database as the truth.
+3. **Photos move** between folders, drives, computers and systems, in Apertrust or in a file manager, their edits with them.
+4. **Photos live anywhere:** a NAS, external drives, cloud folders.
+5. **No trouble when one folder is edited on several computers,** which darktable's library has.
 
-**Sidecars are the truth; no database ever is.** The truth is in files that travel: the sidecars and a library's small text files. A photo's edit and metadata live in its `.apxmp`, written whenever they change. Anything else, a library's cache included, is rebuilt from the files. A database is never the truth and never sits on shared storage. darktable's library is ported as far as these allow.
+**Sidecars are the truth; no database ever is.** The truth is in files that travel: the sidecars, and a folder's small text files in its `.apertrust/`. A photo's edit and metadata live in its `.apxmp`, written whenever they change. Anything else, the saved index included, is rebuilt from the files. A database is never the truth and never sits on shared storage. darktable's library is ported as far as these allow.
 
-### The four modes
+**Each feature's data is made where it belongs, when it is first used** ([decision 101](decisions/0101-folders-first-libraries-optional.md)):
 
-The main window holds one of them at a time, its place, with one main window per user data folder ([decision 89](decisions/0089-one-instance-and-one-window-per-user-data-folder.md); [gui.md](gui.md#instances-and-windows)). The first rows are for choosing between them; the rest say how each is made.
-
-| | One photo | Folder mode | A library | A project |
-| --- | --- | --- | --- | --- |
-| Best for | A look at a photo, or a few, and an edit: whatever was opened, from the system, a dialog, a drop or a terminal | Working through a folder as it is: a card just copied, a trip's folder | Everything you keep, of any size: a client, a trip, a whole archive, across drives and computers | One job from capture to delivery: a shoot, a client's day |
-| What it gives | The photo at once, its edit beside it, nothing else touched | The folder's photos in the Browser, to edit, rate and cull, with nothing to import | Albums and smart albums, nested; search across all its folders; photos on drives that are away, still rated and tagged; its edits beside the photos or in its own folder | What a library gives, and folders with roles (Capture, Selects, Output, Trash), a watched Capture folder and the job's settings |
-| What it lacks | Every other photo: no grid of its folder, no folder tree, and no place in the recents | Albums, smart albums, search beyond the open folder, photos on drives that are not connected | Folder roles and the job's settings | Import library…: a project stays one job |
-| What it leaves on disk | The photo's `.apxmp`, once something changes | Each photo's `.apxmp`, once something about it changes; nothing else of Apertrust's | A folder with `Name.aplibrary` and a hidden `.apertrust/`; the sidecars beside the photos or in it; an id file at the top of each folder added | A folder with `Name.approject`, `.apertrust/` and its role folders |
-| How it opens | Opening a photo by any route: Open With or a double-click on a raw or its edit; File › Open…; raws dropped onto the window; `apertrust FILE` | File › Open Folder…; a folder dropped onto the window; Collections' Folders; Open Recent or the start window; `apertrust FOLDER`; Open This Folder from one photo | File › New Library…, or from the open folder, in place; then Open…, Open Recent, the start window or a double-click on `Name.aplibrary` | File › New Project…, from a template or not, or Export as Project… from an album; then Open…, Open Recent, the start window or a double-click on `Name.approject` |
-| Its photos | The one, or those opened together | The folder's, where they are; Import… (planned) copies a card's or another folder's into a folder of its own and opens it | Copied into its `Photos/`, or referenced where they are | Copied into its Capture, or referenced where they are |
-| Its edits | Beside the photo | Beside the photos | Beside the photos, or in its own folder, mirrored by path | As a library's |
-| Index | None beyond the photo | In memory while open | Built from its files as it opens; a cache on each machine (decision 55) | As a library's |
-| Albums and smart albums | No | No | Yes, nested | Yes |
-| Folder roles and the job's settings | No | No | No | Yes |
-| Photos on a drive that is not connected | — | Not shown | Browsed, rated and tagged; edited from a local copy | As a library's |
-| In the recents, and reopened at the start | No | Yes | Yes | Yes |
-| State | Built, by every way in, several photos together | First part built | Planned, Phase 5 | Planned, Phase 5 |
+| What | Where | Made |
+| --- | --- | --- |
+| Edits, ratings, labels, keywords, groups, virtual copies | The photo's `.apxmp` beside it (decisions 47 and 48) | When something about the photo changes: the edit and its history built; ratings, labels, keywords, groups and further virtual copies planned (Phase 3) |
+| A folder's own albums and smart albums, of photos anywhere under it | `.apertrust/` at that folder's top, hidden; it travels with the folder, so any computer that opens it sees them ([A folder's `.apertrust/`](#a-folders-apertrust)) | When the first album or smart album is made there (Phase 3), or a Library is saved there (Phase 5) |
+| The keyword tree | Built from the sidecars' hierarchical keywords; the keywords' properties and Recent in the user data folder's `keywords.toml` (decision 73) | Never a file beside the photos |
+| Search across a folder and its subfolders | The index: in memory over the open tree in Phase 3, then saved in this computer's cache ([The saved index](#the-saved-index)) | As the folder opens, in the background |
+| Browsing a folder whose drive is away | One thumbnail size per photo kept in the cache, and the index ([Keep Available Offline](#keep-available-offline)) | When a folder is marked Keep Available Offline or is in a Library (Phase 5) |
+| A Library: its folders and its albums across them | `<user data>/libraries/<id>/`, seen only on this computer ([A Library](#a-library)) | New Library… (Phase 5) |
+| A Library that travels, by choice | `.apertrust/libraries/<id>/` in its home folder, one of its own ([A Library that travels](#a-library-that-travels)) | Save Library in a Folder…, or the choice in New Library… (Phase 5) |
 
 ```text
-Folder mode                       A library                          A project
-Mountains/                        Family/                            Wedding/
-  DSCF0001.RAF                      Family.aplibrary                   Wedding.approject
-  DSCF0001.RAF.apxmp (if changed)   .apertrust/ albums/ smart-albums/  .apertrust/
-                                                roots/ keywords.toml   Capture/  Selects/
-                                                edits/ (if kept here)  Output/   Trash/
-                                    Photos/   (copied in at import)
-                                  Photo-Archive/2024/  (a folder referenced in place)
-                                    .apertrust/root.toml  (its id, and where its edits are kept)
+NAS/Photos/                          a folder, opened as it is
+  .apertrust/                        hidden; only once an album is made or a Library saved here
+    albums/7c0e9a14.toml             one file per album, named by id, naming its parent
+    smart-albums/3f2a91d0.toml
+    libraries/9e4d2b61/              only if a Library is saved here: library.toml,
+                                     albums/, smart-albums/
+  2026/2026-11-20 Lisbon/
+    DSCF0001.RAF
+    DSCF0001.RAF.apxmp
+
+<user data>/                         this computer, what clearing the cache must not lose
+  folders/5b0c7d0e.toml              a folder record: last path, volume id, path below the
+                                     mount, Keep Available Offline, edits kept here
+  folders/5b0c7d0e/pending/          ratings and tags waiting while its drive is away
+  folders/5b0c7d0e/edits/            only with its edits kept on this computer, by path
+  libraries/a1b2c3d4/library.toml    a Library: its name and its folders' ids
+  libraries/a1b2c3d4/albums/  smart-albums/
+  libraries/9e4d2b61/library.toml    a Library saved in a folder: its home folder's record
+                                     and the last copy read, for while the home is away
+  keywords.toml                      keyword properties and Recent
+
+<cache>/                             rebuilt from the files
+  indexes/                           a folder tree's index: kept while a folder it
+                                     covers has a record, limited otherwise
+  thumbnails/                        limited
+  offline/                           kept: one thumbnail per photo of a folder kept offline
 ```
+
+```mermaid
+flowchart LR
+    subgraph folder ["A photo folder, anywhere"]
+        apxmp[".apxmp beside each changed photo"]
+        dot[".apertrust/: its albums,<br/>once one is made; a Library<br/>saved here, by choice"]
+    end
+    subgraph user ["User data folder"]
+        libs["Libraries: folder lists,<br/>albums across folders"]
+        recs["Folder records: path, volume id,<br/>offline, pending, edits kept here"]
+    end
+    subgraph cache ["Cache"]
+        idx["Indexes"]
+        th["Thumbnails"]
+    end
+    libs --> recs
+    recs -.->|"finds"| folder
+    folder -->|"read into"| idx
+    folder -->|"read into"| th
+```
+
+### One photo, a folder, a Library
+
+The main window holds one of them at a time, its place, with one main window per user data folder ([decision 89](decisions/0089-one-instance-and-one-window-per-user-data-folder.md); [gui.md](gui.md#instances-and-windows)).
+
+| | One photo | A folder | A Library |
+| --- | --- | --- | --- |
+| Best for | A look at a photo, or a few, and an edit: whatever was opened, from the system, a dialog, a drop or a terminal | Working in a folder as it is: a card just copied, a trip, a whole archive on a NAS, with its subfolders | Several folders on several drives as one: search and albums across them, drives that are away still browsed |
+| What it gives | The photo at once, its edit beside it, nothing else touched | The folder's photos in the Browser, to edit, rate, cull and export, with nothing to import; its subfolders' too with Include subfolders; its own albums and smart albums; search over its tree; Keep Available Offline | What its folders give, and search, albums and smart albums spanning them; its folders found again after a mount changes |
+| What it leaves on disk | The photo's `.apxmp`, once something changes | Each photo's `.apxmp`, once something about it changes; `.apertrust/` once its first album is made or a Library is saved there | Nothing in its folders by default; `.apertrust/libraries/<id>/` in its home folder where saved there by choice |
+| How it opens | Opening a photo by any route: Open With or a double-click on a raw or its edit; File › Open…; raws dropped onto the window; `apertrust FILE` | File › Open Folder…; a folder dropped onto the window; Collections' Folders; Open Recent or the start window; `apertrust FOLDER`; Open This Folder from one photo | Collections, once made by New Library…; Open Recent and the start window; on another computer, the offer on opening its home folder |
+| Its edits | Beside the photo | Beside the photos, or kept on this computer ([Nothing written beside the raws](#nothing-written-beside-the-raws)) | Each folder's own |
+| Index | None beyond the photo | In memory while open, then saved per folder tree ([The saved index](#the-saved-index)) | Its folders' indexes, read together |
+| In the recents, and reopened at the start | No | Yes | Yes |
+| State | Built, by every way in, several photos together | First part built; the rest Phase 3, the saved index Phase 5 | Planned, Phase 5 |
 
 ### One photo
 
 Decision 46. **Opening a photo, by any route, opens that photo alone:** Open With and a double-click on a raw or its `.apxmp`, File › Open…, raws dropped onto the window or the Mac's Dock icon, and `apertrust FILE` from a terminal. One rule, so the same photo never opens two ways: opening a file means "show me this photo", and a folder full of other photos, a changed recents list and a background listing are side effects nobody asked for. The folder is one visible click away, Open This Folder.
 
 - An edit, `IMG.ARW.apxmp`, opens the photo beside it, the name without its lower-case `.apxmp` (`sidecar::photo_for`); one whose photo is not there is refused with an alert naming the photo.
-- Its edit is found as folder mode finds it, beside the photo or where its root's id file says ([Where edits live](#where-edits-live)).
+- Its edit is found as folder mode finds it, beside the photo, or, where the nearest folder above it whose record keeps edits on this computer has it, in that record's `edits/` under the photo's path relative to that folder ([Where edits live](#where-edits-live)).
 - Nothing is listed or indexed beyond the photo, and nothing is written but its `.apxmp`, once something about it changes, and its `.apdata` once the edit has one (decision 49).
 - It adds nothing to the recents (Open Recent, the start window, `state.toml`) and is never what the next start reopens while `library.reopen_last` is on; that stays what was open before it.
 - The Browser shows the photo alone, or the photos opened together, each with its thumbnail as folder mode shows it: read from the photo's own file or the cache, asked for as its cell is drawn, by path (`LibraryCommand::PhotoThumbnails`, [Thumbnails](#thumbnails)), its folder never listed. Collections' top line names the active photo and lists the recent folders, as in any mode; there is no folder tree, and its Folders holds Open This Folder alone ([In the window](#in-the-window)).
 - **Only Open This Folder switches to folder mode,** on the photo's folder, that photo active; only then does that folder join the recents.
 - **Several files opened together** (Open With on several raws, Open… with several, several raws dropped) open together in this mode, from one folder or several: the Browser shows just them, the first active, still with nothing in the recents and no folder tree. Open This Folder opens the active photo's folder.
 - **The app tells the session the photos** (`LibraryCommand::Open(Source::Photos(paths))`), so they are the selection's collection, as a folder's photos are: Select All, Invert Selection and Select Unedited act on them, Next Photo and Previous Photo move through them in the order opened, and an export takes every one selected ([session-protocol.md](session-protocol.md#the-selection)).
-- A path that opens nothing, a `Name.aplibrary` or `Name.approject` until Phase 5, a file that is no raw or a path that is not there, is refused with the alert in the window, as a drop's is, by every route.
+- A path that opens nothing, a file that is no raw or edit or a path that is not there, is refused with the alert in the window, as a drop's is, by every route; no file is a library ([decision 101](decisions/0101-folders-first-libraries-optional.md)).
 - **Where an open goes:** every open replaces the window's place, one from outside as one from inside. From outside are Open With, a double-click, a drop on the Mac's Dock icon and, on Windows and Linux, a second start's paths, which a second start hands to the instance running on its user data folder ([decision 89](decisions/0089-one-instance-and-one-window-per-user-data-folder.md)); from inside, File › Open…, a drop on the window or Open This Folder.
 - **The command line** is taken as a drop is: `apertrust FILE...` opens one photo, `apertrust FOLDER` folder mode, looked at after the window opens and off the interface's thread, a refusal's reason also on stderr. The registrations on Windows and Linux pass the files alone ([packaging.md](packaging.md#opening-a-raw-from-the-system)); `--in-folder`, which told Open With from a terminal while the two differed, is accepted and ignored until the first release is tagged, and removed in it.
 
-Built: all of the above but the root's id file, which the edits of every mode wait for (decision 47). On Windows Open With takes one file; several come through Send To, one start with every file, or through Open where Apertrust is the type's default, one start per file, each handing off, and the instance joins those starts, each arriving within 500 ms of the one before, into one open, the gaps to be measured on Windows 11 ([decision 89](decisions/0089-one-instance-and-one-window-per-user-data-folder.md)).
+Built: all of the above but edits kept on this computer, planned with Phase 5 (decision 47). On Windows Open With takes one file; several come through Send To, one start with every file, or through Open where Apertrust is the type's default, one start per file, each handing off, and the instance joins those starts, each arriving within 500 ms of the one before, into one open, the gaps to be measured on Windows 11 ([decision 89](decisions/0089-one-instance-and-one-window-per-user-data-folder.md)).
 
 ### Folder mode
 
-Built first, and partly built.
+A folder open, the main way in; built first, and partly built.
 
 - It opens only from a folder: File › Open Folder…, a folder dropped onto the window or the Mac's Dock icon, a folder in Collections' Folders, Open Recent or the start window ([gui.md](gui.md#the-start-window)), `apertrust FOLDER`, and Open This Folder from [one photo](#one-photo), which opens the photo's folder with that photo active. A photo opened, by any route, opens [one photo](#one-photo).
   - macOS delivers Open With, a double-click and a drop on the Dock icon as an open-documents event, not as arguments, which the app's platform code receives (`apertrust-display`). A folder dropped on the Dock icon opens in folder mode, as one sent with Windows' Send To does ([packaging.md](packaging.md#opening-a-raw-from-the-system)).
-- Opening, browsing and thumbnailing write nothing beside the photos. A photo gets its `.apxmp` only once something about it changes: an edit, a rating, reject or label, a keyword or metadata field, a virtual copy, a snapshot, a group.
-- The listing and the sidecars, read 16 at a time, make an index in memory, gone when the folder closes ([Listing and the index](#listing-and-the-index)).
-- Collections, the Photos tab's first tool, has Folders alone, the open folder's tree; Albums and Smart albums are not shown, and Make This Folder a Library… is in Collections' options ([In the window](#in-the-window)). Filters filters the open folder from its index (planned, decision 73).
-- Its keyword list is the keywords its photos hold; their properties (synonyms, private, category) and Recent are in the user data folder's `keywords.toml`, of the same form as a library's (planned, decision 73).
+- Opening, browsing and thumbnailing write nothing beside the photos. A photo gets its `.apxmp` only once something about it changes: an edit, a rating, reject or label, a keyword or metadata field, a virtual copy, a snapshot, a group. The folder gets its `.apertrust/` only once its first album or smart album is made there, or a Library is saved there.
+- The listing and the sidecars, read 16 at a time, make an index in memory, gone when the folder closes ([Listing and the index](#listing-and-the-index)); with Phase 5 it is saved per folder tree ([The saved index](#the-saved-index)).
+- Collections, the Photos tab's first tool, shows the open folder's tree in Folders, and from Phase 3 the folder's own Albums and Smart albums ([In the window](#in-the-window)). Filters filters the open folder from its index (planned, decision 73).
+- Its keyword list is the keywords its photos hold; their properties (synonyms, private, category) and Recent are in the user data folder's `keywords.toml`, shared by every folder and Library (planned, decision 73).
 - Import… (planned, decision 85) copies photos from a card or another folder into a destination named with darktable's patterns, then opens it ([Import in folder mode](#import-in-folder-mode)).
-- It lacks albums, smart albums, search beyond the open folder and photos on drives that are not connected. New Library… (planned) makes the open folder a library, in place. The CLI works this way.
+- The CLI works on folders this way too: `library scan` built, `import` planned ([The CLI](#the-cli)).
 
-### A library
+### Include subfolders
 
-Planned, Phase 5. A library is a folder with `Name.aplibrary` at its top, a short TOML file that says the folder is a library and that a person double-clicks (`format`, `id`, `name`, `written_by`, `edits`, `photos`), and a hidden `.apertrust/`.
+Planned, Phase 3, the library's step 19b. **Include subfolders** shows the open folder's photos with its subfolders', from [the tree's walk](#the-trees-walk), the index in memory over the whole tree.
 
-- `.apertrust/` holds one file per root (`roots/`), album (`albums/`) and smart album (`smart-albums/`), each named by its id; `keywords.toml`; `machines/`; and Import library…'s notices. It holds `edits/` only when the library keeps its edits in its folder, and the library holds `Photos/` for photos copied in. There is no database.
-- Photos inside its folder make it self-contained; folders elsewhere are roots, found on each machine by their ids ([Roots](#roots)).
-- It is made by File › New Library… (a name, a place, where its edits live) or from the open folder in place, and opened by Open…, Open Recent, the start window or a double-click on its file.
-- Several libraries may exist, and a window opens one photo, folder, library or project at a time; they replace darktable's workspaces. A photo in two libraries has one place for its edits, so its edit and ratings agree in both, while albums belong to each.
+- **Off by default, remembered per folder,** as darktable's film roll shows one folder and Import's `include_subfolders` is off. The tree's walk lists the archive's folders on its first open, as built, directory entries alone ([The tree's walk](#the-trees-walk)), but no photo or sidecar below the open folder is read unless asked.
+- **Search and filters follow what the Browser shows:** with it off, they run over the open folder and say how many photos its subfolders hold, from the tree's walk, "37 more photos in subfolders", with the switch beside it; no sidecar below the open folder is read for it, so the count is of photos, not of matches, but where a saved index (Phase 5) already holds them; on macOS and Linux it leaves out the photos below a mount point inside the tree, which the walk names but does not enter ([The tree's walk](#the-trees-walk)).
+- **The first open of a large tree** lists and reads in the background, the open folder first. At the measured SMB rates on the M4 against a NAS (342 ms for 2,825 files listed in bulk, 2.2 ms a sidecar read 16 at a time, [Listing in bulk](#listing-in-bulk)), 100,000 photos list in about 12 s and their sidecars read in about 4 minutes; with the saved index (Phase 5) later opens start from it.
+
+### A folder's `.apertrust/`
+
+Planned, Phase 3, the library's steps 19c and 19d ([decision 101](decisions/0101-folders-first-libraries-optional.md)). A folder's own data lives in a hidden `.apertrust/` at its top, made only by the first album or smart album made there or by a Library saved there (Phase 5), whichever comes first, so any computer that opens the folder sees its albums.
+
+- **It holds** `albums/` and `smart-albums/`, one TOML file each, named by the album's id and naming its parent, so a move rewrites one line and two computers changing different albums never touch one file; and `libraries/<id>/` only where a Library is saved there by choice ([A Library that travels](#a-library-that-travels)). Nothing else is written into it, and it is removed once neither is left.
+- **Its album entries** name photos by their path relative to that folder, with `/` and each name's bytes kept as read ([Folder records](#folder-records)), with their fingerprint and virtual copy, so the folder moves or renames with no change to them.
+- **No id of its own:** a copied folder, a backup, is two folders, each with its albums, diverging from there; nothing tells them apart or needs to.
+- **Nested:** a folder with albums moved inside another with albums keeps both `.apertrust/` folders. Opening the outer folder shows its own albums and, grouped under the inner folder's name, the inner's, found by the tree's walk. Nothing is merged.
+- **Hidden:** the dot hides it on macOS and Linux, and Samba hides dot files from Windows clients by default; Explorer shows it otherwise, as it shows `.git`. Setting Windows' hidden attribute on a folder takes `SetFileAttributesW`, an `unsafe` call in the `windows` crate that the standard library does not wrap, so it is set only if `apertrust-fs` comes for another reason (decision 65); until then `.apertrust/` stays visible in Explorer, as `.git` does. The listing skips it by its dot, as it skips every hidden entry ([The listing](#the-listing)); the tree's walk notes it, without walking into it.
 
 ### Albums and smart albums
 
-Planned, Phase 5.
+Planned: a folder's own in Phase 3 (steps 19c and 19d), a Library's spanning its folders in Phase 5 (step 26).
 
-**Albums** hold photos chosen by hand, each named by its root, path and virtual copy, and other albums and smart albums, to any depth. darktable has no albums.
+**Albums** hold photos chosen by hand, each named by its folder, relative path, fingerprint and virtual copy, and other albums and smart albums, to any depth. darktable has no albums.
 
+- A folder's albums hold photos anywhere under that folder; a Library's albums hold photos of any of its folders.
 - An album shows only its own photos, with its albums and smart albums beside them.
-- Removing a photo from one removes nothing else. Deleting an album deletes the albums inside it, after the sheet says how many, never a photo.
-- Each album is one file naming its parent, so a move rewrites one line, and two machines changing different albums never touch one file.
-- A move that would make a cycle is refused. One made offline on two machines puts the album whose move has the later clock at the library's top, and the activity says so.
+- Add to Album adds the selected photos; removing a photo from one removes nothing else. Deleting an album deletes the albums inside it, after the sheet says how many, never a photo.
+- A move that would make a cycle is refused. One made offline on two computers puts the album whose move has the later clock at its folder's or Library's top, and the activity says so.
+- **Two computers changing one album** combine it entry by entry, the later clock winning each (decision 52), so photos added on both are all kept. An album file's conflict copy from a sync tool is combined into the album its id names, then moved as a sidecar's is.
+- **Photos moved out of the folder's tree:** Move to… counts the album entries it takes out and says so before it runs; moved outside Apertrust, the entries stay, shown as missing, and are re-paired if the photo comes back under the folder.
 
-**Smart albums** are darktable's collect rules, filters and sort, saved: at the library's top over the library, inside an album over that album's photos. Their rules gain one property of Apertrust's own, **in album**: the photos of an album, or of an album and every album inside it.
+**Smart albums** are darktable's collect rules, filters and sort, saved: a folder's over that folder's tree, a Library's over its folders, one inside an album over that album's photos. Their rules gain one property of Apertrust's own, **in album**: the photos of an album, or of an album and every album inside it. Filters' Save as Smart Album saves into the open folder's `.apertrust/` (step 19d), or into the open Library.
 
-### A project
+### Move to… and Copy to…
 
-Planned, Phase 5. A project is a small library for one job, `Name.approject`, made by File › New Project… or Export as Project…, in the same format and code as a library with folder roles on.
+Planned, Phase 3, the library's step 19, with Rename and Delete ([decision 101](decisions/0101-folders-first-libraries-optional.md)). Between any two folders, each a `UserForeground` job, cancellable, as darktable's (decision 57):
 
-- **Capture:** where Import… and a tethering tool's photos land.
-- **Selects:** Move to Selects.
-- **Output:** Export's default destination.
-- **Trash:** Delete moves photos there with their sidecars; Empty Trash sends this project's Trash to the system's trash.
-
-New Project… makes the four folders at its top, and any folder inside may take a role instead. A role never points outside the project, so it moves whole. A large library culls with ratings, the reject and albums instead. A project also has:
-
-- Export as Project…: an album with its albums made a standalone project, by copy (the default) or reference;
-- a watched Capture folder while the project is open, so a camera maker's tethering app works;
-- the job's settings in its file: the next capture's folder, name pattern and job code, the start adjustments as `.apertrust/start.apxmp`, the Output folder and export preset;
-- project templates in the user data folder, never photos or edits;
-- Output's photos kept out of smart albums unless a rule names Output;
-- a count of what stays behind on Import library…;
-- the roles marked in the Folders tree.
-
-A project never runs Import library…, so it stays one job. Tethering and import from a camera through libgphoto2 are decided when camera import is planned in detail, leaning to allow it loaded at run time as darktable does, an exception to decision 5; the watched Capture folder serves meanwhile.
-
-### Photos copied or referenced
-
-In every mode, as darktable's import module does.
-
-- **In place,** darktable's "add to library": Open Folder… in folder mode; Add Folder… or Import… in place in a library, the folder becoming a root.
-- **By copy,** darktable's "copy & import", with its base folder, subfolder and file name patterns and variables, job code, date override and original names. The base folder is `$(PICTURES_FOLDER)/Apertrust` in folder mode, the library's `Photos/`, or a project's next capture folder.
-- Importing never writes the source's files and never overwrites one; it writes a sidecar beside a copy only where it sets something on the photo, a renamed photo's camera name among them, and recognises a photo already imported by its size and camera name, confirmed by its fingerprint, not by its date.
-- Import's settings take `import.*` ids, where darktable's copy & import uses `session/…`.
+- **A photo moves whole or stays:** its main file (its raw, else its only image file) with its `.apxmp`, `.apdata` and attached files, and its edits kept on this computer, which go where the destination's edits are kept. A cancel, a crash or a write from elsewhere during the move never leaves a photo in both places, or half in each, and never loses a file: what cannot be settled is named in the activity for the person to settle. How each is met is step 19's spec.
+- **On one volume, a rename; across volumes, a checked copy:** each file is copied through a hidden temporary ([the safe write](#safe-writes)), read back past the system's cache and compared with its source's hash before any source file is removed. How to read past the cache on each platform, and its cost, is the step's spike: a 30 MB raw read back over the NAS's 84 MB/s takes about 0.36 s.
+- **Never replaces a file** at the destination; a cancel takes effect between photos.
+- **Albums:** the sheet counts the album entries a move takes out of a folder's `.apertrust/`.
+- **Delete** sends photos with their sidecars to the system's trash, with a bar and not cancellable (decision 57).
+- **Import's Verify the copies,** after Phase 3, shares the same checked copy (decision 85).
 
 ### Import in folder mode
 
@@ -175,69 +211,127 @@ flowchart LR
 - `LibraryEvent::Imported` chunks name each source and its copy, with their `Import`'s number, by which the sheet marks only the photos of imports it sent from the listing it shows;
 - a photo's own failure is that photo's and the import goes on; the source or the destination failing stops it; the copies made stay. Try again (`RetryJob`) copies what is left, the check skipping each file that landed; Cancel leaves no temporary and no photo half landed.
 
-**The destination opens** as the first photo lands, where After import says so: the app opens it as a way in, with no photo opened, and the session adds each photo copied into the folder the Browser shows to its index and sends it to clients as the folder's photos added, the event step 10's outside changes send, so the Browser fills without reading the folder again; a photo the folder's listing has found already is not added twice. Where the patterns make several subfolders, their deepest common folder opens as the root and the first subfolder is chosen in its tree, as a click chooses it; the others list as they are chosen, each listing only its own photos as any folder does.
+**The destination opens** as the first photo lands, where After import says so: the app opens it as a way in, with no photo opened, and the session adds each photo copied into the folder the Browser shows to its index and sends it to clients as the folder's photos added, the event step 10's outside changes send, so the Browser fills without reading the folder again; a photo the folder's listing has found already is not added twice. Where the patterns make several subfolders, their deepest common folder is the one opened, and the first subfolder is chosen in Collections' tree, as a click chooses it; the others list as they are chosen, each listing only its own photos as any folder does.
 
 **Cards** (20c): `LibraryEvent::Volumes` lists the cards and drives as they come and go, from `apertrust-display`'s platform code; counting a card's new photos is a `SystemBackground` job of the same check.
 
 **Their numbers:** `SourceListed`, `SourceChecked` and the `Thumbnail`s `SourceThumbnails` asks for carry their `ListSource`'s number in `open`, `ImportPreview` its `PreviewImport`'s and `Imported` its `Import`'s; `Volumes`, which answers no command, carries none. The Import sheet keeps the latest `ListSource`'s and the latest `PreviewImport`'s numbers and drops an older one's events, as the grid does an older open's; the folder's filter never applies to them, and an import's `Imported` events reach the destination's grid through the folder's photos added.
 
-**Through the storage interface:** the listing, the check and the copy use `apertrust_base::fs` and the listing until step 21b, then move behind [the storage interface](#four-layers) with the rest.
+**Through `apertrust_base::fs`:** the listing, the check and the copy use it and the listing, as the rest of the library does ([Four layers](#four-layers)). Verify the copies, after Phase 3, is [Move to…'s checked copy](#move-to-and-copy-to).
 
-### Import library…
+### A Library
 
-A library's command, planned. It takes another library's file or a project's and brings it in as one album named after it, with its albums and smart albums inside. A project's Selects arrive as an album inside; its Output and Trash are left behind, and the sheet counts them.
+Planned, Phase 5 ([decision 101](decisions/0101-folders-first-libraries-optional.md)). A Library is optional: a named collection of folders from anywhere, such as "Archive" or "Work", made by **New Library…**. **Add Folder…** adds folders from any drive, and a folder's ⋯ in Collections has **Add to Library…**.
 
-- **By copy,** the default: its photos go into `Photos/<its name>/`, keeping their paths below each root, with their edits placed as this library keeps edits. The sheet says what it costs first ("Copies 2,140 photos, 61 GB"). The old library is left as it was, with a notice in its `.apertrust/` shown when it next opens.
-- **By reference:** its roots become this library's, the edits staying where each root's id file says.
-- Either way keywords merge by path (`Places|Thailand`). A photo already here, matched by fingerprint, is asked about once for all such photos: Keep both, or Link, an imported edit that differs then arriving as a virtual copy.
-- Importing the same one again is refused for now; Apertrust never deletes the old one.
+- **What it adds:** search and filters across its folders; albums and smart albums spanning them; browsing, rating and tagging its folders while their drives are away; its folders found again by their volume id after a mount or drive letter changes ([Folder records](#folder-records)).
+- **It is light:** its name, its folders by their records' ids, and its spanning albums and smart albums, kept by default in `<user data>/libraries/<id>/`, seen only on this computer, with nothing written into its folders. Its folders' indexes are in the cache ([The saved index](#the-saved-index)).
+- **A folder can be in several Libraries or in none,** and works the same either way: its sidecars and its own albums are the folder's. A folder in two Libraries has one record, one index, one set of kept thumbnails and one set of pending changes; each Library's spanning albums are its own. A Library never holds one folder twice, or a folder and one of its subfolders.
+- **Removing a Library** (Remove Library…) deletes only its list and its albums, never photos, sidecars or a folder's own albums. Remove from Library takes one folder out. Removing the last Library of a folder whose edits are kept here asks first: write the edits beside the photos, or add the folder to another Library.
+- **Several Libraries per user data folder** take the place of darktable's workspaces. "Workspace" names the Tools panel's layouts (decision 96), so the word is Library. Settings, presets, styles, workspaces and keywords' properties are shared by every Library of the user data folder; separate user data folders stay for wholly separate setups (decision 89).
+- **Keywords:** each scope's tree, a folder's or a Library's, comes from its own photos' sidecars, so a Library never shows another's keywords; a synonym set once works everywhere. A rename rewrites the sidecars of the open scope only.
+- **Its file,** `library.toml`, holds its id, name and format and its folders; one of a newer format opens view-only (decision 52).
+- In the window, Collections lists each Library with its folders, Albums and Smart albums ([In the window](#in-the-window)); the recents hold it by its id.
+
+### A Library that travels
+
+Planned, Phase 5, the library's step 27b, the last Library step, which moves to Later alone if Phase 5 runs long. As a choice, a Library is saved in one of its own folders, its **home folder**, so any computer that opens that folder can open the Library with its albums. It is the same Library kept elsewhere: the folder does not become a library, and no Library nests in another.
+
+- **Saving it there:** New Library… asks where to keep it, This computer (the default) or In one of its folders. A Library kept here has Save Library in a Folder… in its ⋯ in Collections, which also moves it to another of its folders; Keep Library on This Computer moves it back, and other computers then say once that it has left its folder. Each move is [Move to…'s checked copy](#move-to-and-copy-to): written, verified, and only then the other copy removed.
+- **The home folder** is one of the Library's own folders and writable, told by trying the write as `Cache::create` does, never by permission bits. A folder outside the Library, or one whose edits are kept on this computer, cannot be home. While it is home it cannot be removed from the Library: Remove from Library asks first to move the Library to another of its folders or back to this computer.
+- **Where:** `<home>/.apertrust/libraries/<id>/`, named by id as albums are, so renaming the Library moves nothing and two Libraries named Archive never collide.
+- **What it holds, and nothing else:** `library.toml`, with its id, name and format and its folders, each by an id of the Library's own with its volume id and path below the mount as a hint, the home folder `.`; and its spanning albums and smart albums, one file each.
+- **What it never holds:** one computer's paths, Keep Available Offline marks, pending changes, edits kept on a computer, indexes, thumbnails, settings or keywords. Those stay in each computer's folder records and cache. A folder record is never shared: each computer's notes which of the Library's folder entries it answers.
+- **On another computer,** opening the home folder asks once: "This folder holds the Library 'Archive'. Open it?"
+  - **Open** lists it in Collections with that computer's own Libraries, marked with its home folder.
+  - **Not Now** is remembered in the home folder's record; the folder's ⋯ still offers Open Library "Archive".
+  - **Its folders** show as found (the hint matched, the photos confirming), away (no such volume present) or with Locate… (the volume present without the path, or an id this system reads differently, as an exFAT drive's can be between macOS and Linux). Locate… asks once per folder on each computer and keeps the answer in that computer's folder record; it is accepted once the photos the Library's albums name there match by fingerprint, or, for a folder no album names, as the person points.
+  - **Its albums and smart albums** show as on the first computer; entries in a folder not found yet are away, never missing.
+- **Two computers changing it:** its files are small, one per album as a folder's are, and decision 52's comparison applies to each: an album entry by entry, `library.toml`'s folders entry by entry, the later clock winning each. A folder removed is kept as a removal, so another computer's copy does not bring it back. Conflict copies from sync tools are combined into the file their id names, then moved as a sidecar's are.
+- **Its home folder away:** the Library shows as away, browsed from the last copy this computer read, kept in its `<user data>/libraries/<id>/`. Its other folders work as usual. Album changes meanwhile wait in the home folder's record's `pending/` and are written through decision 52's comparison when it is back.
+- **Its home folder renamed or moved:** the Library goes with it, being inside, found as any folder with a record is. **Copied,** as a backup: two copies of one Library id; a computer that finds both asks once which is the home, as with a clone, and ignores the other.
+- **Removed:** Remove Library… asks first, saying every computer loses it, then deletes `.apertrust/libraries/<id>/`, and `.apertrust/` if nothing else is in it, never photos, sidecars or a folder's own albums; other computers say once that it was removed. Remove from This Computer forgets it on one computer only.
+
+### Keep Available Offline
+
+Planned, Phase 5, the library's step 27. A folder's own mark, in Collections' ⋯, with no Library needed; a Library marks each of its folders the same way. It sits beside the cloud folders' Make Available Offline ([Shares, offline drives and cloud folders](#shares-offline-drives-and-cloud-folders)), the system's own term, which downloads a placeholder's file.
+
+- **It keeps** the folder's [record](#folder-records), its index and one thumbnail per photo in the cache's kept kind `offline/`, 256 px: 25.3 kB each on the corpus's embedded pictures on the M4 ([cache.md](cache.md#timing-the-walk)), so 100,000 photos take about 2.5 GB.
+- **Away,** the photos are browsed, rated and tagged; editing says the drive is not connected. The ratings and tags wait in the folder record's `pending/` and are written through decision 52's comparison when the drive is back, combining with any change another computer made meanwhile.
+- **Away, never deleted:** a volume or share not present means away; a file gone from a present volume means missing, re-paired by fingerprint. No index row, album entry or pending change is dropped by a scan, only by the person.
+
+### Nothing written beside the raws
+
+Planned, Phase 5, the library's step 28. Some people need Apertrust to write nothing into their photo folders: someone trying the app, an archive that must never touch its masters, a share that cannot be written. For them:
+
+- **Albums go in a Library** kept on this computer, never in a folder's `.apertrust/`; a Library is saved into a folder only when the person chooses one.
+- **Keep Edits on This Computer,** a folder's setting in Collections' ⋯, and `library.keep_edits_here` for every folder not yet edited, off by default, with `--conf` for a test install, as darktable's manual suggests `write_sidecar_files=never` for one ([settings.md](settings.md#edits-in-another-user-data-folder)). The edits go to the folder record's `edits/`, mirrored by path, the same `.apxmp` byte for byte ([Where edits live](#where-edits-live)).
+- **Turned on or off for a folder that has edits,** it asks first, naming how many, and moves them to their new place by Move to…'s checked copy, so a photo's edits are only ever in one place and none is lost. How a sidecar already at the new place, a folder that cannot be written and a subfolder's own setting are met is step 28's spec.
+- **Nested:** a subfolder of a folder that keeps its edits here shows the setting on, from that folder, and changes it only there.
+- **Routed to a Library,** so nothing is left unsaved: the first change in such a folder adds it to a Library, asking once which, or making one. Every Library holding the folder uses the same edits. The folder is then only read.
+- **A known limit,** said here and in the setting's help: another computer, or another user data folder on this one (Apertrust Nightly, a development build), sees none of these edits and would write sidecars beside the photos, a second truth.
+
+### Outside changes and several computers
+
+| Case | Rule |
+| --- | --- |
+| **Photos moved or renamed outside Apertrust** | Matched again by fingerprint ([Fingerprints](#fingerprints)) wherever the orphan sidecar and the photo are in one indexed scope, the open folder with its subfolders or a Library; across scopes, Find Photos… on the orphans. Nothing is dropped: an orphan stays as Edits without a photo until the person removes it (step 18) |
+| **A whole folder copied in a file manager** | Its sidecars and any `.apertrust/` go with it; the destination's next listing finds the photos with their edits and albums. Edits kept on this computer stay in the folder's record and do not go with the copy. The copy is the file manager's, not verified by Apertrust |
+| **A folder with `.apertrust/` moved or renamed** | Its albums move with it unchanged, their entries relative to it. A recent breaks, with Locate…; a folder record finds it by volume id and path, else by Locate…, accepted once enough of its photos match by fingerprint |
+| **A folder with `.apertrust/` copied,** a backup | Two folders, each with its own albums and sidecars, diverging from there; a Library holding both shows the photos twice. A Library saved there is the exception ([A Library that travels](#a-library-that-travels)) |
+| **Drive letters and mount points that change** | A folder with a record is found by its volume's id and the path below the mount, the photos' fingerprints confirming ([Folder records](#folder-records)); a plain recent shows Not found, with Locate… |
+| **Two computers editing one sidecar** | Decision 52: a diverged edit kept as a second virtual copy, "From another computer" and the time; ratings and metadata combined field by field ([Comparing two copies](#comparing-two-copies)) |
+| **Two computers changing a folder's albums** | One file per album, combined entry by entry, the later clock winning each |
+| **Sidecar conflict copies from sync tools** | Found by content and handled by decision 52's rule, moved to the user data folder's `conflict-copies/` and removed after 30 days (step 13) |
+
+### Left for later
+
+Later, if asked: editable previews and local copies of raws kept elsewhere; cloud storage folders, behind a spike; [the server](#a-server); a presence note, written only into an existing `.apertrust/`; carrying album entries to Move to…'s destination; videos listed; the watched folder, with tethering. Import's presets take a job's names and destinations, an export preset its output, ratings and albums its selects, and the system's trash its deleted photos.
 
 ### Words
 
-The library's words are decision 46's, listed with the others in [architecture.md](architecture.md#naming):
+The library's words are decisions 46's and 101's, listed with the others in [architecture.md](architecture.md#naming):
 
-- The interface says Folder, Library, Project, Album, Smart album, Capture, Selects, Output, Trash, Virtual copy and Snapshot, and Collections for the tool that chooses which folder, album or smart album the Browser shows (decision 95).
-- The code and docs add **folder roles**, **root** and **collection**, for any set of photos Collections chooses; the interface has no word for a folder and an album together.
-- Never: film roll; catalogue; workspace for a library; session for a library or project ("session" is the engine's); Shoot or layout for the roles; version for a virtual copy.
+- The interface says Folder, Library, Album, Smart album, Virtual copy and Snapshot, and Collections for the tool that chooses which folder, album or smart album the Browser shows (decision 95); and for its commands Include subfolders, Move to…, Copy to…, Keep Available Offline, Keep Edits on This Computer, Add Folder…, Add to Library…, Save Library in a Folder… and Keep Library on This Computer.
+- The code and docs add **folder record**, **home folder**, **folder tree** and **collection**, for any set of photos Collections chooses; the tree's root is the folder opened in Collections. The interface has no word for a folder and an album together, nor for a folder record.
+- Never: project; film roll; catalogue; workspace for a Library; session for a Library ("session" is the engine's); version for a virtual copy.
 
 ### Against darktable's library
 
-darktable's library is kept feature by feature, with 24 deviations, each for a requirement (D1 to D24, each with darktable's sources, recorded with decision 46):
+darktable's library is kept feature by feature, with its deviations, each for a requirement (each with darktable's sources, recorded with decision 46):
 
-- no `library.db` as the truth; roots by id and relative path; no import step in folder mode;
-- libraries, projects and Import library… in place of workspaces;
+- no `library.db` as the truth; folders by folder record, relative path and fingerprint; no import step;
+- optional Libraries, collections of folders, in place of workspaces;
 - a sidecar written only once something changes, whole and byte for byte the same for the same content;
 - groups made by hand stored by id in the sidecars; every virtual copy in the photo's one sidecar;
 - a reject that keeps the stars; ratings and labels as history steps;
-- change detection always on, an edit changed on two machines kept as a second virtual copy, metadata combining; cloud conflict copies found and handled;
-- a content fingerprint; no locks or database on shared storage; offline drives marked, never skulls; no background download of a cloud file;
+- change detection always on, an edit changed on two computers kept as a second virtual copy, metadata combining; cloud conflict copies found and handled;
+- a content fingerprint; no locks or database on shared storage; drives that are away marked, never skulls; no background download of a cloud file;
 - Folders, Albums and Smart albums in place of the collect tool;
 - darktable's automatic `darktable|…` tags not written, their facts properties of the index;
 - Import never rewriting a sidecar; names compared in one Unicode form;
-- the selection the session's; the import time only in each machine's cache; local copies keyed by fingerprint;
-- history in Apertrust's readable layout; snapshots saved; edits optionally in the library's folder.
+- the selection the session's; the import time only in each computer's index; Move to… across volumes a checked copy;
+- history in Apertrust's readable layout; snapshots saved; edits optionally kept on this computer.
 
 ### In the window
 
-Decisions 37, 46 and 73. The Photos tab of the Tools panel chooses what the Browser shows and describes the photos in it. Its tools are Collections, pinned and built, then Filters, Keywords, Metadata and Styles, planned for Phase 3, and Export, last, built for the selection, else the active photo (decision 90) ([gui.md](gui.md#the-tools-panel)). Collections keeps one name in every mode, its top line showing what is open: in one photo the photo, the active one where several were opened together, in folder mode the open folder ("Folder: Wedding 2026-10"), its count on its row in Folders' tree, in a library or a project its name. Its groups are Folders, Albums and Smart albums: Folders from Phase 2, with folder mode, and Albums and Smart albums with the library in Phase 5. The interface has no catch-all word for them; "collection" is the code's and the docs' word for any of them. darktable's film roll is a folder.
+Decisions 37, 46, 73 and 101. The Photos tab of the Tools panel chooses what the Browser shows and describes the photos in it. Its tools are Collections, pinned and built, then Filters, Keywords, Metadata and Styles, planned for Phase 3, and Export, last, built for the selection, else the active photo (decision 90) ([gui.md](gui.md#the-tools-panel)). Collections keeps one name everywhere, its top line showing what is open: in one photo the photo, the active one where several were opened together, a folder ("Folder: Wedding 2026-10"), its count on its row in Folders' tree, or a Library's name. Its groups are Folders, Albums and Smart albums: Folders from Phase 2, a folder's own Albums and Smart albums from Phase 3, and each Library with its folders, Albums and Smart albums in Phase 5. The interface has no catch-all word for them; "collection" is the code's and the docs' word for any of them. darktable's film roll is a folder.
 
-**The sections by mode:**
+**The sections by place:**
 
-| Mode | Folders | Albums | Smart albums |
+| Place | Folders | Albums | Smart albums |
 | --- | --- | --- | --- |
 | One photo | The active photo's folder, as Open This Folder (into folder mode) | Not shown | Not shown |
-| Folder mode | The open folder's tree | Not shown | Not shown |
-| A library | Its roots' trees | Its albums, nested | Its smart albums, over the library or inside an album |
-| A project | Its folders, with their roles marked: Capture, Selects, Output, Trash | Its albums, which group photos without moving them | Its smart albums, saved searches within the project |
+| A folder | The open folder's tree | The folder's own, and grouped under each inner folder's name its own (Phase 3) | The folder's own (Phase 3) |
+| A Library | Its folders' trees, those away marked | Its albums spanning its folders, nested | Its smart albums, over the Library or inside an album |
 
-- **What a mode has not is not shown.** Folder mode writes nothing of Apertrust's but sidecars, while albums and smart albums are saved files, so they need a library and one photo and folder mode show Folders alone. The way there is in Collections' options: Make This Folder a Library…, New Library… on the open folder, in place. The tool's top, what is open with its recents and ＋, is the same in every mode.
-- **Filters in folder mode** (decision 73, Phase 3, planned) run over the open folder's index in memory, not smart albums: nothing is written beside the photos, and Save as Smart Album leads to Make This Folder a Library…. A filter that hides selected photos leaves only the shown ones selected.
+- **One photo shows Folders alone,** since nothing is open beyond the photo. A folder's Albums and Smart albums are made there, the first one making its `.apertrust/` unless a Library saved there has made it. The tool's top, what is open with its recents and ＋, is the same everywhere.
+- **Filters** (decision 73, Phase 3, planned) run over the open folder's index in memory, following what the Browser shows ([Include subfolders](#include-subfolders)); Save as Smart Album saves into the folder's `.apertrust/`. A filter that hides selected photos leaves only the shown ones selected.
 - **Keywords** are one tool, darktable's tagging, and **Metadata** one, darktable's image information and metadata editor (decision 73).
-- **In a project,** the role folders hold where the files are, and albums group photos across them without moving them: a client's picks, the prints, the blog's, one photo in several. Smart albums are saved searches within the project.
+- **Collections' ⋯** gains Keep Available Offline, Keep Edits on This Computer and Add to Library… in Phase 5, each with its step.
 
 - **Built:** [one photo](#one-photo) by every way in, several together, with Collections' Open This Folder; `apertrust FOLDER`; File › Open Folder… and a folder dropped onto the window ([gui.md](gui.md#file)), View › Collections (L), and the Photos tab's Collections, in folder mode's form: its top line, what is open, listing the recents kept in the user data folder's `state.toml`, with ＋ and ⋯, and Folders alone, the tree of the folder opened, its root fixed at the top with its count and nothing above it, its subfolders, a click on one making it the active folder, the tree and the recents unchanged; the Browser showing the active folder's photos in the listing's order, each cell its photo's thumbnail, the camera's embedded picture, its file name until it comes, or No preview yet where there is none ([gui.md](gui.md#the-cell)), its marks from its edit state ([Edit states](#edit-states)); the Viewer's empty states, one quiet line with nothing open; File › Open Recent with Clear Menu, File › Close, and what was open last reopened at the start, its photo active once listed (`library.reopen_last`). A dropped folder opens as Open Folder… opens one.
 - `apertrust-library` owns the folders, their listing and the sidecars' metadata, and the thumbnail cache's files ([Thumbnails](#thumbnails)).
-- Offline, in the cloud, missing and view-only photos, and a project's roles, carry marks of their own ([gui.md](gui.md#the-photos-tabs-marks)).
+- Away, in the cloud, missing and view-only photos carry marks of their own ([gui.md](gui.md#the-photos-tabs-marks)).
 
 ## The code
 
@@ -252,34 +346,26 @@ flowchart TB
     clients["Clients<br/>the app, apertrust-cli library, MCP later"]
     ops["<b>4. Operations</b><br/>ops: LibraryCommand, LibraryEvent"]
     index["<b>3. Index</b><br/>index, listing: one Index"]
-    model["<b>2. Model</b><br/>model: the open folder, library or project (planned)"]
+    model["<b>2. Model</b><br/>model: the open folder tree or Library (planned)"]
     files["<b>1. Files</b><br/>sidecar over xmp; files (planned)"]
-    storage["storage (planned)<br/>local files or the server"]
     fs["apertrust_base::fs<br/>the safe write"]
-    server["the server (decision 71)"]
-    clients -->|"session protocol"| ops --> index --> model --> files --> storage
-    storage --> fs
-    storage -.-> server
+    clients -->|"session protocol"| ops --> index --> model --> files --> fs
 ```
 
 | Layer | Its one job | Tool | State |
 | --- | --- | --- | --- |
-| 1. Files | Bytes in, values out, and back: the `.apxmp` text layer with the comparison of two copies, over the XMP layer, and the library's TOML files (`Name.aplibrary` or `Name.approject`, and `.apertrust/`'s roots, albums, smart albums and keywords); no folders listed, no threads; every call into a root's files through the storage interface | `sidecar`, `xmp`; `files`; below them `storage` and `apertrust_base::fs` | `sidecar` (version 1) and `xmp` built; `files`, the comparison and `storage` planned |
-| 2. Model | The open `Library` (a folder, a library or a project), its roots, photos, virtual copies, albums, smart albums and keywords; every change applied here, written through layer 1, reported as events | `model` | Planned |
-| 3. Index | Rules, sorts, pages and full text: one `Index`, in memory for folder mode, saved as a library's cache (decision 55); always rebuilt from the layers below | `index`, `listing` | The folder's listing and its sidecars read, in memory, built; rules, sorts, pages and full text planned |
+| 1. Files | Bytes in, values out, and back: the `.apxmp` text layer with the comparison of two copies, over the XMP layer, and the library's TOML files (a folder's `.apertrust/` albums and smart albums, the folder records, the Libraries, `keywords.toml`); no folders listed, no threads | `sidecar`, `xmp`; `files`; below them `apertrust_base::fs` | `sidecar` (version 1) and `xmp` built; `files` and the comparison planned |
+| 2. Model | What is open, a folder tree or a Library (decision 101), with its folders, photos, virtual copies, albums, smart albums and keywords; every change applied here, written through layer 1, reported as events | `model` | Planned |
+| 3. Index | Rules, sorts, pages and full text: one `Index`, in memory over the open tree, saved per folder tree (decision 55), a Library's search reading its folders' indexes together; always rebuilt from the layers below | `index`, `listing` | The folder's listing and its sidecars read, in memory, built; rules, sorts, pages and full text planned |
 | 4. Operations | `LibraryCommand` (about forty in the end) and `LibraryEvent` (about twenty) in the session protocol | `ops` | Opening and closing a folder, a folder's subfolders for Collections' tree, and its photos' thumbnails and those of photos alone, built |
 
-Layer 1 alone knows file layouts; layer 3 alone the cache's engine; the storage interface alone where the bytes are. Until the model exists, `ops::open` calls `Index::build` directly, and the index reads its sidecars through `sidecar`.
+Layer 1 alone knows file layouts; layer 3 alone the index's engine. Until the model exists, `ops::open` calls `Index::build` directly, and the index reads its sidecars through `sidecar`.
 
-**The storage interface** (decision 54, planned with step 21b) is the library's lowest part, under layer 1 and the listing, so nothing above it assumes a file system. Every call into a root's files goes through it: a folder listed in chunks, a file's facts, a file read whole or a byte range of it (the fingerprint's first and last 64 KiB, an embedded picture), the safe write, rename, move, copy and delete, and a raw fetched into a local copy.
-
-- **Local files:** `std::fs`, bulk listing (step 7), cloud placeholders' flags and `apertrust_base::fs`'s safe write; today's listing and safe write move behind it.
-- **The server** ([A server](#a-server)): a server root's files through the server's protocol, its raws fetched once into local copies by fingerprint.
-- The per-root queues and their deadlines (decision 53) and the comparison before every write (decision 52) sit above it, the same for both backends.
+**A storage interface waits for a second backend** (decision 54). The library reaches the file system through `std::fs`, bulk listing (step 7), cloud placeholders' flags and `apertrust_base::fs`'s safe write, with the per-folder queues and their deadlines (decision 53) and the comparison before every write (decision 52) above them. Should a second backend come, the server's later, if asked ([A server](#a-server)), every call into a folder's files moves behind one interface under layer 1 and the listing, so nothing above it changes.
 
 **A new library feature** is a command and its events in layer 4, a change in layer 2, and a file format in layer 1 only if it is stored.
 
-**Left out on purpose:** SQL or any query language beyond darktable's rules; a trait for the cache's engine, which has one implementation; plug-in points until scripting has a second user; a sync engine beside decision 52's comparison, the server being one more copy; transactions across photos; a second API beside the protocol; undo in the library, which stays the session's.
+**Left out on purpose:** SQL or any query language beyond darktable's rules; a trait for the index's engine, which has one implementation; a storage trait before a second backend; plug-in points until scripting has a second user; a sync engine beside decision 52's comparison, the server being one more copy; transactions across photos; a second API beside the protocol; undo in the library, which stays the session's.
 
 ### What depends on what
 
@@ -314,7 +400,7 @@ Decision 54's layer 4, in `crates/library/src/ops.rs`. Clients see only `Library
 | `LibraryCommand::Subfolders` | `folder: PathBuf`, a folder inside the tree's root | Lists its subfolders for Collections' tree, a cancellable job on `UserBackground` as the open folder's reading ([Jobs and queues](#jobs-and-queues)), answered by `LibraryEvent::SubfoldersOf`; a folder outside the tree's root, the first folder opened, kept while each later `Open` lies inside it, is refused, so the siblings of the folder open now can be listed. A new `Open` or a `Close` cancels it; with no folder open nothing is listed. |
 | `LibraryCommand::RawThumbnails` | `RawThumbnails`, the setting `library.raw_thumbnails_from` | From which size a photo with no edit shows a render of its raw rather than the camera's embedded picture, for the thumbnails and opening pictures from then on ([Thumbnails](#thumbnails)); answered by nothing. |
 
-`Source` has one variant today; a library and a project join it in Phase 5.
+`Source` has `Folder` and `Photos` today; `Folder` gains Include subfolders with step 19b, and `Library`, by its id, joins them in Phase 5.
 
 ### Events
 
@@ -382,7 +468,7 @@ Each `LibraryCommand::Subfolders` is a job on `UserBackground`, beside the folde
 - its body `ops::subfolders`, handed the tree's root, the first folder opened, kept while each later `Open` lies inside it (`ops::inside`), an observer and a cancel closure as the folder's is, which refuses a folder outside that root, relative or holding a `..`, and lists through layer 3, `listing::subfolders`: a folders-only listing on the listing's own thread, waited for while the cancel is asked every 20 ms, so a share that hangs holds only that thread, never a worker or the quit;
 - a new `Open` or a `Close` cancels it, and with no folder open it is not added.
 
-The library's other long commands are to run on darktable's queues too: move, copy, rename, delete and Import… on `UserForeground`, a source's listing for Import… on `UserBackground` ([Import in folder mode](#import-in-folder-mode)); each call into a root on that root's queue with its deadline (decisions 53 and 57, planned).
+The library's other long commands are to run on darktable's queues too: Move to…, Copy to…, Rename, Delete and Import… on `UserForeground`, a source's listing for Import… on `UserBackground` ([Import in folder mode](#import-in-folder-mode)); each call into a folder tree on that tree's queue with its deadline (decisions 53 and 57, planned).
 
 ### Order, chunks and done
 
@@ -440,11 +526,11 @@ sequenceDiagram
 
 From decision 54 and the steps; none of these names exist in the code yet.
 
-- **What clients see:** `PhotoRef`, a root id or a folder path, a relative path and an optional virtual copy id (`5b0c7d0e/Photos/Wedding/DSCF0001.RAF#7c0e9a14`); `Target`, photos, the selection or a query; `Rules`, darktable's collect rules, filters and sort, with "in album". Undo and Redo stay the session's.
-- **Commands,** about forty, in five groups: open and organise; bring in and take out (`Import`, `ImportLibrary`, `ExportAsProject`); browse (`Show` and `Page`, while today the client keeps the photos listed); describe photos, ratings to snapshots and groups, and the keyword list's rename, move, delete and edit, each a cancellable job writing every sidecar that holds the keyword, one undo step (decision 73); files (Move to `MakeAvailableOffline`).
-- **Events,** about twenty, reporting every change whoever made it: `PhotosChanged`, `Diverged`, `RootOffline`, `InCloud` and `ViewOnly` among them; `CollectionChanged` first, one per change with darktable's reason and property, a fact or a notice by its kind (decision 59, step 5's later part).
+- **What clients see:** `PhotoRef`, a folder record's id or a folder's path, a relative path and an optional virtual copy id (`5b0c7d0e/2026/Lisbon/DSCF0001.RAF#7c0e9a14`); `Target`, photos, the selection or a query; `Rules`, darktable's collect rules, filters and sort, with "in album". Undo and Redo stay the session's.
+- **Commands,** about forty, in five groups: open and organise (Libraries, their folders, albums and smart albums); bring in (`Import`); browse (`Show` and `Page`, while today the client keeps the photos listed); describe photos, ratings to snapshots and groups, and the keyword list's rename, move, delete and edit, each a cancellable job writing every sidecar of the open scope that holds the keyword, one undo step (decision 73); files (`MoveTo`, `CopyTo`, `Rename`, `Delete`, `KeepAvailableOffline`, `KeepEditsHere`, `MakeAvailableOffline`).
+- **Events,** about twenty, reporting every change whoever made it: `PhotosChanged`, `Diverged`, `FolderAway`, `InCloud` and `ViewOnly` among them; `CollectionChanged` first, one per change with darktable's reason and property, a fact or a notice by its kind (decision 59, step 5's later part).
 - **Notices for the user,** `Event::Notice`, with step 12 ([events.md](events.md#notices-for-the-user)).
-- **The whole of `LibraryCommand` and `LibraryEvent`** in the session protocol with step 35; MCP tools generated from `LibraryCommand`'s schema, read and write apart, off until the person allows them and read-only unless writes are allowed (principle 8), in Phase 6.
+- **The whole of `LibraryCommand` and `LibraryEvent`** in the session protocol with step 33; MCP tools generated from `LibraryCommand`'s schema, read and write apart, off until the person allows them and read-only unless writes are allowed (principle 8), in Phase 6.
 
 ## Listing and the index
 
@@ -508,7 +594,7 @@ Decisions 47 and 53, layer 3 in memory, `crates/library/src/index.rs`. `Index::b
 - **`Index::counts`:** the photos with an edit, those that open view-only and the unreadable sidecars, as `Counts`.
 - **Cancelling** is a closure the build asks between calls into the folder, from the calling thread and the readers', and while it waits for the listing. A cancelled build returns at once, never waiting for a listing stuck in a call, says so, and marks the sidecars it had not reached `NotRead`. A reader that panics makes that photo's sidecar unreadable, and the thread goes on with its share.
 
-Ratings and other metadata in the index, and changes made outside, are planned. So are its **rules** (decision 73): the Filters tool's groups with their counts, darktable's collect rules and filters, over the open folder in Phase 3 and reused by smart albums and the library's cache in Phase 5. Camera, lens and exposure come with the capture times, in the same read.
+Ratings and other metadata in the index, and changes made outside, are planned. So are its **rules** (decision 73): the Filters tool's groups with their counts, darktable's collect rules and filters, over the open folder in Phase 3 and reused by a folder's smart albums from step 19d and by the saved index in Phase 5. Camera, lens and exposure come with the capture times, in the same read.
 
 ### Edit states
 
@@ -530,10 +616,8 @@ Ratings and other metadata in the index, and changes made outside, are planned. 
 Decision 47.
 
 - **Beside the photos, by default:** `DSCF0001.RAF.apxmp` (decision 48), `sidecar::path_for`. Built: the session reads and writes every sidecar there.
-- **Or, per library, inside its folder** (planned): `Family/.apertrust/edits/<root id>/<path relative to the root>.apxmp`, mirrored by path, for people who want their photo folders left clean. It is the same sidecar format, byte for byte, never a database. The library's setting covers the photos copied into it and the folders added without sidecars; a folder added with sidecars beside its photos keeps them there. Move Edits…, between the two, is a later command.
-- **One place per root.** The root's id file, `.apertrust/root.toml` at its top, names where its edits are kept: beside the photos, or one library, by its id, name and a path hint. Every library holding the root reads and writes the edits there. So does folder mode, which looks for an id file in the folder and its parents, one look each, says "Edits for these photos are kept in the library Family", and uses them. If that library cannot be found, the photos open view-only and say so, with Locate…, and nothing is written beside them, so no second truth begins. The session is to take the sidecar's path from the library ([engine.md](engine.md#where-edits-are-kept)).
-- **A read-only root,** such as a disc, holds no id file and no sidecar, so its edits are always its library's; in folder mode such media are view-only for edits.
-- **A user data folder never decides where edits go;** `--user-data-dir` separates settings only ([settings.md](settings.md#edits-in-another-user-data-folder)).
+- **Or, for a folder that asks it, on this computer** (planned, Phase 5, step 28; [Nothing written beside the raws](#nothing-written-beside-the-raws)): Keep Edits on This Computer, a folder's setting, puts the edits of every photo in its tree in its folder record's `<user data>/folders/<id>/edits/<path relative to the folder>.apxmp`, mirrored by path; a photo's edits are looked for under the nearest folder above it, the folder itself included, whose record keeps edits here; a record a subfolder gains for another reason, Keep Available Offline or a Library, changes nothing of where its photos' edits live; the same sidecar format byte for byte, never a database. `library.keep_edits_here` sets it for every folder not yet edited. The first change in such a folder adds it to a Library, asking once which, or making one; every Library holding it uses the same edits. The session is to take the sidecar's path from the folder's record ([engine.md](engine.md#where-edits-are-kept)).
+- **A folder's setting decides,** kept in this user data folder's record of it; no file in the photo's folder says where its edits are. So another computer, or another user data folder on this one, sees none of the edits kept here and would write sidecars beside the photos: a known limit, said in the setting's help ([settings.md](settings.md#edits-in-another-user-data-folder)). Folders without the setting are the same in every user data folder: `--user-data-dir` separates settings only.
 - **Own names,** so Apertrust never overwrites darktable's `IMG.ARW.xmp` or the `IMG.xmp` files other editors write. From darktable's XMP files only ratings, labels and keywords are read, while a photo has no `.apxmp`; darktable's edit history is imported once every module it uses is ported (decision 51, planned).
 - **Optional sync** of ratings, labels and keywords into standard XMP files, so other apps see them, without touching their edit data (planned).
 
@@ -610,9 +694,9 @@ Decision 47. Version 2 holds the parts below, in decision 48's style, written th
 - **The drift bound** (decision 47): `Clock::observe(last, read, wall, me)` ignores another machine's clock read more than 5 minutes past this machine's wall clock (`clock::MAX_DRIFT`, Kerberos's default skew), keeping the last clock as it was; the file is still read and that clock kept as written. One sidecar dated 9999, or from a computer whose date or time zone is wrong, never pins every reader's clock, and no other machine's file moves a machine's clocks more than 5 minutes past its wall clock. A clock ignored still orders where it is, after the steps a reader makes meanwhile. This machine's own clocks (`read.machine == me`) are always followed, so after its wall clock is set back its next step still orders after its own earlier ones.
 - **Clocks order** by time, then counter, then machine, so every machine orders any two alike.
 - **Their text** (`Clock::fields`, `Clock::from_fields`): the time written in UTC with milliseconds and `Z`, and read from any XMP Date with seconds and a time zone, or RFC 3339's other forms, from 1970 to 9999; the counter in decimal; the machine id in eight hex digits, lowercase.
-- Each step, snapshot, tombstone and library-file entry has one, and each virtual copy keeps its clock vector, the latest clock of each machine that changed it.
+- Each step, snapshot, tombstone and entry of an album or Library file has one, and each virtual copy keeps its clock vector, the latest clock of each machine that changed it.
 - **The machine id** (`MachineId::current`) is eight hex digits, the first 32 bits of a BLAKE3 hash, in its key derivation mode, of the system's machine id and the user's home folder, so two accounts on one computer are two machines and the system's id cannot be read back. It is worked out once a run, never stored in the user data folder. The system's id is read through `machine-uid`, with no `unsafe` of Apertrust's: `/var/lib/dbus/machine-id`, else `/etc/machine-id`, on Linux; the hardware UUID (`gethostuuid`) on macOS; the registry's `MachineGuid` on Windows. Where it cannot be read, is empty or is systemd's `uninitialized` (as in some containers, or early in a first boot), the id is drawn at random for the run, with a warning, never the home folder's alone, which two computers can share. `00000000` is no machine's: the unknown machine of version 1's step.
-- A machine's name goes only into a library's `.apertrust/machines/`.
+- No machine's name is kept: a diverged copy is named "From another computer" and its time ([Comparing two copies](#comparing-two-copies)).
 
 **Its photo groups,** by id, so they survive a rebuild.
 
@@ -630,16 +714,22 @@ Decisions 47 and 49, planned with the first raster mask, in Phase 4. `IMG_2041.A
 - **Entries never change.** A changed mask is a new entry. A virtual copy, a snapshot or a history step names the entries it uses, so going back in the history or restoring a snapshot finds its masks. Readers ignore entries they do not know, and writers keep entries they cannot attribute, so an older Apertrust never drops what a newer one wrote.
 - **Writes:** the whole zip rewritten through the safe write, never while a reader holds it open on Windows. A zip that cannot be read to its end is never rewritten, swept or merged from.
 - **Cleanup,** darktable's sweep: an entry is removed only when no step of the photo's saved history, no virtual copy and no snapshot names it, decided once the history is final, when the photo is left and its undo records are gone, never on reset, undo, Compress or Truncate, which defer the sweep to the photo's leaving. Only entries of a kind a built-in producer registers are swept, so a build without some kind's producer leaves its entries alone. The file goes once it is empty.
-- **It follows the `.apxmp` everywhere:** it lives where that photo's `.apxmp` lives, beside the photo or mirrored in the library's folder, a virtual copy's beside its `.apxmp` with the same suffix where darktable gives one. Everything that carries the `.apxmp` carries it: Move, Rename and Copy (a sidecar that cannot be moved is copied, since its data exist nowhere else), Delete, copy or reference on import, Import library… and Export as Project…. Pasting an edit onto another photo copies the entries its references need, as darktable's `dt_dtdata_merge`. Until Phase 4, these operations carry any `.apdata` they meet.
+- **It follows the `.apxmp` everywhere:** it lives where that photo's `.apxmp` lives, beside the photo or mirrored in its folder record's `edits/`, a virtual copy's beside its `.apxmp` with the same suffix where darktable gives one. Everything that carries the `.apxmp` carries it: Move to…, Rename and Copy to… (a sidecar that cannot be moved is copied, since its data exist nowhere else), Delete and Import…. Pasting an edit onto another photo copies the entries its references need, as darktable's `dt_dtdata_merge`. Until Phase 4, these operations carry any `.apdata` they meet.
 - **Two copies combine** by taking every entry either holds, which loses nothing, since entries are named by their bytes (decision 52).
 
 ## Finding photos and several computers
 
 Decision 53, from measurements on an M4 against a NAS over SMB and on Proton Drive, and decision 52. Built so far: the listing, the index, the safe write and stale temporaries' removal; the rest is planned.
 
-### Roots
+### Folder records
 
-Roots are folders Apertrust tracks as a unit, each carrying its id at its top: a library or project in its file, a plain folder in `.apertrust/root.toml`, written once as it joins a library. Shared files name a photo by its root's id and a path relative to the root, in Unicode NFC with `/`. A root is found on a machine by its path relative to the library, then by the same name under each mounted volume, its id file checked, then by Locate…, once per root per machine; the answer goes into the machine's root map. Never volume UUIDs, drive letters, inodes or absolute paths.
+Decisions 53 and 101, planned with step 22. A **folder record** is how this computer finds a folder again; it has no word in the interface. A folder gets one only when it must be found again: it is in a Library, marked Keep Available Offline, keeps its edits on this computer, or is a saved Library's home folder.
+
+- **The file,** `<user data>/folders/<id>.toml`, holds the folder's last path, its volume's id and its path below the mount, its Keep Available Offline mark, whether its edits are kept here, and the offers declined in it; beside it, `folders/<id>/pending/`, the changes waiting while its drive is away, and `folders/<id>/edits/`, its edits when kept here.
+- **The volume id is a hint, never the identity:** macOS's volume UUID, Linux's filesystem UUID, Windows' volume GUID, a share's server and share name, read from the platform's volume list, which step 20c's `LibraryEvent::Volumes` reads too. A folder is found by its last path, then by its volume's id and the path below the mount, the photos' fingerprints confirming; a clone with the same id at two places asks which is the folder. Failing both, Locate… asks once per folder on each computer, accepted once enough of its photos match by fingerprint, and the answer goes into the record.
+- **Names inside shared files** are paths relative to a folder, with `/`, each name's bytes kept as read, with the fingerprint, matched by exact bytes first, then in NFC where only one file matches, as a sidecar's name is ([Names](#names)), so two names that differ only in their Unicode form stay apart: a folder's albums relative to that folder, a Library's by its own folder id and a relative path. Never drive letters, inodes or absolute paths, and nothing written into a folder to mark it.
+- **One record per folder:** Libraries name folders by its id, so a folder in two Libraries has one record, one index, one set of kept thumbnails and one set of pending changes. A record is never shared between computers: a Library that travels names its folders by ids of its own, and each computer's record notes which entry it answers.
+- **A plain recent keeps none:** where its mount moves, it shows Not found, with Locate….
 
 ### Fingerprints
 
@@ -650,7 +740,7 @@ The fingerprint is the file's size plus BLAKE3 over its first and last 64 KiB (`
 
 ### Names
 
-A sidecar matches its photo by exact bytes, as built, else (planned) in NFC with case folding when one photo matches, the fingerprint confirming. Apertrust never renames the person's files, Import naming only the copies it makes, and the names it makes pass Windows' and OneDrive's rules on every system. A rename outside Apertrust is re-paired by size and fingerprint, the activity saying so (step 18); Move, Rename and Copy inside Apertrust carry sidecars, `.apdata` and attached files (step 19).
+A sidecar matches its photo by exact bytes, as built, else (planned) in NFC with case folding when one photo matches, the fingerprint confirming. Apertrust never renames the person's files, Import naming only the copies it makes, and the names it makes pass Windows' and OneDrive's rules on every system. A rename outside Apertrust is re-paired by size and fingerprint, the activity saying so (step 18), wherever the orphan and the photo are in one indexed scope; Move to…, Rename and Copy to… inside Apertrust carry sidecars, `.apdata` and attached files (step 19, [Move to… and Copy to…](#move-to-and-copy-to)).
 
 ### Listing in bulk
 
@@ -658,18 +748,18 @@ Planned, step 7: `getattrlistbulk`, `FindFirstFileExW` with a large fetch, `stat
 
 ### When folders are listed
 
-The open folder as it opens, as built; planned: when the window comes to the front, and every 30 s on network and cloud roots; watchers on local disks are hints; a library's roots are crawled in the background; Check for Changes runs by hand. Nothing reads a raw to detect a change.
+The open folder as it opens, as built; planned: when the window comes to the front, and every 30 s on network and cloud folders; watchers on local disks are hints; a Library's folders are rescanned in the background; Check for Changes runs by hand. Nothing reads a raw to detect a change.
 
 ### Writing
 
-Only sidecars, a library's files, a root's id file and the copies Import makes are written into the person's folders, never lock files, caches or indexes, and nothing into an Import's source. Every write goes through the safe write ([Safe writes](#safe-writes)), on the library's threads, never the interface's or the engine's. The export's disk writes share it.
+Only sidecars, a folder's `.apertrust/` (its albums, and a Library saved there by choice) and the copies Import, Move to… and Copy to… make are written into the person's folders, never lock files, caches, indexes or a mark of the folder, and nothing into an Import's source. Every write goes through the safe write ([Safe writes](#safe-writes)), on the library's threads, never the interface's or the engine's. The export's disk writes share it.
 
 ### Shares, offline drives and cloud folders
 
 Planned.
 
-- **A NAS:** each root's calls run on a queue of their own, showing "Waiting for Main-Storage…" after 2 s and "Not responding" after 30 s, retried every 2 minutes, so the interface never waits for a share, as darktable does on a sleeping one.
-- **Offline drives:** their photos keep their thumbnails with an offline mark. Ratings, labels, keywords and metadata still change, held in the library's `.apertrust/pending/` until the drive returns; edits need a local copy, the raw copied into the cache's kept kind `copies/` by fingerprint, never removed by size (decision 76).
+- **A NAS:** each folder tree's calls run on a queue of their own, showing "Waiting for Main-Storage…" after 2 s and "Not responding" after 30 s, retried every 2 minutes, so the interface never waits for a share, as darktable does on a sleeping one.
+- **Drives that are away:** a folder kept offline or in a Library keeps one thumbnail per photo, with an away mark, never read as deleted. Ratings, labels, keywords and metadata still change, held in its folder record's `pending/` until the drive returns; editing waits for the drive, local copies of raws being later, if asked ([Keep Available Offline](#keep-available-offline)).
 - **Cloud folders:** a file not on the disk is never read in the background, macOS's materialisation turned off on the library's threads. Placeholders are told by Windows' recall attributes and macOS's `SF_DATALESS`. Such a photo shows its name, size and a cloud mark, and a thumbnail once it is local, by opening it or Make Available Offline. Spike L3 checks each provider.
 
 ### Comparing two copies
@@ -679,23 +769,23 @@ Decision 52, planned (steps 10 to 13).
 - **Two copies of one sidecar** (a conflict copy, a sidecar changed outside Apertrust, the file found changed before a write) are compared virtual copy by virtual copy, by id, through their clock vectors:
   - the same vector: nothing to do;
   - one at or below the other for every machine: that copy is only older, and the newer replaces it;
-  - neither, and both changed the edit: the copy whose latest clock is later, its clock vector included, stays, and the other becomes a new virtual copy with its own history, named after its machine and time ("From MacBook, 5 Nov 14:02"; in folder mode "From another computer"), the activity saying so. A copy whose only change was an Undo, a Truncate or a Compress counts as later by that move's clock (decision 78).
+  - neither, and both changed the edit: the copy whose latest clock is later, its clock vector included, stays, and the other becomes a new virtual copy with its own history, named "From another computer" and its time ("From another computer, 5 Nov 14:02"), the activity saying so. A copy whose only change was an Undo, a Truncate or a Compress counts as later by that move's clock (decision 78).
 - **Ratings, the reject, labels, keywords and metadata combine:** the two logs join step by step, in clock order, the later change winning each field, label and keyword, so culling on one computer and editing on the other never splits a photo. A tool-by-tool merge comes later, as a setting.
 - **A virtual copy only one side has** is kept; one a side deleted stays deleted if the deletion is later than the other side's last step on it.
 - **When copies are compared:**
   - before every write, the writer reading the file again if it changed since this machine last read it, and writing only if the bytes differ;
   - when a sidecar changes outside Apertrust, the active photo taking a newer edit, a tool being dragged staying the person's;
   - for conflict copies: any file ending in `.apxmp` that is not a photo's name plus `.apxmp`, and whose `apertrust:photo` and fingerprint match a photo there, is compared, kept 30 days in the user data folder's `conflict-copies/` and removed, its content deciding, not its name (decision 76);
-  - for a server root, whenever this machine and the server exchange a sidecar, the server being one more copy ([A server](#a-server));
-  - later, silent winners: each machine keeping in its user data folder the last copy of each sidecar it wrote (decision 76), and iCloud's hidden versions.
+  - for a server folder, later, if asked, whenever this machine and the server exchange a sidecar, the server being one more copy ([A server](#a-server));
+  - later, silent winners: each machine keeping in its user data folder's `last-written/` the last copy of each sidecar it wrote, by the sidecar's path, its folder's record where it has one, with the photo's fingerprint, re-keyed when Move to… moves the photo (decision 76), and iCloud's hidden versions.
 - **Convergence:** comparing the same copies gives the same bytes on every machine, so after one round nothing is written again; spike L4's harness of simulated machines and syncs holds it.
-- **A library's own files** combine entry by entry, the later clock winning each, so photos added to an album on two machines are all kept. A library or project file of a newer format opens view-only; an album or smart album file holding what this build does not know is shown and never written.
-- **No lock decides anything.** Locks fail across NFS and SMB and do not exist in cloud folders. A presence note may later warn that a library is open on another computer; it blocks nothing.
+- **A folder's `.apertrust/` files and a Library's** combine entry by entry, the later clock winning each, so photos added to an album on two machines are all kept, and a folder removed from a Library stays removed. An album file's conflict copy is combined into the album its id names. A Library of a newer format opens view-only; an album or smart album file holding what this build does not know is shown and never written.
+- **No lock decides anything.** Locks fail across NFS and SMB and do not exist in cloud folders. A presence note, later, if asked, may warn that a folder is open on another computer, written only into an existing `.apertrust/`; it blocks nothing.
 - **A known limit:** reading before each write narrows the window to the rename that replaces the file, which no filesystem Apertrust supports makes conditional on the file it replaces; another program's write that lands inside it is lost, as with any two tools writing one file without a lock (decision 52). Where the write gives back no metadata, because the file already held the same bytes and was not renamed (`Written::Unchanged`) or because reading it after the rename failed, the stamp is read again from the path, so another program replacing the file in that instant would be taken as this write: a window of the same kind as the one around the rename.
 
 ## A server
 
-Decision 71, planned, after Phase 5's library and beside Phase 7's server work. A self-hosted server that the desktop app optionally connects to, first as a Docker container on a NAS (amd64 and arm64), written in Rust. It stores, lists and syncs, and does no processing: no engine, no GPU, no renders or thumbnails. The app works fully without it, and its accounts are the person's own, on their own server.
+Decision 71, later, if asked, after Phase 5's Libraries. A self-hosted server that the desktop app optionally connects to, first as a Docker container on a NAS (amd64 and arm64), written in Rust. It stores, lists and syncs, and does no processing: no engine, no GPU, no renders or thumbnails. The app works fully without it, and its accounts are the person's own, on their own server.
 
 ```mermaid
 flowchart LR
@@ -712,28 +802,31 @@ flowchart LR
     sindex -->|"listings"| lib
 ```
 
-- **The files live on the server.** The originals and their sidecars are in the server's folders. The desktop edits local copies and sends back what changed. Raws never change, so only sidecars and `.apdata` files go back, kilobytes a photo. A raw comes down once into a local copy in the cache by its fingerprint, as an offline drive's do ([Shares, offline drives and cloud folders](#shares-offline-drives-and-cloud-folders)).
-- **Away from the server,** the desktop keeps the sidecars of a server root it has read or written, by root and path, with the changes the server has not taken yet, in its user data folder rather than the cache, since the changes are nowhere else (decision 76), so a photo is still rated and edited; the changes go back once the server answers.
-- **A server root** is a new kind of root ([Roots](#roots)), found by the server's URL and an account instead of a path, its id kept on the server at its top. The root map holds the URL and the account. A library may mix server roots and folders.
+- **The files live on the server.** The originals and their sidecars are in the server's folders. The desktop edits local copies and sends back what changed. Raws never change, so only sidecars and `.apdata` files go back, kilobytes a photo. A raw comes down once into a local copy in the cache by its fingerprint, local copies coming with the server.
+- **Away from the server,** the desktop keeps the sidecars of a server folder it has read or written, by folder and path, in that folder's record, with the changes the server has not taken yet, in its user data folder rather than the cache, since the changes are nowhere else (decision 76), so a photo is still rated and edited; the changes go back once the server answers.
+- **A server folder** is a [folder record](#folder-records) of a new kind, found by the server's URL, an account and the folder's path on the server instead of a local path and a volume, so one server holds several folders. A Library may mix server folders and local ones.
 - **Conflicts** are decision 52's: the server is one more copy, compared by clock vectors and merged as copies from several computers are ([Comparing two copies](#comparing-two-copies)). No lock.
-- **The truth** is still the sidecar files, in the server's folders (decision 46). The server's index of its folders is a disposable cache, as a library's is ([A library's cache](#a-librarys-cache)); no database is the truth.
-- **The code:** the desktop reaches it through the storage interface's server backend ([The code](#the-code)); the server lists and reads its own folders through the same library code with the local-files backend. Sync is the storage backend's protocol, not the session protocol.
+- **The truth** is still the sidecar files, in the server's folders (decision 46). The server's index of its folders is a disposable cache, as a folder tree's saved index is ([The saved index](#the-saved-index)); no database is the truth.
+- **The code:** the server brings the storage interface, its second backend ([The code](#the-code)), through which the desktop reaches it; the server lists and reads its own folders through the same library code with the local-files backend. Sync is the storage backend's protocol, not the session protocol.
 - **One server:** `apertrust-cli serve`, the `apertrust-server` crate (decisions 6 and 58), for sync. The engine for browser and tablet clients is a separate, later option for the same program ([session-protocol.md](session-protocol.md#web-tablets-and-remote-access)). An account, and TLS by rustls with a crypto provider in Rust, or a reverse proxy in front; a VPN is still the recommended default in front of a server reached over the Internet (decision 58).
 - **The container's base system** counts as the platform, as a distribution's libraries do; only what Apertrust compiles into the server follows decision 5.
-- **Thumbnails** of a server root are the desktop's, made from the local copies or the raws as it reads them, as for any folder.
+- **Thumbnails** of a server folder are the desktop's, made from the local copies or the raws as it reads them, as for any folder.
 - **What it gives over a NAS share:** away from home, one protocol made for the network's latency where SMB needs a VPN and pays its latency on every call; listing from the server's index rather than a call per file (21.6 s for 2,825 files over SMB, [Listing in bulk](#listing-in-bulk)); one place every machine, and later a mobile app, syncs with.
-- **Later, Shared Project** for a studio shoot (decision 71), by File › Share Project… and Join Shared Project…: several people in one project at once, the host the NAS or a desktop running the same server, changes pushed to every machine within about 2 s on a local network, the owner managing the structure and the collaborators editing and culling, merged tool by tool and never locked, with a follow mode and a sync panel.
+- **Later still:** changes pushed to every connected machine within about 2 s on a local network, and decision 52's tool-by-tool merge, for people working one shoot together.
 
-## A library's cache
+## The saved index
 
-Decision 55, planned (steps 21 and 27): one per library per machine, in `<cache>/libraries/<library id>/cache-<schema>/` (the cache folder, [cache.md](cache.md#the-folder)), never in the library's folder, on a share or in a sync folder.
+Decision 55, planned (steps 21 and 23): one per folder tree per computer, in `<cache>/indexes/<tree id>/index-<schema>/` (the cache folder, [cache.md](cache.md#the-folder)), never in the photos' folders, on a share or in a sync folder.
 
-- **What it gives:** a large library's open under a second, browsing of roots that are away, full-text search and later similarity.
+- **Per folder tree:** a folder opened with its subfolders has one; a folder opened inside a tree that has one reads that tree's. A Library's search and filters read its folders' indexes together, and a folder in several Libraries has one index.
+- **What it gives:** a large tree's open under a second, browsing of folders that are away, full-text search and later similarity.
 - **What it holds:** each photo and virtual copy with its file facts, EXIF, ratings, labels, keywords and metadata, as darktable's `images` table where it serves. Vectors for semantic search, similar photos and faces stay in it too, decided with the AI work.
-- **Disposable:** a library opens without it, and it is rebuilt from the files when missing, so it needs no backup and never travels.
-- **In the cache** it is the kept kind `libraries`: never removed by size or age, offered for removal once long unopened or its library is not found, locked while a process has it open; the library's root map, last-written sidecars and a server root's pending changes are in the user data folder instead ([cache.md](cache.md#time-and-never), decision 76).
-- **Folder mode** has none: the same facts in memory, in the same `Index` type.
-- **Its engine** is chosen by spike L2: plain Rust collections with a snapshot file and `tantivy` for full text, the likely choice, measured beside Turso Database at 100,000 and 500,000 photos against a query under 50 ms and an open under 1 s at 100,000. SQLite only if both fail, with an exception to decision 5.
+- **Disposable:** a folder opens without it, and it is rebuilt from the files when missing, so it needs no backup and never travels.
+- **Built in the background,** the open folder first; later opens start from it and rescan in the background, never blocking; Rebuild Index builds it again. **A scan never drops a row:** a folder whose volume is not present is away; only the person removes a row.
+- **In the cache** it is the kind `indexes`: kept while its tree's folder or any folder inside it has a [record](#folder-records), a recorded subfolder reading the enclosing tree's index, never removed by size, offered for removal once long unopened, and limited again once its record is removed; limited for any other, removed oldest first with the thumbnails; locked while a process has it open. The folder records, pending changes and last-written sidecars are in the user data folder instead ([cache.md](cache.md#time-and-never), decision 76).
+- **Of another schema,** another build's, it is rebuilt, never migrated; while its folder is away it is kept as it is, and the folder shows as away with no photos listed, saying its index is from another version and is rebuilt once its drive is back.
+- **Before it, in Phase 3,** the same facts in memory over the open tree, in the same `Index` type.
+- **Its engine** is chosen by spike L2: plain Rust collections with a snapshot file and `tantivy` for full text, the likely choice, measured beside Turso Database at 100,000 and 500,000 photos against a query under 50 ms and an open under 1 s at 100,000, with one tree of 500,000 on SMB built in the background and five folders totalling 500,000 queried together. SQLite only if both fail, with an exception to decision 5.
 
 ## Thumbnails
 
@@ -767,13 +860,13 @@ The decided design (decisions 53 and 57):
 - where there are any, hidden files and folders skipped, old temporary files removed, names that are not text, subfolders not listed and files that could not be read;
 - the times of the listing and the reading, under `-d perf`.
 
-Planned: `apertrust-cli library` running layers 2 to 4 in its process, `scan` today, later `list`, `query --json`, `rate`, `label`, `tag`, `album`, `import-library`, `export-project`, `relink`, `check`, `rebuild` and `conflicts` (step 35). Scripting comes later as a protocol client.
+Planned: `apertrust-cli library` running layers 2 to 4 in its process, `scan` today, later `list`, `query --json`, `rate`, `label`, `tag`, `album`, `move`, `copy`, `check`, `rebuild` and `conflicts` (step 33). Scripting comes later as a protocol client.
 
-Planned with step 20a: `apertrust-cli import SOURCE... [--base-folder P] [--subfolder P] [--file-name P | --original-names] [--job-code X] [--date D] [--all] [--dry-run]` (decision 85), the one import command in every mode: only new photos unless `--all`, `--dry-run` printing the preview, the `import.*` settings its defaults and `--conf import.base_folder=…` for one run.
+Planned with step 20a: `apertrust-cli import SOURCE... [--base-folder P] [--subfolder P] [--file-name P | --original-names] [--job-code X] [--date D] [--all] [--dry-run]` (decision 85), the one import command: only new photos unless `--all`, `--dry-run` printing the preview, the `import.*` settings its defaults and `--conf import.base_folder=…` for one run.
 
 ## The steps
 
-The library is built in steps, each delivering one thing and reviewed before the next starts: folder mode first, twenty steps in Phases 2 and 3 before any library exists, then the library and then the project in Phase 5, with spikes L1 to L4 along the way. The list, built and remaining, is [roadmap.md](roadmap.md#the-librarys-steps)'s.
+The library is built in steps, each delivering one thing and reviewed before the next starts: folders first, in Phases 2 and 3, their albums, Include subfolders and Move to… and Copy to… among them, then Libraries and the index across folders in Phase 5, with spikes L1 to L4 along the way. The list, built and remaining, is [roadmap.md](roadmap.md#the-librarys-steps)'s.
 
 Built so far: the listing and `library scan` (step 1); the `.apxmp` text layer (step 2); safe writes and stale temporaries removed (step 3); the open folder's `Index` (step 4); the open folder through the session, Collections' Folders and the Browser (step 5's first part); the XMP layer (step 7b); the camera's embedded pictures as thumbnails (step 6's first part); the clock and the machine id (step 8.1) and version 2's text layer (step 8.2). The cache's thumbnails of the embedded pictures are built too; the live photo's own rendered thumbnails are built; rendering other photos and refreshing their stale thumbnails remain.
 
@@ -782,9 +875,7 @@ Built so far: the listing and `library scan` (step 1); the `.apxmp` text layer (
 - **The server** (decision 71, [A server](#a-server)):
   - its licence: AGPL-3.0 is common for self-hosted servers, and GPL-3.0's section 13 lets Apertrust's GPL-3.0-or-later code be combined with it;
   - accounts and sharing between people: one person's server, or a household's, with photos shared between accounts;
-  - where a library whose roots are all on the server keeps its own files;
+  - where a Library whose folders are all on the server is kept: on this computer, or saved in one of its server folders;
   - a hosted service later, which the principles' "no accounts, subscriptions or cloud processing" would have to allow (decision 1).
 
-- **The CLI and the root map** (decision 76): the root map is in the user data folder, which the CLI only reads; `apertrust-cli library relink` (step 35) would be its one write there, decided with that step.
-
-- **A library's cache's engine** (decision 55): spike L2 builds plain Rust collections with a snapshot file and `tantivy`, the likely choice, beside Turso Database, at 100,000 and 500,000 synthetic photos on the M4, against a query under 50 ms and an open under 1 s at 100,000. `rusqlite` with SQLite compiled in only if both fail, with an exception to decision 5.
+- **The saved index's engine** (decision 55): spike L2 builds plain Rust collections with a snapshot file and `tantivy`, the likely choice, beside Turso Database, at 100,000 and 500,000 synthetic photos on the M4, against a query under 50 ms and an open under 1 s at 100,000. `rusqlite` with SQLite compiled in only if both fail, with an exception to decision 5.

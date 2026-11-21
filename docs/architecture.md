@@ -8,7 +8,7 @@ Technically it is:
 - **darktable's trusted colour science,** migrated first, module by module, and then evolved on its own (decision 2);
 - **tools over operations:** people edit tools, the first pass darktable's modules as darktable has them; the engine runs operations, each bound to one owning tool;
 - **one session protocol** that every client speaks: the egui desktop app, the command line, and later the web browser, MCP agents and scripts;
-- **sidecars as the truth,** an `.apxmp` beside each photo, with folder mode first and libraries and projects later, never a database;
+- **sidecars as the truth,** an `.apxmp` beside each photo, or in the user data folder for a folder set to Keep Edits on This Computer, folders the unit and Libraries optional, never a database;
 - **ONNX Runtime** with its WebGPU execution provider for AI, and MCP for assistants, both later.
 
 This document is the overview: what the parts are and how they fit. Each area's design is in a document of its own, linked below with its open questions ([Where things are](#where-things-are)). Every decision is a numbered file in [decisions/](decisions/README.md), with its options and reasons, and the [current state by area](decisions/README.md#the-current-state-by-area); this document cites them by number.
@@ -98,7 +98,7 @@ flowchart LR
 - **Rust, and no C or C++** compiled in or shipped unless no Rust option exists (decision 5); ONNX Runtime the one exception, and the platform's own libraries, loaded at run time, outside the rule. Details: [dependencies.md](dependencies.md).
 - **darktable as the migration's reference, then Apertrust's own way** (decisions 2 and 3). Each darktable module is ported from the reference release's source, never loaded or linked, and judged by ΔE2000 against darktable-cli; once the whole first pass is in, at the end of Phase 3, Apertrust's own renders are the baselines. Details: [testing.md](testing.md).
 - **Tools over operations** (decision 4). A tool is what people work with, a processing tool that edits the photo through operations or a utility that edits nothing of its own (decision 93); an operation is one engine algorithm and never appears in the interface; each operation parameter has at most one owning tool. A tool at its defaults, or off, leaves the render byte for byte as it was. Details: [engine.md, The tool layer](engine.md#the-tool-layer), [tools/README.md](tools/README.md).
-- **Sidecars are the truth** (decision 46). Edits, ratings and albums live in files people can see and copy; a library's cache is per machine and rebuilt from them. Details: [library.md](library.md).
+- **Sidecars are the truth** (decision 46). Edits, ratings and albums live in files people can see and copy; each folder tree's index is per computer and rebuilt from them. Details: [library.md](library.md).
 - **Widgets only emit commands** (decision 58). No client touches engine state; the engine never depends on UI code ([below](#the-engineui-boundary)).
 - **Data files in `data/`** (decision 45), darktable's verbatim, each embedded at build time by the one crate that parses it, never read from an installed folder. Details: [engine.md, Data files](engine.md#data-files).
 
@@ -113,7 +113,7 @@ Details: [session-protocol.md](session-protocol.md) (the commands, their numberi
 Two binaries, built from the same engine crates (decision 6):
 
 - **`apertrust`:** the desktop GUI (egui), with the engine in-process. It can also expose an MCP endpoint, so agents can drive the open editing session.
-- **`apertrust-cli`:** headless, with subcommands: `export` (render edits to files, like `darktable-cli`), `batch` (apply styles or presets to many images), `info` (metadata and edit summary), `serve` (the server on a home NAS: sync for the desktop app's photos, then the engine for web and tablet clients; decision 71) and `mcp` (MCP over stdio for local agents). It runs without a display, on a software GPU where there is no hardware one (decision 7).
+- **`apertrust-cli`:** headless, with subcommands: `export` (render edits to files, like `darktable-cli`), `batch` (apply styles or presets to many images), `info` (metadata and edit summary), `serve` (the server: the engine for web and tablet clients, decision 58, and, later, if asked, sync of the desktop app's photos with a NAS, decision 71) and `mcp` (MCP over stdio for local agents). It runs without a display, on a software GPU where there is no hardware one (decision 7).
 
 The server and MCP parts are library crates used by these two executables, not separate programs.
 
@@ -133,13 +133,13 @@ The server and MCP parts are library crates used by these two executables, not s
 | `apertrust-export` | What an export writes and where, with no GPU: the export settings, darktable's size computation and variables, the file-on-disk rules, the JPEG and PNG writers (decision 56) | Phase 2 |
 | `apertrust-display` | The window's platform code where wgpu and winit stop: display colour ([gui.md](gui.md#display-colour)), the window frame (decision 39), the Mac's native popup menus (decision 40), dialogs and alerts (decision 41), Windows' named pipe and Linux's peer credentials for the single-instance hand-off (decision 89); an FFI crate allowed `unsafe` | Phase 0 |
 | `apertrust-tools` | Tool definitions, bindings, transfer functions, their values and the built-in tools, depending on `apertrust-plugin`, `apertrust-color` and `apertrust-base`'s settings part, for the statics of its tools' settings (decisions 28 and 43), and on no egui, wgpu, engine or operation crate | Phase 2 |
-| `apertrust-library` | Folder mode, libraries and projects in four layers (decision 54): the `.apxmp` text layer and the XMP layer, the library's TOML files, the model, one `Index`, and the operations; no GPU and no engine dependency; reached through the session protocol, never read by a client directly | Phase 2 |
+| `apertrust-library` | One photo, folders and optional Libraries in four layers (decisions 54 and 101): the `.apxmp` text layer and the XMP layer, the library's TOML files, the model, one `Index`, and the operations; no GPU and no engine dependency; reached through the session protocol, never read by a client directly | Phase 2 |
 | `apertrust-ui` | The design system: tokens and themes, fonts, icons, components and their gallery, translation in an egui-free `i18n` module; no engine or tool types ([gui.md](gui.md), decision 36) | Phase 2 |
 | `apertrust`, `apertrust-cli` | The desktop app and the headless binary | Phase 0 |
 | `apertrust-golden` | The golden-image harness: per-operation cases and the whole-pipeline test | Phase 0 |
 | `apertrust-fs` | Planned only if bulk listing needs FFI that `rustix` and the `windows` crate do not cover: bulk listing, cloud placeholders' flags, macOS's materialisation turned off, later `NSFileVersion`; an FFI crate allowed `unsafe` (decisions 53 and 65) | Phase 2, if needed |
 | `apertrust-protocol` | The session's commands and events, once a client must compile them without the engine (decision 58) | When needed |
-| `apertrust-server`, `apertrust-mcp` | The server, sync and then remote access (decision 71), and agent access | Phases 6 and 7 |
+| `apertrust-server`, `apertrust-mcp` | The server: the engine for remote clients (decision 58) and, later, if asked, sync (decision 71); and agent access | Phases 6 and 7; sync later, if asked |
 
 Each crate's state, what is built and what is planned, is in [crates.md](crates.md).
 
@@ -179,20 +179,20 @@ Details: [gui.md](gui.md): [Why egui](gui.md#why-egui), [Display colour](gui.md#
 
 ### Settings and folders
 
-Every setting is declared once in `data/settings.schema.toml`, from which each owner's crate generates typed statics; `apertrust-base` holds the store, `--conf` and the user data folder. The engine never opens a folder or a settings file: the binaries read the store and hand it plain options. No build overwrites an edit a newer Apertrust wrote (decision 43). The cache folder, its choice, flag, variable and settings built and the rest planned, holds only what can be rebuilt with nothing lost, each kind's size shown and cleared in Settings › Storage and by `apertrust-cli cache`, thumbnails and later previews kept within one limit, oldest removed first, or unlimited by the person's choice, library caches and local copies kept until the person removes them; what clearing would lose, root maps, pending changes and conflict copies, is in the user data folder (decision 76).
+Every setting is declared once in `data/settings.schema.toml`, from which each owner's crate generates typed statics; `apertrust-base` holds the store, `--conf` and the user data folder. The engine never opens a folder or a settings file: the binaries read the store and hand it plain options. No build overwrites an edit a newer Apertrust wrote (decision 43). The cache folder, its choice, flag, variable and settings built and the rest planned, holds only what can be rebuilt with nothing lost, each kind's size shown and cleared in Settings › Storage and by `apertrust-cli cache`, thumbnails and later previews kept within one limit, oldest removed first, or unlimited by the person's choice, the indexes of folders with a record and their offline thumbnails kept until the person removes them; what clearing would lose, folder records, pending changes and conflict copies, is in the user data folder (decisions 76 and 101).
 
 Details: [settings.md](settings.md); the cache, [cache.md](cache.md).
 
 ### The library and sidecars
 
-The library's design and API are in [library.md](library.md), decisions 46 to 55, 71, 73 and 85. In short:
+The library's design and API are in [library.md](library.md), decisions 46 to 55, 71, 73, 85 and 101. In short:
 
-- **Sidecars are the truth; no database ever is** (decision 46). One photo and folder mode come first, sidecars only: a photo opened by any route opens alone, never in the recents, and folder mode opens from a folder or the photo's Open This Folder; then the Library, of any size, and the Project, a small library for one job, each a folder with a short TOML file and a hidden `.apertrust/`, with nested albums and smart albums ([library.md](library.md#what-the-library-is)).
-- **Edits** live in `.apxmp` beside the photos by default, or in a library's own folder as each root's id file says, with the optional binary `.apdata`; version 2 holds the photo's identity, its virtual copies and its history as a log of steps (decisions 47 to 50; [library.md](library.md#sidecars)).
-- **Several computers** compare two copies of a sidecar by clock vectors, keeping a diverged edit as a second virtual copy and combining metadata, with no locks; roots are found by an id file and photos by root, path and fingerprint (decisions 52 and 53; [library.md](library.md#finding-photos-and-several-computers)).
+- **Sidecars are the truth; no database ever is** (decision 46). Folders are the unit, a Library optional (decision 101): a photo opened by any route opens alone, never in the recents; a folder opens as it is, from a folder or the photo's Open This Folder, with Include subfolders, its own albums and smart albums in a hidden `.apertrust/` made with its first album or smart album, or a Library saved there, and Move to… and Copy to… with a checked copy; a Library, from Phase 5, is a named collection of folders kept on this computer, or saved in one of its folders to travel, adding search and albums across them and folders kept while their drives are away. Each feature's data is made where it belongs, when it is first used ([library.md](library.md#what-the-library-is)).
+- **Edits** live in `.apxmp` beside the photos, or, for a folder set to Keep Edits on This Computer, in its folder record in the user data folder, with the optional binary `.apdata`; version 2 holds the photo's identity, its virtual copies and its history as a log of steps (decisions 47 to 50; [library.md](library.md#sidecars)).
+- **Several computers** compare two copies of a sidecar by clock vectors, keeping a diverged edit as a second virtual copy and combining metadata, with no locks; folders are found again by folder records on each computer, a volume's id a hint and the photos' fingerprints confirming, and photos by folder, path and fingerprint (decisions 52, 53 and 101; [library.md](library.md#finding-photos-and-several-computers)).
 - **Import…** in folder mode, planned: darktable's copy & import on the Import sheet (decision 86), the source's photos in a grid checked to import beside a column of import tools; photos already imported told by the destination alone, by size and camera name then fingerprint, with nothing written on the card; a copy that never moves or overwrites, carrying the sidecars (decision 85; [library.md](library.md#import-in-folder-mode), [gui.md](gui.md#the-import-sheet)).
-- **A server,** planned: a self-hosted container on a NAS that the app optionally connects to, the originals and sidecars in its folders, the desktop editing local copies and sending back sidecars, merged as several computers' copies are (decision 71; [library.md](library.md#a-server)).
-- **The code** is `apertrust-library`, in four layers over a storage interface for local files and the server, clients seeing only `LibraryCommand` and `LibraryEvent`, served by the engine's session as jobs (decisions 54 and 57; [library.md](library.md#the-code), [The API](library.md#the-api)); a library's cache is one per machine, rebuilt from the files (decision 55; [library.md](library.md#a-librarys-cache)).
+- **A server,** later, if asked: a self-hosted container on a NAS that the app optionally connects to, the originals and sidecars in its folders, the desktop editing local copies and sending back sidecars, merged as several computers' copies are (decision 71; [library.md](library.md#a-server)).
+- **The code** is `apertrust-library`, in four layers, a storage interface waiting for a second backend, clients seeing only `LibraryCommand` and `LibraryEvent`, served by the engine's session as jobs (decisions 54 and 57; [library.md](library.md#the-code), [The API](library.md#the-api)); the saved index is one per folder tree per computer, rebuilt from the files (decision 55; [library.md](library.md#the-saved-index)).
 
 The library is built in steps, folder mode first ([roadmap.md, The library's steps](roadmap.md#the-librarys-steps)).
 
@@ -234,13 +234,13 @@ Details: [testing.md](testing.md), the `golden-tests` skill.
 
 ### Web, tablets and remote access
 
-The engine always runs natively; browsers and tablets are to be remote clients over the network, on a home server or the user's machine (decision 58). Tablets run the one interface in Touch mode (decision 94, planned). The same server, `apertrust-cli serve`, first syncs the desktop app's photos (decision 71).
+The engine always runs natively; browsers and tablets are to be remote clients over the network, on a home server or the user's machine (decision 58). Tablets run the one interface in Touch mode (decision 94, planned). The same server, `apertrust-cli serve`, may later, if asked, sync the desktop app's photos with a NAS (decision 71).
 
 Details: [session-protocol.md, Web, tablets and remote access](session-protocol.md#web-tablets-and-remote-access).
 
 ## Naming
 
-**Apertrust** is the app's name (decision 65), written with a capital A where people read it, and `apertrust` in crates, binaries and identifiers. Internal parts are descriptive under one prefix, so agents and contributors understand them without explanation ([Crates](#crates)). User-facing concepts stay plain: Library, Project, Folder, Album, Smart album, Edit, Export, Layers, Styles.
+**Apertrust** is the app's name (decision 65), written with a capital A where people read it, and `apertrust` in crates, binaries and identifiers. Internal parts are descriptive under one prefix, so agents and contributors understand them without explanation ([Crates](#crates)). User-facing concepts stay plain: Folder, Library, Album, Smart album, Edit, Export, Layers, Styles.
 
 | Part | Name |
 | --- | --- |
@@ -251,14 +251,14 @@ Details: [session-protocol.md, Web, tablets and remote access](session-protocol.
 | Web client | Apertrust Web |
 | Session protocol | `apertrust-protocol`, a module of the engine until a client must compile it without the engine (decision 58) |
 | Edit files | `.apxmp` and `.apdata` sidecars; the `.apxmp` format is `apertrust-library`'s `sidecar` module (decision 54) |
-| Library and project files | `Name.aplibrary` and `Name.approject`, with a hidden `.apertrust/` (decision 46) |
+| A folder's own data | a hidden `.apertrust/` at its top, holding its albums and smart albums, and a Library saved there by choice (decision 101) |
 | The safe write | `apertrust_base::fs` |
 
-**The library's words** are decision 46's ([library.md](library.md#words)):
+**The library's words** are decisions 46's and 101's ([library.md](library.md#words)):
 
-- The interface says Folder, Library, Project, Album, Smart album, Capture, Selects, Output, Trash, Virtual copy and Snapshot, and Collections for the tool that chooses which folder, album or smart album the Browser shows (decision 95).
-- The code and docs add **folder roles**, **root** and **collection**, for any set of photos Collections chooses.
-- Never: film roll; catalogue; workspace for a library; session for a library or project ("session" is the engine's); Shoot or layout for the roles; version for a virtual copy.
+- The interface says Folder, Library, Album, Smart album, Virtual copy and Snapshot, and Collections for the tool that chooses which folder, album or smart album the Browser shows (decision 95), with Include subfolders, Move to…, Copy to…, Keep Available Offline and Keep Edits on This Computer.
+- The code and docs add **folder record**, **home folder**, **folder tree** and **collection**, for any set of photos Collections chooses; the tree's root is the folder opened in Collections.
+- Never: project; film roll; catalogue; workspace for a Library; session for a Library ("session" is the engine's); version for a virtual copy.
 
 **The window's words** (decisions 37 and 95): the app is one view; its parts are the Toolbar, Tools (the Tools panel), the Viewer and the Browser, with the viewer bar and the browser bar; the Viewer's Photo and Map are its layouts; Collections, the Photos tab's first tool, chooses what the Browser shows; a workspace is a named, saved set of the Tools panel's tabs.
 
@@ -322,7 +322,7 @@ Apertrust builds a raw editor on darktable's trusted colour science, with a disc
 | [events.md](events.md) | Every event the session sends, their order and delivery, and the app's one reducer | — |
 | [gui.md](gui.md) | The desktop app's interface: why egui, display colour, the design system, translation, the window, menus, popups, dialogs, the shell, tool panels, keys, settings, accessibility, tests | [Yes](gui.md#open-questions) |
 | [settings.md](settings.md) | The settings schema, the store, `--conf`, the user data folders, edits in another folder | — |
-| [library.md](library.md) | Folder mode, libraries and projects, sidecars, the XMP layer, finding photos, several computers, the library's API | [Yes](library.md#open-questions) |
+| [library.md](library.md) | One photo, folders and optional Libraries, where each feature's data lives, sidecars, the XMP layer, finding folders and photos, several computers, the library's API | [Yes](library.md#open-questions) |
 | [layers.md](layers.md) | Layers and masks, and the scene and display domains | — |
 | [ai.md](ai.md) | AI inference, models, agents and MCP, the differentiable pipeline | — |
 | [testing.md](testing.md) | The golden-image harness, the migration's baselines, departures from darktable | [Yes](testing.md#open-questions) |

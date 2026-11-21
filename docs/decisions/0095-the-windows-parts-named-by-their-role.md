@@ -28,14 +28,13 @@ Built, in one rename pull request (below, The steps).
 | The bar along the top edge, the window's title bar | **Toolbar** | Top panel | The app's and tools' actions, as a person arranges them ([0039](0039-one-top-bar-native-menus-on-the-mac-one-menu-button-elsewhere.md), [0092](0092-the-toolbar.md)) |
 | The panel of tabs and tools | **Tools**, the Tools panel | Side panel | Every processing tool and utility, in the workspace's tabs ([0038](0038-the-side-panels-tabs-by-editing-stage.md), [0083](0083-the-side-panels-layout-dragged-and-floating.md)) |
 | The photo | **Viewer** | Central panel | The layout: the active photo, the selected photos side by side, later the map ([0037](0037-one-view-the-photos-tab.md)) |
-| The thumbnails | **Browser** | Grid panel | The photos of the open folder, album or project |
+| The thumbnails | **Browser** | Grid panel | The photos of the open folder, album or Library |
 | The Photos tab's first tool | **Collections** | Browse | Choosing what the Browser shows ([0073](0073-the-photos-tabs-tools-browse-first-filters-in-folder-mode.md)) |
 
 - **The bars follow their parts:** the viewer bar (was the central bar) and the browser bar (was the grid bar). A cell stays a cell, the Browser being a grid of them; the tab bar, sections, the caption and floating panels keep their names. "Panel" stays the kind: the panels are the window's main regions, bars the strips inside them.
 - **Written as names,** capitalised as the tabs and tools are: the Toolbar, the Viewer, the Browser, Collections. In a list of the parts, View › Panels and the regions F6 visits and screen readers name, the panel of tools is **Tools** (the region's name for screen readers planned: today they hear its tab list, "Tools panel tabs", and its edge, "Tools panel width"); in prose, and in a label where "Tools" alone would read as the tools themselves, it is **the Tools panel** ("Tools panel width"). The bars are written in lower case.
 - **"Browser" alone is the part.** A web browser is written "web browser" wherever the two could be confused.
-- **Collections** fits every mode: a folder's tree in folder mode, and Folders, Albums and Smart albums in a library or a project. darktable's module that chooses what its lighttable and filmstrip show is collections (`src/libs/collect.c`), and the docs already call any set of photos the tool chooses a collection. Folder, Album and Smart album stay the interface's words for what it holds; "collection" in lower case stays the code's and the docs' word for a set.
-- **The start window's Browse…** is a verb, finding a library's or a project's file, and keeps its word.
+- **Collections** fits every place: a folder's tree with its Albums and Smart albums, and from Phase 5 each Library with its folders, Albums and Smart albums ([0101](0101-folders-first-libraries-optional.md)). darktable's module that chooses what its lighttable and filmstrip show is collections (`src/libs/collect.c`), and the docs already call any set of photos the tool chooses a collection. Folder, Album and Smart album stay the interface's words for what it holds; "collection" in lower case stays the code's and the docs' word for a set.
 
 ### The interface's words
 
@@ -62,7 +61,6 @@ In British English, the source; American English, Ukrainian and Polish follow, U
 | every `browse-*` message | `collections-*` | unchanged | unchanged |
 | `folder-empty-hint` | unchanged | Choose a subfolder in Browse. | Choose a subfolder in Collections. |
 | `setting-side-panel-*`, `setting-central-panel-*`, `setting-grid-panel-*` | `setting-tools-panel-*`, `setting-viewer-*`, `setting-browser-*` | unchanged | unchanged |
-| `start-browse` | unchanged | Browse… | unchanged |
 
 ### What files outside the build hold
 
