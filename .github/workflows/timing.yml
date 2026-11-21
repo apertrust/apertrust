@@ -1,8 +1,9 @@
 name: Timing
 
 # The pipeline timed on the software GPUs, lavapipe and WARP (decision 7), as
-# docs/engine.md's Testing asks: a 61 MP export, tiled as the adapter needs, and
-# exposure changes at viewport size. Run by hand from the Actions tab.
+# docs/engine.md's Testing asks: a 61 MP export, tiled as the adapter needs,
+# exposure changes at viewport size, and the zoomed view at 100%. Run by hand from the
+# Actions tab.
 on:
   workflow_dispatch:
 
@@ -20,7 +21,8 @@ jobs:
       matrix:
         os: [ubuntu-24.04, windows-2025]
     runs-on: ${{ matrix.os }}
-    # A release build, three 61 MP exports and ten changes, WARP the slowest.
+    # A release build, three 61 MP exports, ten changes at Fit and the zoomed view's
+    # pans and changes, WARP the slowest.
     timeout-minutes: 90
     defaults:
       run:
@@ -57,3 +59,8 @@ jobs:
       # it binds it, as WARP does (decision 14); the first render's line says which.
       - name: Exposure changes at viewport size
         run: cargo run --locked --release -p apertrust-cli -- preview sample.arw --changes 10
+      # The zoomed view at 100% (decision 99): entering it, twenty pans of a tenth of the
+      # view, each past the margin rendering the detail, and ten exposure changes there,
+      # the detail and the fitted frame. Its lines under -d perf start with "zoom:".
+      - name: Zoomed to 100%
+        run: cargo run --locked --release -p apertrust-cli -- -d perf preview sample.arw --width 2400 --height 1600 --zoom 1 --at 0.5,0.5 --pans 20 --changes 10

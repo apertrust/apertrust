@@ -34,7 +34,7 @@ use apertrust_engine::sidecar;
 use apertrust_export::{Format, png};
 use apertrust_tools::ControlValue;
 
-use crate::{EXPOSURE, OPERATIONS, TOOLS, beside, median, write_file};
+use crate::{EXPOSURE, OPERATIONS, TOOLS, beside, write_file};
 
 /// What `preview --zoom` runs.
 pub(crate) struct Options {
@@ -140,7 +140,9 @@ impl Client {
     }
 }
 
-/// The GPU time of `frame`'s render, both pipelines' passes, in milliseconds.
+/// The GPU time of `frame`'s render, its passes' times added up, in milliseconds: where
+/// the GPU runs two pipelines' passes side by side in one submission, each pass's time
+/// takes in the other's work, and the sum counts it twice.
 fn gpu_ms(frame: &Frame) -> f64 {
     frame.timings.passes.iter().map(|(_, ms)| ms).sum()
 }
@@ -211,8 +213,17 @@ fn pan(client: &mut Client, view: View, entered: &Frame, options: &Options) -> R
         renders.len(),
         options.pans
     );
-    for (pan, latency, gpu) in renders {
+    for &(pan, latency, gpu) in &renders {
         println!("  pan {pan}: {latency:.2} ms to the frame, {gpu:.2} ms GPU");
+    }
+    if !renders.is_empty() {
+        let latency: Vec<f64> = renders.iter().map(|&(_, latency, _)| latency).collect();
+        let gpu: Vec<f64> = renders.iter().map(|&(_, _, gpu)| gpu).collect();
+        println!(
+            "Pans past the margin, to the frame: {}; GPU: {}",
+            beside::stats(&latency),
+            beside::stats(&gpu)
+        );
     }
     Ok(())
 }
@@ -319,7 +330,7 @@ fn zoom(photo: &Path, options: &Options, engine: engine::Options) -> Result<()> 
         let entered_ms = arrived.duration_since(sent_at).as_secs_f64() * 1e3;
         tracing::debug!(
             target: "perf",
-            "zoom: entered in {entered_ms:.1} ms, GPU: {:.1} ms",
+            "zoom: entered in {entered_ms:.1} ms (GPU {:.1} ms)",
             gpu_ms(&entered)
         );
         let place = entered.place;
@@ -358,7 +369,8 @@ fn zoom(photo: &Path, options: &Options, engine: engine::Options) -> Result<()> 
         let (frame, _) = client.frame(last)?;
         tracing::debug!(
             target: "perf",
-            "zoom: change {change}: GPU: {:.2} ms, {} passes{}",
+            "zoom: change {change}: {:.2} ms to the frame, GPU {:.2} ms, {} passes{}",
+            frame.latency_ms,
             gpu_ms(&frame),
             frame.timings.passes.len(),
             if frame.overview.is_some() {
@@ -371,12 +383,14 @@ fn zoom(photo: &Path, options: &Options, engine: engine::Options) -> Result<()> 
         latency.push(frame.latency_ms);
     }
     if !times.is_empty() {
-        let changes = times.len();
-        let (gpu, gpu_min) = median(times);
-        let (latency, latency_min) = median(latency);
-        println!(
-            "Per exposure change, median of {changes}: {gpu:.2} ms GPU (min {gpu_min:.2}); {latency:.2} ms latency (min {latency_min:.2})"
+        let line = format!(
+            "zoom: {} exposure changes: to the frame {}; GPU {}",
+            times.len(),
+            beside::stats(&latency),
+            beside::stats(&times)
         );
+        tracing::debug!(target: "perf", "{line}");
+        println!("{line}");
     }
 
     if let Some(png_path) = &options.png {
