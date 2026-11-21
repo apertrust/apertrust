@@ -10,10 +10,10 @@
 # minutes, run in the manual stage alone.
 #
 # Each check runs only when a file it reads is among those given, and a check that works
-# file by file is given those files alone. The long checks build the workspace, so they
-# take no files. They skip what CI skips: documentation alone, as
-# .github/docs-only-paths.txt matches it. `docs-only` below mirrors that list; change both
-# together.
+# file by file is given those files alone. The long checks build the workspace whatever
+# the files, and skip what CI skips: documentation alone, as .github/docs-only-paths.txt
+# matches it, through tools/check-docs-paths.sh --unless-docs-only. Given many files,
+# pre-commit may run one in several parts, each after the first finding the build done.
 #
 # Each repository below is pinned to a release tag; `pre-commit autoupdate` moves them.
 
@@ -146,19 +146,17 @@ repos:
         files: (\.slang|/generated/[^/]+\.wgsl|^tools/(build-kernels|fetch-slang)\.sh)$
         require_serial: true
 
-      # The long checks, in the manual stage.
+      # The long checks, in the manual stage, skipping documentation alone.
       # Linux, Windows and macOS, the platforms CI checks; tools/clippy.sh says how.
       - id: clippy
         name: cargo clippy
-        entry: tools/clippy.sh --all
+        entry: tools/check-docs-paths.sh --unless-docs-only tools/clippy.sh --all --
         language: system
-        exclude: &docs-only ^(docs/.*|(?!CREDITS\.md$)[^/]+\.md|\.github/ISSUE_TEMPLATE/.*|\.github/pull_request_template\.md)$
-        pass_filenames: false
+        require_serial: true
         stages: [manual]
       - id: api-docs
         name: API docs
-        entry: tools/build-api-docs.sh
+        entry: tools/check-docs-paths.sh --unless-docs-only tools/build-api-docs.sh --
         language: system
-        exclude: *docs-only
-        pass_filenames: false
+        require_serial: true
         stages: [manual]
