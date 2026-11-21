@@ -16,11 +16,12 @@
 
 //! `preview --zoom`: the zoomed view (decision 99) through an in-process session, as the
 //! app sends it: a `Resize` to the bounds, then a `View`. It times entering the zoom, pans
-//! (`--pans`), each inside the rendered region's margin rendering nothing, and exposure
-//! changes there, the detail's frame first, a whole-image round's tiles in submissions
-//! of their own before it, and the fitted frame after it, each timed apart; and writes
-//! the zoomed frame with `--png`. The photo is opened through a link in a folder of its
-//! own, so its edit is never written beside it.
+//! (`--pans`), each inside the rendered region's margin rendering nothing, a pinch's steps
+//! of the zoom (`--pinch`), each rendering the detail at its scale, and exposure changes
+//! there, the detail's frame first, a whole-image round's tiles in submissions of their
+//! own before it, and the fitted frame after it, each timed apart; and writes the zoomed
+//! frame with `--png`. The photo is opened through a link in a folder of its own, so its
+//! edit is never written beside it.
 
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
@@ -48,6 +49,8 @@ pub(crate) struct Options {
     pub exposure: Option<f32>,
     /// The pans to time once zoomed, each a tenth of the view across.
     pub pans: u32,
+    /// The steps of 2% to time after the pans, as a pinch sends them.
+    pub pinch: u32,
     /// The exposure changes to time once zoomed.
     pub changes: u32,
     /// Where to write the zoomed frame, as export writes a PNG.
@@ -180,8 +183,8 @@ fn gpu_ms(frame: &Frame) -> f64 {
 /// the view `options.pans` times, back from the photo's edge, each waited for: its view
 /// fact, and its frame where the visible rectangle leaves the region the latest frame
 /// holds, as a client draws it. Prints how many rendered and each render's time; stops
-/// where the photo's width fits the bounds, which no pan across moves.
-fn pan(client: &mut Client, view: View, entered: &Frame, options: &Options) -> Result<()> {
+/// where the photo's width fits the bounds, which no pan across moves. The view it leaves.
+fn pan(client: &mut Client, view: View, entered: &Frame, options: &Options) -> Result<View> {
     let place = entered.place;
     let mut region = [
         place.origin[0],
@@ -209,7 +212,7 @@ fn pan(client: &mut Client, view: View, entered: &Frame, options: &Options) -> R
         // Where the photo's width fits the bounds, no pan across moves the view.
         if placed.centre == centre {
             println!("The photo's width fits the bounds: a pan across moves nothing");
-            return Ok(());
+            return Ok(View { centre, ..view });
         }
         // Only the latest frame is read here; the others hold their buffers.
         client.frames.clear();
@@ -255,6 +258,68 @@ fn pan(client: &mut Client, view: View, entered: &Frame, options: &Options) -> R
             beside::stats(&latency),
             beside::stats(&gpu)
         );
+    }
+    Ok(View { centre, ..view })
+}
+
+/// `--pinch`: from `view`, whose frame is `entered`, the zoom stepped by 2% `options.pinch`
+/// times, towards 100% and back from it where a step would reach it, or from Fit where a
+/// step would show the fitted frame, each waited for, as a pinch sends them: each new
+/// scale renders the detail. Prints each step's time to its frame and GPU time, and their
+/// median, 95th percentile and worst.
+fn pinch(client: &mut Client, view: View, entered: &Frame, options: &Options) -> Result<()> {
+    // Above 100% the engine renders at 1, so the scale a pinch steps is between Fit and 1.
+    let ViewScale::Factor(mut factor) = view.scale else {
+        return Ok(());
+    };
+    if factor > 1.0 {
+        println!("--pinch: no steps from above 100%, where every zoom renders at 1");
+        return Ok(());
+    }
+    let extent = entered.place.extent;
+    let at = |factor| View {
+        scale: ViewScale::Factor(factor),
+        centre: view.centre,
+    };
+    let renders = |factor| apertrust_engine::view::zoomed(extent, options.bounds, &at(factor));
+    let mut step = 1.02_f32;
+    let (mut latency, mut gpu) = (Vec::new(), Vec::new());
+    for n in 1..=options.pinch {
+        let takes = |step: f32| factor * step < 1.0 && renders(factor * step).is_some();
+        if !takes(step) {
+            step = 1.0 / step;
+        }
+        // Where Fit and 100% are within a step of each other, no step renders the detail.
+        if !takes(step) {
+            println!("--pinch: Fit and 100% are within a step of 2%: no step renders the detail");
+            break;
+        }
+        factor *= step;
+        // Only the latest frame is read here; the others hold their buffers.
+        client.frames.clear();
+        let sent = client.session.send(Command::View(at(factor)));
+        let (frame, _) = client.frame(sent)?;
+        tracing::debug!(
+            target: "perf",
+            "zoom: pinch {n}: {:.1}%, {}×{}: {:.2} ms to the frame, GPU {:.2} ms",
+            frame.place.scale * 100.0,
+            frame.width,
+            frame.height,
+            frame.latency_ms,
+            gpu_ms(&frame)
+        );
+        latency.push(frame.latency_ms);
+        gpu.push(gpu_ms(&frame));
+    }
+    if !gpu.is_empty() {
+        let line = format!(
+            "zoom: {} pinch steps of 2%: to the frame {}; GPU {}",
+            gpu.len(),
+            beside::stats(&latency),
+            beside::stats(&gpu)
+        );
+        tracing::debug!(target: "perf", "{line}");
+        println!("{line}");
     }
     Ok(())
 }
@@ -379,8 +444,13 @@ fn zoom(photo: &Path, options: &Options, engine: engine::Options) -> Result<()> 
             place.scale,
             gpu_ms(&entered)
         );
+        // The pinch from where the pans left the view.
+        let mut at = view;
         if options.pans > 0 {
-            pan(&mut client, view, &entered, options)?;
+            at = pan(&mut client, view, &entered, options)?;
+        }
+        if options.pinch > 0 {
+            pinch(&mut client, at, &entered, options)?;
         }
     }
 

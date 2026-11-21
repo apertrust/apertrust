@@ -230,6 +230,12 @@ enum Command {
         /// renders nothing (viewer.anticipate_move; decision 99).
         #[arg(long, value_name = "N", default_value_t = 0, requires = "zoom")]
         pans: u32,
+        /// With --zoom at 100% or below, after any --pans, step the zoom this many times by
+        /// 2% between Fit and 100%, towards 100% and back from it, as a pinch sends it, each
+        /// waited for, then print each step's time to its frame: every new scale renders the
+        /// detail.
+        #[arg(long, value_name = "N", default_value_t = 0, requires = "zoom")]
+        pinch: u32,
         /// Spike X1: in place of the timings
         /// above, time the changes through an in-process session, as the app sends them,
         /// one every --interval, with nothing else to do and while the session's export
@@ -544,6 +550,7 @@ fn main() -> Result<()> {
             zoom: Some(factor),
             at,
             pans,
+            pinch,
             adapter,
             backend,
             ..
@@ -555,6 +562,7 @@ fn main() -> Result<()> {
                 centre: at.unwrap_or([0.5, 0.5]),
                 exposure,
                 pans,
+                pinch,
                 changes,
                 png,
             },
@@ -3313,29 +3321,38 @@ mod tests {
                 .into_iter()
                 .chain(flags.split_whitespace());
             match Cli::try_parse_from(args).map(|cli| cli.command) {
-                Ok(Command::Preview { zoom, at, pans, .. }) => Ok((zoom, at, pans)),
+                Ok(Command::Preview {
+                    zoom,
+                    at,
+                    pans,
+                    pinch,
+                    ..
+                }) => Ok((zoom, at, pans, pinch)),
                 Ok(other) => panic!("{other:?}"),
                 Err(error) => Err(error.kind()),
             }
         };
         assert_eq!(
             zoom("--zoom 1 --at 0.5,0.25"),
-            Ok((Some(1.0), Some([0.5, 0.25]), 0))
+            Ok((Some(1.0), Some([0.5, 0.25]), 0, 0))
         );
         assert_eq!(
             zoom("--at=0.1,0.9 --zoom=2 --pans 50"),
-            Ok((Some(2.0), Some([0.1, 0.9]), 50))
+            Ok((Some(2.0), Some([0.1, 0.9]), 50, 0))
         );
+        assert_eq!(zoom("--zoom 0.5 --pinch 20"), Ok((Some(0.5), None, 0, 20)));
         // The centre left out is the photo's, which the run takes as 0.5,0.5; a factor below
         // 100%, between Fit and 1.
-        assert_eq!(zoom("--zoom 4"), Ok((Some(4.0), None, 0)));
-        assert_eq!(zoom("--zoom 0.5"), Ok((Some(0.5), None, 0)));
-        assert_eq!(zoom(""), Ok((None, None, 0)));
-        // --at and --pans need --zoom, --at two numbers, --pans a count; --zoom times its
+        assert_eq!(zoom("--zoom 4"), Ok((Some(4.0), None, 0, 0)));
+        assert_eq!(zoom("--zoom 0.5"), Ok((Some(0.5), None, 0, 0)));
+        assert_eq!(zoom(""), Ok((None, None, 0, 0)));
+        // --at, --pans and --pinch need --zoom, --at two numbers, --pans and --pinch counts; --zoom times its
         // own changes.
         for flags in [
             "--at 0.5,0.5",
             "--pans 5",
+            "--pinch 5",
+            "--zoom 0.5 --pinch -1",
             "--zoom 1 --pans -1",
             "--zoom 1 --pans x",
             "--zoom 1 --at 0.5",
