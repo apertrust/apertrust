@@ -115,7 +115,7 @@ use apertrust_ui::components::{
     BrowserPosition, CellMenu, CellRating, FindBar, FindBarAction, Jobs, Margin, Marker,
     MenuButtonStyle, PanelBody, PanelEdge, PanelEdgeAction, PanelTab, PhotoCaption, PhotoFrame,
     PickerAction, Placed, SaveState, ScopeView, TabBar, TabBarAction, Thumb, Toggle, Toolbar,
-    ToolbarAction, ToolsPanelPosition, ViewerBar, ViewerBarAction, Zoom, browser_lines,
+    ToolbarAction, ToolsPanelPosition, ViewMarks, ViewerBar, ViewerBarAction, Zoom, browser_lines,
     browser_thickness,
 };
 use apertrust_ui::{
@@ -1949,6 +1949,11 @@ struct Shell {
     /// The photo area, in points, where the pointer was over it at the last frame: the
     /// zoom's keys zoom about the pointer there (`docs/gui.md`, Zooming).
     pointed: Option<egui::Rect>,
+    /// When the position marks show (`docs/gui.md`, Where the view is).
+    marks: zoom::Marks,
+    /// What the zoom's live region says: the scale after the last key, gesture or middle
+    /// click that zoomed (`docs/gui.md`, The zoom by keyboard and to screen readers).
+    zoom_said: String,
     /// The Viewer's margins, from the settings (`[viewer]`).
     viewer: settings::Viewer,
     /// Whether Settings… ran, for the app to open it in the dialog host after the action.
@@ -2116,6 +2121,8 @@ impl Shell {
             room: None,
             gesture: zoom::Gesture::default(),
             pointed: None,
+            marks: zoom::Marks::default(),
+            zoom_said: String::new(),
             viewer: settings.viewer,
             settings: false,
             show_log: false,
@@ -3682,7 +3689,11 @@ impl Shell {
                     .map_or(egui::Vec2::ZERO, |(area, at)| {
                         (at - area.center()) * ctx.pixels_per_point()
                     });
+                let before = self.zoom;
                 self.zoom_to(step, about);
+                if self.zoom != before {
+                    self.say_zoom(ctx);
+                }
             }
             Intent::Pan { direction, page } => {
                 if let Some(room) = self.room {
@@ -3703,6 +3714,34 @@ impl Shell {
         {
             self.zoom = zoomed;
             self.gesture.end();
+        }
+    }
+
+    /// Has the zoom's live region say the scale now shown: after a key, a gesture, a middle
+    /// click or a zoom-menu choice that lands elsewhere than its item names.
+    fn say_zoom(&mut self, ctx: &egui::Context) {
+        let label = self.zoom.label_in(self.room.as_ref());
+        self.zoom_said = components::zoom_label(ctx, label);
+    }
+
+    /// Moves the zoom as the viewer bar's zoom menu chose it, `action`, about the view's
+    /// centre. Where the scale reached is the one its item names, read already, it says
+    /// nothing, and what the live region said goes, so a key back to that scale is said
+    /// again; Zoom In and Zoom Out, 100% from 100% (to Fit, as Z) and a scale below Fit (to
+    /// Fit) say the new scale, as a key does.
+    fn choose_zoom(&mut self, ctx: &egui::Context, action: ViewerBarAction) {
+        let Some(step) = zoom::chosen(action) else {
+            return;
+        };
+        let before = self.zoom;
+        self.zoom_to(step, egui::Vec2::ZERO);
+        if self.zoom == before {
+            return;
+        }
+        let shown = self.zoom.label_in(self.room.as_ref());
+        match action {
+            ViewerBarAction::Zoom(named) if named == shown => self.zoom_said.clear(),
+            _ => self.say_zoom(ctx),
         }
     }
 
@@ -5570,7 +5609,11 @@ impl App {
     /// The viewer bar, the photo and its caption. Returns the viewer bar's rectangle, a
     /// region for F6, and the action a choice in its right-click menu runs.
     /// `panel_resized`: the Tools panel's width or the Browser's rows changed this frame.
-    fn viewer(&mut self, ui: &mut egui::Ui, panel_resized: bool) -> (egui::Rect, Option<ActionId>) {
+    fn viewer(
+        &mut self,
+        ui: &mut egui::Ui,
+        panel_resized: bool,
+    ) -> (egui::Rect, Option<egui::Rect>, Option<ActionId>) {
         ui.spacing_mut().item_spacing = egui::Vec2::ZERO;
         // The photo's slot, everything under the viewer bar, first. The photo and its
         // caption are one block in it, inside the margin (`PhotoFrame`, `docs/gui.md`, The
@@ -5701,14 +5744,12 @@ impl App {
                 ui.ctx().request_repaint();
             }
             Some(ViewerBarAction::Guides) => self.shell.guides = !self.shell.guides,
-            Some(chosen) => {
-                // A menu's entry zooms about the view's centre.
-                if let Some(step) = zoom::chosen(chosen) {
-                    self.shell.zoom_to(step, egui::Vec2::ZERO);
-                    ui.ctx().request_repaint();
-                }
+            // A menu's entry zooms about the view's centre.
+            Some(chosen) if zoom::chosen(chosen).is_some() => {
+                self.shell.choose_zoom(ui.ctx(), chosen);
+                ui.ctx().request_repaint();
             }
-            None => {}
+            Some(_) | None => {}
         }
         let viewer_bar =
             egui::Rect::from_min_max(top, egui::pos2(ui.max_rect().right(), ui.cursor().top()));
@@ -5748,6 +5789,21 @@ impl App {
             values,
             picture.map(|(p, _)| p),
         );
+        // Zoomed past Fit, the photo is a focus stop, the next after the viewer bar's last
+        // control; its ring is drawn over the photo below.
+        let viewed = room.map(|room| room.place(&zoomed));
+        let stop_area = (placed.as_ref())
+            .filter(|_| open && viewed.as_ref().is_some_and(zoom::overflows))
+            .map(|placed| placed.photo);
+        let (name, value) = match (photo, &viewed) {
+            (Some(photo), Some(viewed)) => {
+                let words = translator(ui.ctx());
+                let scale = components::zoom_label(ui.ctx(), zoomed.label_in(room.as_ref()));
+                photo_view_words(&words, &file_name(&photo.path), &scale, viewed)
+            }
+            _ => Default::default(),
+        };
+        let stop = photo_stop(ui, stop_area, &name, &value);
         // A scroll or a drag moves a zoomed photo, drawn at once where it moves to; a picker
         // on takes the drag, never the scroll (`docs/gui.md`, Panning).
         if let (Some(room), Some(placed)) = (&room, &placed)
@@ -5776,6 +5832,7 @@ impl App {
             self.shell.zoom = zoom_photo(ui, slot, area, before, room, gesture, now);
             if self.shell.zoom != before {
                 placed = place_photo(&block, bounds, ppp, &self.shell.zoom, values, None);
+                self.shell.say_zoom(ui.ctx());
             }
             let area = placed.as_ref().map_or(area, |p| p.photo);
             self.shell.pointed = ui.rect_contains_pointer(area).then_some(area);
@@ -5816,6 +5873,30 @@ impl App {
         {
             let painter = ui.painter_at(slot);
             paint_picture(&painter, placed, shown, generation, &mut self.picture);
+        }
+        // Where the view is: the photo stop's ring after a key, and the position marks in
+        // the margin while the view zooms or moves and a second after.
+        if let Some(stop) = stop.filter(egui::Response::has_focus) {
+            let t = theme(ui.ctx());
+            let ring = stop.rect.shrink(t.shape.focus_width / 2.0);
+            components::focus_ring_centred(&ui.painter_at(slot), ring, &t);
+        }
+        if let (Some(placed), Some(placement)) = (&placed, &placement)
+            && open
+        {
+            let overflows = zoom::overflows(placement);
+            // The system's reduce-motion preference, read only while the marks can show.
+            let still = overflows && apertrust_display::reduce_motion();
+            let zoom = self.shell.zoom;
+            let opacity = marks_opacity(ui.ctx(), &mut self.shell.marks, zoom, overflows, still);
+            let [across, down] = zoom::spans(placement);
+            // No language is right to left yet (`crates/ui/locales/README.md`).
+            ViewMarks::new(placed.photo, block.margin())
+                .caption(components::CAPTION_GAP + components::CAPTION_HEIGHT)
+                .across(across)
+                .down(down)
+                .opacity(opacity)
+                .paint(&ui.painter_at(slot), &theme(ui.ctx()), false);
         }
         let left = self.mirror.saving.left.as_ref().map(|(edit, why)| {
             let mut args = apertrust_ui::i18n::Args::new();
@@ -5877,6 +5958,9 @@ impl App {
         if let Some((area, photo, pixels)) = picking {
             self.picker_on_photo(ui, area, photo, pixels);
         }
+        if open {
+            zoom_live_region(ui, slot.left_top(), &self.shell.zoom_said);
+        }
         // The view as the zoom is now, once the person's moves are in; the session takes
         // the last of a batch.
         let view = self.shell.zoom.view();
@@ -5889,6 +5973,7 @@ impl App {
         self.carry_out(asked, ui.ctx());
         (
             viewer_bar,
+            stop_area,
             self.background_menu(ui.ctx(), &background, photo_rect),
         )
     }
@@ -6452,7 +6537,8 @@ fn pan_photo(
     // A touch screen's pinch moves the pointer with its first finger: the pinch zooms, and
     // the finger's drag moves nothing.
     if drags && ui.input(|i| i.multi_touch().is_none()) {
-        let response = ui.interact(area, ui.scope_id().with("photo"), egui::Sense::drag());
+        // No focus stop: the photo's own is ([`photo_stop`]).
+        let response = ui.interact(area, ui.scope_id().with("photo"), egui::Sense::DRAG);
         if response.dragged_by(egui::PointerButton::Primary) {
             moved += response.drag_delta();
             ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
@@ -7022,7 +7108,7 @@ impl eframe::App for App {
         let central = egui::CentralPanel::default()
             .frame(egui::Frame::NONE.fill(t.colors.photo_surround))
             .show(ui, |ui| self.viewer(ui, panel_resized || browser_resized));
-        let (viewer_bar, background) = central.inner;
+        let (viewer_bar, photo_stop, background) = central.inner;
         let central = central.response.rect;
         run.extend(background);
         // The Tools panel parts from the photo by a separator, as the bars do: its edge,
@@ -7036,10 +7122,12 @@ impl eframe::App for App {
         self.shell.about.show(&ctx);
         run.extend(self.shell.popups(&ctx));
 
-        // F6 goes through the regions in reading order.
+        // F6 goes through the regions in reading order, the photo after the viewer bar while
+        // it is zoomed past Fit.
         let regions: Vec<egui::Rect> = [
             Some(toolbar.response.rect),
             Some(viewer_bar),
+            photo_stop,
             Some(tools_panel.response.rect),
             Some(browser),
         ]
@@ -8691,6 +8779,111 @@ fn focusable(ctx: &egui::Context) -> Vec<(egui::Id, egui::Rect)> {
             .map(|w| (w.id, w.rect))
             .collect()
     })
+}
+
+/// The photo as a focus stop while it overflows the photo area `area`, zoomed in too far
+/// to show whole (`docs/gui.md`, The zoom by keyboard and to screen readers): a group
+/// named `name`, its value `value`, focusable but taking no clicks. It keeps no keys of its own: Alt with the
+/// arrows reach the registry as anywhere ([`Focus::of`]), and egui never moves the focus
+/// off it with an arrow. With no `area` the view fits, and a stop that had the focus gives
+/// it back to the stop before it, the zoom's button, and is gone from the next frame.
+fn photo_stop(
+    ui: &egui::Ui,
+    area: Option<egui::Rect>,
+    name: &str,
+    value: &str,
+) -> Option<egui::Response> {
+    let id = zoom::photo_view_id();
+    let ctx = ui.ctx();
+    let sense = egui::Sense::focusable_noninteractive();
+    let Some(area) = area else {
+        if ctx.memory(|m| m.focused()) == Some(id) {
+            ctx.memory_mut(|m| m.move_focus(egui::FocusDirection::Previous));
+            let nowhere = egui::Rect::from_min_size(ui.max_rect().min, egui::Vec2::ZERO);
+            ui.interact(nowhere, id, sense);
+            // It moves at the next frame's start.
+            ctx.request_repaint();
+        }
+        return None;
+    };
+    let response = ui.interact(area, id, sense);
+    // Given the focus by F6 after the last frame, it had no filter yet as this frame's
+    // input was read, so an arrow in it would move egui's focus off the photo at the
+    // frame's end: that move is cancelled. Tab's moves are made by now.
+    if response.has_focus() {
+        ctx.memory_mut(|m| m.move_focus(egui::FocusDirection::None));
+    }
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::accesskit::Role::Group, true, name));
+    ctx.accesskit_node_builder(id, |node| node.set_value(value));
+    let keeps = egui::EventFilter {
+        horizontal_arrows: true,
+        vertical_arrows: true,
+        ..Default::default()
+    };
+    ctx.memory_mut(|m| m.set_focus_lock_filter(id, keeps));
+    Some(response)
+}
+
+/// The zoomed photo's name and value to screen readers, the photo `file` shown at the scale
+/// `scale` where `placement` places it: "Photo, IMG_2041.ARW", and "100%, 31 to 58%
+/// across, 20 to 45% down", the part shown in whole percentages in the language's numbers.
+fn photo_view_words(
+    words: &Translator,
+    file: &str,
+    scale: &str,
+    placement: &Placement,
+) -> (String, String) {
+    let mut args = apertrust_ui::i18n::Args::new();
+    args.set("name", file);
+    let name = words.text_with("photo-view", Some(&args));
+    let percent = |share: f32| words.format_number(f64::from((share * 100.0).round()), 0, false);
+    let [across, down] = zoom::visible(placement);
+    let mut args = apertrust_ui::i18n::Args::new();
+    args.set("scale", scale);
+    args.set("left", percent(across.min));
+    args.set("right", percent(across.max));
+    args.set("top", percent(down.min));
+    args.set("bottom", percent(down.max));
+    (name, words.text_with("photo-view-value", Some(&args)))
+}
+
+/// The zoom's polite live region at `at`, taking no room (`docs/gui.md`, The zoom by
+/// keyboard and to screen readers): screen readers hear `said`, the new scale, as it
+/// changes.
+fn zoom_live_region(ui: &egui::Ui, at: egui::Pos2, said: &str) {
+    let at = egui::Rect::from_min_size(at, egui::Vec2::ZERO);
+    let response = ui.interact(at, ui.scope_id().with("zoom said"), egui::Sense::hover());
+    let role = egui::accesskit::Role::Status;
+    response.widget_info(|| egui::WidgetInfo::labeled(role, true, said));
+    (ui.ctx()).accesskit_node_builder(response.id, |node| {
+        node.set_live(egui::accesskit::Live::Polite);
+    });
+}
+
+/// How strongly the position marks show this frame (`docs/gui.md`, Where the view is), the
+/// zoom `zoom` taken into `marks`: from a zoom or a move, while the photo `overflows` the
+/// room, until a second after the last, a repaint asked for then; fading in and out over
+/// the theme's `motion.open_ms`, or at once where `still`, the system asking for reduced
+/// motion.
+fn marks_opacity(
+    ctx: &egui::Context,
+    marks: &mut zoom::Marks,
+    zoom: zoom::Zoomed,
+    overflows: bool,
+    still: bool,
+) -> f32 {
+    let now = ctx.input(|i| i.time);
+    let left = marks.update(zoom, now);
+    if let Some(left) = left {
+        ctx.request_repaint_after(Duration::from_secs_f64(left));
+    }
+    let fade = if still {
+        0.0
+    } else {
+        theme(ctx).motion.open_ms / 1000.0
+    };
+    let id = egui::Id::unique("view marks");
+    ctx.animate_bool_with_time(id, overflows && left.is_some(), fade)
 }
 
 /// What the Viewer says over the photo, `said`, each apart: on a raised plate at its
@@ -15768,6 +15961,259 @@ mod tests {
         assert!(!shell.state(&ctx, true, false).zoomed);
         run_live(&mut shell, &ctx, ActionId::PAN_LEFT);
         assert_eq!(shell.zoom, hundred);
+    }
+
+    /// A photo of 6000 × 4000 shown at 100% in a room of 1620 × 1000, the part shown known:
+    /// 31 to 58% across and 20 to 45% down.
+    const STOP_ROOM: zoom::Room = zoom::Room {
+        extent: [6000, 4000],
+        bounds: (1620, 1000),
+    };
+    const STOP_VIEW: zoom::Zoomed = zoom::Zoomed {
+        scale: zoom::Scale::Factor(1.0),
+        centre: [0.445, 0.325],
+    };
+
+    /// The regions F6 goes through as the app lays them out: the Toolbar's and the viewer
+    /// bar's buttons, the photo a focus stop at [`STOP_VIEW`] where `zoomed` says, then the
+    /// Tools panel's; the frame's keys read before and run after, as the app runs them.
+    struct Stops {
+        shell: Shell,
+        zoomed: bool,
+    }
+
+    fn stops(zoomed: bool) -> Harness<'static, Stops> {
+        let rect =
+            |x0, y0, x1, y1| egui::Rect::from_min_max(egui::pos2(x0, y0), egui::pos2(x1, y1));
+        let (toolbar, bar) = (rect(0.0, 0.0, 800.0, 40.0), rect(0.0, 40.0, 600.0, 80.0));
+        let (photo, panel) = (
+            rect(20.0, 100.0, 580.0, 580.0),
+            rect(600.0, 40.0, 800.0, 600.0),
+        );
+        Harness::builder()
+            .with_size(egui::vec2(800.0, 600.0))
+            .with_context_setup(|ctx| apertrust_ui::install(ctx, Theme::default()))
+            .build_ui_state(
+                move |ui, stops: &mut Stops| {
+                    let ctx = ui.ctx().clone();
+                    let state = stops.shell.state(&ctx, true, false);
+                    let keys = actions::read(&ctx, &stops.shell.keymap, &state).pressed;
+                    ui.put(toolbar.shrink(8.0), egui::Button::new("Open"));
+                    ui.put(bar.shrink(8.0), egui::Button::new("Zoom"));
+                    let words = translator(&ctx);
+                    let scale = components::zoom_label(&ctx, STOP_VIEW.label());
+                    let shown = STOP_ROOM.place(&STOP_VIEW);
+                    let (name, value) = photo_view_words(&words, "IMG_2041.ARW", &scale, &shown);
+                    let area = stops.zoomed.then_some(photo);
+                    photo_stop(ui, area, &name, &value);
+                    ui.put(panel.shrink(8.0), egui::Button::new("Exposure"));
+                    let regions: Vec<egui::Rect> = [Some(toolbar), Some(bar), area, Some(panel)]
+                        .into_iter()
+                        .flatten()
+                        .collect();
+                    for id in keys {
+                        stops.shell.run(id, &state, &ctx, &regions);
+                    }
+                },
+                Stops {
+                    shell: Shell::new(&Settings::default(), Locale::EnGb, OperatingSystem::Nix),
+                    zoomed,
+                },
+            )
+    }
+
+    fn focused<S>(harness: &Harness<'_, S>) -> Option<egui::Id> {
+        harness.ctx.memory(|m| m.focused())
+    }
+
+    fn press_on_stops(harness: &mut Harness<'_, Stops>, key: Key) {
+        harness.key_press(key);
+        harness.run();
+    }
+
+    /// F6 from the viewer bar reaches the photo while it is zoomed past Fit, and so does Tab
+    /// from the bar's last control; at Fit F6 goes on to the Tools panel. The photo with the
+    /// focus keeps no keys, and as the view fits the focus goes back to the zoom's button.
+    #[test]
+    fn f6_reaches_the_photo_only_while_zoomed() {
+        for zoomed in [true, false] {
+            let mut harness = stops(zoomed);
+            harness.run();
+            press_on_stops(&mut harness, Key::F6);
+            press_on_stops(&mut harness, Key::F6);
+            let zoom_button = focused(&harness);
+            assert!(harness.get_by_label("Zoom").accesskit_node().is_focused());
+            press_on_stops(&mut harness, Key::F6);
+            if !zoomed {
+                assert!(
+                    harness
+                        .get_by_label("Exposure")
+                        .accesskit_node()
+                        .is_focused()
+                );
+                continue;
+            }
+            assert_eq!(focused(&harness), Some(zoom::photo_view_id()));
+            assert_eq!(Focus::of(&harness.ctx), Focus::None);
+            // Tab from the zoom's button too.
+            let button = zoom_button.expect("the zoom's button focused");
+            harness.ctx.memory_mut(|m| m.request_focus(button));
+            harness.run();
+            press_on_stops(&mut harness, Key::Tab);
+            assert_eq!(focused(&harness), Some(zoom::photo_view_id()));
+            // F6 from the zoom's button then ↑ in the very next frame, before the stop has
+            // drawn since taking the focus: it keeps the focus.
+            harness.ctx.memory_mut(|m| m.request_focus(button));
+            harness.run();
+            for key in [Key::F6, Key::ArrowUp] {
+                harness.event(egui::Event::Key {
+                    key,
+                    physical_key: Some(key),
+                    pressed: true,
+                    repeat: false,
+                    modifiers: Modifiers::NONE,
+                });
+                harness.step();
+            }
+            harness.run();
+            assert_eq!(focused(&harness), Some(zoom::photo_view_id()));
+            // The view fits: the focus goes back to the zoom's button.
+            harness.state_mut().zoomed = false;
+            harness.run();
+            assert_eq!(focused(&harness), zoom_button);
+        }
+    }
+
+    #[test]
+    fn the_photo_s_value_reads_the_scale_and_the_span() {
+        let mut harness = stops(true);
+        harness.run();
+        let photo = harness.get_by_role_and_label(Role::Group, "Photo, IMG_2041.ARW");
+        assert_eq!(
+            photo.accesskit_node().value().as_deref(),
+            Some("100%, 31 to 58% across, 20 to 45% down")
+        );
+        // In Ukrainian, the same part in its words.
+        let words = Translator::new(Locale::Uk);
+        let shown = STOP_ROOM.place(&STOP_VIEW);
+        let (name, value) = photo_view_words(&words, "IMG_2041.ARW", "100%", &shown);
+        assert_eq!(name, "Знімок, IMG_2041.ARW");
+        assert_eq!(value, "100%, 31–58% по ширині, 20–45% по висоті");
+    }
+
+    #[test]
+    fn the_live_region_says_the_new_scale_after_z_but_not_after_the_menu() {
+        let (mut shell, ctx) = zoomed_shell(zoom::Zoomed::FIT);
+        run_live(&mut shell, &ctx, ActionId::ZOOM_100);
+        assert_eq!(shell.zoom_said, "100%");
+        run_live(&mut shell, &ctx, ActionId::ZOOM_100);
+        assert_eq!(shell.zoom_said, "Fit");
+        // The zoom menu's entries, chosen as the Viewer takes them: a scale's item was read
+        // already, so nothing is said, and Z back to 100% after Fit chosen is said again.
+        let menu = ViewerBarAction::Zoom;
+        shell.choose_zoom(&ctx, menu(Zoom::Percent(200.0)));
+        assert_eq!(shell.zoom.scale, zoom::Scale::Factor(2.0));
+        assert_eq!(shell.zoom_said, "");
+        run_live(&mut shell, &ctx, ActionId::ZOOM_100);
+        assert_eq!(shell.zoom_said, "100%");
+        shell.choose_zoom(&ctx, menu(Zoom::Fit));
+        assert_eq!(shell.zoom_said, "");
+        run_live(&mut shell, &ctx, ActionId::ZOOM_100);
+        assert_eq!(shell.zoom_said, "100%");
+        // Zoom In and Zoom Out name no scale, so the menu's say the new one.
+        shell.choose_zoom(&ctx, ViewerBarAction::ZoomOut);
+        assert_eq!(shell.zoom_said, "50%");
+        shell.choose_zoom(&ctx, ViewerBarAction::ZoomIn);
+        assert_eq!(shell.zoom_said, "100%");
+        // 100% chosen at 100% goes to Fit, as Z does, and says so: its item named 100%.
+        shell.choose_zoom(&ctx, menu(Zoom::Percent(100.0)));
+        assert_eq!(shell.zoom.scale, zoom::Scale::Fit);
+        assert_eq!(shell.zoom_said, "Fit");
+        // A polite region, saying it.
+        let mut harness = Harness::new_ui(|ui| {
+            zoom_live_region(ui, egui::pos2(10.0, 10.0), "Fit");
+        });
+        harness.run();
+        let live = harness.get_by_role_and_label(Role::Status, "Fit");
+        let polite = Some(egui::accesskit::Live::Polite);
+        assert_eq!(live.accesskit_node().data().live(), polite);
+    }
+
+    /// The position marks' opacity frame by frame, a twentieth of a second apart, the view
+    /// at 100% and moved by the test ([`moved`]), the reduce-motion preference `still`.
+    struct Marked {
+        marks: zoom::Marks,
+        zoom: zoom::Zoomed,
+        still: bool,
+        opacity: f32,
+    }
+
+    fn marked(still: bool) -> Harness<'static, Marked> {
+        Harness::builder()
+            .with_step_dt(0.05)
+            .with_context_setup(|ctx| apertrust_ui::install(ctx, Theme::default()))
+            .build_ui_state(
+                |ui, m: &mut Marked| {
+                    m.opacity = marks_opacity(ui.ctx(), &mut m.marks, m.zoom, true, m.still);
+                },
+                Marked {
+                    marks: zoom::Marks::default(),
+                    zoom: zoomed_to(zoom::Scale::Factor(1.0), [0.5, 0.5]),
+                    still,
+                    opacity: 0.0,
+                },
+            )
+    }
+
+    /// Moves the view a little, and runs `then` more frames after the one it shows on.
+    fn moved(harness: &mut Harness<'_, Marked>, then: usize) {
+        harness.state_mut().zoom.centre[0] += 0.01;
+        for _ in 0..=then {
+            harness.step();
+        }
+    }
+
+    #[test]
+    fn the_marks_go_a_second_after_the_last_move() {
+        let mut harness = marked(true);
+        harness.step();
+        // None for the view the photo opened at.
+        assert_eq!(harness.state().opacity, 0.0);
+        moved(&mut harness, 0);
+        assert_eq!(harness.state().opacity, 1.0);
+        // Moved again half a second on: a second from then.
+        moved(&mut harness, 10);
+        moved(&mut harness, 18);
+        assert_eq!(harness.state().opacity, 1.0);
+        for _ in 0..3 {
+            harness.step();
+        }
+        assert_eq!(harness.state().opacity, 0.0);
+    }
+
+    #[test]
+    fn with_reduced_motion_the_marks_appear_and_go_without_a_fade() {
+        for still in [true, false] {
+            let mut harness = marked(still);
+            harness.step();
+            moved(&mut harness, 0);
+            let shown = harness.state().opacity;
+            // The first frame below full strength as they go.
+            let mut going = 1.0;
+            for _ in 0..40 {
+                harness.step();
+                going = harness.state().opacity;
+                if going < 1.0 {
+                    break;
+                }
+            }
+            if still {
+                assert_eq!((shown, going), (1.0, 0.0));
+            } else {
+                assert!(shown > 0.0 && shown < 1.0, "{shown}");
+                assert!(going > 0.0 && going < 1.0, "{going}");
+            }
+        }
     }
 
     #[test]
