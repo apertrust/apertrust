@@ -282,20 +282,29 @@ impl Operation for FilmicRgb {
         input: &ImageDesc,
     ) -> Result<Prepared, NotPorted> {
         let profile = WorkingProfile::linear_rec2020();
+        // Sized by the whole image at the pipe's scale, which its reconstruction's
+        // whole-image passes cover: the input itself where it runs whole, and a detail's
+        // region reads what a round over the whole image reconstructed (decision 99).
+        // `main` runs over the input, at its place in that image.
+        let [width, height] = image.whole_image(input);
+        let whole = ImageDesc {
+            width,
+            height,
+            ..*input
+        };
         // The image context carries the pipe's output profile (decision 26), but filmic
         // does not read it yet: v6 and v7 gamut-map against the working space, as
         // darktable does for a linear Rec2020 export (docs/ports/filmicrgb.md,
         // Deliberate differences).
-        prepare(
-            &settings(params),
-            input,
-            Geometry {
-                size: image.width.max(image.height),
-                scale: image.scale,
-            },
-            &profile,
-            &profile,
-        )
+        let geometry = Geometry {
+            size: image.width.max(image.height),
+            scale: image.scale,
+        };
+        let prepared = prepare(&settings(params), &whole, geometry, &profile, &profile)?;
+        Ok(Prepared {
+            output: *input,
+            ..prepared
+        })
     }
 }
 

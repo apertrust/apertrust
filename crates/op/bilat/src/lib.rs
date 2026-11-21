@@ -166,12 +166,22 @@ impl Operation for Bilat {
         image: &ImageContext,
         input: &ImageDesc,
     ) -> Result<Prepared, NotPorted> {
-        prepare(
-            &settings(params),
-            input,
-            image.scale,
-            &WorkingProfile::linear_rec2020(),
-        )
+        // Sized by the whole image at the pipe's scale, which its whole-image passes
+        // cover: the input itself where it runs whole, and a detail's region reads the
+        // pyramid or grid a round over the whole image built (decision 99). `main` runs
+        // over the input, at its place in that image.
+        let [width, height] = image.whole_image(input);
+        let whole = ImageDesc {
+            width,
+            height,
+            ..*input
+        };
+        let profile = WorkingProfile::linear_rec2020();
+        let prepared = prepare(&settings(params), &whole, image.scale, &profile)?;
+        Ok(Prepared {
+            output: *input,
+            ..prepared
+        })
     }
 }
 
