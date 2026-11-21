@@ -30,7 +30,10 @@
 
 use std::time::{Duration, Instant};
 
+use apertrust_engine::session::{ControlValue, Values};
 use apertrust_engine::view::{self, MAX_FACTOR, Placement, View, ViewScale};
+use apertrust_plugin::ImageContext;
+use apertrust_tools::orientation;
 use apertrust_ui::components::{ViewerBarAction, Zoom};
 use eframe::egui;
 
@@ -341,26 +344,43 @@ impl Marks {
 }
 
 /// What the zoom's retained centre was last confirmed in (`docs/gui.md`, The zoom's
-/// centre): the photo last seen live.
+/// centre): the photo last seen live, and the orientation the session last reported for
+/// it, its frame's.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Confirmed {
-    /// The open that asked for the photo last seen live.
-    live: Option<u64>,
+    /// The open that asked for the photo last seen live, and that orientation.
+    live: Option<(u64, Orientation)>,
 }
 
 impl Confirmed {
     /// The retained `zoom` once the photo the open numbered `open` is live in `room`, the
-    /// room the session places it in, its extent and the size last sent: its centre
-    /// committed kept inside the photo's edges as that photo first goes live, so the photo
-    /// after carries the centre it showed, and as the size is sent (`resized`); else as it
-    /// was.
-    pub fn follow(&mut self, open: u64, zoom: Zoomed, room: &Room, resized: bool) -> Zoomed {
-        let first = self.live.replace(open) != Some(open);
-        if first || resized {
-            zoom.clamped(room)
-        } else {
-            zoom
+    /// room the session places it in, its extent and the size last sent, the session
+    /// reporting it in `orientation`. As that photo first goes live its centre is
+    /// committed kept inside the photo's edges, so the photo after carries the centre it
+    /// showed. Then a turn or a flip reported maps the centre through the turns not yet
+    /// applied ([`reoriented`]), so a pan between two reports stays on its point, and
+    /// commits the clamp in the turned room, the centre the session renders, which the
+    /// photo after then carries on both sides; a size sent (`resized`) commits the clamp in
+    /// it; else the centre stays as it was.
+    pub fn follow(
+        &mut self,
+        open: u64,
+        orientation: Orientation,
+        zoom: Zoomed,
+        room: &Room,
+        resized: bool,
+    ) -> Zoomed {
+        let Some((seen, from)) = self.live.replace((open, orientation)) else {
+            return zoom.clamped(room);
+        };
+        if seen != open {
+            return zoom.clamped(room);
         }
+        if from != orientation {
+            let centre = reoriented(zoom.centre, from, orientation);
+            return Zoomed { centre, ..zoom }.clamped(room);
+        }
+        if resized { zoom.clamped(room) } else { zoom }
     }
 }
 
@@ -567,6 +587,69 @@ pub fn chosen(action: ViewerBarAction) -> Option<ZoomStep> {
         ViewerBarAction::ZoomOut => ZoomStep::Out,
         _ => return None,
     })
+}
+
+/// The photo's orientation, as Orientation's settings give it (`apertrust_tools::orientation`):
+/// darktable's `dt_image_orientation_t`, flip x, flip y and swap xy, applied to the unturned
+/// image in that order (`flip.c`, `distort_transform`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Orientation {
+    pub flip_x: bool,
+    pub flip_y: bool,
+    pub swap_xy: bool,
+}
+
+impl Orientation {
+    /// The orientation of darktable's flip `bits`.
+    pub fn from_bits(bits: u8) -> Orientation {
+        Orientation {
+            flip_x: bits & orientation::FLIP_X != 0,
+            flip_y: bits & orientation::FLIP_Y != 0,
+            swap_xy: bits & orientation::SWAP_XY != 0,
+        }
+    }
+
+    /// The orientation the live frame shows the photo of `image` in, from its `values`:
+    /// Orientation's, the photo's own at auto and while the History tab's eye hides the
+    /// tool, which then renders as if reset (decision 78).
+    pub fn shown(values: &Values, image: &ImageContext) -> Orientation {
+        let tool = (values.tools.iter())
+            .find(|state| state.tool == orientation::FLIP)
+            .filter(|state| !state.hidden);
+        let control = tool.and_then(|state| {
+            (state.controls.iter()).find(|control| control.control == orientation::ORIENTATION)
+        });
+        let choice = match control.map(|control| &control.value) {
+            Some(ControlValue::Choice(choice)) => *choice,
+            _ => 0,
+        };
+        Orientation::from_bits(orientation::shown_bits(choice, image))
+    }
+
+    /// Where this orientation shows the point `at` of the unturned image, 0 to 1 across and
+    /// down.
+    fn forward(self, [x, y]: [f32; 2]) -> [f32; 2] {
+        let x = if self.flip_x { 1.0 - x } else { x };
+        let y = if self.flip_y { 1.0 - y } else { y };
+        if self.swap_xy { [y, x] } else { [x, y] }
+    }
+
+    /// The point of the unturned image this orientation shows at `at`: [`Self::forward`]
+    /// undone, the axes swapped back, then the flips.
+    fn backward(self, [x, y]: [f32; 2]) -> [f32; 2] {
+        let [x, y] = if self.swap_xy { [y, x] } else { [x, y] };
+        let x = if self.flip_x { 1.0 - x } else { x };
+        let y = if self.flip_y { 1.0 - y } else { y };
+        [x, y]
+    }
+}
+
+/// The centre `c`, in the photo's coordinates as orientation `from` shows it, mapped to
+/// orientation `to`, so it stays on the same point of the scene: back to the unturned
+/// image through `from`, then forward through `to`. Not clamped: [`Room::place`] keeps it
+/// inside the edges.
+pub fn reoriented(c: [f32; 2], from: Orientation, to: Orientation) -> [f32; 2] {
+    to.forward(from.backward(c))
 }
 
 #[cfg(test)]
@@ -1045,5 +1128,145 @@ mod tests {
             "{hundred:?}"
         );
         assert_eq!(hundred.centre[1], 0.5);
+    }
+
+    /// darktable's eight orientations, by their flip bits.
+    fn orientations() -> impl Iterator<Item = Orientation> {
+        (0..8).map(Orientation::from_bits)
+    }
+
+    /// Points across the photo: its corners, its middle and some between.
+    const POINTS: [[f32; 2]; 7] = [
+        [0.0, 0.0],
+        [1.0, 0.0],
+        [0.0, 1.0],
+        [0.5, 0.5],
+        [0.3, 0.7],
+        [0.9, 0.1],
+        [0.25, 0.6],
+    ];
+
+    fn close_at(a: [f32; 2], b: [f32; 2]) -> bool {
+        close(a[0], b[0]) && close(a[1], b[1])
+    }
+
+    #[test]
+    fn reoriented_round_trips_through_every_orientation() {
+        for from in orientations() {
+            for to in orientations() {
+                for c in POINTS {
+                    let there = reoriented(c, from, to);
+                    let back = reoriented(there, to, from);
+                    assert!(close_at(back, c), "{from:?} to {to:?}: {c:?} {back:?}");
+                }
+            }
+            // Through itself, nothing moves.
+            for c in POINTS {
+                assert!(close_at(reoriented(c, from, from), c), "{from:?}");
+            }
+        }
+    }
+
+    /// A quarter turn clockwise maps (x, y) to (1 − y, x) and a horizontal flip to
+    /// (1 − x, y); every one of darktable's four buttons, from every orientation, keeps the
+    /// centre on the scene's point it showed: the unturned image's point under it is the
+    /// same before and after.
+    #[test]
+    fn a_quarter_turn_maps_the_centre_onto_the_same_scene_point() {
+        use apertrust_tools::orientation::{ACTIONS, turn};
+        let none = Orientation::default();
+        let bits = |action| Orientation::from_bits(turn(action, 0).expect("a button"));
+        for c in POINTS {
+            let [x, y] = c;
+            assert!(close_at(
+                reoriented(c, none, bits("rotate_cw")),
+                [1.0 - y, x]
+            ));
+            assert!(close_at(
+                reoriented(c, none, bits("rotate_ccw")),
+                [y, 1.0 - x]
+            ));
+            let flipped = reoriented(c, none, bits("flip_horizontally"));
+            assert!(close_at(flipped, [1.0 - x, y]));
+            assert!(close_at(
+                reoriented(c, none, bits("flip_vertically")),
+                [x, 1.0 - y]
+            ));
+        }
+        for start in 0..8 {
+            let from = Orientation::from_bits(start);
+            for action in ACTIONS {
+                let to = Orientation::from_bits(turn(action, start).expect("a button"));
+                for c in POINTS {
+                    let scene = from.backward(c);
+                    let mapped = reoriented(c, from, to);
+                    assert!(close_at(to.backward(mapped), scene), "{from:?} {action}");
+                }
+            }
+        }
+    }
+
+    /// The retained centre follows what the session confirms: a photo going live commits
+    /// its clamp; a turn reported maps it through the turns not yet applied and commits its
+    /// clamp in the turned room, so two turns in flight end on the scene's point; a size
+    /// sent commits its clamp; the first sight of another photo commits its own clamp, never
+    /// mapping.
+    #[test]
+    fn the_confirmed_state_moves_the_retained_centre() {
+        let (none, cw) = (Orientation::default(), Orientation::from_bits(turn_bits(0)));
+        let half = Orientation::from_bits(turn_bits(turn_bits(0)));
+        let landscape = Room {
+            extent: [6000, 4000],
+            bounds: (2400, 1600),
+        };
+        let portrait = Room {
+            extent: [4000, 6000],
+            ..landscape
+        };
+        let at = |centre| Zoomed {
+            scale: Scale::Factor(1.0),
+            centre,
+        };
+        let mut confirmed = Confirmed::default();
+        // Live: the carried 0.9 commits to 0.8, as the landscape shows 0.2 to 0.8.
+        let live = confirmed.follow(2, none, at([0.9, 0.5]), &landscape, false);
+        assert!(close_at(live.centre, [0.8, 0.5]), "{live:?}");
+        // A quarter turn clockwise: (1 − 0.5, 0.8), inside the portrait's edges.
+        let turned = confirmed.follow(2, cw, live, &portrait, false);
+        assert!(close_at(turned.centre, [0.5, 0.8]), "{turned:?}");
+        // The same report again moves nothing; a pan in the portrait, 0.15 to the left, is
+        // the person's, then the second turn maps it on: the scene's (0.8, 0.65), at (0.2,
+        // 0.35) half round.
+        assert_eq!(confirmed.follow(2, cw, turned, &portrait, false), turned);
+        let panned = at([0.35, 0.8]);
+        let round = confirmed.follow(2, half, panned, &landscape, false);
+        assert!(close_at(round.centre, [0.2, 0.35]), "{round:?}");
+        // With no pan, the two turns end on 0.2, the portrait between holding (0.5, 0.8).
+        let mut confirmed = Confirmed::default();
+        let live = confirmed.follow(3, none, at([0.8, 0.5]), &landscape, false);
+        let between = confirmed.follow(3, cw, live, &portrait, false);
+        let round = confirmed.follow(3, half, between, &landscape, false);
+        assert!(close_at(round.centre, [0.2, 0.5]), "{round:?}");
+        // A turn whose centre the turned room cannot show commits the one it shows: (0.5,
+        // 0.2) turns to (0.8, 0.5), shown at 0.7 across, as the portrait shows 0.3 to 0.7.
+        let mut clamping = Confirmed::default();
+        let live = clamping.follow(4, none, at([0.5, 0.2]), &landscape, false);
+        let turned = clamping.follow(4, cw, live, &portrait, false);
+        assert!(close_at(turned.centre, [0.7, 0.5]), "{turned:?}");
+        // A size sent commits its clamp: 3600 shows 0.3 to 0.7.
+        let wide = Room {
+            bounds: (3600, 1600),
+            ..landscape
+        };
+        let sent = confirmed.follow(3, half, at([0.2, 0.5]), &wide, true);
+        assert!(close_at(sent.centre, [0.3, 0.5]), "{sent:?}");
+        // Another photo, live in another orientation: its clamp, no turn.
+        let other = confirmed.follow(5, cw, at([0.9, 0.5]), &portrait, false);
+        assert!(close_at(other.centre, [0.7, 0.5]), "{other:?}");
+    }
+
+    /// darktable's clockwise quarter turn from the orientation of `bits`.
+    fn turn_bits(bits: u8) -> u8 {
+        apertrust_tools::orientation::turn("rotate_cw", bits).expect("a button")
     }
 }
