@@ -208,7 +208,9 @@ enum Command {
         /// photo pixel a pixel, through an in-process session as the app sends it: a
         /// Resize to --width and --height, then a View. The engine renders the visible
         /// region at 100% beside the fitted frame (decision 99). Times entering the zoom
-        /// and the --changes exposure changes there, both pipelines in one submission;
+        /// and the --changes exposure changes there, both pipelines in one submission, or
+        /// where an upstream change runs a whole-image round, the fitted passes, each of
+        /// its tiles and the detail's passes in submissions of their own;
         /// --png writes the zoomed frame. Between Fit and 1 the frame stays at Fit for now.
         #[arg(
             long,

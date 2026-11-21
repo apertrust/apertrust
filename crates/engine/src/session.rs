@@ -104,7 +104,8 @@
 //! it is kept across photos, its centre clamped to each. Each frame says where it lies in
 //! the photo ([`Frame::place`]). From 100% on the frame is the detail pipeline's, the
 //! visible region with its margin at scale 1, with the fitted frame beside it
-//! ([`Frame::overview`]), both rendered in one submission, a pan inside the margin
+//! ([`Frame::overview`]), both rendered in one submission where no whole-image round is
+//! due, the rounds submitted between them where one is, a pan inside the margin
 //! rendering nothing; below 100% every frame is the whole photo at Fit for now.
 //!
 //! These types stand in for the session protocol's until `apertrust-protocol` exists.
@@ -5313,11 +5314,12 @@ impl Engine {
                 .as_ref()
                 .map_or_else(|| pipeline.kernels(), Pipeline::kernels);
             // Its buffers and its display pair made under a scope of their own: a detail the
-            // GPU has no memory for leaves the frame at Fit, as a refused one does, rather
-            // than failing the frame and the fitted pipeline with it. The detail pipeline is
-            // rebuilt where the fitted pipeline holds demosaic's image in another buffer, or
-            // describes it otherwise, as a new white balance does.
+            // GPU has no memory for, or refuses, leaves the frame at Fit, as a refused one
+            // does, rather than failing the frame and the fitted pipeline with it. The detail
+            // pipeline is rebuilt where the fitted pipeline holds demosaic's image in another
+            // buffer, or describes it otherwise, as a new white balance does.
             let memory = (self.gpu.device).push_error_scope(wgpu::ErrorFilter::OutOfMemory);
+            let validation = (self.gpu.device).push_error_scope(wgpu::ErrorFilter::Validation);
             let built = results.pipeline(&self.gpu, planned, source.clone(), old);
             let built = pollster::block_on(built);
             let built = built.map(|built| {
@@ -5327,7 +5329,8 @@ impl Engine {
                 let (display, _) = Display::for_frames(&self.gpu, old_display, size, bytes);
                 (built, display)
             });
-            let out_of_memory = pollster::block_on(memory.pop());
+            let validation = pollster::block_on(validation.pop());
+            let out_of_memory = pollster::block_on(memory.pop()).or(validation);
             // Nothing of the fitted pipeline's is recorded yet, so the frame stays at Fit;
             // the next render that wants the detail builds it afresh.
             let (built, mut detail_display) = match (built, out_of_memory) {
@@ -5338,7 +5341,7 @@ impl Engine {
                     break 'detail;
                 }
                 (Ok(_), Some(error)) => {
-                    tracing::error!(target: "pipe", "zoom: stays at Fit: the detail's buffers: {error}");
+                    tracing::error!(target: "pipe", "zoom: stays at Fit: the detail on the GPU: {error}");
                     self.zoom_refused = Some(SessionError::Zoom(error.to_string()));
                     break 'detail;
                 }
