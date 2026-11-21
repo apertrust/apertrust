@@ -18,22 +18,14 @@ Thank you for your interest. Apertrust is in early development, so the way to co
 
 ## Checks
 
-Run these before you open a pull request. CI runs most of them, the tests on Linux:
+Run these before you open a pull request. CI runs the same, the tests on Linux and macOS:
 
 ```sh
-cargo fmt --all
-cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace
-tools/check-license-headers.sh
-tools/check-ui-strings.sh
-tools/check-windows-paths.sh
-tools/check-docs-paths.sh
-tools/credits.sh --check
-tools/build-kernels.sh --check
-tools/build-api-docs.sh
+pre-commit run --hook-stage manual --all-files   # every check but the tests
+cargo test --workspace                           # the tests
 ```
 
-[pre-commit](https://pre-commit.com) runs the same checks from `.pre-commit-config.yaml` when you ask it to, each only when a file it reads changed. It is a Python program; install it once, with whichever you have:
+[pre-commit](https://pre-commit.com) runs the checks in `.pre-commit-config.yaml` when you ask it to, each only when a file it reads changed. It is a Python program; install it once, with whichever you have:
 
 ```sh
 pipx install pre-commit            # or: uv tool install pre-commit
