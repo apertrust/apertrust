@@ -817,21 +817,9 @@ fn a_raw_stage_restart_keeps_highlight_reconstructions_statistic() {
 /// float mosaics 1.6 MB, the viewport image 425 KB.
 const SMALL_BINDING: u64 = 512 << 10;
 
-/// The adapter, opened to bind at most `SMALL_BINDING` bytes of a buffer at once, at
-/// offsets aligned to 256 bytes, WebGPU's largest alignment.
+/// The adapter, opened to bind at most `SMALL_BINDING` bytes of a buffer at once.
 fn small_gpu() -> GpuContext {
-    let options = GpuOptions {
-        max_storage_binding: Some(SMALL_BINDING),
-        storage_offset_alignment: Some(256),
-        ..GpuOptions::default()
-    };
-    let gpu =
-        pollster::block_on(GpuContext::new(&options)).expect("a GPU adapter, hardware or software");
-    assert_eq!(
-        gpu.device.limits().max_storage_buffer_binding_size,
-        SMALL_BINDING
-    );
-    gpu
+    common::small_gpu(SMALL_BINDING)
 }
 
 const SMALL_VIEWPORT: Pipe = Pipe::Viewport {

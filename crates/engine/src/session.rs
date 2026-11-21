@@ -160,7 +160,7 @@ pub use crate::picker::{
     FrameReading, PickKeys, PickerCommand, PickerReading, PickerRef, Region, Shown, Stats,
     ToolReading,
 };
-use crate::pipeline::{self, Kernels, Limits, Pipe, Pipeline, PlanError};
+use crate::pipeline::{self, Kernels, Limits, Pipe, Pipeline, Plan, PlanError};
 use crate::raw_histogram;
 use crate::scopes::Meter;
 pub use crate::scopes::{Graphs, Reading};
@@ -205,9 +205,10 @@ pub enum Command {
     /// through the detail pipeline ([`crate::view::rendered`]): a view whose visible
     /// rectangle the region rendered last holds renders nothing and sends no frame, and
     /// one past it renders the detail alone, its region moved; below 100% the frame stays
-    /// at Fit for now. Where the detail cannot render yet, in a tiled viewport or
-    /// with an operation it refuses, the view is still the session's, its frame stays at
-    /// Fit, and the command is refused with [`SessionError::Zoom`].
+    /// at Fit for now. A tiled viewport's detail starts from the raw stage's output it
+    /// keeps. Where the detail cannot render yet, with an operation it refuses, the view
+    /// is still the session's, its frame stays at Fit, and the command is refused with
+    /// [`SessionError::Zoom`].
     View(View),
     /// Set a tool's control, which keeps it. `done` on the last change of a gesture (a
     /// drag released, a click, a typed value), which saves the edit.
@@ -554,12 +555,52 @@ fn detail_region(
     }
     // The largest RGBA `f32` image the GPU binds.
     let limit_pixels = limits.binding.min(limits.buffer) / 16;
+    grown(placed, anticipate_move, limit_pixels)
+}
+
+/// The region [`crate::view::rendered`] grows round the visible rectangle of `placed`
+/// within `limit_pixels`, or why none fits.
+fn grown(placed: &Placement, anticipate_move: f64, limit_pixels: u64) -> Result<[u32; 4], String> {
     crate::view::rendered(placed, anticipate_move, limit_pixels).ok_or_else(|| {
         let [width, height] = [placed.visible[2], placed.visible[3]].map(f64::ceil);
         format!(
             "the visible {width}×{height} at 100% passes the largest image the GPU binds, {limit_pixels} pixels"
         )
     })
+}
+
+/// How many times a detail's margin shrinks for its plan to bind before the plan is taken
+/// as it is.
+const SHRINKS: usize = 4;
+
+/// The detail's plan of `region`, [`detail_region`]'s for the view placed as `placed`, by
+/// `plan_at`, and the region it plans. Where the plan binds more than `limits` allow at
+/// once, as demosaic's images may over a tiled viewport's mosaic grown by its reach, the
+/// margin shrinks by as much, the region kept last given up, and the plan is made again,
+/// at most [`SHRINKS`] times and down to the visible rectangle, the last taken otherwise,
+/// which the pipeline refuses naming the binding (decision 99). An error where the planner
+/// refuses.
+fn bound_detail(
+    mut region: [u32; 4],
+    placed: &Placement,
+    anticipate_move: f64,
+    limits: &Limits,
+    plan_at: impl Fn([u32; 4]) -> Result<Plan, PlanError>,
+) -> Result<([u32; 4], Plan), String> {
+    let mut planned = plan_at(region).map_err(|error| error.to_string())?;
+    for _ in 0..SHRINKS {
+        let Some(ratio) = planned.binding_ratio(limits) else {
+            break;
+        };
+        let pixels = u64::from(region[2]) * u64::from(region[3]);
+        let fewer = ((pixels as f64 * ratio) as u64).min(pixels - 1);
+        let Ok(smaller) = grown(placed, anticipate_move, fewer) else {
+            break;
+        };
+        region = smaller;
+        planned = plan_at(region).map_err(|error| error.to_string())?;
+    }
+    Ok((region, planned))
 }
 
 /// The tools a command changes: one, by its id; `Some(None)` for every tool, as
@@ -1138,7 +1179,7 @@ pub enum SessionError {
     #[error("the scopes are off: {0}")]
     Scopes(String),
     /// A [`Command::View`] past Fit that the session cannot render yet, as the reason
-    /// says: a tiled viewport, an operation or a region the detail's plan refuses, a
+    /// says: an operation or a region the detail's plan refuses, a
     /// visible rectangle larger than the GPU binds, or a detail pipeline the GPU cannot
     /// build. The view is the session's all the same, and
     /// its frames stay at Fit, as [`Frame::place`] says (decision 99).
@@ -2723,7 +2764,8 @@ impl Display {
 /// built on the first frame zoomed to 100% or above, kept while its photo is open, not
 /// rendered at Fit, and dropped with the photo.
 struct Detail {
-    /// Its plan's, `Pipe::Detail`, reading the fitted pipeline's demosaic image in place.
+    /// Its plan's, `Pipe::Detail`, reading the fitted pipeline's demosaic image in place,
+    /// or in a tiled viewport the raw stage's output it keeps.
     pipeline: Pipeline,
     /// The whole-image results it binds, held across its renders under keys with no
     /// region in them, and the kernels its pipelines compiled.
@@ -5181,9 +5223,10 @@ impl Engine {
         let plan = pipeline::plan(&bound.instances, &open.image, open.sensor, pipe, &limits)?;
         let extent = plan.extent();
         // Zoomed to 100% or above, the detail's plan of the region the view shows, over the
-        // fitted pipeline's demosaic image (decision 99). Where it cannot render yet, in a
-        // tiled viewport or with an operation it refuses, the frame stays at Fit, and why
-        // is kept for the batch's `View` to be refused with.
+        // fitted pipeline's demosaic image, or in a tiled viewport the raw stage's output it
+        // keeps (decision 99). Where it cannot render yet, with an operation it refuses,
+        // the frame stays at Fit, and why is kept for the batch's `View` to be refused
+        // with.
         let refuse = |why: String| {
             tracing::debug!(target: "pipe", "zoom: stays at Fit: {why}");
             Some(SessionError::Zoom(why))
@@ -5192,34 +5235,36 @@ impl Engine {
         let kept = open.detail.as_ref();
         let region =
             placed.map(|placed| detail_region(kept, &placed, self.anticipate_move, &self.limits));
+        // The instances the detail runs over that source: from a mosaic, demosaic and every
+        // later one, as an export's tiles run them.
+        let after = pipeline::detail_instances(&bound.instances, &plan);
         let detail = match region {
             None => None,
-            Some(_) if plan.tiled.is_some() => {
-                self.zoom_refused = refuse(
-                    "the fitted viewport renders in tiles, which the detail does not read from yet"
-                        .to_owned(),
-                );
-                None
-            }
             Some(Err(why)) => {
                 self.zoom_refused = refuse(why);
                 None
             }
             Some(Ok(region)) => {
                 let source = (plan.cached.first()).map(|&op| plan.operations[op].output_desc);
-                let detail = Pipe::Detail { region, scale: 1.0 };
                 let image = &open.image;
-                let planned = source
-                    .map(|source| pipeline::plan(&bound.instances, image, source, detail, &limits));
+                let anticipate = self.anticipate_move;
+                let planned = source.map(|source| {
+                    let plan_at = |region| {
+                        let detail = Pipe::Detail { region, scale: 1.0 };
+                        pipeline::plan(&after, image, source, detail, &limits)
+                    };
+                    let placed = placed.as_ref().expect("a region for a placed view");
+                    bound_detail(region, placed, anticipate, &self.limits, plan_at)
+                });
                 match planned {
-                    Some(Ok(planned)) => Some((region, planned)),
-                    Some(Err(error)) => {
-                        self.zoom_refused = refuse(error.to_string());
+                    Some(Ok(planned)) => Some(planned),
+                    Some(Err(why)) => {
+                        self.zoom_refused = refuse(why);
                         None
                     }
                     None => {
                         self.zoom_refused =
-                            refuse("the viewport keeps no demosaic image".to_owned());
+                            refuse("the viewport keeps no image a detail reads".to_owned());
                         None
                     }
                 }
@@ -5281,8 +5326,7 @@ impl Engine {
             // The fitted frame, rendered where the edit or the size changed it; else the
             // one published, which the overview shows again.
             let fitted_due = fresh || !pipeline.rendered();
-            let (source, key) =
-                (pipeline.demosaiced()).expect("an untiled viewport's demosaic image");
+            let (source, key) = (pipeline.detail_source()).expect("a viewport's first cache point");
             // What the frame shown last is, kept should this render not publish one.
             let was_shown = (open.detail.as_ref()).map_or((region, false), |d| (d.region, d.shown));
             let (old, old_display, mut results) = match open.detail.take() {
@@ -5293,7 +5337,7 @@ impl Engine {
             // held, and the rounds that compute those whose key changed, haze removal's
             // estimate borrowed from the fitted pipeline (decision 99). One the GPU cannot
             // bind, as an export's, leaves the frame at Fit.
-            let instances = &bound.instances;
+            let instances = &after;
             let planned = results.plan(
                 planned,
                 key,
@@ -5316,7 +5360,7 @@ impl Engine {
             // Its buffers and its display pair made under a scope of their own: a detail the
             // GPU has no memory for, or refuses, leaves the frame at Fit, as a refused one
             // does, rather than failing the frame and the fitted pipeline with it. The detail
-            // pipeline is rebuilt where the fitted pipeline holds demosaic's image in another
+            // pipeline is rebuilt where the fitted pipeline holds its source in another
             // buffer, or describes it otherwise, as a new white balance does.
             let memory = (self.gpu.device).push_error_scope(wgpu::ErrorFilter::OutOfMemory);
             let validation = (self.gpu.device).push_error_scope(wgpu::ErrorFilter::Validation);
@@ -5374,7 +5418,7 @@ impl Engine {
                 None
             };
             // The rounds that must run, after the fitted pipeline's passes, which may write
-            // the demosaic image they read: each tile a submission of its own, waited for,
+            // the source they read: each tile a submission of its own, waited for,
             // as an export's (decision 99). Their buffers are made under a scope of their
             // own: a round the GPU cannot build or hold leaves the frame at Fit, as a detail
             // it cannot hold does, the fitted frame rendered there, and the next render that
@@ -6018,11 +6062,13 @@ mod tests {
 
     /// `testing::image`'s photo, whatever the path; one called `bias.ARW` records an
     /// exposure bias of −0.7 EV, one called `held.ARW` a bias of −⅔ EV and 1 EV held back
-    /// by a highlight-preserving mode, one called `xtrans.ARW` has an X-Trans filter, and one
-    /// called `wide.ARW` is 1100 photosites wide, its image 1088 × 62.
+    /// by a highlight-preserving mode, one called `xtrans.ARW` has an X-Trans filter, one
+    /// called `wide.ARW` is 1100 photosites wide, its image 1088 × 62, and one called
+    /// `wide-xtrans.ARW` is both.
     fn synthetic(path: &Path) -> Result<(Metadata, Mosaic), SessionError> {
         let mut image = testing::image();
-        if let (true, Some(camera)) = (path.ends_with("xtrans.ARW"), &mut image.camera) {
+        let x_trans = path.ends_with("xtrans.ARW") || path.ends_with("wide-xtrans.ARW");
+        if let (true, Some(camera)) = (x_trans, &mut image.camera) {
             #[rustfmt::skip]
             let values = vec![
                 1, 1, 0, 1, 1, 2,
@@ -6038,7 +6084,10 @@ mod tests {
                 values,
             });
         }
-        if path.ends_with("wide.ARW") || path.ends_with("thumbnail-large.ARW") {
+        if path.ends_with("wide.ARW")
+            || path.ends_with("wide-xtrans.ARW")
+            || path.ends_with("thumbnail-large.ARW")
+        {
             let [width, height] = if path.ends_with("thumbnail-large.ARW") {
                 [3104, 2064]
             } else {
