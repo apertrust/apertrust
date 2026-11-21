@@ -1722,9 +1722,9 @@ mod tests {
     /// in; and Restart, Settings' Restart now's for now (decision 82); and the eighth to
     /// the twelfth tab's, which only a workspace of more tabs than the Default's has, until
     /// Tools Panel Tab lists the tabs a workspace shows (decision 96); and the zoom's
-    /// scales but Fit and 100%, the viewer bar's zoom menu's alone, and its Shift forms,
-    /// keys alone (`docs/gui.md`, View).
-    const LEFT_OUT: [ActionId; 44] = [
+    /// scales but Fit and 100%, the viewer bar's zoom menu's alone, and its Shift forms and
+    /// the pan actions, keys alone (`docs/gui.md`, View).
+    const LEFT_OUT: [ActionId; 52] = [
         ActionId::EDIT_VIEW,
         ActionId::NEXT_REGION,
         ActionId::PREVIOUS_REGION,
@@ -1773,6 +1773,14 @@ mod tests {
         ActionId::ZOOM_OUT_ALL,
         ActionId::ZOOM_FIT_ALL,
         ActionId::ZOOM_100_ALL,
+        ActionId::PAN_LEFT,
+        ActionId::PAN_RIGHT,
+        ActionId::PAN_UP,
+        ActionId::PAN_DOWN,
+        ActionId::PAN_PAGE_LEFT,
+        ActionId::PAN_PAGE_RIGHT,
+        ActionId::PAN_PAGE_UP,
+        ActionId::PAN_PAGE_DOWN,
     ];
 
     /// The actions only the Mac's menus hold: Close Window, since Windows and Linux close
@@ -1860,6 +1868,7 @@ mod tests {
             zoom_out: true,
             fitted: true,
             at_100: false,
+            zoomed: false,
             dialog: false,
             modal: false,
             dialog_window: false,

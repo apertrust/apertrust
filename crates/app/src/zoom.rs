@@ -191,6 +191,26 @@ impl Zoomed {
         Zoomed { scale, centre }
     }
 
+    /// The zoom after the keys moved the view a `fraction` of the part shown in `direction`
+    /// in `room` ([`panned`]), its centre kept inside the edges; the same where the photo
+    /// does not overflow the room.
+    pub fn stepped(self, direction: Direction, fraction: f32, room: &Room) -> Zoomed {
+        let placed = room.place(&self);
+        if !overflows(&placed) {
+            return self;
+        }
+        self.centred(panned(&placed, direction, fraction), room)
+    }
+
+    /// The zoom with its centre at `centre`, kept inside the edges in `room` as the session
+    /// keeps it.
+    fn centred(self, centre: [f32; 2], room: &Room) -> Zoomed {
+        Zoomed {
+            centre: room.place(&Zoomed { centre, ..self }).centre,
+            ..self
+        }
+    }
+
     /// The zoom after the photo moved by `delta` physical pixels in `room`, its centre kept
     /// inside the edges; the same where the photo does not overflow the room, as at Fit.
     pub fn panned(self, delta: egui::Vec2, room: &Room) -> Zoomed {
@@ -199,11 +219,37 @@ impl Zoomed {
             return self;
         }
         let centre = moved(placed.centre, delta, room.extent, placed.shown as f32);
-        let moved = Zoomed { centre, ..self };
-        Zoomed {
-            centre: room.place(&moved).centre,
-            ..self
-        }
+        self.centred(centre, room)
+    }
+}
+
+/// A way the keys move a zoomed view (`docs/gui.md`, Panning).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Direction {
+    Left,
+    Right,
+    Up,
+    Down,
+}
+
+/// How far Alt with an arrow moves the view: a fifth of the part shown, darktable's
+/// `move horizontal` and `move vertical` (`darkroom.c`, `_action_process_move`).
+pub const PAN_STEP: f32 = 0.2;
+
+/// The centre moved a `fraction` of the visible part in `direction` where `placement`
+/// places the photo: the view, not the photo, moves that way. Not clamped:
+/// [`Room::place`] keeps it inside the edges.
+pub fn panned(placement: &Placement, direction: Direction, fraction: f32) -> [f32; 2] {
+    let shown = |axis: usize| {
+        let side = f64::from(placement.size[axis].max(1));
+        (placement.visible[axis + 2] / side) as f32 * fraction
+    };
+    let [x, y] = placement.centre;
+    match direction {
+        Direction::Left => [x - shown(0), y],
+        Direction::Right => [x + shown(0), y],
+        Direction::Up => [x, y - shown(1)],
+        Direction::Down => [x, y + shown(1)],
     }
 }
 
@@ -641,6 +687,21 @@ mod tests {
         assert!(close(two.centre, expected), "{:?}", two.centre);
         let far = at(Scale::Factor(1.0)).panned(egui::vec2(1e6, 0.0), &ROOM);
         assert!((far.centre[0] - 2400.0 / 6000.0).abs() < 1e-6, "{far:?}");
+    }
+
+    #[test]
+    fn a_key_moves_the_view_a_share_of_the_part_shown() {
+        // At 100% the room shows 4800 of 6000 across and 2700 of 4000 down.
+        let hundred = at(Scale::Factor(1.0));
+        let placed = ROOM.place(&hundred);
+        let [x, y] = panned(&placed, Direction::Left, PAN_STEP);
+        assert!((x - (0.5 - 0.2 * 0.8)).abs() < 1e-6 && y == 0.5, "{x} {y}");
+        let [x, y] = panned(&placed, Direction::Down, 1.0);
+        assert!(x == 0.5 && (y - (0.5 + 0.675)).abs() < 1e-6, "{x} {y}");
+        // Kept inside the edges, and at Fit nothing moves.
+        let right = hundred.stepped(Direction::Right, 1.0, &ROOM);
+        assert!((right.centre[0] - 0.6).abs() < 1e-6, "{right:?}");
+        assert_eq!(Zoomed::FIT.stepped(Direction::Up, 1.0, &ROOM), Zoomed::FIT);
     }
 
     #[test]
