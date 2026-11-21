@@ -81,8 +81,9 @@ cargo deny check                           # licences, advisories; before adding
 pre-commit run --all-files                 # the quick checks of .pre-commit-config.yaml (CONTRIBUTING.md, Checks)
 pre-commit run --hook-stage manual --all-files   # every check, tools/clippy.sh --all and the API docs too; never the tests
                                            # (install: pipx install pre-commit, or uv tool install pre-commit)
-tools/check-ui-strings.sh                  # fails on an English literal in interface code (CI)
-tools/check-windows-paths.sh [--changed REVS]   # a platform cfg missing from .github/windows-paths.txt (CI)
+pre-commit run ui-strings --all-files      # an English literal in interface code, tools/check-ui-strings.sh (CI)
+pre-commit run windows-paths --all-files   # a platform cfg missing from .github/windows-paths.txt (CI)
+tools/check-windows-paths.sh --changed REVS   # the files a diff changes that the list covers
 tools/credits.sh [--check]                 # CREDITS.md from Cargo.lock; --check fails when stale (CI)
 tools/package.sh [--finder-layout] [--nightly] # this platform's packages into target/package/<target>/out;
                                            # --nightly: Apertrust Nightly's, as the nightly builds are
@@ -165,8 +166,7 @@ Each operation's kernel lives in its own crate, `crates/op/<module>` (decision 2
 ```sh
 tools/fetch-slang.sh             # pinned slangc into external/ (git-ignored), checksum-verified
 tools/build-kernels.sh           # slang/*.slang -> generated/*.wgsl; commit the output
-tools/build-kernels.sh --check [FILE...]   # lists stale or orphaned generated files, of the crates
-                                           # FILE is in (none: every crate); changes nothing
+tools/build-kernels.sh --check   # lists stale or orphaned generated files; changes nothing
 cargo run --release -p apertrust-golden -- run CASE --repeat 32   # speed comparison
 WGPU_POWER_PREF=low cargo run --release -p apertrust-golden -- run CASE   # on an integrated GPU
 ```
@@ -260,7 +260,7 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 ```
 
-A file that ports darktable code keeps darktable's copyright as a third line, with the years from the darktable source file it ports, e.g. `Copyright (C) 2009-2026  darktable developers (ported from src/iop/exposure.c)`. Generated WGSL gets its Slang source's header from `tools/build-kernels.sh`. `tools/check-license-headers.sh` checks every source file and runs in CI. Markdown documents have no header.
+A file that ports darktable code keeps darktable's copyright as a third line, with the years from the darktable source file it ports, e.g. `Copyright (C) 2009-2026  darktable developers (ported from src/iop/exposure.c)`. Generated WGSL gets its Slang source's header from `tools/build-kernels.sh`. pre-commit's `license-headers` hook (`tools/check-license-headers.sh`) checks every source file, in CI too. Markdown documents have no header.
 
 ## Writing rules
 
