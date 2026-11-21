@@ -36,12 +36,11 @@ use apertrust_base::cache::{self, CacheEvent, Kind, LIBRARIES, Limit, PIPELINES,
 use apertrust_base::folders;
 use apertrust_engine::jobs::{Argument, JobEvent, JobId, Message};
 use apertrust_engine::session::{CacheCommand, Command, Event, SessionError, size_in_unit};
-use apertrust_ui::components::{Button, FileManager};
+use apertrust_ui::components::FileManager;
+use apertrust_ui::components::settings::{Button, Note, Readout, SettingRow};
 use apertrust_ui::i18n::Args;
 use apertrust_ui::{Theme, Translator, translator};
-use eframe::egui::{
-    self, Align, Color32, FontId, Layout, Rect, Role, Sense, Ui, UiBuilder, WidgetInfo, pos2, vec2,
-};
+use eframe::egui::{FontId, Rect, Role, Sense, Ui, WidgetInfo, pos2, vec2};
 
 /// The limited kinds the page lists, each with its Clear, in the cache's order.
 const CLEARED: [Kind; 2] = [THUMBNAILS, PIPELINES];
@@ -282,31 +281,9 @@ impl Mirror {
     }
 }
 
-/// The labels the page's lines take, for the label column's width.
-pub fn labels(words: &Translator) -> Vec<String> {
-    let ids = [
-        "settings-storage-user-data",
-        "settings-storage-cache",
-        "settings-storage-kind-thumbnails",
-        "settings-storage-kind-pipelines",
-        "settings-storage-kind-libraries",
-        "settings-storage-total",
-    ];
-    ids.iter().map(|id| words.text(id)).collect()
-}
-
-/// The widths the page's lines take: the label column's, the content's.
-#[derive(Clone, Copy, Debug)]
-pub struct Widths {
-    pub label: f32,
-    pub content: f32,
-    /// From a line's start to its value's, the dot's column the rows' own.
-    pub value: f32,
-}
-
 /// The Folders group's lines: the user data folder and the cache folder. Returns what was
 /// asked.
-pub fn folders(ui: &mut Ui, t: &Theme, view: &View, widths: Widths) -> Option<Asked> {
+pub fn folders(ui: &mut Ui, t: &Theme, view: &View) -> Option<Asked> {
     let words = translator(ui.ctx());
     let mut asked = None;
     let lines = [
@@ -341,7 +318,7 @@ pub fn folders(ui: &mut Ui, t: &Theme, view: &View, widths: Widths) -> Option<As
             warning: false,
             button,
         };
-        if line.draw(ui, t, widths)
+        if line.draw(ui, t)
             && let Some(folder) = folder
         {
             asked = Some(Asked::Reveal(folder.path.clone()));
@@ -354,21 +331,10 @@ pub fn folders(ui: &mut Ui, t: &Theme, view: &View, widths: Widths) -> Option<As
 /// view says it is clearing or since it was `pressed`, the libraries' caches, the total
 /// against the limit; with no cache, a line that says so, and no Clear. Returns what was
 /// asked.
-pub fn contents(
-    ui: &mut Ui,
-    t: &Theme,
-    view: &View,
-    pressed: &[Kind],
-    widths: Widths,
-) -> Option<Asked> {
+pub fn contents(ui: &mut Ui, t: &Theme, view: &View, pressed: &[Kind]) -> Option<Asked> {
     let words = translator(ui.ctx());
     if view.cache == Some(CacheEvent::NoCache) {
-        said(
-            ui,
-            t,
-            &words.text("settings-storage-no-cache"),
-            widths.content,
-        );
+        said(ui, t, &words.text("settings-storage-no-cache"));
         return None;
     }
     let sizes = match view.cache {
@@ -404,7 +370,7 @@ pub fn contents(
                 enabled,
             }),
         };
-        if line.draw(ui, t, widths) {
+        if line.draw(ui, t) {
             asked = Some(Asked::Clear(kind));
         }
     }
@@ -424,7 +390,7 @@ pub fn contents(
         warning: false,
         button: None,
     }
-    .draw(ui, t, widths);
+    .draw(ui, t);
     let label = words.text("settings-storage-total");
     let value = sizes.map_or_else(
         || counting.clone(),
@@ -438,9 +404,9 @@ pub fn contents(
         warning: false,
         button: None,
     }
-    .draw(ui, t, widths);
+    .draw(ui, t);
     if let Some(refused) = view.refused {
-        said(ui, t, &words.text(refused), widths.content);
+        said(ui, t, &words.text(refused));
     }
     asked
 }
@@ -505,18 +471,21 @@ fn total(words: &Translator, bytes: u64, limit: Limit) -> String {
     }
 }
 
-/// Words on a line of their own across the content, wrapped, in the secondary text.
-fn said(ui: &mut Ui, t: &Theme, text: &str, content: f32) {
+/// Words on a line of their own across the content, wrapped, in the secondary text, where
+/// the rows' labels start.
+fn said(ui: &mut Ui, t: &Theme, text: &str) {
+    let content = ui.available_width();
+    let inset = t.spacing.s;
     let galley = ui.painter().layout(
         text.to_owned(),
         FontId::proportional(t.text.body),
         t.colors.text_secondary,
-        content,
+        content - 2.0 * inset,
     );
     let top = ui.cursor().min;
-    let height = galley.size().y.max(t.sizes.panel_line);
+    let height = galley.size().y.max(t.sizes.setting_row);
     let rect = Rect::from_min_size(top, vec2(content, height));
-    let at = pos2(top.x, top.y + (height - galley.size().y) / 2.0);
+    let at = pos2(top.x + inset, top.y + (height - galley.size().y) / 2.0);
     ui.painter().galley(at, galley, t.colors.text_secondary);
     let response = ui.allocate_rect(rect, Sense::hover());
     response.widget_info(|| WidgetInfo::labeled(Role::Label, true, text));
@@ -539,9 +508,10 @@ pub(crate) struct Press<'a> {
     enabled: bool,
 }
 
-/// One of the page's lines: a label in the rows' label column, a value where the rows'
-/// controls start, a note under it, and a button at the line's end. Processing's In use
-/// line is one too (`hardware`).
+/// One of the page's lines, a settings row: its label at the start; in its column a
+/// value it shows, a path cut in its middle, with its button after it, or the button with
+/// the value before it as its fact; a note under it. Processing's In use line is one too
+/// (`hardware`).
 pub(crate) struct Line<'a> {
     pub label: &'a str,
     pub value: &'a str,
@@ -554,127 +524,40 @@ pub(crate) struct Line<'a> {
 
 impl Line<'_> {
     /// Draws it; whether its button was pressed.
-    pub(crate) fn draw(self, ui: &mut Ui, t: &Theme, widths: Widths) -> bool {
-        let top = ui.cursor().min;
-        let line = t.sizes.panel_line.max(t.sizes.control);
-        let body = FontId::proportional(t.text.body);
-        let painter = ui.painter().clone();
-        // The label, at the line's start.
-        let label = painter.layout_no_wrap(self.label.to_owned(), body.clone(), t.colors.text);
-        let label_rect = Rect::from_min_size(top, vec2(widths.label, line));
-        painter.galley(
-            pos2(top.x, label_rect.center().y - label.size().y / 2.0),
-            label,
-            t.colors.text,
-        );
-        let id = egui::Id::unique(("storage line", self.label));
-        let response = ui.interact(label_rect, id, Sense::hover());
-        response.widget_info(|| WidgetInfo::labeled(Role::Label, true, self.label));
-        // The button, at the line's end.
-        let end = top.x + widths.content;
-        let mut value_end = end;
-        let mut pressed = false;
-        if let Some(press) = self.button {
-            let rect =
-                Rect::from_min_max(pos2(top.x + widths.value, top.y), pos2(end, top.y + line));
-            let mut row = ui.new_child(
-                UiBuilder::new()
-                    .max_rect(rect)
-                    .layout(Layout::right_to_left(Align::Center)),
-            );
-            let response = Button::new(press.text)
-                .enabled(press.enabled)
-                .tip(press.tip)
-                .show(&mut row);
-            let name = press.name;
-            let enabled = press.enabled;
-            response.widget_info(|| WidgetInfo::labeled(Role::Button, enabled, &name));
-            pressed = response.clicked();
-            value_end = response.rect.left() - t.spacing.m;
-        }
-        // The value, from the controls' start, cut where it does not fit.
-        let start = top.x + widths.value;
-        let room = (value_end - start).max(0.0);
-        let text = fitted(&painter, self.value, &body, room, self.cut);
-        let value = painter.layout_no_wrap(text, body, t.colors.text);
-        let value_rect = Rect::from_min_size(pos2(start, top.y), vec2(room, line));
-        painter.galley(
-            pos2(start, value_rect.center().y - value.size().y / 2.0),
-            value,
-            t.colors.text,
-        );
-        let id = egui::Id::unique(("storage value", self.label));
-        let response = ui.interact(value_rect, id, Sense::hover());
-        let whole = self.value;
-        response.widget_info(|| WidgetInfo::labeled(Role::Label, true, whole));
-        if self.warning
-            && let Some(note) = self.note
-        {
-            ui.ctx()
-                .accesskit_node_builder(response.id, |node| node.set_description(note));
-        }
-        response.on_hover_text(whole);
-        let mut bottom = top.y + line;
-        // The note, under the value, in the small text.
+    pub(crate) fn draw(self, ui: &mut Ui, _t: &Theme) -> bool {
+        let mut row = SettingRow::new(("storage line", self.label), self.label).read_only(true);
         if let Some(note) = self.note {
-            let colour = if self.warning {
-                t.colors.warning
-            } else {
-                t.colors.text_secondary
-            };
-            let galley = painter.layout(
-                note.to_owned(),
-                FontId::proportional(t.text.caption),
-                colour,
-                (end - start).max(0.0),
-            );
-            let at = pos2(start, bottom);
-            let rect = Rect::from_min_size(at, galley.size());
-            painter.galley(at, galley, colour);
-            let id = egui::Id::unique(("storage note", self.label));
-            let said = ui.interact(rect, id, Sense::hover());
-            said.widget_info(|| WidgetInfo::labeled(Role::Label, true, note));
-            bottom = rect.bottom() + t.spacing.xs;
+            row = row.note(Note {
+                text: note,
+                warning: self.warning,
+                live: false,
+            });
         }
-        ui.allocate_rect(Rect::from_min_max(top, pos2(end, bottom)), Sense::hover());
-        pressed
+        let description = self.note.filter(|_| self.warning);
+        row.show(ui, |ui| {
+            fn button<'a>(press: &'a Press<'_>) -> Button<'a> {
+                Button::new(press.text)
+                    .name(&press.name)
+                    .tip(press.tip)
+                    .enabled(press.enabled)
+            }
+            match (&self.button, self.cut) {
+                // A kind's Clear, its size before it.
+                (Some(press), Cut::End) => button(press).fact(self.value).show(ui).clicked(),
+                (press, cut) => {
+                    let mut readout = Readout::new(self.value).path(cut == Cut::Middle);
+                    if let Some(press) = press {
+                        readout = readout.button(button(press));
+                    }
+                    if let Some(said) = description {
+                        readout = readout.description(said);
+                    }
+                    readout.show(ui)
+                }
+            }
+        })
+        .inner
     }
-}
-
-/// `text` whole where it fits in `width`, else cut as `cut` says, with `…`.
-fn fitted(painter: &egui::Painter, text: &str, font: &FontId, width: f32, cut: Cut) -> String {
-    let fits = |text: &str| {
-        painter
-            .layout_no_wrap(text.to_owned(), font.clone(), Color32::WHITE)
-            .size()
-            .x
-            <= width
-    };
-    if fits(text) {
-        return text.to_owned();
-    }
-    let chars: Vec<char> = text.chars().collect();
-    let kept = |kept: usize| match cut {
-        Cut::End => chars[..kept].iter().collect::<String>() + "…",
-        Cut::Middle => {
-            let head = kept.div_ceil(2);
-            let tail = kept - head;
-            let start: String = chars[..head].iter().collect();
-            let end: String = chars[chars.len() - tail..].iter().collect();
-            format!("{start}…{end}")
-        }
-    };
-    // The most characters kept that still fit, found by halves: fewer kept is never wider.
-    let (mut fit, mut over) = (0, chars.len());
-    while over - fit > 1 {
-        let middle = (fit + over) / 2;
-        if fits(&kept(middle)) {
-            fit = middle;
-        } else {
-            over = middle;
-        }
-    }
-    kept(fit)
 }
 
 #[cfg(test)]

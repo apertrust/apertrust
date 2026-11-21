@@ -17,40 +17,60 @@
 //! The Settings dialog's content (`docs/gui.md`, The Settings dialog), drawn from the
 //! settings registry (decision 43), as darktable's preferences are: the pages listed at
 //! the start, the chosen one marked, and the chosen page's groups, each under its title,
-//! with a row per setting the schema puts there, in the schema's order. A row is its label
-//! at the start and its control by its kind at the end: a switch, a choice, a number with
-//! its unit or a text; a list of a choice is a switch row per option, stacked in the control
-//! column in its type's order, the row as tall as they are.
+//! with a row per setting the schema puts there, in the schema's order. A row is the
+//! design system's [`SettingRow`]: its label at the start and its control at the end, in
+//! the column, by its kind and the schema's `control`:
 //!
-//! - A row's help, where its words have one (`setting-<id>-help`), is its label's tooltip.
-//! - A row off its default has darktable's dot before its control; a double-click on its
-//!   label, or Reset in its right-click menu, puts the default back.
-//! - A row `--conf` sets for this run is drawn disabled, saying so (decision 43), and so is
-//!   one whose required boolean (the schema's `requires`) is off, as the cache's limit
-//!   while it is unlimited.
+//! - a choice a [`Combo`], or [`Segmented`] where the schema says so;
+//! - a boolean a [`Switch`], the whole row its target;
+//! - a number a [`Slider`] where it has both ends, else a [`Number`] box, as it is where
+//!   the schema asks one;
+//! - a text a [`Text`] field, or a [`TextArea`] or a [`Folder`] where the schema says so;
+//! - a list of a choice [`Chips`], in its type's order.
+//!
+//! - A row's help, where its words have one (`setting-<id>-help`), is its tooltip.
+//! - A row off its default has the changed mark after its label, a button that resets it,
+//!   its tooltip naming the default; a double-click on its label, Delete on it, or Reset in
+//!   its right-click menu, puts the default back too.
+//! - A row `--conf` sets for this run is dimmed, its tooltip saying so (decision 43), and
+//!   so is one whose required boolean (the schema's `requires`) is off, as the cache's
+//!   limit while it is unlimited; neither has a mark.
 //! - A row whose `platforms` leave out the platform the dialog runs on, as the context's
 //!   operating system says, is not drawn: the graphics API's off Windows.
-//! - "Applies after a restart" is said under the control of a setting that does.
+//! - "· after a restart" follows the label of a setting that applies then.
 //! - Processing's Hardware acceleration group draws the graphics card as a list of the
 //!   adapters the chosen API finds, says what is wrong with a card on its row, and ends in
 //!   the In use line, then, while a choice waits for a restart, the waiting line with
 //!   Restart now ([`hardware`], decision 82).
-//! - Every change applies at once and is kept, with no OK or Apply: it goes to the app as a
+//! - Every change is kept as it is committed, with no OK or Apply, and takes effect as its
+//!   setting's `applies` says: it goes to the app as a
 //!   [`Change`], which keeps it through the settings' keeper and shows it in the main
 //!   window; the theme and the language are shown in this dialog's own window at once too.
 //! - A page that holds nothing yet is listed dimmed and cannot be chosen. The page last
 //!   shown is kept, `settings_window.page`.
+//! - Find a setting, at the page list's top, finds the rows whose label or help holds what
+//!   it holds, case and accents aside: the pages with none are dimmed, still chosen, and
+//!   the shown page's rows that match have their labels underlined. Ctrl+F (Cmd+F) gives it
+//!   the focus, and Escape clears it while it holds anything: in it, which keeps the
+//!   focus, or from a control that is not a field, a field being typed in keeping its own.
+//! - The footer has Close at its end where the window has one.
 //!
 //! It is a [`Dialog`] (decision 41), which the dialog host draws in a window of its own:
 //! modeless on the Mac and modal on Windows and Linux.
 
-use apertrust_base::settings::{Applies, CONF_FLAG, Choice as _, Declared, Kind, Page, Platform};
-use apertrust_ui::components::{Choice, ChoiceAction, Switch, TextField, ToggleRow, ValueField};
-use apertrust_ui::popup::{self, Entry, Item, Request};
-use apertrust_ui::{Builtin, Locale, Theme, fonts, theme, tr, translator};
+use apertrust_base::settings::{
+    Applies, CONF_FLAG, Choice as _, Control, Declared, Kind, Page, Platform,
+};
+use apertrust_ui::components::group_label_text;
+use apertrust_ui::components::settings::{
+    Chips, Combo, Folder, Note, Number, Search, Segmented, SettingRow, Slider, Switch, Text,
+    TextArea,
+};
+use apertrust_ui::popup;
+use apertrust_ui::{Builtin, Locale, Theme, Translator, theme, tr, translator};
 use eframe::egui::os::OperatingSystem;
 use eframe::egui::{
-    self, Align, FontFamily, FontId, Key, Layout, Modifiers, Rect, Role, ScrollArea, Sense, Ui,
+    self, Align, FontId, Key, Layout, Modifiers, Rect, Role, ScrollArea, Sense, Stroke, Ui,
     UiBuilder, WidgetInfo, pos2, vec2,
 };
 use toml::Value;
@@ -69,23 +89,19 @@ pub const WIDTH: f32 = 960.0;
 const PAGES: f32 = 200.0;
 /// The height of the page list and of the page beside it.
 const BODY: f32 = 640.0;
-/// A page's line in the list, for its name in the section titles' size.
+/// A group title's line, the artboard's.
+const GROUP_LINE: f32 = 26.0;
+/// The room between one group's last row and the next group's title, the artboard's.
+const GROUP_GAP: f32 = 14.0;
+/// The page list's padding above Find a setting and between it and the pages, the
+/// artboard's.
+const LIST_PADDING: f32 = 10.0;
+/// A page's line in the list: a row's 26 points (`sizes.row`) and 2 more above and below.
 const PAGE_LINE: f32 = 30.0;
-/// A group title's line.
-const GROUP_LINE: f32 = 28.0;
-/// The label column's narrowest, darktable's grid.
-const LABEL_MIN: f32 = 176.0;
-/// The bar that marks the chosen page, at its line's start. A token to come.
-const PAGE_MARK: f32 = 3.0;
-/// The column of the dot before a row's control.
-const DOT: f32 = 14.0;
-/// The column of a row's control, and the widest a control in it grows to.
-const CONTROL: f32 = 220.0;
-/// Every choice box, number field and text field of a page is this wide, or as wide as
-/// its widest choice needs, up to [`CONTROL`]: one width, so their ends line up.
-const CONTROL_WIDTH: f32 = 180.0;
-/// The dot's radius, as darktable's. A token to come.
-const DOT_RADIUS: f32 = 3.0;
+/// How far a page's name sits in from its line's start, the artboard's.
+const PAGE_INSET: f32 = 10.0;
+/// Find a setting's id, as Ctrl+F (Cmd+F) gives it the focus.
+const FIND: &str = "settings find";
 
 /// One setting's row, as the dialog shows it: what the registry declares of it, its value
 /// and its default as `settings.toml` keeps them, and whether `--conf` sets it.
@@ -100,11 +116,15 @@ pub struct Row {
     pub options: Vec<&'static str>,
     pub value: Option<Value>,
     pub default: Option<Value>,
+    /// Whether its default is one the app works out, as the language's from the system's.
+    pub computed: bool,
     pub overridden: bool,
     /// The boolean setting whose row must be on for this one to be enabled.
     pub requires: Option<&'static str>,
     /// The platforms it is drawn on; None for every one.
     pub platforms: Option<&'static [Platform]>,
+    /// The control the schema names in place of its kind's own.
+    pub control: Option<Control>,
 }
 
 impl Row {
@@ -120,9 +140,11 @@ impl Row {
             options: setting.options(),
             value: keeper.value(setting),
             default: setting.default_value(),
+            computed: setting.default_is_computed(),
             overridden: keeper.overridden(setting),
             requires: setting.requires(),
             platforms: setting.platforms(),
+            control: setting.control(),
         })
     }
 
@@ -139,7 +161,7 @@ impl Row {
             .is_none_or(|platforms| platform.is_some_and(|p| platforms.contains(&p)))
     }
 
-    /// Whether it is off its default, which the dot says.
+    /// Whether it is off its default, which the changed mark says.
     pub fn changed(&self) -> bool {
         self.value != self.default
     }
@@ -172,6 +194,8 @@ pub struct Settings {
     focused: bool,
     /// Processing's Hardware acceleration group: the adapters listed, and the one in use.
     hardware: Hardware,
+    /// What Find a setting holds.
+    query: String,
 }
 
 /// What the user changed in the dialog: a setting set to a value, as `settings.toml` keeps
@@ -245,7 +269,26 @@ impl Dialog for Settings {
     }
 
     fn show(&mut self, ui: &mut egui::Ui) -> Asks {
-        let open = self.menu_open(ui.ctx());
+        // Escape clears Find a setting first, while it holds anything; empty, Find a
+        // setting keeps none, though it had the keyboard, so the host's Escape closes.
+        let open = self.menu_open(ui.ctx()) || !self.query.is_empty();
+        let finding = ui.memory(|m| m.had_focus_last_frame(Search::id_of(FIND)));
+        // Escape held to clear what is found repeats, and a repeat is no press of its own:
+        // it closes nothing, though Find a setting is empty by then, or egui has taken the
+        // focus from it. A fresh press alone closes the dialog.
+        let repeat = ui.input(|i| {
+            let escape = |repeated| {
+                i.events.iter().any(|event| {
+                    matches!(
+                        event,
+                        egui::Event::Key { key: Key::Escape, pressed: true, repeat, .. }
+                            if *repeat == repeated
+                    )
+                })
+            };
+            escape(true) && !escape(false)
+        });
+        let gives_escape = finding && self.query.is_empty();
         let asked = self.frame(ui);
         let change = asked.changes.into_iter().map(Output::Settings);
         let storage = asked.storage.into_iter().map(Output::Storage);
@@ -253,7 +296,8 @@ impl Dialog for Settings {
         Asks {
             outputs: change.chain(storage).chain(restart).collect(),
             close: asked.close,
-            keeps_escape: open,
+            keeps_escape: open || repeat,
+            gives_escape,
         }
     }
 
@@ -279,6 +323,7 @@ impl Settings {
             sizes_asked: false,
             focused: true,
             hardware: Hardware::default(),
+            query: String::new(),
         };
         let kept = keeper.page();
         if dialog.holds(kept, OperatingSystem::from_target_os()) {
@@ -347,14 +392,24 @@ impl Settings {
         self.rows.iter().find(|row| row.id == id)
     }
 
-    /// Whether `row` can be changed: neither `--conf` sets it nor is the row it requires
-    /// off.
-    fn enabled(&self, row: &Row) -> bool {
-        let on = |id| {
-            let required = self.rows.iter().find(|other| other.id == id);
-            required.and_then(|other| other.value.as_ref()?.as_bool()) == Some(true)
-        };
-        !row.overridden && row.requires.is_none_or(on)
+    /// Why `row` cannot be changed now, in `words`, or none where it can: `--conf` sets
+    /// it, or the row it requires is off.
+    fn disabled(&self, row: &Row, words: &Translator) -> Option<String> {
+        let mut args = apertrust_ui::i18n::Args::new();
+        if row.overridden {
+            args.set("flag", CONF_FLAG);
+            return Some(words.text_with("settings-overridden", Some(&args)));
+        }
+        let required = row.requires?;
+        let other = self.rows.iter().find(|other| other.id == required);
+        if other.and_then(|other| other.value.as_ref()?.as_bool()) == Some(true) {
+            return None;
+        }
+        let label = other
+            .map(|other| label_of(words, other))
+            .unwrap_or_default();
+        args.set("setting", label.as_str());
+        Some(words.text_with("settings-requires", Some(&args)))
     }
 
     /// The text the row of the setting `id` holds, empty where it holds none.
@@ -387,7 +442,17 @@ impl Settings {
     fn menu_open(&self, ctx: &egui::Context) -> bool {
         self.rows
             .iter()
-            .any(|row| popup::is_open(ctx, menu_id(row.id)))
+            .any(|row| SettingRow::menu_open(ctx, row.id))
+    }
+
+    /// Shows `page`, chosen in the list, keeping it in `changes`.
+    fn show_page(&mut self, page: Page, changes: &mut Vec<Change>) {
+        self.page = page;
+        self.hardware.left();
+        changes.push(Change::Set(
+            settings::registry::SETTINGS_WINDOW_PAGE.id,
+            Value::String(page.id().to_owned()),
+        ));
     }
 
     /// Draws the dialog in `ui`: the page list, the page, and Close where it has one.
@@ -399,16 +464,43 @@ impl Settings {
         if self.menu_open(&ctx) {
             popup::show(&ctx);
         }
+        // Ctrl+F (Cmd+F) finds a setting; Escape clears what is being found from a control
+        // that is no field. Find a setting clears itself and keeps the focus, and a field
+        // being typed in keeps its own Escape (`dialog_host::typing`). Find a setting empty
+        // keeps none: the host closes by its own binding (`Asks::gives_escape`).
+        if ctx.input_mut(|i| i.consume_key(Modifiers::COMMAND, Key::F)) {
+            // A list or menu left open would take the letters typed next, so it closes,
+            // giving no focus back: Find a setting takes it.
+            popup::dismiss_all(&ctx);
+            ctx.memory_mut(|m| m.request_focus(Search::id_of(FIND)));
+        }
+        let typing = crate::dialog_host::typing(&ctx);
+        let escape = ctx.input(|i| i.key_pressed(Key::Escape));
+        if escape && !self.query.is_empty() && !typing {
+            self.query.clear();
+        }
         ui.set_width(WIDTH);
         ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
         ui.horizontal_top(|ui| {
-            if let Some(page) = self.pages(ui, &t) {
-                self.page = page;
-                self.hardware.left();
-                asked.changes.push(Change::Set(
-                    settings::registry::SETTINGS_WINDOW_PAGE.id,
-                    Value::String(page.id().to_owned()),
-                ));
+            // A page chosen shows at once, but while a field is typed in: the page shown is
+            // drawn once more then, so the field the choice took the focus from commits what
+            // it holds, and the new page shows from the next frame. Every route takes the
+            // focus from the field here, a screen reader's click too, which moves none.
+            let chosen = self.pages(ui, &t);
+            let (now, after) = match chosen {
+                Some(page) if typing => {
+                    ctx.memory_mut(|m| {
+                        let tab = |id| Page::ALL.into_iter().any(|page| page_id(page) == id);
+                        if let Some(field) = m.focused().filter(|id| !tab(*id)) {
+                            m.surrender_focus(field);
+                        }
+                    });
+                    (None, Some(page))
+                }
+                chosen => (chosen, None),
+            };
+            if let Some(page) = now {
+                self.show_page(page, &mut asked.changes);
             }
             // The page's own parts, once the page shown this frame is known.
             let gpu = self.hardware_frame(&ctx);
@@ -428,10 +520,10 @@ impl Settings {
                                 t.spacing.l as i8,
                             ))
                             .show(ui, |ui| {
-                                let (change, storage, restart) =
+                                let (changes, storage, restart) =
                                     self.page_rows(ui, &t, gpu.as_ref());
                                 asked.restart = restart;
-                                asked.changes.extend(change);
+                                asked.changes.extend(changes);
                                 if let Some(storage::Asked::Clear(kind)) = &storage {
                                     self.pressed.push(*kind);
                                 }
@@ -440,6 +532,10 @@ impl Settings {
                     },
                 );
             });
+            if let Some(page) = after {
+                self.show_page(page, &mut asked.changes);
+                ctx.request_repaint();
+            }
         });
         // A card `--conf` holds for this run is never the API change's to reset.
         let held = self
@@ -478,6 +574,7 @@ impl Settings {
         } else if !std::mem::replace(&mut self.sizes_asked, true) || back {
             asked.storage.push(storage::Asked::Sizes);
         }
+        // The footer, where the window has Close.
         if self.close_button {
             let (line, _) = ui.allocate_exact_size(vec2(WIDTH, 1.0), Sense::hover());
             ui.painter().rect_filled(line, 0.0, t.colors.separator);
@@ -513,33 +610,47 @@ impl Settings {
         }
     }
 
-    /// The page list, each page a line: the chosen one marked, those that hold nothing yet
-    /// dimmed, saying they come later, and never chosen. A click, or ↑ and ↓ while a line
-    /// has the focus, chooses one. Returns the page chosen.
-    fn pages(&self, ui: &mut Ui, t: &Theme) -> Option<Page> {
+    /// The page list: Find a setting at its top, then each page a line, the shown one on a
+    /// `raised` plate, those that hold nothing yet dimmed, saying they come later, and never
+    /// chosen; while Find a setting holds something, those with no row that matches it
+    /// dimmed too, but chosen still. A click, or ↑ and ↓ while a line has the focus, chooses
+    /// one. Returns the page chosen.
+    fn pages(&mut self, ui: &mut Ui, t: &Theme) -> Option<Page> {
         let ctx = ui.ctx().clone();
         let (column, _) = ui.allocate_exact_size(vec2(PAGES, BODY), Sense::hover());
         let painter = ui.painter_at(column);
         painter.rect_filled(column, 0.0, t.colors.sunken);
-        let line = t.shape.separator_width;
+        // A hairline in `separator` at its end, as the footer's above it.
+        let line = t.shape.hairline;
         painter.rect_filled(
             Rect::from_x_y_ranges(column.right() - line..=column.right(), column.y_range()),
             0.0,
-            t.colors.divider,
+            t.colors.separator,
         );
+        // The list's own padding, the artboard's.
+        let inner = Rect::from_min_max(
+            column.min + vec2(t.spacing.m, LIST_PADDING),
+            pos2(column.right() - line - t.spacing.m, column.bottom()),
+        );
+        let find = tr(&ctx, "settings-find");
+        let search = Rect::from_min_size(inner.min, vec2(inner.width(), t.sizes.setting_control));
+        let mut field = ui.new_child(UiBuilder::new().max_rect(search));
+        if let Some(typed) = Search::new(FIND, &find, &self.query).show(&mut field) {
+            self.query = typed;
+        }
+        let words = translator(&ctx);
         let later = tr(&ctx, "settings-page-later");
-        let font = FontId::proportional(t.text.section_title);
+        let font = FontId::proportional(t.text.title);
         let mut chosen = None;
         let mut moved = None;
-        // The first page's name level with the first group's title: both centred where
-        // the page's top margin and half a title's line put it.
-        let top = column.top() + t.spacing.l + GROUP_LINE / 2.0 - PAGE_LINE / 2.0;
+        let top = search.bottom() + LIST_PADDING;
         for (i, page) in Page::ALL.into_iter().enumerate() {
             let rect = Rect::from_min_size(
-                pos2(column.left(), top + i as f32 * PAGE_LINE),
-                vec2(PAGES - line, PAGE_LINE),
+                pos2(inner.left(), top + i as f32 * PAGE_LINE),
+                vec2(inner.width(), PAGE_LINE),
             );
             let enabled = self.holds(page, ctx.os());
+            let found = self.query.trim().is_empty() || self.finds(page, &words, ctx.os());
             let shown = page == self.page;
             let id = page_id(page);
             let sense = if enabled {
@@ -550,39 +661,29 @@ impl Settings {
             let response = ui.interact(rect, id, sense);
             let name = tr(&ctx, &format!("settings-page-{}", page.id()));
             response.widget_info(|| WidgetInfo::selected(Role::Tab, enabled, shown, &name));
-            let colour = if shown {
-                t.colors.text_strong
-            } else if enabled {
-                t.colors.text
-            } else {
+            let colour = if !enabled {
                 t.colors.text_disabled
+            } else if !found {
+                t.colors.text_secondary
+            } else if shown {
+                t.colors.text_strong
+            } else {
+                t.colors.text
             };
             if shown {
-                painter.rect_filled(rect, 0.0, t.colors.list_chosen);
-                painter.rect_filled(
-                    Rect::from_min_size(rect.min, vec2(PAGE_MARK, rect.height())),
-                    0.0,
-                    t.colors.frame_ring,
-                );
-            } else if enabled && response.hovered() {
-                painter.rect_filled(rect, 0.0, t.colors.hover);
+                painter.rect_filled(rect, t.shape.radius_small, t.colors.raised);
             }
             let text = painter.layout_no_wrap(name, font.clone(), colour);
             painter.galley(
                 pos2(
-                    rect.left() + t.spacing.xl + PAGE_MARK,
+                    rect.left() + PAGE_INSET,
                     rect.center().y - text.size().y / 2.0,
                 ),
                 text,
                 colour,
             );
             if response.has_focus() {
-                painter.rect_stroke(
-                    rect.shrink(1.0),
-                    t.shape.radius_small,
-                    egui::Stroke::new(1.5, t.colors.focus_ring),
-                    egui::StrokeKind::Inside,
-                );
+                apertrust_ui::components::focus_ring_centred(&painter, rect, t);
                 let step = |key| ctx.input_mut(|i| i.consume_key(Modifiers::NONE, key));
                 if step(Key::ArrowDown) {
                     moved = self.next(page, 1, ctx.os());
@@ -604,6 +705,28 @@ impl Settings {
             chosen = Some(page).filter(|page| *page != self.page);
         }
         chosen
+    }
+
+    /// Whether `row` matches what Find a setting holds: its label or its help, in `words`,
+    /// holds it, case and accents aside.
+    fn matches(&self, row: &Row, words: &Translator) -> bool {
+        let wanted = apertrust_ui::i18n::fold(self.query.trim());
+        if wanted.is_empty() {
+            return false;
+        }
+        let help = format!("setting-{}-help", row.words());
+        let help = words.has(&help).then(|| words.text(&help));
+        std::iter::once(label_of(words, row))
+            .chain(help)
+            .any(|text| apertrust_ui::i18n::fold(&text).contains(&wanted))
+    }
+
+    /// Whether `page` holds a row drawn on `os` that matches what Find a setting holds.
+    fn finds(&self, page: Page, words: &Translator, os: OperatingSystem) -> bool {
+        self.rows
+            .iter()
+            .filter(|row| row.page == page && row.drawn_on(os))
+            .any(|row| self.matches(row, words))
     }
 
     /// The page that can be chosen on `os` next to `from`, `by` 1 after it or −1 before it.
@@ -633,13 +756,15 @@ impl Settings {
     /// and their rows; on Storage, its Folders group first and its In the cache group last;
     /// on Processing, the Hardware acceleration group's parts as `gpu` has them, its In use
     /// line, and the waiting line while a change waits for a restart. Returns what the user
-    /// changed, what Storage asked and whether Restart now was pressed.
+    /// changed, every row's change in the rows' order, as a switch's click and a field's
+    /// commit as it loses the focus can come in one frame; what Storage asked; and whether
+    /// Restart now was pressed.
     fn page_rows(
         &self,
         ui: &mut Ui,
         t: &Theme,
         gpu: Option<&hardware::Frame>,
-    ) -> (Option<Change>, Option<storage::Asked>, bool) {
+    ) -> (Vec<Change>, Option<storage::Asked>, bool) {
         let ctx = ui.ctx().clone();
         // The page's rows drawn on this platform.
         let os = ctx.os();
@@ -654,80 +779,75 @@ impl Settings {
                 groups.push(row.group);
             }
         }
-        let title = FontId::new(t.text.section_title, FontFamily::Name(fonts::MEDIUM.into()));
         let content = ui.available_width();
         let words = translator(&ctx);
         let storage = self.page == Page::Storage;
-        let mut labels: Vec<String> = shown().map(|row| label_of(&words, row)).collect();
-        if storage {
-            labels.extend(storage::labels(&words));
-        }
         let in_use = gpu.and(self.hardware.running().in_use.as_ref());
-        if in_use.is_some() {
-            labels.extend(hardware::labels(&words));
-        }
-        let label_width = label_column(ui, t, &labels, content);
-        let control_width = control_column(ui, &self.rows, self.page, gpu);
-        let lines = storage::Widths {
-            label: label_width,
-            content,
-            value: label_width + t.spacing.xl + DOT + t.spacing.xs,
-        };
-        let mut change = None;
+        let mut changes = Vec::new();
         let mut asked = None;
         let mut restart = false;
         if storage {
-            group_title(ui, t, &tr(&ctx, "settings-group-folders"), &title, content);
-            asked = storage::folders(ui, t, &self.storage, lines);
+            group_title(ui, t, &tr(&ctx, "settings-group-folders"), content);
+            asked = storage::folders(ui, t, &self.storage);
         }
         for (i, group) in groups.into_iter().enumerate() {
             if i > 0 || storage {
-                ui.add_space(t.spacing.l);
+                ui.add_space(GROUP_GAP);
             }
             let name = tr(&ctx, &format!("settings-group-{}", group.replace('_', "-")));
-            group_title(ui, t, &name, &title, content);
+            group_title(ui, t, &name, content);
             for row in shown().filter(|row| row.group == group) {
-                let widths = (label_width, control_width, content);
                 let extra = Extra::of(row, gpu);
-                if let Some(changed) = draw_row(ui, t, row, self.enabled(row), widths, extra) {
-                    change = Some(changed);
+                let disabled = self.disabled(row, &words);
+                let matched = self.matches(row, &words);
+                if let Some(changed) = draw_row(ui, row, disabled.as_deref(), matched, extra) {
+                    changes.push(changed);
                 }
             }
             // What runs now, under the rows that choose what runs after a restart.
             if let Some(in_use) = in_use.filter(|_| group == HARDWARE_GROUP) {
                 ui.add_space(t.spacing.m);
-                hardware::in_use(ui, t, in_use, lines);
+                hardware::in_use(ui, t, in_use);
             }
             // And while what is chosen differs from what this run started with, that it
             // waits for a restart, with Restart now.
             let failed = self.hardware.running().restart_failed.as_deref();
             if gpu.is_some() && group == HARDWARE_GROUP && (self.waiting() || failed.is_some()) {
                 ui.add_space(t.spacing.m);
-                restart = hardware::waiting(ui, t, lines, failed);
+                restart = hardware::waiting(ui, t, content, failed);
             }
         }
         if storage {
-            ui.add_space(t.spacing.l);
+            ui.add_space(GROUP_GAP);
             let name = tr(&ctx, "settings-group-cache-contents");
-            group_title(ui, t, &name, &title, content);
+            group_title(ui, t, &name, content);
             let pressed = &self.pressed;
-            if let Some(contents) = storage::contents(ui, t, &self.storage, pressed, lines) {
+            if let Some(contents) = storage::contents(ui, t, &self.storage, pressed) {
                 asked = Some(contents);
             }
         }
-        (change, asked, restart)
+        (changes, asked, restart)
     }
 }
 
-/// A group's title, `name`, on a line of its own across `content`, its text centred in
-/// it.
-fn group_title(ui: &mut Ui, t: &Theme, name: &str, font: &FontId, content: f32) {
+/// A group's title, `name`, on a line of its own across `content`, drawn as a tool's group
+/// titles are (`group_label_text`: 11-point Medium capitals, a little apart, in
+/// `text_secondary`), centred on the line, then a `divider` hairline to the line's end. No
+/// chevron: a page's groups are always open.
+fn group_title(ui: &mut Ui, t: &Theme, name: &str, content: f32) {
     let (line, response) = ui.allocate_exact_size(vec2(content, GROUP_LINE), Sense::hover());
+    let colour = t.colors.text_secondary;
     let galley = ui
         .painter()
-        .layout_no_wrap(name.to_owned(), font.clone(), t.colors.text_strong);
+        .layout_job(group_label_text(t, name, content, colour));
     let at = pos2(line.left(), line.center().y - galley.size().y / 2.0);
-    ui.painter().galley(at, galley, t.colors.text_strong);
+    let from = at.x + galley.size().x + t.spacing.m;
+    ui.painter().galley(at, galley, colour);
+    if from < line.right() {
+        let stroke = Stroke::new(t.shape.hairline, t.colors.divider);
+        ui.painter()
+            .hline(from..=line.right(), line.center().y, stroke);
+    }
     response.widget_info(|| WidgetInfo::labeled(Role::Label, true, name));
 }
 
@@ -736,54 +856,9 @@ fn page_id(page: Page) -> egui::Id {
     egui::Id::unique(("settings page", page.id()))
 }
 
-/// The id of the right-click menu of the row of the setting `id`.
-fn menu_id(id: &str) -> egui::Id {
-    egui::Id::unique(("settings row menu", id))
-}
-
-/// The label column's width on a page, darktable's grid: its widest label in `ui`'s
-/// language at the body size, rounded up, at least [`LABEL_MIN`] and no wider than leaves
-/// the dot's column and the control within `content`, the page's width inside its margins.
-fn label_column(ui: &Ui, t: &Theme, labels: &[String], content: f32) -> f32 {
-    let font = FontId::proportional(t.text.body);
-    let widest = labels
-        .iter()
-        .map(|label| {
-            let galley = ui
-                .painter()
-                .layout_no_wrap(label.clone(), font.clone(), t.colors.text);
-            galley.size().x
-        })
-        .fold(0.0, f32::max)
-        .ceil();
-    let most = content - t.spacing.xl - DOT - t.spacing.xs - CONTROL;
-    widest.max(LABEL_MIN).min(most)
-}
-
 /// The words of `row`'s label.
-fn label_of(words: &apertrust_ui::Translator, row: &Row) -> String {
+fn label_of(words: &Translator, row: &Row) -> String {
     words.text(&format!("setting-{}-label", row.words()))
-}
-
-/// The width of every choice box and number or text field on `page`: [`CONTROL_WIDTH`], or as wide
-/// as the widest box a choice drawn there needs in `ui`'s language, the graphics card's
-/// list as `gpu` has it among them, up to [`CONTROL`].
-fn control_column(ui: &Ui, rows: &[Row], page: Page, gpu: Option<&hardware::Frame>) -> f32 {
-    let os = ui.ctx().os();
-    let width = |names: &[String]| {
-        let names: Vec<&str> = names.iter().map(String::as_str).collect();
-        Choice::new("", &names, None).box_width(ui)
-    };
-    let choices = rows
-        .iter()
-        .filter(|row| row.page == page && row.drawn_on(os))
-        .filter(|row| matches!(row.kind, Kind::Choice(_)))
-        .map(|row| width(&options(ui.ctx(), row).1));
-    let gpu = gpu.map(|gpu| width(&gpu.card.words));
-    choices
-        .chain(gpu)
-        .fold(CONTROL_WIDTH, f32::max)
-        .min(CONTROL)
 }
 
 /// The Hardware acceleration group, whose rows [`Extra`] adds to, by its id.
@@ -814,205 +889,172 @@ impl<'a> Extra<'a> {
     }
 }
 
-/// Draws `row` across `content` points: its label in the first `label_width`, wrapped
-/// where longer, the dot while it is off its default, its control, and what is said of it
-/// under the row, wrapping at the content's end, one note at a time: `--conf`'s, then what
-/// `extra` says, then "Applies after a restart"; disabled unless `enabled`. `widths` are
-/// the label's, the control's and the content's. Returns what the user changed.
+/// Draws `row` as a [`SettingRow`]: its label, its help as its tooltip, the changed mark
+/// while it is off its default, "after a restart" where it applies then, its control, and
+/// what `extra` says under it; dimmed for the reason `disabled` gives, its label underlined
+/// where it is `matched` by Find a setting. A boolean's whole row toggles it. Returns what
+/// the user changed.
 fn draw_row(
     ui: &mut Ui,
-    t: &Theme,
     row: &Row,
-    enabled: bool,
-    widths: (f32, f32, f32),
+    disabled: Option<&str>,
+    matched: bool,
     extra: Extra<'_>,
 ) -> Option<Change> {
-    let (label_width, control_width, content) = widths;
     let ctx = ui.ctx().clone();
-    let tr_ = translator(&ctx);
-    let label = label_of(&tr_, row);
-    let line = t.sizes.panel_line;
-    let top = ui.cursor().min;
-    let mut change = None;
-    // The label: a double-click, Delete or the menu's Reset puts the default back. Its
-    // target is its own column, never the gap before the dot.
-    let colour = if enabled {
-        t.colors.text
-    } else {
-        t.colors.text_disabled
-    };
-    let text = ui.painter().layout(
-        label.clone(),
-        FontId::proportional(t.text.body),
-        colour,
-        label_width,
-    );
-    let first = text.size().y / text.rows.len().max(1) as f32;
-    let label_rect = Rect::from_min_size(top, vec2(label_width, text.size().y.max(line)));
-    let response = ui.interact(
-        label_rect,
-        egui::Id::unique(("settings label", row.id)),
-        Sense::click(),
-    );
-    ui.painter()
-        .galley(pos2(top.x, top.y + (line - first) / 2.0), text, colour);
-    let resets = enabled && row.changed();
-    response.widget_info(|| WidgetInfo::labeled(Role::Label, enabled, &label));
+    let words = translator(&ctx);
+    let label = label_of(&words, row);
     let help = format!("setting-{}-help", row.words());
-    let response = if tr_.has(&help) {
-        response.on_hover_text(tr_.text(&help))
-    } else {
-        response
-    };
-    if row.changed() {
-        let said = tr_.text("settings-changed");
-        ctx.accesskit_node_builder(response.id, |node| node.set_description(said));
+    let help = words.has(&help).then(|| words.text(&help));
+    let default = row.changed().then(|| default_words(&ctx, row, extra));
+    let switch = matches!(row.kind, Kind::Boolean) && extra.card.is_none();
+    let mut setting = SettingRow::new(row.id, &label)
+        .after_restart(row.applies == Applies::AfterRestart)
+        .whole_row(switch)
+        .matched(matched);
+    if let Some(help) = &help {
+        setting = setting.help(help);
     }
-    // Delete on the label in focus resets it too, as on a tool's row.
-    let delete =
-        response.has_focus() && ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Delete));
-    if resets && (response.double_clicked() || delete) {
-        change = Some(Change::Reset(row.id));
+    if let Some(default) = &default {
+        setting = setting.changed(default);
     }
-    let menu = menu_id(row.id);
-    if response.secondary_clicked()
-        && let Some(at) = response.interact_pointer_pos()
-    {
-        let reset = Item::new("reset", tr_.text("settings-reset")).enabled(resets);
-        let anchor = Rect::from_min_size(at, egui::Vec2::ZERO);
-        let request = Request::pull_down(anchor, label.clone(), vec![Entry::Item(reset)])
-            .opened_by(response.id);
-        popup::open(&ctx, menu, request);
-        popup::show(&ctx);
+    if let Some(why) = disabled {
+        setting = setting.disabled(why);
     }
-    if let Some(popup::Answer::Chosen(item)) = popup::answer(&ctx, menu)
-        && item == "reset"
-        && resets
-    {
-        change = Some(Change::Reset(row.id));
+    if let Some(note) = extra.note {
+        setting = setting.note(Note {
+            text: &note.text,
+            warning: note.warning,
+            live: note.live,
+        });
     }
-    // The dot, darktable's, centred in its column before the control; dimmed on a row the
-    // command line holds.
-    let dot = Rect::from_min_size(
-        pos2(top.x + label_width + t.spacing.xl, top.y),
-        vec2(DOT, line),
-    );
-    if row.changed() {
-        let colour = if enabled {
-            t.colors.kept_marker
-        } else {
-            t.colors.text_disabled
+    // What screen readers hear on a combo after its value: what is said under it, or that
+    // it applies after a restart, which its label's note says only to those who read it.
+    let restart =
+        (row.applies == Applies::AfterRestart).then(|| words.text("settings-restart-note"));
+    let said = extra
+        .note
+        .map(|note| note.text.as_str())
+        .or(restart.as_deref());
+    let out = setting.show(ui, |ui| control(ui, row, &label, extra, said));
+    let on = row.value.as_ref().and_then(Value::as_bool).unwrap_or(false);
+    if out.reset {
+        Some(Change::Reset(row.id))
+    } else if switch && out.clicked {
+        // The row's toggle after the switch's own, where both came in this frame: two
+        // toggles leave the value as it was.
+        let switched = match &out.inner {
+            Some(Change::Set(_, Value::Boolean(switched))) => *switched,
+            _ => on,
         };
-        ui.painter().circle_filled(dot.center(), DOT_RADIUS, colour);
+        (switched == on).then_some(Change::Set(row.id, Value::Boolean(!on)))
+    } else {
+        out.inner
     }
-    // The control, its start edge on the column's; a list's switch rows one under another.
-    let start = dot.right() + t.spacing.xs;
-    let (lines, layout) = match row.kind {
+}
+
+/// `row`'s default as its mark's tooltip names it, in the dialog's language: an option's
+/// words, a number with its unit, On or Off, a text, and a list's options; the graphics
+/// card's Automatic.
+fn default_words(ctx: &egui::Context, row: &Row, extra: Extra<'_>) -> String {
+    let words = translator(ctx);
+    if extra.card.is_some() {
+        return words.text("settings-gpu-automatic");
+    }
+    let default = row.default.as_ref();
+    match row.kind {
+        Kind::Boolean => match default.and_then(Value::as_bool) {
+            Some(true) => words.text("settings-default-on"),
+            _ => words.text("settings-default-off"),
+        },
+        // A default the app works out, as the language's from the system's, is named by the
+        // setting's own words, "the system's language", never by the option it gives today.
+        Kind::Choice(_) if row.computed => words.text(&format!("setting-{}-default", row.words())),
+        Kind::Choice(_) => {
+            let (ids, names) = options(ctx, row);
+            let chosen = default.and_then(Value::as_str);
+            let at = ids.iter().position(|id| Some(*id) == chosen);
+            at.map(|at| names[at].clone()).unwrap_or_default()
+        }
+        Kind::Number(number) => {
+            let kept = default.and_then(as_number).unwrap_or(0.0);
+            let shown =
+                words.format_number(as_shown(&number, kept), shown_decimals(&number), false);
+            match number.unit {
+                Some(unit) => {
+                    let mut args = apertrust_ui::i18n::Args::new();
+                    args.set("value", shown.as_str());
+                    args.set("unit", words.text(&format!("unit-{unit}")));
+                    words.text_with("settings-value-with-unit", Some(&args))
+                }
+                None => shown,
+            }
+        }
+        Kind::Text => match default.and_then(Value::as_str) {
+            Some(text) if !text.is_empty() => text.to_owned(),
+            _ => words.text("settings-default-empty"),
+        },
         Kind::List {
             of: Kind::Choice(_),
             ..
-        } => (row.options.len().max(1), Layout::top_down(Align::Min)),
-        _ => (1, Layout::left_to_right(Align::Center)),
-    };
-    let height = line * lines as f32;
-    let control_rect = Rect::from_min_size(pos2(start, top.y), vec2(CONTROL, height));
-    // What is said of it, under the row: `--conf`'s first, then the group's own, then
-    // that it applies after a restart; in the warning colour where it is a warning, and
-    // announced as it appears where the person's change on another row made it.
-    let (note, warning, live) = if row.overridden {
-        let mut args = apertrust_ui::i18n::Args::new();
-        args.set("flag", CONF_FLAG);
-        let text = tr_.text_with("settings-overridden", Some(&args));
-        (Some(text), false, false)
-    } else if let Some(note) = extra.note {
-        (Some(note.text.clone()), note.warning, note.live)
-    } else if row.applies == Applies::AfterRestart {
-        (Some(tr_.text("settings-after-restart")), false, false)
-    } else {
-        (None, false, false)
-    };
-    let mut column = ui.new_child(UiBuilder::new().max_rect(control_rect).layout(layout));
-    column.set_min_size(vec2(CONTROL, height));
-    column.spacing_mut().item_spacing.x = t.spacing.m;
-    let said = note.as_deref();
-    if let Some(changed) = column
-        .add_enabled_ui(enabled, |ui| {
-            control(ui, t, row, &label, control_width, extra, said)
-        })
-        .inner
-    {
-        change = Some(changed);
-    }
-    let mut bottom = label_rect.bottom().max(control_rect.bottom());
-    if let Some(note) = note {
-        let width = (top.x + content - start).max(0.0);
-        let colour = if warning {
-            t.colors.warning
-        } else {
-            t.colors.text_secondary
-        };
-        let galley = ui.painter().layout(
-            note.clone(),
-            FontId::proportional(t.text.caption),
-            colour,
-            width,
-        );
-        let at = pos2(start, control_rect.bottom());
-        let rect = Rect::from_min_size(at, galley.size());
-        ui.painter().galley(at, galley, colour);
-        let id = egui::Id::unique(("settings note", row.id));
-        let said = ui.interact(rect, id, Sense::hover());
-        said.widget_info(|| WidgetInfo::labeled(Role::Label, true, &note));
-        if live {
-            let polite = egui::accesskit::Live::Polite;
-            ctx.accesskit_node_builder(said.id, |node| node.set_live(polite));
+        } => {
+            let (ids, names) = options(ctx, row);
+            let items: Vec<&str> = default
+                .and_then(Value::as_array)
+                .map(|items| items.iter().filter_map(Value::as_str).collect())
+                .unwrap_or_default();
+            let named: Vec<&str> = ids
+                .iter()
+                .zip(&names)
+                .filter(|(id, _)| items.contains(id))
+                .map(|(_, name)| name.as_str())
+                .collect();
+            named.join(", ")
         }
-        bottom = bottom.max(rect.bottom() + t.spacing.xs);
+        Kind::List { .. } | Kind::Table { .. } => String::new(),
     }
-    ui.allocate_rect(
-        Rect::from_min_max(top, pos2(top.x + content, bottom)),
-        Sense::hover(),
-    );
-    change
 }
 
-/// `row`'s control by its kind, `label` its full name: a switch ending `width` in, or `width`
-/// wide, a choice, a number with its unit inside it, or a text; for a list of a choice, a
-/// switch row per option, each on a line of its own, named by its option. The graphics card's is its
-/// list, as `extra` has it, described to screen readers by `said`, what the row says under
-/// it. Returns the value the user gave it.
+/// How many decimals `number` is shown with, as the schema's generator counts them
+/// (`Number::shown_places`): the fewest that hold its kept step times its factor.
+fn shown_decimals(number: &apertrust_base::settings::Number) -> usize {
+    number.shown_places() as usize
+}
+
+/// `n`, an `f32` of the schema, as the decimal number it was written as
+/// (`settings::written`): 0.7, not the `f32`'s 0.699999988.
+fn decimal(n: f32) -> f64 {
+    apertrust_base::settings::written(n)
+}
+
+/// `value`, kept, as `number` shows it: times its factor, at the decimals it is shown
+/// with, which keep every value it keeps apart.
+fn as_shown(number: &apertrust_base::settings::Number, value: f64) -> f64 {
+    let factor = decimal(number.factor.unwrap_or(1.0));
+    let scale = 10f64.powi(shown_decimals(number) as i32);
+    (value * factor * scale).round() / scale + 0.0
+}
+
+/// `row`'s control by its kind and the schema's `control`, `label` its full name, in the
+/// row's column; the graphics card's is its list, as `extra` has it, described to screen
+/// readers by `said`, what the row says under it. Returns the value the user gave it.
 fn control(
     ui: &mut Ui,
-    t: &Theme,
     row: &Row,
     label: &str,
-    width: f32,
     extra: Extra<'_>,
     said: Option<&str>,
 ) -> Option<Change> {
     let ctx = ui.ctx().clone();
     let set = |value| Some(Change::Set(row.id, value));
     if let Some(card) = extra.card {
-        return card_control(ui, t, row, card, (label, said), width);
+        return card_control(ui, row, card, (label, said));
     }
     match row.kind {
         Kind::Boolean => {
             let mut on = row.value.as_ref().and_then(Value::as_bool).unwrap_or(false);
-            // The switch ends where the page's choice boxes end, its label the row's own, in
-            // the label's column.
-            let at = ui.cursor().min;
-            let side = t.sizes.switch_width;
-            let rect = Rect::from_min_size(
-                pos2(at.x + width - side, at.y),
-                vec2(side, t.sizes.panel_line),
-            );
-            let mut switch = ui.new_child(
-                UiBuilder::new()
-                    .max_rect(rect)
-                    .layout(Layout::left_to_right(Align::Center)),
-            );
             Switch::new(&mut on, label)
-                .show(&mut switch)
+                .show(ui)
                 .changed()
                 .then_some(Value::Boolean(on))
                 .and_then(set)
@@ -1022,61 +1064,93 @@ fn control(
             let names: Vec<&str> = names.iter().map(String::as_str).collect();
             let chosen = row.value.as_ref().and_then(Value::as_str);
             let selected = ids.iter().position(|id| Some(*id) == chosen);
-            let choice = Choice::new("", &names, selected)
-                .name(label)
-                .min_box_width(width);
-            match boxed(ui, t, choice, width) {
-                Some(ChoiceAction::Set(i)) => set(Value::String(ids[i].to_owned())),
-                _ => None,
-            }
+            let picked = if row.control == Some(Control::Segmented) {
+                Segmented::new(label, &names, selected).show(ui)
+            } else {
+                let mut combo = Combo::new(label, &names, selected);
+                if let Some(said) = said {
+                    combo = combo.description(said);
+                }
+                combo.show(ui)
+            };
+            picked.and_then(|i| set(Value::String(ids[i].to_owned())))
         }
         Kind::Number(number) => {
-            let factor = f64::from(number.factor.unwrap_or(1.0));
+            // One representation, the schema's decimal numbers, shown through the factor:
+            // its bounds, step, `above` and the value, so 0.7 typed meets a maximum of 0.7;
+            // and one rounding, the store's, as the controls' grid.
+            let shown = |n: f64| as_shown(&number, n);
             let kept = row.value.as_ref().and_then(as_number).unwrap_or(0.0);
-            let range = number.range();
-            let shown = |n: f32| f64::from(n) * factor;
-            let decimals = number.decimals.unwrap_or(2) as i32;
-            let shown_decimals = (decimals - factor.log10().round() as i32).max(0) as usize;
+            // An open end stays the largest number there, as the controls take it.
+            let open = f64::from(f32::MAX);
+            let start = number.min.map_or(-open, |min| shown(decimal(min)));
+            let range = start..=number.max.map_or(open, |max| shown(decimal(max)));
+            let decimals = shown_decimals(&number);
+            let kept_decimals = number.decimals.unwrap_or(2) as i32;
+            let grid = shown(10f64.powi(-kept_decimals));
+            // With no step of its own, one kept step: the next value the store keeps.
+            let step = number.step.map_or(grid, |step| shown(decimal(step)));
             let unit = number.unit.map(|unit| tr(&ctx, &format!("unit-{unit}")));
-            let mut field = ValueField::new(
-                ui.make_persistent_id(("settings field", row.id)),
-                label,
-                kept * factor,
-                shown(*range.start())..=shown(*range.end()),
-            )
-            .decimals(shown_decimals)
-            .number_only();
-            if let Some(unit) = &unit {
-                field = field.unit(unit).suffix(unit);
-            }
-            let typed = ui
-                .allocate_ui(vec2(width, t.sizes.field), |ui| {
-                    ui.set_width(width);
-                    field.show(ui).1
-                })
-                .inner;
-            let typed = typed?;
-            let value = typed / factor;
-            set(if decimals == 0 {
-                Value::Integer(value.round() as i64)
+            let slider = number.min.is_some()
+                && number.max.is_some()
+                && row.control != Some(Control::Number);
+            let typed = if slider {
+                let mut slider = Slider::new(row.id, label, shown(kept), range)
+                    .step(step)
+                    .grid(grid)
+                    .decimals(decimals);
+                if let Some(unit) = &unit {
+                    slider = slider.unit(unit);
+                }
+                slider.show(ui)
             } else {
-                let scale = 10f64.powi(decimals);
-                Value::Float((value * scale).round() / scale)
+                let mut field = Number::new(row.id, label, shown(kept), range)
+                    .step(step)
+                    .grid(grid)
+                    .decimals(decimals);
+                if let Some(unit) = &unit {
+                    field = field.unit(unit);
+                }
+                // What it must be more than, which no range holds.
+                if let Some(above) = number.above {
+                    field = field.above(shown(decimal(above)));
+                }
+                field.show(ui)
+            };
+            // On the grid, its ends too (the schema's generator refuses an end that is not),
+            // so this is exact but for the float's last digits.
+            let factor = decimal(number.factor.unwrap_or(1.0));
+            let scale = 10f64.powi(kept_decimals);
+            let kept = (typed? / factor * scale).round() / scale;
+            set(if kept_decimals == 0 {
+                Value::Integer(kept as i64)
+            } else {
+                Value::Float(kept)
             })
         }
         Kind::Text => {
             let text = row.value.as_ref().and_then(Value::as_str).unwrap_or("");
-            let id = ui.make_persistent_id(("settings text", row.id));
-            // What it shows while empty, where its words say: `setting-<id>-hint`.
-            let words = translator(&ctx);
-            let hint = format!("setting-{}-hint", row.words());
-            let hint = words.has(&hint).then(|| words.text(&hint));
-            let mut field = TextField::new(id, label, text).width(width);
-            if let Some(hint) = &hint {
-                field = field.hint(hint);
+            match row.control {
+                Some(Control::Area) => TextArea::new(row.id, label, text).show(ui),
+                // No setting is a folder yet: the app's folder dialog comes with the first,
+                // and with it what the button asks of it.
+                Some(Control::Folder) => {
+                    let choose = tr(&ctx, "export-choose-folder");
+                    Folder::new(row.id, label, text, &choose).show(ui).text
+                }
+                _ => {
+                    // What it shows while empty, where its words say: `setting-<id>-hint`.
+                    let words = translator(&ctx);
+                    let hint = format!("setting-{}-hint", row.words());
+                    let hint = words.has(&hint).then(|| words.text(&hint));
+                    let mut field = Text::new(row.id, label, text);
+                    if let Some(hint) = &hint {
+                        field = field.hint(hint);
+                    }
+                    field.show(ui)
+                }
             }
-            let (_, typed) = field.show(ui);
-            typed.and_then(|typed| set(Value::String(typed)))
+            .and_then(|typed| set(Value::String(typed)))
         }
         Kind::List {
             of: Kind::Choice(_),
@@ -1089,55 +1163,20 @@ fn control(
                 .map(|items| items.iter().filter_map(Value::as_str).collect())
                 .unwrap_or_default();
             let (ids, names) = options(&ctx, row);
-            let mut toggled = None;
-            for (id, name) in ids.iter().zip(&names) {
-                // Each option a boolean's row, its words at the column's start and its
-                // switch where the page's choice boxes end, the whole row the target: the
-                // row runs a field's inset past them, as the switch is that far in.
-                let on = ticked.contains(id);
-                let inset = t.spacing.xs + t.shape.hairline;
-                let room = (width + inset).min(ui.max_rect().width());
-                ui.allocate_ui(vec2(room, t.sizes.panel_line), |ui| {
-                    if let Some(on) = ToggleRow::new(name, on).show(ui) {
-                        toggled = Some((*id, on));
-                    }
-                });
-            }
-            // The options ticked after the change, in the type's order.
-            let (changed, on) = toggled?;
+            let names: Vec<&str> = names.iter().map(String::as_str).collect();
+            let on: Vec<bool> = ids.iter().map(|id| ticked.contains(id)).collect();
+            let (changed, now) = Chips::new(label, &names, &on).show(ui)?;
+            // The options on after the change, in the type's order.
             let items = ids
                 .iter()
-                .filter(|id| {
-                    if **id == changed {
-                        on
-                    } else {
-                        ticked.contains(id)
-                    }
-                })
-                .map(|id| Value::String((*id).to_owned()));
+                .enumerate()
+                .filter(|(i, _)| if *i == changed { now } else { on[*i] })
+                .map(|(_, id)| Value::String((*id).to_owned()));
             set(Value::Array(items.collect()))
         }
         // No other list, and no table, is on a page yet.
         Kind::List { .. } | Kind::Table { .. } => None,
     }
-}
-
-/// Draws `choice` as a row's box, at the column's start, as wide as its widest option
-/// needs, at least `width` and at most [`CONTROL`]: the row's own gap before it falls in
-/// the dot's column, and a longer option is cut, whole in its tooltip.
-fn boxed(ui: &mut Ui, t: &Theme, choice: Choice<'_>, width: f32) -> Option<ChoiceAction> {
-    let width = choice.box_width(ui).max(width).min(CONTROL) + t.spacing.l;
-    let start = ui.cursor().min.x - t.spacing.l;
-    let rect = Rect::from_min_size(
-        pos2(start, ui.max_rect().top()),
-        vec2(width, ui.max_rect().height()),
-    );
-    let mut boxed = ui.new_child(
-        UiBuilder::new()
-            .max_rect(rect)
-            .layout(Layout::left_to_right(Align::Center)),
-    );
-    choice.show(&mut boxed)
 }
 
 /// The graphics card's list (decision 82), `named` its row's full name and what is said
@@ -1146,37 +1185,31 @@ fn boxed(ui: &mut Ui, t: &Theme, choice: Choice<'_>, width: f32) -> Option<Choic
 /// Automatic resets the setting, so it leaves the file.
 fn card_control(
     ui: &mut Ui,
-    t: &Theme,
     row: &Row,
     card: &hardware::Card,
     named: (&str, Option<&str>),
-    width: f32,
 ) -> Option<Change> {
     let (label, said) = named;
     let names: Vec<&str> = card.words.iter().map(String::as_str).collect();
     let missing: Vec<usize> = card.missing.iter().map(|(at, _)| *at).collect();
     let missing_tip = card.missing.as_ref().map_or("", |(_, tip)| tip.as_str());
-    let mut choice = Choice::new("", &names, card.selected)
-        .name(label)
-        .min_box_width(width)
-        .enabled(ui.is_enabled() && !card.listing)
+    let mut combo = Combo::new(label, &names, card.selected)
+        .enabled(!card.listing)
         .disabled_options(&missing, missing_tip);
     if let Some((at, tip)) = &card.unlisted {
-        choice = choice.unlisted(*at, tip);
+        combo = combo.unlisted(*at, tip);
     }
     if let Some(at) = card.separator {
-        choice = choice.separator_before(at);
+        combo = combo.separator_before(at);
     }
     if let Some(said) = said {
-        choice = choice.description(said);
+        combo = combo.description(said);
     }
-    match boxed(ui, t, choice, width)? {
-        ChoiceAction::Set(item) => Some(match card.stores(item) {
-            Some(stored) => Change::Set(row.id, Value::String(stored.to_owned())),
-            None => Change::Reset(row.id),
-        }),
-        _ => None,
-    }
+    let item = combo.show(ui)?;
+    Some(match card.stores(item) {
+        Some(stored) => Change::Set(row.id, Value::String(stored.to_owned())),
+        None => Change::Reset(row.id),
+    })
 }
 
 /// A number as `settings.toml` keeps it, whole or not.
@@ -1226,6 +1259,11 @@ mod tests {
         frames: Vec<Vec<Change>>,
         /// How many times Restart now was pressed.
         restarts: usize,
+        /// How many frames asked the host to close the dialog.
+        closes: usize,
+        /// Every change asked for by the frame that first asked to close, that one's included:
+        /// what the app takes before the window goes.
+        closed_with: Option<Vec<Change>>,
     }
 
     /// The dialog over `keeper`'s settings, without Close as on the Mac, in `which` theme;
@@ -1267,7 +1305,7 @@ mod tests {
             }
         }
         let mut harness = Harness::builder()
-            .with_size(vec2(WIDTH, BODY) + vec2(16.0, 16.0))
+            .with_size(vec2(WIDTH, BODY) + vec2(16.0, 104.0))
             .with_os(os)
             // Each event is a frame of its own: a 60th of a second apart, two clicks are one
             // double-click.
@@ -1280,6 +1318,7 @@ mod tests {
             .build_ui_state(
                 |ui, bench: &mut Bench| {
                     let drawn = dialog_host::draw(ui, &mut bench.content);
+                    bench.closes += usize::from(drawn.close);
                     let mut frame = Vec::new();
                     for output in drawn.outputs {
                         match output {
@@ -1292,12 +1331,17 @@ mod tests {
                     if !frame.is_empty() {
                         bench.frames.push(frame);
                     }
+                    if drawn.close && bench.closed_with.is_none() {
+                        bench.closed_with = Some(bench.changes.clone());
+                    }
                 },
                 Bench {
                     content,
                     changes: Vec::new(),
                     frames: Vec::new(),
                     restarts: 0,
+                    closes: 0,
+                    closed_with: None,
                 },
             );
         harness.run();
@@ -1495,37 +1539,82 @@ mod tests {
         );
     }
 
-    /// A change shows darktable's dot, and a double-click on the label, or Reset in its
-    /// right-click menu, puts the default back.
+    /// A language chosen is reset to the system's, whichever that is: the mark names that,
+    /// never the language the system gives now; an explicit default keeps its option's name.
     #[test]
-    fn a_row_off_its_default_is_dotted_and_reset_from_its_label() {
+    fn a_computed_default_is_named_by_its_own_words() {
         let mut harness = dialog();
-        let label = "Ask before overwriting an exported file";
-        assert!(!dotted(&harness, label));
-        harness.get_by_role_and_label(Role::Switch, label).click();
+        let content = &mut harness.state_mut().content;
+        let row = content.rows.iter_mut().find(|row| row.id == "locale");
+        row.expect("the language").value = Some("uk".into());
+        harness.run();
+        assert!(dotted(&harness, "Language"));
+        harness.get_by_role_and_label(Role::Button, "Reset to the system's language");
+        assert!(
+            harness
+                .query_by_role_and_label(Role::Button, "Reset to English (UK)")
+                .is_none()
+        );
+        let mut harness = dialog_of(&keeper_with("theme", "light"), Builtin::Dark);
+        harness.run();
+        harness.get_by_role_and_label(Role::Button, "Reset to Dark");
+    }
+
+    /// The changed mark after the label of a row off its default, a button named and tipped
+    /// by the default, which resets it; a double-click on the label, Reset in its
+    /// right-click menu and Delete on it reset too.
+    #[test]
+    fn a_changed_setting_shows_its_mark_and_resets_from_it() {
+        let mut harness = dialog();
+        let ask = "Ask before overwriting an exported file";
+        let reset_to_on = "Reset to On";
+        assert!(!dotted(&harness, ask));
+        assert!(
+            harness
+                .query_by_role_and_label(Role::Button, reset_to_on)
+                .is_none()
+        );
+        harness.get_by_role_and_label(Role::Switch, ask).click();
         harness.run();
         assert_eq!(
             harness.state().changes,
             [Change::Set("export.ask_before_overwrite", false.into())]
         );
-        assert!(dotted(&harness, label));
-        let at = harness
-            .get_by_role_and_label(Role::Label, label)
-            .rect()
-            .center();
-        double_click(&mut harness, at);
+        assert!(dotted(&harness, ask));
+        // The mark after the label, on its line; its tooltip names the default.
+        let label = harness.get_by_role_and_label(Role::Label, ask).rect();
+        let mark = harness
+            .get_by_role_and_label(Role::Button, reset_to_on)
+            .rect();
+        // The switch's label is its whole row's target, so the row's rectangle.
+        assert!(mark.left() > label.left() + 100.0);
+        assert!((mark.center().y - label.center().y).abs() < 1.0);
+        harness.run_steps(30);
+        harness
+            .get_by_role_and_label(Role::Button, reset_to_on)
+            .hover();
+        harness.run_steps(10);
+        assert!(harness.query_all_by_label(reset_to_on).count() >= 2);
+        press(&mut harness, mark.center(), PointerButton::Primary);
+        harness.run();
         assert_eq!(
             harness.state().changes.last(),
             Some(&Change::Reset("export.ask_before_overwrite"))
         );
-        assert!(!dotted(&harness, label));
-        // The interface's size, typed in per cent, is kept as a factor; the menu resets it.
+        assert!(!dotted(&harness, ask));
+        assert!(
+            harness
+                .query_by_role_and_label(Role::Button, reset_to_on)
+                .is_none()
+        );
+        // The interface's size, typed in per cent, is kept as a factor; its mark names the
+        // default with its unit, and the label's menu resets it.
         let (size, field) = ("Interface size", "Interface size, in %");
-        harness
-            .get_by_role_and_label(Role::TextInput, field)
-            .click();
+        let track = harness.get_by_role_and_label(Role::Slider, size).rect();
+        let value = pos2(track.right() + 30.0, track.center().y);
+        harness.run_steps(30);
+        press(&mut harness, value, PointerButton::Primary);
         harness.run();
-        harness.key_press_modifiers(Modifiers::COMMAND, Key::A);
         harness
             .get_by_role_and_label(Role::TextInput, field)
             .type_text("125");
@@ -1536,6 +1625,7 @@ mod tests {
             Some(&Change::Set("scale", 1.25.into()))
         );
         assert!(dotted(&harness, size));
+        harness.get_by_role_and_label(Role::Button, "Reset to 100 %");
         let at = harness
             .get_by_role_and_label(Role::Label, size)
             .rect()
@@ -1548,24 +1638,186 @@ mod tests {
             Some(&Change::Reset("scale"))
         );
         assert!(!dotted(&harness, size));
-        // Delete on the label in focus resets it as well.
-        harness.get_by_role_and_label(Role::Switch, label).click();
-        harness.run();
-        harness.get_by_role_and_label(Role::Label, label).focus();
-        harness.run();
-        harness.key_press(Key::Delete);
-        harness.run();
+        // A double-click on the label resets a choice, and so does Delete on it. The theme
+        // shown changes with it, the window's areas fading to it.
+        let theme = |harness: &mut Harness<'_, Bench>, item: &str| {
+            harness
+                .get_by_role_and_label(Role::ComboBox, "Theme")
+                .click();
+            harness.run_steps(12);
+            harness.get_by_label(item).click();
+            harness.run_steps(12);
+        };
+        theme(&mut harness, "Light");
+        assert!(dotted(&harness, "Theme"));
+        harness.get_by_role_and_label(Role::Button, "Reset to Dark");
+        let at = harness
+            .get_by_role_and_label(Role::Label, "Theme")
+            .rect()
+            .center();
+        harness.run_steps(30);
+        harness.hover_at(at);
+        press(&mut harness, at, PointerButton::Primary);
+        press(&mut harness, at, PointerButton::Primary);
+        harness.run_steps(12);
         assert_eq!(
             harness.state().changes.last(),
-            Some(&Change::Reset("export.ask_before_overwrite"))
+            Some(&Change::Reset("theme"))
+        );
+        theme(&mut harness, "Grey");
+        assert_eq!(
+            harness.state().changes.last(),
+            Some(&Change::Set("theme", "grey".into()))
+        );
+        let before = harness.state().changes.len();
+        harness.get_by_role_and_label(Role::Label, "Theme").focus();
+        harness.run();
+        harness.key_press(Key::Delete);
+        harness.run_steps(12);
+        assert_eq!(harness.state().changes[before..], [Change::Reset("theme")]);
+    }
+
+    /// A value typed and left by a click on a switch: the field's commit, as it loses the
+    /// focus, and the switch's toggle come in one frame, and both are kept.
+    #[test]
+    fn a_commit_and_a_switch_in_one_frame_are_both_kept() {
+        let mut harness = dialog();
+        let track = harness
+            .get_by_role_and_label(Role::Slider, "Interface size")
+            .rect();
+        let value = pos2(track.right() + 30.0, track.center().y);
+        harness.run_steps(30);
+        press(&mut harness, value, PointerButton::Primary);
+        harness.run();
+        harness
+            .get_by_role_and_label(Role::TextInput, "Interface size, in %")
+            .type_text("125");
+        harness.run();
+        harness.state_mut().frames.clear();
+        let switch = harness
+            .get_by_role_and_label(Role::Switch, "Keep a log of this session")
+            .rect()
+            .center();
+        harness.hover_at(switch);
+        press(&mut harness, switch, PointerButton::Primary);
+        harness.run();
+        let both = [
+            Change::Set("scale", 1.25.into()),
+            Change::Set("log.keep", true.into()),
+        ];
+        let frame = harness
+            .state()
+            .frames
+            .iter()
+            .find(|frame| frame.len() > 1)
+            .cloned();
+        assert_eq!(
+            frame.as_deref(),
+            Some(&both[..]),
+            "{:?}",
+            harness.state().frames
         );
     }
 
-    /// A list of a choice is a switch row per option, one under another in its type's order:
-    /// a change sets the whole list, one dot says the row is off its default, one Reset puts
-    /// it all back, and the row's help is its label's tooltip.
+    /// The point of `name`'s row's words at `y` of its height, and of its switch.
+    fn words_and_switch(
+        harness: &Harness<'_, Bench>,
+        name: &str,
+        y: f32,
+    ) -> (egui::Pos2, egui::Pos2) {
+        let words = harness.get_by_role_and_label(Role::Label, name).rect();
+        let switch = harness.get_by_role_and_label(Role::Switch, name).rect();
+        let at = pos2(words.left() + 20.0, words.top() + y * words.height());
+        (at, switch.center())
+    }
+
+    /// A switch's row takes each click at once, as darktable's label does: one on its
+    /// words or its switch toggles it; a double-click on its words resets it, a stored value
+    /// on its default's other side going back with no stray value kept, and at its default
+    /// it ends there too; quick clicks on two rows toggle each, resetting neither. Each case:
+    /// where the clicks land, the setting before, and after with whether it was reset.
     #[test]
-    fn a_list_of_a_choice_is_a_switch_row_per_option_with_one_dot_and_one_reset() {
+    fn a_switch_s_row_takes_each_click() {
+        const KEEP: &str = "Keep a log of this session";
+        const ASK: [&str; 2] = [
+            "Ask before overwriting an exported file",
+            "Ask before discarding a photo’s history",
+        ];
+        let keep = |on: bool| {
+            let (mut keeper, settings) = Keeper::nowhere();
+            keeper.apply(&settings, "log.keep", Some(&on.into()));
+            keeper
+        };
+        // Where each click lands: Keep a log's words or switch, or the confirmations' words
+        // at the first row's bottom and the second's top, near enough for a double-click.
+        #[derive(Clone, Copy, Debug)]
+        enum At {
+            Words,
+            Switch,
+            Low,
+            High,
+        }
+        let cases = [
+            (&[At::Words][..], false, vec![("log.keep", true, false)]),
+            (&[At::Switch][..], false, vec![("log.keep", true, false)]),
+            (
+                &[At::Words, At::Words][..],
+                true,
+                vec![("log.keep", false, true)],
+            ),
+            (
+                &[At::Words, At::Words][..],
+                false,
+                vec![("log.keep", false, true)],
+            ),
+            (
+                &[At::Low, At::High][..],
+                false,
+                vec![
+                    ("export.ask_before_overwrite", false, false),
+                    ("history.ask_before_discard", false, false),
+                ],
+            ),
+        ];
+        for (clicks, before, after) in cases {
+            let mut harness = dialog_of(&keep(before), Builtin::Dark);
+            harness.run_steps(30);
+            let (words, switch) = words_and_switch(&harness, KEEP, 0.5);
+            let (low, _) = words_and_switch(&harness, ASK[0], 1.0);
+            let (high, _) = words_and_switch(&harness, ASK[1], 0.0);
+            for at in clicks {
+                let pos = match at {
+                    At::Words => words,
+                    At::Switch => switch,
+                    At::Low => low - vec2(0.0, 0.5),
+                    At::High => high + vec2(0.0, 0.5),
+                };
+                harness.hover_at(pos);
+                press(&mut harness, pos, PointerButton::Primary);
+                harness.step();
+            }
+            harness.run();
+            let state = harness.state();
+            for (id, on, reset) in &after {
+                let row = state.content.row(id).expect("the row");
+                let stored = row.value.as_ref().and_then(Value::as_bool);
+                let was_reset = state.changes.contains(&Change::Reset(id));
+                let said = format!("{clicks:?} from {before}: {:?}", state.changes);
+                assert_eq!((stored, was_reset), (Some(*on), *reset), "{id}, {said}");
+            }
+            // A double-click ends with the key removed, its last change the reset.
+            if clicks.len() == 2 && matches!(clicks[0], At::Words) {
+                let last = state.changes.last();
+                assert_eq!(last, Some(&Change::Reset("log.keep")), "{before}");
+            }
+        }
+    }
+
+    /// The log's categories are chips, a toggle button each in the type's order, keeping the
+    /// setting's values: a change sets the whole list, one mark says the row is off its
+    /// default, one Reset puts it all back, and the row's help is its tooltip.
+    #[test]
+    fn the_log_categories_are_chips() {
         let mut harness = dialog();
         let options = [
             ("GPU", true),
@@ -1578,55 +1830,27 @@ mod tests {
             ("Events", true),
             ("Verbose", false),
         ];
+        harness.get_by_role_and_label(Role::Group, "Log");
         let label = harness.get_by_role_and_label(Role::Label, "Log").rect();
-        let mut above = label.top() - 1.0;
-        // One switch column on the page: a boolean's switch and every option's switch end
-        // where the choice boxes end, an option's row being its words at the column's
-        // start and its switch, a field's inset in from the row's end.
-        let keep = harness
-            .get_by_role_and_label(Role::Switch, "Keep a log of this session")
-            .rect();
-        let ask = harness
-            .get_by_role_and_label(Role::Switch, "Ask before overwriting an exported file")
-            .rect();
-        assert_eq!(keep.right(), ask.right());
-        let theme = harness
-            .get_by_role_and_label(Role::ComboBox, "Theme")
-            .rect();
-        assert_eq!(
-            keep.right(),
-            theme.right(),
-            "the choice boxes end where switches do"
-        );
-        let inset = Theme::default().spacing.xs + Theme::default().shape.hairline;
+        let mut before: Option<egui::Rect> = None;
         for (name, ticked) in options {
-            let node = harness.get_by_role_and_label(Role::Switch, name);
+            let node = harness.get_by_role_and_label(Role::Button, name);
             let on = node.accesskit_node().toggled() == Some(Toggled::True);
             assert_eq!(on, ticked, "{name}");
             let rect = node.rect();
-            assert!(rect.top() > above, "{name} is under the one before");
-            assert_eq!(rect.right() - inset, keep.right(), "{name}");
-            assert!(rect.width() > 100.0, "{name}: a row, not a switch alone");
-            above = rect.top();
+            assert!(rect.left() > label.right(), "{name} is in the column");
+            if let Some(before) = before {
+                let after = rect.top() > before.top() || rect.left() > before.right();
+                assert!(after, "{name} comes after the one before");
+            }
+            before = Some(rect);
         }
-        // The option's words, at the row's start, tick it too: the whole row is the target.
-        let pipe = harness.get_by_role_and_label(Role::Switch, "Pipe").rect();
-        let words = pos2(pipe.left() + 12.0, pipe.center().y);
-        let pipe_on = |harness: &Harness<'_, Bench>| {
-            let node = harness.get_by_role_and_label(Role::Switch, "Pipe");
-            node.accesskit_node().toggled() == Some(Toggled::True)
-        };
-        for expected in [false, true] {
-            harness.run_steps(30);
-            harness.hover_at(words);
-            press(&mut harness, words, PointerButton::Primary);
-            harness.run();
-            assert_eq!(pipe_on(&harness), expected, "the words tick their box");
-        }
-        harness.state_mut().changes.clear();
+        // The label stays on the row's first line, level with the first chips.
+        let first = harness.get_by_role_and_label(Role::Button, "GPU").rect();
+        assert!((first.center().y - label.center().y).abs() < 3.0);
         assert!(!dotted(&harness, "Log"));
         harness
-            .get_by_role_and_label(Role::Switch, "Memory")
+            .get_by_role_and_label(Role::Button, "Memory")
             .click();
         harness.run();
         let ids = |ids: &[&str]| {
@@ -1641,17 +1865,14 @@ mod tests {
             [Change::Set("log.domains", ids(&with_memory))]
         );
         assert!(dotted(&harness, "Log"));
-        harness.get_by_role_and_label(Role::Switch, "GPU").click();
+        harness.get_by_role_and_label(Role::Button, "GPU").click();
         harness.run();
         assert_eq!(
             harness.state().changes.last(),
             Some(&Change::Set("log.domains", ids(&with_memory[1..])))
         );
         // One Reset for the whole list.
-        let at = harness
-            .get_by_role_and_label(Role::Label, "Log")
-            .rect()
-            .center();
+        let at = label.center();
         right_click(&mut harness, at);
         harness.get_by_label("Reset").click();
         harness.run();
@@ -1660,9 +1881,9 @@ mod tests {
             Some(&Change::Reset("log.domains"))
         );
         assert!(!dotted(&harness, "Log"));
-        let gpu = harness.get_by_role_and_label(Role::Switch, "GPU");
+        let gpu = harness.get_by_role_and_label(Role::Button, "GPU");
         assert_eq!(gpu.accesskit_node().toggled(), Some(Toggled::True));
-        // The help, in the label's tooltip.
+        // The help, in the row's tooltip.
         harness.run_steps(30);
         harness.get_by_role_and_label(Role::Label, "Log").hover();
         harness.run_steps(10);
@@ -1679,34 +1900,35 @@ mod tests {
         assert!(shown.iter().any(|text| text == help), "{shown:?}");
     }
 
-    /// A row `--conf` sets is disabled, saying so, and its label resets nothing; a setting
-    /// that applies after a restart says so.
+    /// A row `--conf` sets is dimmed, its control disabled, with no mark though it is off
+    /// its default; its label says why and resets nothing. A setting that applies after a
+    /// restart says so after its label.
     #[test]
-    fn a_row_set_by_conf_is_disabled_and_one_after_a_restart_says_so() {
+    fn a_conf_set_row_is_dimmed_with_no_mark() {
         let conf = ["scale=1.5".to_owned()];
         let (keeper, _) = Keeper::open_in(None, &settings::overrides(&conf).expect("read"));
         let mut harness = dialog_of(&keeper, Builtin::Dark);
-        let field = harness.get_by_role_and_label(Role::TextInput, "Interface size, in %");
-        assert!(field.accesskit_node().is_disabled());
-        harness.get_by_label("Set by --conf for this run");
-        let at = harness
-            .get_by_role_and_label(Role::Label, "Interface size")
-            .rect()
-            .center();
+        let slider = harness.get_by_role_and_label(Role::Slider, "Interface size");
+        assert!(slider.accesskit_node().is_disabled());
+        assert_eq!(slider.accesskit_node().numeric_value(), Some(150.0));
+        assert!(harness.query_by_label("Reset to 100 %").is_none());
+        let label = harness.get_by_role_and_label(Role::Label, "Interface size");
+        assert!(label.accesskit_node().is_disabled());
+        let said = label.accesskit_node().description();
+        assert_eq!(said.as_deref(), Some("Set by --conf for this run"));
+        let at = label.rect().center();
         double_click(&mut harness, at);
         assert!(harness.state().changes.is_empty());
         processing(&mut harness);
         harness.get_by_role_and_label(Role::ComboBox, "Graphics card");
         harness.get_by_role_and_label(Role::TextInput, "Memory budget, in MiB");
-        let notes = harness
-            .query_all_by_label("Applies after a restart")
-            .count();
+        let notes = harness.query_all_by_label("after a restart").count();
         assert_eq!(notes, 2);
     }
 
-    /// Processing's Hardware acceleration group: Graphics card, Graphics API and Memory
-    /// budget, the graphics API drawn on Windows alone, the only platform with a choice of
-    /// one (`platforms`; decision 82).
+    /// The graphics API is drawn on Windows alone, the only platform with a choice of one
+    /// (`platforms`; decision 82): Processing's Hardware acceleration group holds Graphics
+    /// card, Graphics API and Memory budget there, and the API's row elsewhere is absent.
     #[test]
     fn the_graphics_api_is_drawn_on_windows_alone() {
         let keeper = Keeper::nowhere().0;
@@ -1733,9 +1955,7 @@ mod tests {
             let api = harness.query_by_role_and_label(Role::ComboBox, "Graphics API");
             assert_eq!(api.is_some(), windows, "{os:?}");
             // Each row says it applies after a restart.
-            let notes = harness
-                .query_all_by_label("Applies after a restart")
-                .count();
+            let notes = harness.query_all_by_label("after a restart").count();
             assert_eq!(notes, rows.len(), "{os:?}");
         }
         // Its options, in the setting's order, and Automatic chosen.
@@ -1758,8 +1978,8 @@ mod tests {
         assert!(!alone.holds(Page::Processing, OperatingSystem::Nix));
     }
 
-    /// A row is disabled while the boolean it requires is off, and enabled again once it
-    /// is on: the cache's limit while the cache is unlimited.
+    /// A row is dimmed while the boolean it requires is off, saying so, and enabled again
+    /// once it is on: the cache's limit while the cache is unlimited.
     #[test]
     fn a_row_is_disabled_while_the_boolean_it_requires_is_off() {
         let mut harness = dialog();
@@ -1776,6 +1996,12 @@ mod tests {
         let set = Change::Set("cache.limited", Value::Boolean(false));
         assert_eq!(harness.state().changes.last(), Some(&set));
         assert!(disabled(&harness));
+        let label = harness.get_by_role_and_label(Role::Label, "Cache limit");
+        let said = label.accesskit_node().description();
+        assert_eq!(
+            said.as_deref(),
+            Some("Off while “Limit the cache's size” is off")
+        );
         harness.get_by_role_and_label(Role::Switch, limited).click();
         harness.run();
         assert!(!disabled(&harness));
@@ -1801,6 +2027,10 @@ mod tests {
                     let options = row.options.iter();
                     ids.extend(options.map(|o| format!("setting-{}-option-{o}", row.words())));
                 }
+                // A choice whose default the app works out names it in words of its own.
+                if row.computed && matches!(row.kind, Kind::Choice(_)) {
+                    ids.push(format!("setting-{}-default", row.words()));
+                }
                 if let Kind::Number(number) = row.kind {
                     ids.extend(number.unit.map(|unit| format!("unit-{unit}")));
                 }
@@ -1811,73 +2041,635 @@ mod tests {
         }
     }
 
-    /// darktable's grid: every label on a page as wide as its widest, at least 176 points,
-    /// then 16, the dot's 14 and 4 before each control, whose start is the column's; the
-    /// label's target ends with its column.
+    /// General draws each kind with its control, where the schema says: Theme and Language
+    /// combos, Interface size a slider, Slider marker and Menu button segmented, the
+    /// confirmations switches, and the log's categories chips; on Linux, where the menu
+    /// button is drawn. Every box ends at one edge, the column's, and the boxes and wells
+    /// fill its 260 points; the labels start together at the rows' start.
     #[test]
-    fn the_labels_take_the_page_s_widest_and_the_controls_start_after_the_dot() {
+    fn the_general_page_draws_each_kind_with_its_control() {
         let keeper = Keeper::nowhere().0;
-        for locale in [Locale::EnGb, Locale::Uk] {
-            let mut harness = dialog_in(&keeper, Builtin::Dark, locale);
-            let words = Translator::new(locale);
-            for page in [Page::General, Page::Photos, Page::Editing, Page::Processing] {
-                let name = words.text(&format!("settings-page-{}", page.id()));
-                harness.get_by_role_and_label(Role::Tab, &name).click();
+        let harness = dialog_on(&keeper, Builtin::Dark, Locale::EnGb, OperatingSystem::Nix);
+        let rect = |role, name| harness.get_by_role_and_label(role, name).rect();
+        let theme = rect(Role::ComboBox, "Theme");
+        let wide = [
+            theme,
+            rect(Role::ComboBox, "Language"),
+            rect(Role::RadioGroup, "Slider marker"),
+            rect(Role::RadioGroup, "Menu button"),
+            rect(Role::Group, "Log"),
+        ];
+        for box_ in wide {
+            assert_eq!(box_.width(), 260.0, "{box_:?}");
+            assert_eq!(box_.right(), theme.right(), "{box_:?}");
+        }
+        for name in ["Theme", "Language"] {
+            assert_eq!(rect(Role::ComboBox, name).height(), 24.0);
+        }
+        // Slider marker's three words, Menu button's two options.
+        for name in ["Triangle", "Circle", "Square", "Apertrust icon", "Menu"] {
+            harness.get_by_role_and_label(Role::RadioButton, name);
+        }
+        let slider = rect(Role::Slider, "Interface size");
+        assert!(slider.right() < theme.right() && slider.left() >= theme.left());
+        for name in [
+            "Reopen what was open last",
+            "Ask before overwriting an exported file",
+            "Ask before discarding a photo’s history",
+            "Keep a log of this session",
+        ] {
+            let switch = rect(Role::Switch, name);
+            assert_eq!(switch.right(), theme.right(), "{name}");
+        }
+        // The labels start together, before the column.
+        let starts: Vec<f32> = ["Theme", "Interface size", "Slider marker", "Log"]
+            .iter()
+            .map(|name| rect(Role::Label, name).left())
+            .collect();
+        assert!(starts.windows(2).all(|w| w[0] == w[1]), "{starts:?}");
+        assert!(starts[0] < theme.left() - 200.0);
+        // A right-click past a label, before its control, opens nothing.
+        let mut harness = dialog();
+        let label = harness.get_by_role_and_label(Role::Label, "Theme").rect();
+        right_click(&mut harness, pos2(label.right() + 40.0, label.center().y));
+        assert!(harness.query_by_label("Reset").is_none());
+    }
+
+    /// Whether the label `label` is drawn underlined, as a row Find a setting matches.
+    fn underlined(harness: &Harness<'_, Bench>, label: &str) -> bool {
+        harness
+            .output()
+            .shapes
+            .iter()
+            .filter_map(|clipped| match &clipped.shape {
+                egui::Shape::Text(text) if text.galley.job.text == label => Some(
+                    text.galley
+                        .job
+                        .sections
+                        .iter()
+                        .any(|section| section.format.underline.width > 0.0),
+                ),
+                _ => None,
+            })
+            .next()
+            .expect("the label drawn")
+    }
+
+    /// Find a setting, which Ctrl+F (Cmd+F) focuses, finds rows by their labels and their
+    /// help, case and accents aside: the shown page's matching labels are underlined, and a
+    /// page with no match is dimmed but chosen still.
+    #[test]
+    fn find_a_setting_finds_labels_and_help() {
+        let mut harness = dialog();
+        harness.key_press_modifiers(Modifiers::COMMAND, Key::F);
+        harness.run();
+        let field = harness.get_by_role_and_label(Role::TextInput, "Find a setting");
+        assert!(field.accesskit_node().is_focused());
+        field.type_text("KÉEP A LOG");
+        harness.run();
+        assert_eq!(harness.state().content.query, "KÉEP A LOG");
+        assert!(underlined(&harness, "Keep a log of this session"));
+        assert!(!underlined(&harness, "Theme"));
+        let words = Translator::new(Locale::EnGb);
+        let os = OperatingSystem::Mac;
+        let content = &harness.state().content;
+        assert!(content.finds(Page::General, &words, os));
+        assert!(!content.finds(Page::Photos, &words, os));
+        // The help is searched too: Log's says what it keeps besides warnings.
+        harness.state_mut().content.query = "warnings".to_owned();
+        harness.run();
+        assert!(underlined(&harness, "Log"));
+        assert!(!underlined(&harness, "Keep a log of this session"));
+        // A page with no match is chosen still.
+        harness.get_by_label("Photos").click();
+        harness.run();
+        assert_eq!(harness.state().content.page, Page::Photos);
+    }
+
+    /// Ctrl+F (Cmd+F) with Theme's list open closes the list, and the letters typed next
+    /// go to Find a setting, not to the list's filter.
+    #[test]
+    fn find_a_setting_closes_an_open_list() {
+        let mut harness = dialog();
+        harness
+            .get_by_role_and_label(Role::ComboBox, "Theme")
+            .click();
+        harness.run_steps(12);
+        assert!(harness.query_by_label("Light").is_some(), "the list open");
+        harness.key_press_modifiers(Modifiers::COMMAND, Key::F);
+        harness.run();
+        harness.event(Event::Text("l".to_owned()));
+        harness.run_steps(12);
+        assert_eq!(harness.state().content.query, "l");
+        assert!(harness.query_by_label("Light").is_none(), "the list closed");
+        assert!(harness.state().changes.is_empty());
+    }
+
+    /// Find a setting, empty, gives Escape up, and the host closes by its own binding:
+    /// plain Escape closes Settings on Windows and Linux, Ctrl+Escape does not.
+    #[test]
+    fn an_empty_find_a_setting_leaves_escape_to_the_host_s_binding() {
+        for os in [OperatingSystem::Windows, OperatingSystem::Nix] {
+            let keeper = Keeper::nowhere().0;
+            let mut harness = dialog_on(&keeper, Builtin::Dark, Locale::EnGb, os);
+            for (modifiers, closes) in [(Modifiers::CTRL, 0), (Modifiers::NONE, 1)] {
+                harness.key_press_modifiers(Modifiers::COMMAND, Key::F);
                 harness.run();
-                listed(&mut harness);
-                let rows: Vec<Row> = harness.state().content.rows.clone();
-                let (mut widths, mut ends) = (Vec::new(), Vec::new());
-                let drawn = |row: &&Row| row.page == page && row.drawn_on(OperatingSystem::Mac);
-                for row in rows.iter().filter(drawn) {
-                    let label = label_of(&words, row);
-                    let rect = harness.get_by_role_and_label(Role::Label, &label).rect();
-                    widths.push(rect.width());
-                    let start = rect.left() + rect.width() + 34.0;
-                    // The graphics card's text is a list of the cards (decision 82).
-                    let kind = if row.id == ENGINE_ADAPTER.id {
-                        Kind::Choice("")
-                    } else {
-                        row.kind
-                    };
-                    match kind {
-                        Kind::Number(_) | Kind::Text => {
-                            let fields: Vec<egui::Rect> = harness
-                                .get_all_by_role(Role::TextInput)
-                                .map(|node| node.rect())
-                                .collect();
-                            let field = fields.iter().find(|field| field.left() == start);
-                            let field = field.unwrap_or_else(|| panic!("{locale:?} {}", row.id));
-                            ends.push(field.right() - start);
-                        }
-                        Kind::Choice(_) => {
-                            // The row's node holds the gap before its box, which ends it.
-                            let choice = harness.get_by_role_and_label(Role::ComboBox, &label);
-                            ends.push(choice.rect().right() - start);
-                        }
-                        _ => {}
-                    }
-                }
-                assert!(
-                    widths.windows(2).all(|w| w[0] == w[1]),
-                    "{locale:?} {page:?}"
-                );
-                assert!(widths[0] >= LABEL_MIN, "{locale:?} {page:?}");
-                // One width for every box and field on the page, their ends together.
-                assert!(
-                    ends.windows(2).all(|w| w[0] == w[1]),
-                    "{locale:?} {page:?}: {ends:?}"
-                );
-                assert!(
-                    ends.iter().all(|w| (CONTROL_WIDTH..=CONTROL).contains(w)),
-                    "{locale:?} {page:?}: {ends:?}"
-                );
+                let field = harness.get_by_role_and_label(Role::TextInput, "Find a setting");
+                assert!(field.accesskit_node().is_focused(), "{os:?}");
+                harness.key_press_modifiers(modifiers, Key::Escape);
+                harness.run();
+                assert_eq!(harness.state().closes, closes, "{os:?}, {modifiers:?}");
             }
         }
-        // A right-click past a label's column, before the dot, opens nothing.
+    }
+
+    /// Escape held in Find a setting clears it and leaves Settings open: its repeats find
+    /// Find a setting empty but are no fresh press, which alone closes, on Windows and
+    /// Linux.
+    #[test]
+    fn a_held_escape_clears_find_a_setting_and_closes_nothing() {
+        let key = |pressed, repeat| Event::Key {
+            key: Key::Escape,
+            physical_key: None,
+            pressed,
+            repeat,
+            modifiers: Modifiers::NONE,
+        };
+        for os in [OperatingSystem::Windows, OperatingSystem::Nix] {
+            let keeper = Keeper::nowhere().0;
+            let mut harness = dialog_on(&keeper, Builtin::Dark, Locale::EnGb, os);
+            harness.key_press_modifiers(Modifiers::COMMAND, Key::F);
+            harness.run();
+            harness
+                .get_by_role_and_label(Role::TextInput, "Find a setting")
+                .type_text("Log");
+            harness.run();
+            harness.event(key(true, false));
+            harness.run();
+            assert_eq!(harness.state().content.query, "", "{os:?}");
+            for _ in 0..2 {
+                harness.event(key(true, true));
+                harness.run();
+            }
+            assert_eq!(harness.state().closes, 0, "{os:?}");
+            harness.event(key(false, false));
+            harness.run();
+            harness.event(key(true, false));
+            harness.run();
+            assert_eq!(harness.state().closes, 1, "{os:?}");
+        }
+    }
+
+    /// What has the focus as Escape comes, in [`escape_goes_by_what_has_the_focus`].
+    #[derive(Clone, Copy, Debug)]
+    enum Focus {
+        /// Find a setting.
+        Find,
+        /// The interface size's field, a value typed in it.
+        SliderField,
+        /// The cache limit's number box, on Storage, a value typed in it.
+        NumberBox,
+        /// The interface size's slider, nothing typed.
+        Slider,
+        /// The Photos page's line.
+        Page,
+    }
+
+    /// Escape goes by what has the focus, on the Mac, where it never closes Settings, and
+    /// on Windows and Linux, where it does: Find a setting holding something clears it,
+    /// keeping the focus; a field typed in puts its value back, keeping Escape; from
+    /// anything else Escape clears Find a setting while it holds anything, the dialog
+    /// staying, and closes it once it is empty, Find a setting's own empty field included.
+    /// Each case: what has the focus and what Find a setting holds, then after one Escape
+    /// and after a second what it holds and how many times the dialog asked to close.
+    #[test]
+    fn escape_goes_by_what_has_the_focus() {
+        const FOUND: &str = "warnings";
+        let cases = [
+            (Focus::Find, FOUND, ("", 0), ("", 1)),
+            (Focus::Find, "", ("", 1), ("", 2)),
+            (Focus::SliderField, FOUND, (FOUND, 0), ("", 0)),
+            (Focus::NumberBox, FOUND, (FOUND, 0), ("", 0)),
+            (Focus::NumberBox, "", ("", 0), ("", 1)),
+            (Focus::Slider, FOUND, ("", 0), ("", 1)),
+            (Focus::Page, FOUND, ("", 0), ("", 1)),
+            (Focus::Page, "", ("", 1), ("", 2)),
+        ];
+        let oses = [
+            OperatingSystem::Mac,
+            OperatingSystem::Windows,
+            OperatingSystem::Nix,
+        ];
+        for os in oses {
+            for (focus, query, first, second) in cases {
+                let keeper = Keeper::nowhere().0;
+                let mut harness = dialog_on(&keeper, Builtin::Dark, Locale::EnGb, os);
+                let said = format!("{focus:?} holding {query:?} on {os:?}");
+                match focus {
+                    Focus::Find => {
+                        harness.key_press_modifiers(Modifiers::COMMAND, Key::F);
+                        harness.run();
+                        if !query.is_empty() {
+                            harness
+                                .get_by_role_and_label(Role::TextInput, "Find a setting")
+                                .type_text(query);
+                            harness.run();
+                        }
+                    }
+                    Focus::SliderField => {
+                        harness.state_mut().content.query = query.to_owned();
+                        let track = harness
+                            .get_by_role_and_label(Role::Slider, "Interface size")
+                            .rect();
+                        let value = pos2(track.right() + 30.0, track.center().y);
+                        harness.run_steps(30);
+                        harness.hover_at(value);
+                        press(&mut harness, value, PointerButton::Primary);
+                        harness.run();
+                        harness
+                            .get_by_role_and_label(Role::TextInput, "Interface size, in %")
+                            .type_text("125");
+                        harness.run();
+                    }
+                    Focus::NumberBox => {
+                        harness.state_mut().content.query = query.to_owned();
+                        harness.state_mut().content.page = Page::Storage;
+                        harness.run();
+                        let field = "Cache limit, in GB";
+                        harness
+                            .get_by_role_and_label(Role::TextInput, field)
+                            .focus();
+                        harness.run();
+                        harness
+                            .get_by_role_and_label(Role::TextInput, field)
+                            .type_text("8");
+                        harness.run();
+                    }
+                    Focus::Slider | Focus::Page => {
+                        harness.state_mut().content.query = query.to_owned();
+                        harness.run();
+                        let (role, name) = match focus {
+                            Focus::Slider => (Role::Slider, "Interface size"),
+                            _ => (Role::Tab, "Photos"),
+                        };
+                        harness.get_by_role_and_label(role, name).focus();
+                        harness.run();
+                        let node = harness.get_by_role_and_label(role, name);
+                        assert!(node.accesskit_node().is_focused(), "{said}");
+                    }
+                }
+                assert_eq!(harness.state().content.query, query, "{said}");
+                let closes = |n: usize| if os == OperatingSystem::Mac { 0 } else { n };
+                for (i, (holds, closed)) in [first, second].into_iter().enumerate() {
+                    harness.key_press(Key::Escape);
+                    harness.run();
+                    let state = harness.state();
+                    let after = format!("{said}, Escape {}", i + 1);
+                    assert_eq!(state.content.query, holds, "{after}");
+                    assert_eq!(state.closes, closes(closed), "{after}");
+                    // A value typed is put back, never kept.
+                    assert!(state.changes.is_empty(), "{after}: {:?}", state.changes);
+                }
+            }
+        }
+    }
+
+    /// A number is shown with the fewest decimals that hold its kept step times its
+    /// factor: none where the factor moves them all into the whole part, as many as it
+    /// keeps where it has none, small steps included.
+    #[test]
+    fn a_number_shows_the_decimals_its_factor_leaves() {
+        let cases = [
+            (1.0, 0, 0),
+            (1.0, 2, 2),
+            (1.0, 7, 7),
+            (4.0, 1, 1),
+            (4.0, 2, 2),
+            (5.0, 1, 1),
+            (100.0, 0, 0),
+            (100.0, 1, 0),
+            (100.0, 2, 0),
+            (100.0, 3, 1),
+        ];
+        for (factor, decimals, shown) in cases {
+            let number = apertrust_base::settings::Number {
+                min: None,
+                max: None,
+                above: None,
+                step: None,
+                decimals: Some(decimals),
+                unit: None,
+                factor: Some(factor),
+            };
+            assert_eq!(shown_decimals(&number), shown, "{factor} with {decimals}");
+        }
+    }
+
+    /// A number typed as its row shows it is kept as its factor and decimals have it, for
+    /// each factor the schema may give: 1, 4, which no power of ten divides, and 100.
+    #[test]
+    fn a_number_typed_is_kept_through_its_factor() {
+        let cases = [
+            (1.0, 1, "2.5", 2.5),
+            (1.0, 0, "7", 7.0),
+            (4.0, 1, "0.8", 0.2),
+            // Half way between 0.4 and 0.8, rounded up, as the store rounds 0.15.
+            (4.0, 1, "0.6", 0.2),
+            // A factor of 0.00000001 shows eight decimals, each kept value apart.
+            (0.00000001, 0, "0.00000002", 2.0),
+            (4.0, 2, "0.04", 0.01),
+            (100.0, 2, "80", 0.8),
+        ];
+        for (factor, decimals, typed, kept) in cases {
+            let mut harness = dialog();
+            let content = &mut harness.state_mut().content;
+            content.page = Page::Storage;
+            let row = content.rows.iter_mut().find(|row| row.id == "cache.limit");
+            let row = row.expect("the cache's limit");
+            row.kind = Kind::Number(apertrust_base::settings::Number {
+                min: Some(0.0),
+                max: Some(1000.0),
+                above: None,
+                step: Some(10f32.powi(-decimals)),
+                decimals: Some(decimals as u32),
+                unit: Some("gb"),
+                factor: Some(factor),
+            });
+            harness.run();
+            let field = "Cache limit, in GB";
+            harness
+                .get_by_role_and_label(Role::TextInput, field)
+                .focus();
+            harness.run();
+            harness
+                .get_by_role_and_label(Role::TextInput, field)
+                .type_text(typed);
+            harness.key_press(Key::Enter);
+            harness.run();
+            let value = if decimals == 0 {
+                Value::Integer(kept as i64)
+            } else {
+                Value::Float(kept)
+            };
+            let said = format!("{factor} with {decimals}: {typed}");
+            let set = Change::Set("cache.limit", value);
+            assert_eq!(harness.state().changes, [set], "{said}");
+        }
+    }
+
+    /// A number with no step of its own steps by one kept step, shown through its factor: a
+    /// whole factor of 1 to 3 shown in per cent steps by 100, never by a 1 % the store drops.
+    #[test]
+    fn a_number_with_no_step_steps_by_its_shown_grid() {
         let mut harness = dialog();
-        let rect = harness.get_by_role_and_label(Role::Label, "Theme").rect();
-        right_click(&mut harness, pos2(rect.right() + 8.0, rect.center().y));
-        assert!(harness.query_by_label("Reset").is_none());
+        let content = &mut harness.state_mut().content;
+        let row = content.rows.iter_mut().find(|row| row.id == "scale");
+        let row = row.expect("the interface's size");
+        row.kind = Kind::Number(apertrust_base::settings::Number {
+            min: Some(1.0),
+            max: Some(3.0),
+            above: None,
+            step: None,
+            decimals: Some(0),
+            unit: Some("percent"),
+            factor: Some(100.0),
+        });
+        row.value = Some(Value::Integer(1));
+        harness.run();
+        harness
+            .get_by_role_and_label(Role::Slider, "Interface size")
+            .focus();
+        harness.run();
+        harness.key_press(Key::ArrowRight);
+        harness.run();
+        assert_eq!(
+            harness.state().changes,
+            [Change::Set("scale", Value::Integer(2))]
+        );
+    }
+
+    /// The dialog on Storage, the cache's limit declared as `number`, `typed` in its box and
+    /// Enter pressed.
+    fn typed_into_the_limit(
+        number: apertrust_base::settings::Number,
+        typed: &str,
+    ) -> Harness<'static, Bench> {
+        let mut harness = dialog();
+        let content = &mut harness.state_mut().content;
+        content.page = Page::Storage;
+        let row = content.rows.iter_mut().find(|row| row.id == "cache.limit");
+        row.expect("the cache's limit").kind = Kind::Number(number);
+        harness.run();
+        let field = "Cache limit, in GB";
+        harness
+            .get_by_role_and_label(Role::TextInput, field)
+            .focus();
+        harness.run();
+        harness
+            .get_by_role_and_label(Role::TextInput, field)
+            .type_text(typed);
+        harness.key_press(Key::Enter);
+        harness.run();
+        harness
+    }
+
+    /// Whether the box says its range under it, as it does for a value it refuses.
+    fn says_its_range(harness: &Harness<'_, Bench>) -> bool {
+        [" to ", "more than", "or more", "up to"]
+            .iter()
+            .any(|words| {
+                harness.query_all_by_label_contains(words).any(|node| {
+                    let node = node.accesskit_node();
+                    let said = node.label().or_else(|| node.value()).unwrap_or_default();
+                    said.ends_with(" GB") && !said.starts_with("Reset")
+                })
+            })
+    }
+
+    /// A number box compares what is typed with its ends, and keeps it, in one
+    /// representation, the schema's decimals shown through the factor, and one rounding,
+    /// the store's: for factors 1, 4 and 100 and 0 to 2 decimals kept, a value at the
+    /// maximum (0.7, which no `f32` holds) and the minimum is kept, one a kept step past
+    /// either is refused, saying the range; with an `above` of 0 in place of the minimum,
+    /// one step over it is kept, and 0, or a value that rounds to it, is refused.
+    #[test]
+    fn a_number_box_takes_its_ends_in_one_representation() {
+        let words = Translator::new(Locale::EnGb);
+        for factor in [1.0f32, 4.0, 100.0] {
+            for decimals in 0..=2u32 {
+                let unit = 10f64.powi(-(decimals as i32));
+                let (min, max) = (3.0 * unit, if decimals == 0 { 7.0 } else { 0.7 });
+                let number =
+                    |min: Option<f64>, above: Option<f32>| apertrust_base::settings::Number {
+                        min: min.map(|min| min as f32),
+                        max: Some(max as f32),
+                        above,
+                        step: Some(unit as f32),
+                        decimals: Some(decimals),
+                        unit: Some("gb"),
+                        factor: Some(factor),
+                    };
+                let bounded = number(Some(min), None);
+                let above = number(None, Some(0.0));
+                // Each case: the number, the value kept that is typed as it shows, how
+                // many decimals more it is typed with, and whether it is kept.
+                let cases = [
+                    (bounded, max, 0, true),
+                    (bounded, max + unit, 0, false),
+                    (bounded, min, 0, true),
+                    (bounded, min - unit, 0, false),
+                    (above, unit, 0, true),
+                    (above, 0.0, 0, false),
+                    (above, 0.4 * unit, 2, false),
+                ];
+                for (number, value, more, kept) in cases {
+                    let shown_with = shown_decimals(&number) + more;
+                    let typed = words.format_number(value * f64::from(factor), shown_with, false);
+                    let harness = typed_into_the_limit(number, &typed);
+                    let said = format!("{factor} with {decimals}: {typed}");
+                    let changes = &harness.state().changes;
+                    if kept {
+                        let value = if decimals == 0 {
+                            Value::Integer(value.round() as i64)
+                        } else {
+                            Value::Float((value / unit).round() * unit)
+                        };
+                        let value = match value {
+                            Value::Float(v) => Value::Float((v * 1e6).round() / 1e6),
+                            other => other,
+                        };
+                        assert_eq!(changes, &[Change::Set("cache.limit", value)], "{said}");
+                        assert!(!says_its_range(&harness), "{said}");
+                    } else {
+                        assert!(changes.is_empty(), "{said}: {changes:?}");
+                        assert!(says_its_range(&harness), "{said}");
+                    }
+                }
+            }
+        }
+    }
+
+    /// Escape in Find a setting clears it and leaves it the focus, so what is typed next
+    /// finds again; Escape in a field being typed in is the field's, putting its value back
+    /// and leaving Find a setting as it was, until Escape comes from no field.
+    #[test]
+    fn escape_in_a_field_is_the_field_s_own() {
+        for os in [OperatingSystem::Mac, OperatingSystem::Windows] {
+            let keeper = Keeper::nowhere().0;
+            let mut harness = dialog_on(&keeper, Builtin::Dark, Locale::EnGb, os);
+            harness.key_press_modifiers(Modifiers::COMMAND, Key::F);
+            harness.run();
+            harness
+                .get_by_role_and_label(Role::TextInput, "Find a setting")
+                .type_text("Theme");
+            harness.run();
+            assert_eq!(harness.state().content.query, "Theme", "{os:?}");
+            harness.key_press(Key::Escape);
+            harness.run();
+            assert_eq!(harness.state().content.query, "", "{os:?}");
+            let field = harness.get_by_role_and_label(Role::TextInput, "Find a setting");
+            assert!(field.accesskit_node().is_focused(), "{os:?}");
+            field.type_text("Log");
+            harness.run();
+            assert_eq!(harness.state().content.query, "Log", "{os:?}");
+            // The interface's size typed in, then put back by Escape.
+            let track = harness
+                .get_by_role_and_label(Role::Slider, "Interface size")
+                .rect();
+            harness.run_steps(30);
+            press(
+                &mut harness,
+                pos2(track.right() + 30.0, track.center().y),
+                PointerButton::Primary,
+            );
+            harness.run();
+            harness
+                .get_by_role_and_label(Role::TextInput, "Interface size, in %")
+                .type_text("125");
+            harness.run();
+            harness.key_press(Key::Escape);
+            harness.run();
+            assert_eq!(harness.state().content.query, "Log", "{os:?}");
+            assert!(harness.state().changes.is_empty(), "{os:?}");
+            assert_eq!(harness.state().closes, 0, "{os:?}");
+            harness.key_press(Key::Escape);
+            harness.run();
+            assert_eq!(harness.state().content.query, "", "{os:?}");
+            assert_eq!(harness.state().closes, 0, "{os:?}");
+        }
+    }
+
+    /// A value typed and left by choosing another page is kept, as leaving it on its own
+    /// page keeps it: a slider's field and a number box, the page chosen by the pointer or
+    /// by a screen reader's click, which moves no focus.
+    #[test]
+    fn a_value_typed_is_kept_as_another_page_is_chosen() {
+        let cases = [
+            (
+                Page::General,
+                "Interface size, in %",
+                "125",
+                Change::Set("scale", 1.25.into()),
+            ),
+            (
+                Page::Storage,
+                "Cache limit, in GB",
+                "8",
+                Change::Set("cache.limit", 8.0.into()),
+            ),
+        ];
+        for ((page, field, typed, kept), screen_reader) in cases
+            .into_iter()
+            .flat_map(|case| [(case.clone(), false), (case, true)])
+        {
+            let mut harness = dialog();
+            harness.state_mut().content.page = page;
+            harness.run();
+            if page == Page::General {
+                let track = harness
+                    .get_by_role_and_label(Role::Slider, "Interface size")
+                    .rect();
+                harness.run_steps(30);
+                press(
+                    &mut harness,
+                    pos2(track.right() + 30.0, track.center().y),
+                    PointerButton::Primary,
+                );
+                harness.run();
+            } else {
+                harness
+                    .get_by_role_and_label(Role::TextInput, field)
+                    .focus();
+                harness.run();
+            }
+            harness
+                .get_by_role_and_label(Role::TextInput, field)
+                .type_text(typed);
+            harness.run();
+            assert!(harness.state().changes.is_empty(), "{field}");
+            let tab = harness.get_by_role_and_label(Role::Tab, "Photos");
+            if screen_reader {
+                let (target_node, target_tree) = tab.accesskit_node().locate();
+                harness.event(Event::AccessKitActionRequest(
+                    egui::accesskit::ActionRequest {
+                        target_node,
+                        target_tree,
+                        action: egui::accesskit::Action::Click,
+                        data: None,
+                    },
+                ));
+            } else {
+                let photos = tab.rect().center();
+                harness.hover_at(photos);
+                press(&mut harness, photos, PointerButton::Primary);
+            }
+            harness.run();
+            let said = format!("{field}, a screen reader's: {screen_reader}");
+            let page = Change::Set("settings_window.page", "photos".into());
+            assert_eq!(harness.state().changes, [kept, page], "{said}");
+            assert_eq!(harness.state().content.page, Page::Photos, "{said}");
+        }
     }
 
     /// The dialog on Windows over `keeper`'s settings, Processing shown with its graphics
@@ -1947,7 +2739,7 @@ mod tests {
     fn the_graphics_card_is_a_list_of_the_cards_the_api_finds() {
         let mut harness = windows(&Keeper::nowhere().0);
         let automatic = "Automatic".to_owned();
-        let after_restart = Some("Applies after a restart".to_owned());
+        let after_restart = Some("after a restart".to_owned());
         assert_eq!(
             card_box(&harness),
             (automatic.clone(), after_restart, false)
@@ -2020,12 +2812,7 @@ mod tests {
         let said = "Graphics card not found: Automatic used";
         harness.get_by_label(said);
         assert_eq!(card_box(&harness), (gone.into(), Some(said.into()), false));
-        assert!(
-            harness
-                .query_all_by_label("Applies after a restart")
-                .count()
-                > 0
-        );
+        assert!(harness.query_all_by_label("after a restart").count() > 0);
         assert!(dotted(&harness, "Graphics card"));
         assert!(harness.state().changes.is_empty());
         harness
@@ -2099,10 +2886,9 @@ mod tests {
         listed(&mut harness);
         let backend = Change::Set("engine.backend", "vulkan".into());
         assert_eq!(harness.state().changes, [backend]);
-        let note = harness
-            .query_all_by_label("Set by --conf for this run")
-            .count();
-        assert_eq!(note, 1);
+        let label = harness.get_by_role_and_label(Role::Label, "Graphics card");
+        let said = label.accesskit_node().description();
+        assert_eq!(said.as_deref(), Some("Set by --conf for this run"));
         assert!(harness.query_by_label_contains("isn’t available").is_none());
         assert_eq!(card_box(&harness).0, CPU_ITEM);
     }
@@ -2189,7 +2975,7 @@ mod tests {
         harness.get_by_label("Processing").click();
         harness.run();
         let looking = "Looking for graphics cards…";
-        let after_restart = Some("Applies after a restart".to_owned());
+        let after_restart = Some("after a restart".to_owned());
         assert_eq!(
             card_box(&harness),
             ("Automatic".into(), after_restart, true)

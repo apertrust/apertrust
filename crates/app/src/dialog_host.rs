@@ -216,8 +216,13 @@ pub struct Asks {
     pub outputs: Vec<Output>,
     /// It asked to close: its Close button, or its work done.
     pub close: bool,
-    /// A list of its own was open as the frame began, which Escape closes first.
+    /// It keeps this frame's Escape: a list of its own was open as the frame began, which
+    /// Escape closes first, or, in Settings, the key is a held Escape's repeat.
     pub keeps_escape: bool,
+    /// The field that had the keyboard as the last frame ended keeps no Escape this frame,
+    /// which is the dialog's then, by its binding, as from no field: Settings' Find a
+    /// setting while it is empty.
+    pub gives_escape: bool,
 }
 
 /// A dialog the host shows (decision 41; `docs/gui.md`, Dialogs and alerts): every fact
@@ -522,7 +527,8 @@ pub fn draw(ui: &mut egui::Ui, dialog: &mut dyn Dialog) -> Drawn {
     let keys = dialog.keys(ctx.os());
     let pressed = |modifiers, key| ctx.input_mut(|i| i.consume_key(modifiers, key));
     let escape = keys.escape && pressed(Modifiers::NONE, Key::Escape);
-    let mut close = closed || asks.close || escape && !typing && !asks.keeps_escape;
+    let free = !typing || asks.gives_escape;
+    let mut close = closed || asks.close || escape && free && !asks.keeps_escape;
     close |= keys.cancel && pressed(Modifiers::COMMAND, Key::Period);
     close |= keys.close_window && pressed(Modifiers::COMMAND, Key::W);
     // A text field, not any control with the focus: a choice a list gave the focus back to
@@ -3022,7 +3028,11 @@ mod tests {
     fn settings_set_by_conf_are_drawn_disabled_saying_why() {
         let mut harness = settings_on(OperatingSystem::Windows, &["theme=light", "locale=pl"]);
         let why = "Set by --conf for this run";
-        assert_eq!(harness.query_all_by_label(why).count(), 2);
+        for name in ["Theme", "Language"] {
+            let label = harness.get_by_role_and_label(Role::Label, name);
+            let said = label.accesskit_node().description();
+            assert_eq!(said.as_deref(), Some(why), "{name}");
+        }
         for name in ["Theme", "Language"] {
             let row = harness.get_by_role_and_label(Role::ComboBox, name);
             assert!(row.accesskit_node().is_disabled(), "{name}");

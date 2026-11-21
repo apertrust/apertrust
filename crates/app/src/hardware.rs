@@ -985,15 +985,10 @@ pub fn card(
     card
 }
 
-/// The labels the group's own lines take, for the label column's width.
-pub fn labels(words: &Translator) -> Vec<String> {
-    vec![words.text("settings-gpu-in-use")]
-}
-
 /// The In use line, as Storage's lines: the adapter and the API the engine opened, CPU for
 /// a software adapter, with a warning under it where that is one, and the driver advice
 /// where Automatic fell to it.
-pub fn in_use(ui: &mut Ui, t: &Theme, in_use: &InUse, widths: storage::Widths) {
+pub fn in_use(ui: &mut Ui, t: &Theme, in_use: &InUse) {
     let words = apertrust_ui::translator(ui.ctx());
     let label = words.text("settings-gpu-in-use");
     let card = if in_use.software {
@@ -1021,24 +1016,27 @@ pub fn in_use(ui: &mut Ui, t: &Theme, in_use: &InUse, widths: storage::Widths) {
         warning: true,
         button: None,
     }
-    .draw(ui, t, widths);
+    .draw(ui, t);
 }
 
 /// The waiting-change line, under the In use line while a setting that applies after a
-/// restart is other than this run's: "Your choice applies when Apertrust restarts", in the
-/// body size where the controls start, and Restart now 12 points after it, or at the next
-/// line's start where both do not fit, so a magnifier keeps them together. The words are a
+/// restart is other than this run's, across `content`: "Your choice applies when Apertrust
+/// restarts", in the body size where the rows' labels start, and Restart now 12 points after
+/// it, or at the next line's start where both do not fit, so a magnifier keeps them
+/// together. The words are a
 /// label, announced once as they appear (a polite live region); the button is named by
 /// its words and described by the line's. Where the last press could not restart, `failed`
 /// says why under them, in the warning colour. Returns whether it was pressed.
-pub fn waiting(ui: &mut Ui, t: &Theme, widths: storage::Widths, failed: Option<&str>) -> bool {
+pub fn waiting(ui: &mut Ui, t: &Theme, content: f32, failed: Option<&str>) -> bool {
     let words = apertrust_ui::translator(ui.ctx());
     let said = words.text("settings-restart-waiting");
     let restart = words.text("settings-restart-now");
     let tip = words.text("settings-restart-tip");
     let top = ui.cursor().min;
-    let start = top.x + widths.value;
-    let room = (widths.content - widths.value).max(0.0);
+    // Where a settings row's label starts.
+    let inset = t.spacing.s;
+    let start = top.x + inset;
+    let room = (content - 2.0 * inset).max(0.0);
     let line = t.sizes.panel_line.max(t.sizes.control);
     let body = egui::FontId::proportional(t.text.body);
     let painter = ui.painter().clone();
@@ -1107,7 +1105,7 @@ pub fn waiting(ui: &mut Ui, t: &Theme, widths: storage::Widths, failed: Option<&
         bottom = rect.bottom() + t.spacing.xs;
     }
     ui.allocate_rect(
-        egui::Rect::from_min_max(top, egui::pos2(top.x + widths.content, bottom)),
+        egui::Rect::from_min_max(top, egui::pos2(top.x + content, bottom)),
         egui::Sense::hover(),
     );
     button.clicked()
