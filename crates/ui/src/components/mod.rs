@@ -64,6 +64,7 @@ mod toggle_row;
 mod toolbar;
 mod tools_panel;
 mod value_field;
+mod view_marks;
 mod viewer_bar;
 mod warning_row;
 mod wheel;
@@ -122,6 +123,7 @@ pub use tools_panel::{
     ToolsPanelPosition, quiet_scroll, quiet_scroll_rows,
 };
 pub use value_field::ValueField;
+pub use view_marks::ViewMarks;
 pub use viewer_bar::{Toggle, ViewerBar, ViewerBarAction, Zoom, percent_label};
 pub use warning_row::WarningRow;
 pub use wheel::{Wheel, set_wheel_scrolls_panel, wheel_scrolls_panel};
