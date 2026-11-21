@@ -73,6 +73,15 @@ const PAGES: [(&str, &str); 9] = [
 /// `std::env::consts::OS` for each.
 const PLATFORMS: [(&str, &str); 3] = [("windows", "Windows"), ("macos", "Mac"), ("linux", "Linux")];
 
+/// The controls a `control` may name, each with its `Control` variant and the kind it is
+/// for: a choice's segmented well, a number's box with − and +, a text's area or folder.
+const CONTROLS: [(&str, &str, &str); 4] = [
+    ("segmented", "Segmented", "choice"),
+    ("number", "Number", "number"),
+    ("area", "Area", "text"),
+    ("folder", "Folder", "text"),
+];
+
 /// For an owner's build script: writes the settings `owner` reads (`app`, `engine`,
 /// `export` or `tool:<id>`) into `OUT_DIR/settings.rs`, or fails the build with each error in the
 /// schema, naming its line.
@@ -290,10 +299,13 @@ impl Reader<'_> {
                 "group",
                 "requires",
                 "platforms",
+                "control",
             ],
         )?;
         let (page, group) = self.place_in_dialog(id, table, line)?;
         let platforms = self.platforms(id, table, line, page != "None")?;
+        let control = self.control(id, table, line, page != "None", &spec)?;
+        self.on_grid(id, table, line, page != "None")?;
         let optional = match table.get("optional") {
             None => false,
             Some(item) => item
@@ -363,6 +375,7 @@ impl Reader<'_> {
              group: {group},\n    \
              requires: {requires_code},\n    \
              platforms: {platforms},\n    \
+             control: {control},\n    \
              place: {place},\n    \
              line: {line},\n\
              }};",
@@ -467,6 +480,97 @@ impl Reader<'_> {
             .map(|variant| format!("{BASE}::Platform::{variant}"))
             .collect();
         Ok(format!("Some(&[{}])", code.join(", ")))
+    }
+
+    /// Refuses a number of the setting `id` shown on a page, `shown`, whose values are not
+    /// all on one grid: it declares `decimals`, and its `min`, `max`, `step`, `above` and
+    /// a `default` of a value are each a whole number of 10^-decimals, so the dialog's
+    /// controls round every value, its ends included, as the store keeps it.
+    fn on_grid(&self, id: &str, table: &Table, line: usize, shown: bool) -> Result<(), Error> {
+        if !shown || table.get("kind").and_then(Item::as_str) != Some("number") {
+            return Ok(());
+        }
+        // The decimals as the number's kind reads them, whole, written 1 or 1.0.
+        let decimals = table
+            .get("decimals")
+            .and_then(Item::as_value)
+            .and_then(number);
+        let Some(decimals) = decimals.filter(|d| d.fract() == 0.0 && *d >= 0.0) else {
+            let why = "a number on a page declares the decimals it is kept with";
+            return Err(self.fail(table, "decimals", line, id, why));
+        };
+        let grid = 10f64.powi(-(decimals as i32));
+        for field in ["min", "max", "step", "above", "default"] {
+            let value = table.get(field).and_then(Item::as_value);
+            let Some(n) = value.and_then(number) else {
+                continue;
+            };
+            // Counted as the Settings dialog counts them, off the number as written.
+            if f64::from(super::decimal_places(n)) > decimals {
+                let why = format!("{field}, {n}, is no whole number of {grid}, its decimals' step");
+                return Err(self.fail(table, field, line, id, &why));
+            }
+        }
+        // Distinct values stay distinct as the `f32`s the setting is kept in.
+        let values: Vec<(&str, f64)> = ["min", "max", "above", "default"]
+            .into_iter()
+            .filter_map(|field| {
+                let n = table.get(field).and_then(Item::as_value).and_then(number)?;
+                Some((field, n))
+            })
+            .collect();
+        for (i, &(field, n)) in values.iter().enumerate() {
+            for &(other, m) in &values[i + 1..] {
+                if n != m && n as f32 == m as f32 {
+                    let why = format!("{field}, {n}, and {other}, {m}, are one f32: {}", n as f32);
+                    return Err(self.fail(table, other, line, id, &why));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// The control the Settings dialog draws the row of the setting `id` with, as code:
+    /// `None` for its kind's own, else one of [`CONTROLS`] its kind, `spec`, has. Only a
+    /// setting on a page, `shown`, has a row to draw.
+    fn control(
+        &self,
+        id: &str,
+        table: &Table,
+        line: usize,
+        shown: bool,
+        spec: &Spec,
+    ) -> Result<String, Error> {
+        let fail = |why: &str| self.fail(table, "control", line, id, why);
+        let Some(item) = table.get("control") else {
+            return Ok("None".to_owned());
+        };
+        if !shown {
+            return Err(fail(
+                "control says how its row is drawn: give its page and group",
+            ));
+        }
+        let kind = match spec.check {
+            Check::Choice(_) => "choice",
+            Check::Number { .. } => "number",
+            Check::Text => "text",
+            _ => "",
+        };
+        let named = CONTROLS
+            .iter()
+            .find(|(control, ..)| item.as_str() == Some(control));
+        match named {
+            Some((_, variant, of)) if *of == kind => {
+                Ok(format!("Some({BASE}::Control::{variant})"))
+            }
+            _ => {
+                let each: Vec<String> = CONTROLS
+                    .iter()
+                    .map(|(control, _, of)| format!("{control} for a {of}"))
+                    .collect();
+                Err(fail(&format!("control is {}", each.join(", "))))
+            }
+        }
     }
 
     /// The kind `table` declares, with its fields; any other field but `common` is
@@ -981,7 +1085,7 @@ mod tests {
         #[rustfmt::skip]
         let expect = [
             format!("/// The interface's size, as `[scale]` keeps it.\n/// Its \\<unit\\> is none.\n///\n/// `[scale]`, declared at line 5 of `test.toml`.\npub static SCALE: {s}::Setting<f32> = "),
-            format!("kind: {s}::Kind::Number({s}::Number {{ min: Some(0.5), max: Some(3.0), above: None, step: Some(0.1), decimals: Some(2), unit: None, factor: None }}),\n    default: {s}::DefaultValue::Value(1.0),\n    applies: {s}::Applies::AtOnce,\n    page: None,\n    group: None,\n    requires: None,\n    platforms: None,\n    place: 0,\n    line: 5,"),
+            format!("kind: {s}::Kind::Number({s}::Number {{ min: Some(0.5), max: Some(3.0), above: None, step: Some(0.1), decimals: Some(2), unit: None, factor: None }}),\n    default: {s}::DefaultValue::Value(1.0),\n    applies: {s}::Applies::AtOnce,\n    page: None,\n    group: None,\n    requires: None,\n    platforms: None,\n    control: None,\n    place: 0,\n    line: 5,"),
             format!("Value({s}::option::<apertrust_ui::Builtin>(\"dark\", \"test.toml:15: [theme]: \\\"dark\\\" is none of apertrust_ui::Builtin's options\"))"),
             format!("pub static WINDOW_POSITION: {s}::Setting<Option<[f32; 2]>> = "),
             format!("default: {s}::DefaultValue::Value(None),"),
@@ -1037,7 +1141,7 @@ mod tests {
         let code = schema.generate("engine");
         let expect = [
             "decimals: Some(0), unit: Some(\"mib\"), factor: Some(1.0) }),".to_owned(),
-            format!("applies: {s}::Applies::AfterRestart,\n    page: Some({s}::Page::Processing),\n    group: Some(\"gpu\"),\n    requires: None,\n    platforms: None,\n    place: 0,"),
+            format!("applies: {s}::Applies::AfterRestart,\n    page: Some({s}::Page::Processing),\n    group: Some(\"gpu\"),\n    requires: None,\n    platforms: None,\n    control: None,\n    place: 0,"),
         ];
         for part in expect {
             assert!(code.contains(&part), "{part}\nin:\n{code}");
@@ -1060,7 +1164,7 @@ mod tests {
         assert_eq!(PLATFORMS.map(|(id, _)| id), ids);
         let s = "::apertrust_base::settings";
         let code = accepted(&backend("platforms = [\"windows\"]\n")).generate("engine");
-        let windows = format!("requires: None,\n    platforms: Some(&[{s}::Platform::Windows]),\n    place: 0,");
+        let windows = format!("requires: None,\n    platforms: Some(&[{s}::Platform::Windows]),\n    control: None,\n    place: 0,");
         assert!(code.contains(&windows), "{code}");
         let code = accepted(&backend("platforms = [\"linux\", \"macos\"]\n")).generate("engine");
         let two = format!("platforms: Some(&[{s}::Platform::Linux, {s}::Platform::Mac]),");
@@ -1072,6 +1176,83 @@ mod tests {
         each_refused(&[
             ("boolean", "default = true\nplatforms = [\"windows\"]\n", "6: [scale]: platforms says where its row is drawn: give its page and group"),
         ]);
+    }
+
+    /// A row may name the control it is drawn with, where its kind has a choice of them,
+    /// which its static names; a control its kind does not have, or one on a setting with
+    /// no page, is refused.
+    #[test]
+    #[rustfmt::skip]
+    fn a_setting_may_name_its_control() {
+        let shown = |kind: &str, control: &str| {
+            format!(
+                "[sliders.marker]\nowner = \"app\"\n{kind}\napplies = \"at-once\"\n\
+                 page = \"general\"\ngroup = \"interface\"\ncontrol = \"{control}\"\n"
+            )
+        };
+        let s = "::apertrust_base::settings";
+        let choice = "kind = \"choice\"\ntype = \"Marker\"\ndefault = \"square\"";
+        let number = "kind = \"number\"\nmin = 1\nmax = 2\ndecimals = 0\ndefault = 1";
+        let text = "kind = \"text\"\ndefault = \"\"";
+        for (kind, control, variant) in [
+            (choice, "segmented", "Segmented"),
+            (number, "number", "Number"),
+            (text, "area", "Area"),
+            (text, "folder", "Folder"),
+        ] {
+            let code = accepted(&shown(kind, control)).generate("app");
+            let named = format!("platforms: None,\n    control: Some({s}::Control::{variant}),\n");
+            assert!(code.contains(&named), "{code}");
+        }
+        use super::super::Control;
+        let ids = [Control::Segmented, Control::Number, Control::Area, Control::Folder].map(Control::id);
+        assert_eq!(CONTROLS.map(|(id, ..)| id), ids);
+        let why = "[sliders.marker]: control is segmented for a choice, number for a number, area for a text, folder for a text";
+        for (kind, control) in [(choice, "number"), (number, "segmented"), (text, "slider"), ("kind = \"boolean\"\ndefault = true", "segmented")] {
+            // The header, owner, the kind's lines, applies, page and group come before it.
+            let line = 6 + kind.lines().count();
+            assert_eq!(refused(&shown(kind, control)), [format!("{line}: {why}")], "{kind} {control}");
+        }
+        each_refused(&[
+            ("text", "default = \"\"\ncontrol = \"area\"\n", "6: [scale]: control says how its row is drawn: give its page and group"),
+        ]);
+    }
+
+    /// A number on a page declares the decimals it is kept with, and its `min`, `max`,
+    /// `step`, `above` and default each lie on their grid, distinct ones distinct as `f32`s,
+    /// so the dialog keeps those declared values as the store does; one that does not is
+    /// refused. A number on no page is not drawn, so it has no grid to keep to.
+    #[test]
+    #[rustfmt::skip]
+    fn a_number_on_a_page_lies_on_its_decimals_grid() {
+        let shown = |fields: &str| {
+            format!(
+                "[scale]\nowner = \"app\"\nkind = \"number\"\n{fields}applies = \"at-once\"\n\
+                 page = \"general\"\ngroup = \"interface\"\n"
+            )
+        };
+        accepted(&shown("min = 0.5\nmax = 3\nstep = 0.1\ndecimals = 2\ndefault = 1.25\n"));
+        accepted(&shown("above = 0\ndecimals = 1\ndefault = 0.4\n"));
+        accepted(&shown("min = 256\nmax = 65536\nstep = 256\ndecimals = 0\ndefault = 2048\n"));
+        accepted(&shown("min = 0\nmax = 2000\ndecimals = 9\ndefault = 1000.000001\n"));
+        accepted(&shown("min = 0.5\nmax = 3\ndecimals = 1.0\ndefault = 1\n"));
+        accepted("[scale]\nowner = \"app\"\nkind = \"number\"\nmin = 0.26\ndecimals = 1\ndefault = 1\napplies = \"at-once\"\n");
+        let decimals = "[scale]: a number on a page declares the decimals it is kept with";
+        for (fields, why) in [
+            ("min = 0.5\nmax = 3\ndefault = 1\n", decimals.to_owned()),
+            ("min = 0.26\nmax = 1.2\ndecimals = 1\ndefault = 1\n", "[scale]: min, 0.26, is no whole number of 0.1, its decimals' step".to_owned()),
+            ("min = 0.2\nmax = 1.24\ndecimals = 1\ndefault = 1\n", "[scale]: max, 1.24, is no whole number of 0.1, its decimals' step".to_owned()),
+            ("min = 0\nmax = 1\nstep = 0.05\ndecimals = 1\ndefault = 1\n", "[scale]: step, 0.05, is no whole number of 0.1, its decimals' step".to_owned()),
+            ("above = 0.5\ndecimals = 0\ndefault = 1\n", "[scale]: above, 0.5, is no whole number of 1, its decimals' step".to_owned()),
+            ("min = 0\nmax = 1\ndecimals = 1\ndefault = 0.25\n", "[scale]: default, 0.25, is no whole number of 0.1, its decimals' step".to_owned()),
+            ("min = 1000000.25\nmax = 1000010\ndecimals = 0\ndefault = 1000001\n", "[scale]: min, 1000000.25, is no whole number of 1, its decimals' step".to_owned()),
+            ("min = 0\nmax = 1\nstep = 0.00001\ndecimals = 1\ndefault = 0.5\n", "[scale]: step, 0.00001, is no whole number of 0.1, its decimals' step".to_owned()),
+            ("min = 1000.000001\nmax = 1000.000002\ndecimals = 6\ndefault = 1000.000001\n", "[scale]: min, 1000.000001, and max, 1000.000002, are one f32: 1000".to_owned()),
+        ] {
+            let errors = refused(&shown(fields));
+            assert_eq!(errors.len(), 1, "{fields}: {errors:?}");
+            assert!(errors[0].ends_with(&why), "{fields}: {errors:?}");
+        }
     }
 
     /// A page the dialog does not have fails the build, and so does a group without its
@@ -1099,22 +1280,22 @@ mod tests {
                   applies = \"at-once\"\npage = \"storage\"\ngroup = \"cache\"\n";
         let limit = |requires: &str| {
             format!(
-                "{on}\n[cache.limit]\nowner = \"engine\"\nkind = \"number\"\ndefault = 4\n\
+                "{on}\n[cache.limit]\nowner = \"engine\"\nkind = \"number\"\ndecimals = 1\ndefault = 4\n\
                  applies = \"at-once\"\npage = \"storage\"\ngroup = \"cache\"\n{requires}"
             )
         };
         let code = accepted(&limit("requires = \"cache.limited\"\n")).generate("engine");
         let s = "::apertrust_base::settings";
-        assert!(code.contains("group: Some(\"cache\"),\n    requires: Some(\"cache.limited\"),\n    platforms: None,\n    place: 1,"), "{code}");
-        assert!(code.contains("requires: None,\n    platforms: None,\n    place: 0,"), "{code}");
+        assert!(code.contains("group: Some(\"cache\"),\n    requires: Some(\"cache.limited\"),\n    platforms: None,\n    control: None,\n    place: 1,"), "{code}");
+        assert!(code.contains("requires: None,\n    platforms: None,\n    control: None,\n    place: 0,"), "{code}");
         assert!(code.contains(&format!("pub static CACHE_LIMIT: {s}::Setting<f32>")), "{code}");
-        assert_eq!(refused(&limit("requires = \"cache.limt\"\n")), ["16: [cache.limit]: requires names no other boolean setting: cache.limt"]);
-        assert_eq!(refused(&limit("requires = \"cache.limit\"\n")), ["16: [cache.limit]: requires names no other boolean setting: cache.limit"]);
-        assert_eq!(refused(&limit("requires = true\n")), ["16: [cache.limit]: requires is a boolean setting's id"]);
+        assert_eq!(refused(&limit("requires = \"cache.limt\"\n")), ["17: [cache.limit]: requires names no other boolean setting: cache.limt"]);
+        assert_eq!(refused(&limit("requires = \"cache.limit\"\n")), ["17: [cache.limit]: requires names no other boolean setting: cache.limit"]);
+        assert_eq!(refused(&limit("requires = true\n")), ["17: [cache.limit]: requires is a boolean setting's id"]);
         // A boolean on no page has no row to turn on, so the requiring row would stay
         // disabled.
         let hidden = limit("requires = \"cache.limited\"\n").replace("page = \"storage\"\ngroup = \"cache\"\n\n", "\n");
-        assert_eq!(refused(&hidden), ["14: [cache.limit]: requires names a setting on no page, whose row is never drawn: cache.limited"]);
+        assert_eq!(refused(&hidden), ["15: [cache.limit]: requires names a setting on no page, whose row is never drawn: cache.limited"]);
         each_refused(&[
             ("boolean", "default = true\nrequires = \"log.keep\"\n", "6: [scale]: requires draws its row disabled: give its page and group"),
         ]);

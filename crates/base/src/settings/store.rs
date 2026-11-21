@@ -1205,6 +1205,7 @@ mod tests {
             group: None,
             requires: None,
             platforms: None,
+            control: None,
             place: 0,
             line: 0,
         }

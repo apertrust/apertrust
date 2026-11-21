@@ -130,6 +130,9 @@ pub struct Setting<T: 'static> {
     /// The platforms the Settings dialog draws its row on, as an action's (decision 43);
     /// None for every one. Its value is read and kept on every platform alike.
     pub platforms: Option<&'static [Platform]>,
+    /// The control the Settings dialog draws its row with where its kind has a choice of
+    /// them, as the schema's `control` says; None for the kind's own.
+    pub control: Option<Control>,
     /// Its place among every owner's settings, in the schema's order, which the Settings
     /// dialog follows.
     pub place: u32,
@@ -246,6 +249,37 @@ impl Number {
         };
         min..=max
     }
+
+    /// How many decimals the Settings dialog shows it with: the fewest that hold its kept
+    /// step, 10^-decimals (2 where it declares none), times its factor, so every value it
+    /// keeps shows apart from its neighbours: none for 100 and two decimals, one for 4 and
+    /// one, eight for 0.00000001 and none.
+    pub fn shown_places(&self) -> u32 {
+        let factor = written(self.factor.unwrap_or(1.0));
+        let places = decimal_places(factor);
+        let mantissa = (factor * 10f64.powi(places as i32)).round() as u64;
+        // The factor's own trailing zeros move as many places into the whole part.
+        let zeros = (1..20)
+            .take_while(|z| mantissa > 0 && mantissa.is_multiple_of(10u64.pow(*z)))
+            .count();
+        (places + self.decimals.unwrap_or(2)).saturating_sub(zeros as u32)
+    }
+}
+
+/// How many decimal places `n` is written with, read off its shortest decimal form, as
+/// the schema's generator and the Settings dialog both count them: 0.26 has two, 1000.000001
+/// six, 1e-8 eight, with no division's error.
+pub fn decimal_places(n: f64) -> u32 {
+    let written = n.to_string();
+    written
+        .split_once('.')
+        .map_or(0, |(_, places)| places.len()) as u32
+}
+
+/// `n`, an `f32` of the schema, as the decimal number it was written as: 0.7, not the
+/// `f32`'s 0.699999988.
+pub fn written(n: f32) -> f64 {
+    n.to_string().parse().unwrap_or(f64::from(n))
 }
 
 /// The Settings dialog's pages, in its list's order (`docs/gui.md`, The Settings dialog):
@@ -328,6 +362,34 @@ impl Platform {
     }
 }
 
+/// The control the Settings dialog draws a row with in place of its kind's own, as a
+/// setting's `control` in the schema names it (`docs/gui.md`, The Settings dialog): a choice
+/// is a combo but `Segmented`, a number with both ends a slider but `Number`, a text one
+/// line but `Area` or `Folder`. The generator refuses one its kind does not have.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Control {
+    /// A choice's options side by side in a well, for two to four short ones.
+    Segmented,
+    /// A number in a box with − and +, though both its ends are given.
+    Number,
+    /// A text of several lines.
+    Area,
+    /// A text that names a folder, with a button that chooses one.
+    Folder,
+}
+
+impl Control {
+    /// Its id in the schema.
+    pub const fn id(self) -> &'static str {
+        match self {
+            Control::Segmented => "segmented",
+            Control::Number => "number",
+            Control::Area => "area",
+            Control::Folder => "folder",
+        }
+    }
+}
+
 /// When a change to a setting takes effect, which the Settings dialog says.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Applies {
@@ -404,6 +466,40 @@ const fn same(a: &str, b: &str) -> bool {
 mod tests {
     use super::*;
 
+    /// A number's decimal places, read off how it is written, and the places the Settings
+    /// dialog shows a number with: its kept step times its factor, never so few that two
+    /// kept values look alike. Each case: the factor, the decimals kept, the places shown.
+    #[test]
+    fn a_number_shows_the_places_its_step_and_factor_need() {
+        for (n, places) in [(0.26, 2), (1000.000001, 6), (1e-8, 8), (7.0, 0), (0.7, 1)] {
+            assert_eq!(decimal_places(n), places, "{n}");
+        }
+        assert_eq!(written(0.7), 0.7);
+        for (factor, decimals, shown) in [
+            (None, Some(2), 2),
+            (Some(1.0), Some(0), 0),
+            (Some(4.0), Some(1), 1),
+            (Some(4.0), Some(2), 2),
+            (Some(100.0), Some(2), 0),
+            (Some(100.0), Some(3), 1),
+            (Some(10.0), Some(2), 1),
+            (Some(0.5), Some(1), 2),
+            (Some(0.00000001), Some(0), 8),
+            (None, None, 2),
+        ] {
+            let number = Number {
+                min: None,
+                max: None,
+                above: None,
+                step: None,
+                decimals,
+                unit: None,
+                factor,
+            };
+            assert_eq!(number.shown_places(), shown, "{factor:?} with {decimals:?}");
+        }
+    }
+
     #[derive(Clone, Copy, Debug, PartialEq)]
     enum Theme {
         Dark,
@@ -479,6 +575,7 @@ mod tests {
             group: Some("interface"),
             requires: None,
             platforms: None,
+            control: None,
             place: 0,
             line: 1,
         };
@@ -497,6 +594,7 @@ mod tests {
             group: None,
             requires: None,
             platforms: None,
+            control: None,
             place: 1,
             line: 10,
         };

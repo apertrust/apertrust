@@ -41,6 +41,13 @@
 # - platforms: on a setting with a page, the platforms the dialog draws its row on, a list
 #   of "windows", "macos" and "linux", each once; every platform without it. Only the row
 #   is left out: the value is read, kept and taken by --conf on every platform alike.
+# - control: on a setting with a page, the control the dialog draws its row with where its
+#   kind has a choice of them: "segmented" for a choice of two to four short options, in
+#   place of a combo; "number" for a number with both min and max, a box with - and +
+#   in place of a slider; "area" for a text of several lines and "folder" for a text that
+#   names a folder, in place of a field of one line. Without it, a choice is a combo, a
+#   number a slider where it has both min and max and a box otherwise, a text one line,
+#   and a list of a choice always chips.
 #
 # Decision 43's other kinds, whole numbers and folders, come with the first setting that
 # needs one.
@@ -97,6 +104,7 @@ default = "square"
 applies = "at-once"
 page = "general"
 group = "interface"
+control = "segmented"
 
 # How the Toolbar's menu button is drawn where the app draws the menus, on Windows and
 # Linux (decision 39): the app's icon with a caret, or ☰. The Mac has the system's menu
@@ -110,6 +118,7 @@ applies = "at-once"
 page = "general"
 group = "interface"
 platforms = ["windows", "linux"]
+control = "segmented"
 
 # The window's inner size in logical pixels, as it last stood while neither maximised nor
 # full screen, kept in whole pixels; each part more than 0, and never under the shell's
@@ -582,6 +591,7 @@ default = 2048
 applies = "after-restart"
 page = "processing"
 group = "hardware_acceleration"
+control = "number"
 
 # Whether the cache's limited kinds, thumbnails first, are kept within cache.limit
 # (decision 76; docs/cache.md, The limit and Unlimited). Off is Unlimited: nothing is
@@ -610,6 +620,7 @@ applies = "at-once"
 page = "storage"
 group = "cache"
 requires = "cache.limited"
+control = "number"
 
 # How long a library's cache may go unopened on this machine before the Storage page
 # marks it and offers to remove it; never removed without the person.
