@@ -376,7 +376,7 @@ The libraries Apertrust and its command line are built from, on every platform, 
 - regex-automata 0.4.18: MIT OR Apache-2.0
 - regex-syntax 0.8.11: MIT OR Apache-2.0
 - renderdoc-sys 1.1.0: MIT OR Apache-2.0
-- resvg 0.49.0: Apache-2.0 OR MIT
+- resvg 0.50.0: Apache-2.0 OR MIT
 - rfd 0.18.0: MIT
 - rgb 0.8.53: MIT
 - rle-decode-fast 1.0.3: MIT OR Apache-2.0
@@ -415,7 +415,7 @@ The libraries Apertrust and its command line are built from, on every platform, 
 - static_assertions 1.1.0: MIT OR Apache-2.0
 - strict-num 0.1.1: MIT
 - strsim 0.11.1: MIT
-- svgtypes 0.16.1: Apache-2.0 OR MIT
+- svgtypes 0.16.2: Apache-2.0 OR MIT
 - syn 2.0.119: MIT OR Apache-2.0
 - syn 3.0.10: MIT OR Apache-2.0
 - synstructure 0.14.0: MIT
@@ -455,7 +455,7 @@ The libraries Apertrust and its command line are built from, on every platform, 
 - unicode-segmentation 1.13.3: MIT OR Apache-2.0
 - unicode-width 0.2.3: MIT OR Apache-2.0
 - url 2.5.8: MIT OR Apache-2.0
-- usvg 0.49.0: Apache-2.0 OR MIT
+- usvg 0.50.0: Apache-2.0 OR MIT
 - utf8_iter 1.1.0: Apache-2.0 OR MIT
 - utf8parse 0.2.2: Apache-2.0 OR MIT
 - utf_types 1.0.0: Apache-2.0 OR MIT
