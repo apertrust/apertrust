@@ -18,8 +18,9 @@
 //! app sends it: a `Resize` to the bounds, then a `View`. It times entering the zoom, pans
 //! (`--pans`), each inside the rendered region's margin rendering nothing, and exposure
 //! changes there, each frame rendering the fitted viewport and the detail in one
-//! submission, and writes the zoomed frame with `--png`. The photo is opened through a link
-//! in a folder of its own, so its edit is never written beside it.
+//! submission, a whole-image round's tiles in submissions of their own between them, and
+//! writes the zoomed frame with `--png`. The photo is opened through a link in a folder of
+//! its own, so its edit is never written beside it.
 
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
@@ -341,7 +342,8 @@ fn zoom(photo: &Path, options: &Options, engine: engine::Options) -> Result<()> 
     }
 
     // Exposure changes, as a slider drag sends them, each waited for: zoomed, both
-    // pipelines from exposure in one submission; at Fit, the fitted one.
+    // pipelines from exposure in one submission, a whole-image round's tiles between
+    // them; at Fit, the fitted one.
     let step = if base + 0.01 > 4.0 { -0.01 } else { 0.01 };
     let (mut times, mut latency) = (Vec::new(), Vec::new());
     // The latest frame's: the zoomed one, or at Fit any.
