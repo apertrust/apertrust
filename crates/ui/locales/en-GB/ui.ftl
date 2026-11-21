@@ -406,9 +406,7 @@ photo-zoom-out = Zoom out
 # The zoom's tooltip. $command is the pointer's modifier as shortcuts spell it: "Cmd" on
 # the Mac, "Ctrl" elsewhere.
 photo-zoom-tip = Zoom: pinch or { $command }+scroll; Z for 100%. Scroll moves a zoomed photo, Shift+scroll sideways
-photo-zoom-tip-exact = At 100% the screen shows exactly what the export will be. Zoom: pinch or { $command }+scroll; Z for 100%. Scroll moves a zoomed photo, Shift+scroll sideways
-# While the viewport can only fit the photo.
-photo-zoom-later = Zoom comes with the 100% view
+photo-zoom-tip-exact = At 100% the screen shows exactly what a full-size export will be. Zoom: pinch or { $command }+scroll; Z for 100%. Scroll moves a zoomed photo, Shift+scroll sideways
 layer-image = Image
 
 ## The Viewer

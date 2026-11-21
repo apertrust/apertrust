@@ -928,9 +928,15 @@ pub fn takes_back(ctx: &egui::Context, picker: PickerRef) -> bool {
 /// The active picker over the photo this frame.
 pub struct OnPhoto<'a> {
     pub picker: PickerRef,
-    /// The photo's rectangle on the screen, the frame drawn in it pixel for pixel.
+    /// The photo area, the part of the photo shown, which takes the pointer and cuts the
+    /// marks: the whole photo's rectangle at Fit.
+    pub area: Rect,
+    /// The whole photo's rectangle on the screen at the zoom, larger than the area where
+    /// the photo overflows it, which the marks are placed on (`docs/gui.md`, On-photo
+    /// overlays).
     pub photo: Rect,
-    /// The frame's size in its pixels.
+    /// The whole photo's size in pixels of the frame's scale, so a frame pixel spans
+    /// `photo`'s width over its first.
     pub pixels: [u32; 2],
     /// Where the picker is, as shown ([`Mirror::region`]).
     pub region: Region,
@@ -960,13 +966,24 @@ const CORNER: f32 = 6.0;
 /// A new area's half side across, as a share of the photo's width.
 const NEW_AREA: f32 = 0.02;
 
-/// Draws the picker's marks over the photo and returns the commands the pointer and the
-/// keys sent this frame, in order. Its node takes the focus where asked
-/// ([`focus_photo`]); Esc's `Off` gives it back to the picker's button.
-pub fn on_photo(ui: &mut egui::Ui, on: &OnPhoto) -> Vec<PickerCommand> {
+/// What the picker on the photo did this frame ([`on_photo`]).
+#[derive(Debug, Default, PartialEq)]
+pub struct PhotoPicked {
+    /// The commands the pointer and the keys sent, in order.
+    pub commands: Vec<PickerCommand>,
+    /// While a drag holds the pointer past the photo area's edge, how far past, in points:
+    /// the view moves that far towards it each frame, as darktable's
+    /// (`src/views/darkroom.c:3895-3902`).
+    pub pan: Option<Vec2>,
+}
+
+/// Draws the picker's marks over the photo and returns what the pointer and the keys did
+/// this frame. Its node takes the focus where asked ([`focus_photo`]); Esc's `Off` gives
+/// it back to the picker's button.
+pub fn on_photo(ui: &mut egui::Ui, on: &OnPhoto) -> PhotoPicked {
     let ctx = ui.ctx().clone();
     let id = photo_id();
-    let response = ui.interact(on.photo, id, Sense::click_and_drag());
+    let response = ui.interact(on.area, id, Sense::click_and_drag());
     if ctx.data_mut(|d| d.remove_temp::<bool>(id.with("focus"))) == Some(true) {
         response.request_focus();
     }
@@ -983,8 +1000,9 @@ pub fn on_photo(ui: &mut egui::Ui, on: &OnPhoto) -> Vec<PickerCommand> {
         1.0 / on.pixels[0].max(1) as f32,
         1.0 / on.pixels[1].max(1) as f32,
     ];
+    // The pointer held inside the area, past which the view moves instead.
     let at = |pos: Pos2| {
-        let p = (pos - on.photo.min) / size;
+        let p = (on.area.clamp(pos) - on.photo.min) / size;
         [p.x.clamp(0.0, 1.0), p.y.clamp(0.0, 1.0)]
     };
     let mut commands = Vec::new();
@@ -1012,13 +1030,17 @@ pub fn on_photo(ui: &mut egui::Ui, on: &OnPhoto) -> Vec<PickerCommand> {
     // The press where it was, a move after it in the same frame then followed.
     let pressed_at = origin
         .or(pos)
-        .filter(|&at| pressed && on.photo.contains(at) && response.contains_pointer());
+        .filter(|&at| pressed && on.area.contains(at) && response.contains_pointer());
     if let Some(origin) = pressed_at {
         response.request_focus();
         let mac = ctx.os() == egui::os::OperatingSystem::Mac;
         drag = pressed_on(&mut commands, on, at(origin), origin, modifiers, mac);
     }
     let moved = moved && pressed_at.is_none_or(|origin| pos != Some(origin));
+    // Held past the area's edge, the view moves under a still pointer: followed too, and
+    // on the release, so it ends where the pointer is on the photo as now placed.
+    let outside = pos.is_some_and(|pos| !on.area.contains(pos));
+    let moved = moved || (drag.is_some() && (down || released) && outside);
     if let (Some(now), Some(pos), true) = (drag, pos, moved) {
         let to = at(pos);
         drag = Some(match now {
@@ -1137,6 +1159,12 @@ pub fn on_photo(ui: &mut egui::Ui, on: &OnPhoto) -> Vec<PickerCommand> {
         }
         None => d.remove::<Drag>(drag_id),
     });
+    // A drag past the area's edge.
+    let pan = (drag.is_some() && down)
+        .then_some(pos)
+        .flatten()
+        .map(|pos| pos - on.area.clamp(pos))
+        .filter(|past| *past != Vec2::ZERO);
 
     // The marks, at what was sent this frame.
     let place = match region {
@@ -1150,7 +1178,7 @@ pub fn on_photo(ui: &mut egui::Ui, on: &OnPhoto) -> Vec<PickerCommand> {
         )),
     };
     let zoom = on.photo.width() / on.pixels[0].max(1) as f32;
-    let painter = ui.painter_at(on.photo);
+    let painter = ui.painter_at(on.area);
     PickerMarks::new(place)
         .focused(response.has_focus())
         .paint(&Overlay::new(&painter, on.photo, zoom));
@@ -1192,7 +1220,7 @@ pub fn on_photo(ui: &mut egui::Ui, on: &OnPhoto) -> Vec<PickerCommand> {
             },
         ]);
     });
-    commands
+    PhotoPicked { commands, pan }
 }
 
 /// What a press at `at`, in the photo's coordinates, `pos` on the screen, with `modifiers`
@@ -1829,6 +1857,7 @@ mod tests {
                     let name = name(&words, Sample.definition(), id);
                     let on = OnPhoto {
                         picker,
+                        area: PHOTO,
                         photo: PHOTO,
                         pixels: PIXELS,
                         region,
@@ -1836,7 +1865,7 @@ mod tests {
                         colour: sampled(scene.mirror.reading()),
                         name: &name,
                     };
-                    for command in on_photo(ui, &on) {
+                    for command in on_photo(ui, &on).commands {
                         scene.send(command, &ctx);
                     }
                     live_region(ui, PHOTO.left_bottom(), scene.said.text());
@@ -2775,5 +2804,121 @@ mod tests {
             "The area has clipped pixels. Exposure at +18 EV: the area is L 12 %, not 50 %. \
              Last pick L 2 % → L 12 % · +17.20 EV"
         );
+    }
+
+    /// The Colour picker at `region` over the photo area `PHOTO`, the photo shown at
+    /// `zoom` times what fits it about its centre, as the Viewer shows a zoomed photo: the
+    /// whole photo's rectangle that much larger. The state keeps every command sent and
+    /// the last frame's pan.
+    fn zoomed(zoom: f32, region: Region) -> Harness<'static, (Region, PhotoPicked)> {
+        Harness::builder()
+            .with_size(vec2(760.0, 400.0))
+            .with_context_setup(|ctx| apertrust_ui::install(ctx, Theme::default()))
+            .build_ui_state(
+                move |ui, (region, picked): &mut (Region, PhotoPicked)| {
+                    let photo = Rect::from_center_size(PHOTO.center(), PHOTO.size() * zoom);
+                    let on = OnPhoto {
+                        picker: PickerRef::ColourPicker,
+                        area: PHOTO,
+                        photo,
+                        pixels: PIXELS.map(|side| (side as f32 * zoom) as u32),
+                        region: *region,
+                        switched: *region,
+                        colour: Color32::RED,
+                        name: "",
+                    };
+                    let now = on_photo(ui, &on);
+                    picked.commands.extend(now.commands);
+                    picked.pan = now.pan;
+                },
+                (region, PhotoPicked::default()),
+            )
+    }
+
+    /// Where the sampled colour's dot, the point's centre, was drawn in the last frame.
+    fn dot(harness: &Harness<'_, (Region, PhotoPicked)>) -> Option<Pos2> {
+        let shapes = &harness.output().shapes;
+        shapes.iter().find_map(|clipped| match &clipped.shape {
+            egui::Shape::Circle(circle) if circle.fill == Color32::RED => Some(circle.center),
+            _ => None,
+        })
+    }
+
+    #[test]
+    fn the_marks_stay_on_their_photo_point_at_every_zoom() {
+        let point = [0.45, 0.55];
+        for zoom in [1.0, 4.0] {
+            let mut harness = zoomed(zoom, Region::Point(point));
+            harness.run();
+            let photo = Rect::from_center_size(PHOTO.center(), PHOTO.size() * zoom);
+            let expected = photo.min + vec2(point[0], point[1]) * photo.size();
+            let drawn = dot(&harness).expect("the point's dot");
+            // On the pixel the point falls in, its centre.
+            assert!(
+                (drawn - expected).abs().max_elem() <= 0.5,
+                "{zoom}: {drawn:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_marks_are_clipped_to_the_photo_area() {
+        // An area larger than the part of the photo shown at 400%.
+        let mut harness = zoomed(4.0, Region::Area([0.1, 0.1, 0.9, 0.9]));
+        harness.run();
+        let shapes = &harness.output().shapes;
+        assert!(!shapes.is_empty());
+        // Every mark's, the panel's ground under them aside.
+        let marks = shapes.iter().filter(|clipped| match &clipped.shape {
+            egui::Shape::Rect(rect) => rect.fill == Color32::TRANSPARENT,
+            _ => true,
+        });
+        for clipped in marks {
+            let clip = clipped.clip_rect;
+            assert!(PHOTO.contains_rect(clip), "{clip:?}");
+        }
+    }
+
+    #[test]
+    fn a_picker_drag_past_the_edge_moves_the_view() {
+        let mut harness = zoomed(4.0, Region::Point([0.5, 0.5]));
+        harness.run();
+        harness.hover_at(PHOTO.center());
+        harness.drag_at(PHOTO.center());
+        harness.run();
+        assert_eq!(harness.state().1.pan, None);
+        // 30 points past the area's right edge and 10 above its top: the view moves that
+        // far each frame, and the point stays at the area's corner.
+        let past = pos2(PHOTO.right() + 30.0, PHOTO.top() - 10.0);
+        harness.hover_at(past);
+        harness.run();
+        let picked = &harness.state().1;
+        assert_eq!(picked.pan, Some(vec2(30.0, -10.0)));
+        let photo = Rect::from_center_size(PHOTO.center(), PHOTO.size() * 4.0);
+        let corner = (PHOTO.right_top() - photo.min) / photo.size();
+        let last = picked.commands.last();
+        let followed = PickerCommand::Point {
+            at: [corner.x, corner.y],
+            done: false,
+            keys: PickKeys::default(),
+        };
+        assert_eq!(last, Some(&followed));
+        // Held there, it keeps moving, the point following the view under the still
+        // pointer each frame; let go, it stops.
+        let sent = harness.state().1.commands.len();
+        harness.run();
+        assert_eq!(harness.state().1.pan, Some(vec2(30.0, -10.0)));
+        assert!(harness.state().1.commands.len() > sent);
+        harness.drop_at(past);
+        harness.run();
+        assert_eq!(harness.state().1.pan, None);
+        // A drag inside the area moves no view.
+        let mut harness = zoomed(4.0, Region::Point([0.5, 0.5]));
+        harness.hover_at(PHOTO.center());
+        harness.drag_at(PHOTO.center());
+        harness.run();
+        harness.hover_at(PHOTO.center() + vec2(40.0, 20.0));
+        harness.run();
+        assert_eq!(harness.state().1.pan, None);
     }
 }

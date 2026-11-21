@@ -1858,6 +1858,7 @@ mod tests {
             zoom_in: true,
             zoom_out: true,
             fitted: true,
+            at_100: false,
             dialog: false,
             modal: false,
             dialog_window: false,

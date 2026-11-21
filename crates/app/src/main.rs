@@ -108,14 +108,15 @@ use apertrust_engine::session::{
     PickerCommand, PickerRef, Places, Session, SessionError, StepSource, Values, ViewOnly,
 };
 use apertrust_engine::sidecar::Reason;
+use apertrust_engine::view::{FramePlace, Placement};
 use apertrust_tools::ToolDefinition;
 use apertrust_ui::components::{
     ActivityAction, Available, Browser, BrowserAction, BrowserEdge, BrowserEdgeAction,
     BrowserPosition, CellMenu, CellRating, FindBar, FindBarAction, Jobs, Margin, Marker,
     MenuButtonStyle, PanelBody, PanelEdge, PanelEdgeAction, PanelTab, PhotoCaption, PhotoFrame,
     PickerAction, Placed, SaveState, ScopeView, TabBar, TabBarAction, Thumb, Toggle, Toolbar,
-    ToolbarAction, ToolsPanelPosition, ViewerBar, ViewerBarAction, Zoom, ZoomChoices,
-    browser_lines, browser_thickness,
+    ToolbarAction, ToolsPanelPosition, ViewerBar, ViewerBarAction, Zoom, browser_lines,
+    browser_thickness,
 };
 use apertrust_ui::{
     Background, Builtin, Locale, Theme, Translator, components, popup, theme, tr, translator,
@@ -1507,6 +1508,18 @@ struct App {
     /// The main window as the start window, with nothing open (`docs/gui.md`, The start
     /// window).
     start: start::Window,
+    /// The view last sent to the session (`Command::View`, decision 99); None after the
+    /// session refused one, so the next is sent whatever it is.
+    view_sent: Option<apertrust_engine::view::View>,
+    /// The number of that view's command and when it was sent, until the session tells a
+    /// view through it, for Rendering… a second after (`docs/gui.md`, While the view
+    /// renders).
+    view_pending: Option<(u64, Instant, apertrust_engine::view::View)>,
+    /// The number of the last view's command, which a refusal of an earlier one, overtaken,
+    /// leaves the zoom alone for.
+    view_number: u64,
+    /// The photo's extent at the last frame, whose change sends the view again.
+    view_extent: Option<[u32; 2]>,
 }
 
 /// What the Toolbar asked for this frame.
@@ -1928,6 +1941,9 @@ struct Shell {
     proof_margin: bool,
     /// The photo's zoom, Fit as the app starts and never kept (`docs/gui.md`, The zoom).
     zoom: zoom::Zoomed,
+    /// The live photo and the room the Viewer gave it at the last frame, which the zoom's
+    /// steps and edges follow; None with no photo live.
+    room: Option<zoom::Room>,
     /// The Viewer's margins, from the settings (`[viewer]`).
     viewer: settings::Viewer,
     /// Whether Settings… ran, for the app to open it in the dialog host after the action.
@@ -2092,6 +2108,7 @@ impl Shell {
             guides: false,
             proof_margin: false,
             zoom: zoom::Zoomed::FIT,
+            room: None,
             viewer: settings.viewer,
             settings: false,
             show_log: false,
@@ -3199,9 +3216,10 @@ impl Shell {
             hidden_tab: (self.find.is_none() && self.hidden_shown()).then_some(self.hidden_chosen),
             show_hidden: self.show_hidden,
             scale: ctx.zoom_factor(),
-            zoom_in: self.zoom.step(zoom::ZoomStep::In).is_some(),
-            zoom_out: self.zoom.step(zoom::ZoomStep::Out).is_some(),
-            fitted: self.zoom == zoom::Zoomed::FIT,
+            zoom_in: self.zoom_to_step(zoom::ZoomStep::In).is_some(),
+            zoom_out: self.zoom_to_step(zoom::ZoomStep::Out).is_some(),
+            fitted: self.zoom.scale == zoom::Scale::Fit,
+            at_100: self.zoom.scale == zoom::Scale::Factor(1.0),
             dialog: self.about.is_open(),
             // About is modal over the window; the open dialog and the host's dialogs are the
             // app's ([`with_dialogs`]).
@@ -3655,9 +3673,15 @@ impl Shell {
 
     /// Moves the photo's zoom by `step`, where it has somewhere to go.
     fn zoom_to(&mut self, step: zoom::ZoomStep) {
-        if let Some(zoomed) = self.zoom.step(step) {
+        if let Some(zoomed) = self.zoom_to_step(step) {
             self.zoom = zoomed;
         }
+    }
+
+    /// Where `step` takes the photo's zoom in the room the Viewer last gave it; None with no
+    /// photo live, or where the step has nowhere to go.
+    fn zoom_to_step(&self, step: zoom::ZoomStep) -> Option<zoom::Zoomed> {
+        self.zoom.step(step, self.room.as_ref()?)
     }
 
     /// Shows the Tools panel's tab `tab`, chosen by the user: kept in `state.toml` as the
@@ -4091,6 +4115,10 @@ impl App {
             remembered: Remembered::default(),
             opening_first: None,
             start: start::Window::new(false, settings.scale),
+            view_sent: Some(apertrust_engine::view::View::default()),
+            view_pending: None,
+            view_number: 0,
+            view_extent: None,
         };
         // The command line's paths, Finder's files at the launch, which macOS hands over as
         // it finishes launching, before the window, and the paths second starts handed over
@@ -4641,6 +4669,17 @@ impl App {
                         let kept = &mut self.picture;
                         self.fade = fade::Fade::begin(ctx, kept, open, generation, reduce);
                     }
+                    // The frame stays at Fit, and so does the zoom (decision 99).
+                    // Only while the zoom is still the one refused: a later choice, sent or
+                    // not yet, stands.
+                    Reaction::Unzoomed { command }
+                        if command >= self.view_number
+                            && self.view_sent == Some(self.shell.zoom.view()) =>
+                    {
+                        self.shell.zoom = zoom::Zoomed::FIT;
+                        self.view_sent = None;
+                    }
+                    Reaction::Unzoomed { .. } => {}
                 }
             }
         }
@@ -5521,11 +5560,6 @@ impl App {
             egui::pos2(rest.min.x, rest.min.y + ViewerBar::height(ui.ctx())),
             rest.max,
         );
-        // A right-click round the photo chooses the background behind it; the photo itself
-        // keeps its right-click for a menu of its own, and what is drawn over the slot later
-        // keeps its own clicks.
-        let id = ui.scope_id().with("background");
-        let background = ui.interact(slot, id, egui::Sense::click());
         let margins = self.shell.viewer;
         let margin = if self.shell.proof_margin {
             Margin::Proof(margins.proof_margin)
@@ -5545,6 +5579,8 @@ impl App {
         let now = Instant::now();
         if let Some((width, height)) = self.bounds.update(bounds, resized, now) {
             self.session.send(Command::Resize { width, height });
+            // The view again after it, so the session clamps its centre in the new room.
+            self.view_sent = None;
         }
         if let Some(wait) = self.bounds.wait(now) {
             ui.ctx().request_repaint_after(wait);
@@ -5559,16 +5595,37 @@ impl App {
         // (decision 77).
         let live = self.mirror.live();
         let open = photo.is_some() && live;
+        // The photo and its room, which the zoom places it in; the live photo's, which the
+        // zoom's steps and edges follow (`docs/gui.md`, The zoom).
+        let room = photo
+            .filter(|_| bounds.0 > 0 && bounds.1 > 0)
+            .map(|_| zoom::Room {
+                extent: self.mirror.values.extent,
+                bounds,
+            });
+        self.shell.room = room.filter(|_| open);
+        // The photo's extent changed, as a turn and its undo change it: the view goes again,
+        // since the session holds the centre it clamped for the extent before.
+        let extent = room.map(|room| room.extent);
+        if extent != self.view_extent {
+            self.view_extent = extent;
+            self.view_sent = None;
+        }
         // Rendering…, quietly, only once the photo is still not live a second after it was
-        // asked for, from a repaint asked for then.
+        // asked for, or its view still on its way a second after it was sent, from a
+        // repaint asked for then.
         if let Some(from) = self.mirror.rendering_from()
             && from > now
         {
             ui.ctx().request_repaint_after(from - now);
         }
-        let rendering = self
-            .mirror
-            .rendering(now)
+        let told = (self.mirror.view.as_ref()).map(|told| (told.through, told.placement));
+        let shown = self.shell.room.as_ref();
+        let (view_slow, view_wait) = view_rendering(&mut self.view_pending, told, shown, now);
+        if let Some(wait) = view_wait {
+            ui.ctx().request_repaint_after(wait);
+        }
+        let rendering = (self.mirror.rendering(now) || (open && view_slow))
             .then(|| tr(ui.ctx(), "photo-rendering"));
         // The zoom menu's entries with the keys of the actions that do the same.
         let words = translator(ui.ctx());
@@ -5596,9 +5653,10 @@ impl App {
                     mac,
                 )
             });
-        // The viewport shows the fitted frame, at Fit or at half of it, Small, until the
-        // engine's detail view (`docs/gui.md`, The zoom, in steps).
-        let mut bar = ViewerBar::new(&layer, self.shell.zoom.label())
+        // Every scale of the menu, the steps in order of scale for this photo and room.
+        let steps = [zoom::ZoomStep::In, zoom::ZoomStep::Out]
+            .map(|step| self.shell.zoom_to_step(step).is_some());
+        let mut bar = ViewerBar::new(&layer, self.shell.zoom.label_in(self.shell.room.as_ref()))
             .toggles(
                 Toggle::new(false, false),
                 Toggle::new(self.shell.proof_margin, open),
@@ -5606,7 +5664,7 @@ impl App {
                 Toggle::new(self.shell.guides, open),
             )
             .zoom_enabled(open)
-            .zoom_choices(ZoomChoices::SmallAndFit)
+            .steps(steps[0], steps[1])
             .status(rendering.as_deref());
         if let Some((name, how)) = &picker_words {
             bar = bar.picker(name, how);
@@ -5654,8 +5712,40 @@ impl App {
             PhotoState::Open(photo) => (!live && picture.is_none()).then(|| opening(&photo.path)),
         };
         let values = photo.map(|_| &self.mirror.values);
-        let small = self.shell.zoom.small();
-        let placed = place_photo(&block, bounds, ppp, small, values, picture.map(|(p, _)| p));
+        // A photo not yet live, its picture shown, at Fit (decision 77); the zoom held.
+        let zoomed = if open {
+            self.shell.zoom
+        } else {
+            zoom::Zoomed::FIT
+        };
+        let placed = place_photo(
+            &block,
+            bounds,
+            ppp,
+            &zoomed,
+            values,
+            picture.map(|(p, _)| p),
+        );
+        // A scroll or a drag moves a zoomed photo, drawn at once where it moves to; a picker
+        // on takes the drag, never the scroll (`docs/gui.md`, Panning).
+        if let (Some(room), Some(placed)) = (&room, &placed)
+            && open
+        {
+            let drags = self.mirror.pickers.active().is_none();
+            self.shell.zoom = pan_photo(ui, placed.photo, self.shell.zoom, room, drags);
+        }
+        // A right-click round the photo chooses the background behind it; the photo itself
+        // keeps its right-click for a menu of its own, and what is drawn over the slot later
+        // keeps its own clicks. Over the photo's drag, which senses no click, so the slot
+        // still takes the clicks there.
+        let id = ui.scope_id().with("background");
+        let background = ui.interact(slot, id, egui::Sense::click());
+        let zoomed = if open {
+            self.shell.zoom
+        } else {
+            zoom::Zoomed::FIT
+        };
+        let placement = room.map(|room| room.place(&zoomed));
         // A failed save says so until a write succeeds; a failed render until the next
         // frame. The edit of a photo left, which could not be written, is said over
         // whatever follows, until another photo is asked for.
@@ -5667,15 +5757,18 @@ impl App {
         // A failed render keeps the last frame, if any, and says what failed over it.
         let mut picking = None;
         if message.is_none()
-            && let (Some(frame), Some(placed)) = (&self.mirror.frame, &placed)
+            && let (Some(frame), Some(placed), Some(placement)) =
+                (&self.mirror.frame, &placed, &placement)
         {
-            self.photo_at(ui, slot, placed, frame);
+            let whole = whole_photo(placed.photo, placement, ppp);
+            self.photo_at(ui, slot, placed.photo, whole, frame, placement);
             // The first picture fading out over the first live frame, until it ends.
             let open = self.mirror.photo.open().unwrap_or_default();
             fade::Fade::paint(&mut self.fade, &ui.painter_at(slot), placed, open);
             // The active picker over the live photo, once the rest is drawn.
             if live {
-                picking = Some((placed.photo, [frame.width, frame.height]));
+                // The frame's own pixels, which may be another scale's than the view's.
+                picking = Some((placed.photo, whole, viewport::frame_image(&frame.place)));
             }
         } else if message.is_none()
             && failure.is_none()
@@ -5711,7 +5804,13 @@ impl App {
             asked = library::empty_state(ui, slot, what, &keys);
         }
 
-        let photo_rect = placed.as_ref().map(|placed| placed.photo);
+        // An opening photo's picture is the whole photo, at Fit.
+        let photo_rect = placed.as_ref().map(|placed| {
+            let whole = (placement.as_ref()).map_or(placed.photo, |placement| {
+                whole_photo(placed.photo, placement, ppp)
+            });
+            (placed.photo, whole)
+        });
         if let (Some(photo), Some(placed)) = (photo, placed) {
             let words = translator(ui.ctx());
             // The shooting data the session read from the raw as it decoded it.
@@ -5735,8 +5834,17 @@ impl App {
                 .details(&details)
                 .show(ui, placed.caption);
         }
-        if let Some((photo, pixels)) = picking {
-            self.picker_on_photo(ui, photo, pixels);
+        if let Some((area, photo, pixels)) = picking {
+            self.picker_on_photo(ui, area, photo, pixels);
+        }
+        // The view as the zoom is now, once the person's moves are in; the session takes
+        // the last of a batch.
+        let view = self.shell.zoom.view();
+        if open && self.view_sent != Some(view) {
+            let number = self.session.send(Command::View(view));
+            self.view_sent = Some(view);
+            self.view_number = number;
+            self.view_pending = Some((number, now, view));
         }
         self.carry_out(asked, ui.ctx());
         (
@@ -5745,10 +5853,17 @@ impl App {
         )
     }
 
-    /// The active colour picker over the photo drawn at `photo` from a frame of `pixels`
-    /// (`docs/pickers.md`, On the photo): its marks, what the pointer and the keys send,
-    /// and the live region reading a pick out once it has rested.
-    fn picker_on_photo(&mut self, ui: &mut egui::Ui, photo: egui::Rect, pixels: [u32; 2]) {
+    /// The active colour picker over the photo area `area`, the whole photo's rectangle on
+    /// the screen `photo`, `pixels` of the frame's scale (`docs/pickers.md`, On the photo):
+    /// its marks, what the pointer and the keys send, the view moved by a drag past the
+    /// area's edge, and the live region reading a pick out once it has rested.
+    fn picker_on_photo(
+        &mut self,
+        ui: &mut egui::Ui,
+        area: egui::Rect,
+        photo: egui::Rect,
+        pixels: [u32; 2],
+    ) {
         let mirror = &self.mirror.pickers;
         let (Some(picker), Some(region)) = (mirror.active(), mirror.region()) else {
             return;
@@ -5763,6 +5878,7 @@ impl App {
         };
         let on = pickers::OnPhoto {
             picker,
+            area,
             photo,
             pixels,
             region,
@@ -5770,8 +5886,19 @@ impl App {
             colour: pickers::sampled(mirror.reading()),
             name: &name,
         };
-        for command in pickers::on_photo(ui, &on) {
+        let picked = pickers::on_photo(ui, &on);
+        for command in picked.commands {
             self.send_picker(command, ui.ctx());
+        }
+        // Past the area's edge, the view follows the pointer each frame, as darktable's.
+        // It stops at the photo's edge, and so do the frames it asks for.
+        if let (Some(overshoot), Some(room)) = (picked.pan, self.shell.room) {
+            let moved = -overshoot * ui.pixels_per_point();
+            let panned = self.shell.zoom.panned(moved, &room);
+            if panned != self.shell.zoom {
+                self.shell.zoom = panned;
+                ui.ctx().request_repaint();
+            }
         }
         let wait = self.said.update(
             Instant::now(),
@@ -5783,7 +5910,7 @@ impl App {
         if let Some(wait) = wait {
             ui.ctx().request_repaint_after(wait);
         }
-        pickers::live_region(ui, photo.left_bottom(), self.said.text());
+        pickers::live_region(ui, area.left_bottom(), self.said.text());
     }
 
     /// The Viewer's right-click menus, hung from the pointer where `slot` was
@@ -5795,7 +5922,7 @@ impl App {
         &self,
         ctx: &egui::Context,
         slot: &egui::Response,
-        photo: Option<egui::Rect>,
+        photo: Option<(egui::Rect, egui::Rect)>,
     ) -> Option<ActionId> {
         let picking = self.mirror.pickers.active().is_some();
         let state = self.state(ctx);
@@ -6184,33 +6311,157 @@ impl App {
         }
     }
 
-    /// Draws `frame` where the block `placed` puts the photo, with the guides over it:
-    /// pixel for pixel at Fit, each 2×2 block's mean at Small. A frame rendered for another
-    /// size, as while the window resizes, is shown smoothly at the size the next will have:
-    /// `placed`'s.
-    fn photo_at(&self, ui: &egui::Ui, slot: egui::Rect, placed: &Placed, frame: &Frame) {
+    /// Draws `frame` in the photo area `area` as the view `placement` shows it, the
+    /// overview under it where it has one, with the guides over the whole photo's
+    /// rectangle `whole`, all cut to the area (`docs/gui.md`, While the view renders).
+    fn photo_at(
+        &self,
+        ui: &egui::Ui,
+        slot: egui::Rect,
+        area: egui::Rect,
+        whole: egui::Rect,
+        frame: &Frame,
+        placement: &Placement,
+    ) {
         let ppp = ui.pixels_per_point();
-        let rect = placed.photo;
         let snap = |v: f32| (v * ppp).round() / ppp;
-        // Cut to the slot, should a frame still be larger than it.
-        let painter = ui.painter_at(slot);
-        let filter = if self.shell.zoom.small() {
-            viewport::Filter::Box2
-        } else {
-            viewport::Filter::Exact
-        };
-        viewport::paint(&painter, rect, frame, filter);
+        // Cut to the area, and to the slot should a frame still be larger than it.
+        let painter = ui.painter_at(area.intersect(slot));
+        let overview = (frame.overview.as_ref()).map(|o| [o.width, o.height]);
+        let (under, shown) = photo_layers(&frame.place, overview, placement);
+        if let (Some(overview), Some(under)) = (&frame.overview, under) {
+            let size = [overview.width, overview.height];
+            viewport::paint(&painter, area, &overview.buffer, size, under);
+        }
+        let size = [frame.width, frame.height];
+        viewport::paint(&painter, area, &frame.buffer, size, shown);
         if self.shell.guides {
-            // Thirds, one physical pixel wide.
+            // Thirds of the whole photo, one physical pixel wide.
             let stroke = egui::Stroke::new(1.0 / ppp, theme(ui.ctx()).colors.guides);
             for k in [1.0, 2.0] {
-                let x = snap(rect.left() + rect.width() * k / 3.0);
-                let y = snap(rect.top() + rect.height() * k / 3.0);
-                painter.vline(x, rect.y_range(), stroke);
-                painter.hline(rect.x_range(), y, stroke);
+                let x = snap(whole.left() + whole.width() * k / 3.0);
+                let y = snap(whole.top() + whole.height() * k / 3.0);
+                painter.vline(x, whole.y_range(), stroke);
+                painter.hline(whole.x_range(), y, stroke);
             }
         }
     }
+}
+
+/// What the Viewer draws of a frame at `place`, with an overview of `overview` pixels
+/// where it has one, in the view `placement` shows: the overview under the whole area,
+/// enlarged smoothly, then the frame, each where it falls in the view, so the last frame
+/// and the overview stand in for the next while it renders (decision 99).
+fn photo_layers(
+    place: &FramePlace,
+    overview: Option<[u32; 2]>,
+    placement: &Placement,
+) -> (Option<viewport::Shown>, viewport::Shown) {
+    let under = overview.map(|size| viewport::overview_shown(size, placement));
+    (under, viewport::frame_shown(place, placement))
+}
+
+/// The photo area's size, in physical pixels, where `placement` puts the photo in `bounds`:
+/// on each axis the photo at the scale shown, or the room where the photo overflows it; at
+/// Small half the fitted frame, an odd side rounded up.
+fn area_size(placement: &Placement, bounds: (u32, u32)) -> egui::Vec2 {
+    let enlarged = placement.shown / placement.render;
+    let side = |axis: usize, bound: u32| {
+        (placement.visible[axis + 2] * enlarged)
+            .round()
+            .min(f64::from(bound)) as f32
+    };
+    egui::vec2(side(0, bounds.0), side(1, bounds.1))
+}
+
+/// The whole photo's rectangle on the screen where `placement` shows it through the photo
+/// area `area` at `ppp`, larger than the area where the photo overflows it: what marks and
+/// guides are placed on. Its corner is the visible rectangle's rounded, as the frame is
+/// drawn ([`viewport::frame_shown`]).
+fn whole_photo(area: egui::Rect, placement: &Placement, ppp: f32) -> egui::Rect {
+    let enlarged = placement.shown / placement.render;
+    let points = |pixels: f64| (pixels * enlarged) as f32 / ppp;
+    let corner = egui::vec2(
+        points(viewport::corner(placement, 0)),
+        points(viewport::corner(placement, 1)),
+    );
+    let size = egui::vec2(
+        points(f64::from(placement.size[0])),
+        points(f64::from(placement.size[1])),
+    );
+    egui::Rect::from_min_size(area.min - corner, size)
+}
+
+/// The pointer's moves of the photo over the photo area `area` (`docs/gui.md`, Panning):
+/// a scroll up and down and, with Shift or a trackpad, sideways, egui turning Shift's wheel
+/// into its horizontal scroll; and where `drags`, no picker taking the drag, a drag with
+/// the primary button moves it with the pointer, the open hand over a photo that can move
+/// and the closed one while dragging. Returns the zoom after them in `room`; at Fit nothing
+/// moves.
+fn pan_photo(
+    ui: &mut egui::Ui,
+    area: egui::Rect,
+    zoomed: zoom::Zoomed,
+    room: &zoom::Room,
+    drags: bool,
+) -> zoom::Zoomed {
+    if !zoom::overflows(&room.place(&zoomed)) {
+        return zoomed;
+    }
+    let mut moved = egui::Vec2::ZERO;
+    if drags {
+        let response = ui.interact(area, ui.scope_id().with("photo"), egui::Sense::drag());
+        if response.dragged_by(egui::PointerButton::Primary) {
+            moved += response.drag_delta();
+            ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+        } else if response.contains_pointer() {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
+        }
+    }
+    if ui.rect_contains_pointer(area) {
+        moved += ui.input(|i| i.smooth_scroll_delta);
+    }
+    if moved == egui::Vec2::ZERO {
+        return zoomed;
+    }
+    zoomed.panned(moved * ui.pixels_per_point(), room)
+}
+
+/// Whether the view sent as the command `pending` names, at the time it holds, is still on
+/// its way at `now` a second after it was sent, and how long until a second has passed
+/// (`docs/gui.md`, While the view renders). `pending` is let go once the session tells a
+/// view through it, its frame with it, or tells a placement that is already the view's in
+/// `room`, which a batch that ends where it began, or a view the session clamps to the one
+/// it shows, answers with no event: `told`, the last view fact, its `through` and its
+/// placement.
+fn view_rendering(
+    pending: &mut Option<(u64, Instant, apertrust_engine::view::View)>,
+    told: Option<(u64, Option<Placement>)>,
+    room: Option<&zoom::Room>,
+    now: Instant,
+) -> (bool, Option<Duration>) {
+    if let (Some((number, _, view)), Some((through, shown))) = (*pending, told) {
+        let wanted =
+            room.map(|room| apertrust_engine::view::place(room.extent, room.bounds, &view));
+        let placed = shown
+            .zip(wanted)
+            .is_some_and(|(shown, wanted)| same_place(&shown, &wanted));
+        if through >= number || placed {
+            *pending = None;
+        }
+    }
+    let Some((_, sent, _)) = *pending else {
+        return (false, None);
+    };
+    let due = sent + mirror::RENDERING_AFTER;
+    (now >= due, (now < due).then(|| due - now))
+}
+
+/// Whether two placements show the same: the scales, the image and the centre, which the
+/// session holds as an `f32` once clamped, so the visible rectangles may differ in their
+/// last bits.
+fn same_place(a: &Placement, b: &Placement) -> bool {
+    (a.shown, a.render, a.size, a.centre) == (b.shown, b.render, b.size, b.centre)
 }
 
 /// The largest size with `size`'s shape that fits `bounds`, larger than `size` too, each
@@ -6239,32 +6490,36 @@ fn same_shape((width, height): (u32, u32), (place_width, place_height): (u32, u3
 
 /// Where the photo goes in `block`, for a room of `bounds` physical pixels at `ppp` (the
 /// photo frame's layout, which its caption follows): once the photo's `values` have come,
-/// at the size the engine renders the edit at, so a frame rendered for it is shown pixel
-/// for pixel and one rendered for another size, as while the window resizes, scaled to the
-/// size its successor will have; before them, an opening photo's `picture` in its own
-/// shape, scaled to fit `bounds` as the live frame will be (decision 77). `small`: at half
-/// that size, each side rounded up, Small's exact 2:1 of the fitted frame (decision 99),
-/// the block centred as at Fit. `None` with neither.
+/// the photo area at `zoomed` ([`area_size`]): at Fit the size the engine renders the edit
+/// at, so a frame rendered for it is shown pixel for pixel and one rendered for another
+/// size, as while the window resizes, scaled to the size its successor will have; at Small
+/// half of it, the block centred as at Fit; zoomed past Fit the photo at its scale, or the
+/// room where it overflows it. Before them, an opening photo's `picture` in its own shape,
+/// scaled to fit `bounds` as the live frame will be (decision 77). `None` with neither.
 fn place_photo(
     block: &PhotoFrame,
     bounds: (u32, u32),
     ppp: f32,
-    small: bool,
+    zoomed: &zoom::Zoomed,
     values: Option<&Values>,
     picture: Option<&Picture>,
 ) -> Option<Placed> {
-    let (width, height) = match (values, picture) {
-        _ if bounds.0 == 0 || bounds.1 == 0 => (0, 0),
-        (Some(values), _) => values.viewport_size(bounds),
-        (None, Some(picture)) => fit_scaled((picture.image.width, picture.image.height), bounds),
+    let size = match (values, picture) {
+        _ if bounds.0 == 0 || bounds.1 == 0 => egui::Vec2::ZERO,
+        (Some(values), _) => {
+            let room = zoom::Room {
+                extent: values.extent,
+                bounds,
+            };
+            area_size(&room.place(zoomed), bounds)
+        }
+        (None, Some(picture)) => {
+            let (width, height) = fit_scaled((picture.image.width, picture.image.height), bounds);
+            egui::vec2(width as f32, height as f32)
+        }
         (None, None) => return None,
     };
-    let (width, height) = if small {
-        (width.div_ceil(2), height.div_ceil(2))
-    } else {
-        (width, height)
-    };
-    Some(block.place(egui::vec2(width as f32, height as f32) / ppp, ppp))
+    Some(block.place(size / ppp, ppp))
 }
 
 /// Draws an opening photo's `picture` of `generation` unmarked, scaled to the place the
@@ -6354,15 +6609,15 @@ fn photo_point(photo: egui::Rect, at: egui::Pos2) -> [f32; 2] {
 /// Opens the context menu at the pointer when `slot` is right-clicked, or Control-clicked
 /// on the Mac, built from `keymap` and `state` for the photo `asked` for
 /// ([`context_popup`]), and returns the action of the item chosen in it: the photo's on
-/// `photo`, the photo's rectangle while one is shown, the point in the photo's coordinates
-/// as pickers take them, unless `picking`, a picker on, takes the right-click there
-/// (decision 91); the surround's outside it. Asked for otherwise, by AccessKit's
+/// `photo`'s photo area while one is shown, the point in the coordinates of the whole
+/// photo's rectangle beside it as pickers take them, unless `picking`, a picker on, takes
+/// the right-click there (decision 91); the surround's outside it. Asked for otherwise, by AccessKit's
 /// ShowContextMenu or the keys, the photo's opens at its centre with no point, or the
 /// surround's at the slot's with no photo.
 fn central_menu(
     ctx: &egui::Context,
     slot: &egui::Response,
-    photo: Option<egui::Rect>,
+    photo: Option<(egui::Rect, egui::Rect)>,
     picking: bool,
     keymap: &Keymap,
     state: &State,
@@ -6372,12 +6627,12 @@ fn central_menu(
     let keys = components::menu_asked(ctx, slot);
     let clicked = components::context_click(ctx, slot);
     let at = slot.interact_pointer_pos().filter(|_| clicked);
-    let centre = photo.map_or(slot.rect.center(), |photo| photo.center());
+    let centre = photo.map_or(slot.rect.center(), |(area, _)| area.center());
     let at = at.or_else(|| keys.then_some(centre));
     let opened = at.and_then(|at| {
-        let (place, target) = match photo.filter(|photo| photo.contains(at)) {
+        let (place, target) = match photo.filter(|(area, _)| area.contains(at)) {
             Some(_) if picking => return None,
-            Some(photo) => {
+            Some((_, photo)) => {
                 let target = menus::Target::Photo {
                     point: (!keys).then(|| photo_point(photo, at)),
                 };
@@ -14321,7 +14576,8 @@ mod tests {
                         // As `App::viewer` places and draws it.
                         let (picture, generation) = scene.mirror.picture().expect("the picture");
                         let values = Some(&scene.mirror.values);
-                        let placed = place_photo(&block, bounds, ppp, false, values, Some(picture))
+                        let fit = zoom::Zoomed::FIT;
+                        let placed = place_photo(&block, bounds, ppp, &fit, values, Some(picture))
                             .expect("a place");
                         let painter = ui.painter_at(slot);
                         paint_picture(&painter, &placed, picture, generation, &mut scene.picture);
@@ -14406,8 +14662,14 @@ mod tests {
                     let open = matches!(scene.mirror.photo, PhotoState::Open(_));
                     let values = open.then_some(&scene.mirror.values);
                     let picture = scene.mirror.picture();
-                    scene.placed =
-                        place_photo(&block, bounds, ppp, false, values, picture.map(|(p, _)| p));
+                    scene.placed = place_photo(
+                        &block,
+                        bounds,
+                        ppp,
+                        &zoom::Zoomed::FIT,
+                        values,
+                        picture.map(|(p, _)| p),
+                    );
                     let painter = ui.painter_at(slot);
                     scene.drawn = match (picture, &scene.placed) {
                         (Some((shown, generation)), Some(placed)) => Some(paint_picture(
@@ -14489,7 +14751,15 @@ mod tests {
             extent: [6000, 4000],
             ..photo_values(0.0, 0)
         };
-        place_photo(&block, bounds, ppp, small, Some(&values), None).expect("a place")
+        let zoomed = zoom::Zoomed {
+            scale: if small {
+                zoom::Scale::Small
+            } else {
+                zoom::Scale::Fit
+            },
+            ..zoom::Zoomed::FIT
+        };
+        place_photo(&block, bounds, ppp, &zoomed, Some(&values), None).expect("a place")
     }
 
     #[test]
@@ -14528,6 +14798,370 @@ mod tests {
             let half = (fit.photo.size() * 2.0 / 2.0).ceil() / 2.0;
             assert_eq!(small.photo.size(), half, "{slot:?}");
         }
+    }
+
+    /// A 6000 × 4000 photo in a room of 2400 × 1600 physical pixels, fitted at 40%.
+    const ZOOM_ROOM: zoom::Room = zoom::Room {
+        extent: [6000, 4000],
+        bounds: (2400, 1600),
+    };
+
+    /// The fitted frame of [`ZOOM_ROOM`], the whole photo at 40%.
+    const FITTED: FramePlace = FramePlace {
+        scale: 0.4,
+        origin: [0, 0],
+        extent: [6000, 4000],
+    };
+
+    fn zoomed_to(scale: zoom::Scale, centre: [f32; 2]) -> zoom::Zoomed {
+        zoom::Zoomed { scale, centre }
+    }
+
+    /// The physical pixels of the area, from its corner, a layer drawn as `shown` from a
+    /// frame of `size` covers on each axis.
+    fn covered(shown: &viewport::Shown, size: [u32; 2]) -> [std::ops::Range<f32>; 2] {
+        [0, 1].map(|axis| {
+            let start = -shown.source[axis] * shown.scale[axis];
+            start..start + size[axis] as f32 * shown.scale[axis]
+        })
+    }
+
+    /// The photo area as `App::viewer` moves it, at twice the scale: 1200 × 800 points,
+    /// [`ZOOM_ROOM`]'s room, at (50, 50), the zoom kept in the state, and the slot's
+    /// right-clicks over it counted, as the photo's menu takes them.
+    fn panning(zoomed: zoom::Zoomed) -> Harness<'static, zoom::Zoomed> {
+        Harness::builder()
+            .with_size(egui::vec2(1300.0, 900.0))
+            .with_pixels_per_point(2.0)
+            .build_ui_state(
+                |ui, zoomed: &mut zoom::Zoomed| {
+                    let picker = ui.ctx().data(|d| d.get_temp::<bool>(PICKER_ON));
+                    let drags = !picker.unwrap_or(false);
+                    *zoomed = pan_photo(ui, PAN_AREA, *zoomed, &ZOOM_ROOM, drags);
+                    let slot = ui.interact(
+                        ui.max_rect(),
+                        egui::Id::NULL.with("slot"),
+                        egui::Sense::click(),
+                    );
+                    if slot.secondary_clicked() {
+                        ui.ctx()
+                            .data_mut(|d| *d.get_temp_mut_or(egui::Id::NULL.with("menus"), 0) += 1);
+                    }
+                },
+                zoomed,
+            )
+    }
+
+    #[test]
+    fn a_zoomed_photo_keeps_its_right_click() {
+        let mut harness = panning(zoomed_to(zoom::Scale::Factor(1.0), [0.5, 0.5]));
+        harness.hover_at(PAN_AREA.center());
+        harness.run();
+        for pressed in [true, false] {
+            harness.event(egui::Event::PointerButton {
+                pos: PAN_AREA.center(),
+                button: egui::PointerButton::Secondary,
+                pressed,
+                modifiers: Modifiers::NONE,
+            });
+        }
+        harness.run();
+        let menus = harness
+            .ctx
+            .data(|d| d.get_temp::<i32>(egui::Id::NULL.with("menus")));
+        assert_eq!(menus, Some(1));
+        // And a drag still moves the photo.
+        drag(&mut harness, egui::vec2(100.0, 0.0));
+        assert!(harness.state().centre[0] < 0.5);
+    }
+
+    const PAN_AREA: egui::Rect = egui::Rect {
+        min: egui::pos2(50.0, 50.0),
+        max: egui::pos2(1250.0, 850.0),
+    };
+
+    /// A turn of the mouse wheel by `delta` points, down positive, with `modifiers`, over
+    /// the area's middle.
+    fn scroll(harness: &mut Harness<'_, zoom::Zoomed>, delta: egui::Vec2, modifiers: Modifiers) {
+        harness.hover_at(PAN_AREA.center());
+        harness.run();
+        harness.event_modifiers(
+            egui::Event::MouseWheel {
+                unit: egui::MouseWheelUnit::Point,
+                delta,
+                phase: egui::TouchPhase::Move,
+                source: egui::MouseWheelSource::Wheel,
+                modifiers,
+            },
+            modifiers,
+        );
+        harness.run_steps(12);
+    }
+
+    /// A drag with the primary button from the area's middle by `by` points.
+    fn drag(harness: &mut Harness<'_, zoom::Zoomed>, by: egui::Vec2) {
+        let from = PAN_AREA.center();
+        harness.hover_at(from);
+        harness.drag_at(from);
+        harness.run();
+        harness.hover_at(from + by);
+        harness.run();
+        harness.drop_at(from + by);
+        harness.run();
+    }
+
+    #[test]
+    fn scrolling_and_dragging_at_fit_do_nothing() {
+        for fitted in [zoom::Zoomed::FIT, zoomed_to(zoom::Scale::Small, [0.5, 0.5])] {
+            let mut harness = panning(fitted);
+            scroll(&mut harness, egui::vec2(0.0, 40.0), Modifiers::NONE);
+            drag(&mut harness, egui::vec2(120.0, 80.0));
+            assert_eq!(*harness.state(), fitted);
+        }
+        // At 100% a scroll down shows more of the top, a drag right more of the left.
+        let mut harness = panning(zoomed_to(zoom::Scale::Factor(1.0), [0.5, 0.5]));
+        scroll(&mut harness, egui::vec2(0.0, 40.0), Modifiers::NONE);
+        let [x, y] = harness.state().centre;
+        assert_eq!(x, 0.5);
+        assert!((y - (0.5 - 80.0 / 4000.0)).abs() < 1e-4, "{y}");
+        drag(&mut harness, egui::vec2(120.0, 0.0));
+        let [x, _] = harness.state().centre;
+        assert!((x - (0.5 - 240.0 / 6000.0)).abs() < 1e-4, "{x}");
+        // Shift turns the wheel sideways, once: egui's own turn, not doubled.
+        let mut harness = panning(zoomed_to(zoom::Scale::Factor(1.0), [0.5, 0.5]));
+        scroll(&mut harness, egui::vec2(0.0, 40.0), Modifiers::SHIFT);
+        let [x, y] = harness.state().centre;
+        assert_eq!(y, 0.5);
+        assert!((x - (0.5 - 80.0 / 6000.0)).abs() < 1e-4, "{x}");
+    }
+
+    #[test]
+    fn the_cursor_is_a_hand_over_a_zoomed_photo() {
+        let cursor =
+            |harness: &Harness<'_, zoom::Zoomed>| harness.output().platform_output.cursor_icon;
+        let mut harness = panning(zoomed_to(zoom::Scale::Factor(1.0), [0.5, 0.5]));
+        harness.hover_at(PAN_AREA.center());
+        harness.run();
+        assert_eq!(cursor(&harness), egui::CursorIcon::Grab);
+        harness.drag_at(PAN_AREA.center());
+        harness.run();
+        harness.hover_at(PAN_AREA.center() + egui::vec2(20.0, 0.0));
+        harness.run();
+        assert_eq!(cursor(&harness), egui::CursorIcon::Grabbing);
+        // At Fit and Small, the arrow.
+        for fitted in [zoom::Zoomed::FIT, zoomed_to(zoom::Scale::Small, [0.5, 0.5])] {
+            let mut harness = panning(fitted);
+            harness.hover_at(PAN_AREA.center());
+            harness.run();
+            assert_eq!(cursor(&harness), egui::CursorIcon::Default);
+        }
+    }
+
+    #[test]
+    fn a_zoom_draws_on_the_frame_of_its_input() {
+        // 400% chosen at Fit: before the session's frame for it, the fitted frame, enlarged
+        // smoothly about the view's centre, covers the whole area at once.
+        let zoomed = zoom::Zoomed::FIT
+            .step(zoom::ZoomStep::To(zoom::Scale::Factor(4.0)), &ZOOM_ROOM)
+            .expect("400%");
+        let placement = ZOOM_ROOM.place(&zoomed);
+        let (under, shown) = photo_layers(&FITTED, None, &placement);
+        assert_eq!(under, None);
+        assert_eq!(shown.filter, viewport::Filter::Smooth);
+        assert_eq!(shown.scale, [10.0, 10.0]);
+        let area = area_size(&placement, ZOOM_ROOM.bounds);
+        assert_eq!(area, egui::vec2(2400.0, 1600.0));
+        let [across, down] = covered(&shown, [2400, 1600]);
+        assert!(across.start <= 0.0 && across.end >= area.x, "{across:?}");
+        assert!(down.start <= 0.0 && down.end >= area.y, "{down:?}");
+        // Its middle frame pixel under the area's middle.
+        let middle = [0, 1].map(|axis| shown.source[axis] + area[axis] / 2.0 / shown.scale[axis]);
+        assert_eq!(middle, [1200.0, 800.0]);
+        // The session's frame for it, the detail at 100%, then in squares, from 200%.
+        let detail = FramePlace {
+            scale: 1.0,
+            origin: [2700, 1800],
+            extent: [6000, 4000],
+        };
+        let (under, shown) = photo_layers(&detail, Some([2400, 1600]), &placement);
+        assert_eq!(shown.filter, viewport::Filter::Nearest);
+        assert_eq!(
+            under.map(|under| under.filter),
+            Some(viewport::Filter::Smooth)
+        );
+    }
+
+    #[test]
+    fn a_pan_never_shows_the_surround_inside_an_overflowing_axis() {
+        // At 100%, the detail of the view's centre with its overview, panned step by step
+        // to each edge: the overview always covers the whole area, the detail where it
+        // reaches.
+        let mut zoomed = zoomed_to(zoom::Scale::Factor(1.0), [0.5, 0.5]);
+        let detail = FramePlace {
+            scale: 1.0,
+            origin: [1800, 1200],
+            extent: [6000, 4000],
+        };
+        let steps = [
+            egui::vec2(700.0, 0.0),
+            egui::vec2(-1500.0, 300.0),
+            egui::vec2(-3000.0, -3000.0),
+            egui::vec2(5000.0, 5000.0),
+        ];
+        for step in steps {
+            for _ in 0..4 {
+                zoomed = zoomed.panned(step, &ZOOM_ROOM);
+                let placement = ZOOM_ROOM.place(&zoomed);
+                let area = area_size(&placement, ZOOM_ROOM.bounds);
+                let (under, _) = photo_layers(&detail, Some([2400, 1600]), &placement);
+                let under = under.expect("the overview");
+                let [across, down] = covered(&under, [2400, 1600]);
+                let close = |a: f32, b: f32| (a - b).abs() < 1e-2;
+                assert!(
+                    across.start <= 0.0 || close(across.start, 0.0),
+                    "{zoomed:?}"
+                );
+                assert!(down.start <= 0.0 || close(down.start, 0.0), "{zoomed:?}");
+                assert!(
+                    across.end >= area.x || close(across.end, area.x),
+                    "{zoomed:?}"
+                );
+                assert!(down.end >= area.y || close(down.end, area.y), "{zoomed:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_resize_at_200_keeps_the_centre() {
+        let zoomed = zoomed_to(zoom::Scale::Factor(2.0), [0.3, 0.6]);
+        for bounds in [(2400, 1600), (3000, 1800), (1200, 900)] {
+            let room = zoom::Room {
+                extent: [6000, 4000],
+                bounds,
+            };
+            let placement = room.place(&zoomed);
+            assert_eq!(placement.shown, 2.0, "{bounds:?}");
+            assert_eq!(placement.centre, [0.3, 0.6], "{bounds:?}");
+            let area = area_size(&placement, bounds);
+            assert_eq!(area, egui::vec2(bounds.0 as f32, bounds.1 as f32));
+        }
+        // A centre near the edge is kept inside it again as the room grows.
+        let near = zoomed_to(zoom::Scale::Factor(2.0), [0.05, 0.6]);
+        let wide = zoom::Room {
+            extent: [6000, 4000],
+            bounds: (3000, 1800),
+        };
+        assert_eq!(wide.place(&near).centre[0], 3000.0 / (2.0 * 6000.0 * 2.0));
+    }
+
+    #[test]
+    fn rendering_shows_after_a_second_and_not_before() {
+        let room = Some(&ZOOM_ROOM);
+        let sent = Instant::now();
+        let hundred = zoomed_to(zoom::Scale::Factor(1.0), [0.5, 0.5]);
+        let fit = Some(ZOOM_ROOM.place(&zoom::Zoomed::FIT));
+        let mut pending = Some((7, sent, hundred.view()));
+        // Not yet: a frame asked for then.
+        let half = sent + Duration::from_millis(500);
+        assert_eq!(
+            view_rendering(&mut pending, Some((6, fit)), room, half),
+            (false, Some(Duration::from_millis(500)))
+        );
+        // A second on, still not told: Rendering.
+        let later = sent + mirror::RENDERING_AFTER;
+        let told = Some((6, fit));
+        assert_eq!(
+            view_rendering(&mut pending, told, room, later),
+            (true, None)
+        );
+        // Told a view through it, its frame with it: gone, and let go.
+        let told = Some((7, Some(ZOOM_ROOM.place(&hundred))));
+        assert_eq!(
+            view_rendering(&mut pending, told, room, later),
+            (false, None)
+        );
+        assert_eq!(pending, None);
+        // Nothing on its way, nothing said.
+        assert_eq!(view_rendering(&mut None, None, room, later), (false, None));
+        // A view the session holds already, as after 100% and Fit in one batch at Fit,
+        // which tells nothing: nothing on its way.
+        let mut pending = Some((9, sent, zoom::Zoomed::FIT.view()));
+        assert_eq!(
+            view_rendering(&mut pending, Some((6, fit)), room, later),
+            (false, None)
+        );
+        assert_eq!(pending, None);
+    }
+
+    #[test]
+    fn rendering_ends_when_the_session_clamps_to_the_view_it_shows() {
+        // At 100% panned to the left edge, the room widened: the session placed the photo
+        // at its clamped centre before the view sent again came, which then tells nothing.
+        let room = zoom::Room {
+            extent: [6000, 4000],
+            bounds: (3000, 1600),
+        };
+        let asked = zoomed_to(zoom::Scale::Factor(1.0), [0.2, 0.5]);
+        let held = zoomed_to(zoom::Scale::Factor(1.0), [0.25, 0.5]);
+        let told = Some((6, Some(room.place(&held))));
+        let sent = Instant::now();
+        let mut pending = Some((9, sent, asked.view()));
+        let later = sent + mirror::RENDERING_AFTER;
+        assert_eq!(
+            view_rendering(&mut pending, told, Some(&room), later),
+            (false, None)
+        );
+        assert_eq!(pending, None);
+        // A view the session has not taken yet waits.
+        let mut pending = Some((
+            9,
+            sent,
+            zoomed_to(zoom::Scale::Factor(2.0), [0.2, 0.5]).view(),
+        ));
+        assert_eq!(
+            view_rendering(&mut pending, told, Some(&room), later),
+            (true, None)
+        );
+    }
+
+    /// Where the panning harness keeps whether a picker is on.
+    const PICKER_ON: egui::Id = egui::Id::NULL;
+
+    #[test]
+    fn a_picker_on_takes_the_drag_never_the_scroll() {
+        let mut harness = panning(zoomed_to(zoom::Scale::Factor(1.0), [0.5, 0.5]));
+        harness.ctx.data_mut(|d| d.insert_temp(PICKER_ON, true));
+        drag(&mut harness, egui::vec2(120.0, 0.0));
+        assert_eq!(harness.state().centre, [0.5, 0.5]);
+        scroll(&mut harness, egui::vec2(0.0, 40.0), Modifiers::NONE);
+        assert!(harness.state().centre[1] < 0.5);
+    }
+
+    #[test]
+    fn the_photo_area_and_the_whole_photo_follow_the_zoom() {
+        let ppp = 2.0;
+        let area = egui::Rect::from_min_size(egui::pos2(10.0, 20.0), egui::vec2(1200.0, 800.0));
+        // At Fit the area is the whole photo.
+        let fit = ZOOM_ROOM.place(&zoom::Zoomed::FIT);
+        assert_eq!(
+            area_size(&fit, ZOOM_ROOM.bounds),
+            egui::vec2(2400.0, 1600.0)
+        );
+        assert_eq!(whole_photo(area, &fit, ppp), area);
+        // At 100% centred, 6000 × 4000 physical pixels, the area 1800 × 1200 into it.
+        let hundred = ZOOM_ROOM.place(&zoomed_to(zoom::Scale::Factor(1.0), [0.5, 0.5]));
+        let whole = whole_photo(area, &hundred, ppp);
+        assert_eq!(whole.size(), egui::vec2(3000.0, 2000.0));
+        assert_eq!(area.min - whole.min, egui::vec2(900.0, 600.0));
+        // A photo smaller than the room on one axis at Fill: centred on it.
+        let room = zoom::Room {
+            extent: [6000, 4000],
+            bounds: (1000, 1000),
+        };
+        let fill = room.place(&zoomed_to(zoom::Scale::Fill, [0.5, 0.5]));
+        assert_eq!(area_size(&fill, room.bounds), egui::vec2(1000.0, 1000.0));
+        let small = room.place(&zoomed_to(zoom::Scale::Factor(0.1), [0.5, 0.5]));
+        assert_eq!(area_size(&small, room.bounds), egui::vec2(1000.0, 667.0));
     }
 
     /// A photo whose edit crops it to another shape than its picture's: from its values on,
@@ -14890,6 +15524,8 @@ mod tests {
                         editable: photo.is_some(),
                         ..shell.state(&ctx, photo.is_some(), photo.is_some())
                     };
+                    // At Fit the photo area is the whole photo.
+                    let photo = photo.map(|photo| (photo, photo));
                     let chosen =
                         central_menu(&ctx, &slot, photo, picking, &shell.keymap, &state, None);
                     surround.chosen.extend(chosen);
@@ -16954,6 +17590,7 @@ mod tests {
                     );
                     let on = pickers::OnPhoto {
                         picker: PickerRef::ColourPicker,
+                        area: photo,
                         photo,
                         pixels: [400, 300],
                         region: Region::Point([0.5, 0.5]),
@@ -16961,7 +17598,7 @@ mod tests {
                         colour: egui::Color32::GRAY,
                         name: "",
                     };
-                    picking.sent.extend(pickers::on_photo(ui, &on));
+                    picking.sent.extend(pickers::on_photo(ui, &on).commands);
                 },
                 Picking {
                     shell: Shell::new(&settings, Locale::EnGb, OperatingSystem::Mac),
@@ -21678,9 +22315,14 @@ mod tests {
     }
 
     #[test]
-    fn ctrl_minus_equals_and_0_zoom_the_photo_between_small_and_fit() {
+    fn ctrl_minus_equals_0_and_z_zoom_the_photo_in_order_of_scale() {
         for os in [OperatingSystem::Windows, OperatingSystem::Mac] {
             let mut harness = bench(os);
+            // A 3:2 photo in a 3:2 room, Fit and Fill both 40%, as the Viewer gives it.
+            harness.state_mut().shell.room = Some(zoom::Room {
+                extent: [6000, 4000],
+                bounds: (2400, 1600),
+            });
             harness.run();
             let zoom = |harness: &Harness<'_, Bench>| harness.state().shell.zoom.scale;
             let command = Modifiers::COMMAND;
@@ -21697,6 +22339,10 @@ mod tests {
                     zoom::Scale::Small,
                 ),
                 (command.plus(Modifiers::SHIFT), Key::Plus, zoom::Scale::Fit),
+                // Up from Fit to 50%, then Z to 100% and back to Fit.
+                (command, Key::Equals, zoom::Scale::Factor(0.5)),
+                (Modifiers::NONE, Key::Z, zoom::Scale::Factor(1.0)),
+                (Modifiers::NONE, Key::Z, zoom::Scale::Fit),
             ] {
                 harness.key_press_modifiers(modifiers, key);
                 harness.run();
@@ -22111,6 +22757,10 @@ mod tests {
     #[test]
     fn the_menu_shows_each_item_as_the_registry_has_it() {
         let mut harness = bench(OperatingSystem::Nix);
+        harness.state_mut().shell.room = Some(zoom::Room {
+            extent: [6000, 4000],
+            bounds: (2400, 1600),
+        });
         harness.run();
         alt(&mut harness, Key::F, Some("f"));
         let item = Role::MenuItem;
@@ -22135,11 +22785,11 @@ mod tests {
             menu_line(&harness, check, "Full screen"),
             (true, keys("F11"), Some(Toggled::False))
         );
-        // The photo's zoom first, with its keys: at Fit, Zoom out and Fit, checked; Zoom
-        // in has nowhere to go, and 100% waits for the detail view.
+        // The photo's zoom first, with its keys: at Fit, both steps, Fit checked and 100%
+        // not.
         assert_eq!(
             menu_line(&harness, item, "Zoom in"),
-            (false, keys("Ctrl+="), None)
+            (true, keys("Ctrl+="), None)
         );
         assert_eq!(
             menu_line(&harness, item, "Zoom out"),
@@ -22150,8 +22800,8 @@ mod tests {
             (true, keys("Ctrl+0"), Some(Toggled::True))
         );
         assert_eq!(
-            menu_line(&harness, item, "Zoom to 100%"),
-            (false, keys("Z"), None)
+            menu_line(&harness, check, "Zoom to 100%"),
+            (true, keys("Z"), Some(Toggled::False))
         );
         // Then Sort By, its checks the Browser's sort, resting with no photos shown.
         for _ in 0..4 {

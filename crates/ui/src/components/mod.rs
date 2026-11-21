@@ -122,7 +122,7 @@ pub use tools_panel::{
     ToolsPanelPosition, quiet_scroll, quiet_scroll_rows,
 };
 pub use value_field::ValueField;
-pub use viewer_bar::{Toggle, ViewerBar, ViewerBarAction, Zoom, ZoomChoices};
+pub use viewer_bar::{Toggle, ViewerBar, ViewerBarAction, Zoom, percent_label};
 pub use warning_row::WarningRow;
 pub use wheel::{Wheel, set_wheel_scrolls_panel, wheel_scrolls_panel};
 

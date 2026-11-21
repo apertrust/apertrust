@@ -14,24 +14,31 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-// Draws the engine's latest frame inside egui's render pass (viewport.rs): each
-// physical pixel reads its own pixel of the frame, so nothing is resampled, unless the
-// frame was rendered for another size, as while the window resizes, when it is shown at
-// the size it will be rendered at until that render arrives, or is shown at half, at
-// Small, when each physical pixel is the mean of a 2×2 block of it. A render shader of
-// the window's, not a kernel: it has no derivatives and stays WGSL.
+// Draws a frame of the engine's inside egui's render pass (viewport.rs): each physical
+// pixel of the area reads the frame where the view puts it, `source` the frame pixel under
+// the area's corner and `scale` the physical pixels a frame pixel spans. At one to one it
+// reads its own frame pixel, nothing resampled; at half, at Small, the mean of a 2×2
+// block; from 200% the frame pixel it falls in, a sharp square; otherwise between the four
+// round where it falls, as for a frame rendered for another size or scale. Where the frame
+// does not reach, nothing is drawn, so what is under it shows. A render shader of the
+// window's, not a kernel: it has no derivatives and stays WGSL.
 
 struct View {
-    // Where the frame is shown, in the window's physical pixels: its top-left corner,
-    // its size as rendered, and the size it is shown at.
+    // The area, in the window's physical pixels: its top-left corner and its size.
     origin: vec2<i32>,
-    size: vec2<u32>,
     shown: vec2<u32>,
+    // The frame's size in its pixels.
+    size: vec2<u32>,
+    // The frame pixel under the area's top-left corner, and the physical pixels each frame
+    // pixel spans, across and down.
+    source: vec2<f32>,
+    scale: vec2<f32>,
+    // How frame pixels become the window's: 0 one for one, 1 between the four round where
+    // a pixel falls, 2 the mean of each 2×2 block, 3 the one it falls in (viewport.rs,
+    // `Filter`).
+    sampling: u32,
     // 1 when the window's format encodes to sRGB itself, so the frame is decoded first.
     decode: u32,
-    // How frame pixels become the window's: 0 one for one, 1 between the four round
-    // where a pixel falls, 2 the mean of each 2×2 block (viewport.rs, `Filter`).
-    sampling: u32,
 }
 
 @group(0) @binding(0) var<uniform> view: View;
@@ -53,7 +60,13 @@ fn srgb_to_linear(c: vec3<f32>) -> vec3<f32> {
 }
 
 fn texel(p: vec2<i32>) -> vec3<f32> {
-    return clamp(pixels[u32(p.y) * view.size.x + u32(p.x)].rgb, vec3<f32>(0.0), vec3<f32>(1.0));
+    let q = clamp(p, vec2<i32>(0), vec2<i32>(view.size) - vec2<i32>(1));
+    return clamp(pixels[u32(q.y) * view.size.x + u32(q.x)].rgb, vec3<f32>(0.0), vec3<f32>(1.0));
+}
+
+// Whether the frame pixel `q` lies in the frame.
+fn inside(q: vec2<i32>) -> bool {
+    return all(q >= vec2<i32>(0)) && all(q < vec2<i32>(view.size));
 }
 
 @fragment
@@ -62,25 +75,42 @@ fn fs_main(@builtin(position) position: vec4<f32>) -> @location(0) vec4<f32> {
     if p.x < 0 || p.y < 0 || p.x >= i32(view.shown.x) || p.y >= i32(view.shown.y) {
         discard;
     }
+    // Where the physical pixel's centre falls in the frame.
+    let at = view.source + (vec2<f32>(p) + 0.5) / view.scale;
+    let corner = vec2<i32>(floor(view.source));
     var rgb: vec3<f32>;
     if view.sampling == 0u {
-        rgb = texel(p);
+        let q = corner + p;
+        if !inside(q) {
+            discard;
+        }
+        rgb = texel(q);
     } else if view.sampling == 2u {
         // The block's far row and column stay inside the frame at an odd edge.
+        let a = corner + p * 2;
+        if !inside(a) {
+            discard;
+        }
         let last = vec2<i32>(view.size) - vec2<i32>(1);
-        let a = min(p * 2, last);
-        let b = min(p * 2 + vec2<i32>(1), last);
+        let b = min(a + vec2<i32>(1), last);
         rgb = (texel(a) + texel(vec2<i32>(b.x, a.y)) + texel(vec2<i32>(a.x, b.y)) + texel(b)) * 0.25;
+    } else if view.sampling == 3u {
+        let q = vec2<i32>(floor(at));
+        if !inside(q) {
+            discard;
+        }
+        rgb = texel(q);
     } else {
+        if any(at < vec2<f32>(0.0)) || any(at >= vec2<f32>(view.size)) {
+            discard;
+        }
         // Between the four frame pixels round where this one falls.
-        let s = (vec2<f32>(p) + 0.5) * vec2<f32>(view.size) / vec2<f32>(view.shown) - 0.5;
-        let last = vec2<i32>(view.size) - vec2<i32>(1);
+        let s = at - 0.5;
         let i = vec2<i32>(floor(s));
-        let a = clamp(i, vec2<i32>(0), last);
-        let b = clamp(i + vec2<i32>(1), vec2<i32>(0), last);
         let f = clamp(s - floor(s), vec2<f32>(0.0), vec2<f32>(1.0));
-        let top = mix(texel(a), texel(vec2<i32>(b.x, a.y)), f.x);
-        let bottom = mix(texel(vec2<i32>(a.x, b.y)), texel(b), f.x);
+        let b = i + vec2<i32>(1);
+        let top = mix(texel(i), texel(vec2<i32>(b.x, i.y)), f.x);
+        let bottom = mix(texel(vec2<i32>(i.x, b.y)), texel(b), f.x);
         rgb = mix(top, bottom, f.y);
     }
     if view.decode != 0u {
