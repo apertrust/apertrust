@@ -4999,6 +4999,24 @@ impl Pipeline {
         Some((key, buffers.collect()))
     }
 
+    /// Whether what a detail reads of this pipeline holds what its plan gives it already
+    /// (decision 99): the source, [`Self::detail_source`], and each whole-image result
+    /// [`Self::result_at_full_resolution`] lends. A render of the plan then writes
+    /// neither, so the detail may render before it.
+    pub(crate) fn lends_current(&self) -> bool {
+        let Some(source) = self.detail_source() else {
+            return false;
+        };
+        let held = |key| self.held.first() == Some(&Some(key));
+        held(source.1)
+            && (self.plan.operations.iter().zip(&self.results)).all(|(op, results)| {
+                self.result_at_full_resolution(op.id)
+                    .is_none_or(|(key, _)| {
+                        [results.whole, results.full_resolution].contains(&Some(key))
+                    })
+            })
+    }
+
     /// Whether `image`, in the same buffer and of the same description, is its input.
     pub(crate) fn reads(&self, image: &GpuImage) -> bool {
         self.input.buffer() == image.buffer() && self.input.desc() == image.desc()

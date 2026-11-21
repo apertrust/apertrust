@@ -104,9 +104,10 @@
 //! it is kept across photos, its centre clamped to each. Each frame says where it lies in
 //! the photo ([`Frame::place`]). Zoomed past Fit the frame is the detail pipeline's, the
 //! visible region with its margin at the zoom's scale, at most 1, with the fitted frame
-//! beside it ([`Frame::overview`]), both rendered in one submission where no whole-image
-//! round is due, the rounds submitted between them where one is, a pan inside the margin
-//! rendering nothing; at Fit and Small every frame is the whole photo at Fit.
+//! beside it ([`Frame::overview`]): a change renders the detail first, a whole-image
+//! round's tiles before it, and the fitted frame in a frame of its own after it, or both
+//! in one submission where the detail reads what the fitted passes write; a pan inside
+//! the margin renders nothing; at Fit and Small every frame is the whole photo at Fit.
 //!
 //! These types stand in for the session protocol's until `apertrust-protocol` exists.
 
@@ -1518,11 +1519,16 @@ impl Session {
                     let wait = if polling {
                         Some(POLL_INTERVAL)
                     } else {
-                        // A stale frame's retry too.
-                        [engine.thumbnail_wait(), wake, engine.stale_wait()]
-                            .into_iter()
-                            .flatten()
-                            .min()
+                        // A stale frame's retry too, and at once a fitted frame that follows.
+                        [
+                            engine.thumbnail_wait(),
+                            wake,
+                            engine.stale_wait(),
+                            engine.overview_wait(),
+                        ]
+                        .into_iter()
+                        .flatten()
+                        .min()
                     };
                     let first = if carried.is_some() {
                         carried.take()
@@ -2256,6 +2262,14 @@ struct Engine {
     /// Why the last render stayed at Fit where the view asks for the detail (decision 99),
     /// which the `View` still to be answered is refused with.
     zoom_refused: Option<SessionError>,
+    /// Since when the fitted frame has followed the detail (decision 99): a detail frame
+    /// went out without its overview, which a turn rendering nothing else renders, the
+    /// first command it answers reaching the session then; `None` while none follows.
+    overview_behind: Option<Instant>,
+    /// After the fitted frame that followed failed to render: how many times in a row, and
+    /// when it is due again, [`STALE_FRAME_RETRY`] later, at most [`STALE_FRAME_TRIES`]
+    /// times; `None` while none failed.
+    overview_retry: Option<(u32, Instant)>,
     /// The number of the last `View` no render has answered yet: one sent while the photo
     /// opens is answered as it goes live ([`Self::answer_view`]).
     view_asked: Option<u64>,
@@ -2383,6 +2397,11 @@ const STALE_FRAME_TRIES: u32 = 3;
 
 /// How long the engine thread waits before it tries a stale frame again (decision 87).
 const STALE_FRAME_RETRY: Duration = Duration::from_millis(100);
+
+/// How long the fitted frame may follow the detail while commands keep coming, as a drag
+/// sends them, before a frame renders both again (decision 99): the scopes, the Colour
+/// picker and the overview follow a drag at 100% about ten times a second.
+const OVERVIEW_LAG: Duration = Duration::from_millis(100);
 
 /// When a test makes a render raise a GPU error.
 #[cfg(test)]
@@ -2840,6 +2859,8 @@ impl Engine {
             view: View::default(),
             view_told: (View::default(), None),
             zoom_refused: None,
+            overview_behind: None,
+            overview_retry: None,
             view_asked: None,
             opening: None,
             decodes: Arc::default(),
@@ -2928,6 +2949,8 @@ impl Engine {
     /// pickers' readings, the thumbnail due, and the frame again where the raw's histogram
     /// was counted outside a batch since a failure (decision 87).
     fn turn(&mut self, batch: Vec<(Instant, Command)>, staged: Option<Box<Stage>>) -> Vec<Event> {
+        // The fitted frame owed before the turn (decision 99).
+        let pending = self.overview_behind;
         // What the writer has classified for the selection since.
         self.take_classified(false);
         let mut events = if batch.is_empty() {
@@ -2952,6 +2975,24 @@ impl Engine {
             self.settle_stale_frame(&refreshed);
             events.extend(refreshed);
         }
+        // The fitted frame a detail frame went out without, in a turn that rendered nothing
+        // else: the detail's frame is with the client by then (decision 99).
+        let published = events.iter().any(|e| matches!(e, Event::Frame(_)));
+        if published {
+            self.overview_retry = None;
+        } else if self.overview_behind.is_none() && self.open.is_some() {
+            // A render of the batch's that failed owes the fitted frame still.
+            self.overview_behind = pending;
+        }
+        let due = (self.overview_retry).is_none_or(|(_, at)| Instant::now() >= at);
+        if let Some(since) = self.overview_behind
+            && !published
+            && due
+        {
+            let followed = self.guarded(|engine| engine.overview_frame());
+            self.settle_overview(since, &followed);
+            events.extend(followed);
+        }
         // The selection, last, as the turn's commands, open and listing left it.
         if let Some(selection) = self.selection_event(&events) {
             events.push(selection);
@@ -2963,6 +3004,56 @@ impl Engine {
     /// is (decision 87); `None` otherwise.
     fn stale_wait(&self) -> Option<Duration> {
         self.stale().then_some(STALE_FRAME_RETRY)
+    }
+
+    /// No wait while the fitted frame follows the detail (decision 99): the engine thread
+    /// takes what has arrived, and renders it where nothing has; after a failure to render
+    /// it, until it is due again; `None` otherwise.
+    fn overview_wait(&self) -> Option<Duration> {
+        let due = |(_, at): (u32, Instant)| at.saturating_duration_since(Instant::now());
+        let wait = self.overview_retry.map_or(Duration::ZERO, due);
+        self.overview_behind.map(|_| wait)
+    }
+
+    /// The fitted frame a detail frame went out without (decision 99): the fitted
+    /// pipeline's passes alone, the detail published again beside them, so the frame's
+    /// overview, its scopes' count and the Colour picker's sample are of the edit the
+    /// detail shows. Its latency counts from the first command the detail answered.
+    fn overview_frame(&mut self) -> Vec<Event> {
+        let mut events = Vec::new();
+        let Some(since) = self.overview_behind else {
+            return events;
+        };
+        let rendered = self.render(since, &mut events);
+        self.answer_view(&rendered, &mut events, 0);
+        match rendered {
+            Ok(Some(frame)) => events.push(Event::Frame(frame)),
+            Ok(None) => {}
+            Err(error) => events.push(Event::Failed(error)),
+        }
+        events
+    }
+
+    /// After [`Self::overview_frame`]'s `events`, as published, for the fitted frame that
+    /// followed the detail since `since`: done once a frame went out; else, where a GPU error
+    /// or a failed render published none, due again after a stale frame's wait, at most
+    /// [`STALE_FRAME_TRIES`] turns in a row, then left to the next command's frame, said once.
+    fn settle_overview(&mut self, since: Instant, events: &[Event]) {
+        let published = events.iter().any(|event| matches!(event, Event::Frame(_)));
+        if published || self.open.is_none() {
+            self.overview_retry = None;
+            return;
+        }
+        // Whatever the failed render left due, it is due again after a stale frame's wait.
+        let tries = self.overview_retry.map_or(0, |(tries, _)| tries) + 1;
+        if tries < STALE_FRAME_TRIES {
+            self.overview_behind = Some(self.overview_behind.unwrap_or(since));
+            self.overview_retry = Some((tries, Instant::now() + STALE_FRAME_RETRY));
+        } else {
+            self.overview_behind = None;
+            self.overview_retry = None;
+            tracing::error!(target: "pipe", "zoom: the fitted frame stays behind the detail until the next change: rendering it failed {STALE_FRAME_TRIES} times");
+        }
     }
 
     /// Applies a batch of commands, then renders once if any of them changed the image.
@@ -3453,8 +3544,10 @@ impl Engine {
             let (size, through) = ([display.size.0, display.size.1], display.through);
             self.count(&buffer, size, through, &mut events);
         }
+        // Where the fitted frame follows the detail, its own frame samples it.
         if resample
             && !published
+            && self.overview_behind.is_none()
             && let Some(display) = &self.display
         {
             // The frame shown, measured under the picker's new region, where no new frame
@@ -5218,6 +5311,9 @@ impl Engine {
         reduced: &mut bool,
     ) -> Result<Option<Frame>, SessionError> {
         self.zoom_refused = None;
+        // Since when the fitted frame has followed the detail, should it still: any render
+        // but a detail's first renders it.
+        let behind = self.overview_behind.take();
         let (Some(open), Some((width, height))) = (&mut self.open, self.size) else {
             return Ok(None);
         };
@@ -5389,14 +5485,14 @@ impl Engine {
                 let output = built.output().desc();
                 let size = (output.width, output.height);
                 let bytes = output.buffer_size();
-                let (display, _) = Display::for_frames(&self.gpu, old_display, size, bytes);
-                (built, display)
+                let (display, fresh) = Display::for_frames(&self.gpu, old_display, size, bytes);
+                (built, display, fresh)
             });
             let validation = pollster::block_on(validation.pop());
             let out_of_memory = pollster::block_on(memory.pop()).or(validation);
             // Nothing of the fitted pipeline's is recorded yet, so the frame stays at Fit;
             // the next render that wants the detail builds it afresh.
-            let (built, mut detail_display) = match (built, out_of_memory) {
+            let (built, mut detail_display, detail_fresh) = match (built, out_of_memory) {
                 (Ok(built), None) => built,
                 (Err(error), _) => {
                     tracing::error!(target: "pipe", "zoom: stays at Fit: the detail pipeline: {error}");
@@ -5417,7 +5513,28 @@ impl Engine {
             let detail_output = detail.output();
             let detail_desc = detail_output.desc();
             let detail_bytes = detail_desc.buffer_size();
-            let detail_next = 1 - detail_display.published;
+            // The detail, rendered where the edit, its region or its scale changed it;
+            // else the one published, shown again.
+            let detail_due = detail_fresh || !detail.rendered();
+            let detail_next = if detail_due {
+                1 - detail_display.published
+            } else {
+                detail_display.published
+            };
+            // The detail first (decision 99): where both are due and the detail reads
+            // nothing the fitted passes write, its source and any result it borrows
+            // current, the fitted frame follows in a frame of its own, once no command
+            // waits, or with this frame's passes once it has waited `OVERVIEW_LAG`. A
+            // tool's picker, measuring in the fitted passes, and a new size, whose
+            // display holds no fitted frame yet, keep them together.
+            let overdue = behind.is_some_and(|since| since.elapsed() >= OVERVIEW_LAG);
+            let deferred = fitted_due
+                && detail_due
+                && !fresh
+                && !overdue
+                && probing.is_none()
+                && pipeline.lends_current();
+            let fitted_due = fitted_due && !deferred;
             // One encoder and one turn at the submit gate (decisions 18 and 99): the fitted
             // pipeline's passes and copy where due, then the detail's.
             let start = Instant::now();
@@ -5469,9 +5586,12 @@ impl Engine {
                     break 'detail;
                 }
             };
-            let (recording, _) = detail.record(&self.gpu, &mut encoder, None);
-            let into = &detail_display.buffers[detail_next];
-            encoder.copy_buffer_to_buffer(detail_output.buffer(), 0, into, 0, detail_bytes);
+            let recording = detail_due.then(|| {
+                let (recording, _) = detail.record(&self.gpu, &mut encoder, None);
+                let into = &detail_display.buffers[detail_next];
+                encoder.copy_buffer_to_buffer(detail_output.buffer(), 0, into, 0, detail_bytes);
+                recording
+            });
             self.gpu.submit([encoder.finish()]);
             *reduced = recorded.is_some();
             #[cfg(test)]
@@ -5479,6 +5599,7 @@ impl Engine {
             let probed = fitted.as_ref().is_some_and(|(_, probed)| *probed);
             let probing = probing.filter(|probing| probing.missed() || probed);
             let rendered_fitted = fitted.is_some();
+            let rendered_detail = recording.is_some();
             // Both pipelines' passes, the fitted one's first, timed over the submission.
             let read = self.gpu.wait().and_then(|()| {
                 let mut timings = match fitted {
@@ -5486,18 +5607,23 @@ impl Engine {
                     None => Timings::default(),
                 };
                 timings.passes.extend(rounds.passes);
-                let detail_timings = detail.timings(&self.gpu, recording)?;
-                timings.passes.extend(detail_timings.passes);
+                if let Some(recording) = recording {
+                    let detail_timings = detail.timings(&self.gpu, recording)?;
+                    timings.passes.extend(detail_timings.passes);
+                }
                 Ok(timings)
             });
-            // A submission whose end was not seen publishes neither frame: the fitted
-            // pipeline, taken as rendered once recorded, renders again into its display,
-            // and the detail is kept, the frame shown still the one published last.
+            // A submission whose end was not seen publishes neither frame: each pipeline,
+            // taken as rendered once recorded, renders again into its display, and the
+            // detail is kept, the frame shown still the one published last.
             let mut timings = match read {
                 Ok(timings) => timings,
                 Err(error) => {
                     if rendered_fitted {
                         pipeline.forget_render();
+                    }
+                    if rendered_detail {
+                        detail.forget_render();
                     }
                     let (region, scale, shown) = was_shown;
                     open.detail = Some(Detail {
@@ -5512,18 +5638,25 @@ impl Engine {
                 }
             };
             timings.wall_ms = start.elapsed().as_secs_f64() * 1e3;
-            // The fitted frame published renders the edit as it is, rendered now or not.
+            // The fitted frame published renders the edit as it is, rendered now or not,
+            // but where it follows: this frame then has no overview, so nothing shows the
+            // fitted frame of an earlier edit beside the detail.
             if rendered_fitted {
                 display.published = next;
             }
-            display.through = self.applied;
+            if !deferred {
+                display.through = self.applied;
+            }
             detail_display.published = detail_next;
             detail_display.through = self.applied;
-            let overview = Overview {
+            let overview = (!deferred).then(|| Overview {
                 buffer: display.buffers[display.published].clone(),
                 width: desc.width,
                 height: desc.height,
-            };
+            });
+            if deferred {
+                self.overview_behind = Some(behind.unwrap_or(since));
+            }
             let buffer = detail_display.buffers[detail_next].clone();
             open.detail = Some(Detail {
                 pipeline: detail,
@@ -5539,11 +5672,14 @@ impl Engine {
             let published = self.published_at.unwrap_or_else(Instant::now);
             open.history.published(published);
             // The scopes and the Colour picker read the fitted frame, so they give the
-            // same values at every zoom (decisions 19, 79 and 99).
-            let whole = [desc.width, desc.height];
+            // same values at every zoom (decisions 19, 79 and 99): where it follows, as
+            // it does.
             self.probed(probing, recorded, events);
-            self.count(&overview.buffer, whole, self.applied, events);
-            self.sample(&overview.buffer, whole, events);
+            if let Some(overview) = &overview {
+                let whole = [desc.width, desc.height];
+                self.count(&overview.buffer, whole, self.applied, events);
+                self.sample(&overview.buffer, whole, events);
+            }
             return Ok(Some(Frame {
                 buffer,
                 width: detail_desc.width,
@@ -5552,7 +5688,7 @@ impl Engine {
                 timings,
                 latency_ms: since.elapsed().as_secs_f64() * 1e3,
                 place: FramePlace::detail(extent, region, scale),
-                overview: Some(overview),
+                overview,
             }));
         }
         // At Fit the detail pipeline is kept, not rendered.

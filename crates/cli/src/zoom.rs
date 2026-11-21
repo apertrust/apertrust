@@ -17,10 +17,10 @@
 //! `preview --zoom`: the zoomed view (decision 99) through an in-process session, as the
 //! app sends it: a `Resize` to the bounds, then a `View`. It times entering the zoom, pans
 //! (`--pans`), each inside the rendered region's margin rendering nothing, and exposure
-//! changes there, each frame rendering the fitted viewport and the detail in one
-//! submission, a whole-image round's tiles in submissions of their own between them, and
-//! writes the zoomed frame with `--png`. The photo is opened through a link in a folder of
-//! its own, so its edit is never written beside it.
+//! changes there, the detail's frame first, a whole-image round's tiles in submissions
+//! of their own before it, and the fitted frame after it, each timed apart; and writes
+//! the zoomed frame with `--png`. The photo is opened through a link in a folder of its
+//! own, so its edit is never written beside it.
 
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
@@ -60,6 +60,8 @@ struct Client {
     wakes: mpsc::Receiver<()>,
     /// The latest frame, and when it arrived.
     frame: Option<(Frame, Instant)>,
+    /// Every frame since this was last emptied, in order, and when each arrived.
+    frames: Vec<(Frame, Instant)>,
     /// The Exposure tool's Exposure as the session last reported it.
     exposure: Option<f32>,
     opened: bool,
@@ -81,7 +83,11 @@ impl Client {
                     self.view_only = photo.view_only.is_some();
                 }
                 Event::View(state) => self.viewed = state.through,
-                Event::Frame(frame) => self.frame = Some((frame, Instant::now())),
+                Event::Frame(frame) => {
+                    let at = Instant::now();
+                    self.frames.push((frame.clone(), at));
+                    self.frame = Some((frame, at));
+                }
                 Event::Values(values) => {
                     let control = (values.tools.iter())
                         .filter(|tool| tool.tool == EXPOSURE.0)
@@ -108,6 +114,29 @@ impl Client {
                 && frame.through >= sent
             {
                 return Ok((frame.clone(), *at));
+            }
+            if Instant::now() > deadline {
+                bail!("no frame within two minutes");
+            }
+            self.pump(Duration::from_millis(50))?;
+        }
+    }
+
+    /// The frames that answer the command numbered `sent`, among those arrived since
+    /// [`Self::frames`] was last emptied, waiting two minutes at most: the first to include
+    /// it, and zoomed, where that one is the detail's alone, the fitted frame that follows
+    /// it, its overview (decision 99).
+    fn answers(&mut self, sent: u64, zoomed: bool) -> Result<(Frame, Option<Frame>)> {
+        let deadline = Instant::now() + Duration::from_secs(120);
+        loop {
+            let mut answering = (self.frames.iter()).filter(|(frame, _)| frame.through >= sent);
+            if let Some((first, _)) = answering.next() {
+                if !zoomed || first.overview.is_some() {
+                    return Ok((first.clone(), None));
+                }
+                if let Some((fitted, _)) = answering.find(|(frame, _)| frame.overview.is_some()) {
+                    return Ok((first.clone(), Some(fitted.clone())));
+                }
             }
             if Instant::now() > deadline {
                 bail!("no frame within two minutes");
@@ -182,6 +211,8 @@ fn pan(client: &mut Client, view: View, entered: &Frame, options: &Options) -> R
             println!("The photo's width fits the bounds: a pan across moves nothing");
             return Ok(());
         }
+        // Only the latest frame is read here; the others hold their buffers.
+        client.frames.clear();
         let sent = client.session.send(Command::View(to));
         centre = placed.centre;
         if apertrust_engine::view::covers(region, placed.visible) {
@@ -277,6 +308,7 @@ fn zoom(photo: &Path, options: &Options, engine: engine::Options) -> Result<()> 
         session,
         wakes,
         frame: None,
+        frames: Vec::new(),
         exposure: None,
         opened: false,
         view_only: false,
@@ -352,11 +384,13 @@ fn zoom(photo: &Path, options: &Options, engine: engine::Options) -> Result<()> 
         }
     }
 
-    // Exposure changes, as a slider drag sends them, each waited for: zoomed, both
-    // pipelines from exposure in one submission, a whole-image round's tiles between
-    // them; at Fit, the fitted one.
+    // Exposure changes, as a slider drag sends them, each waited for: zoomed, the detail
+    // from exposure first, a whole-image round's tiles before it, and the fitted frame in
+    // a frame of its own after it, or both in one where the detail reads what the fitted
+    // passes write; at Fit, the fitted one.
     let step = if base + 0.01 > 4.0 { -0.01 } else { 0.01 };
-    let (mut times, mut latency) = (Vec::new(), Vec::new());
+    let (mut latency, mut times) = (Vec::new(), Vec::new());
+    let (mut fitted_latency, mut fitted_times) = (Vec::new(), Vec::new());
     // The latest frame's: the zoomed one, or at Fit any.
     let mut last = if zoomed.is_some() { viewed } else { 0 };
     let changes = if client.view_only { 0 } else { options.changes };
@@ -365,22 +399,31 @@ fn zoom(photo: &Path, options: &Options, engine: engine::Options) -> Result<()> 
     }
     for change in 1..=changes {
         let ev = base + if change % 2 == 1 { step } else { 0.0 };
+        client.frames.clear();
         last = client.change(ev, false);
-        let (frame, _) = client.frame(last)?;
+        let (frame, fitted) = client.answers(last, zoomed.is_some())?;
+        let after = match &fitted {
+            Some(fitted) => format!(
+                "; the fitted frame after it {:.2} ms to it, GPU {:.2} ms",
+                fitted.latency_ms,
+                gpu_ms(fitted)
+            ),
+            None if frame.overview.is_some() => ", both pipelines".to_owned(),
+            None => String::new(),
+        };
         tracing::debug!(
             target: "perf",
-            "zoom: change {change}: {:.2} ms to the frame, GPU {:.2} ms, {} passes{}",
+            "zoom: change {change}: {:.2} ms to the frame, GPU {:.2} ms, {} passes{after}",
             frame.latency_ms,
             gpu_ms(&frame),
             frame.timings.passes.len(),
-            if frame.overview.is_some() {
-                ", both pipelines"
-            } else {
-                ""
-            }
         );
-        times.push(gpu_ms(&frame));
         latency.push(frame.latency_ms);
+        times.push(gpu_ms(&frame));
+        if let Some(fitted) = fitted {
+            fitted_latency.push(fitted.latency_ms);
+            fitted_times.push(gpu_ms(&fitted));
+        }
     }
     if !times.is_empty() {
         let line = format!(
@@ -388,6 +431,16 @@ fn zoom(photo: &Path, options: &Options, engine: engine::Options) -> Result<()> 
             times.len(),
             beside::stats(&latency),
             beside::stats(&times)
+        );
+        tracing::debug!(target: "perf", "{line}");
+        println!("{line}");
+    }
+    if !fitted_times.is_empty() {
+        let line = format!(
+            "zoom: {} fitted frames after the detail's: to the frame {}; GPU {}",
+            fitted_times.len(),
+            beside::stats(&fitted_latency),
+            beside::stats(&fitted_times)
         );
         tracing::debug!(target: "perf", "{line}");
         println!("{line}");
