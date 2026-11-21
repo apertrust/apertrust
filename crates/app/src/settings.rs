@@ -61,6 +61,7 @@
 //! tab_names = false
 //! wheel_scrolls_panel = false
 //! show_hidden = true
+//! position = "left"
 //! width = 480
 //!
 //! [viewer]
@@ -94,8 +95,9 @@
 //!
 //! A setting the user never changed is not written, so a missing one is its default.
 //! The language is kept only once the user chooses one; until then it follows the
-//! system's. The Tools panel's width is in points, as the user dragged it, within the
-//! widths it can be dragged to; until then it is the theme's. A tool's collapsible
+//! system's. The Tools panel's side, right or left, is kept once chosen, app-wide. Its
+//! width is in points, as the user dragged it, within the widths it can be dragged to;
+//! until then it is the theme's. A tool's collapsible
 //! groups are kept by the tool's id and the group's, only those the user opened or
 //! closed, the others starting closed (decision 29). The scopes' view is kept by part:
 //! the graph, the scale (`linear` or `logarithmic`), the channels shown and whether each
@@ -149,7 +151,7 @@ use apertrust_engine::settings as engine;
 use apertrust_tools::{ControlKind, Row, SettingRow, TOOLS};
 use apertrust_ui::components::{
     BrowserBarAction, BrowserPosition, Channel, Marker, MenuButtonStyle, ScopeView, Sort,
-    ThumbnailSize,
+    ThumbnailSize, ToolsPanelPosition,
 };
 use apertrust_ui::{Builtin, Locale};
 
@@ -215,6 +217,8 @@ pub struct Settings {
     pub wheel_scrolls_panel: bool,
     /// Whether the Tools panel shows the Hidden tab, Show Hidden Tools (decision 96).
     pub show_hidden: bool,
+    /// Where the Tools panel is, at the window's right or left, `tools_panel.position`.
+    pub panel_position: ToolsPanelPosition,
     /// The Tools panel's width in points, within `PANEL_WIDTHS`, as the user dragged it;
     /// None for the theme's.
     pub panel_width: Option<f32>,
@@ -268,6 +272,7 @@ impl Default for Settings {
             tab_names: TOOLS_PANEL_TAB_NAMES.default(),
             wheel_scrolls_panel: TOOLS_PANEL_WHEEL_SCROLLS_PANEL.default(),
             show_hidden: TOOLS_PANEL_SHOW_HIDDEN.default(),
+            panel_position: TOOLS_PANEL_POSITION.default(),
             panel_width: None,
             viewer: Viewer::default(),
             workspace: WORKSPACE.default().to_owned(),
@@ -337,6 +342,7 @@ impl Settings {
             tab_names: store.get(&TOOLS_PANEL_TAB_NAMES),
             wheel_scrolls_panel: store.get(&TOOLS_PANEL_WHEEL_SCROLLS_PANEL),
             show_hidden: store.get(&TOOLS_PANEL_SHOW_HIDDEN),
+            panel_position: store.get(&TOOLS_PANEL_POSITION),
             panel_width: store.kept(&TOOLS_PANEL_WIDTH),
             viewer: Viewer {
                 margin: store.get(&VIEWER_MARGIN),
@@ -449,6 +455,9 @@ impl Settings {
         }
         if s.show_hidden != was.show_hidden {
             store.set(&TOOLS_PANEL_SHOW_HIDDEN, s.show_hidden);
+        }
+        if s.panel_position != was.panel_position {
+            store.set(&TOOLS_PANEL_POSITION, s.panel_position);
         }
         if s.panel_width != was.panel_width {
             keep(store, &TOOLS_PANEL_WIDTH, s.panel_width);
@@ -1380,6 +1389,7 @@ mod tests {
             tab_names: false,
             wheel_scrolls_panel: false,
             show_hidden: true,
+            panel_position: ToolsPanelPosition::Left,
             panel_width: Some(480.0),
             viewer: Viewer {
                 margin: 16.0,
@@ -1546,6 +1556,7 @@ mod tests {
                 tab_names: true,
                 wheel_scrolls_panel: true,
                 show_hidden: false,
+                panel_position: ToolsPanelPosition::Right,
                 panel_width: None,
                 viewer: Viewer {
                     margin: 10.0,
@@ -1758,6 +1769,7 @@ reference_photo = \"/photos/IMG_2041.CR3\"
 target = \"lightness\"
 
 [tools_panel]
+position = \"left\"
 show_hidden = true
 tab_names = false
 wheel_scrolls_panel = false

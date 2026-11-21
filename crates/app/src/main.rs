@@ -114,7 +114,8 @@ use apertrust_ui::components::{
     BrowserPosition, CellMenu, CellRating, FindBar, FindBarAction, Jobs, Margin, Marker,
     MenuButtonStyle, PanelBody, PanelEdge, PanelEdgeAction, PanelTab, PhotoCaption, PhotoFrame,
     PickerAction, Placed, SaveState, ScopeView, TabBar, TabBarAction, Thumb, Toggle, Toolbar,
-    ToolbarAction, ViewerBar, ViewerBarAction, Zoom, ZoomChoices, browser_lines, browser_thickness,
+    ToolbarAction, ToolsPanelPosition, ViewerBar, ViewerBarAction, Zoom, ZoomChoices,
+    browser_lines, browser_thickness,
 };
 use apertrust_ui::{
     Background, Builtin, Locale, Theme, Translator, components, popup, theme, tr, translator,
@@ -1897,6 +1898,9 @@ struct Shell {
     /// Whether `--conf` sets `tools_panel.show_hidden` for this run, so Show Hidden Tools
     /// is disabled, saying why, as the settings store refuses the change (decision 43).
     show_hidden_given: bool,
+    /// Whether `--conf` sets `tools_panel.position` for this run, so the Tools panel's
+    /// positions are disabled, saying why, as the settings store refuses the change.
+    panel_position_given: bool,
     /// The tab shown, by its place among the workspace's; while the Hidden tab is chosen,
     /// the tab shown before it, shown again as it goes.
     panel_tab: usize,
@@ -1918,6 +1922,8 @@ struct Shell {
     /// The Tools panel's width as the user dragged it, in points; None for the theme's.
     /// Kept while a narrower window shows the panel narrower ([`panel_widths`]).
     panel_width: Option<f32>,
+    /// Where the Tools panel is, at the window's right or left, kept app-wide.
+    panel_position: ToolsPanelPosition,
     guides: bool,
     proof_margin: bool,
     /// The photo's zoom, Fit as the app starts and never kept (`docs/gui.md`, The zoom).
@@ -2073,6 +2079,7 @@ impl Shell {
             newer_warning: false,
             workspace_given: false,
             show_hidden_given: false,
+            panel_position_given: false,
             panel_tab,
             hidden_chosen: false,
             show_hidden: settings.show_hidden,
@@ -2081,6 +2088,7 @@ impl Shell {
             tab_names: settings.tab_names,
             wheel_scrolls_panel: settings.wheel_scrolls_panel,
             panel_width: settings.panel_width,
+            panel_position: settings.panel_position,
             guides: false,
             proof_margin: false,
             zoom: zoom::Zoomed::FIT,
@@ -2622,6 +2630,7 @@ impl Shell {
             tab_names: self.tab_names,
             wheel_scrolls_panel: self.wheel_scrolls_panel,
             show_hidden: self.show_hidden,
+            panel_position: self.panel_position,
             panel_width: self.panel_width,
             viewer: self.viewer,
             workspace: self.kept_workspace.clone(),
@@ -3066,12 +3075,25 @@ impl Shell {
         scopes::wanted(self.scopes_shown(), open, self.scopes)
     }
 
-    /// The Tools panel's edge, for the panel at the end of a window `window` points wide:
-    /// at the width the user dragged it to, or the theme's, within [`panel_widths`]; `name`
-    /// is `tools-panel-width`'s message, for screen readers.
+    /// The Tools panel's edge, for the panel in a window `window` points wide, on the side
+    /// towards the Viewer: at the width the user dragged it to, or the theme's, within
+    /// [`panel_widths`], the same at either side; `name` is `tools-panel-width`'s message,
+    /// for screen readers.
     fn panel_edge<'a>(&self, ctx: &egui::Context, window: f32, name: &'a str) -> PanelEdge<'a> {
         let width = self.panel_width.unwrap_or(theme(ctx).sizes.tools_panel);
-        PanelEdge::new(name, width, panel_widths(window))
+        PanelEdge::new(name, width, panel_widths(window)).at_start(self.panel_position.at_start())
+    }
+
+    /// The Tools panel's egui panel where the shell keeps it, `width` points wide, laid out
+    /// before the Browser so that on the Browser's side it takes the outer place, at the
+    /// window's edge (`docs/gui.md`, Its position).
+    fn panel_frame(&self, width: f32) -> egui::Panel {
+        match self.panel_position {
+            ToolsPanelPosition::Left => egui::Panel::left("tools panel"),
+            ToolsPanelPosition::Right => egui::Panel::right("tools panel"),
+        }
+        .exact_size(width)
+        .resizable(false)
     }
 
     /// The Browser's edge, for a window `window` points in size: at the rows or columns
@@ -3092,7 +3114,7 @@ impl Shell {
     }
 
     /// The Browser's egui panel where the shell keeps it, laid out after the Tools panel
-    /// so that at the right it lies between the photo and the Tools panel: as thick as the
+    /// so that on the panel's side it lies between the photo and the Tools panel: as thick as the
     /// lines its edge gives this frame, a drag in progress included. With it, the edge, to
     /// show after the Viewer, and those lines.
     fn browser_frame(&self, ctx: &egui::Context) -> (egui::Panel, BrowserEdge, usize) {
@@ -3190,6 +3212,8 @@ impl Shell {
             workspace: actions::workspace(&self.workspace.id),
             workspace_given: self.workspace_given,
             show_hidden_given: self.show_hidden_given,
+            panel_position: self.panel_position,
+            panel_position_given: self.panel_position_given,
             section: self
                 .focused_section(ctx)
                 .and_then(|tool| self.placing(tool)),
@@ -3619,6 +3643,7 @@ impl Shell {
             // Read while held, by the sections.
             Intent::Peek => {}
             Intent::BrowserBar(chosen) => self.browser.apply(chosen),
+            Intent::ToolsPanelPosition(position) => self.panel_position = position,
             Intent::Background(background) => {
                 self.viewer.background = Some(background);
                 apertrust_ui::set_theme(ctx, self.look());
@@ -3905,6 +3930,7 @@ impl App {
             }),
             workspace_given: keeper.overridden(&settings::registry::WORKSPACE),
             show_hidden_given: keeper.overridden(&settings::registry::TOOLS_PANEL_SHOW_HIDDEN),
+            panel_position_given: keeper.overridden(&settings::registry::TOOLS_PANEL_POSITION),
             ..Shell::new(&settings, system_locale(), cc.egui_ctx.os())
         };
         // On the tab last shown in it, which the recents' `state.toml` keeps.
@@ -6555,16 +6581,17 @@ impl eframe::App for App {
             .panel_edge(&ctx, ui.available_width(), &edge_name);
         let panel_width = edge.width(&ctx);
         let panel_resized = std::mem::replace(&mut self.panel_width, panel_width) != panel_width;
-        let tools_panel = egui::Panel::right("tools panel")
-            .exact_size(panel_width)
-            .resizable(false)
+        // At the window's right or left, outside the Browser on its side. A move lays the
+        // window out again on this frame: the photo keeps its size, the panel its width.
+        let tools_panel = (self.shell.panel_frame(panel_width))
             .frame(egui::Frame::NONE.fill(t.colors.panel))
             .show(ui, |ui| self.tools_panel(ui, peek));
         run.extend(tools_panel.inner);
         // Never hidden: empty with no folder open (`docs/gui.md`, The Browser). Along the
-        // bottom, or a column at the window's left, or between the photo and the Tools
-        // panel; as many rows or columns as its edge was dragged to, a drag in progress
-        // included, the photo held while it moves as for the Tools panel's edge.
+        // bottom, or a column at the window's left or right, between the photo and the
+        // Tools panel on the panel's side; as many rows or columns as its edge was dragged
+        // to, a drag in progress included, the photo held while it moves as for the Tools
+        // panel's edge.
         let (browser_frame, browser_edge, lines) = self.shell.browser_frame(&ctx);
         let placed = (self.shell.browser.position, lines);
         let browser_resized = std::mem::replace(&mut self.browser_lines, placed) != placed;
@@ -15260,18 +15287,26 @@ mod tests {
         assert_eq!(shell.browser.rows, 1);
     }
 
-    /// The window as the app's frame lays out the Tools panel and the Browser, with
-    /// `count` photos in the Browser; what its browser bar chooses runs as the app runs it,
-    /// and its edge resizes it as the app keeps it.
+    /// The window as the app's frame lays out the Tools panel, with its tab bar, the
+    /// Browser, with `count` photos, and the Viewer; what the browser bar and the tab bar's
+    /// ⋮ choose runs as the app runs it, and each edge resizes its panel as the app keeps
+    /// it. The rects are each part's, as the last frame laid them out.
     struct Window {
         shell: Shell,
         count: usize,
         side: egui::Rect,
+        browser: egui::Rect,
+        viewer: egui::Rect,
     }
 
     fn window(settings: &Settings, count: usize) -> Harness<'static, Window> {
+        window_in(settings, count, egui::vec2(1400.0, 900.0))
+    }
+
+    /// [`window`] `size` points in size.
+    fn window_in(settings: &Settings, count: usize, size: egui::Vec2) -> Harness<'static, Window> {
         Harness::builder()
-            .with_size(egui::vec2(1400.0, 900.0))
+            .with_size(size)
             .with_step_dt(1.0 / 60.0)
             .with_context_setup(|ctx| {
                 apertrust_ui::install(ctx, Theme::default());
@@ -15280,12 +15315,18 @@ mod tests {
             .build_ui_state(
                 |ui, window: &mut Window| {
                     let ctx = ui.ctx().clone();
-                    let side = egui::Panel::right("tools panel")
-                        .exact_size(320.0)
-                        .resizable(false)
-                        .show(ui, |_| {});
-                    window.side = side.response.rect;
                     let shell = &mut window.shell;
+                    let state = shell.state(&ctx, false, false);
+                    let name = tr(&ctx, "tools-panel-width");
+                    let panel_edge = shell.panel_edge(&ctx, ui.available_width(), &name);
+                    let fill = egui::Frame::NONE.fill(theme(&ctx).colors.panel);
+                    let side = (shell.panel_frame(panel_edge.width(&ctx)))
+                        .frame(fill)
+                        .show(ui, |ui| shell.tab_bar(ui, &state, &[]));
+                    window.side = side.response.rect;
+                    if let Some(id) = side.inner {
+                        shell.run(id, &state, &ctx, &[]);
+                    }
                     let browser = shell.browser;
                     let (frame, edge, lines) = shell.browser_frame(&ctx);
                     let names: Vec<String> = (0..window.count)
@@ -15309,7 +15350,14 @@ mod tests {
                             .show(ui)
                             .bar
                     });
-                    egui::CentralPanel::default().show(ui, |_| {});
+                    let surround = theme(&ctx).colors.photo_surround;
+                    let viewer = egui::CentralPanel::default()
+                        .frame(egui::Frame::NONE.fill(surround))
+                        .show(ui, |_| {});
+                    (window.browser, window.viewer) = (panel.response.rect, viewer.response.rect);
+                    if let Some(action) = panel_edge.show(ui, window.side) {
+                        shell.resize_panel(action);
+                    }
                     if let Some(action) = edge.show(ui, panel.response.rect) {
                         shell.resize_browser(action);
                     }
@@ -15325,6 +15373,8 @@ mod tests {
                     shell: Shell::new(settings, Locale::EnGb, OperatingSystem::Mac),
                     count,
                     side: egui::Rect::NOTHING,
+                    browser: egui::Rect::NOTHING,
+                    viewer: egui::Rect::NOTHING,
                 },
             )
     }
@@ -15415,6 +15465,228 @@ mod tests {
         let kept = harness.state().shell.to_settings(&ctx).browser;
         assert_eq!(kept.position, BrowserPosition::Bottom);
         assert_eq!((kept.rows, kept.columns), (2, 3));
+    }
+
+    /// The window with the Tools panel at `panel` and the Browser at `browser`, 30 photos
+    /// in it, as [`window`] lays it out.
+    fn placed(
+        panel: ToolsPanelPosition,
+        browser: BrowserPosition,
+        size: egui::Vec2,
+    ) -> Harness<'static, Window> {
+        let settings = Settings {
+            panel_position: panel,
+            browser: settings::BrowserSettings {
+                position: browser,
+                ..settings::BrowserSettings::default()
+            },
+            ..Settings::default()
+        };
+        let mut harness = window_in(&settings, 30, size);
+        harness.run();
+        harness
+    }
+
+    /// The Tools panel's edge's middle, as screen readers find it, in a [`window`].
+    fn window_panel_edge(harness: &Harness<'_, Window>) -> egui::Pos2 {
+        let edge = harness.get_by_role_and_label(Role::Splitter, "Tools panel width");
+        edge.rect().center()
+    }
+
+    /// The six layouts of `docs/gui.md`'s table (Its position): the Tools panel the
+    /// window's height at its right or left edge, outside the Browser on its side, the
+    /// Viewer over the Browser at the bottom with the panel beside both; the panel as wide
+    /// either side, its edge towards the Viewer.
+    #[test]
+    fn the_tools_panel_and_the_browser_take_the_six_layouts() {
+        use ToolsPanelPosition::{Left, Right};
+        // The harness's ui keeps 8 points round the window.
+        let (width, height) = (1400.0, 900.0);
+        let (first, last) = (8.0, width - 8.0);
+        for panel in [Right, Left] {
+            for browser in BrowserPosition::ALL {
+                let harness = placed(panel, browser, egui::vec2(width, height));
+                let Window {
+                    side,
+                    browser: list,
+                    viewer,
+                    ..
+                } = *harness.state();
+                let case = format!("{panel:?}, {browser:?}");
+                assert_eq!((side.top(), side.bottom()), (8.0, height - 8.0), "{case}");
+                assert_eq!(side.width(), 320.0, "{case}");
+                // Left to right, as the table reads.
+                let across: Vec<egui::Rect> = match (panel, browser) {
+                    (Right, BrowserPosition::Left) => vec![list, viewer, side],
+                    (Right, BrowserPosition::Right) => vec![viewer, list, side],
+                    (Right, BrowserPosition::Bottom) => vec![viewer, side],
+                    (Left, BrowserPosition::Left) => vec![side, list, viewer],
+                    (Left, BrowserPosition::Right) => vec![side, viewer, list],
+                    (Left, BrowserPosition::Bottom) => vec![side, viewer],
+                };
+                assert_eq!(across[0].left(), first, "{case}");
+                assert_eq!(across[across.len() - 1].right(), last, "{case}");
+                for pair in across.windows(2) {
+                    assert_eq!(pair[0].right(), pair[1].left(), "{case}");
+                }
+                if browser == BrowserPosition::Bottom {
+                    // The Viewer over the Browser, the two as wide as each other.
+                    assert_eq!(viewer.bottom(), list.top(), "{case}");
+                    assert_eq!(list.bottom(), height - 8.0, "{case}");
+                    assert_eq!(viewer.x_range(), list.x_range(), "{case}");
+                } else {
+                    assert_eq!((list.top(), list.bottom()), (8.0, height - 8.0), "{case}");
+                }
+                // The edge on the side towards the Viewer, at the panel's inner side.
+                let edge = window_panel_edge(&harness).x;
+                let inner = match panel {
+                    Right => side.left(),
+                    Left => side.right(),
+                };
+                assert!((edge - inner).abs() <= 1.0, "{case}: {edge} for {inner}");
+            }
+        }
+    }
+
+    /// The Tools panel at the left, with the Browser at the left between it and the Viewer,
+    /// and with the Browser along the bottom under the Viewer: nothing in the panel is
+    /// mirrored, its edge on the Viewer's side.
+    #[test]
+    fn the_tools_panel_at_the_left_is_photographed() {
+        let mut results = egui_kittest::SnapshotResults::new();
+        for (browser, name) in [
+            (BrowserPosition::Left, "tools-panel-left-browser-left"),
+            (BrowserPosition::Bottom, "tools-panel-left-browser-bottom"),
+        ] {
+            let size = egui::vec2(1000.0, 420.0);
+            let mut harness = placed(ToolsPanelPosition::Left, browser, size);
+            harness.run();
+            results.add(harness.try_snapshot(name));
+        }
+    }
+
+    /// The Tools panel's ⋮ holds Position ▸ after Workspace ▸, Left and Right, the one in
+    /// use checked: Left moves the panel to the window's left on that frame, its edge
+    /// with it, its width as it was, and the place is kept; View › Tools Panel Position's
+    /// actions move it back.
+    #[test]
+    fn the_tools_panel_s_options_move_it_left_and_right() {
+        let folder = settings::testing::Folder::new("panel-position");
+        let (mut keeper, settings) = Keeper::open(folder.storage());
+        let settings = Settings {
+            panel_width: Some(400.0),
+            ..settings
+        };
+        let mut harness = window(&settings, 30);
+        harness.run();
+        assert_eq!(harness.state().side.right(), 1400.0 - 8.0);
+        harness.get_by_label("Tab options").click();
+        harness.run();
+        let top =
+            |harness: &Harness<'_, Window>, label: &str| harness.get_by_label(label).rect().top();
+        assert!(top(&harness, "Workspace") < top(&harness, "Position"));
+        assert!(top(&harness, "Position") < top(&harness, "Show tab names"));
+        harness.get_by_label("Position").click();
+        harness.run();
+        let toggled = |harness: &Harness<'_, Window>, place: &str| {
+            let item = harness.get_by_role_and_label(Role::MenuItemCheckBox, place);
+            item.accesskit_node().toggled()
+        };
+        let (on, off) = (
+            Some(egui::accesskit::Toggled::True),
+            Some(egui::accesskit::Toggled::False),
+        );
+        assert_eq!(
+            (toggled(&harness, "Left"), toggled(&harness, "Right")),
+            (off, on)
+        );
+        harness
+            .get_by_role_and_label(Role::MenuItemCheckBox, "Left")
+            .click();
+        harness.run();
+        let side = harness.state().side;
+        assert_eq!(
+            harness.state().shell.panel_position,
+            ToolsPanelPosition::Left
+        );
+        assert_eq!((side.left(), side.width()), (8.0, 400.0));
+        assert!((window_panel_edge(&harness).x - side.right()).abs() <= 1.0);
+        // The ⋮ shows Left checked now.
+        harness.get_by_label("Tab options").click();
+        harness.run();
+        harness.get_by_label("Position").click();
+        harness.run();
+        assert_eq!(
+            (toggled(&harness, "Left"), toggled(&harness, "Right")),
+            (on, off)
+        );
+        harness.key_press(Key::Escape);
+        harness.run();
+        // Kept, and read as the app starts.
+        let ctx = egui::Context::default();
+        keeper.frame(Instant::now(), &harness.state().shell.to_settings(&ctx));
+        keeper.flush();
+        assert!(folder.text().contains("[tools_panel]\nposition = \"left\""));
+        let (_, kept) = Keeper::open(folder.storage());
+        assert_eq!(kept.panel_position, ToolsPanelPosition::Left);
+        let shell = Shell::new(&kept, Locale::EnGb, OperatingSystem::Mac);
+        let state = shell.state(&ctx, false, false);
+        let checked = |id: ActionId| actions::action(id).unwrap().checked(&state);
+        assert_eq!(checked(ActionId::TOOLS_PANEL_POSITION[0]), Some(true));
+        assert_eq!(checked(ActionId::TOOLS_PANEL_POSITION[1]), Some(false));
+        // View › Tools Panel Position › Right, back at the window's right edge.
+        let shell = &mut harness.state_mut().shell;
+        let state = shell.state(&ctx, false, false);
+        shell.run(ActionId::TOOLS_PANEL_POSITION[1], &state, &ctx, &[]);
+        harness.run();
+        assert_eq!(harness.state().side.right(), 1400.0 - 8.0);
+    }
+
+    /// Where `--conf` sets `tools_panel.position` for the run, the Tools panel cannot move,
+    /// as the settings store refuses the change: ⋮'s Position items are disabled, saying
+    /// why, as a Settings row does, and running one changes nothing (decision 43).
+    #[test]
+    fn a_tools_panel_position_given_by_conf_cannot_be_changed() {
+        let folder = settings::testing::Folder::new("panel-position-given");
+        let given = settings::overrides(&["tools_panel.position=left".to_owned()]).unwrap();
+        let (keeper, settings) = Keeper::open_with(folder.storage(), &given);
+        let mut harness = window(&settings, 30);
+        harness.state_mut().shell = Shell {
+            panel_position_given: keeper.overridden(&settings::registry::TOOLS_PANEL_POSITION),
+            ..Shell::new(&settings, Locale::EnGb, OperatingSystem::Mac)
+        };
+        harness.run();
+        assert_eq!(harness.state().side.left(), 8.0);
+        let ctx = egui::Context::default();
+        let state = harness.state().shell.state(&ctx, false, false);
+        assert!(state.panel_position_given);
+        for id in ActionId::TOOLS_PANEL_POSITION {
+            assert!(!actions::action(id).unwrap().enabled(&state), "{}", id.0);
+        }
+        harness
+            .state_mut()
+            .shell
+            .run(ActionId::TOOLS_PANEL_POSITION[1], &state, &ctx, &[]);
+        assert_eq!(
+            harness.state().shell.panel_position,
+            ToolsPanelPosition::Left
+        );
+        harness.get_by_label("Tab options").click();
+        harness.run();
+        harness.get_by_label("Position").click();
+        harness.run();
+        // Each disabled, its tip, which screen readers hear as its description, saying why.
+        for place in ["Left", "Right"] {
+            let item = harness.get_by_role_and_label(Role::MenuItemCheckBox, place);
+            let node = item.accesskit_node();
+            assert!(node.is_disabled(), "{place}");
+            let why = node.description();
+            assert_eq!(
+                why.as_deref(),
+                Some("Set by --conf for this run"),
+                "{place}"
+            );
+        }
     }
 
     #[test]
@@ -16479,9 +16751,7 @@ mod tests {
                     panels.pressed.extend(keys.pressed);
                     let name = tr(&ctx, "tools-panel-width");
                     let edge = shell.panel_edge(&ctx, ui.available_width(), &name);
-                    let panel = egui::Panel::right("tools panel")
-                        .exact_size(edge.width(&ctx))
-                        .resizable(false)
+                    let panel = (shell.panel_frame(edge.width(&ctx)))
                         .show(ui, |ui| shell.tab_bar(ui, &state, &[]));
                     egui::CentralPanel::default().show(ui, |_| {});
                     if let Some(action) = edge.show(ui, panel.response.rect) {
@@ -21878,8 +22148,9 @@ mod tests {
             menu_line(&harness, check, "Show labels"),
             (false, None, Some(Toggled::True))
         );
+        // Past Browser Position, Tools Panel Position and Collections.
         harness.key_press(Key::ArrowLeft);
-        for _ in 0..5 {
+        for _ in 0..6 {
             harness.key_press(Key::ArrowDown);
         }
         harness.key_press(Key::ArrowRight);

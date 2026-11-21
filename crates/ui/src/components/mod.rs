@@ -119,7 +119,7 @@ pub use toggle_row::ToggleRow;
 pub use toolbar::{Available, MenuButtonStyle, SaveState, Toolbar, ToolbarAction, caption_button};
 pub use tools_panel::{
     FindBar, FindBarAction, PanelBody, PanelEdge, PanelEdgeAction, PanelTab, TabBar, TabBarAction,
-    quiet_scroll, quiet_scroll_rows,
+    ToolsPanelPosition, quiet_scroll, quiet_scroll_rows,
 };
 pub use value_field::ValueField;
 pub use viewer_bar::{Toggle, ViewerBar, ViewerBarAction, Zoom, ZoomChoices};

@@ -171,9 +171,11 @@ impl Choice for ThumbnailSize {
 pub enum BrowserPosition {
     /// Along the bottom, under the Viewer: rows of cells, scrolling sideways.
     Bottom,
-    /// A column at the window's left: columns of cells, scrolling up and down.
+    /// A column at the window's left, or between the Tools panel and the Viewer where the
+    /// panel is at the left too: columns of cells, scrolling up and down.
     Left,
-    /// A column between the Viewer and the Tools panel.
+    /// A column at the window's right, or between the Viewer and the Tools panel where the
+    /// panel is at the right too.
     Right,
 }
 

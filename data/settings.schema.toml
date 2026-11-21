@@ -277,6 +277,16 @@ kind = "boolean"
 default = false
 applies = "at-once"
 
+# Where the Tools panel is: a column at the window's right or its left, outside the Browser
+# where both are on one side, from the Tools panel's ⋮ and View › Tools Panel Position
+# (docs/gui.md, Its position). App-wide, the same in every workspace.
+[tools_panel.position]
+owner = "app"
+kind = "choice"
+type = "apertrust_ui::components::ToolsPanelPosition"
+default = "right"
+applies = "at-once"
+
 # The Tools panel's width in points, as the user dragged its edge, kept whole; until then
 # the theme's. A narrow window shows the panel narrower, never more than half the window,
 # and keeps this width.
