@@ -27,29 +27,19 @@
 //! their result is kept across a rebuild (decision 15); haze removal's estimate at full
 //! resolution across a new viewport size too (decision 15).
 
+mod common;
+
+use common::X_TRANS;
+
 use apertrust_engine::compute::{GpuImage, Timings};
-use apertrust_engine::edit::{self, Edit};
 use apertrust_engine::gpu::{GpuContext, GpuOptions};
 use apertrust_engine::pipeline::{self, Instance, Limits, Pipe, Pipeline, Plan, PlannedOperation};
-use apertrust_operations::OPERATIONS;
-use apertrust_plugin::{
-    Camera, Format, ImageContext, ImageDesc, Kind, ParamValues, Pattern, Resource, Value,
-};
+use apertrust_plugin::{Format, ImageContext, ImageDesc, Pattern, Resource};
 
 const VIEWPORT: Pipe = Pipe::Viewport {
     width: 40,
     height: 40,
 };
-
-#[rustfmt::skip]
-const X_TRANS: [u32; 36] = [
-    1, 1, 0, 1, 1, 2,
-    1, 1, 2, 1, 1, 0,
-    2, 0, 1, 0, 2, 1,
-    1, 1, 2, 1, 1, 0,
-    1, 1, 0, 1, 1, 2,
-    0, 2, 1, 2, 0, 1,
-];
 
 /// A raw `sensor` photosites across and down, its active area `crop` and its declared
 /// image `declared`: a colour gradient with a corner that clips.
@@ -100,39 +90,7 @@ impl Scene {
     }
 
     fn image(&self) -> ImageContext {
-        let (width, height) = self.sensor;
-        ImageContext {
-            camera: Some(Camera {
-                make: String::new(),
-                model: String::new(),
-                alias: String::new(),
-                width,
-                height,
-                cfa: Some(self.cfa.clone()),
-                black: Pattern {
-                    width: 1,
-                    height: 1,
-                    values: vec![0.0],
-                },
-                white: 4000.0,
-                white_balance: Some(vec![2.0, 1.0, 1.5]),
-                xyz_to_camera: Some([
-                    [3.2406, -1.5372, -0.4986],
-                    [-0.9689, 1.8758, 0.0415],
-                    [0.0557, -0.2040, 1.0570],
-                ]),
-                embedded_matrix: false,
-                crop: self.crop,
-                declared: self.declared,
-                exposure_bias: 0.0,
-                iso: 0.0,
-                linear_response_limit: 1.0,
-                lens_correction: None,
-                highlight_preservation: 0.0,
-                orientation: 0,
-            }),
-            ..ImageContext::full(self.declared[2], self.declared[3])
-        }
+        common::image(self.sensor, &self.cfa, self.crop, self.declared)
     }
 
     fn plan(&self, gpu: &GpuContext, settings: &[(&str, &str, f32)], pipe: Pipe) -> pipeline::Plan {
@@ -162,51 +120,7 @@ impl Scene {
     /// as a tool's binding adds it (decision 28); no tools, so the tests stay about
     /// the pipeline.
     fn instances(&self, settings: &[(&str, &str, f32)]) -> Vec<Instance<'static>> {
-        let optional = |id: &str| {
-            OPERATIONS
-                .iter()
-                .copied()
-                .find(|op| op.manifest().id == id && !op.manifest().default_enabled)
-        };
-        let mut edit = Edit::default();
-        // An edit refuses an optional operation's parameters, which only tools set.
-        let mut joined: Vec<Instance<'static>> = Vec::new();
-        for &(id, param, value) in settings {
-            let Some(operation) = optional(id) else {
-                edit.set_param(OPERATIONS, &[], id, param, Value::Float(value))
-                    .unwrap();
-                continue;
-            };
-            let at = match joined.iter().position(|i| i.operation.manifest().id == id) {
-                Some(at) => at,
-                None => {
-                    joined.push(Instance {
-                        operation,
-                        params: ParamValues::new(),
-                    });
-                    joined.len() - 1
-                }
-            };
-            // A choice or a whole number by its index or value.
-            let kind = operation.schema().params.iter().find(|p| p.name == param);
-            let value = match kind.map(|p| p.kind) {
-                Some(Kind::Choice { .. }) => Value::Choice(value as u32),
-                Some(Kind::Int { .. }) => Value::Int(value as i64),
-                _ => Value::Float(value),
-            };
-            joined[at].params.set(param, value);
-        }
-        let mut instances = edit::instances(&edit, OPERATIONS, &[], &self.image())
-            .all()
-            .unwrap();
-        assert!(
-            joined.iter().all(|j| instances
-                .iter()
-                .all(|i| i.operation.manifest().id != j.operation.manifest().id)),
-            "an optional operation in the default pipeline"
-        );
-        instances.extend(joined);
-        instances
+        common::instances(&self.image(), settings)
     }
 
     fn upload(&self, gpu: &GpuContext) -> GpuImage {

@@ -22,9 +22,9 @@
 //! disagree on a scale, a rounding or a clamp. A client works out a resize at Fill, or the
 //! centre a pan reaches, without a round trip.
 //!
-//! Built: the view, its placement and the frame's place; the session renders the whole
-//! photo at Fit at every view. The detail pipeline, which renders the visible region at the
-//! zoom's scale, is to come.
+//! Built: the view, its placement and the frame's place; from 100% on, the region the
+//! detail pipeline renders at scale 1 (`detail_region`). Below 100% the session renders
+//! the whole photo at Fit for now.
 
 use crate::pipeline::{at_scale, fit_scale};
 
@@ -171,8 +171,9 @@ pub fn place(extent: [u32; 2], bounds: (u32, u32), view: &View) -> Placement {
 pub struct FramePlace {
     /// The scale the frame was rendered at, at most 1: the output image at it is `extent`
     /// at that scale, each side rounded, as [`Placement::size`] is. The fitted scale,
-    /// [`place`]'s `render` at Fit, for every frame for now, whatever the view; kept in
-    /// `f64`, as the pipe rounds with it, so a client rounds to the frame's own size.
+    /// [`place`]'s `render` at Fit, for a frame of the whole photo; 1 for the detail's
+    /// from 100% on. Kept in `f64`, as the pipe rounds with it, so a client rounds to the
+    /// frame's own size.
     pub scale: f64,
     /// The frame's top-left corner in the output image at `scale`, in pixels: (0, 0) at Fit.
     pub origin: [u32; 2],
@@ -191,6 +192,41 @@ impl FramePlace {
             extent,
         }
     }
+
+    /// The place of a detail frame of `region`, x, y, width and height of the output
+    /// image `extent` at full resolution, rendered at 100%.
+    pub(crate) fn detail(extent: [u32; 2], region: [u32; 4]) -> FramePlace {
+        FramePlace {
+            scale: 1.0,
+            origin: [region[0], region[1]],
+            extent,
+        }
+    }
+}
+
+/// The region the detail pipeline renders for `view` of the photo whose output image is
+/// `extent` at full resolution in `bounds` (decision 99): [`place`]'s visible rectangle at
+/// 100%, rounded outward to whole pixels and clamped to the image; `None` where the view
+/// renders at Fit: at Fit, Small and Fill or a factor below 100%, which render Fit until
+/// the detail renders between Fit and 100%, and where the photo fits the bounds at 100%,
+/// whose fitted frame is it at 100% already. Above 100% the region is the same: the engine
+/// renders at most at 1, and the client enlarges the frame.
+pub(crate) fn detail_region(extent: [u32; 2], bounds: (u32, u32), view: &View) -> Option<[u32; 4]> {
+    let placed = place(extent, bounds, view);
+    let fitted = place(extent, bounds, &View::default()).render;
+    if placed.render < 1.0 || fitted >= 1.0 {
+        return None;
+    }
+    let [x, y, width, height] = placed.visible;
+    let [right, bottom] = [x + width, y + height];
+    let side = |start: f64, end: f64, size: u32| {
+        let start = (start.floor().max(0.0) as u32).min(size.saturating_sub(1));
+        let end = (end.ceil() as u32).clamp(start + 1, size.max(start + 1));
+        [start, end - start]
+    };
+    let [x, width] = side(x, right, placed.size[0]);
+    let [y, height] = side(y, bottom, placed.size[1]);
+    Some([x, y, width, height])
 }
 
 #[cfg(test)]
@@ -398,5 +434,47 @@ mod tests {
         let framed = FramePlace::fitted(EXTENT, BOUNDS);
         assert_eq!(framed.scale, 0.4);
         assert_eq!((framed.origin, framed.extent), ([0, 0], EXTENT));
+    }
+
+    #[test]
+    fn the_detail_s_region_is_the_visible_rectangle_at_100_rounded_outward() {
+        // At 100% and above the visible rectangle, whole pixels outward, inside the photo.
+        let region = |scale, centre| detail_region(EXTENT, BOUNDS, &at(scale, centre));
+        assert_eq!(
+            region(ViewScale::Factor(1.0), [0.5, 0.5]),
+            Some([1800, 1200, 2400, 1600])
+        );
+        assert_eq!(
+            region(ViewScale::Factor(1.0), [0.0, 1.0]),
+            Some([0, 2400, 2400, 1600])
+        );
+        // At 3×, 800 × 533⅓ visible round the centre: from 2600 and 1733⅓.
+        assert_eq!(
+            region(ViewScale::Factor(3.0), [0.5, 0.5]),
+            Some([2600, 1733, 800, 534])
+        );
+        // Fill, a factor below 100%, Fit and Small render Fit for now.
+        for scale in [
+            ViewScale::Fit,
+            ViewScale::Small,
+            ViewScale::Fill,
+            ViewScale::Factor(0.5),
+        ] {
+            assert_eq!(region(scale, [0.5, 0.5]), None, "{scale:?}");
+        }
+        // A photo the bounds hold at 100% is rendered at 100% by its fitted frame.
+        let small = detail_region([400, 300], BOUNDS, &at(ViewScale::Factor(4.0), [0.5, 0.5]));
+        assert_eq!(small, None);
+        // A photo whose one side fits: that side whole.
+        assert_eq!(
+            detail_region(
+                [6000, 1000],
+                BOUNDS,
+                &at(ViewScale::Factor(1.0), [0.25, 0.5])
+            ),
+            Some([300, 0, 2400, 1000])
+        );
+        let placed = FramePlace::detail(EXTENT, [1800, 1200, 2400, 1600]);
+        assert_eq!((placed.scale, placed.origin), (1.0, [1800, 1200]));
     }
 }

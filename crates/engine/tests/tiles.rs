@@ -25,6 +25,8 @@
 
 use std::sync::Mutex;
 
+mod common;
+
 use apertrust_engine::compute::GpuImage;
 use apertrust_engine::edit::{self, Edit};
 use apertrust_engine::export::{BUDGET, ExportError, Exported, Tiling, export, export_at};
@@ -32,7 +34,7 @@ use apertrust_engine::gpu::{GpuContext, GpuOptions};
 use apertrust_engine::pipeline::{self, Instance, Limits, Pipe, Resample};
 use apertrust_operations::OPERATIONS;
 use apertrust_plugin::{
-    Camera, Format, Geometry, ImageContext, ImageDesc, Kernel, Manifest, NotPorted, Operation,
+    Format, Geometry, ImageContext, ImageDesc, Kernel, Manifest, NotPorted, Operation,
     OutputProfile, ParamValues, Pattern, Prepared, Schema, Value,
 };
 use apertrust_tools::TOOLS;
@@ -80,39 +82,7 @@ impl Raw {
     }
 
     fn image(&self) -> ImageContext {
-        let (width, height) = self.sensor;
-        ImageContext {
-            camera: Some(Camera {
-                make: String::new(),
-                model: String::new(),
-                alias: String::new(),
-                width,
-                height,
-                cfa: Some(self.cfa.clone()),
-                black: Pattern {
-                    width: 1,
-                    height: 1,
-                    values: vec![0.0],
-                },
-                white: 4000.0,
-                white_balance: Some(vec![2.0, 1.0, 1.5]),
-                xyz_to_camera: Some([
-                    [3.2406, -1.5372, -0.4986],
-                    [-0.9689, 1.8758, 0.0415],
-                    [0.0557, -0.2040, 1.0570],
-                ]),
-                embedded_matrix: false,
-                crop: self.crop,
-                declared: self.declared,
-                exposure_bias: 0.0,
-                iso: 0.0,
-                linear_response_limit: 1.0,
-                lens_correction: None,
-                highlight_preservation: 0.0,
-                orientation: 0,
-            }),
-            ..ImageContext::full(self.declared[2], self.declared[3])
-        }
+        common::image(self.sensor, &self.cfa, self.crop, self.declared)
     }
 
     /// The default pipeline an unedited photo runs.

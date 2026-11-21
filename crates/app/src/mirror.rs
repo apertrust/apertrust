@@ -1654,6 +1654,7 @@ pub(crate) mod tests {
                 origin: [0, 0],
                 extent: [2, 2],
             },
+            overview: None,
         };
         let mut m = mirror();
         m.apply(Event::Opened(photo(1)));
@@ -2659,6 +2660,7 @@ pub(crate) mod tests {
                 origin: [0, 0],
                 extent: [2, 2],
             },
+            overview: None,
         })
     }
 
