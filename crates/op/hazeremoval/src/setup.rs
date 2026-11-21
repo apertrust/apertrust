@@ -152,8 +152,8 @@ const PARTIALS: (u32, Resource) = (15, Resource::Scratch(5));
 const IMAGE: (u32, Resource) = (16, Resource::Scratch(6));
 /// In the viewport (decision 15): the full-resolution image its downscale read, bound in
 /// the image's place, which no pass copies; and the filtered transmission's input
-/// downscaled to the viewport's size, which `main` reads in plane A's place, the sixth
-/// scratch buffer there, as no image is held.
+/// downscaled to the whole image at the pipe's scale, which `main` reads in plane A's
+/// place, the sixth scratch buffer there, as no image is held.
 const FULL_RESOLUTION: (u32, Resource) = (16, Resource::FullResolution);
 const VIEWPORT_PLANE: (u32, Resource) = (17, Resource::Scratch(6));
 const VIEWPORT_PLANE_FOR_MAIN: (u32, Resource) = (10, Resource::Scratch(6));
@@ -179,10 +179,13 @@ const ONE_WORKGROUP: Option<[u32; 2]> = Some([WORKGROUP, WORKGROUP]);
 /// read, which the whole-image passes then bind as [`Resource::FullResolution`] in the
 /// image's place, with no `image_copy` (decision 15): they estimate A0, the depth and
 /// the filtered transmission from it, with darktable's windows at full resolution, as
-/// an export does; `plane_downscale` downscales the transmission's input into the
-/// viewport's size by the viewport's own box filter; and `main` runs at the viewport's
-/// scale on `input`, reading that and the statistics as they are. The scratch then takes
-/// 24 bytes a pixel of the full resolution, and 4 of the viewport.
+/// an export does; `plane_downscale` downscales the transmission's input to the whole
+/// image at the pipe's scale, `whole`, by the viewport's own box filter; and `main` runs
+/// at that scale on `input`, reading that at its place in it and the statistics as they
+/// are. The fitted viewport's input is the whole image at its scale; the zoomed view's
+/// detail between Fit and 100% is a region of it (decision 99). The scratch then takes
+/// 24 bytes a pixel of the full resolution, and 4 of the whole image at the pipe's
+/// scale.
 pub fn prepare(
     settings: &Settings,
     input: &ImageDesc,
@@ -334,25 +337,21 @@ pub fn prepare(
         &[image, PLANE_A, COEFFICIENTS],
     ));
     // In the viewport, the transmission's input downscaled from the full resolution to
-    // the viewport's size, which `main` reads, and `main` at the viewport's size.
-    let viewport = [input.width, input.height];
+    // the whole image at the pipe's scale, which `main` reads at its place in it, as it
+    // reads plane A at its scale otherwise.
     let transmission = match full_resolution {
         Some(_) => {
             passes.push(whole_image(
                 "plane_downscale",
                 base,
-                Some(viewport),
+                Some(whole),
                 &[PLANE_A, VIEWPORT_PLANE],
             ));
             VIEWPORT_PLANE_FOR_MAIN
         }
         None => PLANE_A,
     };
-    let [main_width, main_height] = if full_resolution.is_some() {
-        viewport
-    } else {
-        whole
-    };
+    let [main_width, main_height] = whole;
     // The haze-free image.
     let dehaze = Uniforms {
         width: main_width,
@@ -385,9 +384,9 @@ pub fn prepare(
         },
     ];
     scratch.push(match full_resolution {
-        // The viewport's plane, its image the full-resolution one the plan holds.
+        // The plane at the pipe's scale, its image the full-resolution one the plan holds.
         Some(_) => Scratch {
-            bytes: u64::from(input.width) * u64::from(input.height) * 4,
+            bytes: u64::from(whole[0]) * u64::from(whole[1]) * 4,
         },
         None => plane(16),
     });
@@ -709,6 +708,24 @@ mod tests {
         assert_eq!(bytes.len(), 7);
         assert_eq!(bytes[..3], [full * 4, full * 4, full * 16]);
         assert_eq!(bytes[6], 100 * 60 * 4);
+    }
+
+    #[test]
+    fn a_region_lays_its_plane_out_as_the_whole_image() {
+        // The zoomed view's detail between Fit and 100% (decision 99): a region of 30×20
+        // of the whole 100×60 takes the whole image's passes, uniforms and scratch, so its
+        // plane is the fitted viewport's at that scale and `main` reads it at the region's
+        // place, the pass header's origin.
+        let settings = Settings {
+            strength: 0.9,
+            distance: 0.8,
+        };
+        let full = Some([400, 240]);
+        let whole = prepare(&settings, &ImageDesc::rgba(100, 60), [100, 60], 0.25, full).unwrap();
+        let region = prepare(&settings, &ImageDesc::rgba(30, 20), [100, 60], 0.25, full).unwrap();
+        assert_eq!(region.passes, whole.passes);
+        assert_eq!(region.scratch, whole.scratch);
+        assert_eq!(region.output, ImageDesc::rgba(30, 20));
     }
 
     #[test]
