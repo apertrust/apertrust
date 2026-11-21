@@ -39,12 +39,12 @@ use std::ops::{Range, RangeInclusive};
 use egui::text::{CCursor, CCursorRange, CharIndex};
 use egui::widgets::text_edit::TextEditState;
 use egui::{
-    Event, FontId, Frame, Id, ImeEvent, Key, Margin, Response, TextBuffer, TextEdit, Ui, UiBuilder,
-    vec2,
+    Event, FontId, Frame, Id, ImeEvent, Key, Margin, Response, Stroke, StrokeKind, TextBuffer,
+    TextEdit, Ui, UiBuilder, vec2,
 };
 
-use super::field_inset;
-use crate::{Translator, theme, translator};
+use super::{FieldLook, field_inset};
+use crate::{Theme, Translator, theme, translator};
 
 pub struct ValueField<'a> {
     id: Id,
@@ -57,6 +57,7 @@ pub struct ValueField<'a> {
     number_only: bool,
     range: RangeInclusive<f64>,
     step: f64,
+    look: Option<FieldLook>,
 }
 
 impl<'a> ValueField<'a> {
@@ -72,6 +73,7 @@ impl<'a> ValueField<'a> {
             number_only: false,
             range,
             step: 0.0,
+            look: None,
         }
     }
 
@@ -108,14 +110,34 @@ impl<'a> ValueField<'a> {
         self
     }
 
+    /// Drawn as `look` says in place of a tool's field: a Settings control's, a box high
+    /// in the body text, typing taken as a tool's field takes it.
+    pub(crate) fn look(mut self, look: FieldLook) -> Self {
+        self.look = Some(look);
+        self
+    }
+
+    /// Its look: the caller's, or a tool's field's, a field high in the small text on
+    /// `sunken`.
+    fn looks(&self, t: &Theme) -> FieldLook {
+        self.look.clone().unwrap_or_else(|| FieldLook {
+            height: t.sizes.field,
+            font: FontId::proportional(t.text.small),
+            colour: t.colors.text,
+            fill: Some(t.colors.sunken),
+            frame: None,
+            lead: 0.0,
+        })
+    }
+
     /// How wide the field is: `sizes.value_column`, or as wide as its number with 5
     /// points at each end needs, so the whole number is in view as typing starts.
     pub fn width(&self, ui: &Ui) -> f32 {
         let t = theme(ui.ctx());
         let number = self.written(&translator(ui.ctx()));
-        let galley =
-            ui.painter()
-                .layout_no_wrap(number, FontId::proportional(t.text.small), t.colors.text);
+        let galley = ui
+            .painter()
+            .layout_no_wrap(number, self.looks(&t).font, t.colors.text);
         (galley.size().x + 2.0 * field_inset(&t) + self.suffix_room(ui))
             .ceil()
             .max(t.sizes.value_column)
@@ -125,7 +147,7 @@ impl<'a> ValueField<'a> {
     fn suffix_room(&self, ui: &Ui) -> f32 {
         let t = theme(ui.ctx());
         self.suffix.map_or(0.0, |suffix| {
-            let font = FontId::proportional(t.text.small);
+            let font = self.looks(&t).font;
             let galley =
                 ui.painter()
                     .layout_no_wrap(suffix.to_owned(), font, t.colors.text_secondary);
@@ -208,14 +230,26 @@ impl<'a> ValueField<'a> {
             select_all(ui, self.id, &whole);
         }
         let editing = draft.is_some() || focused;
+        let look = self.looks(&t);
         let (rect, _) = ui.allocate_exact_size(
-            vec2(ui.available_width(), t.sizes.field),
+            vec2(ui.available_width(), look.height),
             egui::Sense::hover(),
         );
-        let font = FontId::proportional(t.text.small);
+        let font = look.font.clone();
         let mut text = draft.unwrap_or_else(|| whole.clone());
-        ui.painter()
-            .rect_filled(rect, t.shape.radius_small, t.colors.sunken);
+        let radius = if self.look.is_some() {
+            t.shape.radius
+        } else {
+            t.shape.radius_small
+        };
+        if let Some(fill) = look.fill {
+            ui.painter().rect_filled(rect, radius, fill);
+        }
+        if let Some(frame) = look.frame {
+            let stroke = Stroke::new(t.shape.hairline, frame);
+            ui.painter()
+                .rect_stroke(rect, radius, stroke, StrokeKind::Inside);
+        }
         // The padding is the frame's: egui drops `TextEdit::margin` once the caller gives a
         // frame, and its own frame would draw a stroke while focused.
         let suffix = self.suffix_room(ui);
@@ -228,7 +262,7 @@ impl<'a> ValueField<'a> {
         if let Some(words) = self.suffix {
             let galley = ui.painter().layout_no_wrap(
                 words.to_owned(),
-                FontId::proportional(t.text.small),
+                font.clone(),
                 t.colors.text_secondary,
             );
             let at = egui::pos2(
@@ -253,13 +287,13 @@ impl<'a> ValueField<'a> {
             .frame(Frame::NONE.inner_margin(padding))
             .align(egui::Align2::RIGHT_CENTER)
             .font(font)
-            .text_color(t.colors.text)
+            .text_color(look.colour)
             .desired_width(rect.width());
         // egui makes a text field a control high at least, which would take the slider's
         // strip under it from the pointer; and its selection and cursor are the accent's
         // elsewhere, while here they stay neutral.
         let mut field = ui.new_child(UiBuilder::new().max_rect(rect));
-        field.spacing_mut().interact_size.y = t.sizes.field;
+        field.spacing_mut().interact_size.y = look.height;
         let visuals = field.visuals_mut();
         visuals.selection.bg_fill = t.colors.field_selection;
         visuals.text_cursor.stroke.color = t.colors.text;

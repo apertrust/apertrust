@@ -231,6 +231,81 @@ fn the_no_preview_plate_in_every_theme() {
     results.unwrap();
 }
 
+/// The Settings controls (`docs/gui.md`, The Settings dialog), each in its row, in every
+/// built-in theme: a combo changed and one at its default, a slider, segmented choices,
+/// switches, chips, a text area, a number, a pattern, a folder, a readout, an action, and
+/// the switch in each state.
+#[test]
+fn the_settings_controls_in_every_theme() {
+    let mut results = SnapshotResults::new();
+    for (which, name) in [
+        (Builtin::Dark, "settings-controls-dark"),
+        (Builtin::Grey, "settings-controls-grey"),
+        (Builtin::Light, "settings-controls-light"),
+        (Builtin::HighContrast, "settings-controls-high-contrast"),
+    ] {
+        let mut gallery = Gallery::new(which);
+        let mut harness = Harness::builder()
+            .with_size(egui::vec2(600.0, 800.0))
+            .with_context_setup(move |ctx| {
+                apertrust_ui::install(ctx, Theme::builtin(which));
+                apertrust_ui::set_locale(ctx, Locale::EnGb);
+            })
+            .build_ui(move |ui| {
+                let panel = apertrust_ui::theme(ui.ctx()).colors.panel;
+                ui.painter()
+                    .rect_filled(ui.ctx().content_rect(), 0.0, panel);
+                egui::Frame::new()
+                    .inner_margin(20.0)
+                    .show(ui, |ui| gallery.show_settings(ui));
+            });
+        harness.run();
+        harness.snapshot(name);
+        results.extend_harness(&mut harness);
+    }
+    results.unwrap();
+}
+
+/// Every focus stop of the settings controls has a name for screen readers, a label's its
+/// words: each control,
+/// its buttons and its value, none a part the keys have nothing to do with.
+#[test]
+fn every_focus_stop_of_the_settings_controls_is_named() {
+    use egui::accesskit::Action;
+    use egui_kittest::kittest::By;
+    let mut gallery = Gallery::new(Builtin::Dark);
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(600.0, 800.0))
+        .with_context_setup(|ctx| {
+            apertrust_ui::install(ctx, Theme::builtin(Builtin::Dark));
+            apertrust_ui::set_locale(ctx, Locale::EnGb);
+        })
+        .build_ui(move |ui| {
+            egui::Frame::new()
+                .inner_margin(20.0)
+                .show(ui, |ui| gallery.show_settings(ui));
+        });
+    harness.run();
+    let stops = harness
+        .query_all(By::new().predicate(|node| node.data().supports_action(Action::Focus)))
+        .count();
+    assert!(stops > 20, "the controls' focus stops: {stops}");
+    let unnamed: Vec<String> = harness
+        .query_all(By::new().predicate(|node| {
+            node.data().supports_action(Action::Focus)
+                && node
+                    .label()
+                    .or_else(|| (node.role() == Role::Label).then(|| node.value()).flatten())
+                    .is_none_or(|name| name.trim().is_empty())
+        }))
+        .map(|node| {
+            let node = node.accesskit_node();
+            format!("{:?} at {:?}", node.role(), node.bounding_box())
+        })
+        .collect();
+    assert!(unnamed.is_empty(), "unnamed focus stops: {unnamed:?}");
+}
+
 #[test]
 fn the_theme_switcher_changes_the_theme() {
     let mut gallery = Gallery::new(Builtin::Dark);

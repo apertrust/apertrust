@@ -1176,6 +1176,9 @@ mod tests {
                 args.set("thousands", "123");
                 // The zoomed photo's scale, as its button shows it.
                 args.set("scale", "100%");
+                // A settings number's range, as the box says it when what is typed is out.
+                args.set("min", "256");
+                args.set("max", "2048");
                 let mut errors = Vec::new();
                 bundle.format_pattern(pattern, Some(&args), &mut errors);
                 assert!(errors.is_empty(), "{} {id}: {errors:?}", locale.id());

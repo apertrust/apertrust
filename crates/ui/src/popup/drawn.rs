@@ -181,6 +181,12 @@ impl Popups {
         !self.open.is_empty() || !self.native.is_empty()
     }
 
+    /// Every open popup's id, drawn or the service's.
+    pub(super) fn open_ids(&self) -> Vec<Id> {
+        let drawn = self.open.iter().map(|(id, _)| *id);
+        drawn.chain(self.native.iter().map(|(id, _)| *id)).collect()
+    }
+
     pub(super) fn anchor(&self, id: Id) -> Option<Rect> {
         let drawn = self.open.iter().find(|(open, _)| *open == id);
         let native = self.native.iter().find(|(open, _)| *open == id);

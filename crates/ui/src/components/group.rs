@@ -111,10 +111,11 @@ pub(super) fn group_scope<R>(
     inner.inner
 }
 
-/// A group's title, as a plain group and a collapsible group's row draw it: caption sized
-/// Medium capitals, a little apart, on one line at most `width` wide, cut at its end with …
-/// when longer.
-pub(super) fn group_label_text(t: &Theme, text: &str, width: f32, colour: Color32) -> LayoutJob {
+/// A group's title, as a plain group and a collapsible group's row draw it, and the Settings
+/// dialog its groups' titles: caption sized Medium capitals, a little apart, on one line at
+/// most `width` wide, cut at its end with … when longer. `text` is in sentence case, as its
+/// words keep it; the capitals are the drawing's.
+pub fn group_label_text(t: &Theme, text: &str, width: f32, colour: Color32) -> LayoutJob {
     let mut job = LayoutJob::default();
     job.append(
         &text.to_uppercase(),

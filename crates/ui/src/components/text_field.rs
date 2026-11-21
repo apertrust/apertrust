@@ -36,7 +36,7 @@ use egui::{
     TextEdit, Ui, UiBuilder, WidgetInfo, vec2,
 };
 
-use super::{field_inset, focus_ring, truncated};
+use super::{FieldLook, field_inset, focus_ring, truncated};
 use crate::{Theme, theme, translator};
 
 /// The most variables the path field's list shows at once.
@@ -51,6 +51,7 @@ pub struct TextField<'a> {
     hint: Option<&'a str>,
     error: bool,
     enabled: bool,
+    look: Option<FieldLook>,
 }
 
 /// What a frame of the field did.
@@ -74,6 +75,7 @@ impl<'a> TextField<'a> {
             hint: None,
             error: false,
             enabled: true,
+            look: None,
         }
     }
 
@@ -101,6 +103,13 @@ impl<'a> TextField<'a> {
         self
     }
 
+    /// Drawn as `look` says in place of a tool's field: a Settings control's, a box high in
+    /// the body text or the mono face.
+    pub(crate) fn look(mut self, look: FieldLook) -> Self {
+        self.look = Some(look);
+        self
+    }
+
     /// Draws the field; returns its response and, when the user changed the text, all of it.
     pub fn show(self, ui: &mut Ui) -> (Response, Option<String>) {
         let drawn = self.draw(ui, None);
@@ -113,17 +122,36 @@ impl<'a> TextField<'a> {
         // A caret the list put on the last frame, after the variable it inserted.
         let put = put.or_else(|| ui.data_mut(|d| d.remove_temp::<usize>(self.id.with("put"))));
         let width = self.width.unwrap_or_else(|| ui.available_width());
-        let (rect, _) = ui.allocate_exact_size(vec2(width, t.sizes.field), Sense::hover());
+        let look = self.look.clone().unwrap_or_else(|| FieldLook {
+            height: t.sizes.field,
+            font: FontId::proportional(t.text.small),
+            colour: t.colors.text,
+            fill: Some(t.colors.sunken),
+            frame: None,
+            lead: 0.0,
+        });
+        let radius = if self.look.is_some() {
+            t.shape.radius
+        } else {
+            t.shape.radius_small
+        };
+        let (rect, _) = ui.allocate_exact_size(vec2(width, look.height), Sense::hover());
         let colour = if self.enabled {
-            t.colors.text
+            look.colour
         } else {
             t.colors.text_disabled
         };
-        ui.painter()
-            .rect_filled(rect, t.shape.radius_small, t.colors.sunken);
+        if let Some(fill) = look.fill {
+            ui.painter().rect_filled(rect, radius, fill);
+        }
+        if let Some(frame) = look.frame {
+            let stroke = Stroke::new(t.shape.hairline, frame);
+            ui.painter()
+                .rect_stroke(rect, radius, stroke, StrokeKind::Inside);
+        }
         let mut text = self.text.to_owned();
         let padding = Margin {
-            left: field_inset(&t) as i8,
+            left: (field_inset(&t) + look.lead) as i8,
             right: field_inset(&t) as i8,
             top: 0,
             bottom: 0,
@@ -131,20 +159,24 @@ impl<'a> TextField<'a> {
         let mut edit = TextEdit::singleline(&mut text)
             .id(self.id)
             .frame(Frame::NONE.inner_margin(padding))
-            .font(FontId::proportional(t.text.small))
+            .font(look.font.clone())
             .text_color(colour)
             .desired_width(rect.width());
+        // A settings field is taller than its text: the text sits in its middle.
+        if self.look.is_some() {
+            edit = edit.align(egui::Align2::LEFT_CENTER).min_size(rect.size());
+        }
         if let Some(hint) = self.hint {
             edit = edit.hint_text(
                 egui::RichText::new(hint)
-                    .size(t.text.small)
+                    .font(look.font.clone())
                     .color(t.colors.text_secondary),
             );
         }
         // egui makes a text field a control high at least; the cursor and selection are
         // neutral, as a value field's.
         let mut field = ui.new_child(UiBuilder::new().max_rect(rect));
-        field.spacing_mut().interact_size.y = t.sizes.field;
+        field.spacing_mut().interact_size.y = look.height;
         let visuals = field.visuals_mut();
         visuals.selection.bg_fill = t.colors.field_selection;
         visuals.text_cursor.stroke.color = t.colors.text;
@@ -174,7 +206,7 @@ impl<'a> TextField<'a> {
         if self.error {
             ui.painter().rect_stroke(
                 rect,
-                t.shape.radius_small,
+                radius,
                 Stroke::new(1.5, t.colors.error),
                 StrokeKind::Inside,
             );
@@ -266,6 +298,12 @@ impl<'a> PathField<'a> {
 
     pub fn enabled(mut self, enabled: bool) -> Self {
         self.field = self.field.enabled(enabled);
+        self
+    }
+
+    /// Its field drawn as `look` says, as a Settings text field's.
+    pub(crate) fn look(mut self, look: FieldLook) -> Self {
+        self.field = self.field.look(look);
         self
     }
 

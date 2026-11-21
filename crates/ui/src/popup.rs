@@ -367,6 +367,15 @@ pub fn dismiss(ctx: &Context, id: Id) {
     shut(ctx, id);
 }
 
+/// Closes every open popup, as [`dismiss`] does: for a shortcut that takes the focus
+/// elsewhere, as Find a setting's Ctrl+F (Cmd+F) in Settings, whose letters must not go
+/// on to a list left open.
+pub fn dismiss_all(ctx: &Context) {
+    for id in drawn::with(ctx, |popups| popups.open_ids()) {
+        dismiss(ctx, id);
+    }
+}
+
 /// Closes `id`, drawn or the service's, with [`Answer::Dismissed`], telling the service;
 /// where the focus would go back, if it was open.
 fn shut(ctx: &Context, id: Id) -> Option<Option<Id>> {

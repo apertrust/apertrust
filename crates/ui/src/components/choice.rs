@@ -309,13 +309,13 @@ impl<'a> Choice<'a> {
     /// their tooltips, the rest with their own where given, and a separator where the row
     /// has one.
     /// Whether option `i` is drawn disabled: unlisted, disabled or given a reason.
-    fn disabled_now(&self, i: usize) -> bool {
+    pub(crate) fn disabled_now(&self, i: usize) -> bool {
         self.unlisted.is_some_and(|(unlisted, _)| unlisted == i)
             || self.disabled_options.0.contains(&i)
             || self.disabled_reasons.iter().any(|(at, _)| *at == i)
     }
 
-    fn list(&self, anchor: Rect) -> Request {
+    pub(crate) fn list(&self, anchor: Rect) -> Request {
         let (disabled, disabled_tip) = self.disabled_options;
         let items = self
             .options
