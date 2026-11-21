@@ -61,7 +61,7 @@ use apertrust_ui::components::{
 use apertrust_ui::{Background, Translator};
 use eframe::egui::{self, Key, Modifiers, os::OperatingSystem};
 
-use crate::zoom::{Scale, ZoomStep};
+use crate::zoom::{Direction, Scale, ZoomStep};
 
 /// An action's id, stable so that settings can keep the keys a user gives it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -213,6 +213,16 @@ impl ActionId {
     pub const ZOOM_OUT_ALL: ActionId = ActionId("zoom-out-all");
     pub const ZOOM_FIT_ALL: ActionId = ActionId("zoom-fit-all");
     pub const ZOOM_100_ALL: ActionId = ActionId("zoom-100-all");
+    /// Alt with the arrows, Option on the Mac: a zoomed photo's view moved a fifth of the
+    /// part shown, and with Shift a whole one (`docs/gui.md`, Panning), in no menu.
+    pub const PAN_LEFT: ActionId = ActionId("pan-left");
+    pub const PAN_RIGHT: ActionId = ActionId("pan-right");
+    pub const PAN_UP: ActionId = ActionId("pan-up");
+    pub const PAN_DOWN: ActionId = ActionId("pan-down");
+    pub const PAN_PAGE_LEFT: ActionId = ActionId("pan-page-left");
+    pub const PAN_PAGE_RIGHT: ActionId = ActionId("pan-page-right");
+    pub const PAN_PAGE_UP: ActionId = ActionId("pan-page-up");
+    pub const PAN_PAGE_DOWN: ActionId = ActionId("pan-page-down");
     /// The browser bar's Sort menu and View › Sort By: the key, then the direction.
     pub const SORT: [ActionId; 4] = [
         ActionId("sort-capture-time"),
@@ -363,6 +373,12 @@ pub enum Intent {
     Background(Background),
     /// A move of the photo's zoom (`docs/gui.md`, The zoom).
     Zoom(ZoomStep),
+    /// A zoomed photo's view moved in `direction`, a fifth of the part shown, or the whole
+    /// of it where `page` (`docs/gui.md`, Panning).
+    Pan {
+        direction: Direction,
+        page: bool,
+    },
     /// A tool's own action, run as pressing its button does ([`tool_actions`]).
     ToolAction {
         tool: &'static str,
@@ -489,6 +505,9 @@ pub struct State {
     pub zoom_out: bool,
     pub fitted: bool,
     pub at_100: bool,
+    /// Whether the photo is zoomed past Fit, so it overflows the room and its view can move:
+    /// the pan actions' state (`docs/gui.md`, Panning).
+    pub zoomed: bool,
     /// A modal dialog is open, or a dialog's window has the focus: the view's keys rest,
     /// and focus stays in the dialog.
     pub dialog: bool,
@@ -711,6 +730,32 @@ const fn zoom(
     }
 }
 
+/// Whether a zoomed photo's view can move: a photo live and zoomed past Fit.
+fn pans(state: &State) -> bool {
+    zooms(state) && state.zoomed
+}
+
+/// Alt with Shift: a pan action's whole view.
+const PAN_PAGE: Modifiers = Modifiers::ALT.plus(Modifiers::SHIFT);
+
+/// One of the pan actions, in Photo, repeating while held.
+const fn pan(
+    id: ActionId,
+    message: &'static str,
+    keys: &'static [Binding],
+    direction: Direction,
+    page: bool,
+) -> Action {
+    zoom(
+        id,
+        message,
+        keys,
+        Trigger::Repeat,
+        pans,
+        Emit::Intent(Intent::Pan { direction, page }),
+    )
+}
+
 fn always(_: &State) -> bool {
     true
 }
@@ -899,7 +944,7 @@ const fn to_tab<const I: usize>(message: &'static str) -> Action {
 
 /// Every action, in the order a keyboard map lists them (`docs/gui.md`, The default
 /// keyboard map). Slider keys are not here: they are the slider's own (`SliderRow`).
-pub static ACTIONS: [Action; 120] = [
+pub static ACTIONS: [Action; 128] = [
     // About Apertrust, in the app menu on the Mac and in Help on Windows and Linux.
     Action {
         id: ActionId::ABOUT,
@@ -1661,6 +1706,64 @@ pub static ACTIONS: [Action; 120] = [
         Trigger::Press,
         zooms,
         Emit::Intent(Intent::Zoom(ZoomStep::Hundred)),
+    ),
+    // Alt with the arrows move a zoomed photo's view, Shift a whole view at a time
+    // (`docs/gui.md`, Panning); the arrows alone stay Next and Previous Photo.
+    pan(
+        ActionId::PAN_LEFT,
+        "action-pan-left",
+        &[bind(Modifiers::ALT, Key::ArrowLeft)],
+        Direction::Left,
+        false,
+    ),
+    pan(
+        ActionId::PAN_RIGHT,
+        "action-pan-right",
+        &[bind(Modifiers::ALT, Key::ArrowRight)],
+        Direction::Right,
+        false,
+    ),
+    pan(
+        ActionId::PAN_UP,
+        "action-pan-up",
+        &[bind(Modifiers::ALT, Key::ArrowUp)],
+        Direction::Up,
+        false,
+    ),
+    pan(
+        ActionId::PAN_DOWN,
+        "action-pan-down",
+        &[bind(Modifiers::ALT, Key::ArrowDown)],
+        Direction::Down,
+        false,
+    ),
+    pan(
+        ActionId::PAN_PAGE_LEFT,
+        "action-pan-page-left",
+        &[bind(PAN_PAGE, Key::ArrowLeft)],
+        Direction::Left,
+        true,
+    ),
+    pan(
+        ActionId::PAN_PAGE_RIGHT,
+        "action-pan-page-right",
+        &[bind(PAN_PAGE, Key::ArrowRight)],
+        Direction::Right,
+        true,
+    ),
+    pan(
+        ActionId::PAN_PAGE_UP,
+        "action-pan-page-up",
+        &[bind(PAN_PAGE, Key::ArrowUp)],
+        Direction::Up,
+        true,
+    ),
+    pan(
+        ActionId::PAN_PAGE_DOWN,
+        "action-pan-page-down",
+        &[bind(PAN_PAGE, Key::ArrowDown)],
+        Direction::Down,
+        true,
     ),
     // The browser bar's menus and View's Sort By and Thumbnail Size (`docs/gui.md`, The
     // browser bar); no keys by default, so + and − stay free. Rating comes with the
@@ -2854,6 +2957,7 @@ pub(crate) mod tests {
             zoom_out: true,
             fitted: true,
             at_100: false,
+            zoomed: true,
             dialog: false,
             modal: false,
             dialog_window: false,
@@ -3713,6 +3817,17 @@ pub(crate) mod tests {
         physical: Key,
         modifiers: Modifiers,
     ) -> Option<ActionId> {
+        pressed_on(Focus::None, os, key, physical, modifiers)
+    }
+
+    /// As [`pressed`], with `focus` the focused widget's kind.
+    fn pressed_on(
+        focus: Focus,
+        os: OperatingSystem,
+        key: Key,
+        physical: Key,
+        modifiers: Modifiers,
+    ) -> Option<ActionId> {
         let keymap = Keymap::defaults(os);
         let mac = os == OperatingSystem::Mac;
         let press = Press {
@@ -3721,7 +3836,70 @@ pub(crate) mod tests {
             modifiers: held(modifiers, mac),
             typed: None,
         };
-        press_action(&keymap, &everything(), Focus::None, &press, mac).map(|a| a.id)
+        press_action(&keymap, &everything(), focus, &press, mac).map(|a| a.id)
+    }
+
+    /// Each arrow with the pan action Alt with it runs, and the one Shift+Alt with it runs.
+    const PANS: [(Key, ActionId, ActionId); 4] = [
+        (Key::ArrowLeft, ActionId::PAN_LEFT, ActionId::PAN_PAGE_LEFT),
+        (
+            Key::ArrowRight,
+            ActionId::PAN_RIGHT,
+            ActionId::PAN_PAGE_RIGHT,
+        ),
+        (Key::ArrowUp, ActionId::PAN_UP, ActionId::PAN_PAGE_UP),
+        (Key::ArrowDown, ActionId::PAN_DOWN, ActionId::PAN_PAGE_DOWN),
+    ];
+
+    /// Alt with the arrows, Option on the Mac, move a zoomed photo's view, Shift+Alt a whole
+    /// view, each repeating while held and opening no menu on Windows and Linux; the
+    /// arrows alone stay Next Photo and Previous Photo.
+    #[test]
+    fn alt_arrows_pan_and_plain_arrows_change_the_photo() {
+        for os in PLATFORMS {
+            for (key, step, page) in PANS {
+                assert_eq!(pressed(os, key, key, Modifiers::ALT), Some(step), "{os:?}");
+                assert_eq!(pressed(os, key, key, PAN_PAGE), Some(page), "{os:?}");
+                let alt = Shortcut {
+                    modifiers: Modifiers::ALT,
+                    key,
+                };
+                assert!(!opens_menu(alt, os), "{os:?}");
+                for id in [step, page] {
+                    assert_eq!(action(id).expect("declared").trigger, Trigger::Repeat);
+                }
+            }
+            let right = pressed(os, Key::ArrowRight, Key::ArrowRight, Modifiers::NONE);
+            assert_eq!(right, Some(ActionId::NEXT_PHOTO), "{os:?}");
+            let left = pressed(os, Key::ArrowLeft, Key::ArrowLeft, Modifiers::NONE);
+            assert_eq!(left, Some(ActionId::PREVIOUS_PHOTO), "{os:?}");
+        }
+    }
+
+    /// A focused section header, a control, keeps Alt+↑ and Alt+↓ to move itself (decision
+    /// 83): they never pan the photo while it has the focus.
+    #[test]
+    fn a_focused_header_keeps_alt_up_and_down() {
+        for os in PLATFORMS {
+            for key in [Key::ArrowUp, Key::ArrowDown] {
+                let kept = pressed_on(Focus::Control, os, key, key, Modifiers::ALT);
+                assert_eq!(kept, None, "{os:?}");
+            }
+        }
+    }
+
+    /// A focused text field keeps every Alt with an arrow, Shift's too: they move and select
+    /// by word there.
+    #[test]
+    fn a_text_field_keeps_alt_arrows() {
+        for os in PLATFORMS {
+            for (key, ..) in PANS {
+                for modifiers in [Modifiers::ALT, PAN_PAGE] {
+                    let kept = pressed_on(Focus::Text, os, key, key, modifiers);
+                    assert_eq!(kept, None, "{os:?}");
+                }
+            }
+        }
     }
 
     #[test]

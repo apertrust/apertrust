@@ -3227,6 +3227,7 @@ impl Shell {
             zoom_out: self.zoom_to_step(zoom::ZoomStep::Out).is_some(),
             fitted: self.zoom.scale == zoom::Scale::Fit,
             at_100: self.zoom.scale == zoom::Scale::Factor(1.0),
+            zoomed: (self.room).is_some_and(|room| zoom::overflows(&room.place(&self.zoom))),
             dialog: self.about.is_open(),
             // About is modal over the window; the open dialog and the host's dialogs are the
             // app's ([`with_dialogs`]).
@@ -3682,6 +3683,12 @@ impl Shell {
                         (at - area.center()) * ctx.pixels_per_point()
                     });
                 self.zoom_to(step, about);
+            }
+            Intent::Pan { direction, page } => {
+                if let Some(room) = self.room {
+                    let fraction = if page { 1.0 } else { zoom::PAN_STEP };
+                    self.zoom = self.zoom.stepped(direction, fraction, &room);
+                }
             }
         }
         ctx.request_repaint();
@@ -15689,6 +15696,77 @@ mod tests {
             bounds: (3000, 1800),
         };
         assert_eq!(wide.place(&near).centre[0], 3000.0 / (2.0 * 6000.0 * 2.0));
+    }
+
+    /// A shell with a live photo in [`ZOOM_ROOM`] at `zoomed`, and a context to run its
+    /// actions in.
+    fn zoomed_shell(zoomed: zoom::Zoomed) -> (Shell, egui::Context) {
+        let mut shell = Shell::new(&Settings::default(), Locale::EnGb, OperatingSystem::Nix);
+        shell.room = Some(ZOOM_ROOM);
+        shell.zoom = zoomed;
+        let ctx = egui::Context::default();
+        apertrust_ui::install(&ctx, Theme::default());
+        (shell, ctx)
+    }
+
+    /// Runs `id` on `shell` as its key would, the photo live.
+    fn run_live(shell: &mut Shell, ctx: &egui::Context, id: ActionId) {
+        let state = shell.state(ctx, true, false);
+        shell.run(id, &state, ctx, &[]);
+    }
+
+    const PANS: [ActionId; 8] = [
+        ActionId::PAN_LEFT,
+        ActionId::PAN_RIGHT,
+        ActionId::PAN_UP,
+        ActionId::PAN_DOWN,
+        ActionId::PAN_PAGE_LEFT,
+        ActionId::PAN_PAGE_RIGHT,
+        ActionId::PAN_PAGE_UP,
+        ActionId::PAN_PAGE_DOWN,
+    ];
+
+    #[test]
+    fn alt_right_moves_a_fifth_and_shift_alt_right_a_whole_view() {
+        // At 100% the room shows 2400 of the photo's 6000 pixels across, 0.4 of it, and
+        // 1600 of 4000 down.
+        let (mut shell, ctx) = zoomed_shell(zoomed_to(zoom::Scale::Factor(1.0), [0.3, 0.5]));
+        let close = |a: f32, b: f32| (a - b).abs() < 1e-5;
+        run_live(&mut shell, &ctx, ActionId::PAN_RIGHT);
+        assert!(close(shell.zoom.centre[0], 0.38), "{:?}", shell.zoom);
+        run_live(&mut shell, &ctx, ActionId::PAN_PAGE_RIGHT);
+        assert!(close(shell.zoom.centre[0], 0.78), "{:?}", shell.zoom);
+        // Never past the edge: the view's right side stops at the photo's.
+        run_live(&mut shell, &ctx, ActionId::PAN_PAGE_RIGHT);
+        assert!(close(shell.zoom.centre[0], 0.8), "{:?}", shell.zoom);
+        run_live(&mut shell, &ctx, ActionId::PAN_UP);
+        assert!(close(shell.zoom.centre[1], 0.42), "{:?}", shell.zoom);
+        run_live(&mut shell, &ctx, ActionId::PAN_PAGE_DOWN);
+        assert!(close(shell.zoom.centre[1], 0.8), "{:?}", shell.zoom);
+        // The scale stays.
+        assert_eq!(shell.zoom.scale, zoom::Scale::Factor(1.0));
+    }
+
+    #[test]
+    fn pan_keys_are_disabled_at_fit() {
+        for scale in [zoom::Scale::Fit, zoom::Scale::Small] {
+            let at = zoomed_to(scale, [0.5, 0.5]);
+            let (mut shell, ctx) = zoomed_shell(at);
+            let state = shell.state(&ctx, true, false);
+            for id in PANS {
+                let action = actions::action(id).expect("declared");
+                assert!(!action.enabled(&state), "{scale:?}: {}", id.0);
+                run_live(&mut shell, &ctx, id);
+            }
+            assert_eq!(shell.zoom, at, "{scale:?}");
+        }
+        // Zoomed, but the photo not live: no room, nothing moves.
+        let hundred = zoomed_to(zoom::Scale::Factor(1.0), [0.5, 0.5]);
+        let (mut shell, ctx) = zoomed_shell(hundred);
+        shell.room = None;
+        assert!(!shell.state(&ctx, true, false).zoomed);
+        run_live(&mut shell, &ctx, ActionId::PAN_LEFT);
+        assert_eq!(shell.zoom, hundred);
     }
 
     #[test]
