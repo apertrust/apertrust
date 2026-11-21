@@ -103,7 +103,7 @@ The overflow always keeps 24 points of them. On Windows the hit map's `HTCAPTION
 
 - A built-in workspace nobody changed has no file and follows each build's default toolbar; once its file is written, whole, its `toolbar` is the list as it then was.
 - An id this build does not know, a tool or an action removed or from a newer build, is skipped and kept in the file.
-- A new workspace from the visual editor copies the list, and Reset Workspace, deleting a built-in's file, puts the default back.
+- A new workspace from the visual editor copies the list, and Workspace ▸'s Restore Defaults, deleting a built-in's file, puts the default back.
 - **Customise Toolbar…**, from the toolbar menu and View › Panels, opens a dedicated window of the dialog host ([0041](0041-dialogs-as-native-modal-windows.md)), built much later; its design is settled when it is built. There is no palette inside the main window.
 
 ### The overflow
