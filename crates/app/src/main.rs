@@ -1379,8 +1379,9 @@ struct App {
     session: Session,
     /// What the session's events have reported (`mirror.rs`, `docs/gui.md`, A frame).
     mirror: Mirror,
-    /// The photo area's size for the engine, in physical pixels.
-    bounds: Bounds,
+    /// What the session has been told of the photo area's size and the view, which the
+    /// zoom's retained centre follows ([`ViewSync`]).
+    view_sync: ViewSync,
     /// The window's size at the last frame, in points, to tell when it is resizing.
     window_size: egui::Vec2,
     /// The Tools panel's width at the last frame, in points, to tell when its edge moves.
@@ -1508,18 +1509,6 @@ struct App {
     /// The main window as the start window, with nothing open (`docs/gui.md`, The start
     /// window).
     start: start::Window,
-    /// The view last sent to the session (`Command::View`, decision 99); None after the
-    /// session refused one, so the next is sent whatever it is.
-    view_sent: Option<apertrust_engine::view::View>,
-    /// The number of that view's command and when it was sent, until the session tells a
-    /// view through it, for Rendering… a second after (`docs/gui.md`, While the view
-    /// renders).
-    view_pending: Option<(u64, Instant, apertrust_engine::view::View)>,
-    /// The number of the last view's command, which a refusal of an earlier one, overtaken,
-    /// leaves the zoom alone for.
-    view_number: u64,
-    /// The photo's extent at the last frame, whose change sends the view again.
-    view_extent: Option<[u32; 2]>,
 }
 
 /// What the Toolbar asked for this frame.
@@ -1939,13 +1928,18 @@ struct Shell {
     panel_position: ToolsPanelPosition,
     guides: bool,
     proof_margin: bool,
-    /// The photo's zoom, Fit as the app starts and never kept (`docs/gui.md`, The zoom).
+    /// The photo's zoom, its retained centre in the last confirmed state (`docs/gui.md`, The
+    /// zoom's centre): Fit as the app starts and on a way in ([`fit_view`]), carried to
+    /// another photo, never kept in settings. What is drawn is placed from it, never stored
+    /// back.
     zoom: zoom::Zoomed,
     /// The live photo and the room the Viewer gave it at the last frame, which the zoom's
     /// steps and edges follow; None with no photo live.
     room: Option<zoom::Room>,
     /// The smooth zoom or pinch under way: its unsnapped scale.
     gesture: zoom::Gesture,
+    /// What the zoom's retained centre was last confirmed in ([`Shell::follow_photo`]).
+    confirmed: zoom::Confirmed,
     /// The photo area, in points, where the pointer was over it at the last frame: the
     /// zoom's keys zoom about the pointer there (`docs/gui.md`, Zooming).
     pointed: Option<egui::Rect>,
@@ -2120,6 +2114,7 @@ impl Shell {
             zoom: zoom::Zoomed::FIT,
             room: None,
             gesture: zoom::Gesture::default(),
+            confirmed: zoom::Confirmed::default(),
             pointed: None,
             marks: zoom::Marks::default(),
             zoom_said: String::new(),
@@ -3745,6 +3740,35 @@ impl Shell {
         }
     }
 
+    /// Keeps the zoom's retained centre in step with what the session confirms (`docs/gui.md`,
+    /// The zoom's centre): as the photo `mirror` holds goes live, and as the photo area's
+    /// size is sent (`resized`), the centre is committed kept inside that photo's edges in
+    /// the room the session places it in, its extent and the size last `sent`. Nothing else
+    /// stores a clamp: the room drawn, a size held while the window resizes and an opening
+    /// photo's values only place what is drawn, so a failed open commits nothing.
+    fn follow_photo(&mut self, mirror: &Mirror, sent: (u32, u32), resized: bool) {
+        let PhotoState::Open(photo) = &mirror.photo else {
+            return;
+        };
+        if !mirror.live() || sent.0 == 0 || sent.1 == 0 {
+            return;
+        }
+        let room = zoom::Room {
+            extent: mirror.values.extent,
+            bounds: sent,
+        };
+        self.zoom = self.confirmed.follow(photo.open, self.zoom, &room, resized);
+    }
+
+    /// A way in moved the zoom from `before` to Fit ([`fit_view`]): what the zoom's live
+    /// region said goes with it, so a zoom back to that scale is said again. A way in that
+    /// kept the zoom, its photo staying, keeps it.
+    fn fitted_from(&mut self, before: zoom::Zoomed) {
+        if self.zoom != before {
+            self.zoom_said.clear();
+        }
+    }
+
     /// Where `step` takes the photo's zoom in the room the Viewer last gave it; None with no
     /// photo live, or where the step has nowhere to go.
     fn zoom_to_step(&self, step: zoom::ZoomStep) -> Option<zoom::Zoomed> {
@@ -4128,7 +4152,7 @@ impl App {
         let mut app = Self {
             session,
             mirror: Mirror::new(tools, jobs::Mirror::new(places.home.clone())),
-            bounds: Bounds::default(),
+            view_sync: ViewSync::default(),
             window_size: egui::Vec2::ZERO,
             panel_width: 0.0,
             browser_lines: (BrowserPosition::Bottom, 0),
@@ -4183,10 +4207,6 @@ impl App {
             remembered: Remembered::default(),
             opening_first: None,
             start: start::Window::new(false, settings.scale),
-            view_sent: Some(apertrust_engine::view::View::default()),
-            view_pending: None,
-            view_number: 0,
-            view_extent: None,
         };
         // The command line's paths, Finder's files at the launch, which macOS hands over as
         // it finishes launching, before the window, and the paths second starts handed over
@@ -4604,10 +4624,14 @@ impl App {
         let (reopening, waiting) = (self.reopening.as_ref(), self.remembered.waiting.as_ref());
         keep_at_exit(&mut self.shell.recents, reopening, waiting, &self.mirror);
         self.shell.recents.save();
-        let session = &self.session;
-        open_alone(paths, &mut self.mirror, &mut |command| {
-            session.send(command)
-        });
+        let (session, before) = (&self.session, self.shell.zoom);
+        open_alone(
+            paths,
+            &mut self.shell.zoom,
+            &mut self.mirror,
+            &mut |command| session.send(command),
+        );
+        self.shell.fitted_from(before);
     }
 
     /// Opens what Open…, a drop, Open With or the command line asked for, or asks the alert
@@ -4640,15 +4664,17 @@ impl App {
 
     /// The active folder changed to `path` by `change` ([`change_folder`]).
     fn change_folder(&mut self, path: PathBuf, change: FolderChange) {
-        let session = &self.session;
+        let (session, before) = (&self.session, self.shell.zoom);
         change_folder(
             path,
             change,
             self.shell.recents.last(),
             &mut self.remembered,
+            &mut self.shell.zoom,
             &mut self.mirror,
             &mut |command| session.send(command),
         );
+        self.shell.fitted_from(before);
     }
 
     /// File › Close ([`close`]): what was open last is forgotten where it is the folder
@@ -4741,12 +4767,12 @@ impl App {
                     // Only while the zoom is still the one refused: a later choice, sent or
                     // not yet, stands.
                     Reaction::Unzoomed { command }
-                        if command >= self.view_number
-                            && self.view_sent == Some(self.shell.zoom.view()) =>
+                        if command >= self.view_sync.number
+                            && self.view_sync.sent == Some(self.shell.zoom.view()) =>
                     {
                         self.shell.zoom = zoom::Zoomed::FIT;
                         self.shell.gesture.end();
-                        self.view_sent = None;
+                        self.view_sync.sent = None;
                     }
                     Reaction::Unzoomed { .. } => {}
                 }
@@ -5641,12 +5667,10 @@ impl App {
         let window = ui.ctx().input(|i| i.viewport_rect().size());
         let resized = std::mem::replace(&mut self.window_size, window) != window || panel_resized;
         let now = Instant::now();
-        if let Some((width, height)) = self.bounds.update(bounds, resized, now) {
-            self.session.send(Command::Resize { width, height });
-            // The view again after it, so the session clamps its centre in the new room.
-            self.view_sent = None;
-        }
-        if let Some(wait) = self.bounds.wait(now) {
+        let session = &self.session;
+        let send = &mut |command| session.send(command);
+        (self.view_sync).start(&mut self.shell, &self.mirror, bounds, resized, now, send);
+        if let Some(wait) = self.view_sync.bounds.wait(now) {
             ui.ctx().request_repaint_after(wait);
         }
 
@@ -5668,13 +5692,6 @@ impl App {
                 bounds,
             });
         self.shell.room = room.filter(|_| open);
-        // The photo's extent changed, as a turn and its undo change it: the view goes again,
-        // since the session holds the centre it clamped for the extent before.
-        let extent = room.map(|room| room.extent);
-        if extent != self.view_extent {
-            self.view_extent = extent;
-            self.view_sent = None;
-        }
         // Rendering…, quietly, only once the photo is still not live a second after it was
         // asked for, or its view still on its way a second after it was sent, from a
         // repaint asked for then.
@@ -5685,7 +5702,7 @@ impl App {
         }
         let told = (self.mirror.view.as_ref()).map(|told| (told.through, told.placement));
         let shown = self.shell.room.as_ref();
-        let (view_slow, view_wait) = view_rendering(&mut self.view_pending, told, shown, now);
+        let (view_slow, view_wait) = view_rendering(&mut self.view_sync.pending, told, shown, now);
         if let Some(wait) = view_wait {
             ui.ctx().request_repaint_after(wait);
         }
@@ -5961,15 +5978,14 @@ impl App {
         if open {
             zoom_live_region(ui, slot.left_top(), &self.shell.zoom_said);
         }
-        // The view as the zoom is now, once the person's moves are in; the session takes
-        // the last of a batch.
+        // The view as the zoom is now, once the person's moves are in: while the photo is
+        // live, and after one failed to open, whose values the session may have clamped it for.
+        let session = &self.session;
+        let send = &mut |command| session.send(command);
+        let failed = matches!(self.mirror.photo, PhotoState::Failed { .. });
+        let extent = room.map(|room| room.extent);
         let view = self.shell.zoom.view();
-        if open && self.view_sent != Some(view) {
-            let number = self.session.send(Command::View(view));
-            self.view_sent = Some(view);
-            self.view_number = number;
-            self.view_pending = Some((number, now, view));
-        }
+        self.view_sync.end(view, extent, open || failed, now, send);
         self.carry_out(asked, ui.ctx());
         (
             viewer_bar,
@@ -6684,6 +6700,89 @@ impl PointerZoom {
             });
         });
         zoom
+    }
+}
+
+/// What the app has told the session of the photo area's size and of the view (decision
+/// 99), so each goes once settled or changed, and the zoom's retained centre changes with
+/// what the session confirms (`docs/gui.md`, The zoom's centre).
+#[derive(Debug)]
+struct ViewSync {
+    /// The photo area's size for the engine, sent once the window has settled.
+    bounds: Bounds,
+    /// The view last sent; None after the session refused one, after a `Resize`, and where
+    /// the extent of the photo whose values place it changed, so the next is sent whatever
+    /// it is.
+    sent: Option<apertrust_engine::view::View>,
+    /// The number of that view's command and when it was sent, until the session tells a
+    /// view through it, for Rendering… a second after (`docs/gui.md`, While the view
+    /// renders).
+    pending: Option<(u64, Instant, apertrust_engine::view::View)>,
+    /// The number of the last view's command, which a refusal of an earlier one, overtaken,
+    /// leaves the zoom alone for.
+    number: u64,
+    /// The extent of the photo whose values place it at the last frame: another photo's, a
+    /// turn's, or none after a failed open, each of which the session may have clamped the
+    /// view for, so the view goes again.
+    extent: Option<[u32; 2]>,
+}
+
+impl Default for ViewSync {
+    /// Nothing sent but the view the session starts at, Fit.
+    fn default() -> ViewSync {
+        ViewSync {
+            bounds: Bounds::default(),
+            sent: Some(apertrust_engine::view::View::default()),
+            pending: None,
+            number: 0,
+            extent: None,
+        }
+    }
+}
+
+impl ViewSync {
+    /// The frame's start, before anything zooms: the photo area's `size`, `resized` this
+    /// frame, sent once settled ([`Bounds`]), and the zoom kept in step with what the
+    /// session confirms ([`Shell::follow_photo`]).
+    fn start(
+        &mut self,
+        shell: &mut Shell,
+        mirror: &Mirror,
+        size: (u32, u32),
+        resized: bool,
+        now: Instant,
+        send: &mut SendCommand<'_>,
+    ) {
+        let sent = self.bounds.update(size, resized, now);
+        if let Some((width, height)) = sent {
+            send(Command::Resize { width, height });
+            // The view again after it, so the session clamps its centre in the new room.
+            self.sent = None;
+        }
+        shell.follow_photo(mirror, self.bounds.sent, sent.is_some());
+    }
+
+    /// The frame's end, once the person's moves are in, the photo whose values place it
+    /// `extent` pixels: `view` is sent where `sends` and the session may hold another. The
+    /// session takes the last of a batch.
+    fn end(
+        &mut self,
+        view: apertrust_engine::view::View,
+        extent: Option<[u32; 2]>,
+        sends: bool,
+        now: Instant,
+        send: &mut SendCommand<'_>,
+    ) {
+        if extent != self.extent {
+            self.extent = extent;
+            self.sent = None;
+        }
+        if sends && self.sent != Some(view) {
+            let number = send(Command::View(view));
+            self.sent = Some(view);
+            self.number = number;
+            self.pending = Some((number, now, view));
+        }
     }
 }
 
@@ -7432,22 +7531,30 @@ type SendCommand<'a> = dyn FnMut(Command) -> u64 + 'a;
 /// changes. The session is told them, `Source::Photos`, so they are its collection for the
 /// selection; that closes a folder open, the one the photos came from among them, so
 /// folder mode ends. The first photo opens in place of the photo open, the session saving
-/// that one's edit as it saves any photo it leaves. No path, nothing.
-fn open_alone(paths: Vec<PathBuf>, mirror: &mut Mirror, send: &mut SendCommand<'_>) {
+/// that one's edit as it saves any photo it leaves, at Fit, a way in ([`fit_view`]). No
+/// path, nothing.
+fn open_alone(
+    paths: Vec<PathBuf>,
+    zoom: &mut zoom::Zoomed,
+    mirror: &mut Mirror,
+    send: &mut SendCommand<'_>,
+) {
     let Some(first) = paths.first().cloned() else {
         return;
     };
     let source = Source::Photos(paths.clone());
     let alone = send(Command::Library(LibraryCommand::Open(source)));
     mirror.folder.alone(alone, paths);
+    fit_view(zoom, send);
     let open = send(Command::Open(first.clone()));
     mirror.opening(first, open, Instant::now());
 }
 
 /// Opens the raw at `path`, one of the Browser's, in place of the photo open, as a click
-/// in the Browser does: the folder, or the photos alone, stay as they are. The session
-/// saves the open photo's edit first, if anything in it is not on disk yet, and reads the
-/// new photo's from beside it.
+/// in the Browser does: the folder, or the photos alone, stay as they are, and so does the
+/// zoom, which the session keeps for the new photo (decision 99). The session saves the
+/// open photo's edit first, if anything in it is not on disk yet, and reads the new
+/// photo's from beside it.
 fn open_listed(path: PathBuf, mirror: &mut Mirror, send: &mut SendCommand<'_>) {
     let open = send(Command::Open(path.clone()));
     mirror.opening(path, open, Instant::now());
@@ -7477,7 +7584,7 @@ fn choose_folder(path: PathBuf, mirror: &mut Mirror, send: &mut SendCommand<'_>)
 /// File › Close: the photo open closed, its edit saved as the session saves any photo it
 /// leaves, and the folder open closed, so the Viewer shows where to start; the
 /// photos `remembered` this run are forgotten, as what was open last is. Nothing that is
-/// not open is closed.
+/// not open is closed. Whatever opens next is a way in, at Fit ([`fit_view`]).
 fn close(remembered: &mut Remembered, mirror: &mut Mirror, send: &mut SendCommand<'_>) {
     *remembered = Remembered::default();
     close_photo(mirror, send);
@@ -7485,6 +7592,19 @@ fn close(remembered: &mut Remembered, mirror: &mut Mirror, send: &mut SendComman
         let close = send(Command::Library(LibraryCommand::Close));
         mirror.folder.closing(close);
     }
+}
+
+/// The zoom of a way in, Fit, the whole photo centred (`docs/gui.md`, When the room or the
+/// photo changes), told to the session before the `Open` of any photo the way in opens,
+/// so the session, which takes its commands in order, holds it before that photo can go
+/// live and its first frame is fitted whenever its decode ends: the session keeps the view
+/// across photos until it is sent another (decision 99), as darktable keeps its zoom from
+/// one image to the next and fits as the darkroom is entered (`_dev_change_image`,
+/// `enter`). The way in fits whether its photo opens or not: it leaves the collection the
+/// zoom was carried in.
+fn fit_view(zoom: &mut zoom::Zoomed, send: &mut SendCommand<'_>) {
+    *zoom = zoom::Zoomed::FIT;
+    send(Command::View(zoom.view()));
 }
 
 /// The photo open, or opening, closed with the folder left open: the session saves its
@@ -7592,14 +7712,16 @@ enum FolderChange {
 /// rule that the photo shown is always one of the active folder's is kept (`docs/gui.md`,
 /// Collections). The photo open is closed unless it is one of that folder's; then the photo
 /// last active there this run, `remembered`, or else the one what was open last, `last`,
-/// records for that folder, opens once the folder lists it. With none, or one gone from
-/// it, none is shown. File › Open… of a raw and the start's reopening open a photo of
-/// their own, and go round it.
+/// records for that folder, opens once the folder lists it, at Fit, a way in
+/// ([`fit_view`]). With none, or one gone from it, none is shown. A photo that stays keeps
+/// its zoom. File › Open… of a raw and the start's reopening open a photo of their own,
+/// and go round it.
 fn change_folder(
     path: PathBuf,
     change: FolderChange,
     last: Option<&recents::Last>,
     remembered: &mut Remembered,
+    zoom: &mut zoom::Zoomed,
     mirror: &mut Mirror,
     send: &mut SendCommand<'_>,
 ) {
@@ -7625,6 +7747,9 @@ fn change_folder(
         photo,
         looked: 0,
     });
+    if !stays {
+        fit_view(zoom, send);
+    }
 }
 
 /// Whether each of `paths`, Open Recent's as a menu shows them, can be opened, by place:
@@ -10028,6 +10153,7 @@ mod tests {
         harness.run();
         let sent = [
             told_alone(std::slice::from_ref(&raw)),
+            fitted(),
             Command::Open(raw.clone()),
         ];
         assert_eq!(harness.state().commands, sent);
@@ -10045,7 +10171,14 @@ mod tests {
         };
         let source = Source::Folder(resolved.clone());
         let open = Command::Library(LibraryCommand::Open(source));
-        assert_eq!(harness.state().commands, [open]);
+        // The raw open stays where the folder is its own, as its path names it; else it
+        // closes and the folder is a way in, at Fit.
+        let expected = if raw.parent() == Some(resolved.as_path()) {
+            vec![open]
+        } else {
+            vec![Command::Close, open, fitted()]
+        };
+        assert_eq!(harness.state().commands, expected);
         // Raws from two folders, as Open With hands them over, Finder's and the command
         // line's: all of them alone, together, the first active, the folder open closed.
         let trip = folder.0.join("Trip");
@@ -10069,13 +10202,19 @@ mod tests {
             resolved.join("IMG_3.CR3"),
         ];
         let first = Command::Open(photos[0].clone());
-        assert_eq!(harness.state().commands, [told_alone(&photos), first]);
+        assert_eq!(
+            harness.state().commands,
+            [told_alone(&photos), fitted(), first]
+        );
         assert_eq!(harness.state().mirror.folder.alone_paths(), photos);
         harness.state_mut().commands.clear();
         opened(&mut harness, &[&three, &two]);
         let again = [three.clone(), two.clone()];
         let first = Command::Open(three.clone());
-        assert_eq!(harness.state().commands, [told_alone(&again), first]);
+        assert_eq!(
+            harness.state().commands,
+            [told_alone(&again), fitted(), first]
+        );
         assert_eq!(harness.state().mirror.folder.alone_paths(), [three, two]);
     }
 
@@ -10202,7 +10341,12 @@ mod tests {
         let mut m = mirror::tests::mirror();
         let mut sent = Vec::new();
         let [a, b, c] = ["/photos/a.ARW", "/photos/b.ARW", "/trips/c.ARW"].map(PathBuf::from);
-        open_alone(vec![a, b.clone()], &mut m, &mut sender(&mut sent));
+        open_alone(
+            vec![a, b.clone()],
+            &mut any_zoom(),
+            &mut m,
+            &mut sender(&mut sent),
+        );
         let thumbnail = |open, path: &PathBuf| {
             Event::Library(LibraryEvent::PhotoThumbnail {
                 open,
@@ -10214,9 +10358,15 @@ mod tests {
         m.apply(thumbnail(m.folder.latest(), &b));
         let key = folder::CellKey::Path(b.clone());
         assert!(m.folder.thumbnail(&key, 256).is_some());
-        open_alone(vec![b, c.clone()], &mut m, &mut sender(&mut sent));
+        open_alone(
+            vec![b, c.clone()],
+            &mut any_zoom(),
+            &mut m,
+            &mut sender(&mut sent),
+        );
         assert!(m.folder.thumbnail(&key, 256).is_some(), "b's stays");
-        assert_eq!(m.folder.latest(), sent.len() as u64 - 1);
+        // Before the photo's open and the view.
+        assert_eq!(m.folder.latest(), sent.len() as u64 - 2);
         m.apply(thumbnail(m.folder.latest(), &c));
         assert!(m.folder.thumbnail(&folder::CellKey::Path(c), 256).is_some());
     }
@@ -10239,16 +10389,25 @@ mod tests {
             PathBuf::from("/trips/b.ARW"),
         );
         let mut sent = Vec::new();
-        open_alone(vec![a.clone(), b.clone()], &mut m, &mut sender(&mut sent));
+        open_alone(
+            vec![a.clone(), b.clone()],
+            &mut any_zoom(),
+            &mut m,
+            &mut sender(&mut sent),
+        );
         assert_eq!(
             sent,
             [
                 told_alone(&[a.clone(), b.clone()]),
+                fitted(),
                 Command::Open(a.clone())
             ]
         );
-        let mut reactions = m.apply(Event::Opened(mirror::tests::photo(2)));
-        reactions.extend(m.apply(Event::Values(mirror::tests::report(1.0, 2))));
+        // The open after the library's and the view.
+        let open = m.photo.open().expect("the photo opening");
+        assert_eq!(open, 3);
+        let mut reactions = m.apply(Event::Opened(mirror::tests::photo(open)));
+        reactions.extend(m.apply(Event::Values(mirror::tests::report(1.0, open))));
         for reaction in reactions {
             if let Reaction::FolderOpened(path) = reaction {
                 recents.opened(recents::OpenKind::Folder, path);
@@ -10262,11 +10421,11 @@ mod tests {
         assert_eq!((m.folder.root(), m.folder.shown()), (None, None));
         assert_eq!(m.folder.active_shown(), Some(0));
         open_listed(b.clone(), &mut m, &mut sender(&mut sent));
-        assert_eq!(sent[2..], [Command::Open(b.clone())]);
+        assert_eq!(sent[3..], [Command::Open(b.clone())]);
         assert_eq!(m.folder.alone_paths(), [a, b]);
         assert_eq!(m.folder.active_shown(), Some(1));
         let mut none = Vec::new();
-        open_alone(Vec::new(), &mut m, &mut sender(&mut none));
+        open_alone(Vec::new(), &mut any_zoom(), &mut m, &mut sender(&mut none));
         assert!(none.is_empty());
     }
 
@@ -10275,11 +10434,25 @@ mod tests {
         Command::Library(LibraryCommand::Open(Source::Photos(paths.to_vec())))
     }
 
+    /// The view a way in tells the session: Fit ([`fit_view`]).
+    fn fitted() -> Command {
+        Command::View(zoom::Zoomed::FIT.view())
+    }
+
     /// A list of the commands sent, numbered from 1, and what sends to it.
     fn sender(sent: &mut Vec<Command>) -> impl FnMut(Command) -> u64 + '_ {
         |command| {
             sent.push(command);
             sent.len() as u64
+        }
+    }
+
+    /// The zoom of a route that fits it or keeps it, where the test looks at the rest:
+    /// 100% off the middle.
+    fn any_zoom() -> zoom::Zoomed {
+        zoom::Zoomed {
+            scale: zoom::Scale::Factor(1.0),
+            centre: [0.3, 0.7],
         }
     }
 
@@ -10387,7 +10560,7 @@ mod tests {
         assert_eq!(browser_count(&m), (2, 3));
         // Photos opened alone: just them, the first opening.
         let alone = ["/trips/x.ARW", "/trips/y.ARW"].map(PathBuf::from).to_vec();
-        open_alone(alone, &mut m, &mut sender(&mut sent));
+        open_alone(alone, &mut any_zoom(), &mut m, &mut sender(&mut sent));
         assert_eq!(browser_count(&m), (1, 2));
     }
 
@@ -10409,17 +10582,18 @@ mod tests {
             FolderChange::Choose,
             None,
             &mut remembered,
+            &mut any_zoom(),
             &mut m,
             &mut sender(&mut sent),
         );
         let chosen = Command::Library(LibraryCommand::Open(Source::Folder(new.clone())));
-        assert_eq!(sent[2..], [Command::Close, chosen]);
+        assert_eq!(sent[2..], [Command::Close, chosen, fitted()]);
         assert_eq!(photo_shown(&m), None);
         assert_eq!(m.shown(), Shown::Nothing);
         m.apply(folder_opened(4, &new));
         m.apply(listed(4, &[], true));
         remembered.restore(&mut m, &mut sender(&mut sent));
-        assert_eq!(sent.len(), 4);
+        assert_eq!(sent.len(), 5);
         assert_eq!(
             library::Empty::of(&m.folder.folder),
             library::Empty::NoRaws { subfolders: false }
@@ -10441,14 +10615,15 @@ mod tests {
             FolderChange::Choose,
             None,
             &mut remembered,
+            &mut any_zoom(),
             &mut m,
             &mut sender(&mut sent),
         );
-        assert_eq!(sent.len(), 5, "nothing to close: {sent:?}");
-        m.apply(folder_opened(5, &day));
-        m.apply(listed(5, &["a.DNG", "b.DNG"], true));
+        assert_eq!(sent.len(), 7, "nothing to close: {sent:?}");
+        m.apply(folder_opened(6, &day));
+        m.apply(listed(6, &["a.DNG", "b.DNG"], true));
         remembered.restore(&mut m, &mut sender(&mut sent));
-        assert_eq!(sent.len(), 5);
+        assert_eq!(sent.len(), 7);
         assert_eq!(photo_shown(&m), None);
         assert_eq!(
             library::Empty::of(&m.folder.folder),
@@ -10468,6 +10643,7 @@ mod tests {
             FolderChange::Choose,
             None,
             &mut remembered,
+            &mut any_zoom(),
             &mut m,
             &mut sender(&mut sent),
         );
@@ -10482,10 +10658,11 @@ mod tests {
             FolderChange::Choose,
             None,
             &mut remembered,
+            &mut any_zoom(),
             &mut m,
             &mut sender(&mut sent),
         );
-        assert_eq!(sent.len(), 5);
+        assert_eq!(sent.len(), 7);
         // Quitting meanwhile keeps the photo waited for, not the folder without it.
         let new_kept = recents::Last {
             kind: recents::OpenKind::Folder,
@@ -10499,15 +10676,15 @@ mod tests {
             (None, Some("R0001176.DNG"))
         );
         remembered.restore(&mut m, &mut sender(&mut sent));
-        m.apply(folder_opened(5, &at));
-        m.apply(listed(5, &["R0001175.DNG"], false));
+        m.apply(folder_opened(6, &at));
+        m.apply(listed(6, &["R0001175.DNG"], false));
         remembered.restore(&mut m, &mut sender(&mut sent));
-        assert_eq!(sent.len(), 5);
+        assert_eq!(sent.len(), 7);
         assert_eq!(photo_shown(&m), None);
-        m.apply(listed(5, &["R0001176.DNG"], true));
+        m.apply(listed(6, &["R0001176.DNG"], true));
         remembered.restore(&mut m, &mut sender(&mut sent));
         let photo = at.join("R0001176.DNG");
-        assert_eq!(sent[5..], [Command::Open(photo.clone())]);
+        assert_eq!(sent[7..], [Command::Open(photo.clone())]);
         assert_eq!(photo_shown(&m), Some(photo.as_path()));
         let kept = recents::Last {
             kind: recents::OpenKind::Folder,
@@ -10527,29 +10704,31 @@ mod tests {
             FolderChange::Choose,
             None,
             &mut remembered,
+            &mut any_zoom(),
             &mut m,
             &mut sender(&mut sent),
         );
-        m.apply(folder_opened(8, &new));
-        m.apply(listed(8, &[], true));
+        m.apply(folder_opened(10, &new));
+        m.apply(listed(10, &[], true));
         change_folder(
             at.clone(),
             FolderChange::Choose,
             None,
             &mut remembered,
+            &mut any_zoom(),
             &mut m,
             &mut sender(&mut sent),
         );
-        m.apply(folder_opened(9, &at));
-        m.apply(listed(9, &["R0001175.DNG"], true));
+        m.apply(folder_opened(12, &at));
+        m.apply(listed(12, &["R0001175.DNG"], true));
         remembered.restore(&mut m, &mut sender(&mut sent));
-        assert_eq!(sent.len(), 9, "{sent:?}");
+        assert_eq!(sent.len(), 13, "{sent:?}");
         assert_eq!(photo_shown(&m), None);
         assert_eq!(remembered.waiting, None);
     }
 
     /// [`at_with_its_photo`], then `New 1` chosen and listed, then AT chosen again, its
-    /// photo waited for, AT's open numbered 5.
+    /// photo waited for, AT's open numbered 6, its view 7.
     fn waiting_for_at() -> (Mirror, Vec<Command>, Remembered, PathBuf) {
         let (mut m, mut sent, mut remembered, at) = at_with_its_photo();
         for folder in [at.join("New 1"), at.clone()] {
@@ -10558,16 +10737,17 @@ mod tests {
                 FolderChange::Choose,
                 None,
                 &mut remembered,
+                &mut any_zoom(),
                 &mut m,
                 &mut sender(&mut sent),
             );
-            if sent.len() == 4 {
+            if sent.len() == 5 {
                 m.apply(folder_opened(4, &at.join("New 1")));
                 m.apply(listed(4, &[], true));
                 remembered.restore(&mut m, &mut sender(&mut sent));
             }
         }
-        assert_eq!(sent.len(), 5);
+        assert_eq!(sent.len(), 7);
         assert!(remembered.waiting.is_some());
         (m, sent, remembered, at)
     }
@@ -10581,11 +10761,11 @@ mod tests {
         let (mut m, mut sent, mut remembered, at) = waiting_for_at();
         let clicked = at.join("R0001175.DNG");
         open_listed(clicked.clone(), &mut m, &mut sender(&mut sent));
-        assert_eq!(sent[5..], [Command::Open(clicked.clone())]);
-        m.apply(folder_opened(5, &at));
-        m.apply(listed(5, &["R0001175.DNG", "R0001176.DNG"], true));
+        assert_eq!(sent[7..], [Command::Open(clicked.clone())]);
+        m.apply(folder_opened(6, &at));
+        m.apply(listed(6, &["R0001175.DNG", "R0001176.DNG"], true));
         remembered.restore(&mut m, &mut sender(&mut sent));
-        assert_eq!(sent.len(), 6, "{sent:?}");
+        assert_eq!(sent.len(), 8, "{sent:?}");
         assert_eq!(photo_shown(&m), Some(clicked.as_path()));
 
         // Another folder chosen before AT's listing comes: its listing then is stale.
@@ -10597,27 +10777,28 @@ mod tests {
             choose,
             None,
             &mut remembered,
+            &mut any_zoom(),
             &mut m,
             &mut sender(&mut sent),
         );
         assert_eq!(remembered.waiting, None);
-        m.apply(folder_opened(5, &at));
-        m.apply(listed(5, &["R0001176.DNG"], true));
+        m.apply(folder_opened(6, &at));
+        m.apply(listed(6, &["R0001176.DNG"], true));
         remembered.restore(&mut m, &mut sender(&mut sent));
-        m.apply(folder_opened(6, &new));
-        m.apply(listed(6, &[], true));
+        m.apply(folder_opened(8, &new));
+        m.apply(listed(8, &[], true));
         remembered.restore(&mut m, &mut sender(&mut sent));
-        assert_eq!(sent.len(), 6, "{sent:?}");
+        assert_eq!(sent.len(), 9, "{sent:?}");
         assert_eq!(photo_shown(&m), None);
 
         // AT could not be read.
         let (mut m, mut sent, mut remembered, _) = waiting_for_at();
         m.apply(Event::Library(LibraryEvent::Failed {
-            open: 5,
+            open: 6,
             reason: "No such folder".to_owned(),
         }));
         remembered.restore(&mut m, &mut sender(&mut sent));
-        assert_eq!((sent.len(), remembered.waiting), (5, None));
+        assert_eq!((sent.len(), remembered.waiting), (7, None));
     }
 
     /// What the session still sends of the photo closed as the folder changed is dropped:
@@ -10632,6 +10813,7 @@ mod tests {
             choose,
             None,
             &mut remembered,
+            &mut any_zoom(),
             &mut m,
             &mut sender(&mut sent),
         );
@@ -10647,14 +10829,15 @@ mod tests {
             choose,
             None,
             &mut remembered,
+            &mut any_zoom(),
             &mut m,
             &mut sender(&mut sent),
         );
-        m.apply(folder_opened(5, &at));
-        m.apply(listed(5, &["R0001176.DNG"], true));
+        m.apply(folder_opened(6, &at));
+        m.apply(listed(6, &["R0001176.DNG"], true));
         remembered.restore(&mut m, &mut sender(&mut sent));
         let photo = at.join("R0001176.DNG");
-        assert_eq!(sent[5..], [Command::Open(photo.clone())]);
+        assert_eq!(sent[7..], [Command::Open(photo.clone())]);
         assert_eq!(photo_shown(&m), Some(photo.as_path()));
     }
 
@@ -10664,7 +10847,7 @@ mod tests {
     fn the_photo_s_own_folder_keeps_it_whatever_its_path_is_written_as() {
         let mut m = mirror::tests::mirror();
         let alone = vec![PathBuf::from("/photos/a.ARW")];
-        open_alone(alone, &mut m, &mut sender(&mut Vec::new()));
+        open_alone(alone, &mut any_zoom(), &mut m, &mut sender(&mut Vec::new()));
         let (mut sent, mut remembered) = (Vec::new(), Remembered::default());
         let folder = PathBuf::from("/photos");
         let way_in = FolderChange::WayIn;
@@ -10673,6 +10856,7 @@ mod tests {
             way_in,
             None,
             &mut remembered,
+            &mut any_zoom(),
             &mut m,
             &mut sender(&mut sent),
         );
@@ -10699,6 +10883,7 @@ mod tests {
             choose,
             None,
             &mut remembered,
+            &mut any_zoom(),
             &mut m,
             &mut sender(&mut sent),
         );
@@ -10720,6 +10905,7 @@ mod tests {
             way_in,
             None,
             &mut remembered,
+            &mut any_zoom(),
             &mut m,
             &mut sender(&mut sent),
         );
@@ -10754,14 +10940,14 @@ mod tests {
         };
         m.apply(Event::Job {
             event: added,
-            command: Some(5),
+            command: Some(6),
         });
         m.apply(Event::Job {
             event: cancelled,
             command: None,
         });
         remembered.restore(&mut m, &mut sender(&mut sent));
-        assert_eq!((sent.len(), remembered.waiting), (5, None));
+        assert_eq!((sent.len(), remembered.waiting), (7, None));
         assert_eq!(photo_shown(&m), None);
     }
 
@@ -10779,32 +10965,34 @@ mod tests {
             way_in,
             None,
             &mut remembered,
+            &mut any_zoom(),
             &mut m,
             &mut sender(&mut sent),
         );
         let opened = Command::Library(LibraryCommand::Open(Source::Folder(other.clone())));
-        assert_eq!(sent[2..], [Command::Close, opened]);
+        assert_eq!(sent[2..], [Command::Close, opened, fitted()]);
         assert_eq!(photo_shown(&m), None);
         assert_eq!(m.folder.root(), Some(other.as_path()));
         m.apply(folder_opened(4, &other));
         m.apply(listed(4, &["x.DNG"], true));
         remembered.restore(&mut m, &mut sender(&mut sent));
-        assert_eq!((sent.len(), photo_shown(&m)), (4, None));
+        assert_eq!((sent.len(), photo_shown(&m)), (5, None));
         // AT again from a recent: its photo opens once listed, the folder a way in.
         change_folder(
             at.clone(),
             way_in,
             None,
             &mut remembered,
+            &mut any_zoom(),
             &mut m,
             &mut sender(&mut sent),
         );
-        assert_eq!(sent.len(), 5, "nothing to close: {sent:?}");
-        m.apply(folder_opened(5, &at));
-        m.apply(listed(5, &["R0001175.DNG", "R0001176.DNG"], true));
+        assert_eq!(sent.len(), 7, "nothing to close: {sent:?}");
+        m.apply(folder_opened(6, &at));
+        m.apply(listed(6, &["R0001175.DNG", "R0001176.DNG"], true));
         remembered.restore(&mut m, &mut sender(&mut sent));
         let photo = at.join("R0001176.DNG");
-        assert_eq!(sent[5..], [Command::Open(photo.clone())]);
+        assert_eq!(sent[7..], [Command::Open(photo.clone())]);
         assert_eq!(photo_shown(&m), Some(photo.as_path()));
         assert_eq!(m.folder.root(), Some(at.as_path()));
         // Open This Folder, or the folder opened again: its own photo stays as it is.
@@ -10813,10 +11001,11 @@ mod tests {
             way_in,
             None,
             &mut remembered,
+            &mut any_zoom(),
             &mut m,
             &mut sender(&mut sent),
         );
-        assert_eq!(sent.len(), 7, "nothing closed: {sent:?}");
+        assert_eq!(sent.len(), 9, "nothing closed: {sent:?}");
         assert_eq!(photo_shown(&m), Some(photo.as_path()));
         assert_eq!(remembered.waiting, None);
     }
@@ -10834,6 +11023,7 @@ mod tests {
             way_in,
             Some(&kept),
             &mut remembered,
+            &mut any_zoom(),
             &mut m,
             &mut sender(&mut sent),
         );
@@ -10841,7 +11031,7 @@ mod tests {
         m.apply(folder_opened(4, &kept.path));
         m.apply(listed(4, &["a.ARW", "b.ARW"], true));
         remembered.restore(&mut m, &mut sender(&mut sent));
-        assert_eq!(sent[4..], [Command::Open(kept.path.join("b.ARW"))]);
+        assert_eq!(sent[5..], [Command::Open(kept.path.join("b.ARW"))]);
 
         let (mut m, mut sent, mut remembered, _) = at_with_its_photo();
         let in_day = kept_last(Some("Day 1"), Some("b.ARW"));
@@ -10851,11 +11041,585 @@ mod tests {
             way_in,
             Some(&in_day),
             &mut remembered,
+            &mut any_zoom(),
             &mut m,
             &mut sender(&mut sent),
         );
         assert_eq!(remembered.waiting, None);
         assert_eq!(photo_shown(&m), None);
+    }
+
+    /// The zooms the tests of the zoom across photos carry or fit: each mode, and the
+    /// menu's 50%, 100% and 200%, about the middle and off it.
+    const CARRIED: [zoom::Zoomed; 6] = [
+        zoom::Zoomed::FIT,
+        zoom::Zoomed {
+            scale: zoom::Scale::Small,
+            centre: [0.5, 0.5],
+        },
+        zoom::Zoomed {
+            scale: zoom::Scale::Fill,
+            centre: [0.2, 0.5],
+        },
+        zoom::Zoomed {
+            scale: zoom::Scale::Factor(0.5),
+            centre: [0.4, 0.6],
+        },
+        zoom::Zoomed {
+            scale: zoom::Scale::Factor(1.0),
+            centre: [0.3, 0.7],
+        },
+        zoom::Zoomed {
+            scale: zoom::Scale::Factor(2.0),
+            centre: [0.9, 0.1],
+        },
+    ];
+
+    /// Where the commands `sent` hold `command`, first.
+    fn sent_at(sent: &[Command], command: &Command) -> Option<usize> {
+        sent.iter().position(|sent| sent == command)
+    }
+
+    /// A way in fits the zoom, whatever it was, and tells the session Fit before the photo
+    /// it opens renders: File › Open…, a drop, Open With and the command line's raws,
+    /// opened alone; Open Folder…, Open Recent, Collections' recents and a dropped folder,
+    /// ways in; a folder chosen in Collections' tree; each after File › Close too. A folder
+    /// that holds the photo shown keeps the photo, and its zoom.
+    #[test]
+    fn opening_a_folder_or_a_file_fits() {
+        let fit = Some(zoom::Zoomed::FIT);
+        for carried in CARRIED {
+            for closed in [false, true] {
+                // Alone.
+                let (mut m, mut sent, mut remembered, at) = at_with_its_photo();
+                if closed {
+                    close(&mut remembered, &mut m, &mut sender(&mut sent));
+                }
+                let (mut zoom, raw) = (carried, at.join("R0001175.DNG"));
+                open_alone(vec![raw.clone()], &mut zoom, &mut m, &mut sender(&mut sent));
+                let open = sent_at(&sent, &Command::Open(raw)).expect("the open");
+                let view = sent_at(&sent, &fitted()).expect("Fit");
+                assert_eq!(Some(zoom), fit, "{carried:?}, closed {closed}");
+                assert!(view < open, "{carried:?}: {sent:?}");
+
+                // A folder, as a way in or from the tree, its photo opening once listed.
+                for change in [FolderChange::WayIn, FolderChange::Choose] {
+                    let (mut m, mut sent, mut remembered, _) = at_with_its_photo();
+                    if closed {
+                        close(&mut remembered, &mut m, &mut sender(&mut sent));
+                    }
+                    let (mut zoom, kept) = (carried, last(Some("b.ARW")));
+                    let path = kept.path.clone();
+                    change_folder(
+                        path,
+                        change,
+                        Some(&kept),
+                        &mut remembered,
+                        &mut zoom,
+                        &mut m,
+                        &mut sender(&mut sent),
+                    );
+                    assert_eq!(Some(zoom), fit, "{carried:?}, {change:?}, closed {closed}");
+                    let listing = m.folder.latest();
+                    m.apply(folder_opened(listing, &kept.path));
+                    m.apply(listed(listing, &["a.ARW", "b.ARW"], true));
+                    remembered.restore(&mut m, &mut sender(&mut sent));
+                    let open = sent_at(&sent, &Command::Open(kept.path.join("b.ARW")));
+                    let view = sent_at(&sent, &fitted()).expect("Fit");
+                    assert!(view < open.expect("the open"), "{change:?}: {sent:?}");
+                }
+            }
+
+            // The photo's own folder: nothing closes, and nothing fits.
+            let (mut m, mut sent, mut remembered, at) = at_with_its_photo();
+            let mut zoom = carried;
+            change_folder(
+                at,
+                FolderChange::WayIn,
+                None,
+                &mut remembered,
+                &mut zoom,
+                &mut m,
+                &mut sender(&mut sent),
+            );
+            assert_eq!(zoom, carried);
+            assert_eq!(sent_at(&sent, &fitted()), None, "{sent:?}");
+        }
+    }
+
+    /// The app starts at Fit, the view the session starts at, which the app counts as sent
+    /// (`ViewSync::sent`), never kept in settings; what was open last reopens through it,
+    /// sending no view.
+    #[test]
+    fn starting_the_app_fits() {
+        for os in [OperatingSystem::Mac, OperatingSystem::Windows] {
+            let shell = Shell::new(&Settings::default(), Locale::EnGb, os);
+            assert_eq!(shell.zoom, zoom::Zoomed::FIT, "{os:?}");
+            assert_eq!(shell.zoom.view(), apertrust_engine::view::View::default());
+        }
+        let kept = last(Some("b.ARW"));
+        let (mut m, mut sent) = (mirror::tests::mirror(), Vec::new());
+        let mut reopening = reopen(Some(&kept), true, &mut m, &mut sender(&mut sent));
+        m.apply(folder_opened(1, &kept.path));
+        m.apply(listed(1, &["a.ARW", "b.ARW"], true));
+        reopened(&mut reopening, &mut m, &mut sender(&mut sent));
+        assert_eq!(sent.last(), Some(&Command::Open(kept.path.join("b.ARW"))));
+        let views = sent.iter().filter(|c| matches!(c, Command::View(_)));
+        assert_eq!(views.count(), 0, "{sent:?}");
+    }
+
+    /// A way in that fits the zoom clears what the zoom's live region said, so a zoom back to
+    /// that scale on the next photo is said again; one that keeps the zoom keeps it.
+    #[test]
+    fn a_way_in_clears_what_the_zoom_s_live_region_said() {
+        for carried in CARRIED {
+            let mut shell = Shell::new(&Settings::default(), Locale::EnGb, OperatingSystem::Nix);
+            let said = String::from("100%");
+            (shell.zoom, shell.zoom_said) = (carried, said.clone());
+            fit_view(&mut shell.zoom, &mut |_| 1);
+            shell.fitted_from(carried);
+            let kept = if carried == zoom::Zoomed::FIT {
+                said
+            } else {
+                String::new()
+            };
+            assert_eq!(shell.zoom_said, kept, "{carried:?}");
+        }
+    }
+
+    /// The folder `/photos/Burst`, `a.ARW` to `c.ARW`, every one selected as the session
+    /// tells it, `b.ARW` open as a click in the Browser opens it; and the photos' paths in
+    /// the Browser's order.
+    fn burst() -> (Mirror, Vec<Command>, Vec<PathBuf>) {
+        let (mut m, mut sent) = (mirror::tests::mirror(), Vec::new());
+        let burst = PathBuf::from("/photos/Burst");
+        open_folder(burst.clone(), &mut m, &mut sender(&mut sent));
+        m.apply(folder_opened(1, &burst));
+        let names = ["a.ARW", "b.ARW", "c.ARW"];
+        m.apply(listed(1, &names, true));
+        let paths = names.map(|name| burst.join(name)).to_vec();
+        open_listed(paths[1].clone(), &mut m, &mut sender(&mut sent));
+        m.apply(Event::Selection(apertrust_engine::session::Selection {
+            photos: paths.clone(),
+            active: Some(paths[1].clone()),
+            previous: false,
+            through: sent.len() as u64,
+        }));
+        (m, sent, paths)
+    }
+
+    /// How another photo of the Browser's `paths` becomes active, with a name.
+    type Route = (
+        &'static str,
+        fn(&mut Mirror, &[PathBuf], &mut SendCommand<'_>),
+    );
+
+    /// Every way another photo of the collection becomes active, which keep the zoom:
+    /// Next Photo and Previous Photo, a click in the Browser, the photo open taken out of
+    /// the selection, which opens the nearest selected.
+    const ROUTES: [Route; 4] = [
+        ("Next Photo", |m, _, send| selection::step(true, m, send)),
+        ("Previous Photo", |m, _, send| {
+            selection::step(false, m, send)
+        }),
+        ("a click in the Browser", |m, paths, send| {
+            let click = BrowserAction::Open(2);
+            selection::browse(click, paths, false, &mut None, m, send);
+        }),
+        ("the photo open taken out", |m, paths, send| {
+            let ctrl_click = BrowserAction::ToggleSelected(1);
+            selection::browse(ctrl_click, paths, false, &mut None, m, send);
+        }),
+    ];
+
+    /// Another photo of the collection opens at the zoom of the one before, its mode or
+    /// its scale and its centre in the photo's coordinates: the app keeps its zoom and the
+    /// session its view, told nothing (decision 99), so the next photo, of another size,
+    /// is placed at the same scale about the same point.
+    #[test]
+    fn the_next_photo_opens_at_the_same_zoom_and_relative_point() {
+        let bounds = (2400, 1600);
+        for (route, go) in ROUTES {
+            let (mut m, mut sent, paths) = burst();
+            let before = sent.len();
+            go(&mut m, &paths, &mut sender(&mut sent));
+            let new = &sent[before..];
+            assert!(new.iter().any(|c| matches!(c, Command::Open(_))), "{route}");
+            assert!(
+                !new.iter().any(|c| matches!(c, Command::View(_))),
+                "{route}"
+            );
+        }
+        // 100% at (0.3, 0.7), and every other zoom, on photos of three sizes.
+        let hundred = CARRIED[4];
+        for extent in [[6000, 4000], [8256, 5504], [9504, 6336]] {
+            let room = zoom::Room { extent, bounds };
+            let placed = room.place(&hundred);
+            assert_eq!(placed.shown, 1.0, "{extent:?}");
+            assert_eq!(placed.centre, [0.3, 0.7], "{extent:?}");
+            for carried in CARRIED {
+                let placed = room.place(&carried);
+                let label = carried.label_in(Some(&room));
+                assert_eq!(label, carried.label(), "{extent:?}: {carried:?}");
+                if let zoom::Scale::Factor(factor) = carried.scale {
+                    assert_eq!(placed.shown, f64::from(factor), "{extent:?}");
+                }
+            }
+        }
+    }
+
+    /// A portrait after a landscape shows the landscape's view, its centre clamped on each
+    /// axis by the placement the session and the app share, so the view never passes the
+    /// portrait's edges; the retained centre takes that clamp only once the portrait is
+    /// live ([`the_zoom_s_centre_changes_only_with_what_the_session_confirms`]).
+    #[test]
+    fn a_portrait_after_a_landscape_clamps_the_centre() {
+        let room = |extent| zoom::Room {
+            extent,
+            bounds: (2400, 1600),
+        };
+        let (landscape, portrait) = (room([6000, 4000]), room([4000, 6000]));
+        // At 100% a portrait shows 0.6 of its width and 4/15 of its height, at 200% half
+        // of each, at 50% all its width and 8/15 of its height; Fill fills its width.
+        for (carried, clamped) in [
+            (CARRIED[0], [0.5, 0.5]),
+            (CARRIED[1], [0.5, 0.5]),
+            (CARRIED[2], [0.5, 0.5]),
+            (CARRIED[3], [0.5, 0.6]),
+            (CARRIED[4], [0.3, 0.7]),
+            (CARRIED[5], [0.85, 0.1]),
+            (
+                zoomed_to(zoom::Scale::Factor(1.0), [0.9, 0.05]),
+                [0.7, 2.0 / 15.0],
+            ),
+            (
+                zoomed_to(zoom::Scale::Factor(2.0), [0.0, 1.0]),
+                [0.15, 14.0 / 15.0],
+            ),
+        ] {
+            let placed = portrait.place(&carried);
+            for axis in [0, 1] {
+                let apart = (placed.centre[axis] - clamped[axis]).abs();
+                assert!(apart < 1e-6, "{carried:?}: {:?}", placed.centre);
+            }
+            // The landscape it came from shows it as it was where it fits there.
+            let back = landscape.place(&carried).centre;
+            if carried.scale == zoom::Scale::Factor(2.0) && carried.centre != [0.0, 1.0] {
+                assert_eq!(back, carried.centre, "{carried:?}");
+            }
+        }
+    }
+
+    /// A model of the session's view as `session.rs` keeps it (decision 99): the last
+    /// `View`, its centre written back clamped for the photo it places the view for, at a
+    /// `View`, a `Resize`, a photo's values and its going live; none with no photo placed.
+    struct SessionView {
+        view: apertrust_engine::view::View,
+        bounds: (u32, u32),
+        extent: Option<[u32; 2]>,
+    }
+
+    impl SessionView {
+        fn take(&mut self, command: &Command) {
+            match command {
+                Command::View(view) => self.view = view.normalized(),
+                Command::Resize { width, height } => self.bounds = (*width, *height),
+                _ => return,
+            }
+            self.clamp();
+        }
+
+        /// The photo it places the view for, from its values on: none after a failed open.
+        fn placing(&mut self, extent: Option<[u32; 2]>) {
+            self.extent = extent;
+            self.clamp();
+        }
+
+        fn clamp(&mut self) {
+            if let Some(extent) = self.extent
+                && self.bounds.0 > 0
+            {
+                let placed = apertrust_engine::view::place(extent, self.bounds, &self.view);
+                self.view.centre = placed.centre;
+            }
+        }
+    }
+
+    /// The Viewer's zoom through a run of frames, as `App::viewer` drives it
+    /// ([`ViewSync`], [`Shell::follow_photo`]), over the folder [`burst`] with `b.ARW` live,
+    /// the commands it sends taken by a [`SessionView`] in order.
+    struct ZoomRun {
+        shell: Shell,
+        mirror: Mirror,
+        sync: ViewSync,
+        session: SessionView,
+        sent: Vec<Command>,
+        now: Instant,
+        size: (u32, u32),
+    }
+
+    impl ZoomRun {
+        /// `b.ARW`, 6000 × 4000, live at `zoom` in a room of 2400 × 1600.
+        fn new(zoom: zoom::Zoomed) -> ZoomRun {
+            let (mirror, sent, _) = burst();
+            let mut shell = Shell::new(&Settings::default(), Locale::EnGb, OperatingSystem::Nix);
+            shell.zoom = zoom;
+            let session = SessionView {
+                view: zoom.view(),
+                bounds: (0, 0),
+                extent: None,
+            };
+            let mut run = ZoomRun {
+                shell,
+                mirror,
+                sync: ViewSync::default(),
+                session,
+                sent,
+                now: Instant::now(),
+                size: (2400, 1600),
+            };
+            run.values([6000, 4000], true);
+            run
+        }
+
+        /// One frame at the photo area's `size`, the window `resized` in it, as
+        /// `App::viewer` takes it: the size and the confirmed state at its start, the view
+        /// at its end.
+        fn frame(&mut self, size: (u32, u32), resized: bool) {
+            self.now += Duration::from_millis(16);
+            self.size = size;
+            let (sent, session) = (&mut self.sent, &mut self.session);
+            let send = &mut |command: Command| {
+                session.take(&command);
+                sent.push(command);
+                sent.len() as u64
+            };
+            let (shell, mirror) = (&mut self.shell, &self.mirror);
+            self.sync
+                .start(shell, mirror, size, resized, self.now, send);
+            let room = self.room();
+            let live = self.mirror.live();
+            self.shell.room = room.filter(|_| live);
+            let failed = matches!(self.mirror.photo, PhotoState::Failed { .. });
+            let view = self.shell.zoom.view();
+            let extent = room.map(|room| room.extent);
+            let (sent, session) = (&mut self.sent, &mut self.session);
+            let send = &mut |command: Command| {
+                session.take(&command);
+                sent.push(command);
+                sent.len() as u64
+            };
+            self.sync.end(view, extent, live || failed, self.now, send);
+        }
+
+        /// The room the open photo is drawn in, as `App::viewer` places it.
+        fn room(&self) -> Option<zoom::Room> {
+            let open = matches!(self.mirror.photo, PhotoState::Open(_));
+            open.then_some(zoom::Room {
+                extent: self.mirror.values.extent,
+                bounds: self.size,
+            })
+        }
+
+        /// Frames until a size held while the window resized is sent.
+        fn settle(&mut self) {
+            self.now += RESIZE_SETTLED;
+            self.frame(self.size, false);
+        }
+
+        /// The photo opening reports its values, `extent` pixels, `live` or not.
+        fn values(&mut self, extent: [u32; 2], live: bool) {
+            let open = self.mirror.photo.open().expect("a photo opening");
+            if !matches!(self.mirror.photo, PhotoState::Open(_)) {
+                self.mirror.apply(Event::Opened(mirror::tests::photo(open)));
+            }
+            self.mirror.apply(Event::Values(Values {
+                extent,
+                live,
+                ..photo_values(0.0, self.sent.len() as u64)
+            }));
+            self.session.placing(Some(extent));
+            self.frame(self.size, false);
+        }
+
+        /// The photo opening fails to.
+        fn fail(&mut self) {
+            let open = self.mirror.photo.open().expect("a photo opening");
+            self.mirror.apply(Event::Failed(SessionError::Open {
+                open,
+                error: Box::new(SessionError::NotAMosaic),
+            }));
+            self.session.placing(None);
+            self.frame(self.size, false);
+        }
+
+        /// The person moves the photo `dx` physical pixels across in the room drawn.
+        fn pan(&mut self, dx: f32) {
+            let room = self.shell.room.expect("the photo live");
+            let delta = egui::vec2(dx, 0.0);
+            self.shell.zoom = self.shell.zoom.panned(delta, &room);
+            self.frame(self.size, false);
+        }
+
+        /// Next Photo or Previous Photo, then the photo it opens up to its values.
+        fn step(&mut self, next: bool, extent: [u32; 2]) {
+            let (sent, session) = (&mut self.sent, &mut self.session);
+            let send = &mut |command: Command| {
+                session.take(&command);
+                sent.push(command);
+                sent.len() as u64
+            };
+            selection::step(next, &mut self.mirror, send);
+            self.frame(self.size, false);
+            self.values(extent, false);
+        }
+
+        /// The retained centre's and the session's, across.
+        fn across(&self) -> (f32, f32) {
+            (self.shell.zoom.centre[0], self.session.view.centre[0])
+        }
+    }
+
+    /// The zoom's retained centre changes only with what the session confirms: a pan, a
+    /// size sent, a photo going live; a size held while the window resizes, an opening
+    /// photo's values and a failed open only change what is drawn. Each run starts at 100%
+    /// on a 6000-pixel landscape in a 2400-pixel room, which shows 0.2 to 0.8 across as its
+    /// centre, and moves the photo 600 pixels, a tenth of it, on the way; the session ends
+    /// holding the same view.
+    #[test]
+    fn the_zoom_s_centre_changes_only_with_what_the_session_confirms() {
+        type Steps = fn(&mut ZoomRun);
+        let cases: [(&str, f32, Steps, f32); 8] = [
+            // A size held and back before it was sent: x 0.2 stays 0.2, though 3000 shows
+            // it at 0.25 meanwhile.
+            (
+                "a size held, then back",
+                0.2,
+                |run| {
+                    run.frame((3000, 1600), true);
+                    let held = run.shell.room.expect("live").place(&run.shell.zoom);
+                    assert!((held.centre[0] - 0.25).abs() < 1e-6, "{held:?}");
+                    run.frame((2400, 1600), true);
+                    run.settle();
+                },
+                0.2,
+            ),
+            (
+                "a pan, then a size held and back",
+                0.3,
+                |run| {
+                    run.pan(600.0);
+                    run.frame((3000, 1600), true);
+                    run.frame((2400, 1600), true);
+                    run.settle();
+                },
+                0.2,
+            ),
+            // A size sent commits its clamp: 3600 shows 0.3 to 0.7.
+            (
+                "a pan, then a size sent",
+                0.3,
+                |run| {
+                    run.pan(600.0);
+                    run.frame((3600, 1600), true);
+                    run.settle();
+                },
+                0.3,
+            ),
+            // A photo 4000 wide shows 0.3 to 0.7; live, it commits its clamp.
+            (
+                "a pan, then Next Photo, live",
+                0.7,
+                |run| {
+                    run.pan(-600.0);
+                    run.step(true, [4000, 4000]);
+                    let drawn = run.room().expect("its values").place(&run.shell.zoom);
+                    assert!((drawn.centre[0] - 0.7).abs() < 1e-6, "{drawn:?}");
+                    run.values([4000, 4000], true);
+                },
+                0.7,
+            ),
+            (
+                "Previous Photo, live",
+                0.8,
+                |run| {
+                    run.step(false, [4000, 4000]);
+                    run.values([4000, 4000], true);
+                },
+                0.7,
+            ),
+            // Its values come, then it fails: 0.8 stays, on both sides.
+            (
+                "a pan, then Next Photo, failed",
+                0.7,
+                |run| {
+                    run.pan(-600.0);
+                    run.step(true, [4000, 4000]);
+                    run.fail();
+                },
+                0.8,
+            ),
+            (
+                "a failed open, then a landscape",
+                0.8,
+                |run| {
+                    run.step(true, [4000, 4000]);
+                    run.fail();
+                    run.step(false, [6000, 4000]);
+                    run.values([6000, 4000], true);
+                },
+                0.8,
+            ),
+            // File › Open…: Fit.
+            (
+                "a pan, then File › Open…",
+                0.3,
+                |run| {
+                    run.pan(600.0);
+                    let raw = vec![PathBuf::from("/trips/x.ARW")];
+                    let (sent, session) = (&mut run.sent, &mut run.session);
+                    let send = &mut |command: Command| {
+                        session.take(&command);
+                        sent.push(command);
+                        sent.len() as u64
+                    };
+                    open_alone(raw, &mut run.shell.zoom, &mut run.mirror, send);
+                    run.frame(run.size, false);
+                    run.values([4000, 6000], true);
+                },
+                0.5,
+            ),
+        ];
+        for (case, from, steps, to) in cases {
+            let mut run = ZoomRun::new(zoomed_to(zoom::Scale::Factor(1.0), [from, 0.5]));
+            steps(&mut run);
+            let (kept, session) = run.across();
+            assert!((kept - to).abs() < 1e-6, "{case}: kept {kept}");
+            assert!(
+                (session - to).abs() < 1e-6,
+                "{case}: the session's {session}"
+            );
+        }
+    }
+
+    /// A photo whose open fails leaves the zoom as it was for the next: the mirror asks
+    /// for no zoom back to Fit, and the next photo opens with no view sent.
+    #[test]
+    fn a_failed_open_keeps_the_zoom_for_the_next_photo() {
+        let (mut m, mut sent, paths) = burst();
+        selection::step(true, &mut m, &mut sender(&mut sent));
+        let open = m.photo.open().expect("c opening");
+        let reactions = m.apply(Event::Failed(SessionError::Open {
+            open,
+            error: Box::new(SessionError::NotAMosaic),
+        }));
+        let unzoomed = |r: &Reaction| matches!(r, Reaction::Unzoomed { .. });
+        assert!(!reactions.iter().any(unzoomed), "{reactions:?}");
+        assert!(matches!(m.photo, PhotoState::Failed { .. }));
+        selection::step(false, &mut m, &mut sender(&mut sent));
+        assert_eq!(m.photo.asked(), Some(paths[1].as_path()));
+        let views = sent.iter().filter(|c| matches!(c, Command::View(_)));
+        assert_eq!(views.count(), 0, "{sent:?}");
     }
 
     /// A photo opened by File › Open…, a drop or Open With from the folder already open, or
@@ -10885,11 +11649,16 @@ mod tests {
             let (mut m, mut sent, _, at) = at_with_its_photo();
             let before = sent.len();
             let raw = at.join(chosen);
-            open_alone(vec![raw.clone()], &mut m, &mut sender(&mut sent));
+            open_alone(
+                vec![raw.clone()],
+                &mut any_zoom(),
+                &mut m,
+                &mut sender(&mut sent),
+            );
             let told = told_alone(std::slice::from_ref(&raw));
             assert_eq!(
                 sent[before..],
-                [told, Command::Open(raw.clone())],
+                [told, fitted(), Command::Open(raw.clone())],
                 "{chosen}"
             );
             assert_eq!((m.folder.root(), m.folder.shown()), (None, None));
@@ -10929,7 +11698,7 @@ mod tests {
         shell.recents.set_last(Some(kept.clone()));
         keep_at_exit(&mut shell.recents, None, None, &m);
         let elsewhere = vec![PathBuf::from("/trips/y.ARW")];
-        open_alone(elsewhere, &mut m, &mut sender(&mut sent));
+        open_alone(elsewhere, &mut any_zoom(), &mut m, &mut sender(&mut sent));
         let left = recents::Last {
             folder: Some(day),
             photo: Some("x.ARW".to_owned()),
@@ -11046,13 +11815,21 @@ mod tests {
         for folder in [new, at.clone()] {
             let change = FolderChange::Choose;
             let send = &mut sender(&mut sent);
-            change_folder(folder, change, None, &mut remembered, &mut m, send);
+            change_folder(
+                folder,
+                change,
+                None,
+                &mut remembered,
+                &mut any_zoom(),
+                &mut m,
+                send,
+            );
         }
         assert!(remembered.waiting.is_some());
-        let before = sent.len();
+        let (before, listing) = (sent.len(), m.folder.latest());
         stay_closed(&mut None, &mut remembered);
-        m.apply(folder_opened(5, &at));
-        m.apply(listed(5, &["R0001176.DNG"], true));
+        m.apply(folder_opened(listing, &at));
+        m.apply(listed(listing, &["R0001176.DNG"], true));
         remembered.restore(&mut m, &mut sender(&mut sent));
         assert_eq!(sent.len(), before);
         assert_eq!(photo_shown(&m), None);
@@ -11090,8 +11867,9 @@ mod tests {
         let mut m = mirror::tests::mirror();
         let alone = PathBuf::from("/photos/Other/x.ARW");
         let mut sent = Vec::new();
-        open_alone(vec![alone], &mut m, &mut sender(&mut sent));
-        for reaction in m.apply(Event::Opened(mirror::tests::photo(2))) {
+        open_alone(vec![alone], &mut any_zoom(), &mut m, &mut sender(&mut sent));
+        let open = m.photo.open().expect("the photo opening");
+        for reaction in m.apply(Event::Opened(mirror::tests::photo(open))) {
             if let Reaction::FolderOpened(path) = reaction {
                 shell.remember_folder(path);
             }
@@ -11270,7 +12048,7 @@ mod tests {
         assert!(!starts(Some(&kept), true), "what was open last reopening");
         let mut m = mirror::tests::mirror();
         let alone = vec![PathBuf::from("/photos/a.ARW")];
-        open_alone(alone, &mut m, &mut sender(&mut Vec::new()));
+        open_alone(alone, &mut any_zoom(), &mut m, &mut sender(&mut Vec::new()));
         assert!(!shows_start(opened(&m), false, false, false));
         let mut m = mirror::tests::mirror();
         open_folder(
@@ -11621,14 +12399,19 @@ mod tests {
             let mut m = mirror::tests::mirror();
             let mut sent = Vec::new();
             let alone = vec![PathBuf::from("/photos/a.ARW")];
-            open_alone(alone, &mut m, &mut sender(&mut sent));
+            open_alone(alone, &mut any_zoom(), &mut m, &mut sender(&mut sent));
             let chosen = PathBuf::from(chosen);
             let others = PathBuf::from("/trips/c.ARW");
             let paths = vec![chosen.clone(), others.clone()];
-            open_alone(paths.clone(), &mut m, &mut sender(&mut sent));
+            open_alone(
+                paths.clone(),
+                &mut any_zoom(),
+                &mut m,
+                &mut sender(&mut sent),
+            );
             assert_eq!(
-                sent[2..],
-                [told_alone(&paths), Command::Open(chosen.clone())]
+                sent[3..],
+                [told_alone(&paths), fitted(), Command::Open(chosen.clone())]
             );
             assert_eq!(m.folder.alone_paths(), [chosen, others]);
             assert_eq!(m.folder.shown(), None);
@@ -18389,9 +19172,10 @@ mod tests {
         harness.run();
         assert_eq!(
             harness.state().commands,
-            vec![Command::Library(LibraryCommand::Open(Source::Folder(
-                found.clone()
-            )))]
+            vec![
+                Command::Library(LibraryCommand::Open(Source::Folder(found.clone()))),
+                fitted()
+            ]
         );
         let recents: Vec<PathBuf> = harness
             .state()
@@ -19115,9 +19899,15 @@ mod tests {
                                 commands.push(command);
                                 commands.len() as u64
                             };
+                            let (zoom, mirror) = (&mut bench.shell.zoom, &mut bench.mirror);
+                            // A folder as `App::open_folder` opens it, a way in.
+                            let (way_in, remembered) =
+                                (FolderChange::WayIn, &mut Remembered::default());
                             match chosen {
-                                Opens::Photos(paths) => open_alone(paths, &mut bench.mirror, send),
-                                Opens::Folder(path) => open_folder(path, &mut bench.mirror, send),
+                                Opens::Photos(paths) => open_alone(paths, zoom, mirror, send),
+                                Opens::Folder(path) => change_folder(
+                                    path, way_in, None, remembered, zoom, mirror, send,
+                                ),
                             }
                         }
                         Err((path, why)) => {
@@ -23517,7 +24307,8 @@ mod tests {
             let raw = PathBuf::from("raws/IMG_2041.CR3");
             harness.state_mut().dialog.answer = Some(Some(vec![raw.clone()]));
             harness.run();
-            let opened = vec![told_alone(std::slice::from_ref(&raw)), Command::Open(raw)];
+            let told = told_alone(std::slice::from_ref(&raw));
+            let opened = vec![told, fitted(), Command::Open(raw)];
             assert_eq!(harness.state().commands, opened, "{os:?}");
 
             // Of several, the first opens, the others alone with it (`open_alone`).
@@ -23530,7 +24321,7 @@ mod tests {
             let first = Command::Open(raws[0].clone());
             assert_eq!(
                 harness.state().commands,
-                vec![told_alone(&raws), first],
+                vec![told_alone(&raws), fitted(), first],
                 "{os:?}"
             );
             let alone = harness.state().mirror.folder.alone_paths();
@@ -23581,8 +24372,11 @@ mod tests {
             harness.state().commands,
             vec![
                 open_folder(&wedding),
+                fitted(),
                 open_folder(&portraits),
+                fitted(),
                 told_alone(&raws),
+                fitted(),
                 Command::Open(raws[0].clone())
             ]
         );
@@ -23617,6 +24411,7 @@ mod tests {
         drop_onto(&mut harness, &[&notes, &raw]);
         let opened = vec![
             told_alone(std::slice::from_ref(&raw)),
+            fitted(),
             Command::Open(raw.clone()),
         ];
         assert_eq!(harness.state().commands, opened);

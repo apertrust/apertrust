@@ -208,6 +208,12 @@ impl Zoomed {
         self.centred(revealed(&room.place(&self), mark), room)
     }
 
+    /// The zoom with its centre kept inside the edges in `room`, as the session holds it once
+    /// it places the view for that photo (decision 99).
+    pub fn clamped(self, room: &Room) -> Zoomed {
+        self.centred(self.centre, room)
+    }
+
     /// The zoom with its centre at `centre`, kept inside the edges in `room` as the session
     /// keeps it.
     fn centred(self, centre: [f32; 2], room: &Room) -> Zoomed {
@@ -331,6 +337,30 @@ impl Marks {
         }
         self.seen = Some(zoom);
         (now < self.until).then_some(self.until - now)
+    }
+}
+
+/// What the zoom's retained centre was last confirmed in (`docs/gui.md`, The zoom's
+/// centre): the photo last seen live.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Confirmed {
+    /// The open that asked for the photo last seen live.
+    live: Option<u64>,
+}
+
+impl Confirmed {
+    /// The retained `zoom` once the photo the open numbered `open` is live in `room`, the
+    /// room the session places it in, its extent and the size last sent: its centre
+    /// committed kept inside the photo's edges as that photo first goes live, so the photo
+    /// after carries the centre it showed, and as the size is sent (`resized`); else as it
+    /// was.
+    pub fn follow(&mut self, open: u64, zoom: Zoomed, room: &Room, resized: bool) -> Zoomed {
+        let first = self.live.replace(open) != Some(open);
+        if first || resized {
+            zoom.clamped(room)
+        } else {
+            zoom
+        }
     }
 }
 
