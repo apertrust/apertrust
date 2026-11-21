@@ -107,13 +107,13 @@ The groundwork for orientation:
 
 ### The zoomed view
 
-Decision 99, [engine.md](engine.md#the-zoomed-view), in seven steps, the first built:
+Decision 99, [engine.md](engine.md#the-zoomed-view), in seven steps, the first two built:
 
-- Built: `view` (`apertrust_engine::view`), with `View { scale, centre }`, `ViewScale` (`Small`, `Fit`, `Fill`, `Factor(f32)`, a factor clamped to Fit and 16) and `place(extent, bounds, &view) -> Placement`, a pure function the app uses too, agreeing with `pipeline::fit` at Fit; `Command::View`, view state off the edit, one view per session kept across photos, its centre clamped to each; `Event::View(ViewState { through, view, placement })`, the session's one view told to every client once in each batch that moved it or its placement; `Frame::place` (`FramePlace { scale, origin, extent }`), the whole photo at the fitted scale for now, so a view renders nothing yet. Planned: `Frame::overview`.
-- Planned: `Pipe::Detail { region, scale }`: the visible region with darktable's 1.2 margin at the zoom's scale, never above 1, planned as a tile up to its start and as the viewport after it; its source demosaic's full-resolution cache point borrowed from the fitted pipeline by key, or in a tiled viewport the raw stage's output; recorded with the fitted pipeline's passes in one encoder (`Pipeline::record`).
+- Built: `view` (`apertrust_engine::view`), with `View { scale, centre }`, `ViewScale` (`Small`, `Fit`, `Fill`, `Factor(f32)`, a factor clamped to Fit and 16) and `place(extent, bounds, &view) -> Placement`, a pure function the app uses too, agreeing with `pipeline::fit` at Fit; `Command::View`, view state off the edit, one view per session kept across photos, its centre clamped to each; `Event::View(ViewState { through, view, placement })`, the session's one view told to every client once in each batch that moved it or its placement; `Frame::place` (`FramePlace { scale, origin, extent }`), the whole photo at the fitted scale at Fit, the detail's region at 1 from 100% on.
+- Built at 100%: `Pipe::Detail { region, scale }`, the visible region at scale 1, planned as a tile up to its start and as the viewport after it (`PlanError::Detail` refusing an operation after demosaic with whole-image passes or a reach past its pixel, a region past the image's edge, and any scale but 1); `Plan::keyed_on`, its keys chained from its source's; its source the fitted pipeline's demosaic image read in place (`Pipeline::demosaiced`); recorded with the fitted pipeline's passes in one encoder and one submission (`Pipeline::record`, `Pipeline::timings`); the session's `Detail`, its own display pair, `Frame::overview` (`Overview { buffer, width, height }`), and `SessionError::Zoom`, the refusal of a `View` whose detail cannot render: a tiled fitted viewport, a plan `PlanError::Detail` refuses, or no memory for the detail's buffers; the frame then stays at Fit, and a supported detail renders at scale 1 at every zoom from 100% up. Planned: darktable's 1.2 margin, scales between Fit and 100%, and in a tiled viewport the raw stage's output as its source.
 - Whole-image results at the detail's scale from a round over the whole image, kept by the untiled plan's key; haze removal's full-resolution part borrowed by key.
-- The scopes, the colour pickers, the readouts and the rendered thumbnails reading the fitted pipeline at every zoom.
-- `apertrust-cli preview --zoom SCALE --at X,Y` for its tests and timings.
+- The scopes, the colour pickers, the readouts and the rendered thumbnails reading the fitted pipeline at every zoom: built for the scopes and the Colour picker from 100% on.
+- `apertrust-cli preview --zoom FACTOR --at X,Y` for its timings, built.
 
 ### Edits and sidecars
 
@@ -391,6 +391,7 @@ The headless binary. Its commands are `gpu`, `info`, `edit`, `history`, `export`
 - `--png OUT` writes the frame through `apertrust-export`, with PNG's defaults. The output must not already exist, so a preview cannot overwrite an original photo or an alias of it.
 - `--join OPERATION` then times an optional operation joining and leaving the plan, each rebuild keeping kernels and cache points, against a pipeline built from nothing.
 - `--scopes[=totals|histogram|waveform|vectorscope]` times what counting each frame for the scopes adds, and reports what the last frame clips.
+- `-d perf preview FILE --zoom FACTOR [--at X,Y] [--changes N] [--png OUT]` zooms through an in-process session from the saved edit, the raw linked and its sidecar copied into a folder of the run's own, a `Resize` then a `View`, `X,Y` in the photo's coordinates, 0.5,0.5 by default: it logs `zoom: entered in N ms`, then each exposure change's GPU time, both pipelines', and prints their medians; `--png` writes the zoomed frame. The engine's own lines name the detail's renders `detail:`. Between Fit and 1 the frame stays at Fit for now.
 - `-d perf preview FILE --beside-export ROUNDS [--changes N] [--interval MS]` is spike X1's measurement: changes through an in-process session, alone and while its export job exports the photo, tiled as `engine.memory_budget` says. `-d perf -d verbose` adds each job step's GPU time and readback, as trace lines of the perf domain.
 
 ### library scan
