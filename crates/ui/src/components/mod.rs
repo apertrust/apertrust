@@ -55,7 +55,9 @@ mod readout_row;
 mod reference_row;
 mod section;
 mod segmented;
+pub mod settings;
 mod slider;
+mod steps;
 mod swatches;
 mod switch;
 mod tabs;
@@ -88,7 +90,7 @@ pub use grid_cell::{
     CellAction, CellPicture, CellRating, CellStatus, ColourLabel, ColourLabels, GridCell,
     GridCellOutput,
 };
-pub use group::PlainGroup;
+pub use group::{PlainGroup, group_label_text};
 pub use histogram::{
     Channel, Clipped, Histogram, HistogramAction, HistogramBins, Scale, Scope, ScopeView,
     VectorscopeBins, WaveformBins,
@@ -281,6 +283,24 @@ fn truncated(text: &str, font: FontId, width: f32, colour: Color32) -> LayoutJob
 /// slider's value at rest and a Blended option end.
 pub fn field_inset(t: &Theme) -> f32 {
     t.spacing.xs + t.shape.hairline
+}
+
+/// How a field is drawn where it is not a tool's, a field high in the small text on
+/// `sunken`: a Settings control's ([`settings`]), a box high in the body text, framed.
+/// What it takes, and how, stays the field's own.
+#[derive(Clone, Debug)]
+pub(crate) struct FieldLook {
+    pub height: f32,
+    pub font: FontId,
+    /// Its text while enabled.
+    pub colour: Color32,
+    /// Its well, none where the caller draws one round it.
+    pub fill: Option<Color32>,
+    /// A hairline round the well, in this colour.
+    pub frame: Option<Color32>,
+    /// Room at the text's start besides the field's inset, for an icon the caller draws
+    /// there, as a search field's magnifier.
+    pub lead: f32,
 }
 
 /// Tells screen readers the keys that run a control, as its tooltip spells them.

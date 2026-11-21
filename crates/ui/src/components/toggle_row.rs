@@ -149,6 +149,7 @@ impl<'a> ToggleRow<'a> {
             switch::paint(
                 painter,
                 track,
+                t.sizes.switch_knob,
                 on,
                 Touch {
                     focused: false,

@@ -713,6 +713,31 @@ settings-after-restart = Applies after a restart
 settings-changed = Changed from its default
 # The item of a row's right-click menu that puts its default back.
 settings-reset = Reset
+# The tooltip and screen-reader name of a row's changed mark, ●, a button that puts the
+# default back. $value is the default as the row writes it: an option ("Dark"), a number
+# with its unit ("100 %"), On or Off.
+settings-reset-to = Reset to { $value }
+# After a row's label, behind a middle dot, where its setting takes effect only at the
+# next start: "Memory budget · after a restart".
+settings-restart-note = after a restart
+# A settings value with its unit, as a slider or a number box writes it: "110 %",
+# "2048 MiB". $value is the number or a range in words, $unit the unit's words.
+settings-value-with-unit = { $value } { $unit }
+# Under a number box whose typed value is out of its range: what it may be. The unit
+# follows through settings-value-with-unit.
+settings-number-range = { $min } to { $max }
+# The same, for a number with no maximum.
+settings-number-range-from = { $min } or more
+# The same, for a number with no minimum.
+settings-number-range-up-to = up to { $max }
+# The same, for a number that must be more than a value (the schema's `above`), with no
+# maximum.
+settings-number-range-above = more than { $min }
+# The same, for a number that must be more than a value, with a maximum.
+settings-number-range-above-to = more than { $min }, up to { $max }
+# Screen-reader names of a number box's − and + buttons. $control is the row's label.
+settings-number-decrease = Decrease { $control }
+settings-number-increase = Increase { $control }
 # The pages, listed at the dialog's start, and what a page that holds nothing yet says.
 settings-page-general = General
 settings-page-import = Import

@@ -100,16 +100,25 @@ impl<'a> Switch<'a> {
                 rect.center(),
                 vec2(t.sizes.switch_width, t.sizes.switch_height),
             );
-            paint(&undimmed_painter(ui), track, on, touch, &t);
+            let knob = t.sizes.switch_knob;
+            paint(&undimmed_painter(ui), track, knob, on, touch, &t);
         }
         response.widget_info(|| WidgetInfo::selected(Role::Switch, enabled, on, self.name));
         response
     }
 }
 
-/// The switch in `track`, `on` or off, as `touch` has it: its track, its knob and, focused,
-/// the ring.
-pub(crate) fn paint(painter: &egui::Painter, track: Rect, on: bool, touch: Touch, t: &Theme) {
+/// The switch in `track`, `on` or off, as `touch` has it: its track, its knob `knob`
+/// across and, focused, the ring. A tool's switch and a Settings switch, a size up, share
+/// its colours.
+pub(crate) fn paint(
+    painter: &egui::Painter,
+    track: Rect,
+    knob_side: f32,
+    on: bool,
+    touch: Touch,
+    t: &Theme,
+) {
     let c = &t.colors;
     // Where `sunken` and `button` are one black, a plate has an edge: the high-contrast
     // theme, which draws on as its ticked checkbox.
@@ -145,7 +154,7 @@ pub(crate) fn paint(painter: &egui::Painter, track: Rect, on: bool, touch: Touch
         );
     }
     // The knob a few points in, at the end its side says.
-    let side = t.sizes.switch_knob;
+    let side = knob_side;
     let inset = (track.height() - side) / 2.0;
     let x = if on {
         track.right() - inset - side / 2.0

@@ -109,6 +109,13 @@ impl Gallery {
         pickers(ui, &t);
     }
 
+    /// Draws the Settings controls section alone, as the snapshot tests photograph it in
+    /// each theme.
+    pub fn show_settings(&mut self, ui: &mut Ui) {
+        let t = theme::theme(ui.ctx());
+        settings_controls(ui, &t, &mut self.demo.settings);
+    }
+
     /// Draws the gallery on the panel's colour, as a page of its own.
     pub fn show(&mut self, ui: &mut Ui) {
         let t = theme::theme(ui.ctx());
@@ -163,6 +170,9 @@ impl Gallery {
         ui.add_space(t.spacing.l);
         heading(ui, "Slider markers");
         slider_markers(ui, &mut self.demo);
+        ui.add_space(t.spacing.l);
+        heading(ui, "Settings controls");
+        settings_controls(ui, &t, &mut self.demo.settings);
         ui.add_space(t.spacing.l);
         heading(ui, "Tools panel");
         tools_panel(ui, &t, &mut self.demo);
@@ -1263,6 +1273,8 @@ struct Demo {
     /// The slider markers' rows: Exposure at its minimum, its default, its maximum, and
     /// one for the snapshot tests to drag.
     markers: [f64; 4],
+    /// The Settings controls' values.
+    settings: SettingsDemo,
 }
 
 impl Default for Demo {
@@ -1355,8 +1367,260 @@ impl Default for Demo {
             active: Some(5),
             selected: vec![5, 6],
             markers: [-4.0, 0.0, 4.0, 1.28],
+            settings: SettingsDemo::default(),
         }
     }
+}
+
+/// The Settings controls' sample values, a row of each kind as General shows them, and
+/// those no setting has yet: a text area, a pattern, a folder, a readout and an action.
+#[derive(Clone, Debug)]
+struct SettingsDemo {
+    theme: usize,
+    locale: usize,
+    scale: f64,
+    marker: usize,
+    menu: usize,
+    reopen: bool,
+    keep_log: bool,
+    domains: [bool; 9],
+    note: String,
+    budget: f64,
+    pattern: String,
+    folder: String,
+    search: String,
+}
+
+impl Default for SettingsDemo {
+    fn default() -> Self {
+        SettingsDemo {
+            theme: 0,
+            locale: 0,
+            scale: 110.0,
+            marker: 2,
+            menu: 0,
+            reopen: true,
+            keep_log: false,
+            domains: [true, true, true, true, false, true, true, true, false],
+            note: "Before and after the driver update".to_owned(),
+            budget: 4096.0,
+            pattern: "$(FILE.FOLDER)/darktable_exported/$(FILE.NAME)".to_owned(),
+            folder: "~/Pictures/Export".to_owned(),
+            search: String::new(),
+        }
+    }
+}
+
+/// Each Settings control in its row, the column at the row's end (`docs/gui.md`, The
+/// Settings dialog): a combo changed from its default and one at it, a slider, two
+/// segmented choices, switches on, off and disabled,
+/// chips, a text area, a number waiting for a restart, a pattern, a folder, a readout and
+/// an action; then the switch in each state.
+fn settings_controls(ui: &mut Ui, t: &Theme, demo: &mut SettingsDemo) {
+    use crate::components::settings::{
+        Button as SettingButton, Chips, Combo, Folder, Number, Readout, Search,
+        Segmented as Segments, SettingRow, Slider, Switch as SettingSwitch, Text, TextArea,
+    };
+    use crate::components::{ButtonState as State, Variable};
+    let themes = ["Dark", "Grey", "Light", "High contrast"];
+    let locales = ["English (UK)", "English (US)", "Українська", "Polski"];
+    let shapes = ["Triangle", "Circle", "Square"];
+    let menus = ["Apertrust icon", "Menu"];
+    let domains = [
+        "GPU",
+        "Raw",
+        "Pipe",
+        "Performance",
+        "Memory",
+        "Settings",
+        "Control",
+        "Events",
+        "Verbose",
+    ];
+    let variables = [
+        Variable {
+            insert: "FILE.FOLDER",
+            description: "folder containing the input image",
+        },
+        Variable {
+            insert: "FILE.NAME",
+            description: "basename of the input image",
+        },
+    ];
+    egui::Frame::new().fill(t.colors.panel).show(ui, |ui| {
+        ui.set_width(ui.available_width().min(560.0));
+        ui.push_id("settings controls", |ui| {
+            ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
+            let mut row = SettingRow::new("theme", "Theme");
+            if demo.theme != 0 {
+                row = row.changed("Dark");
+            }
+            let out = row.show(ui, |ui| {
+                Combo::new("Theme", &themes, Some(demo.theme)).show(ui)
+            });
+            if let Some(i) = out.inner {
+                demo.theme = i;
+            }
+            if out.reset {
+                demo.theme = 0;
+            }
+            let out = SettingRow::new("locale", "Language").show(ui, |ui| {
+                Combo::new("Language", &locales, Some(demo.locale)).show(ui)
+            });
+            if let Some(i) = out.inner {
+                demo.locale = i;
+            }
+            let mut row = SettingRow::new("scale", "Interface size");
+            if demo.scale != 100.0 {
+                row = row.changed("100 %");
+            }
+            let out = row.show(ui, |ui| {
+                Slider::new("scale", "Interface size", demo.scale, 50.0..=300.0)
+                    .step(10.0)
+                    .unit("%")
+                    .show(ui)
+            });
+            if let Some(value) = out.inner {
+                demo.scale = value;
+            }
+            if out.reset {
+                demo.scale = 100.0;
+            }
+            let out = SettingRow::new("marker", "Slider marker").show(ui, |ui| {
+                Segments::new("Slider marker", &shapes, Some(demo.marker)).show(ui)
+            });
+            if let Some(i) = out.inner {
+                demo.marker = i;
+            }
+            let out = SettingRow::new("menu", "Menu button").show(ui, |ui| {
+                Segments::new("Menu button", &menus, Some(demo.menu)).show(ui)
+            });
+            if let Some(i) = out.inner {
+                demo.menu = i;
+            }
+            let out = SettingRow::new("reopen", "Reopen what was open last")
+                .whole_row(true)
+                .show(ui, |ui| {
+                    SettingSwitch::new(&mut demo.reopen, "Reopen what was open last")
+                        .show(ui)
+                        .changed()
+                });
+            if out.clicked {
+                demo.reopen = !demo.reopen;
+            }
+            let mut row = SettingRow::new("keep log", "Keep a log of this session").whole_row(true);
+            if demo.keep_log {
+                row = row.changed("Off");
+            }
+            let out = row.show(ui, |ui| {
+                SettingSwitch::new(&mut demo.keep_log, "Keep a log of this session")
+                    .show(ui)
+                    .changed()
+            });
+            if out.clicked {
+                demo.keep_log = !demo.keep_log;
+            }
+            if out.reset {
+                demo.keep_log = false;
+            }
+            SettingRow::new("overridden", "Square thumbnails")
+                .disabled("Set by --conf for this run")
+                .show(ui, |ui| {
+                    SettingSwitch::new(&mut true, "Square thumbnails").show(ui)
+                });
+            let out = SettingRow::new("domains", "Log categories").show(ui, |ui| {
+                Chips::new("Log categories", &domains, &demo.domains).show(ui)
+            });
+            if let Some((i, on)) = out.inner {
+                demo.domains[i] = on;
+            }
+            let out = SettingRow::new("note", "Note in each log").show(ui, |ui| {
+                TextArea::new("note", "Note in each log", &demo.note).show(ui)
+            });
+            if let Some(text) = out.inner {
+                demo.note = text;
+            }
+            let mut row = SettingRow::new("budget", "Memory budget").after_restart(true);
+            if demo.budget != 2048.0 {
+                row = row.changed("2048 MiB");
+            }
+            let out = row.show(ui, |ui| {
+                Number::new("budget", "Memory budget", demo.budget, 256.0..=65536.0)
+                    .step(256.0)
+                    .unit("MiB")
+                    .show(ui)
+            });
+            if let Some(value) = out.inner {
+                demo.budget = value;
+            }
+            if out.reset {
+                demo.budget = 2048.0;
+            }
+            let out = SettingRow::new("pattern", "File name").show(ui, |ui| {
+                Text::new("pattern", "File name", &demo.pattern)
+                    .variables(&variables)
+                    .show(ui)
+            });
+            if let Some(text) = out.inner {
+                demo.pattern = text;
+            }
+            let out = SettingRow::new("folder", "Export to").show(ui, |ui| {
+                Folder::new("folder", "Export to", &demo.folder, "Choose folder").show(ui)
+            });
+            if let Some(text) = out.inner.text {
+                demo.folder = text;
+            }
+            SettingRow::new("user data", "User data").show(ui, |ui| {
+                Readout::new("~/.local/share/apertrust/a/rather/long/path/to/settings")
+                    .path(true)
+                    .button(SettingButton::new("Show").name("Show user data"))
+                    .show(ui)
+            });
+            SettingRow::new("thumbnails", "Thumbnails").show(ui, |ui| {
+                SettingButton::new("Clear")
+                    .name("Clear thumbnails")
+                    .fact("2,345 thumbnails, 120 MB")
+                    .show(ui)
+            });
+        });
+    });
+    ui.add_space(t.spacing.m);
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = t.spacing.m;
+        for state in [
+            State::Rest,
+            State::Hover,
+            State::Pressed,
+            State::Focus,
+            State::Disabled,
+        ] {
+            for on in [false, true] {
+                let mut on = on;
+                ui.allocate_ui(
+                    vec2(t.sizes.setting_switch_width, t.sizes.setting_control),
+                    |ui| {
+                        SettingSwitch::new(&mut on, "Sample").state(state).show(ui);
+                    },
+                );
+            }
+        }
+    });
+    // The page list's Find a setting, empty and holding a word.
+    ui.add_space(t.spacing.m);
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = t.spacing.m;
+        for (i, held) in [demo.search.clone(), "log".to_owned()]
+            .into_iter()
+            .enumerate()
+        {
+            ui.allocate_ui(vec2(180.0, t.sizes.setting_control), |ui| {
+                let typed = Search::new(("gallery search", i), "Find a setting", &held).show(ui);
+                if let (0, Some(typed)) = (i, typed) {
+                    demo.search = typed;
+                }
+            });
+        }
+    });
 }
 
 /// A sample slider: its label, full name, range, step, decimal places and unit, the
