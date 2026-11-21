@@ -542,6 +542,9 @@ pub struct Selectable {
     pub invert: bool,
     /// Select Unedited: a photo of the folder open has no edit, as its cell's pencil says.
     pub unedited: bool,
+    /// Previous Selection: the session keeps an earlier selection, a folder or photos
+    /// opened alone are open, and no Previous Selection sent waits to be told.
+    pub previous: bool,
 }
 
 /// Whether each of the Tools panel's tabs can be chosen, by position, where the first
@@ -1137,16 +1140,16 @@ pub static ACTIONS: [Action; 120] = [
         available: |s| s.select.unedited && on_main_window(s) && !s.modal,
         emits: Emit::Command(Command::Selection(SelectionCommand::Unedited)),
     },
-    // Ctrl+Shift+D (decision 90), darktable's duplicate virgin's key there; drawn disabled
-    // until Phase 3's selection.
+    // Ctrl+Shift+D (decision 90), darktable's duplicate virgin's key there: the selection
+    // as it was before its last change, while the session keeps one.
     Action {
         id: ActionId::PREVIOUS_SELECTION,
         message: "action-previous-selection",
         keys: &[command_shift(Key::D)],
         scope: Scope::App,
         trigger: Trigger::Press,
-        available: never,
-        emits: Emit::Later,
+        available: |s| s.select.previous && on_main_window(s) && !s.modal,
+        emits: Emit::Command(Command::Selection(SelectionCommand::Previous)),
     },
     Action {
         id: ActionId::COPY_EDIT,
@@ -2839,6 +2842,7 @@ pub(crate) mod tests {
                 none: true,
                 invert: true,
                 unedited: true,
+                previous: true,
             },
             next: true,
             previous: true,
@@ -3206,6 +3210,14 @@ pub(crate) mod tests {
                     ..all
                 },
             ),
+            (
+                ActionId::PREVIOUS_SELECTION,
+                SelectionCommand::Previous,
+                Selectable {
+                    previous: false,
+                    ..all
+                },
+            ),
         ];
         for (id, command, rests) in items {
             let item = action(id).expect("declared");
@@ -3234,10 +3246,7 @@ pub(crate) mod tests {
         assert_eq!(keys(ActionId::SELECT_NONE), [ctrl(shift, Key::A)]);
         assert_eq!(keys(ActionId::INVERT_SELECTION), [ctrl(shift, Key::I)]);
         assert!(keys(ActionId::SELECT_UNEDITED).is_empty());
-        // Previous Selection is declared with its key, and waits for Phase 3.
-        let previous = action(ActionId::PREVIOUS_SELECTION).expect("declared");
-        assert_eq!(previous.emits, Emit::Later);
-        assert!(!previous.enabled(&everything()));
+        // Previous Selection on Ctrl+Shift+D, darktable's duplicate virgin's key (decision 90).
         assert_eq!(keys(ActionId::PREVIOUS_SELECTION), [ctrl(shift, Key::D)]);
     }
 

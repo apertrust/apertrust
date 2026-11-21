@@ -195,6 +195,10 @@ pub struct Mirror {
     /// The selection commands and the opens the app sent that no fact includes yet, in the
     /// order sent ([`Mirror::selecting`]).
     asked: Vec<Asked>,
+    /// The number of the Previous Selection sent that no fact includes yet, unless a photo
+    /// was asked for or closed since: once one does, the photo the session made active is
+    /// shown ([`Mirror::follow`]).
+    previous: Option<u64>,
     /// `selected` with `asked` laid over it, as the session will make it: what the cells
     /// mark ([`Mirror::is_selected`]).
     selected_shown: HashSet<PathBuf>,
@@ -246,6 +250,7 @@ impl Mirror {
             selected: HashSet::new(),
             view: None,
             asked: Vec::new(),
+            previous: None,
             selected_shown: HashSet::new(),
             cache: crate::storage::Mirror::default(),
             export_floor: 0,
@@ -273,10 +278,11 @@ impl Mirror {
     }
 
     /// Whether a change of the edit the Tools panel's controls make is to be sent: only the
-    /// open photo's, once its values have arrived, and never while it is open for viewing
-    /// only.
+    /// open photo's, once its values have arrived, never while it is open for viewing
+    /// only, and not while a Previous Selection sent may have made another photo active.
     pub fn takes_edits(&self) -> bool {
-        self.shown == Shown::Photo { editable: true }
+        // Not while Previous Selection may have made another photo active.
+        self.shown == Shown::Photo { editable: true } && self.previous.is_none()
     }
 
     /// Whether Reset would change the photo: its edit holds anything, or the history's end
@@ -300,6 +306,14 @@ impl Mirror {
     pub fn opening(&mut self, path: PathBuf, open: u64, now: Instant) {
         // The session selects a photo opened from outside the selection alone.
         self.ask(open, Ask::Open(path.clone()));
+        // Asked for, it wins over the photo a Previous Selection sent before would show.
+        self.previous = None;
+        self.show_opening(path, open, now);
+    }
+
+    /// The raw at `path` shown opening for the open numbered `open`, `now`, as
+    /// [`Mirror::opening`] shows it.
+    fn show_opening(&mut self, path: PathBuf, open: u64, now: Instant) {
         let held = self.folder.largest_thumbnail(&path).cloned();
         self.photo = PhotoState::Opening { path, open };
         self.closed = false;
@@ -321,6 +335,19 @@ impl Mirror {
     /// the Tools panel shows no photo, and what the session still sends of it is dropped,
     /// but the write of its edit, which `saving` waits for as for a photo left.
     pub fn closing(&mut self) {
+        // Closed, no photo a Previous Selection sent before would show comes.
+        self.previous = None;
+        self.show_closed();
+    }
+
+    /// Select None is sent with no photo shown: no photo a Previous Selection sent before
+    /// it would show comes, as [`Mirror::closing`] says where one is shown.
+    pub fn clearing(&mut self) {
+        self.previous = None;
+    }
+
+    /// No photo shown, as [`Mirror::closing`] leaves it.
+    fn show_closed(&mut self) {
         self.photo = PhotoState::None;
         self.closed = true;
         self.folder.locate(None);
@@ -365,24 +392,59 @@ impl Mirror {
     /// from the photo open or opening as it was sent, or from none should that open fail
     /// first, as the session applies it; taking the active photo
     /// out leaves the app to close it ([`Mirror::closing`]). All, Invert and Unedited, which
-    /// need the collection, change nothing shown until the session tells them.
+    /// need the collection, and Previous, which needs the earlier selection the session
+    /// keeps, change nothing shown until the session tells them.
     pub fn selecting(&mut self, command: &SelectionCommand, number: u64) {
         let active = (self.photo.asked().map(Path::to_owned)).zip(self.photo.open());
         self.ask(number, Ask::Select(command.clone(), active));
+        if *command == SelectionCommand::Previous {
+            self.previous = Some(number);
+        }
     }
 
-    /// Whether a selection command that needs the collection, All, Invert or Unedited, is
-    /// sent and not yet told: what the selection is waits for the session until then.
+    /// The first fact to include the Previous Selection numbered `previous` has come: the
+    /// photo the session made active is shown, opening under that number as the session
+    /// opened it, or none where it closed the one shown; the same photo, nothing. A failed
+    /// write the photo left reported before it is kept apart, as one reported after
+    /// ([`Saving::left`]).
+    fn follow(&mut self, previous: u64) {
+        let active = self.selection.active.clone();
+        if active.as_deref() == self.photo.asked() {
+            return;
+        }
+        let failed = self.saving.departing();
+        match active {
+            Some(photo) => self.show_opening(photo, previous, Instant::now()),
+            None => self.show_closed(),
+        }
+        if failed.is_some() {
+            self.saving.left = failed;
+        }
+    }
+
+    /// Whether a selection command that needs the collection or the earlier selection, All,
+    /// Invert, Unedited or Previous, is sent and not yet told: what the selection is waits
+    /// for the session until then.
     pub fn selection_pending(&self) -> bool {
         self.asked.iter().any(|asked| {
             matches!(
                 asked.ask,
                 Ask::Select(
-                    SelectionCommand::All | SelectionCommand::Invert | SelectionCommand::Unedited,
+                    SelectionCommand::All
+                        | SelectionCommand::Invert
+                        | SelectionCommand::Unedited
+                        | SelectionCommand::Previous,
                     _
                 )
             )
         })
+    }
+
+    /// Whether Previous Selection is sent and not yet told: the earlier selection the last
+    /// fact says the session keeps may be the one it has just put back.
+    pub fn previous_pending(&self) -> bool {
+        (self.asked.iter())
+            .any(|asked| matches!(asked.ask, Ask::Select(SelectionCommand::Previous, _)))
     }
 
     /// The open numbered `open` failed: it selected nothing, and a range sent after it runs
@@ -624,6 +686,12 @@ impl Mirror {
                     (self.asked).retain(|asked| asked.number > selection.through);
                     self.selection = selection;
                     self.lay_over();
+                    // At the first fact to include it, whatever was sent after it.
+                    let through = self.selection.through;
+                    if let Some(previous) = self.previous.filter(|&number| number <= through) {
+                        self.previous = None;
+                        self.follow(previous);
+                    }
                 }
             }
             // The session's view, the latest by its `through`; one numbered lower arrived
@@ -701,6 +769,9 @@ impl Mirror {
             if self.asked.iter().any(|asked| asked.number == command) {
                 self.asked.retain(|asked| asked.number != command);
                 self.lay_over();
+            }
+            if self.previous == Some(command) {
+                self.previous = None;
             }
         }
         // The app sends no change on the edit before the photo is live, its controls drawn
@@ -815,9 +886,12 @@ impl Ask {
                 photos.extend(active.map(Path::to_owned));
             }
             Ask::Select(SelectionCommand::Clear, _) => photos.clear(),
-            // They need the collection: as the session tells them.
+            // They need the collection, or the earlier selection: as the session tells them.
             Ask::Select(
-                SelectionCommand::All | SelectionCommand::Invert | SelectionCommand::Unedited,
+                SelectionCommand::All
+                | SelectionCommand::Invert
+                | SelectionCommand::Unedited
+                | SelectionCommand::Previous,
                 _,
             ) => {}
         }
@@ -1082,6 +1156,12 @@ struct Sent {
 }
 
 impl Saving {
+    /// The open photo's edit file and why its last write failed, where one did: what
+    /// [`Saving::left`] is to keep once the session itself has moved to another photo.
+    fn departing(&self) -> Option<(PathBuf, String)> {
+        (self.sidecar.clone()).zip(self.failure.clone())
+    }
+
     /// Another photo is asked for: the open one's reports are now another photo's.
     fn leaving(&mut self) {
         self.unsaved.clear();
@@ -2431,6 +2511,7 @@ pub(crate) mod tests {
         m.apply(Event::Selection(Selection {
             photos: vec![at("a.ARW")],
             active: Some(at("a.ARW")),
+            previous: false,
             through: 1,
         }));
         m.apply(Event::Failed(SessionError::Open {
@@ -2471,6 +2552,90 @@ pub(crate) mod tests {
         assert_eq!(m.view.map(|v| v.through), Some(4));
     }
 
+    /// The session's selection telling `photos` selected, `active` active and an earlier
+    /// selection kept, through `through`, the photos in `/photos`.
+    fn told_selection(photos: &[&str], active: Option<&str>, through: u64) -> Event {
+        let at = |photo: &str| PathBuf::from("/photos").join(photo);
+        Event::Selection(apertrust_engine::session::Selection {
+            photos: photos.iter().map(|photo| at(photo)).collect(),
+            active: active.map(at),
+            previous: true,
+            through,
+        })
+    }
+
+    /// A Previous Selection sent: no edit is sent until the session tells it, since it may
+    /// make another photo active; then the photo it made active shows, opening under the
+    /// command's number, at the first fact to include it, though a later command sent with
+    /// it, a Select All that changes nothing and so tells nothing, is not yet included.
+    #[test]
+    fn previous_selection_shows_the_session_s_photo_at_the_first_fact_to_include_it() {
+        let mut m = mirror();
+        m.opening(PathBuf::from("/photos/a.ARW"), 1, Instant::now());
+        m.apply(Event::Opened(photo(1)));
+        m.apply(Event::Values(report(0.0, 1)));
+        assert!(m.takes_edits());
+        m.selecting(&SelectionCommand::Previous, 2);
+        assert!(!m.takes_edits(), "another photo may be active");
+        m.selecting(&SelectionCommand::All, 3);
+        m.apply(told_selection(&["b.ARW", "c.ARW"], Some("c.ARW"), 2));
+        assert!(matches!(&m.photo,
+            PhotoState::Opening { path, open: 2 } if *path == Path::new("/photos/c.ARW")));
+        // Its own events then come, not dropped.
+        let opened = Photo {
+            path: PathBuf::from("/photos/c.ARW"),
+            ..photo(2)
+        };
+        m.apply(Event::Opened(opened));
+        assert!(matches!(&m.photo, PhotoState::Open(photo) if photo.open == 2));
+        // A photo asked for after it wins; a refused one shows nothing.
+        m.selecting(&SelectionCommand::Previous, 4);
+        m.opening(PathBuf::from("/photos/d.ARW"), 5, Instant::now());
+        m.apply(told_selection(&["a.ARW"], Some("a.ARW"), 4));
+        assert!(matches!(&m.photo, PhotoState::Opening { open: 5, .. }));
+        m.selecting(&SelectionCommand::Previous, 6);
+        let error = Box::new(SessionError::NoPreviousSelection);
+        m.apply(Event::Failed(SessionError::Refused { command: 6, error }));
+        m.apply(told_selection(&["e.ARW"], Some("e.ARW"), 7));
+        assert!(matches!(&m.photo, PhotoState::Opening { open: 5, .. }));
+    }
+
+    /// A failed write of the open photo reported before the fact that tells Previous
+    /// Selection's other photo is kept apart as the photo left's, its edit not on disk.
+    #[test]
+    fn a_failed_write_reported_before_previous_selection_s_photo_is_kept() {
+        let mut m = mirror();
+        let a = PathBuf::from("/photos/a.ARW");
+        m.opening(a.clone(), 1, Instant::now());
+        m.apply(Event::Opened(photo(1)));
+        m.selecting(&SelectionCommand::Previous, 2);
+        m.apply(Event::Failed(SessionError::Save {
+            path: sidecar::path_for(&a),
+            through: 2,
+            source: std::io::Error::other("disk full"),
+        }));
+        m.apply(told_selection(&["b.ARW"], Some("b.ARW"), 2));
+        assert!(matches!(m.photo, PhotoState::Opening { open: 2, .. }));
+        assert_eq!(m.saving.failed(), Some("disk full"));
+        let (left, _) = m.saving.left.as_ref().expect("kept apart");
+        assert_eq!(*left, sidecar::path_for(&a));
+        // Closed by it too.
+        m.apply(Event::Opened(Photo {
+            path: PathBuf::from("/photos/b.ARW"),
+            ..photo(2)
+        }));
+        m.selecting(&SelectionCommand::Previous, 3);
+        let b = sidecar::path_for(Path::new("/photos/b.ARW"));
+        m.apply(Event::Failed(SessionError::Save {
+            path: b.clone(),
+            through: 3,
+            source: std::io::Error::other("read-only"),
+        }));
+        m.apply(told_selection(&[], None, 3));
+        assert!(matches!(m.photo, PhotoState::None));
+        assert_eq!(m.saving.left, Some((b, "read-only".to_owned())));
+    }
+
     #[test]
     fn the_mirror_keeps_the_session_s_latest_selection() {
         use apertrust_engine::session::Selection;
@@ -2480,6 +2645,7 @@ pub(crate) mod tests {
             Event::Selection(Selection {
                 photos: photos.iter().map(at).collect(),
                 active: active.as_ref().map(at),
+                previous: false,
                 through,
             })
         };

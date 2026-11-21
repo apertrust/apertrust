@@ -35,8 +35,13 @@
 //! - **The sort** is a client's until the protocol carries it (`docs/gui.md`, The browser
 //!   bar), so a range comes with the client's order of the collection
 //!   ([`SelectionCommand::Range`]).
-//! - **One fact,** [`super::Event::Selection`], once a turn where the selection or the
-//!   active photo changed (decision 59).
+//! - **One earlier selection,** its photos and its active photo as they stood just before
+//!   the last change of the photos selected, by a [`SelectionCommand`] or an open selecting
+//!   a photo alone, which [`SelectionCommand::Previous`] puts back (decision 90): view state,
+//!   never a history step nor saved, cleared as another folder or collection opens or it
+//!   closes.
+//! - **One fact,** [`super::Event::Selection`], once a turn where the selection, the
+//!   active photo or whether there is an earlier selection changed (decision 59).
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -79,6 +84,14 @@ pub enum SelectionCommand {
     /// only, one a newer Apertrust wrote, or one whose sidecar cannot be read, counts as
     /// edited. The active photo closes unless it is among them.
     Unedited,
+    /// The selection as it stood just before its last change, its photos and its active
+    /// photo, which opens as [`super::Command::Open`] opens one where it is not the photo
+    /// open; the selection it replaces becomes the earlier one, so a second goes forward
+    /// again. A photo no longer in the collection is left out, and where the active photo
+    /// is, the nearest of those put back in the listing's order is active, the later of
+    /// two as near, or none. With no earlier selection, refused, as
+    /// [`SessionError::NoPreviousSelection`], changing nothing.
+    Previous,
 }
 
 /// The selection and the active photo, the whole of [`super::Fact::Selection`].
@@ -90,9 +103,21 @@ pub struct Selection {
     pub photos: Vec<PathBuf>,
     /// The photo open or opening, as [`super::Command::Open`] named it.
     pub active: Option<PathBuf>,
+    /// Whether there is an earlier selection [`SelectionCommand::Previous`] goes back to.
+    pub previous: bool,
     /// How many commands had been applied: every one [`super::Session::send`] numbered up
     /// to this.
     pub through: u64,
+}
+
+/// What a [`SelectionCommand`] does to the active photo.
+#[derive(Debug, PartialEq, Eq)]
+pub(super) enum Active {
+    Stays,
+    /// Left out of the selection, it closes.
+    Closes,
+    /// Another photo, the one named, opens: Previous's.
+    Opens(PathBuf),
 }
 
 /// The selection as the engine thread keeps it.
@@ -103,8 +128,12 @@ pub(super) struct State {
     /// The photos selected, by their absolute paths ([`key`]): the collection's, and the
     /// active photo; any other is dropped as the selection is told.
     selected: HashSet<PathBuf>,
-    /// The photos and the active photo the last fact told, or none told yet.
-    told: (Vec<PathBuf>, Option<PathBuf>),
+    /// The selection as it stood just before the last change of the photos selected, or
+    /// none: before any, and once another folder or collection opens or it closes.
+    earlier: Option<Earlier>,
+    /// The photos, the active photo and whether there is an earlier selection, as the last
+    /// fact told them, or none told yet.
+    told: (Vec<PathBuf>, Option<PathBuf>, bool),
     /// The open photo, by its absolute path, and whether its values last said it is
     /// edited: what `Unedited` reads of it while it is open, over its listed state, which
     /// stays as its sidecar holds it; none once it closes or another opens.
@@ -112,9 +141,24 @@ pub(super) struct State {
     /// Whether the photos selected or the folder's listing changed since the last fact, which
     /// is worked out again only then, or when the active photo changes.
     changed: bool,
+    /// Whether a `Previous` was taken since the last fact, which is then told though it
+    /// tells what the last did, so a client waiting for its answer gets one: the earlier
+    /// selection put back may be the selection as it stands, its other photos gone since.
+    owed: bool,
     /// How many times a fact was worked out, for a test.
     #[cfg(test)]
     built: usize,
+}
+
+/// A selection as it stood, which [`SelectionCommand::Previous`] puts back.
+#[derive(Debug)]
+struct Earlier {
+    /// The photos selected, by their absolute paths, in the collection's order then, each
+    /// with its place in the whole listing then, none for one outside it.
+    photos: Vec<(Option<usize>, PathBuf)>,
+    /// The active photo, as [`super::Command::Open`] named it, and its place in the whole
+    /// listing then, none for a photo opened alone outside the collection.
+    active: Option<(PathBuf, Option<usize>)>,
 }
 
 /// One of the folder's photos, as its listings and the edit writer last found it.
@@ -343,8 +387,9 @@ fn key(path: &Path) -> PathBuf {
 
 impl State {
     /// The folder at `path` opened by the library command numbered `open`. The folder open
-    /// again is listed anew, the selection kept until its listing is done; another keeps
-    /// the active photo alone ([`State::fact`]).
+    /// again is listed anew, the selection and the earlier one kept until its listing is
+    /// done; another keeps the active photo alone ([`State::fact`]), with no earlier
+    /// selection.
     pub(super) fn folder_opened(&mut self, open: u64, path: &Path) {
         self.changed = true;
         match &mut self.folder {
@@ -361,25 +406,28 @@ impl State {
             _ => {
                 self.folder = Some(Folder::new(open, path));
                 self.selected.clear();
+                self.earlier = None;
             }
         }
     }
 
     /// The photos at `paths` opened alone by the library command numbered `open`: the
     /// collection in their order, in place of the folder or the photos before, the active
-    /// photo staying selected alone. Each one's edit state is unknown until their job reads
-    /// it ([`State::found`]).
+    /// photo staying selected alone, with no earlier selection. Each one's edit state is
+    /// unknown until their job reads it ([`State::found`]).
     pub(super) fn photos_alone(&mut self, open: u64, paths: &[PathBuf]) {
         self.changed = true;
         self.folder = Some(Folder::alone(open, paths));
         self.selected.clear();
+        self.earlier = None;
     }
 
-    /// The folder closed: the active photo stays selected alone.
+    /// The folder closed: the active photo stays selected alone, with no earlier selection.
     pub(super) fn folder_closed(&mut self) {
         self.changed = true;
         self.folder = None;
         self.selected.clear();
+        self.earlier = None;
     }
 
     /// What the reading of the folder open found: a chunk of its photos, the last done, or
@@ -497,12 +545,14 @@ impl State {
     }
 
     /// `path` opens, the active photo from now on in place of `active`: selected alone
-    /// unless it is selected already, as a click on it does. A photo outside the folder is
-    /// selected only while active, so one `active` leaves goes first, as the next fact
-    /// would drop it.
+    /// unless it is selected already, as a click on it does, the selection before it then
+    /// the earlier one. A photo outside the folder is selected only while active, so one
+    /// `active` leaves goes first, as the next fact would drop it.
     pub(super) fn opening(&mut self, path: &Path, active: Option<&Path>) {
         self.changed = true;
         self.live = None;
+        let before = self.selection(active);
+        let named = active;
         let active = active.map(key);
         let photo = key(path);
         if let Some(folder) = &mut self.folder {
@@ -516,18 +566,41 @@ impl State {
             self.selected.clear();
         }
         self.selected.insert(photo);
+        self.record(before, named, Some(path));
     }
 
-    /// [`super::Command::Selection`], with `active` the photo open or opening: whether the
-    /// selection now leaves the active photo out, which then closes. A photo named by
-    /// `Set`, `Add` or `Range`'s `to` that is neither the collection's nor the active one
-    /// refuses the command, which changes nothing.
+    /// [`super::Command::Selection`], with `active` the photo open or opening: what becomes
+    /// of the active photo, which closes where the selection now leaves it out. A photo
+    /// named by `Set`, `Add` or `Range`'s `to` that is neither the collection's nor the
+    /// active one refuses the command, which changes nothing, as `Previous` with no earlier
+    /// selection is. A command that changes the photos selected leaves the selection before
+    /// it as the earlier one; `Previous` swaps the two.
     pub(super) fn command(
         &mut self,
         command: SelectionCommand,
         active: Option<&Path>,
-    ) -> Result<bool, SessionError> {
+    ) -> Result<Active, SessionError> {
         self.changed = true;
+        let before = self.selection(active);
+        if command == SelectionCommand::Previous {
+            return self.previous(before, active);
+        }
+        let closes = self.change(command, active)?;
+        self.record(before, active, active.filter(|_| !closes));
+        Ok(if closes {
+            Active::Closes
+        } else {
+            Active::Stays
+        })
+    }
+
+    /// What [`State::command`] does for any command but `Previous`: whether the selection
+    /// now leaves the active photo out.
+    fn change(
+        &mut self,
+        command: SelectionCommand,
+        active: Option<&Path>,
+    ) -> Result<bool, SessionError> {
         let active = active.map(key);
         // Selected whatever came before, as a folder opened or closed may have cleared it
         // since the last fact.
@@ -586,9 +659,105 @@ impl State {
                     .map(|(photo, ..)| photo)
                     .collect()
             }
+            // Taken by `command`.
+            SelectionCommand::Previous => return Ok(false),
         };
         self.selected = selected;
         Ok(active.is_some_and(|active| !self.selected.contains(&active)))
+    }
+
+    /// The photos selected as the next fact would tell them, with `active` the photo open
+    /// or opening, by their absolute paths: those of the collection, and the active photo.
+    fn selection(&self, active: Option<&Path>) -> HashSet<PathBuf> {
+        let active = active.map(key);
+        let folder = self.folder.as_ref();
+        let held = |photo: &&PathBuf| folder.is_some_and(|folder| folder.holds(photo));
+        let mut photos: HashSet<PathBuf> = self.selected.iter().filter(held).cloned().collect();
+        photos.extend(active);
+        photos
+    }
+
+    /// The selection `before`, with `active` its active photo, as the earlier one, where the
+    /// photos selected now, with `now` the active photo, differ from it: a change of the
+    /// active photo alone, within the same photos, or nothing changed, keeps the earlier one,
+    /// as does a change from no photo, as the first photo's open, so there is nothing to go
+    /// back to until a selection is left.
+    fn record(&mut self, before: HashSet<PathBuf>, active: Option<&Path>, now: Option<&Path>) {
+        if !before.is_empty() && self.selection(now) != before {
+            self.earlier = Some(self.earlier_of(before, active));
+        }
+    }
+
+    /// `photos`, with `active` the active photo, as an earlier selection: the collection's in
+    /// its order, for the nearest to be found among them.
+    fn earlier_of(&self, photos: HashSet<PathBuf>, active: Option<&Path>) -> Earlier {
+        let places = self.folder.as_ref().map(|folder| &folder.places);
+        let place = |photo: &PathBuf| places.and_then(|places| places.get(photo).copied());
+        let mut photos: Vec<(Option<usize>, PathBuf)> = (photos.into_iter())
+            .map(|photo| (place(&photo), photo))
+            .collect();
+        // An active photo outside the collection, which has no place, last.
+        photos.sort_by_key(|(at, _)| at.unwrap_or(usize::MAX));
+        let active = active.map(|named| (named.to_owned(), place(&key(named))));
+        Earlier { photos, active }
+    }
+
+    /// [`SelectionCommand::Previous`], with `before` the photos selected now and `active` the
+    /// active photo: the earlier selection put back, the photos gone from the collection
+    /// since left out, and this one the earlier one in its place.
+    fn previous(
+        &mut self,
+        before: HashSet<PathBuf>,
+        active: Option<&Path>,
+    ) -> Result<Active, SessionError> {
+        let Some(earlier) = self.earlier.take() else {
+            return Err(SessionError::NoPreviousSelection);
+        };
+        self.owed = true;
+        self.earlier = Some(self.earlier_of(before, active));
+        let folder = self.folder.as_ref();
+        let held = |photo: &PathBuf| folder.is_some_and(|folder| folder.holds(photo));
+        // An active photo of the collection's then is put back while it still is one; one
+        // outside it then, opened alone, as `Open` would open it.
+        let restored = match &earlier.active {
+            Some((named, None)) => Some(named.clone()),
+            Some((named, Some(_))) if held(&key(named)) => Some(named.clone()),
+            // Gone: the nearest of the photos put back in the whole listing then, the later
+            // of two as near.
+            Some((_, Some(at))) => (earlier.photos.iter())
+                .filter_map(|(j, photo)| Some((j.as_ref().copied()?, photo)))
+                .filter(|(_, photo)| held(photo))
+                .min_by_key(|(j, _)| (j.abs_diff(*at), *j < *at))
+                .map(|(_, photo)| self.named_in_folder(photo)),
+            None => None,
+        };
+        let photos = (earlier.photos.into_iter())
+            .map(|(_, photo)| photo)
+            .filter(held);
+        let photos: HashSet<PathBuf> = photos.chain(restored.as_deref().map(key)).collect();
+        self.selected = photos;
+        let active = active.map(key);
+        Ok(match restored {
+            Some(photo) if active.as_ref() != Some(&key(&photo)) => {
+                // Another photo opens: what the open one's values said no longer counts.
+                self.live = None;
+                Active::Opens(photo)
+            }
+            Some(_) => Active::Stays,
+            None if active.is_some() => Active::Closes,
+            None => Active::Stays,
+        })
+    }
+
+    /// The photo at `photo`, an absolute path, as the folder open names its photos: its
+    /// path as last asked for, joined with its name.
+    fn named_in_folder(&self, photo: &Path) -> PathBuf {
+        let folder = self.folder.as_ref();
+        let entry = folder.and_then(|folder| Some((folder, *folder.places.get(photo)?)));
+        match entry {
+            Some((folder, at)) => folder.path.join(&folder.photos[at].name),
+            None => photo.to_owned(),
+        }
     }
 
     /// The absolute path of `photo`, one of the collection's or the active photo; else
@@ -611,10 +780,10 @@ impl State {
     }
 
     /// The selection, with `active` the photo open or opening, after `through` commands,
-    /// where it or the active photo changed since the last told. The active photo is
-    /// selected whatever came before, as no command leaves it out but closes it; a photo
-    /// selected that is neither the collection's nor the active one is dropped, as one
-    /// opened alone once another opens or it closes.
+    /// where it, the active photo or whether there is an earlier selection changed since the
+    /// last told, or a `Previous` was taken since. The active photo is selected whatever came
+    /// before, as no command leaves it out but closes it; a photo selected that is neither the collection's nor the active
+    /// one is dropped, as one opened alone once another opens or it closes.
     pub(super) fn fact(&mut self, active: Option<&Path>, through: u64) -> Option<Selection> {
         if !self.changed && self.told.1.as_deref() == active {
             return None;
@@ -649,15 +818,17 @@ impl State {
         {
             photos.push(active.to_owned());
         }
-        let now = (photos, active.map(Path::to_owned));
-        if now == self.told {
+        let now = (photos, active.map(Path::to_owned), self.earlier.is_some());
+        if now == self.told && !self.owed {
             return None;
         }
+        self.owed = false;
         self.told = now.clone();
-        let (photos, active) = now;
+        let (photos, active, previous) = now;
         Some(Selection {
             photos,
             active,
+            previous,
             through,
         })
     }
@@ -908,8 +1079,9 @@ mod tests {
             .collect()
     }
 
+    /// Whether `command`, taken, closes the active photo.
     fn run(state: &mut State, command: SelectionCommand, active: Option<&Path>) -> bool {
-        state.command(command, active).expect("taken")
+        state.command(command, active).expect("taken") == Active::Closes
     }
 
     #[test]
@@ -941,6 +1113,133 @@ mod tests {
         );
         assert!(!run(&mut state, SelectionCommand::All, active));
         assert_eq!(state.fact(active, 0), None);
+    }
+
+    /// Previous puts back the selection before the last change and swaps with it; the
+    /// earlier active photo gone, the nearest of those put back is active, the later of two
+    /// as near; one opened alone outside the collection comes back as it was.
+    #[test]
+    fn previous_puts_back_the_earlier_selection_and_swaps_with_it() {
+        let mut state = listed_abcd();
+        let (a, c) = (at("A.ARW"), at("C.ARW"));
+        let refused = state.command(SelectionCommand::Previous, None);
+        assert!(matches!(refused, Err(SessionError::NoPreviousSelection)));
+        // The first photo opened, from no photo: nothing to go back to.
+        state.opening(&c, None);
+        assert!(!state.fact(Some(&c), 0).expect("told").previous);
+        let set = SelectionCommand::Set(["B.ARW", "C.ARW", "D.ARW"].map(at).to_vec());
+        run(&mut state, set, Some(&c));
+        state.opening(&a, Some(&c));
+        assert!(state.fact(Some(&a), 0).expect("told").previous);
+        // B, C and D with C active, which opens again; then A alone again.
+        let back = state.command(SelectionCommand::Previous, Some(&a));
+        assert_eq!(back.ok(), Some(Active::Opens(c.clone())));
+        assert_eq!(told(&mut state, Some(&c)), ["B.ARW", "C.ARW", "D.ARW"]);
+        let forward = state.command(SelectionCommand::Previous, Some(&c));
+        assert_eq!(forward.ok(), Some(Active::Opens(a.clone())));
+        assert_eq!(told(&mut state, Some(&a)), ["A.ARW"]);
+        // C gone from the folder listed again: B and D as near, D, the later, is active.
+        state.folder_opened(2, &folder());
+        let none = EditState::None;
+        let photos = ["A.ARW", "B.ARW", "D.ARW"].map(|name| (name, none.clone()));
+        state.listing(&listed(2, &photos, true));
+        let back = state.command(SelectionCommand::Previous, Some(&a));
+        assert_eq!(back.ok(), Some(Active::Opens(at("D.ARW"))));
+        assert_eq!(told(&mut state, Some(&at("D.ARW"))), ["B.ARW", "D.ARW"]);
+        // A photo opened alone, outside the collection, comes back as it was.
+        let alone = key(Path::new("elsewhere")).join("E.ARW");
+        state.opening(&alone, Some(&at("D.ARW")));
+        state.opening(&a, Some(&alone));
+        let back = state.command(SelectionCommand::Previous, Some(&a));
+        assert_eq!(back.ok(), Some(Active::Opens(alone.clone())));
+        assert_eq!(told(&mut state, Some(&alone)), ["E.ARW"]);
+    }
+
+    /// The earlier active photo gone, its nearest is measured in the whole listing then, not
+    /// among the selected photos alone: of A, B and D with B active, A is one place from B
+    /// and D two, so A, though both are next to B among the three.
+    #[test]
+    fn previous_measures_the_nearest_in_the_whole_listing() {
+        let mut state = listed_abcd();
+        let b = at("B.ARW");
+        state.opening(&b, None);
+        run(&mut state, SelectionCommand::Add(at("A.ARW")), Some(&b));
+        run(&mut state, SelectionCommand::Add(at("D.ARW")), Some(&b));
+        assert_eq!(told(&mut state, Some(&b)), ["A.ARW", "B.ARW", "D.ARW"]);
+        assert!(run(&mut state, SelectionCommand::Clear, Some(&b)));
+        assert_eq!(told(&mut state, None), Vec::<String>::new());
+        // B gone from the folder listed again.
+        state.folder_opened(2, &folder());
+        let photos = ["A.ARW", "C.ARW", "D.ARW"].map(|name| (name, EditState::None));
+        state.listing(&listed(2, &photos, true));
+        let back = state.command(SelectionCommand::Previous, None);
+        assert_eq!(back.ok(), Some(Active::Opens(at("A.ARW"))));
+        assert_eq!(told(&mut state, Some(&at("A.ARW"))), ["A.ARW", "D.ARW"]);
+    }
+
+    /// A Previous that puts back the selection as it stands, the other photos of the
+    /// earlier one gone since, is told all the same, so a client waiting for its answer
+    /// gets one.
+    #[test]
+    fn previous_putting_back_the_selection_as_it_stands_is_told() {
+        let mut state = listed_abcd();
+        let a = at("A.ARW");
+        state.opening(&a, None);
+        run(&mut state, SelectionCommand::Add(at("B.ARW")), Some(&a));
+        assert_eq!(told(&mut state, Some(&a)), ["A.ARW", "B.ARW"]);
+        // B gone from the folder listed again: A alone, and A alone before.
+        state.folder_opened(2, &folder());
+        let photos = ["A.ARW", "C.ARW", "D.ARW"].map(|name| (name, EditState::None));
+        state.listing(&listed(2, &photos, true));
+        assert_eq!(told(&mut state, Some(&a)), ["A.ARW"]);
+        assert!(!run(&mut state, SelectionCommand::Previous, Some(&a)));
+        let fact = state
+            .fact(Some(&a), 7)
+            .expect("told though nothing changed");
+        assert_eq!((fact.through, fact.previous), (7, true));
+        // Once: the next turn that changes nothing tells nothing.
+        assert_eq!(state.fact(Some(&a), 8), None);
+    }
+
+    /// The earlier selection with no active photo, as a Ctrl-click on the active one leaves
+    /// it, closes the photo open; after Select None it toggles with the empty selection; a
+    /// change from no photo records nothing; photos opened alone, or the folder closed,
+    /// leave none.
+    #[test]
+    fn previous_with_no_earlier_active_photo_closes_the_one_open() {
+        let mut state = listed_abcd();
+        let b = at("B.ARW");
+        state.opening(&b, None);
+        run(&mut state, SelectionCommand::Add(at("D.ARW")), Some(&b));
+        assert!(run(
+            &mut state,
+            SelectionCommand::Remove(b.clone()),
+            Some(&b)
+        ));
+        state.opening(&at("A.ARW"), None);
+        let back = state.command(SelectionCommand::Previous, Some(&at("A.ARW")));
+        assert_eq!(back.ok(), Some(Active::Closes));
+        assert_eq!(told(&mut state, None), ["D.ARW"]);
+        // Select None, then Previous: D back; again, none, the toggle going through the
+        // empty selection Previous replaced.
+        assert!(!run(&mut state, SelectionCommand::Clear, None));
+        assert_eq!(told(&mut state, None), Vec::<String>::new());
+        assert!(!run(&mut state, SelectionCommand::Previous, None));
+        assert_eq!(told(&mut state, None), ["D.ARW"]);
+        assert!(!run(&mut state, SelectionCommand::Previous, None));
+        assert_eq!(told(&mut state, None), Vec::<String>::new());
+        assert!(!run(&mut state, SelectionCommand::Previous, None));
+        assert_eq!(told(&mut state, None), ["D.ARW"]);
+        // Photos opened alone: none; from no photo, Select All records nothing either.
+        state.photos_alone(2, &[at("A.ARW"), at("B.ARW")]);
+        assert!(!state.fact(None, 0).expect("told").previous);
+        run(&mut state, SelectionCommand::All, None);
+        assert!(!state.fact(None, 0).expect("told").previous);
+        run(&mut state, SelectionCommand::Remove(at("B.ARW")), None);
+        assert!(state.fact(None, 0).expect("told").previous);
+        state.folder_closed();
+        let refused = state.command(SelectionCommand::Previous, None);
+        assert!(matches!(refused, Err(SessionError::NoPreviousSelection)));
     }
 
     /// A range runs from the active photo to the one named in the client's order, which
