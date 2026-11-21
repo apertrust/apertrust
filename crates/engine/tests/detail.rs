@@ -1474,40 +1474,45 @@ const RAW_STAGE: [&str; 4] = [
 
 #[test]
 fn a_tiled_viewports_pan_demosaics_only_the_new_region() {
-    // Regions of one size on the 64-pixel grid, as the margin moves them: each pan copies
-    // the new region's photosites, grown by demosaic's reach, and demosaics them alone,
-    // in place, running none of the raw stage.
+    // Regions of one size, on the 64-pixel grid as the margin moves them and off it at every
+    // phase of the colour pattern, Bayer and X-Trans: each pan copies the new region's
+    // photosites, grown by demosaic's reach, and demosaics them alone, in place, running
+    // none of the raw stage, its copy holding the pattern at any phase (decision 99).
     let (gpu, small) = (gpu(), common::small_gpu(SMALL_BINDING));
-    let scene = medium_bayer();
-    let instances = scene.with(&[]);
-    let fitted = tiled_fitted(&small, &scene, &instances);
-    let (width, exported) = scene.whole(&gpu, &instances);
     let [w, h] = [128, 96];
-    let mut detail = tiled_detail(&small, &scene, &fitted, None, &instances, [64, 64, w, h]);
-    for [x, y] in [[192, 128], [0, 192], [256, 0]] {
-        let region = [x, y, w, h];
-        let limits = Limits::of(&small);
-        let fresh = &mut Results::default();
-        let (plan, _, _) =
-            (scene.detail_plan(fresh, &fitted, &instances, region, &limits)).unwrap();
-        assert!(detail.pipeline.accepts(&plan), "{region:?}: in place");
-        detail = tiled_detail(&small, &scene, &fitted, Some(detail), &instances, region);
-        let ran = ran(&detail.timings);
-        assert_eq!(ran[0], "region", "{region:?}");
-        assert!(ran.iter().all(|pass| !RAW_STAGE.contains(pass)), "{ran:?}");
-        let plan = detail.pipeline.plan();
-        let copy = plan.operations[0].output_desc;
-        assert!(
-            copy.width <= w + 2 * 12 + 1 && copy.height <= h + 2 * 12 + 1,
-            "{copy}"
-        );
-        let at = (plan.operations.iter())
-            .position(|op| op.id == "demosaic")
-            .expect("demosaic");
-        let demosaiced = plan.operations[at].output_desc;
-        assert_eq!([demosaiced.width, demosaiced.height], [w, h]);
-        assert_eq!(plan.cached, [0, at]);
-        assert_region(&small, &detail, &exported, width, region);
+    let grid = [[192, 128], [0, 192], [256, 0]];
+    let phases = (1..6).map(|step| [64 + 7 * step, 64 + 5 * step]);
+    let pans: Vec<[u32; 2]> = grid.into_iter().chain(phases).collect();
+    for (scene, period) in [(medium_bayer(), 2), (medium_x_trans(), 6)] {
+        let instances = scene.with(&[]);
+        let fitted = tiled_fitted(&small, &scene, &instances);
+        let (width, exported) = scene.whole(&gpu, &instances);
+        let mut detail = tiled_detail(&small, &scene, &fitted, None, &instances, [64, 64, w, h]);
+        for &[x, y] in &pans {
+            let region = [x, y, w, h];
+            let limits = Limits::of(&small);
+            let fresh = &mut Results::default();
+            let (plan, _, _) =
+                (scene.detail_plan(fresh, &fitted, &instances, region, &limits)).unwrap();
+            assert!(detail.pipeline.accepts(&plan), "{region:?}: in place");
+            detail = tiled_detail(&small, &scene, &fitted, Some(detail), &instances, region);
+            let ran = ran(&detail.timings);
+            assert_eq!(ran[0], "region", "{region:?}");
+            assert!(ran.iter().all(|pass| !RAW_STAGE.contains(pass)), "{ran:?}");
+            let plan = detail.pipeline.plan();
+            let copy = plan.operations[0].output_desc;
+            assert!(
+                copy.width < w + 2 * 12 + period && copy.height < h + 2 * 12 + period,
+                "{copy}"
+            );
+            let at = (plan.operations.iter())
+                .position(|op| op.id == "demosaic")
+                .expect("demosaic");
+            let demosaiced = plan.operations[at].output_desc;
+            assert_eq!([demosaiced.width, demosaiced.height], [w, h]);
+            assert_eq!(plan.cached, [0, at]);
+            assert_region(&small, &detail, &exported, width, region);
+        }
     }
 }
 
