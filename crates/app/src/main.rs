@@ -1509,6 +1509,9 @@ struct App {
     /// The main window as the start window, with nothing open (`docs/gui.md`, The start
     /// window).
     start: start::Window,
+    /// The extent of the photo last live, which places the next photo's picture at a zoom
+    /// carried past Fit until that photo's values come ([`photo_room`]).
+    extent_before: Option<[u32; 2]>,
 }
 
 /// What the Toolbar asked for this frame.
@@ -4207,6 +4210,7 @@ impl App {
             remembered: Remembered::default(),
             opening_first: None,
             start: start::Window::new(false, settings.scale),
+            extent_before: None,
         };
         // The command line's paths, Finder's files at the launch, which macOS hands over as
         // it finishes launching, before the window, and the paths second starts handed over
@@ -5692,6 +5696,9 @@ impl App {
                 bounds,
             });
         self.shell.room = room.filter(|_| open);
+        if let Some(room) = self.shell.room {
+            self.extent_before = Some(room.extent);
+        }
         // Rendering…, quietly, only once the photo is still not live a second after it was
         // asked for, or its view still on its way a second after it was sent, from a
         // repaint asked for then.
@@ -5784,6 +5791,21 @@ impl App {
             args.set("name", file_name(path));
             translator(ui.ctx()).text_with("photo-opening", Some(&args))
         };
+        // A photo not yet live shows its picture at the zoom it opens at, Fit or the one
+        // carried from the photo before, placed as its live frame will be (decision 77).
+        let zoomed = self.shell.zoom;
+        let shown = picture.map(|(p, _)| p);
+        let shown_room = photo_room(room, shown, self.extent_before, &zoomed, bounds);
+        let extent = shown_room.map(|room| room.extent);
+        let placed = place_photo(&block, bounds, ppp, &zoomed, extent, shown);
+        // A picture the area shows none of, letterboxed off it at a zoom carried, as a square
+        // crop's 3:2 picture at the crop's top edge: the photo's name instead.
+        let picture = picture.filter(|(shown, _)| {
+            placed.as_ref().is_none_or(|placed| {
+                let placement = shown_room.map(|room| room.place(&zoomed));
+                picture_shows(placed, placement.as_ref(), shown, ppp)
+            })
+        });
         let message = match &self.mirror.photo {
             // The folder's own words, under the photo's: the empty state below.
             PhotoState::None => None,
@@ -5791,21 +5813,6 @@ impl App {
             PhotoState::Failed { message, .. } => Some(message.clone()),
             PhotoState::Open(photo) => (!live && picture.is_none()).then(|| opening(&photo.path)),
         };
-        let values = photo.map(|_| &self.mirror.values);
-        // A photo not yet live, its picture shown, at Fit (decision 77); the zoom held.
-        let zoomed = if open {
-            self.shell.zoom
-        } else {
-            zoom::Zoomed::FIT
-        };
-        let placed = place_photo(
-            &block,
-            bounds,
-            ppp,
-            &zoomed,
-            values,
-            picture.map(|(p, _)| p),
-        );
         // Zoomed past Fit, the photo is a focus stop, the next after the viewer bar's last
         // control; its ring is drawn over the photo below.
         let viewed = room.map(|room| room.place(&zoomed));
@@ -5848,18 +5855,15 @@ impl App {
             let now = Instant::now();
             self.shell.zoom = zoom_photo(ui, slot, area, before, room, gesture, now);
             if self.shell.zoom != before {
-                placed = place_photo(&block, bounds, ppp, &self.shell.zoom, values, None);
+                let extent = Some(room.extent);
+                placed = place_photo(&block, bounds, ppp, &self.shell.zoom, extent, None);
                 self.shell.say_zoom(ui.ctx());
             }
             let area = placed.as_ref().map_or(area, |p| p.photo);
             self.shell.pointed = ui.rect_contains_pointer(area).then_some(area);
         }
-        let zoomed = if open {
-            self.shell.zoom
-        } else {
-            zoom::Zoomed::FIT
-        };
-        let placement = room.map(|room| room.place(&zoomed));
+        let zoomed = self.shell.zoom;
+        let placement = shown_room.map(|room| room.place(&zoomed));
         // A failed save says so until a write succeeds; a failed render until the next
         // frame. The edit of a photo left, which could not be written, is said over
         // whatever follows, until another photo is asked for.
@@ -5876,9 +5880,11 @@ impl App {
         {
             let whole = whole_photo(placed.photo, placement, ppp);
             self.photo_at(ui, slot, placed.photo, whole, frame, placement);
-            // The first picture fading out over the first live frame, until it ends.
+            // The first picture fading out over the first live frame, until it ends, where
+            // it was drawn: over the whole photo where the zoom overflows the area.
             let open = self.mirror.photo.open().unwrap_or_default();
-            fade::Fade::paint(&mut self.fade, &ui.painter_at(slot), placed, open);
+            let zoomed = zoom::overflows(placement).then_some(whole);
+            fade::Fade::paint(&mut self.fade, &ui.painter_at(slot), placed, zoomed, open);
             // The active picker over the live photo, once the rest is drawn.
             if live {
                 // The frame's own pixels, which may be another scale's than the view's.
@@ -5889,7 +5895,15 @@ impl App {
             && let (Some((shown, generation)), Some(placed)) = (picture, &placed)
         {
             let painter = ui.painter_at(slot);
-            paint_picture(&painter, placed, shown, generation, &mut self.picture);
+            let whole = zoomed_whole(placed, placement.as_ref(), ppp);
+            paint_picture(
+                &painter,
+                placed,
+                whole,
+                shown,
+                generation,
+                &mut self.picture,
+            );
         }
         // Where the view is: the photo stop's ring after a key, and the position marks in
         // the margin while the view zooms or moves and a second after.
@@ -5942,7 +5956,7 @@ impl App {
             asked = library::empty_state(ui, slot, what, &keys);
         }
 
-        // An opening photo's picture is the whole photo, at Fit.
+        // An opening photo's picture is the whole photo, at the zoom it opens at.
         let photo_rect = placed.as_ref().map(|placed| {
             let whole = (placement.as_ref()).map_or(placed.photo, |placement| {
                 whole_photo(placed.photo, placement, ppp)
@@ -6848,30 +6862,25 @@ fn same_shape((width, height): (u32, u32), (place_width, place_height): (u32, u3
 }
 
 /// Where the photo goes in `block`, for a room of `bounds` physical pixels at `ppp` (the
-/// photo frame's layout, which its caption follows): once the photo's `values` have come,
-/// the photo area at `zoomed` ([`area_size`]): at Fit the size the engine renders the edit
-/// at, so a frame rendered for it is shown pixel for pixel and one rendered for another
-/// size, as while the window resizes, scaled to the size its successor will have; at Small
-/// half of it, the block centred as at Fit; zoomed past Fit the photo at its scale, or the
-/// room where it overflows it. Before them, an opening photo's `picture` in its own shape,
-/// scaled to fit `bounds` as the live frame will be (decision 77). `None` with neither.
+/// photo frame's layout, which its caption follows): where its `extent` is known, from its
+/// values or [`photo_room`], the photo area at `zoomed` ([`area_size`]): at Fit the size
+/// the engine renders the edit at, so a frame rendered for it is shown pixel for pixel and
+/// one rendered for another size, as while the window resizes, scaled to the size its
+/// successor will have; at Small half of it, the block centred as at Fit; zoomed past Fit
+/// the photo at its scale, or the room where it overflows it. Else an opening photo's
+/// `picture` in its own shape, scaled to fit `bounds` as the live frame will be (decision
+/// 77). `None` with neither.
 fn place_photo(
     block: &PhotoFrame,
     bounds: (u32, u32),
     ppp: f32,
     zoomed: &zoom::Zoomed,
-    values: Option<&Values>,
+    extent: Option<[u32; 2]>,
     picture: Option<&Picture>,
 ) -> Option<Placed> {
-    let size = match (values, picture) {
+    let size = match (extent, picture) {
         _ if bounds.0 == 0 || bounds.1 == 0 => egui::Vec2::ZERO,
-        (Some(values), _) => {
-            let room = zoom::Room {
-                extent: values.extent,
-                bounds,
-            };
-            area_size(&room.place(zoomed), bounds)
-        }
+        (Some(extent), _) => area_size(&zoom::Room { extent, bounds }.place(zoomed), bounds),
         (None, Some(picture)) => {
             let (width, height) = fit_scaled((picture.image.width, picture.image.height), bounds);
             egui::vec2(width as f32, height as f32)
@@ -6881,37 +6890,109 @@ fn place_photo(
     Some(block.place(size / ppp, ppp))
 }
 
+/// The room the photo shown is placed in: its own, `room`, once its values have come.
+/// Before them, at a zoom `zoomed` carried past Fit (`docs/gui.md`, The Viewer's states),
+/// an opening photo's `picture`'s shape at the size of the photo `before`, whose longer
+/// side it takes, as a burst's photos share it, so the picture shows at the carried scale
+/// and centre from the click on; it steps by up to a pixel of the picture as the values
+/// come. None at Fit, where the picture is fitted in its own shape ([`place_photo`]), and
+/// with no photo before.
+fn photo_room(
+    room: Option<zoom::Room>,
+    picture: Option<&Picture>,
+    before: Option<[u32; 2]>,
+    zoomed: &zoom::Zoomed,
+    bounds: (u32, u32),
+) -> Option<zoom::Room> {
+    if room.is_some() {
+        return room;
+    }
+    let (picture, before) = (picture?, before?);
+    if zoomed.scale == zoom::Scale::Fit {
+        return None;
+    }
+    let (width, height) = (picture.image.width.max(1), picture.image.height.max(1));
+    let long = before[0].max(before[1]);
+    let side = |short: u32, of: u32| {
+        let side = f64::from(long) * f64::from(short) / f64::from(of);
+        (side.round() as u32).max(1)
+    };
+    let extent = if width >= height {
+        [long, side(height, width)]
+    } else {
+        [side(width, height), long]
+    };
+    Some(zoom::Room { extent, bounds })
+}
+
+/// The whole photo's rectangle where `placement` shows it through the place `placed` takes
+/// at `ppp`, where it overflows the photo area ([`whole_photo`]): what an opening photo's
+/// picture covers, cut to the area, as the live frame will be. None where the photo shows
+/// whole, or its placement is not known.
+fn zoomed_whole(placed: &Placed, placement: Option<&Placement>, ppp: f32) -> Option<egui::Rect> {
+    placement
+        .filter(|placement| zoom::overflows(placement))
+        .map(|placement| whole_photo(placed.photo, placement, ppp))
+}
+
 /// Draws an opening photo's `picture` of `generation` unmarked, scaled to the place the
-/// photo takes, `placed`: from the photo's values on, the place its live frame covers, so
-/// the live frame swaps in with nothing moving (decision 77); the whole place where it has
-/// the picture's shape, else letterboxed in it. Its texture, made once for each picture and
-/// kept in `kept`, filters linearly. Returns where it was drawn.
+/// photo takes, `placed`: from the photo's extent on, the place its live frame covers, so
+/// the live frame swaps in with nothing moving (decision 77): where the zoom overflows the
+/// photo area, the whole photo's rectangle `zoomed`, cut to the area, else the area; all
+/// of it where it has the picture's shape, letterboxed in it where not ([`picture_rect`]).
+/// Its texture, made once for each picture and kept in `kept`, filters linearly. Returns
+/// where it was drawn, before the cut.
 fn paint_picture(
     painter: &egui::Painter,
     placed: &Placed,
+    zoomed: Option<egui::Rect>,
     picture: &Picture,
     generation: u64,
     kept: &mut Option<(u64, egui::TextureHandle)>,
 ) -> egui::Rect {
     let image = (picture.image.width, picture.image.height);
-    let rect = picture_rect(placed, image, painter.pixels_per_point());
+    let rect = picture_rect(placed, zoomed, image, painter.pixels_per_point());
     let texture = picture_texture(painter.ctx(), kept, picture, generation);
     let uv = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
-    painter.image(texture.id(), rect, uv, egui::Color32::WHITE);
+    let cut = painter.with_clip_rect(painter.clip_rect().intersect(placed.photo));
+    cut.image(texture.id(), rect, uv, egui::Color32::WHITE);
     rect
 }
 
+/// Whether the photo area of `placed` at `ppp` shows any of an opening photo's `picture`,
+/// drawn where [`paint_picture`] draws it at `placement`: none where it is letterboxed off
+/// the area at a zoom carried past it.
+fn picture_shows(
+    placed: &Placed,
+    placement: Option<&Placement>,
+    picture: &Picture,
+    ppp: f32,
+) -> bool {
+    let whole = zoomed_whole(placed, placement, ppp);
+    let image = (picture.image.width, picture.image.height);
+    let drawn = picture_rect(placed, whole, image, ppp);
+    drawn.intersect(placed.photo).is_positive()
+}
+
 /// Where a picture of `image`'s size is drawn in the place the photo takes, `placed`, at
-/// `ppp`: the whole place where it has the picture's shape, else letterboxed in it.
-fn picture_rect(placed: &Placed, image: (u32, u32), ppp: f32) -> egui::Rect {
-    let room = placed.photo.size() * ppp;
+/// `ppp`: in the whole photo's rectangle, `zoomed`, where the zoom overflows the area, else
+/// in the area; the whole of it where it has the picture's shape, letterboxed in it where
+/// not, never stretched.
+fn picture_rect(
+    placed: &Placed,
+    zoomed: Option<egui::Rect>,
+    image: (u32, u32),
+    ppp: f32,
+) -> egui::Rect {
+    let place = zoomed.unwrap_or(placed.photo);
+    let room = place.size() * ppp;
     let room = (room.x.round() as u32, room.y.round() as u32);
     if same_shape(image, room) {
-        return placed.photo;
+        return place;
     }
     let (width, height) = fit_scaled(image, room);
     let size = egui::vec2(width as f32, height as f32) / ppp;
-    let corner = egui::Rect::from_center_size(placed.photo.center(), size).min;
+    let corner = egui::Rect::from_center_size(place.center(), size).min;
     egui::Rect::from_min_size(egui::emath::GuiRounding::round_to_pixels(corner, ppp), size)
 }
 
@@ -15872,12 +15953,13 @@ mod tests {
                         let bounds = ((room.x * ppp) as u32, (room.y * ppp) as u32);
                         // As `App::viewer` places and draws it.
                         let (picture, generation) = scene.mirror.picture().expect("the picture");
-                        let values = Some(&scene.mirror.values);
+                        let extent = Some(scene.mirror.values.extent);
                         let fit = zoom::Zoomed::FIT;
-                        let placed = place_photo(&block, bounds, ppp, &fit, values, Some(picture))
+                        let placed = place_photo(&block, bounds, ppp, &fit, extent, Some(picture))
                             .expect("a place");
                         let painter = ui.painter_at(slot);
-                        paint_picture(&painter, &placed, picture, generation, &mut scene.picture);
+                        let kept = &mut scene.picture;
+                        paint_picture(&painter, &placed, None, picture, generation, kept);
                     });
                     ui.scope_builder(egui::UiBuilder::new().max_rect(side), |ui| {
                         ui.spacing_mut().item_spacing.y = 0.0;
@@ -15922,18 +16004,32 @@ mod tests {
         harness.snapshot("opening-rendering");
     }
 
-    /// A photo's slot as the Viewer places and draws it while the photo opens, its
-    /// picture's rectangle and the photo's place kept from the last frame.
+    /// A photo's slot as the Viewer places and draws it while the photo opens, at the zoom
+    /// it opens at, `zoom`, after a photo of `before` pixels: its picture's rectangle, the
+    /// photo's place and its placement kept from the last frame.
     struct Places {
         mirror: Mirror,
+        zoom: zoom::Zoomed,
+        before: Option<[u32; 2]>,
         picture: Option<(u64, egui::TextureHandle)>,
         drawn: Option<egui::Rect>,
         placed: Option<Placed>,
+        placement: Option<Placement>,
     }
 
-    /// A slot at twice the scale whose room is 1800 pixels wide, with a photo opening whose
-    /// picture, `width` by `height`, has come and nothing else.
+    /// A slot at twice the scale whose room is 1800 pixels wide, with a photo opening at
+    /// Fit whose picture, `width` by `height`, has come and nothing else.
     fn places_scene(width: u32, height: u32) -> Harness<'static, Places> {
+        places_scene_at(width, height, zoom::Zoomed::FIT, None)
+    }
+
+    /// [`places_scene`] at the zoom `zoom` carried from a photo of `before` pixels.
+    fn places_scene_at(
+        width: u32,
+        height: u32,
+        zoom: zoom::Zoomed,
+        before: Option<[u32; 2]>,
+    ) -> Harness<'static, Places> {
         let mut mirror = crate::mirror::tests::mirror();
         mirror.opening(PathBuf::from("IMG_2041.ARW"), 2, Instant::now());
         mirror.apply(Event::OpenPreview(apertrust_engine::session::OpenPreview {
@@ -15957,33 +16053,34 @@ mod tests {
                     let room = block.bounds();
                     let bounds = ((room.x * ppp).floor() as u32, (room.y * ppp).floor() as u32);
                     let open = matches!(scene.mirror.photo, PhotoState::Open(_));
-                    let values = open.then_some(&scene.mirror.values);
+                    let extent = scene.mirror.values.extent;
+                    let room = open.then_some(zoom::Room { extent, bounds });
                     let picture = scene.mirror.picture();
-                    scene.placed = place_photo(
-                        &block,
-                        bounds,
-                        ppp,
-                        &zoom::Zoomed::FIT,
-                        values,
-                        picture.map(|(p, _)| p),
-                    );
+                    let (zoomed, shown) = (scene.zoom, picture.map(|(p, _)| p));
+                    let shown_room = photo_room(room, shown, scene.before, &zoomed, bounds);
+                    let extent = shown_room.map(|room| room.extent);
+                    scene.placed = place_photo(&block, bounds, ppp, &zoomed, extent, shown);
+                    scene.placement = shown_room.map(|room| room.place(&zoomed));
                     let painter = ui.painter_at(slot);
                     scene.drawn = match (picture, &scene.placed) {
-                        (Some((shown, generation)), Some(placed)) => Some(paint_picture(
-                            &painter,
-                            placed,
-                            shown,
-                            generation,
-                            &mut scene.picture,
-                        )),
+                        (Some((shown, generation)), Some(placed)) => {
+                            let whole = zoomed_whole(placed, scene.placement.as_ref(), ppp);
+                            let kept = &mut scene.picture;
+                            Some(paint_picture(
+                                &painter, placed, whole, shown, generation, kept,
+                            ))
+                        }
                         _ => None,
                     };
                 },
                 Places {
                     mirror,
+                    zoom,
+                    before,
                     picture: None,
                     drawn: None,
                     placed: None,
+                    placement: None,
                 },
             )
     }
@@ -16001,7 +16098,6 @@ mod tests {
     /// or more; a 128 or 256 pixel thumbnail's rounded shape may step as the values come.
     #[test]
     fn an_opening_photo_s_picture_covers_the_place_its_live_frame_takes() {
-        use crate::mirror::tests::photo;
         // A 6000 by 4000 photo's picture from the cache, and its camera's, larger than the
         // room.
         for (width, height) in [(1024, 683), (2048, 1365)] {
@@ -16014,17 +16110,7 @@ mod tests {
                 "{width} by {height}, before its values"
             );
             assert_eq!(before.width() * 2.0, 1800.0, "{width} by {height}");
-            let mirror = &mut harness.state_mut().mirror;
-            mirror.apply(Event::Opened(Photo {
-                path: PathBuf::from("IMG_2041.ARW"),
-                ..photo(2)
-            }));
-            mirror.apply(Event::Values(Values {
-                live: false,
-                extent: [6000, 4000],
-                ..photo_values(0.0, 0)
-            }));
-            harness.run();
+            values_come(&mut harness, [6000, 4000]);
             let (after, drawn) = places(&harness);
             assert_eq!(drawn, Some(after), "{width} by {height}, with its values");
             assert_eq!(after.size() * 2.0, egui::vec2(1800.0, 1200.0));
@@ -16037,6 +16123,151 @@ mod tests {
         }
     }
 
+    /// The opening photo's values come in [`places_scene`], `extent` pixels, not yet live,
+    /// and a frame is drawn.
+    fn values_come(harness: &mut Harness<'_, Places>, extent: [u32; 2]) {
+        let mirror = &mut harness.state_mut().mirror;
+        mirror.apply(Event::Opened(Photo {
+            path: PathBuf::from("IMG_2041.ARW"),
+            ..crate::mirror::tests::photo(2)
+        }));
+        mirror.apply(Event::Values(Values {
+            live: false,
+            extent,
+            ..photo_values(0.0, 0)
+        }));
+        harness.run();
+    }
+
+    /// How far apart two rectangles' corners are, the most on either axis.
+    fn apart(a: egui::Rect, b: egui::Rect) -> f32 {
+        let corners = (a.min - b.min).abs().max((a.max - b.max).abs());
+        corners.max_elem()
+    }
+
+    /// Where the live frame lies on the screen where `placement` shows the photo through
+    /// the photo area `area` at `ppp`: the whole photo's fitted frame, drawn as the overview
+    /// is while zoomed, and as the frame is at Fit ([`photo_layers`]).
+    fn live_rect(area: egui::Rect, placement: &Placement, ppp: f32) -> egui::Rect {
+        let shown = viewport::overview_shown(placement.size, placement);
+        let [across, down] = covered(&shown, placement.size);
+        let corner = area.min + egui::vec2(across.start, down.start) / ppp;
+        let size = egui::vec2(across.end - across.start, down.end - down.start) / ppp;
+        egui::Rect::from_min_size(corner, size)
+    }
+
+    /// An opening photo's picture shows at the zoom carried from the photo before, from the
+    /// click: the whole photo's rectangle at the carried scale and centre, from the picture's
+    /// shape at the size of the photo before, then from the photo's extent, cut to the photo
+    /// area; or, where the photo shows whole, the area, as at Fit. From the values on it lies
+    /// exactly where the live frame will, so the swap moves nothing; from the click, within
+    /// a pixel of the picture where the photo before had the same size.
+    #[test]
+    fn the_stand_in_shows_at_the_carried_zoom_and_the_swap_moves_nothing() {
+        let landscape = [6000, 4000];
+        // The photo, the one before it and its picture: a burst's, a cached thumbnail's, a
+        // portrait after a landscape, a larger photo, and one smaller than the room.
+        let photos = [
+            (landscape, landscape, (1024, 683)),
+            (landscape, landscape, (256, 171)),
+            ([4000, 6000], landscape, (683, 1024)),
+            ([8256, 5504], landscape, (2048, 1365)),
+            ([800, 600], [800, 600], (256, 192)),
+        ];
+        for carried in CARRIED {
+            for (extent, before, (width, height)) in photos {
+                let case = format!("{carried:?}, {extent:?} after {before:?}, {width}");
+                let mut harness = places_scene_at(width, height, carried, Some(before));
+                harness.run();
+                let early = harness.state().drawn.expect("the picture from the click");
+                values_come(&mut harness, extent);
+                let scene = harness.state();
+                let (area, drawn) = (places(&harness).0, scene.drawn.expect("the picture"));
+                let placement = scene.placement.expect("placed by its extent");
+                let live = live_rect(area, &placement, 2.0);
+                // Zoomed past the area, exactly; showing whole, on the area, as at Fit, whose
+                // odd side at Small is half a physical pixel past the frame's half.
+                let overflows = zoom::overflows(&placement);
+                let within = if overflows { 1e-3 } else { 0.5 };
+                assert!(apart(drawn, live) <= within, "{case}: {drawn:?} {live:?}");
+                if overflows {
+                    assert!(area.width() < drawn.width() || area.height() < drawn.height());
+                }
+                // A pixel of the picture on the screen, in points, or a physical one, which the
+                // area rounds to.
+                let pixel = (drawn.width() / width as f32).max(0.5);
+                let same = before.iter().max() == extent.iter().max();
+                if same && carried.scale != zoom::Scale::Fit {
+                    let step = apart(early, drawn);
+                    assert!(step <= pixel, "{case}: {early:?} {drawn:?}");
+                }
+            }
+        }
+    }
+
+    /// The zoom's actions: the menu's, the steps and the pans.
+    const ZOOM_ACTIONS: [ActionId; 11] = [
+        ActionId::ZOOM_SMALL,
+        ActionId::ZOOM_FIT,
+        ActionId::ZOOM_FILL,
+        ActionId::ZOOM_50,
+        ActionId::ZOOM_100,
+        ActionId::ZOOM_200,
+        ActionId::ZOOM_1600,
+        ActionId::ZOOM_IN,
+        ActionId::ZOOM_OUT,
+        ActionId::PAN_LEFT,
+        ActionId::PAN_PAGE_DOWN,
+    ];
+
+    /// While the next photo opens, the viewer bar's zoom, as `App::viewer` builds it from
+    /// the shell, is disabled and shows the zoom carried, and the zoom's actions are
+    /// disabled, their keys moving nothing; once the photo is live the button is enabled
+    /// with the same scale, and Fit and 100% run.
+    #[test]
+    fn the_zoom_button_is_disabled_until_live_showing_the_carried_scale() {
+        for carried in CARRIED {
+            for live in [false, true] {
+                let (mut shell, ctx) = zoomed_shell(carried);
+                // As `App::viewer` keeps the room: the live photo's alone.
+                shell.room = live.then_some(ZOOM_ROOM);
+                let mut harness = Harness::builder()
+                    .with_size(egui::vec2(800.0, 40.0))
+                    .with_context_setup(|ctx| apertrust_ui::install(ctx, Theme::default()))
+                    .build_ui_state(
+                        |ui, (shell, live): &mut (Shell, bool)| {
+                            let layer = tr(ui.ctx(), "layer-image");
+                            let label = shell.zoom.label_in(shell.room.as_ref());
+                            ViewerBar::new(&layer, label).zoom_enabled(*live).show(ui);
+                        },
+                        (shell, live),
+                    );
+                harness.run();
+                let node = harness.get_by_role_and_label(Role::Button, "Zoom");
+                let node = node.accesskit_node();
+                let label = components::zoom_label(&harness.ctx, carried.label());
+                assert_eq!(node.value().as_deref(), Some(label.as_str()), "{carried:?}");
+                assert_eq!(node.is_disabled(), !live, "{carried:?}");
+                // As `App::shell_state` gives the state: waiting until live.
+                let shell = &mut harness.state_mut().0;
+                let state = State {
+                    waiting: !live,
+                    ..shell.state(&ctx, true, false)
+                };
+                let runs = |id: ActionId| actions::action(id).is_some_and(|a| a.enabled(&state));
+                if live {
+                    assert!(runs(ActionId::ZOOM_FIT) && runs(ActionId::ZOOM_100));
+                    continue;
+                }
+                for id in ZOOM_ACTIONS {
+                    assert!(!runs(id), "{carried:?}: {}", id.0);
+                    shell.run(id, &state, &ctx, &[]);
+                    assert_eq!(shell.zoom, carried, "{}", id.0);
+                }
+            }
+        }
+    }
+
     /// Where a 6000 by 4000 photo is placed in `slot`, at twice the scale with the usual
     /// margin, as `App::viewer` places it, at Small or at Fit.
     fn placed_in(slot: egui::Rect, small: bool) -> Placed {
@@ -16044,10 +16275,6 @@ mod tests {
         let ppp = 2.0;
         let room = block.bounds() * ppp;
         let bounds = (room.x.floor() as u32, room.y.floor() as u32);
-        let values = Values {
-            extent: [6000, 4000],
-            ..photo_values(0.0, 0)
-        };
         let zoomed = zoom::Zoomed {
             scale: if small {
                 zoom::Scale::Small
@@ -16056,7 +16283,7 @@ mod tests {
             },
             ..zoom::Zoomed::FIT
         };
-        place_photo(&block, bounds, ppp, &zoomed, Some(&values), None).expect("a place")
+        place_photo(&block, bounds, ppp, &zoomed, Some([6000, 4000]), None).expect("a place")
     }
 
     #[test]
@@ -17119,42 +17346,52 @@ mod tests {
     }
 
     /// A photo whose edit crops it to another shape than its picture's: from its values on,
-    /// the picture is letterboxed inside the place the live frame covers, centred and
-    /// smaller than it on one side, never stretched to it (decision 77).
+    /// the picture is letterboxed inside the place the live frame covers, the photo area or,
+    /// at a zoom carried past it, the whole photo's rectangle, centred and smaller than it
+    /// on one side, never stretched to it (decision 77).
     #[test]
     fn an_opening_photo_s_picture_of_another_shape_is_letterboxed_in_its_place() {
-        use crate::mirror::tests::photo;
-        for (width, height) in [(1024, 683), (2048, 1365)] {
-            let mut harness = places_scene(width, height);
-            let mirror = &mut harness.state_mut().mirror;
-            mirror.apply(Event::Opened(Photo {
-                path: PathBuf::from("IMG_2041.ARW"),
-                ..photo(2)
-            }));
-            // A square crop of the 3:2 photo.
-            mirror.apply(Event::Values(Values {
-                live: false,
-                extent: [4000, 4000],
-                ..photo_values(0.0, 0)
-            }));
-            harness.run();
-            let (place, drawn) = places(&harness);
-            let drawn = drawn.expect("the picture drawn");
-            assert!(
-                (place.width() - place.height()).abs() * 2.0 <= 1.0,
-                "{place:?}"
-            );
-            assert!(place.contains_rect(drawn), "{drawn:?} in {place:?}");
-            assert_eq!(drawn.width(), place.width(), "{width} by {height}");
-            assert!(drawn.height() < place.height(), "{width} by {height}");
-            let off = (drawn.center() - place.center()) * 2.0;
-            assert!(off.abs().max_elem() <= 1.0, "{width} by {height}: {off:?}");
-            // Its own shape, within a pixel.
-            let shape = drawn.width() / drawn.height();
-            assert!(
-                (shape - width as f32 / height as f32).abs() < 0.01,
-                "{width} by {height}: {shape}"
-            );
+        for carried in CARRIED {
+            for (width, height) in [(1024, 683), (2048, 1365)] {
+                let case = format!("{carried:?}, {width} by {height}");
+                let mut harness = places_scene_at(width, height, carried, None);
+                // A square crop of the 3:2 photo.
+                values_come(&mut harness, [4000, 4000]);
+                let (area, drawn) = places(&harness);
+                let drawn = drawn.expect("the picture drawn");
+                let scene = harness.state();
+                let placed = scene.placed.expect("a place");
+                let whole = zoomed_whole(&placed, scene.placement.as_ref(), 2.0);
+                let place = whole.unwrap_or(area);
+                let square = (place.width() - place.height()).abs() * 2.0;
+                assert!(square <= 1.0, "{case}: {place:?}");
+                let inside = place.expand(1e-3).contains_rect(drawn);
+                assert!(inside, "{case}: {drawn:?} in {place:?}");
+                assert!((drawn.width() - place.width()).abs() < 1e-3, "{case}");
+                assert!(drawn.height() < place.height(), "{case}");
+                let off = (drawn.center() - place.center()) * 2.0;
+                assert!(off.abs().max_elem() <= 1.0, "{case}: {off:?}");
+                // Its own shape, within a pixel.
+                let shape = drawn.width() / drawn.height();
+                let apart = (shape - width as f32 / height as f32).abs();
+                assert!(apart < 0.01, "{case}: {shape}");
+            }
+        }
+    }
+
+    /// At 800% on a square crop's top edge, its 3:2 picture letterboxed off the photo area
+    /// shows nothing there, so the Viewer names the photo instead; in the middle it shows.
+    #[test]
+    fn a_picture_letterboxed_off_the_area_shows_nothing() {
+        for (centre, shows) in [([0.5, 0.0], false), ([0.5, 0.5], true), ([0.2, 1.0], false)] {
+            let carried = zoomed_to(zoom::Scale::Factor(8.0), centre);
+            let mut harness = places_scene_at(1024, 683, carried, None);
+            values_come(&mut harness, [4000, 4000]);
+            let scene = harness.state();
+            let (placed, placement) = (scene.placed.expect("a place"), scene.placement);
+            let (picture, _) = scene.mirror.picture().expect("the picture");
+            let shown = picture_shows(&placed, placement.as_ref(), picture, 2.0);
+            assert_eq!(shown, shows, "{centre:?}");
         }
     }
 
