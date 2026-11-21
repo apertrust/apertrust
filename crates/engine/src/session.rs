@@ -2888,7 +2888,8 @@ impl Engine {
 
     /// After a turn that panicked: whatever it was doing may be half done, so the session
     /// starts again empty, without saving what may be half an edit, the colour picker off,
-    /// and says so, with the selection as the photo's close left it. The turn's commands
+    /// and says so, with the view the session holds, which the turn may have told in
+    /// events now lost, and the selection as the photo's close left it. The turn's commands
     /// it never reached count as applied, up to the first `taken`, so a later fact's
     /// `through` includes every command the client sent before.
     fn recover(&mut self, panic: &(dyn std::any::Any + Send), taken: u64) -> Vec<Event> {
@@ -2905,6 +2906,13 @@ impl Engine {
                 reading: None,
             });
         }
+        // Told again, with no photo, so the next photo's placement is told too.
+        self.view_told = (self.view, None);
+        events.push(Event::View(ViewState {
+            through,
+            view: self.view,
+            placement: None,
+        }));
         events.extend(self.selection_event(&events));
         events
     }

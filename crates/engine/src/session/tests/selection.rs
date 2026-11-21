@@ -470,6 +470,7 @@ fn a_panicked_turn_tells_the_selection_with_no_active_photo() {
     assert!(
         matches!(&events[..], [
             Event::Failed(SessionError::Panicked(_)),
+            Event::View(ViewState { placement: None, .. }),
             Event::Selection(Selection { photos, active: None, through }),
         ] if photos.is_empty() && *through == taken),
         "{events:?}"
