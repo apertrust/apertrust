@@ -6017,6 +6017,15 @@ impl App {
                 ui.ctx().request_repaint();
             }
         }
+        // A key that moved the focused mark out of the part shown moves the view just
+        // enough to show it again, as a focused control is scrolled into view.
+        if let (Some(mark), Some(room)) = (picked.reveal, self.shell.room) {
+            let revealed = self.shell.zoom.revealing(mark, &room);
+            if revealed != self.shell.zoom {
+                self.shell.zoom = revealed;
+                ui.ctx().request_repaint();
+            }
+        }
         let wait = self.said.update(
             Instant::now(),
             self.mirror.pickers.reading(),
