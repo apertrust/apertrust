@@ -23,6 +23,11 @@
 #                                            among them, or in tools/ (pre-commit)
 #   tools/check-docs-paths.sh --code REVS    prints the files `git diff REVS` changes that
 #                                            the list does not match: none, docs only
+#   tools/check-docs-paths.sh --unless-docs-only COMMAND... -- FILE...
+#                                            runs COMMAND unless the list matches every
+#                                            FILE: pre-commit's long checks, given the
+#                                            files it checks, skip documentation alone
+#                                            as CI does
 set -euo pipefail
 # sort and comm in one order, the bytes', whatever the locale: under a UTF-8 one they
 # can disagree, and comm then fails.
@@ -42,6 +47,28 @@ while IFS= read -r glob; do
     *) pathspecs+=(":(glob)$glob") ;;
   esac
 done < <(printf '%s\n' "$patterns")
+
+if [[ "${1:-}" == --unless-docs-only ]]; then
+  shift
+  command=()
+  while (($#)) && [[ "$1" != -- ]]; do
+    command+=("$1")
+    shift
+  done
+  (($#)) && shift
+  ((${#command[@]})) || { echo "usage: $0 --unless-docs-only COMMAND... -- FILE..." >&2; exit 2; }
+  documented=""
+  if ((${#pathspecs[@]})); then
+    documented=$(git ls-files --cached --others --exclude-standard -- "${pathspecs[@]}" | sort -u)
+  fi
+  code=$(comm -23 <(printf '%s\n' "$@" | sort -u) <(printf '%s\n' "$documented"))
+  if [[ -z "$code" ]]; then
+    echo "Documentation only ($list): ${command[*]} skipped."
+    exit 0
+  fi
+  # Relative to the repository's root, where pre-commit runs it too.
+  exec "${command[@]}"
+fi
 
 if [[ "${1:-}" == --code ]]; then
   shift
