@@ -26,12 +26,7 @@
 # generated file that is stale or has no source, failing if there is one; generated/
 # is left as it is.
 #
-#   tools/build-kernels.sh [--check] [FILE...]
-#
-# Given files, as pre-commit gives the changed ones, it compiles only the crates whose
-# slang/ or generated/ they are in: a kernel imports only its own crate's slang/ and the
-# shared libraries. A file anywhere else, a shared library or this script among them,
-# compiles every crate, as no files do.
+#   tools/build-kernels.sh [--check]
 set -euo pipefail
 shopt -s nullglob
 
@@ -40,33 +35,10 @@ if [[ "${1:-}" == --check ]]; then
   check=1
   shift
 fi
+(($# == 0)) || { echo "usage: tools/build-kernels.sh [--check]" >&2; exit 2; }
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
-
-# The crates the files touch, each once; every crate for any other file, or for none.
-crates=()
-all=$(($# == 0))
-for path in "$@"; do
-  path="${path#"$root"/}"
-  path="${path#./}"
-  case "$path" in
-    crates/op/*/slang/* | crates/op/*/generated/*)
-      rest="${path#crates/op/}"
-      crate="$root/crates/op/${rest%%/*}"
-      ;;
-    crates/engine/slang/* | crates/engine/generated/*) crate="$root/crates/engine" ;;
-    *)
-      all=1
-      break
-      ;;
-  esac
-  seen=0
-  for c in "${crates[@]+"${crates[@]}"}"; do
-    [[ "$c" == "$crate" ]] && seen=1
-  done
-  ((seen)) || crates+=("$crate")
-done
-((all)) && crates=("$root"/crates/op/* "$root/crates/engine")
+crates=("$root"/crates/op/* "$root/crates/engine")
 
 bin="$("$root/tools/fetch-slang.sh")"
 libs=(-I "$root/crates/color/slang" -I "$root/crates/plugin/slang")

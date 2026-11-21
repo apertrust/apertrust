@@ -81,8 +81,9 @@ cargo deny check                           # licences, advisories; before adding
 pre-commit run --all-files                 # the quick checks of .pre-commit-config.yaml (CONTRIBUTING.md, Checks)
 pre-commit run --hook-stage manual --all-files   # every check, tools/clippy.sh --all and the API docs too; never the tests
                                            # (install: pipx install pre-commit, or uv tool install pre-commit)
-tools/check-ui-strings.sh                  # fails on an English literal in interface code (CI)
-tools/check-windows-paths.sh [--changed REVS]   # a platform cfg missing from .github/windows-paths.txt (CI)
+pre-commit run ui-strings --all-files      # an English literal in interface code, tools/check-ui-strings.sh (CI)
+pre-commit run windows-paths --all-files   # a platform cfg missing from .github/windows-paths.txt (CI)
+tools/check-windows-paths.sh --changed REVS   # the files a diff changes that the list covers
 tools/credits.sh [--check]                 # CREDITS.md from Cargo.lock; --check fails when stale (CI)
 tools/package.sh [--finder-layout] [--nightly] # this platform's packages into target/package/<target>/out;
                                            # --nightly: Apertrust Nightly's, as the nightly builds are
@@ -134,7 +135,7 @@ cargo test --release -p apertrust-raw -- --ignored             # compare with te
 APERTRUST_BLESS=1 cargo test --release -p apertrust-raw -- --ignored   # accept a change, then review the diff
 ```
 
-**CI** runs in three layers (decision 70). `ci.yml`, on every pull request and push to main: lint, cargo-deny, the tests on Linux (lavapipe) and macOS (Metal), and clippy on Windows and macOS. Windows' tests (WARP) are off for now: they ran past two hours. A pull request labelled `full-ci` runs every check even when it changes only docs; a label starts no run, so re-run the jobs after adding it. `nightly-tests.yml` runs them on Linux and macOS every night, opening an issue labelled `nightly-tests-failed` when they fail and closing it when they pass; both call `tests.yml`. `tools/check-windows-paths.sh`, in lint, fails when a file with a platform cfg is not in the list; add it there. A pull request whose every file is in `.github/docs-only-paths.txt` skips lint, clippy, the tests and CodeQL, and `tools/check-docs-paths.sh` fails when code reads a file that list matches. macOS is tested locally on every change. Every job has a timeout, and a new push cancels a pull request's run in progress. `timing.yml`, run by hand, times a 61 MP export and exposure changes on lavapipe and WARP. `nightly-builds.yml`, each night main has changed, builds Apertrust Nightly's packages on each platform and publishes them as the `nightly` pre-release, moving its tag ([docs/packaging.md](docs/packaging.md#nightly-builds)). `codeql.yml`, `scorecard.yml` (OpenSSF) and `dco.yml` (fails a pull request with a commit lacking its author's `Signed-off-by:`) run too, SonarQube Cloud's automatic analysis checks each pull request (`.sonarcloud.properties`), and CodeRabbit reviews each one, its comments answered before merging (Small, focused tasks). Actions are pinned by commit SHA, the version in a comment; Dependabot updates cargo and the actions weekly. Issue forms and the pull request template are in `.github/`.
+**CI** runs in three layers (decision 70). `ci.yml`, on every pull request and push to main: every check of `.pre-commit-config.yaml` on every file (`pre-commit`: the quick checks, cargo-deny among them, and, but for a docs-only change, clippy for Linux, Windows and macOS from the Linux runner and the API docs), and the tests on Linux (lavapipe) and macOS (Metal). Windows' tests (WARP) are off for now: they ran past two hours. A pull request labelled `full-ci` runs every check even when it changes only docs; a label starts no run, so re-run the jobs after adding it. `nightly-tests.yml` runs them on Linux and macOS every night, opening an issue labelled `nightly-tests-failed` when they fail and closing it when they pass; both call `tests.yml`. `tools/check-windows-paths.sh`, in pre-commit, fails when a file with a platform cfg is not in the list; add it there. A pull request whose every file is in `.github/docs-only-paths.txt` skips clippy, the API docs, the tests and CodeQL, and `tools/check-docs-paths.sh` fails when code reads a file that list matches. macOS is tested locally on every change. Every job has a timeout, and a new push cancels a pull request's run in progress. `timing.yml`, run by hand, times a 61 MP export and exposure changes on lavapipe and WARP. `nightly-builds.yml`, each night main has changed, builds Apertrust Nightly's packages on each platform and publishes them as the `nightly` pre-release, moving its tag ([docs/packaging.md](docs/packaging.md#nightly-builds)). `codeql.yml`, `scorecard.yml` (OpenSSF) and `dco.yml` (fails a pull request with a commit lacking its author's `Signed-off-by:`) run too, SonarQube Cloud's automatic analysis checks each pull request (`.sonarcloud.properties`), and CodeRabbit reviews each one, its comments answered before merging (Small, focused tasks). Actions are pinned by commit SHA, the version in a comment; Dependabot updates cargo and the actions weekly. Issue forms and the pull request template are in `.github/`.
 
 ### Golden-image harness
 
@@ -165,8 +166,7 @@ Each operation's kernel lives in its own crate, `crates/op/<module>` (decision 2
 ```sh
 tools/fetch-slang.sh             # pinned slangc into external/ (git-ignored), checksum-verified
 tools/build-kernels.sh           # slang/*.slang -> generated/*.wgsl; commit the output
-tools/build-kernels.sh --check [FILE...]   # lists stale or orphaned generated files, of the crates
-                                           # FILE is in (none: every crate); changes nothing
+tools/build-kernels.sh --check   # lists stale or orphaned generated files; changes nothing
 cargo run --release -p apertrust-golden -- run CASE --repeat 32   # speed comparison
 WGPU_POWER_PREF=low cargo run --release -p apertrust-golden -- run CASE   # on an integrated GPU
 ```
@@ -260,7 +260,7 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 ```
 
-A file that ports darktable code keeps darktable's copyright as a third line, with the years from the darktable source file it ports, e.g. `Copyright (C) 2009-2026  darktable developers (ported from src/iop/exposure.c)`. Generated WGSL gets its Slang source's header from `tools/build-kernels.sh`. `tools/check-license-headers.sh` checks every source file and runs in CI. Markdown documents have no header.
+A file that ports darktable code keeps darktable's copyright as a third line, with the years from the darktable source file it ports, e.g. `Copyright (C) 2009-2026  darktable developers (ported from src/iop/exposure.c)`. Generated WGSL gets its Slang source's header from `tools/build-kernels.sh`. pre-commit's `license-headers` hook (`tools/check-license-headers.sh`) checks every source file, in CI too. Markdown documents have no header.
 
 ## Writing rules
 

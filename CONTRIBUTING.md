@@ -16,22 +16,14 @@ Thank you for your interest. Apertrust is in early development, so the way to co
 
 ## Checks
 
-Run these before you open a pull request. CI runs most of them, the tests on Linux:
+Run these before you open a pull request. CI runs the same, the tests on Linux and macOS:
 
 ```sh
-cargo fmt --all
-cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace
-tools/check-license-headers.sh
-tools/check-ui-strings.sh
-tools/check-windows-paths.sh
-tools/check-docs-paths.sh
-tools/credits.sh --check
-tools/build-kernels.sh --check
-tools/build-api-docs.sh
+pre-commit run --hook-stage manual --all-files   # every check but the tests
+cargo test --workspace                           # the tests
 ```
 
-[pre-commit](https://pre-commit.com) runs the same checks from `.pre-commit-config.yaml` when you ask it to, each only when a file it reads changed. It is a Python program; install it once, with whichever you have:
+[pre-commit](https://pre-commit.com) runs the checks in `.pre-commit-config.yaml` when you ask it to, each only when a file it reads changed. It is a Python program; install it once, with whichever you have:
 
 ```sh
 pipx install pre-commit            # or: uv tool install pre-commit
@@ -49,13 +41,14 @@ pre-commit run clippy --hook-stage manual --all-files       # one long check
 pre-commit run --hook-stage manual --from-ref main --to-ref HEAD   # every check, on this branch's changes
 ```
 
-- **The quick checks:** the formatting; pre-commit's general file checks (large files, merge conflicts, private keys, the syntax of TOML, YAML, JSON and XML, line endings, trailing whitespace and more); shellcheck on the scripts, actionlint on the workflows, typos on the spelling (`typos.toml` holds the words it accepts) and cargo-deny once a manifest or `deny.toml` changes; and the repository checks. Each is given only the files it looks at. Those that fix what they find, as rustfmt does, fail once: stage their changes and run again. The kernels' check runs only when a Slang or generated file changed, and compiles only the kernels of the crates that file is in, or every kernel when a shared library changed.
+- **The quick checks:** the formatting; pre-commit's general file checks (large files, merge conflicts, private keys, the syntax of TOML, YAML, JSON and XML, line endings, trailing whitespace and more); shellcheck on the scripts, actionlint on the workflows, typos on the spelling (`typos.toml` holds the words it accepts) and cargo-deny once a manifest or `deny.toml` changes; and the repository checks. Each is given only the files it looks at. Those that fix what they find, as rustfmt does, fail once: stage their changes and run again. The kernels' check runs only when a Slang or generated file changed, and then compiles every kernel, about 25 seconds.
 - **The tools:** pre-commit installs the ones it runs, at the versions the config pins, on its first run, which takes a few minutes. Rust, clippy and rustfmt are rustup's, from `rust-toolchain.toml`.
 - **The long checks:** clippy (`clippy`, `tools/clippy.sh --all`: Linux, Windows and macOS from any machine, rustup adding each platform's standard library on the first run) and the API docs (`api-docs`) build the workspace and take minutes, so they run in the manual stage alone. Given only documentation, they skip it, as CI does; `--all-files` gives them every file, so they run, and `--from-ref main --to-ref HEAD` gives them only the branch's changes.
 - **The tests** are not among them: run `cargo test --workspace` yourself.
 - **As git hooks, if you want them:** nothing runs unless you ask. `pre-commit install` runs the quick checks before each commit; the long ones never run as a hook.
 - **A kernel:** `tools/build-kernels.sh --check` needs the pinned Slang compiler, which `tools/fetch-slang.sh` downloads.
-- **Windows and macOS:** a pull request runs the tests on Linux and macOS, and clippy on Windows and macOS, which compiles their code and tests. Windows' tests are off for now, since they take hours there. A file that gains a `cfg(windows)`, `cfg(unix)` or `cfg(target_os = …)` goes into that list; `tools/check-windows-paths.sh` says which are missing.
+- **In CI:** every pull request runs pre-commit's checks on every file, as `pre-commit run --hook-stage manual --all-files` does, but for clippy and the API docs on a pull request that changes only documentation.
+- **Windows and macOS:** a pull request runs the tests on Linux and macOS, and clippy for Windows and macOS on Linux, as `tools/clippy.sh --all` does, which compiles their code and tests. Windows' tests are off for now, since they take hours there. A file that gains a `cfg(windows)`, `cfg(unix)` or `cfg(target_os = …)` goes into that list; `tools/check-windows-paths.sh` says which are missing.
 - **Required checks:** a pull request merges when `ci-passed`, which CI's other jobs feed, and `signoff`, the sign-off check, pass. A pull request that changes only documentation skips the code's checks, and `ci-passed` still passes.
 - **A new dependency:** run `cargo deny check`, and follow [docs/dependencies.md](docs/dependencies.md).
 - **A kernel or a port:** CI cannot run darktable-cli, so run the golden checks locally and paste their results in the pull request: `apertrust-golden run CASE` for the ΔE2000 results and `apertrust-golden gradient CASE` for the derivatives. AGENTS.md's Golden-image harness section says what they need.
