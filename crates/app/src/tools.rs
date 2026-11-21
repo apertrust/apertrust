@@ -6128,6 +6128,7 @@ mod tests {
                 let name = picker_name(&words, Sample.definition(), "brightness");
                 let on = OnPhoto {
                     picker: BRIGHTNESS,
+                    area: photo,
                     photo,
                     pixels: [720, 440],
                     region: Region::Area([0.2, 0.3, 0.7, 0.65]),

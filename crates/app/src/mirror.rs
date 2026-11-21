@@ -95,6 +95,10 @@ pub enum Reaction {
     /// picture, the mirror's of `generation`: the Viewer fades that picture out over
     /// the frame (decision 77). Only that swap: never an edit's frame, nor another photo's.
     Swapped { open: u64, generation: u64 },
+    /// The session refused the view the command numbered `command` asked for, past Fit
+    /// where it cannot render yet (`SessionError::Zoom`, decision 99): the zoom goes back to
+    /// Fit, with nothing said over the photo, unless a later view overtook it.
+    Unzoomed { command: u64 },
 }
 
 /// What the Tools panel's editing tabs draw (`docs/gui.md`, The Tools panel): the values
@@ -704,6 +708,18 @@ impl Mirror {
         if let SessionError::Refused { error: refused, .. } = &error
             && matches!(**refused, SessionError::NotLive)
         {
+            return;
+        }
+        // A zoom the session cannot render yet keeps its frame at Fit, and the Viewer goes
+        // back to Fit with it: logged under `control`, as a refused step is.
+        if let SessionError::Refused {
+            command,
+            error: refused,
+        } = &error
+            && let SessionError::Zoom(why) = &**refused
+        {
+            tracing::debug!(target: "control", "zoom refused, back to Fit: {why}");
+            reactions.push(Reaction::Unzoomed { command: *command });
             return;
         }
         if !matches!(error, SessionError::Tool { .. } | SessionError::Scopes(_)) {
@@ -1626,6 +1642,20 @@ pub(crate) mod tests {
         assert_eq!(shown(&m), ControlValue::Number(1.5));
         assert_eq!(m.apply(saved(4)), []);
         assert!(!m.saving.writing());
+    }
+
+    #[test]
+    fn a_refused_view_goes_back_to_fit() {
+        let mut m = mirror();
+        m.apply(Event::Opened(photo(1)));
+        let why = "the fitted viewport renders in tiles".to_owned();
+        let refused = Event::Failed(SessionError::Refused {
+            command: 4,
+            error: Box::new(SessionError::Zoom(why)),
+        });
+        assert_eq!(m.apply(refused), [Reaction::Unzoomed { command: 4 }]);
+        // Nothing said over the photo: its frame stays at Fit, as the zoom goes back to it.
+        assert_eq!(m.failure, None);
     }
 
     #[test]
@@ -2842,17 +2872,19 @@ pub(crate) mod tests {
 
     /// A real session on the test's GPU, its raws synthetic (`session::testing`), whose
     /// events the mirror takes in as the app does; `None` with no adapter.
-    struct Live {
-        session: apertrust_engine::session::Session,
+    pub(crate) struct Live {
+        pub(crate) session: apertrust_engine::session::Session,
+        /// The session's device, which draws its frames as the window does.
+        pub(crate) gpu: apertrust_engine::gpu::GpuContext,
         wakes: std::sync::mpsc::Receiver<()>,
-        mirror: Mirror,
+        pub(crate) mirror: Mirror,
         /// What the Tools panel showed, whether a picture, and the photo's path, after each
         /// event, a state shown again left out.
         seen: Vec<(Shown, bool, Option<PathBuf>)>,
     }
 
     impl Live {
-        fn start() -> Option<Live> {
+        pub(crate) fn start() -> Option<Live> {
             use apertrust_engine::gpu::{GpuContext, GpuOptions};
             let Ok(gpu) = pollster::block_on(GpuContext::new(&GpuOptions::default())) else {
                 eprintln!("no GPU adapter: a session needs one");
@@ -2860,7 +2892,7 @@ pub(crate) mod tests {
             };
             let (woken, wakes) = std::sync::mpsc::channel();
             let session = apertrust_engine::session::testing::start(
-                gpu,
+                gpu.clone(),
                 apertrust_operations::OPERATIONS,
                 apertrust_tools::TOOLS,
                 "0.4.0+12~g1a2b3c4",
@@ -2874,6 +2906,7 @@ pub(crate) mod tests {
             });
             Some(Live {
                 session,
+                gpu,
                 wakes,
                 mirror: mirror(),
                 seen: Vec::new(),
@@ -2881,7 +2914,7 @@ pub(crate) mod tests {
         }
 
         /// Asks for the photo at `path`, as the app does.
-        fn open(&mut self, path: &Path) -> u64 {
+        pub(crate) fn open(&mut self, path: &Path) -> u64 {
             let command = apertrust_engine::session::Command::Open(path.to_owned());
             let open = self.session.send(command);
             self.mirror.opening(path.to_owned(), open, Instant::now());
@@ -2889,7 +2922,7 @@ pub(crate) mod tests {
         }
 
         /// Takes in the session's events until the photo is live with its first frame.
-        fn until_live(&mut self) {
+        pub(crate) fn until_live(&mut self) {
             let deadline = Instant::now() + Duration::from_secs(600);
             while !(self.mirror.live() && self.mirror.frame.is_some()) {
                 assert!(Instant::now() < deadline, "live in time: {:?}", self.seen);
@@ -2910,7 +2943,7 @@ pub(crate) mod tests {
         }
 
         /// Takes in the session's events until `done` holds of the mirror.
-        fn until(&mut self, done: impl Fn(&Mirror) -> bool) {
+        pub(crate) fn until(&mut self, done: impl Fn(&Mirror) -> bool) {
             let deadline = Instant::now() + Duration::from_secs(600);
             while !done(&self.mirror) {
                 assert!(
@@ -3118,7 +3151,7 @@ pub(crate) mod tests {
     }
 
     /// A folder of the test's own, emptied first.
-    fn scratch(name: &str) -> PathBuf {
+    pub(crate) fn scratch(name: &str) -> PathBuf {
         let folder =
             std::env::temp_dir().join(format!("apertrust-mirror-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&folder);

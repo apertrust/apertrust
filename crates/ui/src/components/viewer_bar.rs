@@ -62,18 +62,16 @@ pub enum Zoom {
     Percent(f64),
 }
 
-/// Which of the zoom menu's scales can be chosen, as far as the Viewer can show them
-/// (`docs/gui.md`, The zoom, in steps).
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum ZoomChoices {
-    /// Fit alone: a viewport that only fits.
-    #[default]
-    Fit,
-    /// Small and Fit, the scales the fitted frame shows; Zoom in at Small and Zoom out at
-    /// Fit step between them.
-    SmallAndFit,
-    /// Every scale.
-    All,
+/// The whole number a percentage's label shows: `percent` rounded, except that only 1:1
+/// exactly reads 100, a scale just under or over it 99 or 101, so the label never claims
+/// the exact view the screen is not showing (`docs/gui.md`, The scale).
+pub fn percent_label(percent: f64) -> u32 {
+    let rounded = percent.round().max(0.0);
+    match rounded {
+        100.0 if percent < 100.0 => 99,
+        100.0 if percent > 100.0 => 101,
+        _ => rounded as u32,
+    }
 }
 
 /// What the user did to the viewer bar this frame.
@@ -106,7 +104,10 @@ pub struct ViewerBar<'a> {
     picker: Option<(&'a str, &'a str)>,
     zoom: Zoom,
     zoom_enabled: bool,
-    zoom_choices: ZoomChoices,
+    /// Whether Zoom in and Zoom out have a scale to go to, in order of scale for the photo
+    /// and the room, which only the app knows.
+    zoom_in: bool,
+    zoom_out: bool,
     shortcuts: Vec<(ViewerBarAction, &'a str)>,
 }
 
@@ -155,7 +156,8 @@ impl<'a> ViewerBar<'a> {
             picker: None,
             zoom,
             zoom_enabled: false,
-            zoom_choices: ZoomChoices::Fit,
+            zoom_in: true,
+            zoom_out: true,
             shortcuts: Vec::new(),
         }
     }
@@ -166,11 +168,12 @@ impl<'a> ViewerBar<'a> {
         self
     }
 
-    /// Which scales the menu offers, the rest drawn disabled with a tooltip saying zoom
-    /// comes with the 100% view: Fit alone, by default, for a viewport that only fits. The
-    /// button's own tooltip says how to zoom only once every scale can be chosen.
-    pub fn zoom_choices(mut self, choices: ZoomChoices) -> Self {
-        self.zoom_choices = choices;
+    /// Whether Zoom in (`can_in`) and Zoom out have somewhere to go: the menu's scales in
+    /// order of scale depend on the photo and the room (`docs/gui.md`, Zooming). Both, by
+    /// default, but for Zoom in at 1600% and Zoom out at Small.
+    pub fn steps(mut self, can_in: bool, can_out: bool) -> Self {
+        self.zoom_in = can_in;
+        self.zoom_out = can_out;
         self
     }
 
@@ -208,7 +211,8 @@ impl<'a> ViewerBar<'a> {
     }
 
     /// A quiet word on what the photo is waiting for, after the layer's buttons, as
-    /// Rendering… while a photo opening is slow to go live (decision 77); `None` for none.
+    /// Rendering… while a photo opening is slow to go live (decision 77) or a zoomed view to
+    /// render; `None` for none.
     pub fn status(mut self, status: Option<&'a str>) -> Self {
         self.status = status;
         self
@@ -216,10 +220,10 @@ impl<'a> ViewerBar<'a> {
 
     /// While a colour picker is on: its name ("Colour calibration · Illuminant") and how to
     /// use it ("Drag an area on the photo. Ctrl-click switches to a point. Esc ends."),
-    /// each translated (`docs/pickers.md`, On the photo). They follow the layer's buttons,
-    /// the name in the text colour and how a step quieter, in place of the status and the
-    /// values under the cursor; how is left out where it does not fit, and both where the
-    /// name does not.
+    /// each translated (`docs/pickers.md`, On the photo). They follow the layer's buttons
+    /// and the status, as Rendering… while a zoomed view renders, the name in the text
+    /// colour and how a step quieter, in place of the values under the cursor; how is left
+    /// out where it does not fit, and both where the name does not.
     pub fn picker(mut self, name: &'a str, how: &'a str) -> Self {
         self.picker = Some((name, how));
         self
@@ -337,19 +341,19 @@ impl<'a> ViewerBar<'a> {
             )
             .inner;
 
-        // A picker's words take the gap whole.
-        if let Some((name, how)) = self.picker {
-            if right_start > left_end {
-                picker_words(ui, left_end..=right_start, inner, name, how);
-            }
-            return action;
-        }
         // The status, quiet, at the gap's start, never over the photo.
         let mut left_end = left_end;
         if let Some(status) = self.status
             && right_start > left_end
         {
             left_end = status_label(ui, left_end..=right_start, inner, status);
+        }
+        // A picker's words take the rest of the gap.
+        if let Some((name, how)) = self.picker {
+            if right_start > left_end {
+                picker_words(ui, left_end..=right_start, inner, name, how);
+            }
+            return action;
         }
         // The values under the cursor, in the gap between the two ends when they fit.
         if let Some(rgb) = self.values
@@ -416,23 +420,17 @@ impl<'a> ViewerBar<'a> {
             node.set_value(scale.clone());
             node.set_has_popup(HasPopup::Menu);
         });
-        let later = tr(&ctx, "photo-zoom-later");
-        let every = self.zoom_choices == ZoomChoices::All;
-        let tip = if every {
-            let mut args = Args::new();
-            // The pointer's modifier as the app spells its shortcuts.
-            let mac = ctx.os() == OperatingSystem::Mac;
-            args.set("command", if mac { "Cmd" } else { "Ctrl" });
-            let exact = self.zoom == Zoom::Percent(100.0);
-            let id = if exact {
-                "photo-zoom-tip-exact"
-            } else {
-                "photo-zoom-tip"
-            };
-            translator(&ctx).text_with(id, Some(&args))
+        let mut args = Args::new();
+        // The pointer's modifier as the app spells its shortcuts.
+        let mac = ctx.os() == OperatingSystem::Mac;
+        args.set("command", if mac { "Cmd" } else { "Ctrl" });
+        let exact = self.zoom == Zoom::Percent(100.0);
+        let id = if exact {
+            "photo-zoom-tip-exact"
         } else {
-            later.clone()
+            "photo-zoom-tip"
         };
+        let tip = translator(&ctx).text_with(id, Some(&args));
         let response = response.on_hover_text(tip);
         let picked = pull_down(ui, &response, &name, || {
             ZOOM_MENU
@@ -451,9 +449,6 @@ impl<'a> ViewerBar<'a> {
                         if let Some((_, keys)) = self.shortcuts.iter().find(|(e, _)| e == entry) {
                             item = item.shortcut(*keys);
                         }
-                        if !can && !every {
-                            item = item.tip(later.clone());
-                        }
                         item.into()
                     }
                 })
@@ -467,20 +462,15 @@ impl<'a> ViewerBar<'a> {
         })
     }
 
-    /// Whether the zoom menu's `entry` can be chosen: Fit always, the rest as far as the
-    /// choices go, Zoom in short of the largest scale they offer and Zoom out above Small.
+    /// Whether the zoom menu's `entry` can be chosen: every scale, Zoom in where it has
+    /// somewhere to go short of 1600% and Zoom out above Small.
     fn can_choose(&self, entry: ViewerBarAction) -> bool {
-        use ViewerBarAction::{Zoom as To, ZoomIn, ZoomOut};
-        match (self.zoom_choices, entry) {
-            (_, To(Zoom::Fit)) => true,
-            (ZoomChoices::Fit, _) => false,
-            (ZoomChoices::SmallAndFit, To(Zoom::Small)) => true,
-            (ZoomChoices::SmallAndFit, ZoomIn) => self.zoom == Zoom::Small,
-            (ZoomChoices::SmallAndFit, ZoomOut) => self.zoom == Zoom::Fit,
-            (ZoomChoices::SmallAndFit, _) => false,
-            (ZoomChoices::All, ZoomIn) => !matches!(self.zoom, Zoom::Percent(p) if p >= MOST),
-            (ZoomChoices::All, ZoomOut) => self.zoom != Zoom::Small,
-            (ZoomChoices::All, _) => true,
+        match entry {
+            ViewerBarAction::ZoomIn => {
+                self.zoom_in && !matches!(self.zoom, Zoom::Percent(p) if p >= MOST)
+            }
+            ViewerBarAction::ZoomOut => self.zoom_out && self.zoom != Zoom::Small,
+            _ => true,
         }
     }
 }
@@ -499,11 +489,12 @@ fn zoom_id(entry: ViewerBarAction) -> String {
 }
 
 /// A zoom menu entry's words, translated: a scale as the button shows it, a percentage
-/// rounded to a whole number. The bar's other actions have none.
+/// as [`percent_label`] rounds it. The bar's other actions have none.
 fn zoom_words(ctx: &egui::Context, entry: ViewerBarAction) -> String {
     let id = match entry {
         ViewerBarAction::Zoom(Zoom::Percent(p)) => {
-            return format!("{}%", translator(ctx).format_number(p, 0, false));
+            let shown = f64::from(percent_label(p));
+            return format!("{}%", translator(ctx).format_number(shown, 0, false));
         }
         ViewerBarAction::Zoom(Zoom::Small) => "photo-zoom-small",
         ViewerBarAction::Zoom(Zoom::Fit) => "photo-zoom-fit",

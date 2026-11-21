@@ -321,8 +321,7 @@ photo-zoom-fill = Wypełnij
 photo-zoom-in = Powiększ
 photo-zoom-out = Pomniejsz
 photo-zoom-tip = Powiększenie: uszczypnięcie lub { $command }+przewijanie; Z – 100%. Przewijanie przesuwa powiększone zdjęcie, Shift+przewijanie – w bok
-photo-zoom-tip-exact = Przy 100% ekran pokazuje dokładnie to, czym będzie eksport. Powiększenie: uszczypnięcie lub { $command }+przewijanie; Z – 100%. Przewijanie przesuwa powiększone zdjęcie, Shift+przewijanie – w bok
-photo-zoom-later = Powiększenie pojawi się wraz z widokiem 100%
+photo-zoom-tip-exact = Przy 100% ekran pokazuje dokładnie to, czym będzie eksport w pełnym rozmiarze. Powiększenie: uszczypnięcie lub { $command }+przewijanie; Z – 100%. Przewijanie przesuwa powiększone zdjęcie, Shift+przewijanie – w bok
 layer-image = Obraz
 
 ## Podgląd

@@ -482,12 +482,13 @@ pub struct State {
     pub show_hidden: bool,
     /// The interface's scale: egui's zoom factor.
     pub scale: f32,
-    /// Whether the photo's zoom has a scale to go to up, and down
-    /// ([`Zoomed::step`](crate::zoom::Zoomed::step)), and
-    /// whether it is at Fit, which Zoom to Fit's item shows checked.
+    /// Whether the photo's zoom has a scale to go to up, and down, in order of scale
+    /// ([`Zoomed::step`](crate::zoom::Zoomed::step)), and whether it is at Fit and at
+    /// 100%, which Zoom to Fit's and Zoom to 100%'s items show checked.
     pub zoom_in: bool,
     pub zoom_out: bool,
     pub fitted: bool,
+    pub at_100: bool,
     /// A modal dialog is open, or a dialog's window has the focus: the view's keys rest,
     /// and focus stays in the dialog.
     pub dialog: bool,
@@ -655,6 +656,9 @@ impl Action {
     pub fn checked(&self, state: &State) -> Option<bool> {
         if self.id == ActionId::ZOOM_FIT {
             return Some(state.fitted);
+        }
+        if self.id == ActionId::ZOOM_100 {
+            return Some(state.at_100);
         }
         match self.emits {
             Emit::Intent(Intent::FullScreen) => Some(state.full_screen),
@@ -1534,10 +1538,9 @@ pub static ACTIONS: [Action; 120] = [
         available: |s| s.previous && on_main_window(s) && !s.modal,
         emits: Emit::Intent(Intent::Step { next: false }),
     },
-    // The photo's zoom (`docs/gui.md`, The zoom), on a live photo: Small and Fit, which
-    // the fitted frame shows, and the steps between them; 100% and the other scales come
-    // with the engine's detail view. Ctrl+= first: on most keyboards + needs Shift, and
-    // Ctrl++ matches with it held, unless Ctrl+Shift+= names it exactly.
+    // The photo's zoom (`docs/gui.md`, The zoom), on a live photo: every scale of the zoom
+    // menu, and the steps in order of scale. Ctrl+= first: on most keyboards + needs
+    // Shift, and Ctrl++ matches with it held, unless Ctrl+Shift+= names it exactly.
     zoom(
         ActionId::ZOOM_IN,
         "action-zoom-in",
@@ -1568,7 +1571,7 @@ pub static ACTIONS: [Action; 120] = [
         &[plain(Key::Z)],
         Trigger::Press,
         zooms,
-        Emit::Later,
+        Emit::Intent(Intent::Zoom(ZoomStep::Hundred)),
     ),
     zoom(
         ActionId::ZOOM_SMALL,
@@ -1584,7 +1587,7 @@ pub static ACTIONS: [Action; 120] = [
         &[],
         Trigger::Press,
         zooms,
-        Emit::Later,
+        Emit::Intent(Intent::Zoom(ZoomStep::To(Scale::Fill))),
     ),
     zoom(
         ActionId::ZOOM_50,
@@ -1592,7 +1595,7 @@ pub static ACTIONS: [Action; 120] = [
         &[],
         Trigger::Press,
         zooms,
-        Emit::Later,
+        Emit::Intent(Intent::Zoom(ZoomStep::To(Scale::Factor(0.5)))),
     ),
     zoom(
         ActionId::ZOOM_200,
@@ -1600,7 +1603,7 @@ pub static ACTIONS: [Action; 120] = [
         &[],
         Trigger::Press,
         zooms,
-        Emit::Later,
+        Emit::Intent(Intent::Zoom(ZoomStep::To(Scale::Factor(2.0)))),
     ),
     zoom(
         ActionId::ZOOM_400,
@@ -1608,7 +1611,7 @@ pub static ACTIONS: [Action; 120] = [
         &[],
         Trigger::Press,
         zooms,
-        Emit::Later,
+        Emit::Intent(Intent::Zoom(ZoomStep::To(Scale::Factor(4.0)))),
     ),
     zoom(
         ActionId::ZOOM_800,
@@ -1616,7 +1619,7 @@ pub static ACTIONS: [Action; 120] = [
         &[],
         Trigger::Press,
         zooms,
-        Emit::Later,
+        Emit::Intent(Intent::Zoom(ZoomStep::To(Scale::Factor(8.0)))),
     ),
     zoom(
         ActionId::ZOOM_1600,
@@ -1624,7 +1627,7 @@ pub static ACTIONS: [Action; 120] = [
         &[],
         Trigger::Press,
         zooms,
-        Emit::Later,
+        Emit::Intent(Intent::Zoom(ZoomStep::To(Scale::Factor(16.0)))),
     ),
     // With Shift, every photo shown together; with one, as the plain ones.
     zoom(
@@ -1657,7 +1660,7 @@ pub static ACTIONS: [Action; 120] = [
         &[bind(Modifiers::SHIFT, Key::Z)],
         Trigger::Press,
         zooms,
-        Emit::Later,
+        Emit::Intent(Intent::Zoom(ZoomStep::Hundred)),
     ),
     // The browser bar's menus and View's Sort By and Thumbnail Size (`docs/gui.md`, The
     // browser bar); no keys by default, so + and − stay free. Rating comes with the
@@ -2850,6 +2853,7 @@ pub(crate) mod tests {
             zoom_in: true,
             zoom_out: true,
             fitted: true,
+            at_100: false,
             dialog: false,
             modal: false,
             dialog_window: false,
@@ -3812,6 +3816,7 @@ pub(crate) mod tests {
             zoom_in: false,
             zoom_out: true,
             fitted: true,
+            at_100: false,
             ..everything()
         };
         let runs = |id, state: &State| action(id).expect("declared").can_run(state);
@@ -3842,10 +3847,18 @@ pub(crate) mod tests {
                 assert!(!runs(id, &blocked), "{}", id.0);
             }
         }
-        // 100% and the other scales come with the detail view.
+        // Every scale of the menu runs on a live photo, and Zoom to 100% is checked at it.
         for id in [ActionId::ZOOM_100, ActionId::ZOOM_FILL, ActionId::ZOOM_1600] {
-            assert!(!runs(id, &state), "{}", id.0);
+            assert!(runs(id, &state), "{}", id.0);
         }
+        let hundred = action(ActionId::ZOOM_100).expect("declared");
+        assert_eq!(hundred.checked(&state), Some(false));
+        let at_100 = State {
+            at_100: true,
+            ..state
+        };
+        assert_eq!(hundred.checked(&at_100), Some(true));
+        assert_eq!(hundred.emits, Emit::Intent(Intent::Zoom(ZoomStep::Hundred)));
     }
 
     #[test]
