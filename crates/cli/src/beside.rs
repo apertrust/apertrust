@@ -172,7 +172,7 @@ pub(crate) fn run(path: &Path, options: Options, engine: engine::Options) -> Res
 }
 
 /// `path` linked into `folder` under its own name, so its edit is written there.
-fn linked(path: &Path, folder: &Path) -> Result<PathBuf> {
+pub(crate) fn linked(path: &Path, folder: &Path) -> Result<PathBuf> {
     let path = path
         .canonicalize()
         .with_context(|| format!("{}", path.display()))?;
