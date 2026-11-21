@@ -117,6 +117,12 @@ value_column = 54.0
 switch_width = 26.0
 switch_height = 14.0
 switch_knob = 8.0
+setting_row = 32.0
+setting_control = 24.0
+setting_column = 260.0
+setting_switch_width = 32.0
+setting_switch_height = 18.0
+setting_switch_knob = 12.0
 tools_panel = 320.0
 section_list = 240.0
 

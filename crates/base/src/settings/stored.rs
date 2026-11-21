@@ -24,7 +24,7 @@ use std::fmt;
 
 use toml::Value;
 
-use super::{Applies, Choice, Kind, Number, Page, Platform, Setting, Store};
+use super::{Applies, Choice, Control, Kind, Number, Page, Platform, Setting, Store};
 
 /// A type a setting's static is typed by, and how its value is read from `settings.toml`
 /// and written into it: `bool`, `f32`, a [`Choice`], `&'static str`, a list as an array (of
@@ -347,12 +347,20 @@ pub trait Declared: Sync {
     /// The platforms the Settings dialog draws its row on; None for every one.
     fn platforms(&self) -> Option<&'static [Platform]>;
 
+    /// The control the Settings dialog draws its row with in place of its kind's own; None
+    /// for the kind's.
+    fn control(&self) -> Option<Control>;
+
     /// Its place among every owner's settings, in the schema's order.
     fn place(&self) -> u32;
 
     /// Its default as `settings.toml` would keep it, what it computes now for a computed
     /// one; None for an optional setting's.
     fn default_value(&self) -> Option<Value>;
+
+    /// Whether its default is one its owner computes, the schema's `default = "computed"`,
+    /// as the language's from the system's.
+    fn default_is_computed(&self) -> bool;
 
     /// A choice's options' ids, in its type's order, and a list of a choice's; none for
     /// another kind.
@@ -410,12 +418,20 @@ impl<T: Stored> Declared for Setting<T> {
         self.platforms
     }
 
+    fn control(&self) -> Option<Control> {
+        self.control
+    }
+
     fn place(&self) -> u32 {
         self.place
     }
 
     fn default_value(&self) -> Option<Value> {
         T::write(&self.kind, &self.default().owned())
+    }
+
+    fn default_is_computed(&self) -> bool {
+        matches!(self.default, super::DefaultValue::Computed(_))
     }
 
     fn options(&self) -> Vec<&'static str> {

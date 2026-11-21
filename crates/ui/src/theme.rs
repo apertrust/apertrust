@@ -479,6 +479,20 @@ pub struct Sizes {
     pub switch_width: f32,
     pub switch_height: f32,
     pub switch_knob: f32,
+    /// A row of the Settings dialog, its label at the start and its control in a column
+    /// at the end (`docs/gui.md`, The Settings dialog); a line of its page list too.
+    pub setting_row: f32,
+    /// The height of every box in a settings row: a combo, a segmented well, a field, a
+    /// slider's line, a number's box, a button.
+    pub setting_control: f32,
+    /// The width of a settings row's control column, which boxes and wells fill and at
+    /// whose end a switch, a number and a button sit.
+    pub setting_column: f32,
+    /// A settings switch's track, `setting_switch_width` × `setting_switch_height`, and
+    /// its knob, `setting_switch_knob` across: a tool's switch a size up.
+    pub setting_switch_width: f32,
+    pub setting_switch_height: f32,
+    pub setting_switch_knob: f32,
     /// The Tools panel's usual width; a theme file may still name it `side_panel`
     /// ([`OLD_SIZES`]).
     #[serde(alias = "side_panel")]
@@ -793,6 +807,24 @@ impl Theme {
                 c.button_hover,
                 CONTROL,
             ),
+            // The Settings dialog's controls (`docs/gui.md`, The Settings dialog): a
+            // combo's option, a chosen segment and an on chip on `raised`; a field's text,
+            // a number's unit, an off segment and an off chip in their `sunken` wells; a
+            // row's label and its changed mark under the pointer's band; a slider's thumb
+            // on its track; a number out of range outlined on its well.
+            ("text_strong", c.text_strong, "raised", c.raised, TEXT),
+            ("text_strong", c.text_strong, "sunken", c.sunken, TEXT),
+            ("text_secondary", c.text_secondary, "sunken", c.sunken, TEXT),
+            ("text", c.text, "hover", c.hover, TEXT),
+            ("kept_marker", c.kept_marker, "hover", c.hover, CONTROL),
+            (
+                "text_secondary",
+                c.text_secondary,
+                "sunken_deep",
+                c.sunken_deep(),
+                CONTROL,
+            ),
+            ("error", c.error, "sunken", c.sunken, CONTROL),
             // A ticked box is a control's part on every ground it is drawn on, and so is
             // its tick on it in each state, a disabled one's included.
             ("check", c.check, "panel", c.panel, CONTROL),
@@ -1187,6 +1219,16 @@ impl Colors {
         self.text_on(self.photo_surround)
     }
 
+    /// A step darker than `sunken`: the track of a settings slider, a well inside the
+    /// well, as a scroll bar's (`docs/gui.md`, The Settings dialog). Each channel at four
+    /// fifths; where `sunken` is black it stays black, and the track's `divider` edge
+    /// draws it.
+    pub fn sunken_deep(&self) -> Color32 {
+        let [r, g, b, a] = self.sunken.to_srgba_unmultiplied();
+        let step = |c: u8| (f32::from(c) * 0.8).round() as u8;
+        Color32::from_rgba_unmultiplied(step(r), step(g), step(b), a)
+    }
+
     fn text_on(&self, surround: Color32) -> Color32 {
         let (dark, light) = (self.surround_text, self.surround_text_on_light);
         if contrast(light, surround) > contrast(dark, surround) {
@@ -1344,6 +1386,22 @@ mod tests {
         for which in Builtin::ALL {
             let theme = Theme::builtin(which);
             assert_eq!(theme.check(), vec![], "{}", which.id());
+        }
+    }
+
+    /// A settings slider's track is a step darker than `sunken`, where `sunken` is not
+    /// black already, and opaque.
+    #[test]
+    fn the_deep_well_is_a_step_darker_than_sunken() {
+        for which in Builtin::ALL {
+            let c = Theme::builtin(which).colors;
+            let deep = c.sunken_deep();
+            assert_eq!(deep.a(), 255, "{}", which.id());
+            if c.sunken == Color32::BLACK {
+                assert_eq!(deep, Color32::BLACK);
+            } else {
+                assert!(luminance(deep) < luminance(c.sunken), "{}", which.id());
+            }
         }
     }
 
