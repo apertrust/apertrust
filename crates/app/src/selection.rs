@@ -36,12 +36,14 @@
 //! yet.
 //!
 //! The Select menu's items run here too ([`edit`]): Select All, Select None, Invert
-//! Selection and Select Unedited, each drawn disabled where it would change nothing
-//! ([`selectable`]), over the folder's photos or the photos opened alone, the session's
-//! collection either way. So do Next Photo and Previous Photo ([`step`]): with several
-//! photos selected, the active photo moves through them in the Browser's order, the
-//! selection staying; else through the folder or the photos opened alone, the photo
-//! reached selected alone. And an export takes every selected photo ([`exported`]). Each
+//! Selection, Select Unedited and Previous Selection, each drawn disabled where it would
+//! change nothing ([`selectable`]), over the folder's photos or the photos opened alone, the
+//! session's collection either way. Previous Selection puts back the selection the session
+//! keeps from before its last change, the active photo with it, which the session opens or
+//! closes itself; the mirror follows once it tells the selection ([`Mirror::selecting`]). So do Next
+//! Photo and Previous Photo ([`step`]): with several photos selected, the active photo
+//! moves through them in the Browser's order, the selection staying; else through the
+//! folder or the photos opened alone, the photo reached selected alone. And an export takes every selected photo ([`exported`]). Each
 //! reads the collection as the Browser shows it ([`Collection`]), so a folder and photos
 //! opened alone take one path.
 
@@ -133,9 +135,12 @@ fn clear(waiting: &mut Option<Waiting>, mirror: &mut Mirror, send: &mut SendComm
         return;
     }
     select(SelectionCommand::Clear, mirror, send);
-    // The session closes the photo it leaves out (`Mirror::closing`).
+    // The session closes the photo it leaves out (`Mirror::closing`); with none shown, a
+    // Previous Selection waiting shows nothing either.
     if active {
         mirror.closing();
+    } else {
+        mirror.clearing();
     }
 }
 
@@ -170,23 +175,26 @@ pub(crate) fn open_for_menu(
     }
 }
 
-/// Runs one of the Select menu's items, `command` (`All`, `Clear`, `Invert` or `Unedited`),
-/// as the session will (decision 37): Select All keeps the active photo; Select None
-/// closes it, as File › Close does, and opens none; Invert Selection closes it, and Select
-/// Unedited where it has an edit, as its cell's pencil says; among photos opened alone, whose
-/// edits the app does not know, Select Unedited leaves it to the session, whose selection
-/// closes it if it does. Where those two close it,
+/// Runs one of the Select menu's items, `command` (`All`, `Clear`, `Invert`, `Unedited` or
+/// `Previous`), as the session will (decision 37): Select All keeps the active photo; Select
+/// None closes it, as File › Close does, and opens none; Invert Selection closes it, and
+/// Select Unedited where it has an edit, as its cell's pencil says; among photos opened
+/// alone, whose edits the app does not know, Select Unedited leaves it to the session, whose
+/// selection closes it if it does. Where those two close it,
 /// `waiting` takes the command's number: once the session tells the selection through it,
-/// the first photo of the new selection in the Browser's order opens ([`open_first`]). A
-/// wait under way follows the newest command, so the photo opened is in the selection the
-/// session ends with. A wait ends with the folder it was sent in: another folder, or a
-/// close, opens nothing.
+/// the first photo of the new selection in the Browser's order opens ([`open_first`]).
+/// Previous Selection's active photo is the session's to open or close: once it tells the
+/// selection, the mirror shows the photo it made active, or none, and no first photo waits.
+/// A wait under way follows the
+/// newest command, so the photo opened is in the selection the session ends with. A wait
+/// ends with the folder it was sent in: another folder, or a close, opens nothing.
 pub(crate) fn edit(
     command: SelectionCommand,
     waiting: &mut Option<Waiting>,
     mirror: &mut Mirror,
     send: &mut SendCommand<'_>,
 ) {
+    let previous = command == SelectionCommand::Previous;
     let active = mirror.photo.asked().map(Path::to_owned);
     let leaves = active.is_some_and(|active| match &command {
         SelectionCommand::Clear | SelectionCommand::Invert => true,
@@ -201,6 +209,12 @@ pub(crate) fn edit(
     // The session closes the photo it leaves out (`Mirror::closing`).
     if leaves {
         mirror.closing();
+    }
+    // The photo Previous Selection makes active is the session's: the mirror shows it
+    // once the session tells the selection (`Mirror::selecting`), and no first photo opens.
+    if previous {
+        *waiting = None;
+        return;
     }
     let folder = mirror.folder.latest();
     if (leaves && !clear) || waiting.is_some_and(|waiting| waiting.folder == folder) {
@@ -258,6 +272,9 @@ pub(crate) fn selectable(mirror: &Mirror) -> Selectable {
     let active = mirror.photo.asked();
     let alone_selected = active.is_some_and(|active| mirror.is_selected(active));
     let none = mirror.selected_count() > usize::from(alone_selected);
+    // The earlier selection the session keeps, of the collection open, unless one sent has
+    // not been told, as a second press before it would go back to what the first replaced.
+    let previous = mirror.selection.previous && !mirror.previous_pending();
     if let Some(paths) = alone(mirror) {
         let all = mirror.selected_count() < paths.len()
             || paths.iter().any(|photo| !mirror.is_selected(photo));
@@ -269,6 +286,7 @@ pub(crate) fn selectable(mirror: &Mirror) -> Selectable {
             none,
             invert: !paths.is_empty(),
             unedited: !paths.is_empty() && settled,
+            previous,
         };
     }
     let Some(listing) = listing(mirror) else {
@@ -286,6 +304,7 @@ pub(crate) fn selectable(mirror: &Mirror) -> Selectable {
         none,
         invert: !listing.photos.is_empty(),
         unedited: (listing.photos.iter()).any(|photo| photo.edit == EditState::None),
+        previous,
     }
 }
 
@@ -711,11 +730,30 @@ mod tests {
 
         /// The session tells `photos` selected, `active` active, through command `through`.
         fn fact(&mut self, photos: &[&str], active: Option<&str>, through: u64) {
+            self.fact_keeping(photos, active, through, false);
+        }
+
+        /// [`Folder::fact`], with `previous` whether the session keeps an earlier selection.
+        fn fact_keeping(
+            &mut self,
+            photos: &[&str],
+            active: Option<&str>,
+            through: u64,
+            previous: bool,
+        ) {
             self.m.apply(Event::Selection(Selection {
                 photos: photos.iter().map(|name| at(name)).collect(),
                 active: active.map(at),
+                previous,
                 through,
             }));
+        }
+
+        /// The session tells `photos` selected, `active` active, an earlier selection kept,
+        /// through every command sent.
+        fn told_keeping(&mut self, photos: &[&str], active: Option<&str>) {
+            let through = self.sent.len() as u64;
+            self.fact_keeping(photos, active, through, true);
         }
 
         /// The session tells `photos` selected, `active` active, through every command sent.
@@ -1205,6 +1243,7 @@ mod tests {
             none: false,
             invert: true,
             unedited: true,
+            previous: false,
         };
         assert_eq!(selectable(&f.m), listed);
         f.told(&["a", "b", "c", "d", "e"], Some("a"));
@@ -1223,6 +1262,126 @@ mod tests {
         let mut f = Folder::new("a");
         f.listed(&["a", "b", "c", "d", "e"], false);
         assert!(!selectable(&f.m).unedited);
+    }
+
+    /// Previous Selection is enabled while the session keeps an earlier selection of the
+    /// collection open, and rests while one sent waits to be told, which shows nothing at
+    /// once and holds the keys that read the selection.
+    #[test]
+    fn previous_selection_runs_while_the_session_keeps_an_earlier_selection() {
+        let mut f = Folder::new("a");
+        f.told_keeping(&["a"], Some("a"));
+        // No folder open and no photos alone: no collection.
+        assert!(!selectable(&f.m).previous);
+        f.listed(&[], false);
+        f.told(&["a"], Some("a"));
+        assert!(!selectable(&f.m).previous);
+        f.told_keeping(&["a"], Some("a"));
+        assert!(selectable(&f.m).previous);
+        let previous = selection(SelectionCommand::Previous);
+        assert_eq!(f.edit(SelectionCommand::Previous), [previous]);
+        assert!(f.m.selection_pending() && !selectable(&f.m).previous);
+        assert!(f.m.selected_alone(&at("a")));
+        assert_eq!(stepped(true, &f.m), None);
+        f.told_keeping(&["a", "b", "c"], Some("a"));
+        assert!(selectable(&f.m).previous);
+        assert_eq!(f.m.selected_count(), 3);
+        // Among photos opened alone too.
+        f.alone(&["c", "a"]);
+        assert!(selectable(&f.m).previous);
+    }
+
+    /// Previous Selection's active photo is the session's to open or close: once it tells
+    /// the selection, the app shows the photo it made active, opened under the command's
+    /// number, or none; the same photo opens nothing; a photo asked for meanwhile ends the
+    /// wait.
+    #[test]
+    fn previous_selection_shows_the_photo_the_session_made_active() {
+        let mut f = Folder::new("a");
+        f.listed(&[], false);
+        f.told_keeping(&["a"], Some("a"));
+        f.edit(SelectionCommand::Previous);
+        let previous = f.sent.len() as u64;
+        // Not yet told: the photo stays.
+        assert!(f.open_first().is_empty());
+        assert_eq!(f.m.photo.asked(), Some(at("a").as_path()));
+        f.told_keeping(&["b", "c", "d"], Some("c"));
+        assert!(f.open_first().is_empty(), "the session opened it");
+        assert!(matches!(&f.m.photo,
+            PhotoState::Opening { path, open } if *path == at("c") && *open == previous));
+        assert_eq!(f.waiting, None);
+        assert_eq!(f.m.selected_count(), 3);
+        // Back, with no active photo: closed.
+        f.edit(SelectionCommand::Previous);
+        f.told_keeping(&["a", "e"], None);
+        f.open_first();
+        assert!(matches!(f.m.photo, PhotoState::None));
+        // The same photo active: nothing.
+        let mut f = Folder::new("a");
+        f.listed(&[], false);
+        f.told_keeping(&["a"], Some("a"));
+        let open = f.m.photo.open();
+        f.edit(SelectionCommand::Previous);
+        f.told_keeping(&["a", "b"], Some("a"));
+        f.open_first();
+        assert_eq!(f.m.photo.open(), open);
+        // A photo clicked before the session tells it: that one stays.
+        f.edit(SelectionCommand::Previous);
+        f.browse(BrowserAction::Open(4));
+        let previous = f.sent.len() as u64 - 1;
+        f.fact_keeping(&["a"], Some("a"), previous, true);
+        f.open_first();
+        assert_eq!(f.waiting, None);
+        assert_eq!(f.m.photo.asked(), Some(at("e").as_path()));
+    }
+
+    /// Select None, then Previous Selection putting every photo back with a active, then
+    /// Select All before the session tells it: All changes nothing and tells nothing, yet
+    /// a shows once the fact includes Previous Selection, and its open's events are taken.
+    #[test]
+    fn previous_selection_then_a_command_that_tells_nothing_still_shows_its_photo() {
+        let mut f = Folder::new("a");
+        f.listed(&[], false);
+        let every = ["a", "b", "c", "d", "e"];
+        f.told_keeping(&every, Some("a"));
+        f.edit(SelectionCommand::Clear);
+        f.told_keeping(&[], None);
+        f.edit(SelectionCommand::Previous);
+        let previous = f.sent.len() as u64;
+        f.edit(SelectionCommand::All);
+        f.fact_keeping(&every, Some("a"), previous, true);
+        f.open_first();
+        assert!(matches!(&f.m.photo,
+            PhotoState::Opening { path, open } if *path == at("a") && *open == previous));
+        let opened = apertrust_engine::session::Photo {
+            path: at("a"),
+            ..crate::mirror::tests::photo(previous)
+        };
+        f.m.apply(Event::Opened(opened));
+        assert!(matches!(&f.m.photo, PhotoState::Open(photo) if photo.open == previous));
+    }
+
+    /// A click on the Browser's empty space with no photo shown, a Previous Selection
+    /// waiting, ends the wait: the photo Previous would have shown is not opened once its
+    /// fact comes, since Select None was sent after it.
+    #[test]
+    fn an_empty_space_click_with_no_photo_ends_a_previous_selection_s_wait() {
+        let mut f = Folder::new("a");
+        f.listed(&[], false);
+        let every = ["a", "b", "c", "d", "e"];
+        f.told_keeping(&every, Some("a"));
+        f.edit(SelectionCommand::Clear);
+        f.told_keeping(&[], None);
+        f.edit(SelectionCommand::Previous);
+        let previous = f.sent.len() as u64;
+        f.browse(BrowserAction::ClearSelection);
+        assert_eq!(
+            f.sent.last(),
+            Some(&Command::Selection(SelectionCommand::Clear))
+        );
+        f.fact_keeping(&every, Some("a"), previous, true);
+        f.open_first();
+        assert!(matches!(f.m.photo, PhotoState::None));
     }
 
     /// With several selected, Next Photo and Previous Photo move the active photo through
@@ -1541,6 +1700,7 @@ mod tests {
             none: false,
             invert: true,
             unedited: true,
+            previous: false,
         };
         // A still opening.
         let opening = Selectable {

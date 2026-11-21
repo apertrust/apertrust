@@ -1844,6 +1844,7 @@ mod tests {
                 none: true,
                 invert: true,
                 unedited: true,
+                previous: true,
             },
             next: true,
             previous: true,
@@ -2943,8 +2944,7 @@ mod tests {
                 "{os:?}: {in_edit:?}"
             );
         }
-        // The Mac's: the registry's keys and enabled states, Previous Selection disabled
-        // until Phase 3.
+        // The Mac's: the registry's keys and enabled states.
         let mac = Keymap::defaults(OperatingSystem::Mac);
         let state = everything();
         let shift = Modifiers::COMMAND.plus(Modifiers::SHIFT);
@@ -2954,7 +2954,7 @@ mod tests {
             (ActionId::SELECT_NONE, key(shift, Key::A), true),
             (ActionId::INVERT_SELECTION, key(shift, Key::I), true),
             (ActionId::SELECT_UNEDITED, None, true),
-            (ActionId::PREVIOUS_SELECTION, key(shift, Key::D), false),
+            (ActionId::PREVIOUS_SELECTION, key(shift, Key::D), true),
         ];
         for (id, key, enabled) in mac_items {
             let shown = shown(id, &mac, &state, Focus::None);
@@ -2994,7 +2994,7 @@ mod tests {
                     at("Invert selection", Some("Ctrl+Shift+I"), built),
                     at("Select unedited", None, built),
                     at("—", None, false),
-                    at("Previous selection", Some("Ctrl+Shift+D"), false),
+                    at("Previous selection", Some("Ctrl+Shift+D"), built),
                 ]
             );
         }

@@ -471,7 +471,7 @@ fn a_panicked_turn_tells_the_selection_with_no_active_photo() {
         matches!(&events[..], [
             Event::Failed(SessionError::Panicked(_)),
             Event::View(ViewState { placement: None, .. }),
-            Event::Selection(Selection { photos, active: None, through }),
+            Event::Selection(Selection { photos, active: None, through, .. }),
         ] if photos.is_empty() && *through == taken),
         "{events:?}"
     );
@@ -752,7 +752,7 @@ fn a_photo_a_panic_closes_mid_gesture_reads_as_listed() {
         .engine
         .selection
         .command(SelectionCommand::Unedited, None);
-    assert!(matches!(unedited, Ok(false)), "{unedited:?}");
+    assert!(matches!(unedited, Ok(Active::Stays)), "{unedited:?}");
     let told = driven.engine.selection.fact(None, taken).expect("told");
     assert_eq!(told.photos, [folder.join("other.ARW"), path.clone()]);
     remove(&path);
@@ -791,7 +791,7 @@ fn a_photo_saved_then_closed_by_a_panic_reads_as_its_sidecar() {
         .engine
         .selection
         .command(SelectionCommand::Unedited, None);
-    assert!(matches!(unedited, Ok(false)), "{unedited:?}");
+    assert!(matches!(unedited, Ok(Active::Stays)), "{unedited:?}");
     let told = driven.engine.selection.fact(None, taken).expect("told");
     assert_eq!(told.photos, [folder.join("other.ARW")]);
     remove(&path);
@@ -863,4 +863,226 @@ fn a_cancel_queued_as_the_handle_drops_counts_only_when_taken() {
         assert_eq!(sidecar::path_for(&a).exists(), !taken, "taken: {taken}");
         remove(&a);
     }
+}
+
+/// A folder of its own holding the raws A, B, C and D, which [`remove`] takes with it.
+fn four_photos(name: &str) -> PathBuf {
+    let folder = three_photos(name);
+    std::fs::write(folder.join("D.ARW"), [0u8; 4]).unwrap();
+    folder
+}
+
+/// The first selection the session tells through at least the command numbered `through`,
+/// which must be `photos`, in `folder`, with `active`, and `previous` whether there is an
+/// earlier selection; the events up to it.
+fn told_previous(
+    session: &Session,
+    wakes: &Receiver<()>,
+    folder: &Path,
+    (photos, active): (&[&str], Option<&str>),
+    previous: bool,
+    through: u64,
+) -> Vec<Event> {
+    let after = |e: &Event| matches!(e, Event::Selection(s) if s.through >= through);
+    let events = until(session, wakes, after);
+    let Some(Event::Selection(selection)) = events.iter().find(|e| after(e)) else {
+        unreachable!("`until` stops at it");
+    };
+    let photos: Vec<PathBuf> = photos.iter().map(|photo| folder.join(photo)).collect();
+    assert_eq!(selection.photos, photos, "{through}");
+    assert_eq!(
+        selection.active,
+        active.map(|photo| folder.join(photo)),
+        "{through}"
+    );
+    assert_eq!(selection.previous, previous, "{through}");
+    events
+}
+
+/// Waits until the photo the command numbered `open` opened is open, numbered so, unless
+/// `events`, drained already, say so; what it drains is added to them.
+fn opened_by(
+    session: &Session,
+    wakes: &Receiver<()>,
+    events: &mut Vec<Event>,
+    path: &Path,
+    open: u64,
+) {
+    let opened =
+        |e: &Event| matches!(e, Event::Opened(photo) if photo.open == open && photo.path == path);
+    if !events.iter().any(opened) {
+        events.extend(until(session, wakes, opened));
+    }
+}
+
+/// Whether the command numbered `command` was refused for having no earlier selection.
+fn refused_as_nothing_earlier(session: &Session, wakes: &Receiver<()>, command: u64) -> bool {
+    let refused = |e: &Event| {
+        matches!(e, Event::Failed(SessionError::Refused { command: c, error })
+            if *c == command && matches!(**error, SessionError::NoPreviousSelection))
+    };
+    let answered = |e: &Event| {
+        refused(e)
+            || matches!(e, Event::Failed(SessionError::Refused { command: c, .. }) if *c == command)
+            || matches!(e, Event::Selection(s) if s.through >= command)
+    };
+    until(session, wakes, answered).iter().any(refused)
+}
+
+/// Previous Selection (decision 90): refused with nothing earlier, the first photo opened
+/// included; each change of the photos selected from a selection, by a command or an open
+/// selecting a photo alone, leaves the selection before it to go back to, with its active photo, which opens; a second goes forward again; the
+/// active photo moving within the selection, or a command that changes nothing, leaves the
+/// earlier one; `Selection::previous` says whether there is one.
+#[test]
+fn previous_puts_back_the_selection_before_its_last_change() {
+    let gpu = gpu();
+    let folder = four_photos("selection-previous");
+    let (session, wakes) = start_with(&gpu, &[&Sample], synthetic);
+    session.send(Command::Resize {
+        width: 64,
+        height: 48,
+    });
+    let open = session.send(open_folder(&folder));
+    let listed = |e: &Event| matches!(e, Event::Library(LibraryEvent::Listed { open: o, done: true, .. }) if *o == open);
+    until(&session, &wakes, listed);
+    let previous = || select(SelectionCommand::Previous);
+
+    // Nothing earlier: refused, and the selection is as it was.
+    let refused = session.send(previous());
+    assert!(refused_as_nothing_earlier(&session, &wakes, refused));
+    // A, the first photo opened, is selected alone: from no photo, nothing to go back to.
+    let a = session.send(Command::Open(folder.join("A.ARW")));
+    let events = told_previous(
+        &session,
+        &wakes,
+        &folder,
+        (&["A.ARW"], Some("A.ARW")),
+        false,
+        a,
+    );
+    go_live(&session, &wakes, &events, a);
+    let refused = session.send(previous());
+    assert!(refused_as_nothing_earlier(&session, &wakes, refused));
+    let abc = ["A.ARW", "B.ARW", "C.ARW"];
+    let set = select(SelectionCommand::Set(abc.map(|p| folder.join(p)).to_vec()));
+    let set = session.send(set);
+    told_previous(&session, &wakes, &folder, (&abc, Some("A.ARW")), true, set);
+    // C made active within the selection records nothing: Previous goes back to A alone,
+    // as before the Set, not to the three with A active.
+    let c = session.send(Command::Open(folder.join("C.ARW")));
+    let events = told_previous(&session, &wakes, &folder, (&abc, Some("C.ARW")), true, c);
+    go_live(&session, &wakes, &events, c);
+    let back = session.send(previous());
+    let mut events = told_previous(
+        &session,
+        &wakes,
+        &folder,
+        (&["A.ARW"], Some("A.ARW")),
+        true,
+        back,
+    );
+    opened_by(&session, &wakes, &mut events, &folder.join("A.ARW"), back);
+    go_live(&session, &wakes, &events, back);
+    // A second goes forward again, C opening with the three.
+    let forward = session.send(previous());
+    let mut events = told_previous(
+        &session,
+        &wakes,
+        &folder,
+        (&abc, Some("C.ARW")),
+        true,
+        forward,
+    );
+    opened_by(
+        &session,
+        &wakes,
+        &mut events,
+        &folder.join("C.ARW"),
+        forward,
+    );
+    go_live(&session, &wakes, &events, forward);
+    // B, selected already, added changes nothing and records nothing: Previous still goes
+    // back to A alone.
+    session.send(select(SelectionCommand::Add(folder.join("B.ARW"))));
+    let back = session.send(previous());
+    let events = told_previous(
+        &session,
+        &wakes,
+        &folder,
+        (&["A.ARW"], Some("A.ARW")),
+        true,
+        back,
+    );
+    go_live(&session, &wakes, &events, back);
+    let forward = session.send(previous());
+    let events = told_previous(
+        &session,
+        &wakes,
+        &folder,
+        (&abc, Some("C.ARW")),
+        true,
+        forward,
+    );
+    go_live(&session, &wakes, &events, forward);
+
+    // Select None, then Previous: the three come back, C active and open again.
+    let none = session.send(select(SelectionCommand::Clear));
+    told_previous(&session, &wakes, &folder, (&[], None), true, none);
+    let back = session.send(previous());
+    let mut events = told_previous(&session, &wakes, &folder, (&abc, Some("C.ARW")), true, back);
+    opened_by(&session, &wakes, &mut events, &folder.join("C.ARW"), back);
+    go_live(&session, &wakes, &events, back);
+    // A plain Set of one, then Previous: the three again.
+    let one = select(SelectionCommand::Set(vec![folder.join("C.ARW")]));
+    let one = session.send(one);
+    told_previous(
+        &session,
+        &wakes,
+        &folder,
+        (&["C.ARW"], Some("C.ARW")),
+        true,
+        one,
+    );
+    let back = session.send(previous());
+    told_previous(&session, &wakes, &folder, (&abc, Some("C.ARW")), true, back);
+
+    // D opened, outside the selection, selects it alone; C removed from the folder, listed
+    // again, is left out of what comes back, and B, the nearest to it, is active.
+    let d = session.send(Command::Open(folder.join("D.ARW")));
+    let events = told_previous(
+        &session,
+        &wakes,
+        &folder,
+        (&["D.ARW"], Some("D.ARW")),
+        true,
+        d,
+    );
+    go_live(&session, &wakes, &events, d);
+    std::fs::remove_file(folder.join("C.ARW")).unwrap();
+    let again = session.send(open_folder(&folder));
+    let listed = |e: &Event| matches!(e, Event::Library(LibraryEvent::Listed { open: o, done: true, .. }) if *o == again);
+    until(&session, &wakes, listed);
+    let back = session.send(previous());
+    let ab = ["A.ARW", "B.ARW"];
+    let mut events = told_previous(&session, &wakes, &folder, (&ab, Some("B.ARW")), true, back);
+    opened_by(&session, &wakes, &mut events, &folder.join("B.ARW"), back);
+    go_live(&session, &wakes, &events, back);
+
+    // Another folder: no earlier selection, and Previous is refused.
+    let other = three_photos("selection-previous-other");
+    let other_open = session.send(open_folder(&other));
+    told_previous(
+        &session,
+        &wakes,
+        &folder,
+        (&["B.ARW"], Some("B.ARW")),
+        false,
+        other_open,
+    );
+    let refused = session.send(previous());
+    assert!(refused_as_nothing_earlier(&session, &wakes, refused));
+    drop(session);
+    remove(&folder.join("A.ARW"));
+    remove(&other.join("A.ARW"));
 }

@@ -173,6 +173,7 @@ pub(crate) use open::Load;
 use open::{Decodes, Stage};
 use outbox::Drain;
 pub(crate) use outbox::Outbox;
+use selection::Active;
 pub use selection::{Selection, SelectionCommand};
 use thumbnail::Tally;
 
@@ -433,13 +434,15 @@ pub enum Command {
     /// [`LibraryEvent::PhotoThumbnail`], naming the latest open or close.
     Library(LibraryCommand),
     /// A command on the selection (decision 37; [`SelectionCommand`]): the photos set, one
-    /// added or removed, a range, all, none, the selection inverted, or the unedited
-    /// photos, answered by [`Event::Selection`] where it changed. View state, never a
-    /// command on the edit; one that leaves the active photo out closes it, as
-    /// [`Command::Close`] does. A photo named by `Set`, `Add` or `Range`'s `to` that is
+    /// added or removed, a range, all, none, the selection inverted, the unedited photos,
+    /// or the previous selection, answered by [`Event::Selection`] where it changed. View
+    /// state, never a command on the edit; one that leaves the active photo out closes it,
+    /// as [`Command::Close`] does, and the previous selection opens its active photo as
+    /// [`Command::Open`] does. A photo named by `Set`, `Add` or `Range`'s `to` that is
     /// neither one of the collection's, the folder open's as listed, nor the active photo
     /// is refused ([`SessionError::NotInCollection`]); one `Remove` or `Range`'s `order`
-    /// names is passed over.
+    /// names is passed over. `Previous` with no earlier selection is refused
+    /// ([`SessionError::NoPreviousSelection`]).
     Selection(SelectionCommand),
     /// A command of the disk cache's (decision 76).
     ///
@@ -724,7 +727,10 @@ pub enum Event {
     /// before its frame; a gesture's `done: false` changes send none.
     History(History),
     /// The selection and the active photo (decision 37): once a turn in which either
-    /// changed, after its other events.
+    /// changed, or whether there is an earlier selection ([`Selection::previous`]), after its
+    /// other events. One may change `previous` alone, its photos and active photo as the last
+    /// told, and a `Previous` is always answered by one, though it tells what the last did:
+    /// a client applies each as it applies any.
     Selection(Selection),
     /// The session's one view and where it places the open photo (decision 99), once in
     /// each batch whose commands changed either, after the batch's values and before its
@@ -1214,6 +1220,10 @@ pub enum SessionError {
     /// folder open's as listed, nor the active photo: the selection is as it was.
     #[error("{} is not among the photos shown", photo.display())]
     NotInCollection { photo: PathBuf },
+    /// [`SelectionCommand::Previous`] with no earlier selection to go back to: the selection
+    /// is as it was.
+    #[error("there is no earlier selection to go back to")]
+    NoPreviousSelection,
     /// [`Command::CancelJob`] named a job that cannot be cancelled: it goes on.
     #[error("job {job} cannot be cancelled")]
     NotCancellable { job: JobId },
@@ -3299,17 +3309,23 @@ impl Engine {
                     }
                     let active = self.active().map(Path::to_owned);
                     match self.selection.command(command, active.as_deref()) {
-                        // Left out of the selection, the active photo closes, as by `Close`.
-                        Ok(true) => {
+                        // Left out of the selection, the active photo closes, as by `Close`;
+                        // the previous selection's opens as by `Open`, numbered so.
+                        Ok(change @ (Active::Closes | Active::Opens(_))) => {
                             self.picker_off(&mut events);
                             self.pickers.forget_photo();
-                            events.extend(self.close_saving());
+                            match change {
+                                Active::Opens(path) => {
+                                    events.extend(self.open(path, self.applied, at));
+                                }
+                                _ => events.extend(self.close_saving()),
+                            }
                             (values, render, save, cancelled) = (false, false, false, false);
                             answer = false;
                             resample = false;
                             Ok(())
                         }
-                        Ok(false) => Ok(()),
+                        Ok(Active::Stays) => Ok(()),
                         Err(error) => Err(error),
                     }
                 }
@@ -3582,14 +3598,16 @@ impl Engine {
                 let _ = self.cancel_job(job);
                 continue;
             }
-            // A selection that leaves the active photo out closes it, as `Close` does.
+            // A selection that leaves the active photo out closes it, as `Close` does, and
+            // the previous selection's other active photo opens, as `Open` does.
             if let Command::Selection(command) = command {
                 if command == SelectionCommand::Unedited {
                     self.settle_edited();
                     self.take_classified(true);
                 }
                 let active = self.active().map(Path::to_owned);
-                if matches!(self.selection.command(command, active.as_deref()), Ok(true)) {
+                let change = self.selection.command(command, active.as_deref());
+                if matches!(change, Ok(Active::Closes | Active::Opens(_))) {
                     return true;
                 }
                 self.applied += 1;

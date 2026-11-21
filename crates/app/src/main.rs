@@ -10172,6 +10172,7 @@ mod tests {
         m.apply(Event::Selection(Selection {
             photos: vec![at.join("a.ARW"), at.join("c.ARW")],
             active: Some(at.join("a.ARW")),
+            previous: false,
             through: sent.len() as u64,
         }));
         assert_eq!(browser_count(&m), (2, 3));
@@ -22696,6 +22697,253 @@ mod tests {
         harness.run();
         assert_eq!(harness.state().text, "y");
         assert!(harness.state().commands.is_empty());
+    }
+
+    /// The shell with the Browser of the folder `/photos`, `a.ARW` to `e.ARW`, drawn from
+    /// the app's mirror as [`App::browser`] draws it, on Linux: the keys read first, the
+    /// Toolbar, whose ☰ holds Select, the Browser, then what the keys, the menu and the
+    /// Browser asked for, sent through `selection` as the app sends it. The test answers
+    /// as the session, telling the mirror.
+    struct Browsing {
+        shell: Shell,
+        mirror: Mirror,
+        waiting: Option<selection::Waiting>,
+        sent: Vec<Command>,
+    }
+
+    fn browsing() -> Harness<'static, Browsing> {
+        let (mut mirror, mut sent) = (mirror::tests::mirror(), Vec::new());
+        let folder = PathBuf::from("/photos");
+        open_folder(folder.clone(), &mut mirror, &mut sender(&mut sent));
+        mirror.apply(folder_opened(1, &folder));
+        let names = ["a.ARW", "b.ARW", "c.ARW", "d.ARW", "e.ARW"];
+        mirror.apply(listed(1, &names, true));
+        Harness::builder()
+            .with_size(egui::vec2(1000.0, 300.0))
+            .with_os(OperatingSystem::Nix)
+            .with_context_setup(|ctx| {
+                apertrust_ui::install(ctx, Theme::default());
+                registry_keys_only(ctx);
+            })
+            .build_ui_state(
+                |ui, browsing: &mut Browsing| {
+                    let ctx = ui.ctx().clone();
+                    // As `App::shell_state` reads the selection.
+                    let state = |ctx: &egui::Context, browsing: &Browsing| State {
+                        select: selection::selectable(&browsing.mirror),
+                        ..browsing.shell.state(ctx, false, false)
+                    };
+                    let now = state(&ctx, browsing);
+                    let keys = actions::read(&ctx, &browsing.shell.keymap, &now);
+                    browsing.shell.close_menu(&keys.pressed);
+                    let top = (browsing.shell).toolbar(ui, &now, SaveState::None, None, None, &[]);
+                    let mut run = keys.pressed;
+                    if let Some(FromToolbar::Action(id)) = top {
+                        run.push(id);
+                    }
+                    run.extend(browsing.shell.popups(&ctx));
+                    let mirror = &browsing.mirror;
+                    let folder::Folder::Open(listing) = &mirror.folder.folder else {
+                        unreachable!("the folder stays open");
+                    };
+                    let order = mirror.folder.order();
+                    let paths: Vec<PathBuf> = (order.iter())
+                        .map(|&i| listing.path.join(&listing.photos[i].name))
+                        .collect();
+                    let thumb = |i: usize| Thumb {
+                        name: &listing.photos[order[i]].name,
+                        edited: false,
+                        status: None,
+                        selected: mirror.is_selected(&paths[i]),
+                        picture: None,
+                        no_preview: false,
+                        rating: None,
+                    };
+                    let (selected, total) = browser_count(mirror);
+                    let output = Browser::new(order.len(), mirror.folder.active_shown(), thumb)
+                        .count(selected, total)
+                        .show(ui);
+                    for id in run {
+                        let state = state(&ctx, browsing);
+                        let send = &mut sender(&mut browsing.sent);
+                        match browsing.shell.run(id, &state, &ctx, &[]) {
+                            Some(Command::Selection(command)) => {
+                                let (waiting, mirror) =
+                                    (&mut browsing.waiting, &mut browsing.mirror);
+                                selection::edit(command, waiting, mirror, send);
+                            }
+                            Some(command) => {
+                                send(command);
+                            }
+                            None => {}
+                        }
+                    }
+                    {
+                        let send = &mut sender(&mut browsing.sent);
+                        let (waiting, mirror) = (&mut browsing.waiting, &mut browsing.mirror);
+                        if let Some(action) = output.action {
+                            selection::browse(action, &paths, false, waiting, mirror, send);
+                        }
+                        selection::open_first(waiting, mirror, send);
+                    }
+                    let now = state(&ctx, browsing);
+                    browsing.shell.open_menu(&ctx, &now);
+                },
+                Browsing {
+                    shell: Shell::new(&Settings::default(), Locale::EnGb, OperatingSystem::Nix),
+                    mirror,
+                    waiting: None,
+                    sent,
+                },
+            )
+    }
+
+    impl Browsing {
+        /// The session tells `photos` selected, `active` active, and `previous` whether it
+        /// keeps an earlier selection, through every command sent.
+        fn told(&mut self, photos: &[&str], active: Option<&str>, previous: bool) {
+            let at = |name: &str| PathBuf::from("/photos").join(name);
+            self.mirror
+                .apply(Event::Selection(apertrust_engine::session::Selection {
+                    photos: photos.iter().map(|name| at(name)).collect(),
+                    active: active.map(at),
+                    previous,
+                    through: self.sent.len() as u64,
+                }));
+        }
+    }
+
+    /// Select › Previous Selection, from the ☰'s menu and on Ctrl+Shift+D: disabled while
+    /// the session keeps no earlier selection, the first photo opened included; after a click on the Browser's empty space
+    /// drops one, it sends `Previous`, and once the session tells it, the browser bar's
+    /// count, the cells' rings and the active photo, opened under the command's number,
+    /// come back; again, it goes forward to none.
+    #[test]
+    fn previous_selection_brings_back_a_selection_a_click_on_empty_space_dropped() {
+        use apertrust_engine::session::SelectionCommand;
+
+        let selected = |harness: &Harness<'_, Browsing>, name: &str| {
+            harness.get_by_label(name).accesskit_node().is_selected()
+        };
+        let item = |harness: &mut Harness<'_, Browsing>| {
+            // F10, then down past File, Edit and Photo to Select, and into it.
+            harness.key_press(Key::F10);
+            harness.run();
+            for _ in 0..3 {
+                harness.key_press(Key::ArrowDown);
+            }
+            harness.key_press(Key::ArrowRight);
+            harness.run();
+            let item = harness.get_by_role_and_label(Role::MenuItem, "Previous selection");
+            let node = item.accesskit_node();
+            (
+                node.is_disabled(),
+                node.data().keyboard_shortcut().map(str::to_owned),
+            )
+        };
+        let ctrl_shift = Modifiers::CTRL | Modifiers::COMMAND | Modifiers::SHIFT;
+        let mut harness = browsing();
+        harness.state_mut().told(&[], None, false);
+        harness.run();
+        let shortcut = Some("Ctrl+Shift+D".to_owned());
+        assert_eq!(item(&mut harness), (true, shortcut.clone()));
+        harness.key_press(Key::Escape);
+        harness.key_press(Key::Escape);
+        harness.run();
+        assert!(
+            harness.query_by_role(Role::MenuItem).is_none(),
+            "the menu closed"
+        );
+        let before = harness.state().sent.len();
+        harness.key_press_modifiers(ctrl_shift, Key::D);
+        harness.run();
+        assert_eq!(harness.state().sent.len(), before, "nothing earlier");
+
+        // b, the first photo opened, leaves nothing to go back to, as the session tells it:
+        // still disabled.
+        let b = PathBuf::from("/photos/b.ARW");
+        let browsing = harness.state_mut();
+        open_listed(
+            b.clone(),
+            &mut browsing.mirror,
+            &mut sender(&mut browsing.sent),
+        );
+        harness.state_mut().told(&["b.ARW"], Some("b.ARW"), false);
+        harness.run();
+        assert_eq!(item(&mut harness), (true, shortcut.clone()));
+        harness.key_press(Key::Escape);
+        harness.key_press(Key::Escape);
+        harness.run();
+        let before = harness.state().sent.len();
+        harness.key_press_modifiers(ctrl_shift, Key::D);
+        harness.run();
+        assert_eq!(harness.state().sent.len(), before, "nothing earlier");
+        // Three selected, b active, then a click on empty space after the last cell.
+        harness
+            .state_mut()
+            .told(&["a.ARW", "b.ARW", "c.ARW"], Some("b.ARW"), true);
+        harness.run();
+        let list = harness.get_by_role_and_label(Role::List, "Browser").rect();
+        let last = harness.get_by_label("e.ARW").rect();
+        let empty = egui::pos2(list.right() - 2.0, last.center().y);
+        harness.hover_at(empty);
+        harness.run();
+        harness.event(egui::Event::PointerButton {
+            pos: empty,
+            button: egui::PointerButton::Primary,
+            pressed: true,
+            modifiers: Modifiers::NONE,
+        });
+        harness.step();
+        harness.event(egui::Event::PointerButton {
+            pos: empty,
+            button: egui::PointerButton::Primary,
+            pressed: false,
+            modifiers: Modifiers::NONE,
+        });
+        harness.run();
+        let clear = Command::Selection(SelectionCommand::Clear);
+        assert_eq!(harness.state().sent.last(), Some(&clear));
+        harness.state_mut().told(&[], None, true);
+        harness.run();
+        assert_eq!(selected(&harness, "b.ARW"), Some(false));
+        assert!(matches!(harness.state().mirror.photo, PhotoState::None));
+
+        // Ctrl+Shift+D: the three, b open again under its number.
+        harness.key_press_modifiers(ctrl_shift, Key::D);
+        harness.run();
+        let previous = Command::Selection(SelectionCommand::Previous);
+        assert_eq!(harness.state().sent.last(), Some(&previous));
+        let number = harness.state().sent.len() as u64;
+        harness
+            .state_mut()
+            .told(&["a.ARW", "b.ARW", "c.ARW"], Some("b.ARW"), true);
+        harness.run();
+        assert!(matches!(&harness.state().mirror.photo,
+            PhotoState::Opening { path, open } if *path == b && *open == number));
+        let count = harness.get_by_label("3 of 5 photos selected");
+        assert_eq!(count.accesskit_node().role(), Role::Label);
+        for (name, is) in [
+            ("a.ARW", true),
+            ("b.ARW", true),
+            ("c.ARW", true),
+            ("d.ARW", false),
+        ] {
+            assert_eq!(selected(&harness, name), Some(is), "{name}");
+        }
+
+        // The menu's item, enabled: forward again, to none, b closed.
+        assert_eq!(item(&mut harness), (false, shortcut));
+        harness
+            .get_by_role_and_label(Role::MenuItem, "Previous selection")
+            .click();
+        harness.run();
+        assert_eq!(harness.state().sent.last(), Some(&previous));
+        harness.state_mut().told(&[], None, true);
+        harness.run();
+        assert!(matches!(harness.state().mirror.photo, PhotoState::None));
+        assert_eq!(selected(&harness, "a.ARW"), Some(false));
+        assert!(harness.query_by_label("3 of 5 photos selected").is_none());
     }
 
     #[test]
