@@ -17,8 +17,8 @@
 //! The session's view (decision 99): `Command::View`, view state off the edit, one per
 //! session and kept across photos, told as `Event::View` once a batch that changed it or
 //! its placement; each frame's place; and past Fit the detail pipeline's frame beside
-//! the fitted one, both in one submission, a pan rendering the detail alone, the scopes and
-//! the Colour picker reading the fitted frame, and a tiled viewport's detail from the raw
+//! the fitted one, a change rendering the detail first and the fitted frame after it, a pan
+//! rendering the detail alone, the scopes and the Colour picker reading the fitted frame, and a tiled viewport's detail from the raw
 //! stage's output; the detail's margin, a pan inside it rendering nothing and one past it updating the detail
 //! in place.
 
@@ -314,7 +314,8 @@ fn a_frame_says_its_place_at_fit_and_at_fill() {
     let exposure = [("exposure", "exposure", Value::Float(0.7 + 0.5))];
     let detail = direct_detail_at(&driven.gpu, &exposure, region, scale);
     assert!(frame_bytes(&driven.gpu, frame) == detail);
-    assert!(overview(&driven.gpu, frame) == direct(&driven.gpu, &[], &exposure));
+    let (_, fitted) = with_overview(&mut driven, &events);
+    assert!(overview(&driven.gpu, &fitted) == direct(&driven.gpu, &[], &exposure));
     remove(&path);
 }
 
@@ -419,8 +420,28 @@ fn ran(frame: &Frame) -> Vec<&'static str> {
     frame.timings.passes.iter().map(|(name, _)| *name).collect()
 }
 
+/// A turn with no command, as the engine thread's loop takes one once nothing waits: the
+/// fitted frame a detail frame went out without, if any (decision 99).
+fn follow(driven: &mut Driven) -> Vec<Event> {
+    driven.engine.turn(Vec::new(), None)
+}
+
+/// The frame among `events`, and where it went out without its overview the frame of the
+/// turn that follows it, which carries it.
+fn with_overview(driven: &mut Driven, events: &[Event]) -> (Frame, Frame) {
+    let frame = the_frame(events).clone();
+    if frame.overview.is_some() {
+        return (frame.clone(), frame);
+    }
+    let followed = follow(driven);
+    let fitted = the_frame(&followed).clone();
+    assert_eq!(fitted.through, frame.through);
+    assert!(fitted.buffer == frame.buffer, "the detail published again");
+    (frame, fitted)
+}
+
 #[test]
-fn a_view_at_100_renders_both_pipelines_in_one_submission() {
+fn a_view_at_100_renders_the_detail_first_and_the_fitted_frame_after_it() {
     let path = scratch("detail-both");
     let mut driven = Driven::new(&[&Sample]);
     driven.open(&path);
@@ -438,21 +459,58 @@ fn a_view_at_100_renders_both_pipelines_in_one_submission() {
     assert_eq!((frame.place, frame.width, frame.height), (place, 64, 62));
     assert!(frame_bytes(&driven.gpu, frame) == direct_detail(&driven.gpu, &[], region));
 
-    // A change of the edit while zoomed: both pipelines from exposure, in one submission.
+    // A change of the edit while zoomed: the detail from exposure, alone, in one
+    // submission, its frame with no overview, so nothing shows the fitted frame of the
+    // edit before.
     let turns = driven.gpu.gate.turns();
     let events = driven.run([set("brightness", ControlValue::Number(0.5), false)]);
     assert_eq!(driven.gpu.gate.turns() - turns, 1, "{events:?}");
     let frame = the_frame(&events);
     assert_eq!((frame.place, frame.width, frame.height), (place, 64, 62));
+    assert!(frame.overview.is_none());
     let passes = ran(frame);
-    assert_eq!(passes.iter().filter(|&&name| name == "exposure").count(), 2);
-    assert!(!passes.contains(&"region"), "{passes:?}");
-    // The frame is a fresh detail pipeline's, its overview a fresh fitted viewport's.
+    let detail = labels(
+        driven
+            .engine
+            .open
+            .as_ref()
+            .unwrap()
+            .detail
+            .as_ref()
+            .unwrap()
+            .pipeline
+            .plan(),
+    );
+    assert_eq!(passes, detail[detail.len() - passes.len()..]);
+    assert_eq!(passes.iter().filter(|&&name| name == "exposure").count(), 1);
+    // The frame is a fresh detail pipeline's.
     let exposure = [("exposure", "exposure", Value::Float(0.7 + 0.5))];
     assert!(frame_bytes(&driven.gpu, frame) == direct_detail(&driven.gpu, &exposure, region));
+    // The next turn with nothing to take: the fitted pipeline from exposure, alone, in one
+    // submission, the detail published again beside it; its overview a fresh fitted
+    // viewport's.
+    let (through, buffer) = (frame.through, frame.buffer.clone());
+    let turns = driven.gpu.gate.turns();
+    let events = follow(&mut driven);
+    assert_eq!(driven.gpu.gate.turns() - turns, 1, "{events:?}");
+    let frame = the_frame(&events);
+    assert_eq!(
+        (frame.through, &frame.buffer, frame.place),
+        (through, &buffer, place)
+    );
+    assert_eq!(
+        ran(frame)
+            .iter()
+            .filter(|&&name| name == "exposure")
+            .count(),
+        1
+    );
     let fitted = frame.overview.as_ref().expect("an overview");
     assert_eq!((fitted.width, fitted.height), (40, 30));
     assert!(overview(&driven.gpu, frame) == direct(&driven.gpu, &[], &exposure));
+    // Then nothing more.
+    let events = follow(&mut driven);
+    assert!(!kinds(&events).contains(&"frame"), "{events:?}");
     // Back at Fit, the fitted frame alone.
     let events = driven.run([zoom(ViewScale::Fit, [0.5, 0.5])]);
     let frame = the_frame(&events);
@@ -531,17 +589,31 @@ fn the_scopes_and_the_colour_picker_read_the_overview() {
     for scale in [ViewScale::Factor(1.0), ViewScale::Fit] {
         driven.run([zoom(scale, [0.3, 0.6])]);
         measured(&mut driven);
-        driven.run([brightness(0.2)]);
+        let zoomed = scale != ViewScale::Fit;
+        let events = driven.run([brightness(0.2)]);
+        if zoomed {
+            with_overview(&mut driven, &events);
+        }
         measured(&mut driven);
         let events = driven.run([brightness(0.5)]);
-        assert_eq!(
-            the_frame(&events).overview.is_some(),
-            scale != ViewScale::Fit
-        );
+        // At 100% the detail's frame goes out first, with no overview, nothing counted or
+        // sampled on it, and the fitted frame, which they read, after it, of the same edit;
+        // at Fit the frame is the fitted one, with no overview either.
+        let through = the_frame(&events).through;
+        assert!(the_frame(&events).overview.is_none());
+        if zoomed {
+            let (scopes, picks) = measured(&mut driven);
+            assert!(
+                scopes.is_empty() && picks.is_empty(),
+                "{scopes:?}, {picks:?}"
+            );
+            with_overview(&mut driven, &events);
+        }
         let (scopes, picks) = measured(&mut driven);
         let ([scope], [pick]) = (&scopes[..], &picks[..]) else {
             panic!("one of each: {scopes:?}, {picks:?}");
         };
+        assert_eq!((scope.through, pick.through), (through, through));
         assert_eq!((scope.width, scope.height), (40, 30));
         readings.push((scope.totals, pick.frame));
     }
@@ -575,6 +647,188 @@ fn a_white_balance_change_at_100_runs_the_raw_stage_once() {
     remove(&path);
 }
 
+fn haze(strength: f32) -> Command {
+    Command::SetControl {
+        tool: "hazeremoval".into(),
+        control: "strength".into(),
+        value: ControlValue::Number(strength),
+        done: false,
+    }
+}
+
+/// The frame and the overview a session renders zoomed to 100% at `centre` after
+/// `commands`, from Fit: what any session's frame of that edit and view is.
+fn zoomed_after(
+    tools: &'static [&'static dyn ProcessingTool],
+    commands: &[Command],
+    centre: [f32; 2],
+) -> (Vec<u8>, Vec<u8>) {
+    let path = scratch("detail-first-afresh");
+    let mut driven = Driven::new(tools);
+    driven.open(&path);
+    driven.run(commands.to_vec());
+    let events = driven.run([zoom(ViewScale::Factor(1.0), centre)]);
+    let frame = the_frame(&events);
+    let bytes = (
+        frame_bytes(&driven.gpu, frame),
+        overview(&driven.gpu, frame),
+    );
+    remove(&path);
+    bytes
+}
+
+#[test]
+fn a_change_at_100_renders_the_detail_first_where_the_fitted_passes_write_nothing_it_reads() {
+    // At 100% on the synthetic photo with haze removal, whose estimate at full resolution
+    // the detail borrows from the fitted pipeline (decision 99): a change that leaves the
+    // detail's source and that estimate as they are publishes the detail's frame first,
+    // with no overview, and the fitted frame in the next turn; one that changes either
+    // renders both in one frame. Every frame and overview are those of a session that
+    // zooms after the same changes.
+    let red = |value| Command::Set {
+        operation: "temperature".to_owned(),
+        param: "red".to_owned(),
+        value: Value::Float(value),
+    };
+    let cases = [
+        // What changes, the command, whether the detail goes first.
+        (
+            "exposure, after the estimate",
+            set("brightness", ControlValue::Number(0.5), false),
+            true,
+        ),
+        (
+            "haze removal's strength, the estimate kept",
+            haze(0.4),
+            true,
+        ),
+        ("the strength's sign, the estimate again", haze(-0.3), false),
+        ("white balance, the detail's source again", red(1.6), false),
+        (
+            "exposure again",
+            set("brightness", ControlValue::Number(0.2), false),
+            true,
+        ),
+    ];
+    static TOOLS: [&dyn ProcessingTool; 2] = [&Sample, &apertrust_tools::haze_removal::HazeRemoval];
+    let centre = [0.4, 0.6];
+    let path = scratch("detail-first");
+    let mut driven = Driven::new(&TOOLS);
+    driven.open(&path);
+    let mut applied = vec![haze(0.3)];
+    driven.run(applied.clone());
+    driven.run([zoom(ViewScale::Factor(1.0), centre)]);
+    for (what, command, first) in cases {
+        let events = driven.run([command.clone()]);
+        applied.push(command);
+        assert!(failures(&events).is_empty(), "{what}: {events:?}");
+        assert_eq!(the_frame(&events).overview.is_none(), first, "{what}");
+        let (frame, fitted) = with_overview(&mut driven, &events);
+        if !first {
+            assert!(!kinds(&follow(&mut driven)).contains(&"frame"), "{what}");
+        }
+        let expected = zoomed_after(&TOOLS, &applied, centre);
+        let rendered = (
+            frame_bytes(&driven.gpu, &frame),
+            overview(&driven.gpu, &fitted),
+        );
+        assert!(rendered.0 == expected.0, "{what}: the detail");
+        assert!(rendered.1 == expected.1, "{what}: the overview");
+    }
+    remove(&path);
+}
+
+#[test]
+fn a_drag_at_100_renders_both_once_the_fitted_frame_has_waited() {
+    // Changes that keep coming leave the fitted frame behind at most `OVERVIEW_LAG`, from
+    // the first command its detail answered: the next frame then renders both.
+    let path = scratch("detail-lag");
+    let mut driven = Driven::new(&[&Sample]);
+    driven.open(&path);
+    driven.run([zoom(ViewScale::Factor(1.0), [0.5, 0.5])]);
+    let brightness = |value| set("brightness", ControlValue::Number(value), false);
+    let events = driven.run([brightness(0.3)]);
+    assert!(the_frame(&events).overview.is_none());
+    // The fitted frame follows once nothing waits.
+    assert!(kinds(&follow(&mut driven)).contains(&"frame"));
+    // A detail frame answering a command sent the lag ago, then the drag's next command:
+    // both in one submission.
+    let long_ago = Instant::now() - OVERVIEW_LAG;
+    let events = driven.run_at(long_ago, [brightness(0.5)]);
+    assert!(
+        the_frame(&events).overview.is_none(),
+        "a first detail frame"
+    );
+    let turns = driven.gpu.gate.turns();
+    let events = driven.run([brightness(0.6)]);
+    assert_eq!(driven.gpu.gate.turns() - turns, 1);
+    let frame = the_frame(&events);
+    assert_eq!(
+        ran(frame)
+            .iter()
+            .filter(|&&name| name == "exposure")
+            .count(),
+        2
+    );
+    let exposure = [("exposure", "exposure", Value::Float(0.7 + 0.6))];
+    assert!(overview(&driven.gpu, frame) == direct(&driven.gpu, &[], &exposure));
+    assert!(!kinds(&follow(&mut driven)).contains(&"frame"));
+    remove(&path);
+}
+
+#[test]
+fn a_fitted_frame_that_fails_is_tried_again_a_few_times() {
+    // A GPU error rendering the fitted frame that follows the detail: reported, and tried
+    // again after a stale frame's wait, never before, up to three times in a row; a
+    // healthy turn then publishes it, the overview a fresh fitted viewport's (decision
+    // 99). A change whose render fails leaves it owed too.
+    let path = scratch("detail-retry");
+    let mut driven = Driven::new(&[&Sample]);
+    driven.open(&path);
+    driven.run([zoom(ViewScale::Factor(1.0), [0.5, 0.5])]);
+    let events = driven.run([set("brightness", ControlValue::Number(0.5), false)]);
+    assert!(the_frame(&events).overview.is_none());
+    driven.engine.poison = Some(Poison::Always);
+    let failed = |events: &[Event]| matches!(failures(events)[..], [SessionError::Gpu(_)]);
+    for _ in 0..2 {
+        let events = follow(&mut driven);
+        assert!(failed(&events), "{events:?}");
+        let wait = driven.engine.overview_wait().expect("due again");
+        assert!(
+            wait > Duration::ZERO && wait <= STALE_FRAME_RETRY,
+            "{wait:?}"
+        );
+        // Not before then.
+        assert!(failures(&follow(&mut driven)).is_empty());
+        std::thread::sleep(wait);
+    }
+    // Healthy: the pipelines the error dropped are built again, the detail first.
+    driven.engine.poison = None;
+    let events = follow(&mut driven);
+    let (_, fitted) = with_overview(&mut driven, &events);
+    let exposure = [("exposure", "exposure", Value::Float(0.7 + 0.5))];
+    assert!(overview(&driven.gpu, &fitted) == direct(&driven.gpu, &[], &exposure));
+    assert_eq!(driven.engine.overview_wait(), None);
+    // A change whose render fails, the fitted frame owed: still owed, tried in the same
+    // turn, then twice more, the third failure in a row leaving it to the next change.
+    let events = driven.run([set("brightness", ControlValue::Number(0.6), false)]);
+    assert!(the_frame(&events).overview.is_none());
+    driven.engine.poison = Some(Poison::Always);
+    let change = set("brightness", ControlValue::Number(0.7), false);
+    let events = driven.engine.turn(vec![(Instant::now(), change)], None);
+    assert!(
+        failures(&events).len() == 2,
+        "the change's and the fitted frame's: {events:?}"
+    );
+    for _ in 1..STALE_FRAME_TRIES {
+        let wait = driven.engine.overview_wait().expect("due again");
+        std::thread::sleep(wait);
+        assert!(failed(&follow(&mut driven)));
+    }
+    assert_eq!(driven.engine.overview_wait(), None);
+    remove(&path);
+}
+
 /// The keys of the whole-image results the open photo's detail holds.
 fn held(driven: &Driven) -> Vec<(&'static str, Option<u64>)> {
     let open = driven.engine.open.as_ref().expect("a photo open");
@@ -583,8 +837,8 @@ fn held(driven: &Driven) -> Vec<(&'static str, Option<u64>)> {
 
 #[test]
 fn a_view_at_100_with_the_tone_equalizer_renders_its_round() {
-    // The tone equalizer's mask in a round over the whole image, between the fitted
-    // pipeline's passes and the detail's, held by a key with no region in it: a change
+    // The tone equalizer's mask in a round over the whole image, before the detail's passes,
+    // held by a key with no region in it: a change
     // upstream runs it again, and a pan none (decision 99).
     let path = scratch("detail-round");
     let mut driven = Driven::new(&[&Sample, &apertrust_tools::tone_equalizer::ToneEqualizer]);
@@ -611,7 +865,7 @@ fn a_view_at_100_with_the_tone_equalizer_renders_its_round() {
     at_100(&events);
     assert!(
         driven.gpu.gate.turns() - turns > 1,
-        "the round after the fitted passes"
+        "the round's tiles, then the detail"
     );
     let [("toneequal", Some(changed))] = held(&driven)[..] else {
         panic!("the mask held: {:?}", held(&driven));
@@ -662,18 +916,19 @@ fn a_tiled_viewport_takes_the_zoom() {
     let detail = open.detail.as_ref().expect("the detail pipeline");
     let mosaic = apertrust_plugin::Format::Mosaic;
     assert_eq!(detail.pipeline.plan().input.format, mosaic);
-    // An edit: both pipelines in one submission, the detail restarting after its
-    // demosaiced region, neither copying nor demosaicing again.
+    // An edit: the detail first in one submission, restarting after its demosaiced region,
+    // neither copying nor demosaicing again, and the fitted frame after it.
     let turns = driven.gpu.gate.turns();
     let events = driven.run([set("brightness", ControlValue::Number(0.5), false)]);
     assert_eq!(driven.gpu.gate.turns() - turns, 1, "{events:?}");
     let frame = the_frame(&events);
     let passes = ran(frame);
-    assert_eq!(passes.iter().filter(|&&name| name == "exposure").count(), 2);
+    assert_eq!(passes.iter().filter(|&&name| name == "exposure").count(), 1);
     assert!(!passes.contains(&"region"), "{passes:?}");
     let exposure = [("exposure", "exposure", Value::Float(0.7 + 0.5))];
     assert!(frame_bytes(&driven.gpu, frame) == direct_detail(&driven.gpu, &exposure, region));
-    assert!(overview(&driven.gpu, frame) == direct(&driven.gpu, &[], &exposure));
+    let (_, fitted) = with_overview(&mut driven, &events);
+    assert!(overview(&driven.gpu, &fitted) == direct(&driven.gpu, &[], &exposure));
     // A pan past the margin: the detail alone, from its copy of the new region.
     let events = driven.run([zoom(ViewScale::Factor(1.0), [0.8, 0.5])]);
     assert_eq!(kinds(&events), ["view", "frame"], "{events:?}");
