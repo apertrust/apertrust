@@ -144,7 +144,7 @@ Decision 77 ([engine.md](engine.md#opening-a-photo)). A photo opens in three sta
 
 | Stage | Events | What a client shows |
 | --- | --- | --- |
-| 1. The picture | `OpenPreview { open, picture, source }`, a fact, from the open's job | The picture fitted, unmarked; no scopes, clipping overlays, values under the cursor, zoom past fit or on-photo controls |
+| 1. The picture | `OpenPreview { open, picture, source }`, a fact, from the open's job | The picture at the zoom the photo opens at, Fit or the one carried from the photo before, placed as its live frame will be, unmarked; no scopes, clipping overlays, values under the cursor, zooming or on-photo controls |
 | 2. The values | `Opened(Photo)`, then `Values { live: false }`, from the engine thread | The photo's values, read-only |
 | 3. Live | `Values { live: true }`, then the `Frame` or the render's failure, in one batch | The live frame in one swap, the values enabled, then the scopes |
 

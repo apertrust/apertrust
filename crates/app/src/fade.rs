@@ -72,10 +72,19 @@ impl Fade {
         (t < 1.0).then(|| (1.0 - t.max(0.0)).powi(2) as f32)
     }
 
-    /// Draws the picture over the live frame placed in `placed`, while the open numbered
-    /// `open` is the one shown, and asks for the next frame; ends the fade, dropping its
-    /// texture, once it is over by egui's clock or another photo is asked for.
-    pub fn paint(fade: &mut Option<Fade>, painter: &egui::Painter, placed: &Placed, open: u64) {
+    /// Draws the picture over the live frame placed in `placed`, where it was drawn before
+    /// the swap (`crate::picture_rect`): over the whole photo's rectangle `zoomed` where the
+    /// zoom overflows the photo area, cut to the area, as the live frame is, so it fades out
+    /// exactly over it. While the open numbered `open` is the one shown it asks for the
+    /// next frame; it ends the fade, dropping its texture, once it is over by egui's clock
+    /// or another photo is asked for.
+    pub fn paint(
+        fade: &mut Option<Fade>,
+        painter: &egui::Painter,
+        placed: &Placed,
+        zoomed: Option<egui::Rect>,
+        open: u64,
+    ) {
         let Some(shown) = fade.as_ref() else {
             return;
         };
@@ -89,10 +98,11 @@ impl Fade {
         };
         let [width, height] = shown.texture.size();
         let ppp = painter.pixels_per_point();
-        let rect = crate::picture_rect(placed, (width as u32, height as u32), ppp);
+        let rect = crate::picture_rect(placed, zoomed, (width as u32, height as u32), ppp);
         let uv = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
         let tint = egui::Color32::WHITE.gamma_multiply(alpha);
-        painter.image(shown.texture.id(), rect, uv, tint);
+        let cut = painter.with_clip_rect(painter.clip_rect().intersect(placed.photo));
+        cut.image(shown.texture.id(), rect, uv, tint);
         painter.ctx().request_repaint();
     }
 }
@@ -166,7 +176,13 @@ mod tests {
                     if scene.fade.is_none() {
                         return;
                     }
-                    Fade::paint(&mut scene.fade, &ui.painter_at(slot), &placed, scene.open);
+                    Fade::paint(
+                        &mut scene.fade,
+                        &ui.painter_at(slot),
+                        &placed,
+                        None,
+                        scene.open,
+                    );
                 },
                 Scene {
                     fade: None,
