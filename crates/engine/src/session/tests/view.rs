@@ -18,8 +18,8 @@
 //! session and kept across photos, told as `Event::View` once a batch that changed it or
 //! its placement; each frame's place; and from 100% on the detail pipeline's frame beside
 //! the fitted one, both in one submission, a pan rendering the detail alone, the scopes and
-//! the Colour picker reading the fitted frame, and a tiled viewport refusing the zoom; the
-//! detail's margin, a pan inside it rendering nothing and one past it updating the detail
+//! the Colour picker reading the fitted frame, and a tiled viewport's detail from the raw
+//! stage's output; the detail's margin, a pan inside it rendering nothing and one past it updating the detail
 //! in place.
 
 use crate::session::history::MERGE_WITHIN;
@@ -621,50 +621,89 @@ fn going_back_to_100_compiles_nothing() {
 }
 
 #[test]
-fn a_tiled_viewport_refuses_the_zoom() {
+fn a_tiled_viewport_takes_the_zoom() {
     let path = scratch("detail-tiled");
-    // A budget smaller than demosaic's image, which the viewport demosaics in tiles.
+    // A budget smaller than demosaic's image, which the viewport demosaics in tiles: the
+    // detail starts from the raw stage's output it keeps, and renders what the untiled
+    // viewport's detail does (decision 99).
     let mut driven = Driven::within(&[&Sample], 64 << 10);
     driven.open(&path);
     let open = driven.engine.open.as_ref().expect("a photo open");
     let fitted = open.pipeline.as_ref().expect("a pipeline");
     assert!(fitted.plan().tiled.is_some());
-    let asked = View {
+    let events = driven.run([zoom(ViewScale::Factor(1.0), [0.5, 0.5])]);
+    assert_eq!(kinds(&events), ["view", "frame"], "{events:?}");
+    let region = [0, 0, 64, 62];
+    let frame = the_frame(&events);
+    assert_eq!(frame.place, FramePlace::detail([84, 62], region));
+    assert!(frame_bytes(&driven.gpu, frame) == direct_detail(&driven.gpu, &[], region));
+    let open = driven.engine.open.as_ref().expect("a photo open");
+    let detail = open.detail.as_ref().expect("the detail pipeline");
+    let mosaic = apertrust_plugin::Format::Mosaic;
+    assert_eq!(detail.pipeline.plan().input.format, mosaic);
+    // An edit: both pipelines in one submission, the detail restarting after its
+    // demosaiced region, neither copying nor demosaicing again.
+    let turns = driven.gpu.gate.turns();
+    let events = driven.run([set("brightness", ControlValue::Number(0.5), false)]);
+    assert_eq!(driven.gpu.gate.turns() - turns, 1, "{events:?}");
+    let frame = the_frame(&events);
+    let passes = ran(frame);
+    assert_eq!(passes.iter().filter(|&&name| name == "exposure").count(), 2);
+    assert!(!passes.contains(&"region"), "{passes:?}");
+    let exposure = [("exposure", "exposure", Value::Float(0.7 + 0.5))];
+    assert!(frame_bytes(&driven.gpu, frame) == direct_detail(&driven.gpu, &exposure, region));
+    assert!(overview(&driven.gpu, frame) == direct(&driven.gpu, &[], &exposure));
+    // A pan past the margin: the detail alone, from its copy of the new region.
+    let events = driven.run([zoom(ViewScale::Factor(1.0), [0.8, 0.5])]);
+    assert_eq!(kinds(&events), ["view", "frame"], "{events:?}");
+    let frame = the_frame(&events);
+    assert_eq!(ran(frame)[0], "region");
+    let region = region_of(ViewScale::Factor(1.0), [0.8, 0.5]);
+    assert!(frame_bytes(&driven.gpu, frame) == direct_detail(&driven.gpu, &exposure, region));
+    remove(&path);
+}
+
+#[test]
+fn a_tiled_viewports_detail_shrinks_its_margin_to_bind() {
+    // The wide X-Trans photo, 1088 × 62, in a viewport that tiles, at 100% in 400 × 40:
+    // with darktable's margin its region is 512 × 62, whose RGBA image the binding below
+    // holds but whose photosites, grown by demosaic's reach, Markesteijn's images do not.
+    // The margin shrinks until they do, the region still holding the view (decision 99).
+    let path = scratch("detail-shrink").with_file_name("wide-xtrans.ARW");
+    let mut driven = Driven::within(&[&Sample], 64 << 10);
+    let bounds = Command::Resize {
+        width: 400,
+        height: 40,
+    };
+    driven.run([Command::Open(path.clone()), bounds]);
+    driven.settle();
+    let view = View {
         scale: ViewScale::Factor(1.0),
         centre: [0.5, 0.5],
     };
-    let events = driven.run([Command::View(asked)]);
-    // Refused, before the batch's facts, the view the session's all the same, and the
-    // frame at Fit.
-    assert_eq!(kinds(&events), ["failed", "view", "frame"], "{events:?}");
-    let refused = |event: &Event| {
-        matches!(event, Event::Failed(SessionError::Refused { command, error })
-            if *command == driven.engine.applied && matches!(**error, SessionError::Zoom(_)))
-    };
-    assert!(events.iter().any(refused), "{events:?}");
-    let state = told(&events);
-    assert_eq!(state.view, asked);
-    assert_eq!(state.placement.map(|placed| placed.render), Some(1.0));
-    let frame = the_frame(&events);
-    assert_eq!(frame.place, FramePlace::fitted([84, 62], (40, 40)));
-    assert!(frame.overview.is_none());
-    // An edit renders at Fit, refusing nothing.
-    let events = driven.run([set("brightness", ControlValue::Number(0.5), true)]);
+    let placed = crate::view::zoomed([1088, 62], (400, 40), &view).expect("a detail");
+    let full = crate::view::rendered(&placed, ANTICIPATE_MOVE, u64::MAX).expect("a region");
+    assert_eq!([full[2], full[3]], [512, 62]);
+    let honest = driven.engine.limits;
+    // Past the region's RGBA image, 496 KiB, short of Markesteijn's, about 570 KiB.
+    driven.engine.limits.binding = 548 << 10;
+    let events = driven.run([Command::View(view)]);
     assert!(failures(&events).is_empty(), "{events:?}");
-    assert_eq!(the_frame(&events).place.scale, 40.0 / 84.0);
-    // An edit and a pan in one batch: the pan's refusal comes before the values.
-    let events = driven.run([
-        set("brightness", ControlValue::Number(0.3), true),
-        zoom(ViewScale::Factor(1.0), [0.4, 0.5]),
-    ]);
-    let order: Vec<&str> = (kinds(&events).into_iter())
-        .filter(|kind| *kind != "saved")
-        .collect();
-    assert_eq!(
-        order,
-        ["failed", "values", "history", "view", "frame"],
-        "{events:?}"
-    );
+    let frame = the_frame(&events);
+    assert_eq!((frame.width, frame.height), (448, 62));
+    assert!(crate::view::covers(
+        [frame.place.origin[0], frame.place.origin[1], 448, 62],
+        placed.visible
+    ));
+    let open = driven.engine.open.as_ref().expect("a photo open");
+    let detail = open.detail.as_ref().expect("the detail pipeline");
+    let plan = detail.pipeline.plan();
+    assert_eq!(plan.input.format, apertrust_plugin::Format::Mosaic);
+    assert_eq!(plan.binding_ratio(&driven.engine.limits), None);
+    // Where the GPU binds the whole region, darktable's margin.
+    driven.engine.limits = honest;
+    let events = driven.run([zoom(ViewScale::Factor(1.0), [0.9, 0.5])]);
+    assert_eq!(the_frame(&events).width, 512, "{events:?}");
     remove(&path);
 }
 
@@ -713,13 +752,25 @@ fn a_view_sent_while_the_photo_opens_is_answered_as_it_goes_live() {
     assert_eq!(the_frame(&live).place.scale, 1.0);
     remove(&path);
 
-    // In a tiled one: refused as the photo goes live, before its facts, the frame at Fit.
-    let path = scratch("detail-opening-tiled");
-    let mut driven = Driven::within(&[&Sample], 64 << 10);
+    // With a round no tile of the budget fits, the tone equalizer's saved in the photo's
+    // edit: refused as the photo goes live, before its facts, the frame at Fit.
+    let path = scratch("detail-opening-refused");
+    let tools: &[&dyn ProcessingTool] = &[&Sample, &apertrust_tools::tone_equalizer::ToneEqualizer];
+    let mut saving = Driven::new(tools);
+    saving.open(&path);
+    saving.run([Command::SetControl {
+        tool: "toneequal".into(),
+        control: "blending".into(),
+        value: ControlValue::Number(10.0),
+        done: true,
+    }]);
+    saving.writes();
+    let mut driven = Driven::within(tools, 1 << 10);
     let (view, live) = opening(&mut driven, &path);
     let refused = (live.iter()).position(|event| {
         matches!(event, Event::Failed(SessionError::Refused { command, error })
-            if *command == view && matches!(**error, SessionError::Zoom(_)))
+            if *command == view
+                && matches!(&**error, SessionError::Zoom(why) if why.starts_with("no tiles")))
     });
     // The live stage's values, after the metadata stage's.
     let values = (live.iter()).rposition(|event| matches!(event, Event::Values(_)));

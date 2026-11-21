@@ -30,9 +30,11 @@ use apertrust_engine::compute::{GpuImage, Timings};
 use apertrust_engine::detail::Results;
 use apertrust_engine::export::{ExportError, Tiling};
 use apertrust_engine::gpu::{GpuContext, GpuOptions};
-use apertrust_engine::pipeline::{self, Instance, Limits, Pipe, Pipeline, Plan, PlanError};
+use apertrust_engine::pipeline::{
+    self, Instance, Limits, Pipe, Pipeline, Plan, PlanError, PlannedOperation,
+};
 use apertrust_operations::{bilat, bloom, colorequal, hazeremoval, soften, toneequal};
-use apertrust_plugin::{ImageDesc, Operation, ParamValues};
+use apertrust_plugin::{Format, ImageDesc, Operation, ParamValues};
 use common::fingerprint::{fnv, keys_before_geometry, structure};
 use common::raw::Raw;
 
@@ -73,10 +75,18 @@ trait Scene {
         params: ParamValues,
     ) -> Vec<Instance<'static>>;
     fn plan(&self, instances: &[Instance], pipe: Pipe) -> Result<Plan, PlanError>;
-    /// The fitted viewport pipeline of `instances`, rendered.
-    fn fitted(&self, gpu: &GpuContext, instances: &[Instance]) -> Pipeline;
-    /// The detail of `region` at 100% over `fitted`'s demosaic image within `limits`,
-    /// as `results` plans it: its plan, keyed on that image, its rounds, and that image.
+    /// The fitted viewport pipeline of `instances` within `limits`, rendered: in tiles
+    /// where they ask (decision 14).
+    fn fitted_within(&self, gpu: &GpuContext, instances: &[Instance], limits: &Limits) -> Pipeline;
+    /// The fitted viewport pipeline of `instances`, untiled, rendered.
+    fn fitted(&self, gpu: &GpuContext, instances: &[Instance]) -> Pipeline {
+        let fitted = self.fitted_within(gpu, instances, &Limits::NONE);
+        assert!(fitted.plan().tiled.is_none());
+        fitted
+    }
+    /// The detail of `region` at 100% over `fitted`'s source within `limits`, demosaic's
+    /// image or a tiled viewport's raw-stage output, as `results` plans it: its plan,
+    /// keyed on that image, its rounds, and that image.
     fn detail_plan(
         &self,
         results: &mut Results,
@@ -131,9 +141,9 @@ impl Scene for Raw {
         pipeline::plan(instances, &self.image(), self.sensor(), pipe, &Limits::NONE)
     }
 
-    fn fitted(&self, gpu: &GpuContext, instances: &[Instance]) -> Pipeline {
-        let plan = self.plan(instances, VIEWPORT).unwrap();
-        assert!(plan.tiled.is_none());
+    fn fitted_within(&self, gpu: &GpuContext, instances: &[Instance], limits: &Limits) -> Pipeline {
+        let image = self.image();
+        let plan = pipeline::plan(instances, &image, self.sensor(), VIEWPORT, limits).unwrap();
         let mut fitted = pollster::block_on(Pipeline::new(gpu, plan, self.upload(gpu))).unwrap();
         fitted.render(gpu).unwrap();
         fitted
@@ -147,7 +157,8 @@ impl Scene for Raw {
         region: [u32; 4],
         limits: &Limits,
     ) -> Result<(Plan, apertrust_engine::detail::Rounds, GpuImage), ExportError> {
-        let (source, key) = fitted.demosaiced().expect("demosaic's image, held");
+        let (source, key) = fitted.detail_source().expect("the viewport's source, held");
+        let instances = &pipeline::detail_instances(instances, fitted.plan());
         let pipe = Pipe::Detail { region, scale: 1.0 };
         let image = self.image();
         let planned = pipeline::plan(instances, &image, source.desc(), pipe, limits)?;
@@ -785,6 +796,186 @@ fn a_detail_refuses_a_region_or_a_scale_it_cannot_render() {
     let refused = at([10, 10, 40, 30], 0.5);
     let refused = matches!(refused, Err(PlanError::Detail { .. }));
     assert!(refused, "a detail at 50%");
+}
+
+/// The binding the tiled tests open the GPU with: the medium raws' demosaiced images,
+/// about 2 MB, and their float mosaics, about 550 KB, pass it, so their fitted viewports
+/// demosaic in tiles and their raw stages run in row strips, as lavapipe's do a large
+/// photo's (decision 14).
+const SMALL_BINDING: u64 = 512 << 10;
+
+/// A Bayer raw whose fitted viewport tiles at [`SMALL_BINDING`]: 400 × 320.
+fn medium_bayer() -> Raw {
+    Raw::bayer((420, 340), [2, 3, 414, 334], [5, 6, 400, 320])
+}
+
+/// An X-Trans raw whose fitted viewport tiles at [`SMALL_BINDING`]: 400 × 320.
+fn medium_x_trans() -> Raw {
+    Raw::x_trans((422, 343), [1, 3, 416, 336], [4, 5, 400, 320])
+}
+
+/// [`regions`] but the whole image, which passes [`SMALL_BINDING`], and one inside it of
+/// about half the binding's RGBA pixels.
+fn tiled_regions(width: u32, height: u32) -> Vec<[u32; 4]> {
+    let mut regions = regions(width, height);
+    regions.pop();
+    regions.push([100, 80, 160, 100]);
+    regions
+}
+
+/// The fitted viewport of `instances` on `small`, in tiles, its raw stage in row strips.
+fn tiled_fitted(small: &GpuContext, scene: &Raw, instances: &[Instance]) -> Pipeline {
+    let fitted = scene.fitted_within(small, instances, &Limits::of(small));
+    let plan = fitted.plan();
+    let tiles = plan.tiled.clone().expect("a tiled viewport");
+    let strips = |op: &PlannedOperation| op.dispatches.iter().any(|pass| pass.len() > 1);
+    assert!(plan.operations[..tiles.start].iter().any(strips));
+    fitted
+}
+
+/// `old`, or a fresh detail, of `region` on `small` over `fitted`, a tiled viewport, from
+/// the raw stage's output it keeps (decision 99).
+fn tiled_detail(
+    small: &GpuContext,
+    scene: &Raw,
+    fitted: &Pipeline,
+    old: Option<Detail>,
+    instances: &[Instance],
+    region: [u32; 4],
+) -> Detail {
+    let limits = Limits::of(small);
+    let detail = scene.render(small, fitted, old, instances, region, &limits);
+    assert_eq!(detail.pipeline.plan().input.format, Format::Mosaic);
+    detail
+}
+
+#[test]
+fn a_tiled_viewports_detail_equals_the_untiled_one() {
+    // Upright and with a quarter turn, the region walked back through it to the mosaic.
+    let (gpu, small) = (gpu(), common::small_gpu(SMALL_BINDING));
+    for scene in [medium_bayer(), medium_x_trans()] {
+        for settings in [&[][..], &[("flip", "orientation", 7.0)]] {
+            let instances = scene.with(settings);
+            let untiled = scene.fitted(&gpu, &instances);
+            let tiled = tiled_fitted(&small, &scene, &instances);
+            let [width, height] = untiled.plan().extent();
+            for region in tiled_regions(width, height) {
+                let expected = scene.detail(&gpu, &untiled, &instances, region);
+                let expected = expected.pipeline.output().download(&gpu).unwrap();
+                let detail = tiled_detail(&small, &scene, &tiled, None, &instances, region);
+                let pixels = detail.pipeline.output().download(&small).unwrap();
+                let difference = first_difference(&pixels, &expected);
+                assert_eq!(difference, None, "{settings:?} {region:?}");
+            }
+        }
+    }
+}
+
+/// The raw stage's passes on the medium raws.
+const RAW_STAGE: [&str; 4] = [
+    "rawprepare",
+    "temperature",
+    "opposed_mask",
+    "opposed_inpaint",
+];
+
+#[test]
+fn a_tiled_viewports_pan_demosaics_only_the_new_region() {
+    // Regions of one size on the 64-pixel grid, as the margin moves them: each pan copies
+    // the new region's photosites, grown by demosaic's reach, and demosaics them alone,
+    // in place, running none of the raw stage.
+    let (gpu, small) = (gpu(), common::small_gpu(SMALL_BINDING));
+    let scene = medium_bayer();
+    let instances = scene.with(&[]);
+    let fitted = tiled_fitted(&small, &scene, &instances);
+    let (width, exported) = scene.whole(&gpu, &instances);
+    let [w, h] = [128, 96];
+    let mut detail = tiled_detail(&small, &scene, &fitted, None, &instances, [64, 64, w, h]);
+    for [x, y] in [[192, 128], [0, 192], [256, 0]] {
+        let region = [x, y, w, h];
+        let limits = Limits::of(&small);
+        let fresh = &mut Results::default();
+        let (plan, _, _) =
+            (scene.detail_plan(fresh, &fitted, &instances, region, &limits)).unwrap();
+        assert!(detail.pipeline.accepts(&plan), "{region:?}: in place");
+        detail = tiled_detail(&small, &scene, &fitted, Some(detail), &instances, region);
+        let ran = ran(&detail.timings);
+        assert_eq!(ran[0], "region", "{region:?}");
+        assert!(ran.iter().all(|pass| !RAW_STAGE.contains(pass)), "{ran:?}");
+        let plan = detail.pipeline.plan();
+        let copy = plan.operations[0].output_desc;
+        assert!(
+            copy.width <= w + 2 * 12 + 1 && copy.height <= h + 2 * 12 + 1,
+            "{copy}"
+        );
+        let at = (plan.operations.iter())
+            .position(|op| op.id == "demosaic")
+            .expect("demosaic");
+        let demosaiced = plan.operations[at].output_desc;
+        assert_eq!([demosaiced.width, demosaiced.height], [w, h]);
+        assert_eq!(plan.cached, [0, at]);
+        assert_region(&small, &detail, &exported, width, region);
+    }
+}
+
+#[test]
+fn a_tiled_viewports_white_balance_change_runs_the_raw_stage_once() {
+    // The fitted viewport runs the raw stage again, once; the detail starts at its copy
+    // of the new mosaic, which its plan's keys chain from.
+    let (gpu, small) = (gpu(), common::small_gpu(SMALL_BINDING));
+    let scene = medium_bayer();
+    let region = [64, 64, 128, 96];
+    let fitted = tiled_fitted(&small, &scene, &scene.with(&[]));
+    let detail = tiled_detail(&small, &scene, &fitted, None, &scene.with(&[]), region);
+    let red = scene.with(&[("temperature", "red", 2.2)]);
+    let limits = Limits::of(&small);
+    let plan = pipeline::plan(&red, &scene.image(), scene.sensor(), VIEWPORT, &limits).unwrap();
+    let mut fitted = pollster::block_on(fitted.update(&small, plan)).unwrap();
+    let mut passes = ran(&fitted.render(&small).unwrap());
+    let detail = tiled_detail(&small, &scene, &fitted, Some(detail), &red, region);
+    let detail_passes = ran(&detail.timings);
+    assert_eq!(detail_passes[0], "region");
+    passes.extend(detail_passes);
+    for raw_stage in RAW_STAGE {
+        let times = passes.iter().filter(|&&name| name == raw_stage).count();
+        assert_eq!(times, 1, "{raw_stage} in {passes:?}");
+    }
+    let (width, exported) = scene.whole(&gpu, &red);
+    assert_region(&small, &detail, &exported, width, region);
+}
+
+#[test]
+fn a_tiled_viewports_detail_with_the_tone_equalizer_equals_the_exports_region() {
+    // Its mask in a round over the whole image from the raw stage's output, in tiles of
+    // the binding, each demosaicing its part, as an export's first round does.
+    let (gpu, small) = (gpu(), common::small_gpu(SMALL_BINDING));
+    let limits = Limits::of(&small);
+    for scene in [medium_bayer(), medium_x_trans()] {
+        let params = tone_equalizer(toneequal::Filter::Eigf);
+        let instances = scene.adding(&[], &toneequal::ToneEqual, params);
+        let fitted = tiled_fitted(&small, &scene, &instances);
+        let (width, exported) = scene.whole(&gpu, &instances);
+        let height = (exported.len() / width as usize) as u32;
+        let region = [100, 80, 160, 100];
+        let planned = scene.detail_plan(
+            &mut Results::default(),
+            &fitted,
+            &instances,
+            region,
+            &limits,
+        );
+        let (_, rounds, _) = planned.unwrap();
+        assert!(
+            rounds.tiles().iter().all(|&tiles| tiles > 1),
+            "{:?}",
+            rounds.tiles()
+        );
+        for region in tiled_regions(width, height) {
+            let detail = tiled_detail(&small, &scene, &fitted, None, &instances, region);
+            assert_eq!(detail.rounds, ["toneequal"], "{region:?}");
+            assert_region(&small, &detail, &exported, width, region);
+        }
+    }
 }
 
 /// The fitted viewport's and the export's plans of the default pipeline, Bayer and

@@ -15,8 +15,8 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 //! What several of the engine's tests share: the synthetic raws and their camera, the
-//! default pipeline with settings, and the plans' fingerprints. Each test binary uses part
-//! of it.
+//! default pipeline with settings, the plans' fingerprints, and the GPU opened to bind
+//! less. Each test binary uses part of it.
 
 #![allow(dead_code)]
 
@@ -24,6 +24,7 @@ pub mod fingerprint;
 pub mod raw;
 
 use apertrust_engine::edit::{self, Edit};
+use apertrust_engine::gpu::{GpuContext, GpuOptions};
 use apertrust_engine::pipeline::Instance;
 use apertrust_operations::OPERATIONS;
 use apertrust_plugin::{Camera, ImageContext, Kind, ParamValues, Pattern, Value};
@@ -137,4 +138,19 @@ pub fn instances(image: &ImageContext, settings: &[(&str, &str, f32)]) -> Vec<In
     );
     instances.extend(joined);
     instances
+}
+
+/// The adapter, hardware or software, opened to bind at most `binding` bytes of a buffer
+/// at once, at offsets aligned to 256 bytes, WebGPU's largest alignment, as lavapipe binds
+/// less than a large photo's images (decision 14).
+pub fn small_gpu(binding: u64) -> GpuContext {
+    let options = GpuOptions {
+        max_storage_binding: Some(binding),
+        storage_offset_alignment: Some(256),
+        ..GpuOptions::default()
+    };
+    let gpu =
+        pollster::block_on(GpuContext::new(&options)).expect("a GPU adapter, hardware or software");
+    assert_eq!(gpu.device.limits().max_storage_buffer_binding_size, binding);
+    gpu
 }

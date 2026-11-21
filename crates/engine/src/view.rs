@@ -238,9 +238,10 @@ pub const GRID: u32 = 64;
 ///   past it updates the detail's plan in place.
 /// - It is centred on the visible rectangle, then moved, never shrunk, to lie inside the
 ///   image, its corner on the grid where the image and the visible rectangle allow.
-/// - Where its pixels pass `limit_pixels`, the largest RGBA `f32` image the GPU binds,
-///   `anticipate` shrinks towards 1.0 until they fit; `None` where they pass it even at
-///   1.0, as the fitted viewport is refused above one binding.
+/// - Where its pixels pass `limit_pixels`, the largest RGBA `f32` image the GPU binds, or
+///   fewer where the detail's plan binds more a pixel, as demosaic's images over a mosaic
+///   grown by its reach do, `anticipate` shrinks towards 1.0 until they fit; `None` where
+///   they pass it even at 1.0, as the fitted viewport is refused above one binding.
 pub fn rendered(placement: &Placement, anticipate: f64, limit_pixels: u64) -> Option<[u32; 4]> {
     let anticipate = if anticipate.is_finite() {
         anticipate.clamp(1.0, 2.0)
