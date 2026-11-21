@@ -89,6 +89,7 @@ pre-commit run --hook-stage manual --all-files   # every check, tools/clippy.sh 
                                            # (install: pipx install pre-commit, or uv tool install pre-commit)
 tools/check-ui-strings.sh                  # fails on an English literal in interface code (CI)
 tools/check-windows-paths.sh [--changed REVS]   # a platform cfg missing from .github/windows-paths.txt (CI)
+tools/check-crate-deps.sh                  # a crate depending on one its layer does not allow (CI)
 tools/credits.sh [--check]                 # CREDITS.md from Cargo.lock; --check fails when stale (CI)
 tools/package.sh [--finder-layout] [--nightly] # this platform's packages into target/package/<target>/out;
                                            # --nightly: Apertrust Nightly's, as the nightly builds are
@@ -203,7 +204,7 @@ What each crate has built and planned is in [docs/crates.md](docs/crates.md).
 | `apertrust-fs` | Planned, only if bulk listing needs FFI that `rustix` and the `windows` crate do not cover (decision 65) |
 | `apertrust-protocol`, `apertrust-server`, `apertrust-mcp` | Session protocol; the server, the engine for browsers (decision 58) and, later, if asked, sync (decision 71); MCP; later phases |
 
-- Each crate lives in `crates/<name>`, its package name without `apertrust-`: the app in `crates/app`, operation crates in `crates/op/<id>` (decision 65). A new crate goes into `members` in the root `Cargo.toml`.
+- Each crate lives in `crates/<name>`, its package name without `apertrust-`: the app in `crates/app`, operation crates in `crates/op/<id>` (decision 65). A new crate goes into `members` in the root `Cargo.toml`, and its rule, the workspace crates it may depend on, into `tools/check-crate-deps.sh`, which CI and pre-commit run.
 - Add a crate when its first real code lands, and only when a module of an existing crate cannot do: `unsafe` FFI, a dependency direction that would otherwise break, or a decided boundary such as an operation's (decision 65). Keep the number of crates small.
 - Shared dependency versions live in the root `Cargo.toml` under `[workspace.dependencies]`.
 - Data files live in the top-level `data/`, as darktable's (decision 45): darktable's verbatim under their names, those several crates or readers outside Rust read, the settings schema first, and the built-in themes. Each is added with its first consumer, its provenance in `data/README.md`, embedded at build time by the one crate that parses it, never read from an installed folder. Icons, fonts and locales stay in `apertrust-ui`, kernels in their operation crates.

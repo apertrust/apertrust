@@ -28,6 +28,7 @@ tools/check-license-headers.sh
 tools/check-ui-strings.sh
 tools/check-windows-paths.sh
 tools/check-docs-paths.sh
+tools/check-crate-deps.sh
 tools/credits.sh --check
 tools/build-kernels.sh --check
 tools/build-api-docs.sh
@@ -59,7 +60,7 @@ pre-commit run --hook-stage manual --from-ref main --to-ref HEAD   # every check
 - **A kernel:** `tools/build-kernels.sh --check` needs the pinned Slang compiler, which `tools/fetch-slang.sh` downloads.
 - **Windows and macOS:** a pull request runs the tests on Linux and macOS, and clippy on Windows and macOS, which compiles their code and tests. Windows' tests are off for now, since they take hours there. A file that gains a `cfg(windows)`, `cfg(unix)` or `cfg(target_os = …)` goes into that list; `tools/check-windows-paths.sh` says which are missing.
 - **Required checks:** a pull request merges when `ci-passed`, which CI's other jobs feed, and `signoff`, the sign-off check, pass. A pull request that changes only documentation skips the code's checks, and `ci-passed` still passes.
-- **A new dependency:** run `cargo deny check`, and follow [docs/dependencies.md](docs/dependencies.md).
+- **A new dependency:** run `cargo deny check`, and follow [docs/dependencies.md](docs/dependencies.md). `tools/check-crate-deps.sh` fails when a crate depends on one its place in the layers does not allow, naming the rule; a new crate gets its rule there.
 - **A kernel or a port:** CI cannot run darktable-cli, so run the golden checks locally and paste their results in the pull request: `apertrust-golden run CASE` for the ΔE2000 results and `apertrust-golden gradient CASE` for the derivatives. AGENTS.md's Golden-image harness section says what they need.
 
 ## Licence headers

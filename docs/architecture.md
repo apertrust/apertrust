@@ -119,7 +119,7 @@ The server and MCP parts are library crates used by these two executables, not s
 
 ## Crates
 
-**The dependency rule.** The engine depends on `apertrust-plugin`, `apertrust-color`, `apertrust-raw`, `apertrust-tools`, `apertrust-base`, `apertrust-export`, whose writers and disk rules its export job uses, and `apertrust-library`, whose commands its session serves and whose `sidecar` module is the `.apxmp` format's text layer (decision 54). It never depends on an operation crate or a client: the binaries hand it `apertrust-operations` and the built-in tools (decision 20). Few crates: new code goes into a module of an existing crate unless it needs `unsafe` FFI, a dependency direction that would otherwise break, or a decided boundary (decision 65; [settings.md, Where it lives](settings.md#where-it-lives)).
+**The dependency rule.** The engine depends on `apertrust-plugin`, `apertrust-color`, `apertrust-raw`, `apertrust-tools`, `apertrust-base`, `apertrust-export`, whose writers and disk rules its export job uses, and `apertrust-library`, whose commands its session serves and whose `sidecar` module is the `.apxmp` format's text layer (decision 54). It never depends on an operation crate or a client: the binaries hand it `apertrust-operations` and the built-in tools (decision 20). `tools/check-crate-deps.sh` holds each crate's allowed dependencies and checks every manifest against them, in CI and pre-commit. Few crates: new code goes into a module of an existing crate unless it needs `unsafe` FFI, a dependency direction that would otherwise break, or a decided boundary (decision 65; [settings.md, Where it lives](settings.md#where-it-lives)).
 
 | Crate | Owns | From |
 | --- | --- | --- |
