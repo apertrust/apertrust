@@ -2005,7 +2005,9 @@ fn build(at: &Planning, tiling: Option<&Tiling>) -> Result<(Plan, Vec<String>), 
             .iter()
             .map(|instance| instance.operation.manifest().radius)
             .sum();
-        builder.tile_input(region, border)?;
+        // A detail's copy holds the pattern at any phase, so a pan updates its plan in place.
+        let phases = matches!(pipe, Pipe::Detail { .. });
+        builder.tile_input(region, border, phases)?;
     }
     // A detail's start from demosaic's image: its copy of its region at 1, its downscale
     // below; from a mosaic, after demosaic, below, its copy a cache point too.
@@ -3066,7 +3068,7 @@ impl Builder {
         };
         self.slot = Some(0);
         self.sizing = true;
-        self.tile_input(probe, border)?;
+        self.tile_input(probe, border, false)?;
         for instance in tiled {
             self.add(instance, None)?;
         }
@@ -3083,7 +3085,7 @@ impl Builder {
             };
             self.scaled = None;
             self.slot = Some(0);
-            self.tile_input(tile.source, border)?;
+            self.tile_input(tile.source, border, false)?;
             for instance in tiled {
                 self.add(instance, None)?;
             }
@@ -3139,8 +3141,12 @@ impl Builder {
     /// Copies the part of the whole input a tile of `region` needs, `border` more on
     /// every side, into a buffer of its own: aligned to the colour pattern, so a mosaic
     /// keeps its pattern's phase, and clipped to the input, so the tile meets the image's
-    /// real edges where it reaches them.
-    fn tile_input(&mut self, region: [u32; 4], border: u32) -> Result<(), PlanError> {
+    /// real edges where it reaches them. With `phases`, as a zoomed view's detail copies its
+    /// region (decision 99), it holds as many photosites as the region needs at any phase of
+    /// the pattern, a pattern less one more past the region than it needs where it starts
+    /// on one, so its size, and its demosaic's buffers, depend on the region's size alone, not
+    /// on where it falls against the pattern, but at the input's edges.
+    fn tile_input(&mut self, region: [u32; 4], border: u32, phases: bool) -> Result<(), PlanError> {
         let input = self.current_desc;
         let channels = match input.format {
             Format::Mosaic => 1,
@@ -3167,7 +3173,12 @@ impl Builder {
                 }
             };
             start[axis] = local.saturating_sub(border) / period[axis] * period[axis];
-            let end = (local + region[axis + 2] + border).min(limit[axis]);
+            let needed = local + region[axis + 2] + border;
+            let end = match phases {
+                true => needed.max(start[axis] + region[axis + 2] + 2 * border + period[axis] - 1),
+                false => needed,
+            }
+            .min(limit[axis]);
             size[axis] = end.saturating_sub(start[axis]);
         }
         let output = ImageDesc {
