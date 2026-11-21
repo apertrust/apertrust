@@ -131,7 +131,7 @@ rawler = "0.8.0"
 # GTK backend (decision 5).
 rfd = { version = "0.18.0", default-features = false, features = ["xdg-portal", "wayland"] }
 # SVG icons only: no text, system fonts or bitmap images.
-resvg = { version = "0.49.0", default-features = false }
+resvg = { version = "0.50.0", default-features = false }
 serde = { version = "1.0.229", features = ["derive"] }
 # The export's temporary files, made exclusively beside their names and renamed into place
 # (apertrust-export's disk, decision 56).
