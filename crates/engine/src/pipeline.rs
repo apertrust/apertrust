@@ -1409,6 +1409,45 @@ pub(crate) fn reads_the_whole_image(pass: &Pass) -> bool {
             .any(|binding| binding.resource == Resource::Input)
 }
 
+/// The memory a zoomed view's detail plan takes of its own (decision 99): its buffers but
+/// its input, the fitted pipeline's image it reads in place, and its pair of display
+/// buffers.
+pub(crate) fn detail_bytes(detail: &Plan) -> u64 {
+    let (_, output) = detail.output();
+    detail.bytes() - detail.input.buffer_size() + 2 * output.buffer_size()
+}
+
+/// The limits an untiled fitted viewport's plan, `fitted`, is planned again within beside
+/// a detail taking `detail` bytes of its own (decision 99): where the detail is what takes
+/// them past the budget, the budget less the detail and every buffer of `fitted` but
+/// demosaic's full-resolution image, so that image gives way first and the viewport tiles,
+/// its tiles within what is left (decision 12). `None` where both fit; where `fitted` alone
+/// passes the budget, as it then does at Fit, its tiling decided by demosaic's image
+/// alone (decision 14), and keeps its plan; where it tiles already; and where an
+/// operation keeps a whole-image result at full resolution, which a tiled viewport
+/// estimates at its own scale (decision 15), so that the fitted frame, and
+/// the scopes and pickers reading it, would change with the zoom.
+pub(crate) fn fitted_beside(fitted: &Plan, detail: u64, limits: &Limits) -> Option<Limits> {
+    let over = fitted.bytes() <= limits.budget && fitted.bytes() + detail > limits.budget;
+    let full_resolution = fitted
+        .operations
+        .iter()
+        .any(|op| op.full_resolution.is_some());
+    if !over || fitted.tiled.is_some() || full_resolution {
+        return None;
+    }
+    let &first = fitted.cached.first()?;
+    let full = fitted.operations[first].output_desc;
+    if full.format != Format::Rgba {
+        return None;
+    }
+    let others = fitted.bytes() - full.buffer_size();
+    Some(Limits {
+        budget: limits.budget.saturating_sub(detail + others),
+        ..*limits
+    })
+}
+
 /// Whether a viewport needs tiles (decision 14): when its full-resolution part needs a
 /// binding or a buffer the GPU lacks, or demosaic's full-resolution image, its first
 /// cache point, would take more than the budget, decision 12's. Then where the tiles
@@ -3675,7 +3714,7 @@ pub(crate) fn scratch_buffer(gpu: &GpuContext, bytes: u64) -> wgpu::Buffer {
 }
 
 /// Mebibytes, for the memory domain.
-fn mebibytes(bytes: u64) -> f64 {
+pub(crate) fn mebibytes(bytes: u64) -> f64 {
     bytes as f64 / (1 << 20) as f64
 }
 
@@ -5509,6 +5548,16 @@ impl Pipeline {
         &self.plan
     }
 
+    /// The GPU memory its buffers take as made: its input, working and scratch buffers and
+    /// edit cache. A plan taken in place may use less of them than they hold
+    /// ([`Self::accepts`]), so this is at least its plan's [`Plan::bytes`].
+    pub(crate) fn bytes(&self) -> u64 {
+        let work = self.work.iter().map(|image| image.buffer().size());
+        let edit = self.edit.iter().map(|edit| edit.buffer.buffer().size());
+        let scratch = self.scratch.iter().map(wgpu::Buffer::size);
+        work.chain(edit).chain(scratch).sum::<u64>() + self.input.buffer().size()
+    }
+
     /// How many kernel entry points the pipeline has compiled, those kept from the plans
     /// before it over the same input included.
     pub fn kernels(&self) -> usize {
@@ -6662,6 +6711,68 @@ mod tests {
         binding: 2 << 20,
         ..Limits::NONE
     };
+
+    #[test]
+    fn the_detail_counts_in_the_viewports_budget() {
+        // A fitted viewport and a zoomed detail of 256 × 256 at 100% over its demosaic
+        // image (decision 99): where the detail takes them past the budget, the fitted
+        // plan, planned again within what `fitted_beside` gives, tiles, and both then fit;
+        // where both fit, where the fitted plan alone passes the budget, where it tiles
+        // already, and where an operation keeps a whole-image result at full resolution,
+        // nothing gives way.
+        let image = ImageContext::full(1000, 700);
+        let sensor = ImageDesc::new(1000, 700, Format::Mosaic16);
+        let pipe = Pipe::Viewport {
+            width: 300,
+            height: 200,
+        };
+        let [prepare_raw, demosaic, exposure, tone] = tiled_chain();
+        let mut haze = fake("haze", Stage::CameraRgb, 14.0);
+        haze.estimates = true;
+        let plain = [&prepare_raw, &demosaic, &exposure, &tone];
+        let estimating = [&prepare_raw, &demosaic, &haze, &exposure, &tone];
+        let sizes = |instances: &[Instance]| {
+            let fitted = super::plan(instances, &image, sensor, pipe, &Limits::NONE).unwrap();
+            assert!(fitted.tiled.is_none());
+            let source = fitted.operations[fitted.cached[0]].output_desc;
+            let after = detail_instances(instances, &fitted);
+            let detail = Pipe::Detail {
+                region: [100, 100, 256, 256],
+                scale: 1.0,
+            };
+            let detail = super::plan(&after, &image, source, detail, &Limits::NONE).unwrap();
+            (fitted, detail_bytes(&detail))
+        };
+        let instances: Vec<Instance> = plain.iter().map(|&op| instance(op)).collect();
+        let (fitted, own) = sizes(&instances);
+        // The detail's own: its buffers but the image it reads, and its display pair.
+        assert!(own > 2 * 256 * 256 * 16);
+        let both = fitted.bytes() + own;
+        let within = |budget| Limits {
+            budget,
+            ..Limits::NONE
+        };
+        // Both fit, or the fitted plan alone passes the budget: nothing gives way.
+        assert_eq!(fitted_beside(&fitted, own, &within(both)), None);
+        assert_eq!(
+            fitted_beside(&fitted, own, &within(fitted.bytes() - 1)),
+            None
+        );
+        // The detail takes them past it, by a byte or by all but the fitted plan's own.
+        for budget in [both - 1, fitted.bytes()] {
+            let given = fitted_beside(&fitted, own, &within(budget)).expect("a smaller budget");
+            let tiled = super::plan(&instances, &image, sensor, pipe, &given).unwrap();
+            assert!(tiled.tiled.is_some(), "at {budget}");
+            assert!(tiled.bytes() + own <= budget, "at {budget}");
+            // A plan that tiles already gives way no further.
+            assert_eq!(fitted_beside(&tiled, own, &within(budget)), None);
+        }
+        // Haze removal's estimate at full resolution keeps the fitted plan as it is.
+        let estimating: Vec<Instance> = estimating.iter().map(|&op| instance(op)).collect();
+        let (estimating, own) = sizes(&estimating);
+        let budget = estimating.bytes() + own - 1;
+        assert_eq!(fitted_beside(&estimating, own, &within(budget)), None);
+    }
 
     #[test]
     fn a_reduction_after_demosaic_leaves_the_viewport_in_tiles() {

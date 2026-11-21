@@ -2674,6 +2674,8 @@ struct Open {
     /// The zoomed view's detail pipeline, from the first frame zoomed past Fit (decision
     /// 99).
     detail: Option<Detail>,
+    /// The most memory both pipelines' buffers have taken while zoomed, logged as it grows.
+    zoom_peak: u64,
     /// The edit's history in memory, and its undo records (decision 78).
     history: history::PhotoHistory,
     /// Each tool's memory of the photo, as darktable's panel keeps one, which no edit
@@ -2790,7 +2792,8 @@ impl Display {
 
 /// The zoomed view's detail pipeline (decision 99; `docs/engine.md`, The zoomed view):
 /// built on the first frame zoomed past Fit, kept while its photo is open, not rendered at
-/// Fit, and dropped with the photo.
+/// Fit, freed there first where it would take the fitted pipeline past the budget, and
+/// dropped with the photo.
 struct Detail {
     /// Its plan's, `Pipe::Detail`, reading the fitted pipeline's demosaic image in place,
     /// or in a tiled viewport the raw stage's output it keeps.
@@ -4525,6 +4528,7 @@ impl Engine {
             views_failed: BTreeSet::new(),
             pipeline: None,
             detail: None,
+            zoom_peak: 0,
             history,
             memories: BTreeMap::new(),
             hidden: BTreeSet::new(),
@@ -5333,7 +5337,7 @@ impl Engine {
         }
         open.failing = failing;
         let limits = viewport_limits(&self.limits, [width, height], &open.sensor);
-        let plan = pipeline::plan(&bound.instances, &open.image, open.sensor, pipe, &limits)?;
+        let mut plan = pipeline::plan(&bound.instances, &open.image, open.sensor, pipe, &limits)?;
         let extent = plan.extent();
         // Zoomed past Fit, the detail's plan of the region the view shows at the scale it
         // renders, over the fitted pipeline's demosaic image, or in a tiled viewport the raw
@@ -5346,44 +5350,76 @@ impl Engine {
         };
         let placed = crate::view::zoomed(extent, (width, height), &self.view);
         let kept = open.detail.as_ref();
-        let region =
-            placed.map(|placed| detail_region(kept, &placed, self.anticipate_move, &self.limits));
-        // The instances the detail runs over that source: from a mosaic, demosaic and every
-        // later one, as an export's tiles run them.
-        let after = pipeline::detail_instances(&bound.instances, &plan);
-        let detail = match region {
-            None => None,
-            Some(Err(why)) => {
+        let (image, anticipate, device) = (&open.image, self.anticipate_move, &self.limits);
+        let instances = &bound.instances;
+        let plan_detail = |fitted: &Plan| -> Result<Option<([u32; 4], f64, Plan)>, String> {
+            let Some(placed) = &placed else {
+                return Ok(None);
+            };
+            let region = detail_region(kept, placed, anticipate, device)?;
+            let source = (fitted.cached.first())
+                .map(|&op| fitted.operations[op].output_desc)
+                .ok_or_else(|| "the viewport keeps no image a detail reads".to_owned())?;
+            // The instances the detail runs over that source: from a mosaic, demosaic and
+            // every later one, as an export's tiles run them.
+            let after = pipeline::detail_instances(instances, fitted);
+            let scale = placed.render;
+            let plan_at = |region| {
+                let detail = Pipe::Detail { region, scale };
+                pipeline::plan(&after, image, source, detail, &limits)
+            };
+            let (region, planned) = bound_detail(region, placed, anticipate, device, plan_at)?;
+            Ok(Some((region, scale, planned)))
+        };
+        let mut detail = plan_detail(&plan);
+        // One budget for both pipelines (decision 99): where the detail takes them past it,
+        // the fitted pipeline gives up demosaic's full-resolution image first, its plan
+        // tiled within the budget less the detail and its other buffers, and the detail
+        // starts from the raw stage's output it keeps; what passes the budget still is
+        // logged.
+        if let Ok(Some((_, _, planned))) = &detail {
+            let own = pipeline::detail_bytes(planned);
+            let beside = pipeline::fitted_beside(&plan, own, &limits);
+            let tiled = beside.and_then(|within| {
+                pipeline::plan(instances, image, open.sensor, pipe, &within).ok()
+            });
+            if let Some(tiled) = tiled.filter(|tiled| tiled.tiled.is_some()) {
+                tracing::debug!(
+                    target: "memory",
+                    "zoom: the fitted pipeline tiles, giving up demosaic's full-resolution image: {:.0} MiB with the detail's {:.0} MiB passes the {:.0} MiB budget",
+                    pipeline::mebibytes(plan.bytes()),
+                    pipeline::mebibytes(own),
+                    pipeline::mebibytes(limits.budget)
+                );
+                plan = tiled;
+                detail = plan_detail(&plan);
+            }
+        }
+        let detail = match detail {
+            Ok(detail) => detail,
+            Err(why) => {
                 self.zoom_refused = refuse(why);
                 None
             }
-            Some(Ok(region)) => {
-                let source = (plan.cached.first()).map(|&op| plan.operations[op].output_desc);
-                let image = &open.image;
-                let anticipate = self.anticipate_move;
-                let placed = placed.as_ref().expect("a region for a placed view");
-                let scale = placed.render;
-                let planned = source.map(|source| {
-                    let plan_at = |region| {
-                        let detail = Pipe::Detail { region, scale };
-                        pipeline::plan(&after, image, source, detail, &limits)
-                    };
-                    bound_detail(region, placed, anticipate, &self.limits, plan_at)
-                });
-                match planned {
-                    Some(Ok((region, planned))) => Some((region, scale, planned)),
-                    Some(Err(why)) => {
-                        self.zoom_refused = refuse(why);
-                        None
-                    }
-                    None => {
-                        self.zoom_refused =
-                            refuse("the viewport keeps no image a detail reads".to_owned());
-                        None
-                    }
-                }
-            }
         };
+        // At Fit, the detail kept is the first to go where it takes the fitted pipeline past
+        // the budget; going back past Fit builds it again.
+        if placed.is_none()
+            && let Some(kept) = &open.detail
+            && plan.bytes() <= limits.budget
+            && plan.bytes() + pipeline::detail_bytes(kept.pipeline.plan()) > limits.budget
+        {
+            tracing::debug!(
+                target: "memory",
+                "zoom: the detail pipeline kept at Fit, {:.0} MiB, freed: with the fitted pipeline's {:.0} MiB it passes the {:.0} MiB budget",
+                pipeline::mebibytes(pipeline::detail_bytes(kept.pipeline.plan())),
+                pipeline::mebibytes(plan.bytes()),
+                pipeline::mebibytes(limits.budget)
+            );
+            open.detail = None;
+        }
+        // The instances the detail runs over its source, for its whole-image results.
+        let after = pipeline::detail_instances(&bound.instances, &plan);
         let probing = probe
             .then(|| {
                 let image = &open.image;
@@ -5451,14 +5487,27 @@ impl Engine {
             // Keyed on that image, its whole-image passes left out where their results are
             // held, and the rounds that compute those whose key changed, haze removal's
             // estimate borrowed from the fitted pipeline (decision 99). One the GPU cannot
-            // bind, as an export's, leaves the frame at Fit.
+            // bind, as an export's, leaves the frame at Fit. Its rounds' tiles are sized within
+            // what the fitted pipeline and the detail's own buffers, made before them, leave of
+            // the budget first, the source they read counted as theirs, as an export's tiles
+            // count their input; where the fitted pipeline passes the budget alone, within the
+            // budget, as at Fit.
             let instances = &after;
+            // As made: a plan taken in place may use less of its buffers than they hold.
+            let fitted_bytes = pipeline.bytes();
+            let left = if fitted_bytes <= limits.budget {
+                let taken = fitted_bytes - source.buffer().size();
+                (limits.budget).saturating_sub(taken + pipeline::detail_bytes(&planned))
+            } else {
+                limits.budget
+            };
             let planned = results.plan(
                 planned,
                 key,
                 instances,
                 &open.image,
                 &limits,
+                left,
                 Some(pipeline),
             );
             let (planned, rounds) = match planned {
@@ -5468,6 +5517,7 @@ impl Engine {
                     break 'detail;
                 }
             };
+            let round_bytes = rounds.bytes();
             #[cfg(test)]
             let had = old
                 .as_ref()
@@ -5510,6 +5560,11 @@ impl Engine {
                 self.compiled += built.kernels() - had;
             }
             let mut detail = built;
+            // Both pipelines' buffers as made, the detail's but the source it reads in place and
+            // with its display pair, and the largest round tile's while it runs.
+            let display_pair = 2 * detail.output().desc().buffer_size();
+            let own = detail.bytes() - source.buffer().size() + display_pair;
+            let peak = fitted_bytes + own + round_bytes;
             let detail_output = detail.output();
             let detail_desc = detail_output.desc();
             let detail_bytes = detail_desc.buffer_size();
@@ -5666,6 +5721,16 @@ impl Engine {
                 scale,
                 shown: true,
             });
+            if peak > open.zoom_peak {
+                open.zoom_peak = peak;
+                tracing::debug!(
+                    target: "perf",
+                    "zoom: peak {:.0} MiB for both pipelines' buffers, {:.0} MiB of them the fitted pipeline's, against the {:.0} MiB budget",
+                    pipeline::mebibytes(peak),
+                    pipeline::mebibytes(fitted_bytes),
+                    pipeline::mebibytes(limits.budget)
+                );
+            }
             #[cfg(not(test))]
             let published = Instant::now();
             #[cfg(test)]

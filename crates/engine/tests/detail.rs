@@ -204,7 +204,15 @@ impl Scene for Raw {
         let pipe = Pipe::Detail { region, scale };
         let image = self.image();
         let planned = pipeline::plan(instances, &image, source.desc(), pipe, limits)?;
-        let (plan, rounds) = results.plan(planned, key, instances, &image, limits, Some(fitted))?;
+        let (plan, rounds) = results.plan(
+            planned,
+            key,
+            instances,
+            &image,
+            limits,
+            limits.budget,
+            Some(fitted),
+        )?;
         Ok((plan, rounds, source))
     }
 
@@ -534,6 +542,46 @@ fn a_detail_whose_rounds_take_tiles_equals_the_exports_region() {
     equals_the_exports_regions_within(&gpu, &scene, &instances, &limits, &["toneequal", "bloom"]);
 }
 
+#[test]
+fn a_rounds_tiles_take_what_the_fitted_pipeline_leaves_first() {
+    // The tone equalizer's round, within a budget it fits whole, is cut into tiles within
+    // the bytes the fitted pipeline leaves where some fit them, and takes the budget where
+    // none does (decision 99); its tiles are an export's, which the tests above hold
+    // equal to the untiled round.
+    let gpu = gpu();
+    for scene in [bayer(), x_trans()] {
+        let instances = scene.adding(
+            &[],
+            &toneequal::ToneEqual,
+            tone_equalizer(toneequal::Filter::Eigf),
+        );
+        let fitted = scene.fitted(&gpu, &instances);
+        let (source, key) = fitted.detail_source().expect("demosaic's image");
+        let after = pipeline::detail_instances(&instances, fitted.plan());
+        let image = scene.image();
+        let pipe = Pipe::Detail {
+            region: [10, 10, 40, 30],
+            scale: 1.0,
+        };
+        let tiles = |left: u64| {
+            let planned = pipeline::plan(&after, &image, source.desc(), pipe, &Limits::NONE);
+            let mut results = Results::default();
+            let limits = &Limits::NONE;
+            let fitted = Some(&fitted);
+            let planned = results.plan(planned.unwrap(), key, &after, &image, limits, left, fitted);
+            let (_, rounds) = planned.unwrap();
+            rounds.tiles()
+        };
+        assert_eq!(tiles(u64::MAX), [1]);
+        let left = std::iter::successors(Some(64u64 << 20), |left| Some(left * 15 / 16))
+            .take_while(|&left| left > 0)
+            .find(|&left| tiles(left)[0] > 1)
+            .expect("bytes left that cut the round into tiles");
+        assert!(tiles(left)[0] > 1);
+        assert_eq!(tiles(0), [1], "none fits: the budget's, whole");
+    }
+}
+
 /// `detail`, at `region`, rendered again for `instances`, its fitted pipeline updated and
 /// rendered first, as the session renders a change at 100%; the frame equals a fresh
 /// detail's bit for bit.
@@ -763,7 +811,8 @@ fn a_round_too_large_to_bind_refuses_the_view() {
     };
     let image = scene.image();
     let planned = pipeline::plan(&instances, &image, source, pipe, &limits).unwrap();
-    let refused = Results::default().plan(planned, 0, &instances, &image, &limits, None);
+    let refused =
+        Results::default().plan(planned, 0, &instances, &image, &limits, limits.budget, None);
     match refused {
         Err(
             error @ ExportError::HeldScratch {
@@ -1301,7 +1350,7 @@ fn a_detail_whose_whole_image_scratch_cannot_bind_stops_its_tile_search() {
             op.output_desc
         );
     }
-    let refused = Results::default().plan(planned, 0, &after, &image, &limits, None);
+    let refused = Results::default().plan(planned, 0, &after, &image, &limits, limits.budget, None);
     match refused {
         Err(ExportError::HeldScratch {
             operation, limit, ..
