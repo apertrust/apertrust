@@ -118,9 +118,9 @@ The libraries Apertrust and its command line are built from, on every platform, 
 - calloop-wayland-source 0.3.0: MIT
 - cfg-if 1.0.5: MIT OR Apache-2.0
 - chrono 0.4.45: MIT OR Apache-2.0
-- clap 4.6.7: MIT OR Apache-2.0
+- clap 4.6.9: MIT OR Apache-2.0
 - clap_builder 4.6.7: MIT OR Apache-2.0
-- clap_derive 4.6.7: MIT OR Apache-2.0
+- clap_derive 4.6.9: MIT OR Apache-2.0
 - clap_lex 1.1.1: MIT OR Apache-2.0
 - codespan-reporting 0.13.1: Apache-2.0
 - color 0.3.3: Apache-2.0 OR MIT
@@ -291,7 +291,7 @@ The libraries Apertrust and its command line are built from, on every platform, 
 - muda 0.21.2: Apache-2.0 OR MIT
 - multiversion 0.8.1: MIT OR Apache-2.0
 - multiversion-macros 0.8.1: MIT OR Apache-2.0
-- naga 30.0.1: MIT OR Apache-2.0
+- naga 30.0.2: MIT OR Apache-2.0
 - naga-types 30.0.1: MIT OR Apache-2.0
 - ndk 0.9.0: MIT OR Apache-2.0
 - ndk-context 0.1.1: MIT OR Apache-2.0
@@ -346,7 +346,7 @@ The libraries Apertrust and its command line are built from, on every platform, 
 - plain 0.2.3: MIT/Apache-2.0
 - png 0.18.1: MIT OR Apache-2.0
 - polling 3.11.0: Apache-2.0 OR MIT
-- pollster 1.0.1: Apache-2.0/MIT
+- pollster 1.0.3: MIT OR Apache-2.0
 - polycool 0.4.0: MIT OR Apache-2.0
 - portable-atomic 1.15.0: Apache-2.0 OR MIT
 - portable-atomic-util 0.2.8: Apache-2.0 OR MIT
@@ -417,7 +417,7 @@ The libraries Apertrust and its command line are built from, on every platform, 
 - strsim 0.11.1: MIT
 - svgtypes 0.16.1: Apache-2.0 OR MIT
 - syn 2.0.119: MIT OR Apache-2.0
-- syn 3.0.9: MIT OR Apache-2.0
+- syn 3.0.10: MIT OR Apache-2.0
 - synstructure 0.14.0: MIT
 - target-features 0.1.6: MIT OR Apache-2.0
 - tempfile 3.27.0: MIT OR Apache-2.0
@@ -481,7 +481,7 @@ The libraries Apertrust and its command line are built from, on every platform, 
 - web-time 1.1.0: MIT OR Apache-2.0
 - webbrowser 1.2.6: MIT OR Apache-2.0
 - weezl 0.1.12: MIT OR Apache-2.0
-- wgpu 30.0.1: MIT OR Apache-2.0
+- wgpu 30.0.2: MIT OR Apache-2.0
 - wgpu-core 30.0.1: MIT OR Apache-2.0
 - wgpu-core-deps-apple 30.0.1: MIT OR Apache-2.0
 - wgpu-core-deps-emscripten 30.0.1: MIT OR Apache-2.0
@@ -502,7 +502,6 @@ The libraries Apertrust and its command line are built from, on every platform, 
 - windows-result 0.4.1: MIT OR Apache-2.0
 - windows-strings 0.5.1: MIT OR Apache-2.0
 - windows-sys 0.52.0: MIT OR Apache-2.0
-- windows-sys 0.59.0: MIT OR Apache-2.0
 - windows-sys 0.61.2: MIT OR Apache-2.0
 - windows-targets 0.52.6: MIT OR Apache-2.0
 - windows-threading 0.2.1: MIT OR Apache-2.0
