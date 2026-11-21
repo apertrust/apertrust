@@ -22,8 +22,11 @@
 // checks, so every footprint has a pixel. A tile of the viewport (decision 14) writes
 // the output pixels the header's size covers from its origin, reading a part of the
 // source, its demosaic tile, that holds their footprints: the same sums in the same
-// order as the whole image's. The engine's own pass, after demosaic; not a darktable
-// port: no golden case and no derivatives. Its footprints and sums are
+// order as the whole image's. `main_region` writes into a buffer that holds one region
+// of the output alone, at the output origin and with the rows its uniforms give: the
+// zoomed view's detail between Fit and 100% (decision 99), and crop's first region once
+// built. The engine's own pass, after demosaic; not a darktable port: no golden case and
+// no derivatives. Its footprints and sums are
 // box_downscale.slang's, which an operation that downscales what it computes at full
 // resolution shares (decision 15).
 
@@ -50,9 +53,30 @@ struct Params
     DownscaleParams downscale;
 };
 
+// `main_region`'s: the whole output's footprints, as `main`'s, and the region of it the
+// output buffer holds, so its pixel o lies at o less the region's corner in it.
+struct DownscaleRegionParams
+{
+    DownscaleParams downscale;
+    // The region's corner in the whole output, and the output buffer's rows' length.
+    uint output_x;
+    uint output_y;
+    uint output_row;
+    uint _pad;
+};
+
+struct RegionParams
+{
+    PassHeader pass;
+    DownscaleRegionParams downscale;
+};
+
 [[vk::binding(0, 0)]] StructuredBuffer<float4> input;
 [[vk::binding(1, 0)]] RWStructuredBuffer<float4> output;
 [[vk::binding(2, 0)]] ConstantBuffer<Params> params;
+// `main_region`'s uniform block, at a binding of its own, so `main` binds only its own and
+// its plans keep their bytes.
+[[vk::binding(3, 0)]] ConstantBuffer<RegionParams> region_params;
 
 // The input, a part of the source whose first pixel lies at (x, y) of it.
 struct Source : IDownscaleSource<float4>
@@ -79,4 +103,23 @@ void main(uint3 id: SV_DispatchThreadID)
     uint2 size = uint2(p.output_width, p.output_height);
     Source part = { p.input_x, p.input_y, p.input_width };
     output[o.y * p.output_width + o.x] = footprint_mean<float4>(part, o, source, size);
+}
+
+// `main`, writing into a buffer that holds the region of the output from
+// (output_x, output_y), output_row pixels a row: the pass header's origin and size are in
+// the whole output, and lie inside that region.
+[shader("compute")]
+[numthreads(16, 16, 1)]
+void main_region(uint3 id: SV_DispatchThreadID)
+{
+    if (id.x >= region_params.pass.width || id.y >= region_params.pass.height)
+        return;
+    DownscaleRegionParams r = region_params.downscale;
+    DownscaleParams p = r.downscale;
+    uint2 o = uint2(region_params.pass.origin_x, region_params.pass.origin_y) + id.xy;
+    uint2 source = uint2(p.source_width, p.source_height);
+    uint2 size = uint2(p.output_width, p.output_height);
+    Source part = { p.input_x, p.input_y, p.input_width };
+    uint at = (o.y - r.output_y) * r.output_row + o.x - r.output_x;
+    output[at] = footprint_mean<float4>(part, o, source, size);
 }

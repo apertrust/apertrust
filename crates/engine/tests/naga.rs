@@ -29,9 +29,11 @@ fn every_engine_kernel_validates() {
     for kernel in engine_kernels() {
         let (module, _) = validate(kernel);
         // `main`, but for the pickers' reduction, whose two passes are named for what
-        // they do (docs/pickers.md, The kernel).
+        // they do (docs/pickers.md, The kernel), and the downscale's into a region of its
+        // output too (decision 99).
         let entry_points: &[&str] = match kernel.name {
             "picker" => &["picker_rgba", "picker_combine"],
+            "downscale" => &["main", "main_region"],
             _ => &["main"],
         };
         for entry_point in entry_points {

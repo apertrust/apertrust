@@ -53,6 +53,22 @@ struct Params_std140_0
 @binding(2) @group(0) var<uniform> params_0 : Params_std140_0;
 @binding(1) @group(0) var<storage, read_write> output_0 : array<vec4<f32>>;
 
+struct DownscaleRegionParams_std140_0
+{
+    @align(16) downscale_1 : DownscaleParams_std140_0,
+    @align(16) output_x_0 : u32,
+    @align(4) output_y_0 : u32,
+    @align(8) output_row_0 : u32,
+    @align(4) _pad_1 : u32,
+};
+
+struct RegionParams_std140_0
+{
+    @align(16) pass_1 : PassHeader_std140_0,
+    @align(16) downscale_2 : DownscaleRegionParams_std140_0,
+};
+
+@binding(3) @group(0) var<uniform> region_params_0 : RegionParams_std140_0;
 @binding(0) @group(0) var<storage, read> input_0 : array<vec4<f32>>;
 
 struct Source_0
@@ -135,6 +151,29 @@ fn main(@builtin(global_invocation_id) id_0 : vec3<u32>)
     var o_1 : vec2<u32> = vec2<u32>(params_0.pass_0.origin_x_0, params_0.pass_0.origin_y_0) + id_0.xy;
     var _S8 : vec4<f32> = footprint_mean_0(Source_x24init_0(params_0.downscale_0.input_x_0, params_0.downscale_0.input_y_0, params_0.downscale_0.input_width_0), o_1, vec2<u32>(params_0.downscale_0.source_width_0, params_0.downscale_0.source_height_0), vec2<u32>(params_0.downscale_0.output_width_0, params_0.downscale_0.output_height_0));
     output_0[o_1.y * params_0.downscale_0.output_width_0 + o_1.x] = _S8;
+    return;
+}
+
+@compute
+@workgroup_size(16, 16, 1)
+fn main_region(@builtin(global_invocation_id) id_1 : vec3<u32>)
+{
+    var _S9 : bool;
+    if(((id_1.x) >= (region_params_0.pass_1.width_0)))
+    {
+        _S9 = true;
+    }
+    else
+    {
+        _S9 = ((id_1.y) >= (region_params_0.pass_1.height_0));
+    }
+    if(_S9)
+    {
+        return;
+    }
+    var o_2 : vec2<u32> = vec2<u32>(region_params_0.pass_1.origin_x_0, region_params_0.pass_1.origin_y_0) + id_1.xy;
+    var _S10 : vec4<f32> = footprint_mean_0(Source_x24init_0(region_params_0.downscale_2.downscale_1.input_x_0, region_params_0.downscale_2.downscale_1.input_y_0, region_params_0.downscale_2.downscale_1.input_width_0), o_2, vec2<u32>(region_params_0.downscale_2.downscale_1.source_width_0, region_params_0.downscale_2.downscale_1.source_height_0), vec2<u32>(region_params_0.downscale_2.downscale_1.output_width_0, region_params_0.downscale_2.downscale_1.output_height_0));
+    output_0[(o_2.y - region_params_0.downscale_2.output_y_0) * region_params_0.downscale_2.output_row_0 + o_2.x - region_params_0.downscale_2.output_x_0] = _S10;
     return;
 }
 
