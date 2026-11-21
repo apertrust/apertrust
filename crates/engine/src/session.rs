@@ -103,8 +103,9 @@
 //! view state, one per session, which every client shares and learns from [`Event::View`];
 //! it is kept across photos, its centre clamped to each. Each frame says where it lies in
 //! the photo ([`Frame::place`]). From 100% on the frame is the detail pipeline's, the
-//! visible region at scale 1, with the fitted frame beside it ([`Frame::overview`]), both
-//! rendered in one submission; below 100% every frame is the whole photo at Fit for now.
+//! visible region with its margin at scale 1, with the fitted frame beside it
+//! ([`Frame::overview`]), both rendered in one submission, a pan inside the margin
+//! rendering nothing; below 100% every frame is the whole photo at Fit for now.
 //!
 //! These types stand in for the session protocol's until `apertrust-protocol` exists.
 
@@ -198,9 +199,11 @@ pub enum Command {
     /// photos, another photo taking the same view, its centre clamped to it
     /// ([`crate::view::place`]). A factor not finite or not above 0 is Fit, one above 16 is
     /// 16 ([`View::normalized`]). Answered by [`Event::View`] where the view or its
-    /// placement changed. From 100% on it renders the visible region through the detail
-    /// pipeline, a view that moves the region rendering it alone; below 100% the frame
-    /// stays at Fit for now. Where the detail cannot render yet, in a tiled viewport or
+    /// placement changed. From 100% on it renders the visible region with its margin
+    /// through the detail pipeline ([`crate::view::rendered`]): a view whose visible
+    /// rectangle the region rendered last holds renders nothing and sends no frame, and
+    /// one past it renders the detail alone, its region moved; below 100% the frame stays
+    /// at Fit for now. Where the detail cannot render yet, in a tiled viewport or
     /// with an operation it refuses, the view is still the session's, its frame stays at
     /// Fit, and the command is refused with [`SessionError::Zoom`].
     View(View),
@@ -523,6 +526,38 @@ fn viewport_limits(limits: &Limits, viewport: [u32; 2], sensor: &ImageDesc) -> L
         budget: limits.budget.saturating_sub(reserved),
         ..*limits
     }
+}
+
+/// The region the detail renders at scale 1 for the view placed as `placed` (decision 99):
+/// `kept`'s, the one it rendered last, where that is at the same scale, inside the image
+/// and holds the visible rectangle, so a pan inside it, or an edit, keeps it; else the one
+/// [`crate::view::rendered`] grows round the visible rectangle within what `limits` bind,
+/// of the same size as before at the same scale and bounds, so the detail's plan updates in
+/// place. An error where even the visible rectangle passes one binding.
+fn detail_region(
+    kept: Option<&Detail>,
+    placed: &Placement,
+    anticipate_move: f64,
+    limits: &Limits,
+) -> Result<[u32; 4], String> {
+    if let Some(kept) = kept {
+        let [x, y, width, height] = kept.region;
+        let inside = x + width <= placed.size[0] && y + height <= placed.size[1];
+        if f64::from(kept.scale) == placed.render
+            && inside
+            && crate::view::covers(kept.region, placed.visible)
+        {
+            return Ok(kept.region);
+        }
+    }
+    // The largest RGBA `f32` image the GPU binds.
+    let limit_pixels = limits.binding.min(limits.buffer) / 16;
+    crate::view::rendered(placed, anticipate_move, limit_pixels).ok_or_else(|| {
+        let [width, height] = [placed.visible[2], placed.visible[3]].map(f64::ceil);
+        format!(
+            "the visible {width}×{height} at 100% passes the largest image the GPU binds, {limit_pixels} pixels"
+        )
+    })
 }
 
 /// The tools a command changes: one, by its id; `Some(None)` for every tool, as
@@ -1101,8 +1136,9 @@ pub enum SessionError {
     #[error("the scopes are off: {0}")]
     Scopes(String),
     /// A [`Command::View`] past Fit that the session cannot render yet, as the reason
-    /// says: a tiled viewport, an operation or a region the detail's plan refuses, or a
-    /// detail pipeline the GPU cannot build. The view is the session's all the same, and
+    /// says: a tiled viewport, an operation or a region the detail's plan refuses, a
+    /// visible rectangle larger than the GPU binds, or a detail pipeline the GPU cannot
+    /// build. The view is the session's all the same, and
     /// its frames stay at Fit, as [`Frame::place`] says (decision 99).
     #[error("the photo stays at Fit: {0}")]
     Zoom(String),
@@ -1267,6 +1303,30 @@ fn photo_rows(
     shown
 }
 
+/// How the session renders its photo, from the engine's settings
+/// ([`crate::settings::Options::view`]), kept while it runs, so a change applies at the
+/// next start.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ViewOptions {
+    /// The GPU memory a photo is planned within, in bytes (decision 12):
+    /// `engine.memory_budget`.
+    pub budget: u64,
+    /// How much larger than the visible rectangle, on each side, the zoomed view's detail
+    /// renders, 1.0 to 2.0 (decision 99; [`crate::view::rendered`]):
+    /// `viewer.anticipate_move`.
+    pub anticipate_move: f64,
+}
+
+impl Default for ViewOptions {
+    /// The settings' defaults: [`pipeline::BUDGET`] and [`crate::view::ANTICIPATE_MOVE`].
+    fn default() -> ViewOptions {
+        ViewOptions {
+            budget: pipeline::BUDGET,
+            anticipate_move: crate::view::ANTICIPATE_MOVE,
+        }
+    }
+}
+
 /// A client's handle on the session; dropping it ends the thread, once the edit is saved.
 pub struct Session {
     commands: Option<mpsc::Sender<Inbox>>,
@@ -1286,12 +1346,13 @@ impl Session {
     /// operations or the tools before it ([`check::accept`]) is reported
     /// [`SessionError::Tool`] and left out. Every edit the session writes records
     /// `build` as the build that wrote it: the client's version (decision 44). Every photo
-    /// is planned within `budget` bytes of GPU memory, the engine's memory budget
-    /// (decision 12), which the client reads from its settings (`engine.memory_budget`);
-    /// the session keeps it while it runs, so a change applies at the next start. `cache`
-    /// is the disk cache the client opened, with its limit, which the session tidies,
-    /// walks and keeps within the limit as background jobs (decision 76), or none. `wake`
-    /// is called, from the session's threads, when events have arrived and the client has
+    /// is planned within `view.budget` bytes of GPU memory, the engine's memory budget
+    /// (decision 12), and the zoomed view's detail rendered with `view.anticipate_move`'s
+    /// margin (decision 99), both of which the client reads from its settings
+    /// ([`crate::settings::Options::view`]); the session keeps them while it runs, so a
+    /// change applies at the next start. `cache` is the disk cache the client opened, with
+    /// its limit, which the session tidies, walks and keeps within the limit as background
+    /// jobs (decision 76), or none. `wake` is called, from the session's threads, when events have arrived and the client has
     /// not looked since the last call, once for a burst: the client looks at them with
     /// [`Session::events`], a window asking for a repaint, and the next event after that
     /// look wakes it again.
@@ -1300,7 +1361,7 @@ impl Session {
         operations: &'static [&'static dyn Operation],
         tools: &'static [&'static dyn ProcessingTool],
         build: &str,
-        budget: u64,
+        view: ViewOptions,
         cache: Option<CacheOptions>,
         wake: impl Fn() + Send + Sync + 'static,
     ) -> Session {
@@ -1309,7 +1370,7 @@ impl Session {
             operations,
             tools,
             build,
-            budget,
+            view,
             cache,
             Arc::new(wake),
             open::files(),
@@ -1325,7 +1386,7 @@ impl Session {
         operations: &'static [&'static dyn Operation],
         tools: &'static [&'static dyn ProcessingTool],
         build: &str,
-        budget: u64,
+        view: ViewOptions,
         cache: Option<CacheOptions>,
         wake: Wake,
         load: Load,
@@ -1367,7 +1428,7 @@ impl Session {
                     operations,
                     tools,
                     build,
-                    budget,
+                    view,
                     Writer::start(outbox.clone()),
                     Jobs::start(outbox.clone(), tasks),
                 );
@@ -2130,6 +2191,8 @@ struct Engine {
     /// The build every edit written records.
     build: String,
     limits: Limits,
+    /// `viewer.anticipate_move`: the zoomed view's margin (decision 99).
+    anticipate_move: f64,
     load: Load,
     size: Option<(u32, u32)>,
     /// The view (decision 99): one per session, kept across photos, its centre clamped to
@@ -2682,19 +2745,19 @@ struct Effect {
 }
 
 impl Engine {
-    /// The engine, planning within `budget` bytes, and an event for each tool it
+    /// The engine, planning within `view`'s budget, and an event for each tool it
     /// leaves out.
     fn new(
         gpu: GpuContext,
         operations: &'static [&'static dyn Operation],
         tools: &'static [&'static dyn ProcessingTool],
         build: String,
-        budget: u64,
+        view: ViewOptions,
         writer: Writer,
         jobs: Jobs,
     ) -> (Self, Vec<Event>) {
         let limits = Limits {
-            budget,
+            budget: view.budget,
             ..Limits::of(&gpu)
         };
         let (tools, rejected) = check::accept(tools, operations);
@@ -2715,6 +2778,7 @@ impl Engine {
             retired: apertrust_tools::RETIRED,
             build,
             limits,
+            anticipate_move: view.anticipate_move,
             load: open::files(),
             size: None,
             view: View::default(),
@@ -3304,7 +3368,7 @@ impl Engine {
         // A view that moves the frame renders: to or from the detail, or the detail's
         // region elsewhere (decision 99). One the session cannot render past Fit renders
         // the fitted frame, and is refused.
-        render |= viewed.is_some() && self.zoom_wanted() != self.zoom_shown();
+        render |= viewed.is_some() && self.zoom_wanted() != self.zoom_shown().map(Ok);
         // A `View` of the frame shown, on a live photo, is answered as it is: nothing is
         // left for a later render to refuse it for.
         if viewed.is_some() && !render && (self.open.as_ref()).is_some_and(|o| o.input.is_some()) {
@@ -3369,12 +3433,14 @@ impl Engine {
     }
 
     /// The detail's region and scale the view asks of the open photo in the last bounds
-    /// (decision 99; [`crate::view::detail_region`]), placed on its extent as its values
-    /// last reported it; `None` where it asks for Fit.
-    fn zoom_wanted(&self) -> Option<([u32; 4], f32)> {
+    /// (decision 99; [`detail_region`]), placed on its extent as its values last reported
+    /// it, or why none binds; `None` where it asks for Fit.
+    fn zoom_wanted(&self) -> Option<Result<([u32; 4], f32), String>> {
         let (open, bounds) = self.open.as_ref().zip(self.size)?;
-        let region = crate::view::detail_region(open.extent, bounds, &self.view)?;
-        Some((region, 1.0))
+        let placed = crate::view::zoomed(open.extent, bounds, &self.view)?;
+        let kept = open.detail.as_ref();
+        let region = detail_region(kept, &placed, self.anticipate_move, &self.limits);
+        Some(region.map(|region| (region, 1.0)))
     }
 
     /// The detail's region and scale the frame published last shows; `None` at Fit.
@@ -5117,7 +5183,11 @@ impl Engine {
             tracing::debug!(target: "pipe", "zoom: stays at Fit: {why}");
             Some(SessionError::Zoom(why))
         };
-        let detail = match crate::view::detail_region(extent, (width, height), &self.view) {
+        let placed = crate::view::zoomed(extent, (width, height), &self.view);
+        let kept = open.detail.as_ref();
+        let region =
+            placed.map(|placed| detail_region(kept, &placed, self.anticipate_move, &self.limits));
+        let detail = match region {
             None => None,
             Some(_) if plan.tiled.is_some() => {
                 self.zoom_refused = refuse(
@@ -5126,7 +5196,11 @@ impl Engine {
                 );
                 None
             }
-            Some(region) => {
+            Some(Err(why)) => {
+                self.zoom_refused = refuse(why);
+                None
+            }
+            Some(Ok(region)) => {
                 let source = (plan.cached.first()).map(|&op| plan.operations[op].output_desc);
                 let detail = Pipe::Detail { region, scale: 1.0 };
                 let image = &open.image;
@@ -5843,7 +5917,7 @@ pub mod testing {
             operations,
             tools,
             build,
-            pipeline::BUDGET,
+            ViewOptions::default(),
             None,
             Arc::new(wake),
             open::testing::loading(synthetic),
@@ -5975,7 +6049,7 @@ mod tests {
             OPERATIONS,
             tools,
             BUILD,
-            pipeline::BUDGET,
+            ViewOptions::default(),
             cache,
             Arc::new(wake),
             load,
@@ -6725,7 +6799,7 @@ mod tests {
             ..GpuOptions::default()
         };
         let gpu = pollster::block_on(GpuContext::new(&options)).expect("a GPU adapter");
-        let mut driven = Driven::on(gpu, &[&Sample], pipeline::BUDGET);
+        let mut driven = Driven::on(gpu, &[&Sample], ViewOptions::default());
         let first = scratch("failed-build-first");
         driven.open(&first);
         // Planned as if the GPU bound anything, the wide photo's build fails.
@@ -6968,11 +7042,24 @@ mod tests {
 
         /// An engine that plans within `budget` bytes.
         fn within(tools: &'static [&'static dyn ProcessingTool], budget: u64) -> Self {
-            Driven::on(gpu(), tools, budget)
+            let view = ViewOptions {
+                budget,
+                ..ViewOptions::default()
+            };
+            Driven::with(tools, view)
         }
 
-        /// An engine on `gpu` that plans within `budget` bytes.
-        fn on(gpu: GpuContext, tools: &'static [&'static dyn ProcessingTool], budget: u64) -> Self {
+        /// An engine that renders as `view` says.
+        fn with(tools: &'static [&'static dyn ProcessingTool], view: ViewOptions) -> Self {
+            Driven::on(gpu(), tools, view)
+        }
+
+        /// An engine on `gpu` that renders as `view` says.
+        fn on(
+            gpu: GpuContext,
+            tools: &'static [&'static dyn ProcessingTool],
+            view: ViewOptions,
+        ) -> Self {
             let (sent, saved) = outbox::channel(Arc::new(|| {}));
             let (tasks, inbox) = mpsc::channel();
             let (mut engine, _) = Engine::new(
@@ -6980,7 +7067,7 @@ mod tests {
                 OPERATIONS,
                 tools,
                 BUILD.to_owned(),
-                budget,
+                view,
                 Writer::start(sent.clone()),
                 Jobs::start(sent, tasks),
             );
@@ -11313,7 +11400,7 @@ mod tests {
             OPERATIONS,
             &[],
             BUILD,
-            pipeline::BUDGET,
+            ViewOptions::default(),
             Some(options),
             Arc::new(|| {}),
             loading(synthetic),
@@ -11386,7 +11473,7 @@ mod tests {
             OPERATIONS,
             &[],
             BUILD,
-            pipeline::BUDGET,
+            ViewOptions::default(),
             Some(options),
             Arc::new(wake),
             open::testing::loading(synthetic),

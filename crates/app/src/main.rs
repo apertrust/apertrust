@@ -3876,9 +3876,10 @@ impl App {
     /// looked at; `keeper` writes them back. Its window was made at `built`'s placement, as
     /// the start window where it says so, and is given the other where the start turns out
     /// otherwise, before it first shows.
-    /// Its session plans within `engine`'s budget, `engine.memory_budget`, and keeps
-    /// `cache`, the disk cache, if the app could open one; Settings says whether the
-    /// adapter in use is the one `engine` chose. The Tools panel shows `workspace`, on the
+    /// Its session plans within `engine`'s budget, `engine.memory_budget`, zooms with its
+    /// margin, `viewer.anticipate_move`, and keeps `cache`, the disk cache, if the app
+    /// could open one; Settings says whether the adapter in use is the one `engine`
+    /// chose. The Tools panel shows `workspace`, on the
     /// tab the recents' `state.toml` kept for it, and View › Workspace lists `workspaces`,
     /// as read. Its dialogs are the host's. It keeps the session's log in `kept` while
     /// settings say so. `launch` says whether it reopens what was open last, how it
@@ -4024,7 +4025,7 @@ impl App {
             apertrust_operations::OPERATIONS,
             tools,
             apertrust_base::program!().version,
-            engine.budget,
+            engine.view(),
             cache,
             move || ctx.request_repaint(),
         );

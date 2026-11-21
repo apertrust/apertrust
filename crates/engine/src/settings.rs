@@ -34,6 +34,7 @@ use apertrust_base::cache::Limit;
 use apertrust_base::settings::{CONF_FLAG, Declared, Store};
 
 use crate::gpu::{self, AdapterChoice, Backend, GpuError, GpuOptions};
+use crate::session::ViewOptions;
 
 /// The engine's settings as the settings schema declares them, generated from it by
 /// `build.rs` as typed statics, each named after its id, and `ALL`, every one of them, for
@@ -42,7 +43,10 @@ pub mod registry {
     include!(concat!(env!("OUT_DIR"), "/settings.rs"));
 }
 
-use registry::{CACHE_LIMIT, CACHE_LIMITED, ENGINE_ADAPTER, ENGINE_BACKEND, ENGINE_MEMORY_BUDGET};
+use registry::{
+    CACHE_LIMIT, CACHE_LIMITED, ENGINE_ADAPTER, ENGINE_BACKEND, ENGINE_MEMORY_BUDGET,
+    VIEWER_ANTICIPATE_MOVE,
+};
 
 /// A gigabyte of `cache.limit`, as disks count it.
 const GB: f64 = 1e9;
@@ -129,11 +133,25 @@ pub struct Options {
     /// `engine.memory_budget` in bytes: the GPU memory a render may take before it tiles
     /// (decision 12), for an export's `Tiling::Auto` and a plan's `Limits`.
     pub budget: u64,
+    /// `viewer.anticipate_move`: how much larger than the visible rectangle, on each side,
+    /// the zoomed view's detail renders, 1.0 to 2.0 (decision 99), kept to one decimal.
+    pub anticipate_move: f64,
     /// Where each came from: the adapter's, the budget's, then the backend's.
     pub sources: [Source; 3],
 }
 
 impl Options {
+    /// What a session renders its photo within ([`Session::start`]): the budget and the
+    /// zoomed view's margin.
+    ///
+    /// [`Session::start`]: crate::session::Session::start
+    pub fn view(&self) -> ViewOptions {
+        ViewOptions {
+            budget: self.budget,
+            anticipate_move: self.anticipate_move,
+        }
+    }
+
     /// The engine's settings in `store`, which a binary opened on a registry holding
     /// [`registry::ALL`] with its `--conf` values, under its own `flags`: a flag of its own
     /// first, then `--conf`, then the file, then the default, and for the backend
@@ -202,6 +220,12 @@ impl Options {
         };
         // Kept whole: a value read with decimals is rounded.
         let mib = mib.round() as u64;
+        // Kept to its one decimal, as the schema declares it.
+        let (anticipate, anticipate_from) = match store.kept(&VIEWER_ANTICIPATE_MOVE) {
+            Some(value) => (value, Source::kept(store, &VIEWER_ANTICIPATE_MOVE)),
+            None => (VIEWER_ANTICIPATE_MOVE.default(), Source::Default),
+        };
+        let anticipate_move = (f64::from(anticipate) * 10.0).round() / 10.0;
         let by = instead.map(|instead| (instead.backend, instead.by));
         let (backend, backend_from, backend_shown) = backend(store, flags, by, variable, finds);
         let (adapter_id, budget_id) = (ENGINE_ADAPTER.id, ENGINE_MEMORY_BUDGET.id);
@@ -209,6 +233,8 @@ impl Options {
         tracing::debug!(target: "settings", "{adapter_id}: {shown}, from: {adapter_from}");
         tracing::debug!(target: "settings", "{backend_id}: {backend_shown}, from: {backend_from}");
         tracing::debug!(target: "settings", "{budget_id}: {mib} MiB, from: {budget_from}");
+        let anticipate_id = VIEWER_ANTICIPATE_MOVE.id;
+        tracing::debug!(target: "settings", "{anticipate_id}: {anticipate_move}, from: {anticipate_from}");
         Options {
             gpu: GpuOptions {
                 backend,
@@ -216,6 +242,7 @@ impl Options {
                 ..GpuOptions::default()
             },
             budget: mib << 20,
+            anticipate_move,
             sources: [adapter_from, budget_from, backend_from],
         }
     }
@@ -328,6 +355,7 @@ mod tests {
         assert_eq!(
             ids,
             [
+                "viewer.anticipate_move",
                 "library.raw_thumbnails_from",
                 "engine.adapter",
                 "engine.backend",
@@ -346,6 +374,9 @@ mod tests {
         assert_eq!(ENGINE_MEMORY_BUDGET.default(), 2048.0);
         assert_eq!(ENGINE_MEMORY_BUDGET.applies, Applies::AfterRestart);
         assert_eq!(ENGINE_MEMORY_BUDGET.range(), 256.0..=65536.0);
+        assert_eq!(VIEWER_ANTICIPATE_MOVE.owner, Owner::Engine);
+        assert_eq!(VIEWER_ANTICIPATE_MOVE.applies, Applies::AfterRestart);
+        assert_eq!(VIEWER_ANTICIPATE_MOVE.range(), 1.0..=2.0);
     }
 
     /// The golden harness reads no settings: it takes the engine's own defaults, which are
@@ -362,6 +393,8 @@ mod tests {
         assert_eq!(options.gpu.adapter, GpuOptions::default().adapter);
         assert_eq!(options.gpu.adapter, AdapterChoice::Any);
         assert_eq!(options.budget, crate::pipeline::BUDGET);
+        assert_eq!(options.anticipate_move, crate::view::ANTICIPATE_MOVE);
+        assert_eq!(options.view(), ViewOptions::default());
         assert_eq!(options.gpu.backend, GpuOptions::default().backend);
         assert_eq!(options.gpu.backend, Backend::Auto);
         assert_eq!(options.sources, [Source::Default; 3]);
@@ -446,6 +479,25 @@ mod tests {
         let clamped = read_with(file, &["engine.memory_budget=100"], Flags::default());
         assert_eq!(clamped.budget, 256 << 20);
         assert_eq!(clamped.sources[..2], [Source::File, Source::Conf]);
+    }
+
+    /// `viewer.anticipate_move`, the zoomed view's margin (decision 99): `--conf` over the
+    /// file over the default, kept to one decimal, out of its range the nearer end, and
+    /// handed to the session with the budget.
+    #[test]
+    fn the_anticipate_setting_is_read_into_the_view_options() {
+        let none = read("", Flags::default());
+        assert_eq!(none.anticipate_move, 1.2);
+        let file = "version = 1\n[viewer]\nanticipate_move = 1.5\n";
+        assert_eq!(read(file, Flags::default()).anticipate_move, 1.5);
+        let conf = read_with(file, &["viewer.anticipate_move=1.0"], Flags::default());
+        assert_eq!(conf.anticipate_move, 1.0);
+        let view = conf.view();
+        assert_eq!((view.budget, view.anticipate_move), (conf.budget, 1.0));
+        let clamped = read_with("", &["viewer.anticipate_move=7"], Flags::default());
+        assert_eq!(clamped.anticipate_move, 2.0);
+        let rounded = read_with("", &["viewer.anticipate_move=1.34"], Flags::default());
+        assert_eq!(rounded.anticipate_move, 1.3);
     }
 
     /// `engine.backend`: `WGPU_BACKEND`, then `--backend`, then `--conf`, then the file,

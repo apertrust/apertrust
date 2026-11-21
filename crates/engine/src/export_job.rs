@@ -1393,7 +1393,7 @@ mod tests {
                 OPERATIONS,
                 TOOLS,
                 BUILD,
-                pipeline::BUDGET,
+                crate::session::ViewOptions::default(),
                 None,
                 Arc::new(wake),
                 open::testing::loading(synthetic),

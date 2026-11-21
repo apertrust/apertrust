@@ -23,7 +23,8 @@
 //! centre a pan reaches, without a round trip.
 //!
 //! Built: the view, its placement and the frame's place; from 100% on, the region the
-//! detail pipeline renders at scale 1 (`detail_region`). Below 100% the session renders
+//! detail pipeline renders at scale 1 ([`rendered`]), the visible rectangle with its
+//! margin, and whether a pan stays inside it ([`covers`]). Below 100% the session renders
 //! the whole photo at Fit for now.
 
 use crate::pipeline::{at_scale, fit_scale};
@@ -204,29 +205,93 @@ impl FramePlace {
     }
 }
 
-/// The region the detail pipeline renders for `view` of the photo whose output image is
-/// `extent` at full resolution in `bounds` (decision 99): [`place`]'s visible rectangle at
-/// 100%, rounded outward to whole pixels and clamped to the image; `None` where the view
-/// renders at Fit: at Fit, Small and Fill or a factor below 100%, which render Fit until
-/// the detail renders between Fit and 100%, and where the photo fits the bounds at 100%,
-/// whose fitted frame is it at 100% already. Above 100% the region is the same: the engine
-/// renders at most at 1, and the client enlarges the frame.
-pub(crate) fn detail_region(extent: [u32; 2], bounds: (u32, u32), view: &View) -> Option<[u32; 4]> {
+/// The placement of `view` of the photo whose output image is `extent` at full resolution
+/// in `bounds` where the detail pipeline renders it (decision 99): from 100% on, at scale
+/// 1, where the photo does not fit the bounds at 100%; `None` where the view renders at
+/// Fit: at Fit, Small and Fill or a factor below 100%, which render Fit until the detail
+/// renders between Fit and 100%, and where the photo fits the bounds at 100%, whose fitted
+/// frame is it at 100% already. Above 100% the engine renders at 1, and the client
+/// enlarges the frame.
+pub(crate) fn zoomed(extent: [u32; 2], bounds: (u32, u32), view: &View) -> Option<Placement> {
     let placed = place(extent, bounds, view);
     let fitted = place(extent, bounds, &View::default()).render;
-    if placed.render < 1.0 || fitted >= 1.0 {
-        return None;
-    }
-    let [x, y, width, height] = placed.visible;
-    let [right, bottom] = [x + width, y + height];
-    let side = |start: f64, end: f64, size: u32| {
-        let start = (start.floor().max(0.0) as u32).min(size.saturating_sub(1));
-        let end = (end.ceil() as u32).clamp(start + 1, size.max(start + 1));
-        [start, end - start]
+    (placed.render >= 1.0 && fitted < 1.0).then_some(placed)
+}
+
+/// darktable's `darkroom/ui/anticipate_move`: how much larger than the visible rectangle,
+/// on each side, the detail renders, so a pan inside the margin renders nothing; the
+/// default of the setting `viewer.anticipate_move`, which goes from 1.0 to 2.0.
+pub const ANTICIPATE_MOVE: f64 = 1.2;
+
+/// The grid, in output pixels at the rendered scale, the rendered region's sides and its
+/// corner are snapped to (decision 99).
+pub const GRID: u32 = 64;
+
+/// The region the detail renders for `placement` (decision 99): x, y, width and height of
+/// the output image at `placement.render`, holding the visible rectangle with a margin, so
+/// a pan inside it renders nothing ([`covers`]).
+///
+/// - Its size on each axis is the visible side times `anticipate` (1.0 to 2.0, else
+///   [`ANTICIPATE_MOVE`]), rounded up to a multiple of [`GRID`], but at least the visible
+///   side rounded outward from any place, and at most the image's side. It depends on the
+///   visible size alone, so every region of a view's size is the same size, and a pan
+///   past it updates the detail's plan in place.
+/// - It is centred on the visible rectangle, then moved, never shrunk, to lie inside the
+///   image, its corner on the grid where the image and the visible rectangle allow.
+/// - Where its pixels pass `limit_pixels`, the largest RGBA `f32` image the GPU binds,
+///   `anticipate` shrinks towards 1.0 until they fit; `None` where they pass it even at
+///   1.0, as the fitted viewport is refused above one binding.
+pub fn rendered(placement: &Placement, anticipate: f64, limit_pixels: u64) -> Option<[u32; 4]> {
+    let anticipate = if anticipate.is_finite() {
+        anticipate.clamp(1.0, 2.0)
+    } else {
+        ANTICIPATE_MOVE
     };
-    let [x, width] = side(x, right, placed.size[0]);
-    let [y, height] = side(y, bottom, placed.size[1]);
-    Some([x, y, width, height])
+    let grid = f64::from(GRID);
+    let sides = |anticipate: f64| {
+        [0, 1].map(|axis| {
+            let (seen, whole) = (placement.visible[axis + 2], placement.size[axis]);
+            let grown = ((seen * anticipate - WHOLE) / grid).ceil() * grid;
+            // The visible side rounded outward, wherever its corner lies.
+            let least = (seen - WHOLE).ceil() + 1.0;
+            (grown.max(least) as u32).min(whole)
+        })
+    };
+    // A hundredth of the margin at a time, down to none.
+    let steps = ((anticipate - 1.0) * 100.0).ceil() as u32;
+    let [width, height] = (0..=steps)
+        .rev()
+        .map(|step| sides(1.0 + (anticipate - 1.0) * f64::from(step) / f64::from(steps.max(1))))
+        .find(|[width, height]| u64::from(*width) * u64::from(*height) <= limit_pixels)?;
+    let corner = |axis: usize, side: u32| {
+        let (start, seen) = (placement.visible[axis], placement.visible[axis + 2]);
+        let room = f64::from(placement.size[axis] - side);
+        let side = f64::from(side);
+        // The corners that hold the visible rectangle rounded outward, inside the image.
+        let low = ((start + seen - WHOLE).ceil() - side).max(0.0);
+        let high = (start + WHOLE).floor().min(room).max(low);
+        let centred = start + seen / 2.0 - side / 2.0;
+        let [first, last] = [(low / grid).ceil() * grid, (high / grid).floor() * grid];
+        let at = if first <= last {
+            ((centred / grid).round() * grid).clamp(first, last)
+        } else {
+            centred.round().clamp(low, high)
+        };
+        at as u32
+    };
+    Some([corner(0, width), corner(1, height), width, height])
+}
+
+/// Whether `region`, x, y, width and height in output pixels, holds `visible`, a
+/// [`Placement::visible`] at the same scale: a pan whose visible rectangle the detail's
+/// region holds renders nothing (decision 99).
+pub fn covers(region: [u32; 4], visible: [f64; 4]) -> bool {
+    let [x, y, width, height] = region.map(f64::from);
+    let [left, top, seen_width, seen_height] = visible;
+    left + WHOLE >= x
+        && top + WHOLE >= y
+        && left + seen_width <= x + width + WHOLE
+        && top + seen_height <= y + height + WHOLE
 }
 
 #[cfg(test)]
@@ -436,23 +501,20 @@ mod tests {
         assert_eq!((framed.origin, framed.extent), ([0, 0], EXTENT));
     }
 
+    /// The region at 100% of `view` of `extent` in `BOUNDS`, with darktable's margin and no
+    /// limit.
+    fn region_of(extent: [u32; 2], view: &View) -> [u32; 4] {
+        let placed = zoomed(extent, BOUNDS, view).expect("a detail");
+        rendered(&placed, ANTICIPATE_MOVE, u64::MAX).expect("a region")
+    }
+
     #[test]
-    fn the_detail_s_region_is_the_visible_rectangle_at_100_rounded_outward() {
-        // At 100% and above the visible rectangle, whole pixels outward, inside the photo.
-        let region = |scale, centre| detail_region(EXTENT, BOUNDS, &at(scale, centre));
-        assert_eq!(
-            region(ViewScale::Factor(1.0), [0.5, 0.5]),
-            Some([1800, 1200, 2400, 1600])
-        );
-        assert_eq!(
-            region(ViewScale::Factor(1.0), [0.0, 1.0]),
-            Some([0, 2400, 2400, 1600])
-        );
-        // At 3×, 800 × 533⅓ visible round the centre: from 2600 and 1733⅓.
-        assert_eq!(
-            region(ViewScale::Factor(3.0), [0.5, 0.5]),
-            Some([2600, 1733, 800, 534])
-        );
+    fn the_detail_renders_from_100_on() {
+        let zoom = |scale| zoomed(EXTENT, BOUNDS, &at(scale, [0.5, 0.5]));
+        for scale in [ViewScale::Factor(1.0), ViewScale::Factor(3.0)] {
+            let placed = zoom(scale).expect("a detail");
+            assert_eq!(placed, place(EXTENT, BOUNDS, &at(scale, [0.5, 0.5])));
+        }
         // Fill, a factor below 100%, Fit and Small render Fit for now.
         for scale in [
             ViewScale::Fit,
@@ -460,21 +522,141 @@ mod tests {
             ViewScale::Fill,
             ViewScale::Factor(0.5),
         ] {
-            assert_eq!(region(scale, [0.5, 0.5]), None, "{scale:?}");
+            assert_eq!(zoom(scale), None, "{scale:?}");
         }
         // A photo the bounds hold at 100% is rendered at 100% by its fitted frame.
-        let small = detail_region([400, 300], BOUNDS, &at(ViewScale::Factor(4.0), [0.5, 0.5]));
+        let small = zoomed([400, 300], BOUNDS, &at(ViewScale::Factor(4.0), [0.5, 0.5]));
         assert_eq!(small, None);
-        // A photo whose one side fits: that side whole.
-        assert_eq!(
-            detail_region(
-                [6000, 1000],
-                BOUNDS,
-                &at(ViewScale::Factor(1.0), [0.25, 0.5])
-            ),
-            Some([300, 0, 2400, 1000])
-        );
-        let placed = FramePlace::detail(EXTENT, [1800, 1200, 2400, 1600]);
-        assert_eq!((placed.scale, placed.origin), (1.0, [1800, 1200]));
+        let placed = FramePlace::detail(EXTENT, [1536, 1024, 2880, 1920]);
+        assert_eq!((placed.scale, placed.origin), (1.0, [1536, 1024]));
+    }
+
+    #[test]
+    fn the_rendered_region_holds_the_visible_one_with_its_margin() {
+        // 2400 × 1600 visible at 100%: 2880 × 1920, 1.2 times it, both multiples of 64,
+        // its corner the grid's nearest to the centred one's, 1560 and 1040.
+        let view = at(ViewScale::Factor(1.0), [0.5, 0.5]);
+        let region = region_of(EXTENT, &view);
+        assert_eq!(region, [1536, 1024, 2880, 1920]);
+        assert!(covers(region, place(EXTENT, BOUNDS, &view).visible));
+        // Any centre, and any zoom from 100% on: 1.2 times the visible size rounded up to
+        // the grid, but at least the visible size rounded outward from anywhere, holding
+        // the visible rectangle; its corner on the grid where the margin leaves room.
+        for factor in [1.0, 1.5, 3.0, 16.0] {
+            for centre in [[0.3, 0.6], [0.5137, 0.4821], [0.71, 0.29]] {
+                let view = at(ViewScale::Factor(factor), centre);
+                let placed = place(EXTENT, BOUNDS, &view);
+                let region = region_of(EXTENT, &view);
+                let [x, y, width, height] = region;
+                let least = |seen: f64| seen.ceil() as u32 + 1;
+                let want = |seen: f64| {
+                    let grown = ((seen * 1.2 - 1e-6) / 64.0).ceil() as u32 * 64;
+                    grown.max(least(seen))
+                };
+                let (seen_width, seen_height) = (placed.visible[2], placed.visible[3]);
+                let sides = [want(seen_width), want(seen_height)];
+                assert_eq!([width, height], sides, "{factor} at {centre:?}");
+                assert!(covers(region, placed.visible), "{factor} at {centre:?}");
+                if width - least(seen_width) >= 64 {
+                    assert_eq!(x % 64, 0, "{factor} at {centre:?}");
+                }
+                if height - least(seen_height) >= 64 {
+                    assert_eq!(y % 64, 0, "{factor} at {centre:?}");
+                }
+            }
+        }
+        // A covering region holds the visible rectangle whole; one a pixel short does not.
+        let visible = [10.5, 20.0, 100.0, 50.0];
+        assert!(covers([10, 20, 101, 50], visible));
+        assert!(!covers([11, 20, 101, 50], visible));
+        assert!(!covers([10, 20, 100, 50], visible));
+        assert!(!covers([10, 21, 101, 50], visible));
+    }
+
+    #[test]
+    fn the_rendered_region_moves_inside_the_photo_at_its_edges() {
+        let middle = region_of(EXTENT, &at(ViewScale::Factor(1.0), [0.5, 0.5]));
+        for centre in [
+            [0.0, 0.0],
+            [1.0, 1.0],
+            [0.0, 1.0],
+            [1.0, 0.0],
+            [0.0, 0.5],
+            [1.0, 0.5],
+            [0.5, 0.0],
+            [0.5, 1.0],
+            [0.25, 0.75],
+        ] {
+            let view = at(ViewScale::Factor(1.0), centre);
+            let region = region_of(EXTENT, &view);
+            let [x, y, width, height] = region;
+            // The same size everywhere, inside the photo, holding the visible rectangle.
+            assert_eq!([width, height], [middle[2], middle[3]], "{centre:?}");
+            assert!(x + width <= 6000 && y + height <= 4000, "{centre:?}");
+            assert!(covers(region, place(EXTENT, BOUNDS, &view).visible));
+            // At an edge, against it.
+            let edge = |at: f32, low: u32, high: u32| {
+                if at == 0.0 {
+                    assert_eq!(low, 0, "{centre:?}");
+                } else if at == 1.0 {
+                    assert_eq!(high, 0, "{centre:?}");
+                }
+            };
+            edge(centre[0], x, 6000 - x - width);
+            edge(centre[1], y, 4000 - y - height);
+        }
+        // The far edges are off the grid, where the photo's sides are.
+        let corner = region_of(EXTENT, &at(ViewScale::Factor(1.0), [1.0, 1.0]));
+        assert_eq!(corner, [3120, 2080, 2880, 1920]);
+        // Across the photo, a fortieth of it at a time, every corner lies on the grid but
+        // against the far edge.
+        for step in 0..=40 {
+            let view = at(ViewScale::Factor(1.0), [step as f32 / 40.0, 0.4]);
+            let [x, y, ..] = region_of(EXTENT, &view);
+            assert!(x % 64 == 0 || x == 3120, "{x}");
+            assert_eq!(y % 64, 0);
+        }
+    }
+
+    #[test]
+    fn the_rendered_region_shrinks_its_margin_to_bind() {
+        // 4K bounds on the 7R V's photo, on a GPU that binds 128 MiB: 8 Mi pixels of
+        // RGBA `f32`. At 1.2 the region, 4608 × 2624, would take about 11.5 Mi.
+        let (extent, bounds) = ([9504, 6336], (3840, 2160));
+        let view = at(ViewScale::Factor(1.0), [0.5, 0.5]);
+        let placed = zoomed(extent, bounds, &view).expect("a detail");
+        let limit = (128 << 20) / 16;
+        let margin = rendered(&placed, ANTICIPATE_MOVE, u64::MAX).expect("a region");
+        assert_eq!(margin[2..], [4608, 2624]);
+        let bound = rendered(&placed, ANTICIPATE_MOVE, limit).expect("a region");
+        let [_, _, width, height] = bound;
+        assert!(u64::from(width) * u64::from(height) <= limit);
+        assert!(width < margin[2] && height < margin[3]);
+        assert!(covers(bound, placed.visible));
+        // Here, at 1.0: the visible rectangle rounded up to the grid, and wide enough to
+        // hold it rounded outward wherever it lies.
+        assert_eq!(rendered(&placed, 1.0, limit), Some(bound));
+        assert_eq!(bound[2..], [3841, 2176]);
+        // Fewer pixels than that, refused.
+        assert_eq!(rendered(&placed, ANTICIPATE_MOVE, 3840 * 2160), None);
+        // A setting out of its range is taken at the nearer end; one not a number, as the
+        // default.
+        let unbound = |anticipate| rendered(&placed, anticipate, u64::MAX);
+        assert_eq!(unbound(0.5), unbound(1.0));
+        assert_eq!(unbound(3.0), unbound(2.0));
+        assert_eq!(unbound(f64::NAN), Some(margin));
+    }
+
+    #[test]
+    fn a_photo_smaller_than_the_region_is_rendered_whole() {
+        // 1.2 times 2400 × 1600 is more than the photo: the whole photo.
+        let extent = [2600, 1700];
+        for centre in [[0.5, 0.5], [0.0, 0.0], [1.0, 0.3]] {
+            let view = at(ViewScale::Factor(1.0), centre);
+            assert_eq!(region_of(extent, &view), [0, 0, 2600, 1700], "{centre:?}");
+        }
+        // One side whole, the other with its margin.
+        let view = at(ViewScale::Factor(1.0), [0.25, 0.5]);
+        assert_eq!(region_of([6000, 1000], &view), [64, 0, 2880, 1000]);
     }
 }

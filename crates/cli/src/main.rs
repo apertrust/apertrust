@@ -221,6 +221,12 @@ enum Command {
         /// 0 to 1 across and down the photo as export renders it; 0.5,0.5 when left out.
         #[arg(long, value_name = "X,Y", value_parser = point, requires = "zoom")]
         at: Option<[f32; 2]>,
+        /// With --zoom, once zoomed, move the centre across by a tenth of the view this
+        /// many times, back at the photo's edge, each waited for, then print how many
+        /// rendered and each render's time: a pan inside the rendered region's margin
+        /// renders nothing (viewer.anticipate_move; decision 99).
+        #[arg(long, value_name = "N", default_value_t = 0, requires = "zoom")]
+        pans: u32,
         /// Spike X1: in place of the timings
         /// above, time the changes through an in-process session, as the app sends them,
         /// one every --interval, with nothing else to do and while the session's export
@@ -534,6 +540,7 @@ fn main() -> Result<()> {
             png,
             zoom: Some(factor),
             at,
+            pans,
             adapter,
             backend,
             ..
@@ -544,6 +551,7 @@ fn main() -> Result<()> {
                 factor,
                 centre: at.unwrap_or([0.5, 0.5]),
                 exposure,
+                pans,
                 changes,
                 png,
             },
@@ -1326,7 +1334,7 @@ fn export_in_session(
         OPERATIONS,
         TOOLS,
         apertrust_base::program!().version,
-        engine.budget,
+        engine.view(),
         // The CLI writes no disk cache: none of its commands keeps anything there yet, and
         // it creates no folder (decision 43).
         None,
@@ -3302,25 +3310,29 @@ mod tests {
                 .into_iter()
                 .chain(flags.split_whitespace());
             match Cli::try_parse_from(args).map(|cli| cli.command) {
-                Ok(Command::Preview { zoom, at, .. }) => Ok((zoom, at)),
+                Ok(Command::Preview { zoom, at, pans, .. }) => Ok((zoom, at, pans)),
                 Ok(other) => panic!("{other:?}"),
                 Err(error) => Err(error.kind()),
             }
         };
         assert_eq!(
             zoom("--zoom 1 --at 0.5,0.25"),
-            Ok((Some(1.0), Some([0.5, 0.25])))
+            Ok((Some(1.0), Some([0.5, 0.25]), 0))
         );
         assert_eq!(
-            zoom("--at=0.1,0.9 --zoom=2"),
-            Ok((Some(2.0), Some([0.1, 0.9])))
+            zoom("--at=0.1,0.9 --zoom=2 --pans 50"),
+            Ok((Some(2.0), Some([0.1, 0.9]), 50))
         );
         // The centre left out is the photo's, which the run takes as 0.5,0.5.
-        assert_eq!(zoom("--zoom 4"), Ok((Some(4.0), None)));
-        assert_eq!(zoom(""), Ok((None, None)));
-        // --at needs --zoom and two numbers; --zoom times its own changes.
+        assert_eq!(zoom("--zoom 4"), Ok((Some(4.0), None, 0)));
+        assert_eq!(zoom(""), Ok((None, None, 0)));
+        // --at and --pans need --zoom, --at two numbers, --pans a count; --zoom times its
+        // own changes.
         for flags in [
             "--at 0.5,0.5",
+            "--pans 5",
+            "--zoom 1 --pans -1",
+            "--zoom 1 --pans x",
             "--zoom 1 --at 0.5",
             "--zoom 1 --at x,0.5",
             "--zoom 1 --at nan,0.5",

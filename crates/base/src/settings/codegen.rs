@@ -939,6 +939,7 @@ mod tests {
         assert_eq!(
             ids(&engine),
             [
+                "viewer.anticipate_move",
                 "library.raw_thumbnails_from",
                 "engine.adapter",
                 "engine.backend",
