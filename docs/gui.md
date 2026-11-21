@@ -887,8 +887,8 @@ macOS only: the menu AppKit fills once it is the app's Windows menu.
 
 Planned (decision 97). Help opens the Apertrust Guide, a website of its own at `guide.apertrust.org`, built from `apertrust/apertrust-guide`, in the system's browser.
 
-- **Topics.** The app names a topic, never a page: a tool's is `tools/<id>`, from its id, with nothing declared (`ToolDefinition::help` overrides it); every other place names its own, `browser`, `viewer`, `workspaces`, `settings/<page>`, `dialogs/<id>`. The Guide's pages claim topics, so a page moves without a change to the app; a topic in a release is never renamed.
-- **The URL:** `{help.url}/{version}/{language}/topic/{topic}/` for a topic and `{help.url}/{version}/{language}/` for the start page, the version `X.Y` for a release build and `development` for any other, the language the interface's, `en` for both Englishes.
+- **Topics.** The app names a topic, the path of the Guide's page that answers it: a tool's is `tools/processing/<id>` for a processing tool and `tools/utility/<id>` for a utility tool, from its kind and id, with nothing declared, as `tools/processing/exposure` and `tools/utility/export` (`ToolDefinition::help` overrides it); every other place names its own, `browser`, `viewer`, `workspaces`, `settings/<page>`, `dialogs/<id>`. A topic in a release is never renamed: a page that moves keeps its old path among its front matter's `topics`, and the Guide leaves a redirect there, so the app needs no change.
+- **The URL:** `{help.url}/{version}/{language}/{topic}/` for a topic, as `https://guide.apertrust.org/1.0/uk/tools/processing/exposure/`, and `{help.url}/{version}/{language}/` for the start page, the version `X.Y` for a release build and `development` for any other, the language the interface's, `en` for both Englishes.
 - **Where:**
   - Help, last in every Tools panel tool's ⋯, after the layout's items, a line before it (`section-help`); the Import tool's ⋯ takes none, the sheet's Help being the button at its footer's start ([Sheets](#the-footer));
   - Apertrust Guide in the Help menu (`guide`);
