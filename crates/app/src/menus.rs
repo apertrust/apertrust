@@ -310,6 +310,17 @@ static BROWSER_POSITION: Menu = Menu {
     ]],
 };
 
+/// View › Tools Panel Position, which the Tools panel's ⋮ lists as Position ▸.
+static TOOLS_PANEL_POSITION: Menu = Menu {
+    title: "menu-tools-panel-position",
+    role: Role::Plain,
+    on: Platforms::All,
+    groups: &[&[
+        item(ActionId::TOOLS_PANEL_POSITION[0]),
+        item(ActionId::TOOLS_PANEL_POSITION[1]),
+    ]],
+};
+
 /// The menus as `docs/gui.md` (The tree) places them, macOS first, with only the actions
 /// the registry declares; the few it declares that no menu holds are the tests' `LEFT_OUT`.
 pub static MENUS: [Menu; 8] = [
@@ -412,6 +423,7 @@ pub static MENUS: [Menu; 8] = [
                 Entry::Submenu(&THUMBNAIL_SIZE),
                 item(ActionId::SHOW_LABELS),
                 Entry::Submenu(&BROWSER_POSITION),
+                Entry::Submenu(&TOOLS_PANEL_POSITION),
             ],
             &[
                 item(ActionId::SHOW_COLLECTIONS),
@@ -815,7 +827,8 @@ pub fn layout_items(
 /// item ([`shown`]), Show Hidden Tools' tip `tip` where the dot on ⋮ or `--conf` says why
 /// ("Hidden tools change this photo: Exposure"); then Workspace ▸, View › Workspace's
 /// submenu with `workspaces`, the one shown checked, each item its `workspace-<id>`, so a
-/// choice runs as the menu's does ([`chosen`]). The tab bar's menu's other items join them
+/// choice runs as the menu's does ([`chosen`]); then Position ▸, View › Tools Panel
+/// Position's items, the one in use checked. The tab bar's menu's other items join them
 /// with that menu.
 pub fn tools_panel(
     ctx: &egui::Context,
@@ -837,8 +850,14 @@ pub fn tools_panel(
         workspaces,
     };
     let workspace = drawn(&WORKSPACE, os, keymap, state, lists, &steps, &tr);
+    let position = drawn(&TOOLS_PANEL_POSITION, os, keymap, state, lists, &steps, &tr);
+    let position = popup::Submenu::new(
+        "tools-panel-position",
+        tr.text("tools-panel-position"),
+        position.entries,
+    );
     let entries = find.into_iter().chain(item).map(Into::into);
-    entries.chain([workspace.into()]).collect()
+    entries.chain([workspace.into(), position.into()]).collect()
 }
 
 /// The app's items in the places open to tools' (decision 91), declared as the tools'
@@ -1109,7 +1128,10 @@ fn action_item(
         item = item.checked(on);
     }
     if let Some(why) = actions::why_unavailable(id, state) {
-        item = item.tip(tr.text(why));
+        item = item.tip(match why {
+            actions::SET_BY_CONF => crate::utility::overridden(tr),
+            why => tr.text(why),
+        });
     }
     Some(item)
 }
@@ -1844,6 +1866,8 @@ mod tests {
             workspace: actions::workspace(crate::layout::DEFAULT),
             workspace_given: false,
             show_hidden_given: false,
+            panel_position: apertrust_ui::components::ToolsPanelPosition::Right,
+            panel_position_given: false,
             section: None,
             browser: crate::settings::BrowserSettings::default(),
             shown: true,
@@ -2229,6 +2253,86 @@ mod tests {
         assert_eq!(
             chosen("workspace-travel"),
             Some(actions::workspace("travel"))
+        );
+    }
+
+    /// View › Tools Panel Position follows Browser Position on every platform, Left and
+    /// Right, the one in use checked, and the Tools panel's ⋮ lists the same items as
+    /// Position ▸ after Workspace ▸; where `--conf` sets the place for this run each is
+    /// disabled, its tip saying so, as a Settings row does.
+    #[test]
+    fn tools_panel_position_follows_browser_position_the_one_in_use_checked() {
+        use apertrust_ui::components::ToolsPanelPosition;
+        for os in PLATFORMS {
+            let view = menus(os).find(|m| m.title == "menu-view").expect("View");
+            let submenus: Vec<&str> = groups(view, os)
+                .into_iter()
+                .flatten()
+                .filter_map(|entry| match entry {
+                    Entry::Submenu(menu) => Some(menu.title),
+                    _ => None,
+                })
+                .collect();
+            let at = submenus.iter().position(|t| *t == "menu-browser-position");
+            let next = submenus.get(at.expect("Browser Position") + 1);
+            assert_eq!(next, Some(&"menu-tools-panel-position"), "{os:?}");
+        }
+        let mut state = everything();
+        state.panel_position = ToolsPanelPosition::Left;
+        let positions = |menu: &popup::Request| {
+            let all = items(&menu.entries);
+            ActionId::TOOLS_PANEL_POSITION.map(|id| {
+                let item = all.iter().find(|i| i.id == id.0).expect("in the menu");
+                (
+                    item.text.clone(),
+                    item.enabled,
+                    item.checked,
+                    item.tip.clone(),
+                )
+            })
+        };
+        let menu = drawn_menu(Locale::EnGb, &state);
+        let view = tops(&menu)[4];
+        let submenu = view.entries.iter().find_map(|entry| match entry {
+            popup::Entry::Submenu(s) if s.id == "menu-tools-panel-position" => Some(s),
+            _ => None,
+        });
+        assert_eq!(submenu.expect("there").text, "Tools Panel Position");
+        assert_eq!(
+            positions(&menu),
+            [
+                ("Left".to_owned(), true, Some(true), None),
+                ("Right".to_owned(), true, Some(false), None),
+            ]
+        );
+        assert_eq!(
+            chosen("tools-panel-position-right"),
+            Some(ActionId::TOOLS_PANEL_POSITION[1])
+        );
+        // The Tools panel's ⋮: Find Tool…, Show Hidden Tools, Workspace ▸, Position ▸.
+        let ctx = egui::Context::default();
+        apertrust_ui::set_locale(&ctx, Locale::EnGb);
+        let keymap = Keymap::defaults(OperatingSystem::Nix);
+        let options = tools_panel(&ctx, &keymap, &state, None, &builtin_workspaces());
+        let last = options.last().expect("items");
+        let popup::Entry::Submenu(position) = last else {
+            panic!("not a submenu: {last:?}");
+        };
+        assert_eq!(position.text, "Position");
+        let words: Vec<(&str, Option<bool>)> = items(&position.entries)
+            .iter()
+            .map(|item| (item.text.as_str(), item.checked))
+            .collect();
+        assert_eq!(words, [("Left", Some(true)), ("Right", Some(false))]);
+        // Given by `--conf`: neither can be chosen, and each says why.
+        state.panel_position_given = true;
+        let why = Some("Set by --conf for this run".to_owned());
+        assert_eq!(
+            positions(&drawn_menu(Locale::EnGb, &state)),
+            [
+                ("Left".to_owned(), false, Some(true), why.clone()),
+                ("Right".to_owned(), false, Some(false), why),
+            ]
         );
     }
 

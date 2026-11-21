@@ -65,6 +65,7 @@ panel-tab-options = Opcje kart
 panel-show-tab-names = Pokaż nazwy kart
 panel-customise-tabs = Dostosuj karty…
 tools-panel-width = Szerokość panelu narzędzi
+tools-panel-position = Położenie
 
 ## Przyciski w nagłówku sekcji; $section to tytuł sekcji
 
@@ -814,6 +815,8 @@ action-thumbnails-extra-large = Bardzo duże
 action-browser-position-left = Po lewej
 action-browser-position-right = Po prawej
 action-browser-position-bottom = Na dole
+action-tools-panel-position-left = Po lewej
+action-tools-panel-position-right = Po prawej
 action-show-labels = Pokazuj podpisy
 action-background-black = Czarne
 action-background-very-dark = Bardzo ciemne
@@ -856,6 +859,7 @@ menu-sort-by = Sortuj według
 menu-thumbnail-size = Rozmiar miniatur
 menu-background = Tło
 menu-browser-position = Położenie przeglądarki
+menu-tools-panel-position = Położenie panelu narzędzi
 menu-open-recent = Otwórz ostatnie
 menu-recent-in = { $name } — { $parent }
 menu-undo-step = Cofnij: { $step }

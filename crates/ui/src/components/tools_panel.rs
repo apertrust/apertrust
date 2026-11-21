@@ -39,6 +39,7 @@
 
 use std::ops::RangeInclusive;
 
+use apertrust_base::settings::Choice;
 use egui::accesskit::{Action, Live, Orientation};
 use egui::text::LayoutJob;
 use egui::{
@@ -745,6 +746,35 @@ pub enum PanelEdgeAction {
 /// step it by the first.
 const KEY_STEP: f32 = 10.0;
 const KEY_STEP_LARGE: f32 = 50.0;
+
+/// Where the Tools panel is in the window (`docs/gui.md`, Its position): a column the
+/// window's height under the Toolbar, at its right or its left, outside the Browser where
+/// both are on one side. Nothing inside it is mirrored; only its edge moves, towards the
+/// Viewer ([`PanelEdge::at_start`]).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum ToolsPanelPosition {
+    Left,
+    /// The default.
+    #[default]
+    Right,
+}
+
+impl ToolsPanelPosition {
+    pub const ALL: [ToolsPanelPosition; 2] = [ToolsPanelPosition::Left, ToolsPanelPosition::Right];
+
+    /// Whether the panel is at the window's start, its edge at its end.
+    pub fn at_start(self) -> bool {
+        self == ToolsPanelPosition::Left
+    }
+}
+
+/// The position as settings keep it.
+impl Choice for ToolsPanelPosition {
+    const OPTIONS: &'static [(ToolsPanelPosition, &'static str)] = &[
+        (ToolsPanelPosition::Right, "right"),
+        (ToolsPanelPosition::Left, "left"),
+    ];
+}
 
 /// The Tools panel's edge towards the photo, which resizes it. It is the separator between
 /// the panel and the photo, inside the panel, and brightens from `separator` to `border`

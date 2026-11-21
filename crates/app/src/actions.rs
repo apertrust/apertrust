@@ -55,7 +55,9 @@ use std::collections::BTreeMap;
 
 use apertrust_engine::session::{Command, SelectionCommand};
 use apertrust_tools::{ProcessingDefinition, Row};
-use apertrust_ui::components::{BrowserBarAction, BrowserPosition, SortKey, ThumbnailSize};
+use apertrust_ui::components::{
+    BrowserBarAction, BrowserPosition, SortKey, ThumbnailSize, ToolsPanelPosition,
+};
 use apertrust_ui::{Background, Translator};
 use eframe::egui::{self, Key, Modifiers, os::OperatingSystem};
 
@@ -235,6 +237,11 @@ impl ActionId {
         ActionId("browser-position-right"),
         ActionId("browser-position-bottom"),
     ];
+    /// The Tools panel's ⋮ and View › Tools Panel Position: left, right.
+    pub const TOOLS_PANEL_POSITION: [ActionId; 2] = [
+        ActionId("tools-panel-position-left"),
+        ActionId("tools-panel-position-right"),
+    ];
     /// View › Background and the Viewer's right-click menu, black to white.
     pub const BACKGROUND: [ActionId; 6] = [
         ActionId("background-black"),
@@ -350,6 +357,8 @@ pub enum Intent {
     /// The Browser's sort, its direction, the thumbnails' size or where the panel is, as
     /// the browser bar's menus choose them, or its Labels turned on or off.
     BrowserBar(BrowserBarAction),
+    /// Where the Tools panel is, as its ⋮ and View › Tools Panel Position choose it.
+    ToolsPanelPosition(ToolsPanelPosition),
     /// The background behind the photo (`docs/gui.md`, The background).
     Background(Background),
     /// A move of the photo's zoom (`docs/gui.md`, The zoom).
@@ -503,6 +512,11 @@ pub struct State {
     /// Whether `--conf` sets `tools_panel.show_hidden` for this run: Show Hidden Tools
     /// cannot be turned on or off then, as the settings store refuses the change.
     pub show_hidden_given: bool,
+    /// Where the Tools panel is, whose item is shown checked.
+    pub panel_position: ToolsPanelPosition,
+    /// Whether `--conf` sets `tools_panel.position` for this run: the Tools panel cannot
+    /// move then, as the settings store refuses the change.
+    pub panel_position_given: bool,
     /// Where the section the layout's actions act on is: the one whose header has the
     /// focus, or in ⋯ its own; none where none has, and they cannot run.
     pub section: Option<Placing>,
@@ -651,6 +665,7 @@ impl Action {
             Emit::Intent(Intent::ShowHiddenTools) => Some(state.show_hidden),
             Emit::Intent(Intent::Workspace(_)) => Some(state.workspace == self.id),
             Emit::Intent(Intent::BrowserBar(chosen)) => Some(state.browser.holds(chosen)),
+            Emit::Intent(Intent::ToolsPanelPosition(p)) => Some(state.panel_position == p),
             Emit::Intent(Intent::Background(b)) => Some(state.background == Some(b)),
             _ => None,
         }
@@ -703,12 +718,20 @@ fn never(_: &State) -> bool {
 /// Whether no modal dialog is open, for an action that opens a dialog.
 /// Why the action `id` cannot run in `state`, as its menu item's tooltip says, where the
 /// reason is one the person can act on: Discard History… where it would ask and the
-/// platform shows no alert. The message's id, or none.
+/// platform shows no alert; the Tools panel's positions where `--conf` sets it for this
+/// run, [`SET_BY_CONF`]. The message's id, or none.
 pub fn why_unavailable(id: ActionId, state: &State) -> Option<&'static str> {
+    if state.panel_position_given && ActionId::TOOLS_PANEL_POSITION.contains(&id) {
+        return Some(SET_BY_CONF);
+    }
     state
         .discard_why
         .filter(|_| id == ActionId::DISCARD_HISTORY)
 }
+
+/// The message that says `--conf` sets a setting for this run, as a Settings row says it,
+/// which names the flag (`utility::overridden`).
+pub const SET_BY_CONF: &str = "settings-overridden";
 
 /// What the action `id`'s item says in its tip in a tool's ⋯ (decision 93), as the
 /// pull-down's items do: why it cannot run where something says ([`why_unavailable`]),
@@ -781,6 +804,30 @@ const fn browser_bar(
     }
 }
 
+/// Whether the Tools panel can be moved: as the Browser can, unless `--conf` sets where it
+/// is for this run.
+fn tools_panel_movable(state: &State) -> bool {
+    !state.panel_position_given && browser_anywhere(state)
+}
+
+/// The Tools panel's place `chosen` as an action, no keys by default, its words
+/// `action-<id>`.
+const fn tools_panel_position(
+    id: ActionId,
+    message: &'static str,
+    chosen: ToolsPanelPosition,
+) -> Action {
+    Action {
+        id,
+        message,
+        keys: &[],
+        scope: Scope::App,
+        trigger: Trigger::Press,
+        available: tools_panel_movable,
+        emits: Emit::Intent(Intent::ToolsPanelPosition(chosen)),
+    }
+}
+
 /// The background `chosen` as an action: no keys by default, on the main window with no
 /// modal dialog over it, in every state, as the Viewer's menu opens with no photo.
 const fn background(id: ActionId, message: &'static str, chosen: Background) -> Action {
@@ -848,7 +895,7 @@ const fn to_tab<const I: usize>(message: &'static str) -> Action {
 
 /// Every action, in the order a keyboard map lists them (`docs/gui.md`, The default
 /// keyboard map). Slider keys are not here: they are the slider's own (`SliderRow`).
-pub static ACTIONS: [Action; 118] = [
+pub static ACTIONS: [Action; 120] = [
     // About Apertrust, in the app menu on the Mac and in Help on Windows and Linux.
     Action {
         id: ActionId::ABOUT,
@@ -1704,6 +1751,17 @@ pub static ACTIONS: [Action; 118] = [
         "action-browser-position-bottom",
         BrowserBarAction::Position(BrowserPosition::Bottom),
         browser_anywhere,
+    ),
+    // Where the Tools panel goes, in every state, as the Browser.
+    tools_panel_position(
+        ActionId::TOOLS_PANEL_POSITION[0],
+        "action-tools-panel-position-left",
+        ToolsPanelPosition::Left,
+    ),
+    tools_panel_position(
+        ActionId::TOOLS_PANEL_POSITION[1],
+        "action-tools-panel-position-right",
+        ToolsPanelPosition::Right,
     ),
     background(
         ActionId::BACKGROUND[0],
@@ -2800,6 +2858,8 @@ pub(crate) mod tests {
             workspace: workspace(crate::layout::DEFAULT),
             workspace_given: false,
             show_hidden_given: false,
+            panel_position: ToolsPanelPosition::Right,
+            panel_position_given: false,
             section: None,
             browser: crate::settings::BrowserSettings::default(),
             shown: true,

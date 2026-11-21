@@ -65,6 +65,7 @@ panel-tab-options = Параметри вкладок
 panel-show-tab-names = Показувати назви вкладок
 panel-customise-tabs = Налаштувати вкладки…
 tools-panel-width = Ширина панелі інструментів
+tools-panel-position = Розташування
 
 ## Кнопки в заголовку розділу; $section — назва розділу
 
@@ -812,6 +813,8 @@ action-thumbnails-extra-large = Дуже великі
 action-browser-position-left = Ліворуч
 action-browser-position-right = Праворуч
 action-browser-position-bottom = Унизу
+action-tools-panel-position-left = Ліворуч
+action-tools-panel-position-right = Праворуч
 action-show-labels = Показувати підписи
 action-background-black = Чорне
 action-background-very-dark = Дуже темне
@@ -853,6 +856,7 @@ menu-sort-by = Сортувати за
 menu-thumbnail-size = Розмір мініатюр
 menu-background = Тло
 menu-browser-position = Розташування оглядача
+menu-tools-panel-position = Розташування панелі інструментів
 menu-open-recent = Відкрити недавні
 menu-recent-in = { $name } — { $parent }
 menu-undo-step = Скасувати: { $step }

@@ -87,6 +87,8 @@ panel-tab-options = Tab options
 panel-show-tab-names = Show tab names
 panel-customise-tabs = Customise tabs…
 tools-panel-width = Tools panel width
+# The Tools panel's ⋮: its submenu of where the panel goes, after Workspace.
+tools-panel-position = Position
 
 ## A section's header buttons; $section is the section's title
 
@@ -1051,6 +1053,9 @@ action-thumbnails-extra-large = Extra large
 action-browser-position-left = Left
 action-browser-position-right = Right
 action-browser-position-bottom = Bottom
+# Where the Tools panel goes: its ⋮'s Position and View › Tools Panel Position.
+action-tools-panel-position-left = Left
+action-tools-panel-position-right = Right
 # View › Show Labels and the browser bar's options menu: the captions under the thumbnails.
 action-show-labels = Show labels
 action-background-black = Black
@@ -1104,6 +1109,7 @@ menu-sort-by = Sort By
 menu-thumbnail-size = Thumbnail Size
 menu-background = Background
 menu-browser-position = Browser Position
+menu-tools-panel-position = Tools Panel Position
 # A submenu of File, and its item for a recent whose name another shares: with the
 # name of the folder it is in.
 menu-open-recent = Open Recent

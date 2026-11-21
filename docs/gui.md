@@ -825,6 +825,7 @@ Phase 4: the menu appears with Layers, and its keys are set with their design. I
 | Thumbnail Size → Small, Medium, Large, Extra Large, the one in use checked | `thumbnails-small`, `thumbnails-medium`, `thumbnails-large`, `thumbnails-extra-large` | — | New, Phase 2, with the browser bar |
 | Show Labels, checked while the thumbnails show their captions | `show-labels` | — | Built, also in the browser bar's options menu |
 | Browser Position → Left, Right, Bottom, the one in use checked | `browser-position-left`, `browser-position-right`, `browser-position-bottom` | — | New, Phase 2, with the browser bar's options menu |
+| Tools Panel Position → Left, Right, the one in use checked | `tools-panel-position-left`, `tools-panel-position-right` | — | Built, also the Tools panel's ⋮'s Position ▸; drawn disabled, "Set by --conf for this run", while `--conf` sets `tools_panel.position` |
 | — | | | |
 | Collections | `show-collections` | L | Built: chooses the first tab shown holding Collections, the Photos tab in the Default workspace; pressed again, nothing; where no tab shown holds it, reveals it in the Hidden tab, open and scrolled to (decisions 37, 73 and 96) |
 | Tools Panel Tab → each tab by its name, the one shown checked | `panel-tab-1` to `panel-tab-12`; the menu lists `panel-tab-1` to `-7` today, the Default workspace's seven, and tabs 8 to 12 of a workspace with more have their actions only, a click and a key kept in settings, until the menu lists the workspace's tabs by name; then `panel-tab-hidden`, the Hidden tab, enabled while it shows (decision 96) | Ctrl+1 to Ctrl+5; in the Default workspace the sixth and seventh, Raw and History, none; the Hidden tab none | Built (decisions 38 and 96) |
@@ -837,7 +838,6 @@ Phase 4: the menu appears with Layers, and its keys are set with their design. I
 | Toolbar Labels, checked while on | `toolbar-labels` | — | New, Phase 3 (decision 92); also in the toolbar menu and Settings › General |
 | Customise Toolbar… | `customise-toolbar` | — | New, Phase 3, drawn disabled, "Customise Toolbar comes in a later version", until its window is built (decision 92) |
 | Dock All Floating Panels | `dock-all` | — | New, with the floating panels in Phase 3 (decisions 83 and 96); also in the Tools panel's ⋮ |
-| Tools Panel on the Right, Tools Panel on the Left | `panel-right`, `panel-left` | — | New, Phase 3 |
 | Interface Size → Larger, Smaller, Normal Size | `scale-up`, `scale-down`, `scale-reset` | None by default; Settings sets the size too | Built, with no keys: Ctrl+=, Ctrl+− and Ctrl+0 are the photo's zoom's |
 | Touch Mode, checked while on | `touch-mode` | — | New, with Touch mode in the mobile phase (decision 94); Settings › General sets it too |
 | — | | | |
@@ -852,7 +852,7 @@ Phase 4: the menu appears with Layers, and its keys are set with their design. I
 - **Slideshow** plays the selected photos when several are selected, else the folder or album from the active photo.
 - **Clipping Warnings** is one item and one key, J, for both of the photo's clipping overlays: checked while both are on; choosing it turns both on, or both off when both are on. The scopes' corner toggles set each alone. One state, three places.
 - **Tools Panel Tab** lists the first seven tabs, those under » too: today the Default workspace's seven, a workspace's eighth to twelfth having their actions alone; only the first five have keys, Ctrl+1 choosing the first tab whatever the workspace, Photos in the Default workspace.
-- **Sort By, Thumbnail Size, Show Labels and Browser Position** run the browser bar's actions ([The browser bar](#the-browser-bar)), and their checks show what the browser bar's menus show. **Search Photos** is planned in the menu alone.
+- **Sort By, Thumbnail Size, Show Labels and Browser Position** run the browser bar's actions ([The browser bar](#the-browser-bar)), and their checks show what the browser bar's menus show. **Tools Panel Position** runs the same actions as the Tools panel's ⋮'s Position ▸ ([Its position](#its-position)). **Search Photos** is planned in the menu alone.
 - **The theme and the language** are not in the menus: they are settings, one Ctrl+, away.
 
 #### Window
@@ -1082,7 +1082,7 @@ Native popup menus on the Mac for plain lists and context menus; drawn everywher
 - Every popup in the app goes through the service, as a plain list with no checkbox or other control inside, so that each can be drawn natively on the Mac:
   - ⋯ lists the folded actions with their keys, disabled where they cannot run;
   - » lists the tabs that do not fit, one that cannot be chosen disabled with its "to come" tip;
-  - ⋮ holds Find Tool… with its keys (decision 96, [Finding a tool](#finding-a-tool)), Show Hidden Tools ([Hidden tools](#hidden-tools)), then Workspace ▸, View › Workspace's submenu (the one shown checked, each running its `workspace-<id>`, disabled while `--conf` sets `workspace`), a line, then Show tab names, an item with a check mark, and Customise tabs…, drawn disabled until the visual editor. The app hands the component its items before the tab bar's own (`TabBar::items`, built by `menus::tools_panel` as the menus build theirs, a choice in them reported as `TabBarAction::Chosen` with its action's id), and a dot's words (`TabBar::dot`). Planned, the tab bar's menu's other items join them, Reset Tab, Reset Workspace and Processing Order (decision 96), and Dock All Floating Panels in Phase 3 (decision 83), and Help, last, opening the Guide at `workspaces` (decision 97).
+  - ⋮ holds Find Tool… with its keys (decision 96, [Finding a tool](#finding-a-tool)), Show Hidden Tools ([Hidden tools](#hidden-tools)), then Workspace ▸, View › Workspace's submenu (the one shown checked, each running its `workspace-<id>`, disabled while `--conf` sets `workspace`), Position ▸, View › Tools Panel Position's Left and Right (the one in use checked, disabled while `--conf` sets `tools_panel.position`), a line, then Show tab names, an item with a check mark, and Customise tabs…, drawn disabled until the visual editor. The app hands the component its items before the tab bar's own (`TabBar::items`, built by `menus::tools_panel` as the menus build theirs, a choice in them reported as `TabBarAction::Chosen` with its action's id), and a dot's words (`TabBar::dot`). Planned, the tab bar's menu's other items join them, Reset Tab, Reset Workspace and Processing Order (decision 96), and Dock All Floating Panels in Phase 3 (decision 83), and Help, last, opening the Guide at `workspaces` (decision 97).
 
   Each is opened by its button, or ↓ on it, and closed by a second press or Esc, with the focus back on the button, which stays lit while its menu is open (`components::pull_down`, `popup::button_menu`).
 - On the Mac, the native service, which shows every one of them, ⋯, », ⋮ and `Choice`'s list, as AppKit's menu, in the main window and in a dialog's (below). Windows and Linux keep the drawn ones.
@@ -1521,7 +1521,7 @@ Import… opens a sheet, full-window inside the main window (decision 86, planne
 | **The tools column** | 440 points by default, resizable at its edge (`PanelEdge`) from 296 to 600, and to no more than half the sheet where that leaves more than 296: 296 is the floor, below a 592-point sheet too; kept (`import.column_width`, owner `app`) | The sheet's tools, scrolling with the quiet scroll bar in its end margin |
 | **The footer** | 52 points across the sheet, a hairline above | The summary on two lines at its start; Keep open, Close and the primary button at its end |
 
-- **The column sits on the Tools panel's side,** the right today and the left when the Tools panel moves there, the grid on the Browser's: opening a sheet, thumbnails appear where thumbnails were and tools where tools were, and reading down the column ends above the primary button. With the Browser at the right or the bottom, the column still follows the Tools panel.
+- **The column sits on the Tools panel's side,** the right or the left as the Tools panel is ([Its position](#its-position)), the grid on the Browser's: opening a sheet, thumbnails appear where thumbnails were and tools where tools were, and reading down the column ends above the primary button. With the Browser at the right or the bottom, the column still follows the Tools panel.
 - **Why 440:** the export rows were measured at 415 points (the path row, the notes, Polish's print size row at 407), and Import's path rows and sample-path notes are the same rows; at 320 the default paths are cut and every note wraps in Ukrainian and Polish. A 1280-point window still leaves the grid about 840 points, seven Medium cells across.
 - **The interface scale** multiplies all of it.
 
@@ -2820,7 +2820,7 @@ labels = false
 
 ### The Tools panel
 
-The Tools panel is resizable in width, and its scroll bar is quiet. Both are built.
+The Tools panel is resizable in width, and its scroll bar is quiet. Both are built, and so is its side: the window's right, the default, or its left, outside the Browser where both are on one side ([Its position](#its-position)).
 
 - **The tabs** are the current workspace's ([Workspaces](#workspaces)) and stay the same whatever the Viewer shows, so no tab appears or goes with the layout. In the Default workspace the Photos tab is first (decision 37), then the editing tabs, Adjust, Detail, Geometry, Effects and Raw, and History last (decision 38; [below](#the-tabs-by-editing-stage)).
   - Ctrl+1 to Ctrl+5 choose the first five by position, and L the first tab holding Collections (pressed again, nothing). A workspace shows at most 12 tabs of its file, `panel-tab-1` to `panel-tab-12` choosing them by position, and after them the Hidden tab when it is shown, chosen by `panel-tab-hidden` (decision 96).
@@ -3404,15 +3404,18 @@ With a cell focused the arrows move as the cells lie:
 - **Bottom, Left or Right,** from the browser bar's options menu (a right-click on the browser bar, in either of its forms: **Position › Left, Right, Bottom**, the one in use checked) and from View › Browser Position. Left is the default.
 - **At the bottom** it runs along the window's bottom under the Viewer, the Tools panel beside it running the window's height, and the browser bar is a column at its left end.
 - **At the left or right** it is a column the window's height under the Toolbar, the browser bar a row across its top, its edge on the side towards the Viewer.
-- **The rule:** when the Browser and the Tools panel are on the same side, the Tools panel takes the outer place, at the window's edge, and the Browser sits between it and the Viewer. The Tools panel is always on the right for now; moving it (Position › Left, Right in its own options menu) is planned, apart from the Browser's position.
+- **The rule:** when the Browser and the Tools panel are on the same side, the Tools panel takes the outer place, at the window's edge, and the Browser sits between it and the Viewer. The Tools panel is at the right or the left, apart from the Browser's position: **Position › Left, Right** in its ⋮, after Workspace ▸, and View › Tools Panel Position, the one in use checked, each its action, `tools-panel-position-left` and `tools-panel-position-right`, with no default keys. Right is the default.
 
   | Tools panel | Browser at the left | Browser at the right | Browser at the bottom |
   | --- | --- | --- | --- |
-  | Right (today) | Browser, Viewer, Tools panel | Viewer, Browser, Tools panel | Viewer over the Browser, Tools panel beside both |
-  | Left (planned) | Tools panel, Browser, Viewer | Tools panel, Viewer, Browser | Tools panel beside both, Viewer over the Browser |
+  | Right (default) | Browser, Viewer, Tools panel | Viewer, Browser, Tools panel | Viewer over the Browser, Tools panel beside both |
+  | Left | Tools panel, Browser, Viewer | Tools panel, Viewer, Browser | Tools panel beside both, Viewer over the Browser |
 
-- **A change** lays the panel out again on that frame, the active photo kept in view, the number of rows and columns each kept for its own place.
-- **Kept** in settings as `position` under `[browser]` (`bottom`, `left`, `right`), written only once changed.
+- **The Tools panel at either side** runs the window's height under the Toolbar, its edge on the side towards the Viewer, its width the same either side (`PanelEdge::at_start`, the egui panel from `Shell::panel_frame`). Nothing inside it is mirrored: the tab bar, the headers, the rows and the scroll bar stay as they are. The F6 order of the regions stays Toolbar, viewer bar, Viewer, Tools panel, Browser whichever side it is on, so a user's keys never change with the layout.
+- **Where `--conf` sets it** for the run, its items are drawn disabled, their tip "Set by --conf for this run", as a Settings row is, since the store refuses the change.
+
+- **A change** lays the panel out again on that frame, the active photo kept in view, the number of rows and columns each kept for its own place. A move of the Tools panel lays the window out again on that frame too; the Viewer keeps its size, so the photo is not rendered again.
+- **Kept** in settings as `position` under `[browser]` (`bottom`, `left`, `right`), and the Tools panel's as `position` under `[tools_panel]` (`right`, `left`), app-wide, the same in every workspace, each written only once changed.
 - **What a script sees:** nothing; it is interface state.
 
 #### The browser bar
@@ -4477,7 +4480,7 @@ It is versioned (`version = 2`) and migrated as `.apxmp` is, version 1 to 2 movi
 
 - the theme, the locale and the scale; theme overrides and the density once they exist;
 - the keys that differ from the defaults;
-- whether the Tools panel's tabs show their names, and its width once the user drags its edge ([The Tools panel](#the-tools-panel));
+- whether the Tools panel's tabs show their names, its side, `tools_panel.position`, once the user moves it ([Its position](#its-position)), and its width once the user drags its edge ([The Tools panel](#the-tools-panel));
 - the Browser's position and its rows and columns, and the browser bar's sort and thumbnail size, each once the user changes it ([The Browser](#the-browser), [The browser bar](#the-browser-bar));
 - the current workspace by id, `workspace` (decision 96), and Show Hidden Tools, `tools_panel.show_hidden`; the workspaces themselves are files of their own, and the tab last shown in each is `state.toml`'s ([Workspaces](#workspaces));
 - each floating panel's place and width, the same in every workspace (decision 83, with the floating panels);
@@ -4584,6 +4587,7 @@ workspace = "portraits"     # the current workspace's id, decision 96, planned
 tab_names = false
 wheel_scrolls_panel = false # the wheel over a row changes it, as darktable's default
 show_hidden = true          # Show Hidden Tools, decision 96
+position = "left"           # right, the default, or left
 width = 480
 
 [edit]
