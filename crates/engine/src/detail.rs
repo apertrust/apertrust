@@ -87,6 +87,8 @@ struct Held {
 #[derive(Default)]
 pub struct Rounds {
     due: Vec<Due>,
+    /// The largest round tile's buffers but the source it reads, made and freed by its round.
+    bytes: u64,
 }
 
 /// One round: the operation, the key its result will have, and its tiles' plans.
@@ -110,6 +112,12 @@ impl Rounds {
     /// How many tiles each round takes, in order.
     pub fn tiles(&self) -> Vec<usize> {
         self.due.iter().map(|due| due.plans.len()).collect()
+    }
+
+    /// The memory its largest tile takes beside the source it reads, made and freed by its
+    /// round; 0 where no round runs.
+    pub fn bytes(&self) -> u64 {
+        self.bytes
     }
 }
 
@@ -135,9 +143,14 @@ impl Results {
     /// out, its later passes binding the result held, of which only the scratch they bind
     /// takes memory. A result is borrowed from `fitted` where it holds it at full
     /// resolution (decision 15), or else, where its key changed, takes a round: tiles of
-    /// its stage within `limits`' budget for an operation that opts in, the whole of it for
-    /// the others. Refused, as an export is, where a held result binds more than the GPU
+    /// its stage within `left` bytes, what both pipelines leave of the budget, for an
+    /// operation that opts in, or where none fit within `limits`' budget, logged (decision
+    /// 99), the whole of it for the others. Refused, as an export is, where a held result binds more than the GPU
     /// allows ([`ExportError::HeldScratch`]) or no tiles fit ([`ExportError::NoTiles`]).
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "the region, its source, the edit and the budgets it is planned within"
+    )]
     pub fn plan(
         &mut self,
         region: Plan,
@@ -145,6 +158,7 @@ impl Results {
         instances: &[Instance],
         image: &ImageContext,
         limits: &Limits,
+        left: u64,
         fitted: Option<&Pipeline>,
     ) -> Result<(Plan, Rounds), ExportError> {
         let mut plan = region.keyed_on(key);
@@ -229,6 +243,7 @@ impl Results {
                     as_region,
                     earlier: &earlier,
                     kept,
+                    left,
                     limits,
                 };
                 let (plans, own) = tiles.plan(op, skip)?;
@@ -245,9 +260,10 @@ impl Results {
         let results = export::held_bytes(&plan, &runs);
         let what = "the region and each round's tile";
         let source = plan.input.buffer_size();
-        let own = plan.bytes() - results + largest.saturating_sub(source);
+        let bytes = largest.saturating_sub(source);
+        let own = plan.bytes() - results + bytes;
         export::log_held("detail", results, own, &runs, what, limits);
-        Ok((plan, Rounds { due }))
+        Ok((plan, Rounds { due, bytes }))
     }
 
     /// The result held for `run` whose buffers have `sizes`, taken out to be held again,
@@ -468,8 +484,8 @@ fn fits<'a>(
 /// What a round's tiles are planned from: the detail's instances after the raw stage,
 /// its image context, its source's image, its scale, how its plans plan their operations
 /// as the region's do ([`pipeline::plan_as`]), the operations whose results the
-/// round binds, the bytes of the round's own result the detail keeps or is lent, and the
-/// limits.
+/// round binds, the bytes of the round's own result the detail keeps or is lent, the
+/// budget its tiles take first and the limits.
 struct Tiles<'a> {
     after: &'a [Instance<'a>],
     image: &'a ImageContext,
@@ -478,6 +494,7 @@ struct Tiles<'a> {
     as_region: Option<AsRegion>,
     earlier: &'a [&'a str],
     kept: u64,
+    left: u64,
     limits: &'a Limits,
 }
 
@@ -513,17 +530,33 @@ impl Tiles<'_> {
             let largest = largest(&plans);
             return Ok((plans, largest));
         }
-        let mut edge = 8192;
-        while edge >= SMALLEST_TILE {
-            let regions = export::regions(op.output_desc.scaled_extent, [edge, edge]);
-            let plans = self.at(op, &regions, skip)?;
-            let fit =
-                |plan: &Plan| own(plan) <= self.limits.budget && plan.binds_within(self.limits);
-            if plans.iter().all(fit) {
-                let largest = largest(&plans);
-                return Ok((plans, largest));
+        // Within what both pipelines leave first, then, where no tile fits it, the
+        // budget (decision 99).
+        let budgets = [self.left.min(self.limits.budget), self.limits.budget];
+        for (tried, &budget) in budgets.iter().enumerate() {
+            if tried > 0 && budget == budgets[0] {
+                break;
             }
-            edge /= 2;
+            let mut edge = 8192;
+            while edge >= SMALLEST_TILE {
+                let regions = export::regions(op.output_desc.scaled_extent, [edge, edge]);
+                let plans = self.at(op, &regions, skip)?;
+                let fit = |plan: &Plan| own(plan) <= budget && plan.binds_within(self.limits);
+                if plans.iter().all(fit) {
+                    let largest = largest(&plans);
+                    if tried > 0 {
+                        tracing::debug!(
+                            target: "memory",
+                            "detail: no round tile of {} fits the {:.0} MiB the fitted pipeline leaves; tiles of up to {edge} within the {:.0} MiB budget",
+                            op.id,
+                            pipeline::mebibytes(budgets[0]),
+                            pipeline::mebibytes(budget)
+                        );
+                    }
+                    return Ok((plans, largest));
+                }
+                edge /= 2;
+            }
         }
         Err(refused())
     }

@@ -829,6 +829,133 @@ fn a_fitted_frame_that_fails_is_tried_again_a_few_times() {
     remove(&path);
 }
 
+/// What the open photo's pipelines take of the budget (decision 99): the fitted plan's
+/// buffers, the detail's own, if any, and the colour pickers' reserve.
+fn taken(driven: &Driven) -> (u64, Option<u64>, u64) {
+    let open = driven.engine.open.as_ref().expect("a photo open");
+    let fitted = open.pipeline.as_ref().expect("the fitted pipeline").plan();
+    let detail = (open.detail.as_ref()).map(|d| pipeline::detail_bytes(d.pipeline.plan()));
+    let size = driven.engine.size.expect("bounds");
+    let viewport = viewport_limits(&driven.engine.limits, [size.0, size.1], &open.sensor);
+    let reserved = driven.engine.limits.budget - viewport.budget;
+    (fitted.bytes(), detail, reserved)
+}
+
+/// The tone equalizer on, as its blending turns it on.
+fn tone_equalizer() -> Command {
+    Command::SetControl {
+        tool: "toneequal".into(),
+        control: "blending".into(),
+        value: ControlValue::Number(10.0),
+        done: true,
+    }
+}
+
+static WITH_TONE_EQUALIZER: [&dyn ProcessingTool; 2] =
+    [&Sample, &apertrust_tools::tone_equalizer::ToneEqualizer];
+
+#[test]
+fn a_small_budget_drops_the_full_resolution_image_and_keeps_the_detail_exact() {
+    // At a budget just under both pipelines' untiled buffers, the fitted pipeline gives
+    // up demosaic's full-resolution image and tiles, the detail starting from the raw
+    // stage's output it keeps (decision 99); each frame and overview are those of a
+    // session within the default budget, bit for bit: Bayer and X-Trans, at 100% and at
+    // Fill, with no whole-image operation and with the tone equalizer, whose round then
+    // runs from the mosaic.
+    let photos = ["synthetic.ARW", "xtrans.ARW"];
+    let scales = [ViewScale::Factor(1.0), ViewScale::Fill];
+    let edits: [&[Command]; 2] = [&[], &[tone_equalizer()]];
+    for (photo, scale, edit) in every(&photos, &scales, &edits) {
+        let case = format!("{photo} at {scale:?} with {} commands", edit.len());
+        let path = scratch("detail-budget").with_file_name(photo);
+        let view = zoom(*scale, [0.4, 0.6]);
+        let brightness = set("brightness", ControlValue::Number(0.5), false);
+        let frames = |driven: &mut Driven| {
+            driven.open(&path);
+            driven.run(edit.to_vec());
+            let mut bytes = Vec::new();
+            for command in [view.clone(), brightness.clone()] {
+                let events = driven.run([command]);
+                assert!(failures(&events).is_empty(), "{case}: {events:?}");
+                let (frame, fitted) = with_overview(driven, &events);
+                bytes.push(frame_bytes(&driven.gpu, &frame));
+                bytes.push(overview(&driven.gpu, &fitted));
+            }
+            bytes
+        };
+        let mut untiled = Driven::new(&WITH_TONE_EQUALIZER);
+        let expected = frames(&mut untiled);
+        let (fitted, Some(detail), reserved) = taken(&untiled) else {
+            panic!("{case}: a detail");
+        };
+        let open = untiled.engine.open.as_ref().unwrap();
+        assert!(
+            open.pipeline.as_ref().unwrap().plan().tiled.is_none(),
+            "{case}"
+        );
+        let mut small = Driven::within(&WITH_TONE_EQUALIZER, reserved + fitted + detail - 1);
+        let rendered = frames(&mut small);
+        let open = small.engine.open.as_ref().unwrap();
+        assert!(
+            open.pipeline.as_ref().unwrap().plan().tiled.is_some(),
+            "{case}"
+        );
+        let source = open.detail.as_ref().unwrap().pipeline.plan().input.format;
+        assert_eq!(source, apertrust_plugin::Format::Mosaic, "{case}");
+        assert!(rendered == expected, "{case}");
+        remove(&path);
+    }
+}
+
+/// Every combination of `a`, `b` and `c`, in order.
+fn every<'a, A, B, C>(
+    a: &'a [A],
+    b: &'a [B],
+    c: &'a [C],
+) -> impl Iterator<Item = (&'a A, &'a B, &'a C)> {
+    a.iter()
+        .flat_map(move |a| b.iter().flat_map(move |b| c.iter().map(move |c| (a, b, c))))
+}
+
+#[test]
+fn at_fit_the_detail_is_freed_first() {
+    // Back at Fit, a larger viewport that the fitted pipeline fits alone but not beside
+    // the detail kept frees the detail, the fitted plan still untiled; going back to
+    // 100% builds it again, its frame a session's that never let it go (decision 99).
+    let path = scratch("detail-freed");
+    let larger = Command::Resize {
+        width: 80,
+        height: 80,
+    };
+    let at_100 = zoom(ViewScale::Factor(1.0), [0.5, 0.5]);
+    let fit = zoom(ViewScale::Fit, [0.5, 0.5]);
+    // Within the default budget: what each pipeline takes.
+    let mut roomy = Driven::new(&[&Sample]);
+    roomy.open(&path);
+    roomy.run([at_100.clone()]);
+    let (_, Some(detail), _) = taken(&roomy) else {
+        panic!("a detail");
+    };
+    roomy.run([fit.clone(), larger.clone()]);
+    let (fitted, kept, reserved) = taken(&roomy);
+    assert_eq!(kept, Some(detail), "kept at Fit within the default budget");
+    let events = roomy.run([at_100.clone()]);
+    let expected = frame_bytes(&roomy.gpu, the_frame(&events));
+
+    let mut driven = Driven::within(&[&Sample], reserved + fitted + detail - 1);
+    driven.open(&path);
+    driven.run([at_100.clone()]);
+    assert!(taken(&driven).1.is_some(), "the detail at 100%");
+    driven.run([fit, larger]);
+    let open = driven.engine.open.as_ref().unwrap();
+    assert!(open.detail.is_none(), "the detail freed");
+    assert!(open.pipeline.as_ref().unwrap().plan().tiled.is_none());
+    let events = driven.run([at_100]);
+    assert!(taken(&driven).1.is_some(), "the detail built again");
+    assert!(frame_bytes(&driven.gpu, the_frame(&events)) == expected);
+    remove(&path);
+}
+
 /// The keys of the whole-image results the open photo's detail holds.
 fn held(driven: &Driven) -> Vec<(&'static str, Option<u64>)> {
     let open = driven.engine.open.as_ref().expect("a photo open");
