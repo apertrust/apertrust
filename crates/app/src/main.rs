@@ -1944,6 +1944,11 @@ struct Shell {
     /// The live photo and the room the Viewer gave it at the last frame, which the zoom's
     /// steps and edges follow; None with no photo live.
     room: Option<zoom::Room>,
+    /// The smooth zoom or pinch under way: its unsnapped scale.
+    gesture: zoom::Gesture,
+    /// The photo area, in points, where the pointer was over it at the last frame: the
+    /// zoom's keys zoom about the pointer there (`docs/gui.md`, Zooming).
+    pointed: Option<egui::Rect>,
     /// The Viewer's margins, from the settings (`[viewer]`).
     viewer: settings::Viewer,
     /// Whether Settings… ran, for the app to open it in the dialog host after the action.
@@ -2109,6 +2114,8 @@ impl Shell {
             proof_margin: false,
             zoom: zoom::Zoomed::FIT,
             room: None,
+            gesture: zoom::Gesture::default(),
+            pointed: None,
             viewer: settings.viewer,
             settings: false,
             show_log: false,
@@ -3666,15 +3673,29 @@ impl Shell {
                 self.viewer.background = Some(background);
                 apertrust_ui::set_theme(ctx, self.look());
             }
-            Intent::Zoom(step) => self.zoom_to(step),
+            // About the pointer where it is over the photo, else the view's centre.
+            Intent::Zoom(step) => {
+                let pointer = ctx.pointer_hover_pos();
+                let about = (self.pointed.zip(pointer))
+                    .filter(|(area, at)| area.contains(*at))
+                    .map_or(egui::Vec2::ZERO, |(area, at)| {
+                        (at - area.center()) * ctx.pixels_per_point()
+                    });
+                self.zoom_to(step, about);
+            }
         }
         ctx.request_repaint();
     }
 
-    /// Moves the photo's zoom by `step`, where it has somewhere to go.
-    fn zoom_to(&mut self, step: zoom::ZoomStep) {
-        if let Some(zoomed) = self.zoom_to_step(step) {
+    /// Moves the photo's zoom by `step`, where it has somewhere to go, keeping the screen
+    /// point `about` still, in physical pixels from the photo area's centre; a gesture
+    /// under way ends.
+    fn zoom_to(&mut self, step: zoom::ZoomStep, about: egui::Vec2) {
+        if let Some(room) = self.room
+            && let Some(zoomed) = self.zoom.step_about(step, about, &room)
+        {
             self.zoom = zoomed;
+            self.gesture.end();
         }
     }
 
@@ -4678,6 +4699,7 @@ impl App {
                             && self.view_sent == Some(self.shell.zoom.view()) =>
                     {
                         self.shell.zoom = zoom::Zoomed::FIT;
+                        self.shell.gesture.end();
                         self.view_sent = None;
                     }
                     Reaction::Unzoomed { .. } => {}
@@ -5682,8 +5704,9 @@ impl App {
             }
             Some(ViewerBarAction::Guides) => self.shell.guides = !self.shell.guides,
             Some(chosen) => {
+                // A menu's entry zooms about the view's centre.
                 if let Some(step) = zoom::chosen(chosen) {
-                    self.shell.zoom_to(step);
+                    self.shell.zoom_to(step, egui::Vec2::ZERO);
                     ui.ctx().request_repaint();
                 }
             }
@@ -5741,6 +5764,24 @@ impl App {
         // still takes the clicks there.
         let id = ui.scope_id().with("background");
         let background = ui.interact(slot, id, egui::Sense::click());
+        // Ctrl+scroll, a pinch and middle-click zoom about the pointer, and the keys zoom
+        // there while it is over the photo (`docs/gui.md`, Zooming). A zoom shows on the
+        // frame of its input, in the photo area it gives.
+        self.shell.pointed = None;
+        let mut placed = placed;
+        if let (Some(room), Some(area)) = (&room, placed.as_ref().map(|p| p.photo))
+            && open
+        {
+            let before = self.shell.zoom;
+            let gesture = &mut self.shell.gesture;
+            let now = Instant::now();
+            self.shell.zoom = zoom_photo(ui, slot, area, before, room, gesture, now);
+            if self.shell.zoom != before {
+                placed = place_photo(&block, bounds, ppp, &self.shell.zoom, values, None);
+            }
+            let area = placed.as_ref().map_or(area, |p| p.photo);
+            self.shell.pointed = ui.rect_contains_pointer(area).then_some(area);
+        }
         let zoomed = if open {
             self.shell.zoom
         } else {
@@ -6410,7 +6451,9 @@ fn pan_photo(
         return zoomed;
     }
     let mut moved = egui::Vec2::ZERO;
-    if drags {
+    // A touch screen's pinch moves the pointer with its first finger: the pinch zooms, and
+    // the finger's drag moves nothing.
+    if drags && ui.input(|i| i.multi_touch().is_none()) {
         let response = ui.interact(area, ui.scope_id().with("photo"), egui::Sense::drag());
         if response.dragged_by(egui::PointerButton::Primary) {
             moved += response.drag_delta();
@@ -6426,6 +6469,129 @@ fn pan_photo(
         return zoomed;
     }
     zoomed.panned(moved * ui.pixels_per_point(), room)
+}
+
+/// The pointer's zooms of the photo, shown in the photo area `area` of the slot `slot`
+/// (`docs/gui.md`, Zooming), each keeping the photo's point under the pointer still:
+/// Ctrl+scroll (Cmd+scroll on the Mac) anywhere in the slot, a mouse wheel's notch by
+/// [`zoom::notch`] and a smooth scroll or a pinch through `gesture` at `now`, a touch
+/// screen's pinch where its centre is in the slot; and middle-click on the photo,
+/// darktable's cycle ([`zoom::middle_click`]), a colour picker on or not, since it takes
+/// the primary button alone. A click or a double-click zooms nothing, and while a popup is
+/// open the wheel is the popup's, the slider popup's among them. Returns the zoom after
+/// them in `room`.
+fn zoom_photo(
+    ui: &mut egui::Ui,
+    slot: egui::Rect,
+    area: egui::Rect,
+    zoomed: zoom::Zoomed,
+    room: &zoom::Room,
+    gesture: &mut zoom::Gesture,
+    now: Instant,
+) -> zoom::Zoomed {
+    let (fit, _) = room.modes();
+    let shown = room.place(&zoomed).shown as f32;
+    let about = |at: egui::Pos2| (at - area.center()) * ui.pixels_per_point();
+    let middle = ui.input(|i| {
+        (i.pointer.button_clicked(egui::PointerButton::Middle))
+            .then(|| i.pointer.interact_pos())
+            .flatten()
+    });
+    if let Some(at) = middle.filter(|at| area.contains(*at))
+        && ui.rect_contains_pointer(area)
+    {
+        gesture.end();
+        return zoomed.about(zoom::middle_click(shown), about(at), room);
+    }
+    // A touch screen's pinch by its centre, which its first finger, the pointer, may leave.
+    let pinch = ui.input(|i| i.multi_touch().map(|touch| touch.center_pos));
+    let inside = pinch.map_or_else(|| ui.rect_contains_pointer(slot), |at| slot.contains(at));
+    if popup::any_open(ui.ctx()) || !inside {
+        return zoomed;
+    }
+    let wheel = PointerZoom::take(ui);
+    let Some(at) = pinch.or_else(|| ui.input(|i| i.pointer.hover_pos())) else {
+        return zoomed;
+    };
+    let mut value = shown;
+    for up in wheel.notches {
+        value = zoom::notch(value, up, fit);
+        gesture.end();
+    }
+    if wheel.factor != 1.0 {
+        value = gesture.zoom(value, wheel.factor, fit, now);
+    }
+    if wheel.ended {
+        gesture.end();
+    }
+    if (value - shown).abs() <= shown * 1e-6 {
+        return zoomed;
+    }
+    zoomed.about(zoom::scale_at(value, fit), about(at), room)
+}
+
+/// What the pointer zooms the photo by in a frame: Ctrl+scroll's, Cmd+scroll's on the Mac,
+/// and a pinch's (`docs/gui.md`, Zooming).
+struct PointerZoom {
+    /// A mouse wheel's notches in the order they came, true up: lines of the wheel, each one
+    /// notch.
+    notches: Vec<bool>,
+    /// A smooth scroll's and a pinch's factor, as egui's `zoom_delta` folds them but
+    /// unsmoothed, since it would fold the notches in too: a trackpad's scroll in points, a
+    /// part of a line, as Windows' precision touchpad sends its pinch, and a pinch's own.
+    factor: f32,
+    /// Whether a trackpad's gesture ended.
+    ended: bool,
+}
+
+impl PointerZoom {
+    /// The frame's zoom, its events taken from the input so nothing behind the photo sees
+    /// them.
+    fn take(ui: &egui::Ui) -> PointerZoom {
+        let (speed, line) = ui.ctx().options(|o| {
+            let input = &o.input_options;
+            (input.scroll_zoom_speed, input.line_scroll_speed)
+        });
+        let page = ui.ctx().content_rect().height();
+        let mut zoom = PointerZoom {
+            notches: Vec::new(),
+            factor: 1.0,
+            ended: false,
+        };
+        ui.ctx().input_mut(|i| {
+            if let Some(touch) = i.multi_touch() {
+                zoom.factor *= touch.zoom_delta;
+            }
+            i.events.retain(|event| match *event {
+                egui::Event::Zoom(factor) => {
+                    zoom.factor *= factor;
+                    false
+                }
+                egui::Event::MouseWheel {
+                    unit,
+                    delta,
+                    phase,
+                    modifiers,
+                    ..
+                } if modifiers.command => {
+                    let along = delta.x + delta.y;
+                    match unit {
+                        egui::MouseWheelUnit::Line if along.fract() == 0.0 => {
+                            let notches = std::iter::repeat_n(along > 0.0, along.abs() as usize);
+                            zoom.notches.extend(notches);
+                        }
+                        egui::MouseWheelUnit::Line => zoom.factor *= (speed * along * line).exp(),
+                        egui::MouseWheelUnit::Page => zoom.factor *= (speed * along * page).exp(),
+                        egui::MouseWheelUnit::Point => zoom.factor *= (speed * along).exp(),
+                    }
+                    zoom.ended |= matches!(phase, egui::TouchPhase::End | egui::TouchPhase::Cancel);
+                    false
+                }
+                _ => true,
+            });
+        });
+        zoom
+    }
 }
 
 /// Whether the view sent as the command `pending` names, at the time it holds, is still on
@@ -6789,7 +6955,8 @@ impl eframe::App for App {
         // its menus against the key window.
         let drawn = self.state_in_window(&ctx);
         let peek = keys.held.contains(&ActionId::PEEK);
-        let mut run = keys.pressed;
+        let keyed = keys.pressed;
+        let mut run = Vec::new();
         // The Tools panel runs the window's height under the Toolbar; the Browser runs
         // under the photo only.
         let toolbar = egui::Panel::top("toolbar")
@@ -6881,7 +7048,12 @@ impl eframe::App for App {
         .into_iter()
         .flatten()
         .collect();
+        // The keys first, which zoom about the pointer over the photo; then what was
+        // clicked or chosen in a menu, which zooms about the view's centre.
+        self.run_actions(keyed, &ctx, &regions);
+        let pointed = self.shell.pointed.take();
         self.run_actions(run, &ctx, &regions);
+        self.shell.pointed = pointed;
         // The scopes count what the section now shows: its tab, whether it is open, the
         // graph.
         if let Some(command) = self.mirror.scopes.ask(self.shell.scopes_wanted()) {
@@ -14827,30 +14999,86 @@ mod tests {
         })
     }
 
-    /// The photo area as `App::viewer` moves it, at twice the scale: 1200 × 800 points,
-    /// [`ZOOM_ROOM`]'s room, at (50, 50), the zoom kept in the state, and the slot's
-    /// right-clicks over it counted, as the photo's menu takes them.
+    /// The photo area as `App::viewer` moves and zooms it, at twice the scale: 1200 × 800
+    /// points, [`ZOOM_ROOM`]'s room, at (50, 50) in the slot [`PAN_SLOT`], the zoom kept in
+    /// the state, its gesture, its clock ([`wait`]) and whether a picker is on in the
+    /// context's data, and the
+    /// slot's right-clicks over it counted, as the photo's menu takes them. Under the slot,
+    /// a Tools panel's row that takes the wheel ([`PAN_ROW`]), its value in the data too.
     fn panning(zoomed: zoom::Zoomed) -> Harness<'static, zoom::Zoomed> {
+        let clock = Instant::now();
         Harness::builder()
-            .with_size(egui::vec2(1300.0, 900.0))
+            .with_size(egui::vec2(1300.0, 940.0))
             .with_pixels_per_point(2.0)
+            .with_context_setup(|ctx| apertrust_ui::install(ctx, Theme::default()))
             .build_ui_state(
-                |ui, zoomed: &mut zoom::Zoomed| {
+                move |ui, zoomed: &mut zoom::Zoomed| {
+                    popup::show(ui.ctx());
                     let picker = ui.ctx().data(|d| d.get_temp::<bool>(PICKER_ON));
                     let drags = !picker.unwrap_or(false);
                     *zoomed = pan_photo(ui, PAN_AREA, *zoomed, &ZOOM_ROOM, drags);
-                    let slot = ui.interact(
-                        ui.max_rect(),
-                        egui::Id::NULL.with("slot"),
-                        egui::Sense::click(),
-                    );
+                    let slot =
+                        ui.interact(PAN_SLOT, egui::Id::NULL.with("slot"), egui::Sense::click());
                     if slot.secondary_clicked() {
                         ui.ctx()
                             .data_mut(|d| *d.get_temp_mut_or(egui::Id::NULL.with("menus"), 0) += 1);
                     }
+                    // A picker on takes the photo's clicks and drags, as its marks do.
+                    let kept = |name| egui::Id::NULL.with(name);
+                    if !drags {
+                        ui.interact(PAN_AREA, kept("picker"), egui::Sense::click_and_drag());
+                    }
+                    let mut gesture: zoom::Gesture = ui
+                        .ctx()
+                        .data(|d| d.get_temp(kept("gesture")))
+                        .unwrap_or_default();
+                    // The harness's own clock, which a test moves on.
+                    let elapsed: Duration = ui
+                        .ctx()
+                        .data(|d| d.get_temp(kept("clock")))
+                        .unwrap_or_default();
+                    let now = clock + elapsed;
+                    let room = &ZOOM_ROOM;
+                    *zoomed = zoom_photo(ui, PAN_SLOT, PAN_AREA, *zoomed, room, &mut gesture, now);
+                    ui.ctx()
+                        .data_mut(|d| d.insert_temp(kept("gesture"), gesture));
+                    let builder = egui::UiBuilder::new().max_rect(PAN_ROW);
+                    let action = ui.scope_builder(builder, |ui| {
+                        components::SliderRow::new("Exposure", row_value(ui.ctx()), -4.0..=4.0)
+                            .step(0.1)
+                            .wheel(components::Wheel::Pointer)
+                            .show(ui)
+                    });
+                    if let Some(components::SliderAction::Set { value, .. }) = action.inner {
+                        ui.ctx().data_mut(|d| d.insert_temp(kept("row"), value));
+                    }
                 },
                 zoomed,
             )
+    }
+
+    /// The slot round the photo area of [`panning`], and the row under it.
+    const PAN_SLOT: egui::Rect = egui::Rect {
+        min: egui::pos2(0.0, 0.0),
+        max: egui::pos2(1300.0, 900.0),
+    };
+    const PAN_ROW: egui::Rect = egui::Rect {
+        min: egui::pos2(50.0, 905.0),
+        max: egui::pos2(450.0, 935.0),
+    };
+
+    /// Moves [`panning`]'s clock on by `by`.
+    fn wait(harness: &mut Harness<'_, zoom::Zoomed>, by: Duration) {
+        let clock = egui::Id::NULL.with("clock");
+        harness
+            .ctx
+            .data_mut(|d| *d.get_temp_mut_or_default::<Duration>(clock) += by);
+    }
+
+    /// The value of [`panning`]'s row.
+    fn row_value(ctx: &egui::Context) -> f64 {
+        ctx.data(|d| d.get_temp(egui::Id::NULL.with("row")))
+            .unwrap_or(0.0)
     }
 
     #[test]
@@ -14884,11 +15112,24 @@ mod tests {
     /// A turn of the mouse wheel by `delta` points, down positive, with `modifiers`, over
     /// the area's middle.
     fn scroll(harness: &mut Harness<'_, zoom::Zoomed>, delta: egui::Vec2, modifiers: Modifiers) {
-        harness.hover_at(PAN_AREA.center());
+        let unit = egui::MouseWheelUnit::Point;
+        wheel_at(harness, PAN_AREA.center(), unit, delta, modifiers);
+    }
+
+    /// A turn of the mouse wheel at `at` by `delta` in `unit`s, down positive, with
+    /// `modifiers`, and the frames egui spreads it over.
+    fn wheel_at(
+        harness: &mut Harness<'_, zoom::Zoomed>,
+        at: egui::Pos2,
+        unit: egui::MouseWheelUnit,
+        delta: egui::Vec2,
+        modifiers: Modifiers,
+    ) {
+        harness.hover_at(at);
         harness.run();
         harness.event_modifiers(
             egui::Event::MouseWheel {
-                unit: egui::MouseWheelUnit::Point,
+                unit,
                 delta,
                 phase: egui::TouchPhase::Move,
                 source: egui::MouseWheelSource::Wheel,
@@ -14897,6 +15138,270 @@ mod tests {
             modifiers,
         );
         harness.run_steps(12);
+    }
+
+    /// Ctrl as Windows and Linux hold it, the command modifier too.
+    const CTRL: Modifiers = Modifiers {
+        ctrl: true,
+        command: true,
+        ..Modifiers::NONE
+    };
+
+    /// The photo's point under `at` where `zoomed` shows it in [`panning`]'s area, 0 to 1
+    /// across it.
+    fn under(zoomed: &zoom::Zoomed, at: egui::Pos2) -> [f32; 2] {
+        let placed = ZOOM_ROOM.place(zoomed);
+        let d = (at - PAN_AREA.center()) * 2.0;
+        let shown = placed.shown as f32;
+        [0, 1].map(|axis| placed.centre[axis] + d[axis] / (ZOOM_ROOM.extent[axis] as f32 * shown))
+    }
+
+    /// Whether the photo's point under `at` is the same, within a physical pixel, at
+    /// `before` and at `after`.
+    fn kept_under(before: &zoom::Zoomed, after: &zoom::Zoomed, at: egui::Pos2) -> bool {
+        let pixel = |axis: usize| {
+            1.0 / (ZOOM_ROOM.extent[axis] as f32 * ZOOM_ROOM.place(after).shown as f32)
+        };
+        let (was, is) = (under(before, at), under(after, at));
+        (0..2).all(|axis| (was[axis] - is[axis]).abs() < pixel(axis))
+    }
+
+    /// A click of `button` at `at`.
+    fn press_at(
+        harness: &mut Harness<'_, zoom::Zoomed>,
+        at: egui::Pos2,
+        button: egui::PointerButton,
+    ) {
+        harness.hover_at(at);
+        harness.run();
+        for pressed in [true, false] {
+            harness.event(egui::Event::PointerButton {
+                pos: at,
+                button,
+                pressed,
+                modifiers: Modifiers::NONE,
+            });
+        }
+        harness.run();
+    }
+
+    /// A point of the photo area off its middle, where a zoom about it moves the centre.
+    const OFF_MIDDLE: egui::Pos2 = egui::pos2(850.0, 300.0);
+
+    #[test]
+    fn ctrl_scroll_over_the_photo_zooms_and_never_reaches_a_row() {
+        let line = egui::MouseWheelUnit::Line;
+        let up = egui::vec2(0.0, 1.0);
+        let mut harness = panning(zoom::Zoomed::FIT);
+        // A notch up at Fit, 40%: 44%, about the pointer.
+        wheel_at(&mut harness, OFF_MIDDLE, line, up, CTRL);
+        let notched = *harness.state();
+        assert_eq!(notched.scale, zoom::Scale::Factor(0.4 * 1.1));
+        assert!(
+            kept_under(&zoom::Zoomed::FIT, &notched, OFF_MIDDLE),
+            "{notched:?}"
+        );
+        assert_eq!(row_value(&harness.ctx), 0.0);
+        // A notch down then up in one frame: to Fit, then 44%, in the order they came.
+        let mut batched = panning(zoom::Zoomed::FIT);
+        batched.hover_at(OFF_MIDDLE);
+        batched.run();
+        let notch = |up: f32| egui::Event::MouseWheel {
+            unit: line,
+            delta: egui::vec2(0.0, up),
+            phase: egui::TouchPhase::Move,
+            source: egui::MouseWheelSource::Wheel,
+            modifiers: CTRL,
+        };
+        batched.input_mut().events.extend([notch(-1.0), notch(1.0)]);
+        batched.run();
+        assert_eq!(batched.state().scale, zoom::Scale::Factor(0.4 * 1.1));
+        // Nine more stop on 100%, which reads so.
+        for _ in 0..9 {
+            wheel_at(&mut harness, OFF_MIDDLE, line, up, CTRL);
+        }
+        assert_eq!(harness.state().scale, zoom::Scale::Factor(1.0));
+        assert_eq!(harness.state().label(), Zoom::Percent(100.0));
+        // Over the surround it zooms about the pointer too, the edges then keeping the
+        // photo in place.
+        wheel_at(&mut harness, egui::pos2(20.0, 450.0), line, -up, CTRL);
+        assert!(harness.state().scale != zoom::Scale::Factor(1.0));
+        // Down to Fit, never past it.
+        for _ in 0..12 {
+            wheel_at(&mut harness, OFF_MIDDLE, line, -up, CTRL);
+        }
+        assert_eq!(*harness.state(), zoom::Zoomed::FIT);
+        // Over the row, the row's, never the photo's.
+        wheel_at(&mut harness, PAN_ROW.center(), line, up, CTRL);
+        assert_eq!(*harness.state(), zoom::Zoomed::FIT);
+        assert!(row_value(&harness.ctx) > 0.0);
+    }
+
+    #[test]
+    fn a_pinch_zooms_about_its_centre() {
+        let mut harness = panning(zoom::Zoomed::FIT);
+        harness.hover_at(OFF_MIDDLE);
+        harness.run();
+        harness.event(egui::Event::Zoom(1.5));
+        harness.run();
+        let pinched = *harness.state();
+        let shown = ZOOM_ROOM.place(&pinched).shown as f32;
+        assert!((shown - 0.6).abs() < 1e-5, "{pinched:?}");
+        assert!(
+            kept_under(&zoom::Zoomed::FIT, &pinched, OFF_MIDDLE),
+            "{pinched:?}"
+        );
+        // On within 4% of 100%: it rests there, and moves on past it.
+        harness.event(egui::Event::Zoom(1.0 / 0.6 * 1.03));
+        harness.run();
+        assert_eq!(harness.state().scale, zoom::Scale::Factor(1.0));
+        harness.event(egui::Event::Zoom(1.05));
+        harness.run();
+        let on = ZOOM_ROOM.place(harness.state()).shown;
+        assert!((on - 1.03 * 1.05).abs() < 1e-4, "{on}");
+        // Back to rest on it at 98%; a pinch after a pause starts again from 100%.
+        harness.event(egui::Event::Zoom(0.98 / (1.03 * 1.05)));
+        harness.run();
+        assert_eq!(harness.state().scale, zoom::Scale::Factor(1.0));
+        wait(&mut harness, zoom::Gesture::IDLE * 2);
+        harness.event(egui::Event::Zoom(1.05));
+        harness.run();
+        let again = ZOOM_ROOM.place(harness.state()).shown;
+        assert!((again - 1.05).abs() < 1e-4, "{again}");
+        // Out, it stops at Fit.
+        harness.event(egui::Event::Zoom(0.1));
+        harness.run();
+        assert_eq!(*harness.state(), zoom::Zoomed::FIT);
+    }
+
+    #[test]
+    fn a_touch_screen_pinch_zooms_about_its_centre_and_never_pans() {
+        // At 100%, two fingers either side of a point spread from 200 to 300 points apart,
+        // the first one moving the pointer as egui-winit has it: 150%, the point kept. Across
+        // and down, where the first finger leaves the slot for the row under it.
+        let low = egui::pos2(650.0, 780.0);
+        for (centre, first_way) in [(OFF_MIDDLE, egui::vec2(-1.0, 0.0)), (low, egui::Vec2::Y)] {
+            let hundred = zoomed_to(zoom::Scale::Factor(1.0), [0.5, 0.5]);
+            let mut harness = panning(hundred);
+            let touch = |finger: u64, phase, pos| egui::Event::Touch {
+                device_id: egui::TouchDeviceId(0),
+                id: egui::TouchId(finger),
+                phase,
+                pos,
+                force: None,
+            };
+            let (start, move_) = (egui::TouchPhase::Start, egui::TouchPhase::Move);
+            let apart = |by: f32| [centre + first_way * by, centre - first_way * by];
+            // Each frame's events together, as egui-winit hands them over.
+            let mut frame = |events: Vec<egui::Event>| {
+                harness.input_mut().events.extend(events);
+                harness.step();
+            };
+            let [first, second] = apart(100.0);
+            let press = egui::Event::PointerButton {
+                pos: first,
+                button: egui::PointerButton::Primary,
+                pressed: true,
+                modifiers: Modifiers::NONE,
+            };
+            frame(vec![
+                egui::Event::PointerMoved(first),
+                press,
+                touch(0, start, first),
+                touch(1, start, second),
+            ]);
+            frame(Vec::new());
+            for by in [110.0, 125.0, 150.0] {
+                let [first, second] = apart(by);
+                frame(vec![
+                    egui::Event::PointerMoved(first),
+                    touch(0, move_, first),
+                    touch(1, move_, second),
+                ]);
+            }
+            let pinched = *harness.state();
+            let shown = ZOOM_ROOM.place(&pinched).shown as f32;
+            assert!((shown - 1.5).abs() < 1e-4, "{centre:?}: {pinched:?}");
+            assert!(
+                kept_under(&hundred, &pinched, centre),
+                "{centre:?}: {pinched:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_windows_touchpad_pinch_arrives_as_ctrl_wheel_and_zooms() {
+        // Parts of a line, each a smooth step of the zoom, never a notch of 1.1.
+        let mut harness = panning(zoom::Zoomed::FIT);
+        let line = egui::MouseWheelUnit::Line;
+        for _ in 0..4 {
+            wheel_at(&mut harness, OFF_MIDDLE, line, egui::vec2(0.0, 0.25), CTRL);
+        }
+        let pinched = *harness.state();
+        let shown = ZOOM_ROOM.place(&pinched).shown as f32;
+        let expected = 0.4 * (4.0 * 0.25 * 40.0 / 200.0_f32).exp();
+        assert!((shown - expected).abs() < 1e-4, "{shown} {expected}");
+        assert!(
+            kept_under(&zoom::Zoomed::FIT, &pinched, OFF_MIDDLE),
+            "{pinched:?}"
+        );
+    }
+
+    #[test]
+    fn the_slider_popup_keeps_the_wheel_over_the_photo() {
+        // The slider popup is one of the popup service's; any of them open keeps the
+        // wheel, and the pinch, from the photo.
+        let mut harness = panning(zoom::Zoomed::FIT);
+        let item = popup::Item::new("a", "Alpha");
+        let anchor = egui::Rect::from_min_size(PAN_ROW.min, egui::vec2(100.0, 20.0));
+        let request = popup::Request::dropdown(anchor, "Mode", vec![item]);
+        popup::open(&harness.ctx, egui::Id::unique("dropdown"), request);
+        harness.run();
+        let line = egui::MouseWheelUnit::Line;
+        wheel_at(&mut harness, OFF_MIDDLE, line, egui::vec2(0.0, 1.0), CTRL);
+        harness.event(egui::Event::Zoom(1.5));
+        harness.run();
+        assert!(popup::any_open(&harness.ctx));
+        assert_eq!(*harness.state(), zoom::Zoomed::FIT);
+    }
+
+    #[test]
+    fn a_click_or_double_click_on_the_photo_zooms_nothing() {
+        for zoomed in [
+            zoom::Zoomed::FIT,
+            zoomed_to(zoom::Scale::Factor(1.0), [0.5, 0.5]),
+        ] {
+            let mut harness = panning(zoomed);
+            press_at(&mut harness, OFF_MIDDLE, egui::PointerButton::Primary);
+            press_at(&mut harness, OFF_MIDDLE, egui::PointerButton::Primary);
+            assert_eq!(*harness.state(), zoomed);
+        }
+    }
+
+    #[test]
+    fn middle_click_cycles_100_200_and_fit_at_the_pointer() {
+        let mut harness = panning(zoom::Zoomed::FIT);
+        let middle = egui::PointerButton::Middle;
+        press_at(&mut harness, OFF_MIDDLE, middle);
+        let hundred = *harness.state();
+        assert_eq!(hundred.scale, zoom::Scale::Factor(1.0));
+        assert!(
+            kept_under(&zoom::Zoomed::FIT, &hundred, OFF_MIDDLE),
+            "{hundred:?}"
+        );
+        press_at(&mut harness, OFF_MIDDLE, middle);
+        let two = *harness.state();
+        assert_eq!(two.scale, zoom::Scale::Factor(2.0));
+        assert!(kept_under(&hundred, &two, OFF_MIDDLE), "{two:?}");
+        press_at(&mut harness, OFF_MIDDLE, middle);
+        assert_eq!(*harness.state(), zoom::Zoomed::FIT);
+        // On the surround, nothing.
+        press_at(&mut harness, egui::pos2(20.0, 450.0), middle);
+        assert_eq!(*harness.state(), zoom::Zoomed::FIT);
+        // A picker on keeps the primary button, never the middle one.
+        harness.ctx.data_mut(|d| d.insert_temp(PICKER_ON, true));
+        press_at(&mut harness, OFF_MIDDLE, middle);
+        assert_eq!(harness.state().scale, zoom::Scale::Factor(1.0));
     }
 
     /// A drag with the primary button from the area's middle by `by` points.
@@ -17804,6 +18309,7 @@ mod tests {
                     bench.shell.close_menu(&keys.pressed);
                     bench.pressed.extend(&keys.pressed);
                     bench.held.clone_from(&keys.held);
+                    let keyed = keys.pressed.len();
                     let mut run = keys.pressed;
                     let top = ui.scope(|ui| {
                         let (title_bar, caption) = (bench.title_bar, bench.caption);
@@ -17905,12 +18411,16 @@ mod tests {
                     bench.chosen.extend(chosen);
                     run.extend(chosen);
                     bench.regions = vec![top.response.rect, side.response.rect];
-                    for id in run {
+                    // The keys first, about the pointer, as `App::ui` runs them.
+                    let pointed = bench.shell.pointed;
+                    for (at, id) in run.into_iter().enumerate() {
+                        bench.shell.pointed = pointed.filter(|_| at < keyed);
                         let state = bench.state(&ctx);
                         let regions = bench.regions.clone();
                         let command = bench.shell.run(id, &state, &ctx, &regions);
                         bench.commands.extend(command);
                     }
+                    bench.shell.pointed = pointed;
                     // Settings asked for goes to the host, as `run_action` hands it on.
                     if std::mem::take(&mut bench.shell.settings) {
                         let (keeper, _) = Keeper::nowhere();
@@ -22352,6 +22862,65 @@ mod tests {
             // The interface keeps its size.
             assert_eq!(harness.ctx.zoom_factor(), 1.0, "{os:?}");
         }
+    }
+
+    #[test]
+    fn z_at_the_pointer_zooms_there() {
+        let mut harness = bench(OperatingSystem::Windows);
+        // A 6000 × 4000 photo fitted at 15% in a room of 900 × 600, the pointer over it
+        // 300 pixels right of its middle.
+        let area = egui::Rect::from_center_size(egui::pos2(600.0, 320.0), egui::vec2(900.0, 600.0));
+        harness.state_mut().shell.room = Some(zoom::Room {
+            extent: [6000, 4000],
+            bounds: (900, 600),
+        });
+        harness.state_mut().shell.pointed = Some(area);
+        let pointer = area.center() + egui::vec2(300.0, 0.0);
+        harness.hover_at(pointer);
+        harness.run();
+        harness.key_press(Key::Z);
+        harness.run();
+        // At 100%, the photo's point that was under it, 0.5 + 300 / (6000 × 0.15) across,
+        // still is.
+        let zoomed = harness.state().shell.zoom;
+        assert_eq!(zoomed.scale, zoom::Scale::Factor(1.0));
+        let under = zoomed.centre[0] + 300.0 / 6000.0;
+        assert!((under - (0.5 + 300.0 / 900.0)).abs() < 1e-5, "{zoomed:?}");
+        assert_eq!(zoomed.centre[1], 0.5);
+        // Ctrl+= steps about it too: from Fit to 50%.
+        let fit = |harness: &mut Harness<'_, Bench>| {
+            harness.key_press_modifiers(Modifiers::COMMAND, Key::Num0);
+            harness.run();
+            assert_eq!(harness.state().shell.zoom, zoom::Zoomed::FIT);
+        };
+        fit(&mut harness);
+        harness.key_press_modifiers(Modifiers::COMMAND, Key::Equals);
+        harness.run();
+        let zoomed = harness.state().shell.zoom;
+        assert_eq!(zoomed.scale, zoom::Scale::Factor(0.5));
+        let under = zoomed.centre[0] + 300.0 / (6000.0 * 0.5);
+        assert!((under - (0.5 + 300.0 / 900.0)).abs() < 1e-5, "{zoomed:?}");
+        // With the pointer elsewhere, about the view's centre.
+        fit(&mut harness);
+        harness.hover_at(egui::pos2(5.0, 5.0));
+        harness.run();
+        harness.key_press(Key::Z);
+        harness.run();
+        let centred = zoom::Zoomed {
+            scale: zoom::Scale::Factor(1.0),
+            centre: [0.5, 0.5],
+        };
+        assert_eq!(harness.state().shell.zoom, centred);
+        // A menu's choice zooms about the view's centre, wherever the pointer is.
+        fit(&mut harness);
+        let window = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1200.0, 600.0));
+        harness.state_mut().shell.pointed = Some(window);
+        alt(&mut harness, Key::V, Some("v"));
+        harness
+            .get_by_role_and_label(Role::MenuItemCheckBox, "Zoom to 100%")
+            .click();
+        harness.run();
+        assert_eq!(harness.state().shell.zoom, centred);
     }
 
     #[test]

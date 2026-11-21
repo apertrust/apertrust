@@ -22,8 +22,15 @@
 //! factor keeps its scale. The session is told the view (`Command::View`, decision 99),
 //! and the app places the photo by the same pure function the session does
 //! (`apertrust_engine::view::place`), so the two never disagree on a scale or a clamp.
+//!
+//! A zoom about the pointer, the keys', a wheel's notch, a pinch or middle-click's, keeps
+//! the photo's point under it still ([`anchored`]), the centre then kept inside the edges by
+//! the same placement. A notch and a gesture stop on Fit, 100% and 200% ([`notch`],
+//! [`snapped`]), and never go below Fit.
 
-use apertrust_engine::view::{self, Placement, View, ViewScale};
+use std::time::{Duration, Instant};
+
+use apertrust_engine::view::{self, MAX_FACTOR, Placement, View, ViewScale};
 use apertrust_ui::components::{ViewerBarAction, Zoom};
 use eframe::egui;
 
@@ -137,10 +144,18 @@ impl Zoomed {
         }
     }
 
-    /// The zoom after `step` in `room`, or None where it has nowhere to go: Zoom in at
-    /// 1600% and Zoom out at Small. A scale keeps the view's centre, as the room clamps it;
-    /// Fit and Small centre the photo. Z's step goes to 100%, and from 100% back to Fit.
+    /// The zoom after `step` in `room` about the view's centre, as the zoom menu's entries
+    /// take it ([`Self::step_about`]).
     pub fn step(self, step: ZoomStep, room: &Room) -> Option<Zoomed> {
+        self.step_about(step, egui::Vec2::ZERO, room)
+    }
+
+    /// The zoom after `step` in `room`, or None where it has nowhere to go: Zoom in at
+    /// 1600% and Zoom out at Small. A scale keeps the screen point `about` still, in
+    /// physical pixels from the photo area's centre, zero for the view's centre
+    /// ([`Self::about`]); Fit and Small centre the photo. Z's step goes to 100%, and from
+    /// 100% back to Fit.
+    pub fn step_about(self, step: ZoomStep, about: egui::Vec2, room: &Room) -> Option<Zoomed> {
         let (fit, fill) = room.modes();
         let scale = match step {
             // From the scale shown, which a room grown past a factor clamps to Fit.
@@ -155,11 +170,25 @@ impl Zoomed {
             ZoomStep::To(Scale::Factor(factor)) if factor < fit => Scale::Fit,
             ZoomStep::To(scale) => scale,
         };
+        Some(self.about(scale, about, room))
+    }
+
+    /// The zoom at `scale` in `room`, keeping the screen point `about`, in physical pixels
+    /// from the photo area's centre, on the same point of the photo ([`anchored`]), its
+    /// centre then kept inside the edges as the session keeps it (decision 99). Fit and
+    /// Small centre the photo.
+    pub fn about(self, scale: Scale, about: egui::Vec2, room: &Room) -> Zoomed {
         let centre = match scale {
             Scale::Small | Scale::Fit => Zoomed::FIT.centre,
-            Scale::Fill | Scale::Factor(_) => room.place(&self).centre,
+            Scale::Fill | Scale::Factor(_) => {
+                let placed = room.place(&self);
+                let to = room.place(&Zoomed { scale, ..self }).shown as f32;
+                let from = placed.shown as f32;
+                let centre = anchored(placed.centre, about, room.extent, from, to);
+                room.place(&Zoomed { scale, centre }).centre
+            }
         };
-        Some(Zoomed { scale, centre })
+        Zoomed { scale, centre }
     }
 
     /// The zoom after the photo moved by `delta` physical pixels in `room`, its centre kept
@@ -236,6 +265,136 @@ pub fn moved(centre: [f32; 2], delta: egui::Vec2, photo: [u32; 2], shown: f32) -
         along(centre[0], delta.x, photo[0]),
         along(centre[1], delta.y, photo[1]),
     ]
+}
+
+/// How near a smooth zoom or a pinch comes to a snap point to rest on it: 4% of it.
+pub const SNAP: f32 = 0.04;
+
+/// How near two scales are to count as one: a scale on a snap point but for rounding is on
+/// it.
+const SAME: f32 = 1e-4;
+
+/// The snap points where Fit is `fit`: Fit, 100% and 200% (`docs/gui.md`, Zooming).
+fn snap_points(fit: f32) -> [f32; 3] {
+    [fit, 1.0, 2.0]
+}
+
+/// One wheel notch from `scale`, up or down, where Fit is `fit`, as darktable's
+/// (`_calculate_new_scroll_zoom_tscale`): by 1.1 under 200% and by 2 from 200%, stopping on
+/// Fit, 100% or 200% where it would pass one, never below Fit nor above 1600%. Down from
+/// Fit or below it, as from Small, the scale stays.
+pub fn notch(scale: f32, up: bool, fit: f32) -> f32 {
+    let points = snap_points(fit);
+    let near = |p: f32| (scale - p).abs() <= p * SAME;
+    let scale = points.into_iter().find(|&p| near(p)).unwrap_or(scale);
+    if up {
+        let next = if scale < 2.0 {
+            scale * 1.1
+        } else {
+            scale * 2.0
+        };
+        let passed = points.into_iter().filter(|&p| p > scale && p <= next);
+        passed.fold(next, f32::min).clamp(fit, MAX_FACTOR)
+    } else if scale <= fit {
+        scale
+    } else {
+        let next = if scale <= 2.0 {
+            scale / 1.1
+        } else {
+            scale / 2.0
+        };
+        let passed = points.into_iter().filter(|&p| p < scale && p >= next);
+        passed.fold(next, f32::max).clamp(fit, MAX_FACTOR)
+    }
+}
+
+/// The scale a smooth zoom or a pinch shows at its unsnapped scale `raw`, where Fit is
+/// `fit`: the snap point within [`SNAP`] of it, the nearest where two are, else `raw`;
+/// never below Fit nor above 1600%.
+pub fn snapped(raw: f32, fit: f32) -> f32 {
+    let distance = |p: f32| (raw - p).abs();
+    let near = (snap_points(fit).into_iter())
+        .filter(|&p| distance(p) <= p * SNAP)
+        .min_by(|&a, &b| distance(a).total_cmp(&distance(b)));
+    near.unwrap_or(raw).clamp(fit, MAX_FACTOR)
+}
+
+/// The centre that keeps the screen point `d`, in physical pixels from the photo area's
+/// centre, on the same point of the photo as the zoom goes from `from` to `to`, the photo
+/// `photo` pixels at full resolution and the view centred on `centre`: darktable's anchor
+/// (`dt_dev_zoom_move`). Not clamped: [`Room::place`] keeps it inside the edges.
+pub fn anchored(centre: [f32; 2], d: egui::Vec2, photo: [u32; 2], from: f32, to: f32) -> [f32; 2] {
+    let along = |at: f32, d: f32, side: u32| at + d / side.max(1) as f32 * (1.0 / from - 1.0 / to);
+    [
+        along(centre[0], d.x, photo[0]),
+        along(centre[1], d.y, photo[1]),
+    ]
+}
+
+/// Middle-click's next scale from the scale shown, darktable's cycle: under 100% to 100%,
+/// from 100% to 200%, from 200% on to Fit.
+pub fn middle_click(scale: f32) -> Scale {
+    if scale < 1.0 - SAME {
+        Scale::Factor(1.0)
+    } else if scale < 2.0 - SAME {
+        Scale::Factor(2.0)
+    } else {
+        Scale::Fit
+    }
+}
+
+/// The scale a notch or a gesture that stops at `value` sets, where Fit is `fit`: Fit on
+/// Fit, so it reads Fit and follows the room, else the factor, 1 reading "100%" and Z going
+/// from it back to Fit.
+pub fn scale_at(value: f32, fit: f32) -> Scale {
+    if (value - fit).abs() <= fit * SAME {
+        Scale::Fit
+    } else {
+        Scale::Factor(value)
+    }
+}
+
+/// One smooth zoom's or pinch's unsnapped scale (`docs/gui.md`, Zooming): the gesture
+/// zooms on from it, so it moves past a snap point it rested on, and it is dropped as the
+/// gesture ends, after [`Gesture::IDLE`] with no zoom or at [`Gesture::end`], and where the
+/// scale shown is no longer the one it showed, as after a resize changes Fit.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Gesture {
+    raw: Option<f32>,
+    last: Option<Instant>,
+    /// The scale it showed last.
+    shown: Option<f32>,
+}
+
+impl Gesture {
+    /// How long a gesture goes without a zoom before it ends.
+    pub const IDLE: Duration = Duration::from_millis(100);
+
+    /// The scale shown after `factor` more of the gesture at `now`, where Fit is `fit`, a
+    /// gesture starting from the scale `shown`: [`snapped`], within Fit and 1600%. One that
+    /// starts below Fit, at Small, and zooms out leaves the scale where it is.
+    pub fn zoom(&mut self, shown: f32, factor: f32, fit: f32, now: Instant) -> f32 {
+        let idle = (self.last).is_none_or(|last| now.duration_since(last) > Self::IDLE);
+        let moved = (self.shown).is_some_and(|showed| (showed - shown).abs() > showed * SAME);
+        if idle || moved {
+            self.raw = None;
+        }
+        self.last = Some(now);
+        if self.raw.is_none() && shown < fit && factor < 1.0 {
+            self.shown = Some(shown);
+            return shown;
+        }
+        let raw = (self.raw.unwrap_or(shown) * factor).clamp(fit, MAX_FACTOR);
+        self.raw = Some(raw);
+        let showing = snapped(raw, fit);
+        self.shown = Some(showing);
+        showing
+    }
+
+    /// Ends the gesture: its unsnapped scale goes, and the scale shown stays.
+    pub fn end(&mut self) {
+        *self = Gesture::default();
+    }
 }
 
 /// The move the viewer bar's zoom menu asks for with `action`, None for its other
@@ -510,5 +669,181 @@ mod tests {
         assert_eq!(view.centre, [0.25, 0.75]);
         assert_eq!(at(Scale::Small).view().scale, ViewScale::Small);
         assert_eq!(Zoomed::FIT.view(), View::default());
+    }
+
+    fn close(a: f32, b: f32) -> bool {
+        (a - b).abs() < 1e-5
+    }
+
+    #[test]
+    fn a_notch_steps_1_1_under_200_and_2_from_200() {
+        let fit = 0.2;
+        for (from, up, to) in [
+            (0.5, true, 0.55),
+            (1.2, true, 1.32),
+            (0.5, false, 0.5 / 1.1),
+            (2.0, false, 2.0 / 1.1),
+            (2.0, true, 4.0),
+            (4.0, true, 8.0),
+            (8.0, false, 4.0),
+            (4.0, false, 2.0),
+        ] {
+            let stepped = notch(from, up, fit);
+            assert!(close(stepped, to), "{from} {up}: {stepped}");
+        }
+        // At most 1600%, and down from Fit, or from Small below it, nowhere.
+        assert_eq!(notch(16.0, true, fit), 16.0);
+        assert_eq!(notch(12.0, true, fit), 16.0);
+        assert_eq!(notch(fit, false, fit), fit);
+        assert_eq!(notch(fit / 2.0, false, fit), fit / 2.0);
+        // Up from Small, Fit: gestures never stop below it.
+        assert_eq!(notch(fit / 2.0, true, fit), fit);
+    }
+
+    #[test]
+    fn a_notch_never_passes_fit_100_or_200() {
+        let fit = 0.4;
+        assert_eq!(notch(0.95, true, fit), 1.0);
+        assert_eq!(notch(1.9, true, fit), 2.0);
+        assert_eq!(notch(3.0, false, fit), 2.0);
+        assert_eq!(notch(1.05, false, fit), 1.0);
+        assert_eq!(notch(fit * 1.05, false, fit), fit);
+        // From a snap point but for rounding, on past it.
+        assert!(close(notch(1.0 - 1e-6, true, fit), 1.1));
+    }
+
+    #[test]
+    fn a_smooth_zoom_rests_on_a_snap_point_within_4_percent() {
+        let fit = 0.4;
+        assert_eq!(snapped(1.03, fit), 1.0);
+        assert_eq!(snapped(0.97, fit), 1.0);
+        assert_eq!(snapped(1.05, fit), 1.05);
+        assert_eq!(snapped(2.07, fit), 2.0);
+        assert_eq!(snapped(0.41, fit), fit);
+        // A gesture moves on past a snap point it rests on: its own scale is unsnapped.
+        let now = Instant::now();
+        let mut gesture = Gesture::default();
+        assert_eq!(gesture.zoom(0.98, 1.0, fit, now), 1.0);
+        assert_eq!(gesture.zoom(1.0, 1.04, fit, now), 1.0);
+        let on = gesture.zoom(1.0, 1.04, fit, now);
+        assert!(close(on, 0.98 * 1.04 * 1.04), "{on}");
+        // It ends after a tenth of a second with no zoom, and the next starts where the
+        // scale shown is.
+        let later = now + Gesture::IDLE + Duration::from_millis(1);
+        assert!(close(gesture.zoom(1.5, 1.1, fit, later), 1.65));
+        gesture.end();
+        assert!(close(gesture.zoom(1.0, 1.1, fit, later), 1.1));
+        // A resize that raises Fit above the gesture's scale starts it again from the scale
+        // shown: 60% shown at Fit's 80% zooms on from 80%.
+        let mut gesture = Gesture::default();
+        assert!(close(gesture.zoom(0.6, 1.0, 0.4, now), 0.6));
+        assert!(close(gesture.zoom(0.8, 1.05, 0.8, now), 0.84));
+    }
+
+    #[test]
+    fn gestures_stop_at_fit_and_16() {
+        let (fit, now) = (0.4, Instant::now());
+        assert_eq!(snapped(0.1, fit), fit);
+        assert_eq!(snapped(20.0, fit), 16.0);
+        let mut gesture = Gesture::default();
+        assert_eq!(gesture.zoom(1.0, 0.1, fit, now), fit);
+        // Its own scale stops there too, so zooming back in starts from Fit.
+        assert!(close(gesture.zoom(fit, 1.2, fit, now), fit * 1.2));
+        assert_eq!(gesture.zoom(fit, 100.0, fit, now), 16.0);
+        assert!(close(gesture.zoom(16.0, 0.5, fit, now), 8.0));
+        // From Small, out leaves it; in goes to Fit at least.
+        let mut gesture = Gesture::default();
+        assert_eq!(gesture.zoom(fit / 2.0, 0.9, fit, now), fit / 2.0);
+        assert_eq!(gesture.zoom(fit / 2.0, 1.1, fit, now), fit);
+    }
+
+    #[test]
+    fn the_point_under_the_pointer_stays_still() {
+        // A small linear congruential generator: the same values every run.
+        let mut seed = 0x2545_f491_u32;
+        let mut random = move || {
+            seed = seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            (seed >> 8) as f32 / (1u32 << 24) as f32
+        };
+        let (fit, _) = ROOM.modes();
+        let mut kept = 0;
+        for _ in 0..1000 {
+            let from = fit + random() * (8.0 - fit);
+            let to = fit + random() * (16.0 - fit);
+            let centre = [random(), random()];
+            let zoom = Zoomed {
+                scale: Scale::Factor(from),
+                centre,
+            };
+            let before = ROOM.place(&zoom);
+            // A point of the photo area: the room, or the photo where it is smaller.
+            let area = [0, 1].map(|axis| {
+                let side = [ROOM.bounds.0, ROOM.bounds.1][axis] as f32;
+                side.min(ROOM.extent[axis] as f32 * from)
+            });
+            let d = egui::vec2((random() - 0.5) * area[0], (random() - 0.5) * area[1]);
+            let photo = ROOM.extent.map(|side| side as f32);
+            let point = [0, 1].map(|axis| before.centre[axis] + d[axis] / (photo[axis] * from));
+            let zoomed = zoom.about(Scale::Factor(to), d, &ROOM);
+            let unclamped = anchored(before.centre, d, ROOM.extent, from, to);
+            let after = ROOM.place(&zoomed);
+            assert_eq!(after.centre, zoomed.centre);
+            for axis in [0, 1] {
+                if (after.centre[axis] - unclamped[axis]).abs() > 1e-6 {
+                    continue;
+                }
+                let on_screen = (point[axis] - after.centre[axis]) * photo[axis] * to;
+                let moved = (on_screen - d[axis]).abs();
+                assert!(
+                    moved < 1.0,
+                    "{from} → {to} at {d:?}: {moved} on axis {axis}"
+                );
+                kept += 1;
+            }
+        }
+        // Most anchors are not clamped.
+        assert!(kept > 1000, "{kept}");
+    }
+
+    #[test]
+    fn middle_click_cycles_100_200_fit() {
+        assert_eq!(middle_click(0.5), Scale::Factor(1.0));
+        assert_eq!(middle_click(1.0), Scale::Factor(2.0));
+        assert_eq!(middle_click(1.5), Scale::Factor(2.0));
+        assert_eq!(middle_click(2.0), Scale::Fit);
+        assert_eq!(middle_click(3.0), Scale::Fit);
+    }
+
+    #[test]
+    fn a_zoom_that_stops_on_fit_is_fit_and_on_1_is_100() {
+        assert_eq!(scale_at(0.4, 0.4), Scale::Fit);
+        assert_eq!(scale_at(1.0, 0.4), Scale::Factor(1.0));
+        assert_eq!(
+            Zoomed::FIT
+                .about(Scale::Factor(1.0), egui::Vec2::ZERO, &ROOM)
+                .label(),
+            Zoom::Percent(100.0)
+        );
+    }
+
+    #[test]
+    fn z_at_a_point_keeps_it_still() {
+        // At Fit, 40% of the room's 2400 × 1600, the pointer 600 pixels right of the
+        // middle: the photo's point there, 0.5 + 600 / (6000 × 0.4) across, stays under it
+        // at 100%.
+        let room = Room {
+            extent: [6000, 4000],
+            bounds: (2400, 1600),
+        };
+        let d = egui::vec2(600.0, 0.0);
+        let hundred = Zoomed::FIT
+            .step_about(ZoomStep::Hundred, d, &room)
+            .expect("100%");
+        let point = 0.5 + 600.0 / (6000.0 * 0.4);
+        assert!(
+            close(hundred.centre[0] + 600.0 / 6000.0, point),
+            "{hundred:?}"
+        );
+        assert_eq!(hundred.centre[1], 0.5);
     }
 }
