@@ -24,8 +24,9 @@
 //! Where the key changed, a first round over the whole image computes the result, as an
 //! export's (`docs/engine.md`, Tiling): an operation that opts in
 //! (`Operation::tiles_whole_image_passes`) in tiles from the detail's source, demosaic's
-//! image, the others (local contrast, filmic rgb's reconstruction) whole with every
-//! operation before them. Haze removal's estimate, computed at full resolution by the
+//! image, or in a tiled viewport the raw stage's output, each tile then demosaicing its
+//! part as an export's first round does, the others (local contrast, filmic rgb's
+//! reconstruction) whole with every operation before them. Haze removal's estimate, computed at full resolution by the
 //! fitted pipeline, is borrowed from it by its key and read in place, never estimated
 //! twice; where that pipeline holds none, with geometry after it, the detail estimates in
 //! a round of its own. Every result of a fitted pipeline at scale 1, a photo no larger
@@ -33,7 +34,7 @@
 //!
 //! Built at scale 1, the 100% view; scales between Fit and 100% are planned.
 
-use apertrust_plugin::{ImageContext, ImageDesc, PassKind, Stage};
+use apertrust_plugin::{ImageContext, ImageDesc, PassKind};
 
 use crate::compute::{ComputeError, GpuImage, Timings};
 use crate::export::{self, ExportError, Round};
@@ -117,7 +118,8 @@ impl Results {
     }
 
     /// The detail's plan and its rounds, from `region`, a plan of `instances` for
-    /// `Pipe::Detail` over demosaic's image, whose content has the key `key`: its keys
+    /// `Pipe::Detail` over its source, demosaic's image or the raw stage's output
+    /// ([`Pipeline::detail_source`]), whose content has the key `key`: its keys
     /// chained from that ([`Plan::keyed_on`]), and each operation's whole-image passes left
     /// out, its later passes binding the result held, of which only the scratch they bind
     /// takes memory. A result is borrowed from `fitted` where it holds it at full
@@ -149,8 +151,7 @@ impl Results {
             output_profile: plan.image.output_profile,
             ..image.clone()
         };
-        let after: Vec<Instance> = (instances.iter())
-            .filter(|instance| instance.operation.manifest().slot.stage != Stage::Raw)
+        let after: Vec<Instance> = (pipeline::from_source(instances, &plan.input).into_iter())
             .cloned()
             .collect();
         // The untiled plan at the detail's scale, through the last operation with
@@ -256,7 +257,7 @@ impl Results {
         Ok(built)
     }
 
-    /// Runs `rounds` from `source`, demosaic's image the detail reads, each into the
+    /// Runs `rounds` from `source`, the image the detail reads, each into the
     /// buffers held for its result, and their passes' timings. Each tile is a submission
     /// of its own, waited for, as an export's first rounds are (decision 15), after the
     /// caller's submissions, which may write that image; the round's working buffers are

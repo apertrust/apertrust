@@ -196,16 +196,21 @@ pub enum Pipe {
     },
     /// The zoomed view's detail (decision 99; `docs/engine.md`, The zoomed view): `region`,
     /// x, y, width and height of the output image at `scale`, after every geometry, from
-    /// an input that is demosaic's image at full resolution, which another pipeline holds
-    /// and the plan reads in place ([`Plan::keyed_on`]). Up to its start it is planned as
-    /// a tile of an export, its region walked back through every geometry and cut out by
-    /// the engine's `region` copy, a cache point; after it, as the viewport, with an edit
-    /// cache and whole-image keys. Its operations see [`PipeKind::Viewport`]. The raw
-    /// stage's instances are left out, as its input is past them. Only at `scale` 1 so
-    /// far, and refused ([`PlanError::Detail`]) with an operation after demosaic that
-    /// reaches past its pixel. An operation with whole-image passes keeps them all in the
-    /// plan, which renders the region alone: [`crate::detail::Results`] leaves them out and
-    /// binds their result, computed over the whole image in a round of its own.
+    /// an input another pipeline holds and the plan reads in place ([`Plan::keyed_on`]):
+    /// demosaic's image at full resolution, or in a tiled viewport the raw stage's output,
+    /// the mosaic its tiles copy from ([`Pipeline::detail_source`]). Up to its start it is
+    /// planned as a tile of an export, its region walked back through every geometry and
+    /// cut out by the engine's `region` copy, a cache point; from a mosaic the copy grown
+    /// by demosaic's reach and aligned to the colour pattern, then demosaiced, its image a
+    /// cache point too. After its start, as the viewport, with an edit cache and
+    /// whole-image keys. Its operations see [`PipeKind::Viewport`]. From demosaic's image
+    /// the raw stage's instances are left out, as its input is past them; from a mosaic
+    /// the instances are taken as given, those after it ([`detail_instances`]), as an
+    /// export's tiles take theirs. Only at `scale` 1 so far, and refused
+    /// ([`PlanError::Detail`]) with an operation after demosaic that reaches past its
+    /// pixel. An operation with whole-image passes keeps them all in the plan, which
+    /// renders the region alone: [`crate::detail::Results`] leaves them out and binds
+    /// their result, computed over the whole image in a round of its own.
     Detail { region: [u32; 4], scale: f32 },
 }
 
@@ -442,6 +447,15 @@ impl Plan {
             && self
                 .oversized_binding(limits.binding, self.input.buffer_size())
                 .is_none()
+    }
+
+    /// Where the plan binds more at once than `limits` allow, the most they allow over
+    /// the first binding past it: how much smaller that binding must be, as a detail's
+    /// region shrinks by (decision 99). `None` where every binding fits.
+    pub(crate) fn binding_ratio(&self, limits: &Limits) -> Option<f64> {
+        let limit = limits.binding.min(limits.buffer);
+        let (_, _, bytes) = self.oversized_binding(limit, self.input.buffer_size())?;
+        Some(limit as f64 / bytes as f64)
     }
 
     /// The GPU memory the viewport's tiles take of their own: the buffers every tile
@@ -951,10 +965,11 @@ pub fn plan(
     }
 }
 
-/// The instances a detail at `scale` from `input`, demosaic's image, runs (decision 99):
-/// those after the raw stage, which made its input, refused where it cannot render them
-/// yet: at a scale other than 1, from an input that is not demosaic's RGBA image, or with
-/// an operation that reaches past its pixel, whose region would have to grow by its reach
+/// The instances a detail at `scale` from `input` runs (decision 99): from demosaic's
+/// image, those after the raw stage, which made it; from the raw stage's output, a float
+/// mosaic, those given ([`from_source`]). Refused where it cannot render them yet: at a
+/// scale other than 1, from an input that is neither, or with an operation after
+/// demosaic that reaches past its pixel, whose region would have to grow by its reach
 /// and be cut back after it.
 fn after_demosaic<'a, 'b>(
     ordered: Vec<&'b Instance<'a>>,
@@ -965,15 +980,16 @@ fn after_demosaic<'a, 'b>(
     if scale != 1.0 {
         return refuse("the detail", "a scale other than 1 is not planned yet");
     }
-    if input.format != Format::Rgba || input.extent.contains(&0) {
-        return refuse("the detail", "its input is not demosaic's image");
+    let demosaiced = input.format == Format::Rgba && !input.extent.contains(&0);
+    if !demosaiced && input.format != Format::Mosaic {
+        return refuse(
+            "the detail",
+            "its input is neither demosaic's image nor the raw stage's output",
+        );
     }
-    let after: Vec<&Instance> = ordered
-        .into_iter()
+    let after = from_source(ordered, input);
+    if let Some(reaching) = (after.iter())
         .filter(|instance| instance.operation.manifest().slot.stage != Stage::Raw)
-        .collect();
-    if let Some(reaching) = after
-        .iter()
         .find(|instance| instance.operation.manifest().radius > 0)
     {
         return refuse(
@@ -982,6 +998,37 @@ fn after_demosaic<'a, 'b>(
         );
     }
     Ok(after)
+}
+
+/// Of `instances`, those a detail from `input` runs (decision 99): from demosaic's image,
+/// those after the raw stage; from the raw stage's output, a mosaic, every one, the
+/// caller having left out those that made it ([`detail_instances`]), as an export's
+/// tiles are planned from the instances in them.
+pub(crate) fn from_source<'b, 'a: 'b>(
+    instances: impl IntoIterator<Item = &'b Instance<'a>>,
+    input: &ImageDesc,
+) -> Vec<&'b Instance<'a>> {
+    let mosaic = input.format.is_mosaic();
+    (instances.into_iter())
+        .filter(|instance| mosaic || instance.operation.manifest().slot.stage != Stage::Raw)
+        .collect()
+}
+
+/// Of `instances`, those a detail over the source `fitted` keeps runs (decision 99),
+/// `fitted` a viewport's plan: those after the operations that made its first cache
+/// point, the source ([`Pipeline::detail_source`]). Untiled, every one after the raw
+/// stage, demosaic's image being the source; tiled, demosaic and any raw-stage instance
+/// the tiles run, then every later one, as an export divides the instances before its
+/// tiles from those in them.
+pub fn detail_instances<'a>(instances: &[Instance<'a>], fitted: &Plan) -> Vec<Instance<'a>> {
+    let made = fitted
+        .cached
+        .first()
+        .map_or(&[][..], |&op| &fitted.operations[..=op]);
+    (instances.iter())
+        .filter(|instance| (made.iter()).all(|op| op.id != instance.operation.manifest().id))
+        .cloned()
+        .collect()
 }
 
 /// Logs, under `-d memory`, a viewport whose buffers come to more than the budget with
@@ -1689,16 +1736,20 @@ fn build(
         builder.scaled_origin = Some([x, y]);
         builder.plan.resample = Some(0..0);
     }
-    // A detail's region lies inside its input, which its copy cuts it from whole: with no
-    // reach to grow it by, the copy is the region itself, which one past the image's edge
-    // would leave clipped or one before the input's corner shifted (decision 99).
+    // A detail's region lies inside its input, which its copy cuts it from whole: from
+    // demosaic's image, with no reach to grow it by, the copy is the region itself, which
+    // one past the image's edge would leave clipped or one before the input's corner
+    // shifted; from a mosaic, the developed image the raw stage makes of it (decision 99).
     if let (Pipe::Detail { .. }, Some([x, y, width, height])) = (pipe, region) {
-        let [left, top] = input.origin;
+        let ([left, top], size) = match input.format {
+            Format::Rgba => (input.origin, [input.width, input.height]),
+            Format::Mosaic | Format::Mosaic16 => ([0, 0], [image.width, image.height]),
+        };
         let inside = |start: u32, length: u32, from: u32, size: u32| {
             let end = start.checked_add(length);
             length > 0 && start >= from && end.is_some_and(|end| end - from <= size)
         };
-        if !(inside(x, width, left, input.width) && inside(y, height, top, input.height)) {
+        if !(inside(x, width, left, size[0]) && inside(y, height, top, size[1])) {
             return Err(PlanError::Detail {
                 operation: "the detail",
                 what: "its region is empty or not inside its input",
@@ -1714,10 +1765,13 @@ fn build(
         builder.tile_input(region, border)?;
     }
     // A detail's copy of its region is its first cache point, and the edit cache starts
-    // after it, as the viewport's start after its downscale (decision 99).
+    // after it, as the viewport's start after its downscale (decision 99); from a mosaic,
+    // after demosaic, below.
     if let Pipe::Detail { .. } = pipe {
         builder.cache_current();
-        builder.plan.edit_cache = Some(builder.current_desc);
+        if input.format == Format::Rgba {
+            builder.plan.edit_cache = Some(builder.current_desc);
+        }
     }
     // The raw-stage instances the viewport's tiles run, from the tiling's split on.
     let mut tiled = Vec::new();
@@ -1726,6 +1780,7 @@ fn build(
         let stage = instance.operation.manifest().slot.stage;
         if stage != Stage::Raw {
             builder.viewport(&tiled)?;
+            builder.detail_demosaiced();
             if !started {
                 started = true;
                 builder.start()?;
@@ -1740,6 +1795,7 @@ fn build(
     }
     if builder.current_desc.format == Format::Rgba || !tiled.is_empty() {
         builder.viewport(&tiled)?;
+        builder.detail_demosaiced();
     }
     builder.resample(ordered.len())?;
     Ok((builder.plan, builder.lines))
@@ -2853,6 +2909,21 @@ impl Builder {
             Vec::new(),
             false,
         )
+    }
+
+    /// A detail's start from a mosaic, once demosaic has made its region (decision 99):
+    /// that image a cache point, as the copy of demosaic's image is, so a change after
+    /// demosaic restarts there, and the edit cache after it. Nothing in any other plan,
+    /// nor twice.
+    fn detail_demosaiced(&mut self) {
+        if matches!(self.plan.pipe, Pipe::Detail { .. })
+            && self.plan.input.format.is_mosaic()
+            && self.current_desc.format == Format::Rgba
+            && self.plan.edit_cache.is_none()
+        {
+            self.cache_current();
+            self.plan.edit_cache = Some(self.current_desc);
+        }
     }
 
     /// Makes the current image, unless it is the pipe's input, a cache point.
@@ -4528,13 +4599,29 @@ impl Pipeline {
     /// first cache point is the raw stage's mosaic. Its description is the cache point's
     /// image's.
     pub fn demosaiced(&self) -> Option<(GpuImage, u64)> {
+        let source = self.detail_source()?;
+        (source.0.desc().format == Format::Rgba).then_some(source)
+    }
+
+    /// What a detail reads in place (decision 99), the first cache point of a viewport's
+    /// plan, with the key it holds once the plan is rendered: demosaic's image where the
+    /// viewport is untiled ([`Self::demosaiced`]); where it is tiled, the raw stage's
+    /// output its tiles copy from, the float mosaic after the raw stage's last
+    /// whole-image pass, which the detail copies, grown and aligned, and demosaics as an
+    /// export's tile does. `None` in any other plan. Its description is the cache point's
+    /// image's.
+    pub fn detail_source(&self) -> Option<(GpuImage, u64)> {
         // A viewport's alone: a detail's first cache point is its region's copy.
-        if !matches!(self.plan.pipe, Pipe::Viewport { .. }) || self.plan.tiled.is_some() {
+        if !matches!(self.plan.pipe, Pipe::Viewport { .. }) {
             return None;
         }
         let &op = self.plan.cached.first()?;
         let planned = &self.plan.operations[op];
-        if planned.output_desc.format != Format::Rgba {
+        let source = match self.plan.tiled {
+            Some(_) => Format::Mosaic,
+            None => Format::Rgba,
+        };
+        if planned.output_desc.format != source {
             return None;
         }
         let mut image = self.image(planned.output).clone();
