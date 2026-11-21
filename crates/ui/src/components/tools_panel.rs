@@ -960,14 +960,27 @@ impl<'a> PanelEdge<'a> {
         // The width less how far along the drag the press was, kept from the drag's start,
         // since the press origin goes with the release. A panel at the end widens towards
         // the start.
+        // The anchor is kept with the side it was taken on: a key moving the panel to the
+        // other side mid-drag takes the anchor again from the width as it is, so the width
+        // carries on from there rather than jumping.
         let sign = if self.at_start { 1.0 } else { -1.0 };
-        let anchor = if response.drag_started() {
-            let origin = ctx.input(|i| i.pointer.press_origin())?.x;
-            let anchor = self.width - sign * origin;
-            ctx.data_mut(|d| d.insert_temp(self.id, anchor));
-            anchor
-        } else {
-            ctx.data(|d| d.get_temp::<f32>(self.id))?
+        let kept = ctx.data(|d| d.get_temp::<(f32, bool)>(self.id));
+        let anchor = match kept {
+            Some((anchor, at_start)) if !response.drag_started() && at_start == self.at_start => {
+                anchor
+            }
+            Some(_) if !response.drag_started() => {
+                let anchor = self.width - sign * pointer;
+                ctx.data_mut(|d| d.insert_temp(self.id, (anchor, self.at_start)));
+                anchor
+            }
+            None if !response.drag_started() => return None,
+            _ => {
+                let origin = ctx.input(|i| i.pointer.press_origin())?.x;
+                let anchor = self.width - sign * origin;
+                ctx.data_mut(|d| d.insert_temp(self.id, (anchor, self.at_start)));
+                anchor
+            }
         };
         Some(self.within((anchor + sign * pointer).round()))
     }

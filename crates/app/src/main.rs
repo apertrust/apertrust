@@ -16818,6 +16818,31 @@ mod tests {
     }
 
     #[test]
+    fn a_side_change_mid_drag_keeps_the_tools_panel_s_width() {
+        let mut harness = panels(1600.0, &Settings::default());
+        harness.run();
+        let from = panel_edge(&harness).rect().center();
+        harness.hover_at(from);
+        harness.run();
+        harness.drag_at(from);
+        harness.run();
+        harness.hover_at(from + egui::vec2(-80.0, 0.0));
+        harness.run();
+        assert_eq!(harness.state().shell.panel_width, Some(400.0));
+        // A key moves the panel to the left while the edge is held: the width stays, and
+        // the drag goes on from it where the pointer is, now widening rightwards.
+        harness.state_mut().shell.panel_position = ToolsPanelPosition::Left;
+        harness.run();
+        assert_eq!(harness.state().shell.panel_width, Some(400.0));
+        let to = from + egui::vec2(-50.0, 0.0);
+        harness.hover_at(to);
+        harness.run();
+        harness.drop_at(to);
+        harness.run();
+        assert_eq!(harness.state().shell.panel_width, Some(430.0));
+    }
+
+    #[test]
     fn the_tools_panel_never_takes_more_than_half_the_window() {
         // A window 960 points wide, at the width the user kept in a wider one.
         let settings = Settings {

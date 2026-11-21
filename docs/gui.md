@@ -1521,7 +1521,7 @@ Import… opens a sheet, full-window inside the main window (decision 86, planne
 | **The tools column** | 440 points by default, resizable at its edge (`PanelEdge`) from 296 to 600, and to no more than half the sheet where that leaves more than 296: 296 is the floor, below a 592-point sheet too; kept (`import.column_width`, owner `app`) | The sheet's tools, scrolling with the quiet scroll bar in its end margin |
 | **The footer** | 52 points across the sheet, a hairline above | The summary on two lines at its start; Keep open, Close and the primary button at its end |
 
-- **The column sits on the Tools panel's side,** the right or the left as the Tools panel is ([Its position](#its-position)), the grid on the Browser's: opening a sheet, thumbnails appear where thumbnails were and tools where tools were, and reading down the column ends above the primary button. With the Browser at the right or the bottom, the column still follows the Tools panel.
+- **The column sits on the Tools panel's side,** the right or the left as the Tools panel is ([Its position](#its-position)), the grid taking the rest of the window beside it: opening a sheet, tools appear where tools were, and reading down the column ends above the primary button. With the Browser at the right or the bottom, the column still follows the Tools panel.
 - **Why 440:** the export rows were measured at 415 points (the path row, the notes, Polish's print size row at 407), and Import's path rows and sample-path notes are the same rows; at 320 the default paths are cut and every note wraps in Ukrainian and Polish. A 1280-point window still leaves the grid about 840 points, seven Medium cells across.
 - **The interface scale** multiplies all of it.
 
@@ -3411,7 +3411,7 @@ With a cell focused the arrows move as the cells lie:
   | Right (default) | Browser, Viewer, Tools panel | Viewer, Browser, Tools panel | Viewer over the Browser, Tools panel beside both |
   | Left | Tools panel, Browser, Viewer | Tools panel, Viewer, Browser | Tools panel beside both, Viewer over the Browser |
 
-- **The Tools panel at either side** runs the window's height under the Toolbar, its edge on the side towards the Viewer, its width the same either side (`PanelEdge::at_start`, the egui panel from `Shell::panel_frame`). Nothing inside it is mirrored: the tab bar, the headers, the rows and the scroll bar stay as they are. The F6 order of the regions stays Toolbar, viewer bar, Viewer, Tools panel, Browser whichever side it is on, so a user's keys never change with the layout.
+- **The Tools panel at either side** runs the window's height under the Toolbar, its edge on the side towards the Viewer, its width the same either side (`PanelEdge::at_start`, the egui panel from `Shell::panel_frame`). Nothing inside it is mirrored: the tab bar, the headers, the rows and the scroll bar stay as they are. The F6 order of the regions stays Toolbar, viewer bar, Tools panel, Browser whichever side it is on, so a user's keys never change with the layout.
 - **Where `--conf` sets it** for the run, its items are drawn disabled, their tip "Set by --conf for this run", as a Settings row is, since the store refuses the change.
 
 - **A change** lays the panel out again on that frame, the active photo kept in view, the number of rows and columns each kept for its own place. A move of the Tools panel lays the window out again on that frame too; the Viewer keeps its size, so the photo is not rendered again.
