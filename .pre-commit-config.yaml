@@ -9,11 +9,12 @@
 # the commit, push and manual stages, off the commit message. The long ones, which take
 # minutes, run in the manual stage alone.
 #
-# Each check runs only when a file it reads is among those given, and a check that works
-# file by file is given those files alone. The long checks build the workspace whatever
-# the files, and skip what CI skips: documentation alone, as .github/docs-only-paths.txt
-# matches it, through tools/check-docs-paths.sh --unless-docs-only. Given many files,
-# pre-commit may run one in several parts, each after the first finding the build done.
+# pre-commit alone chooses the files: each hook's `files`, `types` and `exclude` below.
+# A check that works file by file is given those files and checks them, nothing more; a
+# check of the whole repository takes no files and runs when a file it reads is among
+# those given. The long checks build the workspace, so they take no files. They skip
+# what CI skips: documentation alone, as .github/docs-only-paths.txt matches it.
+# `docs-only` below mirrors that list; change both together.
 #
 # Each repository below is pinned to a release tag; `pre-commit autoupdate` moves them.
 
@@ -111,16 +112,20 @@ repos:
         entry: tools/check-license-headers.sh
         language: system
         files: \.(rs|wgsl|slang|sh)$
+      # The design system's and the app's sources, less the gallery and the viewport
+      # spike's section, tools for developers (docs/gui.md, build order step 6).
       - id: ui-strings
         name: Interface strings
         entry: tools/check-ui-strings.sh
         language: system
         files: ^crates/(ui|app)/src/.*\.rs$
+        exclude: ^crates/(ui/src/gallery|app/src/spike)\.rs$
+      # A change to .github/windows-paths.txt alone is checked with --all-files, as in CI.
       - id: windows-paths
         name: Windows paths
         entry: tools/check-windows-paths.sh
         language: system
-        files: (\.(rs|toml)|^\.github/windows-paths\.txt)$
+        files: \.(rs|toml)$
       # The documentation that skips CI's code checks, none of it read by code: the list,
       # the files it matches, and the code and tools that could name them.
       - id: docs-paths
@@ -136,27 +141,28 @@ repos:
         language: system
         files: ((^|/)Cargo\.(toml|lock)|^CREDITS\.md|^tools/credits\.sh)$
         pass_filenames: false
-      # The kernels of the crates whose Slang or WGSL changed; every kernel once a shared
-      # library or the scripts change. Its first run downloads the pinned slangc
-      # (tools/fetch-slang.sh). One run for all the files, so the kernels compile once.
+      # Every kernel, about 25 seconds, once a Slang or generated file or the scripts
+      # change. Its first run downloads the pinned slangc (tools/fetch-slang.sh).
       - id: kernels
         name: Generated WGSL
         entry: tools/build-kernels.sh --check
         language: system
         files: (\.slang|/generated/[^/]+\.wgsl|^tools/(build-kernels|fetch-slang)\.sh)$
-        require_serial: true
+        pass_filenames: false
 
-      # The long checks, in the manual stage, skipping documentation alone.
+      # The long checks, in the manual stage.
       # Linux, Windows and macOS, the platforms CI checks; tools/clippy.sh says how.
       - id: clippy
         name: cargo clippy
-        entry: tools/check-docs-paths.sh --unless-docs-only tools/clippy.sh --all --
+        entry: tools/clippy.sh --all
         language: system
-        require_serial: true
+        exclude: &docs-only ^(docs/.*|(?!CREDITS\.md$)[^/]+\.md|\.github/ISSUE_TEMPLATE/.*|\.github/pull_request_template\.md)$
+        pass_filenames: false
         stages: [manual]
       - id: api-docs
         name: API docs
-        entry: tools/check-docs-paths.sh --unless-docs-only tools/build-api-docs.sh --
+        entry: tools/build-api-docs.sh
         language: system
-        require_serial: true
+        exclude: *docs-only
+        pass_filenames: false
         stages: [manual]
