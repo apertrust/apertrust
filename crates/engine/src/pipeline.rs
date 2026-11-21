@@ -202,8 +202,10 @@ pub enum Pipe {
     /// the engine's `region` copy, a cache point; after it, as the viewport, with an edit
     /// cache and whole-image keys. Its operations see [`PipeKind::Viewport`]. The raw
     /// stage's instances are left out, as its input is past them. Only at `scale` 1 so
-    /// far, and refused ([`PlanError::Detail`]) with an operation after demosaic that has
-    /// whole-image passes or reaches past its pixel.
+    /// far, and refused ([`PlanError::Detail`]) with an operation after demosaic that
+    /// reaches past its pixel. An operation with whole-image passes keeps them all in the
+    /// plan, which renders the region alone: [`crate::detail::Results`] leaves them out and
+    /// binds their result, computed over the whole image in a round of its own.
     Detail { region: [u32; 4], scale: f32 },
 }
 
@@ -583,6 +585,25 @@ impl Plan {
         }
     }
 
+    /// Makes each scratch buffer of operation `id` that none of its passes binds take no
+    /// memory, and returns the others, as indices into its own: a detail that binds an
+    /// operation's whole-image result, its whole-image passes left out
+    /// ([`Self::retain_passes`]), holds only the scratch its later passes read (decision
+    /// 99).
+    pub(crate) fn drop_unbound_scratch(&mut self, id: &str) -> Vec<usize> {
+        let Some(op) = self.operations.iter().find(|op| op.id == id) else {
+            return Vec::new();
+        };
+        let bound = bound_scratch(&op.passes);
+        for (own, &index) in op.scratch.iter().enumerate() {
+            if !bound.contains(&own) {
+                self.scratch[index] = 0;
+                self.scratch_used[index] = 0;
+            }
+        }
+        bound
+    }
+
     /// Whether the edit cache may keep the input of operation `op` (decision 12): the
     /// plan has one, `op` is not the first, no cache point holds that input already, it
     /// is not inside the viewport's tiles, whose buffers every tile shares, the edit
@@ -755,8 +776,8 @@ pub enum PlanError {
         smaller_fits: bool,
     },
     /// A detail the zoomed view cannot render yet (decision 99): an operation after
-    /// demosaic with whole-image passes, or one that reaches past its pixel, or a scale
-    /// other than 1.
+    /// demosaic that reaches past its pixel, a scale other than 1, or a region outside its
+    /// input.
     #[error("{operation}: {what}")]
     Detail {
         operation: &'static str,
@@ -835,17 +856,6 @@ pub fn plan(
         Pipe::Export | Pipe::Resampled(_) | Pipe::Tile { .. } | Pipe::Detail { .. } => None,
     };
     let Some((split, full, (fitted_width, fitted_height))) = viewport else {
-        if let Pipe::Detail { .. } = pipe
-            && let Some(op) = whole
-                .operations
-                .iter()
-                .find(|op| has_whole_image_passes(op))
-        {
-            return Err(PlanError::Detail {
-                operation: op.id,
-                what: "whole-image passes after demosaic are not rendered past Fit yet",
-            });
-        }
         log(&whole, &lines);
         log_full_resolution(&whole, limits);
         return Ok(whole);
@@ -945,7 +955,7 @@ pub fn plan(
 /// those after the raw stage, which made its input, refused where it cannot render them
 /// yet: at a scale other than 1, from an input that is not demosaic's RGBA image, or with
 /// an operation that reaches past its pixel, whose region would have to grow by its reach
-/// and be cut back after it. Whole-image passes are refused once they are planned.
+/// and be cut back after it.
 fn after_demosaic<'a, 'b>(
     ordered: Vec<&'b Instance<'a>>,
     input: &ImageDesc,
@@ -1178,7 +1188,7 @@ fn has_whole_image_passes(op: &PlannedOperation) -> bool {
 /// passes first, then those that read only scratch, then the rest, so every tile runs
 /// the first, the last tile the second, and the last round the rest. Otherwise it runs
 /// over the whole image, with every operation before it.
-fn takes_a_first_round(op: &PlannedOperation) -> bool {
+pub(crate) fn takes_a_first_round(op: &PlannedOperation) -> bool {
     let order = |pass: &Pass| match pass.kind {
         PassKind::Reduction if reads_the_whole_image(pass) => 0,
         PassKind::Reduction => 1,
@@ -3230,8 +3240,20 @@ fn describe(schema: &Schema, values: &ParamValues) -> Vec<String> {
 
 /// The size of the buffer made for a scratch buffer of `bytes`: at least a word, since
 /// an empty buffer cannot be bound.
-fn scratch_size(bytes: u64) -> u64 {
+pub(crate) fn scratch_size(bytes: u64) -> u64 {
     bytes.max(4)
+}
+
+/// A scratch buffer of `bytes`, as a pipeline makes one, or a detail for the whole-image
+/// results it holds (decision 99).
+pub(crate) fn scratch_buffer(gpu: &GpuContext, bytes: u64) -> wgpu::Buffer {
+    gpu.device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("scratch"),
+        size: scratch_size(bytes),
+        // A render in parts touches it with a clear.
+        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    })
 }
 
 /// Mebibytes, for the memory domain.
@@ -3391,6 +3413,21 @@ impl Kernels {
     pub(crate) fn len(&self) -> usize {
         self.compiled.len()
     }
+
+    /// Takes every entry point of `other` it lacks: a detail's kernels, its region
+    /// pipeline's and its rounds', compiled into caches of their own (decision 99).
+    pub(crate) fn merge(&mut self, other: &Kernels) {
+        for (key, &index) in &other.index {
+            if !self.index.contains_key(key) {
+                self.compiled.push(other.compiled[index].clone());
+                self.index.insert(key.clone(), self.compiled.len() - 1);
+            }
+        }
+        #[cfg(debug_assertions)]
+        for (&name, &wgsl) in &other.sources {
+            self.sources.entry(name).or_insert(wgsl);
+        }
+    }
 }
 
 /// Compiles into `kernels` every entry point `plan`'s passes run that they lack, and
@@ -3490,7 +3527,8 @@ impl Kept {
         for (id, buffers) in held {
             for op in plan.operations.iter().filter(|op| op.id == *id) {
                 assert_eq!(op.scratch.len(), buffers.len(), "{id}'s scratch buffers");
-                for (&index, buffer) in op.scratch.iter().zip(buffers) {
+                let held = op.scratch.iter().zip(buffers);
+                for (&index, buffer) in held.filter_map(|(i, b)| Some((i, b.as_ref()?))) {
                     assert_eq!(
                         buffer.size(),
                         scratch_size(plan.scratch[index]),
@@ -3515,10 +3553,10 @@ impl Kept {
     }
 }
 
-/// Scratch buffers an export holds across its tiles and rounds (decision 15): an
-/// operation's, by its ID, in its own order, which every pipeline that runs it binds in
-/// place of its own.
-pub(crate) type Held = [(&'static str, Vec<wgpu::Buffer>)];
+/// Scratch buffers an export holds across its tiles and rounds (decision 15), or a detail
+/// across its renders (decision 99): an operation's, by its ID, in its own order, which
+/// every pipeline that runs it binds in place of its own; `None` where it makes its own.
+pub(crate) type Held = [(&'static str, Vec<Option<wgpu::Buffer>>)];
 
 /// Which derivative entry point [`Pipeline::derivative`] dispatches.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -3708,8 +3746,20 @@ impl Pipeline {
         input: GpuImage,
         kernels: Kernels,
     ) -> Result<Self, ComputeError> {
+        Self::holding_with(gpu, plan, input, &[], kernels).await
+    }
+
+    /// [`Self::holding`], taking `kernels`, as [`Self::with_kernels`] does.
+    pub(crate) async fn holding_with(
+        gpu: &GpuContext,
+        plan: Plan,
+        input: GpuImage,
+        held: &Held,
+        kernels: Kernels,
+    ) -> Result<Self, ComputeError> {
         let mut kept = Kept::nothing(input, &plan);
         kept.kernels = kernels;
+        kept.hold(&plan, held);
         Self::build(gpu, plan, kept).await
     }
 
@@ -3726,9 +3776,7 @@ impl Pipeline {
         input: GpuImage,
         held: &Held,
     ) -> Result<Self, ComputeError> {
-        let mut kept = Kept::nothing(input, &plan);
-        kept.hold(&plan, held);
-        Self::build(gpu, plan, kept).await
+        Self::holding_with(gpu, plan, input, held, Kernels::default()).await
     }
 
     /// The scratch buffers of the operation `id`, in its own order, for an export to hold
@@ -3886,17 +3934,7 @@ impl Pipeline {
             .scratch
             .iter()
             .zip(kept_scratch)
-            .map(|(&size, kept)| {
-                kept.unwrap_or_else(|| {
-                    gpu.device.create_buffer(&wgpu::BufferDescriptor {
-                        label: Some("scratch"),
-                        size: scratch_size(size),
-                        // A render in parts touches it with a clear.
-                        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-                        mapped_at_creation: false,
-                    })
-                })
-            })
+            .map(|(&size, kept)| kept.unwrap_or_else(|| scratch_buffer(gpu, size)))
             .collect();
         let image = |buffer: Buffer| match buffer {
             Buffer::Input => &input,
@@ -4227,16 +4265,20 @@ impl Pipeline {
         plan: Plan,
         held: &Held,
     ) -> Result<Self, ComputeError> {
-        if !self.accepts(&plan) {
+        // The same shape keeps the same scratch buffers, the held ones among them; held
+        // buffers that changed, as a detail's borrowed from another pipeline that made them
+        // again, are bound by a rebuild.
+        let holds = held.iter().all(|(id, buffers)| {
+            let bound = self.scratch_of(id);
+            bound.len() == buffers.len()
+                && (buffers.iter().zip(&bound))
+                    .all(|(held, bound)| held.as_ref().is_none_or(|held| held == bound))
+        });
+        if !self.accepts(&plan) || !holds {
             let mut kept = self.keep(&plan);
             kept.hold(&plan, held);
             return Self::build(gpu, plan, kept).await;
         }
-        // The same shape keeps the same scratch buffers, the held ones among them.
-        debug_assert!(
-            held.iter()
-                .all(|(id, buffers)| self.scratch_of(id) == *buffers)
-        );
         let Self {
             plan: old,
             input,
@@ -4498,6 +4540,28 @@ impl Pipeline {
         let mut image = self.image(planned.output).clone();
         image.set_desc(planned.output_desc);
         Some((image, planned.key))
+    }
+
+    /// The key of operation `id`'s whole-image result at full resolution in an untiled
+    /// viewport's plan, and the operation's scratch buffers, which hold it once the plan
+    /// is rendered: its full-resolution part's (decision 15), or all its whole-image
+    /// passes' where the viewport runs at scale 1, a photo no larger than the bounds. What
+    /// a detail at 100% binds in place of a round of its own, so the result is never
+    /// computed twice (decision 99). `None` where the plan has no such result, as with
+    /// geometry after haze removal or in a tiled viewport.
+    pub(crate) fn result_at_full_resolution(&self, id: &str) -> Option<(u64, Vec<wgpu::Buffer>)> {
+        if !matches!(self.plan.pipe, Pipe::Viewport { .. }) || self.plan.tiled.is_some() {
+            return None;
+        }
+        let op = self.plan.operations.iter().find(|op| op.id == id)?;
+        let whole = op.whole_image?;
+        let key = match whole.full_resolution {
+            Some(part) => part.key,
+            None if op.scale == 1.0 => whole.key,
+            None => return None,
+        };
+        let buffers = op.scratch.iter().map(|&i| self.scratch[i].clone());
+        Some((key, buffers.collect()))
     }
 
     /// Whether `image`, in the same buffer and of the same description, is its input.

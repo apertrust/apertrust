@@ -367,7 +367,7 @@ async fn render_export(
             (full, self::regions(full, edge))
         })
     };
-    let mut held: Vec<(&'static str, Vec<wgpu::Buffer>)> = Vec::new();
+    let mut held: Vec<(&'static str, Vec<Option<wgpu::Buffer>>)> = Vec::new();
     for &run in &runs {
         let through = &instances_through(&after, run);
         let own_stage;
@@ -389,28 +389,17 @@ async fn render_export(
             }
             _ => (extent, &regions, resample),
         };
-        let last = round_regions.len() - 1;
-        let plans = round_regions
-            .iter()
-            .enumerate()
-            .map(|(k, &region)| {
-                let pipe = Pipe::Tile {
-                    region: grown(region, round_extent),
-                    resample: round_resample,
-                };
-                let mut plan = pipeline::plan(through, image, source.desc(), pipe, &limits)?;
-                for (id, _) in &held {
-                    plan.retain_passes(id, |pass| pass.kind != PassKind::Reduction);
-                }
-                plan.retain_passes(run, |pass| {
-                    reads_the_whole_image(pass) || (k == last && pass.kind == PassKind::Reduction)
-                });
-                Ok(plan)
-            })
-            .collect::<Result<Vec<_>, PlanError>>()?;
+        let earlier: Vec<&str> = held.iter().map(|&(id, _)| id).collect();
+        let round = Round {
+            run,
+            extent: round_extent,
+            regions: round_regions,
+            resample: round_resample,
+        };
+        let plans = round.plans(through, image, source.desc(), &earlier, &limits)?;
         let mut tiles =
             Pipeline::holding(gpu, largest(&plans).clone(), source.clone(), &held).await?;
-        held.push((run, tiles.scratch_of(run)));
+        held.push((run, tiles.scratch_of(run).into_iter().map(Some).collect()));
         for plan in plans {
             tiles = tiles.update_holding(gpu, plan, &held).await?;
             tiles = render(tiles, gpu, &mut turns, &mut renders)?;
@@ -788,8 +777,52 @@ fn past_the_resample(whole: &Plan, run: &str) -> bool {
         .is_some_and(|(resample, index)| index >= resample.end)
 }
 
+/// A first round of tiles for the operation `run` (decision 15): tiles of `extent`, its
+/// stage at the round's scale, cut as `regions`, resampled as `resample` says.
+pub(crate) struct Round<'a> {
+    pub(crate) run: &'static str,
+    pub(crate) extent: [u32; 2],
+    pub(crate) regions: &'a [[u32; 4]],
+    pub(crate) resample: Option<Resample>,
+}
+
+impl Round<'_> {
+    /// Its tiles' plans, of `through`, the instances in the tiles up to and including
+    /// `run`, from `source`: each tile a pixel larger to the right and below, so a grid
+    /// sample on its edge reads its next node there ([`grown`]), binding the results of
+    /// the operations `held` names, whose whole-image passes it leaves out, and keeping of
+    /// `run`'s passes those that read its input, and on the last tile its whole-image
+    /// passes that read only scratch. An export's and a detail's rounds alike (decisions
+    /// 15 and 99).
+    pub(crate) fn plans(
+        &self,
+        through: &[Instance],
+        image: &ImageContext,
+        source: ImageDesc,
+        held: &[&str],
+        limits: &Limits,
+    ) -> Result<Vec<Plan>, PlanError> {
+        let last = self.regions.len() - 1;
+        let tile = |(k, &region): (usize, &[u32; 4])| {
+            let pipe = Pipe::Tile {
+                region: grown(region, self.extent),
+                resample: self.resample,
+            };
+            let mut plan = pipeline::plan(through, image, source, pipe, limits)?;
+            for id in held {
+                plan.retain_passes(id, |pass| pass.kind != PassKind::Reduction);
+            }
+            plan.retain_passes(self.run, |pass| {
+                reads_the_whole_image(pass) || (k == last && pass.kind == PassKind::Reduction)
+            });
+            Ok(plan)
+        };
+        self.regions.iter().enumerate().map(tile).collect()
+    }
+}
+
 /// The plan of the largest tile, whose buffers every other one fits.
-fn largest(plans: &[Plan]) -> &Plan {
+pub(crate) fn largest(plans: &[Plan]) -> &Plan {
     plans
         .iter()
         .max_by_key(|plan| plan.bytes())
@@ -797,7 +830,7 @@ fn largest(plans: &[Plan]) -> &Plan {
 }
 
 /// The instances in the tiles up to and including the operation `id`, for its first round.
-fn instances_through<'a>(instances: &[Instance<'a>], id: &str) -> Vec<Instance<'a>> {
+pub(crate) fn instances_through<'a>(instances: &[Instance<'a>], id: &str) -> Vec<Instance<'a>> {
     let slot = |instance: &Instance| instance.operation.manifest().slot;
     let last = instances
         .iter()
@@ -814,7 +847,7 @@ fn instances_through<'a>(instances: &[Instance<'a>], id: &str) -> Vec<Instance<'
 /// A first round's tile: `region` a pixel larger to the right and below, but at the
 /// edges of the output image, `extent`, so the grid samples it places can read their
 /// nodes (decision 15).
-fn grown(region: [u32; 4], extent: [u32; 2]) -> [u32; 4] {
+pub(crate) fn grown(region: [u32; 4], extent: [u32; 2]) -> [u32; 4] {
     let [x, y, width, height] = region;
     [
         x,
@@ -839,7 +872,7 @@ fn divide<'a>(
 
 /// The output image, `extent` at full resolution, the developed image's but after a
 /// geometry (decision 16), cut into tiles of at most `size`, row by row.
-fn regions(extent: [u32; 2], size: [u32; 2]) -> Vec<[u32; 4]> {
+pub(crate) fn regions(extent: [u32; 2], size: [u32; 2]) -> Vec<[u32; 4]> {
     let [tile_width, tile_height] = size.map(|v| v.max(1));
     let columns = spans(extent[0], tile_width);
     spans(extent[1], tile_height)
@@ -869,7 +902,7 @@ fn spans(length: u32, size: u32) -> Vec<(u32, u32)> {
 
 /// The bytes of whole-image scratch `plan` gives the operations in `runs`, which an
 /// export holds across its rounds and no tile size changes (decision 15).
-fn held_bytes(plan: &Plan, runs: &[&str]) -> u64 {
+pub(crate) fn held_bytes(plan: &Plan, runs: &[&str]) -> u64 {
     plan.operations
         .iter()
         .filter(|op| runs.contains(&op.id))
@@ -882,7 +915,11 @@ fn held_bytes(plan: &Plan, runs: &[&str]) -> u64 {
 /// GPU binds or makes at once: an export holds that scratch whole across its rounds and
 /// binds it whole, so no tile size helps (decision 15), and the export is refused,
 /// naming the pass, rather than searching every tile size for nothing.
-fn held_scratch_binds(whole: &Plan, runs: &[&str], limits: &Limits) -> Result<(), ExportError> {
+pub(crate) fn held_scratch_binds(
+    whole: &Plan,
+    runs: &[&str],
+    limits: &Limits,
+) -> Result<(), ExportError> {
     let limit = limits.binding.min(limits.buffer);
     for op in whole.operations.iter().filter(|op| runs.contains(&op.id)) {
         for pass in &op.passes {
@@ -904,15 +941,22 @@ fn held_scratch_binds(whole: &Plan, runs: &[&str], limits: &Limits) -> Result<()
     Ok(())
 }
 
-/// Logs, under `-d memory`, the whole-image scratch an export holds for `runs`, `held`
-/// bytes, where it and `own`, the largest plan's buffers beside it, `what`, come to more
-/// than the budget (decision 15).
-fn log_held(held: u64, own: u64, runs: &[&str], what: &str, limits: &Limits) {
+/// Logs, under `-d memory`, the whole-image scratch `pipe`, an export or a detail, holds
+/// for `runs`, `held` bytes, where it and `own`, the largest plan's buffers beside it,
+/// `what`, come to more than the budget (decisions 15 and 99).
+pub(crate) fn log_held(
+    pipe: &str,
+    held: u64,
+    own: u64,
+    runs: &[&str],
+    what: &str,
+    limits: &Limits,
+) {
     let mebibytes = |bytes: u64| bytes as f64 / (1 << 20) as f64;
     if held > 0 && held + own > limits.budget {
         tracing::debug!(
             target: "memory",
-            "export: {:.0} MiB of whole-image scratch for {} and {:.0} MiB for {what}, {:.0} MiB, over the {:.0} MiB budget",
+            "{pipe}: {:.0} MiB of whole-image scratch for {} and {:.0} MiB for {what}, {:.0} MiB, over the {:.0} MiB budget",
             mebibytes(held),
             runs.join(", "),
             mebibytes(own),
@@ -946,7 +990,7 @@ fn auto_tile(
     let held = held_bytes(whole, &runs);
     let own = whole.bytes() - held;
     if at_most.is_none() && own <= limits.budget && whole.binds_within(limits) {
-        log_held(held, own, &runs, "the whole image", limits);
+        log_held("export", held, own, &runs, "the whole image", limits);
         return Ok(None);
     }
     held_scratch_binds(whole, &runs, limits)?;
@@ -966,7 +1010,7 @@ fn auto_tile(
             largest = largest.map(|bytes: u64| bytes.max(own));
         }
         if let Some(largest) = largest {
-            log_held(held, largest, &runs, "each tile", limits);
+            log_held("export", held, largest, &runs, "each tile", limits);
             return Ok(Some([edge, edge]));
         }
         edge /= 2;
