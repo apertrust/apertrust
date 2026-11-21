@@ -43,10 +43,10 @@ use crate::{
 pub struct Orientation;
 
 /// The operation it drives, and the tool's id.
-const FLIP: &str = "flip";
+pub const FLIP: &str = "flip";
 
 /// The control, the operation's parameter, darktable's `orientation`.
-const ORIENTATION: &str = "orientation";
+pub const ORIENTATION: &str = "orientation";
 
 /// darktable's `dt_image_orientation_t` values, from -1, as the operation's choices name
 /// them (`apertrust_operations::flip::ORIENTATIONS`): autodetect, no rotation, flip
@@ -182,21 +182,27 @@ impl ProcessingTool for Orientation {
             Some(ControlValue::Choice(choice)) => *choice,
             _ => 0,
         };
-        let orientation = match shown {
-            0 => photo_orientation(image),
-            choice => (choice - 1) as u8,
-        };
-        let turned = turn(action, orientation)?;
+        let turned = turn(action, shown_bits(shown, image))?;
         let mut writes = Controls::new();
         writes.set(ORIENTATION, ControlValue::Choice(u32::from(turned) + 1));
         Some(writes)
     }
 }
 
-/// darktable's flip bits.
-const FLIP_Y: u8 = 1;
-const FLIP_X: u8 = 2;
-const SWAP_XY: u8 = 4;
+/// darktable's flip bits, applied to the unturned image in the order flip x, flip y, swap
+/// xy (`flip.c`, `distort_transform`).
+pub const FLIP_Y: u8 = 1;
+pub const FLIP_X: u8 = 2;
+pub const SWAP_XY: u8 = 4;
+
+/// The orientation the option `choice` of the control shows a photo of `image` in, as
+/// darktable's flip bits: the photo's own at auto, else darktable's value `choice - 1`.
+pub fn shown_bits(choice: u32, image: &ImageContext) -> u8 {
+    match choice {
+        0 => photo_orientation(image),
+        choice => (choice - 1) as u8,
+    }
+}
 
 /// The photo's own orientation, darktable's `dt_image_orientation`: none for an image
 /// that records none or is not a raw.

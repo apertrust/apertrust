@@ -192,6 +192,10 @@ pub struct Mirror {
     /// session, as it last told them, the latest by its `through`: none before it tells any.
     /// Not a photo's: another photo keeps it.
     pub view: Option<ViewState>,
+    /// The orientation the session last reported for the photo, its frames', whatever change
+    /// of Orientation is still pending, which `values` shows at once: what the zoom's
+    /// retained centre turns with (`docs/gui.md`, The zoom's centre).
+    pub orientation: crate::zoom::Orientation,
     /// The selection commands and the opens the app sent that no fact includes yet, in the
     /// order sent ([`Mirror::selecting`]).
     asked: Vec<Asked>,
@@ -249,6 +253,7 @@ impl Mirror {
             selection: Selection::default(),
             selected: HashSet::new(),
             view: None,
+            orientation: crate::zoom::Orientation::default(),
             asked: Vec::new(),
             previous: None,
             selected_shown: HashSet::new(),
@@ -626,6 +631,7 @@ impl Mirror {
                     let live = values.live;
                     self.saving.reported(&values);
                     let image = self.photo.image();
+                    self.orientation = crate::zoom::Orientation::shown(&values, &image);
                     self.values = reported(values, &mut self.pending, self.tools, &image);
                     self.edit_changes += u64::from(live && !self.live);
                     self.live = live;

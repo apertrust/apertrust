@@ -3746,9 +3746,12 @@ impl Shell {
     /// Keeps the zoom's retained centre in step with what the session confirms (`docs/gui.md`,
     /// The zoom's centre): as the photo `mirror` holds goes live, and as the photo area's
     /// size is sent (`resized`), the centre is committed kept inside that photo's edges in
-    /// the room the session places it in, its extent and the size last `sent`. Nothing else
-    /// stores a clamp: the room drawn, a size held while the window resizes and an opening
-    /// photo's values only place what is drawn, so a failed open commits nothing.
+    /// the room the session places it in, its extent and the size last `sent`. A turn or a
+    /// flip the session reports for it, Orientation's, its undo or the History tab's eye,
+    /// maps the centre through it, whatever change of it is still pending
+    /// ([`zoom::Confirmed`]). Nothing else stores a clamp: the room drawn, a size held while
+    /// the window resizes and an opening photo's values only place what is drawn, so a
+    /// failed open commits nothing.
     fn follow_photo(&mut self, mirror: &Mirror, sent: (u32, u32), resized: bool) {
         let PhotoState::Open(photo) = &mirror.photo else {
             return;
@@ -3760,7 +3763,8 @@ impl Shell {
             extent: mirror.values.extent,
             bounds: sent,
         };
-        self.zoom = self.confirmed.follow(photo.open, self.zoom, &room, resized);
+        let orientation = mirror.orientation;
+        self.zoom = (self.confirmed).follow(photo.open, orientation, self.zoom, &room, resized);
     }
 
     /// A way in moved the zoom from `before` to Fit ([`fit_view`]): what the zoom's live
@@ -11701,6 +11705,236 @@ mod tests {
         assert_eq!(m.photo.asked(), Some(paths[1].as_path()));
         let views = sent.iter().filter(|c| matches!(c, Command::View(_)));
         assert_eq!(views.count(), 0, "{sent:?}");
+    }
+
+    /// A live photo whose camera records the EXIF orientation 6, darktable's flip bits 6,
+    /// a quarter turn anticlockwise, open by command 2, for the shell to follow its turns.
+    fn turning() -> (Shell, Mirror) {
+        let mut mirror = mirror::tests::mirror();
+        mirror.opening(PathBuf::from("/photos/a.ARW"), 2, Instant::now());
+        let mut image = apertrust_tools::testing::image();
+        if let Some(camera) = &mut image.camera {
+            camera.orientation = 6;
+        }
+        mirror.apply(Event::Opened(Photo {
+            image: Box::new(image),
+            ..mirror::tests::photo(2)
+        }));
+        let shell = Shell::new(&Settings::default(), Locale::EnGb, OperatingSystem::Nix);
+        (shell, mirror)
+    }
+
+    /// A live photo's values with Orientation at the option `choice`, the tool hidden by the
+    /// History tab's eye where `hidden`, through the command `through`: a 6000 × 4000 photo
+    /// as that orientation, on the photo of `image`, turns it.
+    fn oriented(
+        choice: u32,
+        hidden: bool,
+        through: u64,
+        image: &apertrust_plugin::ImageContext,
+    ) -> Values {
+        use apertrust_tools::orientation::{FLIP, ORIENTATION, SWAP_XY, shown_bits};
+        let mut values = photo_values(0.0, through);
+        let flip = (values.tools.iter_mut())
+            .find(|state| state.tool == FLIP)
+            .expect("Orientation");
+        flip.hidden = hidden;
+        for control in flip.controls.iter_mut() {
+            if control.control == ORIENTATION {
+                control.value = ControlValue::Choice(choice);
+            }
+        }
+        // Hidden, it renders as if reset: auto.
+        let bits = shown_bits(if hidden { 0 } else { choice }, image);
+        values.extent = if bits & SWAP_XY == 0 {
+            [6000, 4000]
+        } else {
+            [4000, 6000]
+        };
+        values
+    }
+
+    /// The session reports Orientation at the option `choice`, the tool hidden by the
+    /// History tab's eye where `hidden`, through the command `through`; the shell follows
+    /// it in the room of a 6000 × 4000 photo as that orientation turns it, as `App::viewer`
+    /// does.
+    fn turned(shell: &mut Shell, mirror: &mut Mirror, choice: u32, hidden: bool, through: u64) {
+        let values = oriented(choice, hidden, through, &mirror.photo.image());
+        let extent = values.extent;
+        mirror.apply(Event::Values(values));
+        shell.room = Some(zoom::Room {
+            extent,
+            bounds: (2400, 1600),
+        });
+        shell.follow_photo(mirror, (2400, 1600), false);
+    }
+
+    /// At 200%, each of darktable's four buttons, from each of the eight orientations,
+    /// keeps the centre on the scene's point it showed, once the session reports the turn,
+    /// not while the change is pending; an undo brings it back, and the History tab's eye,
+    /// showing the photo's own orientation, moves it as a turn does. The scale stays.
+    #[test]
+    fn a_quarter_turn_at_200_keeps_the_centre_s_scene_point() {
+        use apertrust_tools::orientation::{ACTIONS, FLIP, ORIENTATION, shown_bits, turn};
+        // The point of the unturned photo the centre shows in the orientation of `bits`.
+        let scene = |centre, bits| {
+            let none = zoom::Orientation::default();
+            zoom::reoriented(centre, zoom::Orientation::from_bits(bits), none)
+        };
+        let near = |a: [f32; 2], b: [f32; 2]| (a[0] - b[0]).abs().max((a[1] - b[1]).abs()) < 1e-5;
+        for start in 0..8u8 {
+            for action in ACTIONS {
+                for centre in [[0.3, 0.7], [0.2, 0.25], [0.8, 0.6]] {
+                    let case = format!("{start} then {action} at {centre:?}");
+                    let (mut shell, mut mirror) = turning();
+                    let at = zoomed_to(zoom::Scale::Factor(2.0), centre);
+                    shell.zoom = at;
+                    turned(&mut shell, &mut mirror, u32::from(start) + 1, false, 3);
+                    assert_eq!(shell.zoom, at, "{case}");
+                    let to = turn(action, start).expect("a button");
+                    let choice = ControlValue::Choice(u32::from(to) + 1);
+                    let (tool, control) = (FLIP, ORIENTATION);
+                    let pending = Pending::Control {
+                        tool,
+                        control,
+                        value: choice,
+                    };
+                    mirror.pend(4, pending);
+                    shell.follow_photo(&mirror, (2400, 1600), false);
+                    assert_eq!(shell.zoom, at, "{case}: pending");
+                    turned(&mut shell, &mut mirror, u32::from(to) + 1, false, 4);
+                    assert_eq!(shell.zoom.scale, at.scale, "{case}");
+                    let now = shell.zoom.centre;
+                    assert!(
+                        near(scene(now, to), scene(centre, start)),
+                        "{case}: {now:?}"
+                    );
+                    // Undone: back where it was.
+                    turned(&mut shell, &mut mirror, u32::from(start) + 1, false, 5);
+                    assert!(near(shell.zoom.centre, centre), "{case}: undone");
+                    // Hidden by the eye: the photo's own orientation, auto's.
+                    turned(&mut shell, &mut mirror, u32::from(start) + 1, true, 6);
+                    let own = shown_bits(0, &mirror.photo.image());
+                    let now = shell.zoom.centre;
+                    assert!(
+                        near(scene(now, own), scene(centre, start)),
+                        "{case}: hidden"
+                    );
+                }
+            }
+        }
+    }
+
+    /// Two quarter turns in flight at 100%, the first reported while the second is pending:
+    /// each report maps the centre through its own turn, the pending one moving nothing, and
+    /// a pan in the portrait between them is the person's, in the frame shown. The
+    /// landscape's 0.8 across, which its own room allows, ends half round at 0.2, never
+    /// kept inside the portrait between; panned 600 pixels in the portrait, at (0.2, 0.35),
+    /// the scene's point (0.8, 0.65) the pan reached.
+    impl ZoomRun {
+        /// The session reports Orientation at the option `choice` for the live photo, which
+        /// its turn gives a new extent where it swaps the axes.
+        fn report(&mut self, choice: u32) {
+            let through = self.sent.len() as u64;
+            let values = oriented(choice, false, through, &self.mirror.photo.image());
+            let extent = values.extent;
+            self.mirror.apply(Event::Values(values));
+            self.session.placing(Some(extent));
+            self.frame(self.size, false);
+        }
+    }
+
+    /// The retained centre turns with what the session reports, on both sides: one turn,
+    /// two turns in flight with a pan between their reports, and a turn the turned room
+    /// clamps, then Next Photo, which carries the clamped centre, as each step of the table
+    /// before ([`the_zoom_s_centre_changes_only_with_what_the_session_confirms`]).
+    #[test]
+    fn the_zoom_s_centre_turns_with_what_the_session_reports() {
+        use apertrust_tools::orientation::turn;
+        let cw = turn("rotate_cw", 0).expect("a button");
+        let half = turn("rotate_cw", cw).expect("a button");
+        type Steps = fn(&mut ZoomRun, u8, u8);
+        let cases: [(&str, [f32; 2], Steps, [f32; 2]); 3] = [
+            // Panned to (0.2, 0.5), turned clockwise: (1 − 0.5, 0.2).
+            (
+                "a pan, then a turn",
+                [0.3, 0.5],
+                |run, cw, _| {
+                    run.pan(600.0);
+                    run.report(u32::from(cw) + 1);
+                },
+                [0.5, 0.2],
+            ),
+            // 0.8 turned to (0.5, 0.8), panned in the portrait to (0.35, 0.8), turned on to
+            // (0.2, 0.35): the scene's point the pan reached.
+            (
+                "two turns, a pan between their reports",
+                [0.8, 0.5],
+                |run, cw, half| {
+                    run.report(u32::from(cw) + 1);
+                    run.pan(600.0);
+                    run.report(u32::from(half) + 1);
+                },
+                [0.2, 0.35],
+            ),
+            // (0.5, 0.2) turned clockwise is (0.8, 0.5), which the portrait shows at 0.7 across:
+            // the turn commits 0.7, and the next photo, a landscape that could show 0.8, takes
+            // 0.7 on both sides.
+            (
+                "a turn, then Next Photo",
+                [0.5, 0.2],
+                |run, cw, _| {
+                    run.report(u32::from(cw) + 1);
+                    run.step(true, [6000, 4000]);
+                    run.values([6000, 4000], true);
+                },
+                [0.7, 0.5],
+            ),
+        ];
+        let near = |a: [f32; 2], b: [f32; 2]| (a[0] - b[0]).abs().max((a[1] - b[1]).abs()) < 1e-5;
+        for (case, from, steps, to) in cases {
+            let mut run = ZoomRun::new(zoomed_to(zoom::Scale::Factor(1.0), from));
+            steps(&mut run, cw, half);
+            let (kept, session) = (run.shell.zoom.centre, run.session.view.centre);
+            assert!(near(kept, to), "{case}: kept {kept:?}");
+            assert!(near(session, to), "{case}: the session's {session:?}");
+        }
+    }
+
+    #[test]
+    fn two_turns_in_flight_keep_the_centre_s_scene_point() {
+        use apertrust_tools::orientation::{FLIP, ORIENTATION, turn};
+        for (pan, ends) in [(0.0, [0.2, 0.5]), (600.0, [0.2, 0.35])] {
+            let (mut shell, mut mirror) = turning();
+            let at = zoomed_to(zoom::Scale::Factor(1.0), [0.8, 0.5]);
+            shell.zoom = at;
+            turned(&mut shell, &mut mirror, 1, false, 3);
+            let first = turn("rotate_cw", 0).expect("a button");
+            let second = turn("rotate_cw", first).expect("a button");
+            for (number, bits) in [(4, first), (5, second)] {
+                let value = ControlValue::Choice(u32::from(bits) + 1);
+                let (tool, control) = (FLIP, ORIENTATION);
+                mirror.pend(
+                    number,
+                    Pending::Control {
+                        tool,
+                        control,
+                        value,
+                    },
+                );
+                shell.follow_photo(&mirror, (2400, 1600), false);
+                assert_eq!(shell.zoom, at, "pending");
+            }
+            turned(&mut shell, &mut mirror, u32::from(first) + 1, false, 4);
+            let near =
+                |a: [f32; 2], b: [f32; 2]| (a[0] - b[0]).abs().max((a[1] - b[1]).abs()) < 1e-5;
+            assert!(near(shell.zoom.centre, [0.5, 0.8]), "{:?}", shell.zoom);
+            // As `pan_photo` moves it, in the portrait drawn.
+            let portrait = shell.room.expect("live");
+            shell.zoom = shell.zoom.panned(egui::vec2(pan, 0.0), &portrait);
+            turned(&mut shell, &mut mirror, u32::from(second) + 1, false, 5);
+            assert!(near(shell.zoom.centre, ends), "{pan}: {:?}", shell.zoom);
+        }
     }
 
     /// A photo opened by File › Open…, a drop or Open With from the folder already open, or
