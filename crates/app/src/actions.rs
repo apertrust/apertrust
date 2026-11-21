@@ -2436,10 +2436,13 @@ pub enum Focus {
 }
 
 impl Focus {
+    /// The focused widget's kind in `ctx`. The zoomed photo's focus stop keeps no keys, so
+    /// Alt with the arrows move it and the arrows change the photo as anywhere.
     pub fn of(ctx: &egui::Context) -> Focus {
+        let focused = ctx.memory(|m| m.focused());
         if ctx.text_edit_focused() {
             Focus::Text
-        } else if ctx.memory(|m| m.focused().is_some()) {
+        } else if focused.is_some_and(|id| id != crate::zoom::photo_view_id()) {
             Focus::Control
         } else {
             Focus::None

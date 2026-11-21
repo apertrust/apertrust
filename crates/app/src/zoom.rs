@@ -253,6 +253,60 @@ pub fn panned(placement: &Placement, direction: Direction, fraction: f32) -> [f3
     }
 }
 
+/// The part of the photo `placement` shows on each axis, across then down, 0 to 1 across
+/// the photo: the whole of it on an axis that fits.
+pub fn visible(placement: &Placement) -> [egui::Rangef; 2] {
+    [0, 1].map(|axis| {
+        let side = f64::from(placement.size[axis].max(1));
+        let start = placement.visible[axis];
+        let end = start + placement.visible[axis + 2];
+        egui::Rangef::new((start / side) as f32, (end / side) as f32)
+    })
+}
+
+/// The part of the photo `placement` shows on each axis where the photo overflows the room,
+/// across then down, as the position marks span it: none on an axis that fits.
+pub fn spans(placement: &Placement) -> [Option<egui::Rangef>; 2] {
+    let parts = visible(placement);
+    [0, 1].map(|axis| {
+        let whole = placement.visible[axis + 2] >= f64::from(placement.size[axis]);
+        (!whole).then_some(parts[axis])
+    })
+}
+
+/// The id of the photo's focus stop while it is zoomed past Fit (`docs/gui.md`, The zoom
+/// by keyboard and to screen readers), which keeps no keys of its own
+/// ([`Focus::of`](crate::actions::Focus::of)).
+pub fn photo_view_id() -> egui::Id {
+    egui::Id::unique("photo-view")
+}
+
+/// When the position marks show (`docs/gui.md`, Where the view is): from a zoom or a move
+/// of the view until [`Marks::LINGER`] after the last one.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Marks {
+    /// The zoom at the last frame.
+    seen: Option<Zoomed>,
+    /// When they go, in egui's time, seconds.
+    until: f64,
+}
+
+impl Marks {
+    /// How long they stay after the view last changed, in seconds.
+    pub const LINGER: f64 = 1.0;
+
+    /// Takes the zoom of the frame at `now`, egui's time in seconds, and returns how long
+    /// the marks still show, None once they have gone. A zoom or a move since the frame
+    /// before shows them again for [`Self::LINGER`]; the first frame's view shows none.
+    pub fn update(&mut self, zoom: Zoomed, now: f64) -> Option<f64> {
+        if self.seen.is_some_and(|seen| seen != zoom) {
+            self.until = now + Self::LINGER;
+        }
+        self.seen = Some(zoom);
+        (now < self.until).then_some(self.until - now)
+    }
+}
+
 /// The zoom menu's factors, after its modes.
 const FACTORS: [f32; 6] = [0.5, 1.0, 2.0, 4.0, 8.0, 16.0];
 

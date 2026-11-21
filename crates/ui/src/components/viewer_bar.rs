@@ -490,6 +490,12 @@ fn zoom_id(entry: ViewerBarAction) -> String {
 
 /// A zoom menu entry's words, translated: a scale as the button shows it, a percentage
 /// as [`percent_label`] rounds it. The bar's other actions have none.
+/// What the zoom's button shows for `zoom`, as screen readers hear it too: the mode's word,
+/// or the percentage in the language's numbers.
+pub fn zoom_label(ctx: &egui::Context, zoom: Zoom) -> String {
+    zoom_words(ctx, ViewerBarAction::Zoom(zoom))
+}
+
 fn zoom_words(ctx: &egui::Context, entry: ViewerBarAction) -> String {
     let id = match entry {
         ViewerBarAction::Zoom(Zoom::Percent(p)) => {
