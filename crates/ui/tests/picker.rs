@@ -26,6 +26,8 @@ use apertrust_ui::components::{
     Patch, Patches, PickerAction, PickerButton, Reference, ReferenceAction, ReferenceRow,
     SliderAction, SliderRow,
 };
+mod common;
+
 use apertrust_ui::gallery::Gallery;
 use apertrust_ui::{Builtin, Locale, Theme, Translator};
 use egui::accesskit::{Role, Toggled};
@@ -462,23 +464,8 @@ fn a_slider_s_picker_quad_reports_its_presses() {
 }
 
 fn photograph(which: Builtin, name: &str) {
-    let mut harness = Harness::builder()
-        .with_size(egui::vec2(600.0, 1100.0))
-        .with_pixels_per_point(2.0)
-        .with_context_setup(move |ctx| apertrust_ui::install(ctx, Theme::builtin(which)))
-        .build_ui_state(
-            |ui, gallery: &mut Gallery| {
-                let panel = apertrust_ui::theme(ui.ctx()).colors.panel;
-                ui.painter()
-                    .rect_filled(ui.ctx().content_rect(), 0.0, panel);
-                egui::Frame::new().inner_margin(12.0).show(ui, |ui| {
-                    gallery.show_pickers(ui);
-                });
-            },
-            Gallery::new(which),
-        );
-    harness.run();
-    harness.snapshot(name);
+    let size = egui::vec2(600.0, 1100.0);
+    common::photograph_section(which, size, name, Gallery::show_pickers);
 }
 
 #[test]
