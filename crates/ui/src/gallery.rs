@@ -2680,6 +2680,7 @@ fn shell(ui: &mut Ui, t: &Theme, demo: &mut Demo) {
         },
         selected: demo.selected.contains(&i),
         picture: None,
+        no_preview: false,
         rating: None,
     };
     let panel = Browser::new(names.len(), demo.active, thumb).show(ui);

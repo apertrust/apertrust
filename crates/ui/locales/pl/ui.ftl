@@ -375,6 +375,11 @@ grid-cell-reject = Odrzuć
 grid-cell-colour-labels = Etykiety kolorów
 grid-cell-no-labels = Brak
 grid-cell-clear-labels = Usuń etykiety
+# Opis komórki dla czytników ekranu, po nazwie pliku: plik nie zawiera obrazu, który
+# Apertrust potrafi odczytać, a zdjęcie nie zostało jeszcze wyrenderowane.
+grid-cell-no-preview = Jeszcze bez miniatury
+# Ostatni wiersz podpowiedzi tej samej komórki.
+grid-cell-no-preview-tip = Ten plik nie ma jeszcze miniatury. Apertrust utworzy ją, gdy otworzysz zdjęcie.
 colour-label-red = Czerwony
 colour-label-yellow = Żółty
 colour-label-green = Zielony

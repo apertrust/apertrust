@@ -5479,18 +5479,9 @@ impl App {
                 (None, folder::Folder::Alone { paths, .. }) => paths.get(order[i]).cloned(),
                 _ => None,
             };
-            let thumb = |i: usize| {
-                let photo = &photos[order[i]];
-                Thumb {
-                    name: &photo.name,
-                    edited: matches!(photo.edit, EditState::Edited),
-                    status: folder::status(&photo.edit),
-                    selected: path(i).is_some_and(|path| mirror.is_selected(&path)),
-                    picture: textures.picture(&mirror.folder.key(order[i]), size),
-                    // The library keeps no ratings or labels yet (Phase 3): every photo
-                    // shows as unrated and unlabelled.
-                    rating: Some(CellRating::default()),
-                }
+            let thumb = |i: usize| Thumb {
+                selected: path(i).is_some_and(|path| mirror.is_selected(&path)),
+                ..cell_thumb(&mirror.folder, textures, order[i], size)
             };
             // What a caption's first line reports waits for the ratings, as they do.
             let mut panel = Browser::new(order.len(), active, thumb)
@@ -7293,6 +7284,30 @@ fn export_others(mirror: &Mirror) -> export::Others {
         left_out: (exported.left_out).saturating_sub(usize::from(exported.open_left_out)),
         pending,
         skips_open,
+    }
+}
+
+/// The Browser's cell of the photo at `at` in `folder`'s listing, unselected, its thumbnail
+/// at `size` pixels: the picture `textures` made of it, or No preview yet where it came with
+/// none (`GridCell::no_preview`), for a folder's photos and photos opened alone alike.
+fn cell_thumb<'a>(
+    folder: &'a folder::FolderState,
+    textures: &thumbnails::Textures,
+    at: usize,
+    size: u32,
+) -> Thumb<'a> {
+    let photo = &folder.photos()[at];
+    let key = folder.key(at);
+    Thumb {
+        name: &photo.name,
+        edited: matches!(photo.edit, EditState::Edited),
+        status: folder::status(&photo.edit),
+        selected: false,
+        picture: textures.picture(&key, size),
+        no_preview: (folder.thumbnail(&key, size)).is_some_and(|kept| kept.image.is_none()),
+        // The library keeps no ratings or labels yet (Phase 3): every photo shows as
+        // unrated and unlabelled.
+        rating: Some(CellRating::default()),
     }
 }
 
@@ -9853,6 +9868,122 @@ mod tests {
         let first = Command::Open(three.clone());
         assert_eq!(harness.state().commands, [told_alone(&again), first]);
         assert_eq!(harness.state().mirror.folder.alone_paths(), [three, two]);
+    }
+
+    /// The Browser's cells as the app builds them (`cell_thumb`), at 256 pixels, of the
+    /// folder its state holds, the textures brought in line with it each frame.
+    fn cells() -> Harness<'static, (folder::FolderState, thumbnails::Textures)> {
+        Harness::builder()
+            .with_size(egui::vec2(700.0, 200.0))
+            .with_context_setup(|ctx| apertrust_ui::install(ctx, Theme::default()))
+            .build_ui_state(
+                |ui, (folder, textures): &mut (folder::FolderState, thumbnails::Textures)| {
+                    textures.sync(ui.ctx(), folder);
+                    let (folder, textures) = (&*folder, &*textures);
+                    let count = folder.order().len();
+                    let thumb = |i: usize| cell_thumb(folder, textures, i, 256);
+                    Browser::new(count, None, thumb).show(ui);
+                },
+                (
+                    folder::FolderState::default(),
+                    thumbnails::Textures::default(),
+                ),
+            )
+    }
+
+    /// The folder `/photos` open, listing `names`.
+    fn folder_of(names: &[&str]) -> folder::FolderState {
+        let mut folder = folder::FolderState::default();
+        folder.opening(PathBuf::from("/photos"), 1);
+        folder.apply(&folder_opened(1, Path::new("/photos")));
+        folder.apply(&listed(1, names, true));
+        folder
+    }
+
+    /// The thumbnail of the folder's `photo` at 256 pixels: a picture, or none.
+    fn came(photo: &str, picture: bool) -> Event {
+        Event::Library(LibraryEvent::Thumbnail {
+            open: 1,
+            photo: photo.to_owned(),
+            size: 256,
+            image: picture.then(|| apertrust_engine::session::library::Thumbnail {
+                width: 3,
+                height: 2,
+                pixels: vec![128; 24].into(),
+            }),
+        })
+    }
+
+    /// What the cell of the file `name` says to screen readers.
+    fn cell_says<T>(harness: &Harness<'_, T>, name: &str) -> String {
+        let cell = harness.get_by_role_and_label(Role::ListItem, name);
+        cell.accesskit_node().description().unwrap_or_default()
+    }
+
+    /// A photo whose thumbnail came with no picture shows No preview yet, one with a
+    /// picture shows it, for a folder's photos and photos opened alone alike.
+    #[test]
+    fn a_photo_answered_without_a_picture_shows_no_preview() {
+        let mut harness = cells();
+        let mut folder = folder_of(&["a.ORF", "b.ORF"]);
+        folder.apply(&came("a.ORF", true));
+        folder.apply(&came("b.ORF", false));
+        harness.state_mut().0 = folder;
+        harness.run();
+        assert!(!cell_says(&harness, "a.ORF").contains("No preview yet"));
+        assert!(cell_says(&harness, "b.ORF").starts_with("No preview yet"));
+
+        // Photos opened alone, by path.
+        let paths = [PathBuf::from("/a/c.ORF"), PathBuf::from("/b/d.ORF")];
+        let mut alone = folder::FolderState::default();
+        alone.alone(2, paths.to_vec());
+        alone.apply(&Event::Library(LibraryEvent::PhotoThumbnail {
+            open: 2,
+            path: paths[1].clone(),
+            size: 256,
+            image: None,
+        }));
+        harness.state_mut().0 = alone;
+        harness.run();
+        assert!(!cell_says(&harness, "c.ORF").contains("No preview yet"));
+        assert!(cell_says(&harness, "d.ORF").starts_with("No preview yet"));
+    }
+
+    /// A photo whose thumbnail has not come keeps the name's box: nothing says No preview
+    /// yet, nor does a thumbnail come at another size than the cell's.
+    #[test]
+    fn a_photo_not_answered_yet_keeps_the_name_box() {
+        let mut harness = cells();
+        let mut folder = folder_of(&["a.ORF", "b.ORF"]);
+        folder.apply(&Event::Library(LibraryEvent::Thumbnail {
+            open: 1,
+            photo: "b.ORF".to_owned(),
+            size: 128,
+            image: None,
+        }));
+        harness.state_mut().0 = folder;
+        harness.run();
+        for name in ["a.ORF", "b.ORF"] {
+            assert!(
+                !cell_says(&harness, name).contains("No preview yet"),
+                "{name}"
+            );
+        }
+    }
+
+    /// A picture that comes after No preview yet, as the live photo's render does once it
+    /// is opened, replaces it.
+    #[test]
+    fn a_picture_after_no_preview_replaces_it() {
+        let mut harness = cells();
+        let mut folder = folder_of(&["a.ORF"]);
+        folder.apply(&came("a.ORF", false));
+        harness.state_mut().0 = folder;
+        harness.run();
+        assert!(cell_says(&harness, "a.ORF").starts_with("No preview yet"));
+        harness.state_mut().0.apply(&came("a.ORF", true));
+        harness.run();
+        assert!(!cell_says(&harness, "a.ORF").contains("No preview yet"));
     }
 
     /// Photos opened alone again keep the thumbnails that came for those still among them,
@@ -16481,6 +16612,7 @@ mod tests {
                             status: None,
                             selected: false,
                             picture: None,
+                            no_preview: false,
                             rating: None,
                         };
                         Browser::new(names.len(), None, thumb)

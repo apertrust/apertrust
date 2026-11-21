@@ -373,6 +373,11 @@ grid-cell-reject = Відхилити
 grid-cell-colour-labels = Кольорові мітки
 grid-cell-no-labels = Немає
 grid-cell-clear-labels = Зняти мітки
+# Опис комірки для екранних читачів, після назви файлу: у файлі немає зображення, яке
+# Apertrust може прочитати, і знімок ще не відрендерено.
+grid-cell-no-preview = Ще немає мініатюри
+# Останній рядок підказки тієї ж комірки.
+grid-cell-no-preview-tip = У цьому файлі ще немає мініатюри. Apertrust створить її, коли ви відкриєте знімок.
 colour-label-red = Червоний
 colour-label-yellow = Жовтий
 colour-label-green = Зелений

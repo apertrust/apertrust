@@ -22,8 +22,15 @@
 //!
 //! - **The picture alone,** with no box or margin round it: fitted in the square, its
 //!   shape kept, at the square's bottom centre, right above its caption; with square
-//!   thumbnails it fills the square, cut at its longer sides. Until it comes, and for a
-//!   photo with none, the file name stands in a box of the square's size.
+//!   thumbnails it fills the square, cut at its longer sides. Until it comes, the file name
+//!   stands in a box of the square's size.
+//! - **No preview yet,** where the photo's thumbnail came with no picture
+//!   ([`GridCell::no_preview`]): a plate where a fitted landscape picture lands, 3:2 at the
+//!   square's bottom centre, or the whole square with square thumbnails, in `sunken`
+//!   (outlined in `border` where `sunken` is the panel's `surface`), an image glyph centred
+//!   on it and, from Medium up, the file's type under the glyph; with labels off the file
+//!   name stands there instead, at every size. The rings, the marks and the click take the
+//!   plate as they take a picture.
 //! - **The rings** hug the picture, 2 points out: a thin `frame_ring` for selected and a
 //!   thicker one for the active photo, the icons' grey and never the accent. The focus
 //!   ring is the usual one, outside them.
@@ -38,30 +45,32 @@
 //!   `text_strong`; at Small 20 points, the name alone. Without a rating ([`CellRating`],
 //!   which the library has yet to keep), the first line is not drawn and the name takes its
 //!   place.
-//! - **The click that picks the photo** is taken over the picture alone, or the name's box
-//!   until it comes ([`GridCellOutput::clicked`]). The square round a fitted picture and
-//!   the caption outside its first line and its name are empty space, a click there
-//!   reported apart ([`GridCellOutput::empty`]). The cell stays one widget, so a
+//! - **The click that picks the photo** is taken over the picture alone, or the plate, or
+//!   the name's box until it comes ([`GridCellOutput::clicked`]). The square round a
+//!   fitted picture and the caption outside its first line and its name are empty space, a
+//!   click there reported apart ([`GridCellOutput::empty`]). The cell stays one widget, so a
 //!   right-click anywhere on it, its focus and its keys are the whole cell's.
 //! - **The first line's clicks**, reported as a [`CellAction`]: a star rates the photo, the
 //!   reject mark turns its reject on or off, and the circle opens the list of the five
 //!   labels through the popup service (AppKit's menu on the Mac), each checked while on,
 //!   with darktable's keys, and Clear labels.
-//! - **To AccessKit** a list item named by the file name, its marks, rating, reject and
-//!   labels in its description whatever the caption shows, selected, as a list's item and
-//!   as toggled, when it is selected or active; the first line's stars, reject and circle are buttons inside it.
+//! - **To AccessKit** a list item named by the file name, No preview yet, its marks,
+//!   rating, reject and labels in its description whatever the caption shows, selected, as
+//!   a list's item and as toggled, when it is selected or active; the first line's stars,
+//!   reject and circle are buttons inside it. The tooltip says the name, the marks and,
+//!   last, the No preview yet plate's line.
 
 use egui::accesskit::HasPopup;
 use egui::{
-    Align, Color32, FontId, Id, PointerButton, Pos2, Rect, Response, Role, Sense, Shape, Stroke,
-    StrokeKind, Ui, UiBuilder, WidgetInfo, pos2, text::LayoutJob, vec2,
+    Align, Color32, FontFamily, FontId, Id, PointerButton, Pos2, Rect, Response, Role, Sense,
+    Shape, Stroke, StrokeKind, TextFormat, Ui, UiBuilder, WidgetInfo, pos2, text::LayoutJob, vec2,
 };
 
 use super::photo_frame::middle_cut;
 use super::{focus_ring, pull_down};
 use crate::i18n::Args;
 use crate::popup::{Entry, Item};
-use crate::{Icon, Theme, theme, tr, translator};
+use crate::{Icon, Theme, fonts, theme, tr, translator};
 
 /// What a cell's status mark says: the photo opens, but not as an edit can change it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -221,8 +230,8 @@ pub struct GridCellOutput {
     /// The whole cell's, its square and caption: its own `clicked` counts a click anywhere
     /// on it.
     pub response: Response,
-    /// The photo was clicked: by the pointer on its picture, or on the name's box while it
-    /// has none, or by Enter, Space or a screen reader.
+    /// The photo was clicked: by the pointer on its picture, its No preview yet plate, or
+    /// the name's box while it has none, or by Enter, Space or a screen reader.
     pub clicked: bool,
     /// The pointer clicked the cell's empty space: the square round a fitted picture, or the
     /// caption outside its first line and its name.
@@ -233,6 +242,7 @@ pub struct GridCellOutput {
 pub struct GridCell<'a> {
     name: &'a str,
     picture: Option<CellPicture>,
+    no_preview: bool,
     side: f32,
     labels: bool,
     square: bool,
@@ -256,6 +266,10 @@ const STEP: f32 = 2.0;
 const RING_GAP: f32 = 2.0;
 /// A corner mark's scrim, and its inset from the picture's corner.
 const CHIP: f32 = 16.0;
+/// The No preview yet plate's shape, where a fitted landscape picture lands.
+const PLATE: egui::Vec2 = vec2(3.0, 2.0);
+/// The letter spacing of the file's type on the plate.
+const TYPE_SPACING: f32 = 0.55;
 
 impl GridCell<'_> {
     /// The Medium size of the design, in points.
@@ -280,6 +294,7 @@ impl<'a> GridCell<'a> {
         GridCell {
             name,
             picture: None,
+            no_preview: false,
             side: Self::MEDIUM,
             labels: true,
             square: false,
@@ -294,6 +309,15 @@ impl<'a> GridCell<'a> {
     /// The photo's thumbnail, once it has come; the file name stands in for it until then.
     pub fn picture(mut self, picture: Option<CellPicture>) -> Self {
         self.picture = picture;
+        self
+    }
+
+    /// Whether the photo's thumbnail came with no picture: its file holds none Apertrust
+    /// reads, and none has been rendered. Without a picture the cell then shows the No
+    /// preview yet plate, not the name's box it shows until one comes; a picture always
+    /// wins. Off by default.
+    pub fn no_preview(mut self, no_preview: bool) -> Self {
+        self.no_preview = no_preview;
         self
     }
 
@@ -371,11 +395,19 @@ impl<'a> GridCell<'a> {
         let painter = ui.painter_at(rect.expand(8.0));
         let square = Rect::from_min_size(rect.min, vec2(self.side, self.side));
 
-        // The picture, or the file name in a box of the square's size.
-        let picture = match self.picture.filter(|p| p.size.x > 0.0 && p.size.y > 0.0) {
+        // The picture, the No preview yet plate, or the file name in a box of the square's
+        // size.
+        let shown = self.picture.filter(|p| p.size.x > 0.0 && p.size.y > 0.0);
+        let plate = shown.is_none() && self.no_preview;
+        let picture = match shown {
             Some(picture) => {
                 let (place, uv) = placed(square, picture.size, self.square);
                 painter.image(picture.texture, place, uv, Color32::WHITE);
+                place
+            }
+            None if plate => {
+                let (place, _) = placed(square, PLATE, self.square);
+                self.paint_plate(&painter, &t, place, response.hovered());
                 place
             }
             None => {
@@ -481,29 +513,104 @@ impl<'a> GridCell<'a> {
         let empty = released
             .is_some_and(|at| !picture.contains(at) && !taken.iter().any(|r| r.contains(at)));
 
-        // What screen readers and the tooltip say of the marks; whether it is selected as a
+        // What screen readers and the tooltip say of the marks, No preview yet first to
+        // screen readers and its line last in the tooltip; whether it is selected as a
         // list's item says it, which egui's `selected` alone tells as toggled.
         let notes = self.notes(ui);
+        let words = translator(ui.ctx());
+        let said = plate.then(|| words.text("grid-cell-no-preview"));
+        let tip_line = plate.then(|| words.text("grid-cell-no-preview-tip"));
+        let description = (said.into_iter())
+            .chain(Some(notes.clone()).filter(|notes| !notes.is_empty()))
+            .collect::<Vec<_>>()
+            .join(". ");
         ui.ctx().accesskit_node_builder(response.id, |node| {
             node.set_selected(selected);
             // The active photo, of those selected, as the list's current item.
             if self.active {
                 node.set_aria_current(egui::accesskit::AriaCurrent::True);
             }
-            if !notes.is_empty() {
-                node.set_description(notes.clone());
+            if !description.is_empty() {
+                node.set_description(description.clone());
             }
         });
-        let tip = if notes.is_empty() {
-            self.name.to_owned()
-        } else {
-            format!("{}\n{notes}", self.name)
-        };
+        let tip = (Some(self.name.to_owned()).into_iter())
+            .chain(Some(notes).filter(|notes| !notes.is_empty()))
+            .chain(tip_line)
+            .collect::<Vec<_>>()
+            .join("\n");
         GridCellOutput {
             response: response.on_hover_text(tip),
             clicked,
             empty,
             action,
+        }
+    }
+
+    /// The No preview yet plate in `plate`: `sunken`, or `hover` under the pointer, outlined
+    /// in `border` where `sunken` is the panel's `surface` and would not show; centred on it
+    /// in `text_secondary`, the image glyph and under it, from Medium up, the file's type, or
+    /// with labels off the file name, cut in its middle, at every size.
+    fn paint_plate(&self, painter: &egui::Painter, t: &Theme, plate: Rect, hovered: bool) {
+        let ground = if hovered {
+            t.colors.hover
+        } else {
+            t.colors.sunken
+        };
+        painter.rect_filled(plate, t.shape.radius_small, ground);
+        if t.colors.sunken == t.colors.surface {
+            painter.rect_stroke(
+                plate,
+                t.shape.radius_small,
+                Stroke::new(1.0, t.colors.border),
+                StrokeKind::Inside,
+            );
+        }
+        let colour = t.colors.text_secondary;
+        let words = if !self.labels {
+            let font = FontId::proportional(t.text.caption);
+            let name = fitted(
+                painter,
+                self.name,
+                &font,
+                plate.width() - 2.0 * t.spacing.xs,
+            );
+            Some(painter.layout_no_wrap(name, font, colour))
+        } else if self.side >= Self::MEDIUM {
+            file_type(self.name).map(|kind| {
+                let mut job = LayoutJob::default();
+                job.append(
+                    &kind,
+                    0.0,
+                    TextFormat {
+                        font_id: FontId::new(
+                            t.text.caption,
+                            FontFamily::Name(fonts::SEMIBOLD.into()),
+                        ),
+                        color: colour,
+                        extra_letter_spacing: TYPE_SPACING,
+                        ..Default::default()
+                    },
+                );
+                painter.layout_job(job)
+            })
+        } else {
+            None
+        };
+        let glyph = glyph_side(self.side);
+        let height = glyph + words.as_ref().map_or(0.0, |w| t.spacing.xs + w.size().y);
+        let top = plate.center().y - height / 2.0;
+        let icon = Rect::from_min_size(
+            pos2(plate.center().x - glyph / 2.0, top),
+            vec2(glyph, glyph),
+        );
+        Icon::Photo.paint(painter, icon, colour);
+        if let Some(words) = words {
+            let at = pos2(
+                plate.center().x - words.size().x / 2.0,
+                icon.bottom() + t.spacing.xs,
+            );
+            painter.galley(at, words, colour);
         }
     }
 
@@ -591,6 +698,27 @@ fn placed(square: Rect, size: egui::Vec2, filling: bool) -> (Rect, Rect) {
         square.bottom() - fitted.y,
     );
     (Rect::from_min_size(min, fitted), whole)
+}
+
+/// The No preview yet plate's glyph for a square of `side` points: 16 points at Small and
+/// Medium, 20 at Large, 24 at Extra large.
+fn glyph_side(side: f32) -> f32 {
+    if side >= 256.0 {
+        24.0
+    } else if side >= 176.0 {
+        20.0
+    } else {
+        16.0
+    }
+}
+
+/// The file's type, as the plate shows it: the extension of `name` in capitals, if it has
+/// one.
+fn file_type(name: &str) -> Option<String> {
+    match name.rfind('.') {
+        Some(dot) if dot > 0 && dot + 1 < name.len() => Some(name[dot + 1..].to_uppercase()),
+        _ => None,
+    }
 }
 
 /// `name` whole where it fits in `width`, else cut in its middle, its extension kept.
@@ -814,6 +942,15 @@ mod tests {
         assert_eq!(GridCell::caption_height(120.0, true), 40.0);
         assert_eq!(GridCell::caption_height(256.0, true), 40.0);
         assert_eq!(GridCell::caption_height(120.0, false), 0.0);
+    }
+
+    #[test]
+    fn the_plate_names_the_file_s_type_in_capitals_where_it_has_one() {
+        assert_eq!(file_type("P1010042.orf").as_deref(), Some("ORF"));
+        assert_eq!(file_type("B0000042.3FR").as_deref(), Some("3FR"));
+        assert_eq!(file_type("README"), None);
+        assert_eq!(file_type(".hidden"), None);
+        assert_eq!(file_type("IMG_2041."), None);
     }
 
     #[test]

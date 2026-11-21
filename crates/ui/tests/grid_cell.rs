@@ -16,8 +16,8 @@
 
 //! The grid cell and the Browser's cells (`docs/gui.md`, The Browser, The cell): the
 //! picture fitted or filling its square, the rings round it, the corner marks that always
-//! show, the caption and its first line's clicks, what screen readers hear, and the
-//! panel's keys.
+//! show, the caption and its first line's clicks, the No preview yet plate, what screen
+//! readers hear, and the panel's keys.
 
 use apertrust_ui::components::{
     Browser, BrowserAction, CellAction, CellPicture, CellRating, CellStatus, ColourLabel,
@@ -45,6 +45,10 @@ struct Cell {
     side: f32,
     rating: Option<CellRating>,
     reject_activation: bool,
+    /// The thumbnail came with no picture.
+    no_preview: bool,
+    /// Square thumbnails.
+    square: bool,
 }
 
 impl Default for Cell {
@@ -59,6 +63,8 @@ impl Default for Cell {
             side: GridCell::MEDIUM,
             rating: None,
             reject_activation: false,
+            no_preview: false,
+            square: false,
         }
     }
 }
@@ -232,6 +238,7 @@ fn pictured(
             ui.add_space(10.0);
             GridCell::new("IMG_2041.ARW")
                 .picture(picture)
+                .no_preview(state.no_preview)
                 .square(square)
                 .selected(state.selected)
                 .active(state.active)
@@ -336,6 +343,365 @@ fn a_picture_is_fitted_at_its_square_s_bottom_centre_with_no_frame_round_it() {
     let (harness, texture) = pictured(None, false, Cell::default());
     assert!(drawn(&harness, texture).is_empty());
     assert_eq!(painted(&harness), ["IMG_2041.ARW", "IMG_2041.ARW"]);
+}
+
+/// A cell for the file `name` drawn as `state` says in the theme `which`, with no picture,
+/// 10 points in, its tooltip shown at once, and whether each frame's click picked the
+/// photo or was on its empty space.
+fn plated(which: Builtin, name: &'static str, state: Cell) -> Harness<'static, Vec<(bool, bool)>> {
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(state.side + 40.0, state.side + 80.0))
+        .with_context_setup(move |ctx| {
+            apertrust_ui::install(ctx, Theme::builtin(which));
+            ctx.global_style_mut(|style| style.interaction.tooltip_delay = 0.0);
+        })
+        .build_ui_state(
+            move |ui, clicks: &mut Vec<(bool, bool)>| {
+                ui.add_space(10.0);
+                let output = GridCell::new(name)
+                    .no_preview(state.no_preview)
+                    .side(state.side)
+                    .labels(state.labels)
+                    .square(state.square)
+                    .edited(state.edited)
+                    .selected(state.selected)
+                    .active(state.active)
+                    .show(ui);
+                if output.clicked || output.empty {
+                    clicks.push((output.clicked, output.empty));
+                }
+            },
+            Vec::new(),
+        );
+    harness.run();
+    harness
+}
+
+/// The cell drawn as `state` says with no picture and its thumbnail come without one.
+fn no_preview(state: Cell) -> Harness<'static, Vec<(bool, bool)>> {
+    plated(
+        Builtin::Dark,
+        "IMG_2041.ARW",
+        Cell {
+            no_preview: true,
+            ..state
+        },
+    )
+}
+
+/// The filled rectangles of `colours` painted inside the cell named `name`: its plate or
+/// its name's box.
+fn filled<T>(harness: &Harness<'_, T>, name: &str, colours: &[egui::Color32]) -> Vec<egui::Rect> {
+    let cell = harness.get_by_label(name).rect().expand(8.0);
+    harness
+        .output()
+        .shapes
+        .iter()
+        .filter_map(|clipped| match &clipped.shape {
+            Shape::Rect(rect) if colours.contains(&rect.fill) => Some(rect.rect),
+            _ => None,
+        })
+        .filter(|rect| cell.contains_rect(*rect))
+        .collect()
+}
+
+/// The plate, or the name's box: the `sunken` rectangle in the dark theme.
+fn plate_of<T>(harness: &Harness<'_, T>) -> egui::Rect {
+    let t = Theme::builtin(Builtin::Dark);
+    let [plate] = filled(harness, "IMG_2041.ARW", &[t.colors.sunken])[..] else {
+        panic!("one plate");
+    };
+    plate
+}
+
+/// The texts painted, each with where it lies.
+fn texts<T>(harness: &Harness<'_, T>) -> Vec<(String, egui::Rect)> {
+    harness
+        .output()
+        .shapes
+        .iter()
+        .filter_map(|clipped| match &clipped.shape {
+            Shape::Text(text) => Some((
+                text.galley.text().to_owned(),
+                egui::Rect::from_min_size(text.pos, text.galley.size()),
+            )),
+            _ => None,
+        })
+        .collect()
+}
+
+/// The icons painted: each mesh's bounds.
+fn icons<T>(harness: &Harness<'_, T>) -> Vec<egui::Rect> {
+    harness
+        .output()
+        .shapes
+        .iter()
+        .filter_map(|clipped| match &clipped.shape {
+            Shape::Mesh(mesh) => Some(mesh.calc_bounds()),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn a_cell_with_no_preview_draws_the_plate() {
+    let t = Theme::builtin(Builtin::Dark);
+    // 3:2, as wide as the square, at its foot, where a fitted landscape picture lands.
+    let harness = no_preview(Cell::default());
+    let square = square_of_cell(&harness);
+    let plate = plate_of(&harness);
+    let foot = egui::Rect::from_min_max(
+        egui::pos2(square.left(), square.bottom() - 80.0),
+        square.max,
+    );
+    assert_eq!(plate, foot, "in {square:?}");
+    // With square thumbnails, the whole square.
+    let harness = no_preview(Cell {
+        square: true,
+        ..Cell::default()
+    });
+    assert_eq!(plate_of(&harness), square_of_cell(&harness));
+
+    // Centred on it, the image glyph and under it the file's type, from Medium up; the
+    // caption names the photo as for a picture.
+    for (side, glyph) in [(84.0, 16.0), (120.0, 16.0), (176.0, 20.0), (256.0, 24.0)] {
+        let harness = no_preview(Cell {
+            side,
+            ..Cell::default()
+        });
+        let plate = plate_of(&harness);
+        let [icon] = icons(&harness)[..] else {
+            panic!("one glyph at {side}: {:?}", icons(&harness));
+        };
+        assert_eq!(icon.size(), egui::vec2(glyph, glyph), "at {side}");
+        assert!(
+            (icon.center().x - plate.center().x).abs() <= 0.5,
+            "at {side}"
+        );
+        let texts = texts(&harness);
+        let names: Vec<&str> = texts.iter().map(|(text, _)| text.as_str()).collect();
+        if side < GridCell::MEDIUM {
+            assert_eq!(names, ["IMG_2041.ARW"], "at {side}");
+            assert!((icon.center().y - plate.center().y).abs() <= 0.5);
+        } else {
+            assert_eq!(names, ["ARW", "IMG_2041.ARW"], "at {side}");
+            let kind = texts[0].1;
+            assert!(
+                kind.top() > icon.bottom() && plate.contains_rect(kind),
+                "at {side}"
+            );
+            assert!(
+                (kind.center().x - plate.center().x).abs() <= 1.0,
+                "at {side}"
+            );
+            // The two together centred on the plate.
+            let middle = (icon.top() + kind.bottom()) / 2.0;
+            assert!((middle - plate.center().y).abs() <= 0.5, "at {side}");
+        }
+    }
+
+    // Under the pointer it takes `hover`, as the name's box does.
+    let mut harness = no_preview(Cell::default());
+    harness.get_by_label("IMG_2041.ARW").hover();
+    harness.run();
+    assert_eq!(filled(&harness, "IMG_2041.ARW", &[t.colors.hover]).len(), 1);
+
+    // Outlined in `border` only where `sunken` is the panel's `surface`: High contrast.
+    let outlines = |which: Builtin| {
+        let harness = plated(
+            which,
+            "IMG_2041.ARW",
+            Cell {
+                no_preview: true,
+                ..Cell::default()
+            },
+        );
+        let border = Theme::builtin(which).colors.border;
+        let outlined: Vec<egui::Rect> = (harness.output().shapes.iter())
+            .filter_map(|clipped| match &clipped.shape {
+                Shape::Rect(rect)
+                    if rect.stroke_kind == egui::StrokeKind::Inside
+                        && rect.stroke.width == 1.0
+                        && rect.stroke.color == border =>
+                {
+                    Some(rect.rect)
+                }
+                _ => None,
+            })
+            .collect();
+        outlined
+    };
+    let contrast = Theme::builtin(Builtin::HighContrast);
+    assert_eq!(contrast.colors.sunken, contrast.colors.surface);
+    assert_eq!(outlines(Builtin::HighContrast).len(), 1);
+    for which in [Builtin::Dark, Builtin::Grey, Builtin::Light] {
+        let colours = Theme::builtin(which).colors;
+        assert_ne!(colours.sunken, colours.surface);
+        assert!(outlines(which).is_empty(), "{which:?}");
+    }
+
+    // The rings hug it, 2 points out, and the marks sit at its bottom right.
+    let harness = no_preview(Cell {
+        active: true,
+        selected: true,
+        edited: true,
+        ..Cell::default()
+    });
+    let plate = plate_of(&harness);
+    let [(ring, width, _)] = rings(&harness)[..] else {
+        panic!("one ring: {:?}", rings(&harness));
+    };
+    assert_eq!((ring, width), (plate.expand(2.0), 3.0));
+    let chip = filled(&harness, "IMG_2041.ARW", &[t.colors.thumb_scrim]);
+    let [chip] = chip[..] else {
+        panic!("one mark: {chip:?}");
+    };
+    assert_eq!(chip.max, plate.max - egui::vec2(4.0, 4.0));
+}
+
+/// The cell's square: its top, as wide as it is.
+fn square_of_cell<T>(harness: &Harness<'_, T>) -> egui::Rect {
+    let cell = harness.get_by_label("IMG_2041.ARW").rect();
+    egui::Rect::from_min_size(cell.min, egui::vec2(cell.width(), cell.width()))
+}
+
+#[test]
+fn a_cell_coming_keeps_the_name_box() {
+    for square in [false, true] {
+        let harness = plated(
+            Builtin::Dark,
+            "IMG_2041.ARW",
+            Cell {
+                square,
+                ..Cell::default()
+            },
+        );
+        // The name in a box of the square's size, and in the caption; no glyph, no type.
+        assert_eq!(plate_of(&harness), square_of_cell(&harness));
+        assert_eq!(painted(&harness), ["IMG_2041.ARW", "IMG_2041.ARW"]);
+        assert!(icons(&harness).is_empty());
+        // With no marks, egui's description is the tooltip's: the name alone.
+        let item = harness.get_by_role_and_label(Role::ListItem, "IMG_2041.ARW");
+        let said = item.accesskit_node().description();
+        assert_eq!(said.as_deref(), Some("IMG_2041.ARW"));
+    }
+}
+
+#[test]
+fn a_picture_wins_over_no_preview() {
+    let state = Cell {
+        no_preview: true,
+        ..Cell::default()
+    };
+    for square in [false, true] {
+        let (with, texture) = pictured(Some([3, 2]), square, state);
+        let (without, plain) = pictured(Some([3, 2]), square, Cell::default());
+        assert_eq!(drawn(&with, texture), drawn(&without, plain));
+        assert_eq!(painted(&with), ["IMG_2041.ARW"]);
+        assert_eq!(meshes(&with), 1, "the picture alone, no glyph");
+        let item = with.get_by_role_and_label(Role::ListItem, "IMG_2041.ARW");
+        let said = item.accesskit_node().description();
+        assert_eq!(said.as_deref(), Some("IMG_2041.ARW"), "the tooltip's alone");
+    }
+}
+
+#[test]
+fn no_preview_with_labels_off_puts_the_name_on_the_plate() {
+    let t = Theme::builtin(Builtin::Dark);
+    for side in [84.0, 120.0, 176.0, 256.0] {
+        let harness = no_preview(Cell {
+            side,
+            labels: false,
+            ..Cell::default()
+        });
+        // No caption: the name, in place of the type, under the glyph on the plate; at
+        // Small cut in its middle.
+        let plate = plate_of(&harness);
+        let [(name, at)] = &texts(&harness)[..] else {
+            panic!("the name alone at {side}: {:?}", texts(&harness));
+        };
+        if side < GridCell::MEDIUM {
+            assert!(name.starts_with("IMG") && name.ends_with(".ARW"), "{name}");
+        } else {
+            assert_eq!(name, "IMG_2041.ARW", "at {side}");
+        }
+        assert!(plate.contains_rect(*at), "at {side}");
+        let [icon] = icons(&harness)[..] else {
+            panic!("one glyph");
+        };
+        assert!(at.top() > icon.bottom(), "at {side}");
+    }
+    // A long one cut in its middle to the plate's width, less `xs` each side.
+    let harness = plated(
+        Builtin::Dark,
+        "Wedding_2026-10-31_ceremony_0042.ORF",
+        Cell {
+            side: 84.0,
+            labels: false,
+            no_preview: true,
+            ..Cell::default()
+        },
+    );
+    let [(name, at)] = &texts(&harness)[..] else {
+        panic!("the name alone: {:?}", texts(&harness));
+    };
+    assert!(
+        name.contains('…') && name.starts_with("We") && name.ends_with(".ORF"),
+        "{name}"
+    );
+    let cell = harness
+        .get_by_label("Wedding_2026-10-31_ceremony_0042.ORF")
+        .rect();
+    assert!(at.width() <= cell.width() - 2.0 * t.spacing.xs, "{at:?}");
+}
+
+#[test]
+fn a_click_on_the_plate_picks_and_beside_it_is_empty() {
+    let mut harness = no_preview(Cell::default());
+    let plate = plate_of(&harness);
+    let square = square_of_cell(&harness);
+    click_at(&mut harness, plate.center(), egui::Modifiers::NONE);
+    assert_eq!(*harness.state(), [(true, false)]);
+    harness.state_mut().clear();
+    // Above the plate, in the square: the cell's empty space.
+    let above = egui::pos2(square.center().x, square.top() + 10.0);
+    assert!(!plate.contains(above));
+    click_at(&mut harness, above, egui::Modifiers::NONE);
+    assert_eq!(*harness.state(), [(false, true)]);
+}
+
+#[test]
+fn no_preview_is_in_the_description_and_tooltip() {
+    let tip = "No preview in this file yet. Apertrust makes one when you open it.";
+    let description = |harness: &Harness<'_, _>| {
+        let item = harness.get_by_role_and_label(Role::ListItem, "IMG_2041.ARW");
+        item.accesskit_node().description()
+    };
+    let tooltip = |harness: &mut Harness<'_, _>| {
+        harness.get_by_label("IMG_2041.ARW").hover();
+        harness.run();
+        painted(harness).last().cloned()
+    };
+    // After the name, before the marks; in the tooltip, a line after the name and marks.
+    let mut harness = no_preview(Cell::default());
+    assert_eq!(description(&harness).as_deref(), Some("No preview yet"));
+    assert_eq!(tooltip(&mut harness), Some(format!("IMG_2041.ARW\n{tip}")));
+    let mut harness = no_preview(Cell {
+        edited: true,
+        ..Cell::default()
+    });
+    assert_eq!(
+        description(&harness).as_deref(),
+        Some("No preview yet. Edited")
+    );
+    assert_eq!(
+        tooltip(&mut harness),
+        Some(format!("IMG_2041.ARW\nEdited\n{tip}"))
+    );
+    // Coming: neither, egui's description the tooltip's.
+    let mut harness = plated(Builtin::Dark, "IMG_2041.ARW", Cell::default());
+    assert_eq!(description(&harness).as_deref(), Some("IMG_2041.ARW"));
+    assert_eq!(tooltip(&mut harness).as_deref(), Some("IMG_2041.ARW"));
 }
 
 #[test]
@@ -630,6 +996,7 @@ fn panel(count: usize, active: Option<usize>) -> Harness<'static, Vec<BrowserAct
                     status: None,
                     selected: false,
                     picture: None,
+                    no_preview: false,
                     rating: None,
                 };
                 if let Some(action) = Browser::new(count, active, thumb).show(ui).action {
@@ -700,6 +1067,7 @@ fn pictured_panel() -> Harness<'static, Vec<BrowserAction>> {
                         texture: handle.id(),
                         size: handle.size_vec2(),
                     }),
+                    no_preview: false,
                     rating: rated(),
                 };
                 if let Some(action) = Browser::new(3, Some(0), thumb).show(ui).action {
@@ -881,6 +1249,7 @@ fn the_panel_reports_the_photos_whose_cells_it_drew() {
                         status: None,
                         selected: false,
                         picture: None,
+                        no_preview: false,
                         rating: None,
                     };
                     *shown = Browser::new(count, active, thumb).show(ui).shown;

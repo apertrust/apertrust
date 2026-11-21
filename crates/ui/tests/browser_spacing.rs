@@ -82,6 +82,7 @@ fn strip(
                             status: None,
                             selected: i == active || i == active + 1,
                             picture: None,
+                            no_preview: false,
                             rating: None,
                         };
                         Browser::new(state.count, Some(active), thumb)

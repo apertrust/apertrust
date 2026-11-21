@@ -494,6 +494,13 @@ grid-cell-reject = Reject
 grid-cell-colour-labels = Colour labels
 grid-cell-no-labels = None
 grid-cell-clear-labels = Clear labels
+# What screen readers hear first in a cell's description, after its file name, for a
+# photo whose file holds no picture Apertrust reads and that has not been rendered yet:
+# its cell shows an image glyph on a plain plate in place of a picture.
+grid-cell-no-preview = No preview yet
+# The line the same cell's tooltip ends with: Apertrust renders a preview of the photo
+# once it is opened.
+grid-cell-no-preview-tip = No preview in this file yet. Apertrust makes one when you open it.
 # darktable's colour labels, in its order.
 colour-label-red = Red
 colour-label-yellow = Yellow

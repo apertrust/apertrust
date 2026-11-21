@@ -78,6 +78,9 @@ pub struct Thumb<'a> {
     pub selected: bool,
     /// Its thumbnail, once it has come.
     pub picture: Option<CellPicture>,
+    /// Whether its thumbnail came with no picture: No preview yet, while `picture` is none
+    /// ([`GridCell::no_preview`]).
+    pub no_preview: bool,
     /// Its rating, reject and colour labels, where the library has them.
     pub rating: Option<CellRating>,
 }
@@ -612,6 +615,7 @@ impl<'a, F: Fn(usize) -> Thumb<'a>> Browser<'a, F> {
                                 .square(self.square)
                                 .rating(thumb.rating)
                                 .picture(thumb.picture)
+                                .no_preview(thumb.no_preview)
                                 .edited(thumb.edited)
                                 .status(thumb.status)
                                 .selected(thumb.selected)

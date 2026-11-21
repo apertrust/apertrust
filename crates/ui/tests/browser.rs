@@ -66,6 +66,7 @@ fn browser_on(count: usize, os: egui::os::OperatingSystem) -> Harness<'static, B
                     status: None,
                     selected: false,
                     picture: None,
+                    no_preview: false,
                     rating: None,
                 };
                 let output = Browser::new(browser.count, Some(0), thumb)
@@ -318,6 +319,7 @@ fn the_browser_bar_is_photographed() {
                 status: None,
                 selected: false,
                 picture: None,
+                no_preview: false,
                 rating: None,
             };
             Browser::new(names.len(), Some(1), thumb)
@@ -368,6 +370,7 @@ fn bottom(rows: usize, most: usize, count: usize) -> Harness<'static, Bottom> {
                             status: None,
                             selected: false,
                             picture: None,
+                            no_preview: false,
                             rating: None,
                         };
                         Browser::new(state.count, None, thumb)
@@ -782,6 +785,7 @@ fn column(position: BrowserPosition, columns: usize, count: usize) -> Harness<'s
                             status: None,
                             selected: false,
                             picture: None,
+                            no_preview: false,
                             rating: None,
                         };
                         Browser::new(state.count, Some(1), thumb)
@@ -1163,6 +1167,7 @@ fn pictured(count: usize) -> Harness<'static, Clicked> {
                         texture: portrait.id(),
                         size: portrait.size_vec2(),
                     }),
+                    no_preview: false,
                     rating: Some(CellRating::default()),
                 };
                 let output = Browser::new(count, Some(0), thumb).show(ui);
