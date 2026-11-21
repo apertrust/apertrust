@@ -56,8 +56,8 @@ use crate::gpu::GpuContext;
 use crate::jobs::{GpuTask, Step, TaskError};
 pub use crate::pipeline::BUDGET;
 use crate::pipeline::{
-    self, Instance, Limits, Parts, Pipe, Pipeline, Plan, PlanError, Resample, SMALLEST_TILE,
-    reads_the_whole_image, runs, split,
+    self, AsRegion, Instance, Limits, Parts, Pipe, Pipeline, Plan, PlanError, Resample,
+    SMALLEST_TILE, reads_the_whole_image, runs, split,
 };
 use crate::raw_histogram;
 
@@ -395,6 +395,8 @@ async fn render_export(
             extent: round_extent,
             regions: round_regions,
             resample: round_resample,
+            detail: None,
+            as_region: None,
         };
         let plans = round.plans(through, image, source.desc(), &earlier, &limits)?;
         let mut tiles =
@@ -778,12 +780,18 @@ fn past_the_resample(whole: &Plan, run: &str) -> bool {
 }
 
 /// A first round of tiles for the operation `run` (decision 15): tiles of `extent`, its
-/// stage at the round's scale, cut as `regions`, resampled as `resample` says.
+/// stage at the round's scale, cut as `regions`, resampled as `resample` says, or for a
+/// detail below 1 (decision 99), the scale its tiles are details at, each downscaling its
+/// footprints as the fitted viewport at that scale does.
 pub(crate) struct Round<'a> {
     pub(crate) run: &'static str,
     pub(crate) extent: [u32; 2],
     pub(crate) regions: &'a [[u32; 4]],
     pub(crate) resample: Option<Resample>,
+    pub(crate) detail: Option<f64>,
+    /// How a detail's tiles plan their operations, as its region does
+    /// ([`pipeline::plan_as`]).
+    pub(crate) as_region: Option<AsRegion>,
 }
 
 impl Round<'_> {
@@ -804,11 +812,18 @@ impl Round<'_> {
     ) -> Result<Vec<Plan>, PlanError> {
         let last = self.regions.len() - 1;
         let tile = |(k, &region): (usize, &[u32; 4])| {
-            let pipe = Pipe::Tile {
-                region: grown(region, self.extent),
-                resample: self.resample,
+            let region = grown(region, self.extent);
+            let pipe = match self.detail {
+                Some(scale) => Pipe::Detail { region, scale },
+                None => Pipe::Tile {
+                    region,
+                    resample: self.resample,
+                },
             };
-            let mut plan = pipeline::plan(through, image, source, pipe, limits)?;
+            let as_region = self.as_region;
+            let mut plan = pipeline::plan_as(through, image, source, pipe, limits, as_region)?;
+            // A tile renders once, so it keeps no edit cache, as an export's tile has none.
+            plan.edit_cache = None;
             for id in held {
                 plan.retain_passes(id, |pass| pass.kind != PassKind::Reduction);
             }

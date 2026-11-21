@@ -202,16 +202,23 @@ pub enum Pipe {
     /// planned as a tile of an export, its region walked back through every geometry and
     /// cut out by the engine's `region` copy, a cache point; from a mosaic the copy grown
     /// by demosaic's reach and aligned to the colour pattern, then demosaiced, its image a
-    /// cache point too. After its start, as the viewport, with an edit cache and
-    /// whole-image keys. Its operations see [`PipeKind::Viewport`]. From demosaic's image
-    /// the raw stage's instances are left out, as its input is past them; from a mosaic
-    /// the instances are taken as given, those after it ([`detail_instances`]), as an
-    /// export's tiles take theirs. Only at `scale` 1 so far, and refused
-    /// ([`PlanError::Detail`]) with an operation after demosaic that reaches past its
-    /// pixel. An operation with whole-image passes keeps them all in the plan, which
-    /// renders the region alone: [`crate::detail::Results`] leaves them out and binds
-    /// their result, computed over the whole image in a round of its own.
-    Detail { region: [u32; 4], scale: f32 },
+    /// cache point too. Below 1 its start is instead the viewport's box downscale of the
+    /// region, with the footprints of the whole output at `scale`, `at_scale(extent,
+    /// scale)`, so its pixels are the fitted viewport's at that scale: from demosaic's
+    /// image read in place, or from a mosaic after demosaicing the photosites its
+    /// footprints cover, grown by demosaic's reach. After its start, as the viewport, at
+    /// `scale`, with an edit cache and whole-image keys. Its operations see
+    /// [`PipeKind::Viewport`]. From demosaic's image the raw stage's instances are left
+    /// out, as its input is past them; from a mosaic the instances are taken as given,
+    /// those after it ([`detail_instances`]), as an export's tiles take theirs. Refused
+    /// ([`PlanError::Detail`]) at a scale above 1 or not above 0, and with an operation
+    /// after demosaic that reaches past its pixel. An operation with whole-image passes
+    /// keeps them all in the plan, which renders the region alone:
+    /// [`crate::detail::Results`] leaves them out and binds their result, computed over
+    /// the whole image at `scale` in a round of its own. `scale` is an `f64`, as
+    /// [`crate::view::Placement::render`] is, so the output at it is the one the view
+    /// places.
+    Detail { region: [u32; 4], scale: f64 },
 }
 
 /// Which image buffer an operation reads or writes: the pipe's input, or a working
@@ -562,9 +569,23 @@ impl Plan {
         if input > limits.buffer {
             return Some((0, input, limits.buffer));
         }
+        self.oversized_among(limits, false)
+    }
+
+    /// Whether every operation inside the tiles binds within `limits` and writes buffers
+    /// the GPU makes: what smaller tiles can change.
+    fn tiles_bind(&self, limits: &Limits) -> bool {
+        self.oversized_among(limits, true).is_none()
+    }
+
+    /// The first operation inside the tiles, or outside them, that binds more than the
+    /// GPU binds at once, or writes a buffer larger than it makes: its index, and the
+    /// bytes and the limit.
+    fn oversized_among(&self, limits: &Limits, inside: bool) -> Option<(usize, u64, u64)> {
+        let input = self.input.buffer_size();
         let tiled = self.tiled.clone().unwrap_or_default();
         self.operations.iter().enumerate().find_map(|(index, op)| {
-            if tiled.contains(&index) {
+            if tiled.contains(&index) != inside {
                 return None;
             }
             if let Some((_, _, bytes)) = self.oversized_in(op, 0, limits.binding, input) {
@@ -790,8 +811,8 @@ pub enum PlanError {
         smaller_fits: bool,
     },
     /// A detail the zoomed view cannot render yet (decision 99): an operation after
-    /// demosaic that reaches past its pixel, a scale other than 1, or a region outside its
-    /// input.
+    /// demosaic that reaches past its pixel, a scale above 1 or not above 0, or a region
+    /// outside its input.
     #[error("{operation}: {what}")]
     Detail {
         operation: &'static str,
@@ -818,6 +839,42 @@ pub fn plan(
     pipe: Pipe,
     limits: &Limits,
 ) -> Result<Plan, PlanError> {
+    plan_as(instances, image, input, pipe, limits, None)
+}
+
+/// How a detail's region plans its operations below 1 (decision 99), which its
+/// whole-image plan and its rounds, planned with the operations up to the one whose
+/// results they are, follow ([`plan_as`]): whether it offers an operation that computes
+/// its whole-image results at full resolution demosaic's image, and the scale its
+/// operations run at, [`ImageContext::scale`]. A geometry after that operation, which
+/// those plans leave out, leaves the region's at the detail's scale, and its scale
+/// taken from the output's width after the geometry, as it leaves the fitted
+/// viewport's.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct AsRegion {
+    pub(crate) full_resolution: bool,
+    pub(crate) scale: f32,
+}
+
+impl AsRegion {
+    /// How `region`, a detail's plan, plans its operations.
+    pub(crate) fn of(region: &Plan) -> Self {
+        Self {
+            full_resolution: (region.operations.iter()).any(|op| op.full_resolution.is_some()),
+            scale: region.operations.last().map_or(1.0, |op| op.scale),
+        }
+    }
+}
+
+/// [`plan`], a detail below 1 planning its operations as `as_region` says.
+pub(crate) fn plan_as(
+    instances: &[Instance],
+    image: &ImageContext,
+    input: ImageDesc,
+    pipe: Pipe,
+    limits: &Limits,
+    as_region: Option<AsRegion>,
+) -> Result<Plan, PlanError> {
     let mut ordered: Vec<&Instance> = instances.iter().collect();
     ordered.sort_by(|a, b| {
         a.operation
@@ -839,7 +896,7 @@ pub fn plan(
         ..image.clone()
     };
     let output_profile = output_profile(&ordered, &bare)?.or(image.output_profile);
-    let regions = regions(&ordered, &bare, &input, pipe)?;
+    let regions = regions(&ordered, &bare, &input, pipe, as_region)?;
     if let Some(regions) = &regions {
         let [x, y, width, height] = regions.region;
         let [full_width, full_height] = regions.start.full;
@@ -858,7 +915,19 @@ pub fn plan(
         output_profile,
         ..bare
     };
-    let (whole, lines) = build(&ordered, image, input, pipe, limits, None, regions.as_ref())?;
+    let at = Planning {
+        ordered: &ordered,
+        image,
+        input,
+        pipe,
+        limits,
+        regions: regions.as_ref(),
+        as_region,
+    };
+    let (whole, lines) = build(&at, None)?;
+    if let Some(tiled) = detail_tiles(&at, &whole)? {
+        return Ok(tiled);
+    }
     let viewport = match pipe {
         Pipe::Viewport { width, height } => viewport_split(&whole, limits).map(|(split, full)| {
             let fitted = match &regions {
@@ -909,16 +978,9 @@ pub fn plan(
             full,
             output,
             tiles: viewport_tiles(source, output, edge),
+            region: None,
         };
-        let (plan, lines) = build(
-            &ordered,
-            image,
-            input,
-            pipe,
-            limits,
-            Some(&tiling),
-            regions.as_ref(),
-        )?;
+        let (plan, lines) = build(&at, Some(&tiling))?;
         let tiled = plan.tiled.clone().expect("a tiled viewport");
         // What does not fit outside the tiles no tile size helps. After them, the
         // viewport image fits, as checked above, so it is a table or a scratch buffer
@@ -965,20 +1027,85 @@ pub fn plan(
     }
 }
 
+/// A detail below 1 from a mosaic whose plan `whole` does not bind, planned again with
+/// its start in tiles, as the viewport's (decisions 14 and 99): each tile copies the
+/// photosites under its footprints, grown by demosaic's reach, demosaics them and
+/// downscales them into its part of the region, the largest tiles, halving from 8192
+/// pixels of the image, whose plan binds and whose own buffers stay within the budget,
+/// or the smallest tried otherwise. Where what does not bind lies outside the tiles, as
+/// a whole-image operation's scratch at the detail's scale, no tile size helps it: the
+/// largest tiles that bind themselves are taken, and the pipeline or the detail's
+/// results refuse that binding.
+/// `None` for any other plan, which `whole` is.
+fn detail_tiles(at: &Planning, whole: &Plan) -> Result<Option<Plan>, PlanError> {
+    let (input, limits, regions) = (at.input, at.limits, at.regions);
+    let Pipe::Detail { region, scale } = at.pipe else {
+        return Ok(None);
+    };
+    if scale >= 1.0 || !input.format.is_mosaic() || whole.binds_within(limits) {
+        return Ok(None);
+    }
+    // Demosaic's image of the footprints, and so the whole of it at full resolution.
+    let Some(made) = (whole.operations.iter()).find(|op| op.output_desc.format == Format::Rgba)
+    else {
+        return Ok(None);
+    };
+    let made = made.output_desc;
+    let full = ImageDesc {
+        width: made.extent[0],
+        height: made.extent[1],
+        sensor_origin: [
+            made.sensor_origin[0] - made.origin[0],
+            made.sensor_origin[1] - made.origin[1],
+        ],
+        origin: [0, 0],
+        ..made
+    };
+    let (start, output) = match regions {
+        Some(regions) => (regions.region, regions.start.scaled),
+        None => (region, at_scale(made.extent, scale)),
+    };
+    let source = [full.width, full.height];
+    let mut edge = 8192;
+    loop {
+        let tiling = Tiling {
+            split: 0,
+            full,
+            output,
+            tiles: region_tiles(source, output, start, edge),
+            region: Some(start),
+        };
+        let (plan, lines) = build(at, Some(&tiling))?;
+        if edge <= SMALLEST_TILE
+            || (plan.oversized_outside_tiles(limits).is_some() && plan.tiles_bind(limits))
+            || (plan.binds_within(limits) && plan.tile_bytes() <= limits.budget)
+        {
+            log(&plan, &lines);
+            tracing::debug!(
+                target: "pipe",
+                "detail: demosaic in {} tiles, {edge} pixels a side at most",
+                tiling.tiles.len()
+            );
+            return Ok(Some(plan));
+        }
+        edge /= 2;
+    }
+}
+
 /// The instances a detail at `scale` from `input` runs (decision 99): from demosaic's
 /// image, those after the raw stage, which made it; from the raw stage's output, a float
-/// mosaic, those given ([`from_source`]). Refused where it cannot render them yet: at a
-/// scale other than 1, from an input that is neither, or with an operation after
-/// demosaic that reaches past its pixel, whose region would have to grow by its reach
-/// and be cut back after it.
+/// mosaic, those given ([`from_source`]). Refused where it cannot render them: at a
+/// scale above 1 or not above 0, from an input that is neither, or with an operation
+/// after demosaic that reaches past its pixel, whose region would have to grow by its
+/// reach and be cut back after it.
 fn after_demosaic<'a, 'b>(
     ordered: Vec<&'b Instance<'a>>,
     input: &ImageDesc,
-    scale: f32,
+    scale: f64,
 ) -> Result<Vec<&'b Instance<'a>>, PlanError> {
     let refuse = |operation, what| Err(PlanError::Detail { operation, what });
-    if scale != 1.0 {
-        return refuse("the detail", "a scale other than 1 is not planned yet");
+    if !(scale > 0.0 && scale <= 1.0) {
+        return refuse("the detail", "a scale above 1 or not above 0");
     }
     let demosaiced = input.format == Format::Rgba && !input.extent.contains(&0);
     if !demosaiced && input.format != Format::Mosaic {
@@ -1309,9 +1436,13 @@ struct Tiling {
     /// The image the raw stage ends with at full resolution, as the untiled viewport's
     /// demosaic makes it.
     full: ImageDesc,
-    /// The viewport image's width and height.
+    /// The viewport image's width and height: the whole output's, whose footprints the
+    /// downscale takes.
     output: [u32; 2],
     tiles: Vec<ViewportTile>,
+    /// A detail's region of that output below 1, which its image holds alone (decision
+    /// 99); `None` for the viewport, whose image is the whole output.
+    region: Option<[u32; 4]>,
 }
 
 /// One tile of the viewport: its part of the developed image at full resolution, and of
@@ -1329,12 +1460,28 @@ struct ViewportTile {
 /// exactly the source pixels from `a × source / output` to `b × source / output`, and
 /// the tiles' parts of the source cut it without overlapping.
 fn viewport_tiles(source: [u32; 2], output: [u32; 2], edge: u32) -> Vec<ViewportTile> {
+    region_tiles(source, output, [0, 0, output[0], output[1]], edge)
+}
+
+/// [`viewport_tiles`] of `region` of the output alone, a detail's below 1 (decision 99):
+/// its output pixels cut into tiles of about `edge` pixels of the source the region's
+/// footprints cover, each covering exactly its own footprints.
+fn region_tiles(
+    source: [u32; 2],
+    output: [u32; 2],
+    region: [u32; 4],
+    edge: u32,
+) -> Vec<ViewportTile> {
     let bounds = |axis: usize| -> Vec<[u32; 2]> {
         let (whole, out) = (u64::from(source[axis]), u64::from(output[axis]));
-        let tiles = whole.div_ceil(u64::from(edge.max(1))).clamp(1, out.max(1));
+        let (start, length) = (u64::from(region[axis]), u64::from(region[axis + 2]));
+        let covered = (start + length) * whole / out.max(1) - start * whole / out.max(1);
+        let tiles = covered
+            .div_ceil(u64::from(edge.max(1)))
+            .clamp(1, length.max(1));
         (0..=tiles)
             .map(|k| {
-                let o = k * out / tiles;
+                let o = start + k * length / tiles;
                 [o as u32, (o * whole / out.max(1)) as u32]
             })
             .collect()
@@ -1410,6 +1557,7 @@ fn regions(
     image: &ImageContext,
     input: &ImageDesc,
     pipe: Pipe,
+    as_region: Option<AsRegion>,
 ) -> Result<Option<Regions>, PlanError> {
     let mut geometries = Vec::with_capacity(ordered.len());
     for instance in ordered {
@@ -1499,7 +1647,12 @@ fn regions(
             [0, 0, resample.output[0], resample.output[1]],
         ),
         Pipe::Tile { region, resample } => (1.0, resample.map_or(1.0, |r| r.scale), region),
-        Pipe::Detail { region, scale } => (1.0, scale, region),
+        // Every stage at the detail's scale, as the fitted viewport at that scale has them
+        // (decision 99).
+        Pipe::Detail { region, scale } => {
+            let operations = detail_scale(extent, scale, as_region);
+            (scale, operations, region)
+        }
         Pipe::Viewport { width, height } => {
             let fitted = fit_scale((extent[0], extent[1]), (width, height));
             let [width, height] = at_scale(extent, fitted);
@@ -1644,17 +1797,31 @@ fn within(region: [u32; 4], size: [u32; 2]) -> bool {
     x + width <= u64::from(size[0]) && y + height <= u64::from(size[1])
 }
 
-/// Plans the ordered instances, the viewport's in tiles if `tiling` says, with geometry
-/// where `regions` say, with the lines to log, each with whether it is detail.
-fn build(
-    ordered: &[&Instance],
-    image: &ImageContext,
+/// What [`build`] plans: the ordered instances, the image, the pipe's input and the pipe,
+/// within the limits, with geometry where `regions` say, and a detail below 1 as its
+/// region does ([`plan_as`]).
+struct Planning<'a> {
+    ordered: &'a [&'a Instance<'a>],
+    image: &'a ImageContext,
     input: ImageDesc,
     pipe: Pipe,
-    limits: &Limits,
-    tiling: Option<&Tiling>,
-    regions: Option<&Regions>,
-) -> Result<(Plan, Vec<String>), PlanError> {
+    limits: &'a Limits,
+    regions: Option<&'a Regions>,
+    as_region: Option<AsRegion>,
+}
+
+/// Plans the ordered instances, the viewport's in tiles if `tiling` says, with the lines
+/// to log, each with whether it is detail.
+fn build(at: &Planning, tiling: Option<&Tiling>) -> Result<(Plan, Vec<String>), PlanError> {
+    let Planning {
+        ordered,
+        image,
+        input,
+        pipe,
+        limits,
+        regions,
+        ..
+    } = *at;
     // The stage the operations after the raw stage start in, at full resolution.
     let stage = match regions {
         Some(regions) => regions.start.full,
@@ -1683,6 +1850,38 @@ fn build(
             Pipe::Export | Pipe::Resampled(_) | Pipe::Tile { .. } | Pipe::Detail { .. },
             Some(regions),
         ) => Some(regions.region),
+    };
+    // Below 1, a detail's region is at its scale, and the raw stage, or the copy from
+    // demosaic's image, makes the region at full resolution its footprints cover
+    // (decision 99).
+    let detail = match (pipe, region) {
+        (Pipe::Detail { scale, .. }, Some(scaled)) if scale < 1.0 => {
+            // With geometry, the scale `regions` worked out; without, the output is the
+            // developed image's stage. Both from `detail_scale`.
+            let (whole, context_scale) = match regions {
+                Some(regions) => (regions.start.scaled, regions.start.scale),
+                None => (
+                    at_scale(stage, scale),
+                    detail_scale(stage, scale, at.as_region),
+                ),
+            };
+            if !within(scaled, whole) {
+                return Err(PlanError::Detail {
+                    operation: "the detail",
+                    what: "its region is empty or not inside its input",
+                });
+            }
+            Some(DetailStart {
+                region: scaled,
+                whole,
+                scale: context_scale,
+            })
+        }
+        _ => None,
+    };
+    let region = match detail {
+        Some(start) => Some(footprints(start.region, stage, start.whole)),
+        None => region,
     };
     let mut builder = Builder {
         plan: Plan {
@@ -1727,6 +1926,8 @@ fn build(
         full_resolution: None,
         scaled_origin: None,
         at_size,
+        detail,
+        offers_full_resolution: at.as_region.is_none_or(|region| region.full_resolution),
     };
     // A tile past its export's resample starts at the export's scale.
     if let Some(at_size) = builder.at_size.as_ref().filter(|at| !at.pending) {
@@ -1756,7 +1957,10 @@ fn build(
             });
         }
     }
-    if let (Pipe::Tile { .. } | Pipe::Detail { .. }, Some(region)) = (pipe, region) {
+    // Below 1, a detail's downscale reads demosaic's image in place, copying nothing, and
+    // in tiles each tile copies its own part.
+    let copies = detail.is_none() || (input.format.is_mosaic() && tiling.is_none());
+    if let (Pipe::Tile { .. } | Pipe::Detail { .. }, Some(region), true) = (pipe, region, copies) {
         // The tile's operations need the region grown by their radii.
         let border: u32 = ordered
             .iter()
@@ -1764,13 +1968,13 @@ fn build(
             .sum();
         builder.tile_input(region, border)?;
     }
-    // A detail's copy of its region is its first cache point, and the edit cache starts
-    // after it, as the viewport's start after its downscale (decision 99); from a mosaic,
-    // after demosaic, below.
+    // A detail's start from demosaic's image: its copy of its region at 1, its downscale
+    // below; from a mosaic, after demosaic, below, its copy a cache point too.
     if let Pipe::Detail { .. } = pipe {
-        builder.cache_current();
         if input.format == Format::Rgba {
-            builder.plan.edit_cache = Some(builder.current_desc);
+            builder.detail_start()?;
+        } else {
+            builder.cache_current();
         }
     }
     // The raw-stage instances the viewport's tiles run, from the tiling's split on.
@@ -1780,7 +1984,7 @@ fn build(
         let stage = instance.operation.manifest().slot.stage;
         if stage != Stage::Raw {
             builder.viewport(&tiled)?;
-            builder.detail_demosaiced();
+            builder.detail_start()?;
             if !started {
                 started = true;
                 builder.start()?;
@@ -1795,7 +1999,7 @@ fn build(
     }
     if builder.current_desc.format == Format::Rgba || !tiled.is_empty() {
         builder.viewport(&tiled)?;
-        builder.detail_demosaiced();
+        builder.detail_start()?;
     }
     builder.resample(ordered.len())?;
     Ok((builder.plan, builder.lines))
@@ -1953,6 +2157,36 @@ struct Builder {
     scaled_origin: Option<[u32; 2]>,
     /// The export's size and its resample, in an export at a size.
     at_size: Option<AtSize>,
+    /// A detail's start below 1 (decision 99).
+    detail: Option<DetailStart>,
+    /// Whether a detail below 1 may offer demosaic's image at full resolution
+    /// ([`plan_as`]).
+    offers_full_resolution: bool,
+}
+
+/// Where a detail below 1 starts (decision 99): its region and the whole of the stage it
+/// starts in at its scale, the developed image's or, with geometry, the region the
+/// operations after the raw stage read, and the scale its operations run at, from
+/// [`detail_scale`], which its downscale and its tiles take.
+#[derive(Debug, Clone, Copy)]
+struct DetailStart {
+    region: [u32; 4],
+    whole: [u32; 2],
+    scale: f32,
+}
+
+/// The region of `source` pixels at full resolution the footprints of `region` cover, in
+/// an output of `output` pixels: output pixel o covers source pixels from
+/// `o × source / output` up to `(o + 1) × source / output`, as the downscale computes them
+/// ([`viewport_tiles`]). `region` lies inside `output`.
+fn footprints(region: [u32; 4], source: [u32; 2], output: [u32; 2]) -> [u32; 4] {
+    let at = |o: u32, axis: usize| {
+        let (source, output) = (u64::from(source[axis]), u64::from(output[axis].max(1)));
+        (u64::from(o) * source / output) as u32
+    };
+    let [x, y, width, height] = region;
+    let [left, top] = [at(x, 0), at(y, 1)];
+    [left, top, at(x + width, 0) - left, at(y + height, 1) - top]
 }
 
 /// The full-resolution image the viewport's downscale read (decision 15): the buffer
@@ -2107,9 +2341,10 @@ impl Builder {
     /// opts in, and comes straight after the untiled viewport's downscale, so that image
     /// is its input at full resolution. Elsewhere it estimates at the pipe's scale, as
     /// every operation does, logged: in a tiled viewport, whose full resolution exists
-    /// a tile at a time, or after another operation at the viewport's scale, which the
+    /// a tile at a time, after another operation at the viewport's scale, which the
     /// first operation ported between demosaic and it, denoise, will need to run at full
-    /// resolution first.
+    /// resolution first. A detail below 100% (decision 99) follows the viewport, its full
+    /// resolution in tiles where it starts from a tiled viewport's mosaic.
     fn full_resolution_for(
         &self,
         id: &'static str,
@@ -2128,14 +2363,22 @@ impl Builder {
             .is_some_and(|op| op.id == DOWNSCALE.name);
         let full = self.full_resolution.filter(|_| after_downscale);
         if full.is_none() && self.downscaled {
+            // A detail from a tiled viewport's mosaic holds its full resolution a region or
+            // a tile at a time.
+            let detail = matches!(self.plan.pipe, Pipe::Detail { .. });
+            let tiled = match detail {
+                true => self.plan.input.format.is_mosaic(),
+                false => self.plan.tiled.is_some(),
+            };
+            let pipe = if detail { "detail" } else { "viewport" };
+            let why = if tiled {
+                "is in tiles"
+            } else {
+                "is not its input"
+            };
             tracing::debug!(
                 target: "pipe",
-                "{id}: whole-image results at the viewport's scale, as its full resolution {}",
-                if self.plan.tiled.is_some() {
-                    "is in tiles"
-                } else {
-                    "is not its input"
-                }
+                "{id}: whole-image results at the {pipe}'s scale, as its full resolution {why}"
             );
         }
         full
@@ -2438,6 +2681,13 @@ impl Builder {
     /// geometry, the developed image is downscaled to the scale the output fits at
     /// (decision 16).
     fn viewport(&mut self, tiled: &[&Instance]) -> Result<(), PlanError> {
+        // A detail's start in tiles below 1, which then is its first cache point.
+        if matches!(self.plan.pipe, Pipe::Detail { .. })
+            && let Some(tiling) = self.tiling.take()
+        {
+            self.downscaled = true;
+            return self.viewport_tiles(&tiling, tiled);
+        }
         let Pipe::Viewport { width, height } = self.plan.pipe else {
             return Ok(());
         };
@@ -2703,23 +2953,26 @@ impl Builder {
     /// each tile copies its part with the border the `tiled` instances need, runs them,
     /// and downscales the part of the image they make into its part of the viewport
     /// image, which then is a cache point for every later operation, at the viewport's
-    /// scale.
+    /// scale. A detail's tiles below 1 (decision 99) start from the mosaic, the plan's
+    /// input, and downscale into its region alone, at its scale.
     fn viewport_tiles(&mut self, tiling: &Tiling, tiled: &[&Instance]) -> Result<(), PlanError> {
         let (source, source_desc) = (self.current, self.current_desc);
         let full = tiling.full;
         let [fitted_width, fitted_height] = tiling.output;
+        let [x, y, width, height] = tiling.region.unwrap_or([0, 0, fitted_width, fitted_height]);
         let viewport = ImageDesc {
-            width: fitted_width,
-            height: fitted_height,
-            origin: [0, 0],
+            width,
+            height,
+            origin: [x, y],
             ..full
         };
-        let scale = self
-            .regions
-            .as_ref()
-            .map_or(fitted_width as f32 / full.width as f32, |regions| {
-                regions.start.scale
-            });
+        // A detail's from its start, `detail_scale`'s; the viewport's from its fitted
+        // size, as `viewport` takes it.
+        let scale = match (&self.detail, &self.regions) {
+            (Some(start), _) => start.scale,
+            (None, Some(regions)) => regions.start.scale,
+            (None, None) => fitted_width as f32 / full.width as f32,
+        };
         let border: u32 = tiled
             .iter()
             .map(|instance| instance.operation.manifest().radius)
@@ -2740,20 +2993,21 @@ impl Builder {
             .and_then(|camera| camera.cfa.as_ref())
             .map_or([1, 1], |cfa| [cfa.width, cfa.height]);
         let image = [full.width, full.height];
-        let across = [
-            tiling
-                .tiles
-                .iter()
-                .filter(|tile| tile.output[1] == 0)
-                .count() as u32,
-            tiling
-                .tiles
-                .iter()
-                .filter(|tile| tile.output[0] == 0)
-                .count() as u32,
-        ];
+        // The tiles across and down, and the source they cover between them: the whole
+        // image, or a detail's footprints.
+        let corner = tiling.tiles.first().map_or([0; 4], |tile| tile.output);
+        let across = [1, 0].map(|axis: usize| {
+            (tiling.tiles.iter())
+                .filter(|tile| tile.output[axis] == corner[axis])
+                .count() as u32
+        });
+        let covered: [u32; 2] = std::array::from_fn(|axis| {
+            let ends = (tiling.tiles.iter()).map(|tile| tile.source[axis] + tile.source[axis + 2]);
+            let starts = (tiling.tiles.iter()).map(|tile| tile.source[axis]);
+            ends.max().unwrap_or(0) - starts.min().unwrap_or(0)
+        });
         let probe: [u32; 2] = std::array::from_fn(|axis| {
-            let nominal = image[axis].div_ceil(across[axis].max(1));
+            let nominal = covered[axis].div_ceil(across[axis].max(1));
             let footprint = image[axis].div_ceil(tiling.output[axis]);
             let largest = tiling.tiles.iter().map(|tile| tile.source[axis + 2]).max();
             (nominal + footprint + period[axis])
@@ -2810,7 +3064,7 @@ impl Builder {
                 });
             }
             let [x, y, width, _] = tile.source;
-            let params = downscale_params([full.width, full.height], tiling.output, [x, y, width])?;
+            let pass = downscale_pass(image, tiling.output, [x, y, width], tiling.region)?;
             let [ox, oy, ow, oh] = tile.output;
             self.context.scale = scale;
             self.scaled = Some(tiling.output);
@@ -2823,11 +3077,14 @@ impl Builder {
                 viewport,
                 vec![Pass {
                     size: Some([ow, oh]),
-                    ..Pass::per_pixel(params, Vec::new())
+                    ..pass
                 }],
                 Vec::new(),
                 false,
             )?;
+        }
+        if let Some([x, y, ..]) = tiling.region {
+            self.scaled_origin = Some([x, y]);
         }
         self.slot = None;
         self.plan.tiled = Some(first..self.plan.operations.len());
@@ -2911,19 +3168,68 @@ impl Builder {
         )
     }
 
-    /// A detail's start from a mosaic, once demosaic has made its region (decision 99):
-    /// that image a cache point, as the copy of demosaic's image is, so a change after
-    /// demosaic restarts there, and the edit cache after it. Nothing in any other plan,
-    /// nor twice.
-    fn detail_demosaiced(&mut self) {
-        if matches!(self.plan.pipe, Pipe::Detail { .. })
-            && self.plan.input.format.is_mosaic()
-            && self.current_desc.format == Format::Rgba
-            && self.plan.edit_cache.is_none()
+    /// A detail's start (decision 99), once the image of its region at full resolution is
+    /// there: its copy of demosaic's image, or from a mosaic demosaic's image of it; or
+    /// below 1, demosaic's image itself. At 1 that image, below 1 its downscale, is a cache
+    /// point, so a change after demosaic restarts there, and the edit cache starts after
+    /// it, as the viewport's after its downscale. Nothing in any other plan, nor twice.
+    fn detail_start(&mut self) -> Result<(), PlanError> {
+        if !matches!(self.plan.pipe, Pipe::Detail { .. })
+            || self.current_desc.format != Format::Rgba
+            || self.plan.edit_cache.is_some()
         {
-            self.cache_current();
-            self.plan.edit_cache = Some(self.current_desc);
+            return Ok(());
         }
+        if let Some(start) = self.detail {
+            self.detail_downscale(start)?;
+        }
+        self.cache_current();
+        self.plan.edit_cache = Some(self.current_desc);
+        Ok(())
+    }
+
+    /// A detail's start below 1 (decision 99): the viewport's box downscale of the current
+    /// image, which holds the footprints of `start`'s region at full resolution, into that
+    /// region alone, with the footprints of the whole stage at its scale, so its pixels are
+    /// the fitted viewport's at that scale; every later operation then runs at that scale.
+    /// From demosaic's whole image, upright, the image an operation that computes its
+    /// whole-image results at full resolution binds, as in the untiled viewport.
+    fn detail_downscale(&mut self, start: DetailStart) -> Result<(), PlanError> {
+        let full = self.current_desc;
+        let [x, y, width, height] = start.region;
+        let input = [full.origin[0], full.origin[1], full.width];
+        let pass = downscale_pass(self.stage, start.whole, input, Some(start.region))?;
+        self.context.scale = start.scale;
+        self.scaled = Some(start.whole);
+        self.scaled_origin = Some([x, y]);
+        self.downscaled = true;
+        // From demosaic's whole image, upright, the image an operation that computes its
+        // whole-image results at full resolution binds, as the untiled viewport's is
+        // (decision 15): the detail then holds the same results at its scale.
+        if self.offers_full_resolution && self.regions.is_none() && self.current == Buffer::Input {
+            self.full_resolution = Some(FullImage {
+                buffer: self.current,
+                desc: full,
+                key: self.key,
+            });
+        }
+        let output = ImageDesc {
+            width,
+            height,
+            origin: [x, y],
+            ..full
+        };
+        self.push(
+            DOWNSCALE.name,
+            1,
+            &DOWNSCALE,
+            "detail scale",
+            Place::At([x, y]),
+            output,
+            vec![pass],
+            Vec::new(),
+            false,
+        )
     }
 
     /// Makes the current image, unless it is the pipe's input, a cache point.
@@ -2961,6 +3267,32 @@ fn downscale_params(
         .iter()
         .flat_map(|word| word.to_le_bytes())
         .collect())
+}
+
+/// The downscale's pass from the whole `source` down to the whole `output`, from an input
+/// whose first pixel lies at (x, y) of the source and whose rows are this wide
+/// ([`downscale_params`]): `main` into the whole output, or `main_region` into a buffer
+/// that holds `region` of it alone (decision 99), its uniforms at a binding of their own.
+fn downscale_pass(
+    source: [u32; 2],
+    output: [u32; 2],
+    input: [u32; 3],
+    region: Option<[u32; 4]>,
+) -> Result<Pass, PlanError> {
+    let mut params = downscale_params(source, output, input)?;
+    let Some([x, y, width, _]) = region else {
+        return Ok(Pass::per_pixel(params, Vec::new()));
+    };
+    params.extend([x, y, width, 0].iter().flat_map(|word| word.to_le_bytes()));
+    Ok(Pass {
+        entry_point: "main_region",
+        bindings: vec![
+            Binding::new(0, Resource::Input),
+            Binding::new(1, Resource::Output),
+            Binding::new(3, Resource::Uniforms),
+        ],
+        ..Pass::per_pixel(params, Vec::new())
+    })
 }
 
 /// How a pass of an operation that reads `input` and writes `output` dispatches under
@@ -3089,6 +3421,21 @@ pub(crate) fn at_scale(extent: [u32; 2], scale: f64) -> [u32; 2] {
     extent.map(|side| ((side as f64 * scale).round() as u32).max(1))
 }
 
+/// The scale a detail at `scale` of an output image `extent` at full resolution runs its
+/// operations at, [`ImageContext::scale`]: the output's width at `scale` over its width
+/// at full resolution, as the fitted viewport of that width takes its own, so the two
+/// scale their lengths alike (decisions 15 and 99). The one place it is worked out: a
+/// detail's whole-image plan and its rounds, planned without the geometries after the
+/// operation whose results they are, take their region's (`as_region`), whose output
+/// is after them all; `regions` gives it every stage, a detail's start and its tiles
+/// take it from there ([`DetailStart::scale`]).
+fn detail_scale(extent: [u32; 2], scale: f64, as_region: Option<AsRegion>) -> f32 {
+    match as_region {
+        Some(region) => region.scale,
+        None => at_scale(extent, scale)[0] as f32 / extent[0] as f32,
+    }
+}
+
 /// An operation's key: the previous key and everything the operation's output depends
 /// on that `prepare` decided.
 fn key(
@@ -3192,7 +3539,7 @@ fn binds(pass: &Pass, resource: Resource) -> bool {
 
 /// The operation's scratch buffers that `passes` bind, as indices into its own, in
 /// order.
-fn bound_scratch(passes: &[Pass]) -> Vec<usize> {
+pub(crate) fn bound_scratch(passes: &[Pass]) -> Vec<usize> {
     let mut bound: Vec<usize> = passes
         .iter()
         .flat_map(|pass| &pass.bindings)
@@ -4633,8 +4980,9 @@ impl Pipeline {
     /// viewport's plan, and the operation's scratch buffers, which hold it once the plan
     /// is rendered: its full-resolution part's (decision 15), or all its whole-image
     /// passes' where the viewport runs at scale 1, a photo no larger than the bounds. What
-    /// a detail at 100% binds in place of a round of its own, so the result is never
-    /// computed twice (decision 99). `None` where the plan has no such result, as with
+    /// a detail binds in place of a round of its own, at 100% the whole of it, below 100%
+    /// the full-resolution part alone, so the result is never computed twice (decision
+    /// 99). `None` where the plan has no such result, as with
     /// geometry after haze removal or in a tiled viewport.
     pub(crate) fn result_at_full_resolution(&self, id: &str) -> Option<(u64, Vec<wgpu::Buffer>)> {
         if !matches!(self.plan.pipe, Pipe::Viewport { .. }) || self.plan.tiled.is_some() {

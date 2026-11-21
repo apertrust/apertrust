@@ -16,7 +16,7 @@
 
 //! The session's view (decision 99): `Command::View`, view state off the edit, one per
 //! session and kept across photos, told as `Event::View` once a batch that changed it or
-//! its placement; each frame's place; and from 100% on the detail pipeline's frame beside
+//! its placement; each frame's place; and past Fit the detail pipeline's frame beside
 //! the fitted one, both in one submission, a pan rendering the detail alone, the scopes and
 //! the Colour picker reading the fitted frame, and a tiled viewport's detail from the raw
 //! stage's output; the detail's margin, a pan inside it rendering nothing and one past it updating the detail
@@ -131,7 +131,7 @@ fn a_view_is_no_command_on_the_edit() {
     driven.open(&only);
     assert!(driven.engine.open.as_ref().unwrap().view_only.is_some());
     driven.writes();
-    // From the 200% kept across photos to Fill, which renders Fit for now.
+    // From the 200% kept across photos to Fill, which renders the detail at its scale.
     let viewed = driven.run([zoom(ViewScale::Fill, [0.5, 0.5])]);
     assert_eq!(kinds(&viewed), ["view", "frame"], "{viewed:?}");
     assert!(driven.writes().is_empty());
@@ -280,7 +280,7 @@ fn a_panicked_turn_tells_the_view_again() {
 }
 
 #[test]
-fn a_frame_at_fit_says_its_place() {
+fn a_frame_says_its_place_at_fit_and_at_fill() {
     let path = scratch("zoom-frame");
     let mut driven = Driven::new(&[&Sample]);
     let events = driven.open(&path);
@@ -294,16 +294,27 @@ fn a_frame_at_fit_says_its_place() {
     assert_eq!(the_frame(&events).place, fitted);
     // Its pixels are the viewport's as it rendered them before the view.
     assert!(frame(&driven.gpu, &events) == direct(&driven.gpu, &[], &[]));
-    // At Fill, between Fit and 100%, it is still the whole photo at Fit, rendered as
-    // before, until the detail renders below 100%.
+    // At Fill, between Fit and 100%, the photo's height fills the bounds: the detail at
+    // Fill's scale, its region round the visible rectangle at its left, the fitted frame
+    // beside it.
     let events = driven.run([
         zoom(ViewScale::Fill, [0.1, 0.1]),
         set("brightness", ControlValue::Number(0.5), false),
     ]);
-    assert_eq!(the_frame(&events).place, fitted);
-    assert!(the_frame(&events).overview.is_none());
-    let exposure = ("exposure", "exposure", Value::Float(0.7 + 0.5));
-    assert!(frame(&driven.gpu, &events) == direct(&driven.gpu, &[], &[exposure]));
+    let scale = 40.0 / 62.0;
+    let region = region_of(ViewScale::Fill, [0.1, 0.1]);
+    let frame = the_frame(&events);
+    let place = FramePlace {
+        scale,
+        origin: [region[0], region[1]],
+        extent,
+    };
+    assert_eq!(frame.place, place);
+    assert_eq!([frame.width, frame.height], [region[2], region[3]]);
+    let exposure = [("exposure", "exposure", Value::Float(0.7 + 0.5))];
+    let detail = direct_detail_at(&driven.gpu, &exposure, region, scale);
+    assert!(frame_bytes(&driven.gpu, frame) == detail);
+    assert!(overview(&driven.gpu, frame) == direct(&driven.gpu, &[], &exposure));
     remove(&path);
 }
 
@@ -337,6 +348,16 @@ fn default_instances(settings: &[(&str, &str, Value)]) -> Vec<Instance<'static>>
 /// A fresh detail pipeline's frame of `region` at 100% with `settings`, over a fresh
 /// fitted viewport's demosaic image, as [`direct`] renders the fitted frame: its bytes.
 fn direct_detail(gpu: &GpuContext, settings: &[(&str, &str, Value)], region: [u32; 4]) -> Vec<u8> {
+    direct_detail_at(gpu, settings, region, 1.0)
+}
+
+/// [`direct_detail`] at `scale`.
+fn direct_detail_at(
+    gpu: &GpuContext,
+    settings: &[(&str, &str, Value)],
+    region: [u32; 4],
+    scale: f64,
+) -> Vec<u8> {
     let instances = default_instances(settings);
     let image = testing::image();
     let input = GpuImage::upload_mosaic(gpu, 96, 72, &testing::mosaic()).unwrap();
@@ -349,7 +370,7 @@ fn direct_detail(gpu: &GpuContext, settings: &[(&str, &str, Value)], region: [u3
     let mut fitted = pollster::block_on(Pipeline::new(gpu, plan, input)).unwrap();
     fitted.render(gpu).unwrap();
     let (source, key) = fitted.demosaiced().expect("demosaic's image");
-    let pipe = Pipe::Detail { region, scale: 1.0 };
+    let pipe = Pipe::Detail { region, scale };
     let plan = pipeline::plan(&instances, &image, source.desc(), pipe, &limits)
         .unwrap()
         .keyed_on(key);
@@ -635,7 +656,7 @@ fn a_tiled_viewport_takes_the_zoom() {
     assert_eq!(kinds(&events), ["view", "frame"], "{events:?}");
     let region = [0, 0, 64, 62];
     let frame = the_frame(&events);
-    assert_eq!(frame.place, FramePlace::detail([84, 62], region));
+    assert_eq!(frame.place, FramePlace::detail([84, 62], region, 1.0));
     assert!(frame_bytes(&driven.gpu, frame) == direct_detail(&driven.gpu, &[], region));
     let open = driven.engine.open.as_ref().expect("a photo open");
     let detail = open.detail.as_ref().expect("the detail pipeline");

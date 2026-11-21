@@ -102,11 +102,11 @@
 //! The view, the zoom and its centre ([`Command::View`], decision 99; [`crate::view`]), is
 //! view state, one per session, which every client shares and learns from [`Event::View`];
 //! it is kept across photos, its centre clamped to each. Each frame says where it lies in
-//! the photo ([`Frame::place`]). From 100% on the frame is the detail pipeline's, the
-//! visible region with its margin at scale 1, with the fitted frame beside it
-//! ([`Frame::overview`]), both rendered in one submission where no whole-image round is
-//! due, the rounds submitted between them where one is, a pan inside the margin
-//! rendering nothing; below 100% every frame is the whole photo at Fit for now.
+//! the photo ([`Frame::place`]). Zoomed past Fit the frame is the detail pipeline's, the
+//! visible region with its margin at the zoom's scale, at most 1, with the fitted frame
+//! beside it ([`Frame::overview`]), both rendered in one submission where no whole-image
+//! round is due, the rounds submitted between them where one is, a pan inside the margin
+//! rendering nothing; at Fit and Small every frame is the whole photo at Fit.
 //!
 //! These types stand in for the session protocol's until `apertrust-protocol` exists.
 
@@ -202,14 +202,14 @@ pub enum Command {
     /// photos, another photo taking the same view, its centre clamped to it
     /// ([`crate::view::place`]). A factor not finite or not above 0 is Fit, one above 16 is
     /// 16 ([`View::normalized`]). Answered by [`Event::View`] where the view or its
-    /// placement changed. From 100% on it renders the visible region with its margin
-    /// through the detail pipeline ([`crate::view::rendered`]): a view whose visible
-    /// rectangle the region rendered last holds renders nothing and sends no frame, and
-    /// one past it renders the detail alone, its region moved; below 100% the frame stays
-    /// at Fit for now. A tiled viewport's detail starts from the raw stage's output it
-    /// keeps. Where the detail cannot render yet, with an operation it refuses, the view
-    /// is still the session's, its frame stays at Fit, and the command is refused with
-    /// [`SessionError::Zoom`].
+    /// placement changed. Past Fit it renders the visible region with its margin through
+    /// the detail pipeline at the scale [`crate::view::Placement::render`] gives
+    /// ([`crate::view::rendered`]): a view at that region's scale whose visible rectangle
+    /// the region rendered last holds renders nothing and sends no frame, and one past it,
+    /// or at another scale, renders the detail alone, its region moved. A tiled
+    /// viewport's detail starts from the raw stage's output it keeps. Where the detail
+    /// cannot render yet, with an operation it refuses, the view is still the session's,
+    /// its frame stays at Fit, and the command is refused with [`SessionError::Zoom`].
     View(View),
     /// Set a tool's control, which keeps it. `done` on the last change of a gesture (a
     /// drag released, a click, a typed value), which saves the edit.
@@ -534,7 +534,7 @@ fn viewport_limits(limits: &Limits, viewport: [u32; 2], sensor: &ImageDesc) -> L
     }
 }
 
-/// The region the detail renders at scale 1 for the view placed as `placed` (decision 99):
+/// The region the detail renders at its scale for the view placed as `placed` (decision 99):
 /// `kept`'s, the one it rendered last, where that is at the same scale, inside the image
 /// and holds the visible rectangle, so a pan inside it, or an edit, keeps it; else the one
 /// [`crate::view::rendered`] grows round the visible rectangle within what `limits` bind,
@@ -549,9 +549,7 @@ fn detail_region(
     if let Some(kept) = kept {
         let [x, y, width, height] = kept.region;
         let inside = x + width <= placed.size[0] && y + height <= placed.size[1];
-        if f64::from(kept.scale) == placed.render
-            && inside
-            && crate::view::covers(kept.region, placed.visible)
+        if kept.scale == placed.render && inside && crate::view::covers(kept.region, placed.visible)
         {
             return Ok(kept.region);
         }
@@ -567,7 +565,8 @@ fn grown(placed: &Placement, anticipate_move: f64, limit_pixels: u64) -> Result<
     crate::view::rendered(placed, anticipate_move, limit_pixels).ok_or_else(|| {
         let [width, height] = [placed.visible[2], placed.visible[3]].map(f64::ceil);
         format!(
-            "the visible {width}×{height} at 100% passes the largest image the GPU binds, {limit_pixels} pixels"
+            "the visible {width}×{height} at {:.0}% passes the largest image the GPU binds, {limit_pixels} pixels",
+            placed.render * 100.0
         )
     })
 }
@@ -1038,8 +1037,8 @@ pub struct Frame {
     /// From the first command it answers reaching the session to its publication.
     pub latency_ms: f64,
     /// Where it lies in the photo (decision 99): at Fit, the whole photo at the fitted scale
-    /// for the bounds it was rendered for, its origin (0, 0); zoomed to 100% or above, the
-    /// detail's region at scale 1, its origin the region's corner.
+    /// for the bounds it was rendered for, its origin (0, 0); zoomed past Fit, the detail's
+    /// region at the scale rendered, its origin the region's corner.
     pub place: FramePlace,
     /// Zoomed past Fit, the fitted viewport's frame, the whole photo at the fitted scale,
     /// which a client draws, enlarged to the zoom, wherever the detail does not reach,
@@ -2653,8 +2652,8 @@ struct Open {
     /// for the photo.
     views_failed: BTreeSet<&'static str>,
     pipeline: Option<Pipeline>,
-    /// The zoomed view's detail pipeline, from the first frame zoomed to 100% or above
-    /// (decision 99).
+    /// The zoomed view's detail pipeline, from the first frame zoomed past Fit (decision
+    /// 99).
     detail: Option<Detail>,
     /// The edit's history in memory, and its undo records (decision 78).
     history: history::PhotoHistory,
@@ -2771,8 +2770,8 @@ impl Display {
 }
 
 /// The zoomed view's detail pipeline (decision 99; `docs/engine.md`, The zoomed view):
-/// built on the first frame zoomed to 100% or above, kept while its photo is open, not
-/// rendered at Fit, and dropped with the photo.
+/// built on the first frame zoomed past Fit, kept while its photo is open, not rendered at
+/// Fit, and dropped with the photo.
 struct Detail {
     /// Its plan's, `Pipe::Detail`, reading the fitted pipeline's demosaic image in place,
     /// or in a tiled viewport the raw stage's output it keeps.
@@ -2784,7 +2783,7 @@ struct Detail {
     display: Display,
     /// The output image's region it last rendered, at `scale`.
     region: [u32; 4],
-    scale: f32,
+    scale: f64,
     /// Whether the frame published last is its.
     shown: bool,
 }
@@ -3498,16 +3497,16 @@ impl Engine {
     /// The detail's region and scale the view asks of the open photo in the last bounds
     /// (decision 99; [`detail_region`]), placed on its extent as its values last reported
     /// it, or why none binds; `None` where it asks for Fit.
-    fn zoom_wanted(&self) -> Option<Result<([u32; 4], f32), String>> {
+    fn zoom_wanted(&self) -> Option<Result<([u32; 4], f64), String>> {
         let (open, bounds) = self.open.as_ref().zip(self.size)?;
         let placed = crate::view::zoomed(open.extent, bounds, &self.view)?;
         let kept = open.detail.as_ref();
         let region = detail_region(kept, &placed, self.anticipate_move, &self.limits);
-        Some(region.map(|region| (region, 1.0)))
+        Some(region.map(|region| (region, placed.render)))
     }
 
     /// The detail's region and scale the frame published last shows; `None` at Fit.
-    fn zoom_shown(&self) -> Option<([u32; 4], f32)> {
+    fn zoom_shown(&self) -> Option<([u32; 4], f64)> {
         let detail = self.open.as_ref()?.detail.as_ref()?;
         detail.shown.then_some((detail.region, detail.scale))
     }
@@ -5240,11 +5239,11 @@ impl Engine {
         let limits = viewport_limits(&self.limits, [width, height], &open.sensor);
         let plan = pipeline::plan(&bound.instances, &open.image, open.sensor, pipe, &limits)?;
         let extent = plan.extent();
-        // Zoomed to 100% or above, the detail's plan of the region the view shows, over the
-        // fitted pipeline's demosaic image, or in a tiled viewport the raw stage's output it
-        // keeps (decision 99). Where it cannot render yet, with an operation it refuses,
-        // the frame stays at Fit, and why is kept for the batch's `View` to be refused
-        // with.
+        // Zoomed past Fit, the detail's plan of the region the view shows at the scale it
+        // renders, over the fitted pipeline's demosaic image, or in a tiled viewport the raw
+        // stage's output it keeps (decision 99). Where it cannot render yet, with an
+        // operation it refuses, the frame stays at Fit, and why is kept for the batch's
+        // `View` to be refused with.
         let refuse = |why: String| {
             tracing::debug!(target: "pipe", "zoom: stays at Fit: {why}");
             Some(SessionError::Zoom(why))
@@ -5266,16 +5265,17 @@ impl Engine {
                 let source = (plan.cached.first()).map(|&op| plan.operations[op].output_desc);
                 let image = &open.image;
                 let anticipate = self.anticipate_move;
+                let placed = placed.as_ref().expect("a region for a placed view");
+                let scale = placed.render;
                 let planned = source.map(|source| {
                     let plan_at = |region| {
-                        let detail = Pipe::Detail { region, scale: 1.0 };
+                        let detail = Pipe::Detail { region, scale };
                         pipeline::plan(&after, image, source, detail, &limits)
                     };
-                    let placed = placed.as_ref().expect("a region for a placed view");
                     bound_detail(region, placed, anticipate, &self.limits, plan_at)
                 });
                 match planned {
-                    Some(Ok(planned)) => Some(planned),
+                    Some(Ok((region, planned))) => Some((region, scale, planned)),
                     Some(Err(why)) => {
                         self.zoom_refused = refuse(why);
                         None
@@ -5338,7 +5338,7 @@ impl Engine {
         // in the same submission, right after the operation's last pass.
         let mut recorded = None;
         'detail: {
-            let Some((region, planned)) = detail else {
+            let Some((region, scale, planned)) = detail else {
                 break 'detail;
             };
             // The fitted frame, rendered where the edit or the size changed it; else the
@@ -5346,7 +5346,8 @@ impl Engine {
             let fitted_due = fresh || !pipeline.rendered();
             let (source, key) = (pipeline.detail_source()).expect("a viewport's first cache point");
             // What the frame shown last is, kept should this render not publish one.
-            let was_shown = (open.detail.as_ref()).map_or((region, false), |d| (d.region, d.shown));
+            let was_shown = (open.detail.as_ref())
+                .map_or((region, scale, false), |d| (d.region, d.scale, d.shown));
             let (old, old_display, mut results) = match open.detail.take() {
                 Some(old) => (Some(old.pipeline), Some(old.display), old.results),
                 None => (None, None, Results::with_kernels(pipeline.shared_kernels())),
@@ -5498,13 +5499,13 @@ impl Engine {
                     if rendered_fitted {
                         pipeline.forget_render();
                     }
-                    let (region, shown) = was_shown;
+                    let (region, scale, shown) = was_shown;
                     open.detail = Some(Detail {
                         pipeline: detail,
                         results,
                         display: detail_display,
                         region,
-                        scale: 1.0,
+                        scale,
                         shown,
                     });
                     return Err(error.into());
@@ -5529,7 +5530,7 @@ impl Engine {
                 results,
                 display: detail_display,
                 region,
-                scale: 1.0,
+                scale,
                 shown: true,
             });
             #[cfg(not(test))]
@@ -5550,7 +5551,7 @@ impl Engine {
                 through: self.applied,
                 timings,
                 latency_ms: since.elapsed().as_secs_f64() * 1e3,
-                place: FramePlace::detail(extent, region),
+                place: FramePlace::detail(extent, region, scale),
                 overview: Some(overview),
             }));
         }
