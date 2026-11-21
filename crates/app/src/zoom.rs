@@ -202,6 +202,12 @@ impl Zoomed {
         self.centred(panned(&placed, direction, fraction), room)
     }
 
+    /// The zoom moved just enough in `room` to show `mark`, in the photo's coordinates
+    /// ([`revealed`]), its centre kept inside the edges.
+    pub fn revealing(self, mark: egui::Rect, room: &Room) -> Zoomed {
+        self.centred(revealed(&room.place(&self), mark), room)
+    }
+
     /// The zoom with its centre at `centre`, kept inside the edges in `room` as the session
     /// keeps it.
     fn centred(self, centre: [f32; 2], room: &Room) -> Zoomed {
@@ -261,6 +267,27 @@ pub fn visible(placement: &Placement) -> [egui::Rangef; 2] {
         let start = placement.visible[axis];
         let end = start + placement.visible[axis + 2];
         egui::Rangef::new((start / side) as f32, (end / side) as f32)
+    })
+}
+
+/// The centre that brings `mark`, in the photo's coordinates, inside the part of the photo
+/// `placement` shows, moving it the least on each axis: a mark larger than the part shown
+/// is centred on it. Not clamped: [`Room::place`] keeps it inside the edges.
+pub fn revealed(placement: &Placement, mark: egui::Rect) -> [f32; 2] {
+    let shown = visible(placement);
+    let marks = [mark.x_range(), mark.y_range()];
+    [0, 1].map(|axis| {
+        let (part, mark) = (shown[axis], marks[axis]);
+        let by = if mark.span() >= part.span() {
+            mark.center() - part.center()
+        } else if mark.min < part.min {
+            mark.min - part.min
+        } else if mark.max > part.max {
+            mark.max - part.max
+        } else {
+            0.0
+        };
+        placement.centre[axis] + by
     })
 }
 
@@ -756,6 +783,34 @@ mod tests {
         let right = hundred.stepped(Direction::Right, 1.0, &ROOM);
         assert!((right.centre[0] - 0.6).abs() < 1e-6, "{right:?}");
         assert_eq!(Zoomed::FIT.stepped(Direction::Up, 1.0, &ROOM), Zoomed::FIT);
+    }
+
+    #[test]
+    fn a_mark_out_of_view_moves_the_view_just_enough() {
+        // At 200% the room shows 0.4 of the width and 0.3375 of the height about the centre.
+        let two = at(Scale::Factor(2.0));
+        let placed = ROOM.place(&two);
+        let inside = egui::Rect::from_min_max(egui::pos2(0.4, 0.4), egui::pos2(0.6, 0.6));
+        assert_eq!(revealed(&placed, inside), [0.5, 0.5]);
+        // Past the right edge by 0.05, and above the top by 0.01.
+        let mark = egui::Rect::from_min_max(egui::pos2(0.6, 0.32), egui::pos2(0.75, 0.4));
+        let [x, y] = revealed(&placed, mark);
+        let top = 0.5 - 0.3375 / 2.0;
+        assert!(
+            (x - 0.55).abs() < 1e-5 && (y - (0.5 - (top - 0.32))).abs() < 1e-5,
+            "{x} {y}"
+        );
+        // Larger than the part shown: centred on it.
+        let wide = egui::Rect::from_min_max(egui::pos2(0.1, 0.45), egui::pos2(0.7, 0.55));
+        assert!((revealed(&placed, wide)[0] - 0.4).abs() < 1e-5);
+        // And kept inside the photo's edges.
+        let corner = egui::Rect::from_min_max(egui::pos2(0.97, 0.97), egui::pos2(1.02, 1.02));
+        let moved = two.revealing(corner, &ROOM);
+        let [x, y] = moved.centre;
+        assert!(
+            (x - 0.8).abs() < 1e-5 && (y - (1.0 - 0.3375 / 2.0)).abs() < 1e-5,
+            "{x} {y}"
+        );
     }
 
     #[test]
