@@ -73,6 +73,10 @@ reviews:
         A change to a decision edits its record so it states what is decided now, with no
         "amended by" or history. Check that the decision summary in docs/architecture.md,
         the index in docs/decisions/README.md and the docs describing the area agree.
+        A record states the model and its guarantees, not the algorithm. For a planned
+        feature, check the record against the other docs and decisions; do not ask for
+        procedures, crash recovery, concurrency or edge-case rules it leaves to the step
+        that builds it, whose issue holds its spec.
 
   labeling_instructions:
     - label: bugfix
