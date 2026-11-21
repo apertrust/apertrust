@@ -55,7 +55,7 @@ use apertrust_tools::{
 use apertrust_ui::Translator;
 use apertrust_ui::components::{PickerAction, PickerMarks, PickerPlace, ReadoutRow};
 use apertrust_ui::i18n::Args;
-use apertrust_ui::overlay::Overlay;
+use apertrust_ui::overlay::{Overlay, Point, Weight};
 use eframe::egui::{
     self, Color32, CursorIcon, Key, Modifiers, Pos2, Rect, Role, Sense, Vec2, WidgetInfo, pos2,
     vec2,
@@ -975,6 +975,10 @@ pub struct PhotoPicked {
     /// the view moves that far towards it each frame, as darktable's
     /// (`src/views/darkroom.c:3895-3902`).
     pub pan: Option<Vec2>,
+    /// Where a key moved the mark past the photo area's edge, the mark's box grown by its
+    /// reach, in the photo's coordinates: the view moves just enough to show it again
+    /// (`docs/gui.md`, On-photo overlays, At every zoom).
+    pub reveal: Option<Rect>,
 }
 
 /// Draws the picker's marks over the photo and returns what the pointer and the keys did
@@ -1099,6 +1103,7 @@ pub fn on_photo(ui: &mut egui::Ui, on: &OnPhoto) -> PhotoPicked {
     }
     // The keys and screen readers' actions, while the node has the focus.
     let (mut region, mut switched) = (on.region, on.switched);
+    let mut keyed = false;
     for command in &commands {
         (region, switched) = followed(command, region, switched);
     }
@@ -1125,6 +1130,8 @@ pub fn on_photo(ui: &mut egui::Ui, on: &OnPhoto) -> PhotoPicked {
             };
             if command == PickerCommand::Off {
                 give_back(&ctx, on.picker);
+            } else {
+                keyed = true;
             }
             // Keyboard changes end a pointer gesture at its old region.
             drag = None;
@@ -1151,6 +1158,7 @@ pub fn on_photo(ui: &mut egui::Ui, on: &OnPhoto) -> PhotoPicked {
             let command = key_command(PickerKey::Move(step, 1.0), region, pixel);
             if let Some(command) = command {
                 drag = None;
+                keyed = true;
                 (region, switched) = followed(&command, region, switched);
                 commands.push(command);
             }
@@ -1183,9 +1191,11 @@ pub fn on_photo(ui: &mut egui::Ui, on: &OnPhoto) -> PhotoPicked {
     };
     let zoom = on.photo.width() / on.pixels[0].max(1) as f32;
     let painter = ui.painter_at(on.area);
+    let overlay = Overlay::new(&painter, on.photo, zoom);
     PickerMarks::new(place)
         .focused(response.has_focus())
-        .paint(&Overlay::new(&painter, on.photo, zoom));
+        .paint(&overlay);
+    let reveal = keyed.then(|| revealed(on, region, &overlay)).flatten();
 
     // To screen readers.
     let words = apertrust_ui::translator(&ctx);
@@ -1224,7 +1234,25 @@ pub fn on_photo(ui: &mut egui::Ui, on: &OnPhoto) -> PhotoPicked {
             },
         ]);
     });
-    PhotoPicked { commands, pan }
+    PhotoPicked {
+        commands,
+        pan,
+        reveal,
+    }
+}
+
+/// The box the mark at `region` needs in view, its reach round it on the `overlay`, in the
+/// photo's coordinates, where it leaves the photo area: None while it is all in view.
+fn revealed(on: &OnPhoto, region: Region, overlay: &Overlay) -> Option<Rect> {
+    let mark = match region {
+        Region::Point([x, y]) => to_screen(on.photo, [x, y, x, y]),
+        Region::Area(area) => to_screen(on.photo, area),
+    };
+    let needed = mark.expand(overlay.reach(Point::Active, Weight::Normal));
+    let size = on.photo.size();
+    let photo = |at: Pos2| ((at - on.photo.min) / size).to_pos2();
+    (!on.area.contains_rect(needed))
+        .then(|| Rect::from_min_max(photo(needed.min), photo(needed.max)))
 }
 
 /// What a press at `at`, in the photo's coordinates, `pos` on the screen, with `modifiers`
@@ -2853,8 +2881,8 @@ mod tests {
 
     /// The Colour picker at `region` over the photo area `PHOTO`, the photo shown at
     /// `zoom` times what fits it about its centre, as the Viewer shows a zoomed photo: the
-    /// whole photo's rectangle that much larger. The state keeps every command sent and
-    /// the last frame's pan.
+    /// whole photo's rectangle that much larger. The state keeps every command sent, the
+    /// last frame's pan and the last box a key asked the view to show.
     fn zoomed(zoom: f32, region: Region) -> Harness<'static, (Region, PhotoPicked)> {
         Harness::builder()
             .with_size(vec2(760.0, 400.0))
@@ -2875,9 +2903,40 @@ mod tests {
                     let now = on_photo(ui, &on);
                     picked.commands.extend(now.commands);
                     picked.pan = now.pan;
+                    picked.reveal = now.reveal.or(picked.reveal);
                 },
                 (region, PhotoPicked::default()),
             )
+    }
+
+    /// The Colour picker's area at `area` over [`zoomed`]'s photo at 400%, its node with the
+    /// focus, after Shift+→ moved it ten frame pixels right: where the view must move to
+    /// show it.
+    fn shifted_right(area: [f32; 4]) -> Option<Rect> {
+        let mut harness = zoomed(4.0, Region::Area(area));
+        focus_photo(&harness.ctx);
+        harness.run();
+        harness.key_press_modifiers(Modifiers::SHIFT, Key::ArrowRight);
+        harness.run();
+        harness.state().1.reveal
+    }
+
+    #[test]
+    fn a_picker_area_moved_past_the_edge_pulls_the_view() {
+        // At 400% about the centre the area shows 0.375 to 0.625 of the photo each way, a
+        // frame pixel 1/1600 of its width. Well inside, a key moves no view.
+        assert_eq!(shifted_right([0.45, 0.45, 0.55, 0.55]), None);
+        // To 6 points from the edge: the box with the mark's reach round it, to bring in.
+        let reveal = shifted_right([0.55, 0.45, 0.615, 0.55]).expect("a box to show");
+        let moved = Rect::from_min_max(pos2(0.55625, 0.45), pos2(0.62125, 0.55));
+        assert!(reveal.contains_rect(moved), "{reveal:?}");
+        assert!(reveal.right() > 0.625, "{reveal:?}");
+        // Its reach, the same each way.
+        let reach = moved.left() - reveal.left();
+        assert!(
+            (reveal.right() - moved.right() - reach).abs() < 1e-5,
+            "{reveal:?}"
+        );
     }
 
     /// Where the sampled colour's dot, the point's centre, was drawn in the last frame.
