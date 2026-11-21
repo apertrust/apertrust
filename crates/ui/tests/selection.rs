@@ -42,6 +42,7 @@ fn selecting(os: OperatingSystem) -> Harness<'static, Vec<BrowserAction>> {
                     status: None,
                     selected: (1..=3).contains(&i),
                     picture: None,
+                    no_preview: false,
                     rating: None,
                 };
                 actions.extend(Browser::new(8, Some(2), thumb).show(ui).action);
@@ -106,6 +107,7 @@ fn the_list_is_multi_selectable_and_each_cell_says_whether_it_is_selected() {
             status: None,
             selected: false,
             picture: None,
+            no_preview: false,
             rating: None,
         };
         Browser::new(1, Some(0), thumb).several(false).show(ui);
@@ -149,6 +151,7 @@ fn a_disabled_browser_takes_no_ctrl_space() {
                     status: None,
                     selected: false,
                     picture: None,
+                    no_preview: false,
                     rating: None,
                 };
                 actions.extend(Browser::new(8, Some(2), thumb).show(ui).action);
@@ -211,6 +214,7 @@ fn a_selection_is_photographed_in_every_theme() {
                     status: None,
                     selected: (1..=3).contains(&i),
                     picture: None,
+                    no_preview: false,
                     rating: Some(CellRating::default()),
                 };
                 Browser::new(5, Some(2), thumb).count(3, 5).show(ui);

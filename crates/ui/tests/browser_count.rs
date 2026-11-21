@@ -70,6 +70,7 @@ fn counted_in(
                     status: None,
                     selected: i < state.selected,
                     picture: None,
+                    no_preview: false,
                     rating: None,
                 };
                 let output = Browser::new(names.len(), Some(0), thumb)

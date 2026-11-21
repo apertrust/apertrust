@@ -1522,6 +1522,7 @@ fn browser(count: usize) -> Harness<'static, Vec<BrowserAction>> {
                     status: None,
                     selected: false,
                     picture: None,
+                    no_preview: false,
                     rating: None,
                 };
                 if let Some(action) = Browser::new(count, Some(0), thumb).show(ui).action {

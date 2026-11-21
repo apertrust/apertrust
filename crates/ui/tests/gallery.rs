@@ -22,6 +22,7 @@
 //! It renders through wgpu, on CI's software GPU, and through AccessKit, whose tree the
 //! harness checks too.
 
+use apertrust_ui::components::GridCell;
 use apertrust_ui::gallery::Gallery;
 use apertrust_ui::{Builtin, Locale, Theme, Translator};
 use egui::accesskit::Role;
@@ -159,6 +160,75 @@ fn the_tools_panel_at_its_narrowest_in_the_pseudo_locale() {
     harness.hover_at(edge.rect().center());
     harness.run();
     harness.snapshot("tools-panel-narrowest-pseudo");
+}
+
+/// The Browser cell's No preview yet plate (`docs/gui.md`, The cell) at Small, Medium,
+/// Large and Extra large, labels on, then off, in every built-in theme: the glyph and the
+/// file's type, or the file name where no caption shows, a ring and a mark on two of them.
+#[test]
+fn the_no_preview_plate_in_every_theme() {
+    let mut results = SnapshotResults::new();
+    for (which, name) in [
+        (Builtin::Dark, "grid-cell-no-preview-dark"),
+        (Builtin::Grey, "grid-cell-no-preview-grey"),
+        (Builtin::Light, "grid-cell-no-preview-light"),
+        (Builtin::HighContrast, "grid-cell-no-preview-high-contrast"),
+    ] {
+        let mut harness = Harness::builder()
+            .with_size(egui::vec2(700.0, 590.0))
+            .with_context_setup(move |ctx| {
+                apertrust_ui::install(ctx, Theme::builtin(which));
+                apertrust_ui::set_locale(ctx, Locale::EnGb);
+            })
+            .build_ui(|ui| {
+                // The Browser's own ground.
+                let surface = apertrust_ui::theme(ui.ctx()).colors.surface;
+                ui.painter()
+                    .rect_filled(ui.ctx().content_rect(), 0.0, surface);
+                ui.add_space(10.0);
+                ui.spacing_mut().item_spacing = egui::vec2(12.0, 12.0);
+                // Each cell's own file, so each keeps an id of its own.
+                let rows = [
+                    (
+                        true,
+                        [
+                            "_1010042.ORF",
+                            "SAM_0042.SRW",
+                            "CF000042.IIQ",
+                            "B0000042.3FR",
+                        ],
+                    ),
+                    (
+                        false,
+                        [
+                            "_1010043.ORF",
+                            "SAM_0043.SRW",
+                            "CF000043.IIQ",
+                            "Wedding_0043.3FR",
+                        ],
+                    ),
+                ];
+                for (labels, files) in rows {
+                    ui.horizontal_top(|ui| {
+                        ui.add_space(10.0);
+                        for (side, file) in [84.0, 120.0, 176.0, 256.0].into_iter().zip(files) {
+                            GridCell::new(file)
+                                .no_preview(true)
+                                .side(side)
+                                .labels(labels)
+                                .selected(labels && side == 120.0)
+                                .active(!labels && side == 176.0)
+                                .edited(!labels && side == 176.0)
+                                .show(ui);
+                        }
+                    });
+                }
+            });
+        harness.run();
+        harness.snapshot(name);
+        results.extend_harness(&mut harness);
+    }
+    results.unwrap();
 }
 
 #[test]
