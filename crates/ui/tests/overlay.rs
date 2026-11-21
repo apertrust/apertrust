@@ -21,28 +21,14 @@
 //! and the ring's colour, in each. Accepted with `UPDATE_SNAPSHOTS=1 cargo test -p
 //! apertrust-ui --test overlay`, reviewed like a golden image.
 
+mod common;
+
+use apertrust_ui::Builtin;
 use apertrust_ui::gallery::Gallery;
-use apertrust_ui::{Builtin, Theme};
-use egui_kittest::Harness;
 
 fn photograph(which: Builtin, name: &str) {
-    let mut harness = Harness::builder()
-        .with_size(egui::vec2(600.0, 900.0))
-        .with_pixels_per_point(2.0)
-        .with_context_setup(move |ctx| apertrust_ui::install(ctx, Theme::builtin(which)))
-        .build_ui_state(
-            |ui, gallery: &mut Gallery| {
-                let panel = apertrust_ui::theme(ui.ctx()).colors.panel;
-                ui.painter()
-                    .rect_filled(ui.ctx().content_rect(), 0.0, panel);
-                egui::Frame::new().inner_margin(12.0).show(ui, |ui| {
-                    gallery.show_overlays(ui);
-                });
-            },
-            Gallery::new(which),
-        );
-    harness.run();
-    harness.snapshot(name);
+    let size = egui::vec2(600.0, 900.0);
+    common::photograph_section(which, size, name, Gallery::show_overlays);
 }
 
 #[test]
