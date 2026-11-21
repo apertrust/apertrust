@@ -16,10 +16,13 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 # Claude Code turn hooks. `start` (UserPromptSubmit) records fingerprints of the Rust
-# sources and of everything a golden result depends on, and prints nothing: its output
-# would reach Claude. `stop` (Stop) compares them and, for what changed during the
-# turn, runs:
-#   - Rust: cargo fmt --check and cargo clippy -D warnings;
+# sources and of everything a golden result depends on, and a hash of each file that
+# differs from HEAD, and prints nothing: its output would reach Claude. `stop` (Stop)
+# compares them and, for what changed during the turn, runs:
+#   - any file: pre-commit's quick checks (.pre-commit-config.yaml) on the files the
+#     turn changed, `pre-commit run --files`; without pre-commit, cargo fmt --check
+#     where Rust changed;
+#   - Rust: cargo clippy -D warnings, for this machine's platform;
 #   - kernels, the golden harness or the engine: apertrust-golden run (ΔE against
 #     darktable) and gradient, or only gradient --synthetic when APERTRUST_TEST_IMAGES
 #     is not set.
@@ -52,11 +55,25 @@ golden_inputs() {
   fingerprint crates/op crates/color crates/plugin \
     crates/operations crates/golden crates/engine Cargo.lock
 }
+# Each file that differs from HEAD, tracked or untracked but not ignored, as a line of
+# its contents' hash ("-" once deleted) and its path, sorted.
+dirty_files() {
+  { git diff --name-only -z HEAD -- 2> /dev/null; git ls-files -z --others --exclude-standard; } \
+    | sort -zu | while IFS= read -r -d '' file; do
+      if [[ -f "$file" ]]; then
+        printf '%s %s\n' "$("${hash[@]}" < "$file" | cut -d' ' -f1)" "$file"
+      else
+        printf -- '- %s\n' "$file"
+      fi
+    done | LC_ALL=C sort
+}
 
 case "${1:-}" in
   start)
     mkdir -p "$state"
     printf '%s %s\n' "$(rust_sources)" "$(golden_inputs)" > "$turn"
+    git rev-parse -q --verify HEAD > "$turn.head" 2> /dev/null
+    dirty_files > "$turn.files"
     rm -f "$blocked"
     exit 0
     ;;
@@ -70,13 +87,36 @@ rust_now="$(rust_sources)"
 golden_now="$(golden_inputs)"
 [[ "$rust_now" != "$rust_before" ]] && rust_changed=1 || rust_changed=0
 [[ "$golden_now" != "$golden_before" ]] && golden_changed=1 || golden_changed=0
-((rust_changed || golden_changed)) || exit 0
+# The files the turn changed: those whose difference from HEAD changed, and those of
+# any commit it made; only those still there, and not as they were when it started, so a
+# commit of the user's own changes leaves them out.
+files_now="$(dirty_files)"
+head_before="$(cat "$turn.head" 2> /dev/null)"
+changed=()
+while IFS= read -r file; do
+  [[ -f "$file" ]] || continue
+  grep -qxF "$("${hash[@]}" < "$file" | cut -d' ' -f1) $file" "$turn.files" 2> /dev/null \
+    || changed+=("$file")
+done < <(
+  {
+    LC_ALL=C comm -3 <(cat "$turn.files" 2> /dev/null) <(echo "$files_now") | sed -E 's/^\t//; s/^[^ ]+ //'
+    [[ -n "$head_before" ]] && git -c core.quotePath=false diff --name-only "$head_before" HEAD -- 2> /dev/null
+  } | sort -u
+)
+((rust_changed || golden_changed || ${#changed[@]})) || exit 0
 
 log="$(mktemp)"
 trap 'rm -f "$log"' EXIT
 failures="" # the failed checks' names, for the user
 details=""  # their output, for Claude
 note=""
+
+# pre-commit's report on the files given, less the checks that passed or had nothing to
+# check; its status is pre-commit's.
+pre_commit_failures() {
+  pre-commit run --color never --files "$@" 2>&1 \
+    | { grep -vE '\.{3,}(\(no files to check\))?(Passed|Skipped)$' || true; }
+}
 
 # Runs a check; on failure records its name and the start of its output.
 check() {
@@ -88,8 +128,14 @@ check() {
   return 1
 }
 
-if ((rust_changed)); then
+if ((${#changed[@]})) && command -v pre-commit > /dev/null && [[ -f .pre-commit-config.yaml ]]; then
+  # The quick checks alone: the manual stage's clippy for three platforms and API docs
+  # take minutes. Fixers such as trailing-whitespace fix the file and fail once.
+  check "pre-commit run --files" pre_commit_failures "${changed[@]}"
+elif ((rust_changed)); then
   check "cargo fmt --all --check" cargo fmt --all -- --check -l
+fi
+if ((rust_changed)); then
   # The harness needs a clean build; it runs at the next stop, once clippy passes.
   check "cargo clippy --workspace --all-targets -- -D warnings" \
     cargo clippy -q --workspace --all-targets --message-format short -- -D warnings \
@@ -112,8 +158,11 @@ if [[ -z "$failures" ]]; then
   exit 0
 fi
 
-# Unchanged sources since the last block mean Claude chose to stop: let it.
-sources="$rust_now $golden_now"
+# Unchanged sources since the last block mean Claude chose to stop: let it. HEAD counts,
+# so a new commit is checked again. Taken after the checks, as pre-commit's fixers leave
+# the files, so a retry with nothing new matches it.
+head_now="$(git rev-parse -q --verify HEAD 2> /dev/null)"
+sources="$(rust_sources) $(golden_inputs) $head_now $(dirty_files | "${hash[@]}" | cut -d' ' -f1)"
 blocks=0
 if [[ -f "$blocked" ]]; then
   read -r blocks last_sources < "$blocked"
