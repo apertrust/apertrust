@@ -14,13 +14,14 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! The zoomed view's detail pipeline at 100% (decision 99; `docs/engine.md`, The zoomed
-//! view), on a GPU adapter, hardware or software: planned as an export tile up to its
-//! start and as the viewport after it, over demosaic's full-resolution image, which it
-//! reads in place from the fitted viewport pipeline by its key. Its frame is the same
-//! pixels of the untiled export bit for bit, with every operation that has whole-image
-//! passes too, their results computed over the whole image in rounds of their own, held
-//! by keys with no region in them, haze removal's borrowed from the fitted pipeline; a
+//! The zoomed view's detail pipeline (decision 99; `docs/engine.md`, The zoomed view), on
+//! a GPU adapter, hardware or software: planned as an export tile up to its start and as
+//! the viewport after it, over demosaic's full-resolution image, which it reads in place
+//! from the fitted viewport pipeline by its key. At 100% its frame is the same pixels of
+//! the untiled export bit for bit, with every operation that has whole-image passes too,
+//! their results computed over the whole image in rounds of their own, held by keys with
+//! no region in them, haze removal's borrowed from the fitted pipeline; below 100% it is
+//! the same pixels of the fitted viewport at its scale, its rounds at that scale. A
 //! change restarts it at its edit cache, and the plans of every other pipe keep their
 //! bytes and keys.
 
@@ -53,17 +54,19 @@ fn x_trans() -> Raw {
     Raw::x_trans((120, 96), [1, 3, 116, 90], [4, 5, 108, 84])
 }
 
-/// A detail at 100%: its whole-image results, its own pipeline, rendered after the rounds
+/// A detail at its scale: its whole-image results, its own pipeline, rendered after the rounds
 /// its frame ran, those rounds' operations, and the timings of its own passes.
 struct Detail {
     results: Results,
     pipeline: Pipeline,
     rounds: Vec<&'static str>,
+    /// The passes those rounds ran.
+    round_passes: Vec<&'static str>,
     timings: Timings,
 }
 
-/// A raw as these tests develop it: through the fitted viewport, its detail at 100% over
-/// the viewport's demosaic image, and the untiled export.
+/// A raw as these tests develop it: through the fitted viewport, its detail over the
+/// viewport's demosaic image, and the untiled export.
 trait Scene {
     /// The default pipeline with these parameters set ([`common::instances`]).
     fn with(&self, settings: &[(&str, &str, f32)]) -> Vec<Instance<'static>>;
@@ -75,18 +78,34 @@ trait Scene {
         params: ParamValues,
     ) -> Vec<Instance<'static>>;
     fn plan(&self, instances: &[Instance], pipe: Pipe) -> Result<Plan, PlanError>;
-    /// The fitted viewport pipeline of `instances` within `limits`, rendered: in tiles
-    /// where they ask (decision 14).
-    fn fitted_within(&self, gpu: &GpuContext, instances: &[Instance], limits: &Limits) -> Pipeline;
-    /// The fitted viewport pipeline of `instances`, untiled, rendered.
+    /// The fitted viewport pipeline of `instances` for `viewport` within `limits`,
+    /// rendered: in tiles where they ask (decision 14).
+    fn fitted_within(
+        &self,
+        gpu: &GpuContext,
+        instances: &[Instance],
+        limits: &Limits,
+        viewport: Pipe,
+    ) -> Pipeline;
+    /// The fitted viewport pipeline of `instances` in 40 × 40, untiled, rendered.
     fn fitted(&self, gpu: &GpuContext, instances: &[Instance]) -> Pipeline {
-        let fitted = self.fitted_within(gpu, instances, &Limits::NONE);
+        let fitted = self.fitted_within(gpu, instances, &Limits::NONE, VIEWPORT);
         assert!(fitted.plan().tiled.is_none());
         fitted
     }
-    /// The detail of `region` at 100% over `fitted`'s source within `limits`, demosaic's
-    /// image or a tiled viewport's raw-stage output, as `results` plans it: its plan,
-    /// keyed on that image, its rounds, and that image.
+    /// The detail of `region` at `scale` over `fitted`'s source within `limits`,
+    /// demosaic's image or a tiled viewport's raw-stage output, as `results` plans it: its
+    /// plan, keyed on that image, its rounds, and that image.
+    fn detail_plan_at(
+        &self,
+        results: &mut Results,
+        fitted: &Pipeline,
+        instances: &[Instance],
+        region: [u32; 4],
+        scale: f64,
+        limits: &Limits,
+    ) -> Result<(Plan, apertrust_engine::detail::Rounds, GpuImage), ExportError>;
+    /// [`Scene::detail_plan_at`] at 100%.
     fn detail_plan(
         &self,
         results: &mut Results,
@@ -94,10 +113,24 @@ trait Scene {
         instances: &[Instance],
         region: [u32; 4],
         limits: &Limits,
-    ) -> Result<(Plan, apertrust_engine::detail::Rounds, GpuImage), ExportError>;
+    ) -> Result<(Plan, apertrust_engine::detail::Rounds, GpuImage), ExportError> {
+        self.detail_plan_at(results, fitted, instances, region, 1.0, limits)
+    }
     /// `old`, or a fresh detail where it is `None`, rendered for `instances` at `region`
-    /// over `fitted`'s demosaic image within `limits`: its results planned, its pipeline
-    /// updated or built, its rounds run, then its own passes.
+    /// and `scale` over `fitted`'s demosaic image within `limits`: its results planned,
+    /// its pipeline updated or built, its rounds run, then its own passes.
+    #[allow(clippy::too_many_arguments, reason = "a detail's whole description")]
+    fn render_at(
+        &self,
+        gpu: &GpuContext,
+        fitted: &Pipeline,
+        old: Option<Detail>,
+        instances: &[Instance],
+        region: [u32; 4],
+        scale: f64,
+        limits: &Limits,
+    ) -> Detail;
+    /// [`Scene::render_at`] at 100%.
     fn render(
         &self,
         gpu: &GpuContext,
@@ -106,7 +139,9 @@ trait Scene {
         instances: &[Instance],
         region: [u32; 4],
         limits: &Limits,
-    ) -> Detail;
+    ) -> Detail {
+        self.render_at(gpu, fitted, old, instances, region, 1.0, limits)
+    }
     /// A fresh detail of `region` over `fitted`'s demosaic image, rendered.
     fn detail(
         &self,
@@ -141,38 +176,46 @@ impl Scene for Raw {
         pipeline::plan(instances, &self.image(), self.sensor(), pipe, &Limits::NONE)
     }
 
-    fn fitted_within(&self, gpu: &GpuContext, instances: &[Instance], limits: &Limits) -> Pipeline {
+    fn fitted_within(
+        &self,
+        gpu: &GpuContext,
+        instances: &[Instance],
+        limits: &Limits,
+        viewport: Pipe,
+    ) -> Pipeline {
         let image = self.image();
-        let plan = pipeline::plan(instances, &image, self.sensor(), VIEWPORT, limits).unwrap();
+        let plan = pipeline::plan(instances, &image, self.sensor(), viewport, limits).unwrap();
         let mut fitted = pollster::block_on(Pipeline::new(gpu, plan, self.upload(gpu))).unwrap();
         fitted.render(gpu).unwrap();
         fitted
     }
 
-    fn detail_plan(
+    fn detail_plan_at(
         &self,
         results: &mut Results,
         fitted: &Pipeline,
         instances: &[Instance],
         region: [u32; 4],
+        scale: f64,
         limits: &Limits,
     ) -> Result<(Plan, apertrust_engine::detail::Rounds, GpuImage), ExportError> {
         let (source, key) = fitted.detail_source().expect("the viewport's source, held");
         let instances = &pipeline::detail_instances(instances, fitted.plan());
-        let pipe = Pipe::Detail { region, scale: 1.0 };
+        let pipe = Pipe::Detail { region, scale };
         let image = self.image();
         let planned = pipeline::plan(instances, &image, source.desc(), pipe, limits)?;
         let (plan, rounds) = results.plan(planned, key, instances, &image, limits, Some(fitted))?;
         Ok((plan, rounds, source))
     }
 
-    fn render(
+    fn render_at(
         &self,
         gpu: &GpuContext,
         fitted: &Pipeline,
         old: Option<Detail>,
         instances: &[Instance],
         region: [u32; 4],
+        scale: f64,
         limits: &Limits,
     ) -> Detail {
         let (mut results, old) = match old {
@@ -180,17 +223,20 @@ impl Scene for Raw {
             None => (Results::default(), None),
         };
         let (plan, rounds, source) = self
-            .detail_plan(&mut results, fitted, instances, region, limits)
+            .detail_plan_at(&mut results, fitted, instances, region, scale, limits)
             .unwrap();
         let built = results.pipeline(gpu, plan, source.clone(), old);
         let mut pipeline = pollster::block_on(built).unwrap();
         let ran = rounds.operations();
-        pollster::block_on(results.run(gpu, rounds, &source)).unwrap();
+        let round_timings = pollster::block_on(results.run(gpu, rounds, &source)).unwrap();
         let timings = pipeline.render(gpu).unwrap();
         Detail {
             results,
             pipeline,
             rounds: ran,
+            round_passes: (round_timings.passes.iter())
+                .map(|(name, _)| *name)
+                .collect(),
             timings,
         }
     }
@@ -792,10 +838,315 @@ fn a_detail_refuses_a_region_or_a_scale_it_cannot_render() {
         let refused = matches!(planned, Err(PlanError::Detail { .. }));
         assert!(refused, "{region:?}: {planned:?}");
     }
-    // Only at 100% so far.
-    let refused = at([10, 10, 40, 30], 0.5);
-    let refused = matches!(refused, Err(PlanError::Detail { .. }));
-    assert!(refused, "a detail at 50%");
+    // Below 100%, a region of the image at the scale, 42 × 31 at 50%; never above 100%,
+    // nor at a scale not above 0.
+    assert!(at([10, 10, 30, 20], 0.5).is_ok());
+    for (region, scale) in [
+        ([30, 10, 20, 10], 0.5),
+        ([10, 10, 40, 30], 1.5),
+        ([10, 10, 40, 30], 0.0),
+        ([10, 10, 40, 30], -1.0),
+        ([10, 10, 40, 30], f64::NAN),
+    ] {
+        let planned = at(region, scale);
+        let refused = matches!(planned, Err(PlanError::Detail { .. }));
+        assert!(refused, "{region:?} at {scale}: {planned:?}");
+    }
+}
+
+/// The output image `extent` at full resolution at `scale`, each side rounded and at least
+/// a pixel, as the view places it (`view::Placement::size`).
+fn at_scale(extent: [u32; 2], scale: f64) -> [u32; 2] {
+    extent.map(|side| ((f64::from(side) * scale).round() as u32).max(1))
+}
+
+/// The fitted viewport of `instances` planned with bounds of the whole image at `scale`,
+/// rendered: its width and pixels, the image a detail at that scale is a region of
+/// (decision 99).
+fn fitted_at(
+    gpu: &GpuContext,
+    scene: &Raw,
+    instances: &[Instance],
+    scale: f64,
+) -> (u32, Vec<[f32; 4]>) {
+    let extent = scene.plan(instances, Pipe::Export).unwrap().extent();
+    let [width, height] = at_scale(extent, scale);
+    let fitted = scene.fitted_within(
+        gpu,
+        instances,
+        &Limits::NONE,
+        Pipe::Viewport { width, height },
+    );
+    let desc = fitted.output().desc();
+    assert_eq!([desc.width, desc.height], [width, height], "at {scale}");
+    (width, fitted.output().download(gpu).unwrap())
+}
+
+/// Regions of the smaller images below 100%: [`regions`]' places, at about a third of the
+/// image's sides.
+fn regions_below_100(width: u32, height: u32) -> Vec<[u32; 4]> {
+    let (w, h) = (width / 3 + 1, height / 3 + 1);
+    vec![
+        [0, 0, w, h],
+        [width - w, 0, w, h],
+        [0, height - h, w, h],
+        [width - w, height - h, w, h],
+        [width / 2 - w / 2, height / 2 - h / 2, w, h],
+        [0, height / 3, width, h / 2 + 1],
+        [width / 3, 0, w / 2 + 1, height],
+        [0, 0, width, height],
+    ]
+}
+
+/// The scales the tests below 100% take: 50%, and one whose footprints are uneven.
+const BELOW_100: [f64; 2] = [0.5, 0.37];
+
+/// For each region of the image at `scale`, the detail frame of `instances` within
+/// `limits` is the same pixels of the fitted viewport at that scale, bit for bit, and each
+/// fresh detail runs the rounds of `rounds`.
+fn equals_the_fitted_regions_within(
+    gpu: &GpuContext,
+    scene: &Raw,
+    instances: &[Instance],
+    scale: f64,
+    limits: &Limits,
+    rounds: &[&str],
+) {
+    let fitted = scene.fitted(gpu, instances);
+    let (width, expected) = fitted_at(gpu, scene, instances, scale);
+    let height = (expected.len() / width as usize) as u32;
+    for region in regions_below_100(width, height) {
+        let detail = scene.render_at(gpu, &fitted, None, instances, region, scale, limits);
+        assert_region(gpu, &detail, &expected, width, region);
+        assert_eq!(detail.rounds, rounds, "region {region:?} at {scale}");
+    }
+}
+
+#[test]
+fn a_detail_below_100_equals_the_fitted_viewport_at_its_scale() {
+    // Upright and with orientation's quarter turn, its region walked back through it at
+    // the scale; its start the downscale of the region from demosaic's image.
+    let gpu = gpu();
+    for scene in [bayer(), x_trans()] {
+        for settings in [&[][..], &[("flip", "orientation", 7.0)]] {
+            let instances = scene.with(settings);
+            for scale in BELOW_100 {
+                equals_the_fitted_regions_within(
+                    &gpu,
+                    &scene,
+                    &instances,
+                    scale,
+                    &Limits::NONE,
+                    &[],
+                );
+            }
+        }
+    }
+    let scene = bayer();
+    let fitted = scene.fitted(&gpu, &scene.with(&[]));
+    let detail = scene.render_at(
+        &gpu,
+        &fitted,
+        None,
+        &scene.with(&[]),
+        [5, 4, 20, 15],
+        0.5,
+        &Limits::NONE,
+    );
+    assert_eq!(ran(&detail.timings)[0], "main_region");
+    let plan = detail.pipeline.plan();
+    assert_eq!(
+        (plan.operations[0].id, &plan.cached[..]),
+        ("downscale", &[0][..])
+    );
+}
+
+#[test]
+fn a_detail_below_100_with_the_tone_equalizer_equals_the_fitted_viewport_at_its_scale() {
+    // Its mask over the whole image at the scale, in a round of its own; once more at a
+    // budget that cuts that round into tiles, each a detail at the scale, on a raw large
+    // enough to take them.
+    let gpu = gpu();
+    for scene in [bayer(), x_trans()] {
+        for filter in [toneequal::Filter::Eigf, toneequal::Filter::AveragedEigf] {
+            let instances = scene.adding(&[], &toneequal::ToneEqual, tone_equalizer(filter));
+            for scale in BELOW_100 {
+                equals_the_fitted_regions_within(
+                    &gpu,
+                    &scene,
+                    &instances,
+                    scale,
+                    &Limits::NONE,
+                    &["toneequal"],
+                );
+            }
+        }
+    }
+    let scene = medium_bayer();
+    let instances = toned(&scene, &[], 0.0);
+    let limits = tiling_budget(&gpu, &scene, &instances, 0.5);
+    equals_the_fitted_regions_within(&gpu, &scene, &instances, 0.5, &limits, &["toneequal"]);
+}
+
+#[test]
+fn a_detail_below_100_with_bloom_equals_the_fitted_viewport_at_its_scale() {
+    let gpu = gpu();
+    let scene = bayer();
+    let small = bloom::Settings {
+        size: 0.0,
+        threshold: 40.0,
+        strength: 60.0,
+    };
+    for settings in [bloom::Settings::default(), small] {
+        let instances = scene.adding(&[], &bloom::Bloom, bloom::values(&settings));
+        for scale in BELOW_100 {
+            equals_the_fitted_regions_within(
+                &gpu,
+                &scene,
+                &instances,
+                scale,
+                &Limits::NONE,
+                &["bloom"],
+            );
+        }
+    }
+}
+
+#[test]
+fn a_detail_below_100_with_haze_removal_equals_the_fitted_viewport_at_its_scale() {
+    // Upright, the fitted viewport at the scale estimates at full resolution and brings
+    // the transmission's input to its scale with `plane_downscale`: the detail borrows
+    // the 40 × 40 fitted pipeline's estimate, and its round runs `plane_downscale` alone,
+    // or none where the scale's image is the fitted frame's size, whose result it borrows
+    // whole. With a quarter turn after it, the fitted viewport estimates at its own scale,
+    // as the detail does, in a round of its own, both at the scale the turned width
+    // gives: at 36/62 the Bayer raw's width before the turn gives 49/84, and a dark
+    // channel's radius of 4 rather than 3.
+    let gpu = gpu();
+    for scene in [bayer(), x_trans()] {
+        for settings in [&[][..], &[("flip", "orientation", 7.0)]] {
+            let instances = scene.adding(settings, &hazeremoval::HazeRemoval, haze_removal());
+            let fitted = scene.fitted(&gpu, &instances);
+            let fitted_size = fitted.output().desc();
+            for scale in [BELOW_100[0], BELOW_100[1], 36.0 / 62.0] {
+                let (width, expected) = fitted_at(&gpu, &scene, &instances, scale);
+                let height = (expected.len() / width as usize) as u32;
+                let whole = [width, height] == [fitted_size.width, fitted_size.height];
+                for region in regions_below_100(width, height) {
+                    let limits = &Limits::NONE;
+                    let detail =
+                        scene.render_at(&gpu, &fitted, None, &instances, region, scale, limits);
+                    assert_region(&gpu, &detail, &expected, width, region);
+                    let at = format!("{settings:?} {region:?} at {scale}");
+                    let round = &detail.round_passes;
+                    if !settings.is_empty() {
+                        assert_eq!(detail.rounds, ["hazeremoval"], "{at}");
+                        assert!(round.contains(&"image_copy"), "{at}: {round:?}");
+                    } else if whole {
+                        assert!(detail.rounds.is_empty(), "{at}: {:?}", detail.rounds);
+                    } else {
+                        assert_eq!(detail.rounds, ["hazeremoval"], "{at}");
+                        assert_eq!(round, &["plane_downscale"], "{at}");
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// The largest budget, a sixteenth smaller each time from far more than the whole image
+/// takes, at which every round of a detail of `instances` at `scale` takes more than one
+/// tile.
+fn tiling_budget(gpu: &GpuContext, scene: &Raw, instances: &[Instance], scale: f64) -> Limits {
+    let fitted = scene.fitted(gpu, instances);
+    let tiled = |budget: u64| {
+        let limits = Limits {
+            budget,
+            ..Limits::NONE
+        };
+        let fresh = &mut Results::default();
+        let planned =
+            scene.detail_plan_at(fresh, &fitted, instances, [5, 5, 20, 15], scale, &limits);
+        planned.is_ok_and(|(_, rounds, _)| rounds.tiles().iter().all(|&tiles| tiles > 1))
+    };
+    let budget = std::iter::successors(Some(64u64 << 20), |budget| Some(budget * 15 / 16))
+        .take_while(|&budget| budget > 0)
+        .find(|&budget| tiled(budget))
+        .expect("a budget that tiles every round");
+    Limits {
+        budget,
+        ..Limits::NONE
+    }
+}
+
+#[test]
+fn a_scale_change_reruns_the_rounds_and_a_pan_does_not() {
+    // The tone equalizer's mask is held under the key of the whole image at the detail's
+    // scale: a pan at that scale keeps it, a change of scale makes another, and going back
+    // computes the first again.
+    let gpu = gpu();
+    let scene = bayer();
+    let instances = toned(&scene, &[], 0.0);
+    let fitted = scene.fitted(&gpu, &instances);
+    let mut detail: Option<Detail> = None;
+    for (scale, region, rounds) in [
+        (0.5, [0, 0, 20, 15], &["toneequal"][..]),
+        (0.5, [12, 9, 20, 15], &[]),
+        (0.6, [12, 9, 20, 15], &["toneequal"]),
+        (0.6, [30, 22, 20, 15], &[]),
+        (0.5, [22, 16, 20, 15], &["toneequal"]),
+    ] {
+        let rendered = scene.render_at(
+            &gpu,
+            &fitted,
+            detail,
+            &instances,
+            region,
+            scale,
+            &Limits::NONE,
+        );
+        assert_eq!(rendered.rounds, rounds, "{region:?} at {scale}");
+        let (width, expected) = fitted_at(&gpu, &scene, &instances, scale);
+        assert_region(&gpu, &rendered, &expected, width, region);
+        detail = Some(rendered);
+    }
+}
+
+#[test]
+fn a_new_scale_never_reuses_another_scales_pixels() {
+    // 50% then 60% round the same centre, the region the view renders at each: the second
+    // renders at 60% from its start, its frame the fitted viewport's at 60%.
+    use apertrust_engine::view::{ANTICIPATE_MOVE, View, ViewScale, place, rendered};
+    let gpu = gpu();
+    let scene = bayer();
+    let instances = toned(&scene, &[], 0.0);
+    let fitted = scene.fitted(&gpu, &instances);
+    let extent = fitted.plan().extent();
+    let mut detail: Option<Detail> = None;
+    for scale in [0.5, 0.6] {
+        let view = View {
+            scale: ViewScale::Factor(scale as f32),
+            centre: [0.45, 0.55],
+        };
+        let placed = place(extent, (16, 12), &view);
+        assert_eq!(placed.render, f64::from(scale as f32));
+        let region = rendered(&placed, ANTICIPATE_MOVE, u64::MAX).expect("a region");
+        let rendered = scene.render_at(
+            &gpu,
+            &fitted,
+            detail,
+            &instances,
+            region,
+            placed.render,
+            &Limits::NONE,
+        );
+        assert_eq!(ran(&rendered.timings)[0], "main_region", "at {scale}");
+        let desc = rendered.pipeline.output().desc();
+        assert_eq!([desc.width, desc.height], [region[2], region[3]]);
+        let (width, expected) = fitted_at(&gpu, &scene, &instances, placed.render);
+        assert_region(&gpu, &rendered, &expected, width, region);
+        detail = Some(rendered);
+    }
 }
 
 /// The binding the tiled tests open the GPU with: the medium raws' demosaiced images,
@@ -825,7 +1176,7 @@ fn tiled_regions(width: u32, height: u32) -> Vec<[u32; 4]> {
 
 /// The fitted viewport of `instances` on `small`, in tiles, its raw stage in row strips.
 fn tiled_fitted(small: &GpuContext, scene: &Raw, instances: &[Instance]) -> Pipeline {
-    let fitted = scene.fitted_within(small, instances, &Limits::of(small));
+    let fitted = scene.fitted_within(small, instances, &Limits::of(small), VIEWPORT);
     let plan = fitted.plan();
     let tiles = plan.tiled.clone().expect("a tiled viewport");
     let strips = |op: &PlannedOperation| op.dispatches.iter().any(|pass| pass.len() > 1);
@@ -866,6 +1217,199 @@ fn a_tiled_viewports_detail_equals_the_untiled_one() {
                 let pixels = detail.pipeline.output().download(&small).unwrap();
                 let difference = first_difference(&pixels, &expected);
                 assert_eq!(difference, None, "{settings:?} {region:?}");
+            }
+        }
+    }
+}
+
+#[test]
+fn a_tiled_viewports_detail_below_100_equals_the_untiled_one() {
+    // At 50%, upright and with a quarter turn: from the raw stage's output, the photosites
+    // under the region's footprints copied, grown by demosaic's reach, demosaiced and
+    // downscaled; where they pass the binding, as the whole image's do, in tiles, as the
+    // fitted viewport's start.
+    let (gpu, small) = (gpu(), common::small_gpu(SMALL_BINDING));
+    for scene in [medium_bayer(), medium_x_trans()] {
+        for settings in [&[][..], &[("flip", "orientation", 7.0)]] {
+            let instances = scene.with(settings);
+            let tiled = tiled_fitted(&small, &scene, &instances);
+            let (width, expected) = fitted_at(&gpu, &scene, &instances, 0.5);
+            let height = (expected.len() / width as usize) as u32;
+            for (region, in_tiles) in [
+                ([0, 0, 60, 40], false),
+                ([width - 60, height - 40, 60, 40], false),
+                ([width / 2 - 31, height / 2 - 23, 61, 47], false),
+                ([0, height / 3, width, 9], false),
+                ([width / 3, 0, 9, height], false),
+                ([0, 0, width, height], true),
+                ([width / 4, height / 5, width / 2 + 3, height / 2 + 5], true),
+            ] {
+                let limits = Limits::of(&small);
+                let detail =
+                    scene.render_at(&small, &tiled, None, &instances, region, 0.5, &limits);
+                let plan = detail.pipeline.plan();
+                assert_eq!(plan.input.format, Format::Mosaic);
+                assert_eq!(plan.tiled.is_some(), in_tiles, "{settings:?} {region:?}");
+                assert_region(&small, &detail, &expected, width, region);
+            }
+        }
+    }
+    // With the tone equalizer, its round at 50% in tiles from the raw stage's output too.
+    let scene = medium_bayer();
+    let instances = toned(&scene, &[], 0.0);
+    let tiled = tiled_fitted(&small, &scene, &instances);
+    let (width, expected) = fitted_at(&gpu, &scene, &instances, 0.5);
+    let region = [20, 30, 120, 90];
+    let limits = Limits::of(&small);
+    let detail = scene.render_at(&small, &tiled, None, &instances, region, 0.5, &limits);
+    assert_eq!(detail.rounds, ["toneequal"]);
+    assert_region(&small, &detail, &expected, width, region);
+}
+
+#[test]
+fn a_detail_whose_whole_image_scratch_cannot_bind_stops_its_tile_search() {
+    // At 50% from a tiled viewport's mosaic, haze removal's scratch over the whole image
+    // at the scale binds more at once than the GPU allows, which no tile of the detail's
+    // start makes smaller: the start takes the largest tiles that bind themselves, 2 × 2
+    // of 128 pixels, not the 4 × 3 of the smallest the search tries, and the detail's
+    // results refuse the binding, as an export's are.
+    let scene = medium_bayer();
+    let instances = scene.adding(&[], &hazeremoval::HazeRemoval, haze_removal());
+    let limits = Limits {
+        binding: 256 << 10,
+        ..Limits::NONE
+    };
+    let image = scene.image();
+    let fitted = pipeline::plan(&instances, &image, scene.sensor(), VIEWPORT, &limits).unwrap();
+    assert!(fitted.tiled.is_some());
+    let source = fitted.operations[fitted.cached[0]].output_desc;
+    assert_eq!(source.format, Format::Mosaic);
+    let after = pipeline::detail_instances(&instances, &fitted);
+    let pipe = Pipe::Detail {
+        region: [0, 0, 100, 80],
+        scale: 0.5,
+    };
+    let planned = pipeline::plan(&after, &image, source, pipe, &limits).unwrap();
+    let tiled = planned.tiled.clone().expect("its start in tiles");
+    let tiles = &planned.operations[tiled];
+    let downscales = tiles.iter().filter(|op| op.id == "downscale").count();
+    assert_eq!(downscales, 4);
+    for op in tiles {
+        assert!(
+            op.output_desc.buffer_size() <= 256 << 10,
+            "{}",
+            op.output_desc
+        );
+    }
+    let refused = Results::default().plan(planned, 0, &after, &image, &limits, None);
+    match refused {
+        Err(ExportError::HeldScratch {
+            operation, limit, ..
+        }) => assert_eq!((operation, limit), ("hazeremoval", 256 << 10)),
+        other => panic!("refused, not {:?}", other.map(|(plan, _)| plan.pipe)),
+    }
+}
+
+/// The whole-image operations the sweep below runs with: none, the tone equalizer, haze
+/// removal.
+#[derive(Debug, Clone, Copy)]
+enum Whole {
+    None,
+    ToneEqualizer,
+    HazeRemoval,
+}
+
+impl Whole {
+    /// The default pipeline with `settings`, and this whole-image operation.
+    fn instances(self, scene: &Raw, settings: &[(&str, &str, f32)]) -> Vec<Instance<'static>> {
+        match self {
+            Whole::None => scene.with(settings),
+            Whole::ToneEqualizer => toned(scene, settings, 0.0),
+            Whole::HazeRemoval => scene.adding(settings, &hazeremoval::HazeRemoval, haze_removal()),
+        }
+    }
+}
+
+/// Fill's scale of an odd ratio: the photo of `extent` in bounds of 50 × 23.
+fn odd_fill(extent: [u32; 2]) -> f64 {
+    use apertrust_engine::view::{View, ViewScale, place};
+    let fill = View {
+        scale: ViewScale::Fill,
+        centre: [0.5, 0.5],
+    };
+    place(extent, (50, 23), &fill).render
+}
+
+#[test]
+fn a_detail_below_100_equals_the_fitted_viewport_across_scales_turns_sources_and_rounds() {
+    // Every case's frame is the same pixels of the fitted viewport planned at the whole
+    // output's size at the scale, bit for bit: Bayer and X-Trans, upright and with the
+    // quarter turn, whose width before and after the turn gives different scales; the
+    // detail's start from demosaic's image (the small raws) or in tiles from a tiled
+    // viewport's mosaic (the medium raws, with a region whose footprints pass the
+    // binding); no whole-image operation, the tone equalizer's round, or haze removal's,
+    // borrowed upright and at the detail's scale turned. A tiled viewport's haze removal
+    // estimates at its own scale, which the fitted viewport at the scale does not, so it
+    // is left out. The scales: non-half ones and Fill's of an odd ratio, each one whose
+    // output size a fitted viewport has (at 0.83 the 84 × 62 raw's output, 70 × 51, is no
+    // fitted viewport's: one 70 wide is 52 high).
+    let (full, small) = (gpu(), common::small_gpu(SMALL_BINDING));
+    let fill = f64::NAN;
+    let cases: [(bool, Whole, &[f64]); 5] = [
+        (false, Whole::None, &[0.37, 0.5, 0.61, 0.81, fill]),
+        (false, Whole::ToneEqualizer, &[0.61, fill]),
+        (false, Whole::HazeRemoval, &[0.61, 0.81, fill]),
+        (true, Whole::None, &[0.61, 0.81]),
+        (true, Whole::ToneEqualizer, &[0.61, 0.81]),
+    ];
+    for (tiled, whole, scales) in cases {
+        let scenes = if tiled {
+            [medium_bayer(), medium_x_trans()]
+        } else {
+            [bayer(), x_trans()]
+        };
+        for scene in &scenes {
+            for settings in [&[][..], &[("flip", "orientation", 7.0)]] {
+                let instances = whole.instances(scene, settings);
+                let extent = scene.plan(&instances, Pipe::Export).unwrap().extent();
+                let (gpu, fitted, limits) = if tiled {
+                    (
+                        &small,
+                        tiled_fitted(&small, scene, &instances),
+                        Limits::of(&small),
+                    )
+                } else {
+                    (&full, scene.fitted(&full, &instances), Limits::NONE)
+                };
+                for &scale in scales {
+                    let scale = if scale.is_nan() {
+                        odd_fill(extent)
+                    } else {
+                        scale
+                    };
+                    let (width, expected) = fitted_at(&full, scene, &instances, scale);
+                    let height = (expected.len() / width as usize) as u32;
+                    let (w, h) = (width, height);
+                    let regions = if tiled {
+                        [[w / 8, h / 8, w * 9 / 16, h * 9 / 16], [0, 0, w / 3, h / 3]]
+                    } else {
+                        [
+                            [w / 3, h / 3, w / 3 + 1, h / 3 + 1],
+                            [0, h / 3, w, h / 4 + 1],
+                        ]
+                    };
+                    for (k, region) in regions.into_iter().enumerate() {
+                        let at = format!("{whole:?} {settings:?} {region:?} at {scale}");
+                        let detail =
+                            scene.render_at(gpu, &fitted, None, &instances, region, scale, &limits);
+                        // A tiled viewport's first region starts in tiles.
+                        let in_tiles = detail.pipeline.plan().tiled.is_some();
+                        assert_eq!(in_tiles, tiled && k == 0, "{at}");
+                        let pixels = detail.pipeline.output().download(gpu).unwrap();
+                        let difference = first_difference(&pixels, &cut(&expected, width, region));
+                        assert_eq!(difference, None, "{at}");
+                    }
+                }
             }
         }
     }
@@ -1007,5 +1551,35 @@ fn plans_of_other_pipes_keep_their_bytes() {
             .map(|op| (op.key, op.whole_image.map(|whole| whole.key)))
             .collect();
         assert_eq!(planned, keys_before_geometry(plan), "{name}'s keys");
+    }
+}
+
+#[test]
+fn a_round_of_one_tile_that_cannot_bind_refuses_the_view() {
+    // Local contrast takes one tile of the whole stage, which no tile size makes smaller:
+    // at 50%, a tile whose downscale binds demosaic's whole image past the GPU's binding
+    // is refused at planning, as rounds whose tiles never fit are, and the view stays
+    // at Fit.
+    let gpu = gpu();
+    let scene = bayer();
+    let instances = scene.adding(
+        &[],
+        &bilat::Bilat,
+        bilat::values(&bilat::Settings::default()),
+    );
+    let fitted = scene.fitted(&gpu, &instances);
+    let region = [10, 10, 20, 15];
+    let at = |kib: u64| {
+        let limits = Limits {
+            binding: kib << 10,
+            ..Limits::NONE
+        };
+        let fresh = &mut Results::default();
+        scene.detail_plan_at(fresh, &fitted, &instances, region, 0.5, &limits)
+    };
+    assert!(at(512).is_ok_and(|(_, rounds, _)| rounds.tiles() == [1]));
+    match at(80) {
+        Err(ExportError::NoTiles { binding, .. }) => assert_eq!(binding, 80 << 10),
+        other => panic!("refused, not {:?}", other.map(|(plan, _, _)| plan.pipe)),
     }
 }

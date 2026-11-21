@@ -207,11 +207,12 @@ enum Command {
         /// In place of the timings above, zoom the view to this factor, 1 being 100%, one
         /// photo pixel a pixel, through an in-process session as the app sends it: a
         /// Resize to --width and --height, then a View. The engine renders the visible
-        /// region at 100% beside the fitted frame (decision 99). Times entering the zoom
+        /// region at the zoom's scale, at most 100%, beside the fitted frame (decision 99),
+        /// or at Fit and below the fitted frame alone. Times entering the zoom
         /// and the --changes exposure changes there, both pipelines in one submission, or
         /// where an upstream change runs a whole-image round, the fitted passes, each of
         /// its tiles and the detail's passes in submissions of their own;
-        /// --png writes the zoomed frame. Between Fit and 1 the frame stays at Fit for now.
+        /// --png writes the zoomed frame.
         #[arg(
             long,
             value_name = "FACTOR",
@@ -3325,8 +3326,10 @@ mod tests {
             zoom("--at=0.1,0.9 --zoom=2 --pans 50"),
             Ok((Some(2.0), Some([0.1, 0.9]), 50))
         );
-        // The centre left out is the photo's, which the run takes as 0.5,0.5.
+        // The centre left out is the photo's, which the run takes as 0.5,0.5; a factor below
+        // 100%, between Fit and 1.
         assert_eq!(zoom("--zoom 4"), Ok((Some(4.0), None, 0)));
+        assert_eq!(zoom("--zoom 0.5"), Ok((Some(0.5), None, 0)));
         assert_eq!(zoom(""), Ok((None, None, 0)));
         // --at and --pans need --zoom, --at two numbers, --pans a count; --zoom times its
         // own changes.

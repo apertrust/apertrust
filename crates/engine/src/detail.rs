@@ -30,9 +30,16 @@
 //! fitted pipeline, is borrowed from it by its key and read in place, never estimated
 //! twice; where that pipeline holds none, with geometry after it, the detail estimates in
 //! a round of its own. Every result of a fitted pipeline at scale 1, a photo no larger
-//! than the bounds, is borrowed the same way.
+//! than the bounds, is borrowed the same way. Between Fit and 100% the estimate is
+//! borrowed alone, and the detail's round runs only the passes after it, haze removal's
+//! `plane_downscale`, to the whole image at its scale.
 //!
-//! Built at scale 1, the 100% view; scales between Fit and 100% are planned.
+//! At 1, the 100% view, each round's tiles are an export's; between Fit and 100% they are
+//! details at the scale, each downscaling its footprints from the source as the fitted
+//! viewport at that scale does, so the result is that viewport's, and a change of scale
+//! takes a round of its own.
+
+use std::hash::{DefaultHasher, Hash, Hasher};
 
 use apertrust_plugin::{ImageContext, ImageDesc, PassKind};
 
@@ -40,8 +47,8 @@ use crate::compute::{ComputeError, GpuImage, Timings};
 use crate::export::{self, ExportError, Round};
 use crate::gpu::GpuContext;
 use crate::pipeline::{
-    self, Instance, Kernels, Limits, Pipe, Pipeline, Plan, PlanError, PlannedOperation,
-    SMALLEST_TILE, scratch_buffer, scratch_size, takes_a_first_round,
+    self, AsRegion, Instance, Kernels, Limits, Pipe, Pipeline, Plan, PlanError, PlannedOperation,
+    SMALLEST_TILE, bound_scratch, scratch_buffer, scratch_size, takes_a_first_round,
 };
 
 /// The whole-image results of a detail's operations, held across its renders (decision
@@ -69,6 +76,10 @@ struct Held {
     buffers: Vec<Option<wgpu::Buffer>>,
     /// Whether the buffers are the fitted pipeline's.
     borrowed: bool,
+    /// Per buffer, whether it is the fitted pipeline's, lent for the part of the result
+    /// it holds at full resolution while the rest is the detail's own (decision 15):
+    /// bound by the round that brings it to the detail's scale, never written.
+    lent: Vec<bool>,
 }
 
 /// The rounds a detail's frame runs before its region's passes, from [`Results::plan`]:
@@ -155,42 +166,72 @@ impl Results {
             .cloned()
             .collect();
         // The untiled plan at the detail's scale, through the last operation with
-        // whole-image passes, whose keys hold no region: each result's key is its.
-        let [width, height] = operation(&plan, last).extent;
+        // whole-image passes, whose keys hold no region: each result's key is its. Its
+        // output is that operation's stage at the scale, which its whole-image passes
+        // cover.
+        let [width, height] = operation(&plan, last).output_desc.scaled_extent;
         let pipe = Pipe::Detail {
             region: [0, 0, width, height],
             scale,
         };
         let through = export::instances_through(&after, last);
-        let whole = pipeline::plan(&through, image, plan.input, pipe, limits)?.keyed_on(key);
+        // Planned as the region's plan has its operations, with the full-resolution image
+        // or not and at its operations' scale, which a geometry after the operation sets,
+        // as it does in the fitted viewport.
+        let as_region = Some(AsRegion::of(&plan));
+        let whole =
+            pipeline::plan_as(&through, image, plan.input, pipe, limits, as_region)?.keyed_on(key);
         export::held_scratch_binds(&whole, &runs, limits)?;
         let mut held: Vec<Held> = Vec::new();
         let mut due = Vec::new();
         let mut largest = 0;
         for &run in &runs {
             let sizes = bound_sizes(&mut plan, &whole, run)?;
-            let borrowed = fitted
-                .and_then(|fitted| fitted.result_at_full_resolution(run))
-                .filter(|(_, buffers)| fits(&sizes, buffers.iter().map(Some)));
+            let lent = fitted.and_then(|fitted| fitted.result_at_full_resolution(run));
+            let borrowed =
+                (lent.clone()).filter(|(_, buffers)| fits(&sizes, buffers.iter().map(Some)));
             if let Some((part, buffers)) = borrowed {
                 held.push(Held::borrowed(run, part, sizes, buffers));
                 continue;
             }
             let mut entry = self.take(run, sizes);
             let op = operation(&whole, run);
-            let result = op.whole_image.map_or(op.key, |whole| whole.key);
+            let mut result = op.whole_image.map_or(op.key, |whole| whole.key);
+            // Below 1, the fitted pipeline's estimate at full resolution, where it holds
+            // one in buffers of the sizes the detail's takes: the round runs only the
+            // passes after it, and the result's key holds the estimate's.
+            let part = lent.and_then(|lent| lend(&whole, op, lent));
+            let skip = part.as_ref().map_or(0, |part| part.passes);
+            if let Some(part) = &part {
+                for (&index, buffer) in part.scratch.iter().zip(&part.buffers) {
+                    entry.buffers[index] = Some(buffer.clone());
+                    entry.lent[index] = true;
+                }
+                let mut hasher = DefaultHasher::new();
+                (part.key, result).hash(&mut hasher);
+                result = hasher.finish();
+            }
             if entry.key != Some(result) {
                 entry.key = None;
                 let earlier: Vec<&str> = held.iter().map(|held| held.id).collect();
+                // What the detail keeps of it, or is lent.
+                let kept = (entry.buffers.iter().zip(&entry.sizes).zip(&entry.lent))
+                    .map(|((buffer, size), &lent)| match buffer {
+                        Some(buffer) if lent => buffer.size(),
+                        _ => size.unwrap_or(0),
+                    })
+                    .sum();
                 let tiles = Tiles {
                     after: &after,
                     image,
                     source: plan.input,
+                    scale,
+                    as_region,
                     earlier: &earlier,
-                    kept: entry.sizes.iter().flatten().sum(),
+                    kept,
                     limits,
                 };
-                let (plans, own) = tiles.plan(op)?;
+                let (plans, own) = tiles.plan(op, skip)?;
                 largest = largest.max(own);
                 let (id, key) = (run, result);
                 due.push(Due { id, key, plans });
@@ -210,19 +251,26 @@ impl Results {
     }
 
     /// The result held for `run` whose buffers have `sizes`, taken out to be held again,
-    /// with its key; or a new one, holding nothing yet, its buffers made by
-    /// [`Self::pipeline`].
+    /// with its key, the buffers the fitted pipeline lent it given back; or a new one,
+    /// holding nothing yet, its buffers made by [`Self::pipeline`].
     fn take(&mut self, run: &'static str, sizes: Vec<Option<u64>>) -> Held {
         let kept = (self.held.iter())
             .position(|held| held.id == run && !held.borrowed && held.sizes == sizes)
             .map(|at| self.held.swap_remove(at));
-        kept.unwrap_or_else(|| Held {
+        let mut held = kept.unwrap_or_else(|| Held {
             id: run,
             key: None,
             buffers: vec![None; sizes.len()],
+            lent: vec![false; sizes.len()],
             sizes,
             borrowed: false,
-        })
+        });
+        for (buffer, lent) in held.buffers.iter_mut().zip(&mut held.lent) {
+            if std::mem::take(lent) {
+                *buffer = None;
+            }
+        }
+        held
     }
 
     /// The detail's own pipeline for `plan`, from [`Self::plan`], over `source`, binding
@@ -243,7 +291,7 @@ impl Results {
             }
         }
         let held: Vec<(&'static str, Vec<Option<wgpu::Buffer>>)> = (self.held.iter())
-            .map(|held| (held.id, held.buffers.clone()))
+            .map(|held| (held.id, held.bound()))
             .collect();
         let built = match old {
             Some(old) if old.reads(&source) => old.update_holding(gpu, plan, &held).await?,
@@ -273,10 +321,13 @@ impl Results {
             let at = (self.held.iter())
                 .position(|held| held.id == id)
                 .expect("a round's result is held");
-            let mut held: Vec<(&'static str, Vec<Option<wgpu::Buffer>>)> = self.held[..=at]
+            // The earlier results as the detail binds them, and this one whole, the buffers
+            // the fitted pipeline lent it among them.
+            let mut held: Vec<(&'static str, Vec<Option<wgpu::Buffer>>)> = self.held[..at]
                 .iter()
-                .map(|held| (held.id, held.buffers.clone()))
+                .map(|held| (held.id, held.bound()))
                 .collect();
+            held.push((id, self.held[at].buffers.clone()));
             let largest = export::largest(&plans).clone();
             let kernels = self.kernels.clone();
             let built = Pipeline::holding_with(gpu, largest, source.clone(), &held, kernels);
@@ -311,18 +362,61 @@ impl Held {
         Self {
             id: run,
             key: Some(part),
+            lent: vec![false; sizes.len()],
             sizes,
             buffers,
             borrowed: true,
         }
     }
+
+    /// Its buffers the detail's passes after the whole-image ones bind, the rest `None`.
+    fn bound(&self) -> Vec<Option<wgpu::Buffer>> {
+        (self.buffers.iter().zip(&self.sizes))
+            .map(|(buffer, size)| size.and(buffer.clone()))
+            .collect()
+    }
+}
+
+/// The fitted pipeline's estimate at full resolution an operation's result below 1
+/// takes (decision 15): its key, how many of the operation's passes make it, and the
+/// scratch buffers they bind, by index into the operation's own.
+struct Lent {
+    key: u64,
+    passes: usize,
+    scratch: Vec<usize>,
+    buffers: Vec<wgpu::Buffer>,
+}
+
+/// What `op` of `whole`, the untiled plan at the detail's scale, takes of `lent`, the
+/// fitted pipeline's result at full resolution, its key and its buffers: where `op` has a
+/// part at full resolution of its own, every scratch buffer that part binds, each the
+/// size the detail's plan asks; `None` otherwise, as at 100%, which borrows the whole.
+fn lend(whole: &Plan, op: &PlannedOperation, lent: (u64, Vec<wgpu::Buffer>)) -> Option<Lent> {
+    let part = op.whole_image?.full_resolution?;
+    let (key, buffers) = lent;
+    let scratch = bound_scratch(&op.passes[..part.passes]);
+    let fits = (buffers.len() == op.scratch.len())
+        && (scratch.iter())
+            .all(|&own| buffers[own].size() == scratch_size(whole.scratch[op.scratch[own]]));
+    if !fits {
+        return None;
+    }
+    let buffers = scratch.iter().map(|&own| buffers[own].clone()).collect();
+    Some(Lent {
+        key,
+        passes: part.passes,
+        scratch,
+        buffers,
+    })
 }
 
 /// Leaves `run`'s whole-image passes out of `plan`, a detail's, and the scratch its later
 /// passes do not bind; then the bytes of each scratch buffer of it they bind, `None` for
 /// the rest. Refused where the region's plan sizes that scratch otherwise than `whole`,
 /// the untiled plan, as an operation sized by its input rather than the whole image
-/// would.
+/// would, or runs it at another scale or over another stage at it, the stage its
+/// whole-image passes cover (`ImageDesc::scaled_extent`), which every round's tiles
+/// cut.
 fn bound_sizes(plan: &mut Plan, whole: &Plan, run: &str) -> Result<Vec<Option<u64>>, PlanError> {
     let scratch = |plan: &Plan| -> Vec<u64> {
         let op = operation(plan, run);
@@ -331,8 +425,12 @@ fn bound_sizes(plan: &mut Plan, whole: &Plan, run: &str) -> Result<Vec<Option<u6
             .map(|&index| plan.scratch[index])
             .collect()
     };
+    let at = |plan: &Plan| {
+        let op = operation(plan, run);
+        (op.scale, op.output_desc.scaled_extent)
+    };
     let all = scratch(plan);
-    if all != scratch(whole) {
+    if all != scratch(whole) || at(plan) != at(whole) {
         return Err(PlanError::Detail {
             operation: operation(whole, run).id,
             what: "its whole-image passes are sized by the region",
@@ -368,12 +466,16 @@ fn fits<'a>(
 }
 
 /// What a round's tiles are planned from: the detail's instances after the raw stage,
-/// its image context, its source's image, the operations whose results the round binds,
-/// the bytes of the round's own result the detail keeps, and the limits.
+/// its image context, its source's image, its scale, how its plans plan their operations
+/// as the region's do ([`pipeline::plan_as`]), the operations whose results the
+/// round binds, the bytes of the round's own result the detail keeps or is lent, and the
+/// limits.
 struct Tiles<'a> {
     after: &'a [Instance<'a>],
     image: &'a ImageContext,
     source: ImageDesc,
+    scale: f64,
+    as_region: Option<AsRegion>,
     earlier: &'a [&'a str],
     kept: u64,
     limits: &'a Limits,
@@ -381,24 +483,40 @@ struct Tiles<'a> {
 
 impl Tiles<'_> {
     /// The plans of the round of `op`, from the untiled plan, and the bytes of the largest
-    /// one's buffers beside the results held: tiles of its stage, the largest square ones,
-    /// halving from 8192 to [`SMALLEST_TILE`], whose buffers, their source among them as
-    /// an export's tiles count their input, fit the budget beside the results and bind,
-    /// for an operation that opts in, or the whole stage for any other (decision 15). The
-    /// round's scratch the detail does not keep, haze removal's copy of the image among
-    /// it, is the round's own.
-    fn plan(&self, op: &PlannedOperation) -> Result<(Vec<Plan>, u64), ExportError> {
+    /// one's buffers beside the results held: tiles of its stage at the detail's scale,
+    /// the largest square ones, halving from 8192 to [`SMALLEST_TILE`], whose buffers,
+    /// their source among them as an export's tiles count their input, fit the budget
+    /// beside the results and bind, for an operation that opts in, or the whole stage for
+    /// any other (decision 15). At 1 each tile is an export's; below 1 a detail's at the
+    /// scale, downscaling its footprints (decision 99). The round's scratch the detail
+    /// does not keep, haze removal's copy of the image among it, is the round's own. The
+    /// first `skip` of `op`'s passes are left out, their result lent by the fitted
+    /// pipeline. A round of one tile, the whole stage's or a lent one's, that does not
+    /// bind is refused as one whose tiles never fit ([`ExportError::NoTiles`]); its bytes
+    /// past the budget are only logged, as no tile size makes them fewer.
+    fn plan(&self, op: &PlannedOperation, skip: usize) -> Result<(Vec<Plan>, u64), ExportError> {
         let own = |plan: &Plan| plan.bytes() - export::held_bytes(plan, self.earlier) - self.kept;
         let largest = |plans: &[Plan]| plans.iter().map(own).max().unwrap_or(0);
-        let [width, height] = op.extent;
-        if !takes_a_first_round(op) {
-            let plans = self.at(op, &[[0, 0, width, height]])?;
+        let [width, height] = op.output_desc.scaled_extent;
+        // With its first passes lent, the rest cover the whole image whatever the tile:
+        // one of a pixel, every other operation's passes left out.
+        let whole = if skip > 0 { [1, 1] } else { [width, height] };
+        let refused = || ExportError::NoTiles {
+            binding: self.limits.binding,
+            budget: self.limits.budget,
+        };
+        if skip > 0 || !takes_a_first_round(op) {
+            let plans = self.at(op, &[[0, 0, whole[0], whole[1]]], skip)?;
+            if !plans.iter().all(|plan| plan.binds_within(self.limits)) {
+                return Err(refused());
+            }
             let largest = largest(&plans);
             return Ok((plans, largest));
         }
         let mut edge = 8192;
         while edge >= SMALLEST_TILE {
-            let plans = self.at(op, &export::regions(op.extent, [edge, edge]))?;
+            let regions = export::regions(op.output_desc.scaled_extent, [edge, edge]);
+            let plans = self.at(op, &regions, skip)?;
             let fit =
                 |plan: &Plan| own(plan) <= self.limits.budget && plan.binds_within(self.limits);
             if plans.iter().all(fit) {
@@ -407,20 +525,25 @@ impl Tiles<'_> {
             }
             edge /= 2;
         }
-        Err(ExportError::NoTiles {
-            binding: self.limits.binding,
-            budget: self.limits.budget,
-        })
+        Err(refused())
     }
 
     /// The plans of `op`'s round over `regions` of its stage, the earlier results' unbound
-    /// scratch taking no memory.
-    fn at(&self, op: &PlannedOperation, regions: &[[u32; 4]]) -> Result<Vec<Plan>, PlanError> {
+    /// scratch taking no memory, and `op`'s first `skip` passes left out, with every other
+    /// operation's where there are some.
+    fn at(
+        &self,
+        op: &PlannedOperation,
+        regions: &[[u32; 4]],
+        skip: usize,
+    ) -> Result<Vec<Plan>, PlanError> {
         let round = Round {
             run: op.id,
-            extent: op.extent,
+            extent: op.output_desc.scaled_extent,
             regions,
             resample: None,
+            detail: (self.scale < 1.0).then_some(self.scale),
+            as_region: self.as_region,
         };
         let through = export::instances_through(self.after, op.id);
         let mut plans =
@@ -429,6 +552,21 @@ impl Tiles<'_> {
             for id in self.earlier {
                 plan.drop_unbound_scratch(id);
             }
+            if skip == 0 {
+                continue;
+            }
+            let others: Vec<&'static str> = (plan.operations.iter())
+                .map(|planned| planned.id)
+                .filter(|&id| id != op.id)
+                .collect();
+            for id in others {
+                plan.retain_passes(id, |_| false);
+            }
+            let passes = std::cell::Cell::new(0);
+            plan.retain_passes(op.id, |_| {
+                passes.set(passes.get() + 1);
+                passes.get() > skip
+            });
         }
         Ok(plans)
     }

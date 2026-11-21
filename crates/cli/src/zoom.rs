@@ -305,13 +305,13 @@ fn zoom(photo: &Path, options: &Options, engine: engine::Options) -> Result<()> 
     };
     let sent_at = Instant::now();
     let viewed = client.session.send(Command::View(view));
-    // Only a view the engine renders past Fit sends a frame: from 100% on, for now.
+    // Only a view the engine renders past Fit sends a frame.
     let placed = apertrust_engine::view::place(fitted.place.extent, options.bounds, &view);
-    let zoomed = placed.render >= 1.0 && fitted.place.scale < 1.0;
-    if !zoomed {
+    let zoomed = apertrust_engine::view::zoomed(fitted.place.extent, options.bounds, &view);
+    if zoomed.is_none() {
         client.view(viewed)?;
         println!(
-            "The frame stays at Fit at {:.0}%: the detail renders from 100% so far.",
+            "The frame stays at Fit at {:.0}%: the view shows the fitted frame.",
             placed.shown * 100.0
         );
     } else {
@@ -347,7 +347,7 @@ fn zoom(photo: &Path, options: &Options, engine: engine::Options) -> Result<()> 
     let step = if base + 0.01 > 4.0 { -0.01 } else { 0.01 };
     let (mut times, mut latency) = (Vec::new(), Vec::new());
     // The latest frame's: the zoomed one, or at Fit any.
-    let mut last = if zoomed { viewed } else { 0 };
+    let mut last = if zoomed.is_some() { viewed } else { 0 };
     let changes = if client.view_only { 0 } else { options.changes };
     if client.view_only && options.changes > 0 {
         println!("No changes timed: the photo is open for viewing only.");

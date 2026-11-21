@@ -22,10 +22,9 @@
 //! disagree on a scale, a rounding or a clamp. A client works out a resize at Fill, or the
 //! centre a pan reaches, without a round trip.
 //!
-//! Built: the view, its placement and the frame's place; from 100% on, the region the
-//! detail pipeline renders at scale 1 ([`rendered`]), the visible rectangle with its
-//! margin, and whether a pan stays inside it ([`covers`]). Below 100% the session renders
-//! the whole photo at Fit for now.
+//! Built: the view, its placement and the frame's place; past Fit, the region the detail
+//! pipeline renders at the scale rendered ([`rendered`]), the visible rectangle with its
+//! margin, and whether a pan stays inside it ([`covers`]).
 
 use crate::pipeline::{at_scale, fit_scale};
 
@@ -172,9 +171,9 @@ pub fn place(extent: [u32; 2], bounds: (u32, u32), view: &View) -> Placement {
 pub struct FramePlace {
     /// The scale the frame was rendered at, at most 1: the output image at it is `extent`
     /// at that scale, each side rounded, as [`Placement::size`] is. The fitted scale,
-    /// [`place`]'s `render` at Fit, for a frame of the whole photo; 1 for the detail's
-    /// from 100% on. Kept in `f64`, as the pipe rounds with it, so a client rounds to the
-    /// frame's own size.
+    /// [`place`]'s `render` at Fit, for a frame of the whole photo; the detail's, the
+    /// view's `render`, past Fit. Kept in `f64`, as the pipe rounds with it, so a client
+    /// rounds to the frame's own size.
     pub scale: f64,
     /// The frame's top-left corner in the output image at `scale`, in pixels: (0, 0) at Fit.
     pub origin: [u32; 2],
@@ -195,10 +194,10 @@ impl FramePlace {
     }
 
     /// The place of a detail frame of `region`, x, y, width and height of the output
-    /// image `extent` at full resolution, rendered at 100%.
-    pub(crate) fn detail(extent: [u32; 2], region: [u32; 4]) -> FramePlace {
+    /// image `extent` at full resolution at `scale`, rendered at that scale.
+    pub(crate) fn detail(extent: [u32; 2], region: [u32; 4], scale: f64) -> FramePlace {
         FramePlace {
-            scale: 1.0,
+            scale,
             origin: [region[0], region[1]],
             extent,
         }
@@ -206,16 +205,18 @@ impl FramePlace {
 }
 
 /// The placement of `view` of the photo whose output image is `extent` at full resolution
-/// in `bounds` where the detail pipeline renders it (decision 99): from 100% on, at scale
-/// 1, where the photo does not fit the bounds at 100%; `None` where the view renders at
-/// Fit: at Fit, Small and Fill or a factor below 100%, which render Fit until the detail
-/// renders between Fit and 100%, and where the photo fits the bounds at 100%, whose fitted
-/// frame is it at 100% already. Above 100% the engine renders at 1, and the client
-/// enlarges the frame.
-pub(crate) fn zoomed(extent: [u32; 2], bounds: (u32, u32), view: &View) -> Option<Placement> {
+/// in `bounds` where the detail pipeline renders it (decision 99): past Fit, at the scale
+/// [`Placement::render`] gives, Fill's, 50% or a pinch's below 100%, 1 from 100% on;
+/// `None` where the view renders at Fit: at Fit and Small, at Fill or a factor whose image
+/// is the fitted frame's size, and from 100% on where the photo fits the bounds at 100%,
+/// whose fitted frame is it at 100% already. Above 100% the engine renders at 1, and the
+/// client enlarges the frame.
+pub fn zoomed(extent: [u32; 2], bounds: (u32, u32), view: &View) -> Option<Placement> {
     let placed = place(extent, bounds, view);
-    let fitted = place(extent, bounds, &View::default()).render;
-    (placed.render >= 1.0 && fitted < 1.0).then_some(placed)
+    let fitted = place(extent, bounds, &View::default());
+    // A factor a rounding above Fit, as an `f32` of the fitted scale is, renders the
+    // fitted frame's pixels.
+    (placed.render > fitted.render && placed.size != fitted.size).then_some(placed)
 }
 
 /// darktable's `darkroom/ui/anticipate_move`: how much larger than the visible rectangle,
@@ -510,26 +511,64 @@ mod tests {
     }
 
     #[test]
-    fn the_detail_renders_from_100_on() {
+    fn the_detail_renders_past_fit() {
         let zoom = |scale| zoomed(EXTENT, BOUNDS, &at(scale, [0.5, 0.5]));
-        for scale in [ViewScale::Factor(1.0), ViewScale::Factor(3.0)] {
+        for (scale, render) in [
+            (ViewScale::Factor(0.5), 0.5),
+            (ViewScale::Factor(1.0), 1.0),
+            (ViewScale::Factor(3.0), 1.0),
+        ] {
             let placed = zoom(scale).expect("a detail");
             assert_eq!(placed, place(EXTENT, BOUNDS, &at(scale, [0.5, 0.5])));
+            assert_eq!(placed.render, render);
         }
-        // Fill, a factor below 100%, Fit and Small render Fit for now.
+        // Fit, Small, and Fill and factors no larger than Fit, at Fit: a photo of the
+        // bounds' shape fills them at Fit.
         for scale in [
             ViewScale::Fit,
             ViewScale::Small,
             ViewScale::Fill,
-            ViewScale::Factor(0.5),
+            ViewScale::Factor(0.4),
+            ViewScale::Factor(0.3),
         ] {
             assert_eq!(zoom(scale), None, "{scale:?}");
         }
         // A photo the bounds hold at 100% is rendered at 100% by its fitted frame.
         let small = zoomed([400, 300], BOUNDS, &at(ViewScale::Factor(4.0), [0.5, 0.5]));
         assert_eq!(small, None);
-        let placed = FramePlace::detail(EXTENT, [1536, 1024, 2880, 1920]);
-        assert_eq!((placed.scale, placed.origin), (1.0, [1536, 1024]));
+        for scale in [1.0, 0.5] {
+            let placed = FramePlace::detail(EXTENT, [1536, 1024, 2880, 1920], scale);
+            assert_eq!((placed.scale, placed.origin), (scale, [1536, 1024]));
+        }
+    }
+
+    #[test]
+    fn fill_on_a_photo_of_another_shape_shows_its_shorter_side_whole() {
+        // A landscape photo in a portrait panel, and a portrait one in a landscape panel:
+        // Fill shows the photo's shorter side whole, at 0.6, and crops its longer side,
+        // which the centre moves along; the detail renders it, its region holding it.
+        for (extent, bounds, shorter) in [
+            ([6000, 4000], (1600, 2400), 1),
+            ([4000, 6000], (2400, 1600), 0),
+        ] {
+            let longer = 1 - shorter;
+            let view = at(ViewScale::Fill, [0.9, 0.9]);
+            let filled = place(extent, bounds, &view);
+            assert_eq!((filled.shown, filled.render), (0.6, 0.6));
+            assert_eq!(filled.size[shorter], 2400);
+            assert_eq!(filled.size[longer], 3600);
+            assert_eq!(filled.visible[shorter], 0.0);
+            assert_eq!(filled.visible[shorter + 2], 2400.0);
+            let close = |a: f64, b: f64| (a - b).abs() < 1e-9;
+            assert!(close(filled.visible[longer + 2], 1600.0), "{filled:?}");
+            assert!(close(filled.visible[longer], 3600.0 - 1600.0), "{filled:?}");
+            assert_eq!(filled.centre[shorter], 0.5);
+            assert!(filled.centre[longer] > 0.5);
+            assert_eq!(zoomed(extent, bounds, &view), Some(filled));
+            let region = rendered(&filled, ANTICIPATE_MOVE, u64::MAX).expect("a region");
+            assert!(covers(region, filled.visible), "{region:?}");
+            assert_eq!(region[shorter + 2], 2400, "{region:?}");
+        }
     }
 
     #[test]
@@ -540,9 +579,10 @@ mod tests {
         let region = region_of(EXTENT, &view);
         assert_eq!(region, [1536, 1024, 2880, 1920]);
         assert!(covers(region, place(EXTENT, BOUNDS, &view).visible));
-        // Any centre, and any zoom from 100% on: 1.2 times the visible size rounded up to
-        // the grid, but at least the visible size rounded outward from anywhere, holding
-        // the visible rectangle; its corner on the grid where the margin leaves room.
+        // Any centre, and any zoom from 100% on, rendered at 1: 1.2 times the visible size
+        // rounded up to the grid, but at least the visible size rounded outward from
+        // anywhere, holding the visible rectangle; its corner on the grid where the margin
+        // leaves room.
         for factor in [1.0, 1.5, 3.0, 16.0] {
             for centre in [[0.3, 0.6], [0.5137, 0.4821], [0.71, 0.29]] {
                 let view = at(ViewScale::Factor(factor), centre);
