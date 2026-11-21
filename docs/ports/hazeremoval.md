@@ -247,8 +247,10 @@ The estimate is not scale-invariant. The dark channel's box minimum over a downs
 So the operation opts in through `Operation::whole_image_at_full_resolution` (decision 15; `docs/engine.md`, Pipes, Whole-image results at full resolution). In the untiled viewport:
 
 - the whole-image passes bind the full-resolution image the downscale read (`Resource::FullResolution`) in the image's place, with no `image_copy`, and run at full resolution with darktable's windows;
-- `plane_downscale` takes plane A, the filtered transmission, to the viewport's size by the viewport's box filter;
-- `main` reads it at the viewport's scale, with A0 and the depth as they are.
+- `plane_downscale` takes plane A, the filtered transmission, to the whole image at the viewport's scale (`ImageContext::whole_image`) by the viewport's box filter, a plane laid out as the whole image, as plane A is at the pipe's scale;
+- `main` reads it at its pixel's place in it, at the viewport's scale, with A0 and the depth as they are.
+
+The plane is the whole image's however much of it the pipe renders, so the fitted viewport's and the zoomed view's detail between Fit and 100%, a region of the image at its scale (decision 99), take the same passes, uniforms and scratch. For the fitted viewport, whose input is the whole image at its scale, the bytes are those of a plane sized by its input, as before (`a_region_lays_its_plane_out_as_the_whole_image`); an export never takes this path, and its golden cases are unchanged (Results).
 
 Decision 15's baseline, every value a pixel reads from other pixels computed at full resolution and downscaled by the viewport's box filter, is this viewport. So the share decision 15's target applies to is 0, and the whole gap, `main`'s per-pixel gap at the viewport's scale, is within the target too.
 
@@ -269,6 +271,8 @@ On the corpus each raw is developed up to haze removal by an export and measured
 - A resize of the 7R V's viewport runs `plane_downscale` and `main`: 22 to 34 ms from submission to done in place, against 395 to 463 ms for the whole estimate.
 
 **The 100% view** binds the fitted viewport's estimate, plane A and the statistics, in place, running no pass of it; where the fitted viewport estimates at its own scale, with geometry after haze removal, the detail estimates at full resolution in a round of its own over the whole image (decision 99; `docs/engine.md`, The zoomed view).
+
+**Between Fit and 100%,** upright, the detail borrows the fitted viewport's estimate alone, through `guide_result`, and its round runs `plane_downscale` to the whole image at its own scale, its plane the detail's; where the fitted viewport holds none, the round estimates at full resolution first. With geometry after haze removal, or from a tiled viewport's mosaic, it estimates at its own scale, as the fitted viewport does there.
 
 **Planned:** an operation ported between demosaic and haze removal reaches the fitted viewport's estimate through the 100% view's round, an engine change made before the first of their tools ships; orientation offers it with geometry after haze removal. Until each is built, the fitted viewport estimates at its own scale there, logged under `-d pipe`, as it does in a tiled viewport.
 
