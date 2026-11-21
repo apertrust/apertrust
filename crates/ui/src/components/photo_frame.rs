@@ -84,6 +84,11 @@ impl PhotoFrame {
         PhotoFrame { slot, margin }
     }
 
+    /// The margin round the block, in points: Proof margin's worked out for the slot.
+    pub fn margin(&self) -> f32 {
+        self.margin
+    }
+
     /// The largest box the photo may take, for whoever fits it at its aspect: the slot
     /// less the margin on every side and the caption.
     pub fn bounds(&self) -> Vec2 {

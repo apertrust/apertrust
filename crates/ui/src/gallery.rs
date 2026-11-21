@@ -34,8 +34,8 @@ use crate::components::{
     PickerMarks, PickerPlace, Place, PlainGroup, Quad, Rail, RailLine, RailNode, ReadoutRow,
     Reference, ReferenceRow, SaveState, Scale, Scope, ScopeView, Section, SectionAction, Segmented,
     SliderAction, SliderRow, Swatch, SwatchFill, Swatches, Switch, TabBar, TabBarAction, Thumb,
-    Toggle, ToggleRow, ToolButton, Toolbar, ToolbarAction, Track, VectorscopeBins, ViewerBar,
-    ViewerBarAction, WarningRow, WaveformBins, Zoom,
+    Toggle, ToggleRow, ToolButton, Toolbar, ToolbarAction, Track, VectorscopeBins, ViewMarks,
+    ViewerBar, ViewerBarAction, WarningRow, WaveformBins, Zoom,
 };
 use crate::fonts::{MEDIUM, SEMIBOLD};
 use crate::i18n::{Args, Locale, Translator};
@@ -95,6 +95,12 @@ impl Gallery {
     pub fn show_overlays(&mut self, ui: &mut Ui) {
         let t = theme::theme(ui.ctx());
         overlays(ui, &t);
+    }
+
+    /// Draws the View marks section alone, as the snapshot tests photograph it.
+    pub fn show_view_marks(&mut self, ui: &mut Ui) {
+        let t = theme::theme(ui.ctx());
+        view_marks(ui, &t);
     }
 
     /// Draws the Pickers section alone, as the snapshot tests photograph it.
@@ -171,6 +177,9 @@ impl Gallery {
         ui.add_space(t.spacing.l);
         heading(ui, "On-photo overlays");
         overlays(ui, &t);
+        ui.add_space(t.spacing.l);
+        heading(ui, "View marks");
+        view_marks(ui, &t);
         ui.add_space(t.spacing.l);
         heading(ui, "Pickers");
         pickers(ui, &t);
@@ -522,6 +531,48 @@ fn overlays(ui: &mut Ui, t: &Theme) {
         ),
     ];
     over_photos(ui, t, &rows);
+}
+
+/// The zoomed view's position marks (`docs/gui.md`, Where the view is): a zoomed photo's
+/// part shown at its corner, in its middle and at its far end, each in a slot of the
+/// surround with the usual margin, the marks in it along the bottom and the end.
+fn view_marks(ui: &mut Ui, t: &Theme) {
+    const MARGIN: f32 = 12.0;
+    let ctx = ui.ctx().clone();
+    let photo = overlay_photo(&ctx, Ground::Busy, false);
+    let spans = [
+        ("A corner", 0.0..=0.3),
+        ("The middle", 0.35..=0.65),
+        ("The far end", 0.7..=1.0),
+    ];
+    ui.horizontal(|ui| {
+        for (name, span) in spans {
+            ui.vertical(|ui| {
+                ui.label(RichText::new(name).color(t.colors.text_secondary));
+                // Smaller than the overlays' photos, so three fit the page's width.
+                let size = OVERLAY_PHOTO * 0.8 + vec2(2.0, 2.0) * MARGIN;
+                let (slot, _) = ui.allocate_exact_size(size, Sense::hover());
+                let slot = slot.round_to_pixels(ui.pixels_per_point());
+                ui.painter().rect_filled(slot, 0.0, t.colors.photo_surround);
+                let area = slot.shrink(MARGIN);
+                let span = egui::Rangef::from(span);
+                let uv = egui::Rect::from_x_y_ranges(span, span);
+                ui.painter()
+                    .image(photo.texture.id(), area, uv, Color32::WHITE);
+                ViewMarks::new(area, MARGIN)
+                    .across(Some(span))
+                    .down(Some(span))
+                    .paint(ui.painter(), t, false);
+            });
+        }
+    });
+    ui.label(
+        RichText::new(
+            "In the margin, the part of each overflowing axis shown; gone a second after a \
+             move.",
+        )
+        .color(t.colors.text_secondary),
+    );
 }
 
 /// How a row of the overlay sections draws over each photo.
