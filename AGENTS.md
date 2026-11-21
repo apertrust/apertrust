@@ -98,7 +98,7 @@ cargo run --release -p apertrust-cli -- edit FILE [--set TOOL.CONTROL=VALUE] [--
 cargo run -p apertrust-cli -- history FILE [--undo | --redo | --go-to N | --compress | --truncate | --discard]   # list, or one move
 cargo run --release -p apertrust-cli -- export FILE... [-o PATTERN] [--width W --height H --hq BOOL --upscale BOOL] [--set ...] [--param ...] [--skip OP] [--tile N] [--runs N]
 cargo run --release -p apertrust-cli -- preview FILE [--width W --height H] [--exposure EV] [--png OUT] [--join OPERATION] [--scopes[=totals|histogram|waveform|vectorscope]]
-cargo run --release -p apertrust-cli -- -d perf preview FILE --zoom FACTOR [--at X,Y] [--changes N] [--png OUT]   # the zoomed view (decision 99)
+cargo run --release -p apertrust-cli -- -d perf preview FILE --zoom FACTOR [--at X,Y] [--pans N] [--changes N] [--png OUT]   # the zoomed view (decision 99)
 cargo run --release -p apertrust-cli -- -d perf preview FILE --beside-export ROUNDS [--changes N] [--interval MS]
 cargo run --release -p apertrust-cli -- library scan DIR                       # one folder's raws, sidecars, edits
 cargo run -p apertrust-cli -- [--cache-dir DIR] cache info                     # the disk cache's folder, limit and sizes
