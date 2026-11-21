@@ -142,6 +142,7 @@ pub use apertrust_tools::{ControlValue, LabelValue, Mark, Range, Setting, ValueF
 use thiserror::Error;
 
 use crate::compute::{ComputeError, GpuImage, POLL_INTERVAL, Timings};
+use crate::detail::Results;
 use crate::edit::{self, Edit, EditError, Held, panic_message};
 use crate::export_job::{self, Live, Numbering, Snapshot, Stamp};
 pub use crate::export_job::{Cause, ExportStatus, Failure, PhotoResult, Summary, Why};
@@ -2723,6 +2724,9 @@ impl Display {
 struct Detail {
     /// Its plan's, `Pipe::Detail`, reading the fitted pipeline's demosaic image in place.
     pipeline: Pipeline,
+    /// The whole-image results it binds, held across its renders under keys with no
+    /// region in them, and the kernels its pipelines compiled.
+    results: Results,
     /// Its own pair of display buffers, sized to its region.
     display: Display,
     /// The output image's region it last rendered, at `scale`.
@@ -5278,16 +5282,31 @@ impl Engine {
             let fitted_due = fresh || !pipeline.rendered();
             let (source, key) =
                 (pipeline.demosaiced()).expect("an untiled viewport's demosaic image");
-            let planned = planned.keyed_on(key);
-            // The detail pipeline over that image, taking the fitted pipeline's kernels
-            // the first time; rebuilt from its own where the fitted pipeline holds the
-            // image in another buffer, or describes it otherwise, as a new white balance
-            // does.
             // What the frame shown last is, kept should this render not publish one.
             let was_shown = (open.detail.as_ref()).map_or((region, false), |d| (d.region, d.shown));
-            let (old, old_display) = match open.detail.take() {
-                Some(old) => (Some(old.pipeline), Some(old.display)),
-                None => (None, None),
+            let (old, old_display, mut results) = match open.detail.take() {
+                Some(old) => (Some(old.pipeline), Some(old.display), old.results),
+                None => (None, None, Results::with_kernels(pipeline.shared_kernels())),
+            };
+            // Keyed on that image, its whole-image passes left out where their results are
+            // held, and the rounds that compute those whose key changed, haze removal's
+            // estimate borrowed from the fitted pipeline (decision 99). One the GPU cannot
+            // bind, as an export's, leaves the frame at Fit.
+            let instances = &bound.instances;
+            let planned = results.plan(
+                planned,
+                key,
+                instances,
+                &open.image,
+                &limits,
+                Some(pipeline),
+            );
+            let (planned, rounds) = match planned {
+                Ok(planned) => planned,
+                Err(error) => {
+                    self.zoom_refused = refuse(error.to_string());
+                    break 'detail;
+                }
             };
             #[cfg(test)]
             let had = old
@@ -5295,23 +5314,12 @@ impl Engine {
                 .map_or_else(|| pipeline.kernels(), Pipeline::kernels);
             // Its buffers and its display pair made under a scope of their own: a detail the
             // GPU has no memory for leaves the frame at Fit, as a refused one does, rather
-            // than failing the frame and the fitted pipeline with it.
+            // than failing the frame and the fitted pipeline with it. The detail pipeline is
+            // rebuilt where the fitted pipeline holds demosaic's image in another buffer, or
+            // describes it otherwise, as a new white balance does.
             let memory = (self.gpu.device).push_error_scope(wgpu::ErrorFilter::OutOfMemory);
-            let built = match old {
-                Some(old) if old.reads(&source) => {
-                    pollster::block_on(old.update(&self.gpu, planned))
-                }
-                Some(old) => {
-                    let kernels = old.into_kernels();
-                    let built = Pipeline::with_kernels(&self.gpu, planned, source, kernels);
-                    pollster::block_on(built)
-                }
-                None => {
-                    let kernels = pipeline.shared_kernels();
-                    let built = Pipeline::with_kernels(&self.gpu, planned, source, kernels);
-                    pollster::block_on(built)
-                }
-            };
+            let built = results.pipeline(&self.gpu, planned, source.clone(), old);
+            let built = pollster::block_on(built);
             let built = built.map(|built| {
                 let output = built.output().desc();
                 let size = (output.width, output.height);
@@ -5362,6 +5370,39 @@ impl Engine {
             } else {
                 None
             };
+            // The rounds that must run, after the fitted pipeline's passes, which may write
+            // the demosaic image they read: each tile a submission of its own, waited for,
+            // as an export's (decision 99). Their buffers are made under a scope of their
+            // own: a round the GPU cannot build or hold leaves the frame at Fit, as a detail
+            // it cannot hold does, the fitted frame rendered there, and the next render that
+            // wants the detail builds it afresh.
+            let rounds = if rounds.is_empty() {
+                (Ok(Timings::default()), None)
+            } else {
+                if fitted.is_some() {
+                    let next = self.gpu.device.create_command_encoder(&Default::default());
+                    self.gpu
+                        .submit([std::mem::replace(&mut encoder, next).finish()]);
+                }
+                let memory = (self.gpu.device).push_error_scope(wgpu::ErrorFilter::OutOfMemory);
+                let validation = (self.gpu.device).push_error_scope(wgpu::ErrorFilter::Validation);
+                let ran = pollster::block_on(results.run(&self.gpu, rounds, &source));
+                let validation = pollster::block_on(validation.pop());
+                (ran, pollster::block_on(memory.pop()).or(validation))
+            };
+            let rounds = match rounds {
+                (Ok(rounds), None) => rounds,
+                (Err(error), _) => {
+                    tracing::error!(target: "pipe", "zoom: stays at Fit: a round: {error}");
+                    self.zoom_refused = Some(SessionError::Zoom(error.to_string()));
+                    break 'detail;
+                }
+                (Ok(_), Some(error)) => {
+                    tracing::error!(target: "pipe", "zoom: stays at Fit: a round on the GPU: {error}");
+                    self.zoom_refused = Some(SessionError::Zoom(error.to_string()));
+                    break 'detail;
+                }
+            };
             let (recording, _) = detail.record(&self.gpu, &mut encoder, None);
             let into = &detail_display.buffers[detail_next];
             encoder.copy_buffer_to_buffer(detail_output.buffer(), 0, into, 0, detail_bytes);
@@ -5378,6 +5419,7 @@ impl Engine {
                     Some((fitted, _)) => pipeline.timings(&self.gpu, fitted)?,
                     None => Timings::default(),
                 };
+                timings.passes.extend(rounds.passes);
                 let detail_timings = detail.timings(&self.gpu, recording)?;
                 timings.passes.extend(detail_timings.passes);
                 Ok(timings)
@@ -5394,6 +5436,7 @@ impl Engine {
                     let (region, shown) = was_shown;
                     open.detail = Some(Detail {
                         pipeline: detail,
+                        results,
                         display: detail_display,
                         region,
                         scale: 1.0,
@@ -5418,6 +5461,7 @@ impl Engine {
             let buffer = detail_display.buffers[detail_next].clone();
             open.detail = Some(Detail {
                 pipeline: detail,
+                results,
                 display: detail_display,
                 region,
                 scale: 1.0,

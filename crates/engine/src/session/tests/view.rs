@@ -554,6 +554,57 @@ fn a_white_balance_change_at_100_runs_the_raw_stage_once() {
     remove(&path);
 }
 
+/// The keys of the whole-image results the open photo's detail holds.
+fn held(driven: &Driven) -> Vec<(&'static str, Option<u64>)> {
+    let open = driven.engine.open.as_ref().expect("a photo open");
+    open.detail.as_ref().expect("the detail").results.keys()
+}
+
+#[test]
+fn a_view_at_100_with_the_tone_equalizer_renders_its_round() {
+    // The tone equalizer's mask in a round over the whole image, between the fitted
+    // pipeline's passes and the detail's, held by a key with no region in it: a change
+    // upstream runs it again, and a pan none (decision 99).
+    let path = scratch("detail-round");
+    let mut driven = Driven::new(&[&Sample, &apertrust_tools::tone_equalizer::ToneEqualizer]);
+    driven.open(&path);
+    driven.run([Command::SetControl {
+        tool: "toneequal".into(),
+        control: "blending".into(),
+        value: ControlValue::Number(10.0),
+        done: true,
+    }]);
+    let at_100 = |events: &[Event]| {
+        assert!(failures(events).is_empty(), "{events:?}");
+        let frame = the_frame(events);
+        assert_eq!(frame.place.scale, 1.0, "the detail's frame");
+    };
+    let events = driven.run([zoom(ViewScale::Factor(1.0), [0.5, 0.5])]);
+    at_100(&events);
+    let [("toneequal", Some(first))] = held(&driven)[..] else {
+        panic!("the mask held: {:?}", held(&driven));
+    };
+    // Exposure, before the tone equalizer: the round again, into the same buffers.
+    let turns = driven.gpu.gate.turns();
+    let events = driven.run([set("brightness", ControlValue::Number(0.5), false)]);
+    at_100(&events);
+    assert!(
+        driven.gpu.gate.turns() - turns > 1,
+        "the round after the fitted passes"
+    );
+    let [("toneequal", Some(changed))] = held(&driven)[..] else {
+        panic!("the mask held: {:?}", held(&driven));
+    };
+    assert_ne!(changed, first);
+    // A pan past the margin: the region's passes alone, in one submission.
+    let turns = driven.gpu.gate.turns();
+    let events = driven.run([zoom(ViewScale::Factor(1.0), [0.8, 0.5])]);
+    at_100(&events);
+    assert_eq!(driven.gpu.gate.turns() - turns, 1);
+    assert_eq!(held(&driven), [("toneequal", Some(changed))]);
+    remove(&path);
+}
+
 #[test]
 fn going_back_to_100_compiles_nothing() {
     let path = scratch("detail-compiles");

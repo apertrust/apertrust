@@ -27,6 +27,7 @@
 extern crate self as apertrust_engine;
 
 pub mod compute;
+pub mod detail;
 pub mod edit;
 pub mod export;
 pub mod export_job;
