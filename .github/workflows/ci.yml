@@ -42,6 +42,8 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       # rustup installs the toolchain pinned in rust-toolchain.toml on first use.
       - run: cargo fmt --all --check
+      # Each crate's dependencies against its place in the layers.
+      - run: tools/check-crate-deps.sh
       - run: cargo clippy --workspace --all-targets -- -D warnings
       # CREDITS.md's list of components, as Cargo.lock has them.
       - run: tools/credits.sh --check

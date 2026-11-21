@@ -16,7 +16,7 @@
 - [ ] `tools/check-windows-paths.sh`, when a file gained a platform cfg
 - [ ] `tools/build-kernels.sh --check`, when a Slang file changed (the generated WGSL is committed)
 - [ ] `tools/build-api-docs.sh`
-- [ ] `cargo deny check` and `tools/credits.sh --check`, when a dependency changed
+- [ ] `cargo deny check`, `tools/credits.sh --check` and `tools/check-crate-deps.sh`, when a dependency changed
 
 For a kernel or a port, paste the results of `apertrust-golden run` (the ΔE2000 numbers) and `apertrust-golden gradient`:
 

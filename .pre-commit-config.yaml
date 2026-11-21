@@ -136,6 +136,14 @@ repos:
         language: system
         files: ((^|/)Cargo\.(toml|lock)|^CREDITS\.md|^tools/credits\.sh)$
         pass_filenames: false
+      # Each crate's dependencies, as its manifest declares them, against its place in the
+      # layers.
+      - id: crate-deps
+        name: Crate dependencies
+        entry: tools/check-crate-deps.sh
+        language: system
+        files: ((^|/)Cargo\.toml|^tools/check-crate-deps\.sh)$
+        pass_filenames: false
       # The kernels of the crates whose Slang or WGSL changed; every kernel once a shared
       # library or the scripts change. Its first run downloads the pinned slangc
       # (tools/fetch-slang.sh). One run for all the files, so the kernels compile once.
