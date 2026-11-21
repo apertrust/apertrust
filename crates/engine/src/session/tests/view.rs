@@ -246,6 +246,32 @@ fn a_centre_clamped_at_an_edge_is_told_once() {
     remove(&path);
 }
 
+/// A turn that panics loses the events it made, a `View` among them: the session tells the
+/// view again, with no photo, and the next photo's placement, though of the same extent.
+#[test]
+fn a_panicked_turn_tells_the_view_again() {
+    let path = scratch("view-panic");
+    let mut driven = Driven::new(&[]);
+    driven.open(&path);
+    driven.run([zoom(ViewScale::Factor(1.0), [0.4, 0.5])]);
+    let payload: Box<dyn std::any::Any + Send> = Box::new("a bug");
+    let taken = driven.engine.applied;
+    let events = driven.engine.recover(payload.as_ref(), taken);
+    let state = told(&events);
+    assert_eq!(
+        (state.view.scale, state.placement),
+        (ViewScale::Factor(1.0), None)
+    );
+    assert_eq!(state.through, taken);
+    let events = driven.open(&path);
+    let state = told(&events);
+    assert_eq!(
+        state.placement,
+        Some(crate::view::place([84, 62], (40, 40), &state.view))
+    );
+    remove(&path);
+}
+
 #[test]
 fn a_frame_at_fit_says_its_place() {
     let path = scratch("view-frame");
