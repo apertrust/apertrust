@@ -226,7 +226,7 @@ static PANEL_TAB: Menu = Menu {
 };
 
 /// View › Workspace: every workspace, Default, Essentials, then a person's own by name, the
-/// one shown checked (decision 96); Reset Workspace joins it with the tab bar's menu.
+/// one shown checked (decision 96); Restore Defaults ends it with the tab bar's menu.
 static WORKSPACE: Menu = Menu {
     title: "menu-workspace",
     role: Role::Plain,
