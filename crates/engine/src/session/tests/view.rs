@@ -82,7 +82,7 @@ fn the_frame(events: &[Event]) -> &Frame {
 
 #[test]
 fn a_view_is_no_command_on_the_edit() {
-    let path = scratch("view-edit");
+    let path = scratch("zoom-edit");
     let mut driven = Driven::new(&[&Sample]);
     driven.run([
         Command::Open(path.clone()),
@@ -118,7 +118,7 @@ fn a_view_is_no_command_on_the_edit() {
     assert_eq!(last_history(&done).steps.len(), steps + 1, "{done:?}");
 
     // On a photo open for viewing only, taken too, writing nothing.
-    let only = scratch("view-only");
+    let only = scratch("zoom-only");
     let newer =
         brightened_log("0.9.0").replace(r#"apertrust:version="2""#, r#"apertrust:version="3""#);
     std::fs::write(sidecar::path_for(&only), newer).unwrap();
@@ -134,7 +134,7 @@ fn a_view_is_no_command_on_the_edit() {
 
 #[test]
 fn a_view_is_kept_across_photos() {
-    let path = scratch("view-kept");
+    let path = scratch("zoom-kept");
     let mut driven = Driven::new(&[]);
     driven.open(&path);
     let kept = View {
@@ -145,7 +145,7 @@ fn a_view_is_kept_across_photos() {
     // 84 × 62 at 100% in 40 × 40: the centre inside the photo stays.
     assert_eq!(state.view, kept);
     // Another photo, turned upright, 62 × 84: the same view, its centre clamped to it.
-    let portrait = scratch("view-kept-portrait").with_file_name("portrait.ARW");
+    let portrait = scratch("zoom-kept-portrait").with_file_name("portrait.ARW");
     let events = driven.run([Command::Open(portrait.clone())]);
     assert!(views(&events).is_empty(), "{events:?}");
     let events = driven.settle();
@@ -168,7 +168,7 @@ fn a_view_is_kept_across_photos() {
 
 #[test]
 fn a_view_change_sends_the_view_fact_once_a_batch() {
-    let path = scratch("view-batch");
+    let path = scratch("zoom-batch");
     let mut driven = Driven::new(&[&Sample]);
     driven.open(&path);
     let events = driven.run([
@@ -200,7 +200,7 @@ fn a_view_change_sends_the_view_fact_once_a_batch() {
 
 #[test]
 fn a_resize_that_moves_the_placement_sends_the_view_fact() {
-    let path = scratch("view-resize");
+    let path = scratch("zoom-resize");
     let mut driven = Driven::new(&[]);
     driven.open(&path);
     let larger = Command::Resize {
@@ -228,7 +228,7 @@ fn a_resize_that_moves_the_placement_sends_the_view_fact() {
 
 #[test]
 fn a_centre_clamped_at_an_edge_is_told_once() {
-    let path = scratch("view-edge");
+    let path = scratch("zoom-edge");
     let mut driven = Driven::new(&[]);
     driven.open(&path);
     // At 100% in 40 × 40, the corner clamps the centre to where the view touches the
@@ -250,7 +250,7 @@ fn a_centre_clamped_at_an_edge_is_told_once() {
 /// view again, with no photo, and the next photo's placement, though of the same extent.
 #[test]
 fn a_panicked_turn_tells_the_view_again() {
-    let path = scratch("view-panic");
+    let path = scratch("zoom-panic");
     let mut driven = Driven::new(&[]);
     driven.open(&path);
     driven.run([zoom(ViewScale::Factor(1.0), [0.4, 0.5])]);
@@ -274,7 +274,7 @@ fn a_panicked_turn_tells_the_view_again() {
 
 #[test]
 fn a_frame_at_fit_says_its_place() {
-    let path = scratch("view-frame");
+    let path = scratch("zoom-frame");
     let mut driven = Driven::new(&[&Sample]);
     let events = driven.open(&path);
     let extent = values(&events).extent;
