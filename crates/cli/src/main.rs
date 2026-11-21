@@ -74,6 +74,7 @@ mod beside;
 mod cache;
 mod history;
 mod library;
+mod zoom;
 
 /// The operations and the tools the CLI hands the engine, as the app hands them.
 const OPERATIONS: &[&dyn Operation] = apertrust_operations::OPERATIONS;
@@ -203,6 +204,23 @@ enum Command {
             default_missing_value = "histogram"
         )]
         scopes: Option<ScopesGraph>,
+        /// In place of the timings above, zoom the view to this factor, 1 being 100%, one
+        /// photo pixel a pixel, through an in-process session as the app sends it: a
+        /// Resize to --width and --height, then a View. The engine renders the visible
+        /// region at 100% beside the fitted frame (decision 99). Times entering the zoom
+        /// and the --changes exposure changes there, both pipelines in one submission;
+        /// --png writes the zoomed frame. Between Fit and 1 the frame stays at Fit for now.
+        #[arg(
+            long,
+            value_name = "FACTOR",
+            value_parser = factor,
+            conflicts_with_all = ["join", "scopes"]
+        )]
+        zoom: Option<f32>,
+        /// With --zoom, the point shown at the bounds' centre, in the photo's coordinates:
+        /// 0 to 1 across and down the photo as export renders it; 0.5,0.5 when left out.
+        #[arg(long, value_name = "X,Y", value_parser = point, requires = "zoom")]
+        at: Option<[f32; 2]>,
         /// Spike X1: in place of the timings
         /// above, time the changes through an in-process session, as the app sends them,
         /// one every --interval, with nothing else to do and while the session's export
@@ -212,7 +230,7 @@ enum Command {
         #[arg(
             long,
             value_name = "ROUNDS",
-            conflicts_with_all = ["png", "join", "scopes", "exposure"]
+            conflicts_with_all = ["png", "join", "scopes", "exposure", "zoom"]
         )]
         beside_export: Option<u32>,
         /// With --beside-export, the milliseconds between two changes, as a drag sends one
@@ -507,6 +525,30 @@ fn main() -> Result<()> {
                 engine(&store, adapter, backend),
             )
         }
+        Command::Preview {
+            file,
+            width,
+            height,
+            exposure,
+            changes,
+            png,
+            zoom: Some(factor),
+            at,
+            adapter,
+            backend,
+            ..
+        } => zoom::run(
+            &file,
+            zoom::Options {
+                bounds: (width, height),
+                factor,
+                centre: at.unwrap_or([0.5, 0.5]),
+                exposure,
+                changes,
+                png,
+            },
+            engine(&store(), adapter, backend),
+        ),
         Command::Preview {
             file,
             width,
@@ -1594,6 +1636,25 @@ fn backend_named(value: &str) -> Result<gpu::Backend, String> {
 }
 
 /// `--interval`: milliseconds above 0, a finite number.
+/// `preview --zoom`'s factor: a number above 0, 1 being 100%.
+fn factor(value: &str) -> Result<f32, String> {
+    match value.parse::<f32>() {
+        Ok(factor) if factor.is_finite() && factor > 0.0 => Ok(factor),
+        _ => Err(format!("a number above 0, 1 being 100%, not '{value}'")),
+    }
+}
+
+/// `preview --at`'s point: two numbers, X and Y, separated by a comma.
+fn point(value: &str) -> Result<[f32; 2], String> {
+    let refuse = || format!("X,Y: two numbers separated by a comma, not '{value}'");
+    let (x, y) = value.split_once(',').ok_or_else(refuse)?;
+    let number = |text: &str| text.trim().parse::<f32>().ok().filter(|v| v.is_finite());
+    match (number(x), number(y)) {
+        (Some(x), Some(y)) => Ok([x, y]),
+        _ => Err(refuse()),
+    }
+}
+
 fn interval_ms(value: &str) -> Result<f64, String> {
     match value.parse::<f64>() {
         Ok(ms)
@@ -3231,6 +3292,47 @@ mod tests {
             ..png::Options::default()
         };
         assert_eq!(format("out.png"), Format::Png(png));
+    }
+
+    #[test]
+    fn preview_parses_zoom_and_at() {
+        // `preview a.ARW` with `flags`, split at spaces.
+        let zoom = |flags: &str| {
+            let args = ["apertrust-cli", "preview", "a.ARW"]
+                .into_iter()
+                .chain(flags.split_whitespace());
+            match Cli::try_parse_from(args).map(|cli| cli.command) {
+                Ok(Command::Preview { zoom, at, .. }) => Ok((zoom, at)),
+                Ok(other) => panic!("{other:?}"),
+                Err(error) => Err(error.kind()),
+            }
+        };
+        assert_eq!(
+            zoom("--zoom 1 --at 0.5,0.25"),
+            Ok((Some(1.0), Some([0.5, 0.25])))
+        );
+        assert_eq!(
+            zoom("--at=0.1,0.9 --zoom=2"),
+            Ok((Some(2.0), Some([0.1, 0.9])))
+        );
+        // The centre left out is the photo's, which the run takes as 0.5,0.5.
+        assert_eq!(zoom("--zoom 4"), Ok((Some(4.0), None)));
+        assert_eq!(zoom(""), Ok((None, None)));
+        // --at needs --zoom and two numbers; --zoom times its own changes.
+        for flags in [
+            "--at 0.5,0.5",
+            "--zoom 1 --at 0.5",
+            "--zoom 1 --at x,0.5",
+            "--zoom 1 --at nan,0.5",
+            "--zoom 0",
+            "--zoom -1",
+            "--zoom inf",
+            "--zoom 1 --join grain",
+            "--zoom 1 --scopes",
+            "--zoom 1 --beside-export 1",
+        ] {
+            assert!(zoom(flags).is_err(), "{flags}");
+        }
     }
 
     #[test]
