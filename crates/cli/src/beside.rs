@@ -341,7 +341,7 @@ fn wait_until(client: &mut Client, at: Instant) -> Result<()> {
 }
 
 /// `values`' median, 95th percentile and worst, in milliseconds.
-fn stats(values: &[f64]) -> String {
+pub(crate) fn stats(values: &[f64]) -> String {
     if values.is_empty() {
         return "none".to_owned();
     }
