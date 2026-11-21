@@ -1021,6 +1021,10 @@ pub fn on_photo(ui: &mut egui::Ui, on: &OnPhoto) -> PhotoPicked {
             i.modifiers,
         )
     });
+    // A touch screen's pinch zooms the photo: a drag its first finger began ends where it
+    // was, and the fingers pick nothing more until they lift.
+    let pinching = ui.input(|i| i.multi_touch().is_some());
+    let released = released || (pinching && drag.is_some());
     // A drag lasts while the button is held: one whose release this never saw, as the
     // picker turned off under it, is over.
     if !(down || released) {
@@ -1030,7 +1034,7 @@ pub fn on_photo(ui: &mut egui::Ui, on: &OnPhoto) -> PhotoPicked {
     // The press where it was, a move after it in the same frame then followed.
     let pressed_at = origin
         .or(pos)
-        .filter(|&at| pressed && on.area.contains(at) && response.contains_pointer());
+        .filter(|&at| pressed && !pinching && on.area.contains(at) && response.contains_pointer());
     if let Some(origin) = pressed_at {
         response.request_focus();
         let mac = ctx.os() == egui::os::OperatingSystem::Mac;
@@ -1040,7 +1044,7 @@ pub fn on_photo(ui: &mut egui::Ui, on: &OnPhoto) -> PhotoPicked {
     // Held past the area's edge, the view moves under a still pointer: followed too, and
     // on the release, so it ends where the pointer is on the photo as now placed.
     let outside = pos.is_some_and(|pos| !on.area.contains(pos));
-    let moved = moved || (drag.is_some() && (down || released) && outside);
+    let moved = !pinching && (moved || (drag.is_some() && (down || released) && outside));
     if let (Some(now), Some(pos), true) = (drag, pos, moved) {
         let to = at(pos);
         drag = Some(match now {
@@ -2060,6 +2064,47 @@ mod tests {
         assert_eq!(
             on_the_photo(&harness).value().as_deref(),
             Some("point at 30%, 75%")
+        );
+    }
+
+    /// A second finger down mid-drag, a touch screen's pinch, ends the drag where it was,
+    /// and the fingers' moves pick nothing more.
+    #[test]
+    fn a_pinch_ends_a_drag_where_it_was() {
+        let mut harness = scene();
+        harness
+            .get_by_role_and_label(Role::Button, SPREAD_BUTTON)
+            .click();
+        harness.run();
+        answer(&mut harness, Region::Point([0.5, 0.5]));
+        sent(&mut harness);
+        let touch = |finger: u64, phase, pos| egui::Event::Touch {
+            device_id: egui::TouchDeviceId(0),
+            id: egui::TouchId(finger),
+            phase,
+            pos,
+            force: None,
+        };
+        let (first, second) = (at(0.25, 0.5), at(0.75, 0.5));
+        harness.hover_at(first);
+        harness.run();
+        harness.drag_at(first);
+        harness.run();
+        harness.event(touch(0, egui::TouchPhase::Start, first));
+        harness.event(touch(1, egui::TouchPhase::Start, second));
+        harness.run();
+        let moved = at(0.2, 0.5);
+        harness.event(egui::Event::PointerMoved(moved));
+        harness.event(touch(0, egui::TouchPhase::Move, moved));
+        harness.run();
+        let point = |at, done| PickerCommand::Point {
+            at,
+            done,
+            keys: PickKeys::default(),
+        };
+        assert_eq!(
+            sent(&mut harness),
+            [point([0.25, 0.5], false), point([0.25, 0.5], true)]
         );
     }
 

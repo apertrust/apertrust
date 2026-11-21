@@ -1390,8 +1390,8 @@ fn the_zoom_s_tooltip_says_how_to_zoom_and_at_100_what_it_shows() {
     harness.run();
     harness.get_by_role_and_label(Role::Button, "Zoom").hover();
     harness.run();
-    let tip = "Zoom: pinch or Ctrl+scroll; Z for 100%. Scroll moves a zoomed photo, \
-               Shift+scroll sideways";
+    let tip = "Zoom: pinch or Ctrl+scroll; Z for 100%; middle-click cycles 100%, 200% and Fit. \
+               Scroll moves a zoomed photo, Shift+scroll sideways";
     assert!(harness.query_by_label(tip).is_some());
     harness.state_mut().zoom = Zoom::Percent(100.0);
     harness.run();

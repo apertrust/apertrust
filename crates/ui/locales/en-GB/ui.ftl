@@ -405,8 +405,8 @@ photo-zoom-in = Zoom in
 photo-zoom-out = Zoom out
 # The zoom's tooltip. $command is the pointer's modifier as shortcuts spell it: "Cmd" on
 # the Mac, "Ctrl" elsewhere.
-photo-zoom-tip = Zoom: pinch or { $command }+scroll; Z for 100%. Scroll moves a zoomed photo, Shift+scroll sideways
-photo-zoom-tip-exact = At 100% the screen shows exactly what a full-size export will be. Zoom: pinch or { $command }+scroll; Z for 100%. Scroll moves a zoomed photo, Shift+scroll sideways
+photo-zoom-tip = Zoom: pinch or { $command }+scroll; Z for 100%; middle-click cycles 100%, 200% and Fit. Scroll moves a zoomed photo, Shift+scroll sideways
+photo-zoom-tip-exact = At 100% the screen shows exactly what a full-size export will be. Zoom: pinch or { $command }+scroll; Z for 100%; middle-click cycles 100%, 200% and Fit. Scroll moves a zoomed photo, Shift+scroll sideways
 layer-image = Image
 
 ## The Viewer
