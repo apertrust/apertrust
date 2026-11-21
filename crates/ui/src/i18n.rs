@@ -1179,6 +1179,8 @@ mod tests {
                 // A settings number's range, as the box says it when what is typed is out.
                 args.set("min", "256");
                 args.set("max", "2048");
+                // The switch a dimmed settings row needs on.
+                args.set("setting", "Limit the cache's size");
                 let mut errors = Vec::new();
                 bundle.format_pattern(pattern, Some(&args), &mut errors);
                 assert!(errors.is_empty(), "{} {id}: {errors:?}", locale.id());

@@ -704,13 +704,23 @@ start-failed-overridden = { $flag } sets the graphics card or API for this run, 
 ## Settings
 
 settings-close = Close
-# Why a row is disabled: the command line set it for this run (decision 43). $flag is
-# the flag, --conf, never translated.
+# The field at the top of the Settings dialog's page list, its placeholder and its name for
+# screen readers: it finds a setting by its label or its help.
+settings-find = Find a setting
+# Why a row is dimmed, its tooltip: the command line set it for this run (decision 43).
+# $flag is the flag, --conf, never translated.
 settings-overridden = Set by { $flag } for this run
-# Under a row whose setting takes effect only at the next start.
-settings-after-restart = Applies after a restart
-# What a row's dot, darktable's, tells screen readers: the setting is off its default.
+# Why a row is dimmed, its tooltip: the switch it needs is off, as Cache limit while the
+# cache is unlimited. $setting is that switch's row's label.
+settings-requires = Off while “{ $setting }” is off
+# What a row's label tells screen readers while its changed mark shows: the setting is
+# off its default.
 settings-changed = Changed from its default
+# A switch's default as a row's changed mark names it: "Reset to On".
+settings-default-on = On
+settings-default-off = Off
+# A text's default, where it is no text at all: "Reset to empty".
+settings-default-empty = empty
 # The item of a row's right-click menu that puts its default back.
 settings-reset = Reset
 # The tooltip and screen-reader name of a row's changed mark, ●, a button that puts the
@@ -766,6 +776,9 @@ setting-theme-option-grey = Grey
 setting-theme-option-light = Light
 setting-theme-option-high-contrast = High contrast
 setting-locale-label = Language
+# The language's default, which the app works out from the system's: its changed mark says
+# "Reset to" these words.
+setting-locale-default = the system's language
 setting-scale-label = Interface size
 setting-sliders-marker-label = Slider marker
 setting-sliders-marker-option-triangle = Triangle
@@ -773,7 +786,7 @@ setting-sliders-marker-option-circle = Circle
 setting-sliders-marker-option-square = Square
 setting-toolbar-menu-button-label = Menu button
 setting-toolbar-menu-button-option-icon = { app-name } icon
-setting-toolbar-menu-button-option-menu = Menu icon
+setting-toolbar-menu-button-option-menu = Menu
 setting-library-reopen-last-label = Reopen what was open last
 setting-library-reopen-last-help = Opens the folder you were working in when { app-name } closed, with its photo. A file or folder opened from the file manager or a terminal opens instead.
 setting-export-ask-before-overwrite-label = Ask before overwriting an exported file

@@ -279,19 +279,10 @@ fn a_long_path_is_cut_in_its_middle() {
     let shown = crate::export::shown(Path::new(&long), Some(Path::new(HOME)));
     harness.get_by_label(&shown);
     harness.get_by_label("Chosen by APERTRUST_CACHE_DIR");
-    let ctx = harness.ctx.clone();
-    let font = FontId::proportional(13.0);
-    let painter = egui::Painter::new(ctx, egui::LayerId::background(), Rect::EVERYTHING);
-    let cut = fitted(&painter, &shown, &font, 200.0, Cut::Middle);
-    assert!(
-        cut.starts_with("~/a-very") && cut.ends_with("/Apertrust"),
-        "{cut}"
-    );
-    assert!(cut.contains('…'));
-    assert_eq!(
-        fitted(&painter, "short", &font, 200.0, Cut::Middle),
-        "short"
-    );
+    // Its tooltip shows it whole, since it is cut (the readout's own tests say where).
+    harness.get_by_label(&shown).hover();
+    harness.run_steps(40);
+    assert!(harness.query_all_by_label(&shown).count() >= 2);
 }
 
 fn cleared(job: JobId, state: State) -> Event {
