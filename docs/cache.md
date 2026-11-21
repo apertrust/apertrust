@@ -247,14 +247,14 @@ The engine opens no folder: a binary opens the cache and hands `Session::start` 
 
 ## Settings › Storage
 
-A page of rows from the schema with a hand-built part around them ([gui.md](gui.md#the-settings-dialog)), `crates/app/src/storage.rs`.
+A page of rows from the schema with a hand-built part around them ([gui.md](gui.md#the-settings-dialog)), `crates/app/src/storage.rs`, whose lines are settings rows too: a folder a readout with its Show, a limited kind a Clear button with its size before it.
 
 **Built,** in three groups:
 
 | Group | Lines |
 | --- | --- |
 | Folders, hand-built, first | The user data folder and the cache folder, each in full with the home as `~`, cut in its middle where the page is narrow, how it was chosen under it (the flag, the variable, inside the user data folder, or the system's), and Show in Finder (Explorer, Files), read-only, since a folder is chosen before the app starts |
-| Cache, the schema's | `cache.limited`, `cache.limit` (disabled while unlimited) and `cache.unused_after` |
+| Cache, the schema's | `cache.limited`, `cache.limit` (a number box, `control = "number"`, dimmed while unlimited) and `cache.unused_after` |
 | In the cache, hand-built, last | Thumbnails and Pipelines, each with its entries and size in the language's numbers and its Clear; Library caches, one read-only line with their entries and size, the kept indexes' from step 23; the limited kinds' total against the limit, or with "unlimited" |
 
 - **The sizes** are `CacheCommand::Sizes`, sent each time the page is shown and each time its window comes back to the front on it, and again after a limit Settings changed is sent, so the total and the limit agree. The app's mirror keeps the latest `Event::Cache` (`storage::Mirror`) and hands Settings the page's view as it changes, through the dialog host, the window open or only asked for. Before the first answer each line says "Counting…", and Clear waits.
