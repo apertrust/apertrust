@@ -335,6 +335,23 @@ type = "apertrust_ui::Background"
 default = "computed"
 applies = "at-once"
 
+# How much larger than the visible rectangle, on each side, the zoomed view renders, so a
+# pan inside the margin renders nothing (decision 99; docs/engine.md, The zoomed view):
+# darktable's darkroom/ui/anticipate_move, 1.0 to 2.0, default 1.2. The rendered region
+# is snapped outward to a 64-pixel grid, and its margin shrinks towards 1.0 on a GPU that
+# binds less. Read by every process that renders a zoom, at its start. Not on a page of
+# the Settings dialog: it is set as anticipate_move under [viewer] in settings.toml, taken
+# at the next start, or for one run by --conf viewer.anticipate_move=1.5.
+[viewer.anticipate_move]
+owner = "engine"
+kind = "number"
+min = 1.0
+max = 2.0
+step = 0.1
+decimals = 1
+default = 1.2
+applies = "after-restart"
+
 # Edit's Tools panel tab, by its id, as earlier builds kept it: read only where state.toml
 # holds no tab for the Default workspace, for its move there (decision 96), then left as
 # it is; never written.

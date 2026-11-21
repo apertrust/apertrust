@@ -583,9 +583,8 @@ mod tests {
     use super::*;
     use crate::export_job::testing::{Hold, path_in};
     use crate::gpu::{GpuContext, GpuOptions};
-    use crate::pipeline;
     use crate::session::open::{self, Metadata, Mosaic};
-    use crate::session::{Command, Session, SessionError, TEST_WAIT};
+    use crate::session::{Command, Session, SessionError, TEST_WAIT, ViewOptions};
 
     const TOOLS: &[&dyn ProcessingTool] = &[&Sample];
 
@@ -1183,7 +1182,7 @@ mod tests {
             OPERATIONS,
             TOOLS,
             "0.4.0+12~g1a2b3c4",
-            pipeline::BUDGET,
+            ViewOptions::default(),
             None,
             Arc::new(wake),
             open::testing::loading(synthetic),

@@ -15,8 +15,9 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 //! `preview --zoom`: the zoomed view (decision 99) through an in-process session, as the
-//! app sends it: a `Resize` to the bounds, then a `View`. It times entering the zoom and
-//! exposure changes there, each frame rendering the fitted viewport and the detail in one
+//! app sends it: a `Resize` to the bounds, then a `View`. It times entering the zoom, pans
+//! (`--pans`), each inside the rendered region's margin rendering nothing, and exposure
+//! changes there, each frame rendering the fitted viewport and the detail in one
 //! submission, and writes the zoomed frame with `--png`. The photo is opened through a link
 //! in a folder of its own, so its edit is never written beside it.
 
@@ -44,6 +45,8 @@ pub(crate) struct Options {
     pub centre: [f32; 2],
     /// The Exposure tool's Exposure to start from; the saved edit's when `None`.
     pub exposure: Option<f32>,
+    /// The pans to time once zoomed, each a tenth of the view across.
+    pub pans: u32,
     /// The exposure changes to time once zoomed.
     pub changes: u32,
     /// Where to write the zoomed frame, as export writes a PNG.
@@ -141,6 +144,78 @@ fn gpu_ms(frame: &Frame) -> f64 {
     frame.timings.passes.iter().map(|(_, ms)| ms).sum()
 }
 
+/// `--pans`: from `view`, whose frame is `entered`, the centre moved across by a tenth of
+/// the view `options.pans` times, back from the photo's edge, each waited for: its view
+/// fact, and its frame where the visible rectangle leaves the region the latest frame
+/// holds, as a client draws it. Prints how many rendered and each render's time; stops
+/// where the photo's width fits the bounds, which no pan across moves.
+fn pan(client: &mut Client, view: View, entered: &Frame, options: &Options) -> Result<()> {
+    let place = entered.place;
+    let mut region = [
+        place.origin[0],
+        place.origin[1],
+        entered.width,
+        entered.height,
+    ];
+    let placed = apertrust_engine::view::place(place.extent, options.bounds, &view);
+    let step = placed.visible[2] / 10.0 / f64::from(placed.size[0]);
+    let mut centre = placed.centre;
+    let mut direction = 1.0;
+    let mut renders = Vec::new();
+    for pan in 1..=options.pans {
+        let mut to = view;
+        let mut placed = placed;
+        for _ in 0..2 {
+            to.centre = [(f64::from(centre[0]) + direction * step) as f32, centre[1]];
+            placed = apertrust_engine::view::place(place.extent, options.bounds, &to);
+            if placed.centre != centre {
+                break;
+            }
+            // At the photo's edge: back the other way.
+            direction = -direction;
+        }
+        // Where the photo's width fits the bounds, no pan across moves the view.
+        if placed.centre == centre {
+            println!("The photo's width fits the bounds: a pan across moves nothing");
+            return Ok(());
+        }
+        let sent = client.session.send(Command::View(to));
+        centre = placed.centre;
+        if apertrust_engine::view::covers(region, placed.visible) {
+            client.view(sent)?;
+        } else {
+            client.frame(sent)?;
+        }
+        // A frame for the pan, expected or not, is a render.
+        if let Some((frame, _)) = &client.frame
+            && frame.through >= sent
+        {
+            let place = frame.place;
+            region = [place.origin[0], place.origin[1], frame.width, frame.height];
+            tracing::debug!(
+                target: "perf",
+                "zoom: pan {pan}: rendered {}×{} at {},{}: {:.2} ms to the frame, {:.2} ms GPU",
+                frame.width,
+                frame.height,
+                place.origin[0],
+                place.origin[1],
+                frame.latency_ms,
+                gpu_ms(frame)
+            );
+            renders.push((pan, frame.latency_ms, gpu_ms(frame)));
+        }
+    }
+    println!(
+        "Pans of a tenth of the view: {} of {} rendered",
+        renders.len(),
+        options.pans
+    );
+    for (pan, latency, gpu) in renders {
+        println!("  pan {pan}: {latency:.2} ms to the frame, {gpu:.2} ms GPU");
+    }
+    Ok(())
+}
+
 /// `preview --zoom` of `path`, as [`Options`] says, from its saved edit: the raw linked
 /// and its sidecar copied into a folder this run makes, so what the session saves never
 /// reaches the photo's own.
@@ -179,7 +254,7 @@ fn zoom(photo: &Path, options: &Options, engine: engine::Options) -> Result<()> 
         OPERATIONS,
         TOOLS,
         apertrust_base::program!().version,
-        engine.budget,
+        engine.view(),
         // The CLI writes no disk cache (decision 43).
         None,
         move || {
@@ -260,6 +335,9 @@ fn zoom(photo: &Path, options: &Options, engine: engine::Options) -> Result<()> 
             place.scale,
             gpu_ms(&entered)
         );
+        if options.pans > 0 {
+            pan(&mut client, view, &entered, options)?;
+        }
     }
 
     // Exposure changes, as a slider drag sends them, each waited for: zoomed, both
