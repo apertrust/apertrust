@@ -22,8 +22,8 @@
 //! open; the app's id is the same everywhere,
 //! Apertrust's and, as `packaging/nightly-identity.txt` makes the files for
 //! `tools/package.sh --nightly`, Apertrust Nightly's; the `.deb` and the `.rpm` need the
-//! same libraries; and the plist the binary embeds agrees with the bundle's
-//! (docs/packaging.md).
+//! same libraries; the app is built with the system clipboard; and the plist the binary
+//! embeds agrees with the bundle's (docs/packaging.md).
 
 use std::collections::BTreeSet;
 use std::fs;
@@ -816,6 +816,20 @@ fn the_linux_packages_need_the_libraries_the_app_loads() {
             "{library} in the AppImage"
         );
     }
+}
+
+/// eframe is built with its clipboard, so a copy reaches the system's and not only the
+/// window's own: arboard, and smithay-clipboard on Wayland, over the libraries above.
+#[test]
+fn the_app_copies_to_the_system_clipboard() {
+    let manifest: toml::Table = read("Cargo.toml").parse().expect("TOML");
+    let features = manifest["workspace"]["dependencies"]["eframe"]["features"]
+        .as_array()
+        .expect("eframe's features");
+    assert!(
+        features.iter().any(|f| f.as_str() == Some("clipboard")),
+        "{features:?}"
+    );
 }
 
 #[test]

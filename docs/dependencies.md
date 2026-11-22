@@ -28,7 +28,7 @@ Used to build Apertrust, never compiled into it or shipped with it, so decision 
 
 ## The main libraries
 
-The choices behind the libraries that shape the image, each under decision 5's rule.
+The choices behind the libraries that shape the image, and the system clipboard's, each under decision 5's rule.
 
 ### Raw decoding: rawler
 
@@ -78,6 +78,10 @@ The app reads and writes XMP and tags (decision 50). It needs EXIF reading, make
 **The metadata spike** round-trips the XMP layer over darktable's `.xmp` files and packets other tools wrote, and reads its output back with ExifTool and exiv2. It passes when every property and unknown namespace is kept; ratings, labels and keywords read back the same in ExifTool, exiv2, darktable and commercial raw editors; and lens identification and orientation from rawler match exiv2's. Its fallback is exiv2, which would need an exception to decision 5.
 
 **Not used:** exiftool-rs, ExifTool's Perl run by an interpreter in Rust that compiles in PCRE2 and zlib; Adobe's XMP Toolkit and rexiv2, both C++; xmpkit, young, with one maintainer and unproven conformance; typst's `xmp_writer`, which only writes; RDF/XML crates such as oxrdfxml, which give triples without XMP's order, languages or canonical form.
+
+### The system clipboard: arboard and smithay-clipboard
+
+Copy and paste reach the system clipboard through eframe's `clipboard` feature, which brings egui-winit's arboard and, on Wayland, smithay-clipboard, both Rust, over the platform's own clipboard and, on Linux, libwayland and the X11 libraries loaded at run time.
 
 ## Licences
 
