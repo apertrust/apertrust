@@ -103,6 +103,14 @@ impl ActionId {
     pub const COMPRESS_HISTORY: ActionId = ActionId("compress-history");
     pub const TRUNCATE_HISTORY: ActionId = ActionId("truncate-history");
     pub const CREATE_STYLE: ActionId = ActionId("create-style");
+    /// A History step's menu (decision 91): Go to Step, `Command::GoTo` of the step; Show
+    /// Tool, its tool's section revealed, as Shift-click on it does; Compress up to Here and
+    /// Truncate after Here, `Command::Compress` and `Command::Truncate` with the step. Each
+    /// acts on the step whose menu chose it ([`State::step`]).
+    pub const STEP_GO_TO: ActionId = ActionId("history-step-go-to");
+    pub const STEP_SHOW_TOOL: ActionId = ActionId("history-step-show-tool");
+    pub const STEP_COMPRESS: ActionId = ActionId("history-step-compress");
+    pub const STEP_TRUNCATE: ActionId = ActionId("history-step-truncate");
     pub const UNDO: ActionId = ActionId("undo");
     pub const REDO: ActionId = ActionId("redo");
     pub const COPY_EDIT: ActionId = ActionId("copy-edit");
@@ -398,6 +406,30 @@ pub enum Intent {
     /// A move of the section whose header has the focus, or whose ⋯ chose it (decisions
     /// 83 and 96): display order only, never the edit.
     Section(SectionMove),
+    /// One of a History step's menu's items, run on the step whose menu chose it (decision
+    /// 91; `Shell::step_menu`).
+    HistoryStep(StepItem),
+}
+
+/// What an item of a History step's menu does to its step ([`Intent::HistoryStep`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StepItem {
+    GoTo,
+    ShowTool,
+    Compress,
+    Truncate,
+}
+
+/// The History step a step's menu acts on ([`State::step`]; `history::stepping`): what each
+/// of its items can do there.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Stepping {
+    /// Whether it is the end, where Go to Step changes nothing.
+    pub end: bool,
+    /// Whether it has a tool the app knows, which Show Tool opens.
+    pub tool: bool,
+    /// Whether a step after it is the person's own, which Truncate after Here drops.
+    pub truncate: bool,
 }
 
 /// What a layout action does to its section ([`Intent::Section`]).
@@ -548,6 +580,9 @@ pub struct State {
     /// Where the section the layout's actions act on is: the one whose header has the
     /// focus, or in ⋯ its own; none where none has, and they cannot run.
     pub section: Option<Placing>,
+    /// The History step whose menu is open, which its items act on; none elsewhere, and
+    /// they cannot run (decision 91).
+    pub step: Option<Stepping>,
     /// How the Browser shows the folder, whose items are shown checked.
     pub browser: crate::settings::BrowserSettings,
     /// Whether the Browser shows photos: its browser bar's items rest without any.
@@ -793,10 +828,10 @@ pub fn why_unavailable(id: ActionId, state: &State) -> Option<&'static str> {
 /// which names the flag (`utility::overridden`).
 pub const SET_BY_CONF: &str = "settings-overridden";
 
-/// What the action `id`'s item says in its tip in a tool's ⋯ (decision 93), as the
-/// pull-down's items do: why it cannot run where something says ([`why_unavailable`]),
-/// else what it does, for History's items, or that it comes later, for Copy Settings and
-/// Paste Settings. The message's id, or none.
+/// What the action `id`'s item says in its tip in a tool's ⋯ (decision 93) and a History
+/// step's menu (decision 91), as the pull-down's items do: why it cannot run where
+/// something says ([`why_unavailable`]), else what it does, for History's items, or that
+/// it comes later, for Copy Settings and Paste Settings. The message's id, or none.
 pub fn options_tip(id: ActionId, state: &State) -> Option<&'static str> {
     why_unavailable(id, state).or(match id {
         ActionId::COMPRESS_HISTORY => Some("history-compress-tip"),
@@ -805,6 +840,10 @@ pub fn options_tip(id: ActionId, state: &State) -> Option<&'static str> {
         ActionId::SECTION_COPY_SETTINGS | ActionId::SECTION_PASTE_SETTINGS => {
             Some("section-options-later")
         }
+        ActionId::STEP_GO_TO => Some("history-step-go-to-tip"),
+        ActionId::STEP_SHOW_TOOL => Some("history-step-show-tool-tip"),
+        ActionId::STEP_COMPRESS => Some("history-step-compress-tip"),
+        ActionId::STEP_TRUNCATE => Some("history-step-truncate-tip"),
         ActionId::DISCARD_HISTORY if state.unreadable => Some("history-discard-tip-unreadable"),
         ActionId::DISCARD_HISTORY => Some("history-discard-tip"),
         _ => None,
@@ -959,7 +998,7 @@ const fn to_tab<const I: usize>(message: &'static str) -> Action {
 
 /// Every action, in the order a keyboard map lists them (`docs/gui.md`, The default
 /// keyboard map). Slider keys are not here: they are the slider's own (`SliderRow`).
-pub static ACTIONS: [Action; 131] = [
+pub static ACTIONS: [Action; 135] = [
     // About Apertrust, in the app menu on the Mac and in Help on Windows and Linux.
     Action {
         id: ActionId::ABOUT,
@@ -1116,6 +1155,50 @@ pub static ACTIONS: [Action; 131] = [
         trigger: Trigger::Press,
         available: |s| s.truncate && on_main_window(s) && !s.modal,
         emits: Emit::Command(Command::Truncate { after: None }),
+    },
+    // A History step's menu (decision 91), with no key: each acts on the step whose menu
+    // chose it, and none can run elsewhere. Go to Step and the rewrites take edits, as a
+    // click on a step and History's ⋯ items do; Show Tool opens a tool whatever the photo,
+    // as Shift-click on the step does.
+    Action {
+        id: ActionId::STEP_GO_TO,
+        message: "history-step-go-to",
+        keys: &[],
+        scope: Scope::App,
+        trigger: Trigger::Press,
+        available: |s| {
+            s.editable && s.step.is_some_and(|step| !step.end) && on_main_window(s) && !s.modal
+        },
+        emits: Emit::Intent(Intent::HistoryStep(StepItem::GoTo)),
+    },
+    Action {
+        id: ActionId::STEP_SHOW_TOOL,
+        message: "history-step-show-tool",
+        keys: &[],
+        scope: Scope::App,
+        trigger: Trigger::Press,
+        available: |s| s.step.is_some_and(|step| step.tool) && on_main_window(s) && !s.modal,
+        emits: Emit::Intent(Intent::HistoryStep(StepItem::ShowTool)),
+    },
+    Action {
+        id: ActionId::STEP_COMPRESS,
+        message: "history-step-compress",
+        keys: &[],
+        scope: Scope::App,
+        trigger: Trigger::Press,
+        available: |s| s.compress && s.step.is_some() && on_main_window(s) && !s.modal,
+        emits: Emit::Intent(Intent::HistoryStep(StepItem::Compress)),
+    },
+    Action {
+        id: ActionId::STEP_TRUNCATE,
+        message: "history-step-truncate",
+        keys: &[],
+        scope: Scope::App,
+        trigger: Trigger::Press,
+        available: |s| {
+            s.editable && s.step.is_some_and(|step| step.truncate) && on_main_window(s) && !s.modal
+        },
+        emits: Emit::Intent(Intent::HistoryStep(StepItem::Truncate)),
     },
     // History's ⋯ item, drawn disabled until styles come (Phase 3).
     Action {
@@ -3017,6 +3100,7 @@ pub(crate) mod tests {
             panel_position: ToolsPanelPosition::Right,
             panel_position_given: false,
             section: None,
+            step: None,
             browser: crate::settings::BrowserSettings::default(),
             shown: true,
             background: Some(Background::Dark),

@@ -299,6 +299,18 @@ pub static BACKGROUND: Menu = Menu {
     ]],
 };
 
+/// A History step's menu (decision 91), the app's alone: Go to Step and Show Tool, then
+/// the rewrites, Compress up to Here and Truncate after Here.
+static STEP: Menu = Menu {
+    title: "context-menu-step",
+    role: Role::Plain,
+    on: Platforms::All,
+    groups: &[
+        &[item(ActionId::STEP_GO_TO), item(ActionId::STEP_SHOW_TOOL)],
+        &[item(ActionId::STEP_COMPRESS), item(ActionId::STEP_TRUNCATE)],
+    ],
+};
+
 static BROWSER_POSITION: Menu = Menu {
     title: "menu-browser-position",
     role: Role::Plain,
@@ -656,6 +668,9 @@ pub enum Place {
     /// The Viewer's surround, round the photo: View › Background's items alone
     /// (`docs/gui.md`, The background).
     Surround,
+    /// A History step's line: Go to Step, Show Tool, Compress up to Here and Truncate after
+    /// Here, the app's alone (`docs/history.md`, The History tab).
+    Step,
 }
 
 /// What a context menu's items act on (decision 91).
@@ -672,17 +687,21 @@ pub enum Target {
     Tool(&'static str),
     /// The app itself, as the surround's items set its background.
     App,
+    /// A History step, by its number, which names its menu to screen readers ("Step 3");
+    /// its items act on it as `State::step` says they can.
+    Step { number: usize },
 }
 
 /// The context menu at `place`, acting on `target`, hung from `anchor`, the point
 /// right-clicked for a right-click (decision 91): the app's items there ([`APP_ITEMS`]) and
 /// those tools and utilities add ([`added`]) together, by section and order, a line
 /// wherever the section changes ([`built`]). The surround, the app's alone, holds View ›
-/// Background's items. Each item is its action's, as the menu button's ([`shown`]); in the
-/// photo's and a thumbnail's menus an item that cannot run is hidden, but shown disabled
-/// while only the photo's not yet being live stops it, and no item shows its key
-/// ([`pared`]). In ⋯ an item that cannot run is drawn disabled with its tip, as in a
-/// pull-down. Its items' ids are their actions' ([`chosen`]).
+/// Background's items, and a History step's its own ([`STEP`]). Each item is its action's,
+/// as the menu button's ([`shown`]); in the photo's and a thumbnail's menus an item that
+/// cannot run is hidden, but shown disabled while only the photo's not yet being live
+/// stops it, and no item shows its key ([`pared`]). In ⋯ and a step's menu an item that
+/// cannot run is drawn disabled with its tip, as in a pull-down. Its items' ids are their
+/// actions' ([`chosen`]).
 pub fn context(
     ctx: &egui::Context,
     place: Place,
@@ -697,7 +716,7 @@ pub fn context(
         .collect();
     let added = match place {
         Place::Open(open) => added(open, target, &tools, apertrust_tools::utility::UTILITIES),
-        Place::Surround => Vec::new(),
+        Place::Surround | Place::Step => Vec::new(),
     };
     let (os, tr) = (ctx.os(), translator(ctx));
     built(place, target, &added, keymap, state, os, &tr, anchor)
@@ -1036,7 +1055,19 @@ fn built(
     let steps = Steps::default();
     let Place::Open(open) = place else {
         let lists = Lists::default();
-        let entries = drawn(&BACKGROUND, os, keymap, state, lists, &steps, tr).entries;
+        let menu = match place {
+            Place::Step => &STEP,
+            _ => &BACKGROUND,
+        };
+        let mut entries = drawn(menu, os, keymap, state, lists, &steps, tr).entries;
+        // A step's items say what they do, as ⋯'s do (decision 93).
+        for entry in entries.iter_mut().filter(|_| place == Place::Step) {
+            if let popup::Entry::Item(item) = entry
+                && let Some(tip) = chosen(&item.id).and_then(|id| actions::options_tip(id, state))
+            {
+                item.tip = Some(tr.text(tip));
+            }
+        }
         return popup::Request::pull_down(anchor, name(place, target, tr), entries);
     };
     let several = *target == Target::Selection && state.photos > 1;
@@ -1096,10 +1127,18 @@ pub(crate) fn chosen_on_thumbnail(chosen: ActionId, selected: usize) -> Option<A
 }
 
 /// What screen readers call the menu at `place`: the surround's is Background, as View ›
-/// Background's submenu is; ⋯'s its tool's or utility's options, as its button is.
+/// Background's submenu is; ⋯'s its tool's or utility's options, as its button is; a
+/// History step's the step by its number, "Step 3".
 fn name(place: Place, target: &Target, tr: &Translator) -> String {
     match (place, target) {
         (Place::Surround, _) => tr.text(BACKGROUND.title),
+        (Place::Step, target) => {
+            let mut args = Args::new();
+            if let Target::Step { number } = target {
+                args.set("number", *number);
+            }
+            tr.text_with(STEP.title, Some(&args))
+        }
         (Place::Open(apertrust_tools::Place::Photo), _) => tr.text("context-menu-photo"),
         (Place::Open(apertrust_tools::Place::Thumbnail), _) => tr.text("context-menu-thumbnail"),
         (Place::Open(apertrust_tools::Place::Options), target) => {
@@ -1773,7 +1812,7 @@ mod tests {
     /// Tools Panel Tab lists the tabs a workspace shows (decision 96); and the zoom's
     /// scales but Fit and 100%, the viewer bar's zoom menu's alone, and its Shift forms and
     /// the pan actions, keys alone (`docs/gui.md`, View).
-    const LEFT_OUT: [ActionId; 55] = [
+    const LEFT_OUT: [ActionId; 59] = [
         ActionId::EDIT_VIEW,
         ActionId::NEXT_REGION,
         ActionId::PREVIOUS_REGION,
@@ -1784,6 +1823,11 @@ mod tests {
         ActionId::COMPRESS_HISTORY,
         ActionId::TRUNCATE_HISTORY,
         ActionId::CREATE_STYLE,
+        // A History step's menu's, which act on its step alone (decision 91).
+        ActionId::STEP_GO_TO,
+        ActionId::STEP_SHOW_TOOL,
+        ActionId::STEP_COMPRESS,
+        ActionId::STEP_TRUNCATE,
         ActionId::PANEL_TABS[7],
         ActionId::PANEL_TABS[8],
         ActionId::PANEL_TABS[9],
@@ -1933,6 +1977,7 @@ mod tests {
             panel_position: apertrust_ui::components::ToolsPanelPosition::Right,
             panel_position_given: false,
             section: None,
+            step: None,
             browser: crate::settings::BrowserSettings::default(),
             shown: true,
             background: Some(apertrust_ui::Background::Dark),
@@ -3853,6 +3898,89 @@ mod tests {
             let count: usize = all.map(|item| item.actions.len()).sum();
             assert!(count <= 16, "{place:?} holds {count} items");
         }
+    }
+
+    /// A History step's menu (decision 91), named by its step: Go to Step and Show Tool,
+    /// a line, then Compress up to Here and Truncate after Here, each with no key and its
+    /// tip, enabled from the step: none without one, as from the keys; Go to Step not on
+    /// the end, Truncate after Here not with nothing after it, and the three that change
+    /// the edit not while the photo takes none, Show Tool still opening the tool.
+    #[test]
+    fn a_step_s_menu_holds_its_four_items_enabled_from_the_step() {
+        let ctx = egui::Context::default();
+        ctx.set_os(OperatingSystem::Nix);
+        apertrust_ui::set_locale(&ctx, Locale::EnGb);
+        let keymap = Keymap::defaults(OperatingSystem::Nix);
+        let target = Target::Step { number: 3 };
+        let open =
+            |state: &State| context(&ctx, Place::Step, &target, &keymap, state, Rect::NOTHING);
+        let lines = |menu: &popup::Request| -> Vec<(String, bool)> {
+            let line = |entry: &popup::Entry| match entry {
+                popup::Entry::Item(item) => {
+                    assert!(item.shortcut.is_none() && item.tip.is_some(), "{item:?}");
+                    (item.text.clone(), item.enabled)
+                }
+                popup::Entry::Separator => ("-".into(), true),
+                other => panic!("not a step's item: {other:?}"),
+            };
+            menu.entries.iter().map(line).collect()
+        };
+        let line = |words: &str, enabled| (words.to_owned(), enabled);
+        let stepping = actions::Stepping {
+            end: false,
+            tool: true,
+            truncate: true,
+        };
+        let on = State {
+            step: Some(stepping),
+            ..everything()
+        };
+        let menu = open(&on);
+        assert_eq!(menu.name, "Step 3");
+        assert_eq!(
+            lines(&menu),
+            [
+                line("Go to Step", true),
+                line("Show Tool", true),
+                line("-", true),
+                line("Compress up to Here", true),
+                line("Truncate after Here", true),
+            ]
+        );
+        let enabled = |state: &State| -> Vec<bool> {
+            let menu = open(state);
+            let items = lines(&menu).into_iter().filter(|(words, _)| words != "-");
+            items.map(|(_, enabled)| enabled).collect()
+        };
+        let at_end = State {
+            step: Some(actions::Stepping {
+                end: true,
+                truncate: false,
+                ..stepping
+            }),
+            ..on
+        };
+        assert_eq!(enabled(&at_end), [false, true, true, false]);
+        let no_tool = State {
+            step: Some(actions::Stepping {
+                tool: false,
+                ..stepping
+            }),
+            ..on
+        };
+        assert_eq!(enabled(&no_tool), [true, false, true, true]);
+        // Open for viewing only, or not yet live: no edit taken, so nothing compresses.
+        let viewing = State {
+            editable: false,
+            view_only: true,
+            compress: false,
+            truncate: false,
+            ..on
+        };
+        assert_eq!(enabled(&viewing), [false, true, false, false]);
+        let modal = State { modal: true, ..on };
+        assert_eq!(enabled(&modal), [false; 4]);
+        assert_eq!(enabled(&everything()), [false; 4]);
     }
 
     /// The surround's menu is View › Background's items alone, as it was before the

@@ -59,6 +59,11 @@
 //!   Original, but on where the end is, which changes nothing, as darktable's click on its
 //!   active item; Shift-click on a step opens its tool's section ([`Action::Open`]), as
 //!   darktable's Shift-click focuses it;
+//! - a step's menu (decision 91), the app's own, by a right-click, Control-click on the
+//!   Mac, Shift+F10, the Menu key or a screen reader's ShowContextMenu on its line
+//!   ([`Action::Menu`]): Go to Step, Show Tool, Compress up to Here and Truncate after
+//!   Here, which the shell opens and runs on the step (`menus::Place::Step`,
+//!   [`stepping`]);
 //! - the keys, a tree's: ↑ and ↓ move between the lines, → opens a group, or goes into
 //!   one open, ← closes it, or goes from a line inside it to it, Home to the newest line
 //!   and End to Original, a key with nothing to do keeping the focus; Enter does what a
@@ -95,12 +100,14 @@ use apertrust_tools::{
     ControlKind, ProcessingDefinition, ProcessingTool, Row, Slider, Widget, messages,
 };
 use apertrust_ui::components::{
-    IconButton, PanelBody, Rail, RailLine, RailNode, focus_ring_centred, section_body,
+    IconButton, PanelBody, Rail, RailLine, RailNode, context_click, focus_ring_centred, menu_asked,
+    section_body,
 };
 use apertrust_ui::i18n::{Args, local_day};
 use apertrust_ui::{Icon, Translator, fonts, theme, translator};
 use eframe::egui::{self, FontId, Key, Modifiers, Role, Sense, UiBuilder, WidgetInfo, pos2, vec2};
 
+use crate::actions::Stepping;
 use crate::menus::Steps;
 use crate::tools::{Head, Pressed};
 use crate::utility::{Context, UtilityTool};
@@ -112,7 +119,7 @@ pub const ID: &str = "history";
 const SEPARATOR: &str = " · ";
 
 /// What the user did in the section's list this frame.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Action {
     /// Go to a step, or to Original with `None`: `Command::GoTo`, which History's body sends
     /// ([`HistoryTool`]).
@@ -122,6 +129,36 @@ pub enum Action {
     /// The eye held this frame on this tool's line: the photo shown without the tool
     /// while it is held, `Command::Hide`.
     Peek(&'static str),
+    /// A step's menu asked for on its line (decision 91), which the shell opens.
+    Menu(StepMenu),
+}
+
+/// A History step's menu as its line asks for it (decision 91): the step, by its id and
+/// number, the tool Show Tool opens, as Shift-click does, where it hangs from and the line
+/// the focus goes back to as it closes.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct StepMenu {
+    pub step: StepId,
+    pub number: usize,
+    pub tool: Option<&'static str>,
+    /// The point right-clicked, or the line's bottom left where the keys asked.
+    pub at: egui::Pos2,
+    pub line: egui::Id,
+}
+
+/// What a step's menu's items can do on `step` of `history`, the open photo's, `tool`
+/// whether it has one Show Tool opens (`actions::Stepping`): Go to Step anywhere but the
+/// end, Truncate after Here where a step after it is the person's own, which it drops.
+/// None where the history no longer holds the step, and nothing runs.
+pub fn stepping(history: Option<&History>, step: StepId, tool: bool) -> Option<Stepping> {
+    let history = history?;
+    let at = history.steps.iter().position(|s| s.id == step)?;
+    let after = &history.steps[at + 1..];
+    Some(Stepping {
+        end: at + 1 == history.end,
+        tool,
+        truncate: after.iter().any(|s| s.source != StepSource::Default),
+    })
 }
 
 /// What the section's ⋯ items can do now ([`options`]), each drawn disabled where it
@@ -250,8 +287,8 @@ pub struct Line {
     pub tip: Tip,
     /// Its node on the rail; a group's is drawn the end's only while it is closed.
     pub node: RailNode,
-    /// The tool Shift-click opens; none where the app
-    /// does not know it, as an operation's unowned parameters or a newer build's tool.
+    /// The tool Shift-click and a step's Show Tool open; none where the app does not know
+    /// it, as an operation's unowned parameters or a newer build's tool.
     pub tool: Option<&'static str>,
     /// The tool the eye at its end hides from the view: a step's one tool the app
     /// knows; none on Reset's, a group's line or Original, nor where the app does not know
@@ -1111,6 +1148,7 @@ impl Pass<'_> {
             hidden,
         );
         self.actions.extend(out.action);
+        self.actions.extend(out.menu);
         if out.toggle {
             self.toggled.push(shown.line.key);
         }
@@ -1413,6 +1451,8 @@ const UNDONE_MARK: f32 = 20.0;
 struct Clicked {
     response: egui::Response,
     action: Option<Action>,
+    /// A step's menu asked for ([`Action::Menu`]).
+    menu: Option<Action>,
     /// A group's chevron was clicked: open or close it.
     toggle: bool,
 }
@@ -1424,7 +1464,8 @@ struct Clicked {
 /// no room, and the tag before the eye's room at the row's end; the end's on
 /// `list_chosen`, an undone step's in `text_secondary`; and the eye on a step of one
 /// tool ([`eye_button`]), its tool's name struck through in `text_secondary` while the
-/// session reports it `hidden`. Returns what a click, or Enter, asked for, and the eye held.
+/// session reports it `hidden`. Returns what a click, or Enter, asked for, the eye held, and
+/// a step's menu asked for ([`step_menu`]).
 fn line_row(
     ui: &mut egui::Ui,
     id: egui::Id,
@@ -1674,12 +1715,15 @@ fn line_row(
         };
         ui.input(|i| i.has_accesskit_action_request(response.id, asked))
     });
+    let menu = step_menu(ui, &response, line);
     let mut clicked = Clicked {
         action: eyed,
+        menu,
         toggle: disclosed,
         response: response.clone(),
     };
-    if !response.clicked() {
+    // A Control-click on the Mac asks for the menu, and goes nowhere.
+    if !response.clicked() || menu.is_some() {
         return clicked;
     }
     // A pointer's press that began on the eye is the eye's, a peek, though the line took it
@@ -1697,6 +1741,30 @@ fn line_row(
         clicked.action = line.clicked(shift_clicked(ui), editable);
     }
     clicked
+}
+
+/// A step's menu asked for on its line, `response` (decision 91): by a right-click, or a
+/// Control-click on the Mac, hung from the point clicked; by Shift+F10 or the Menu key with
+/// the focus, or a screen reader's ShowContextMenu, from the line's bottom left. Only a
+/// step's line has one, which tells screen readers so; a group's and Original's have none.
+fn step_menu(ui: &egui::Ui, response: &egui::Response, line: &Line) -> Option<Action> {
+    let Place::Step { id, number, .. } = line.place else {
+        return None;
+    };
+    let keys = menu_asked(ui.ctx(), response);
+    let clicked = context_click(ui.ctx(), response);
+    let at = match response.interact_pointer_pos() {
+        Some(at) if clicked => at,
+        _ if clicked || keys => response.rect.left_bottom(),
+        _ => return None,
+    };
+    Some(Action::Menu(StepMenu {
+        step: id,
+        number,
+        tool: line.tool,
+        at,
+        line: response.id,
+    }))
 }
 
 /// Whether this frame's click is the primary button's release of a press that began on the
@@ -3565,6 +3633,38 @@ pub(crate) mod tests {
             (false, false, true)
         );
         assert_eq!(super::options(None, true, false), Options::default());
+    }
+
+    /// What a step's menu's items can do on a step (decision 91): Go to Step anywhere but
+    /// the end; Truncate after Here where a step of the person's lies after it, never a
+    /// default step alone; nothing on a step the history no longer holds.
+    #[test]
+    fn a_step_s_menu_offers_what_its_step_can_do() {
+        let history = with_defaults(photo_s(0), DEFAULT_STEPS + 3);
+        let at = |id, tool| stepping(Some(&history), StepId(id), tool);
+        let stepped = |end, tool, truncate| {
+            Some(Stepping {
+                end,
+                tool,
+                truncate,
+            })
+        };
+        // The end, the person's third step, with two after it.
+        assert_eq!(at(0xa3, true), stepped(true, true, true));
+        // The last: nothing after it to drop.
+        assert_eq!(at(0xa5, false), stepped(false, false, false));
+        // A default step, the person's steps after it.
+        assert_eq!(at(0xd0, true), stepped(false, true, true));
+        // Default steps alone after it: nothing of the person's to drop.
+        let defaults = History {
+            steps: history.steps[..DEFAULT_STEPS].to_vec(),
+            end: 2,
+            ..history.clone()
+        };
+        let first = stepping(Some(&defaults), StepId(0xd0), true);
+        assert_eq!(first, stepped(false, true, false));
+        assert_eq!(at(0xff, true), None);
+        assert_eq!(stepping(None, StepId(0xa1), true), None);
     }
 
     /// Opens the header's options, ⋯.

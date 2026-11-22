@@ -1202,11 +1202,13 @@ menu-minimise = Minimise
 menu-zoom-window = Zoom
 menu-bring-all-to-front = Bring All to Front
 
-## Context menus, by what screen readers call them (decision 91): the photo's and a
-## thumbnail's
+## Context menus, by what screen readers call them (decision 91): the photo's, a
+## thumbnail's and a History step's
 
 context-menu-photo = Photo
 context-menu-thumbnail = Thumbnail
+# $number is the step's, as History numbers it.
+context-menu-step = Step { $number }
 
 ## The edit's history: a step's name, as History lists it and Undo and Redo name it
 
@@ -1238,6 +1240,17 @@ history-discard-tip-unreadable = Starts the history afresh from the photo as it 
 history-discard-no-alert = Discard History asks first, and that question can’t be shown here yet. Turn off Ask before discarding a photo’s history in Settings to discard without asking.
 # The same on an edit part of whose history can't be read, which always asks first.
 history-discard-no-alert-unreadable = Discarding this history asks first, since nothing can bring back what can’t be read, and that question can’t be shown here yet.
+# A History step's right-click menu, as items, each with its tip: Go to Step, Show Tool,
+# which opens the step's tool, Compress up to Here and Truncate after Here, which go to the
+# step first.
+history-step-go-to = Go to Step
+history-step-go-to-tip = Shows the photo as it was at this step. The steps after it stay until your next edit replaces them.
+history-step-show-tool = Show Tool
+history-step-show-tool-tip = Opens this step’s tool in the Tools panel, as Shift-click on the step does.
+history-step-compress = Compress up to Here
+history-step-compress-tip = Goes to this step, then keeps each tool’s last step up to it and removes the rest.
+history-step-truncate = Truncate after Here
+history-step-truncate-tip = Goes to this step, then removes the steps after it and keeps the rest as they are.
 
 ## The History section in the Tools panel's History tab (docs/history.md)
 

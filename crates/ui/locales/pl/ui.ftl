@@ -923,6 +923,7 @@ menu-bring-all-to-front = Umieść wszystko na wierzchu
 
 context-menu-photo = Zdjęcie
 context-menu-thumbnail = Miniatura
+context-menu-step = Krok { $number }
 
 ## Historia edycji: nazwa kroku
 
@@ -948,6 +949,14 @@ history-discard-tip = Czyści historię i przywraca zdjęcie do stanu z pierwsze
 history-discard-tip-unreadable = Zaczyna historię od nowa od zdjęcia w obecnym stanie. To, czego nie da się odczytać, przepadnie.
 history-discard-no-alert = Odrzucenie historii najpierw pyta, a tego pytania nie da się tu jeszcze pokazać. Aby odrzucać bez pytania, wyłącz w Ustawieniach „Pytaj przed odrzuceniem historii zdjęcia”.
 history-discard-no-alert-unreadable = Odrzucenie tej historii najpierw pyta, bo tego, czego nie da się odczytać, nie będzie można przywrócić, a tego pytania nie da się tu jeszcze pokazać.
+history-step-go-to = Przejdź do kroku
+history-step-go-to-tip = Pokazuje zdjęcie takie, jakie było na tym kroku. Kroki po nim zostają, dopóki nie zastąpi ich Twoja następna edycja.
+history-step-show-tool = Pokaż narzędzie
+history-step-show-tool-tip = Otwiera narzędzie tego kroku w panelu narzędzi, tak jak kliknięcie kroku z Shift.
+history-step-compress = Kompresuj do tego kroku
+history-step-compress-tip = Przechodzi do tego kroku, a potem zachowuje ostatni krok każdego narzędzia do niego i usuwa resztę.
+history-step-truncate = Przytnij po tym kroku
+history-step-truncate-tip = Przechodzi do tego kroku, potem usuwa kroki po nim, a resztę zostawia bez zmian.
 
 ## Sekcja Historia na karcie Historia panelu narzędzi
 

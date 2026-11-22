@@ -96,7 +96,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use actions::{ActionId, Emit, Focus, Intent, Keymap, SectionMove, State, View};
+use actions::{ActionId, Emit, Focus, Intent, Keymap, SectionMove, State, StepItem, View};
 use apertrust_base::cache::{Cache, Limit};
 use apertrust_base::folders::{self, Folders, Given};
 use apertrust_base::settings::CONF_FLAG;
@@ -104,8 +104,9 @@ use apertrust_display::{ColorSpace, DoubleClick, WindowButtons};
 use apertrust_engine::gpu::{self, GpuContext, SubmitGate};
 use apertrust_engine::session::library::{EditState, RawThumbnails, Source};
 use apertrust_engine::session::{
-    CacheCommand, CacheOptions, Command, ControlValue, Event, Frame, Graphs, LibraryCommand,
-    PickerCommand, PickerRef, Places, Session, SessionError, StepSource, Values, ViewOnly,
+    CacheCommand, CacheOptions, Command, ControlValue, Event, Frame, Graphs, History,
+    LibraryCommand, PickerCommand, PickerRef, Places, Session, SessionError, StepSource, Values,
+    ViewOnly,
 };
 use apertrust_engine::sidecar::Reason;
 use apertrust_engine::view::{FramePlace, Placement};
@@ -2990,6 +2991,67 @@ impl Shell {
         run
     }
 
+    /// A History step's menu (decision 91; `menus::Place::Step`): opened where a step's line
+    /// asked for it this frame in `actions`, drawn while open, its items enabled from `state`
+    /// with what each can do on the step in `history` (`history::stepping`), for the photo
+    /// `photo` it opens on ([`context_popup`]). Returns the one command its choice sends, the
+    /// step its target: Go to Step `GoTo`, Compress up to Here `Compress { up_to }` and
+    /// Truncate after Here `Truncate { after }`, which the session refuses where the step
+    /// has gone by then; Show Tool reveals the step's tool, as Shift-click does, and sends
+    /// nothing ([`Shell::reveal`]). A choice its step no longer takes, the history having
+    /// changed under the menu, does nothing.
+    fn step_menu(
+        &mut self,
+        ctx: &egui::Context,
+        actions: &[history::Action],
+        history: Option<&History>,
+        state: &State,
+        photo: Option<&Path>,
+    ) -> Option<Command> {
+        let id = egui::Id::unique("history step menu");
+        let kept = id.with("step");
+        let asked = actions.iter().find_map(|action| match action {
+            history::Action::Menu(menu) => Some(*menu),
+            _ => None,
+        });
+        if let Some(asked) = asked {
+            ctx.data_mut(|d| d.insert_temp(kept, asked));
+        }
+        let menu = asked.or_else(|| ctx.data(|d| d.get_temp::<history::StepMenu>(kept)))?;
+        let state = State {
+            step: history::stepping(history, menu.step, menu.tool.is_some()),
+            ..*state
+        };
+        let opened = asked.map(|asked| Opened {
+            place: menus::Place::Step,
+            target: menus::Target::Step {
+                number: asked.number,
+            },
+            anchor: egui::Rect::from_min_size(asked.at, egui::Vec2::ZERO),
+            opener: Some(asked.line),
+        });
+        let chosen = context_popup(ctx, id, opened, &self.keymap, &state, photo);
+        let action = chosen
+            .and_then(actions::action)
+            .filter(|a| a.enabled(&state));
+        let Some(Emit::Intent(Intent::HistoryStep(item))) = action.map(|a| &a.emits) else {
+            return None;
+        };
+        let step = Some(menu.step);
+        match item {
+            StepItem::GoTo => Some(Command::GoTo { step }),
+            StepItem::ShowTool => {
+                if let Some(tool) = menu.tool {
+                    self.reveal(tool);
+                    ctx.request_repaint();
+                }
+                None
+            }
+            StepItem::Compress => Some(Command::Compress { up_to: step }),
+            StepItem::Truncate => Some(Command::Truncate { after: step }),
+        }
+    }
+
     /// What the History tab's eye holds this frame, `held`, the tool it shows the photo
     /// without (`history::Action::Peek`), none where it is let go, its line or tab gone, or
     /// the window lost the focus: the `Hide` commands that show the tool hidden until now
@@ -3249,6 +3311,8 @@ impl Shell {
             section: self
                 .focused_section(ctx)
                 .and_then(|tool| self.placing(tool)),
+            // A History step's menu's own, as it opens ([`Shell::step_menu`]).
+            step: None,
             browser: self.browser,
             // The app's, from the folder it shows ([`App::shell_state`]).
             shown: false,
@@ -3635,6 +3699,9 @@ impl Shell {
                     self.move_section(tool, change, ctx);
                 }
             }
+            // Run on its step by the step's menu alone ([`Shell::step_menu`]): with no step
+            // it never runs from here.
+            Intent::HistoryStep(_) => {}
             // Pressed again, it is chosen already, and nothing changes. Hidden, it is
             // revealed in the Hidden tab, opened and scrolled to, as any tool is (decision
             // 96). Either way Find Tool…'s search, which would hide it, closes first.
@@ -5478,6 +5545,13 @@ impl App {
         let asked = self
             .shell
             .history_asked(tab.pressed, &tab.history, ui.ctx());
+        let menu_state = self.state(ui.ctx());
+        let history = self.mirror.history.as_ref();
+        let photo = self.mirror.photo.asked();
+        let step = (self.shell).step_menu(ui.ctx(), &tab.history, history, &menu_state, photo);
+        if let Some(command) = step {
+            self.send_edit(command);
+        }
         self.shell.layout_asked(&state, ui.ctx());
         asked.or(tab_clicked)
     }
@@ -7179,12 +7253,12 @@ struct Opened {
 /// The context menu `opened` this frame, if any, as the popup `id`, built from `keymap` and
 /// `state` (`menus::context`), and the action of the item chosen in it.
 ///
-/// The photo's and a thumbnail's act on the photo asked for as they open, `photo`, opening
-/// or open (decision 91): while one is open another photo can become active, by a drop,
-/// Open… or an open asked for earlier, and the menu then closes with nothing chosen, so it
-/// never acts on a photo other than its own. The Mac's native menu is modal, so nothing
-/// changes while it is open, but it answers after it closes: its choice is dropped when
-/// another photo became active meanwhile.
+/// The photo's, a thumbnail's and a History step's act on the photo asked for as they open,
+/// `photo`, opening or open (decision 91): while one is open another photo can become
+/// active, by a drop, Open… or an open asked for earlier, and the menu then closes with
+/// nothing chosen, so it never acts on a photo other than its own. The Mac's native menu is
+/// modal, so nothing changes while it is open, but it answers after it closes: its choice
+/// is dropped when another photo became active meanwhile.
 ///
 /// One opened while its photo waits to go live (decision 91), as a thumbnail's does on a
 /// photo it has just made active, shows the items that wait disabled; once the photo is
@@ -7229,7 +7303,7 @@ fn context_popup(
             } else {
                 d.remove::<Opened>(waiting);
             }
-            if let menus::Place::Open(_) = opened.place {
+            if let menus::Place::Open(_) | menus::Place::Step = opened.place {
                 d.insert_temp(own, photo.map(Path::to_path_buf));
             } else {
                 d.remove::<Option<PathBuf>>(own);
@@ -13823,6 +13897,13 @@ mod tests {
                     editing.sent.extend(tab.commands);
                     editing.history.extend(tab.history.iter().copied());
                     editing.shell.history_asked(tab.pressed, &tab.history, &ctx);
+                    let (history, photo) = (
+                        editing.mirror.history.as_ref(),
+                        editing.mirror.photo.asked(),
+                    );
+                    let step =
+                        (editing.shell).step_menu(&ctx, &tab.history, history, &state, photo);
+                    editing.sent.extend(step);
                     editing.shell.layout_asked(&state, &ctx);
                 },
                 Editing {
@@ -13906,6 +13987,307 @@ mod tests {
                 .state()
                 .shell
                 .section_open(&apertrust_tools::grain::Grain.definition().tool)
+        );
+    }
+
+    /// The History tab, on a photo `opened` with `values`, holding three steps, Exposure,
+    /// Grain and Vignetting, all applied.
+    fn three_steps(
+        folder: &settings::testing::Folder,
+        opened: Photo,
+        values: Values,
+    ) -> Harness<'static, Editing> {
+        let mut harness = tools_panel(folder);
+        harness.state_mut().shell.panel_tab = HISTORY;
+        let mirror = &mut harness.state_mut().mirror;
+        mirror.apply(Event::Opened(opened));
+        mirror.apply(Event::Values(values));
+        let steps = vec![
+            history::tests::step(7, &["exposure"], None),
+            history::tests::step(8, &["grain"], None),
+            history::tests::step(9, &["vignette"], None),
+        ];
+        mirror.apply(Event::History(history::tests::history(
+            3, steps, None, None,
+        )));
+        harness.run();
+        harness
+    }
+
+    /// A step's menu's items, by their words, and whether each is enabled.
+    fn step_menu_items(harness: &Harness<'_, Editing>, step: &str) -> Vec<(String, bool)> {
+        let menu = harness.get_by_role_and_label(Role::Menu, step);
+        (menu.query_all_by_role(Role::MenuItem))
+            .map(|node| {
+                let node = node.accesskit_node();
+                (node.label().unwrap_or_default(), !node.is_disabled())
+            })
+            .collect()
+    }
+
+    /// Decision 91: a right-click on a step opens its menu, Go to Step, Show Tool, Compress
+    /// up to Here and Truncate after Here, each sending its History command with the step
+    /// as its target; Show Tool reveals the step's tool, sending nothing. On the end's line
+    /// Go to Step, and with nothing after it Truncate after Here, are disabled.
+    #[test]
+    fn a_step_s_menu_sends_its_command_with_the_step() {
+        use crate::mirror::tests::photo;
+        use apertrust_engine::session::StepId;
+        let folder = settings::testing::Folder::new("panel-history-step-menu");
+        let mut harness = three_steps(&folder, photo(1), photo_values(1.5, 3));
+        let at = |harness: &Harness<'_, Editing>, name: &str| {
+            let item = harness.get_by_role_and_label(Role::TreeItem, name);
+            item.rect().center()
+        };
+        let choose = |harness: &mut Harness<'_, Editing>, step: &str, item: &str| {
+            let line = at(harness, step);
+            right_click_at(harness, line);
+            harness.get_by_role_and_label(Role::MenuItem, item).click();
+            harness.run();
+            std::mem::take(&mut harness.state_mut().sent)
+        };
+        let first = at(&harness, "Step 1: Exposure");
+        right_click_at(&mut harness, first);
+        let enabled = |words: &str| (words.to_owned(), true);
+        assert_eq!(
+            step_menu_items(&harness, "Step 1"),
+            [
+                enabled("Go to Step"),
+                enabled("Show Tool"),
+                enabled("Compress up to Here"),
+                enabled("Truncate after Here"),
+            ]
+        );
+        // A right-click goes to no step by itself.
+        assert!(harness.state().sent.is_empty());
+        harness.key_press(egui::Key::Escape);
+        harness.run();
+        let to_first = Command::GoTo {
+            step: Some(StepId(7)),
+        };
+        let sent = choose(&mut harness, "Step 1: Exposure", "Go to Step");
+        assert_eq!(sent, std::slice::from_ref(&to_first));
+        let first = Some(StepId(7));
+        let sent = choose(&mut harness, "Step 1: Exposure", "Compress up to Here");
+        assert_eq!(sent, [Command::Compress { up_to: first }]);
+        let sent = choose(&mut harness, "Step 1: Exposure", "Truncate after Here");
+        assert_eq!(sent, [Command::Truncate { after: first }]);
+        // Show Tool: Grain's section, in Effects, open; no command.
+        let sent = choose(&mut harness, "Step 2: Grain", "Show Tool");
+        assert!(sent.is_empty(), "{sent:?}");
+        assert_eq!(harness.state().shell.panel_tab, 4);
+        let grain = &apertrust_tools::grain::Grain.definition().tool;
+        assert!(harness.state().shell.section_open(grain));
+        // The end's line: there already, and nothing after it to truncate.
+        harness.state_mut().shell.panel_tab = HISTORY;
+        harness.run();
+        let last = at(&harness, "Step 3: Vignetting");
+        right_click_at(&mut harness, last);
+        assert_eq!(
+            step_menu_items(&harness, "Step 3"),
+            [
+                ("Go to Step".to_owned(), false),
+                enabled("Show Tool"),
+                enabled("Compress up to Here"),
+                ("Truncate after Here".to_owned(), false),
+            ]
+        );
+    }
+
+    /// Decision 91: Shift+F10 and the Menu key on a focused step open its menu, from which
+    /// the keys choose as a pointer does.
+    #[test]
+    fn the_keys_open_a_focused_step_s_menu() {
+        use crate::mirror::tests::photo;
+        use apertrust_engine::session::StepId;
+        let folder = settings::testing::Folder::new("panel-history-step-menu-keys");
+        let mut harness = three_steps(&folder, photo(1), photo_values(1.5, 3));
+        let focus = |harness: &mut Harness<'_, Editing>| {
+            harness
+                .get_by_role_and_label(Role::TreeItem, "Step 2: Grain")
+                .focus();
+            harness.run();
+        };
+        focus(&mut harness);
+        harness.key_press_modifiers(Modifiers::SHIFT, egui::Key::F10);
+        harness.run();
+        assert_eq!(step_menu_items(&harness, "Step 2").len(), 4);
+        harness.key_press(egui::Key::Escape);
+        harness.run();
+        assert!(
+            harness
+                .query_by_role_and_label(Role::Menu, "Step 2")
+                .is_none()
+        );
+        focus(&mut harness);
+        harness.key_press(egui::Key::Menu);
+        harness.run();
+        harness
+            .get_by_role_and_label(Role::MenuItem, "Go to Step")
+            .click();
+        harness.run();
+        assert_eq!(
+            harness.state().sent,
+            [Command::GoTo {
+                step: Some(StepId(8))
+            }]
+        );
+    }
+
+    /// Decision 91: on a photo open for viewing only, and on one not yet live, a step's
+    /// menu shows Go to Step, Compress up to Here and Truncate after Here disabled, each
+    /// with its tip, as History's ⋯ items are; Show Tool still opens the tool, as
+    /// Shift-click does.
+    #[test]
+    fn a_step_s_menu_rests_where_the_photo_takes_no_edit() {
+        use crate::mirror::tests::photo;
+        use apertrust_engine::sidecar::Newer;
+        let newer = Photo {
+            view_only: Some(ViewOnly {
+                build: Some("9.9.9".to_owned()),
+                reason: Reason::Newer(Newer::Tool("lens".to_owned())),
+            }),
+            ..photo(1)
+        };
+        let loading = Values {
+            live: false,
+            ..photo_values(1.5, 3)
+        };
+        let cases = [
+            (
+                "panel-history-step-menu-viewing",
+                newer,
+                photo_values(1.5, 3),
+            ),
+            ("panel-history-step-menu-loading", photo(1), loading),
+        ];
+        for (name, opened, values) in cases {
+            let folder = settings::testing::Folder::new(name);
+            let mut harness = three_steps(&folder, opened, values);
+            assert!(!harness.state().mirror.takes_edits(), "{name}");
+            let line = harness.get_by_role_and_label(Role::TreeItem, "Step 1: Exposure");
+            let line = line.rect().center();
+            right_click_at(&mut harness, line);
+            assert_eq!(
+                step_menu_items(&harness, "Step 1"),
+                [
+                    ("Go to Step".to_owned(), false),
+                    ("Show Tool".to_owned(), true),
+                    ("Compress up to Here".to_owned(), false),
+                    ("Truncate after Here".to_owned(), false),
+                ],
+                "{name}"
+            );
+            harness
+                .get_by_role_and_label(Role::MenuItem, "Compress up to Here")
+                .hover();
+            harness.run();
+            harness.get_by_label(
+                "Goes to this step, then keeps each tool’s last step up to it and removes the \
+                 rest.",
+            );
+            harness
+                .get_by_role_and_label(Role::MenuItem, "Show Tool")
+                .click();
+            harness.run();
+            assert!(harness.state().sent.is_empty(), "{name}");
+            assert_eq!(harness.state().shell.panel_tab, ADJUST, "{name}");
+        }
+    }
+
+    /// Decision 91: only a step's line has a menu: a right-click on the Defaults' line or
+    /// on Original opens none, and sends nothing.
+    #[test]
+    fn a_group_s_line_and_original_open_no_menu() {
+        use crate::mirror::tests::photo;
+        use apertrust_engine::session::HistoryStep;
+        let folder = settings::testing::Folder::new("panel-history-step-menu-none");
+        let mut harness = tools_panel(&folder);
+        harness.state_mut().shell.panel_tab = HISTORY;
+        let mirror = &mut harness.state_mut().mirror;
+        mirror.apply(Event::Opened(photo(1)));
+        mirror.apply(Event::Values(photo_values(1.5, 3)));
+        let default = |id, tool| {
+            Arc::new(HistoryStep {
+                source: StepSource::Default,
+                ..(*history::tests::step(id, &[tool], None)).clone()
+            })
+        };
+        let steps = vec![
+            default(5, "exposure"),
+            default(6, "grain"),
+            history::tests::step(7, &["vignette"], None),
+        ];
+        mirror.apply(Event::History(history::tests::history(
+            3, steps, None, None,
+        )));
+        harness.run();
+        for name in ["Steps 1 to 2: Defaults", "Original"] {
+            let line = harness.get(egui_kittest::kittest::by().predicate(|node| {
+                node.role() == Role::TreeItem && node.label().is_some_and(|l| l.starts_with(name))
+            }));
+            let line = line.rect().center();
+            right_click_at(&mut harness, line);
+            assert!(harness.query_by_role(Role::Menu).is_none(), "{name}");
+            assert!(harness.state().sent.is_empty(), "{name}");
+        }
+    }
+
+    /// A step's menu acts on its step as the history stands when a choice is made: Go to
+    /// Step on a step the history no longer holds sends nothing.
+    #[test]
+    fn a_step_s_menu_on_a_step_gone_sends_nothing() {
+        let folder = settings::testing::Folder::new("panel-history-step-menu-gone");
+        let opened = crate::mirror::tests::photo(1);
+        let mut harness = three_steps(&folder, opened, photo_values(1.5, 3));
+        let line = harness.get_by_role_and_label(Role::TreeItem, "Step 1: Exposure");
+        let line = line.rect().center();
+        right_click_at(&mut harness, line);
+        // Another program's edit, say, taken in while the menu is open: step 1 is gone.
+        let steps = vec![
+            history::tests::step(8, &["grain"], None),
+            history::tests::step(9, &["vignette"], None),
+        ];
+        let history = history::tests::history(4, steps, None, None);
+        harness.state_mut().mirror.apply(Event::History(history));
+        harness.run();
+        harness
+            .get_by_role_and_label(Role::MenuItem, "Go to Step")
+            .click();
+        harness.run();
+        assert!(
+            harness.state().sent.is_empty(),
+            "{:?}",
+            harness.state().sent
+        );
+    }
+
+    /// A step's menu belongs to the photo it opened on: another photo opening while it is
+    /// open closes it, and nothing is sent.
+    #[test]
+    fn a_step_s_menu_closes_as_another_photo_opens() {
+        use crate::mirror::tests::photo;
+        let folder = settings::testing::Folder::new("panel-history-step-menu-photo");
+        let mut harness = three_steps(&folder, photo(1), photo_values(1.5, 3));
+        let line = harness.get_by_role_and_label(Role::TreeItem, "Step 1: Exposure");
+        let line = line.rect().center();
+        right_click_at(&mut harness, line);
+        assert!(
+            harness
+                .query_by_role_and_label(Role::Menu, "Step 1")
+                .is_some()
+        );
+        let other = Photo {
+            path: PathBuf::from("/photos/b.ARW"),
+            ..photo(2)
+        };
+        harness.state_mut().mirror.apply(Event::Opened(other));
+        harness.run();
+        assert!(harness.query_by_role(Role::Menu).is_none());
+        assert!(
+            harness.state().sent.is_empty(),
+            "{:?}",
+            harness.state().sent
         );
     }
 
