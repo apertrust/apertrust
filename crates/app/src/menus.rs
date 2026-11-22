@@ -703,12 +703,14 @@ pub fn context(
     built(place, target, &added, keymap, state, os, &tr, anchor)
 }
 
-/// The entries of `tool`'s ⋯, its header's options (decisions 91 and 93): the items it
-/// declares at `Place::Options`, each its registry action's, built as [`context`] builds
-/// every menu, enabled from `state`, an item that cannot run drawn disabled with its tip,
-/// each saying in its tip what it does where the registry words it
-/// ([`actions::options_tip`]). None for a tool that declares none; the shell adds the
-/// layout's items after them ([`layout_items`]).
+/// The entries of `tool`'s ⋯, its header's options (decisions 91 and 93): the app's
+/// editing items first, Reset where it has ↺, then Copy Settings and Paste Settings on a
+/// processing tool ([`APP_ITEMS`]), and the items it declares at `Place::Options` after
+/// them, each its registry action's, built as [`context`] builds every menu, enabled from
+/// `state`, an item that cannot run drawn disabled with its tip, each saying in its tip
+/// what it does where the registry words it ([`actions::options_tip`]). Reset is enabled
+/// as ↺ is by the header (`tools::header`). None for a utility with no ↺ that declares
+/// none; the shell adds the layout's items after them ([`layout_items`]).
 pub fn options(
     ctx: &egui::Context,
     tool: &'static str,
@@ -861,11 +863,13 @@ pub fn tools_panel(
 }
 
 /// The app's items in the places open to tools' (decision 91), declared as the tools'
-/// are: the photo's Export… and Background ▸, View › Background's items as a submenu, and
-/// a thumbnail's Export…. Copy Edit and Apply Edit join Edit's section once built, Show in
-/// Finder and Show in Folder once built; Reset is History's. The app's are held to no
-/// section's rule.
-pub static APP_ITEMS: [MenuItem; 3] = [
+/// are: the photo's Export… and Background ▸, View › Background's items as a submenu, a
+/// thumbnail's Export…, and in a tool's ⋯ Reset, Copy Settings and Paste Settings, first,
+/// as far as they apply to its tool ([`applies`]), each in Edit's section below order 200,
+/// where a tool's own start. Copy Edit and Apply Edit join the photo's Edit section once
+/// built, Show in Finder and Show in Folder once built; the photo's and a thumbnail's
+/// Reset is History's. The app's are held to no other section's rule.
+pub static APP_ITEMS: [MenuItem; 6] = [
     MenuItem {
         place: apertrust_tools::Place::Photo,
         section: Section::EXPORT,
@@ -893,6 +897,25 @@ pub static APP_ITEMS: [MenuItem; 3] = [
         section: Section::EXPORT,
         order: 100,
         entry: MenuEntry::Action(ActionId::EXPORT.0),
+    },
+    MenuItem {
+        place: apertrust_tools::Place::Options,
+        section: Section::EDIT,
+        order: 100,
+        entry: MenuEntry::Action(ActionId::SECTION_RESET.0),
+    },
+    // Below 200, where a tool's own items in Edit's section start (decision 91).
+    MenuItem {
+        place: apertrust_tools::Place::Options,
+        section: Section::EDIT,
+        order: 110,
+        entry: MenuEntry::Action(ActionId::SECTION_COPY_SETTINGS.0),
+    },
+    MenuItem {
+        place: apertrust_tools::Place::Options,
+        section: Section::EDIT,
+        order: 120,
+        entry: MenuEntry::Action(ActionId::SECTION_PASTE_SETTINGS.0),
     },
 ];
 
@@ -928,12 +951,38 @@ impl Added {
     }
 }
 
-/// The app's items at `place` ([`APP_ITEMS`]).
-fn app_items(place: apertrust_tools::Place) -> Vec<Added> {
-    let items = APP_ITEMS.iter().filter(|item| item.place == place);
+/// The app's items at `place` for `target` ([`APP_ITEMS`]), those that apply to it
+/// ([`applies`]).
+fn app_items(place: apertrust_tools::Place, target: &Target) -> Vec<Added> {
+    let items = APP_ITEMS
+        .iter()
+        .filter(|item| item.place == place && applies(item, target));
     items
         .map(|item| Added::of(item, &|id| id.to_string()))
         .collect()
+}
+
+/// Whether the app's `item` applies to `target`: in a tool's ⋯, Reset where its header
+/// has ↺, every processing tool's and some utilities', and Copy Settings and Paste
+/// Settings on a processing tool alone, a utility holding none of the photo's settings;
+/// anywhere else, always.
+fn applies(item: &MenuItem, target: &Target) -> bool {
+    let Target::Tool(tool) = *target else {
+        return true;
+    };
+    let utility = apertrust_tools::utility::utility(tool);
+    match item.entry {
+        MenuEntry::Action(id) if id == ActionId::SECTION_RESET.0 => {
+            utility.is_none_or(|utility| utility.tool.reset != apertrust_tools::Reset::None)
+        }
+        MenuEntry::Action(id)
+            if id == ActionId::SECTION_COPY_SETTINGS.0
+                || id == ActionId::SECTION_PASTE_SETTINGS.0 =>
+        {
+            utility.is_none()
+        }
+        _ => true,
+    }
 }
 
 /// The items `tools` and `utilities` add to `place` for `target`, by their registry actions'
@@ -1001,7 +1050,7 @@ fn built(
             None => item,
         })
     };
-    let all = app_items(open);
+    let all = app_items(open, target);
     let all = all.iter().chain(added).filter_map(|added| {
         let entry = match added.title {
             None => item(added.actions.first()?)?.into(),
@@ -1724,7 +1773,7 @@ mod tests {
     /// Tools Panel Tab lists the tabs a workspace shows (decision 96); and the zoom's
     /// scales but Fit and 100%, the viewer bar's zoom menu's alone, and its Shift forms and
     /// the pan actions, keys alone (`docs/gui.md`, View).
-    const LEFT_OUT: [ActionId; 52] = [
+    const LEFT_OUT: [ActionId; 55] = [
         ActionId::EDIT_VIEW,
         ActionId::NEXT_REGION,
         ActionId::PREVIOUS_REGION,
@@ -1762,6 +1811,10 @@ mod tests {
         ActionId::SECTION_MOVE_TO_TAB[11],
         ActionId::SECTION_HIDE,
         ActionId::SECTION_SHOW,
+        // A tool's ⋯'s editing items, which its ⋯ holds alone (decision 91).
+        ActionId::SECTION_RESET,
+        ActionId::SECTION_COPY_SETTINGS,
+        ActionId::SECTION_PASTE_SETTINGS,
         ActionId::ZOOM_SMALL,
         ActionId::ZOOM_FILL,
         ActionId::ZOOM_50,
@@ -3249,6 +3302,85 @@ mod tests {
         assert!(ids(Open::Options, Target::Tool("second")).is_empty());
     }
 
+    /// A tool's ⋯ as the app builds it (decision 91): the app's editing items first, Reset
+    /// where its header has ↺ and Copy Settings and Paste Settings on a processing tool
+    /// alone, drawn disabled with their tip; then its own, History's four. Reset waits for
+    /// the header to enable it as ↺ is (`tools::header`).
+    #[test]
+    fn a_tool_s_options_begin_with_the_app_s_items_that_apply_to_it() {
+        let ctx = egui::Context::default();
+        ctx.set_os(OperatingSystem::Nix);
+        apertrust_ui::set_locale(&ctx, Locale::EnGb);
+        let keymap = Keymap::defaults(OperatingSystem::Nix);
+        let state = everything();
+        let ids = |tool| {
+            let entries = options(&ctx, tool, &keymap, &state);
+            let menu = popup::Request::pull_down(Rect::NOTHING, "", entries);
+            lines(&menu)
+                .into_iter()
+                .map(|(id, ..)| id)
+                .collect::<Vec<_>>()
+        };
+        let editing = [
+            "section-reset",
+            "section-copy-settings",
+            "section-paste-settings",
+        ];
+        assert_eq!(ids("exposure"), editing);
+        assert_eq!(
+            ids("history"),
+            [
+                "section-reset",
+                "-",
+                "compress-history",
+                "truncate-history",
+                "create-style",
+                "-",
+                "discard-history"
+            ]
+        );
+        assert_eq!(ids("export"), ["section-reset"]);
+        assert!(ids("scopes").is_empty());
+        assert!(ids("collections").is_empty());
+        let entries = options(&ctx, "exposure", &keymap, &state);
+        for item in items(&entries).into_iter().skip(1) {
+            assert!(!item.enabled, "{}", item.id);
+            assert_eq!(
+                item.tip.as_deref(),
+                Some("Coming in a later version"),
+                "{}",
+                item.id
+            );
+        }
+    }
+
+    /// Decision 91: the app's items in ⋯ sit in Edit's section below order 200, where a
+    /// tool's own may start, so no tool's item there falls between them or clashes with
+    /// one. 200 is where `check_section` lets a tool's item in Edit's section start.
+    #[test]
+    fn the_app_s_options_items_sit_in_edit_below_a_tool_s() {
+        let tool_s = |order| apertrust_tools::check_section(&at(Open::Options, 1000, order, "a"));
+        assert!(tool_s(200).is_ok());
+        assert!(tool_s(199).is_err());
+        let below = |item: &MenuItem| item.section == Section::EDIT && item.order < 200;
+        let options = APP_ITEMS.iter().filter(|item| item.place == Open::Options);
+        let ids: Vec<&str> = options
+            .clone()
+            .flat_map(|item| item.entry.actions().iter().copied())
+            .collect();
+        assert_eq!(
+            ids,
+            [
+                ActionId::SECTION_RESET.0,
+                ActionId::SECTION_COPY_SETTINGS.0,
+                ActionId::SECTION_PASTE_SETTINGS.0
+            ]
+        );
+        for item in options {
+            assert!(below(item), "{item:?}");
+        }
+    }
+
     /// The menu lists the app's items and the added ones together by section, then order,
     /// a line wherever the section changes: a tool's item may sit between two of the
     /// app's sections, or before them all.
@@ -3511,9 +3643,12 @@ mod tests {
         };
         let menu = context_menu(Open::Options, Target::Tool("history"), groups, &options);
         let keyed = |id: &str, enabled, key| (id.to_string(), enabled, key);
+        // Reset first, the app's, enabled by the header as its ↺ is (`tools::header`).
         assert_eq!(
             lines(&menu),
             [
+                keyed("section-reset", false, false),
+                sep(),
                 keyed("undo", true, true),
                 keyed("redo", false, true),
                 sep(),
@@ -3714,7 +3849,7 @@ mod tests {
         ] {
             let tools = definitions();
             let added = added(place, &target, &tools, apertrust_tools::utility::UTILITIES);
-            let all = app_items(place).into_iter().chain(added);
+            let all = app_items(place, &target).into_iter().chain(added);
             let count: usize = all.map(|item| item.actions.len()).sum();
             assert!(count <= 16, "{place:?} holds {count} items");
         }

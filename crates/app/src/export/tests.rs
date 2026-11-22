@@ -66,6 +66,8 @@ struct Bench {
     picker: Picker,
     /// Whether Export… reveals the tool this frame, as the Photos tab tells it.
     reveal: bool,
+    /// Whether its ⋯ holds what the shell gives it (`menus::options`); empty otherwise.
+    options: bool,
 }
 
 /// A stand-in for the folder button's dialog and the disk under it: `folders` are the
@@ -152,8 +154,15 @@ fn tool_of(export: Export, which: Builtin, locale: Locale, width: f32) -> Harnes
                     words: &words,
                     commands: &mut commands,
                 };
+                let options = bench.options.then(|| {
+                    let keymap = crate::actions::Keymap::defaults(ui.ctx().os());
+                    let state = crate::actions::tests::everything();
+                    crate::menus::options(ui.ctx(), ID, &keymap, &state)
+                });
                 let head = crate::tools::Head {
                     open: bench.open,
+                    options: options.unwrap_or_default(),
+                    enabled: true,
                     ..crate::tools::Head::default()
                 };
                 let (mut changes, mut asked) = (Vec::new(), Asked::default());
@@ -249,6 +258,7 @@ fn tool_of(export: Export, which: Builtin, locale: Locale, width: f32) -> Harnes
                 bottom: 0.0,
                 picker: Picker::default(),
                 reveal: false,
+                options: false,
             },
         );
     harness.run();
@@ -1007,6 +1017,44 @@ fn the_header_s_reset_applies_default_settings_and_rests_while_they_are_in_place
     let asked = harness.state().asked.last().cloned().expect("asked");
     assert_eq!(asked.values, Some(Values::default()));
     assert!(!asked.start && !asked.confirm);
+}
+
+/// ⋯'s Reset is ↺ (decision 91): at the defaults it is disabled and does nothing; once a
+/// setting changes it is enabled and applies Default settings.
+#[test]
+fn options_reset_applies_default_settings_as_the_header_s_does() {
+    let mut harness = open();
+    harness.state_mut().options = true;
+    settle(&mut harness);
+    let reset = |harness: &mut Harness<'_, Bench>| {
+        harness
+            .get_by_role_and_label(Role::Button, "Export options")
+            .click();
+        settle(harness);
+        harness
+            .get_by_role_and_label(Role::MenuItem, "Reset")
+            .click();
+        settle(harness);
+    };
+    harness
+        .get_by_role_and_label(Role::Button, "Export options")
+        .click();
+    settle(&mut harness);
+    assert!(disabled(&harness, Role::MenuItem, "Reset"));
+    harness
+        .get_by_role_and_label(Role::MenuItem, "Reset")
+        .click();
+    settle(&mut harness);
+    assert!(harness.state().asked.is_empty());
+    assert_eq!(held(&mut harness), Values::default());
+    // Close ⋯, still open after the disabled item's click.
+    harness.key_press(egui::Key::Escape);
+    settle(&mut harness);
+    choose(&mut harness, "On conflict", "Skip");
+    assert_ne!(held(&mut harness), Values::default());
+    reset(&mut harness);
+    assert_eq!(held(&mut harness), Values::default());
+    assert!(disabled(&harness, Role::Button, "Reset export settings"));
 }
 
 /// A number typed into a row and left by a press of ↺ is committed in the frame Default

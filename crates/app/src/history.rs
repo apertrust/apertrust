@@ -3634,6 +3634,40 @@ pub(crate) mod tests {
         assert!(harness.state().pressed.is_empty());
     }
 
+    /// History's ⋯, a utility's (decision 91): the app's Reset first, before its own items,
+    /// enabled as its ↺, Reset edit, is and running as it does; no Copy Settings or Paste
+    /// Settings, which are a processing tool's.
+    #[test]
+    fn the_options_begin_with_reset_as_the_header_s() {
+        let mut harness = photo_scene(3);
+        harness.run();
+        open_options(&mut harness);
+        let top = |h: &Harness<'_, Scene>, words: &str| {
+            h.get_by_role_and_label(AccessRole::MenuItem, words)
+                .rect()
+                .top()
+        };
+        assert!(top(&harness, "Reset") < top(&harness, "Compress History"));
+        assert!(harness.query_by_label("Copy Settings").is_none());
+        assert!(harness.query_by_label("Paste Settings").is_none());
+        harness
+            .get_by_role_and_label(AccessRole::MenuItem, "Reset")
+            .click();
+        harness.run();
+        assert_eq!(
+            harness.state().pressed,
+            [run(crate::actions::ActionId::RESET)]
+        );
+        harness.state_mut().pressed.clear();
+        harness.state_mut().resettable = false;
+        open_options(&mut harness);
+        let reset = harness.get_by_role_and_label(AccessRole::MenuItem, "Reset");
+        assert!(reset.accesskit_node().is_disabled());
+        reset.click();
+        harness.run();
+        assert!(harness.state().pressed.is_empty());
+    }
+
     /// A menu opened for one photo closes as another opens, and chooses nothing for it.
     #[test]
     fn the_options_menu_closes_as_another_photo_opens() {

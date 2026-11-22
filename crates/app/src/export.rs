@@ -1005,8 +1005,7 @@ impl Export {
         self.jobs = shown.jobs.clone();
         self.summary = shown.summary;
         // Its ↺ applies Default settings, drawn disabled while they hold; then the presets
-        // button, drawn disabled until presets come, then its options, which hold nothing
-        // yet.
+        // button, drawn disabled until presets come, then its options, whose Reset is ↺.
         let resettable = self.values != self.defaults();
         self.keys(&ctx);
         let top = ui.cursor().top();

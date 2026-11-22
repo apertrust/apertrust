@@ -97,6 +97,8 @@ section-presets = { $section } presets
 section-options = { $section } options
 # The tooltip of a tool's options button, drawn disabled while its menu holds nothing.
 section-options-none = No options yet
+# The tooltip of an item of a tool's options menu drawn disabled because it is not built yet.
+section-options-later = Coming in a later version
 section-toggle = Open or close { $section }. Hold H over it to see the photo without it.
 # The name of a section's tab list, for screen readers.
 section-tabs = { $section } tabs
@@ -1039,6 +1041,10 @@ action-section-move-to-tab-11 = Move Tool to Tab 11
 action-section-move-to-tab-12 = Move Tool to Tab 12
 action-section-hide = Remove Tool
 action-section-show = Show Tool in Tab
+# A tool's options menu's editing items: Reset does what its header's reset button does.
+action-section-reset = Reset
+action-section-copy-settings = Copy Settings
+action-section-paste-settings = Paste Settings
 action-scale-up = Larger interface
 action-scale-down = Smaller interface
 action-scale-reset = Normal interface size
