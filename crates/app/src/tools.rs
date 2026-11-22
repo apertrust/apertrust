@@ -19,8 +19,9 @@
 //! no code of the tool's own.
 //!
 //! - The section is `Section::edits()`: its title, its tabs when it has more than one,
-//!   Auto drawn disabled until Auto runs, and presets and options drawn disabled until
-//!   something is behind them. Closed, it shows its header alone.
+//!   Auto drawn disabled until Auto runs, presets drawn disabled until presets come, and
+//!   options holding the app's items, the tool's and the layout's. Closed, it shows its
+//!   header alone.
 //! - Each row is a design-system component: a slider is a `SliderRow`, its track over
 //!   darktable's soft range where the definition gives one, a choice a `Choice` in its
 //!   Blended style, darktable's combobox, with its kept marker (decision 42), or
@@ -182,9 +183,9 @@ pub struct Head {
     pub open: bool,
     /// Whether the keys that peek are held (`Section::peek`).
     pub peek: bool,
-    /// ⋯'s entries: the items the tool declares at `Place::Options`, as
-    /// [`crate::menus::options`] builds them, then, until they are declared, Collections'
-    /// own; then the layout's ([`Head::with_layout`]).
+    /// ⋯'s entries: the app's editing items and those the tool declares at
+    /// `Place::Options`, as [`crate::menus::options`] builds them, then, until they are
+    /// declared, Collections' own; then the layout's ([`Head::with_layout`]).
     pub options: Vec<popup::Entry>,
     /// Whether ⋯ opens while it holds anything: History's only while the photo has a
     /// history.
@@ -245,9 +246,9 @@ pub enum Pressed {
 /// disabled until presets come; a utility's ↺ is named `reset_name`, and its presets button,
 /// where it has one, is named by the first of `presets` and drawn disabled, its tooltip the
 /// second, until its presets come with the presets API every tool shares (decision 93;
-/// planned). ↺ is drawn disabled unless
-/// `resettable`. Its tooltip says `about`, where the tool says anything, and after its
-/// title it says where it lives while Find Tool… lists it (`head.found`).
+/// planned). ↺, and ⋯'s Reset with it, is drawn disabled unless `resettable`. Its tooltip
+/// says `about`, where the tool says anything, and after its title it says where it lives
+/// while Find Tool… lists it (`head.found`).
 pub fn header<'a>(
     tool: &ToolDefinition,
     title: &'a str,
@@ -255,8 +256,16 @@ pub fn header<'a>(
     presets: [&'a str; 2],
     resettable: bool,
     about: Option<parts::About>,
-    head: Head,
+    mut head: Head,
 ) -> Section<'a> {
+    // ⋯'s Reset is ↺, enabled as it is (decision 91).
+    for entry in &mut head.options {
+        if let popup::Entry::Item(item) = entry
+            && item.id == ActionId::SECTION_RESET.0
+        {
+            item.enabled = resettable;
+        }
+    }
     let movable = head.layout.is_some_and(|placing| !placing.hidden);
     let mut section = Section::new(title, head.open)
         .peek(head.peek)
@@ -285,9 +294,9 @@ pub fn header<'a>(
 
 /// What `tool`'s header, drawn as `out` reports, asked for this frame: its ↺ as the
 /// declaration's `reset` says, and the item chosen in ⋯, a registry action or one of its
-/// own, unless the photo ⋯ acts on is no longer `photo`, the open of the photo now: ⋯,
-/// opened for the photo before, then closes, and its choice is dropped. Presets and an
-/// empty ⋯ are drawn disabled, nothing behind them yet.
+/// own, its Reset as ↺, unless the photo ⋯ acts on is no longer `photo`, the open of the
+/// photo now: ⋯, opened for the photo before, then closes, and its choice is dropped.
+/// Presets and an empty ⋯ are drawn disabled, nothing behind them yet.
 ///
 /// What it asks of the layout, where `layout` places it in the workspace, goes to the
 /// shell apart, by the tool's id ([`layout_asked`]): Alt+↑ and Alt+↓ on its focused
@@ -333,6 +342,8 @@ pub fn pressed(
             Some(action) if actions::moves_section(action) => {
                 ask_layout(ui.ctx(), |asked| asked.run.push((tool.id, action)));
             }
+            // Reset, as ↺ is pressed.
+            Some(ActionId::SECTION_RESET) => pressed.extend(reset),
             Some(action) => pressed.push(Pressed::Run(action)),
             None => pressed.push(Pressed::Own(id.to_owned())),
         }
@@ -3209,6 +3220,8 @@ mod tests {
         /// The picker on, and why the pickers cannot be pressed.
         on: Option<PickerRef>,
         why: Option<&'static str>,
+        /// ⋯'s entries, as the shell gives them; none by default.
+        options: Vec<popup::Entry>,
     }
 
     fn panel(tool: &'static dyn ProcessingTool, state: ToolState) -> Harness<'static, Panel> {
@@ -3236,6 +3249,8 @@ mod tests {
                         &panel.state,
                         Head {
                             open: panel.open,
+                            options: panel.options.clone(),
+                            enabled: true,
                             ..Head::default()
                         },
                         &panel.panels,
@@ -3295,6 +3310,7 @@ mod tests {
                     changes: Vec::new(),
                     on: None,
                     why: None,
+                    options: Vec::new(),
                 },
             )
     }
@@ -3573,6 +3589,66 @@ mod tests {
         assert!(harness.state().changes.is_empty());
         // A tool's header draws no Auto yet.
         assert!(harness.query_by_label("Auto").is_none());
+    }
+
+    /// `tool`'s section with ⋯ holding what the shell gives it (`menus::options`), the
+    /// actions all able to run, and ⋯ opened.
+    fn options_opened(
+        tool: &'static dyn ProcessingTool,
+        state: ToolState,
+    ) -> Harness<'static, Panel> {
+        let mut harness = panel(tool, state);
+        let ctx = harness.ctx.clone();
+        let keymap = actions::Keymap::defaults(ctx.os());
+        let id = tool.definition().tool.id;
+        let state = actions::tests::everything();
+        harness.state_mut().options = crate::menus::options(&ctx, id, &keymap, &state);
+        harness.run();
+        let title = translator(&ctx).text(&messages::title(id));
+        (harness.get_by_role_and_label(Role::Button, &format!("{title} options"))).click();
+        harness.run();
+        harness
+    }
+
+    /// A processing tool's ⋯ (decision 91): the app's Reset first, enabled as ↺ is and
+    /// running as it does, then Copy Settings and Paste Settings, drawn disabled with
+    /// their tip until they are built.
+    #[test]
+    fn a_tool_s_options_hold_reset_then_copy_and_paste_settings() {
+        let mut harness = options_opened(&Exposure, untouched(&Exposure));
+        let top = |h: &Harness<'_, Panel>, words: &str| {
+            h.get_by_role_and_label(Role::MenuItem, words).rect().top()
+        };
+        assert!(top(&harness, "Reset") < top(&harness, "Copy Settings"));
+        assert!(top(&harness, "Copy Settings") < top(&harness, "Paste Settings"));
+        for words in ["Copy Settings", "Paste Settings"] {
+            let item = harness.get_by_role_and_label(Role::MenuItem, words);
+            assert!(item.accesskit_node().is_disabled(), "{words}");
+            item.hover();
+            // Past the tooltip's delay, at a sixtieth of a second a frame.
+            harness.run_steps(60);
+            harness.get_by_label("Coming in a later version");
+            harness.get_by_role_and_label(Role::MenuItem, words).click();
+            harness.run();
+        }
+        assert!(harness.state().changes.is_empty());
+        let reset = harness.get_by_role_and_label(Role::MenuItem, "Reset");
+        assert!(!reset.accesskit_node().is_disabled());
+        reset.click();
+        harness.run();
+        assert_eq!(
+            harness.state().changes,
+            [Change::ResetTool { tool: "exposure" }]
+        );
+        // A switched tool still off has nothing to reset: ⋯'s Reset is disabled, as ↺ is.
+        let mut harness = options_opened(&Vignetting, untouched(&Vignetting));
+        let header = harness.get_by_role_and_label(Role::Button, "Reset Vignetting");
+        assert!(header.accesskit_node().is_disabled());
+        let reset = harness.get_by_role_and_label(Role::MenuItem, "Reset");
+        assert!(reset.accesskit_node().is_disabled());
+        reset.click();
+        harness.run();
+        assert!(harness.state().changes.is_empty());
     }
 
     #[test]

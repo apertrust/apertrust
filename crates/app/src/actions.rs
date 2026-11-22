@@ -174,6 +174,14 @@ impl ActionId {
     /// Show Tool in Tab, for keys and screen readers: a hidden tool to its first default tab
     /// shown.
     pub const SECTION_SHOW: ActionId = ActionId("section-show");
+    /// A tool's ⋯'s Reset (decision 91): its header's ↺, run there by the header
+    /// (`tools::pressed`) and enabled as ↺ is, never by the registry, so no key runs it; a
+    /// tool's reset from the keys is decision 98's.
+    pub const SECTION_RESET: ActionId = ActionId("section-reset");
+    /// A processing tool's ⋯'s Copy Settings and Paste Settings (decision 91), drawn
+    /// disabled until they are built.
+    pub const SECTION_COPY_SETTINGS: ActionId = ActionId("section-copy-settings");
+    pub const SECTION_PASTE_SETTINGS: ActionId = ActionId("section-paste-settings");
     pub const SCALE_UP: ActionId = ActionId("scale-up");
     pub const SCALE_DOWN: ActionId = ActionId("scale-down");
     pub const SCALE_RESET: ActionId = ActionId("scale-reset");
@@ -787,12 +795,16 @@ pub const SET_BY_CONF: &str = "settings-overridden";
 
 /// What the action `id`'s item says in its tip in a tool's ⋯ (decision 93), as the
 /// pull-down's items do: why it cannot run where something says ([`why_unavailable`]),
-/// else what it does, for History's items. The message's id, or none.
+/// else what it does, for History's items, or that it comes later, for Copy Settings and
+/// Paste Settings. The message's id, or none.
 pub fn options_tip(id: ActionId, state: &State) -> Option<&'static str> {
     why_unavailable(id, state).or(match id {
         ActionId::COMPRESS_HISTORY => Some("history-compress-tip"),
         ActionId::TRUNCATE_HISTORY => Some("history-truncate-tip"),
         ActionId::CREATE_STYLE => Some("history-options-style-later"),
+        ActionId::SECTION_COPY_SETTINGS | ActionId::SECTION_PASTE_SETTINGS => {
+            Some("section-options-later")
+        }
         ActionId::DISCARD_HISTORY if state.unreadable => Some("history-discard-tip-unreadable"),
         ActionId::DISCARD_HISTORY => Some("history-discard-tip"),
         _ => None,
@@ -947,7 +959,7 @@ const fn to_tab<const I: usize>(message: &'static str) -> Action {
 
 /// Every action, in the order a keyboard map lists them (`docs/gui.md`, The default
 /// keyboard map). Slider keys are not here: they are the slider's own (`SliderRow`).
-pub static ACTIONS: [Action; 128] = [
+pub static ACTIONS: [Action; 131] = [
     // About Apertrust, in the app menu on the Mac and in Help on Windows and Linux.
     Action {
         id: ActionId::ABOUT,
@@ -1442,6 +1454,35 @@ pub static ACTIONS: [Action; 128] = [
         trigger: Trigger::Press,
         available: |s| section_can(s, |s| s.hidden && s.show),
         emits: Emit::Intent(Intent::Section(SectionMove::Show)),
+    },
+    // A tool's ⋯'s editing items (decision 91): Reset runs in ⋯ alone, as its header's ↺
+    // ([`ActionId::SECTION_RESET`]); Copy Settings and Paste Settings wait to be built.
+    Action {
+        id: ActionId::SECTION_RESET,
+        message: "action-section-reset",
+        keys: &[],
+        scope: Scope::App,
+        trigger: Trigger::Press,
+        available: never,
+        emits: Emit::Later,
+    },
+    Action {
+        id: ActionId::SECTION_COPY_SETTINGS,
+        message: "action-section-copy-settings",
+        keys: &[],
+        scope: Scope::App,
+        trigger: Trigger::Press,
+        available: never,
+        emits: Emit::Later,
+    },
+    Action {
+        id: ActionId::SECTION_PASTE_SETTINGS,
+        message: "action-section-paste-settings",
+        keys: &[],
+        scope: Scope::App,
+        trigger: Trigger::Press,
+        available: never,
+        emits: Emit::Later,
     },
     // No keys: the photo's zoom has them (`docs/gui.md`, The default keyboard map), and the
     // interface's size, set once, keeps View › Interface Size and Settings.

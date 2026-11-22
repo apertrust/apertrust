@@ -15285,6 +15285,35 @@ mod tests {
         !item.accesskit_node().is_disabled()
     }
 
+    /// ⋯ in the Tools panel, as the app builds it (decision 91): a processing tool's holds
+    /// the app's editing items, Reset, Copy Settings and Paste Settings, then the layout's;
+    /// Scopes', a utility with no ↺ and no items of its own, the layout's alone.
+    #[test]
+    fn a_tool_s_options_hold_the_app_s_items_then_the_layout_s() {
+        let folder = settings::testing::Folder::new("app-options");
+        let mut harness = effects_tab(&folder);
+        open_options(&mut harness, "Vignetting");
+        let top = |h: &Harness<'_, Editing>, words: &str| {
+            h.get_by_role_and_label(Role::MenuItem, words).rect().top()
+        };
+        let order = ["Reset", "Copy Settings", "Paste Settings", "Pin Tool"];
+        for pair in order.windows(2) {
+            assert!(top(&harness, pair[0]) < top(&harness, pair[1]), "{pair:?}");
+        }
+        // Untouched, Vignetting has nothing to reset, as its ↺ says.
+        for words in ["Reset", "Copy Settings", "Paste Settings"] {
+            assert!(!menu_item(&harness, words), "{words}");
+        }
+        open_options(&mut harness, "Vignetting");
+        // Scopes is pinned over the tab's tools.
+        open_options(&mut harness, "Scopes");
+        assert!(menu_item(&harness, "Unpin Tool"));
+        for words in ["Reset", "Copy Settings", "Paste Settings"] {
+            let item = harness.query_by_role_and_label(Role::MenuItem, words);
+            assert!(item.is_none(), "{words}");
+        }
+    }
+
     /// ⋯ of a tool in a tab ends with Pin Tool, Move Tool to Tab ▸ listing every tab shown,
     /// the one it is in and one that cannot be chosen disabled, and Remove Tool, saying what
     /// it does; a choice there moves the tool, as its action does (decisions 83 and 96).

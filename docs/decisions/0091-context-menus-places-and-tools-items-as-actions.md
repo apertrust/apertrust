@@ -122,7 +122,7 @@ Discard History… is in no context menu: it stays in Edit and History's ⋯ ([0
 - the items: History's Reset in both menus, and Orientation ▸ on the photo, after Background ▸, the first submenu a tool adds;
 - the tests: the limits and the section rules, the menus' size, a repeated `(section, order)` in one menu, Background ▸ equal to View › Background, every item reachable elsewhere, the photo's and a thumbnail's menus as they read, and the generated actions' ids, words, availability and keys.
 
-Pickers as items, the other places, and the app's items in ⋯, Reset, Copy Settings and Paste Settings, come later; ⋯ is built through `menus::context` with each tool's declared items (decision 93's step 93.3, `menus::options`).
+⋯ is built through `menus::context` (decision 93's step 93.3, `menus::options`): the app's items first, Reset where the tool has ↺, enabled and run as ↺ is, then Copy Settings and Paste Settings on a processing tool, drawn disabled with their tip until built; each tool's declared items; the layout's last. Pickers as items and the other places come later.
 
 ## Options considered
 
