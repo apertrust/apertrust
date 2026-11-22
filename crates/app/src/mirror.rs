@@ -631,7 +631,7 @@ impl Mirror {
                     let live = values.live;
                     self.saving.reported(&values);
                     let image = self.photo.image();
-                    self.orientation = crate::zoom::Orientation::shown(&values, &image);
+                    self.orientation = crate::zoom::shown(&values, &image);
                     self.values = reported(values, &mut self.pending, self.tools, &image);
                     self.edit_changes += u64::from(live && !self.live);
                     self.live = live;

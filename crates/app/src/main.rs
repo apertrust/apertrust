@@ -1931,18 +1931,19 @@ struct Shell {
     panel_position: ToolsPanelPosition,
     guides: bool,
     proof_margin: bool,
-    /// The photo's zoom, its retained centre in the last confirmed state (`docs/gui.md`, The
-    /// zoom's centre): Fit as the app starts and on a way in ([`fit_view`]), carried to
-    /// another photo, never kept in settings. What is drawn is placed from it, never stored
-    /// back.
+    /// The photo's zoom and its retained centre (`docs/gui.md`, The zoom's centre): Fit as
+    /// the app starts and on a way in ([`fit_view`]), carried to another photo as the
+    /// session reports it ([`Shell::follow_photo`]), never kept in settings. What is drawn
+    /// is placed from it, never stored back.
     zoom: zoom::Zoomed,
     /// The live photo and the room the Viewer gave it at the last frame, which the zoom's
     /// steps and edges follow; None with no photo live.
     room: Option<zoom::Room>,
     /// The smooth zoom or pinch under way: its unsnapped scale.
     gesture: zoom::Gesture,
-    /// What the zoom's retained centre was last confirmed in ([`Shell::follow_photo`]).
-    confirmed: zoom::Confirmed,
+    /// The photo last seen live and its orientation as last reported, which a turn maps
+    /// the retained centre from ([`Shell::follow_photo`]).
+    reported: zoom::Reported,
     /// The photo area, in points, where the pointer was over it at the last frame: the
     /// zoom's keys zoom about the pointer there (`docs/gui.md`, Zooming).
     pointed: Option<egui::Rect>,
@@ -2117,7 +2118,7 @@ impl Shell {
             zoom: zoom::Zoomed::FIT,
             room: None,
             gesture: zoom::Gesture::default(),
-            confirmed: zoom::Confirmed::default(),
+            reported: zoom::Reported::default(),
             pointed: None,
             marks: zoom::Marks::default(),
             zoom_said: String::new(),
@@ -3743,28 +3744,52 @@ impl Shell {
         }
     }
 
-    /// Keeps the zoom's retained centre in step with what the session confirms (`docs/gui.md`,
-    /// The zoom's centre): as the photo `mirror` holds goes live, and as the photo area's
-    /// size is sent (`resized`), the centre is committed kept inside that photo's edges in
-    /// the room the session places it in, its extent and the size last `sent`. A turn or a
-    /// flip the session reports for it, Orientation's, its undo or the History tab's eye,
-    /// maps the centre through it, whatever change of it is still pending
-    /// ([`zoom::Confirmed`]). Nothing else stores a clamp: the room drawn, a size held while
-    /// the window resizes and an opening photo's values only place what is drawn, so a
-    /// failed open commits nothing.
-    fn follow_photo(&mut self, mirror: &Mirror, sent: (u32, u32), resized: bool) {
-        let PhotoState::Open(photo) = &mirror.photo else {
-            return;
+    /// Keeps the zoom's retained centre in step with the session (`docs/gui.md`, The zoom's
+    /// centre). While no photo is live, and as one is first seen live, it takes the centre
+    /// of the view the session last reported (`Event::View`), the one the session renders
+    /// and carries to the next photo, once that report answers the view the app last sent,
+    /// `asked`, its command's number and the view, and the zoom is still that view; whether
+    /// it took it. A report answers it where it includes that command, or where it already
+    /// places that view as the session would in its room, the photo's extent and the size
+    /// last `sent`, since a view the session clamps to the one it shows is answered with no
+    /// report. A turn or a flip the session reports for the live photo, Orientation's, its
+    /// undo or the History tab's eye, maps the centre through it, whatever change of it is
+    /// still pending ([`zoom::Reported`]). Nothing else moves it: the clamp to the room
+    /// drawn and a size held while the window resizes only place what is drawn.
+    fn follow_photo(
+        &mut self,
+        mirror: &Mirror,
+        asked: (u64, apertrust_engine::view::View),
+        sent: (u32, u32),
+    ) -> bool {
+        let live = match &mirror.photo {
+            PhotoState::Open(photo) if mirror.live() => Some(photo.open),
+            _ => None,
         };
-        if !mirror.live() || sent.0 == 0 || sent.1 == 0 {
-            return;
+        let answers = |told: &apertrust_engine::session::ViewState| {
+            let placed = (told.placement.as_ref()).filter(|_| sent.0 > 0 && sent.1 > 0);
+            let extent = mirror.values.extent;
+            let at = |placed| {
+                same_place(
+                    placed,
+                    &apertrust_engine::view::place(extent, sent, &asked.1),
+                )
+            };
+            told.through >= asked.0 || placed.is_some_and(at)
+        };
+        let mut taken = false;
+        if live.is_none_or(|open| self.reported.unseen(open))
+            && let Some(told) = &mirror.view
+            && answers(told)
+            && self.zoom.view() == asked.1
+        {
+            self.zoom.centre = told.view.centre;
+            taken = true;
         }
-        let room = zoom::Room {
-            extent: mirror.values.extent,
-            bounds: sent,
-        };
-        let orientation = mirror.orientation;
-        self.zoom = (self.confirmed).follow(photo.open, orientation, self.zoom, &room, resized);
+        if let Some(open) = live {
+            self.zoom = (self.reported).follow(open, mirror.orientation, self.zoom);
+        }
+        taken
     }
 
     /// A way in moved the zoom from `before` to Fit ([`fit_view`]): what the zoom's live
@@ -5163,6 +5188,15 @@ impl App {
     /// Runs `ids`, from the keys, the clicks or the menus, in order, each only if it can
     /// run where it is then (`Shell::run`), sending the session the commands they make;
     /// `regions` are the frame's, for F6.
+    /// Sends the zoom where the person moved it since the view was last sent
+    /// ([`ViewSync::flush`]), before a command that may turn the photo or leave it.
+    fn flush_view(&mut self) {
+        let session = &self.session;
+        let send = &mut |command| session.send(command);
+        let view = self.shell.zoom.view();
+        self.view_sync.flush(view, Instant::now(), send);
+    }
+
     fn run_actions(
         &mut self,
         ids: impl IntoIterator<Item = ActionId>,
@@ -5186,6 +5220,9 @@ impl App {
             // In the Browser's sort as an earlier action may have left it, which Next Photo
             // and Previous Photo read.
             self.mirror.folder.sort(self.shell.browser.sort);
+            // A pan or a zoom an earlier action made goes first, so a turn or another photo
+            // this one asks for carries it (`docs/gui.md`, The zoom's centre).
+            self.flush_view();
             let state = self.state(ctx);
             // Close Window on the start window closes it, as its close button does; on a
             // dialog's own window with the focus, that window.
@@ -5996,14 +6033,13 @@ impl App {
         if open {
             zoom_live_region(ui, slot.left_top(), &self.shell.zoom_said);
         }
-        // The view as the zoom is now, once the person's moves are in: while the photo is
-        // live, and after one failed to open, whose values the session may have clamped it for.
+        // The view as the zoom is now, once the person's moves are in, while the photo is
+        // live.
         let session = &self.session;
         let send = &mut |command| session.send(command);
-        let failed = matches!(self.mirror.photo, PhotoState::Failed { .. });
         let extent = room.map(|room| room.extent);
         let view = self.shell.zoom.view();
-        self.view_sync.end(view, extent, open || failed, now, send);
+        self.view_sync.end(view, extent, open, now, send);
         self.carry_out(asked, ui.ctx());
         (
             viewer_bar,
@@ -6722,8 +6758,8 @@ impl PointerZoom {
 }
 
 /// What the app has told the session of the photo area's size and of the view (decision
-/// 99), so each goes once settled or changed, and the zoom's retained centre changes with
-/// what the session confirms (`docs/gui.md`, The zoom's centre).
+/// 99), so each goes once settled or changed, and the zoom's retained centre takes the
+/// session's where it carries it (`docs/gui.md`, The zoom's centre).
 #[derive(Debug)]
 struct ViewSync {
     /// The photo area's size for the engine, sent once the window has settled.
@@ -6739,9 +6775,12 @@ struct ViewSync {
     /// The number of the last view's command, which a refusal of an earlier one, overtaken,
     /// leaves the zoom alone for.
     number: u64,
-    /// The extent of the photo whose values place it at the last frame: another photo's, a
-    /// turn's, or none after a failed open, each of which the session may have clamped the
-    /// view for, so the view goes again.
+    /// That view, or the one taken from the session since ([`Shell::follow_photo`]): the
+    /// view the session holds while the zoom is still it.
+    asked: apertrust_engine::view::View,
+    /// The extent of the photo whose values place it at the last frame, none with none:
+    /// another photo's or a turn's, each of which the session may have clamped the view
+    /// for, so the view goes again once that photo is live.
     extent: Option<[u32; 2]>,
 }
 
@@ -6753,6 +6792,7 @@ impl Default for ViewSync {
             sent: Some(apertrust_engine::view::View::default()),
             pending: None,
             number: 0,
+            asked: apertrust_engine::view::View::default(),
             extent: None,
         }
     }
@@ -6761,7 +6801,7 @@ impl Default for ViewSync {
 impl ViewSync {
     /// The frame's start, before anything zooms: the photo area's `size`, `resized` this
     /// frame, sent once settled ([`Bounds`]), and the zoom kept in step with what the
-    /// session confirms ([`Shell::follow_photo`]).
+    /// session reports ([`Shell::follow_photo`]).
     fn start(
         &mut self,
         shell: &mut Shell,
@@ -6777,12 +6817,19 @@ impl ViewSync {
             // The view again after it, so the session clamps its centre in the new room.
             self.sent = None;
         }
-        shell.follow_photo(mirror, self.bounds.sent, sent.is_some());
+        if shell.follow_photo(mirror, (self.number, self.asked), self.bounds.sent) {
+            self.asked = shell.zoom.view();
+            if self.sent.is_some() {
+                self.sent = Some(self.asked);
+            }
+        }
     }
 
     /// The frame's end, once the person's moves are in, the photo whose values place it
-    /// `extent` pixels: `view` is sent where `sends` and the session may hold another. The
-    /// session takes the last of a batch.
+    /// `extent` pixels: `view` is sent where `sends` and the session may hold another, and,
+    /// live or not, wherever it is not the view the session was asked for or told, as a
+    /// pan in the frame a click leaves the photo, which the session then carries, its clamp
+    /// to an opening photo provisional. The session takes the last of a batch.
     fn end(
         &mut self,
         view: apertrust_engine::view::View,
@@ -6795,12 +6842,36 @@ impl ViewSync {
             self.extent = extent;
             self.sent = None;
         }
-        if sends && self.sent != Some(view) {
-            let number = send(Command::View(view));
-            self.sent = Some(view);
-            self.number = number;
-            self.pending = Some((number, now, view));
+        if (sends && self.sent != Some(view)) || view != self.asked {
+            self.send(view, now, send);
         }
+    }
+
+    /// `view` sent where it is not the view the session was asked for or told: a move the
+    /// person made since the last was sent, before the next command, which may turn the
+    /// photo or leave it, so the session maps it through the turn or carries it.
+    fn flush(
+        &mut self,
+        view: apertrust_engine::view::View,
+        now: Instant,
+        send: &mut SendCommand<'_>,
+    ) {
+        if view != self.asked {
+            self.send(view, now, send);
+        }
+    }
+
+    fn send(
+        &mut self,
+        view: apertrust_engine::view::View,
+        now: Instant,
+        send: &mut SendCommand<'_>,
+    ) {
+        let number = send(Command::View(view));
+        self.sent = Some(view);
+        self.asked = view;
+        self.number = number;
+        self.pending = Some((number, now, view));
     }
 }
 
@@ -7228,6 +7299,9 @@ impl eframe::App for App {
         self.shell.access_key(&ctx, &state);
         let keys = actions::read(&ctx, &self.shell.keymap, &state);
         self.shell.close_menu(&keys.pressed);
+        // A pan or a zoom the last frame's actions made, before a panel's command can turn
+        // the photo.
+        self.flush_view();
         // Its own controls as its own: AppKit checks a window's controls against that window,
         // its menus against the key window.
         let drawn = self.state_in_window(&ctx);
@@ -11355,8 +11429,8 @@ mod tests {
 
     /// A portrait after a landscape shows the landscape's view, its centre clamped on each
     /// axis by the placement the session and the app share, so the view never passes the
-    /// portrait's edges; the retained centre takes that clamp only once the portrait is
-    /// live ([`the_zoom_s_centre_changes_only_with_what_the_session_confirms`]).
+    /// portrait's edges; the retained centre takes that clamp as the session reports it
+    /// ([`the_zoom_s_centre_carries_the_session_s`]).
     #[test]
     fn a_portrait_after_a_landscape_clamps_the_centre() {
         let room = |extent| zoom::Room {
@@ -11396,49 +11470,116 @@ mod tests {
     }
 
     /// A model of the session's view as `session.rs` keeps it (decision 99): the last
-    /// `View`, its centre written back clamped for the photo it places the view for, at a
-    /// `View`, a `Resize`, a photo's values and its going live; none with no photo placed.
+    /// `View`, placed on the photo whose values it has, its centre clamped there and written
+    /// back while that photo is live, at a `View`, a `Resize` and the photo's values; an
+    /// opening photo's clamp provisional, so a failed open leaves the view as asked; a
+    /// turn of the live photo maps it with the session's function ([`zoom::reoriented`]),
+    /// as the turn is reported, where the session maps it as it applies the turn. Each
+    /// change of the view placed or its placement is told as `Event::View`, in `facts`
+    /// until the app drains them.
     struct SessionView {
         view: apertrust_engine::view::View,
         bounds: (u32, u32),
         extent: Option<[u32; 2]>,
+        live: bool,
+        oriented: zoom::Orientation,
+        told: Option<(apertrust_engine::view::View, Option<Placement>)>,
+        /// Whether that placement is an opening photo's, as `view_told_opening` is.
+        told_opening: bool,
+        facts: Vec<apertrust_engine::session::ViewState>,
     }
 
     impl SessionView {
-        fn take(&mut self, command: &Command) {
+        /// The live photo turned to `orientation`, `extent` pixels as it turns it, reported
+        /// through the command `through`: the view mapped onto the same point of the scene,
+        /// then placed. The model maps it as the report comes; the session maps it earlier,
+        /// as it applies the turn, which no test here tells apart.
+        fn turning(&mut self, orientation: zoom::Orientation, extent: [u32; 2], through: u64) {
+            let centre = zoom::reoriented(self.view.centre, self.oriented, orientation);
+            self.view.centre = centre;
+            self.oriented = orientation;
+            self.placing(Some(extent), true, through);
+        }
+
+        /// `command`, numbered `through`.
+        fn take(&mut self, command: &Command, through: u64) {
             match command {
                 Command::View(view) => self.view = view.normalized(),
                 Command::Resize { width, height } => self.bounds = (*width, *height),
+                // The photo before closes: nothing is placed until the next's values.
+                Command::Open(_) | Command::Close => (self.extent, self.live) = (None, false),
                 _ => return,
             }
-            self.clamp();
+            self.place(through);
         }
 
-        /// The photo it places the view for, from its values on: none after a failed open.
-        fn placing(&mut self, extent: Option<[u32; 2]>) {
+        /// The photo it places the view for, from its values on, `live` or not: none after a
+        /// failed open; `through` the commands it has taken.
+        fn placing(&mut self, extent: Option<[u32; 2]>, live: bool, through: u64) {
             self.extent = extent;
-            self.clamp();
+            self.live = live;
+            self.place(through);
         }
 
-        fn clamp(&mut self) {
-            if let Some(extent) = self.extent
-                && self.bounds.0 > 0
-            {
-                let placed = apertrust_engine::view::place(extent, self.bounds, &self.view);
-                self.view.centre = placed.centre;
+        fn place(&mut self, through: u64) {
+            use apertrust_engine::view::{View, place};
+            let (view, placement) = match self.extent.filter(|_| self.bounds.0 > 0) {
+                Some(extent) => {
+                    let centre = place(extent, self.bounds, &self.view).centre;
+                    let view = View {
+                        centre,
+                        ..self.view
+                    };
+                    (view, Some(place(extent, self.bounds, &view)))
+                }
+                None => (self.view, None),
+            };
+            if self.live {
+                self.view = view;
+                self.told_opening = false;
             }
+            // An opening photo's placement told is withdrawn as it fails or is left.
+            let left = placement.is_none() && self.told_opening;
+            let same = self.told.is_some_and(|(told, told_placement)| {
+                view == told && (placement.is_none() || placement == told_placement)
+            });
+            if !same || left {
+                self.told = Some((view, placement));
+                self.told_opening = placement.is_some() && !self.live;
+                self.facts.push(apertrust_engine::session::ViewState {
+                    through,
+                    view,
+                    placement,
+                });
+            }
+        }
+    }
+
+    /// The send of a [`ZoomRun`]: each command taken by the session's model, then kept in
+    /// `sent`, numbered as the session numbers it.
+    fn taking<'a>(
+        sent: &'a mut Vec<Command>,
+        session: &'a mut SessionView,
+    ) -> impl FnMut(Command) -> u64 + 'a {
+        move |command| {
+            let number = sent.len() as u64 + 1;
+            session.take(&command, number);
+            sent.push(command);
+            number
         }
     }
 
     /// The Viewer's zoom through a run of frames, as `App::viewer` drives it
     /// ([`ViewSync`], [`Shell::follow_photo`]), over the folder [`burst`] with `b.ARW` live,
-    /// the commands it sends taken by a [`SessionView`] in order.
+    /// the commands it sends taken by a [`SessionView`] in order, whose facts the mirror
+    /// takes at each frame's start, as `App::drain` does.
     struct ZoomRun {
         shell: Shell,
         mirror: Mirror,
         sync: ViewSync,
         session: SessionView,
         sent: Vec<Command>,
+        paths: Vec<PathBuf>,
         now: Instant,
         size: (u32, u32),
     }
@@ -11446,13 +11587,18 @@ mod tests {
     impl ZoomRun {
         /// `b.ARW`, 6000 × 4000, live at `zoom` in a room of 2400 × 1600.
         fn new(zoom: zoom::Zoomed) -> ZoomRun {
-            let (mirror, sent, _) = burst();
+            let (mirror, sent, paths) = burst();
             let mut shell = Shell::new(&Settings::default(), Locale::EnGb, OperatingSystem::Nix);
             shell.zoom = zoom;
             let session = SessionView {
                 view: zoom.view(),
                 bounds: (0, 0),
                 extent: None,
+                live: false,
+                oriented: zoom::Orientation::default(),
+                told: None,
+                told_opening: false,
+                facts: Vec::new(),
             };
             let mut run = ZoomRun {
                 shell,
@@ -11460,6 +11606,7 @@ mod tests {
                 sync: ViewSync::default(),
                 session,
                 sent,
+                paths,
                 now: Instant::now(),
                 size: (2400, 1600),
             };
@@ -11468,33 +11615,27 @@ mod tests {
         }
 
         /// One frame at the photo area's `size`, the window `resized` in it, as
-        /// `App::viewer` takes it: the size and the confirmed state at its start, the view
-        /// at its end.
+        /// `App::viewer` takes it: the session's facts, then the size and what the session
+        /// reports at its start, the view at its end.
         fn frame(&mut self, size: (u32, u32), resized: bool) {
+            for state in std::mem::take(&mut self.session.facts) {
+                self.mirror.apply(Event::View(state));
+            }
             self.now += Duration::from_millis(16);
             self.size = size;
-            let (sent, session) = (&mut self.sent, &mut self.session);
-            let send = &mut |command: Command| {
-                session.take(&command);
-                sent.push(command);
-                sent.len() as u64
-            };
-            let (shell, mirror) = (&mut self.shell, &self.mirror);
-            self.sync
-                .start(shell, mirror, size, resized, self.now, send);
+            {
+                let send = &mut taking(&mut self.sent, &mut self.session);
+                let (shell, mirror) = (&mut self.shell, &self.mirror);
+                self.sync
+                    .start(shell, mirror, size, resized, self.now, send);
+            }
             let room = self.room();
             let live = self.mirror.live();
             self.shell.room = room.filter(|_| live);
-            let failed = matches!(self.mirror.photo, PhotoState::Failed { .. });
             let view = self.shell.zoom.view();
             let extent = room.map(|room| room.extent);
-            let (sent, session) = (&mut self.sent, &mut self.session);
-            let send = &mut |command: Command| {
-                session.take(&command);
-                sent.push(command);
-                sent.len() as u64
-            };
-            self.sync.end(view, extent, live || failed, self.now, send);
+            let send = &mut taking(&mut self.sent, &mut self.session);
+            self.sync.end(view, extent, live, self.now, send);
         }
 
         /// The room the open photo is drawn in, as `App::viewer` places it.
@@ -11514,28 +11655,43 @@ mod tests {
 
         /// The photo opening reports its values, `extent` pixels, `live` or not.
         fn values(&mut self, extent: [u32; 2], live: bool) {
+            self.report_values(extent, live);
+            self.frame(self.size, false);
+        }
+
+        /// The session reports the opening photo's values, `extent` pixels, `live` or not,
+        /// with no frame drawn.
+        fn report_values(&mut self, extent: [u32; 2], live: bool) {
             let open = self.mirror.photo.open().expect("a photo opening");
             if !matches!(self.mirror.photo, PhotoState::Open(_)) {
                 self.mirror.apply(Event::Opened(mirror::tests::photo(open)));
             }
+            let through = self.sent.len() as u64;
             self.mirror.apply(Event::Values(Values {
                 extent,
                 live,
-                ..photo_values(0.0, self.sent.len() as u64)
+                ..photo_values(0.0, through)
             }));
-            self.session.placing(Some(extent));
-            self.frame(self.size, false);
+            // The photo's own orientation, no turn.
+            self.session.oriented = self.mirror.orientation;
+            self.session.placing(Some(extent), live, through);
         }
 
         /// The photo opening fails to.
         fn fail(&mut self) {
+            self.report_failure();
+            self.frame(self.size, false);
+        }
+
+        /// The session reports the opening photo's failure, with no frame drawn.
+        fn report_failure(&mut self) {
             let open = self.mirror.photo.open().expect("a photo opening");
             self.mirror.apply(Event::Failed(SessionError::Open {
                 open,
                 error: Box::new(SessionError::NotAMosaic),
             }));
-            self.session.placing(None);
-            self.frame(self.size, false);
+            let through = self.sent.len() as u64;
+            self.session.placing(None, false, through);
         }
 
         /// The person moves the photo `dx` physical pixels across in the room drawn.
@@ -11548,15 +11704,27 @@ mod tests {
 
         /// Next Photo or Previous Photo, then the photo it opens up to its values.
         fn step(&mut self, next: bool, extent: [u32; 2]) {
-            let (sent, session) = (&mut self.sent, &mut self.session);
-            let send = &mut |command: Command| {
-                session.take(&command);
-                sent.push(command);
-                sent.len() as u64
-            };
-            selection::step(next, &mut self.mirror, send);
+            {
+                let send = &mut taking(&mut self.sent, &mut self.session);
+                selection::step(next, &mut self.mirror, send);
+            }
             self.frame(self.size, false);
             self.values(extent, false);
+        }
+
+        /// A click on the Browser's photo `index` ([`burst`]'s), with no frame drawn.
+        fn click(&mut self, index: usize) {
+            let path = self.paths[index].clone();
+            let send = &mut taking(&mut self.sent, &mut self.session);
+            open_listed(path, &mut self.mirror, send);
+        }
+
+        /// The zoom sent where it moved since the view was last, as `App::run_actions` does
+        /// before each action and `App::ui` before the panels.
+        fn flush(&mut self) {
+            let view = self.shell.zoom.view();
+            let send = &mut taking(&mut self.sent, &mut self.session);
+            self.sync.flush(view, self.now, send);
         }
 
         /// The retained centre's and the session's, across.
@@ -11565,16 +11733,17 @@ mod tests {
         }
     }
 
-    /// The zoom's retained centre changes only with what the session confirms: a pan, a
-    /// size sent, a photo going live; a size held while the window resizes, an opening
-    /// photo's values and a failed open only change what is drawn. Each run starts at 100%
-    /// on a 6000-pixel landscape in a 2400-pixel room, which shows 0.2 to 0.8 across as its
-    /// centre, and moves the photo 600 pixels, a tenth of it, on the way; the session ends
-    /// holding the same view.
+    /// The zoom's retained centre changes with the person's pans, and takes the session's
+    /// as it carries it to the next photo, so both sides carry the same: a size held while
+    /// the window resizes and a size sent only change what is drawn, the session clamping
+    /// the view it renders; an opening photo's values and a failed open move it to the
+    /// session's. Each run starts at 100% on a 6000-pixel landscape in a 2400-pixel room,
+    /// which shows 0.2 to 0.8 across as its centre, and most move the photo 600 pixels, a
+    /// tenth of it, on the way; each ends with the retained centre and the session's.
     #[test]
-    fn the_zoom_s_centre_changes_only_with_what_the_session_confirms() {
+    fn the_zoom_s_centre_carries_the_session_s() {
         type Steps = fn(&mut ZoomRun);
-        let cases: [(&str, f32, Steps, f32); 8] = [
+        let cases: [(&str, f32, Steps, (f32, f32)); 15] = [
             // A size held and back before it was sent: x 0.2 stays 0.2, though 3000 shows
             // it at 0.25 meanwhile.
             (
@@ -11587,7 +11756,7 @@ mod tests {
                     run.frame((2400, 1600), true);
                     run.settle();
                 },
-                0.2,
+                (0.2, 0.2),
             ),
             (
                 "a pan, then a size held and back",
@@ -11598,9 +11767,10 @@ mod tests {
                     run.frame((2400, 1600), true);
                     run.settle();
                 },
-                0.2,
+                (0.2, 0.2),
             ),
-            // A size sent commits its clamp: 3600 shows 0.3 to 0.7.
+            // A size sent: 3600 shows 0.3 to 0.7, which the session renders and the app
+            // draws, the person's 0.2 kept for a room that shows it.
             (
                 "a pan, then a size sent",
                 0.3,
@@ -11608,10 +11778,13 @@ mod tests {
                     run.pan(600.0);
                     run.frame((3600, 1600), true);
                     run.settle();
+                    let drawn = run.shell.room.expect("live").place(&run.shell.zoom);
+                    assert!((drawn.centre[0] - 0.3).abs() < 1e-6, "{drawn:?}");
                 },
-                0.3,
+                (0.2, 0.3),
             ),
-            // A photo 4000 wide shows 0.3 to 0.7; live, it commits its clamp.
+            // A photo 4000 wide shows 0.3 to 0.7: its values place the view at 0.7, live
+            // it is the session's.
             (
                 "a pan, then Next Photo, live",
                 0.7,
@@ -11622,7 +11795,7 @@ mod tests {
                     assert!((drawn.centre[0] - 0.7).abs() < 1e-6, "{drawn:?}");
                     run.values([4000, 4000], true);
                 },
-                0.7,
+                (0.7, 0.7),
             ),
             (
                 "Previous Photo, live",
@@ -11631,7 +11804,7 @@ mod tests {
                     run.step(false, [4000, 4000]);
                     run.values([4000, 4000], true);
                 },
-                0.7,
+                (0.7, 0.7),
             ),
             // Its values come, then it fails: 0.8 stays, on both sides.
             (
@@ -11642,7 +11815,7 @@ mod tests {
                     run.step(true, [4000, 4000]);
                     run.fail();
                 },
-                0.8,
+                (0.8, 0.8),
             ),
             (
                 "a failed open, then a landscape",
@@ -11653,7 +11826,149 @@ mod tests {
                     run.step(false, [6000, 4000]);
                     run.values([6000, 4000], true);
                 },
+                (0.8, 0.8),
+            ),
+            // A photo 4000 wide opens, its values placing 0.8 at 0.7, then a size of 2000 is
+            // sent while it opens, which shows it 0.25 to 0.75, and it fails: the view asked
+            // stays 0.8 on both sides, never the opening photo's clamp, and the landscape,
+            // which shows 0.167 to 0.833 in 2000, renders at 0.8.
+            (
+                "a size sent while a photo opens, which fails",
                 0.8,
+                |run| {
+                    run.step(true, [4000, 4000]);
+                    let before = run.sent.len();
+                    run.frame((2000, 1600), true);
+                    run.settle();
+                    // The size alone, no view again while the photo opens.
+                    let sent = &run.sent[before..];
+                    assert!(
+                        !sent.iter().any(|c| matches!(c, Command::View(_))),
+                        "{sent:?}"
+                    );
+                    run.fail();
+                    assert_eq!(run.across(), (0.8, 0.8));
+                    run.step(false, [6000, 4000]);
+                    assert_eq!(run.across(), (0.8, 0.8));
+                    run.values([6000, 4000], true);
+                },
+                (0.8, 0.8),
+            ),
+            // A photo 4000 wide shows 0.3 to 0.7, so 0.5 stays 0.5 on it; its placement is
+            // told as it opens, and withdrawn as it fails, the centre unchanged.
+            (
+                "a failed open, the centre unchanged",
+                0.5,
+                |run| {
+                    run.step(true, [4000, 4000]);
+                    let told = run.mirror.view.expect("a view fact");
+                    assert!(told.placement.is_some_and(|p| p.size == [4000, 4000]));
+                    run.fail();
+                    let told = run.mirror.view.expect("a view fact");
+                    assert_eq!((told.view.centre[0], told.placement), (0.5, None));
+                },
+                (0.5, 0.5),
+            ),
+            // After a failed open, a click opens a photo 4000 wide whose values and failure
+            // come before the app draws again: the next landscape renders at 0.8, never the
+            // 4000-wide photo's 0.7.
+            (
+                "a failed open, then values and a failure in one frame",
+                0.8,
+                |run| {
+                    run.step(true, [4000, 4000]);
+                    run.fail();
+                    run.click(0);
+                    run.frame(run.size, false);
+                    run.report_values([4000, 4000], false);
+                    run.report_failure();
+                    run.frame(run.size, false);
+                    run.click(1);
+                    run.frame(run.size, false);
+                    run.values([6000, 4000], false);
+                    assert_eq!(run.across(), (0.8, 0.8));
+                    run.values([6000, 4000], true);
+                },
+                (0.8, 0.8),
+            ),
+            // Held at 1500 in the session's 3000, as below, then 600 pixels back: 0.225,
+            // which the session clamps to the 0.25 it shows, so it tells nothing. A photo of
+            // the same extent tells nothing either: its picture and its first live frame at
+            // the 0.25 the last report already places 0.225 at.
+            (
+                "a pan the session clamps to the view it shows, then Previous Photo",
+                0.5,
+                |run| {
+                    run.frame((3000, 1600), true);
+                    run.settle();
+                    run.frame((1500, 1600), true);
+                    run.pan(6000.0);
+                    run.pan(-600.0);
+                    assert_eq!(run.across(), (0.225, 0.25));
+                    run.frame((3000, 1600), true);
+                    run.step(false, [6000, 4000]);
+                    assert_eq!(run.across(), (0.25, 0.25));
+                    run.values([6000, 4000], true);
+                },
+                (0.25, 0.25),
+            ),
+            // The session's room is 3000, which shows 0.25 to 0.75; held at 1500, the pan to
+            // the left edge draws 0.125, which the session clamps to 0.25. Back at 3000
+            // before it settles, no size goes. A photo 12000 wide shows 0.125 to 0.875: its
+            // picture, and its first live frame, at the session's 0.25.
+            (
+                "a pan while a size is held, then Next Photo",
+                0.5,
+                |run| {
+                    run.frame((3000, 1600), true);
+                    run.settle();
+                    run.frame((1500, 1600), true);
+                    run.pan(6000.0);
+                    assert_eq!(run.across(), (0.125, 0.25));
+                    run.frame((3000, 1600), true);
+                    run.step(true, [12000, 8000]);
+                    assert_eq!(run.across(), (0.25, 0.25));
+                    run.values([12000, 8000], true);
+                },
+                (0.25, 0.25),
+            ),
+            // A pan to 0.4 the session has told, then another, Alt+→'s, and a click in the
+            // Browser in one frame, before the Viewer draws: the session's 0.4 is not taken
+            // over the person's 0.3, which goes to the session though no photo is live, so
+            // the next photo's picture and its first live frame are at 0.3 on both sides.
+            (
+                "a pan and a click in one frame",
+                0.5,
+                |run| {
+                    run.pan(600.0);
+                    run.frame(run.size, false);
+                    let room = run.shell.room.expect("live");
+                    run.shell.zoom = run.shell.zoom.panned(egui::vec2(600.0, 0.0), &room);
+                    run.click(2);
+                    run.frame(run.size, false);
+                    run.values([6000, 4000], false);
+                    let (kept, session) = run.across();
+                    assert!((kept - 0.3).abs() < 1e-6 && (session - 0.3).abs() < 1e-6);
+                    run.values([6000, 4000], true);
+                },
+                (0.3, 0.3),
+            ),
+            // A click, then a size sent before the next photo's values: 3600 would show the
+            // landscape left at 0.3 to 0.7, but it is no longer placed; the photo 12000 wide
+            // shows 0.15 to 0.85, so 0.2 stays on both sides.
+            (
+                "a click, then a size sent before the next photo's values",
+                0.2,
+                |run| {
+                    run.click(2);
+                    run.frame(run.size, false);
+                    run.frame((3600, 1600), true);
+                    run.settle();
+                    run.values([12000, 8000], false);
+                    assert_eq!(run.across(), (0.2, 0.2));
+                    run.values([12000, 8000], true);
+                },
+                (0.2, 0.2),
             ),
             // File › Open…: Fit.
             (
@@ -11662,26 +11977,23 @@ mod tests {
                 |run| {
                     run.pan(600.0);
                     let raw = vec![PathBuf::from("/trips/x.ARW")];
-                    let (sent, session) = (&mut run.sent, &mut run.session);
-                    let send = &mut |command: Command| {
-                        session.take(&command);
-                        sent.push(command);
-                        sent.len() as u64
-                    };
-                    open_alone(raw, &mut run.shell.zoom, &mut run.mirror, send);
+                    {
+                        let send = &mut taking(&mut run.sent, &mut run.session);
+                        open_alone(raw, &mut run.shell.zoom, &mut run.mirror, send);
+                    }
                     run.frame(run.size, false);
                     run.values([4000, 6000], true);
                 },
-                0.5,
+                (0.5, 0.5),
             ),
         ];
-        for (case, from, steps, to) in cases {
+        for (case, from, steps, (to_kept, to_session)) in cases {
             let mut run = ZoomRun::new(zoomed_to(zoom::Scale::Factor(1.0), [from, 0.5]));
             steps(&mut run);
             let (kept, session) = run.across();
-            assert!((kept - to).abs() < 1e-6, "{case}: kept {kept}");
+            assert!((kept - to_kept).abs() < 1e-6, "{case}: kept {kept}");
             assert!(
-                (session - to).abs() < 1e-6,
+                (session - to_session).abs() < 1e-6,
                 "{case}: the session's {session}"
             );
         }
@@ -11766,7 +12078,11 @@ mod tests {
             extent,
             bounds: (2400, 1600),
         });
-        shell.follow_photo(mirror, (2400, 1600), false);
+        shell.follow_photo(
+            mirror,
+            (0, apertrust_engine::view::View::default()),
+            (2400, 1600),
+        );
     }
 
     /// At 200%, each of darktable's four buttons, from each of the eight orientations,
@@ -11800,7 +12116,11 @@ mod tests {
                         value: choice,
                     };
                     mirror.pend(4, pending);
-                    shell.follow_photo(&mirror, (2400, 1600), false);
+                    shell.follow_photo(
+                        &mirror,
+                        (0, apertrust_engine::view::View::default()),
+                        (2400, 1600),
+                    );
                     assert_eq!(shell.zoom, at, "{case}: pending");
                     turned(&mut shell, &mut mirror, u32::from(to) + 1, false, 4);
                     assert_eq!(shell.zoom.scale, at.scale, "{case}");
@@ -11835,26 +12155,34 @@ mod tests {
         /// The session reports Orientation at the option `choice` for the live photo, which
         /// its turn gives a new extent where it swaps the axes.
         fn report(&mut self, choice: u32) {
+            self.report_turn(choice);
+            self.frame(self.size, false);
+        }
+
+        /// [`Self::report`] with no frame drawn.
+        fn report_turn(&mut self, choice: u32) {
             let through = self.sent.len() as u64;
             let values = oriented(choice, false, through, &self.mirror.photo.image());
             let extent = values.extent;
             self.mirror.apply(Event::Values(values));
-            self.session.placing(Some(extent));
-            self.frame(self.size, false);
+            let orientation = self.mirror.orientation;
+            self.session.turning(orientation, extent, through);
         }
     }
 
     /// The retained centre turns with what the session reports, on both sides: one turn,
     /// two turns in flight with a pan between their reports, and a turn the turned room
-    /// clamps, then Next Photo, which carries the clamped centre, as each step of the table
-    /// before ([`the_zoom_s_centre_changes_only_with_what_the_session_confirms`]).
+    /// clamps, then Next Photo, which carries the session's clamp, as each step of the table
+    /// before ([`the_zoom_s_centre_carries_the_session_s`]); a flip, then Next Photo; and a
+    /// flip reported in the frame a click opens another photo, which carries the centre the
+    /// session mapped through it.
     #[test]
     fn the_zoom_s_centre_turns_with_what_the_session_reports() {
         use apertrust_tools::orientation::turn;
         let cw = turn("rotate_cw", 0).expect("a button");
         let half = turn("rotate_cw", cw).expect("a button");
         type Steps = fn(&mut ZoomRun, u8, u8);
-        let cases: [(&str, [f32; 2], Steps, [f32; 2]); 3] = [
+        let cases: [(&str, [f32; 2], Steps, [f32; 2]); 6] = [
             // Panned to (0.2, 0.5), turned clockwise: (1 − 0.5, 0.2).
             (
                 "a pan, then a turn",
@@ -11878,8 +12206,8 @@ mod tests {
                 [0.2, 0.35],
             ),
             // (0.5, 0.2) turned clockwise is (0.8, 0.5), which the portrait shows at 0.7 across:
-            // the turn commits 0.7, and the next photo, a landscape that could show 0.8, takes
-            // 0.7 on both sides.
+            // the session clamps it to 0.7, and the next photo, a landscape that could show
+            // 0.8, takes 0.7 on both sides.
             (
                 "a turn, then Next Photo",
                 [0.5, 0.2],
@@ -11889,6 +12217,55 @@ mod tests {
                     run.values([6000, 4000], true);
                 },
                 [0.7, 0.5],
+            ),
+            // A flip maps 0.25 across to 0.75 on both sides; the next photo carries it.
+            (
+                "a flip, then Next Photo",
+                [0.25, 0.5],
+                |run, _, _| {
+                    let flip = turn("flip_horizontally", 0).expect("a button");
+                    run.report(u32::from(flip) + 1);
+                    run.step(true, [6000, 4000]);
+                    run.values([6000, 4000], true);
+                },
+                [0.75, 0.5],
+            ),
+            // A flip reported in the frame a click in the Browser opens c.ARW: the photo is
+            // left before the app maps 0.25 to 0.75 or sends it, but the session mapped its
+            // view as it applied the flip, so both sides carry 0.75.
+            (
+                "a flip reported and a click in one frame",
+                [0.25, 0.5],
+                |run, _, _| {
+                    let flip = turn("flip_horizontally", 0).expect("a button");
+                    run.report_turn(u32::from(flip) + 1);
+                    run.click(2);
+                    run.frame(run.size, false);
+                    run.values([6000, 4000], false);
+                    run.values([6000, 4000], true);
+                },
+                [0.75, 0.5],
+            ),
+            // A key's pan from 0.25 to 0.35, then a flip and a click in the Browser, all
+            // actions of one frame: the pan goes before the flip, so the session maps it,
+            // and the next photo carries 0.65 on both sides.
+            (
+                "a pan, a flip and a click in one frame",
+                [0.25, 0.5],
+                |run, _, _| {
+                    let room = run.shell.room.expect("live");
+                    run.shell.zoom = run.shell.zoom.panned(egui::vec2(-600.0, 0.0), &room);
+                    // Before each next action, as `App::run_actions` sends a move.
+                    let flip = turn("flip_horizontally", 0).expect("a button");
+                    run.flush();
+                    run.report_turn(u32::from(flip) + 1);
+                    run.flush();
+                    run.click(2);
+                    run.frame(run.size, false);
+                    run.values([6000, 4000], false);
+                    run.values([6000, 4000], true);
+                },
+                [0.65, 0.5],
             ),
         ];
         let near = |a: [f32; 2], b: [f32; 2]| (a[0] - b[0]).abs().max((a[1] - b[1]).abs()) < 1e-5;
@@ -11922,7 +12299,11 @@ mod tests {
                         value,
                     },
                 );
-                shell.follow_photo(&mirror, (2400, 1600), false);
+                shell.follow_photo(
+                    &mirror,
+                    (0, apertrust_engine::view::View::default()),
+                    (2400, 1600),
+                );
                 assert_eq!(shell.zoom, at, "pending");
             }
             turned(&mut shell, &mut mirror, u32::from(first) + 1, false, 4);
