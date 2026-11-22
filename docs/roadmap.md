@@ -71,7 +71,7 @@ Goal: prove the core bet cheaply, before building on it. Gate: do migrated kerne
 - [x] Raw decoding with rawler, a decoder written in Rust, pinned by a corpus of 40 raw.pixls.us samples.
 - [x] The kernel spike: kernels written in Slang and compiled to WGSL, with automatic derivatives, as fast as hand-written WGSL.
 - [x] The viewport spike: a 60 MP raw with a live exposure slider, in correct colour on macOS and on Linux under Wayland.
-- [x] Every golden case passing on an Apple M4, an NVIDIA RTX 5060 and an AMD Radeon 780M.
+- [x] Phase 0's golden cases passing on an Apple M4, an NVIDIA RTX 5060 and an AMD Radeon 780M.
 
 ## Phase 1: engine and command line
 

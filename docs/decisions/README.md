@@ -91,7 +91,7 @@ All major technology choices are made; one waits on a spike to be confirmed, the
 | Events | One event system: each event a fact or a notice, numbered against commands, sent through one outbox, taken in by one reducer per client (59) | A global bus of signals |
 | AI inference | ONNX Runtime, the WebGPU execution provider by default, vendor providers as optional packs; copies between devices for now (60) | Burn on wgpu; bundled vendor providers |
 | Agents | MCP through rmcp, a thin client of the session protocol; assistants a core capability, not the headline (1, 58) | MCP with its own logic |
-| Correctness | During the migration, ΔE2000 golden tests against darktable-cli (61) and a whole-pipeline exit test (62); after it, Apertrust's own renders as baselines (2) | Visual review |
+| Correctness | During the migration, ΔE2000 golden tests against darktable-cli (61) and a whole-pipeline exit test (62), every reference rendered by darktable's official, generic build of the reference release, never one compiled for the local CPU (103); after it, Apertrust's own renders as baselines (2) | Visual review; local builds with wider tolerances |
 | Licence | GPL-3.0-or-later; darktable's copyright and provenance kept in ported files; bundled fonts under the OFL, icons derived from Lucide under ISC and MIT, with their notices (64) | A permissive clean-room licence |
 | Names and crates | Apertrust, its parts prefixed `apertrust-`; few crates (65) | — |
 | Decision records | One file per decision, with its options and reasons, stating what is decided now; a record wholly replaced kept as a stub naming its successor (66) | Records amended or superseded in a chain; a replaced record deleted |
@@ -263,6 +263,7 @@ All major technology choices are made; one waits on a spike to be confirmed, the
 | [0061](0061-golden-image-tests-against-darktable-cli.md) | Golden-image tests against darktable-cli |
 | [0062](0062-the-whole-pipeline-comparison.md) | The whole-pipeline comparison |
 | [0063](0063-departures-from-darktable-and-views-below-full-scale.md) | Departures from darktable, and views below full scale |
+| [0103](0103-golden-references-from-darktables-official-build.md) | Golden references from darktable's official build |
 
 ## Licences and the project
 

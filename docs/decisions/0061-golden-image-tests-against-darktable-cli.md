@@ -6,7 +6,7 @@ Image quality must be judged by measurement, never by eye (principle 1). During 
 
 ## Decision
 
-**Each port is checked by ΔE2000 against darktable-cli at the reference release** ([0003](0003-the-reference-is-darktables-latest-stable-release.md)), with a tolerance per case, by the golden-image harness, `apertrust-golden`:
+**Each port is checked by ΔE2000 against darktable-cli at the reference release** ([0003](0003-the-reference-is-darktables-latest-stable-release.md)), with a tolerance per case, by the golden-image harness, `apertrust-golden`, its references rendered by darktable's official build, never one compiled for the local CPU ([0103](0103-golden-references-from-darktables-official-build.md)):
 
 - a case has darktable render a module's input and expected output from darktable's integration-test images (`APERTRUST_TEST_IMAGES`), cached in `target/golden`; the port passes when its kernel's output is within the case's ΔE2000 tolerance; heatmaps show where it differs;
 - the raw stage has its own checks: `raw-passthrough`, `raw-run` and `raw-defaults`; the whole pipeline has `pipeline` ([0062](0062-the-whole-pipeline-comparison.md));
