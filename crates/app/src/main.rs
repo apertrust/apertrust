@@ -3313,6 +3313,8 @@ impl Shell {
                 .and_then(|tool| self.placing(tool)),
             // A History step's menu's own, as it opens ([`Shell::step_menu`]).
             step: None,
+            // A job's row's menu's own, as it is built (`jobs::Do::Menu`).
+            job: None,
             browser: self.browser,
             // The app's, from the folder it shows ([`App::shell_state`]).
             shown: false,
@@ -3702,6 +3704,9 @@ impl Shell {
             // Run on its step by the step's menu alone ([`Shell::step_menu`]): with no step
             // it never runs from here.
             Intent::HistoryStep(_) => {}
+            // Run on its job by the jobs window's row menu alone (`jobs::Window`): with no
+            // job it never runs from here.
+            Intent::Job(_) => {}
             // Pressed again, it is chosen already, and nothing changes. Hidden, it is
             // revealed in the Hidden tab, opened and scrolled to, as any tool is (decision
             // 96). Either way Find Tool…'s search, which would hide it, closes first.
@@ -4701,6 +4706,13 @@ impl App {
                 false
             }
             jobs::Do::Changed => true,
+            // Built here, with the keys and the state, as every menu is (decision 91).
+            jobs::Do::Menu { asked, items } => {
+                let state = self.state(ctx);
+                let menu = jobs::row_menu(ctx, asked, items, &self.shell.keymap, &state);
+                self.dialogs.jobs_menu(asked.job, menu);
+                false
+            }
         };
         if changed {
             self.jobs_view = self.mirror.jobs.view(&translator(ctx));
@@ -21884,6 +21896,15 @@ mod tests {
                     open.set(jobs.clone());
                 }
                 hosted.jobs_shown = jobs;
+            }
+        }
+
+        fn jobs_menu(&mut self, job: u64, request: apertrust_ui::popup::Request) {
+            let mut hosted = self.0.borrow_mut();
+            if hosted.jobs.is_some()
+                && let Some(open) = &mut hosted.jobs_window
+            {
+                open.open_menu(job, request);
             }
         }
 

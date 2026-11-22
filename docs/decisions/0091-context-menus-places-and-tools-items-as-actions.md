@@ -23,7 +23,7 @@ A tool's section already has its own buttons: reset, presets and options (⋯). 
   - Collections' folder rows (built);
   - the Browser's empty area, `Place::Browser` (built: Select All, Select None, —, then the browser bar's options, read from the list the browser bar builds its own from);
   - a History step, `Place::Step` (built): Go to Step, Show Tool, Compress up to Here and Truncate after Here;
-  - the jobs window's rows: Cancel, Show in Folder and Copy Error;
+  - the jobs window's rows, `Place::Job` (built): Cancel, Show in Folder and Copy Error;
   - the Tools panel's tab bar, `Place::TabBar`, on a tab's icon or its empty end: Find Tool…, Show Hidden Tools, Workspace ▸, Reset Tab, Processing Order and Workspace ▸'s Restore Defaults, the same items in the Tools panel's ⋮ (planned, [0096](0096-workspaces-as-files-hidden-tools-and-finding-a-tool.md));
   - a layer (Phase 4), the scopes.
 - Another place opens to tools' items only by a decision of its own, which adds it to `apertrust-tools`' `Place`.

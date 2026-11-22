@@ -254,6 +254,8 @@ jobs-cancel = Cancel
 jobs-cancel-tip = Stop this job
 # The footer's button, which takes away every finished and cancelled row.
 jobs-clear-finished = Clear Finished
+# A failed row's menu item, which copies its failure as the row says it.
+jobs-copy-error = Copy Error
 # What the live region says as a job starts.
 jobs-live-started = Started: { $message }
 
@@ -1203,12 +1205,13 @@ menu-zoom-window = Zoom
 menu-bring-all-to-front = Bring All to Front
 
 ## Context menus, by what screen readers call them (decision 91): the photo's, a
-## thumbnail's and a History step's
+## thumbnail's, a History step's and a job's row's in the jobs window
 
 context-menu-photo = Photo
 context-menu-thumbnail = Thumbnail
 # $number is the step's, as History numbers it.
 context-menu-step = Step { $number }
+context-menu-job = Job
 
 ## The edit's history: a step's name, as History lists it and Undo and Redo name it
 

@@ -26,7 +26,7 @@ use apertrust_ui::components::JobPhase;
 use apertrust_ui::{Builtin, Locale, Theme};
 use eframe::egui::accesskit::Role;
 use egui_kittest::Harness;
-use egui_kittest::kittest::Queryable as _;
+use egui_kittest::kittest::{NodeT as _, Queryable as _};
 
 use super::*;
 use crate::dialog_host;
@@ -218,7 +218,8 @@ fn an_exports_events_fold_into_its_row() {
         .progress(0, Some(3))
         .cancellable(true)
         .detail(queued)
-        .destination("~/out");
+        .destination("~/out")
+        .menu(true);
     assert_eq!(only(&mirror), expected);
 
     // Running, the first photo under way: its title and the detail naming it.
@@ -289,7 +290,9 @@ fn an_exports_events_fold_into_its_row() {
     .progress(3, Some(3))
     .destination("~/out")
     .outcome(outcome)
-    .ended_at(at(60));
+    .ended_at(at(60))
+    .menu(true)
+    .file(true);
     assert_eq!(only(&mirror), expected);
     // Show in Finder selects its first file.
     assert_eq!(
@@ -323,7 +326,8 @@ fn a_folders_reading_folds_through_the_same_code_and_never_opens_the_window() {
     let expected = Job::new(id.get(), JobPhase::Running, reading.clone())
         .kind("folder")
         .progress(120, None)
-        .cancellable(true);
+        .cancellable(true)
+        .menu(true);
     // With no total its bar has no fraction, however much is done: it is indeterminate.
     let events = [
         state(id, State::Running),
@@ -559,6 +563,95 @@ fn the_buttons_ask_for_cancel_the_reveal_and_the_dismissal() {
         mirror.act(ActivityAction::Cancel(number + 100)),
         Do::Nothing
     );
+}
+
+/// The disk filling up on photo 2 of an export that has written photo 1, or none.
+fn disk_full() -> Failure {
+    Failure::new("disk-full", "an error in the engine's words")
+        .item(raw(2))
+        .file(file(2))
+}
+
+/// A row's menu asked for on job `job`, where the window reports it.
+fn menu_on(job: JobId) -> RowMenu {
+    RowMenu {
+        job: job.get(),
+        at: egui::pos2(10.0, 20.0),
+        row: egui::Id::NULL,
+    }
+}
+
+/// Decision 91: a row's menu holds what its job allows, each item hidden otherwise: Cancel
+/// while it is queued or running and can be stopped, Show in Folder once it has written a
+/// file, Copy Error once it failed. A row with none has no menu, and asks for nothing.
+#[test]
+fn a_row_s_menu_holds_what_its_job_allows() {
+    let items = |cancel, show, copy| Some(JobItems { cancel, show, copy });
+    let started = |mirror: &mut Mirror, wrote: bool| {
+        let id = ids(1)[0];
+        mirror.apply(&export_added(id, 3));
+        mirror.apply(&state(id, State::Running));
+        if wrote {
+            fold(mirror, photo_starts(id, 1, 3));
+            fold(mirror, photo_done(id, 1, 3, true));
+        }
+        id
+    };
+    let menu = |mirror: &Mirror, id: JobId| {
+        let row = mirror
+            .view(&english())
+            .into_iter()
+            .find(|row| row.id == id.get());
+        (mirror.items(id.get()), row.expect("its row").menu)
+    };
+
+    // Queued, then running: Cancel; once a file is written, Show in Folder too.
+    let mut mirror = Mirror::new(None);
+    let id = ids(1)[0];
+    mirror.apply(&export_added(id, 3));
+    assert_eq!(menu(&mirror, id), (items(true, false, false), true));
+    mirror.apply(&state(id, State::Running));
+    assert_eq!(menu(&mirror, id), (items(true, false, false), true));
+    fold(&mut mirror, photo_starts(id, 1, 3));
+    fold(&mut mirror, photo_done(id, 1, 3, true));
+    assert_eq!(menu(&mirror, id), (items(true, true, false), true));
+    // Asked to stop, it can be stopped no more.
+    mirror.apply(&state(id, State::Cancelled));
+    assert_eq!(menu(&mirror, id), (items(false, true, false), true));
+    // Finished with files: Show in Folder alone.
+    mirror.apply(&ended(id, State::Finished, None));
+    assert_eq!(menu(&mirror, id), (items(false, true, false), true));
+    let asked = menu_on(id);
+    let items_now = items(false, true, false).expect("items");
+    assert_eq!(
+        mirror.act(ActivityAction::Menu(asked)),
+        Do::Menu {
+            asked,
+            items: items_now
+        }
+    );
+
+    // Finished, or cancelled, with none: no menu, and none asked.
+    for end in [State::Finished, State::Cancelled] {
+        let mut mirror = Mirror::new(None);
+        let id = started(&mut mirror, false);
+        mirror.apply(&ended(id, end, None));
+        assert_eq!(menu(&mirror, id), (None, false), "{end:?}");
+        assert_eq!(mirror.act(ActivityAction::Menu(menu_on(id))), Do::Nothing);
+    }
+
+    // Failed: Copy Error, and Show in Folder where it wrote a file first.
+    for (wrote, expected) in [
+        (false, items(false, false, true)),
+        (true, items(false, true, true)),
+    ] {
+        let mut mirror = Mirror::new(None);
+        let id = started(&mut mirror, wrote);
+        mirror.apply(&ended(id, State::Finished, Some(disk_full())));
+        assert_eq!(menu(&mirror, id), (expected, true), "wrote: {wrote}");
+    }
+    // A job the mirror does not hold asks nothing.
+    assert_eq!(mirror.items(id.get() + 100), None);
 }
 
 #[test]
@@ -950,6 +1043,184 @@ fn a_failed_row_that_offers_it_draws_try_again_which_reaches_the_app() {
     );
 }
 
+/// What the window asked of the app in every frame so far.
+fn outputs(harness: &Harness<'_, Bench>) -> Vec<dialog_host::Output> {
+    let asked = harness.state().asked.iter();
+    asked.flat_map(|drawn| drawn.outputs.clone()).collect()
+}
+
+/// The menu the app builds for `asked` with `items` ([`row_menu`]), handed to the window,
+/// which opens it.
+fn open_menu(harness: &mut Harness<'_, Bench>, asked: RowMenu, items: JobItems) {
+    let keymap = Keymap::defaults(OperatingSystem::Mac);
+    let state = crate::actions::tests::everything();
+    let menu = row_menu(&harness.ctx, asked, items, &keymap, &state);
+    harness.state_mut().content.open_menu(asked.job, menu);
+    harness.run();
+}
+
+/// The words of the items in the open menu named Job.
+fn menu_items(harness: &Harness<'_, Bench>) -> Vec<String> {
+    let menu = harness.get_by_role_and_label(Role::Menu, "Job");
+    let items = menu.query_all_by_role(Role::MenuItem);
+    items
+        .map(|item| item.accesskit_node().label().unwrap_or_default())
+        .collect()
+}
+
+/// Decision 91: Shift+F10 on a running export's focused row asks the app for its menu,
+/// which the app builds and hands back; its Cancel sends `CancelJob` for the job, as the
+/// row's ✕ does, and its Show in Folder reveals the file written.
+#[test]
+fn a_row_s_menu_from_its_keys_cancels_its_job_or_shows_its_file() {
+    let id = ids(1)[0];
+    let mut mirror = Mirror::new(None);
+    mirror.apply(&export_added(id, 3));
+    mirror.apply(&state(id, State::Running));
+    fold(&mut mirror, photo_starts(id, 1, 3));
+    fold(&mut mirror, photo_done(id, 1, 3, true));
+    let mut harness = window(mirror.view(&english()));
+    harness.key_press(egui::Key::Tab);
+    harness.run();
+    harness.key_press_modifiers(egui::Modifiers::SHIFT, egui::Key::F10);
+    harness.run();
+    let asked = outputs(&harness)
+        .into_iter()
+        .find_map(|output| match output {
+            dialog_host::Output::Jobs(ActivityAction::Menu(asked)) => Some(asked),
+            _ => None,
+        });
+    let asked = asked.expect("the row asked for its menu");
+    assert_eq!(asked.job, id.get());
+    let Do::Menu { asked, items } = mirror.act(ActivityAction::Menu(asked)) else {
+        panic!("a running export has a menu");
+    };
+    // Named as this platform's file manager is, whatever the harness's platform.
+    let show = english().text(FILE_MANAGER.show_message());
+    for (item, then) in [
+        ("Cancel", Do::Send(Command::CancelJob { job: id })),
+        (show.as_str(), Do::Reveal(Reveal::File(file(1)))),
+    ] {
+        open_menu(&mut harness, asked, items);
+        assert_eq!(menu_items(&harness), ["Cancel", show.as_str()]);
+        harness.get_by_role_and_label(Role::MenuItem, item).click();
+        harness.run();
+        let Some(dialog_host::Output::Jobs(action)) = outputs(&harness).pop() else {
+            panic!("{item} asked nothing");
+        };
+        assert_eq!(mirror.act(action), then, "{item}");
+    }
+}
+
+/// Decision 91: a failed row's menu holds Copy Error, which copies its failure as the row
+/// says it, and asks the app nothing.
+#[test]
+fn copy_error_copies_the_failure_as_the_row_says_it() {
+    let id = ids(1)[0];
+    let mut mirror = Mirror::new(None);
+    mirror.apply(&export_added(id, 3));
+    mirror.apply(&state(id, State::Running));
+    mirror.apply(&ended(id, State::Finished, Some(disk_full())));
+    let mut harness = window(mirror.view(&english()));
+    let items = mirror.items(id.get()).expect("a failed row has a menu");
+    open_menu(&mut harness, menu_on(id), items);
+    assert_eq!(menu_items(&harness), ["Copy Error"]);
+    let before = outputs(&harness).len();
+    harness
+        .get_by_role_and_label(Role::MenuItem, "Copy Error")
+        .click();
+    harness.step();
+    let line = "IMG_0002.ARW: could not write IMG_0002.jpg: the disk is full.";
+    let copied = &harness.output().platform_output.commands;
+    assert!(
+        copied.contains(&egui::OutputCommand::CopyText(line.to_owned())),
+        "{copied:?}"
+    );
+    harness.run();
+    assert_eq!(outputs(&harness).len(), before);
+}
+
+/// Decision 91: a choice in a row's menu acts only where the row, as the window holds it
+/// when the choice comes, still allows it: Cancel on a job that has finished since the
+/// menu opened asks nothing, Show in Folder on a row a same-ID `Added` with a folder for
+/// its destination has replaced asks nothing, and Copy Error on a failed row Try again has
+/// replaced copies nothing.
+#[test]
+fn a_menu_s_choice_the_row_no_longer_allows_does_nothing() {
+    let id = ids(1)[0];
+    let mut mirror = Mirror::new(None);
+    mirror.apply(&export_added(id, 3));
+    mirror.apply(&state(id, State::Running));
+    let mut harness = window(mirror.view(&english()));
+    let items = mirror.items(id.get()).expect("a running export has a menu");
+    open_menu(&mut harness, menu_on(id), items);
+    mirror.apply(&ended(id, State::Finished, None));
+    harness.state_mut().content.set(mirror.view(&english()));
+    harness.run();
+    let before = outputs(&harness).len();
+    harness
+        .get_by_role_and_label(Role::MenuItem, "Cancel")
+        .click();
+    harness.run();
+    assert_eq!(outputs(&harness).len(), before);
+
+    // A file written, then the row replaced under the same id, its destination a folder.
+    let id = ids(1)[0];
+    let mut mirror = Mirror::new(None);
+    mirror.apply(&export_added(id, 3));
+    mirror.apply(&state(id, State::Running));
+    fold(&mut mirror, photo_starts(id, 1, 3));
+    fold(&mut mirror, photo_done(id, 1, 3, true));
+    let mut harness = window(mirror.view(&english()));
+    let items = mirror.items(id.get()).expect("a running export has a menu");
+    open_menu(&mut harness, menu_on(id), items);
+    mirror.apply(&export_added(id, 3));
+    assert_eq!(mirror.items(id.get()).map(|items| items.show), Some(false));
+    harness.state_mut().content.set(mirror.view(&english()));
+    harness.run();
+    let before = outputs(&harness).len();
+    let show = english().text(FILE_MANAGER.show_message());
+    harness.get_by_role_and_label(Role::MenuItem, &show).click();
+    harness.run();
+    assert_eq!(outputs(&harness).len(), before);
+
+    // Failed, then tried again: the retry's row, running, takes the failed one's place.
+    let (failed, retry) = (ids(1)[0], ids(1)[0]);
+    let mut mirror = Mirror::new(None);
+    mirror.apply(&export_added(failed, 3));
+    mirror.apply(&state(failed, State::Running));
+    mirror.apply(&ended(failed, State::Finished, Some(disk_full())));
+    let mut harness = window(mirror.view(&english()));
+    let items = mirror.items(failed.get()).expect("a failed row has a menu");
+    open_menu(&mut harness, menu_on(failed), items);
+    let mut added = export_added(retry, 3);
+    if let Event::Job {
+        event: JobEvent::Added { retries, .. },
+        ..
+    } = &mut added
+    {
+        *retries = Some(failed);
+    }
+    mirror.apply(&added);
+    assert_eq!(mirror.view(&english()).len(), 1, "in its place");
+    harness.state_mut().content.set(mirror.view(&english()));
+    harness.run();
+    let before = outputs(&harness).len();
+    harness
+        .get_by_role_and_label(Role::MenuItem, "Copy Error")
+        .click();
+    harness.step();
+    let copied = &harness.output().platform_output.commands;
+    assert!(
+        !copied
+            .iter()
+            .any(|command| matches!(command, egui::OutputCommand::CopyText(_))),
+        "{copied:?}"
+    );
+    harness.run();
+    assert_eq!(outputs(&harness).len(), before);
+}
+
 // When the window closes itself.
 
 /// A job of the window's, numbered `id`, in `phase`.
@@ -1091,6 +1362,69 @@ fn the_pointer_over_it_holds_the_close_until_it_leaves() {
     assert!(!closed(&harness), "closed at once as the pointer left");
     harness.run_steps(3);
     assert!(closed(&harness), "never closed after the pointer left");
+}
+
+/// Decision 91: a row's menu holds the close while it is open, as the pointer does, though
+/// a screen reader's ShowContextMenu, which opened it, touches nothing; once it has gone,
+/// the window closes after the delay.
+#[test]
+fn a_row_s_menu_holds_the_close_until_it_goes() {
+    let mut harness = opened(vec![job_in(1, JobPhase::Finished).menu(true)]);
+    let row = harness.get_by_role_and_label(Role::Group, "Finished: Creating thumbnails");
+    let (target_node, target_tree) = row.accesskit_node().locate();
+    harness.event(egui::Event::AccessKitActionRequest(
+        egui::accesskit::ActionRequest {
+            target_node,
+            target_tree,
+            action: egui::accesskit::Action::ShowContextMenu,
+            data: None,
+        },
+    ));
+    harness.run();
+    let asked = outputs(&harness)
+        .into_iter()
+        .find_map(|output| match output {
+            dialog_host::Output::Jobs(ActivityAction::Menu(asked)) => Some(asked),
+            _ => None,
+        });
+    let asked = asked.expect("the row asked for its menu");
+    let items = JobItems {
+        show: true,
+        ..JobItems::default()
+    };
+    open_menu(&mut harness, asked, items);
+    harness.run_steps(10);
+    assert!(!closed(&harness), "closed under its menu");
+    popup::close(&harness.ctx, menu_id());
+    harness.run_steps(3);
+    assert!(!closed(&harness), "closed at once as its menu went");
+    harness.run_steps(3);
+    assert!(closed(&harness), "never closed after its menu went");
+
+    // Asked for in the frame the delay runs out, before the app hands it over, it holds
+    // the close too, whenever that frame comes.
+    for waited in 0..6 {
+        let mut harness = opened(vec![job_in(1, JobPhase::Finished).menu(true)]);
+        harness.run_steps(waited);
+        if closed(&harness) {
+            break;
+        }
+        let row = harness.get_by_role_and_label(Role::Group, "Finished: Creating thumbnails");
+        let (target_node, target_tree) = row.accesskit_node().locate();
+        harness.event(egui::Event::AccessKitActionRequest(
+            egui::accesskit::ActionRequest {
+                target_node,
+                target_tree,
+                action: egui::accesskit::Action::ShowContextMenu,
+                data: None,
+            },
+        ));
+        harness.step();
+        assert!(
+            !closed(&harness),
+            "closed as its menu was asked, {waited} steps in"
+        );
+    }
 }
 
 #[test]

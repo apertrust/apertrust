@@ -208,6 +208,9 @@ pub struct Job {
     /// and a right-click on it, or the menu key, Shift+F10 or a screen reader's
     /// ShowContextMenu while it has the focus, asks for it ([`ActivityAction::Menu`]).
     pub menu: bool,
+    /// Whether its destination is a file it has written, which Show in Finder shows
+    /// selected in its folder: the app's row menu offers Show in Folder only then.
+    pub file: bool,
 }
 
 impl Job {
@@ -227,6 +230,7 @@ impl Job {
             retry: false,
             ended_at: None,
             menu: false,
+            file: false,
         }
     }
 
@@ -286,6 +290,11 @@ impl Job {
 
     pub fn menu(mut self, menu: bool) -> Self {
         self.menu = menu;
+        self
+    }
+
+    pub fn file(mut self, file: bool) -> Self {
+        self.file = file;
         self
     }
 }

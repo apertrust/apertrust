@@ -73,6 +73,13 @@ impl ActionId {
     pub const SHOW_LOG: ActionId = ActionId("show-log");
     /// View › Jobs: the jobs window.
     pub const SHOW_JOBS: ActionId = ActionId("show-jobs");
+    /// A job's row's menu in the jobs window (decision 91): Cancel, `CancelJob` as the row's
+    /// ✕ sends; Show in Folder, its first file written shown in the platform's file manager
+    /// as the row's Show in Finder does; Copy Error, its failure copied as the row says it.
+    /// Each acts on the job whose menu chose it ([`State::job`]).
+    pub const JOB_CANCEL: ActionId = ActionId("job-cancel");
+    pub const JOB_SHOW_IN_FOLDER: ActionId = ActionId("job-show-in-folder");
+    pub const JOB_COPY_ERROR: ActionId = ActionId("job-copy-error");
     pub const SETTINGS: ActionId = ActionId("settings");
     pub const OPEN: ActionId = ActionId("open");
     pub const OPEN_FOLDER: ActionId = ActionId("open-folder");
@@ -409,6 +416,9 @@ pub enum Intent {
     /// One of a History step's menu's items, run on the step whose menu chose it (decision
     /// 91; `Shell::step_menu`).
     HistoryStep(StepItem),
+    /// One of a job's row's menu's items, run on the job whose menu chose it by the jobs
+    /// window (decision 91; `jobs::Window`).
+    Job(JobItem),
 }
 
 /// What an item of a History step's menu does to its step ([`Intent::HistoryStep`]).
@@ -430,6 +440,25 @@ pub struct Stepping {
     pub tool: bool,
     /// Whether a step after it is the person's own, which Truncate after Here drops.
     pub truncate: bool,
+}
+
+/// What an item of a job's row's menu does to its job ([`Intent::Job`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum JobItem {
+    Cancel,
+    ShowInFolder,
+    CopyError,
+}
+
+/// What a job's row's menu can do for its job ([`State::job`]; `jobs::Mirror::items`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct JobItems {
+    /// Whether it is queued or running and can be stopped, as its ✕ shows.
+    pub cancel: bool,
+    /// Whether it has written a file, which Show in Folder shows in its folder.
+    pub show: bool,
+    /// Whether it failed, saying why, which Copy Error copies.
+    pub copy: bool,
 }
 
 /// What a layout action does to its section ([`Intent::Section`]).
@@ -583,6 +612,9 @@ pub struct State {
     /// The History step whose menu is open, which its items act on; none elsewhere, and
     /// they cannot run (decision 91).
     pub step: Option<Stepping>,
+    /// The job whose row's menu is being built, which its items act on; none elsewhere, and
+    /// they cannot run (decision 91).
+    pub job: Option<JobItems>,
     /// How the Browser shows the folder, whose items are shown checked.
     pub browser: crate::settings::BrowserSettings,
     /// Whether the Browser shows photos: its browser bar's items rest without any.
@@ -998,7 +1030,7 @@ const fn to_tab<const I: usize>(message: &'static str) -> Action {
 
 /// Every action, in the order a keyboard map lists them (`docs/gui.md`, The default
 /// keyboard map). Slider keys are not here: they are the slider's own (`SliderRow`).
-pub static ACTIONS: [Action; 135] = [
+pub static ACTIONS: [Action; 138] = [
     // About Apertrust, in the app menu on the Mac and in Help on Windows and Linux.
     Action {
         id: ActionId::ABOUT,
@@ -1030,6 +1062,38 @@ pub static ACTIONS: [Action; 135] = [
         trigger: Trigger::Press,
         available: always,
         emits: Emit::Intent(Intent::ShowJobs),
+    },
+    // A job's row's menu (decision 91), with no key: each acts on the job whose menu chose
+    // it, and none can run elsewhere. The jobs window is modeless beside any dialog, so they
+    // ask nothing of the main window.
+    Action {
+        id: ActionId::JOB_CANCEL,
+        message: "jobs-cancel",
+        keys: &[],
+        scope: Scope::App,
+        trigger: Trigger::Press,
+        available: |s| s.job.is_some_and(|job| job.cancel),
+        emits: Emit::Intent(Intent::Job(JobItem::Cancel)),
+    },
+    // Named as the platform's file manager is, as the row's own button: Show in Finder on
+    // the Mac.
+    Action {
+        id: ActionId::JOB_SHOW_IN_FOLDER,
+        message: crate::jobs::FILE_MANAGER.show_message(),
+        keys: &[],
+        scope: Scope::App,
+        trigger: Trigger::Press,
+        available: |s| s.job.is_some_and(|job| job.show),
+        emits: Emit::Intent(Intent::Job(JobItem::ShowInFolder)),
+    },
+    Action {
+        id: ActionId::JOB_COPY_ERROR,
+        message: "jobs-copy-error",
+        keys: &[],
+        scope: Scope::App,
+        trigger: Trigger::Press,
+        available: |s| s.job.is_some_and(|job| job.copy),
+        emits: Emit::Intent(Intent::Job(JobItem::CopyError)),
     },
     Action {
         id: ActionId::SETTINGS,
@@ -3101,6 +3165,7 @@ pub(crate) mod tests {
             panel_position_given: false,
             section: None,
             step: None,
+            job: None,
             browser: crate::settings::BrowserSettings::default(),
             shown: true,
             background: Some(Background::Dark),

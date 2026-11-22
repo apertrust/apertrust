@@ -36,6 +36,13 @@
 //!   row that offers it sends `RetryJob`, its job's row taking the failed one's place,
 //!   Dismiss and Clear Finished change the mirror, and Show in Finder reveals the job's
 //!   destination through the platform ([`reveal`]), a file selected in its folder.
+//! - **A row's menu** (decision 91) holds Cancel while the job can be stopped, Show in
+//!   Folder once it has written a file and Copy Error once it failed, each hidden where it
+//!   cannot act ([`Mirror::items`]); a row with none has no menu. The window reports the
+//!   row's ask, the app builds the menu (`menus::context` at `Place::Job`) and hands it to
+//!   the window, which opens it and does its choice ([`Window::open_menu`]): Cancel and
+//!   Show in Folder as the row's ✕ and Show in Finder do, Copy Error copying the failure
+//!   as the row says it.
 
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
@@ -45,13 +52,15 @@ use apertrust_engine::jobs::{
 };
 use apertrust_engine::session::{Command, Event};
 use apertrust_ui::components::{
-    ActivityAction, FileManager, Job, JobFailure, JobMessage, JobPhase, Jobs,
+    ActivityAction, FileManager, Job, JobFailure, JobMessage, JobPhase, Jobs, RowMenu, failure_line,
 };
-use apertrust_ui::{Theme, Translator, tr};
+use apertrust_ui::{Theme, Translator, popup, tr, translator};
 use eframe::egui;
 use eframe::egui::os::OperatingSystem;
 
+use crate::actions::{self, Emit, Intent, JobItem, JobItems, Keymap};
 use crate::dialog_host::{AppDialogs, Asks, Dialog, Form, Keys, Look, Output};
+use crate::menus;
 use crate::settings::Position;
 
 /// One job's row, each part as the job's events last set it.
@@ -139,6 +148,9 @@ pub enum Do {
     Reveal(Reveal),
     /// The mirror changed: the window shows it.
     Changed,
+    /// Open a row's menu, `asked`, holding what `items` allow, for the app to build and
+    /// hand to the window ([`Window::open_menu`]).
+    Menu { asked: RowMenu, items: JobItems },
 }
 
 /// What Show in Finder reveals.
@@ -341,7 +353,8 @@ impl Mirror {
     /// Try again, on a failed row that offers it, the session's `RetryJob`, the offer taken
     /// from the row as it is sent, so it is asked once, and the row stays failed should the
     /// session refuse it; Show in Finder reveals the job's destination; Dismiss takes an
-    /// ended row away, and Clear Finished every finished and cancelled one.
+    /// ended row away, and Clear Finished every finished and cancelled one; a row's menu
+    /// opens with what its job allows, and nothing for a row with none.
     pub fn act(&mut self, action: ActivityAction) -> Do {
         match action {
             ActivityAction::Cancel(job) => match self.rows.iter().find(|r| r.id.get() == job) {
@@ -352,8 +365,10 @@ impl Mirror {
             ActivityAction::TryAgain(job) => self.try_again(job),
             ActivityAction::Dismiss(job) => self.remove(|row| row.id.get() == job),
             ActivityAction::ClearFinished => self.remove(|row| row.phase.cleared()),
-            // No row has a menu yet.
-            ActivityAction::Menu(_) => Do::Nothing,
+            ActivityAction::Menu(asked) => match self.items(asked.job) {
+                Some(items) => Do::Menu { asked, items },
+                None => Do::Nothing,
+            },
         }
     }
 
@@ -398,6 +413,12 @@ impl Mirror {
             .filter(|row| row.user && row.phase.active() && row.cancellable)
             .map(|row| row.id)
             .collect()
+    }
+
+    /// What the menu of job `job`'s row can do for it (decision 91): none for a row with
+    /// nothing to offer, or none left.
+    pub fn items(&self, job: u64) -> Option<JobItems> {
+        self.rows.iter().find(|row| row.id.get() == job)?.items()
     }
 
     /// The jobs as the window and the spinner draw them, in the language of `words`.
@@ -445,12 +466,26 @@ impl Mirror {
 }
 
 impl Row {
+    /// What its menu can do: Cancel while it is queued or running and can be stopped, as
+    /// its ✕ shows; Show in Folder once it has written a file, its destination one; Copy
+    /// Error once it failed. None where it can do nothing, and the row has no menu.
+    fn items(&self) -> Option<JobItems> {
+        let items = JobItems {
+            cancel: self.cancellable && self.phase.active(),
+            show: matches!(self.destination, Some(Destination::File(_))),
+            copy: self.phase == JobPhase::Failed && self.failure.is_some(),
+        };
+        (items != JobItems::default()).then_some(items)
+    }
+
     fn view(&self, words: &Translator, home: Option<&Path>) -> Job {
         let mut job = Job::new(self.id.get(), self.phase, job_message(&self.title))
             .kind(self.kind)
             .progress(self.progress.done, self.progress.total)
             .cancellable(self.cancellable && self.phase.active())
-            .retry(self.offers.iter().any(|o| matches!(o, Offer::Retry { .. })));
+            .retry(self.offers.iter().any(|o| matches!(o, Offer::Retry { .. })))
+            .menu(self.items().is_some())
+            .file(matches!(self.destination, Some(Destination::File(_))));
         job.detail = self.detail.as_ref().map(job_message);
         job.destination = self.destination.as_ref().and_then(|destination| {
             let folder = match destination {
@@ -566,6 +601,22 @@ pub fn reveal(what: &Reveal) {
     }
 }
 
+/// The menu of the row `asked` for, holding what `items` allow, as the app builds every
+/// menu (decision 91): `menus::context` at `Place::Job`, from `keymap` and `state`, hung
+/// where it was asked, the focus going back to the row as it closes.
+pub fn row_menu(
+    ctx: &egui::Context,
+    asked: RowMenu,
+    items: JobItems,
+    keymap: &Keymap,
+    state: &actions::State,
+) -> popup::Request {
+    let anchor = egui::Rect::from_min_size(asked.at, egui::Vec2::ZERO);
+    let target = menus::Target::Job(items);
+    let request = menus::context(ctx, menus::Place::Job, &target, keymap, state, anchor);
+    request.opened_by(asked.row)
+}
+
 /// The platform's file manager, for the button's words.
 pub const FILE_MANAGER: FileManager = if cfg!(target_os = "macos") {
     FileManager::Finder
@@ -611,6 +662,10 @@ pub struct Window {
     /// What it waits for to close itself, where it opened itself; none where the person
     /// opened it or touched it, or a job it opened for failed or was cancelled.
     closing: Option<Closing>,
+    /// A row's menu the app built, to open as it is next drawn, with its job.
+    asked: Option<(u64, popup::Request)>,
+    /// The job whose row's menu is open, which its choice acts on.
+    menu: Option<u64>,
 }
 
 /// What a window that opened itself waits for before it closes itself.
@@ -661,11 +716,17 @@ impl Dialog for Window {
     }
 
     fn show(&mut self, ui: &mut egui::Ui) -> Asks {
-        let outputs = self.rows(ui).map(Output::Jobs).into_iter().collect();
+        let mut outputs: Vec<Output> = self.rows(ui).map(Output::Jobs).into_iter().collect();
+        outputs.extend(self.show_menu(ui.ctx()).map(Output::Jobs));
         let ctx = ui.ctx().clone();
         let os = ctx.os();
         let (now, touched, over) = ctx.input(|i| (i.time, touched(i, os), i.pointer.has_pointer()));
-        let close = match self.close(now, touched, over) {
+        // A row's menu holds the close as the pointer does, asked for this frame, handed or
+        // open, however it was asked for: a screen reader's ShowContextMenu touches nothing.
+        let asked = |output: &Output| matches!(output, Output::Jobs(ActivityAction::Menu(_)));
+        let menu =
+            outputs.iter().any(asked) || self.asked.is_some() || popup::is_open(&ctx, menu_id());
+        let close = match self.close(now, touched, over || menu) {
             Close::Now => true,
             Close::After(left) => {
                 ctx.request_repaint_after(left);
@@ -685,6 +746,11 @@ impl Dialog for Window {
     }
 }
 
+/// The popup of a row's menu ([`Window::open_menu`]).
+fn menu_id() -> egui::Id {
+    egui::Id::unique("jobs row menu")
+}
+
 /// Whether the person touched the window in this frame: pressed in it or typed in it, or,
 /// on the Mac, where a window that opens itself does so without the focus, gave it the
 /// focus, by a click, a move by its title bar or bringing it to the front. Elsewhere it
@@ -702,6 +768,52 @@ impl Window {
         Window {
             jobs,
             closing: None,
+            asked: None,
+            menu: None,
+        }
+    }
+
+    /// Opens `request`, the menu the app built for job `job`'s row (decision 91), as the
+    /// window is next drawn.
+    pub fn open_menu(&mut self, job: u64, request: popup::Request) {
+        self.asked = Some((job, request));
+    }
+
+    /// A row's menu: opened as the app handed it ([`Window::open_menu`]), drawn while it is
+    /// open, and its choice done for its job if the row still allows it: Cancel and Show in
+    /// Folder as the row's ✕ and Show in Finder ask the app, Copy Error copying the failure
+    /// as the row says it.
+    fn show_menu(&mut self, ctx: &egui::Context) -> Option<ActivityAction> {
+        let id = menu_id();
+        if let Some((job, request)) = self.asked.take() {
+            self.menu = Some(job);
+            popup::open(ctx, id, request);
+        }
+        if popup::is_open(ctx, id) {
+            popup::show(ctx);
+        }
+        let answer = popup::answer(ctx, id)?;
+        let job = self.menu.take()?;
+        let popup::Answer::Chosen(chosen) = answer else {
+            return None;
+        };
+        let row = self.jobs.iter().find(|row| row.id == job)?;
+        let action = menus::chosen(&chosen).and_then(actions::action);
+        let Some(Emit::Intent(Intent::Job(item))) = action.map(|a| &a.emits) else {
+            return None;
+        };
+        match item {
+            JobItem::Cancel => {
+                (row.cancellable && row.phase.active()).then_some(ActivityAction::Cancel(job))
+            }
+            // Only a file written, as the menu offered it: a row in its place may hold a
+            // folder, which its own button still opens.
+            JobItem::ShowInFolder => row.file.then_some(ActivityAction::ShowFolder(job)),
+            JobItem::CopyError => {
+                let failure = row.failure.as_ref()?;
+                ctx.copy_text(failure_line(&translator(ctx), failure));
+                None
+            }
         }
     }
 
@@ -732,8 +844,9 @@ impl Window {
 
     /// Whether a window that opened itself closes now, at `now` seconds by its clock: once
     /// a job it opened for failed or was cancelled, or the person `touched` it, it stays
-    /// open for good; while one is queued or running, or the pointer is `over` it, it
-    /// waits; otherwise it closes [`CLOSE_AFTER`] after it first saw them all ended.
+    /// open for good; while one is queued or running, or the pointer is `over` it or a
+    /// row's menu is open, it waits; otherwise it closes [`CLOSE_AFTER`] after it first
+    /// saw them all ended.
     fn close(&mut self, now: f64, touched: bool, over: bool) -> Close {
         let Some(closing) = &mut self.closing else {
             return Close::Stay;
