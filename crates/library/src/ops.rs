@@ -428,7 +428,8 @@ fn open_in_chunks(
 
 /// When each of `names`, raws of `folder`, was taken, from their EXIF and not their
 /// pixels, read [`READERS`] at a time; `None` once `cancel` answers true. A raw that
-/// cannot be read, or whose reading panics, has no time.
+/// cannot be read, whose reading panics, or a cloud file not on the disk, which is not
+/// read ([`raw_state`]), has no time.
 fn capture_times(
     folder: &Path,
     names: &[String],
@@ -439,6 +440,11 @@ fn capture_times(
         paths,
         READERS,
         |path| {
+            if raw_state(path).is_some_and(|state| !state.local) {
+                return None;
+            }
+            #[cfg(any(test, feature = "testing"))]
+            crate::testing::read(path);
             panic::catch_unwind(AssertUnwindSafe(|| {
                 apertrust_raw::read_exif_file(path).ok()?.taken
             }))
@@ -461,7 +467,8 @@ fn capture_times(
 /// [`LibraryEvent::Thumbnail`], unless `cancel` answers true by then. A blocking call, made
 /// by a job's body. Until Apertrust renders its own, a thumbnail is the camera's embedded
 /// picture, shown as darktable shows it; a raw with none, or one that cannot be read, has
-/// none, which is told too. A name that is no plain file name reads nothing.
+/// none, which is told too. A name that is no plain file name reads nothing, nor a cloud
+/// file not on the disk ([`raw_state`], decision 53), which has no thumbnail until it is.
 pub fn thumbnail(
     open: u64,
     folder: &Path,
@@ -476,11 +483,22 @@ pub fn thumbnail(
     let plain = Path::new(photo).file_name() == Some(std::ffi::OsStr::new(photo));
     let image = plain
         .then(|| folder.join(photo))
-        .and_then(|path| match apertrust_raw::read_preview_file(&path, size) {
-            Ok(preview) => preview,
-            Err(error) => {
-                tracing::debug!(target: "raw", "no thumbnail of {photo}: {error}");
-                None
+        .filter(|path| {
+            let local = raw_state(path).is_none_or(|state| state.local);
+            if !local {
+                tracing::debug!(target: "raw", "no thumbnail of {photo}: not on the disk");
+            }
+            local
+        })
+        .and_then(|path| {
+            #[cfg(any(test, feature = "testing"))]
+            crate::testing::read(&path);
+            match apertrust_raw::read_preview_file(&path, size) {
+                Ok(preview) => preview,
+                Err(error) => {
+                    tracing::debug!(target: "raw", "no thumbnail of {photo}: {error}");
+                    None
+                }
             }
         })
         .map(|preview| Thumbnail {
@@ -524,13 +542,14 @@ pub struct Identity {
 }
 
 impl Identity {
-    /// The identity of the raw at `path`, of `stamp` as just read: its fingerprint through
+    /// The identity of the raw at `path`, of `state` as just read: its fingerprint through
     /// `fingerprints`, its copy from its sidecar as it is on the disk; `None` where its
-    /// fingerprint cannot be read, so it is read and not kept. A blocking call.
-    pub fn read(path: &Path, stamp: RawStamp, fingerprints: &Fingerprints) -> Option<Identity> {
+    /// fingerprint or stamp cannot be read, so it is read and not kept, or for a cloud file
+    /// not on the disk ([`Fingerprints::get`]). A blocking call.
+    pub fn read(path: &Path, state: RawState, fingerprints: &Fingerprints) -> Option<Identity> {
         Some(Identity {
-            stamp,
-            fingerprint: fingerprints.get(path, &stamp)?,
+            fingerprint: fingerprints.get(path, &state)?,
+            stamp: state.stamp?,
             copy: thumbnail_copy(path),
         })
     }
@@ -599,17 +618,27 @@ impl Fingerprints {
         }
     }
 
-    /// The fingerprint of the file at `path` of `stamp`: the one read before while its stamp
-    /// holds, else read now ([`crate::sidecar::read_fingerprint`]), outside the lock, so the
-    /// jobs read in parallel; `None` where it cannot be read, tried again the next time. A
-    /// blocking call on a miss.
-    pub fn get(&self, path: &Path, stamp: &RawStamp) -> Option<String> {
+    /// The fingerprint of the file at `path` of `state` as just read: the one read before
+    /// while its stamp holds, else read now ([`crate::sidecar::read_fingerprint`]), outside
+    /// the lock, so the jobs read in parallel; `None` where it cannot be read, tried again
+    /// the next time, and for a cloud file not on the disk, which is never fingerprinted
+    /// (decision 53), whatever its stamp; and for a file of no stamp, which the memo cannot
+    /// keep. A blocking call on a miss.
+    pub fn get(&self, path: &Path, state: &RawState) -> Option<String> {
+        if !state.local {
+            let name = crate::sidecar::file_name(path);
+            tracing::debug!(target: "raw", "no fingerprint of {name}: not on the disk");
+            return None;
+        }
+        let stamp = state.stamp.as_ref()?;
         let known = (self.lock().get(path))
             .filter(|(at, _)| at == stamp)
             .map(|(_, fingerprint)| fingerprint.clone());
         if known.is_some() {
             return known;
         }
+        #[cfg(any(test, feature = "testing"))]
+        crate::testing::read(path);
         let fingerprint = match (self.read)(path) {
             Ok(fingerprint) => fingerprint,
             Err(error) => {
@@ -1346,7 +1375,7 @@ mod tests {
 
     /// The identity of the raw at `path` as it is now, through `fingerprints`.
     fn identity(path: &Path, fingerprints: &Fingerprints) -> Option<Identity> {
-        Identity::read(path, raw_stamp(path)?, fingerprints)
+        Identity::read(path, raw_state(path)?, fingerprints)
     }
 
     /// A thumbnail's key: its slot the photo's fingerprint, copy and size, its version the
@@ -1428,7 +1457,8 @@ mod tests {
     }
 
     /// A raw is fingerprinted once while its size and modified time hold; touched, it is
-    /// read again. One that cannot be read is tried again each time.
+    /// read again. One that cannot be read is tried again each time; a cloud file not on
+    /// the disk is refused, known or not, and read nothing.
     #[test]
     fn a_raw_is_fingerprinted_once_while_its_stamp_holds() {
         let dir = TempDir::new().unwrap();
@@ -1436,27 +1466,89 @@ mod tests {
         fs::write(&path, b"a raw").unwrap();
         let fingerprints = Fingerprints::reading(counted);
         let reads = || FINGERPRINT_READS.load(Ordering::SeqCst);
-        let stamp = raw_stamp(&path).unwrap();
-        let first = fingerprints.get(&path, &stamp).expect("a fingerprint");
+        let state = raw_state(&path).unwrap();
+        let first = fingerprints.get(&path, &state).expect("a fingerprint");
         assert_eq!(first, sidecar::read_fingerprint(&path).unwrap());
-        assert_eq!(fingerprints.get(&path, &stamp), Some(first.clone()));
+        assert_eq!(fingerprints.get(&path, &state), Some(first.clone()));
         assert_eq!(reads(), 1);
 
         let file = fs::File::options().write(true).open(&path).unwrap();
         file.set_modified(SystemTime::now() + Duration::from_secs(10))
             .unwrap();
         drop(file);
-        let touched = raw_stamp(&path).unwrap();
-        assert_ne!(touched, stamp);
+        let touched = raw_state(&path).unwrap();
+        assert_ne!(touched, state);
         assert_eq!(fingerprints.get(&path, &touched), Some(first.clone()));
         assert_eq!(reads(), 2, "touched, read again");
         assert_eq!(fingerprints.get(&path, &touched), Some(first));
         assert_eq!(reads(), 2);
 
         let gone = dir.path().join("gone.ARW");
-        assert_eq!(fingerprints.get(&gone, &stamp), None);
-        assert_eq!(fingerprints.get(&gone, &stamp), None);
+        assert_eq!(fingerprints.get(&gone, &state), None);
+        assert_eq!(fingerprints.get(&gone, &state), None);
         assert_eq!(reads(), 4, "what cannot be read is not kept");
+
+        let not_local = |state: RawState| RawState {
+            local: false,
+            ..state
+        };
+        assert_eq!(fingerprints.get(&path, &not_local(touched)), None);
+        let other = dir.path().join("B.ARW");
+        fs::write(&other, b"another raw").unwrap();
+        let other_state = not_local(raw_state(&other).unwrap());
+        assert_eq!(fingerprints.get(&other, &other_state), None);
+        assert_eq!(reads(), 4, "nothing read of a file not on the disk");
+    }
+
+    /// A cloud file not on the disk, as the test hook marks it, is never read: its thumbnail
+    /// is told as none and its capture time is none, while the folder's other raws are read
+    /// as before.
+    #[test]
+    fn a_file_not_on_the_disk_gets_no_thumbnail_or_capture_time() {
+        let dir = folder();
+        let (cloud, local) = (dir.path().join("A.RAF"), dir.path().join("F.ORF"));
+        // One dated before 1970 has no stamp, and is still not read.
+        let old = dir.path().join("C.NEF");
+        before_1970(&old);
+        for raw in [&cloud, &old] {
+            crate::testing::evict(raw);
+        }
+        for photo in ["A.RAF", "C.NEF"] {
+            assert_eq!(
+                thumbnails(dir.path(), photo, &|| false),
+                [LibraryEvent::Thumbnail {
+                    open: 7,
+                    photo: photo.to_owned(),
+                    size: 256,
+                    image: None,
+                }]
+            );
+        }
+        let state = raw_state(&old).unwrap();
+        assert_eq!((state.stamp, state.local), (None, false));
+        assert_eq!(Fingerprints::default().get(&old, &state), None);
+        assert_eq!(crate::testing::reads(&cloud), 0);
+        assert_eq!(crate::testing::reads(&old), 0);
+        thumbnails(dir.path(), "F.ORF", &|| false);
+        assert_eq!(
+            crate::testing::reads(&local),
+            1,
+            "a raw on the disk is read"
+        );
+
+        let (events, ended) = run(dir.path(), CHUNK, &|| false);
+        assert_eq!(ended, Ended::Listed);
+        let Some(LibraryEvent::Taken { times, .. }) = events.last() else {
+            panic!("{events:?}");
+        };
+        assert_eq!(times.len(), 6);
+        assert_eq!((times[0], times[2]), (None, None), "A.RAF, C.NEF");
+        assert_eq!(crate::testing::reads(&cloud), 0);
+        assert_eq!(crate::testing::reads(&old), 0);
+        assert_eq!(crate::testing::reads(&local), 2, "its capture time read");
+        for raw in [&cloud, &old] {
+            crate::testing::restore(raw);
+        }
     }
 
     /// A raw's state is its stamp and whether it is on the disk, read with no read of the

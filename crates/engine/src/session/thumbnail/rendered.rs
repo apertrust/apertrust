@@ -658,7 +658,12 @@ impl Render {
     /// that cannot be read.
     fn opened_raw(&self) -> Option<library::RawStamp> {
         let now = library::raw_stamp(&self.path).filter(|now| Some(*now) == self.stamp)?;
-        let fingerprint = self.fingerprints.get(&self.path, &now)?;
+        // The photo the person opened, read as its open read it (decision 53).
+        let asked = library::RawState {
+            stamp: Some(now),
+            local: true,
+        };
+        let fingerprint = self.fingerprints.get(&self.path, &asked)?;
         (fingerprint == self.fingerprint).then_some(now)
     }
 

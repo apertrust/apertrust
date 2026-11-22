@@ -16,13 +16,17 @@
 
 //! A test's hooks, for the library's tests and, through the `testing` feature, its
 //! clients': a raw marked as not on the disk ([`evict`]), as a cloud provider leaves a file
-//! it has freed, so a test needs no cloud provider.
+//! it has freed, so a test needs no cloud provider; and a count of the library's reads of
+//! each raw's bytes ([`reads`]): its fingerprint, its embedded picture and its EXIF.
 
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, PoisonError};
 
 /// The raws marked as not on the disk.
 static EVICTED: Mutex<Vec<PathBuf>> = Mutex::new(Vec::new());
+
+/// Each read of a raw's bytes, by its path.
+static READS: Mutex<Vec<PathBuf>> = Mutex::new(Vec::new());
 
 /// Marks the raw at `path` as not on the disk: [`crate::ops::raw_state`] says so until
 /// [`restore`].
@@ -41,4 +45,17 @@ pub fn restore(path: &Path) {
 pub(crate) fn evicted(path: &Path) -> bool {
     let evicted = EVICTED.lock().unwrap_or_else(PoisonError::into_inner);
     evicted.iter().any(|evicted| evicted == path)
+}
+
+/// Counts a read of the raw at `path`, made as the library reads it.
+pub(crate) fn read(path: &Path) {
+    let mut reads = READS.lock().unwrap_or_else(PoisonError::into_inner);
+    reads.push(path.to_owned());
+}
+
+/// How many times the library has read the raw at `path`, whether the read succeeded or
+/// not.
+pub fn reads(path: &Path) -> usize {
+    let reads = READS.lock().unwrap_or_else(PoisonError::into_inner);
+    reads.iter().filter(|read| *read == path).count()
 }

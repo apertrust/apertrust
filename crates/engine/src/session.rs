@@ -13917,9 +13917,9 @@ mod tests {
             let mut driven = Driven::new(&[&Sample]);
             let cache = with_cache(&mut driven, &folder);
             // X's embedded picture is in the cache at its file's version; y's is read.
-            let stamp = library::raw_stamp(&x).expect("x's stamp");
+            let state = library::raw_state(&x).expect("x's state");
             let fingerprints = library::Fingerprints::default();
-            let x_now = library::Identity::read(&x, stamp, &fingerprints).expect("x's identity");
+            let x_now = library::Identity::read(&x, state, &fingerprints).expect("x's identity");
             let key = library::thumbnail_key(&x_now, 256);
             let picture = library::Thumbnail {
                 width: 4,
@@ -13970,6 +13970,92 @@ mod tests {
             finish(&mut driven);
             drop(driven);
             remove(&x);
+        }
+
+        /// A cloud file not on the disk, as the library's test hook marks it, is never read
+        /// in the background (decision 53): its thumbnail is none though the cache holds
+        /// one for its fingerprint, nothing of it is read, its fingerprint, embedded picture
+        /// or EXIF, nothing is written, and its capture time is none; the raw beside it on
+        /// the disk is read as before.
+        #[test]
+        fn a_file_not_on_the_disk_gets_no_thumbnail_and_nothing_is_read() {
+            use apertrust_library::testing;
+            let cloud = scratch("not-on-the-disk").with_file_name("cloud.ARW");
+            let folder = cloud.parent().unwrap().to_owned();
+            let local = folder.join("local.ARW");
+            for raw in [&cloud, &local] {
+                std::fs::write(raw, format!("no raw: {}", raw.display())).unwrap();
+            }
+            let mut driven = Driven::new(&[&Sample]);
+            let cache = with_cache(&mut driven, &folder);
+            // The cloud file's embedded picture in the cache from when it was on the disk.
+            let state = library::raw_state(&cloud).expect("its state");
+            let fingerprints = library::Fingerprints::default();
+            let identity = library::Identity::read(&cloud, state, &fingerprints).unwrap();
+            let key = library::thumbnail_key(&identity, 256);
+            let picture = library::Thumbnail {
+                width: 4,
+                height: 3,
+                pixels: vec![200; 48].into(),
+            };
+            let jpeg = thumbnail::encode(&picture).expect("a JPEG");
+            (cache.write(THUMBNAILS, &key.slot, &key.version, &jpeg)).unwrap();
+            assert_eq!(testing::reads(&cloud), 1, "its fingerprint, then");
+            testing::evict(&cloud);
+
+            let open = Command::Library(LibraryCommand::Open(library::Source::Folder(
+                folder.clone(),
+            )));
+            let ask = Command::Library(LibraryCommand::Thumbnails {
+                photos: vec!["cloud.ARW".to_owned(), "local.ARW".to_owned()],
+                size: 256,
+            });
+            driven.run([open, ask]);
+            let deadline = Instant::now() + TEST_WAIT;
+            let mut told = Vec::new();
+            let (mut images, mut times) = (Vec::new(), None);
+            while images.len() < 2 || times.is_none() {
+                assert!(Instant::now() < deadline, "{told:?}");
+                std::thread::sleep(Duration::from_millis(5));
+                for event in driven.saved.events() {
+                    match event {
+                        Event::Library(LibraryEvent::Thumbnail { photo, image, .. }) => {
+                            images.push((photo, image));
+                        }
+                        Event::Library(LibraryEvent::Taken { times: taken, .. }) => {
+                            times = Some(taken);
+                        }
+                        event => told.push(event),
+                    }
+                }
+            }
+            finish(&mut driven);
+            images.sort_by(|a, b| a.0.cmp(&b.0));
+            assert_eq!(
+                images,
+                [
+                    ("cloud.ARW".to_owned(), None),
+                    ("local.ARW".to_owned(), None)
+                ]
+            );
+            assert_eq!(times, Some(vec![None, None]), "cloud.ARW, local.ARW");
+            assert_eq!(
+                testing::reads(&cloud),
+                1,
+                "nothing read of the cloud file since"
+            );
+            // The local raw's fingerprint, embedded picture and EXIF.
+            assert_eq!(testing::reads(&local), 3);
+            // Nothing written: the cloud file's entry as it was, and no other.
+            assert_eq!(
+                cache.version(THUMBNAILS, &key.slot).unwrap(),
+                Some(key.version)
+            );
+            let walked = cache.walk(&|| false).unwrap().unwrap();
+            assert_eq!(walked.of(THUMBNAILS).entries, 1);
+            testing::restore(&cloud);
+            drop(driven);
+            remove(&cloud);
         }
 
         /// The live photo opened alone, its thumbnail asked for by its path, gets its
