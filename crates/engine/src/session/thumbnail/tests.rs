@@ -198,8 +198,8 @@ impl Drop for Bench {
 /// with a memo of its own.
 fn identity(folder: &Path, photo: &str) -> Identity {
     let path = folder.join(photo);
-    let stamp = library::raw_stamp(&path).expect("the raw's stamp");
-    Identity::read(&path, stamp, &Fingerprints::default()).expect("its identity")
+    let state = library::raw_state(&path).expect("the raw's state");
+    Identity::read(&path, state, &Fingerprints::default()).expect("its identity")
 }
 
 /// The key of the embedded picture of `photo` of `folder` at 256, as a thumbnail job reads
@@ -322,6 +322,26 @@ fn with_no_cache_thumbnails_are_read_as_before() {
     let items: Vec<_> = std::fs::read_dir(&folder).unwrap().flatten().collect();
     assert_eq!(items.len(), 1, "nothing written beside the raw");
     let _ = std::fs::remove_dir_all(&folder);
+}
+
+/// A cloud file not on the disk, as the library's test hook marks it, is sent as none
+/// before anything else, with a cache or without: the reading is never called, its cached
+/// picture never read, and nothing is written.
+#[test]
+fn a_file_not_on_the_disk_is_sent_as_none_and_never_read() {
+    let bench = Bench::new("not-on-the-disk", &["A.ARW"], Limit::Bytes(1 << 30));
+    let path = bench.folder.join("A.ARW");
+    let tally = Tally::new(256);
+    assert!(picture(&bench.serve("A.ARW", &tally)).is_some());
+    assert_eq!((reads(&path), bench.entries()), (1, 1));
+
+    apertrust_library::testing::evict(&path);
+    assert_eq!(picture(&bench.serve("A.ARW", &tally)), None);
+    assert_eq!(picture(&serve_with(None, &bench.folder, "A.ARW")), None);
+    assert_eq!(reads(&path), 1, "not read again");
+    assert_eq!(tally.counts(), (0, 1, 1), "neither a hit nor a miss");
+    assert_eq!(bench.entries(), 1);
+    apertrust_library::testing::restore(&path);
 }
 
 /// A picture that cannot be encoded is sent and not kept, nor is no picture.

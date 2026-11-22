@@ -449,9 +449,17 @@ fn body(run: &Run, context: &Context<'_>, delivery: &mut Delivery) {
     let stamp = library::raw_stamp(&run.path);
     // The fingerprint first, which step 1's slots are keyed by and step 2's file names
     // the photo by: through the memo, or read alone for a raw with no stamp, as one
-    // modified before 1970 has, which the memo cannot tell from another.
+    // modified before 1970 has, which the memo cannot tell from another. Read even for a
+    // cloud file not on the disk, which the memo refuses otherwise, since the person asked
+    // for the photo and its decode reads it anyway (decision 53).
     let fingerprint = match stamp {
-        Some(stamp) => run.fingerprints.get(&run.path, &stamp),
+        Some(stamp) => {
+            let asked = library::RawState {
+                stamp: Some(stamp),
+                local: true,
+            };
+            run.fingerprints.get(&run.path, &asked)
+        }
         None => sidecar::read_fingerprint(&run.path).ok(),
     };
     let rendered =

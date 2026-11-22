@@ -48,6 +48,9 @@ naga.workspace = true
 # Its `testing::Sample` tool, for the session's and the edit's tests.
 apertrust-operations.workspace = true
 apertrust-tools = { workspace = true, features = ["testing"] }
+# Its `testing` hooks, a raw marked as not on the disk and the raws' reads counted, for the
+# thumbnail tests.
+apertrust-library = { workspace = true, features = ["testing"] }
 
 [lints]
 workspace = true

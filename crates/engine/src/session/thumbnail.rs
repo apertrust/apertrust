@@ -18,6 +18,8 @@
 //! Kinds; `docs/library.md`, Thumbnails), around the library's reading of the camera's
 //! embedded picture ([`library::thumbnail`]).
 //!
+//! - **A cloud file not on the disk** ([`library::raw_state`]) has none, sent as none
+//!   before anything is read or written (decision 53).
 //! - **A read first:** the cache's entry for the photo's slot, its fingerprint, the first
 //!   virtual copy its sidecar names and the size ([`library::thumbnail_slot`]), the
 //!   fingerprint read once a session ([`library::Fingerprints`]): a render at any version
@@ -159,6 +161,27 @@ pub(crate) fn serve(
         size,
         raw,
     } = *asked;
+    let send = |image| {
+        observer(LibraryEvent::Thumbnail {
+            open,
+            photo: photo.to_owned(),
+            size,
+            image,
+        })
+    };
+    // The file's state before anything else: a cloud file not on the disk is never read in
+    // the background (decision 53), so it has no thumbnail, no cache entry being read, as
+    // it has no fingerprint, and none written.
+    let plain = Path::new(photo).file_name() == Some(std::ffi::OsStr::new(photo));
+    let path = folder.join(photo);
+    let state = plain.then(|| library::raw_state(&path)).flatten();
+    if state.is_some_and(|state| !state.local) {
+        tracing::debug!(target: "raw", "no thumbnail of {photo}: not on the disk");
+        if !cancel() {
+            send(None);
+        }
+        return;
+    }
     let Some((upkeep, tally, fingerprints)) = cached else {
         return read(open, folder, photo, size, observer, cancel);
     };
@@ -169,19 +192,8 @@ pub(crate) fn serve(
     // The photo by its file's size and time, its sidecar's first copy and its fingerprint;
     // none for a name that is no plain file name, or a file whose size, time or fingerprint
     // cannot be read, so it is read and not kept.
-    let plain = Path::new(photo).file_name() == Some(std::ffi::OsStr::new(photo));
-    let path = folder.join(photo);
-    let identity = (plain.then(|| library::raw_stamp(&path)).flatten())
-        .and_then(|stamp| Identity::read(&path, stamp, fingerprints));
+    let identity = state.and_then(|state| Identity::read(&path, state, fingerprints));
     let key = (identity.as_ref()).map(|photo| library::thumbnail_key(photo, size));
-    let send = |image| {
-        observer(LibraryEvent::Thumbnail {
-            open,
-            photo: photo.to_owned(),
-            size,
-            image,
-        })
-    };
     // A read first, the slot's render, current or stale, else its embedded picture,
     // decoded outside the replacement lock.
     let found = key.as_ref().and_then(|key| {
