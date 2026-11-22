@@ -101,7 +101,7 @@ One completed change makes a step of each tool it touched: a gesture ending with
 | `Reset` | One, with an empty entry for every tool the edit holds at the end, switched tools going off (decision 32), and the note `history-reset` |
 | `Step { source, note, commands }` | One for each tool its commands write, in a batch where there are several |
 | `Set` (unowned parameters) | None until the next change, where it is a step of its own in that change's batch |
-| `Picker(Once)`, a one-shot pick (planned, decision 79), a picker cursor's click or drag (decision 104) | One, its tool's, of source Auto: the tool's turning on, where it needs one, with the pick's writes; none where neither changes anything ([pickers.md](pickers.md#a-one-shot-pick)) |
+| `Picker(Once)`, a one-shot pick (decision 79), a picker cursor's click or drag (decision 104, planned) | One, its tool's, of source Auto: the tool's turning on, where it needs one, with the pick's writes; none where neither changes anything ([pickers.md](pickers.md#a-one-shot-pick)) |
 | `CancelGesture` | None ([decision 42](decisions/0042-numbers-shown-typed-and-stored.md)) |
 | `Undo`, `Redo`, `GoTo`, `Compress`, `Truncate` | None: they move the end or rewrite the log |
 

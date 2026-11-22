@@ -82,7 +82,7 @@ Cursors are the app's. The engine, the session protocol, the CLI and MCP never h
 
 ## Consequences
 
-- **[0079](0079-colour-pickers-one-api-for-tools-and-the-colour-picker.md):** `PickerCommand::Once` and `Region::pressed` (planned, 79.17), sent by a picker cursor.
+- **[0079](0079-colour-pickers-one-api-for-tools-and-the-colour-picker.md):** `PickerCommand::Once` and `Region::pressed` (built, 79.17), sent by a picker cursor.
 - **[0091](0091-context-menus-places-and-tools-items-as-actions.md):** its open question on an item that picks at the pointer is settled: no such item.
 - **[0092](0092-the-toolbar.md):** the part `cursors`, one, the whole well, in the default list between two flexible spaces, never folded; a hidden well leaves every cursor with a key reachable by it, and every cursor's work by its tool's own button.
 - **[0098](0098-actions-and-shortcuts-after-darktable.md):** the cursor actions' family and kind, and the default keys Esc, A held and K.
