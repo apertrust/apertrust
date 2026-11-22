@@ -80,8 +80,10 @@ clap = { version = "4.6.7", features = ["derive"] }
 # home, Pictures and Desktop folders darktable's variables name (apertrust-cli's places).
 directories = "6.0.0"
 # AccessKit: screen readers on every platform (docs/gui.md, Accessibility; decision 36).
+# Clipboard: copy and paste reach the system clipboard, through arboard and, on Wayland,
+# smithay-clipboard (Rust).
 # Links: a link opens in the system's browser, through webbrowser (Rust).
-eframe = { version = "0.37.0", default-features = false, features = ["accesskit", "links", "wgpu", "wayland", "x11"] }
+eframe = { version = "0.37.0", default-features = false, features = ["accesskit", "clipboard", "links", "wgpu", "wayland", "x11"] }
 # Without its default fonts, which fail the licence policy (decision 36).
 egui = { version = "0.37.0", default-features = false }
 # eframe's own, for its winit: the app places its window where settings say.
