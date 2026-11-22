@@ -17,7 +17,8 @@
 //! The Toolbar (`docs/gui.md`, The Toolbar): at its start, on Windows and Linux, the menu
 //! button, which opens the menus ([`Toolbar::menu_button`], decision 39), drawn as the
 //! app's icon with a caret or as ☰ ([`MenuButtonStyle`]), then the common actions, Import,
-//! Export, Reset, Undo and Redo, then after a gap Copy edit and Apply edit; at its end,
+//! Export, Reset, Undo and Redo, then after a gap Copy edit and Apply edit; when the app
+//! asks, the cursors' well centred in the room after them ([`Toolbar::cursors`]); at its end,
 //! when the app asks, the jobs spinner ([`Toolbar::jobs`]), then the edit's save state
 //! ([`SaveState`]), which shows only when a save goes wrong. Each sits in a slot of its
 //! own, as wide as its widest form at the fold, kept whether it shows anything or not, so
@@ -45,7 +46,10 @@ use egui::{
 
 use super::icon_button::colour;
 use super::plate::{Touch, paint_focus, undimmed_painter};
-use super::{IconButton, Jobs, ToolButton, focus_ring, pull_down, report_shortcut};
+use super::{
+    CursorWell, CursorWellAction, IconButton, Jobs, ToolButton, focus_ring, pull_down,
+    report_shortcut,
+};
 use crate::i18n::Args;
 use crate::{Icon, popup, theme, tr, translator};
 
@@ -78,6 +82,8 @@ pub enum ToolbarAction {
     /// The save warning ([`SaveState::Failed`]): why the edit is not saved should show,
     /// with Try again.
     NotSaved,
+    /// The cursors' well ([`Toolbar::cursors`]): what was pressed or chosen in it.
+    Cursors(CursorWellAction),
     /// The caption buttons ([`Toolbar::caption_buttons`]): minimise the window.
     Minimise,
     /// Maximise the window, or restore it where it is maximised.
@@ -165,6 +171,7 @@ impl MenuButtonStyle {
 #[derive(Default)]
 pub struct Toolbar<'a> {
     available: Available,
+    cursors: Option<CursorWell<'a>>,
     saved: SaveState<'a>,
     jobs: Option<Jobs<'a>>,
     undo_tip: Option<&'a str>,
@@ -341,6 +348,17 @@ impl<'a> Toolbar<'a> {
         self
     }
 
+    /// Draws the cursors' well (decision 104; `docs/gui.md`, The Toolbar) centred between
+    /// two empty strips after Apply edit, in the middle of the room between the actions
+    /// and the status slots, a group's gap before it at least. It never folds: the actions
+    /// fold before it, and the empty panel left to move the window by is counted on both
+    /// sides of it together. It is no empty area: a press on it never moves the window.
+    /// What it reports comes back as [`ToolbarAction::Cursors`].
+    pub fn cursors(mut self, well: CursorWell<'a>) -> Self {
+        self.cursors = Some(well);
+        self
+    }
+
     /// What Undo would undo, for its tooltip: "Undo Exposure: Brightness +8".
     pub fn undo_tip(mut self, tip: &'a str) -> Self {
         self.undo_tip = Some(tip);
@@ -470,19 +488,24 @@ impl<'a> Toolbar<'a> {
             0.0
         };
         let end = |fold: Fold| status_end(fold) + spinner_end;
+        // The cursors' well, which never folds, and a group's gap before it.
+        let well = self
+            .cursors
+            .as_ref()
+            .map_or(0.0, |w| w.width(ui) + t.spacing.xl);
         let id = response.id.with("fold");
         let last = ui.data(|d| d.get_temp::<Fold>(id)).unwrap_or(Fold::None);
         let fold = Fold::ALL
             .into_iter()
             .find(|&fold| {
                 let spare = if fold < last { SPARE } else { 0.0 };
-                start(fold) + EMPTY + end(fold) + spare <= inner.width()
+                start(fold) + well + EMPTY + end(fold) + spare <= inner.width()
             })
             .unwrap_or(Fold::Undo);
         ui.data_mut(|d| d.insert_temp(id, fold));
 
         // At the start: the menu button and the common actions, the folded ones under ⋯.
-        ui.scope_builder(
+        let actions = ui.scope_builder(
             UiBuilder::new()
                 .max_rect(inner)
                 .layout(Layout::left_to_right(Align::Center)),
@@ -546,6 +569,30 @@ impl<'a> Toolbar<'a> {
                 }
             },
         );
+
+        // Between them, centred in the room the actions and the status slots leave, the
+        // cursors' well, after the actions in the focus order.
+        let mut well_rect = None;
+        if let Some(well) = self.cursors {
+            let width = well.width(ui);
+            let room = actions.response.rect.right()..=(inner.max.x - end(fold));
+            let centre = ((room.start() + room.end()) / 2.0).round();
+            let rect = Rect::from_center_size(
+                pos2(centre, bar.center().y),
+                vec2(width, t.sizes.cursor_well),
+            );
+            let drawn = ui.scope_builder(
+                UiBuilder::new()
+                    .id_salt("cursors")
+                    .max_rect(rect)
+                    .layout(Layout::left_to_right(Align::Center)),
+                |ui| well.show(ui),
+            );
+            if let Some(chosen) = drawn.inner {
+                action = Some(ToolbarAction::Cursors(chosen));
+            }
+            well_rect = Some(rect);
+        }
 
         // At the end: the save state, in its slot, right-aligned.
         let folded = fold >= Fold::Status;
@@ -615,6 +662,8 @@ impl<'a> Toolbar<'a> {
                 },
             );
         }
+        // The well is no empty area, between its buttons too.
+        controls.extend(well_rect);
         if self.title_bar {
             action = action.or_else(|| title_bar_gesture(ui, bar, response.id, &controls));
         }
