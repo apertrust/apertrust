@@ -33,12 +33,15 @@
 //! picture or on a caption outside its first line and its name; with Ctrl, Cmd or Shift
 //! it does nothing. A right-click on a cell, a Control-click on the Mac, or the menu key,
 //! Shift+F10 or AccessKit's ShowContextMenu on the one focused, asks for its photo's
-//! menu, which the caller builds ([`BrowserOutput::menu`]). With a cell focused, ← and →
-//! move the focus to the next or previous photo, Home and End to the first and last, and
-//! Enter or Space opens the one focused; the panel scrolls to keep it in sight. The active
-//! photo's cell is scrolled into view when it changes. With no photos it is drawn empty and, where the app
-//! gives one, says why: a struck-through photo over the message, and a hint under it where
-//! the app gives one too.
+//! menu, which the caller builds ([`BrowserOutput::menu`]), a cell's own empty space
+//! included. Between and after the cells, or from the keys on the browser bar's buttons
+//! or a screen reader on the list, they ask for the Browser's own menu, which the caller
+//! builds too ([`BrowserOutput::space_menu`]). With a cell focused, ← and → move the
+//! focus to the next or previous photo, Home and End to the first and last, and Enter or
+//! Space opens the one focused; the panel scrolls to keep it in sight. The active photo's
+//! cell is scrolled into view when it changes. With no photos it is drawn empty and, where
+//! the app gives one, says why: a struck-through photo over the message, and a hint under
+//! it where the app gives one too.
 //!
 //! The browser bar holds Sort at its start and Zoom at its end, each opening its menu
 //! through the popup service, the one in use checked, and between them how many photos are
@@ -218,6 +221,9 @@ pub struct BrowserOutput {
     pub cell: Option<(usize, CellAction)>,
     /// A photo's cell asked for its menu this frame (decision 91).
     pub menu: Option<CellMenu>,
+    /// The Browser's own menu asked for this frame, on its empty space or from the keys
+    /// with no cell focused (decision 91).
+    pub space_menu: Option<SpaceMenu>,
 }
 
 /// A photo's menu asked for on its cell: by a right-click or the Mac's Control-click, at
@@ -230,6 +236,21 @@ pub struct CellMenu {
     pub at: egui::Pos2,
     /// The cell's id, the menu's opener (`popup::Request::opened_by`).
     pub cell: Id,
+}
+
+/// The Browser's own menu asked for (decision 91): by a right-click or the Mac's
+/// Control-click on its empty space, at the pointer; by the menu key, Shift+F10 or
+/// AccessKit's ShowContextMenu on the browser bar's Sort or Zoom, the Browser focused with
+/// no cell focused, under the button; or by AccessKit's ShowContextMenu on the list, in
+/// the middle of the panel. The caller builds the menu and opens it through the popup
+/// service.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SpaceMenu {
+    /// Where it hangs from, in points.
+    pub at: egui::Pos2,
+    /// The button the focus goes back to as it closes, asked for on Sort or Zoom; none
+    /// from the pointer or the list, the focus going back to what had it.
+    pub opener: Option<Id>,
 }
 
 /// What the user did to the Browser this frame.
@@ -260,7 +281,32 @@ pub enum BrowserBarAction {
     Labels,
 }
 
+/// An entry of the browser bar's options menu: a choice, or a submenu of choices under
+/// `title`, a message id that is its id too.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BarOption {
+    Choice(BrowserBarAction),
+    Submenu {
+        title: &'static str,
+        choices: &'static [BrowserBarAction],
+    },
+}
+
 impl BrowserBarAction {
+    /// The browser bar's options menu, in its order: Show Labels, then Position ▸ Left,
+    /// Right, Bottom.
+    pub const OPTIONS: [BarOption; 2] = [
+        BarOption::Choice(BrowserBarAction::Labels),
+        BarOption::Submenu {
+            title: "browser-position",
+            choices: &[
+                BrowserBarAction::Position(BrowserPosition::Left),
+                BrowserBarAction::Position(BrowserPosition::Right),
+                BrowserBarAction::Position(BrowserPosition::Bottom),
+            ],
+        },
+    ];
+
     /// Every choice, in the menus' order.
     pub const ALL: [BrowserBarAction; 14] = [
         BrowserBarAction::Sort(SortKey::CaptureTime),
@@ -508,8 +554,9 @@ impl<'a, F: Fn(usize) -> Thumb<'a>> Browser<'a, F> {
                 pos2(inner.right() - t.spacing.l, inner.bottom()),
             )
         };
-        // The panel's empty space, under the cells, outside the browser bar, all of it with no photos: a plain click
-        // there selects nothing. Inside the strip too, over the drag that scrolls it on a
+        // The panel's empty space, under the cells, outside the browser bar, all of it with
+        // no photos: a plain click there selects nothing, and a right-click asks for the
+        // Browser's own menu. Inside the strip too, over the drag that scrolls it on a
         // touch screen.
         let background = list.with("background");
         let around = if column {
@@ -517,14 +564,20 @@ impl<'a, F: Fn(usize) -> Thumb<'a>> Browser<'a, F> {
         } else {
             Rect::from_min_max(pos2(header.right(), inner.top()), inner.max)
         };
-        let mut action = cleared(ui, around, background).then_some(BrowserAction::ClearSelection);
+        let (cleared, at) = space(ui, around, background);
+        let mut action = cleared.then_some(BrowserAction::ClearSelection);
+        // A screen reader's ShowContextMenu on the list asks for it too.
+        let read = menu_asked(ui.ctx(), &response).then_some(around.center());
+        let mut space_menu = at.or(read).map(|at| SpaceMenu { at, opener: None });
         if self.count == 0 {
             if let Some(message) = self.empty {
                 empty(ui, area, message, self.hint);
             }
+            let (bar, keyed) = self.bar(ui, header, bar_id);
             return BrowserOutput {
                 action,
-                bar: self.bar(ui, header, bar_id),
+                bar,
+                space_menu: space_menu.or(keyed),
                 ..BrowserOutput::default()
             };
         }
@@ -582,8 +635,12 @@ impl<'a, F: Fn(usize) -> Thumb<'a>> Browser<'a, F> {
                         let origin = all.min;
                         // The part of the strip in sight, where its clip may reach past it.
                         let seen = viewport.translate(origin.to_vec2());
-                        if cleared(ui, seen, background.with("strip")) {
+                        let (cleared, at) = space(ui, seen, background.with("strip"));
+                        if cleared {
                             action = Some(BrowserAction::ClearSelection);
+                        }
+                        if let Some(at) = at {
+                            space_menu = Some(SpaceMenu { at, opener: None });
                         }
                         // Room round a cell scrolled to, for its rings: the strip's own at
                         // either end, so the first and last are never cut.
@@ -668,13 +725,14 @@ impl<'a, F: Fn(usize) -> Thumb<'a>> Browser<'a, F> {
                 });
         });
         // After the cells, so Tab reaches them first, then the browser bar's buttons.
-        let bar = self.bar(ui, header, bar_id);
+        let (bar, keyed) = self.bar(ui, header, bar_id);
         BrowserOutput {
             action,
             bar,
             shown,
             cell: cell_action,
             menu,
+            space_menu: space_menu.or(keyed),
         }
     }
 
@@ -684,8 +742,14 @@ impl<'a, F: Fn(usize) -> Thumb<'a>> Browser<'a, F> {
     /// row across the panel's top, the viewer bar's separator under it, so the two bars'
     /// lines meet, Sort at its left end and Zoom at its right; at the bottom a column at the panel's left end, the same separator
     /// between it and the cells, Sort at its top and Zoom at its bottom. Returns what was
-    /// chosen in their menus.
-    fn bar(&self, ui: &mut Ui, header: Rect, id: Id) -> Option<BrowserBarAction> {
+    /// chosen in their menus, and the Browser's own menu where Sort's or Zoom's menu keys
+    /// asked for it, neither having a context menu of its own.
+    fn bar(
+        &self,
+        ui: &mut Ui,
+        header: Rect,
+        id: Id,
+    ) -> (Option<BrowserBarAction>, Option<SpaceMenu>) {
         let t = theme(ui.ctx());
         let ctx = ui.ctx().clone();
         let stacked = !self.position.is_column();
@@ -732,7 +796,8 @@ impl<'a, F: Fn(usize) -> Thumb<'a>> Browser<'a, F> {
             } else {
                 Icon::SortAscending
             };
-            // A button that opens its menu of `actions`, reporting the one chosen.
+            // A button that opens its menu of `actions`, reporting the one chosen, and the
+            // Browser's own menu where its menu keys asked for it, under it.
             let menu = |ui: &mut Ui, icon, name: &str, tip: &str, value: &str, actions: &[_]| {
                 let button = IconButton::new(icon, name)
                     .tip(tip)
@@ -742,6 +807,10 @@ impl<'a, F: Fn(usize) -> Thumb<'a>> Browser<'a, F> {
                 ctx.accesskit_node_builder(button.id, |node| {
                     node.set_value(value);
                     node.set_has_popup(HasPopup::Menu);
+                });
+                let asked = menu_asked(&ctx, &button).then(|| SpaceMenu {
+                    at: button.rect.left_bottom(),
+                    opener: Some(button.id),
                 });
                 let picked = pull_down(ui, &button, name, || {
                     let mut entries = Vec::new();
@@ -754,7 +823,7 @@ impl<'a, F: Fn(usize) -> Thumb<'a>> Browser<'a, F> {
                     }
                     entries
                 });
-                picked.as_deref().and_then(BrowserBarAction::from_id)
+                (picked.as_deref().and_then(BrowserBarAction::from_id), asked)
             };
             let sort_name = tr(&ctx, "grid-sort");
             let sorted = menu(
@@ -799,28 +868,31 @@ impl<'a, F: Fn(usize) -> Thumb<'a>> Browser<'a, F> {
                 &text("grid-thumbnail-size-value"),
                 &BrowserBarAction::ALL[6..10],
             );
-            let chosen = sorted.or(zoomed);
-            chosen.or(options)
+            let chosen = sorted.0.or(zoomed.0);
+            (chosen.or(options), sorted.1.or(zoomed.1))
         }
     }
 
     /// The browser bar's options menu, hung from the pointer where `toolbar` was
-    /// right-clicked: Show Labels, checked while the captions show, then Position › Left,
-    /// Right, Bottom, the one in use checked. Returns what was chosen.
+    /// right-clicked: [`BrowserBarAction::OPTIONS`], Show Labels, checked while the captions
+    /// show, then Position › Left, Right, Bottom, the one in use checked. Returns what was
+    /// chosen.
     fn options(&self, ui: &Ui, toolbar: &Response) -> Option<BrowserBarAction> {
         let ctx = ui.ctx();
         let id = toolbar.id.with("options");
         if toolbar.secondary_clicked()
             && let Some(at) = toolbar.interact_pointer_pos()
         {
-            let positions = BrowserBarAction::ALL[10..13]
+            let entries = BrowserBarAction::OPTIONS
                 .iter()
-                .map(|action| action.item(ui, self))
+                .map(|option| match *option {
+                    BarOption::Choice(action) => action.item(ui, self),
+                    BarOption::Submenu { title, choices } => {
+                        let items = choices.iter().map(|action| action.item(ui, self));
+                        Submenu::new(title, tr(ctx, title), items.collect()).into()
+                    }
+                })
                 .collect();
-            let entries = vec![
-                BrowserBarAction::Labels.item(ui, self),
-                Submenu::new("position", tr(ctx, "browser-position"), positions).into(),
-            ];
             let anchor = Rect::from_min_size(at, vec2(0.0, 0.0));
             let request = Request::pull_down(anchor, tr(ctx, "browser-bar-options"), entries);
             popup::open(ctx, id, request);
@@ -1106,11 +1178,16 @@ fn keyed(ui: &Ui, id: Id, i: usize, cells: &Cells) -> Option<usize> {
     .filter(|target| *target != i)
 }
 
-/// Whether the primary button clicked `rect`, the widget `id` under the cells, with no
-/// modifier held: the panel's empty space, which takes no focus and has no node of its own,
-/// Select None being the keys' way.
-fn cleared(ui: &Ui, rect: Rect, id: Id) -> bool {
-    ui.interact(rect, id, Sense::CLICK).clicked() && plain(ui)
+/// What the panel's empty space over `rect`, the widget `id` under the cells, was asked this
+/// frame: whether the primary button clicked it with no modifier held, Select None being
+/// the keys' way, and where a right-click, or the Mac's Control-click, asked for the
+/// Browser's own menu. It takes no focus and has no node of its own.
+fn space(ui: &Ui, rect: Rect, id: Id) -> (bool, Option<egui::Pos2>) {
+    let response = ui.interact(rect, id, Sense::CLICK);
+    let menu = context_click(ui.ctx(), &response)
+        .then(|| response.interact_pointer_pos())
+        .flatten();
+    (response.clicked() && plain(ui), menu)
 }
 
 /// Whether the primary button last came up this frame with no modifier held, as the event
