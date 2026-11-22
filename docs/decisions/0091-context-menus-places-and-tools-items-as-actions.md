@@ -19,9 +19,9 @@ A tool's section already has its own buttons: reset, presets and options (⋯). 
 - Open to tools' items: `Photo` (the photo in the Viewer), `Thumbnail` (a Browser cell, and a cell in Photo when several photos show), and `Options` (a tool's own ⋯, in its own section only).
 - The app's alone, each built with its feature:
   - the surround, `Place::Surround` (built: View › Background's items);
-  - the browser bar (built: Position ▸);
+  - the browser bar (built: Show Labels, Position ▸);
   - Collections' folder rows (built);
-  - the Browser's empty area: the browser bar's options, with Select All and Select None;
+  - the Browser's empty area, `Place::Browser` (built: Select All, Select None, —, then the browser bar's options, read from the list the browser bar builds its own from);
   - a History step, `Place::Step` (built): Go to Step, Show Tool, Compress up to Here and Truncate after Here;
   - the jobs window's rows: Cancel, Show in Folder and Copy Error;
   - the Tools panel's tab bar, `Place::TabBar`, on a tab's icon or its empty end: Find Tool…, Show Hidden Tools, Workspace ▸, Reset Tab, Processing Order and Workspace ▸'s Restore Defaults, the same items in the Tools panel's ⋮ (planned, [0096](0096-workspaces-as-files-hidden-tools-and-finding-a-tool.md));
@@ -84,7 +84,7 @@ A tool's section already has its own buttons: reset, presets and options (⋯). 
 - On the photo: the active photo, with the point under the pointer in the photo's coordinates as pickers take them (79), or no point when the menu opens from the keys. An action that needs a point is hidden without one. Export… there is File › Export…'s: it reveals the Export tool, whose button exports the selection, and its words say how many.
 - On a thumbnail: the selection, which always holds its photo. Opening its menu, by a right-click or from the keys on its focused cell, opens its photo first unless it is the active one ([0037](0037-one-view-the-photos-tab.md)): a photo in the selection keeps it, one outside it is selected alone. So Reset, which acts on the active photo alone, acts on the photo the menu was opened on, and while several photos are selected it is hidden, as any item that acts on one photo alone is. Export… stays shown with several selected, saying how many ("Export 12 Photos…"); it reveals the Export tool, whose button exports the selection.
 - In ⋯: its tool.
-- On the surround: the app.
+- On the surround and the Browser's empty area: the app.
 
 **Opening.**
 
@@ -122,7 +122,7 @@ Discard History… is in no context menu: it stays in Edit and History's ⋯ ([0
 - the items: History's Reset in both menus, and Orientation ▸ on the photo, after Background ▸, the first submenu a tool adds;
 - the tests: the limits and the section rules, the menus' size, a repeated `(section, order)` in one menu, Background ▸ equal to View › Background, every item reachable elsewhere, the photo's and a thumbnail's menus as they read, and the generated actions' ids, words, availability and keys.
 
-⋯ is built through `menus::context` (decision 93's step 93.3, `menus::options`): the app's items first, Reset where the tool has ↺, enabled and run as ↺ is, then Copy Settings and Paste Settings on a processing tool, drawn disabled with their tip until built; each tool's declared items; the layout's last. Pickers as items and the other places come later.
+⋯ is built through `menus::context` (decision 93's step 93.3, `menus::options`): the app's items first, Reset where the tool has ↺, enabled and run as ↺ is, then Copy Settings and Paste Settings on a processing tool, drawn disabled with their tip until built; each tool's declared items; the layout's last. The Browser's empty area has its menu too (`Place::Browser`). Pickers as items and the other places come later.
 
 ## Options considered
 
@@ -148,7 +148,7 @@ Discard History… is in no context menu: it stays in Edit and History's ⋯ ([0
   - the photo's right-click in `main.rs`, and a thumbnail's from the Browser;
   - the app's own items as `MenuItem`s, `menus::APP_ITEMS`;
   - tests of the limits, of the menu's size, of a repeated `(section, order)` in one menu, of Background ▸ against View › Background, and of every item being reachable elsewhere.
-- `apertrust-ui`: the Browser reports a cell's right-click and its menu keys, with the cell (`BrowserOutput::menu`). It still holds no tool types.
+- `apertrust-ui`: the Browser reports a cell's right-click and its menu keys, with the cell (`BrowserOutput::menu`), and its empty area's right-click, and the menu keys on the browser bar's Sort or Zoom, as its own menu (`BrowserOutput::space_menu`). It still holds no tool types.
 - The engine and the session protocol are unchanged: an item runs an action that already sends its command.
 - Decision 92's tools' items on the toolbar are these generated actions.
 - Decisions 83 and 86 no longer open anything on a right-click on a section's header.

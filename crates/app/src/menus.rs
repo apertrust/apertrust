@@ -45,6 +45,7 @@
     )
 )]
 
+use apertrust_ui::components::{BarOption, BrowserBarAction};
 use apertrust_ui::i18n::Args;
 use apertrust_ui::{Translator, popup, translator};
 use eframe::egui::{self, Rect, os::OperatingSystem};
@@ -671,6 +672,9 @@ pub enum Place {
     /// A History step's line: Go to Step, Show Tool, Compress up to Here and Truncate after
     /// Here, the app's alone (`docs/history.md`, The History tab).
     Step,
+    /// The Browser's empty space, between and after its cells, all of it with no photos:
+    /// Select All and Select None, then the browser bar's options ([`browser_items`]).
+    Browser,
 }
 
 /// What a context menu's items act on (decision 91).
@@ -685,7 +689,8 @@ pub enum Target {
     Selection,
     /// The tool or utility whose ⋯ it is, by its id: only its own items join the menu.
     Tool(&'static str),
-    /// The app itself, as the surround's items set its background.
+    /// The app itself, as the surround's items set its background and the Browser's its
+    /// selection and layout.
     App,
     /// A History step, by its number, which names its menu to screen readers ("Step 3");
     /// its items act on it as `State::step` says they can.
@@ -696,12 +701,13 @@ pub enum Target {
 /// right-clicked for a right-click (decision 91): the app's items there ([`APP_ITEMS`]) and
 /// those tools and utilities add ([`added`]) together, by section and order, a line
 /// wherever the section changes ([`built`]). The surround, the app's alone, holds View ›
-/// Background's items, and a History step's its own ([`STEP`]). Each item is its action's,
-/// as the menu button's ([`shown`]); in the photo's and a thumbnail's menus an item that
-/// cannot run is hidden, but shown disabled while only the photo's not yet being live
-/// stops it, and no item shows its key ([`pared`]). In ⋯ and a step's menu an item that
-/// cannot run is drawn disabled with its tip, as in a pull-down. Its items' ids are their
-/// actions' ([`chosen`]).
+/// Background's items, a History step's its own ([`STEP`]), and the Browser's empty space
+/// Select All, Select None and the browser bar's options ([`browser_items`]). Each item is
+/// its action's, as the menu button's ([`shown`]); in the photo's and a thumbnail's menus
+/// an item that cannot run is hidden, but shown disabled while only the photo's not yet
+/// being live stops it, and no item shows its key ([`pared`]). In ⋯ and a step's menu an
+/// item that cannot run is drawn disabled with its tip, as in a pull-down. Its items' ids
+/// are their actions' ([`chosen`]).
 pub fn context(
     ctx: &egui::Context,
     place: Place,
@@ -716,7 +722,7 @@ pub fn context(
         .collect();
     let added = match place {
         Place::Open(open) => added(open, target, &tools, apertrust_tools::utility::UTILITIES),
-        Place::Surround | Place::Step => Vec::new(),
+        Place::Surround | Place::Step | Place::Browser => Vec::new(),
     };
     let (os, tr) = (ctx.os(), translator(ctx));
     built(place, target, &added, keymap, state, os, &tr, anchor)
@@ -1053,6 +1059,10 @@ fn built(
     anchor: Rect,
 ) -> popup::Request {
     let steps = Steps::default();
+    if place == Place::Browser {
+        let entries = browser_items(keymap, state, os, tr);
+        return popup::Request::pull_down(anchor, name(place, target, tr), entries);
+    }
     let Place::Open(open) = place else {
         let lists = Lists::default();
         let menu = match place {
@@ -1114,6 +1124,47 @@ fn built(
     popup::Request::pull_down(anchor, name(place, target, tr), entries)
 }
 
+/// The Browser's own menu, on its empty space (decision 91): Select All and Select None,
+/// a line, then the browser bar's options, built from the list the browser bar builds its
+/// own from ([`BrowserBarAction::OPTIONS`]), so the two hold the same items: Show Labels,
+/// then Position ▸. Each item is its registry action's, drawn disabled where it cannot
+/// run, as the menu bar draws it: with no photos Show Labels rests, as View › Show Labels
+/// does, where the browser bar's own menu keeps it. None shows its keys, as the browser
+/// bar's and macOS's context menus show none.
+fn browser_items(
+    keymap: &Keymap,
+    state: &State,
+    os: OperatingSystem,
+    tr: &Translator,
+) -> Vec<popup::Entry> {
+    let steps = Steps::default();
+    let item = |id: ActionId| {
+        let item = action_item(id, keymap, state, &steps, os, tr)?;
+        Some(popup::Entry::Item(popup::Item {
+            shortcut: None,
+            ..item
+        }))
+    };
+    let chosen = |action: &BrowserBarAction| chosen(action.id()).and_then(item);
+    let mut entries: Vec<popup::Entry> = [ActionId::SELECT_ALL, ActionId::SELECT_NONE]
+        .into_iter()
+        .filter_map(item)
+        .collect();
+    entries.push(popup::Entry::Separator);
+    entries.extend(
+        BrowserBarAction::OPTIONS
+            .iter()
+            .filter_map(|option| match *option {
+                BarOption::Choice(action) => chosen(&action),
+                BarOption::Submenu { title, choices } => {
+                    let items = choices.iter().filter_map(chosen).collect();
+                    Some(popup::Submenu::new(title, tr.text(title), items).into())
+                }
+            }),
+    );
+    entries
+}
+
 /// The actions a thumbnail's menu hides while several photos are selected, since they act
 /// on one photo alone (decision 91): Reset, whose `Command::Reset` resets the open photo
 /// only, until resetting several is decided.
@@ -1127,11 +1178,13 @@ pub(crate) fn chosen_on_thumbnail(chosen: ActionId, selected: usize) -> Option<A
 }
 
 /// What screen readers call the menu at `place`: the surround's is Background, as View ›
-/// Background's submenu is; ⋯'s its tool's or utility's options, as its button is; a
-/// History step's the step by its number, "Step 3".
+/// Background's submenu is; the Browser's empty space's Browser, as its list is; ⋯'s its
+/// tool's or utility's options, as its button is; a History step's the step by its number,
+/// "Step 3".
 fn name(place: Place, target: &Target, tr: &Translator) -> String {
     match (place, target) {
         (Place::Surround, _) => tr.text(BACKGROUND.title),
+        (Place::Browser, _) => tr.text("browser"),
         (Place::Step, target) => {
             let mut args = Args::new();
             if let Target::Step { number } = target {
@@ -4027,6 +4080,148 @@ mod tests {
                 ("Medium", Some(false)),
                 ("Light", Some(false)),
                 ("White", Some(false)),
+            ]
+        );
+    }
+
+    /// Decision 91: the Browser's own menu, on its empty space, is Select All and Select
+    /// None, a line, then the browser bar's options menu exactly as the browser bar builds
+    /// its own, both from `BrowserBarAction::OPTIONS`. Compared as each is built, the bar's
+    /// as its right-click hands it to the popup service, so neither can drift from the
+    /// other.
+    #[test]
+    fn the_browser_s_menu_is_select_all_select_none_then_the_browser_bar_s_options() {
+        use std::sync::{Arc, Mutex};
+
+        use apertrust_ui::Theme;
+        use apertrust_ui::components::{Browser, BrowserPosition, Thumb};
+        use egui_kittest::Harness;
+        use egui_kittest::kittest::Queryable as _;
+
+        /// A popup service that takes every request, keeping them.
+        struct Recording(Mutex<Vec<popup::Request>>);
+
+        impl popup::Service for Recording {
+            fn takes(&self, _: &popup::Request) -> bool {
+                true
+            }
+
+            fn open(&self, _: egui::Id, request: popup::Request) {
+                self.0.lock().unwrap().push(request);
+            }
+        }
+
+        let state = State {
+            browser: crate::settings::BrowserSettings {
+                labels: false,
+                position: BrowserPosition::Right,
+                ..crate::settings::BrowserSettings::default()
+            },
+            ..everything()
+        };
+        let recording = Arc::new(Recording(Mutex::new(Vec::new())));
+        let service = recording.clone();
+        let browser = state.browser;
+        let mut harness = Harness::builder()
+            .with_size(egui::vec2(900.0, 360.0))
+            .with_os(OperatingSystem::Nix)
+            .with_context_setup(move |ctx| {
+                apertrust_ui::install(ctx, Theme::default());
+                popup::install(ctx, service.clone());
+            })
+            .build_ui(move |ui| {
+                let thumb = |_| Thumb {
+                    name: "IMG_0001.ARW",
+                    edited: false,
+                    status: None,
+                    selected: false,
+                    picture: None,
+                    no_preview: false,
+                    rating: None,
+                };
+                Browser::new(3, None, thumb)
+                    .labels(browser.labels)
+                    .position(browser.position)
+                    .show(ui);
+            });
+        harness.run();
+        let at = harness
+            .get_by_role_and_label(egui::accesskit::Role::Toolbar, "Browser bar")
+            .rect()
+            .center();
+        harness.hover_at(at);
+        harness.run();
+        for pressed in [true, false] {
+            harness.event(egui::Event::PointerButton {
+                pos: at,
+                button: egui::PointerButton::Secondary,
+                pressed,
+                modifiers: egui::Modifiers::NONE,
+            });
+        }
+        harness.run();
+        let bar = recording.0.lock().unwrap().last().cloned();
+        let bar = bar.expect("the browser bar's options menu");
+
+        let keymap = Keymap::defaults(OperatingSystem::Nix);
+        let menu = context(
+            &harness.ctx,
+            Place::Browser,
+            &Target::App,
+            &keymap,
+            &state,
+            Rect::NOTHING,
+        );
+        assert_eq!(menu.name, "Browser");
+        let (select, options) = menu.entries.split_at(3);
+        assert_eq!(options, bar.entries);
+        // Each line's id, words, whether it is enabled and checked, and whether it shows
+        // keys, a submenu's after it.
+        fn flat(entries: &[popup::Entry]) -> Vec<(String, String, bool, Option<bool>, bool)> {
+            let mut lines = Vec::new();
+            for entry in entries {
+                match entry {
+                    popup::Entry::Item(item) => lines.push((
+                        item.id.clone(),
+                        item.text.clone(),
+                        item.enabled,
+                        item.checked,
+                        item.shortcut.is_some(),
+                    )),
+                    popup::Entry::Separator => {
+                        lines.push(("-".into(), String::new(), false, None, false));
+                    }
+                    popup::Entry::Submenu(submenu) => {
+                        let (id, text) = (submenu.id.clone(), submenu.text.clone());
+                        lines.push((id, text, true, None, false));
+                        lines.extend(flat(&submenu.entries));
+                    }
+                }
+            }
+            lines
+        }
+        let line = |id: &str, text: &str, checked| {
+            let enabled = id != "-";
+            (id.to_owned(), text.to_owned(), enabled, checked, false)
+        };
+        // Select's two, enabled as Select's items are, then Show Labels and Position ▸, as
+        // they stand, with no keys shown.
+        assert_eq!(
+            flat(select),
+            [
+                line("select-all", "Select all", None),
+                line("select-none", "Select none", None),
+                ("-".into(), String::new(), false, None, false),
+            ]
+        );
+        assert_eq!(
+            flat(options),
+            [
+                line("show-labels", "Show labels", Some(false)),
+                line("browser-position", "Position", None),
+                line("browser-position-left", "Left", Some(false)),
+                line("browser-position-right", "Right", Some(true)),
+                line("browser-position-bottom", "Bottom", Some(false)),
             ]
         );
     }
