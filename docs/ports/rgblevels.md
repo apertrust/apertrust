@@ -12,7 +12,7 @@ Ported. Every mode is in Slang (`crates/op/rgblevels`), with its manifest and sc
 
 Golden result: eight cases on tests 0054 and 0055's mire1.cr2, 3908×2602, Apple M4, 48-byte pass header. Every case passes, ΔE2000 mean 0.0004 to 0.0038, max 1.52 at most (Results).
 
-Gradients: every parameter passes on every case and on the synthetic sweep, the black point at worst 3.2e-3 on the test image and 3.7e-3 on the sweep, the others 1.0e-4 or better; forward and reverse mode agree within 3.3e-7 (Gradients).
+Gradients: every parameter passes on every case and on the synthetic sweep, the black point at worst 3.2e-3 on the test image and 3.7e-3 on the sweep, the others 1.0e-4 or better; forward and reverse mode agree within 3.3e-7 (Gradients). On the AMD Radeon 780M, against darktable's official AppImage's references, `rgblevels-average`'s black point fails, its finite difference NaN, to be investigated (Results, On the Radeon 780M).
 
 ## Purpose
 
@@ -233,6 +233,23 @@ The largest differences are darktable's table near black. A CPU simulation of da
 - With the curve alone, `rgblevels-average` would reach a max of 10.48 and `rgblevels-norm` 8.84 (simulated); the band keeps them at 1.52 and 1.15.
 - `rgblevels-none`, at a power of 0.71, would pass with the curve alone too (1.19, simulated), and passes at 0.49.
 - At a power of 0.84 (`rgblevels-max`) the first step is 9e-5, and the case passes with the curve alone. For a power of 1 or more the table is within power/65536 of the range of the curve everywhere (2e-5 at 1.34, 2.8e-5 at 1.85, 1.5e-4 at 10).
+
+### On the Radeon 780M
+
+On the AMD Radeon 780M (Vulkan through RADV, Linux, a Ryzen 7 8845HS), against references rendered by darktable's official `Darktable-5.6.2-x86_64.AppImage` (decision 103): `apertrust-golden run` with one round of one iteration and no warm-up, so each time is a single render's GPU time, not a median, and `gradient`. Every case passes its tolerance with no pixel over its max.
+
+| Case | ΔE2000 mean | p95 | max | Pixels over max | GPU time, one render | Gradient check |
+| --- | --- | --- | --- | --- | --- | --- |
+| `rgblevels` | 0.0010 | 0.0028 | 0.0292 | 0 | 4.5 ms, 1 pass | passes, 3 parameters, relative error ≤ 3.4e-4, forward mode within 2.8e-7 a pixel |
+| `rgblevels-independent` | 0.0016 | 0.0044 | 0.0172 | 0 | 4.5 ms, 1 pass | passes, 4 parameters, relative error ≤ 3.6e-4, forward mode within 2.7e-7 a pixel |
+| `rgblevels-none` | 0.0038 | 0.0135 | 0.4894 | 0 | 4.5 ms, 1 pass | passes, 3 parameters, relative error ≤ 8.2e-4, forward mode within 1.4e-7 a pixel |
+| `rgblevels-max` | 0.0012 | 0.0037 | 0.1657 | 0 | 4.5 ms, 1 pass | passes, 3 parameters, relative error ≤ 4.9e-5, forward mode within 2.4e-7 a pixel |
+| `rgblevels-average` | 0.0015 | 0.0052 | 1.5249 | 0 | 4.6 ms, 1 pass | **fails** on `black`, its finite difference NaN; `grey` and `white` pass, relative error ≤ 1.2e-5, forward mode within 2.3e-7 a pixel |
+| `rgblevels-sum` | 0.0004 | 0.0012 | 0.0067 | 0 | 4.8 ms, 1 pass | passes, 3 parameters, relative error ≤ 3.2e-3, forward mode within 2.9e-7 a pixel |
+| `rgblevels-norm` | 0.0007 | 0.0023 | 1.1504 | 0 | 4.5 ms, 1 pass | passes, 3 parameters, relative error ≤ 2.2e-3, forward mode within 2.2e-7 a pixel |
+| `rgblevels-power` | 0.0007 | 0.0015 | 0.0044 | 0 | 4.5 ms, 1 pass | passes, 3 parameters, relative error ≤ 2.6e-4, forward mode within 3.1e-7 a pixel |
+
+One gradient fails: `rgblevels-average`'s black point, at 0, has a finite difference of NaN on this case's input. Its reverse and forward values (−1.463884e7) are the same as on the input a local darktable build compiled for the CPU renders, where the finite difference agrees within 1.9e-5. Found, to be investigated; `grey` and `white` pass on this case, and every parameter on the others.
 
 ## Test plan
 

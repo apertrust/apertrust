@@ -20,6 +20,18 @@ Every case is darktable's output bit for bit: the tolerance is none (`cases::FLI
 
 The exit test (`apertrust-golden pipeline`, Apple M4), with orientation at auto on both sides: 27 of the 29 colour mosaics pass, as before the port, the two Sony lossy ARWs failing as they did. The X100VI's raw, which its EXIF turns, is compared upright, 5152×7728: mean ΔE2000 0.001, max 13.68, 0.0003% of pixels over 2.3, the same as with orientation off on both sides. With the vignette case added (`--add vignette`), the turned X100VI is 0.064 mean ΔE2000 from darktable, where the X-T5, landscape, is 0.079 and the X100VI with orientation off on both sides 0.083: the vignette frames the turned photo as darktable's does.
 
+Golden results on the AMD Radeon 780M (Vulkan through RADV, Linux, a Ryzen 7 8845HS), against references rendered by darktable's official `Darktable-5.6.2-x86_64.AppImage` (decision 103): `apertrust-golden run` with one round of one iteration and no warm-up, so each time is a single render's GPU time, not a median, and `gradient`. Every case passes its tolerance with no pixel over its max.
+
+| Case | ΔE2000 mean | p95 | max | Pixels over max | GPU time, one render | Gradient check |
+| --- | --- | --- | --- | --- | --- | --- |
+| `flip-ccw` | 0.0000 | 0.0000 | 0.0000 | 0 | 5.0 ms, 1 pass | none: no gradient port |
+| `flip-cw` | 0.0000 | 0.0000 | 0.0000 | 0 | 4.5 ms, 1 pass | none: no gradient port |
+| `flip-180` | 0.0000 | 0.0000 | 0.0000 | 0 | 4.6 ms, 1 pass | none: no gradient port |
+| `flip-horizontal` | 0.0000 | 0.0000 | 0.0000 | 0 | 4.5 ms, 1 pass | none: no gradient port |
+| `flip-vertical` | 0.0000 | 0.0000 | 0.0000 | 0 | 4.7 ms, 1 pass | none: no gradient port |
+| `flip-transpose` | 0.0000 | 0.0000 | 0.0000 | 0 | 4.5 ms, 1 pass | none: no gradient port |
+| `flip-transverse` | 0.0000 | 0.0000 | 0.0000 | 0 | 4.4 ms, 1 pass | none: no gradient port |
+
 ## Purpose
 
 Turns or mirrors the photo in steps of 90°, so it shows the right way up: by default the photo's own orientation, which the camera records in the EXIF Orientation tag, and otherwise the one the user chooses. Algorithmically, a permutation of whole pixels, no interpolation: each output pixel is one input pixel. It is the Geometry tab's Orientation tool (`docs/tools/README.md`).

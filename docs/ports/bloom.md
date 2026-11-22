@@ -191,6 +191,14 @@ Every scale meets the target; 1/2 has the least margin, 0.140 against 0.15. The 
 
 The viewport thresholds each downscaled pixel, where the export thresholds its full-resolution pixels before the footprint averages them. So wherever a footprint holds pixels on both sides of the threshold, which mire1's chart has along every edge, the lights differ, and Lab's lightness of a footprint's mean is not the mean of its lightnesses.
 
+### On the Radeon 780M
+
+On the AMD Radeon 780M (Vulkan through RADV, Linux, a Ryzen 7 8845HS), against references rendered by darktable's official `Darktable-5.6.2-x86_64.AppImage` (decision 103): `apertrust-golden run` with one round of one iteration and no warm-up, so each time is a single render's GPU time, not a median, and `gradient`. Every case passes its tolerance with no pixel over its max.
+
+| Case | ΔE2000 mean | p95 | max | Pixels over max | GPU time, one render | Gradient check |
+| --- | --- | --- | --- | --- | --- | --- |
+| `bloom` | 0.0000 | 0.0001 | 0.0002 | 0 | 76.9 ms, 18 passes | none: no gradient port |
+
 ## Test plan
 
 - **Golden case:** `bloom`, darktable's test 0050-bloom on mire1.cr2, unchanged: size 40, threshold 85, strength 70, after darktable's default pipeline without a tone mapper. `Tolerance::DARKTABLE`, a one-instance plan of the engine (decision 15).

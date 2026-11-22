@@ -7,7 +7,7 @@ Status: ported.
 - **Code:** the kernel is `slang/filmicrgb.slang` in `crates/op/filmicrgb`, its setup `src/setup.rs`, its manifest and schema `src/lib.rs`.
 - **Coverage:** everything darktable offers a new instance: the five colour sciences, v3 (2019) to v7 (2023), darktable's default; every norm, the legacy euclidean one included; the hard, soft and safe curves of the toe and the shoulder; the display targets, custom middle grey; and the highlight reconstruction, its noise in all three distributions, its wavelets in RGB and its iterations on ratios. Only spline v1 and v2 return `NotPorted`: no widget sets them, and only a params version 5 edit holds them (Parameter versions).
 - **Planning:** in `OPERATIONS` at darktable's v5.0 place, working space 46.0, with `default_enabled` off: nothing plans it until an edit can choose it as its tone mapper (decision 33, planned with the Filmic RGB tool).
-- **Checks:** the eight golden cases pass, and the gradient check passes on every case and on the synthetic sweep (Gradients). Checked on one GPU so far.
+- **Checks:** the eight golden cases pass, and the gradient check passes on every case and on the synthetic sweep (Gradients). Checked on the Apple M4 and the AMD Radeon 780M (below).
 
 Golden results, Apple M4, each case a one-instance plan of the engine (decision 15):
 
@@ -23,6 +23,19 @@ Golden results, Apple M4, each case a one-instance plan of the engine (decision 
 | `filmicrgb-v6-euclidean` | 0142 | v6 (2022), euclidean norm, safe curves, reconstruction at +3 EV | 0.0001 | 0.0001 | 0.0004 | 2.91 | 629 ms, 567 (72) |
 
 No pixel of any case is over 2.3. The module's effect is darktable's input against its output. The largest differences, 0.029 and 0.0087, are isolated pixels of the two cases with a polynomial piece and no norm. A render's time is that of every pass, GPU timestamps: the reconstruction's 71 whole-image passes over 3908×2602, each reading or writing an image-sized buffer of 16 bytes a pixel, take about 7 ms each; the tone mapping alone takes 3 to 7 ms.
+
+Golden results on the AMD Radeon 780M (Vulkan through RADV, Linux, a Ryzen 7 8845HS), against references rendered by darktable's official `Darktable-5.6.2-x86_64.AppImage` (decision 103): `apertrust-golden run` with one round of one iteration and no warm-up, so each time is a single render's GPU time, not a median, and `gradient`. Every case passes its tolerance with no pixel over its max.
+
+| Case | ΔE2000 mean | p95 | max | Pixels over max | GPU time, one render | Gradient check |
+| --- | --- | --- | --- | --- | --- | --- |
+| `filmicrgb` | 0.0001 | 0.0002 | 0.0003 | 0 | 313 ms, 37 passes | passes, 3 parameters, relative error ≤ 3.7e-3, forward mode within 1.2e-6 a pixel |
+| `filmicrgb-reconstruction` | 0.0001 | 0.0003 | 0.0055 | 0 | 610 ms, 72 passes | passes, 2 parameters, relative error ≤ 5.3e-3, forward mode within 1.3e-6 a pixel |
+| `filmicrgb-v6` | 0.0000 | 0.0001 | 0.0002 | 0 | 616 ms, 72 passes | passes, 3 parameters, relative error ≤ 1.8e-3, forward mode within 1.3e-6 a pixel |
+| `filmicrgb-v7` | 0.0000 | 0.0001 | 0.0003 | 0 | 612 ms, 72 passes | passes, 4 parameters, relative error ≤ 3.8e-3, forward mode within 1.3e-6 a pixel |
+| `filmicrgb-v3-nochroma` | 0.0002 | 0.0005 | 0.0212 | 0 | 303 ms, 37 passes | passes, 4 parameters, relative error ≤ 7.6e-3, forward mode within 5.4e-6 a pixel |
+| `filmicrgb-v4-nochroma` | 0.0000 | 0.0001 | 0.0136 | 0 | 602 ms, 72 passes | passes, 4 parameters, relative error ≤ 2.8e-3, forward mode within 4.9e-6 a pixel |
+| `filmicrgb-v5-nochroma` | 0.0000 | 0.0001 | 0.0050 | 0 | 4.6 ms, 1 pass | passes, 4 parameters, relative error ≤ 4.0e-3, forward mode within 2.5e-6 a pixel |
+| `filmicrgb-v6-euclidean` | 0.0000 | 0.0001 | 0.0004 | 0 | 604 ms, 72 passes | passes, 3 parameters, relative error ≤ 4.0e-3, forward mode within 6.5e-7 a pixel |
 
 ## Purpose
 

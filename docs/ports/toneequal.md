@@ -571,7 +571,7 @@ How:
 
 ## Results
 
-On the Apple M4 (Metal), `apertrust-golden run` and `gradient` at full resolution, 3908×2602, with the module at darktable's place and the sidecars in the tests' own order, colorin an identity (decision 22; Test plan). The filtered cases take each case raw's readout as darktable's `piece->iwidth` (Setup). Times are the median GPU time per whole render of the one-instance plan. The references come from darktable's official macOS build (decision 103). Of other vendors' GPUs only the Radeon 780M has run, below, so the status is ported, not verified.
+On the Apple M4 (Metal), `apertrust-golden run` and `gradient` at full resolution, 3908×2602, with the module at darktable's place and the sidecars in the tests' own order, colorin an identity (decision 22; Test plan). The filtered cases take each case raw's readout as darktable's `piece->iwidth` (Setup). Times are the median GPU time per whole render of the one-instance plan. The references come from darktable's official macOS build (decision 103). Of other vendors' GPUs only the Radeon 780M has run (On the Radeon 780M, below), so the status is ported, not verified.
 
 | Case | Module effect, mean ΔE2000 | ΔE2000 mean | p95 | max | Pixels over 0.05 | Median GPU time per render, three runs |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -589,7 +589,19 @@ On the Apple M4 (Metal), `apertrust-golden run` and `gradient` at full resolutio
 - darktable's loops restated on the CPU in `src/filters.rs`, with the f64 curve, render the same four filtered cases at means of 0.0002 to 0.0004 and maxima of 0.0012 to 0.0015 (`the_restated_filters_render_darktables_cases`, ignored as it needs darktable).
 - Quantised, outside the cases (Deliberate differences): test 0080's bands with the preset's mask settings and quantisation 0.5 EV give a mean of 0.0003, p95 0.0008 and a max of 6.36, 2 pixels over 0.05, with one iteration, and a mean of 0.0025, p95 0.0011 and a max of 11.50, 16,151 pixels over 0.05, 0.16%, with five. The restatement in Rust gives 6.27 with 3 pixels over, and 11.08 with five iterations.
 
-**On the Radeon 780M** (Vulkan, Linux, a Ryzen 7 8845HS), `apertrust-golden run` against references from darktable's official `Darktable-5.6.2-x86_64.AppImage`: all seven cases pass, the four filtered ones among them, at means of 0.0002 to 0.0013, maxima of at most 0.0037 and no pixel over.
+### On the Radeon 780M
+
+On the AMD Radeon 780M (Vulkan through RADV, Linux, a Ryzen 7 8845HS), against references rendered by darktable's official `Darktable-5.6.2-x86_64.AppImage` (decision 103): `apertrust-golden run` with one round of one iteration and no warm-up, so each time is a single render's GPU time, not a median, and `gradient`. All seven cases pass, the four filtered ones among them, at means of 0.0002 to 0.0013, maxima of at most 0.0037 and no pixel over.
+
+| Case | ΔE2000 mean | p95 | max | Pixels over max | GPU time, one render | Gradient check |
+| --- | --- | --- | --- | --- | --- | --- |
+| `toneequal-max` | 0.0004 | 0.0010 | 0.0013 | 0 | 4.5 ms, 1 pass | passes, 4 parameters, relative error ≤ 1.1e-3, forward mode within 5.3e-6 a pixel |
+| `toneequal-geomean` | 0.0004 | 0.0010 | 0.0013 | 0 | 4.6 ms, 1 pass | passes, 4 parameters, relative error ≤ 1.3e-3, forward mode within 5.2e-6 a pixel |
+| `toneequal-smoothing` | 0.0002 | 0.0006 | 0.0007 | 0 | 4.7 ms, 1 pass | passes, 4 parameters, relative error ≤ 4.9e-4, forward mode within 1.4e-6 a pixel |
+| `toneequal-eigf` | 0.0013 | 0.0030 | 0.0037 | 0 | 8.8 ms, 6 passes | passes, 4 parameters, relative error ≤ 1.8e-4, forward mode within 4.3e-6 a pixel |
+| `toneequal-average` | 0.0006 | 0.0016 | 0.0023 | 0 | 8.9 ms, 6 passes | passes, 4 parameters, relative error ≤ 1.3e-3, forward mode within 5.7e-6 a pixel |
+| `toneequal-power` | 0.0004 | 0.0010 | 0.0018 | 0 | 9.4 ms, 6 passes | passes, 4 parameters, relative error ≤ 8.9e-5, forward mode within 5.7e-6 a pixel |
+| `toneequal-eigf-iterations` | 0.0006 | 0.0014 | 0.0031 | 0 | 30.0 ms, 31 passes | passes, 4 parameters, relative error ≤ 4.0e-4, forward mode within 7.9e-6 a pixel |
 
 **Against a local build compiled for the CPU** (`-march=native`, with darktable's `-O3 -ffast-math`), the four filtered cases fail their tolerances: all four the maximum of 0.050, three of them the mean of 0.010 too (means of 0.0099 to 0.0197, maxima up to 1.06), hundreds of thousands of pixels over. darktable's mask differs, by up to 0.06 EV in flat areas and on saturated labels: that build's `eigf_variance_analysis`, `eigf_blending` and `luminance_mask` loops are AVX-512 code with fused multiply-adds, where the AppImage's are baseline x86-64 with none. Apertrust is not the cause: the first public commit fails the same way, and the restatement in `src/filters.rs`, on the CPU, gives the GPU kernel's numbers. So references come only from darktable's official build (decision 103).
 

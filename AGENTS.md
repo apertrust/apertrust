@@ -36,7 +36,7 @@ A free, non-destructive, cross-platform raw photo editor ([docs/principles.md](d
 - Exit criteria: every raw.pixls.us sample both decoders read as a colour mosaic (29 of the 40), rendered as `apertrust-cli export` does before rounding to 8 bits, within a mean ΔE2000 of 0.01 of darktable's 16-bit render and at most 0.01% of pixels over 2.3, with Apertrust's crop and levels on both sides (decisions 23 and 62).
 - 27 pass (`apertrust-golden pipeline`); Sony's two lossy ARWs wait for rawler's dither-seed fix.
 - WARP is timed. lavapipe binds at most 128 MiB at once, less than the 61 MP raw's 233 MiB mosaic, so such passes run in row strips and the rest in tiles (decision 14), byte-identical on the M4 at that limit; its timing waits for the workflow's next run.
-- Phase 0's gate has passed: its golden cases on the M4, an RTX 5060 and a Radeon 780M, and a fast viewport on macOS and Linux. Every port's golden results are recorded on the M4; on the Radeon 780M the tone equalizer's cases pass too, against darktable's official AppImage (decision 103).
+- Phase 0's gate has passed: its golden cases on the M4, an RTX 5060 and a Radeon 780M, and a fast viewport on macOS and Linux. Every golden case (`apertrust-golden run`) passes on the M4 and on the Radeon 780M, the 780M's against darktable's official AppImage (decision 103), and every gradient check but one, `rgblevels-average`'s black point on the 780M, to be investigated.
 
 ## Project skills
 

@@ -13,6 +13,13 @@ Golden results (mire1.cr2, 3908×2602, Apple M4), through the operation's `prepa
 
 The module's effect on the second case, darktable's input against its output, is a mean ΔE2000 of 6.96, max 25.7.
 
+Golden results on the AMD Radeon 780M (Vulkan through RADV, Linux, a Ryzen 7 8845HS), against references rendered by darktable's official `Darktable-5.6.2-x86_64.AppImage` (decision 103): `apertrust-golden run` with one round of one iteration and no warm-up, so each time is a single render's GPU time, not a median, and `gradient`. Every case passes its tolerance with no pixel over its max.
+
+| Case | ΔE2000 mean | p95 | max | Pixels over max | GPU time, one render | Gradient check |
+| --- | --- | --- | --- | --- | --- | --- |
+| `colorbalancergb` | 0.0055 | 0.0169 | 0.0601 | 0 | 7.3 ms, 1 pass | passes, 4 parameters, relative error ≤ 2.4e-3, forward mode within 2.8e-6 a pixel |
+| `colorbalancergb-ucs` | 0.0018 | 0.0048 | 0.0114 | 0 | 7.4 ms, 1 pass | passes, 4 parameters, relative error ≤ 7.2e-5, forward mode within 1.5e-6 a pixel |
+
 ## Purpose
 
 Colour grading for the photographer: lift, gamma and gain by tonal range with colour wheels, chroma, saturation and brilliance per range, vibrance, a hue shift, and a contrast around middle grey. Algorithmically, luminance masks split the image into shadows, mid-tones and highlights; the wheels act in Filmlight's grading RGB as offset, slope and power; chroma in Filmlight Yrg; contrast as a power of Yrg luminance around a grey fulcrum; saturation and brilliance in darktable UCS 22 or JzAzBz, as the saturation formula says, then a gamut mapping to the working space in the same space. In the first pass the Colour balance RGB tool, darktable's, drives it (decision 2).

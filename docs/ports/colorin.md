@@ -119,6 +119,18 @@ The raws that differ more:
 
 The mean of 0.0017 is the 40D's matrix, rawler's against darktable's decoder's, the same in every case and with neither option (mean 0.0017, max 0.0142); sRGB and linear Rec709 clip alike, as in darktable. No gradient check: colorin has no derivatives.
 
+### On the Radeon 780M
+
+On the AMD Radeon 780M (Vulkan through RADV, Linux, a Ryzen 7 8845HS), against references rendered by darktable's official `Darktable-5.6.2-x86_64.AppImage` (decision 103): `apertrust-golden run` with one round of one iteration and no warm-up, so each time is a single render's GPU time, not a median, and `gradient`. Every case passes its tolerance with no pixel over its max.
+
+| Case | ΔE2000 mean | p95 | max | Pixels over max | GPU time, one render | Gradient check |
+| --- | --- | --- | --- | --- | --- | --- |
+| `colorin-srgb` | 0.0017 | 0.0043 | 0.0148 | 0 | 4.6 ms, 1 pass | none: no gradient port |
+| `colorin-adobe-rgb` | 0.0017 | 0.0044 | 0.0146 | 0 | 4.5 ms, 1 pass | none: no gradient port |
+| `colorin-rec709` | 0.0017 | 0.0043 | 0.0148 | 0 | 4.8 ms, 1 pass | none: no gradient port |
+| `colorin-rec2020` | 0.0017 | 0.0044 | 0.0141 | 0 | 4.7 ms, 1 pass | none: no gradient port |
+| `colorin-blue-mapping` | 0.0017 | 0.0042 | 0.0087 | 0 | 4.5 ms, 1 pass | none: no gradient port |
+
 ## Open questions
 
 - **The next rawler release** (dnglab PR #891, merged 2026-10-29) models a DNG's camera profiles and holds CameraCalibration and AnalogBalance itself; `apertrust-raw` can then take them from rawler instead of reading the first IFD, keeping darktable's choice and composition (decision 24).

@@ -218,6 +218,22 @@ Apple M4, every case `Tolerance::DARKTABLE`. A single pass takes about 3.8 ms ov
 
 The largest, `rgbcurve-luminance`'s 0.47, is in very dark saturated blues (luminance 0.0062 to 0.0063, blue 0.07). Their luminance sits a table step or two above the first node, 0.0062 linear, where the cubic spline rises from 0 steeply. A simulation of darktable's table on the CPU reproduces the expected render there (mean 3e-7), and the continuous curve's value at these pixels' luminance is up to twice the table's, which the ratio carries into their chroma.
 
+### On the Radeon 780M
+
+On the AMD Radeon 780M (Vulkan through RADV, Linux, a Ryzen 7 8845HS), against references rendered by darktable's official `Darktable-5.6.2-x86_64.AppImage` (decision 103): `apertrust-golden run` with one round of one iteration and no warm-up, so each time is a single render's GPU time, not a median, and `gradient`. Every case passes its tolerance with no pixel over its max.
+
+| Case | ΔE2000 mean | p95 | max | Pixels over max | GPU time, one render | Gradient check |
+| --- | --- | --- | --- | --- | --- | --- |
+| `rgbcurve` | 0.0038 | 0.0153 | 0.1563 | 0 | 5.0 ms, 1 pass | passes, 4 parameters, relative error ≤ 4.9e-5, forward mode within 1.6e-7 a pixel |
+| `rgbcurve-independent` | 0.0036 | 0.0141 | 0.0804 | 0 | 4.9 ms, 1 pass | passes, 4 parameters, relative error ≤ 1.7e-5, forward mode within 1.1e-7 a pixel |
+| `rgbcurve-luminance` | 0.0020 | 0.0098 | 0.4715 | 0 | 4.9 ms, 1 pass | passes, 4 parameters, relative error ≤ 2.4e-5, forward mode within 1.6e-7 a pixel |
+| `rgbcurve-none` | 0.0028 | 0.0085 | 0.1094 | 0 | 4.9 ms, 1 pass | passes, 4 parameters, relative error ≤ 4.6e-5, forward mode within 1.1e-7 a pixel |
+| `rgbcurve-max` | 0.0015 | 0.0062 | 0.1084 | 0 | 4.6 ms, 1 pass | passes, 4 parameters, relative error ≤ 2.1e-5, forward mode within 2.0e-7 a pixel |
+| `rgbcurve-average` | 0.0013 | 0.0045 | 0.1546 | 0 | 4.5 ms, 1 pass | passes, 4 parameters, relative error ≤ 1.2e-4, forward mode within 2.9e-7 a pixel |
+| `rgbcurve-sum` | 0.0007 | 0.0021 | 0.1419 | 0 | 4.9 ms, 1 pass | passes, 4 parameters, relative error ≤ 1.4e-5, forward mode within 1.5e-7 a pixel |
+| `rgbcurve-norm` | 0.0008 | 0.0031 | 0.0678 | 0 | 4.6 ms, 1 pass | passes, 4 parameters, relative error ≤ 4.8e-5, forward mode within 2.3e-7 a pixel |
+| `rgbcurve-power` | 0.0016 | 0.0078 | 0.0936 | 0 | 4.5 ms, 1 pass | passes, 4 parameters, relative error ≤ 4.7e-5, forward mode within 1.6e-7 a pixel |
+
 ## Test plan
 
 ### Golden cases

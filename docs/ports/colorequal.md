@@ -217,6 +217,15 @@ The baseline that counts is decision 15 (2)'s: the per-pixel gap stated per step
 
 The filter narrows the gap at every scale: the curves' large hue offsets (+43° red, −101° orange at the second entry of test 0158, ±45° on 0159) make the operation strongly nonlinear in the chromaticity of a pixel the viewport averages, and the filter smooths the chromaticity first. Against decision 15 (4)'s baseline the share would be 0.27, 0.30, 0.60 and 0.18, over the target at three scales, which counts that nonlinearity as the filter's.
 
+### On the Radeon 780M
+
+On the AMD Radeon 780M (Vulkan through RADV, Linux, a Ryzen 7 8845HS), against references rendered by darktable's official `Darktable-5.6.2-x86_64.AppImage` (decision 103): `apertrust-golden run` with one round of one iteration and no warm-up, so each time is a single render's GPU time, not a median, and `gradient`. Every case passes its tolerance with no pixel over its max.
+
+| Case | ΔE2000 mean | p95 | max | Pixels over max | GPU time, one render | Gradient check |
+| --- | --- | --- | --- | --- | --- | --- |
+| `colorequal` | 0.0000 | 0.0001 | 0.0014 | 0 | 348 ms, 46 passes | none: no gradient port |
+| `colorequal-no-filter` | 0.0001 | 0.0002 | 0.0025 | 0 | 5.8 ms, 1 pass | passes, 3 parameters, relative error ≤ 2.6e-3, forward mode within 1.8e-6 a pixel |
+
 ## Test plan
 
 - **Golden cases:** `colorequal`, darktable's test 0159-coloreq-guided-filter, and `colorequal-no-filter`, test 0158-coloreq-no-guided-filter (the second of its two entries), both on mire1.cr2, unchanged, version 1 migrated, sigmoid off after them. `Tolerance::DARKTABLE`, one-instance plans of the engine (decision 15).

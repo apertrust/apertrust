@@ -33,6 +33,14 @@ Gradients (details under Gradients):
 - on the synthetic sweep the tint's two pass, and `gradient --synthetic` skips the two primaries' as sweep-blind, since their totals cancel below what finite differences resolve there, while per pixel they agree;
 - GPU tests check all eight settings' derivatives per pixel against the setup's f64 matrix.
 
+### On the Radeon 780M
+
+On the AMD Radeon 780M (Vulkan through RADV, Linux, a Ryzen 7 8845HS), against references rendered by darktable's official `Darktable-5.6.2-x86_64.AppImage` (decision 103): `apertrust-golden run` with one round of one iteration and no warm-up, so each time is a single render's GPU time, not a median, and `gradient`. Every case passes its tolerance with no pixel over its max.
+
+| Case | ΔE2000 mean | p95 | max | Pixels over max | GPU time, one render | Gradient check |
+| --- | --- | --- | --- | --- | --- | --- |
+| `primaries` | 0.0000 | 0.0001 | 0.0002 | 0 | 4.5 ms, 1 pass | passes, 4 parameters, relative error ≤ 3.8e-4, forward mode within 2.4e-6 a pixel |
+
 ## Purpose
 
 Colour grading for the photographer: turn each of the working space's red, green and blue towards its neighbours, make it purer or duller, and tint the greys towards a hue. All of it happens at once and linearly, so tones and the relations between colours keep their shape.
