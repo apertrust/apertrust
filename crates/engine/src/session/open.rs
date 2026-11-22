@@ -18,11 +18,13 @@
 //! open's job, kind `open` on darktable's `SystemForeground` queue, with no progress. Its
 //! body, on a worker, maps the raw once ([`RawFile`]) and:
 //!
-//! 1. sends the largest of the photo's rendered thumbnails the cache holds, stale or not,
-//!    as [`Event::OpenPreview`];
+//! 1. reads the raw's fingerprint through the session's memo ([`library::Fingerprints`]),
+//!    then sends the largest of the photo's rendered thumbnails the cache holds, stale or
+//!    not, by its fingerprint and its sidecar's first copy, as [`Event::OpenPreview`];
 //! 2. reads the raw's metadata without its pixels, its EXIF and its sidecar, once the
-//!    edit writer has written what it was handed of it, and hands them to the engine
-//!    thread ([`Stage::Read`]), which sends `Opened` and the values, not yet live;
+//!    edit writer has written what it was handed of it, the file naming the photo by step
+//!    1's fingerprint, and hands them to the engine thread ([`Stage::Read`]), which sends
+//!    `Opened` and the values, not yet live;
 //! 3. where step 1 found none, sends the camera's embedded picture at the longer side of
 //!    the last `Resize`, or no picture where the raw holds none;
 //! 4. waits for the session's one decode slot ([`Decodes`]) through `Context::wait`, so
@@ -290,12 +292,13 @@ pub(crate) enum Stage {
         read: Result<Box<Read>, SessionError>,
     },
     /// Step 4 has the decode slot and begins to decode, with what steps 1 and 3 read of
-    /// the raw's embedded picture, and the raw's size and modified time as step 1 read
-    /// them.
+    /// the raw's embedded picture, and the raw's size and modified time and its
+    /// fingerprint as step 1 read them.
     Decoding {
         open: u64,
         embedded: EmbeddedRead,
         stamp: Option<RawStamp>,
+        fingerprint: Option<String>,
     },
     /// Step 4's decode, or its failure.
     Decoded {
@@ -362,6 +365,8 @@ pub(crate) struct Run {
     pub raw: RawThumbnails,
     pub load: Load,
     pub cache: Option<Upkeep>,
+    /// The session's memo of the photos' fingerprints.
+    pub fingerprints: Arc<library::Fingerprints>,
     pub operations: &'static [&'static dyn Operation],
     pub tools: Vec<&'static dyn ProcessingTool>,
     pub retired: &'static [&'static str],
@@ -442,10 +447,18 @@ fn body(run: &Run, context: &Context<'_>, delivery: &mut Delivery) {
     // after the embedded picture where that depends on its size.
     let room = run.room.unwrap_or((u32::MAX, u32::MAX));
     let stamp = library::raw_stamp(&run.path);
-    let rendered = run
-        .cache
-        .as_ref()
-        .and_then(|cache| rendered(cache, &run.path));
+    // The fingerprint first, which step 1's slots are keyed by and step 2's file names
+    // the photo by: through the memo, or read alone for a raw with no stamp, as one
+    // modified before 1970 has, which the memo cannot tell from another.
+    let fingerprint = match stamp {
+        Some(stamp) => run.fingerprints.get(&run.path, &stamp),
+        None => sidecar::read_fingerprint(&run.path).ok(),
+    };
+    let rendered =
+        (run.cache.as_ref().zip(fingerprint.as_deref())).and_then(|(cache, fingerprint)| {
+            let copy = library::thumbnail_copy(&run.path);
+            rendered(cache, fingerprint, copy.as_deref())
+        });
     if cancelled() {
         return;
     }
@@ -495,7 +508,7 @@ fn body(run: &Run, context: &Context<'_>, delivery: &mut Delivery) {
     let read = file.metadata().and_then(|metadata| {
         raw = (metadata.sensor.width, metadata.sensor.height);
         phase_one = library::RawFacts::phase_one(&metadata.camera);
-        edit(run, context, metadata).map(Box::new)
+        edit(run, context, metadata, fingerprint.as_deref()).map(Box::new)
     });
     if cancelled() {
         return;
@@ -549,6 +562,7 @@ fn body(run: &Run, context: &Context<'_>, delivery: &mut Delivery) {
             open,
             embedded,
             stamp,
+            fingerprint,
         },
         false,
     );
@@ -585,11 +599,12 @@ fn preview(run: &Run, name: &str, picture: Option<Thumbnail>, source: PreviewSou
     }));
 }
 
-/// The largest of the photo's rendered thumbnails the cache holds, stale or not, with its
-/// version; none where it holds none or one that cannot be read.
-fn rendered(cache: &Upkeep, path: &Path) -> Option<(Vec<u8>, Thumbnail)> {
+/// The largest of the rendered thumbnails the cache holds of the photo of `fingerprint` and
+/// `copy`, stale or not, with its version; none where it holds none or one that cannot be
+/// read.
+fn rendered(cache: &Upkeep, fingerprint: &str, copy: Option<&str>) -> Option<(Vec<u8>, Thumbnail)> {
     largest_first().find_map(|size| {
-        let slot = library::thumbnail_slot(path, size);
+        let slot = library::thumbnail_slot(fingerprint, copy, size);
         let (version, jpeg) = cache.cache().read_any(THUMBNAILS, &slot).ok()??;
         if !version.starts_with(library::RENDERED) {
             return None;
@@ -607,9 +622,14 @@ fn rendered(cache: &Upkeep, path: &Path) -> Option<(Vec<u8>, Thumbnail)> {
 /// The photo's edit, from its sidecar as the edit writer reads it once it has written what
 /// it was handed of it, clamped as an opened edit is, with its history, whether it opens for
 /// viewing only, its bytes' hash and the file's stamp, and the photo's name and fingerprint
-/// for the file: no edit, history, hash or stamp for a photo never edited. `metadata`, the
-/// raw's, is what the edit is clamped on.
-fn edit(run: &Run, context: &Context<'_>, metadata: Metadata) -> Result<Read, SessionError> {
+/// for the file, the fingerprint the one step 1 read: no edit, history, hash or stamp for a
+/// photo never edited. `metadata`, the raw's, is what the edit is clamped on.
+fn edit(
+    run: &Run,
+    context: &Context<'_>,
+    metadata: Metadata,
+    fingerprint: Option<&str>,
+) -> Result<Read, SessionError> {
     let sidecar = sidecar::path_for(&run.path);
     let snapshot = context
         .wait(&run.snapshot)
@@ -630,8 +650,8 @@ fn edit(run: &Run, context: &Context<'_>, metadata: Metadata) -> Result<Read, Se
     // What the file names the photo by: its name, and its fingerprint (decision 53).
     let identify = |file: &mut Edits| {
         file.photo = Some(sidecar::file_name(&run.path).into_owned());
-        if let Ok(fingerprint) = sidecar::read_fingerprint(&run.path) {
-            file.fingerprint = Some(fingerprint);
+        if let Some(fingerprint) = fingerprint {
+            file.fingerprint = Some(fingerprint.to_owned());
         }
     };
     let xml = match snapshot.map(Snapshot::xml) {

@@ -120,12 +120,14 @@ fn gradient_of(width: u32, height: u32) -> Thumbnail {
     }
 }
 
-/// A folder of the test's own with a raw for each name, and a cache in it kept within
-/// `limit`, its start's walk done.
+/// A folder of the test's own with a raw for each name, each of its own bytes, and a cache
+/// in it kept within `limit`, its start's walk done, with the session's memo of
+/// fingerprints.
 struct Bench {
     folder: PathBuf,
     cache: Arc<Cache>,
     upkeep: Upkeep,
+    fingerprints: Fingerprints,
     asks: mpsc::Receiver<()>,
     _control: Control,
 }
@@ -137,7 +139,7 @@ impl Bench {
         let _ = std::fs::remove_dir_all(&folder);
         std::fs::create_dir_all(&folder).unwrap();
         for photo in photos {
-            std::fs::write(folder.join(photo), b"a raw").unwrap();
+            std::fs::write(folder.join(photo), format!("a raw: {photo}")).unwrap();
         }
         let cache = Arc::new(Cache::create(folder.join("cache")).unwrap());
         let control = Control::start(|_| {});
@@ -159,6 +161,7 @@ impl Bench {
             folder,
             cache,
             upkeep,
+            fingerprints: Fingerprints::default(),
             asks,
             _control: control,
         }
@@ -166,7 +169,12 @@ impl Bench {
 
     /// The events serving `photo` at 256 sends, through the cache with `tally`.
     fn serve(&self, photo: &str, tally: &Tally) -> Vec<LibraryEvent> {
-        serve_with(Some((&self.upkeep, tally)), &self.folder, photo)
+        serve_with(self.cached(tally), &self.folder, photo)
+    }
+
+    /// The cache with `tally` and the memo, as a thumbnail job serves through them.
+    fn cached<'a>(&'a self, tally: &'a Tally) -> Option<(&'a Upkeep, &'a Tally, &'a Fingerprints)> {
+        Some((&self.upkeep, tally, &self.fingerprints))
     }
 
     /// The thumbnails the cache holds.
@@ -186,13 +194,41 @@ impl Drop for Bench {
     }
 }
 
-fn serve_with(cached: Option<(&Upkeep, &Tally)>, folder: &Path, photo: &str) -> Vec<LibraryEvent> {
+/// The identity of `photo` of `folder` as a thumbnail job reads it now, the next session's,
+/// with a memo of its own.
+fn identity(folder: &Path, photo: &str) -> Identity {
+    let path = folder.join(photo);
+    let stamp = library::raw_stamp(&path).expect("the raw's stamp");
+    Identity::read(&path, stamp, &Fingerprints::default()).expect("its identity")
+}
+
+/// The key of the embedded picture of `photo` of `folder` at 256, as a thumbnail job reads
+/// it now.
+fn key_of(folder: &Path, photo: &str) -> ThumbnailKey {
+    library::thumbnail_key(&identity(folder, photo), 256)
+}
+
+/// The slot of the raw at `path` at `size`, as a thumbnail job reads it now.
+fn slot_of(path: &Path, size: u32) -> Vec<u8> {
+    let (folder, photo) = (path.parent().unwrap(), path.file_name().unwrap());
+    identity(folder, photo.to_str().unwrap()).slot(size)
+}
+
+/// Sets the modified time of the file at `path` to `time`.
+fn touch(path: &Path, time: std::time::SystemTime) {
+    let file = std::fs::File::options().write(true).open(path).unwrap();
+    file.set_modified(time).unwrap();
+}
+
+type Cached<'a> = Option<(&'a Upkeep, &'a Tally, &'a Fingerprints)>;
+
+fn serve_with(cached: Cached<'_>, folder: &Path, photo: &str) -> Vec<LibraryEvent> {
     serve_raw(cached, folder, photo, RawThumbnails::Never)
 }
 
 /// [`serve_with`] under the thumbnails' setting `raw`.
 fn serve_raw(
-    cached: Option<(&Upkeep, &Tally)>,
+    cached: Cached<'_>,
     folder: &Path,
     photo: &str,
     raw: RawThumbnails,
@@ -250,14 +286,17 @@ fn a_miss_is_written_and_the_next_ask_hits() {
     assert!(worst <= Some(6), "{worst:?}");
 }
 
-/// A file changed has another version: the next ask misses, reads and writes again.
+/// A file touched has another version: the next ask misses, reads and writes again.
 #[test]
 fn a_changed_version_misses() {
     let bench = Bench::new("version", &["A.ARW"], Limit::Bytes(1 << 30));
     let path = bench.folder.join("A.ARW");
     let tally = Tally::new(256);
     bench.serve("A.ARW", &tally);
-    std::fs::write(&path, b"the same raw, written again longer").unwrap();
+    touch(
+        &path,
+        std::time::SystemTime::now() + Duration::from_secs(10),
+    );
     bench.serve("A.ARW", &tally);
     assert_eq!(reads(&path), 2);
     assert_eq!(tally.counts(), (0, 2, 2));
@@ -346,14 +385,7 @@ fn the_picture_is_sent_before_it_is_written() {
         raw: RawThumbnails::Never,
     };
     let tally = Tally::new(256);
-    serve(
-        Some((&bench.upkeep, &tally)),
-        &asked,
-        &tell,
-        &|| false,
-        read,
-        facts,
-    );
+    serve(bench.cached(&tally), &asked, &tell, &|| false, read, facts);
     assert_eq!(*told.lock().unwrap(), 1);
     assert_eq!(bench.entries(), 1);
 }
@@ -373,14 +405,7 @@ fn a_cancel_after_the_read_writes_nothing() {
         raw: RawThumbnails::Never,
     };
     let tally = Tally::new(256);
-    serve(
-        Some((&bench.upkeep, &tally)),
-        &asked,
-        &tell,
-        &cancel,
-        read,
-        facts,
-    );
+    serve(bench.cached(&tally), &asked, &tell, &cancel, read, facts);
     assert!(read_by_now.into_inner());
     assert_eq!(bench.entries(), 0);
     assert_eq!(tally.counts(), (0, 1, 0));
@@ -405,7 +430,7 @@ fn an_odd_sized_picture_comes_back_whole() {
 fn a_damaged_entry_is_read_again_and_written_over() {
     let bench = Bench::new("damaged", &["A.ARW"], Limit::Bytes(1 << 30));
     let path = bench.folder.join("A.ARW");
-    let key = library::thumbnail_key(&bench.folder, "A.ARW", 256).expect("a key");
+    let key = key_of(&bench.folder, "A.ARW");
     let jpeg = encode(&gradient()).expect("it encodes");
     let cut = jpeg[..jpeg.len() * 2 / 3].to_vec();
     for (damage, entry) in [
@@ -492,7 +517,7 @@ fn rendered_entries_are_served_current_or_stale() {
     ] {
         let bench = Bench::new(name, &["A.ARW"], Limit::Bytes(1 << 30));
         let path = bench.folder.join("A.ARW");
-        let slot = library::thumbnail_slot(&path, 256);
+        let slot = slot_of(&path, 256);
         let jpeg = encode(&gradient_of(32, 24)).unwrap();
         bench
             .cache
@@ -509,7 +534,7 @@ fn rendered_entries_are_served_current_or_stale() {
 #[test]
 fn an_embedded_write_keeps_a_rendered_entry_that_arrived_meanwhile() {
     let bench = Bench::new("rendered-race", &["A.ARW"], Limit::Bytes(1 << 30));
-    let embedded = library::thumbnail_key(&bench.folder, "A.ARW", 256).unwrap();
+    let embedded = key_of(&bench.folder, "A.ARW");
     let rendered = ThumbnailKey {
         slot: embedded.slot.clone(),
         version: library::rendered_version(&apertrust_library::index::hash(b"edit")),
@@ -533,7 +558,7 @@ fn an_embedded_write_keeps_a_rendered_entry_that_arrived_meanwhile() {
 fn an_unreadable_rendered_entry_falls_back_to_the_embedded_picture() {
     let bench = Bench::new("rendered-broken", &["A.ARW"], Limit::Bytes(1 << 30));
     let path = bench.folder.join("A.ARW");
-    let slot = library::thumbnail_slot(&path, 256);
+    let slot = slot_of(&path, 256);
     bench
         .cache
         .write(THUMBNAILS, &slot, library::RENDERED, b"broken jpeg")
@@ -555,7 +580,7 @@ fn an_unreadable_rendered_entry_falls_back_to_the_embedded_picture() {
 #[test]
 fn a_render_arriving_after_a_failed_lookup_wins_over_the_fallback() {
     let bench = Bench::new("rendered-after-miss", &["A.ARW"], Limit::Bytes(1 << 30));
-    let embedded = library::thumbnail_key(&bench.folder, "A.ARW", 256).unwrap();
+    let embedded = key_of(&bench.folder, "A.ARW");
     let old = library::rendered_version(&apertrust_library::index::hash(b"old"));
     bench
         .cache
@@ -591,7 +616,7 @@ fn a_render_arriving_after_a_failed_lookup_wins_over_the_fallback() {
 #[test]
 fn reset_replaces_a_render_but_a_superseded_write_changes_nothing() {
     let bench = Bench::new("rendered-reset", &["A.ARW"], Limit::Bytes(1 << 30));
-    let embedded = library::thumbnail_key(&bench.folder, "A.ARW", 256).unwrap();
+    let embedded = key_of(&bench.folder, "A.ARW");
     let rendered = ThumbnailKey {
         slot: embedded.slot.clone(),
         version: library::rendered_version(&apertrust_library::index::hash(b"edit")),
@@ -637,28 +662,25 @@ fn a_reset_without_an_embedded_picture_removes_only_the_rendered_slot() {
     let bench = Bench::new("rendered-remove", &["none.ARW"], Limit::Bytes(1 << 30));
     let path = bench.folder.join("none.ARW");
     let key = ThumbnailKey {
-        slot: library::thumbnail_slot(&path, 256),
+        slot: slot_of(&path, 256),
         version: library::rendered_version(&apertrust_library::index::hash(b"edit")),
     };
     assert!(write(&bench.upkeep, &key, &gradient(), "none.ARW"));
     assert_eq!(bench.entries(), 1);
     assert!(!remove_rendered_if_current(
         &bench.upkeep,
-        &path,
-        256,
+        &key.slot,
         &|| true
     ));
     assert!(remove_rendered_if_current(
         &bench.upkeep,
-        &path,
-        256,
+        &key.slot,
         &|| false
     ));
     assert_eq!(bench.entries(), 0);
     assert!(remove_rendered_if_current(
         &bench.upkeep,
-        &path,
-        256,
+        &key.slot,
         &|| false
     ));
 }
@@ -674,7 +696,7 @@ fn a_slow_embedded_read_does_not_downgrade_a_render_that_arrived() {
         _: &(dyn Fn() -> bool + Sync),
     ) {
         let cache = Cache::open(folder.join("cache"));
-        let slot = library::thumbnail_slot(&folder.join(photo), size);
+        let slot = slot_of(&folder.join(photo), size);
         let version = library::rendered_version(&apertrust_library::index::hash(b"new edit"));
         let jpeg = encode(&gradient_of(32, 24)).unwrap();
         cache.write(THUMBNAILS, &slot, &version, &jpeg).unwrap();
@@ -688,7 +710,7 @@ fn a_slow_embedded_read_does_not_downgrade_a_render_that_arrived() {
     let bench = Bench::new("rendered-event-race", &["A.ARW"], Limit::Bytes(1 << 30));
     let events = Mutex::new(Vec::new());
     serve(
-        Some((&bench.upkeep, &Tally::new(256))),
+        bench.cached(&Tally::new(256)),
         &Asked {
             open: 3,
             folder: &bench.folder,
@@ -728,7 +750,7 @@ fn a_render_of_a_photo_with_no_edit_is_shown_as_the_setting_says() {
     for (raw, photo, shown) in cases {
         let name = format!("raw-{raw:?}-{photo}");
         let bench = Bench::new(&name, &[photo], Limit::Bytes(1 << 30));
-        let slot = library::thumbnail_slot(&bench.folder.join(photo), 256);
+        let slot = slot_of(&bench.folder.join(photo), 256);
         let version = library::rendered_version(&library::UNALTERED);
         let jpeg = encode(&gradient_of(32, 24)).unwrap();
         bench
@@ -736,8 +758,7 @@ fn a_render_of_a_photo_with_no_edit_is_shown_as_the_setting_says() {
             .write(THUMBNAILS, &slot, &version, &jpeg)
             .unwrap();
         let tally = Tally::new(256);
-        let cached = Some((&bench.upkeep, &tally));
-        let image = picture(&serve_raw(cached, &bench.folder, photo, raw));
+        let image = picture(&serve_raw(bench.cached(&tally), &bench.folder, photo, raw));
         let size = image.map(|image| (image.width, image.height));
         assert_eq!(size == Some((32, 24)), shown, "{raw:?} {photo}");
         let (kept, _) = bench.cache.read_any(THUMBNAILS, &slot).unwrap().unwrap();
@@ -751,13 +772,13 @@ fn a_render_of_a_photo_with_no_edit_is_shown_as_the_setting_says() {
 
 /// A render of a photo with no edit that records its raw's facts is decided from them under
 /// auto, with no look at the raw: here a 64 by 48 embedded picture, smaller than the level,
-/// though the raw itself would say 6000 by 4000. Once the raw is replaced, its facts are
+/// though the raw itself would say 6000 by 4000. Once the raw is touched, its facts are
 /// read again: the embedded picture of 6000 by 4000 then takes the slot.
 #[test]
 fn a_render_that_records_its_facts_is_shown_with_no_read_of_the_raw() {
     let bench = Bench::new("raw-facts", &["large.ARW"], Limit::Bytes(1 << 30));
     let path = bench.folder.join("large.ARW");
-    let slot = library::thumbnail_slot(&path, 256);
+    let slot = slot_of(&path, 256);
     let recorded = RawFacts {
         embedded: Some((64, 48)),
         raw: (6048, 4024),
@@ -771,9 +792,8 @@ fn a_render_that_records_its_facts_is_shown_with_no_read_of_the_raw() {
         .unwrap();
     let tally = Tally::new(256);
     let serve = || {
-        let cached = Some((&bench.upkeep, &tally));
         picture(&serve_raw(
-            cached,
+            bench.cached(&tally),
             &bench.folder,
             "large.ARW",
             RawThumbnails::Auto,
@@ -787,8 +807,11 @@ fn a_render_that_records_its_facts_is_shown_with_no_read_of_the_raw() {
     };
     assert_eq!(fact_reads(), None, "the raw's facts are not read");
     assert_eq!(reads(&path), 0, "the raw is not read");
-    // The raw replaced, by one of another length.
-    std::fs::write(&path, b"another raw").unwrap();
+    // The raw touched: the facts recorded are of its earlier time.
+    touch(
+        &path,
+        std::time::SystemTime::now() + Duration::from_secs(10),
+    );
     let image = serve().unwrap();
     assert_eq!(
         (image.width, image.height),
@@ -802,7 +825,7 @@ fn a_render_that_records_its_facts_is_shown_with_no_read_of_the_raw() {
 #[test]
 fn an_edited_photo_s_render_is_shown_whatever_the_setting() {
     let bench = Bench::new("raw-edited", &["odd.ARW"], Limit::Bytes(1 << 30));
-    let slot = library::thumbnail_slot(&bench.folder.join("odd.ARW"), 256);
+    let slot = slot_of(&bench.folder.join("odd.ARW"), 256);
     let version = library::rendered_version(&apertrust_library::index::hash(b"edit"));
     let jpeg = encode(&gradient_of(32, 24)).unwrap();
     bench
@@ -811,8 +834,96 @@ fn an_edited_photo_s_render_is_shown_whatever_the_setting() {
         .unwrap();
     for raw in [RawThumbnails::Never, RawThumbnails::Auto] {
         let tally = Tally::new(256);
-        let events = serve_raw(Some((&bench.upkeep, &tally)), &bench.folder, "odd.ARW", raw);
+        let events = serve_raw(bench.cached(&tally), &bench.folder, "odd.ARW", raw);
         let image = picture(&events).unwrap();
         assert_eq!((image.width, image.height), (32, 24), "{raw:?}");
     }
+}
+
+/// A raw renamed in its folder keeps its thumbnail: asked for under its new name, it is a
+/// hit, its fingerprint the same.
+#[test]
+fn a_renamed_raw_finds_its_cached_thumbnail() {
+    let bench = Bench::new("renamed", &["A.ARW"], Limit::Bytes(1 << 30));
+    let tally = Tally::new(256);
+    bench.serve("A.ARW", &tally);
+    assert_eq!(tally.counts(), (0, 1, 1));
+    let renamed = bench.folder.join("B.ARW");
+    std::fs::rename(bench.folder.join("A.ARW"), &renamed).unwrap();
+    let image = picture(&bench.serve("B.ARW", &tally)).expect("a picture");
+    assert_eq!((image.width, image.height), (64, 48));
+    assert_eq!(reads(&renamed), 0, "a hit reads nothing");
+    assert_eq!(tally.counts(), (1, 1, 1));
+    assert_eq!(bench.entries(), 1);
+}
+
+/// A raw replaced by other bytes of the same length and modified time, as FAT32's
+/// 2-second times allow for a burst, has another fingerprint: the next session reads it
+/// again, never taking the other raw's thumbnail.
+#[test]
+fn a_raw_replaced_with_the_same_size_and_time_misses() {
+    let bench = Bench::new("replaced", &["A.ARW"], Limit::Bytes(1 << 30));
+    let path = bench.folder.join("A.ARW");
+    let tally = Tally::new(256);
+    bench.serve("A.ARW", &tally);
+    let before = library::raw_stamp(&path).unwrap();
+    let modified = std::fs::metadata(&path).unwrap().modified().unwrap();
+    let length = std::fs::metadata(&path).unwrap().len() as usize;
+    std::fs::write(&path, vec![b'x'; length]).unwrap();
+    touch(&path, modified);
+    assert_eq!(
+        library::raw_stamp(&path),
+        Some(before),
+        "the same size and time"
+    );
+    // The next session, with a memo of its own.
+    let next = Fingerprints::default();
+    serve_with(Some((&bench.upkeep, &tally, &next)), &bench.folder, "A.ARW");
+    assert_eq!(reads(&path), 2, "read again");
+    assert_eq!(tally.counts(), (0, 2, 2));
+}
+
+/// The same raw in two folders, one with a sidecar and its render in the cache: the other,
+/// with no sidecar, has no copy and so its own slot, and gets the camera's embedded picture.
+#[test]
+fn an_unedited_copy_of_an_edited_raw_never_shows_its_render() {
+    use apertrust_library::sidecar::{Edits, VirtualCopy};
+    let bench = Bench::new("copies", &["A.ARW"], Limit::Bytes(1 << 30));
+    let edited = bench.folder.join("A.ARW");
+    let mut edits = Edits::new("test");
+    edits.copies.push(VirtualCopy {
+        id: "1a2b3c4d".to_owned(),
+        number: "0".to_owned(),
+        name: String::new(),
+        end: String::new(),
+        clocks: Vec::new(),
+        history: Vec::new(),
+    });
+    let sidecar = apertrust_library::sidecar::path_for(&edited);
+    std::fs::write(&sidecar, edits.to_xml()).unwrap();
+    let other = bench.folder.join("other");
+    std::fs::create_dir(&other).unwrap();
+    std::fs::copy(&edited, other.join("A.ARW")).unwrap();
+    let photo = identity(&bench.folder, "A.ARW");
+    assert_eq!(photo.copy.as_deref(), Some("1a2b3c4d"));
+    assert_eq!(identity(&other, "A.ARW").fingerprint, photo.fingerprint);
+    let slot = photo.slot(256);
+    let version = library::rendered_version(&apertrust_library::index::hash(b"edit"));
+    let jpeg = encode(&gradient_of(32, 24)).unwrap();
+    bench
+        .cache
+        .write(THUMBNAILS, &slot, &version, &jpeg)
+        .unwrap();
+    let tally = Tally::new(256);
+    let image = picture(&bench.serve("A.ARW", &tally)).unwrap();
+    assert_eq!(
+        (image.width, image.height),
+        (32, 24),
+        "the edited one's render"
+    );
+    let image = picture(&serve_with(bench.cached(&tally), &other, "A.ARW")).unwrap();
+    assert_eq!(image, gradient(), "the other's embedded picture");
+    assert_eq!(reads(&other.join("A.ARW")), 1);
+    let (kept, _) = bench.cache.read_any(THUMBNAILS, &slot).unwrap().unwrap();
+    assert_eq!(kept, version, "the render kept");
 }

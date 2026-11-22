@@ -2326,6 +2326,10 @@ struct Engine {
     /// ended, which the next open or a close cancels.
     thumbnails: Vec<JobId>,
     rendered_thumbnails: thumbnail::rendered::State,
+    /// The photos' fingerprints read this session, which the thumbnails' slots are keyed by
+    /// (decision 53), shared by the thumbnail jobs, the open's job and the live photo's
+    /// renders.
+    fingerprints: Arc<library::Fingerprints>,
     /// When the live photo last rendered a frame, which a thumbnail's still yields to
     /// (`pipeline::EDITING_QUIET`).
     last_change: pipeline::LastChange,
@@ -2621,6 +2625,10 @@ struct Open {
     /// The file as text, which a write lays the log on: the photo's name and fingerprint,
     /// and its copies, the first the log's (version 2, decision 47).
     file: sidecar::Edits,
+    /// Whether the session has handed the writer a write of the file since it was read,
+    /// which [`sidecar::log_xml`] gives a first copy where the file as read had none; a
+    /// held save writes nothing.
+    written: bool,
     thumbnail_hash: Option<[u8; 32]>,
     thumbnail_saved_at: Option<Instant>,
     thumbnail_through: Option<u64>,
@@ -2632,6 +2640,9 @@ struct Open {
     /// The raw's size and modified time as its open read them, which a render of it with
     /// no edit records.
     stamp: Option<library::RawStamp>,
+    /// The raw's fingerprint as its open read it, which its rendered thumbnails' slots are
+    /// keyed by (decision 53); none where it could not be read, and nothing is rendered.
+    fingerprint: Option<String>,
     image: ImageContext,
     /// The raw's mosaic, once decoded and uploaded: the photo is live from then on
     /// (decision 77).
@@ -2897,6 +2908,7 @@ impl Engine {
             latest_library: 0,
             thumbnails: Vec::new(),
             rendered_thumbnails: thumbnail::rendered::State::default(),
+            fingerprints: Arc::default(),
             last_change: pipeline::LastChange::default(),
             raw_thumbnails: library::RawThumbnails::default(),
             subfolders: Vec::new(),
@@ -4080,6 +4092,7 @@ impl Engine {
                 }
                 open.thumbnail_hash = Some(hash);
                 open.thumbnail_saved_at = None;
+                open.written = true;
             }
             // The thumbnail waits for the write by the number the writer reports.
             open.thumbnail_through = Some(through);
@@ -4231,6 +4244,7 @@ impl Engine {
             if existed {
                 let (photo, fingerprint) = (open.file.photo.take(), open.file.fingerprint.take());
                 open.file = loaded.file;
+                open.written = false;
                 open.file.photo = photo;
                 open.file.fingerprint = fingerprint.or(open.file.fingerprint.take());
             }
@@ -4260,6 +4274,7 @@ impl Engine {
                     .adopt(&path, stamp, history::Base::of(&loaded.log, &clocks));
                 let (photo, fingerprint) = (open.file.photo.take(), open.file.fingerprint.take());
                 open.file = loaded.file;
+                open.written = false;
                 open.file.photo = photo;
                 open.file.fingerprint = fingerprint.or(open.file.fingerprint.take());
             }
@@ -4289,6 +4304,7 @@ impl Engine {
                 .adopt(&path, stamp, history::Base::of(&loaded.log, &clocks));
             let (photo, fingerprint) = (open.file.photo.take(), open.file.fingerprint.take());
             open.file = loaded.file;
+            open.written = false;
             open.file.photo = photo;
             open.file.fingerprint = fingerprint.or(open.file.fingerprint.take());
             // What the changes not yet a step are measured from: the old fold, but for a
@@ -4386,6 +4402,7 @@ impl Engine {
             raw: self.raw_thumbnails,
             load: Arc::clone(&self.load),
             cache: self.cache.clone(),
+            fingerprints: Arc::clone(&self.fingerprints),
             operations: self.operations,
             tools: self.tools.clone(),
             retired: self.retired,
@@ -4430,11 +4447,15 @@ impl Engine {
                 None
             }
             Stage::Decoding {
-                embedded, stamp, ..
+                embedded,
+                stamp,
+                fingerprint,
+                ..
             } => {
                 if let Some(photo) = &mut self.open {
                     photo.embedded = embedded;
                     photo.stamp = stamp;
+                    photo.fingerprint = fingerprint;
                 }
                 #[cfg(test)]
                 self.decoding.push(open);
@@ -4531,12 +4552,14 @@ impl Engine {
         self.open = Some(Open {
             sidecar: sidecar::path_for(&path),
             file,
+            written: false,
             thumbnail_hash: hash,
             thumbnail_saved_at: Some(Instant::now()),
             thumbnail_through: None,
             phase_one,
             embedded: open::EmbeddedRead::Unread,
             stamp: None,
+            fingerprint: None,
             image,
             input: None,
             sensor: metadata.sensor,
@@ -5098,6 +5121,7 @@ impl Engine {
         // The command's jobs share one tally, logged once the last has ended.
         let cached = (self.cache.clone()).map(|upkeep| (upkeep, Arc::new(Tally::new(size))));
         let raw = self.raw_thumbnails;
+        let fingerprints = &self.fingerprints;
         for thumbnail::Wanted {
             folder,
             photo,
@@ -5119,6 +5143,7 @@ impl Engine {
             let description = format!("thumbnail of {photo} at {size}");
             let outbox = self.jobs.outbox.clone();
             let cached = cached.clone();
+            let fingerprints = Arc::clone(fingerprints);
             #[cfg(test)]
             let hold = hold.clone();
             let job = self.jobs.add(self.applied, Queue::SystemForeground, |_| {
@@ -5137,7 +5162,8 @@ impl Engine {
                         size,
                         raw,
                     };
-                    let cached = cached.as_ref().map(|(upkeep, tally)| (upkeep, &**tally));
+                    let cached =
+                        (cached.as_ref()).map(|(upkeep, tally)| (upkeep, &**tally, &*fingerprints));
                     let cancel = || context.cancelled();
                     let (read, facts) = (library::thumbnail, thumbnail::raw_facts);
                     thumbnail::serve(cached, &asked, &tell, &cancel, read, facts);
@@ -7248,6 +7274,7 @@ mod tests {
         use apertrust_base::cache::{Cache, Limit, THUMBNAILS};
         let gpu = gpu();
         let path = scratch("pictures").with_file_name("embedded.ARW");
+        std::fs::write(&path, b"synthetic raw").unwrap();
         let frame = |e: &Event| matches!(e, Event::Frame(_));
         let picture = |events: &[Event]| {
             let shown: Vec<(Option<(u32, u32)>, PreviewSource)> = pictures(events)
@@ -7285,7 +7312,7 @@ mod tests {
         };
         let keep = |size: u32, version: &[u8], width: u32, height: u32| {
             let jpeg = thumbnail::encode(&thumbnail(width, height)).expect("a JPEG");
-            let slot = library::thumbnail_slot(&path, size);
+            let slot = slot_of(&path, size);
             cache.write(THUMBNAILS, &slot, version, &jpeg).unwrap();
         };
         let rendered = [library::RENDERED, b"an older edit"].concat();
@@ -7311,6 +7338,75 @@ mod tests {
             [(Some((512, 384)), PreviewSource::Rendered)]
         );
         drop(session);
+        remove(&path);
+    }
+
+    /// An opening photo finds its rendered thumbnail by its fingerprint (decision 53): a
+    /// raw rendered, then renamed, opens with that render as its first picture.
+    #[test]
+    fn an_open_s_picture_is_found_by_the_fingerprint() {
+        use apertrust_base::cache::{Cache, Limit, THUMBNAILS};
+        let gpu = gpu();
+        let rendered = scratch("fingerprinted").with_file_name("embedded.ARW");
+        std::fs::write(&rendered, b"synthetic raw").unwrap();
+        let cache = Cache::create(rendered.parent().unwrap().join("cache")).expect("a cache");
+        let cache = Arc::new(cache);
+        let picture = library::Thumbnail {
+            width: 512,
+            height: 384,
+            pixels: vec![128; 512 * 384 * 4].into(),
+        };
+        let jpeg = thumbnail::encode(&picture).expect("a JPEG");
+        let version = library::rendered_version(&[7; 32]);
+        (cache.write(THUMBNAILS, &slot_of(&rendered, 512), &version, &jpeg)).unwrap();
+        let renamed = rendered.with_file_name("renamed.ARW");
+        std::fs::rename(&rendered, &renamed).unwrap();
+        let options = CacheOptions {
+            cache: Arc::clone(&cache),
+            limit: Limit::Unlimited,
+        };
+        let (session, wakes) = spawned(&gpu, &[&Sample], Some(options), loading(synthetic));
+        session.send(Command::Resize {
+            width: 40,
+            height: 30,
+        });
+        let mut events = open_live(&session, &wakes, &renamed);
+        if pictures(&events).is_empty() {
+            events.extend(until(&session, &wakes, |e| {
+                matches!(e, Event::OpenPreview(_))
+            }));
+        }
+        let shown: Vec<_> = pictures(&events)
+            .iter()
+            .map(|p| (p.picture.as_ref().map(|p| (p.width, p.height)), p.source))
+            .collect();
+        assert_eq!(shown, [(Some((512, 384)), PreviewSource::Rendered)]);
+        drop(session);
+        remove(&renamed);
+    }
+
+    /// A raw modified before 1970 has no stamp, so no memo holds its fingerprint: the open
+    /// reads it alone, and the edit's file names the photo by it.
+    #[test]
+    fn a_raw_modified_before_1970_is_named_by_its_fingerprint() {
+        let path = scratch("before-1970");
+        std::fs::write(&path, b"synthetic raw").unwrap();
+        let file = std::fs::File::options().write(true).open(&path).unwrap();
+        let before = std::time::UNIX_EPOCH - Duration::from_secs(86_400);
+        if file.set_modified(before).is_err() || library::raw_stamp(&path).is_some() {
+            // A platform that keeps no time before 1970 has nothing to test.
+            remove(&path);
+            return;
+        }
+        drop(file);
+        let mut driven = Driven::new(&[&Sample]);
+        driven.open(&path);
+        driven.run([set("brightness", ControlValue::Number(0.8), true)]);
+        driven.engine.writer.flush(None);
+        let file = apertrust_library::sidecar::read_edits(&sidecar::path_for(&path)).unwrap();
+        let fingerprint = sidecar::read_fingerprint(&path).unwrap();
+        assert_eq!(file.fingerprint, Some(fingerprint));
+        drop(driven);
         remove(&path);
     }
 
@@ -7679,6 +7775,13 @@ mod tests {
         let mut pipeline = pollster::block_on(Pipeline::new(gpu, plan, input)).expect("it builds");
         pipeline.render(gpu).expect("it renders");
         bytemuck::cast_slice(&pipeline.output().download(gpu).expect("it reads back")).to_vec()
+    }
+
+    /// The cache's slot of the thumbnail at `size` of the raw at `path` as it is now: its
+    /// fingerprint and its sidecar's first copy (decision 53).
+    fn slot_of(path: &Path, size: u32) -> Vec<u8> {
+        let fingerprint = sidecar::read_fingerprint(path).expect("the raw's fingerprint");
+        library::thumbnail_slot(&fingerprint, library::thumbnail_copy(path).as_deref(), size)
     }
 
     /// A photo's path in a folder of the test's own, emptied first.
@@ -13551,7 +13654,7 @@ mod tests {
         /// whose full-resolution part a still reads in place, saved.
         fn large_with_haze(driven: &mut Driven, path: &Path) -> PathBuf {
             let large = path.with_file_name("thumbnail-large.ARW");
-            std::fs::write(&large, b"synthetic raw").unwrap();
+            std::fs::write(&large, b"synthetic raw, large").unwrap();
             driven.run([
                 Command::Open(large.clone()),
                 Command::Resize {
@@ -13603,7 +13706,7 @@ mod tests {
 
         fn slots(cache: &Cache, path: &Path) -> Vec<Option<Vec<u8>>> {
             (library::THUMBNAIL_SIZES.iter())
-                .map(|&size| cache.version(THUMBNAILS, &library::thumbnail_slot(path, size)))
+                .map(|&size| cache.version(THUMBNAILS, &slot_of(path, size)))
                 .map(Result::unwrap)
                 .collect()
         }
@@ -13672,7 +13775,7 @@ mod tests {
             // Every size has a version of exactly the sidecar bytes, and an upright JPEG.
             for size in library::THUMBNAIL_SIZES {
                 let (version, jpeg) = cache
-                    .read_any(THUMBNAILS, &library::thumbnail_slot(&path, size))
+                    .read_any(THUMBNAILS, &slot_of(&path, size))
                     .unwrap()
                     .unwrap();
                 assert!(library::rendered_matches(&version, &hash));
@@ -13733,12 +13836,15 @@ mod tests {
             let folder = x.parent().unwrap().to_owned();
             let y = folder.join("y.ARW");
             for raw in [&x, &y] {
-                std::fs::write(raw, b"no raw").unwrap();
+                std::fs::write(raw, format!("no raw: {}", raw.display())).unwrap();
             }
             let mut driven = Driven::new(&[&Sample]);
             let cache = with_cache(&mut driven, &folder);
             // X's embedded picture is in the cache at its file's version; y's is read.
-            let key = library::thumbnail_key(&folder, "x.ARW", 256).expect("a key");
+            let stamp = library::raw_stamp(&x).expect("x's stamp");
+            let fingerprints = library::Fingerprints::default();
+            let x_now = library::Identity::read(&x, stamp, &fingerprints).expect("x's identity");
+            let key = library::thumbnail_key(&x_now, 256);
             let picture = library::Thumbnail {
                 width: 4,
                 height: 3,
@@ -13769,7 +13875,7 @@ mod tests {
             assert_eq!(told.len(), 2, "{told:?}");
             assert!(
                 cache
-                    .version(THUMBNAILS, &library::thumbnail_slot(&y, 256))
+                    .version(THUMBNAILS, &slot_of(&y, 256))
                     .unwrap()
                     .is_none()
             );
@@ -14025,6 +14131,29 @@ mod tests {
             remove(&path);
         }
 
+        /// The camera's picture of a raw replaced since the open is another raw's: never
+        /// kept under the open raw's slots, which keep it while the raw is unchanged.
+        #[test]
+        fn an_embedded_picture_of_a_raw_replaced_since_the_open_is_not_kept() {
+            for replaced in [false, true] {
+                let name = format!("rendered-replaced-{replaced}");
+                let (mut driven, cache, path) = cached_embedded(&name);
+                let opened = library::THUMBNAIL_SIZES.map(|size| slot_of(&path, size));
+                if replaced {
+                    std::fs::write(&path, b"another synthetic raw").unwrap();
+                }
+                driven.run([Command::Close]);
+                finish(&mut driven);
+                for slot in &opened {
+                    let version = cache.version(THUMBNAILS, slot).unwrap();
+                    let embedded = version.is_some_and(|v| v.starts_with(library::EMBEDDED));
+                    assert_eq!(embedded, !replaced, "replaced {replaced}");
+                }
+                drop(driven);
+                remove(&path);
+            }
+        }
+
         /// The still made from the tick's own plan equals the live frame at its size, byte
         /// for byte before the JPEG, reading the live pipe's cached image and, with haze
         /// removal, its whole-image result in place, while a live frame of another size
@@ -14190,6 +14319,32 @@ mod tests {
                 &path,
                 &apertrust_library::index::hash(xml.as_bytes()),
             );
+            drop(driven);
+            remove(&path);
+        }
+
+        /// A held save writes nothing: the render of a sidecar read with no virtual copy, a
+        /// gesture cancelled on it, is keyed by no copy, as the file on the disk is, and a
+        /// grid read finds it.
+        #[test]
+        fn a_held_save_keys_its_render_by_the_copy_on_the_disk() {
+            let (mut driven, cache, path) = cached("rendered-held-no-copy");
+            let sidecar = sidecar::path_for(&path);
+            let mut file = sidecar::Edits::new(BUILD);
+            file.photo = Some("synthetic.ARW".to_owned());
+            let xml = file.to_xml();
+            std::fs::write(&sidecar, &xml).unwrap();
+            driven.run([Command::Open(path.clone())]);
+            driven.settle();
+            driven.run([set("brightness", ControlValue::Number(1.3), false)]);
+            driven.run([Command::CancelGesture {
+                tool: "sample".into(),
+            }]);
+            driven.engine.writer.flush(None);
+            assert_eq!(std::fs::read_to_string(&sidecar).unwrap(), xml, "held");
+            assert_eq!(library::thumbnail_copy(&path), None);
+            driven.engine.thumbnail_tick(true);
+            written(&mut driven, &cache, &path, &library::UNALTERED);
             drop(driven);
             remove(&path);
         }
@@ -14684,6 +14839,8 @@ mod tests {
         fn a_render_of_a_raw_gone_or_replaced_records_no_facts() {
             for replaced in [false, true] {
                 let (mut driven, cache, path) = cached(&format!("rendered-gone-{replaced}"));
+                // The open's slot, of the raw it read.
+                let slot = slot_of(&path, 1024);
                 if replaced {
                     std::fs::write(&path, b"another synthetic raw").unwrap();
                 } else {
@@ -14691,7 +14848,6 @@ mod tests {
                 }
                 driven.run([Command::Close]);
                 finish(&mut driven);
-                let slot = library::thumbnail_slot(&path, 1024);
                 let version = cache.version(THUMBNAILS, &slot).unwrap();
                 let plain = library::rendered_version(&library::UNALTERED);
                 assert_eq!(version.as_ref(), Some(&plain), "replaced {replaced}");
@@ -14721,7 +14877,7 @@ mod tests {
                 } else {
                     cached(&name)
                 };
-                let slot = library::thumbnail_slot(&path, 1024);
+                let slot = slot_of(&path, 1024);
                 let picture = library::Thumbnail {
                     width: 84,
                     height: 62,
@@ -14929,7 +15085,7 @@ mod tests {
                         assert!(thumbnail::write(
                             &upkeep,
                             &library::ThumbnailKey {
-                                slot: library::thumbnail_slot(&path, size),
+                                slot: slot_of(&path, size),
                                 version: library::rendered_version(&[0; 32])
                             },
                             &image,
