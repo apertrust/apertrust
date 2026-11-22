@@ -948,3 +948,69 @@ fn an_unedited_copy_of_an_edited_raw_never_shows_its_render() {
     let (kept, _) = bench.cache.read_any(THUMBNAILS, &slot).unwrap().unwrap();
     assert_eq!(kept, version, "the render kept");
 }
+
+/// Writes a picture of 32 by 24 as the render of `photo` with no edit at 256, recording the
+/// facts `facts` gives and the raw's stamp, made by `origin`: its version, and its slot.
+fn unaltered(bench: &Bench, photo: &str, origin: Origin) -> (Vec<u8>, Vec<u8>) {
+    let path = bench.folder.join(photo);
+    let stamp = library::raw_stamp(&path).unwrap();
+    let version = library::unaltered_version(&facts(&path), &stamp, origin);
+    let jpeg = encode(&gradient_of(32, 24)).unwrap();
+    let slot = identity(&bench.folder, photo).slot(256);
+    bench
+        .cache
+        .write(THUMBNAILS, &slot, &version, &jpeg)
+        .unwrap();
+    (version, slot)
+}
+
+/// Under never, a render of a photo with no edit the rule made, of the raw as it is, is not
+/// shown: the embedded picture of 64 by 48 is sent and written over it.
+#[test]
+fn a_rule_render_still_follows_the_setting() {
+    let bench = Bench::new("rule-render", &["x.ARW"], Limit::Bytes(1 << 30));
+    let (_, slot) = unaltered(&bench, "x.ARW", Origin::Rule);
+    let tally = Tally::new(256);
+    let events = serve_raw(
+        bench.cached(&tally),
+        &bench.folder,
+        "x.ARW",
+        RawThumbnails::Never,
+    );
+    let image = picture(&events).unwrap();
+    assert_eq!((image.width, image.height), (64, 48));
+    let (kept, _) = bench.cache.read_any(THUMBNAILS, &slot).unwrap().unwrap();
+    assert!(kept.starts_with(library::EMBEDDED), "{kept:?}");
+}
+
+/// A render of a photo with no edit made from the live photo is sent whatever the setting,
+/// never replaced by the embedded picture, while its raw is the one it records. Once the
+/// raw's stamp changes, its bytes and so its slot the same, the rule decides: under never,
+/// the embedded picture is sent and written over it.
+#[test]
+fn an_opened_render_is_sent_whatever_the_setting_until_its_raw_is_replaced() {
+    let bench = Bench::new("opened-render", &["x.ARW"], Limit::Bytes(1 << 30));
+    let (version, slot) = unaltered(&bench, "x.ARW", Origin::Opened);
+    let path = bench.folder.join("x.ARW");
+    let serve = |raw| {
+        let tally = Tally::new(256);
+        let events = serve_raw(bench.cached(&tally), &bench.folder, "x.ARW", raw);
+        let image = picture(&events).unwrap();
+        (image.width, image.height)
+    };
+    for raw in [
+        RawThumbnails::Never,
+        RawThumbnails::Auto,
+        RawThumbnails::Always,
+    ] {
+        assert_eq!(serve(raw), (32, 24), "{raw:?}");
+        let (kept, _) = bench.cache.read_any(THUMBNAILS, &slot).unwrap().unwrap();
+        assert_eq!(kept, version, "{raw:?}");
+    }
+    assert_eq!(reads(&path), 0, "the embedded picture is not read");
+    touch(&path, std::time::SystemTime::now() + Duration::from_secs(5));
+    assert_eq!(identity(&bench.folder, "x.ARW").slot(256), slot);
+    assert_eq!(serve(RawThumbnails::Never), (64, 48));
+    let (kept, _) = bench.cache.read_any(THUMBNAILS, &slot).unwrap().unwrap();
+    assert!(kept.starts_with(library::EMBEDDED), "{kept:?}");
+}

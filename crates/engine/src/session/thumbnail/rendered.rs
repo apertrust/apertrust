@@ -25,7 +25,7 @@ use std::time::{Duration, Instant};
 
 use apertrust_base::cache::THUMBNAILS;
 use apertrust_library::ops::{
-    self as library, Identity, LibraryEvent, RawThumbnails, Thumbnail, ThumbnailKey,
+    self as library, Identity, LibraryEvent, Origin, Thumbnail, ThumbnailKey,
 };
 use apertrust_library::sidecar::FIRST_COPY;
 
@@ -40,6 +40,11 @@ use crate::session::{Engine, Event, Load, Open, Outbox};
 /// How long after the last successful write of the live photo's sidecar its thumbnail is
 /// made.
 pub const THUMBNAIL_SETTLE: Duration = Duration::from_secs(1);
+
+/// How long a photo never edited, its edit at the defaults, is shown before its thumbnail
+/// is made: one flicked past sooner makes none, so its still never runs beside the next
+/// photo's open.
+pub const UNEDITED_SETTLE: Duration = Duration::from_millis(300);
 
 /// How long after a failed preparation or write the same saved edit is tried again; a
 /// departure tries at once.
@@ -65,12 +70,16 @@ struct Running {
     sources: Sources,
 }
 
+/// What a photo's thumbnail was done with for: its saved edit's hash and the raw's stamp.
+type Done = ([u8; 32], Option<library::RawStamp>);
+
 #[derive(Default)]
 pub(crate) struct State {
     asked: Asked,
-    /// The saved edit of each photo nothing is left to do for: its thumbnails written,
-    /// found in the cache already, or refused.
-    done: Arc<Mutex<BTreeMap<PathBuf, [u8; 32]>>>,
+    /// The saved edit of each photo nothing is left to do for, with the raw's size and
+    /// modified time as its open read them: its thumbnails written, found in the cache
+    /// already, or refused. A raw replaced since is done with for no edit.
+    done: Arc<Mutex<BTreeMap<PathBuf, Done>>>,
     running: BTreeMap<PathBuf, Running>,
     /// When the saved edit of each photo may be tried again without a departure: after a
     /// failure, or after a live frame cancelled its still.
@@ -235,12 +244,12 @@ impl State {
         }
     }
 
-    fn done(&self, path: &Path, hash: &[u8; 32]) -> bool {
+    fn done(&self, path: &Path, hash: &[u8; 32], stamp: Option<library::RawStamp>) -> bool {
         self.done
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .get(path)
-            == Some(hash)
+            == Some(&(*hash, stamp))
     }
 
     /// `path`'s thumbnail due at the next tick, whatever retry it waited for: the raw's
@@ -249,17 +258,18 @@ impl State {
         self.not_before.remove(path);
     }
 
-    fn finish(&self, path: &Path, hash: [u8; 32]) {
+    fn finish(&self, path: &Path, hash: [u8; 32], stamp: Option<library::RawStamp>) {
         self.done
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .insert(path.to_owned(), hash);
+            .insert(path.to_owned(), (hash, stamp));
     }
 }
 
 /// What a photo's thumbnail is made from: the viewport pipe at 1024 pixels on its longer
 /// side, its output sRGB; `unaltered` where the edit renders as a photo with no edit does,
-/// which shows its render only where darktable's raw-thumbnail rule does.
+/// whose render is kept as [`Origin::Opened`]'s and shown at every size, whatever the
+/// setting.
 pub(in crate::session) struct ThumbnailPlan {
     pub plan: Box<Plan>,
     pub unaltered: bool,
@@ -267,11 +277,13 @@ pub(in crate::session) struct ThumbnailPlan {
 
 impl Engine {
     /// The live photo's saved edit as a thumbnail sees it: the photo's path, the hash of
-    /// its sidecar's bytes, and when the writer said it was saved, or `None` for one read
-    /// as the photo opened. Before an acknowledgement, only as the photo leaves, by the
-    /// hash of what was handed over. `None` while nothing can be made: no cache, the photo
-    /// opening, viewed only, with a change not handed over, a write that failed, or never
-    /// edited.
+    /// its sidecar's bytes, and when its thumbnail is due: [`THUMBNAIL_SETTLE`] after the
+    /// writer said it was saved, or after the photo opened for one read then, and
+    /// [`UNEDITED_SETTLE`] after the first live frame for one never edited at the defaults.
+    /// Before an acknowledgement, only as the photo leaves, by the hash of what was handed
+    /// over. `None` while nothing can be made: no cache, the photo opening, viewed only,
+    /// with a change not handed over, or a write that failed; and as it leaves never
+    /// edited, at the defaults.
     fn thumbnail_saved(&self, leaving: bool) -> Option<(PathBuf, [u8; 32], Option<Instant>)> {
         let open = self.open.as_ref()?;
         if self.cache.is_none() || open.input.is_none() || open.view_only.is_some() || open.unsaved
@@ -279,14 +291,32 @@ impl Engine {
             return None;
         }
         let path = open.sidecar.with_extension("");
+        // Never edited, at the defaults: rendered once shown a dwell from its first frame
+        // drawn, never before, and none as it leaves.
+        let unedited = |path, hash| {
+            let due = open.shown_at.map(|at| at + UNEDITED_SETTLE);
+            (!leaving).then_some((path, hash, due))
+        };
         if let Some((hash, at)) = self.writer.saved_for(&open.sidecar, open.thumbnail_through) {
-            return Some((path, hash, Some(at)));
+            // A held save, as a cancelled gesture leaves a photo never edited, of the bytes
+            // it opened with or of no sidecar: still never edited.
+            if open.unedited {
+                return unedited(path, hash);
+            }
+            return Some((path, hash, Some(at + THUMBNAIL_SETTLE)));
         }
         if open.thumbnail_through.is_none() {
-            // Never edited: rendered as its defaults where the setting renders those.
-            // A photo never edited is rendered as its defaults, where the rule says.
             let hash = open.thumbnail_hash.unwrap_or(library::UNALTERED);
-            return Some((path, hash, open.thumbnail_saved_at));
+            if open.unedited {
+                return unedited(path, hash);
+            }
+            let due = open.thumbnail_saved_at.map(|at| at + THUMBNAIL_SETTLE);
+            return Some((path, hash, due));
+        }
+        // A held save of a photo never edited not yet acknowledged, or failed: nothing, as
+        // it leaves too.
+        if open.unedited {
+            return None;
         }
         let hash = open.thumbnail_hash?;
         // Handed over and not yet acknowledged: the writer's read barrier checks the bytes
@@ -299,9 +329,9 @@ impl Engine {
     /// `None` where nothing is due until something else happens, a command, the writer's
     /// acknowledgement or a job's end.
     pub(in crate::session) fn thumbnail_wait(&self) -> Option<Duration> {
-        let (path, hash, saved) = self.thumbnail_saved(false)?;
+        let (path, hash, due) = self.thumbnail_saved(false)?;
         let state = &self.rendered_thumbnails;
-        if state.done(&path, &hash) {
+        if state.done(&path, &hash, self.open.as_ref()?.stamp) {
             return None;
         }
         let retry = (state.not_before.get(&path))
@@ -310,7 +340,7 @@ impl Engine {
         // A job under way wakes nothing as it fails: the retry's time is a wake of its own.
         let at = match state.running.get(&path) {
             Some(running) if running.hash == hash && self.thumbnail_running(running.job) => retry?,
-            _ => (saved? + THUMBNAIL_SETTLE).max(retry.unwrap_or(Instant::now())),
+            _ => due?.max(retry.unwrap_or(Instant::now())),
         };
         Some(at.saturating_duration_since(Instant::now()))
     }
@@ -327,11 +357,17 @@ impl Engine {
     /// work starts until that edit is on disk, and a failed write makes no thumbnail.
     pub(in crate::session) fn thumbnail_tick(&mut self, leaving: bool) {
         self.rendered_thumbnails.forget_ended(&self.jobs.control);
-        let Some((path, hash, saved)) = self.thumbnail_saved(leaving) else {
+        let Some((path, hash, due)) = self.thumbnail_saved(leaving) else {
+            // A photo never edited leaves with nothing started, and nothing to try again; a
+            // still of it under way is hurried as it departs.
+            if leaving && let Some(open) = &self.open {
+                let path = open.sidecar.with_extension("");
+                self.rendered_thumbnails.not_before.remove(&path);
+            }
             return;
         };
         let state = &self.rendered_thumbnails;
-        if state.done(&path, &hash) {
+        if state.done(&path, &hash, self.open.as_ref().and_then(|open| open.stamp)) {
             return;
         }
         if let Some(running) = state.running.get(&path) {
@@ -341,7 +377,7 @@ impl Engine {
             self.jobs.control.cancel(running.job);
         }
         if !leaving {
-            let settled = saved.is_some_and(|at| at.elapsed() >= THUMBNAIL_SETTLE);
+            let settled = due.is_some_and(|at| Instant::now() >= at);
             let waiting = (state.not_before.get(&path))
                 .is_some_and(|(tried, at)| *tried == hash && Instant::now() < *at);
             if !settled || waiting {
@@ -349,6 +385,33 @@ impl Engine {
             }
         }
         self.start_thumbnail(path, hash);
+    }
+
+    /// Whether `instances`, bound from `open`'s edit, render as a photo with no edit does:
+    /// the defaults' operations, each at the defaults' parameters.
+    fn at_the_defaults(&self, open: &Open, instances: &[pipeline::Instance]) -> bool {
+        let defaults = edit::instances(&Edit::default(), self.operations, &self.tools, &open.image);
+        instances.len() == defaults.instances.len()
+            && (instances.iter().zip(&defaults.instances)).all(|(a, b)| {
+                let base = a.operation.defaults(&open.image);
+                let schema = a.operation.schema();
+                a.operation.manifest().id == b.operation.manifest().id
+                    && matches!(
+                        (schema.resolve_over(&base, &a.params), schema.resolve_over(&base, &b.params)),
+                        (Ok(actual), Ok(expected)) if actual == expected
+                    )
+            })
+    }
+
+    /// Whether `open`'s edit as its file holds it renders as a photo with no edit does: no
+    /// sidecar, or one at the defaults.
+    pub(in crate::session) fn renders_unedited(&self, open: &Open) -> bool {
+        if open.thumbnail_hash.is_none() {
+            return true;
+        }
+        let saved = open.saved_edit();
+        let bound = edit::instances(&saved, self.operations, &self.tools, &open.image);
+        bound.failed.is_empty() && self.at_the_defaults(open, &bound.instances)
     }
 
     /// The plan of the live photo's thumbnail, from its edit as its file holds it, the
@@ -366,17 +429,7 @@ impl Engine {
         {
             return Err("the raw's histogram is not counted yet".to_owned());
         }
-        let defaults = edit::instances(&Edit::default(), self.operations, &self.tools, &open.image);
-        let unchanged = bound.instances.len() == defaults.instances.len()
-            && (bound.instances.iter().zip(&defaults.instances)).all(|(a, b)| {
-                let base = a.operation.defaults(&open.image);
-                let schema = a.operation.schema();
-                a.operation.manifest().id == b.operation.manifest().id
-                    && matches!(
-                        (schema.resolve_over(&base, &a.params), schema.resolve_over(&base, &b.params)),
-                        (Ok(actual), Ok(expected)) if actual == expected
-                    )
-            });
+        let unchanged = self.at_the_defaults(open, &bound.instances);
         let mut instances = bound.instances;
         // Thumbnails are sRGB, as their JPEG says, whatever the monitor and whatever output
         // profile the edit chose.
@@ -436,14 +489,13 @@ impl Engine {
         // Its slots: the fingerprint its open read and the copy its saved edit is of.
         let Some(fingerprint) = open.fingerprint.clone() else {
             tracing::debug!(target: "pipe", "no thumbnail of {photo}: no fingerprint");
-            self.rendered_thumbnails.finish(&path, hash);
+            self.rendered_thumbnails.finish(&path, hash, open.stamp);
             return;
         };
         let copy = saved_copy(open);
         let slot = |size| library::thumbnail_slot(&fingerprint, copy.as_deref(), size);
         let cache = upkeep.cache();
         let version = |size| (cache.version(THUMBNAILS, &slot(size)).ok()).flatten();
-        let raw = self.raw_thumbnails;
         // An edit reading the raw's histogram whose count failed tries again later, never
         // marked done; a count that succeeds plans it at once (decision 87).
         if open.image.raw_histogram.is_none() {
@@ -463,32 +515,17 @@ impl Engine {
             }
         }
         let plan = self.thumbnail_plan(open);
-        // What darktable's rule shows at each size of the photo with no edit, from what its
-        // open read of the raw: a render, the embedded picture, or `None` where only the
-        // embedded picture's unread size would tell.
-        let shows = |size: u32| -> Option<bool> {
-            let asked = (size, size);
-            if open.phase_one || raw.renders_at(asked) {
-                return Some(true);
-            }
-            let facts = |embedded| library::RawFacts {
-                embedded,
-                raw: (open.sensor.width, open.sensor.height),
-                phase_one: open.phase_one,
-            };
-            match open.embedded {
-                EmbeddedRead::Sized(size) => Some(raw.shows_render(asked, &facts(size))),
-                EmbeddedRead::Present if raw == RawThumbnails::Never => Some(false),
-                EmbeddedRead::Present | EmbeddedRead::Unread => None,
-            }
-        };
-        let sizes = library::THUMBNAIL_SIZES;
         // What this saved edit made before, in this session or an earlier one: the render
-        // at 1024; for a photo with no edit, each size as the rule shows it, a render that
-        // records the facts of the raw the open read.
-        let current = |version: &[u8]| {
-            (open.stamp.as_ref())
-                .is_some_and(|stamp| library::unaltered_facts(version, stamp).is_some())
+        // at 1024; for a photo with no edit, a render made from the live photo at every
+        // size, of the raw the open read. A render the rule made, or the embedded picture,
+        // is replaced.
+        let opened = |version: &[u8]| {
+            (open.stamp.as_ref()).is_some_and(|stamp| {
+                matches!(
+                    library::unaltered_facts(version, stamp),
+                    Some((_, Origin::Opened))
+                )
+            })
         };
         let made = match &plan {
             Ok(ThumbnailPlan {
@@ -496,32 +533,34 @@ impl Engine {
             }) => version(1024).is_some_and(|version| library::rendered_matches(&version, &hash)),
             Ok(ThumbnailPlan {
                 unaltered: true, ..
-            }) => sizes.iter().all(|&size| {
-                version(size).is_some_and(|version| match shows(size) {
-                    Some(true) => current(&version),
-                    Some(false) => version.starts_with(library::EMBEDDED),
-                    None => false,
-                })
-            }),
+            }) => (library::THUMBNAIL_SIZES.iter())
+                .all(|&size| version(size).is_some_and(|version| opened(&version))),
             Err(_) => false,
         };
         if made {
             tracing::debug!(target: "perf", "thumbnail of {photo}: cached already");
-            self.rendered_thumbnails.finish(&path, hash);
+            self.rendered_thumbnails.finish(&path, hash, open.stamp);
             return;
         }
-        // A still only where a size may show a render: none for a photo with no edit
-        // whose every size shows the embedded picture, as under never.
-        let renders = sizes.iter().any(|&size| shows(size) != Some(false));
         let (plan, unaltered) = match plan {
             Ok(ThumbnailPlan { plan, unaltered }) => (*plan, unaltered),
             Err(error) => {
                 tracing::warn!(target: "pipe", "no thumbnail of {photo}: {error}");
-                self.rendered_thumbnails.finish(&path, hash);
+                self.rendered_thumbnails.finish(&path, hash, open.stamp);
                 return;
             }
         };
-        let facts = ((open.sensor.width, open.sensor.height), open.phase_one);
+        // What darktable's rule reads of the raw, as the open read it, recorded with a
+        // render of the photo with no edit: the embedded picture's size only where the open
+        // read it.
+        let facts = library::RawFacts {
+            embedded: match open.embedded {
+                EmbeddedRead::Sized(size) => size,
+                EmbeddedRead::Present | EmbeddedRead::Unread => None,
+            },
+            raw: (open.sensor.width, open.sensor.height),
+            phase_one: open.phase_one,
+        };
         let stamp = open.stamp;
         let state = &mut self.rendered_thumbnails;
         let retry = Instant::now() + RETRY_AFTER;
@@ -530,33 +569,24 @@ impl Engine {
             state.not_before.insert(path, (hash, retry));
             return;
         };
-        let prepared = if !unaltered || renders {
-            #[cfg(test)]
-            {
-                state.stills += 1;
-            }
-            Some(pollster::block_on(pipeline.still(
-                &self.gpu,
-                plan,
-                self.limits.budget,
-            )))
-        } else {
-            None
-        };
+        #[cfg(test)]
+        {
+            state.stills += 1;
+        }
+        let prepared = pollster::block_on(pipeline.still(&self.gpu, plan, self.limits.budget));
         let still = match prepared {
-            None => None,
-            Some(Ok(still)) => Some(still),
-            Some(Err(StillError::Refused(why))) => {
+            Ok(still) => Some(still),
+            Err(StillError::Refused(why)) => {
                 tracing::warn!(target: "pipe", "no thumbnail of {photo}: {why}");
-                // A photo with no edit still gets its embedded picture in place of a
-                // render left from before.
+                // A photo with no edit gets its embedded picture in place of a render left
+                // from before.
                 if !unaltered {
-                    state.finish(&path, hash);
+                    state.finish(&path, hash, stamp);
                     return;
                 }
                 None
             }
-            Some(Err(StillError::Compute(error))) => {
+            Err(StillError::Compute(error)) => {
                 tracing::warn!(target: "pipe", "cannot prepare thumbnail: {error}");
                 state.not_before.insert(path, (hash, retry));
                 return;
@@ -594,7 +624,6 @@ impl Engine {
             generation,
             at,
             unaltered,
-            raw,
             facts,
             stamp,
             load: Arc::clone(&self.load),
@@ -630,20 +659,21 @@ struct Render {
     snapshots: mpsc::Receiver<Vec<Snapshot>>,
     upkeep: Upkeep,
     asked: Asked,
-    done: Arc<Mutex<BTreeMap<PathBuf, [u8; 32]>>>,
+    done: Arc<Mutex<BTreeMap<PathBuf, Done>>>,
     outbox: Outbox,
     generation: Arc<AtomicU64>,
     at: u64,
-    /// Whether the edit renders as a photo with no edit does: its render is shown only
-    /// where `raw` shows one, and versioned as [`library::UNALTERED`].
+    /// Whether the edit renders as a photo with no edit does: its render is versioned as
+    /// [`library::UNALTERED`], made from the live photo ([`Origin::Opened`]).
     unaltered: bool,
-    raw: RawThumbnails,
-    /// The raw's size and whether Phase One made it, for darktable's rule.
-    facts: ((u32, u32), bool),
+    /// What darktable's rule reads of the raw, as the open read it, which that render
+    /// records.
+    facts: library::RawFacts,
     /// The raw's size and modified time as the open read them: its facts are recorded only
     /// for that raw, never for one replaced since.
     stamp: Option<library::RawStamp>,
-    /// How the raw is read, for its embedded picture.
+    /// How the raw is read, for its embedded picture where a photo with no edit's still was
+    /// refused.
     load: Load,
 }
 
@@ -667,10 +697,9 @@ impl Render {
         (fingerprint == self.fingerprint).then_some(now)
     }
 
-    /// Waits for the saved edit to be on disk, renders it with `still`, reads the camera's
-    /// embedded picture where there is none or the edit is at the defaults, writes every
-    /// size, each the render or the embedded picture as the setting shows it, and tells
-    /// the sizes the client asked for.
+    /// Waits for the saved edit to be on disk, renders it with `still`, writes every size,
+    /// and tells the sizes the client asked for. A photo with no edit whose still was
+    /// refused, none given, gets the camera's embedded picture instead.
     fn run(self, context: &Context<'_>, tasks: &Tasks, still: Option<Still>) {
         let current = || !context.cancelled() && self.generation.load(Ordering::Relaxed) == self.at;
         let cancel = || !current();
@@ -707,32 +736,21 @@ impl Render {
             }
             None => None,
         };
-        // Then the camera's embedded picture, read once at the largest size, with the
-        // stored size of the largest, for a photo with no edit; none that cannot be read,
-        // or of a raw replaced since the open, whose render then records no facts, so a
-        // later read looks at the raw again.
-        let stamp = library::raw_stamp(&self.path).filter(|now| Some(*now) == self.stamp);
+        // The raw as the open read it, by its stamp and fingerprint: a render of the photo
+        // with no edit records its facts, none for a raw gone or replaced since the open, so
+        // a later read looks at the raw again.
         let opened = self.opened_raw();
-        let (read, (embedded, embedded_size)) = match (self.load)(&self.path) {
-            Ok(file) if self.unaltered => (true, file.preview(1024, true)),
-            Ok(_) => (true, (None, None)),
-            Err(_) => (false, (None, None)),
+        // With no render, the camera's embedded picture, read once at the largest size;
+        // none that cannot be read.
+        let embedded = match &rendered {
+            Some(_) => None,
+            None => ((self.load)(&self.path).ok()).and_then(|file| file.preview(1024, false).0),
         };
         // The embedded picture is kept under the open raw's slots only where the raw was
         // that one before its read and after it: another raw's is never kept there.
         let embedded_stamp = opened.filter(|_| self.opened_raw() == opened);
-        let (raw, phase_one) = self.facts;
-        let facts = library::RawFacts {
-            embedded: embedded_size,
-            raw,
-            phase_one,
-        };
-        // A photo with no edit shows its render only at the sizes darktable's rule does.
-        let shows = |size| !self.unaltered || self.raw.shows_render((size, size), &facts);
-        let version = match (self.unaltered, stamp.filter(|_| read)) {
-            (true, Some(stamp)) => {
-                library::unaltered_version(&facts, &stamp, library::Origin::Rule)
-            }
+        let version = match (self.unaltered, opened) {
+            (true, Some(stamp)) => library::unaltered_version(&self.facts, &stamp, Origin::Opened),
             (true, None) => library::rendered_version(&library::UNALTERED),
             (false, _) => library::rendered_version(&actual),
         };
@@ -742,10 +760,9 @@ impl Render {
             if !current() {
                 return;
             }
-            let render = rendered.as_ref().filter(|_| shows(size));
             let upkeep = &self.upkeep;
             let image;
-            all_written &= match (render, &embedded) {
+            all_written &= match (&rendered, &embedded) {
                 (Some(render), _) => {
                     image = Some(average(render, size));
                     let key = ThumbnailKey {
@@ -809,7 +826,7 @@ impl Render {
         if all_written {
             let mut done = self.done.lock().unwrap_or_else(PoisonError::into_inner);
             if current() {
-                done.insert(self.path, self.hash);
+                done.insert(self.path, (self.hash, self.stamp));
             }
         }
     }
@@ -915,13 +932,13 @@ mod tests {
         state
             .generations
             .insert(path.clone(), Arc::clone(&generation));
-        state.finish(&path, hash);
+        state.finish(&path, hash, None);
         state
             .not_before
             .insert(path.clone(), (hash, Instant::now()));
         state.invalidate(&path);
         assert_eq!(generation.load(Ordering::Relaxed), 3);
-        assert!(!state.done(&path, &hash));
+        assert!(!state.done(&path, &hash, None));
         assert!(!state.not_before.contains_key(&path));
     }
 }
