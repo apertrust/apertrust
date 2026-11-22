@@ -188,7 +188,7 @@ The libraries Apertrust and its command line are built from, on every platform, 
 - foreign-types 0.5.0: MIT/Apache-2.0
 - foreign-types-macros 0.2.4: MIT/Apache-2.0
 - foreign-types-shared 0.3.1: MIT/Apache-2.0
-- form_urlencoded 1.2.2: MIT OR Apache-2.0
+- form_urlencoded 1.2.3: MIT OR Apache-2.0
 - futures-core 0.3.34: MIT OR Apache-2.0
 - futures-io 0.3.34: MIT OR Apache-2.0
 - futures-lite 2.6.1: Apache-2.0 OR MIT
@@ -454,7 +454,7 @@ The libraries Apertrust and its command line are built from, on every platform, 
 - unicode-properties 0.1.4: MIT/Apache-2.0
 - unicode-segmentation 1.13.3: MIT OR Apache-2.0
 - unicode-width 0.2.3: MIT OR Apache-2.0
-- url 2.5.8: MIT OR Apache-2.0
+- url 2.5.9: MIT OR Apache-2.0
 - usvg 0.50.0: Apache-2.0 OR MIT
 - utf8_iter 1.1.0: Apache-2.0 OR MIT
 - utf8parse 0.2.2: Apache-2.0 OR MIT
