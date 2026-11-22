@@ -91,6 +91,7 @@ tools/package.sh [--finder-layout] [--nightly] # this platform's packages into t
                                            # on Linux, cargo-generate-rpm --version 0.21.1 too)
 tools/build-icons.sh                       # the app icon's PNGs, .icns and .ico from its SVGs; commit them
 tools/build-dmg-background.sh              # the disk image's background.tiff from its SVG, on a Mac; commit it (docs/packaging.md)
+tools/install.sh [--nightly]               # install or update Apertrust, or Apertrust Nightly, on this Mac or Linux computer
 
 # The CLI; every flag in docs/crates.md, apertrust-cli
 cargo run -p apertrust-cli -- gpu [--adapter NAME] [--backend auto|dx12|vulkan]   # adapters, and the one the engine opens

@@ -63,7 +63,21 @@ Early development, in Phase 2: the desktop app. [docs/roadmap.md](docs/roadmap.m
 
 ## Installation
 
-Releases and the nightly builds, Apertrust Nightly, are on the [Releases page](https://github.com/apertrust/apertrust/releases). Nightlies are untested development builds. Neither is signed with a developer's certificate yet, so each system warns the first time you open it. The commands below assume the download is in `~/Downloads`; use its own folder where it went elsewhere:
+Releases and the nightly builds, Apertrust Nightly, are on the [Releases page](https://github.com/apertrust/apertrust/releases). Nightlies are untested development builds. Neither is signed with a developer's certificate yet, so each system warns the first time you open it.
+
+On a Mac or a Linux computer, one command downloads Apertrust Nightly's package for it, checks it and installs or updates it, the steps below done for you; without `--nightly` it installs the latest release, once one is published:
+
+```sh
+curl -q --proto '=https' --proto-redir '=https' -fsSL https://raw.githubusercontent.com/apertrust/apertrust/main/tools/install.sh | bash -s -- --nightly
+```
+
+A pipe hides a failed download (a 404, no network) behind bash's own status; in a script or an unattended run, download the script first, then run it:
+
+```sh
+curl -q --proto '=https' --proto-redir '=https' -fsSL https://raw.githubusercontent.com/apertrust/apertrust/main/tools/install.sh -o install.sh && bash install.sh --nightly
+```
+
+To install a package yourself, the commands below assume the download is in `~/Downloads`; use its own folder where it went elsewhere:
 
 - **macOS** refuses the disk image as from an unidentified developer, or says it "is damaged and can't be opened".
   - Before opening the disk image, remove its quarantine, then drag Apertrust into Applications:
