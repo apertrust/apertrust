@@ -255,6 +255,14 @@ Automatic mode:
 - **The metered region:** the exposure over the declared image against darktable's crop differs by none on 15 raws at 50 % and −4 EV; by 0.0118 EV on the OM-1 Mark II, 0.0112 on the K-3 Mark III, 0.0083 on the D5100, 0.0060 on the 5D Mark IV and E-M1 Mark III, and less on the rest; at most 0.0072 EV at the other settings.
 - **Cost,** the 7R V's 61 MP raw on the M4: the count of 60,217,344 photosites takes 20 to 32 ms of wall time once, its kernel compiled in under 1 ms, submitted and read back included; the export then takes 691 and 694 ms against manual mode's 671 and 700; an exposure change in the viewport 7.07 ms median against manual mode's 7.06; the plan of the six operations up to exposure for the readout, at each values report while it shows, 0.035 ms median. Manual mode counts nothing (E37).
 
+### On the Radeon 780M
+
+On the AMD Radeon 780M (Vulkan through RADV, Linux, a Ryzen 7 8845HS), against references rendered by darktable's official `Darktable-5.6.2-x86_64.AppImage` (decision 103): `apertrust-golden run` with one round of one iteration and no warm-up, so each time is a single render's GPU time, not a median, and `gradient`. Every case passes its tolerance with no pixel over its max.
+
+| Case | ΔE2000 mean | p95 | max | Pixels over max | GPU time, one render | Gradient check |
+| --- | --- | --- | --- | --- | --- | --- |
+| `exposure` | 0.0000 | 0.0000 | 0.0002 | 0 | 4.6 ms, 1 pass | passes, 2 parameters, relative error ≤ 6.9e-6, forward mode within 3.6e-8 a pixel |
+
 ## Open questions
 
 - **Metering rawspeed's crop** would give darktable's computed exposure on every raw, from rawspeed's camera data as a data file (decision 87, Options considered); kept for later, should the up to 0.012 EV matter.

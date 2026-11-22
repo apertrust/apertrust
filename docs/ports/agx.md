@@ -6,7 +6,7 @@ Status: ported.
 
 - **Code:** the kernel is `slang/agx.slang` in `crates/op/agx`, its setup `src/setup.rs`, with shared helpers in `apertrust-color` (`src/lib.rs` and `slang/color.slang`).
 - **Coverage:** every setting of params version 7 except base primaries "export profile", which returns `NotPorted`.
-- **Checks:** all four golden cases pass, and the gradient check passes on every case and on the synthetic sweep (Gradients). Checked on one GPU so far.
+- **Checks:** all four golden cases pass, and the gradient check passes on every case and on the synthetic sweep (Gradients). Checked on the Apple M4 and the AMD Radeon 780M (below).
 - **Tool:** AgX, darktable's page, in the Default workspace's Adjust tab (decision 38), owning every parameter ([../tools/agx.md](../tools/agx.md)). A tool set to each golden case's values binds its parameters bit for bit but three of `agx`'s, one f32 step off.
 
 Golden result, Apple M4:
@@ -19,6 +19,15 @@ Golden result, Apple M4:
 | `agx-edges` | 0174, edited | mire1.cr2, 3908×2602 | 0.0000 | 0.0001 | 0.0005 | 6.40 |
 
 One pass takes 3.6 to 3.7 ms on a 10 MP image and 7.4 ms on 20 MP (median), the memory-bound cost of any full-image pass on the M4.
+
+Golden results on the AMD Radeon 780M (Vulkan through RADV, Linux, a Ryzen 7 8845HS), against references rendered by darktable's official `Darktable-5.6.2-x86_64.AppImage` (decision 103): `apertrust-golden run` with one round of one iteration and no warm-up, so each time is a single render's GPU time, not a median, and `gradient`. Every case passes its tolerance with no pixel over its max.
+
+| Case | ΔE2000 mean | p95 | max | Pixels over max | GPU time, one render | Gradient check |
+| --- | --- | --- | --- | --- | --- | --- |
+| `agx` | 0.0000 | 0.0001 | 0.0003 | 0 | 4.5 ms, 1 pass | passes, 4 parameters, relative error ≤ 5.2e-5, forward mode within 4.5e-6 a pixel |
+| `agx-default` | 0.0000 | 0.0001 | 0.0002 | 0 | 4.6 ms, 1 pass | passes, 4 parameters, relative error ≤ 1.8e-5, forward mode within 1.6e-6 a pixel |
+| `agx-highlights` | 0.0000 | 0.0001 | 0.0002 | 0 | 8.9 ms, 1 pass | passes, 4 parameters, relative error ≤ 1.7e-5, forward mode within 2.3e-6 a pixel |
+| `agx-edges` | 0.0000 | 0.0001 | 0.0016 | 0 | 4.5 ms, 1 pass | passes, 4 parameters, relative error ≤ 1.9e-5, forward mode within 2.5e-6 a pixel |
 
 ## Purpose
 

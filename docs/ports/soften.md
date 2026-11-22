@@ -267,6 +267,14 @@ Known non-smooth spots: the radius's integer steps; the clips of the saturation 
 
 Apple M4, a one-instance plan of the engine: `soften`, ΔE2000 mean 0.0001, p95 0.0003, max 0.0042, no pixel over 2.3. The module's effect, darktable's input against its output, is a mean of 8.39, p95 18.94, max 53.59.
 
+### On the Radeon 780M
+
+On the AMD Radeon 780M (Vulkan through RADV, Linux, a Ryzen 7 8845HS), against references rendered by darktable's official `Darktable-5.6.2-x86_64.AppImage` (decision 103): `apertrust-golden run` with one round of one iteration and no warm-up, so each time is a single render's GPU time, not a median, and `gradient`. Every case passes its tolerance with no pixel over its max.
+
+| Case | ΔE2000 mean | p95 | max | Pixels over max | GPU time, one render | Gradient check |
+| --- | --- | --- | --- | --- | --- | --- |
+| `soften` | 0.0001 | 0.0003 | 0.0057 | 0 | 868 ms, 18 passes | passes, 1 parameter, relative error ≤ 1.4e-3, forward mode within 1.2e-7 a pixel |
+
 ### Speed
 
 Apple M4, a render of the plan, GPU timestamps, 3908×2602, medians of each run with minimums, bloom run alongside. Other work on the machine put its load average between 6 and 55, so the runs are compared pairwise.

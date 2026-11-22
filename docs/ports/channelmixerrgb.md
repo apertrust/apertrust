@@ -2,7 +2,7 @@
 
 Source: darktable (the reference release, commit 20891f6c6f), `src/iop/channelmixerrgb.c`: `legacy_params()`, `init_presets()`, `init()`, `reload_defaults()`, `commit_params()` and `process()` through `_loop_switch()`, `_gamut_mapping()` and `_luma_chroma()`, with `_get_white_balance_coeff()`, `_check_if_close_to_daylight()`, `_auto_set_illuminant()` (the picker), `_extract_color_checker()` and `_extract_patches()` (the colour checker) and `_auto_detect_WB()` (illuminant detection, compiled out). Helpers from `src/common/chromatic_adaptation.h`, `src/common/illuminants.h`, `src/common/colorchecker.h`, `src/iop/gaussian_elimination.h`, `src/common/math.h` and `src/common/colorspaces_inline_conversions.h`; the defaults it depends on from `src/iop/temperature.c` (`reload_defaults`) and `src/develop/develop.c` (`dt_dev_equal_chroma`, auto-applied presets). OpenCL: `data/kernels/channelmixer.cl` (program 32). The reference is darktable's CPU path.
 
-Status: **ported** (checks pass on the Apple M4), in `crates/op/channelmixerrgb` with the shared maths in `crates/color` (`adaptation.rs`, `illuminants.rs`, and the illuminants section of `slang/color.slang`). Params version 3 with the `V_3` colourfulness, every adaptation, every illuminant darktable offers.
+Status: **ported** (checks pass on the Apple M4 and the AMD Radeon 780M), in `crates/op/channelmixerrgb` with the shared maths in `crates/color` (`adaptation.rs`, `illuminants.rs`, and the illuminants section of `slang/color.slang`). Params version 3 with the `V_3` colourfulness, every adaptation, every illuminant darktable offers.
 
 - **Default pipeline:** in `OPERATIONS` with `default_enabled` on, so every colour raw runs it (architecture decision 27), from darktable's own defaults: As shot snapped to daylight or Planckian as `reload_defaults` snaps it (Defaults).
 - **Tool:** Colour calibration owns every parameter, its CAT tab's included (`docs/tools/colour-calibration.md`).
@@ -368,6 +368,24 @@ Apple M4 (Metal), `run`, every case at full resolution; the module's own effect 
 - **The negative-`Δ` path:** in `channelmixerrgb-unclipped` (gamut 4, so `powf` gives NaN for a negative `Δ`), 82 of 10.2 million pixels have a negative luminance after the mix, and none a non-positive X + Y + Z. They take darktable's D50 path and stay within the image's maximum ΔE of 0.0002; being dark, they are weak evidence of how darktable's fast-math build treats the NaN, which the restated code's test covers instead.
 - **The exit test** (`pipeline`, decision 62), with the operation on every colour raw and As shot snapped as darktable's: 29 checked, 27 passed, 11 skipped. The two lossy Sony ARWs (ILCE-1, ILCE-6400) fail at means of 0.037 and 0.071 (the whole-pipeline test); every passing sample has a mean of 0.001 and a 95th percentile of at most 0.002.
 - **The defaults** against darktable's own on the 29 samples the exit test compares (`the_defaults_are_darktables_on_the_corpus` in `crates/golden/tests/channelmixerrgb.rs`, `--ignored`, the corpus): darktable's values read from the history darktable-cli embeds in an unedited export, Apertrust's from rawler's decode. The same illuminant on all 29, 17 `D`, 5 `BB` and 7 `custom` (`D`: Canon 5D Mark IV, 7D Mark II, 90D, M50, Fujifilm GFX 50S, X-H2S, Nikon D5100, Z 6, OM System OM-1 Mark II, Panasonic DC-S5M2 twice, Pentax K-1 Mark II, K-3 Mark III, Samsung NX1, Sony ILCE-1, ILCE-6400, ILCE-7RM5; `BB`: Canon R6 Mark II, Fujifilm X-T5, X100VI, Nikon D850 twice; `custom`: Canon 5D Mark III's DNG, R5, Google Pixel 4a, Leica Q2, Nikon Z 9, Olympus E-M1 Mark III, Panasonic DC-GH6); `x` and `y` within 1.5e-7; the temperature within 0.003 K, but the M50's 0.14 K (Deliberate differences). On a Fujifilm raw outside the corpus (DSCF1033), darktable's GUI and darktable-cli show Planckian at 4794.951 K, x 0.3514780, y 0.3564790, and Apertrust's defaults are the same, bit for bit.
+
+### On the Radeon 780M
+
+On the AMD Radeon 780M (Vulkan through RADV, Linux, a Ryzen 7 8845HS), against references rendered by darktable's official `Darktable-5.6.2-x86_64.AppImage` (decision 103): `apertrust-golden run` with one round of one iteration and no warm-up, so each time is a single render's GPU time, not a median, and `gradient`. Every case passes its tolerance with no pixel over its max.
+
+| Case | ΔE2000 mean | p95 | max | Pixels over max | GPU time, one render | Gradient check |
+| --- | --- | --- | --- | --- | --- | --- |
+| `channelmixerrgb` | 0.0000 | 0.0001 | 0.0003 | 0 | 4.5 ms, 1 pass | passes, 2 parameters, relative error ≤ 8.6e-6, forward mode within 2.1e-7 a pixel |
+| `channelmixerrgb-linear-bradford` | 0.0000 | 0.0001 | 0.0004 | 0 | 4.5 ms, 1 pass | passes, 2 parameters, relative error ≤ 1.3e-5, forward mode within 1.8e-7 a pixel |
+| `channelmixerrgb-bradford` | 0.0000 | 0.0001 | 0.0004 | 0 | 4.5 ms, 1 pass | passes, 2 parameters, relative error ≤ 1.6e-5, forward mode within 1.8e-7 a pixel |
+| `channelmixerrgb-xyz` | 0.0000 | 0.0001 | 0.0002 | 0 | 4.6 ms, 1 pass | passes, 2 parameters, relative error ≤ 1.2e-5, forward mode within 2.0e-7 a pixel |
+| `channelmixerrgb-default` | 0.0000 | 0.0001 | 0.0004 | 0 | 4.5 ms, 1 pass | passes, 2 parameters, relative error ≤ 3.6e-5, forward mode within 6.4e-7 a pixel |
+| `channelmixerrgb-daylight` | 0.0000 | 0.0001 | 0.0003 | 0 | 11.8 ms, 1 pass | passes, 2 parameters, relative error ≤ 5.5e-5, forward mode within 1.1e-6 a pixel |
+| `channelmixerrgb-highlights` | 0.0001 | 0.0002 | 0.0006 | 0 | 2.5 ms, 1 pass | passes, 2 parameters, relative error ≤ 2.0e-4, forward mode within 1.2e-6 a pixel |
+| `channelmixerrgb-grey` | 0.0000 | 0.0001 | 0.0002 | 0 | 4.5 ms, 1 pass | passes, 2 parameters, relative error ≤ 9.5e-5, forward mode within 6.1e-7 a pixel |
+| `channelmixerrgb-bypass` | 0.0000 | 0.0001 | 0.0003 | 0 | 4.5 ms, 1 pass | none: no gradient port |
+| `channelmixerrgb-unclipped` | 0.0000 | 0.0001 | 0.0036 | 0 | 4.5 ms, 1 pass | passes, 2 parameters, relative error ≤ 7.7e-6, forward mode within 1.9e-7 a pixel |
+| `channelmixerrgb-camera` | 0.0000 | 0.0001 | 0.0004 | 0 | 11.6 ms, 1 pass | passes, 2 parameters, relative error ≤ 6.4e-5, forward mode within 5.5e-7 a pixel |
 
 ### Other tests
 

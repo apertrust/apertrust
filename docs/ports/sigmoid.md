@@ -7,7 +7,7 @@ Status: **ported.**
 - **Where:** the kernel is `slang/sigmoid.slang` in `crates/op/sigmoid`, its setup `src/setup.rs`, its manifest and schema `src/lib.rs`.
 - **What:** every setting of params version 3: both colour processings (per channel, darktable's default, and RGB ratio), the hue preservation and the primaries section with all five base primaries, so `prepare` returns `NotPorted` for nothing. Where darktable's f32 curve breaks down at the ranges' corners, the kernel renders its breakdown.
 - **In the pipeline:** in `OPERATIONS` at darktable's v5.0 place, working space 45.3, with `default_enabled` off. Nothing plans it until an edit can choose it as its tone mapper (decision 33), planned with the Sigmoid tool.
-- **Checks:** the five golden cases pass, and the gradient check passes on every case and on the synthetic sweep (Gradients). Checked on one GPU so far.
+- **Checks:** the five golden cases pass, and the gradient check passes on every case and on the synthetic sweep (Gradients). Checked on the Apple M4 and the AMD Radeon 780M, the 780M's means larger, still inside the tolerance (below).
 
 Golden results, Apple M4:
 
@@ -25,6 +25,18 @@ Tests 0183 to 0185 render byte for byte as 0182 does in darktable, so they are n
 
 - 0184 differs only in its PQ output profile, which the harness replaces with linear Rec2020 and which the reference release's sigmoid does not read.
 - 0183 and 0185 hold params version 4, which the reference release cannot read and renders with its defaults (Parameter versions).
+
+Golden results on the AMD Radeon 780M (Vulkan through RADV, Linux, a Ryzen 7 8845HS), against references rendered by darktable's official `Darktable-5.6.2-x86_64.AppImage` (decision 103): `apertrust-golden run` with one round of one iteration and no warm-up, so each time is a single render's GPU time, not a median, and `gradient`. Every case passes its tolerance with no pixel over its max.
+
+| Case | ΔE2000 mean | p95 | max | Pixels over max | GPU time, one render | Gradient check |
+| --- | --- | --- | --- | --- | --- | --- |
+| `sigmoid` | 0.3622 | 0.4599 | 0.7237 | 0 | 4.6 ms, 1 pass | passes, 4 parameters, relative error ≤ 7.3e-5, forward mode within 4.5e-7 a pixel |
+| `sigmoid-no-hue-preservation` | 0.3707 | 0.4802 | 0.7119 | 0 | 4.5 ms, 1 pass | passes, 4 parameters, relative error ≤ 2.5e-3, forward mode within 3.3e-7 a pixel |
+| `sigmoid-default` | 0.0366 | 0.0489 | 0.0919 | 0 | 9.1 ms, 1 pass | passes, 4 parameters, relative error ≤ 7.3e-5, forward mode within 3.2e-6 a pixel |
+| `sigmoid-rgb-ratio` | 0.1247 | 0.1878 | 0.3167 | 0 | 4.5 ms, 1 pass | passes, 3 parameters, relative error ≤ 4.7e-5, forward mode within 8.1e-8 a pixel |
+| `sigmoid-primaries` | 0.1977 | 0.2399 | 0.4442 | 0 | 4.6 ms, 1 pass | passes, 4 parameters, relative error ≤ 4.7e-5, forward mode within 2.1e-6 a pixel |
+
+The means are well above the M4's 0.0000, though inside `Tolerance::DARKTABLE`: 0.36 and 0.37 on test 0097's two per-channel cases, 0.04 to 0.20 on the others. Whether darktable's Linux build renders the references differently from its macOS build, or the Radeon 780M differs from the M4, is not yet known; it is to be investigated.
 
 ## Purpose
 

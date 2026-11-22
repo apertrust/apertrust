@@ -200,6 +200,18 @@ Planned engine feature: the noise computed once per viewport size and scale and 
 | `grain-v1` | 4.124 | 0.0008 | 0.0024 | 0.0604 | 0 | pass |
 | `grain-agx` | 2.907 | 0.0004 | 0.0013 | 0.0601 | 0 | pass |
 
+### On the Radeon 780M
+
+On the AMD Radeon 780M (Vulkan through RADV, Linux, a Ryzen 7 8845HS), against references rendered by darktable's official `Darktable-5.6.2-x86_64.AppImage` (decision 103): `apertrust-golden run` with one round of one iteration and no warm-up, so each time is a single render's GPU time, not a median, and `gradient`. Every case passes its tolerance with no pixel over its max.
+
+| Case | ΔE2000 mean | p95 | max | Pixels over max | GPU time, one render | Gradient check |
+| --- | --- | --- | --- | --- | --- | --- |
+| `grain` | 0.0006 | 0.0018 | 0.0952 | 0 | 8.9 ms, 1 pass | passes, 1 parameter, relative error ≤ 1.3e-3, forward mode within 5.8e-7 a pixel |
+| `grain-fine` | 0.0006 | 0.0019 | 0.0294 | 0 | 8.9 ms, 1 pass | none: no gradient port |
+| `grain-channel` | 0.0004 | 0.0012 | 0.0599 | 0 | 8.9 ms, 1 pass | passes, 1 parameter, relative error ≤ 1.2e-3, forward mode within 3.2e-7 a pixel |
+| `grain-v1` | 0.0007 | 0.0021 | 0.0608 | 0 | 8.9 ms, 1 pass | passes, 1 parameter, relative error ≤ 1.3e-3, forward mode within 3.7e-7 a pixel |
+| `grain-agx` | 0.0004 | 0.0013 | 0.0601 | 0 | 12.0 ms, 1 pass | passes, 1 parameter, relative error ≤ 1.0e-3, forward mode within 3.8e-7 a pixel |
+
 ## Test plan
 
 - **Golden cases** (`crates/golden/src/cases.rs`), `disable: &[]` (no later module in either sidecar changes the image; output colour is replaced by linear Rec2020), no mask (test 0059's grain has mask mode 0):

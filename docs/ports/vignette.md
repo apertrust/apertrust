@@ -286,6 +286,19 @@ A single pass takes 3.6 to 4.5 ms over 10 MP (exposure's 3.9 ms: memory-bound); 
 
 Test 0045 as it stands, with 8-bit dithering, is not a case: against a CPU emulation of darktable without the noise its render differs by the noise alone, at most 0.9995/256 per channel, ΔE2000 mean 0.133, p95 0.77, max 2.98, 621 pixels over 2.3 (Dithering).
 
+### On the Radeon 780M
+
+On the AMD Radeon 780M (Vulkan through RADV, Linux, a Ryzen 7 8845HS), against references rendered by darktable's official `Darktable-5.6.2-x86_64.AppImage` (decision 103): `apertrust-golden run` with one round of one iteration and no warm-up, so each time is a single render's GPU time, not a median, and `gradient`. Every case passes its tolerance with no pixel over its max.
+
+| Case | ΔE2000 mean | p95 | max | Pixels over max | GPU time, one render | Gradient check |
+| --- | --- | --- | --- | --- | --- | --- |
+| `vignette` | 0.0000 | 0.0000 | 0.0001 | 0 | 4.5 ms, 1 pass | passes, 4 parameters, relative error ≤ 1.4e-3, forward mode within 1.1e-7 a pixel |
+| `vignette-autoratio` | 0.0000 | 0.0000 | 0.0001 | 0 | 4.6 ms, 1 pass | passes, 4 parameters, relative error ≤ 1.3e-4, forward mode within 8.1e-8 a pixel |
+| `vignette-narrow` | 0.0000 | 0.0000 | 0.0001 | 0 | 4.5 ms, 1 pass | passes, 4 parameters, relative error ≤ 1.7e-4, forward mode within 1.2e-7 a pixel |
+| `vignette-star` | 0.0000 | 0.0000 | 0.0002 | 0 | 4.5 ms, 1 pass | passes, 4 parameters, relative error ≤ 3.9e-3, forward mode within 5.5e-7 a pixel |
+| `vignette-clip` | 0.0000 | 0.0000 | 0.0001 | 0 | 4.6 ms, 1 pass | passes, 2 parameters, relative error ≤ 1.7e-3, forward mode within 8.6e-8 a pixel |
+| `vignette-white` | 0.0000 | 0.0001 | 0.0002 | 0 | 4.9 ms, 1 pass | passes, 4 parameters, relative error ≤ 2.0e-3, forward mode within 1.3e-7 a pixel |
+
 ## Test plan
 
 - **Golden cases** (`crates/golden/src/cases.rs`), all on mire1.cr2, `disable: &[]` (no later module in test 0045's sidecar changes the image; output colour is replaced by linear Rec2020), no mask (test 0045's vignette has none: its blend parameters have mask mode 0). Each is test 0045's sidecar with only the vignette entry's params edited:

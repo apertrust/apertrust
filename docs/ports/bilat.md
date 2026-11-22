@@ -223,6 +223,15 @@ The local laplacian filter meets the target at every scale, and so does the bila
 
 The target applies as decision 15 measures it: the baseline is the per-pixel gap left once the whole-image result is exact, measured with the whole-image passes at full resolution and `main` at the viewport's scale through a setting only the tests reach, and the target applies to the rest. That baseline is still to be measured; until it is, the test bounds the 1/8 view at detail 200 % by 0.5, a regression check.
 
+### On the Radeon 780M
+
+On the AMD Radeon 780M (Vulkan through RADV, Linux, a Ryzen 7 8845HS), against references rendered by darktable's official `Darktable-5.6.2-x86_64.AppImage` (decision 103): `apertrust-golden run` with one round of one iteration and no warm-up, so each time is a single render's GPU time, not a median, and `gradient`. Every case passes its tolerance with no pixel over its max.
+
+| Case | ΔE2000 mean | p95 | max | Pixels over max | GPU time, one render | Gradient check |
+| --- | --- | --- | --- | --- | --- | --- |
+| `bilat` | 0.0000 | 0.0000 | 0.0002 | 0 | 68.0 ms, 20 passes | none: no gradient port |
+| `bilat-bilateral` | 0.0000 | 0.0000 | 0.0002 | 0 | 42.6 ms, 5 passes | passes, 1 parameter, relative error ≤ 1.6e-5, forward mode within 6.9e-8 a pixel |
+
 ## Test plan
 
 - **Golden cases:** `bilat`, darktable's test 0002-local-contrast on mire1.cr2, the local laplacian filter at its defaults after exposure +1 EV, unchanged; `bilat-bilateral`, test 0002 edited to the bilateral grid with the coarseness and contrast darktable's sliders give the mode (50 and 20) and detail 200 % (1.0), so the module's effect is well above the tolerance's mean; no darktable test covers the mode. Both `Tolerance::DARKTABLE`, both one-instance plans of the engine (decision 15).

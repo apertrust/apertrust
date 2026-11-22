@@ -419,6 +419,17 @@ On test 0166's case an f64 numpy restatement of darktable's algorithm on the har
 - Its input, darktable's render of the module's input through an identity colorin and colorout, is about 0.04% from what darktable's module saw: darktable's `-d verbose` A0 is 0.5419, 0.5365, 0.5475, the restatement's on the harness's input 0.5421, 0.5366, 0.5477. That moves the depth and t_min.
 - darktable's inexact quick select (Deliberate differences, 7) is not the gap. Its `_ambient_light()`, copied into C and run on the harness's input, gives A0 0.542059, 0.536624, 0.547658 with darktable's select and 0.542066, 0.536631, 0.547663 with an exact one: 7e-6 apart, a thirtieth of the 2e-4 between darktable's A0 and the restatement's, with the same critical haze level and depth.
 
+### On the Radeon 780M
+
+On the AMD Radeon 780M (Vulkan through RADV, Linux, a Ryzen 7 8845HS), against references rendered by darktable's official `Darktable-5.6.2-x86_64.AppImage` (decision 103): `apertrust-golden run` with one round of one iteration and no warm-up, so each time is a single render's GPU time, not a median, and `gradient`. Every case passes its tolerance with no pixel over its max.
+
+| Case | ΔE2000 mean | p95 | max | Pixels over max | GPU time, one render | Gradient check |
+| --- | --- | --- | --- | --- | --- | --- |
+| `hazeremoval` | 0.0994 | 0.2335 | 0.6312 | 0 | 98.0 ms, 25 passes | passes, 2 parameters, relative error ≤ 1.6e-6, forward mode within 3.4e-8 a pixel |
+| `hazeremoval-v2` | 0.0020 | 0.0049 | 0.1082 | 0 | 98.2 ms, 25 passes | passes, 2 parameters, relative error ≤ 1.5e-4, forward mode within 4.2e-8 a pixel |
+
+`hazeremoval`'s mean, 0.0994, is above the M4's 0.0213, though inside `Tolerance::DARKTABLE`; `hazeremoval-v2`'s, 0.0020, is about the M4's 0.0025. Whether darktable's Linux build renders the reference differently from its macOS build, or the Radeon 780M differs from the M4, is not yet known; it is to be investigated.
+
 ### Timing
 
 Apple M4, 3908×2602, GPU timestamps; the fastest of runs, since runs differ by up to 2× with the MacBook Air's throttling and other work on the GPU.
