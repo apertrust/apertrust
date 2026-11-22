@@ -2,7 +2,7 @@
 
 A cursor decides what a press on the photo does. One is chosen at a time, and it stays chosen until another is chosen: Select, the default, selects and moves marks on the photo and pans a zoomed photo from empty photo; Pan always pans; a picker cursor sets White balance or Exposure from the area clicked or drawn; later, mask cursors paint a layer's mask, retouch cursors heal spots, annotation cursors mark the photo, and Copy and apply copies one photo's edit onto others. This document describes the well on the Toolbar where cursors are chosen, the groups and their settings, the keys, the pointer on the photo, the API every owner of cursors uses, and how the work is built. Pickers themselves are in [pickers.md](pickers.md), the Toolbar in [gui.md](gui.md#the-toolbar), layers and masks in [layers.md](layers.md).
 
-**Status.** [Decision 104](decisions/0104-cursors-one-chosen-at-a-time-in-a-well-on-the-toolbar.md) records the design, with the options considered. Planned: Phase 2 builds Select, Pan and Pick with White balance and Exposure ([The plan](#the-plan)); Copy and apply comes in Phase 3, the Mask and Retouch cursors with layers in Phase 4, Annotate later with its own decision. Today a drag on a zoomed photo pans it, and a tool's picker starts from its button alone.
+**Status.** [Decision 104](decisions/0104-cursors-one-chosen-at-a-time-in-a-well-on-the-toolbar.md) records the design, with the options considered. Built, 104.1: the one-shot pick a picker cursor will send, `PickerCommand::Once`, and `Region::pressed` (79.17 of [pickers.md](pickers.md#a-one-shot-pick)). Planned: Phase 2 builds Select, Pan and Pick with White balance and Exposure ([The plan](#the-plan)); Copy and apply comes in Phase 3, the Mask and Retouch cursors with layers in Phase 4, Annotate later with its own decision. Today a drag on a zoomed photo pans it, and a tool's picker starts from its button alone.
 
 ## What it serves
 
@@ -298,7 +298,7 @@ Phase 2, one pull request each, each reviewed before the next that needs it:
 
 | # | Delivers | Touches | Out of scope |
 | --- | --- | --- | --- |
-| 104.1 | `PickerCommand::Once` and `Region::pressed`, with their tests (79.17) | tools, engine | the app |
+| 104.1 | Built: `PickerCommand::Once` and `Region::pressed`, with their tests (79.17) | tools, engine | the app |
 | 104.2 | `CursorDef`, `CursorGroup`, `CursorGroupDef`, `Gesture`, `Surface`, `ToolCursor`, `ToolDefinition::cursors` and the check; White balance's and Exposure's cursors and their words in every language | tools | the app |
 | 104.3 | The well in the design system: faces, chevrons, states, the list with its settings, keys and AccessKit, in the gallery with snapshots | ui | amounts, the app |
 | 104.4 | The app: the mode, the registry, `CursorOwner`, Select and Pan, the tools' owner; the gestures and pointers over the photo; the well on the Toolbar between two flexible spaces and the narrowing with it; the cursor actions with Esc, K and A held; Pick's Show the last pick in the settings schema | app, settings schema | the toolbar's list, holds on one key, Copy and apply |
