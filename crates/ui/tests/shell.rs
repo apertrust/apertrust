@@ -19,11 +19,11 @@
 //! is compact (`docs/gui.md`, Testing).
 
 use apertrust_ui::components::{
-    Available, Browser, BrowserAction, Jobs, Margin, MenuButtonStyle, PanelEdge, PanelEdgeAction,
-    PhotoCaption, PhotoFrame, SaveState, Thumb, Toggle, Toolbar, ToolbarAction, ViewerBar,
-    ViewerBarAction, Zoom,
+    Available, Browser, BrowserAction, CursorWell, CursorWellAction, Jobs, Margin, MenuButtonStyle,
+    PanelEdge, PanelEdgeAction, PhotoCaption, PhotoFrame, SaveState, Thumb, Toggle, Toolbar,
+    ToolbarAction, ViewerBar, ViewerBarAction, WellCursor, WellGroup, WellSetting, Zoom,
 };
-use apertrust_ui::{Builtin, Locale, Theme, Translator};
+use apertrust_ui::{Builtin, Icon, Locale, Theme, Translator};
 use egui::accesskit::{Action, Role};
 use egui::{Color32, CursorIcon, Key, Modifiers, PointerButton, Pos2, Sense, vec2};
 use egui_kittest::Harness;
@@ -31,6 +31,27 @@ use egui_kittest::kittest::{NodeT as _, Queryable as _};
 
 fn install(ctx: &egui::Context) {
     apertrust_ui::install(ctx, Theme::default());
+}
+
+/// Phase 2's well, Select, Pan and Pick, as the app hands it to the Toolbar, `chosen` the
+/// group whose cursor is chosen, drawn by `draw`.
+fn with_well<R>(chosen: usize, draw: impl FnOnce(CursorWell<'_>) -> R) -> R {
+    let select = [WellCursor::new(Icon::Select, "Select").key("Esc")];
+    let pan = [WellCursor::new(Icon::Pan, "Pan").key("A")];
+    let picks = [
+        WellCursor::new(Icon::PickWhiteBalance, "White balance picker").key("K"),
+        WellCursor::new(Icon::PickExposure, "Exposure picker"),
+    ];
+    let settings = [WellSetting::Toggle {
+        name: "Show the last pick on the photo",
+        on: true,
+    }];
+    let groups = [
+        WellGroup::new("Select", &select, 0),
+        WellGroup::new("Pan", &pan, 0),
+        WellGroup::new("Pick", &picks, 0).settings(&settings),
+    ];
+    draw(CursorWell::new(&groups).chosen(chosen))
 }
 
 fn toolbar(available: Available) -> Harness<'static, Vec<ToolbarAction>> {
@@ -158,7 +179,7 @@ fn narrow_in(
         })
         .build_ui_state(
             move |ui, actions: &mut Vec<ToolbarAction>| {
-                if let Some(action) = Toolbar::new()
+                let bar = Toolbar::new()
                     .available(Available {
                         redo: false,
                         apply: false,
@@ -169,9 +190,8 @@ fn narrow_in(
                     .title_bar(true)
                     .menu_button(caption)
                     .caption_buttons(caption)
-                    .shortcut(ToolbarAction::Export, "Ctrl+E")
-                    .show(ui)
-                {
+                    .shortcut(ToolbarAction::Export, "Ctrl+E");
+                if let Some(action) = with_well(0, |well| bar.cursors(well).show(ui)) {
                     actions.push(action);
                 }
             },
@@ -201,7 +221,7 @@ fn a_narrowing_toolbar_folds_its_words_then_its_actions_into_more() {
     assert!(wide.query_by_label("More actions").is_none());
 
     // Narrower, the actions are icons.
-    let mut icons = narrow(480.0, SaveState::Saved, 0.0, false);
+    let mut icons = narrow(600.0, SaveState::Saved, 0.0, false);
     icons.run();
     let widths = shown(&icons);
     assert_eq!(widths.len(), 7);
@@ -210,7 +230,7 @@ fn a_narrowing_toolbar_folds_its_words_then_its_actions_into_more() {
 
     // Narrower still, all but Undo and Redo go under ⋯, listed with their keys and
     // disabled where they can't run.
-    let mut more = narrow(300.0, SaveState::Saved, 0.0, false);
+    let mut more = narrow(400.0, SaveState::Saved, 0.0, false);
     more.run();
     let names: Vec<_> = shown(&more).into_iter().map(|(name, _)| name).collect();
     assert_eq!(names, ["Undo", "Redo"]);
@@ -246,7 +266,7 @@ fn a_narrowing_toolbar_folds_its_words_then_its_actions_into_more() {
 /// shortcut, disabled where it cannot run, the focus back on the button after Esc.
 #[test]
 fn the_more_menu_is_a_popup_list_with_keys_and_enabled_states() {
-    let mut harness = narrow(300.0, SaveState::Saved, 0.0, false);
+    let mut harness = narrow(400.0, SaveState::Saved, 0.0, false);
     harness.run();
     // Focused as a key left it, so the list can give the focus back.
     harness.get_by_label("More actions").focus();
@@ -301,7 +321,7 @@ fn the_more_menu_opened_with_the_pointer_gives_the_focus_to_its_button() {
             .accesskit_node()
             .label()
     };
-    let mut harness = narrow(300.0, SaveState::Saved, 0.0, false);
+    let mut harness = narrow(400.0, SaveState::Saved, 0.0, false);
     harness.run();
     harness.get_by_label("More actions").click();
     harness.run();
@@ -311,7 +331,7 @@ fn the_more_menu_opened_with_the_pointer_gives_the_focus_to_its_button() {
     harness.run();
     assert_eq!(*harness.state(), vec![ToolbarAction::Export]);
     assert_eq!(focused(&harness).as_deref(), Some("More actions"));
-    let mut harness = narrow(300.0, SaveState::Saved, 0.0, false);
+    let mut harness = narrow(400.0, SaveState::Saved, 0.0, false);
     harness.run();
     harness.get_by_label("More actions").click();
     harness.run();
@@ -362,9 +382,13 @@ fn a_narrowing_toolbar_always_leaves_room_to_move_the_window() {
                     };
                     assert_eq!(status.right(), edge, "{locale:?}, {width}, {saved:?}");
                     let end = status.left();
+                    // The cursors' well between them, the empty panel counted on both its
+                    // sides together.
+                    let well = harness.get_by_role(Role::RadioGroup).rect();
+                    let (before, after) = (well.left() - last, end - well.right());
                     assert!(
-                        end - last >= 24.0,
-                        "{locale:?}, {width} points, {saved:?}, inset {inset}: {last} to {end}"
+                        before >= 0.0 && after >= 0.0 && before + after >= 24.0,
+                        "{locale:?}, {width} points, {saved:?}, inset {inset}: {last}, {well:?}, {end}"
                     );
                 }
             }
@@ -375,7 +399,7 @@ fn a_narrowing_toolbar_always_leaves_room_to_move_the_window() {
 /// Where each of the narrowing's steps starts, in points, in `locale`: as on the Mac,
 /// with the traffic lights' room, where `menu` is None, else as on Windows and Linux, the
 /// menu button drawn as `menu` says and the caption buttons at the end; with the jobs
-/// spinner's slot, as the app draws it. Each is the widest Toolbar that has taken the step,
+/// spinner's slot and Phase 2's cursors' well, as the app draws them. Each is the widest Toolbar that has taken the step,
 /// plus one: the words folded, the actions under ⋯, Undo and Redo under ⋯.
 fn fold_widths(locale: Locale, menu: Option<MenuButtonStyle>) -> [u32; 3] {
     let mut harness = Harness::builder()
@@ -386,15 +410,15 @@ fn fold_widths(locale: Locale, menu: Option<MenuButtonStyle>) -> [u32; 3] {
         })
         .build_ui(move |ui| {
             let inset = if menu.is_some() { 0.0 } else { 78.0 };
-            Toolbar::new()
+            let bar = Toolbar::new()
                 .saved(SaveState::Saved)
                 .jobs(Jobs::new(&[]))
                 .start_inset(inset)
                 .title_bar(true)
                 .menu_button(menu.is_some())
                 .menu_button_style(menu.unwrap_or_default())
-                .caption_buttons(menu.is_some())
-                .show(ui);
+                .caption_buttons(menu.is_some());
+            with_well(0, |well| bar.cursors(well).show(ui));
         });
     let words = Translator::new(locale);
     let [import, more, undo] =
@@ -422,11 +446,11 @@ fn fold_widths(locale: Locale, menu: Option<MenuButtonStyle>) -> [u32; 3] {
 #[test]
 fn the_toolbar_folds_where_gui_md_says() {
     for (locale, menu, expected) in [
-        (Locale::EnGb, None, [638, 482, 282]),
-        (Locale::EnGb, Some(MenuButtonStyle::Icon), [763, 607, 407]),
-        (Locale::EnGb, Some(MenuButtonStyle::Menu), [752, 596, 396]),
-        (Locale::Uk, None, [692, 509, 282]),
-        (Locale::Pl, None, [691, 497, 282]),
+        (Locale::EnGb, None, [755, 599, 399]),
+        (Locale::EnGb, Some(MenuButtonStyle::Icon), [880, 724, 524]),
+        (Locale::EnGb, Some(MenuButtonStyle::Menu), [869, 713, 513]),
+        (Locale::Uk, None, [809, 626, 399]),
+        (Locale::Pl, None, [808, 614, 399]),
     ] {
         let measured = fold_widths(locale, menu);
         assert_eq!(measured, expected, "{locale:?}, {menu:?}");
@@ -890,6 +914,101 @@ fn a_new_press_moves_the_window_again_when_the_last_release_never_came() {
         harness.step();
     }
     assert_eq!(*harness.state(), vec![ToolbarAction::MoveWindow; 2]);
+}
+
+/// The title bar with Phase 2's cursors' well, Select chosen, `width` points wide.
+fn title_bar_with_well(width: f32) -> Harness<'static, Vec<ToolbarAction>> {
+    Harness::builder()
+        .with_size(egui::vec2(width, 120.0))
+        .with_step_dt(1.0 / 60.0)
+        .with_context_setup(install)
+        .build_ui_state(
+            |ui, actions: &mut Vec<ToolbarAction>| {
+                let bar = Toolbar::new().saved(SaveState::Saved).title_bar(true);
+                actions.extend(with_well(0, |well| bar.cursors(well).show(ui)));
+            },
+            Vec::new(),
+        )
+}
+
+/// The well sits after Apply edit, a group's gap before it at least, its presses reported
+/// as the well's; it is no empty area, so neither a drag nor a double-click on it, between
+/// its buttons too, moves or zooms the window, while the strips either side still do.
+#[test]
+fn the_cursors_well_is_the_toolbar_s_and_never_moves_the_window() {
+    let mut harness = title_bar_with_well(1200.0);
+    harness.run();
+    let well = harness.get_by_role(Role::RadioGroup).rect();
+    let apply = harness.get_by_label("Apply edit").rect();
+    assert!(well.left() - apply.right() >= 16.0, "{apply:?}, {well:?}");
+    assert_eq!(well.size(), egui::vec2(101.0, 30.0));
+    harness.get_by_label("Pan, A").click();
+    harness.run();
+    assert_eq!(
+        *harness.state(),
+        vec![ToolbarAction::Cursors(CursorWellAction::Cursor {
+            group: 1,
+            cursor: 0
+        })]
+    );
+    harness.state_mut().clear();
+    // Between Select's face and Pan's, the track showing through.
+    let select = harness.get_by_label("Select, Esc").rect();
+    let between = egui::pos2(select.right() + 3.0, select.center().y);
+    for at in [between, egui::pos2(well.left() + 1.0, well.center().y)] {
+        drag(&mut harness, at);
+        harness.run_steps(30);
+        harness.hover_at(at);
+        for pressed in [true, false, true, false] {
+            press(&harness, at, pressed);
+        }
+        harness.run();
+    }
+    assert!(
+        (harness.state().iter()).all(|a| !matches!(
+            a,
+            ToolbarAction::MoveWindow | ToolbarAction::TitleBarDoubleClick
+        )),
+        "{:?}",
+        harness.state()
+    );
+    // The strip after it still moves the window.
+    harness.state_mut().clear();
+    drag(
+        &mut harness,
+        egui::pos2(well.right() + 40.0, well.center().y),
+    );
+    assert_eq!(*harness.state(), vec![ToolbarAction::MoveWindow]);
+}
+
+/// The Toolbar with Phase 2's well, Select chosen, at a full window's width, in the
+/// theme `which` (`docs/gui.md`, The Toolbar; `docs/cursors.md`, The well).
+fn photograph_the_well(which: Builtin, name: &str) {
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1000.0, 60.0))
+        .with_context_setup(move |ctx| apertrust_ui::install(ctx, Theme::builtin(which)))
+        .build_ui(|ui| {
+            let panel = apertrust_ui::theme(ui.ctx()).colors.panel;
+            ui.painter()
+                .rect_filled(ui.ctx().content_rect(), 0.0, panel);
+            let bar = Toolbar::new()
+                .saved(SaveState::Saved)
+                .jobs(Jobs::new(&[]))
+                .title_bar(true);
+            with_well(0, |well| bar.cursors(well).show(ui));
+        });
+    harness.run();
+    harness.snapshot(format!("toolbar-cursors-{name}"));
+}
+
+#[test]
+fn the_toolbar_with_the_cursors_well_is_photographed_in_the_dark_theme() {
+    photograph_the_well(Builtin::Dark, "dark");
+}
+
+#[test]
+fn the_toolbar_with_the_cursors_well_is_photographed_in_the_light_theme() {
+    photograph_the_well(Builtin::Light, "light");
 }
 
 /// A right-click at `pos`, as a press and a release.
