@@ -797,7 +797,9 @@ setting-export-ask-before-overwrite-label = Ask before overwriting an exported f
 setting-history-ask-before-discard-label = Ask before discarding a photo’s history
 setting-browser-square-thumbnails-label = Square thumbnails
 setting-library-raw-thumbnails-from-label = Raw thumbnails from
-setting-library-raw-thumbnails-from-help = For photos with no edit: thumbnails larger than this size are rendered from the raw, in { app-name }'s look, instead of the camera's embedded JPEG. Slower. Edited photos always show their edit.
+# Raw thumbnails from's tooltip: the setting applies to photos with no edit; those with an
+# edit, or shown in the app for at least 300 ms, show its own render.
+setting-library-raw-thumbnails-from-help = For photos with no edit: thumbnails larger than this size are rendered from the raw, in { app-name }'s look, instead of the camera's embedded JPEG. Slower. Photos with an edit, or shown in { app-name } for at least 300 ms, always show { app-name }'s render.
 setting-library-raw-thumbnails-from-option-always = Always
 setting-library-raw-thumbnails-from-option-small = Small
 setting-library-raw-thumbnails-from-option-VGA = VGA
