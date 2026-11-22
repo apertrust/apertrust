@@ -15795,5 +15795,118 @@ mod tests {
                 }
             }
         }
+
+        /// Times flipping through photos never edited, as the Viewer's → does, for
+        /// docs/engine.md: APERTRUST_FLIP_RAWS lists raw paths, separated by the platform's
+        /// path-list separator, each hard-linked APERTRUST_FLIP_PHOTOS times, 20 by default,
+        /// into a temporary folder of its own, which must be on the raws' file system, each
+        /// link with a sidecar never edited naming a first copy of its own, so that it has
+        /// its own thumbnail slots, with a cache, under the default setting, never, through a session of its own with the
+        /// built-in tools. Each is opened APERTRUST_FLIP_DWELL_MS after the one before went
+        /// live, 0 by default; APERTRUST_FLIP_NO_CACHE leaves the cache out, for the same
+        /// flip with no thumbnail work. Prints, for each raw, how many photos have a render
+        /// at every size, and the median and the slowest time from each `Open` to its
+        /// photo's first live frame (`Frame::latency_ms`), the first photo left out, as it
+        /// compiles the kernels.
+        #[test]
+        #[ignore = "needs raws on the timing machine"]
+        fn time_flipping_photos() {
+            let paths =
+                std::env::split_paths(&std::env::var_os("APERTRUST_FLIP_RAWS").expect("raw paths"))
+                    .collect::<Vec<_>>();
+            let photos: usize = std::env::var("APERTRUST_FLIP_PHOTOS")
+                .ok()
+                .and_then(|photos| photos.parse().ok())
+                .unwrap_or(20);
+            let dwell = Duration::from_millis(
+                std::env::var("APERTRUST_FLIP_DWELL_MS")
+                    .ok()
+                    .and_then(|ms| ms.parse().ok())
+                    .unwrap_or(0),
+            );
+            let gpu = gpu();
+            for (index, source) in paths.iter().enumerate() {
+                let first = scratch(&format!("flip-timing-{index}"));
+                let folder = first.parent().unwrap().to_owned();
+                let extension = source.extension().unwrap_or_default();
+                let links: Vec<PathBuf> = (0..photos)
+                    .map(|photo| {
+                        let link = folder.join(format!("{photo:02}")).with_extension(extension);
+                        std::fs::hard_link(source, &link).unwrap();
+                        // Links share the raw's fingerprint: a sidecar never edited, its
+                        // first copy's id the link's own, gives each its own slots.
+                        let mut file = sidecar::Edits::new(BUILD);
+                        file.photo = Some(link.file_name().unwrap().to_string_lossy().into());
+                        file.copies.push(apertrust_library::sidecar::VirtualCopy {
+                            id: format!("{photo:08x}"),
+                            number: "0".to_owned(),
+                            name: String::new(),
+                            end: String::new(),
+                            clocks: Vec::new(),
+                            history: Vec::new(),
+                        });
+                        std::fs::write(sidecar::path_for(&link), file.to_xml()).unwrap();
+                        link
+                    })
+                    .collect();
+                let cache = Arc::new(Cache::create(folder.join("cache")).unwrap());
+                let options = CacheOptions {
+                    cache: Arc::clone(&cache),
+                    limit: Limit::Unlimited,
+                };
+                // With no cache, the same flip with no thumbnail work.
+                let options =
+                    (std::env::var_os("APERTRUST_FLIP_NO_CACHE").is_none()).then_some(options);
+                let tools = apertrust_tools::TOOLS;
+                let (session, wakes) = spawned(&gpu, tools, options, open::files());
+                session.send(Command::Resize {
+                    width: 2400,
+                    height: 1600,
+                });
+                let frame = |event: &Event| matches!(event, Event::Frame(_));
+                let mut times = Vec::new();
+                for link in &links {
+                    let mut events = open_live(&session, &wakes, link);
+                    if !events.iter().any(frame) {
+                        events.extend(until(&session, &wakes, frame));
+                    }
+                    assert!(failures(&events).is_empty(), "{:?}", failures(&events));
+                    let latency = (events.iter())
+                        .find_map(|event| match event {
+                            Event::Frame(frame) => Some(frame.latency_ms),
+                            _ => None,
+                        })
+                        .unwrap();
+                    times.push(latency);
+                    std::thread::sleep(dwell);
+                }
+                drop(session);
+                // The photos with a render at every size: none flicked past within
+                // `UNEDITED_SETTLE`.
+                let rendered = (links.iter())
+                    .filter(|link| {
+                        library::THUMBNAIL_SIZES.iter().all(|&size| {
+                            let slot = slot_of(link, size);
+                            (cache.version(THUMBNAILS, &slot).ok().flatten())
+                                .is_some_and(|version| version.starts_with(library::RENDERED))
+                        })
+                    })
+                    .count();
+                let mut later = times[1..].to_vec();
+                later.sort_by(f64::total_cmp);
+                let (median, slowest) = (later[later.len() / 2], later[later.len() - 1]);
+                let each = (times.iter())
+                    .map(|ms| format!("{ms:.0}"))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                eprintln!(
+                    "{}: {photos} photos, each shown {dwell:?}, {rendered} rendered, from the \
+                     Open to the first live frame, the first left out: median {median:.1} ms, \
+                     slowest {slowest:.1} ms; each: {each}",
+                    source.display(),
+                );
+                remove(&first);
+            }
+        }
     }
 }
