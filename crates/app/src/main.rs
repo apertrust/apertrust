@@ -20375,7 +20375,7 @@ mod tests {
             let each = entries.iter().flat_map(|entry| match entry {
                 popup::Entry::Item(item) => vec![item],
                 popup::Entry::Submenu(submenu) => items(&submenu.entries),
-                popup::Entry::Separator => Vec::new(),
+                popup::Entry::Separator | popup::Entry::Heading(_) => Vec::new(),
             });
             each.collect()
         }

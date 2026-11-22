@@ -991,6 +991,7 @@ In `crates/ui/src/components`. Each reports its role, full name and value to Acc
 - each level an egui `Area`; an open one takes its plain keys through an egui plugin;
 - `popup::show` is called once a frame; a second call in a pass does nothing, so `Choice` calls it too;
 - `popup::Service`, which an app installs in a context (`popup::install`) to show the requests it takes itself, answering between frames through `popup::answered`; the next frame's `popup::answer` gives the answer. The drawn popups show the rest, and everything where no service is installed;
+- a heading (`Entry::Heading`), words over the items under it in the caption's size and `text_secondary`, never chosen and skipped by the keys and the pointer, a label to AccessKit; on the Mac a disabled line;
 - an item's alternate (`Item::alternate`), shown and chosen in its place while Alt (Option) is held, as macOS's alternate menu items, the line keeping its id so the focus stays; Enter with Alt alone is the popup's;
 - a request's opener (`Request::opened_by`) is the control the focus goes back to, set by `Choice` and `components::pull_down`, since a press leaves the focus on nothing;
 - `components::pull_down`, a menu hung from a button, and `components::context_menu`, one opening at the pointer on a right-click, or under the control on the menu key or Shift+F10, are public for the app's own controls, and so is `components::field_inset`, where a field's text, a slider's value at rest and a Blended option end.
