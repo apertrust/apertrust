@@ -312,6 +312,21 @@ static STEP: Menu = Menu {
     ],
 };
 
+/// A job's row's menu in the jobs window (decision 91), the app's alone: Cancel, then Show
+/// in Folder and Copy Error, which only an ended or running job's facts allow.
+static JOB: Menu = Menu {
+    title: "context-menu-job",
+    role: Role::Plain,
+    on: Platforms::All,
+    groups: &[
+        &[item(ActionId::JOB_CANCEL)],
+        &[
+            item(ActionId::JOB_SHOW_IN_FOLDER),
+            item(ActionId::JOB_COPY_ERROR),
+        ],
+    ],
+};
+
 static BROWSER_POSITION: Menu = Menu {
     title: "menu-browser-position",
     role: Role::Plain,
@@ -675,6 +690,9 @@ pub enum Place {
     /// The Browser's empty space, between and after its cells, all of it with no photos:
     /// Select All and Select None, then the browser bar's options ([`browser_items`]).
     Browser,
+    /// A job's row in the jobs window: Cancel, Show in Folder and Copy Error, the app's alone
+    /// (`docs/gui.md`, The jobs window).
+    Job,
 }
 
 /// What a context menu's items act on (decision 91).
@@ -695,19 +713,22 @@ pub enum Target {
     /// A History step, by its number, which names its menu to screen readers ("Step 3");
     /// its items act on it as `State::step` says they can.
     Step { number: usize },
+    /// A job, by what its row's menu can do for it; its items act on it as `State::job`
+    /// says they can.
+    Job(actions::JobItems),
 }
 
 /// The context menu at `place`, acting on `target`, hung from `anchor`, the point
 /// right-clicked for a right-click (decision 91): the app's items there ([`APP_ITEMS`]) and
 /// those tools and utilities add ([`added`]) together, by section and order, a line
 /// wherever the section changes ([`built`]). The surround, the app's alone, holds View ›
-/// Background's items, a History step's its own ([`STEP`]), and the Browser's empty space
-/// Select All, Select None and the browser bar's options ([`browser_items`]). Each item is
-/// its action's, as the menu button's ([`shown`]); in the photo's and a thumbnail's menus
-/// an item that cannot run is hidden, but shown disabled while only the photo's not yet
-/// being live stops it, and no item shows its key ([`pared`]). In ⋯ and a step's menu an
-/// item that cannot run is drawn disabled with its tip, as in a pull-down. Its items' ids
-/// are their actions' ([`chosen`]).
+/// Background's items, a History step's its own ([`STEP`]), a job's row its own ([`JOB`]),
+/// and the Browser's empty space Select All, Select None and the browser bar's options
+/// ([`browser_items`]). Each item is its action's, as the menu button's ([`shown`]); in the
+/// photo's, a thumbnail's and a job's row's menus an item that cannot run is hidden, but in
+/// the first two shown disabled while only the photo's not yet being live stops it, and no
+/// item shows its key ([`pared`]). In ⋯ and a step's menu an item that cannot run is drawn
+/// disabled with its tip, as in a pull-down. Its items' ids are their actions' ([`chosen`]).
 pub fn context(
     ctx: &egui::Context,
     place: Place,
@@ -722,7 +743,7 @@ pub fn context(
         .collect();
     let added = match place {
         Place::Open(open) => added(open, target, &tools, apertrust_tools::utility::UTILITIES),
-        Place::Surround | Place::Step | Place::Browser => Vec::new(),
+        Place::Surround | Place::Step | Place::Browser | Place::Job => Vec::new(),
     };
     let (os, tr) = (ctx.os(), translator(ctx));
     built(place, target, &added, keymap, state, os, &tr, anchor)
@@ -1065,19 +1086,37 @@ fn built(
     }
     let Place::Open(open) = place else {
         let lists = Lists::default();
-        let menu = match place {
-            Place::Step => &STEP,
-            _ => &BACKGROUND,
-        };
-        let mut entries = drawn(menu, os, keymap, state, lists, &steps, tr).entries;
-        // A step's items say what they do, as ⋯'s do (decision 93).
-        for entry in entries.iter_mut().filter(|_| place == Place::Step) {
-            if let popup::Entry::Item(item) = entry
-                && let Some(tip) = chosen(&item.id).and_then(|id| actions::options_tip(id, state))
-            {
-                item.tip = Some(tr.text(tip));
+        let entries = match place {
+            // What its job allows, the rest hidden, as the photo's menu hides them.
+            Place::Job => {
+                let job = match target {
+                    Target::Job(job) => Some(*job),
+                    _ => None,
+                };
+                let state = State { job, ..*state };
+                pared(
+                    drawn(&JOB, os, keymap, &state, lists, &steps, tr).entries,
+                    false,
+                )
             }
-        }
+            _ => {
+                let menu = match place {
+                    Place::Step => &STEP,
+                    _ => &BACKGROUND,
+                };
+                let mut entries = drawn(menu, os, keymap, state, lists, &steps, tr).entries;
+                // A step's items say what they do, as ⋯'s do (decision 93).
+                for entry in entries.iter_mut().filter(|_| place == Place::Step) {
+                    if let popup::Entry::Item(item) = entry
+                        && let Some(tip) =
+                            chosen(&item.id).and_then(|id| actions::options_tip(id, state))
+                    {
+                        item.tip = Some(tr.text(tip));
+                    }
+                }
+                entries
+            }
+        };
         return popup::Request::pull_down(anchor, name(place, target, tr), entries);
     };
     let several = *target == Target::Selection && state.photos > 1;
@@ -1180,7 +1219,7 @@ pub(crate) fn chosen_on_thumbnail(chosen: ActionId, selected: usize) -> Option<A
 /// What screen readers call the menu at `place`: the surround's is Background, as View ›
 /// Background's submenu is; the Browser's empty space's Browser, as its list is; ⋯'s its
 /// tool's or utility's options, as its button is; a History step's the step by its number,
-/// "Step 3".
+/// "Step 3"; a job's row's Job.
 fn name(place: Place, target: &Target, tr: &Translator) -> String {
     match (place, target) {
         (Place::Surround, _) => tr.text(BACKGROUND.title),
@@ -1192,6 +1231,7 @@ fn name(place: Place, target: &Target, tr: &Translator) -> String {
             }
             tr.text_with(STEP.title, Some(&args))
         }
+        (Place::Job, _) => tr.text(JOB.title),
         (Place::Open(apertrust_tools::Place::Photo), _) => tr.text("context-menu-photo"),
         (Place::Open(apertrust_tools::Place::Thumbnail), _) => tr.text("context-menu-thumbnail"),
         (Place::Open(apertrust_tools::Place::Options), target) => {
@@ -1864,8 +1904,9 @@ mod tests {
     /// the twelfth tab's, which only a workspace of more tabs than the Default's has, until
     /// Tools Panel Tab lists the tabs a workspace shows (decision 96); and the zoom's
     /// scales but Fit and 100%, the viewer bar's zoom menu's alone, and its Shift forms and
-    /// the pan actions, keys alone (`docs/gui.md`, View).
-    const LEFT_OUT: [ActionId; 59] = [
+    /// the pan actions, keys alone (`docs/gui.md`, View); and a job's row's menu's, which act
+    /// on its job alone (decision 91).
+    const LEFT_OUT: [ActionId; 62] = [
         ActionId::EDIT_VIEW,
         ActionId::NEXT_REGION,
         ActionId::PREVIOUS_REGION,
@@ -1881,6 +1922,11 @@ mod tests {
         ActionId::STEP_SHOW_TOOL,
         ActionId::STEP_COMPRESS,
         ActionId::STEP_TRUNCATE,
+        // A job's row's menu's, which act on its job alone, its ✕ and buttons doing the
+        // same (decision 91).
+        ActionId::JOB_CANCEL,
+        ActionId::JOB_SHOW_IN_FOLDER,
+        ActionId::JOB_COPY_ERROR,
         ActionId::PANEL_TABS[7],
         ActionId::PANEL_TABS[8],
         ActionId::PANEL_TABS[9],
@@ -2031,6 +2077,7 @@ mod tests {
             panel_position_given: false,
             section: None,
             step: None,
+            job: None,
             browser: crate::settings::BrowserSettings::default(),
             shown: true,
             background: Some(apertrust_ui::Background::Dark),
@@ -4034,6 +4081,71 @@ mod tests {
         let modal = State { modal: true, ..on };
         assert_eq!(enabled(&modal), [false; 4]);
         assert_eq!(enabled(&everything()), [false; 4]);
+    }
+
+    /// A job's row's menu (decision 91), named Job: Cancel, a line, then Show in Folder,
+    /// worded as the platform's file manager is, and Copy Error, each shown only where its
+    /// job allows it and with no key, whatever else the state says; none where it allows
+    /// nothing, as for a row with no menu.
+    #[test]
+    fn a_job_s_menu_holds_only_what_its_job_allows() {
+        let ctx = egui::Context::default();
+        ctx.set_os(OperatingSystem::Nix);
+        apertrust_ui::set_locale(&ctx, Locale::EnGb);
+        let tr = translator(&ctx);
+        let keymap = Keymap::defaults(OperatingSystem::Nix);
+        let show = tr.text(crate::jobs::FILE_MANAGER.show_message());
+        let open = |cancel, show, copy, state: &State| {
+            let target = Target::Job(actions::JobItems { cancel, show, copy });
+            context(&ctx, Place::Job, &target, &keymap, state, Rect::NOTHING)
+        };
+        let lines = |menu: &popup::Request| -> Vec<String> {
+            let line = |entry: &popup::Entry| match entry {
+                popup::Entry::Item(item) => {
+                    assert!(item.enabled && item.shortcut.is_none(), "{item:?}");
+                    item.text.clone()
+                }
+                popup::Entry::Separator => "-".into(),
+                other => panic!("not a job's item: {other:?}"),
+            };
+            menu.entries.iter().map(line).collect()
+        };
+        let all = open(true, true, true, &everything());
+        assert_eq!(all.name, "Job");
+        assert_eq!(lines(&all), ["Cancel", "-", show.as_str(), "Copy Error"]);
+        // The main window's state stops none of them: the jobs window is beside any dialog.
+        let modal = State {
+            modal: true,
+            dialog: true,
+            dialog_window: true,
+            ..everything()
+        };
+        // What the job allows, Cancel, Show in Folder and Copy Error, and the menu.
+        type Case<'a> = ((bool, bool, bool), &'a [&'a str]);
+        let cases: [Case; 5] = [
+            ((true, false, false), &["Cancel"]),
+            ((true, true, false), &["Cancel", "-", show.as_str()]),
+            ((false, true, false), &[show.as_str()]),
+            ((false, false, true), &["Copy Error"]),
+            ((false, true, true), &[show.as_str(), "Copy Error"]),
+        ];
+        for ((cancel, shows, copy), expected) in cases {
+            for state in [everything(), modal] {
+                let menu = open(cancel, shows, copy, &state);
+                assert_eq!(lines(&menu), expected, "{cancel} {shows} {copy}");
+            }
+        }
+        assert!(open(false, false, false, &everything()).entries.is_empty());
+        // From anywhere else, with no job, none of them runs.
+        for id in [
+            ActionId::JOB_CANCEL,
+            ActionId::JOB_SHOW_IN_FOLDER,
+            ActionId::JOB_COPY_ERROR,
+        ] {
+            let action = actions::action(id).expect("declared");
+            assert!(!action.enabled(&everything()), "{}", id.0);
+            assert!(action.keys.is_empty(), "{}", id.0);
+        }
     }
 
     /// The surround's menu is View › Background's items alone, as it was before the

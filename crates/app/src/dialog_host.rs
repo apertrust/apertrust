@@ -766,6 +766,9 @@ pub trait Dialogs {
     fn jobs_shown(&self) -> Option<Shown>;
     /// Gives the jobs window open the jobs it shows, in the order the app holds them.
     fn set_jobs(&mut self, jobs: Vec<Job>);
+    /// Hands the jobs window open the menu the app built for job `job`'s row, which it
+    /// opens as it is next drawn ([`jobs::Window::open_menu`]); nothing while it is not open.
+    fn jobs_menu(&mut self, job: u64, request: apertrust_ui::popup::Request);
     /// Closes the jobs window open, which stops no job.
     fn close_jobs(&mut self);
     /// Opens the log window, a window of its own beside any dialog and the jobs window, at
@@ -853,6 +856,11 @@ impl AppDialogs {
     /// Gives the jobs window open the jobs it shows.
     pub fn set_jobs(&mut self, jobs: Vec<Job>) {
         self.host.set_jobs(jobs);
+    }
+
+    /// Hands the jobs window open a row's menu ([`Dialogs::jobs_menu`]).
+    pub fn jobs_menu(&mut self, job: u64, request: apertrust_ui::popup::Request) {
+        self.host.jobs_menu(job, request);
     }
 
     /// Opens the log window, or brings it forward ([`Dialogs::open_log`]).
@@ -1410,6 +1418,16 @@ impl Dialogs for Host {
             && let Some(window) = dialog_mut::<jobs::Window>(&mut asked.dialog)
         {
             window.set(jobs);
+        }
+    }
+
+    fn jobs_menu(&mut self, job: u64, request: apertrust_ui::popup::Request) {
+        let mut inner = self.0.borrow_mut();
+        if let Some(open) = inner.open[Slot::Jobs.index()].as_mut()
+            && let Some(window) = dialog_mut::<jobs::Window>(&mut open.dialog)
+        {
+            window.open_menu(job, request);
+            open.window.request_redraw();
         }
     }
 

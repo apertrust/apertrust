@@ -185,6 +185,7 @@ jobs-cancelled = Anulowano: { $message }
 jobs-cancel = Anuluj
 jobs-cancel-tip = Zatrzymaj to zadanie
 jobs-clear-finished = Wyczyść zakończone
+jobs-copy-error = Kopiuj błąd
 jobs-live-started = Rozpoczęto: { $message }
 
 ## Komunikaty samych zadań
@@ -924,6 +925,7 @@ menu-bring-all-to-front = Umieść wszystko na wierzchu
 context-menu-photo = Zdjęcie
 context-menu-thumbnail = Miniatura
 context-menu-step = Krok { $number }
+context-menu-job = Zadanie
 
 ## Historia edycji: nazwa kroku
 
