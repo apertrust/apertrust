@@ -212,6 +212,16 @@ darktable's colour pickers and its Colour picker, one API (decision 79; [pickers
 - [ ] 79.14 Stored samples through the session.
 - [ ] 79.15 The scopes restricted to the Colour picker's selection.
 - [ ] 79.16 The Colour picker, hidden by default, its place to be decided: the live sample, numbered stored samples, statistics and colour modes, samples on the photo.
+- [ ] 79.17 The one-shot pick: `PickerCommand::Once`, a tool's picker on for one reading of a point or an area, applied as one step where it changes the edit and off again, which a picker cursor sends (decision 104).
+
+### Cursors
+
+One cursor chosen at a time decides what a press on the photo does (decision 104; [cursors.md](cursors.md#the-plan)), one pull request each:
+
+- [ ] 104.1 The one-shot pick, 79.17 above.
+- [ ] 104.2 The declarations in `apertrust-tools`: `CursorDef`, the groups, `ToolDefinition::cursors` and its checks; White balance's and Exposure's picker cursors and their words.
+- [ ] 104.3 The well in the design system: one button per group, its face and its chevron's list of cursors and settings, its states, keys and screen readers, in the gallery.
+- [ ] 104.4 The app: Select, the default, Pan and Pick on the Toolbar between two empty strips, the gestures and pointers on the photo, Esc, A held and K, Show the last pick.
 
 ### Scopes
 
@@ -315,7 +325,8 @@ The library's steps 10 to 20, 15b, 19b, 19c and 19d, [listed below](#the-library
 - [ ] The Photos workspace for culling (decisions 37 and 96; [gui.md](gui.md#workspaces)).
 - [ ] A visual editor for workspaces (decision 96): adding, naming and removing tabs, hiding and showing tools, a new workspace, with Save as, Rename and Delete Workspace; it replaces the Customise tabs dialog, which is not built on fixed lists.
 - [ ] Floating panels inside the window, belonging to no tab, docked by a drop into any tab or back where they left by × or Dock; the ⋯ menu's Float, Dock and Position, Dock All Floating Panels, and their keys and screen readers' actions (decisions 83 and 96; [gui.md](gui.md#moving-pinning-and-floating-sections)).
-- [ ] Each workspace's own toolbar (decision 92; [gui.md](gui.md#customising-the-toolbar)): the Toolbar drawn from each workspace's list of items, kept in the workspace's file (decision 96), with spaces, the guards for the menu button, the save state, the jobs and an assistant, actions folding into » as it narrows, and Toolbar Labels; the toolbar menu on a right-click anywhere on it, the system's window menu on its own key; tools' items from `ToolDefinition::toolbar` (decision 93), Orientation's rotations first.
+- [ ] Each workspace's own toolbar (decision 92; [gui.md](gui.md#customising-the-toolbar)): the Toolbar drawn from each workspace's list of items, kept in the workspace's file (decision 96), with spaces, the guards for the menu button, the save state, the jobs and an assistant, actions folding into » as it narrows, and Toolbar Labels; the toolbar menu on a right-click anywhere on it, the system's window menu on its own key; tools' items from `ToolDefinition::toolbar` (decision 93), Orientation's rotations first. The cursors' well a part of the list, `cursors`, between two flexible spaces (decision 104).
+- [ ] Copy and apply, a cursor of its own on the photo and the Browser's thumbnails, with Copy Parts; and a cursor's key held to borrow it until released, with the dispatcher (decision 104; [cursors.md](cursors.md#keys)).
 - [ ] Changes made outside Apertrust noticed; nothing overwritten without reading it first.
 - [ ] Virtual copies.
 - [ ] Two computers editing the same photo: both versions kept, never one lost.
@@ -361,6 +372,7 @@ Goal: local editing.
 - [ ] Gradients and shapes, then Feather and Edge, range parts, the brush, paths and a mask overlay, combined top to bottom, ported from darktable's master (decision 74).
 - [ ] Colour calibration's adaptation on a masked layer, for mixed light.
 - [ ] Retouch layers, heal and clone, darktable's retouch ported from its master (decision 74), then AI erase.
+- [ ] The Mask and Retouch cursors on the Toolbar's well, sharing one state with the Layers section's buttons, with their group settings, amounts, `[` and `]` and keys (decision 104; [cursors.md](cursors.md)).
 - [ ] AI masks for subject, sky, background, people and a clicked object, and a depth part, run locally through ONNX Runtime's WebGPU provider (decision 60), recomputed once per photo when copied.
 - [ ] The binary sidecar, `.apdata` (decision 49).
 - [ ] Shortcuts on layers (decision 98): a shortcut's instance, darktable's preferred-instance settings mapped onto layers, `<blending>` as the layers' and masks' actions, and visual mapping's instance.

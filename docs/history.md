@@ -101,6 +101,7 @@ One completed change makes a step of each tool it touched: a gesture ending with
 | `Reset` | One, with an empty entry for every tool the edit holds at the end, switched tools going off (decision 32), and the note `history-reset` |
 | `Step { source, note, commands }` | One for each tool its commands write, in a batch where there are several |
 | `Set` (unowned parameters) | None until the next change, where it is a step of its own in that change's batch |
+| `Picker(Once)`, a one-shot pick (planned, decision 79), a picker cursor's click or drag (decision 104) | One, its tool's, of source Auto: the tool's turning on, where it needs one, with the pick's writes; none where neither changes anything ([pickers.md](pickers.md#a-one-shot-pick)) |
 | `CancelGesture` | None ([decision 42](decisions/0042-numbers-shown-typed-and-stored.md)) |
 | `Undo`, `Redo`, `GoTo`, `Compress`, `Truncate` | None: they move the end or rewrite the log |
 
@@ -137,7 +138,7 @@ The merged step keeps its id, its entry takes the new state and its clock become
 
 - **The times.** A change's first write is timed when the client sent its command, as the session receives each command with that time; a frame's publication when the session publishes it. A test hands both in, so it merges and splits without waiting.
 - **What counts as a command between:** any command on the edit that writes no value, Undo, Redo, `GoTo` and `CancelGesture` among them, and any command refused, a `Step` refused as `DefaultSource` or `EmptyStep` too; not `RetrySave`, which changes nothing and leaves a gesture under way. A change that changes nothing, a gesture's or a `Set`'s too, makes no step and counts as none: it sets neither a target nor when the change began.
-- **A `Step` of one command** has that command's target, so Auto's single writes, each a `Step { source: Auto }`, merge as the person's do. A `ResetTool`, `Keep`, `Set` or `Reset` has no target: it never merges, and a step holding one is merged into by none.
+- **A `Step` of one command** has that command's target, so Auto's single writes, each a `Step { source: Auto }`, merge as the person's do. A `ResetTool`, `Keep`, `Set`, `Reset` or one-shot pick (`Picker(Once)`) has no target: it never merges, and a step holding one is merged into by none.
 - **A merged step whose changes come back to where it began** stays, its one entry the state now, as darktable's history item stays after its undo record merged; Undo takes it back as any step.
 
 **Pickers and Auto** write with source Auto and gesture semantics. A picker's pick is a change the session makes itself as the reading arrives, through the tool's `pick` ([pickers.md](pickers.md#what-a-pick-writes), decision 79): a drag's readings are `done: false` changes ending with the release's `done: true`, one step, merged as a slider's, its target the picker. Auto sends its writes as `Step { source: Auto }`. Built with 9.5, so a pick reaches the saved log: what a picker command or a drag's picks wrote is made one step of source Auto where the session saves it, sent as `History` with the pick's values, as the drag ends, before a `Settings` command's or another drag's pick, and as the picker turns off, a slider's gesture under way a step of its own source first; the merge by picker comes with the pickers' own steps ([pickers.md](pickers.md#what-a-pick-writes)).
