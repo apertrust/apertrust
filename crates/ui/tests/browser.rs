@@ -19,7 +19,7 @@
 
 use apertrust_ui::components::{
     Browser, BrowserAction, BrowserBarAction, BrowserEdge, BrowserEdgeAction, BrowserPosition,
-    CellAction, CellMenu, CellPicture, CellRating, Sort, SortKey, Thumb, ThumbnailSize,
+    CellAction, CellMenu, CellPicture, CellRating, Sort, SortKey, SpaceMenu, Thumb, ThumbnailSize,
     browser_height, browser_width,
 };
 use apertrust_ui::{Icon, Theme};
@@ -40,6 +40,8 @@ struct BrowserState {
     chosen: Vec<BrowserBarAction>,
     /// The cells' menus asked for.
     menus: Vec<CellMenu>,
+    /// The Browser's own menus asked for.
+    spaces: Vec<SpaceMenu>,
     /// What was done to the photos.
     actions: Vec<BrowserAction>,
 }
@@ -87,6 +89,7 @@ fn browser_on(count: usize, os: egui::os::OperatingSystem) -> Harness<'static, B
                     browser.chosen.push(chosen);
                 }
                 browser.menus.extend(output.menu);
+                browser.spaces.extend(output.space_menu);
                 browser.actions.extend(output.action);
             },
             BrowserState {
@@ -99,6 +102,7 @@ fn browser_on(count: usize, os: egui::os::OperatingSystem) -> Harness<'static, B
                 labels: true,
                 chosen: Vec::new(),
                 menus: Vec::new(),
+                spaces: Vec::new(),
                 actions: Vec::new(),
             },
         )
@@ -743,6 +747,148 @@ fn a_control_click_counts_control_as_the_button_came_up() {
     assert_eq!(browser.menus.len(), 1);
     assert_eq!((browser.menus[0].photo, browser.menus[0].at), (2, at));
     assert!(browser.actions.is_empty(), "{:?}", browser.actions);
+}
+
+/// Decision 91: a right-click on the Browser's empty space, in the gap between two cells,
+/// after the last cell or all of it with no photos, asks for the Browser's own menu at the
+/// pointer, with no opener, and selects nothing; a cell's, its own empty space included,
+/// keeps its photo's menu, and the browser bar its options menu.
+#[test]
+fn a_right_click_on_empty_space_asks_for_the_browser_s_own_menu() {
+    let mut harness = browser(3);
+    harness.run();
+    let first = harness.get_by_label("IMG_0000.ARW").rect();
+    let between = egui::pos2(first.right() + 4.0, first.center().y);
+    let last = harness.get_by_label("IMG_0002.ARW").rect();
+    let after = egui::pos2(last.right() + 40.0, last.center().y);
+    for at in [between, after] {
+        right_click(&mut harness, at);
+    }
+    let asked = harness.state();
+    let at = |at| SpaceMenu { at, opener: None };
+    assert_eq!(asked.spaces, [at(between), at(after)]);
+    assert!(asked.menus.is_empty() && asked.actions.is_empty());
+    // On a cell, and above its picture in its square, the photo's menu alone.
+    let cell = harness.get_by_label("IMG_0001.ARW").rect();
+    for at in [cell.center(), egui::pos2(cell.center().x, cell.top() + 4.0)] {
+        right_click(&mut harness, at);
+    }
+    assert_eq!(harness.state().spaces.len(), 2);
+    assert_eq!(harness.state().menus.len(), 2);
+    // On the browser bar, its options menu, which the panel opens itself.
+    let bar = harness
+        .get_by_role_and_label(Role::Toolbar, "Browser bar")
+        .rect();
+    right_click(&mut harness, bar.center());
+    assert!(
+        harness
+            .query_by_role_and_label(Role::Menu, "Browser options")
+            .is_some()
+    );
+    assert_eq!(harness.state().spaces.len(), 2);
+    // With no photos, anywhere but the bar.
+    let mut harness = browser(0);
+    harness.run();
+    let list = harness.get_by_role_and_label(Role::List, "Browser").rect();
+    right_click(&mut harness, list.center());
+    assert_eq!(
+        harness.state().spaces,
+        [SpaceMenu {
+            at: list.center(),
+            opener: None
+        }]
+    );
+}
+
+/// Decision 91: the menu key and Shift+F10 on the browser bar's Sort or Zoom, the Browser
+/// focused with no cell focused, ask for the Browser's own menu under the button, which
+/// the focus goes back to; on a focused cell they still ask for its photo's.
+#[test]
+fn the_menu_keys_with_no_cell_focused_ask_for_the_browser_s_own_menu() {
+    let mut harness = browser(12);
+    harness.run();
+    for name in ["Sort", "Thumbnail size"] {
+        for (modifiers, key) in [
+            (egui::Modifiers::NONE, egui::Key::Menu),
+            (egui::Modifiers::SHIFT, egui::Key::F10),
+        ] {
+            harness.get_by_role_and_label(Role::Button, name).focus();
+            harness.run();
+            let under = (harness.get_by_role_and_label(Role::Button, name))
+                .rect()
+                .left_bottom();
+            harness.key_press_modifiers(modifiers, key);
+            harness.run();
+            let asked = *harness.state().spaces.last().expect("asked for");
+            assert_eq!(asked.at, under, "{name} {key:?}");
+            assert!(asked.opener.is_some(), "{name} {key:?}");
+            // Its own menu stays shut.
+            assert!(harness.query_by_role(Role::Menu).is_none(), "{name}");
+        }
+    }
+    assert_eq!(harness.state().spaces.len(), 4);
+    assert!(harness.state().menus.is_empty());
+    // A focused cell's keys are its photo's.
+    harness.get_by_label("IMG_0003.ARW").focus();
+    harness.run();
+    harness.key_press_modifiers(egui::Modifiers::SHIFT, egui::Key::F10);
+    harness.run();
+    assert_eq!(harness.state().menus.len(), 1);
+    assert_eq!(harness.state().spaces.len(), 4);
+}
+
+/// Decision 91: AccessKit's ShowContextMenu on the Browser's list asks for its own menu in
+/// the middle of the panel.
+#[test]
+fn screen_readers_ask_for_the_browser_s_own_menu_on_its_list() {
+    let mut harness = browser(3);
+    harness.run();
+    let list = harness.get_by_role_and_label(Role::List, "Browser");
+    let node = list.accesskit_node();
+    let show = egui::accesskit::Action::ShowContextMenu;
+    assert!(
+        node.data().supports_action(show),
+        "the list offers its menu"
+    );
+    let (target_node, target_tree) = node.locate();
+    harness.event(egui::Event::AccessKitActionRequest(
+        egui::accesskit::ActionRequest {
+            target_node,
+            target_tree,
+            action: show,
+            data: None,
+        },
+    ));
+    harness.run();
+    let spaces = &harness.state().spaces;
+    assert_eq!(spaces.len(), 1);
+    assert_eq!(spaces[0].opener, None);
+    assert!(harness.state().menus.is_empty());
+}
+
+/// Decision 91: on the Mac a Control-click on the empty space asks for the Browser's own
+/// menu, as a right-click does, and selects nothing; elsewhere it does nothing.
+#[test]
+fn a_control_click_on_empty_space_opens_the_browser_s_menu_on_the_mac_alone() {
+    use egui::os::OperatingSystem;
+    for os in [OperatingSystem::Mac, OperatingSystem::Nix] {
+        let mut harness = browser_on(3, os);
+        harness.run();
+        let last = harness.get_by_label("IMG_0002.ARW").rect();
+        let after = egui::pos2(last.right() + 40.0, last.center().y);
+        let ctrl = egui::Modifiers {
+            ctrl: true,
+            command: os != OperatingSystem::Mac,
+            ..egui::Modifiers::NONE
+        };
+        click_at(&mut harness, after, ctrl);
+        let browser = harness.state();
+        assert!(browser.actions.is_empty(), "{os:?}: {:?}", browser.actions);
+        assert_eq!(
+            browser.spaces.len(),
+            usize::from(os == OperatingSystem::Mac)
+        );
+    }
 }
 
 /// A window with the Browser as a column at `position`, `columns` wide as its edge

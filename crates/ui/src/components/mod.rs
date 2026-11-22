@@ -75,8 +75,9 @@ pub use about::{About, Place};
 pub use action_row::ActionRow;
 pub use alert::{AlertBody, AlertResponse, ButtonOrder};
 pub use browser::{
-    Browser, BrowserAction, BrowserBarAction, BrowserOutput, BrowserPosition, CellMenu, Sort,
-    SortKey, Thumb, ThumbnailSize, browser_height, browser_lines, browser_thickness, browser_width,
+    BarOption, Browser, BrowserAction, BrowserBarAction, BrowserOutput, BrowserPosition, CellMenu,
+    Sort, SortKey, SpaceMenu, Thumb, ThumbnailSize, browser_height, browser_lines,
+    browser_thickness, browser_width,
 };
 pub use browser_edge::{BrowserEdge, BrowserEdgeAction};
 pub use button::Button;
