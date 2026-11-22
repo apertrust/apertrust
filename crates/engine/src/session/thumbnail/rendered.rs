@@ -25,8 +25,9 @@ use std::time::{Duration, Instant};
 
 use apertrust_base::cache::THUMBNAILS;
 use apertrust_library::ops::{
-    self as library, LibraryEvent, RawThumbnails, Thumbnail, ThumbnailKey,
+    self as library, Identity, LibraryEvent, RawThumbnails, Thumbnail, ThumbnailKey,
 };
+use apertrust_library::sidecar::FIRST_COPY;
 
 use super::Upkeep;
 use crate::edit::{self, Edit};
@@ -429,16 +430,19 @@ impl Engine {
             .unwrap_or_default()
             .to_string_lossy()
             .into_owned();
-        let cache = upkeep.cache();
-        let version = |size| {
-            (cache
-                .version(THUMBNAILS, &library::thumbnail_slot(&path, size))
-                .ok())
-            .flatten()
-        };
         let Some(open) = self.open.as_ref() else {
             return;
         };
+        // Its slots: the fingerprint its open read and the copy its saved edit is of.
+        let Some(fingerprint) = open.fingerprint.clone() else {
+            tracing::debug!(target: "pipe", "no thumbnail of {photo}: no fingerprint");
+            self.rendered_thumbnails.finish(&path, hash);
+            return;
+        };
+        let copy = saved_copy(open);
+        let slot = |size| library::thumbnail_slot(&fingerprint, copy.as_deref(), size);
+        let cache = upkeep.cache();
+        let version = |size| (cache.version(THUMBNAILS, &slot(size)).ok()).flatten();
         let raw = self.raw_thumbnails;
         // An edit reading the raw's histogram whose count failed tries again later, never
         // marked done; a count that succeeds plans it at once (decision 87).
@@ -575,9 +579,11 @@ impl Engine {
         });
         let (still, sources) = still.unzip();
         let render = Render {
-            folder: path.parent().unwrap_or(Path::new("")).to_owned(),
             photo,
             path: path.clone(),
+            fingerprint,
+            copy,
+            fingerprints: Arc::clone(&self.fingerprints),
             hash,
             canonical,
             snapshots: self.writer.read(vec![open.sidecar.clone()]),
@@ -609,9 +615,14 @@ impl Engine {
 
 /// A thumbnail job's body: what it renders or reads, writes and tells.
 struct Render {
-    folder: PathBuf,
     photo: String,
     path: PathBuf,
+    /// The raw's fingerprint as the open read it, and the copy the saved edit is of, which
+    /// every slot it writes is keyed by.
+    fingerprint: String,
+    copy: Option<String>,
+    /// The session's memo, which tells whether the raw is still the one the open read.
+    fingerprints: Arc<library::Fingerprints>,
     hash: [u8; 32],
     /// The hash of the edit as this build writes it, which a held write's bytes may differ
     /// from.
@@ -637,6 +648,20 @@ struct Render {
 }
 
 impl Render {
+    /// The slot it writes at `size`.
+    fn slot(&self, size: u32) -> Vec<u8> {
+        library::thumbnail_slot(&self.fingerprint, self.copy.as_deref(), size)
+    }
+
+    /// The raw's stamp where its file is still the one the open read: of the stamp the open
+    /// read, and of the open's fingerprint through the memo; `None` for another raw, or one
+    /// that cannot be read.
+    fn opened_raw(&self) -> Option<library::RawStamp> {
+        let now = library::raw_stamp(&self.path).filter(|now| Some(*now) == self.stamp)?;
+        let fingerprint = self.fingerprints.get(&self.path, &now)?;
+        (fingerprint == self.fingerprint).then_some(now)
+    }
+
     /// Waits for the saved edit to be on disk, renders it with `still`, reads the camera's
     /// embedded picture where there is none or the edit is at the defaults, writes every
     /// size, each the render or the embedded picture as the setting shows it, and tells
@@ -682,11 +707,15 @@ impl Render {
         // or of a raw replaced since the open, whose render then records no facts, so a
         // later read looks at the raw again.
         let stamp = library::raw_stamp(&self.path).filter(|now| Some(*now) == self.stamp);
+        let opened = self.opened_raw();
         let (read, (embedded, embedded_size)) = match (self.load)(&self.path) {
             Ok(file) if self.unaltered => (true, file.preview(1024, true)),
             Ok(_) => (true, (None, None)),
             Err(_) => (false, (None, None)),
         };
+        // The embedded picture is kept under the open raw's slots only where the raw was
+        // that one before its read and after it: another raw's is never kept there.
+        let embedded_stamp = opened.filter(|_| self.opened_raw() == opened);
         let (raw, phase_one) = self.facts;
         let facts = library::RawFacts {
             embedded: embedded_size,
@@ -713,7 +742,7 @@ impl Render {
                 (Some(render), _) => {
                     image = Some(average(render, size));
                     let key = ThumbnailKey {
-                        slot: library::thumbnail_slot(&self.path, size),
+                        slot: self.slot(size),
                         version: version.clone(),
                     };
                     let picture = image.as_ref().expect("a render");
@@ -722,13 +751,26 @@ impl Render {
                 (None, Some(embedded)) => {
                     image = Some(average(embedded, size));
                     let picture = image.as_ref().expect("an embedded picture");
-                    library::thumbnail_key(&self.folder, photo, size).is_some_and(|key| {
-                        super::replace_with_embedded(upkeep, &key, picture, photo, &cancel)
-                    })
+                    match embedded_stamp {
+                        Some(stamp) => {
+                            let opened = Identity {
+                                stamp,
+                                fingerprint: self.fingerprint.clone(),
+                                copy: self.copy.clone(),
+                            };
+                            let key = library::thumbnail_key(&opened, size);
+                            super::replace_with_embedded(upkeep, &key, picture, photo, &cancel)
+                        }
+                        // Nothing of the open raw to keep: its file is another's now.
+                        None => {
+                            tracing::debug!(target: "pipe", "thumbnail of {photo}: the raw changed since the open, its embedded picture not kept");
+                            true
+                        }
+                    }
                 }
                 (None, None) => {
                     image = None;
-                    super::remove_rendered_if_current(upkeep, &self.path, size, &cancel)
+                    super::remove_rendered_if_current(upkeep, &self.slot(size), &cancel)
                 }
             };
             super::publish_if_current(&cancel, || {
@@ -763,6 +805,19 @@ impl Render {
                 done.insert(self.path, self.hash);
             }
         }
+    }
+}
+
+/// The virtual copy the live photo's saved edit is of on the disk, as a grid read finds it
+/// ([`library::thumbnail_copy`]): the first copy of its file as read, or, once the session
+/// has written the file, the one [`crate::sidecar::log_xml`] writes, [`FIRST_COPY`] for a
+/// file read with none; none for a photo never edited, nor for a file read with none and
+/// only held since, which nothing has written.
+fn saved_copy(open: &Open) -> Option<String> {
+    let first = open.file.copies.first().map(|copy| copy.id.clone());
+    match open.written {
+        true => Some(first.unwrap_or_else(|| FIRST_COPY.to_owned())),
+        false => first,
     }
 }
 

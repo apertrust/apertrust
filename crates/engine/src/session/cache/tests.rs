@@ -723,6 +723,7 @@ fn time_the_walk() {
             }
         }
         let mut before = (0, 0);
+        let fingerprints = apertrust_library::ops::Fingerprints::default();
         for size in [256, 512, 1024] {
             for pass in ["written", "read back"] {
                 let tally = Tally::new(size);
@@ -738,7 +739,7 @@ fn time_the_walk() {
                     };
                     let tell = |_: LibraryEvent| {};
                     serve(
-                        Some((&upkeep, &tally)),
+                        Some((&upkeep, &tally, &fingerprints)),
                         &asked,
                         &tell,
                         &|| false,

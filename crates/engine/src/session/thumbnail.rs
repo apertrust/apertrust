@@ -18,7 +18,9 @@
 //! Kinds; `docs/library.md`, Thumbnails), around the library's reading of the camera's
 //! embedded picture ([`library::thumbnail`]).
 //!
-//! - **A read first:** the cache's entry for the photo's slot, a render at any version
+//! - **A read first:** the cache's entry for the photo's slot, its fingerprint, the first
+//!   virtual copy its sidecar names and the size ([`library::thumbnail_slot`]), the
+//!   fingerprint read once a session ([`library::Fingerprints`]): a render at any version
 //!   ([`rendered`]) or the embedded picture at the version its file and the embedded
 //!   picture's reading give ([`library::thumbnail_key`]), sent as the library would send
 //!   it.
@@ -59,7 +61,8 @@ use apertrust_base::cache::THUMBNAILS;
 use apertrust_export::Image;
 use apertrust_export::jpeg::{self, Options, Subsample};
 use apertrust_library::ops::{
-    self as library, LibraryEvent, RawFacts, RawThumbnails, Thumbnail, ThumbnailKey,
+    self as library, Fingerprints, Identity, LibraryEvent, RawFacts, RawThumbnails, Thumbnail,
+    ThumbnailKey,
 };
 
 use super::cache::Upkeep;
@@ -138,10 +141,11 @@ pub(crate) fn named(event: LibraryEvent, alone: Option<&PathBuf>) -> LibraryEven
 }
 
 /// Sends the thumbnail `asked` names to `observer` as [`library::thumbnail`] does, from the
-/// cache where `cached` holds it, and keeps one read in the cache; with no cache, the
-/// library's reading alone. `read` is [`library::thumbnail`], `facts` [`raw_facts`].
+/// cache where `cached` holds it, its slot the photo's fingerprint through the session's
+/// memo, and keeps one read in the cache; with no cache, the library's reading alone.
+/// `read` is [`library::thumbnail`], `facts` [`raw_facts`].
 pub(crate) fn serve(
-    cached: Option<(&Upkeep, &Tally)>,
+    cached: Option<(&Upkeep, &Tally, &Fingerprints)>,
     asked: &Asked<'_>,
     observer: &(dyn Fn(LibraryEvent) + Send + Sync),
     cancel: &(dyn Fn() -> bool + Sync),
@@ -155,14 +159,21 @@ pub(crate) fn serve(
         size,
         raw,
     } = *asked;
-    let Some((upkeep, tally)) = cached else {
+    let Some((upkeep, tally, fingerprints)) = cached else {
         return read(open, folder, photo, size, observer, cancel);
     };
     if cancel() {
         return;
     }
     let started = Instant::now();
-    let key = library::thumbnail_key(folder, photo, size);
+    // The photo by its file's size and time, its sidecar's first copy and its fingerprint;
+    // none for a name that is no plain file name, or a file whose size, time or fingerprint
+    // cannot be read, so it is read and not kept.
+    let plain = Path::new(photo).file_name() == Some(std::ffi::OsStr::new(photo));
+    let path = folder.join(photo);
+    let identity = (plain.then(|| library::raw_stamp(&path)).flatten())
+        .and_then(|stamp| Identity::read(&path, stamp, fingerprints));
+    let key = (identity.as_ref()).map(|photo| library::thumbnail_key(photo, size));
     let send = |image| {
         observer(LibraryEvent::Thumbnail {
             open,
@@ -406,24 +417,22 @@ pub(super) fn replace_with_embedded(
     write_checked(upkeep, key, image, photo, Over::Any, cancel)
 }
 
-/// Drops a previous rendered slot after a reset with no embedded picture. Other
+/// Drops a previous rendered `slot` after a reset with no embedded picture. Other
 /// versions are kept, and a superseded reset does nothing. Returns whether the
 /// desired state holds, including a slot that was already absent.
 pub(super) fn remove_rendered_if_current(
     upkeep: &Upkeep,
-    path: &Path,
-    size: u32,
+    slot: &[u8],
     cancel: &(dyn Fn() -> bool + Sync),
 ) -> bool {
     let _writing = WRITES.lock().unwrap_or_else(PoisonError::into_inner);
     if cancel() {
         return false;
     }
-    let slot = library::thumbnail_slot(path, size);
     let cache = upkeep.cache();
-    match cache.read_any(THUMBNAILS, &slot) {
+    match cache.read_any(THUMBNAILS, slot) {
         Ok(Some((version, _))) if version.starts_with(library::RENDERED) => {
-            cache.remove(THUMBNAILS, &slot).is_ok()
+            cache.remove(THUMBNAILS, slot).is_ok()
         }
         Ok(_) => true,
         Err(_) => false,

@@ -503,30 +503,56 @@ pub fn thumbnail(
 /// it stands for, and the version of the picture it holds.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ThumbnailKey {
-    /// The photo, its virtual copy and the size asked. Until the photo's fingerprint is
-    /// built (the library's step 8), the photo is its path.
+    /// The photo's fingerprint, its virtual copy and the size asked ([`thumbnail_slot`]), so
+    /// a raw renamed or moved keeps its thumbnails, and another file at its path, or another
+    /// file of the same raw with another edit, never takes them.
     pub slot: Vec<u8>,
     /// What the picture depends on: the embedded picture's reading
     /// ([`apertrust_raw::PREVIEW_VERSION`]) and the file, by its size and modified time.
     pub version: Vec<u8>,
 }
 
-/// The cache's key of the thumbnail of `photo`, a file of `folder`, at `size`, as
-/// [`thumbnail`] reads it; `None` where the name is no plain file name or the file's size
-/// and modified time cannot be read, so it is read and not kept.
-pub fn thumbnail_key(folder: &Path, photo: &str, size: u32) -> Option<ThumbnailKey> {
-    let plain = Path::new(photo).file_name() == Some(std::ffi::OsStr::new(photo));
-    if !plain {
-        return None;
+/// A photo's file as its thumbnails are keyed (decision 53): its size and modified time, its
+/// fingerprint, and the virtual copy the session edits, none for a photo with no sidecar.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Identity {
+    pub stamp: RawStamp,
+    /// [`crate::sidecar::fingerprint`]'s.
+    pub fingerprint: String,
+    /// The id of the sidecar's first virtual copy ([`thumbnail_copy`]).
+    pub copy: Option<String>,
+}
+
+impl Identity {
+    /// The identity of the raw at `path`, of `stamp` as just read: its fingerprint through
+    /// `fingerprints`, its copy from its sidecar as it is on the disk; `None` where its
+    /// fingerprint cannot be read, so it is read and not kept. A blocking call.
+    pub fn read(path: &Path, stamp: RawStamp, fingerprints: &Fingerprints) -> Option<Identity> {
+        Some(Identity {
+            stamp,
+            fingerprint: fingerprints.get(path, &stamp)?,
+            copy: thumbnail_copy(path),
+        })
     }
-    let path = folder.join(photo);
-    let stamp = raw_stamp(&path)?;
-    let slot = thumbnail_slot(&path, size);
+
+    /// The cache's slot of its thumbnail at `size` ([`thumbnail_slot`]).
+    pub fn slot(&self, size: u32) -> Vec<u8> {
+        thumbnail_slot(&self.fingerprint, self.copy.as_deref(), size)
+    }
+}
+
+/// The cache's key of the thumbnail of `photo` at `size`, as [`thumbnail`] reads it: the
+/// slot its fingerprint, copy and size, the version its stamp and the embedded picture's
+/// reading.
+pub fn thumbnail_key(photo: &Identity, size: u32) -> ThumbnailKey {
     let mut version = EMBEDDED.to_vec();
     version.extend_from_slice(apertrust_raw::PREVIEW_VERSION.as_bytes());
     version.push(0);
-    version.extend_from_slice(&stamp);
-    Some(ThumbnailKey { slot, version })
+    version.extend_from_slice(&photo.stamp);
+    ThumbnailKey {
+        slot: photo.slot(size),
+        version,
+    }
 }
 
 /// The virtual copy a thumbnail of the photo at `photo` is of: the id of its sidecar's first
@@ -864,15 +890,16 @@ pub fn level((width, height): (u32, u32)) -> usize {
         .unwrap_or(LEVELS.len())
 }
 
-/// The cache's slot of the thumbnail of the raw at `path` at `size`, whatever picture it
-/// holds: the photo, its virtual copy and the size.
-pub fn thumbnail_slot(path: &Path, size: u32) -> Vec<u8> {
-    // The virtual copy: the photo itself until virtual copies are built.
-    let copy = 0u32;
+/// The cache's slot of a photo's thumbnail at `size`, whatever picture it holds:
+/// `thumbnail`, a zero byte, the photo's `fingerprint` ([`crate::sidecar::fingerprint`]), a
+/// zero byte, its virtual `copy`'s id ([`thumbnail_copy`]) or nothing, a zero byte, then
+/// the size as a little-endian `u32`.
+pub fn thumbnail_slot(fingerprint: &str, copy: Option<&str>, size: u32) -> Vec<u8> {
     let mut slot = b"thumbnail\0".to_vec();
-    slot.extend_from_slice(path.as_os_str().as_encoded_bytes());
+    slot.extend_from_slice(fingerprint.as_bytes());
     slot.push(0);
-    slot.extend_from_slice(&copy.to_le_bytes());
+    slot.extend_from_slice(copy.unwrap_or_default().as_bytes());
+    slot.push(0);
     slot.extend_from_slice(&size.to_le_bytes());
     slot
 }
@@ -1287,15 +1314,26 @@ mod tests {
         assert!(thumbnails(dir.path(), "A.RAF", &|| true).is_empty());
     }
 
-    /// A thumbnail's slot is the photo's path, copy and size; its version follows the file
-    /// and the reading, so a file changed reads again. No key for a name that is no file
-    /// name, or a file that is not there.
+    /// The identity of the raw at `path` as it is now, through `fingerprints`.
+    fn identity(path: &Path, fingerprints: &Fingerprints) -> Option<Identity> {
+        Identity::read(path, raw_stamp(path)?, fingerprints)
+    }
+
+    /// A thumbnail's key: its slot the photo's fingerprint, copy and size, its version the
+    /// file's size and modified time and the reading, so a file changed reads again. The
+    /// copy is the sidecar's first, a version 1 file's [`sidecar::FIRST_COPY`], none with
+    /// no sidecar or one that cannot be read; no identity for a file that is not there.
     #[test]
     fn a_thumbnail_s_key_follows_the_photo_its_size_and_its_file() {
         let dir = folder();
-        let key = thumbnail_key(dir.path(), "A.RAF", 256).expect("a key");
-        assert_eq!(thumbnail_key(dir.path(), "A.RAF", 256), Some(key.clone()));
-        let larger = thumbnail_key(dir.path(), "A.RAF", 512).expect("a key");
+        let path = dir.path().join("A.RAF");
+        let fingerprints = Fingerprints::default();
+        let photo = identity(&path, &fingerprints).expect("an identity");
+        assert_eq!(photo.copy, None, "no sidecar, no copy");
+        let key = thumbnail_key(&photo, 256);
+        assert_eq!(key, thumbnail_key(&photo, 256));
+        assert_eq!(key.slot, thumbnail_slot(&photo.fingerprint, None, 256));
+        let larger = thumbnail_key(&photo, 512);
         assert_ne!(larger.slot, key.slot);
         assert_eq!(larger.version, key.version);
         let version = String::from_utf8_lossy(&key.version).into_owned();
@@ -1304,13 +1342,49 @@ mod tests {
             "{version}"
         );
 
-        std::fs::write(dir.path().join("A.RAF"), b"another file, longer").unwrap();
-        let changed = thumbnail_key(dir.path(), "A.RAF", 256).expect("a key");
-        assert_eq!(changed.slot, key.slot);
+        fs::write(&path, b"another file, longer").unwrap();
+        let changed = thumbnail_key(&identity(&path, &fingerprints).expect("an identity"), 256);
+        assert_ne!(changed.slot, key.slot, "other bytes, another fingerprint");
         assert_ne!(changed.version, key.version);
 
-        assert_eq!(thumbnail_key(dir.path(), "gone.ARW", 256), None);
-        assert_eq!(thumbnail_key(dir.path(), "../A.RAF", 256), None);
+        let copy = |raw: &str| identity(&dir.path().join(raw), &fingerprints).map(|p| p.copy);
+        assert_eq!(copy("B.CR3"), Some(Some(sidecar::FIRST_COPY.to_owned())));
+        assert_eq!(copy("D.ARW"), Some(None), "a sidecar that cannot be read");
+        assert_eq!(copy("gone.ARW"), None);
+    }
+
+    /// Two sizes, three copies and two fingerprints: each a slot of its own, laid out as
+    /// `thumbnail`, the fingerprint, the copy and the size, a zero byte between each.
+    #[test]
+    fn a_thumbnail_slot_is_the_fingerprint_copy_and_size() {
+        let a = sidecar::fingerprint(4, b"head", b"tail");
+        let b = sidecar::fingerprint(4, b"head", b"other");
+        let mut slots = std::collections::HashSet::new();
+        for fingerprint in [&a, &b] {
+            for copy in [None, Some(sidecar::FIRST_COPY), Some("1a2b3c4d")] {
+                for size in [256, 512] {
+                    slots.insert(thumbnail_slot(fingerprint, copy, size));
+                }
+            }
+        }
+        assert_eq!(slots.len(), 12);
+        let expected = [
+            b"thumbnail\0".as_slice(),
+            a.as_bytes(),
+            b"\0",
+            b"1a2b3c4d",
+            b"\0",
+            &256u32.to_le_bytes(),
+        ]
+        .concat();
+        assert_eq!(thumbnail_slot(&a, Some("1a2b3c4d"), 256), expected);
+        let none = [
+            b"thumbnail\0".as_slice(),
+            a.as_bytes(),
+            b"\0\0",
+            &256u32.to_le_bytes(),
+        ];
+        assert_eq!(thumbnail_slot(&a, None, 256), none.concat());
     }
 
     /// How many times [`counted`] has read a fingerprint.
