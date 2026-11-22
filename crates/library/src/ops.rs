@@ -34,10 +34,11 @@
 //! command that opened the folder, or closed it: a client keeps the number of its latest
 //! `Open` or `Close` and drops what an earlier one sends on its way.
 
+use std::collections::HashMap;
 use std::fmt;
 use std::panic::{self, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 pub use apertrust_raw::DateTime;
@@ -526,6 +527,78 @@ pub fn thumbnail_key(folder: &Path, photo: &str, size: u32) -> Option<ThumbnailK
     version.push(0);
     version.extend_from_slice(&stamp);
     Some(ThumbnailKey { slot, version })
+}
+
+/// The virtual copy a thumbnail of the photo at `photo` is of: the id of its sidecar's first
+/// copy, the one the session edits, as [`Edits::parse`] reads it, a version 1 file's
+/// [`FIRST_COPY`]; none for a photo with no sidecar or one that cannot be read. Further
+/// virtual copies come with the library's step 11.
+///
+/// [`Edits::parse`]: crate::sidecar::Edits::parse
+/// [`FIRST_COPY`]: crate::sidecar::FIRST_COPY
+pub fn thumbnail_copy(photo: &Path) -> Option<String> {
+    let xml = std::fs::read_to_string(crate::sidecar::path_for(photo)).ok()?;
+    // The modified time dates a version 1 file's steps alone, which the id never reads.
+    let edits = crate::sidecar::Edits::parse(&xml, 0).ok()?;
+    edits.copies.into_iter().next().map(|copy| copy.id)
+}
+
+/// What [`Fingerprints`] holds of each file, by its path: its stamp as read and its
+/// fingerprint.
+type Known = HashMap<PathBuf, (RawStamp, String)>;
+
+/// The photos' fingerprints a session has read, by path and [`RawStamp`], so each raw is
+/// fingerprinted once a session (decision 53): shared by the thumbnail jobs, the open's
+/// job and the live photo's renders. A file whose size or modified time changed is
+/// fingerprinted again; one replaced by another of the same size and time, as FAT32's
+/// 2-second times allow, keeps its fingerprint until the next session.
+pub struct Fingerprints {
+    read: fn(&Path) -> std::io::Result<String>,
+    known: Mutex<Known>,
+}
+
+impl Default for Fingerprints {
+    fn default() -> Self {
+        Fingerprints::reading(crate::sidecar::read_fingerprint)
+    }
+}
+
+impl Fingerprints {
+    /// A memo reading each fingerprint with `read`, a test's own in place of
+    /// [`crate::sidecar::read_fingerprint`].
+    fn reading(read: fn(&Path) -> std::io::Result<String>) -> Self {
+        Fingerprints {
+            read,
+            known: Mutex::default(),
+        }
+    }
+
+    /// The fingerprint of the file at `path` of `stamp`: the one read before while its stamp
+    /// holds, else read now ([`crate::sidecar::read_fingerprint`]), outside the lock, so the
+    /// jobs read in parallel; `None` where it cannot be read, tried again the next time. A
+    /// blocking call on a miss.
+    pub fn get(&self, path: &Path, stamp: &RawStamp) -> Option<String> {
+        let known = (self.lock().get(path))
+            .filter(|(at, _)| at == stamp)
+            .map(|(_, fingerprint)| fingerprint.clone());
+        if known.is_some() {
+            return known;
+        }
+        let fingerprint = match (self.read)(path) {
+            Ok(fingerprint) => fingerprint,
+            Err(error) => {
+                let name = crate::sidecar::file_name(path);
+                tracing::debug!(target: "raw", "no fingerprint of {name}: {error}");
+                return None;
+            }
+        };
+        (self.lock()).insert(path.to_owned(), (*stamp, fingerprint.clone()));
+        Some(fingerprint)
+    }
+
+    fn lock(&self) -> std::sync::MutexGuard<'_, Known> {
+        self.known.lock().unwrap_or_else(PoisonError::into_inner)
+    }
 }
 
 /// A file as a thumbnail's version knows it: its size in bytes, a little-endian `u64`,
@@ -1238,6 +1311,48 @@ mod tests {
 
         assert_eq!(thumbnail_key(dir.path(), "gone.ARW", 256), None);
         assert_eq!(thumbnail_key(dir.path(), "../A.RAF", 256), None);
+    }
+
+    /// How many times [`counted`] has read a fingerprint.
+    static FINGERPRINT_READS: std::sync::atomic::AtomicUsize =
+        std::sync::atomic::AtomicUsize::new(0);
+
+    /// [`sidecar::read_fingerprint`], counted.
+    fn counted(path: &Path) -> std::io::Result<String> {
+        FINGERPRINT_READS.fetch_add(1, Ordering::SeqCst);
+        sidecar::read_fingerprint(path)
+    }
+
+    /// A raw is fingerprinted once while its size and modified time hold; touched, it is
+    /// read again. One that cannot be read is tried again each time.
+    #[test]
+    fn a_raw_is_fingerprinted_once_while_its_stamp_holds() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("A.ARW");
+        fs::write(&path, b"a raw").unwrap();
+        let fingerprints = Fingerprints::reading(counted);
+        let reads = || FINGERPRINT_READS.load(Ordering::SeqCst);
+        let stamp = raw_stamp(&path).unwrap();
+        let first = fingerprints.get(&path, &stamp).expect("a fingerprint");
+        assert_eq!(first, sidecar::read_fingerprint(&path).unwrap());
+        assert_eq!(fingerprints.get(&path, &stamp), Some(first.clone()));
+        assert_eq!(reads(), 1);
+
+        let file = fs::File::options().write(true).open(&path).unwrap();
+        file.set_modified(SystemTime::now() + Duration::from_secs(10))
+            .unwrap();
+        drop(file);
+        let touched = raw_stamp(&path).unwrap();
+        assert_ne!(touched, stamp);
+        assert_eq!(fingerprints.get(&path, &touched), Some(first.clone()));
+        assert_eq!(reads(), 2, "touched, read again");
+        assert_eq!(fingerprints.get(&path, &touched), Some(first));
+        assert_eq!(reads(), 2);
+
+        let gone = dir.path().join("gone.ARW");
+        assert_eq!(fingerprints.get(&gone, &stamp), None);
+        assert_eq!(fingerprints.get(&gone, &stamp), None);
+        assert_eq!(reads(), 4, "what cannot be read is not kept");
     }
 
     #[test]
