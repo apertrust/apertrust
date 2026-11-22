@@ -524,6 +524,82 @@ fn presets_and_options_drawn_disabled_do_not_run() {
     assert_eq!(*harness.state(), vec![SectionAction::Reset]);
 }
 
+/// A tool's header with ⋯ holding a menu, and what it reported: its actions and the item
+/// chosen in ⋯.
+fn with_options() -> Harness<'static, (Vec<SectionAction>, Vec<String>)> {
+    Harness::builder()
+        .with_size(egui::vec2(400.0, 200.0))
+        .with_context_setup(|ctx| apertrust_ui::install(ctx, Theme::default()))
+        .build_ui_state(
+            |ui, (actions, chosen): &mut (Vec<SectionAction>, Vec<String>)| {
+                // A widget before the section and one after, so Tab neither starts nor
+                // ends at its edges.
+                let _ = ui.button("Before");
+                let entries = vec![Item::new("section-reset", "Reset").into()];
+                let out = Section::new("Exposure", false)
+                    .edits()
+                    .reset(true)
+                    .options(true)
+                    .options_menu(entries)
+                    .show(ui, |_| {});
+                actions.extend(out.actions);
+                chosen.extend(out.chosen);
+                let _ = ui.button("After");
+            },
+            (Vec::new(), Vec::new()),
+        )
+}
+
+/// A header takes no context menu (decision 91): Shift+F10 and the Menu key on it open
+/// nothing. Tab from a widget before the section reaches ⋯ on its way to the one after,
+/// and Space opens it.
+#[test]
+fn a_focused_header_opens_no_menu_from_the_keys_and_tab_reaches_its_options() {
+    let mut harness = with_options();
+    harness.run();
+    harness
+        .get_by_role_and_label(Role::Button, "Exposure")
+        .focus();
+    harness.run();
+    for (modifiers, key) in [
+        (egui::Modifiers::SHIFT, Key::F10),
+        (egui::Modifiers::NONE, Key::Menu),
+    ] {
+        harness.key_press_modifiers(modifiers, key);
+        harness.run();
+        assert!(harness.query_by_role(Role::MenuItem).is_none(), "{key:?}");
+        assert_eq!(focused(&harness), "Exposure", "{key:?}");
+    }
+    assert!(harness.state().0.is_empty());
+    // From the widget before the section, Tab goes through it to the one after.
+    harness
+        .get_by_role_and_label(Role::Button, "Before")
+        .focus();
+    harness.run();
+    let mut stops = Vec::new();
+    while stops.len() < 8 && stops.last().is_none_or(|stop| stop != "After") {
+        harness.key_press(Key::Tab);
+        harness.run();
+        stops.push(focused(&harness));
+    }
+    assert!(
+        stops.iter().any(|stop| stop == "Exposure options"),
+        "{stops:?}"
+    );
+    assert_eq!(stops.last().map(String::as_str), Some("After"), "{stops:?}");
+    harness
+        .get_by_role_and_label(Role::Button, "Exposure options")
+        .focus();
+    harness.run();
+    harness.key_press(Key::Space);
+    harness.run();
+    harness
+        .get_by_role_and_label(Role::MenuItem, "Reset")
+        .click();
+    harness.run();
+    assert_eq!(harness.state().1, ["section-reset"]);
+}
+
 #[test]
 fn the_tabs_switch() {
     let mut harness = tool(true);
