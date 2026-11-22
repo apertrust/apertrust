@@ -201,16 +201,18 @@ pub enum Command {
     /// and while it is open for viewing only. One view per session, which every client
     /// shares: the last `View` any client sends wins, within a batch too. It is kept across
     /// photos, another photo taking the same view, its centre clamped to it
-    /// ([`crate::view::place`]). A factor not finite or not above 0 is Fit, one above 16 is
-    /// 16 ([`View::normalized`]). Answered by [`Event::View`] where the view or its
-    /// placement changed. Past Fit it renders the visible region with its margin through
-    /// the detail pipeline at the scale [`crate::view::Placement::render`] gives
-    /// ([`crate::view::rendered`]): a view at that region's scale whose visible rectangle
-    /// the region rendered last holds renders nothing and sends no frame, and one past it,
-    /// or at another scale, renders the detail alone, its region moved. A tiled
-    /// viewport's detail starts from the raw stage's output it keeps. Where the detail
-    /// cannot render yet, with an operation it refuses, the view is still the session's,
-    /// its frame stays at Fit, and the command is refused with [`SessionError::Zoom`].
+    /// ([`crate::view::place`]), the clamp kept once that photo is live, and mapped onto the
+    /// same point of the scene through a turn of it ([`crate::view::reoriented`]). A factor
+    /// not finite or not above 0 is Fit, one above 16 is 16 ([`View::normalized`]).
+    /// Answered by [`Event::View`] where the view or its placement changed. Past Fit it
+    /// renders the visible region with its margin through the detail pipeline at the scale
+    /// [`crate::view::Placement::render`] gives ([`crate::view::rendered`]): a view at that
+    /// region's scale whose visible rectangle the region rendered last holds renders nothing
+    /// and sends no frame, and one past it, or at another scale, renders the detail alone,
+    /// its region moved. A tiled viewport's detail starts from the raw stage's output it
+    /// keeps. Where the detail cannot render yet, with an operation it refuses, the view is
+    /// still the session's, its frame stays at Fit, and the command is refused with
+    /// [`SessionError::Zoom`].
     View(View),
     /// Set a tool's control, which keeps it. `done` on the last change of a gesture (a
     /// drag released, a click, a typed value), which saves the edit.
@@ -1080,12 +1082,15 @@ impl Frame {
 pub struct ViewState {
     /// How many commands it includes, as [`Values::through`] counts them.
     pub through: u64,
-    /// The view as the session holds it, its centre clamped to the open photo.
+    /// The view as the session places it, its centre clamped to the open photo; with no
+    /// photo, as the session holds it. A live photo's clamp is the session's own; an
+    /// opening photo's is provisional, so one that fails to open leaves the view as asked.
     pub view: View,
     /// [`crate::view::place`] of it for the open photo and the last bounds; `None` with no
-    /// photo or no bounds as it is told. A photo closing tells nothing, so the latest fact
-    /// keeps the closed photo's placement until another photo's differs or the view
-    /// changes.
+    /// photo or no bounds as it is told. A live photo closing tells nothing where it leaves
+    /// the view as told, so the latest fact keeps the closed photo's placement until another
+    /// photo's differs or the view changes; a photo that fails to open, or is left while it
+    /// opens, after its placement was told, tells the view again with none.
     pub placement: Option<Placement>,
 }
 
@@ -2261,12 +2266,16 @@ struct Engine {
     anticipate_move: f64,
     load: Load,
     size: Option<(u32, u32)>,
-    /// The view (decision 99): one per session, kept across photos, its centre clamped to
-    /// the open photo as it is placed ([`Self::view_event`]).
+    /// The view as asked (decision 99), normalised: one per session, kept across photos.
+    /// Its centre takes the clamp to the photo it is placed on while that photo is live;
+    /// an opening photo's placement leaves it as asked ([`Self::view_event`]).
     view: View,
     /// The view and its placement last told as [`Event::View`], which the next is compared
     /// with; the default view and none before any.
     view_told: (View, Option<Placement>),
+    /// Whether that placement is an opening photo's, which the view is told again without
+    /// where the photo fails to open or is left while it opens ([`Self::view_event`]).
+    view_told_opening: bool,
     /// Why the last render stayed at Fit where the view asks for the detail (decision 99),
     /// which the `View` still to be answered is refused with.
     zoom_refused: Option<SessionError>,
@@ -2652,6 +2661,9 @@ struct Open {
     /// The output image at full resolution as the live frame shows it, as the last values
     /// reported it ([`Values::extent`]), which the view is placed on.
     extent: [u32; 2],
+    /// The orientation the view was last placed on the photo in, which a turn of it maps
+    /// the view from ([`Engine::view_event`]).
+    oriented: crate::view::Orientation,
     /// What an export's variables read of the raw, so that its export needs no decode.
     shot: Shot,
     edit: Edit,
@@ -2884,6 +2896,7 @@ impl Engine {
             size: None,
             view: View::default(),
             view_told: (View::default(), None),
+            view_told_opening: false,
             zoom_refused: None,
             overview_behind: None,
             overview_retry: None,
@@ -3196,6 +3209,8 @@ impl Engine {
     /// frames still on their way, and cancels the open under way, whose events from then
     /// on are dropped. The kernels its pipeline compiled are kept for the next photo.
     fn close(&mut self) {
+        // A turn since the view was last placed goes with the view to the next photo.
+        self.follow_turn();
         // What was handed over is written, after a panic too, before the writer forgets the
         // photo's file.
         self.writer.flush(None);
@@ -3244,6 +3259,7 @@ impl Engine {
         }
         // Told again, with no photo, so the next photo's placement is told too.
         self.view_told = (self.view, None);
+        self.view_told_opening = false;
         events.push(Event::View(ViewState {
             through,
             view: self.view,
@@ -3361,8 +3377,11 @@ impl Engine {
                     Ok(())
                 }
                 // The view, the last of the batch's winning; told after the batch's values,
-                // and rendered after the loop where it moves the frame (decision 99).
+                // and rendered after the loop where it moves the frame (decision 99). Its
+                // centre is in the photo's coordinates as the edit shows it now, a turn
+                // earlier in the batch taken in first.
                 Command::View(view) => {
+                    self.follow_turn();
                     self.view = view.normalized();
                     viewed = Some(self.applied);
                     self.view_asked = Some(self.applied);
@@ -3672,34 +3691,72 @@ impl Engine {
 
     /// The view's fact (decision 99), where the view or its placement on the open photo
     /// changed since the last told: a `View`, a `Resize`, a photo of another extent, an edit
-    /// that turns the photo. The view's centre is clamped to the photo as it is placed, and
-    /// held so. A photo closing, which leaves no placement, tells nothing of its own: the
-    /// last placement told stands until a photo's differs, so another photo of the same
-    /// extent tells nothing either.
+    /// that turns the photo. A turn or a flip maps the view the session holds onto the same
+    /// point of the scene first. The view told has its centre clamped to the photo as it is
+    /// placed. A live photo commits that clamp to the view the session holds, so the photo
+    /// after carries the centre it showed; an opening photo's is provisional, so one that
+    /// fails to open leaves the view as asked. A live photo closing, which leaves no
+    /// placement, tells nothing of its own where it leaves the view as told: the last
+    /// placement told stands until a photo's differs, so another photo of the same extent
+    /// tells nothing either. A photo that fails to open, or is left while it opens, after
+    /// its placement was told, tells the view again with none.
     fn view_event(&mut self) -> Option<Event> {
-        let place = |engine: &Engine| {
-            (engine.open.as_ref())
-                .zip(engine.size)
-                .map(|(open, bounds)| crate::view::place(open.extent, bounds, &engine.view))
+        self.follow_turn();
+        let (view, placement) = match self.open.as_ref().zip(self.size) {
+            Some((open, bounds)) => {
+                let clamped = crate::view::place(open.extent, bounds, &self.view);
+                // Placed again from the centre as held, an `f32`, so the placement told is
+                // `place` of the view told and the next batch's, from the same centre, is
+                // the same, though the clamp's own centre rounds as it is held.
+                let view = View {
+                    centre: clamped.centre,
+                    ..self.view
+                };
+                (view, Some(crate::view::place(open.extent, bounds, &view)))
+            }
+            None => (self.view, None),
         };
-        let mut placement = place(self);
-        if let Some(clamped) = &placement {
-            // Placed again from the centre as held, an `f32`, so the placement told is
-            // `place` of the view told and the next batch's, from the same centre, is the
-            // same, though the clamp's own centre rounds as it is held.
-            self.view.centre = clamped.centre;
-            placement = place(self);
+        let live = (self.open.as_ref()).is_some_and(|open| open.input.is_some());
+        if live {
+            self.view = view;
+            self.view_told_opening = false;
         }
         let (told, told_placement) = self.view_told;
-        if self.view == told && (placement.is_none() || placement == told_placement) {
+        // An opening photo's placement told goes with it, where it fails to open or is
+        // left while it opens: the view is told again with none.
+        let left = placement.is_none() && self.view_told_opening;
+        if view == told && (placement.is_none() || placement == told_placement) && !left {
             return None;
         }
-        self.view_told = (self.view, placement);
+        self.view_told = (view, placement);
+        self.view_told_opening = placement.is_some() && !live;
         Some(Event::View(ViewState {
             through: self.applied,
-            view: self.view,
+            view,
             placement,
         }))
+    }
+
+    /// Maps the view through a turn or a flip of the live photo since the view was last
+    /// placed on it, onto the same point of the scene, as a client maps its own centre
+    /// ([`crate::view::reoriented`], decision 99): as the view is placed, and as the photo
+    /// closes, so a turn in the batch that leaves it is carried too.
+    fn follow_turn(&mut self) {
+        let Some(open) = &mut self.open else {
+            return;
+        };
+        let now = open.orientation();
+        // An opening photo's orientation, the eye hiding Orientation as it opens, is the one
+        // it goes live in: no turn of the view, which a failed open leaves as asked.
+        if now != open.oriented && open.input.is_some() {
+            let centre = crate::view::reoriented(self.view.centre, open.oriented, now);
+            self.view = View {
+                centre,
+                ..self.view
+            }
+            .normalized();
+        }
+        open.oriented = now;
     }
 
     /// Applies the edit commands of a batch that arrived after the client dropped its
@@ -4498,6 +4555,8 @@ impl Engine {
                 open,
                 error: Box::new(error),
             }));
+            // The view as asked again, with no placement, where the photo's metadata placed it.
+            events.extend(self.view_event());
         }
         events
     }
@@ -4564,6 +4623,7 @@ impl Engine {
             input: None,
             sensor: metadata.sensor,
             extent: [photo.width, photo.height],
+            oriented: crate::view::Orientation::default(),
             shot: metadata.shot,
             edit,
             view_only,
@@ -4593,6 +4653,9 @@ impl Engine {
         if let Some(open) = &mut self.open {
             open.remember(&self.tools, Moment::Opened, None);
             open.remember(&self.tools, Moment::Redrawn, None);
+            // The view carried in is placed as it is: a photo shown in another orientation
+            // than the one before is no turn.
+            open.oriented = open.orientation();
         }
         photo
     }
@@ -4683,6 +4746,8 @@ impl Engine {
         }
         photo.sensor = input.desc();
         photo.shot = metadata.shot;
+        // The orientation it goes live in, the decode's own where it differs: no turn.
+        photo.oriented = photo.orientation();
         photo.input = Some(input);
         self.opening = None;
         self.count_raw_histogram(events);
@@ -5897,6 +5962,17 @@ impl Engine {
 }
 
 impl Open {
+    /// The orientation the live frame shows the photo in: Orientation's option in its edit,
+    /// a tool the eye hides as if reset, the photo's own at auto (decision 99).
+    fn orientation(&self) -> crate::view::Orientation {
+        use apertrust_tools::orientation::{FLIP, ORIENTATION};
+        let choice = self
+            .shown()
+            .tool(FLIP)
+            .and_then(|tool| tool.choice(ORIENTATION));
+        crate::view::Orientation::shown(choice.unwrap_or(0), &self.image)
+    }
+
     /// Each tool's memory of the photo after `moment` ([`ProcessingTool::remember`]), every
     /// tool's, or `only`'s. A tool whose code panics keeps the memory it had.
     fn remember(&mut self, tools: &[&dyn ProcessingTool], moment: Moment<'_>, only: Option<&str>) {

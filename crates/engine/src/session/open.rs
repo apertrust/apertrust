@@ -725,8 +725,10 @@ pub(crate) mod testing {
     /// The raws `develop` gives, whatever the path: the metadata read the decode's, an
     /// embedded picture only for a raw called `embedded.ARW`, 64 × 48 pixels made no larger
     /// than the longer side asked, a decode that fails for one called
-    /// `undecodable.ARW`, whose metadata reads, and one whose decode reads a bias of
-    /// −⅔ EV the metadata missed for one called `rebias.ARW`.
+    /// `undecodable.ARW`, whose metadata reads, one whose decode reads a bias of −⅔ EV
+    /// the metadata missed for one called `rebias.ARW`, and one whose decode reads the
+    /// EXIF orientation 6, a quarter turn, the metadata missed for one called
+    /// `reoriented.ARW`.
     pub(crate) fn loading(develop: Develop) -> Load {
         Arc::new(move |path: &Path| {
             Ok(Box::new(Synthetic {
@@ -792,6 +794,12 @@ pub(crate) mod testing {
                 &mut metadata.image.camera,
             ) {
                 camera.exposure_bias = -2.0 / 3.0;
+            }
+            if let (true, Some(camera)) = (
+                self.path.ends_with("reoriented.ARW"),
+                &mut metadata.image.camera,
+            ) {
+                camera.orientation = 6;
             }
             Ok((metadata, mosaic))
         }

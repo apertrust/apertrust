@@ -280,6 +280,433 @@ fn a_panicked_turn_tells_the_view_again() {
     remove(&path);
 }
 
+/// The centre across that 100% at `x` shows of the synthetic photo, 84 × 62, in `bounds`:
+/// 0.238 to 0.762 in 40 × 40, 0.357 to 0.643 in 60 × 40.
+fn across(x: f32, bounds: (u32, u32)) -> f32 {
+    let view = View {
+        scale: ViewScale::Factor(1.0),
+        centre: [x, 0.5],
+    };
+    crate::view::place([84, 62], bounds, &view).centre[0]
+}
+
+/// Opens the photo at `path` in the bounds last sent, until it is live or has failed.
+fn opened(driven: &mut Driven, path: &Path) -> Vec<Event> {
+    let mut events = driven.run([Command::Open(path.to_owned())]);
+    events.extend(driven.settle());
+    events
+}
+
+/// The view's clamp to a photo is the session's once the photo is live, from its going
+/// live, a `View` and a `Resize`, and provisional while it opens, so one that fails to
+/// open leaves the view as asked. Each case starts at 100% on `wide.ARW`, 1088 × 62, live
+/// in 40 × 40 at `from` across, which it shows unclamped; its steps, on the synthetic
+/// photo of `path` or one beside it, return the centre across the session then holds,
+/// which the next `wide.ARW`'s view fact tells and its first live frame shows.
+#[test]
+fn a_photo_commits_the_view_s_clamp_once_it_is_live() {
+    type Steps = fn(&mut Driven, &Path) -> f32;
+    let cases: [(&str, f32, Steps); 5] = [
+        ("a photo going live", 0.9, |driven, path| {
+            opened(driven, path);
+            across(0.9, (40, 40))
+        }),
+        ("a View while live", 0.5, |driven, path| {
+            opened(driven, path);
+            driven.run([zoom(ViewScale::Factor(1.0), [0.9, 0.5])]);
+            across(0.9, (40, 40))
+        }),
+        ("a Resize while live", 0.5, |driven, path| {
+            opened(driven, path);
+            driven.run([zoom(ViewScale::Factor(1.0), [0.3, 0.5])]);
+            driven.run([Command::Resize {
+                width: 60,
+                height: 40,
+            }]);
+            across(0.3, (60, 40))
+        }),
+        // Its values place the view at 0.762, then its decode fails: the view as asked is
+        // told again, with no placement.
+        (
+            "a decode failing after the photo's values",
+            0.8,
+            |driven, path| {
+                let events = opened(driven, &path.with_file_name("undecodable.ARW"));
+                assert_eq!(failures(&events).len(), 1, "{events:?}");
+                let told: Vec<(f32, bool)> = (views(&events).iter())
+                    .map(|state| (state.view.centre[0], state.placement.is_some()))
+                    .collect();
+                assert_eq!(told, [(across(0.8, (40, 40)), true), (0.8, false)]);
+                0.8
+            },
+        ),
+        // Told clamped to the opening photo, kept as asked; its decode fails.
+        ("a View while a photo opens", 0.5, |driven, path| {
+            driven.run([Command::Open(path.with_file_name("undecodable.ARW"))]);
+            driven.pump(|_, events| events.iter().any(|e| matches!(e, Event::Opened(_))));
+            let events = driven.run([zoom(ViewScale::Factor(1.0), [0.9, 0.5])]);
+            assert_eq!(told(&events).view.centre[0], across(0.9, (40, 40)));
+            assert_eq!(driven.engine.view.centre[0], 0.9);
+            let events = driven.settle();
+            assert_eq!(failures(&events).len(), 1, "{events:?}");
+            0.9
+        }),
+    ];
+    for (case, from, steps) in cases {
+        let path = scratch("zoom-commit");
+        let wide = path.with_file_name("wide.ARW");
+        let mut driven = Driven::new(&[]);
+        driven.run([
+            Command::Open(wide.clone()),
+            Command::Resize {
+                width: 40,
+                height: 40,
+            },
+        ]);
+        driven.settle();
+        driven.run([zoom(ViewScale::Factor(1.0), [from, 0.5])]);
+        assert_eq!(driven.engine.view.centre[0], from, "{case}");
+        let kept = steps(&mut driven, &path);
+        assert_eq!(driven.engine.view.centre[0], kept, "{case}");
+        let events = opened(&mut driven, &wide);
+        assert_eq!(values(&events).extent, [1088, 62], "{case}");
+        let state = told(&events);
+        assert_eq!(state.view.centre[0], kept, "{case}");
+        let placement = state.placement.expect("a placement");
+        let frame = the_frame(&events);
+        let [x, y] = frame.place.origin;
+        let region = [x, y, frame.width, frame.height];
+        assert_eq!(frame.place.scale, 1.0, "{case}");
+        assert!(
+            crate::view::covers(region, placement.visible),
+            "{case}: {region:?} holds {placement:?}"
+        );
+        remove(&path);
+    }
+}
+
+/// Orientation's option for darktable's flip `bits`.
+fn orient(bits: u8) -> Command {
+    Command::SetControl {
+        tool: apertrust_tools::orientation::FLIP.to_owned(),
+        control: apertrust_tools::orientation::ORIENTATION.to_owned(),
+        value: ControlValue::Choice(u32::from(bits) + 1),
+        done: true,
+    }
+}
+
+/// A turn or a flip maps the view onto the same point of the scene, as the app maps its
+/// own centre ([`crate::view::reoriented`]), and the session holds it so: each of
+/// darktable's four buttons from each of the eight orientations, at 100% at (0.4, 0.6),
+/// off-centre on both axes and inside the edges of the photo, 84 × 62, and of its quarter
+/// turn, so the centre told is the mapped one unclamped. The next photo, upright, carries
+/// it: its view fact and its first live frame.
+#[test]
+fn a_turn_maps_the_view_onto_the_same_point_of_the_scene() {
+    use apertrust_tools::orientation::{ACTIONS, Orientation as Tool, turn};
+    let mut driven = Driven::new(&[&Sample, &Tool]);
+    let near = |a: [f32; 2], b: [f32; 2]| (a[0] - b[0]).abs().max((a[1] - b[1]).abs()) < 1e-6;
+    let at = [0.4, 0.6];
+    for start in 0..8u8 {
+        for action in ACTIONS {
+            let to = turn(action, start).expect("a button");
+            let case = format!("{start} then {action}, {to}");
+            let path = scratch(&format!("zoom-turn-{start}-{action}"));
+            driven.open(&path);
+            driven.run([orient(start), zoom(ViewScale::Factor(1.0), at)]);
+            let events = driven.run([orient(to)]);
+            let from = crate::view::Orientation::from_bits(start);
+            let mapped = crate::view::reoriented(at, from, crate::view::Orientation::from_bits(to));
+            let state = told(&events);
+            assert!(near(state.view.centre, mapped), "{case}: {state:?}");
+            assert_eq!(driven.engine.view, state.view, "{case}");
+            // The next photo, upright, at the centre the turned one showed.
+            let events = opened(&mut driven, &path.with_file_name("next.ARW"));
+            assert_eq!(values(&events).extent, [84, 62], "{case}");
+            assert_eq!(driven.engine.view, state.view, "{case}");
+            let placement = crate::view::place([84, 62], (40, 40), &state.view);
+            if let Some(next) = views(&events).last() {
+                assert_eq!(next.view, state.view, "{case}");
+            }
+            let frame = the_frame(&events);
+            let [x, y] = frame.place.origin;
+            let region = [x, y, frame.width, frame.height];
+            assert!(
+                crate::view::covers(region, placement.visible),
+                "{case}: {region:?} holds {placement:?}"
+            );
+            remove(&path);
+        }
+    }
+}
+
+/// A flip in the batch that opens another photo goes with the view: 0.25 across, flipped,
+/// is 0.75 on the next photo.
+#[test]
+fn a_turn_in_the_batch_that_leaves_the_photo_goes_with_the_view() {
+    use apertrust_tools::orientation::{Orientation as Tool, turn};
+    let path = scratch("zoom-turn-leaving");
+    let mut driven = Driven::new(&[&Sample, &Tool]);
+    driven.open(&path);
+    driven.run([zoom(ViewScale::Factor(1.0), [0.25, 0.5])]);
+    let flip = turn("flip_horizontally", 0).expect("a button");
+    let next = path.with_file_name("next.ARW");
+    let mut events = driven.run([orient(flip), Command::Open(next)]);
+    events.extend(driven.settle());
+    let last = *views(&events).last().expect("a view fact");
+    assert!((last.view.centre[0] - 0.75).abs() < 1e-6, "{last:?}");
+    assert!(last.placement.is_some(), "{last:?}");
+    assert!((driven.engine.view.centre[0] - 0.75).abs() < 1e-6);
+    remove(&path);
+}
+
+/// A `View` in the batch that leaves the photo is never placed on it, so it goes on as
+/// asked: 0.9, which the photo, 84 × 62 in 40 × 40, would clamp to 0.762, shows at 0.9 on
+/// `wide.ARW`, which shows it whole.
+#[test]
+fn a_view_in_the_batch_that_leaves_the_photo_goes_on_as_asked() {
+    let path = scratch("zoom-view-leaving");
+    let mut driven = Driven::new(&[]);
+    driven.open(&path);
+    let asked = View {
+        scale: ViewScale::Factor(1.0),
+        centre: [0.9, 0.5],
+    };
+    let wide = path.with_file_name("wide.ARW");
+    let mut events = driven.run([Command::View(asked), Command::Open(wide)]);
+    assert_eq!(driven.engine.view, asked);
+    events.extend(driven.settle());
+    assert_eq!(values(&events).extent, [1088, 62]);
+    assert_eq!(views(&events).last().expect("a view fact").view, asked);
+    assert_eq!(driven.engine.view, asked);
+    remove(&path);
+}
+
+/// A photo saved flipped, whose Orientation the History tab's eye hides as it opens, goes
+/// live in the orientation it then shows: no turn of the view, which stays as asked.
+#[test]
+fn an_opening_photo_s_orientation_is_no_turn() {
+    use apertrust_tools::orientation::{FLIP, Orientation as Tool, turn};
+    let path = scratch("zoom-turn-opening");
+    let mut driven = Driven::new(&[&Sample, &Tool]);
+    driven.open(&path);
+    let flip = turn("flip_horizontally", 0).expect("a button");
+    driven.run([orient(flip)]);
+    driven.run([Command::Close]);
+    driven.writes();
+    let asked = View {
+        scale: ViewScale::Factor(1.0),
+        centre: [0.3, 0.5],
+    };
+    driven.run([Command::View(asked), Command::Open(path.clone())]);
+    driven.pump(|_, events| events.iter().any(|e| matches!(e, Event::Opened(_))));
+    driven.run([Command::Hide {
+        tool: FLIP.to_owned(),
+        hidden: true,
+    }]);
+    assert_eq!(driven.engine.view, asked);
+    driven.settle();
+    assert_eq!(driven.engine.view, asked);
+    remove(&path);
+}
+
+/// A photo whose decode reads another orientation than its metadata, the EXIF orientation
+/// 6 its metadata missed, goes live in it: no turn of the view, which stays as asked.
+#[test]
+fn a_decode_s_own_orientation_is_no_turn() {
+    let path = scratch("zoom-turn-decode").with_file_name("reoriented.ARW");
+    let mut driven = Driven::new(&[&Sample]);
+    let asked = View {
+        scale: ViewScale::Factor(1.0),
+        centre: [0.4, 0.6],
+    };
+    driven.run([
+        Command::View(asked),
+        Command::Open(path.clone()),
+        Command::Resize {
+            width: 40,
+            height: 40,
+        },
+    ]);
+    let events = driven.settle();
+    assert_eq!(values(&events).extent, [62, 84], "{events:?}");
+    assert_eq!(driven.engine.view, asked);
+    remove(&path);
+}
+
+/// Every other way the orientation of a live photo changes is a turn of the view: an undo
+/// of a turn, its redo, and the History tab's eye hiding Orientation and showing it again.
+/// Each case asks for 100% at (0.4, 0.6), inside the edges of the photo, 84 × 62, live in
+/// 40 × 40, and of its quarter turn, in the orientation shown just before the change, and
+/// ends with the view the session holds mapped through it.
+#[test]
+fn an_undo_a_redo_and_the_eye_turn_the_view() {
+    use crate::view::{Orientation, reoriented};
+    use apertrust_tools::orientation::{FLIP, Orientation as Tool, turn};
+    type Steps = fn(&mut Driven, Command, u8, u8);
+    let cw = turn("rotate_cw", 0).expect("a button");
+    let flip = turn("flip_horizontally", 0).expect("a button");
+    let at = [0.4, 0.6];
+    let none = Orientation::default();
+    let (cw_, flip_) = (Orientation::from_bits(cw), Orientation::from_bits(flip));
+    let cases: [(&str, Steps, [f32; 2]); 4] = [
+        (
+            "a turn undone",
+            |driven, view, cw, _| {
+                driven.run([orient(cw)]);
+                driven.run([view]);
+                driven.run([Command::Undo]);
+            },
+            reoriented(at, cw_, none),
+        ),
+        (
+            "a turn redone",
+            |driven, view, cw, _| {
+                driven.run([orient(cw)]);
+                driven.run([Command::Undo]);
+                driven.run([view]);
+                driven.run([Command::Redo]);
+            },
+            reoriented(at, none, cw_),
+        ),
+        (
+            "a flip the eye hides",
+            |driven, view, _, flip| {
+                driven.run([orient(flip)]);
+                driven.run([view]);
+                driven.run([Command::Hide {
+                    tool: FLIP.to_owned(),
+                    hidden: true,
+                }]);
+            },
+            reoriented(at, flip_, none),
+        ),
+        (
+            "a flip the eye shows again",
+            |driven, view, _, flip| {
+                driven.run([orient(flip)]);
+                driven.run([Command::Hide {
+                    tool: FLIP.to_owned(),
+                    hidden: true,
+                }]);
+                driven.run([view]);
+                driven.run([Command::Hide {
+                    tool: FLIP.to_owned(),
+                    hidden: false,
+                }]);
+            },
+            reoriented(at, none, flip_),
+        ),
+    ];
+    let mut driven = Driven::new(&[&Sample, &Tool]);
+    for (case, steps, want) in cases {
+        let path = scratch(&format!("zoom-turn-{}", case.replace(' ', "-")));
+        driven.open(&path);
+        steps(&mut driven, zoom(ViewScale::Factor(1.0), at), cw, flip);
+        let centre = driven.engine.view.centre;
+        let near = (centre[0] - want[0]).abs().max((centre[1] - want[1]).abs()) < 1e-6;
+        assert!(near, "{case}: {centre:?}, not {want:?}");
+        remove(&path);
+    }
+}
+
+/// A photo that fails to open, or is left while it opens, after its values placed the view,
+/// takes that placement with it: the view is told again with none, though at Fit the view
+/// itself did not change.
+#[test]
+fn a_photo_left_before_it_goes_live_takes_its_placement() {
+    type Leave = fn(&mut Driven, &Path) -> Vec<Event>;
+    let cases: [(&str, &str, Leave); 3] = [
+        ("its decode failing", "undecodable.ARW", |driven, _| {
+            driven.settle()
+        }),
+        ("a Close", "synthetic.ARW", |driven, _| {
+            driven.run([Command::Close])
+        }),
+        ("an Open of another", "synthetic.ARW", |driven, path| {
+            driven.run([Command::Open(path.with_file_name("next.ARW"))])
+        }),
+    ];
+    for (case, name, leave) in cases {
+        let path = scratch("zoom-left-opening").with_file_name(name);
+        let mut driven = Driven::new(&[]);
+        driven.run([
+            Command::Resize {
+                width: 40,
+                height: 40,
+            },
+            Command::Open(path.clone()),
+        ]);
+        let opened = driven.pump(|_, events| events.iter().any(|e| matches!(e, Event::Opened(_))));
+        assert!(told(&opened).placement.is_some(), "{case}: {opened:?}");
+        let events = leave(&mut driven, &path);
+        let state = told(&events);
+        assert_eq!(
+            (state.view, state.placement),
+            (View::default(), None),
+            "{case}"
+        );
+        remove(&path);
+    }
+}
+
+/// A `Resize` between a photo's metadata and its going live places the view in the new
+/// bounds and tells that clamp, but commits nothing until the photo is live.
+#[test]
+fn a_resize_while_a_photo_opens_is_provisional() {
+    let path = scratch("zoom-resize-opening");
+    let mut driven = Driven::new(&[]);
+    let asked = View {
+        scale: ViewScale::Factor(1.0),
+        centre: [0.3, 0.5],
+    };
+    driven.run([
+        Command::View(asked),
+        Command::Open(path.clone()),
+        Command::Resize {
+            width: 40,
+            height: 40,
+        },
+    ]);
+    driven.pump(|_, events| events.iter().any(|e| matches!(e, Event::Opened(_))));
+    // 60 × 40 at 100% shows 0.357 to 0.643 of the photo, 84 wide.
+    let events = driven.run([Command::Resize {
+        width: 60,
+        height: 40,
+    }]);
+    let clamped = crate::view::place([84, 62], (60, 40), &asked).centre;
+    assert!(clamped[0] > 0.3);
+    assert_eq!(told(&events).view.centre, clamped, "{events:?}");
+    assert_eq!(driven.engine.view, asked);
+    driven.settle();
+    assert_eq!(driven.engine.view.centre, clamped);
+    remove(&path);
+}
+
+/// A photo open for viewing only takes the view as any photo does: its clamp is committed
+/// once it is live.
+#[test]
+fn a_photo_open_for_viewing_only_commits_its_clamp() {
+    let path = scratch("zoom-view-only");
+    let newer =
+        brightened_log("0.9.0").replace(r#"apertrust:version="2""#, r#"apertrust:version="3""#);
+    std::fs::write(sidecar::path_for(&path), newer).unwrap();
+    let mut driven = Driven::new(&[&Sample]);
+    driven.open(&path);
+    assert!(driven.engine.open.as_ref().unwrap().view_only.is_some());
+    let asked = View {
+        scale: ViewScale::Factor(1.0),
+        centre: [0.9, 0.5],
+    };
+    let events = driven.run([Command::View(asked)]);
+    let clamped = crate::view::place([84, 62], (40, 40), &asked).centre;
+    assert!(clamped[0] < 0.9);
+    assert_eq!(told(&events).view.centre, clamped);
+    assert_eq!(driven.engine.view.centre, clamped);
+    assert!(driven.writes().is_empty());
+    remove(&path);
+}
+
 #[test]
 fn a_frame_says_its_place_at_fit_and_at_fill() {
     let path = scratch("zoom-frame");
