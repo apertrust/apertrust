@@ -305,11 +305,18 @@ pub enum Command {
     /// yet a step is made one first. Undo puts the log back as it was, Redo compresses it
     /// again; one that leaves the log as it is changes nothing. The edit then saves as a
     /// completed change does.
-    Compress,
+    ///
+    /// With `up_to`, a History step's Compress up to Here (decision 91): the end first just
+    /// after that step, as [`Command::GoTo`] puts it, then compressed there, one undo record
+    /// that one Undo takes back, log and end together. A step not in the log is refused
+    /// ([`SessionError::UnknownStep`]), as `GoTo`'s is, once a change not yet a step is made
+    /// one, the rewrite changing nothing more; `None` compresses at the end.
+    Compress { up_to: Option<StepId> },
     /// Truncate History, darktable's Ctrl-click on compress: the person's steps after the end
     /// dropped, every step up to it and the default steps after it kept as they are, all of
-    /// them at end 0, as [`Command::Compress`] otherwise.
-    Truncate,
+    /// them at end 0, as [`Command::Compress`] otherwise; with `after`, a History step's
+    /// Truncate after Here, the end first just after that step, as `up_to` is.
+    Truncate { after: Option<StepId> },
     /// Discard History, darktable's discard: the history cleared and the edit reset, as
     /// going to Original and then [`Command::Compress`] does, one undo record that Undo
     /// takes back while the photo is open. The photo, with no history, is given its default
@@ -1143,7 +1150,8 @@ pub enum SessionError {
     /// A [`Command::Step`] holding no command.
     #[error("a step holds no command")]
     EmptyStep,
-    /// [`Command::GoTo`] named a step not in the open photo's history.
+    /// [`Command::GoTo`], or [`Command::Compress`] or [`Command::Truncate`] with a step,
+    /// named a step not in the open photo's history.
     #[error("the history has no step {step}")]
     UnknownStep { step: StepId },
     /// A tool that does not hold, left out of the session; or one whose binding failed,
@@ -3977,8 +3985,8 @@ impl Engine {
             Command::Undo => return self.undo(false),
             Command::Redo => return self.undo(true),
             Command::GoTo { step } => return self.go_to(step),
-            Command::Compress => return self.rewrite(history::Rewrite::Compress),
-            Command::Truncate => return self.rewrite(history::Rewrite::Truncate),
+            Command::Compress { up_to } => return self.rewrite(history::Rewrite::Compress(up_to)),
+            Command::Truncate { after } => return self.rewrite(history::Rewrite::Truncate(after)),
             Command::DiscardHistory => return self.rewrite(history::Rewrite::Discard),
             Command::Step { commands, .. } => return self.apply_step(commands),
             Command::Open(_)

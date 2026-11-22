@@ -209,11 +209,12 @@ struct Merge {
     published: Option<Instant>,
 }
 
-/// A command that rewrites the log rather than moving its end.
+/// A command that rewrites the log rather than moving its end: Compress and Truncate at the
+/// end, or with a step just after it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum Rewrite {
-    Compress,
-    Truncate,
+    Compress(Option<StepId>),
+    Truncate(Option<StepId>),
     Discard,
 }
 
@@ -821,17 +822,42 @@ impl PhotoHistory {
     /// Compress, `edit` the edit as it stands, a change not yet a step made one first, as for
     /// Undo: the log keeps the default steps and each tool's last step up to the end
     /// ([`Log::compressed`]), a log left with no step given a default step of each of
-    /// `defaults` again. The edit it leaves, or `None` where it leaves the log as it is.
-    pub(super) fn compress(&mut self, edit: &Edit, defaults: &[&str]) -> Option<Edit> {
+    /// `defaults` again. With `up_to`, the end first just after that step, in the same
+    /// record, so one Undo puts back the log and the end together. The edit it leaves, or
+    /// `None` where it leaves the log as it is; `Err` with a step not in the log, as
+    /// [`Self::go_to`] refuses it, which changes nothing more.
+    pub(super) fn compress(
+        &mut self,
+        edit: &Edit,
+        up_to: Option<StepId>,
+        defaults: &[&str],
+    ) -> Result<Option<Edit>, StepId> {
         self.complete(edit, StepSource::You, None);
-        self.rewrite(self.log.compressed(), Move::Compress, defaults)
+        let log = self.ending_at(up_to)?.compressed();
+        Ok(self.rewrite(log, Move::Compress, defaults))
     }
 
-    /// Truncate, as [`Self::compress`]: the person's steps after the end dropped
-    /// ([`Log::truncated`]).
-    pub(super) fn truncate(&mut self, edit: &Edit, defaults: &[&str]) -> Option<Edit> {
+    /// Truncate, as [`Self::compress`]: the person's steps after the end, or after `after`,
+    /// dropped ([`Log::truncated`]).
+    pub(super) fn truncate(
+        &mut self,
+        edit: &Edit,
+        after: Option<StepId>,
+        defaults: &[&str],
+    ) -> Result<Option<Edit>, StepId> {
         self.complete(edit, StepSource::You, None);
-        self.rewrite(self.log.truncated(), Move::Truncate, defaults)
+        let log = self.ending_at(after)?.truncated();
+        Ok(self.rewrite(log, Move::Truncate, defaults))
+    }
+
+    /// The log with its end just after `step`, as [`Self::go_to`] puts it, or as it is with
+    /// `None`; `Err` with a step not in it.
+    fn ending_at(&self, step: Option<StepId>) -> Result<Log, StepId> {
+        let mut log = self.log.clone();
+        if let Some(id) = step {
+            log.set_end(log.position(id).ok_or(id)? + 1);
+        }
+        Ok(log)
     }
 
     /// Discard History, as [`Self::compress`]: going to Original and compressing, so the
@@ -1394,7 +1420,8 @@ impl Engine {
     }
 
     /// [`Command::Compress`], [`Command::Truncate`] or [`Command::DiscardHistory`], as `what`
-    /// names it: the log rewritten, the edit its fold, a completed change, which saves it.
+    /// names it: the log rewritten, the edit its fold, a completed change, which saves it;
+    /// Compress's or Truncate's step not in the log refused, as [`Command::GoTo`]'s is.
     /// `DiscardHistory` on an edit open for viewing only, which [`Self::edit_command`] lets
     /// through only for a [`crate::sidecar::Problem`], any of them, never a newer build's
     /// edit, starts the log afresh, the file's unreadable parts going with the old log, and
@@ -1414,10 +1441,11 @@ impl Engine {
         }
         let edit = pending(open);
         let moved = match what {
-            Rewrite::Compress => open.history.compress(&edit, &defaults),
-            Rewrite::Truncate => open.history.truncate(&edit, &defaults),
-            Rewrite::Discard => open.history.discard(&edit, &defaults),
+            Rewrite::Compress(up_to) => open.history.compress(&edit, up_to, &defaults),
+            Rewrite::Truncate(after) => open.history.truncate(&edit, after, &defaults),
+            Rewrite::Discard => Ok(open.history.discard(&edit, &defaults)),
         };
+        let moved = moved.map_err(|step| SessionError::UnknownStep { step })?;
         Ok(moved_to(open, moved, &self.tools))
     }
 

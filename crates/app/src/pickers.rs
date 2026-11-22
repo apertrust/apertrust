@@ -326,8 +326,8 @@ impl Picked {
             | Command::Redo
             | Command::GoTo { .. }
             | Command::Reset
-            | Command::Compress
-            | Command::Truncate
+            | Command::Compress { .. }
+            | Command::Truncate { .. }
             | Command::DiscardHistory => Some(None),
             Command::ResetTool { tool } => Some(Some(tool.clone())),
             _ => None,
