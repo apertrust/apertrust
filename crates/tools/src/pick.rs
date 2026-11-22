@@ -33,6 +33,30 @@ pub enum Region {
     Area([f32; 4]),
 }
 
+/// darktable's half side across of the area a press on the photo starts, as a share of
+/// the photo's width (`src/views/darkroom.c:4064-4073`).
+const PRESSED: f32 = 0.02;
+
+impl Region {
+    /// The area a press at `at` starts on the photo for an area picker, as darktable's
+    /// press away from an area's corners starts one (`src/views/darkroom.c:4064-4073`):
+    /// 2 % of the photo's width each way of the point and as tall in its pixels, `aspect`
+    /// its width over its height, clamped to the photo. The app's press and the session's
+    /// one-shot pick both make it here, so the two never differ. Left, top, right, bottom,
+    /// as [`Region::Area`] holds them.
+    pub fn pressed(at: [f32; 2], aspect: f32) -> [f32; 4] {
+        let (across, down) = (PRESSED, PRESSED * aspect);
+        // A coordinate that is not a number at 0, as the session clamps a region.
+        let clamped = |v: f32| if v >= 0.0 { v.min(1.0) } else { 0.0 };
+        [
+            clamped(at[0] - across),
+            clamped(at[1] - down),
+            clamped(at[0] + across),
+            clamped(at[1] + down),
+        ]
+    }
+}
+
 /// darktable's `lib_colorpicker_stats` (`src/common/color_picker.c`): per channel over a
 /// region, the mean, the sum over its pixels divided by their number, and the exact
 /// minimum and maximum. In the picker's space; the fourth channel a hue moved half a turn
@@ -153,6 +177,37 @@ impl Patch {
         Patch {
             srgb: apertrust_color::xyz_d50_to_srgb(xyz).map(|v| v.clamp(0.0, 1.0)),
             lch,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A press's area against darktable's `fbox` (`src/views/darkroom.c:4064-4073`), `dx`
+    /// 0.02 and `dy` scaled by the processed width over the height, at a few sizes, and
+    /// clamped to the photo at its edges.
+    #[test]
+    fn a_press_starts_darktable_s_area_clamped_to_the_photo() {
+        #[rustfmt::skip]
+        let cases: [([u32; 2], [f32; 2], [f32; 4]); 6] = [
+            // Landscape, 3:2: as tall as 3 % of the height.
+            ([6000, 4000], [0.5, 0.5], [0.48, 0.47, 0.52, 0.53]),
+            // Portrait, 2:3.
+            ([4000, 6000], [0.25, 0.75], [0.23, 0.75 - 0.04 / 3.0, 0.27, 0.75 + 0.04 / 3.0]),
+            // Square.
+            ([1000, 1000], [0.5, 0.3], [0.48, 0.28, 0.52, 0.32]),
+            // Wide, 16:9.
+            ([1920, 1080], [0.7, 0.4], [0.68, 0.4 - 0.32 / 9.0, 0.72, 0.4 + 0.32 / 9.0]),
+            // Near the edges, held to the photo.
+            ([6000, 4000], [0.01, 0.99], [0.0, 0.96, 0.03, 1.0]),
+            ([6000, 4000], [1.0, 0.0], [0.98, 0.0, 1.0, 0.03]),
+        ];
+        for ([width, height], at, want) in cases {
+            let area = Region::pressed(at, width as f32 / height as f32);
+            let near = area.iter().zip(want).all(|(a, b)| (a - b).abs() < 1e-6);
+            assert!(near, "{width}×{height} at {at:?}: {area:?}, not {want:?}");
         }
     }
 }

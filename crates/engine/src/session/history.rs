@@ -1197,6 +1197,10 @@ impl Engine {
                 return Err(refused);
             }
         }
+        // A one-shot pick's turning on, held for its pick, is a step of its own first.
+        if on_edit(&command) {
+            self.save_held_once();
+        }
         let gesture = (self.open.as_ref())
             .and_then(|open| open.gesture.as_ref())
             .map(|gesture| (gesture.tool.clone(), gesture.source, gesture.note.clone()));

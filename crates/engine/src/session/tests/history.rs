@@ -361,6 +361,47 @@ fn a_picker_turned_on_among_the_default_steps_applies_them() {
     remove(&path);
 }
 
+/// A one-shot pick with the end among the default steps applies them as `On` does, the
+/// turning on and the pick's writes one step of its tool, of source Auto, not two.
+#[test]
+fn a_one_shot_pick_among_the_default_steps_is_one_step() {
+    let path = scratch("history-default-once");
+    let mut driven = Driven::new(DEFAULTS);
+    let (_, _) = opened_with_defaults(&mut driven, &path);
+    let all = planned(&driven);
+    driven.run([Command::GoTo { step: None }]);
+    let events = driven.run([Command::Picker(PickerCommand::Once {
+        picker: PickerRef::Tool {
+            tool: "exposure",
+            picker: "exposure",
+        },
+        region: Region::Point([0.5, 0.5]),
+        keys: PickKeys::default(),
+        settings: Vec::new(),
+        channel: None,
+    })]);
+    assert!(failures(&events).is_empty(), "{events:?}");
+    assert!(on(&events, "exposure"));
+    assert_eq!(planned(&driven), all);
+    // Its reading, applied, then the picker off.
+    let (start, mut picked) = (Instant::now(), Vec::new());
+    while driven.engine.pickers.on() || driven.engine.pickers.pending() {
+        assert!(start.elapsed() < TEST_WAIT, "no reading");
+        picked.extend(driven.engine.picked());
+        std::thread::sleep(POLL_INTERVAL);
+    }
+    let after = history(&picked);
+    assert_eq!((after.steps.len(), after.end), (4, 4));
+    assert_eq!(after.steps[3].source, StepSource::Auto);
+    assert_eq!(after.steps[3].changes[0].tool, "exposure");
+    assert_eq!(fold(&driven), edit(&driven));
+    driven.writes();
+    let read = sidecar::read(&sidecar::path_for(&path), OPERATIONS, DEFAULTS, &[]).unwrap();
+    assert_eq!((read.log.steps().len(), read.log.end()), (4, 4));
+    assert!(read.edit.unapplied.is_empty());
+    remove(&path);
+}
+
 /// A newer file another program wrote, taken in on a photo whose log is its default steps
 /// never written, as a move among them finds it: no move of the end is lost, since the
 /// file never held one.

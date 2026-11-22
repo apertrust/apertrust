@@ -2346,3 +2346,776 @@ fn a_newer_file_s_white_balance_stands(name: &str, reopen: bool) {
     );
     remove(&path);
 }
+
+/// `Once` for the picker `id` of `tool`, reading `region`.
+fn once(tool: &'static str, id: &'static str, region: Region) -> Command {
+    picker(PickerCommand::Once {
+        picker: PickerRef::Tool { tool, picker: id },
+        region,
+        keys: PickKeys::default(),
+        settings: Vec::new(),
+        channel: None,
+    })
+}
+
+/// The source and tool of each step of the open photo's log, in order.
+fn sources(driven: &Driven) -> Vec<(crate::history::StepSource, String)> {
+    let open = driven.engine.open.as_ref().unwrap();
+    let steps = open.history.log().steps().iter().map(|step| step.source);
+    steps.zip(steps_of(driven)).collect()
+}
+
+/// The newest command a `Saved` in `writes` is through.
+fn saved_through(writes: &[Event]) -> Option<u64> {
+    (writes.iter())
+        .filter_map(|e| match e {
+            Event::Saved { through, .. } => Some(*through),
+            _ => None,
+        })
+        .max()
+}
+
+/// A one-shot pick (`docs/pickers.md`, A one-shot pick): one reading of the area a click
+/// starts for an area picker, its pick's values those the tool's pick gives for it, one
+/// step of its tool, of source Auto, saved through it; its events in order in the batch
+/// its reading arrives in, with no frame part; then the picker off, its own area still the
+/// default for its next `On`.
+#[test]
+fn a_one_shot_pick_is_one_step_of_auto_and_leaves_nothing_on() {
+    use crate::history::StepSource;
+    let path = scratch("picker-once");
+    let mut driven = Driven::new(&[&Sample]);
+    let opened = driven.open(&path);
+    let [width, height] = values(&opened).extent;
+    driven.writes();
+    let before = sources(&driven);
+    let events = driven.run([once("sample", "brightness", Region::Point([0.3, 0.4]))]);
+    assert!(failures(&events).is_empty(), "{events:?}");
+    let command = driven.engine.applied;
+    let picked = driven.picked();
+    let kinds: Vec<&str> = (picked.iter())
+        .filter_map(|e| match e {
+            Event::Picker {
+                reading: Some(_), ..
+            } => Some("reading"),
+            Event::Values(_) => Some("values"),
+            Event::History(_) => Some("history"),
+            Event::Frame(_) => Some("frame"),
+            Event::Picker { reading: None, .. } => Some("end"),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        kinds,
+        ["reading", "values", "history", "frame", "end"],
+        "{picked:?}"
+    );
+    let Some(reading) = readings(&picked)[0] else {
+        unreachable!()
+    };
+    let pressed = Region::Area(Region::pressed([0.3, 0.4], width as f32 / height as f32));
+    assert!(same(reading.region, pressed), "{reading:?}");
+    assert!(reading.frame.is_none(), "{reading:?}");
+    let part = reading.tool.as_ref().expect("its tool part");
+    assert!(
+        part.picked
+            .as_ref()
+            .is_some_and(|shown| shown.patch.is_some())
+    );
+    let output = part.output.expect("its output read");
+    let brightness = number(values(&picked), "sample", "brightness");
+    let expected = (0.18 / grey(&output)).log2();
+    assert!(
+        (brightness - expected).abs() < 1e-6,
+        "{brightness} against {expected}"
+    );
+    assert!(!driven.engine.pickers.on());
+    let after = sources(&driven);
+    assert_eq!(after[..before.len()], before[..]);
+    assert_eq!(
+        after[before.len()..],
+        [(StepSource::Auto, "sample".to_owned())]
+    );
+    let writes = driven.writes();
+    assert_eq!(written(&writes).len(), 1, "{writes:?}");
+    assert!(saved_through(&writes).is_some_and(|t| t >= command));
+    assert!(driven.engine.pickers.owed.is_empty());
+    // The picker's own area is untouched: `On` starts at the default.
+    driven.run([on_tool("brightness", true)]);
+    let picked = driven.picked();
+    let first = readings(&picked)[0].as_ref().expect("a reading");
+    assert!(same(first.region, DEFAULT_AREA), "{first:?}");
+    remove(&path);
+}
+
+/// What a one-shot pick reads: a point as a plain click there reads in darktable, the
+/// point for a picker that takes points and the area a press starts for an area picker,
+/// clamped to the photo; an area as sent, its corners in any order. A picker on is turned
+/// off first, and nothing is left on.
+#[test]
+fn a_one_shot_pick_reads_a_point_as_darktable_s_click_and_an_area_as_sent() {
+    let path = scratch("picker-once-regions");
+    let mut driven = Driven::new(&[&Sample]);
+    let opened = driven.open(&path);
+    let [width, height] = values(&opened).extent;
+    let aspect = width as f32 / height as f32;
+    let cases = [
+        (
+            "brightness",
+            Region::Point([0.3, 0.4]),
+            Region::Area(Region::pressed([0.3, 0.4], aspect)),
+        ),
+        (
+            "brightness",
+            Region::Point([-0.5, 2.0]),
+            Region::Area(Region::pressed([0.0, 1.0], aspect)),
+        ),
+        (
+            "brightness",
+            Region::Area([0.6, 0.7, 0.2, 0.1]),
+            Region::Area([0.2, 0.1, 0.6, 0.7]),
+        ),
+        ("show", Region::Point([0.3, 0.4]), Region::Point([0.3, 0.4])),
+        (
+            "show",
+            Region::Area([0.2, 0.1, 0.6, 0.7]),
+            Region::Area([0.2, 0.1, 0.6, 0.7]),
+        ),
+    ];
+    for (id, sent, read) in cases {
+        // The Colour picker's on: turned off first.
+        driven.reading([on(true)]);
+        let events = driven.run([once("sample", id, sent)]);
+        assert!(failures(&events).is_empty(), "{id} {sent:?}: {events:?}");
+        assert!(matches!(readings(&events)[..], [None]), "{events:?}");
+        let picked = driven.picked();
+        let reading = readings(&picked)[0].as_ref().expect("a reading");
+        assert!(same(reading.region, read), "{id} {sent:?}: {reading:?}");
+        assert!(!driven.engine.pickers.on(), "{id} {sent:?}");
+    }
+    remove(&path);
+}
+
+/// Two quick one-shot picks are two steps, never merged: one Undo takes back each.
+#[test]
+fn two_one_shot_picks_are_two_steps() {
+    use crate::history::StepSource;
+    let path = scratch("picker-once-twice");
+    let mut driven = Driven::new(&[&Sample]);
+    driven.open(&path);
+    let before = sources(&driven);
+    driven.run([once("sample", "brightness", Region::Point([0.3, 0.4]))]);
+    let first = number(values(&driven.picked()), "sample", "brightness");
+    driven.run([once("sample", "brightness", Region::Point([0.7, 0.6]))]);
+    let second = number(values(&driven.picked()), "sample", "brightness");
+    assert_ne!(first, second);
+    let after = sources(&driven);
+    assert_eq!(
+        after[before.len()..],
+        [
+            (StepSource::Auto, "sample".to_owned()),
+            (StepSource::Auto, "sample".to_owned())
+        ]
+    );
+    let undone = driven.run([Command::Undo]);
+    assert_eq!(number(values(&undone), "sample", "brightness"), first);
+    let undone = driven.run([Command::Undo]);
+    assert_eq!(number(values(&undone), "sample", "brightness"), 0.0);
+    remove(&path);
+}
+
+/// A one-shot pick that neither turns its tool on nor writes makes no step, writes no
+/// file, and is answered with the edit reported held.
+#[test]
+fn a_one_shot_pick_that_changes_nothing_makes_no_step() {
+    let path = scratch("picker-once-nothing");
+    let sidecar = sidecar::path_for(&path);
+    let mut driven = Driven::new(&[&Sample]);
+    driven.open(&path);
+    driven.writes();
+    let before = sources(&driven);
+    driven.run([once("sample", "show", Region::Point([0.3, 0.4]))]);
+    let command = driven.engine.applied;
+    let picked = driven.picked();
+    assert!(
+        !picked.iter().any(|e| matches!(e, Event::History(_))),
+        "{picked:?}"
+    );
+    assert!(end(&picked).is_some(), "{picked:?}");
+    assert_eq!(sources(&driven), before);
+    let writes = driven.writes();
+    assert!(saved_through(&writes).is_some_and(|t| t >= command));
+    assert!(!sidecar.exists());
+    assert!(driven.engine.pickers.owed.is_empty());
+    remove(&path);
+}
+
+/// A one-shot pick of a switched tool that is off turns it on in the same step as its
+/// pick, held until then, never a step of its own: Colour balance RGB's hue picker, whose
+/// pick writes nothing yet, makes one step of the tool turned on, and Undo turns it off.
+#[test]
+fn a_one_shot_pick_turns_its_tool_on_in_its_own_step() {
+    use crate::history::StepSource;
+    let path = scratch("picker-once-switched");
+    let mut driven = Driven::new(&[&Sample, &ColourBalanceRgb]);
+    driven.open(&path);
+    driven.writes();
+    let enabled = |values: &Values| {
+        (values.tools.iter())
+            .find(|m| m.tool == "colorbalancergb")
+            .is_some_and(|m| m.enabled)
+    };
+    let before = sources(&driven);
+    let events = driven.run([once(
+        "colorbalancergb",
+        "global_hue",
+        Region::Point([0.5, 0.5]),
+    )]);
+    assert!(failures(&events).is_empty(), "{events:?}");
+    assert!(enabled(values(&events)));
+    assert!(
+        !events.iter().any(|e| matches!(e, Event::History(_))),
+        "{events:?}"
+    );
+    let picked = driven.picked();
+    let history = picked.iter().position(|e| matches!(e, Event::History(_)));
+    let ended = picked
+        .iter()
+        .position(|e| matches!(e, Event::Picker { reading: None, .. }));
+    assert!(
+        history.is_some_and(|h| ended.is_some_and(|e| h < e)),
+        "{picked:?}"
+    );
+    let after = sources(&driven);
+    assert_eq!(
+        after[before.len()..],
+        [(StepSource::Auto, "colorbalancergb".to_owned())]
+    );
+    assert_eq!(written(&driven.writes()).len(), 1);
+    let undone = driven.run([Command::Undo]);
+    assert!(!enabled(values(&undone)));
+    remove(&path);
+}
+
+/// A one-shot pick is refused with `On`'s reasons, writing nothing, making no step and
+/// leaving nothing on: before the photo is live, for a picker no tool declares, one of a
+/// tool the session lacks, the Colour picker's, a setting no picker of the tool reads,
+/// while a tool is hidden, a picker not ready, and on a photo open for viewing only.
+#[test]
+fn a_one_shot_pick_is_refused_with_on_s_reasons() {
+    use apertrust_tools::exposure::Exposure;
+    let refused = |events: &[Event]| match &failures(events)[..] {
+        [error] => format!("{error:?}"),
+        _ => panic!("{events:?}"),
+    };
+    let at = Region::Point([0.5, 0.5]);
+    let path = scratch("picker-once-refused");
+    let mut driven = Driven::new(&[&Orientation, &Sample]);
+    assert_eq!(
+        refused(&driven.run([once("sample", "brightness", at)])),
+        "NotLive"
+    );
+    driven.open(&path);
+    driven.writes();
+    let before = sources(&driven);
+    let colour = picker(PickerCommand::Once {
+        picker: PickerRef::ColourPicker,
+        region: at,
+        keys: PickKeys::default(),
+        settings: Vec::new(),
+        channel: None,
+    });
+    let mut unread = once("sample", "brightness", at);
+    if let Command::Picker(PickerCommand::Once { settings, .. }) = &mut unread {
+        *settings = vec![("target", ControlValue::Number(50.0))];
+    }
+    let cases = [
+        (once("sample", "contrast", at), "UnknownPicker"),
+        (once("exposure", "exposure", at), "UnknownPicker"),
+        (colour, "UnknownPicker"),
+        (unread, "UnknownSetting(\"target\")"),
+    ];
+    for (command, reason) in cases {
+        assert_eq!(refused(&driven.run([command])), reason);
+        assert!(!driven.engine.pickers.on());
+    }
+    // While the History tab's eye hides a tool.
+    driven.run([hide("flip", true)]);
+    assert_eq!(
+        refused(&driven.run([once("sample", "brightness", at)])),
+        "Hidden"
+    );
+    driven.run([hide("flip", false)]);
+    assert!(driven.picked().is_empty());
+    assert_eq!(sources(&driven), before);
+    assert!(written(&driven.writes()).is_empty());
+    remove(&path);
+
+    // Exposure's picker toward a reference with none set.
+    let path = scratch("picker-once-not-ready");
+    let mut driven = Driven::new(&[&Exposure]);
+    driven.open(&path);
+    let mut not_ready = once("exposure", "exposure", at);
+    if let Command::Picker(PickerCommand::Once { settings, .. }) = &mut not_ready {
+        *settings = toward_reference(None);
+    }
+    assert_eq!(refused(&driven.run([not_ready])), "NotReady");
+    assert!(!driven.engine.pickers.on());
+    remove(&path);
+
+    // On a photo open for viewing only.
+    let path = scratch("picker-once-view-only");
+    let newer = brightened("0.9.0").replace(r#"apertrust:version="1""#, r#"apertrust:version="3""#);
+    std::fs::write(sidecar::path_for(&path), newer).unwrap();
+    let mut driven = Driven::new(&[&Sample]);
+    driven.open(&path);
+    let events = driven.run([once("sample", "brightness", at)]);
+    assert!(
+        matches!(failures(&events)[..], [SessionError::ViewOnly(_)]),
+        "{events:?}"
+    );
+    assert!(!driven.engine.pickers.on());
+    remove(&path);
+}
+
+/// A one-shot pick's region is mapped through the geometry as every picker's is: a point
+/// on a photo turned clockwise reads the part of the scene it read upright, and what `On`
+/// and a move there read, bit for bit, its region drawn where it was sent; an area
+/// picker's click starts its area on the turned photo's shape.
+#[test]
+fn a_one_shot_pick_maps_its_region_through_the_geometry() {
+    let path = scratch("picker-once-turned");
+    let mut driven = Driven::new(&[&Orientation, &Sample]);
+    driven.open(&path);
+    // The scene's (0.3, 0.45), upright, then turned clockwise, where it shows at (1 − y, x).
+    let input = |driven: &mut Driven, at: [f32; 2]| {
+        driven.run([once("sample", "show", Region::Point(at))]);
+        let picked = driven.picked();
+        let reading = readings(&picked)[0].clone().expect("a reading");
+        assert!(same(reading.region, Region::Point(at)), "{reading:?}");
+        reading.tool.and_then(|part| part.input).expect("its input")
+    };
+    let upright = input(&mut driven, [0.3, 0.45]);
+    let turned = driven.run([Command::SetControl {
+        tool: "flip".to_owned(),
+        control: "orientation".to_owned(),
+        value: ControlValue::Choice(6),
+        done: true,
+    }]);
+    let [width, height] = values(&turned).extent;
+    assert_eq!(bits(&input(&mut driven, [0.55, 0.3])), bits(&upright));
+    let at = [0.75, 0.25];
+    driven.run([once("sample", "show", Region::Point(at))]);
+    let picked = driven.picked();
+    let once_read = readings(&picked)[0].clone().expect("a reading");
+    assert!(same(once_read.region, Region::Point(at)), "{once_read:?}");
+    driven.run([on_tool("show", false)]);
+    driven.picked();
+    driven.run([point(at)]);
+    let picked = driven.picked();
+    let want = latest(&picked);
+    let read = once_read.tool.expect("its tool part");
+    assert_eq!(bits(&read.input.unwrap()), bits(&want.input.unwrap()));
+    driven.run([picker(PickerCommand::Off)]);
+    // An area picker's click: as tall in the turned photo's pixels as 2 % of its width.
+    driven.run([once("sample", "brightness", Region::Point(at))]);
+    let picked = driven.picked();
+    let reading = readings(&picked)[0].as_ref().expect("a reading");
+    let pressed = Region::Area(Region::pressed(at, width as f32 / height as f32));
+    assert!(same(reading.region, pressed), "{reading:?}");
+    remove(&path);
+}
+
+/// The first pass's picker cursors' tools: White balance's one-shot pick on the synthetic
+/// raw writes the coefficients that make the area a click starts neutral, from image area,
+/// and Exposure's sets its exposure; each one step of its tool, of source Auto, saved
+/// through it.
+#[test]
+fn white_balance_s_and_exposure_s_one_shot_picks_are_one_step_each() {
+    use apertrust_tools::exposure::Exposure;
+    use apertrust_tools::white_balance::{SETTINGS, WhiteBalance};
+
+    use crate::history::StepSource;
+    let path = scratch("picker-once-tools");
+    let mut driven = Driven::new(&[&WhiteBalance, &Exposure]);
+    let opened = driven.open(&path);
+    let exposure = number(values(&opened), "exposure", "exposure");
+    driven.writes();
+    let before = sources(&driven);
+    let at = Region::Point([0.5, 0.5]);
+
+    driven.run([once("temperature", "spot", at)]);
+    let command = driven.engine.applied;
+    let picked = driven.picked();
+    assert!(failures(&picked).is_empty(), "{picked:?}");
+    let from_image_area = SETTINGS.iter().position(|o| *o == "spot").unwrap() as u32;
+    assert_eq!(
+        control(values(&picked), "temperature", "preset").value,
+        ControlValue::Choice(from_image_area)
+    );
+    let m = latest(&picked).input.expect("its input read").mean;
+    let inverse = |mean: f32| if mean > 0.001 { 1.0 / mean } else { 1.0 };
+    for (c, id) in ["red", "green", "blue"].into_iter().enumerate() {
+        let expected = match c {
+            1 => 1.0,
+            _ => (inverse(m[c]) / inverse(m[1])).clamp(0.0, 8.0),
+        };
+        let picked = number(values(&picked), "temperature", id);
+        assert!(
+            (picked - expected).abs() <= 1e-6,
+            "{id}: {picked} against {expected}"
+        );
+    }
+    assert!(saved_through(&driven.writes()).is_some_and(|t| t >= command));
+
+    driven.run([once("exposure", "exposure", at)]);
+    let command = driven.engine.applied;
+    let picked = driven.picked();
+    assert!(failures(&picked).is_empty(), "{picked:?}");
+    assert_ne!(number(values(&picked), "exposure", "exposure"), exposure);
+    assert!(saved_through(&driven.writes()).is_some_and(|t| t >= command));
+
+    let after = sources(&driven);
+    assert_eq!(
+        after[before.len()..],
+        [
+            (StepSource::Auto, "temperature".to_owned()),
+            (StepSource::Auto, "exposure".to_owned())
+        ]
+    );
+    assert!(!driven.engine.pickers.on());
+    remove(&path);
+}
+
+/// While only a one-shot pick's picker is on, a move, a switch or a reset is refused as
+/// with none on: nothing of a one-shot is left to move.
+#[test]
+fn a_one_shot_pick_takes_no_moves() {
+    let path = scratch("picker-once-no-moves");
+    let mut driven = Driven::new(&[&Sample]);
+    driven.open(&path);
+    driven.run([once("sample", "brightness", Region::Point([0.3, 0.4]))]);
+    for command in [
+        point([0.5, 0.5]),
+        area([0.1, 0.1], [0.2, 0.2]),
+        picker(PickerCommand::Switch),
+        picker(PickerCommand::Reset),
+    ] {
+        let events = driven.run([command]);
+        assert!(
+            matches!(failures(&events)[..], [SessionError::NoPicker]),
+            "{events:?}"
+        );
+        assert!(driven.engine.pickers.on());
+    }
+    driven.picked();
+    assert!(!driven.engine.pickers.on());
+    remove(&path);
+}
+
+/// The source and tool of each step `path`'s file holds, once the writer is done.
+fn saved_steps(driven: &Driven, path: &Path) -> Vec<(crate::history::StepSource, String)> {
+    use crate::history::{Change, Entry};
+    driven.writes();
+    let read = sidecar::read(
+        &sidecar::path_for(path),
+        OPERATIONS,
+        &driven.engine.tools,
+        &[],
+    )
+    .expect("the file");
+    (read.log.steps().iter())
+        .map(|step| match &step.change {
+            Change::Entry(Entry::Tool { tool, .. }) => (step.source, tool.clone()),
+            other => (step.source, format!("{other:?}")),
+        })
+        .collect()
+}
+
+/// A one-shot pick ended before its reading arrives saves what it turned on as a step of
+/// its own, of source Auto: by `Off`, another photo, a close, a second one-shot, and a
+/// command on the edit, of its tool or another, whose step follows it and never takes it
+/// in.
+#[test]
+fn a_one_shot_pick_ended_early_saves_its_turning_on_as_a_step_of_its_own() {
+    use crate::history::StepSource;
+    let mut driven = Driven::new(&[&Sample, &ColourBalanceRgb]);
+    let hue = || once("colorbalancergb", "global_hue", Region::Point([0.5, 0.5]));
+    let auto = (StepSource::Auto, "colorbalancergb".to_owned());
+    let other = scratch("picker-once-early-other");
+    // Each with the tool of the person's step that follows, if any.
+    let cases: [(&str, Command, Option<&str>); 6] = [
+        ("off", picker(PickerCommand::Off), None),
+        ("open", Command::Open(other.clone()), None),
+        ("close", Command::Close, None),
+        (
+            "once",
+            once("sample", "show", Region::Point([0.3, 0.4])),
+            None,
+        ),
+        (
+            "its tool",
+            Command::SetControl {
+                tool: "colorbalancergb".to_owned(),
+                control: "white_fulcrum".to_owned(),
+                value: ControlValue::Number(1.0),
+                done: true,
+            },
+            Some("colorbalancergb"),
+        ),
+        (
+            "another tool",
+            set("brightness", ControlValue::Number(0.5), true),
+            Some("sample"),
+        ),
+    ];
+    for (name, ender, then) in cases {
+        let path = scratch(&format!("picker-once-early-{}", name.replace(' ', "-")));
+        driven.open(&path);
+        let events = driven.run([hue(), ender]);
+        assert!(failures(&events).is_empty(), "{name}: {events:?}");
+        // The step it made is sent, whatever ended it.
+        assert!(
+            events.iter().any(|e| matches!(e, Event::History(_))),
+            "{name}: {events:?}"
+        );
+        driven.picked();
+        assert!(!driven.engine.pickers.on(), "{name}");
+        let steps = saved_steps(&driven, &path);
+        let made: Vec<_> = (steps.into_iter())
+            .filter(|(source, _)| *source != StepSource::Default)
+            .collect();
+        let then = then.map(|tool| (StepSource::You, tool.to_owned()));
+        let want: Vec<_> = [auto.clone()].into_iter().chain(then).collect();
+        assert_eq!(made, want, "{name}");
+        remove(&path);
+    }
+    remove(&other);
+}
+
+/// A switched tool, off by default, with a picker on grain's input that writes its level
+/// as [`Configured`]'s does: it owns grain's strength, so grain runs while it is on, and
+/// binds nothing.
+struct Switched;
+
+static SWITCHED: ProcessingDefinition = ProcessingDefinition {
+    tool: ToolDefinition::processing(
+        "switched",
+        &[Tab {
+            id: None,
+            rows: &[Row::Slider(
+                Slider::new("level").quad(Quad::Picker("level")),
+            )],
+        }],
+    ),
+    version: 1,
+    layers: false,
+    auto: false,
+    switched: true,
+    controls: &[Control {
+        id: "level",
+        kind: ControlKind::Number {
+            min: 0.0,
+            max: 10.0,
+            step: 0.01,
+            default: 0.0,
+        },
+        unit: None,
+        unported: false,
+    }],
+    preset_rows: &[],
+    views: &[],
+    pickers: &[Picker {
+        id: "level",
+        operation: "grain",
+        kind: PickerKind::Area,
+        denoise: false,
+        output: false,
+        space: Space::Operation,
+        keep: false,
+        writes: &["level"],
+        settings: &[],
+        words_by: None,
+    }],
+    facts: None,
+};
+
+static SWITCHED_OWNS: [Owned; 1] = [Owned::new("grain", "strength")];
+
+impl ProcessingTool for Switched {
+    fn definition(&self) -> &'static ProcessingDefinition {
+        &SWITCHED
+    }
+
+    fn owns(&self) -> &'static [Owned] {
+        &SWITCHED_OWNS
+    }
+
+    fn bind(&self, _: &ToolValues, _: &ImageContext, _: &Base) -> Vec<Setting> {
+        Vec::new()
+    }
+
+    fn pick(
+        &self,
+        picker: &str,
+        reading: &apertrust_tools::pick::Reading,
+        values: &Controls,
+        image: &ImageContext,
+        settings: &[(&str, ControlValue)],
+        channel: Option<&str>,
+        last: Option<&apertrust_tools::pick::Reading>,
+        keys: PickKeys,
+    ) -> Option<apertrust_tools::pick::Picked> {
+        let mut picked = (Configured.pick(
+            picker, reading, values, image, settings, channel, last, keys,
+        ))?;
+        picked.shown.settings.clear();
+        Some(picked)
+    }
+}
+
+/// A one-shot pick of a switched tool that is off, outside the default steps, whose pick
+/// writes: the turning on and the pick's write one step of the tool, of source Auto.
+#[test]
+fn a_one_shot_pick_of_a_tool_that_is_off_is_one_step_with_its_write() {
+    use crate::history::StepSource;
+    let path = scratch("picker-once-off-writes");
+    let mut driven = Driven::new(&[&Switched]);
+    let opened = driven.open(&path);
+    let enabled = |values: &Values| {
+        (values.tools.iter())
+            .find(|m| m.tool == "switched")
+            .is_some_and(|m| m.enabled)
+    };
+    assert!(!enabled(values(&opened)));
+    let before = sources(&driven);
+    let events = driven.run([once("switched", "level", Region::Point([0.5, 0.5]))]);
+    assert!(failures(&events).is_empty(), "{events:?}");
+    let picked = driven.picked();
+    assert!(failures(&picked).is_empty(), "{picked:?}");
+    assert!(enabled(values(&picked)));
+    assert_ne!(number(values(&picked), "switched", "level"), 0.0);
+    let after = sources(&driven);
+    assert_eq!(
+        after[before.len()..],
+        [(StepSource::Auto, "switched".to_owned())]
+    );
+    let undone = driven.run([Command::Undo]);
+    assert!(!enabled(values(&undone)));
+    remove(&path);
+}
+
+/// A move through the history before a one-shot pick's reading arrives, Undo, Redo or
+/// `GoTo`, or a rewrite of it, Compress, Truncate or Discard History, ends it as `Off` would: its turning on a step of its own, which the move takes
+/// back or puts back, and its reading, arriving after, writing nothing, so the steps the
+/// move left after the end stay for Redo.
+#[test]
+fn a_move_through_the_history_ends_a_one_shot_pick_before_its_reading() {
+    let path = scratch("picker-once-undo");
+    let mut driven = Driven::new(&[&Switched]);
+    driven.open(&path);
+    driven.writes();
+    let enabled = |values: &Values| {
+        (values.tools.iter())
+            .find(|m| m.tool == "switched")
+            .is_some_and(|m| m.enabled)
+    };
+    let events = driven.run([
+        once("switched", "level", Region::Point([0.5, 0.5])),
+        Command::Undo,
+    ]);
+    assert!(failures(&events).is_empty(), "{events:?}");
+    assert!(!enabled(values(&events)));
+    assert!(!driven.engine.pickers.on());
+    // Its step's `History` after the batch's values, and one write, the move's.
+    let at = |f: fn(&Event) -> bool| events.iter().position(f);
+    let values_at = at(|e| matches!(e, Event::Values(_)));
+    assert!(
+        at(|e| matches!(e, Event::History(_))) > values_at,
+        "{events:?}"
+    );
+    assert_eq!(written(&driven.writes()).len(), 1);
+    let picked = driven.picked();
+    assert!(failures(&picked).is_empty(), "{picked:?}");
+    assert!(
+        !picked.iter().any(|e| matches!(e, Event::Values(_))),
+        "{picked:?}"
+    );
+    let redone = driven.run([Command::Redo]);
+    assert!(failures(&redone).is_empty(), "{redone:?}");
+    assert!(enabled(values(&redone)));
+    assert_eq!(number(values(&redone), "switched", "level"), 0.0);
+    remove(&path);
+
+    // A tool already on: the Undo takes back the step before, and Redo puts it back.
+    let path = scratch("picker-once-undo-on");
+    let mut driven = Driven::new(&[&Sample]);
+    driven.open(&path);
+    driven.run([set("brightness", ControlValue::Number(0.4), true)]);
+    let events = driven.run([
+        once("sample", "brightness", Region::Point([0.3, 0.4])),
+        Command::Undo,
+    ]);
+    assert!(failures(&events).is_empty(), "{events:?}");
+    assert!(!driven.engine.pickers.on());
+    let picked = driven.picked();
+    assert!(
+        !picked.iter().any(|e| matches!(e, Event::Values(_))),
+        "{picked:?}"
+    );
+    let redone = driven.run([Command::Redo]);
+    assert!(failures(&redone).is_empty(), "{redone:?}");
+    assert_eq!(number(values(&redone), "sample", "brightness"), 0.4);
+    remove(&path);
+
+    // Compress, Truncate and Discard History end it too: its reading writes nothing on
+    // the log they leave.
+    for rewrite in [
+        Command::Compress { up_to: None },
+        Command::Truncate { after: None },
+        Command::DiscardHistory,
+    ] {
+        let path = scratch("picker-once-rewrite");
+        let mut driven = Driven::new(&[&Sample]);
+        driven.open(&path);
+        let events = driven.run([
+            once("sample", "brightness", Region::Point([0.3, 0.4])),
+            rewrite.clone(),
+        ]);
+        assert!(failures(&events).is_empty(), "{rewrite:?}: {events:?}");
+        assert!(!driven.engine.pickers.on(), "{rewrite:?}");
+        let picked = driven.picked();
+        assert!(
+            !picked.iter().any(|e| matches!(e, Event::Values(_))),
+            "{rewrite:?}: {picked:?}"
+        );
+        remove(&path);
+    }
+}
+
+/// The pickers failing while a one-shot pick's turning on is held save it as a step of
+/// its own and send the `History` it made, as `Off` does.
+#[test]
+fn the_pickers_failing_send_the_step_a_held_one_shot_made() {
+    use crate::history::StepSource;
+    let path = scratch("picker-once-failed");
+    let mut driven = Driven::new(&[&Switched]);
+    driven.open(&path);
+    let before = sources(&driven);
+    let events = driven.run([once("switched", "level", Region::Point([0.5, 0.5]))]);
+    assert!(failures(&events).is_empty(), "{events:?}");
+    let mut events = Vec::new();
+    driven
+        .engine
+        .pickers_fail("refused".to_owned(), &mut events);
+    assert!(
+        events.iter().any(|e| matches!(e, Event::History(_))),
+        "{events:?}"
+    );
+    let after = sources(&driven);
+    assert_eq!(
+        after[before.len()..],
+        [(StepSource::Auto, "switched".to_owned())]
+    );
+    remove(&path);
+}
