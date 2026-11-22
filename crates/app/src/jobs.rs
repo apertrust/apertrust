@@ -352,6 +352,8 @@ impl Mirror {
             ActivityAction::TryAgain(job) => self.try_again(job),
             ActivityAction::Dismiss(job) => self.remove(|row| row.id.get() == job),
             ActivityAction::ClearFinished => self.remove(|row| row.phase.cleared()),
+            // No row has a menu yet.
+            ActivityAction::Menu(_) => Do::Nothing,
         }
     }
 
