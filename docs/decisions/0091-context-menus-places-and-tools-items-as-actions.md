@@ -22,7 +22,7 @@ A tool's section already has its own buttons: reset, presets and options (⋯). 
   - the browser bar (built: Position ▸);
   - Collections' folder rows (built);
   - the Browser's empty area: the browser bar's options, with Select All and Select None;
-  - a History step: Go to Step, Show Tool, Compress up to Here and Truncate after Here;
+  - a History step, `Place::Step` (built): Go to Step, Show Tool, Compress up to Here and Truncate after Here;
   - the jobs window's rows: Cancel, Show in Folder and Copy Error;
   - the Tools panel's tab bar, `Place::TabBar`, on a tab's icon or its empty end: Find Tool…, Show Hidden Tools, Workspace ▸, Reset Tab, Processing Order and Workspace ▸'s Restore Defaults, the same items in the Tools panel's ⋮ (planned, [0096](0096-workspaces-as-files-hidden-tools-and-finding-a-tool.md));
   - a layer (Phase 4), the scopes.
