@@ -49,6 +49,10 @@ pub enum Entry {
     /// A line between groups.
     Separator,
     Submenu(Submenu),
+    /// Words over the items under it, translated, as darktable's combobox section is: a
+    /// choice's name over its options. Never chosen, and skipped by the keys and the
+    /// pointer; on the Mac a disabled line.
+    Heading(String),
 }
 
 /// An item that answers with its id when chosen.

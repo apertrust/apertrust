@@ -1278,6 +1278,7 @@ fn pared(entries: Vec<popup::Entry>, waits: bool) -> Vec<popup::Entry> {
                 }
                 popup::Entry::Separator
             }
+            heading @ popup::Entry::Heading(_) => heading,
         };
         kept.push(entry);
     }
@@ -3005,7 +3006,7 @@ mod tests {
             .flat_map(|entry| match entry {
                 popup::Entry::Item(item) => vec![item],
                 popup::Entry::Submenu(submenu) => items(&submenu.entries),
-                popup::Entry::Separator => Vec::new(),
+                popup::Entry::Separator | popup::Entry::Heading(_) => Vec::new(),
             })
             .collect()
     }
@@ -3186,6 +3187,7 @@ mod tests {
                         (item.text.clone(), item.shortcut.clone(), item.enabled)
                     }
                     popup::Entry::Separator => ("—".to_owned(), None, false),
+                    popup::Entry::Heading(text) => panic!("a heading in Select: {text}"),
                     popup::Entry::Submenu(s) => panic!("a submenu in Select: {}", s.id),
                 }
             };
@@ -3666,6 +3668,7 @@ mod tests {
                     (item.id.clone(), item.enabled, item.shortcut.is_some())
                 }
                 popup::Entry::Separator => ("-".into(), true, false),
+                popup::Entry::Heading(text) => (text.clone(), false, false),
                 popup::Entry::Submenu(submenu) => (submenu.id.clone(), true, false),
             })
             .collect()
@@ -3843,6 +3846,7 @@ mod tests {
             let line = |entry: &popup::Entry| match entry {
                 popup::Entry::Item(item) => item.text.clone(),
                 popup::Entry::Submenu(submenu) => format!("{} ▸", submenu.text),
+                popup::Entry::Heading(text) => text.clone(),
                 popup::Entry::Separator => "-".into(),
             };
             menu.entries.iter().map(line).collect()
@@ -4302,6 +4306,9 @@ mod tests {
                     )),
                     popup::Entry::Separator => {
                         lines.push(("-".into(), String::new(), false, None, false));
+                    }
+                    popup::Entry::Heading(text) => {
+                        lines.push(("#".into(), text.clone(), false, None, false));
                     }
                     popup::Entry::Submenu(submenu) => {
                         let (id, text) = (submenu.id.clone(), submenu.text.clone());

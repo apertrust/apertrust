@@ -164,6 +164,16 @@ fn entries(lines: &[Entry], top: bool, space: &str) -> Vec<MenuEntry> {
         .map(|entry| match entry {
             Entry::Item(item) => MenuEntry::Item(menu_item(item, space)),
             Entry::Separator => MenuEntry::Separator,
+            // AppKit's way before its section headers: a line that cannot be chosen.
+            Entry::Heading(text) => MenuEntry::Item(MenuItem {
+                id: String::new(),
+                title: text.clone(),
+                enabled: false,
+                on: false,
+                tip: None,
+                keys: None,
+                alternate: None,
+            }),
             Entry::Submenu(submenu) => MenuEntry::Submenu {
                 title: if top {
                     submenu.shown()
@@ -410,6 +420,27 @@ mod tests {
                     })),
                 }),
             ]
+        );
+    }
+
+    #[test]
+    fn a_heading_is_a_line_that_cannot_be_chosen() {
+        let request = Request::pull_down(
+            Rect::from_min_size(pos2(0.0, 0.0), vec2(24.0, 24.0)),
+            "Menu",
+            vec![Entry::Heading("A click applies".to_owned())],
+        );
+        assert_eq!(
+            menu(&request, &look(1.0)).entries,
+            vec![MenuEntry::Item(MenuItem {
+                id: String::new(),
+                title: "A click applies".to_owned(),
+                enabled: false,
+                on: false,
+                tip: None,
+                keys: None,
+                alternate: None,
+            })]
         );
     }
 

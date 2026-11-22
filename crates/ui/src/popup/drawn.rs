@@ -30,10 +30,11 @@
 //! - A menu opens under its anchor on `raised`, with the menus' border and shadow, and a
 //!   submenu to the side of its line, towards the end where it fits, else towards the
 //!   start.
-//! - ↓ and ↑ move through the lines but the separators, disabled ones included, so
-//!   screen readers learn they exist; → or Enter opens a submenu and ← closes it; Enter or
-//!   Space chooses an item; Escape closes a level, the last giving the focus back; Tab
-//!   closes them all; a letter moves to the next line starting with it.
+//! - ↓ and ↑ move through the lines but the separators and headings, disabled ones
+//!   included, so screen readers learn they exist; → or Enter opens a submenu and ←
+//!   closes it; Enter or Space chooses an item; Escape closes a level, the last giving
+//!   the focus back; Tab closes them all; a letter moves to the next line starting with
+//!   it.
 //! - An item with an alternate shows it in its place while Option (Alt) is held, as
 //!   macOS's alternate items do: a click, or Enter with it held, chooses the alternate.
 //! - Under the pointer a line is chosen at once, and a submenu opens, or another closes,
@@ -754,11 +755,17 @@ fn entries_of<'a>(top: &'a [Entry], path: &[Option<usize>]) -> &'a [Entry] {
     entries
 }
 
-/// The line `by` lines on from `from`, separators skipped, wrapping round; from none,
-/// the first going down and the last going up.
+/// Whether the keys and the pointer can reach `entry`: an item or a submenu, never a
+/// separator or a heading.
+fn reachable(entry: &Entry) -> bool {
+    matches!(entry, Entry::Item(_) | Entry::Submenu(_))
+}
+
+/// The line `by` lines on from `from`, separators and headings skipped, wrapping round;
+/// from none, the first going down and the last going up.
 fn step(entries: &[Entry], from: Option<usize>, by: isize) -> Option<usize> {
     let lines: Vec<usize> = (0..entries.len())
-        .filter(|&i| !matches!(entries[i], Entry::Separator))
+        .filter(|&i| reachable(&entries[i]))
         .collect();
     let count = lines.len() as isize;
     if count == 0 {
@@ -780,7 +787,7 @@ fn starting_with(entries: &[Entry], from: Option<usize>, letter: char, top: bool
     (0..entries.len())
         .map(|i| (start + i) % entries.len())
         .find(|&i| {
-            !matches!(entries[i], Entry::Separator)
+            reachable(&entries[i])
                 && shown(&entries[i], top)
                     .0
                     .to_lowercase()
@@ -795,6 +802,7 @@ fn shown(entry: &Entry, top: bool) -> (String, Option<(usize, char)>) {
         Entry::Submenu(submenu) if top => words(&submenu.text),
         Entry::Submenu(submenu) => (submenu.text.clone(), None),
         Entry::Item(item) => (item.text.clone(), None),
+        Entry::Heading(text) => (text.clone(), None),
         Entry::Separator => (String::new(), None),
     }
 }
@@ -834,6 +842,7 @@ fn line_id(popup: Id, entry: &Entry) -> Id {
     match entry {
         Entry::Item(item) => popup.with(("item", &item.id)),
         Entry::Submenu(submenu) => popup.with(("submenu-line", &submenu.id)),
+        Entry::Heading(text) => popup.with(("heading", text)),
         Entry::Separator => popup.with("separator"),
     }
 }
@@ -864,6 +873,7 @@ impl Layout {
         let mut check = 0.0;
         let mut words_width: f32 = 0.0;
         let mut end: f32 = 0.0;
+        let mut heading: f32 = 0.0;
         for entry in entries {
             match entry {
                 // An alternate takes the item's place, so the level is as wide as either.
@@ -882,11 +892,16 @@ impl Layout {
                     words_width = words_width.max(measure(&shown(entry, top).0, font.clone()));
                     end = end.max(Icon::Chevron.size());
                 }
+                Entry::Heading(text) => {
+                    heading = heading.max(measure(text, heading_font(t)));
+                }
                 Entry::Separator => {}
             }
         }
         let gap = if end > 0.0 { t.spacing.xl } else { 0.0 };
-        let width = t.spacing.m + check + words_width.ceil() + gap + end.ceil() + t.spacing.m;
+        let lines = check + words_width.ceil() + gap + end.ceil();
+        // A heading's words start where the check mark does.
+        let width = t.spacing.m + lines.max(heading.ceil()) + t.spacing.m;
         Layout { check, width }
     }
 }
@@ -894,6 +909,11 @@ impl Layout {
 /// The font of an item's keys, at its end.
 fn key_font(t: &Theme) -> FontId {
     FontId::proportional(t.text.small)
+}
+
+/// The font of a heading's words.
+fn heading_font(t: &Theme) -> FontId {
+    FontId::proportional(t.text.caption)
 }
 
 /// One line of a level.
@@ -930,6 +950,26 @@ impl Line<'_> {
                 node.set_orientation(Orientation::Horizontal);
                 node.set_read_only();
             });
+            return None;
+        }
+        if let Entry::Heading(text) = self.entry {
+            // A line high, so a dropdown's height stays its lines'; its words at the line's
+            // start in the caption's size and `text_secondary`, as the mock's choices' names.
+            let (id, rect) = ui.allocate_space(vec2(layout.width, t.sizes.row));
+            let painter = ui.painter();
+            let galley =
+                painter.layout_no_wrap(text.clone(), heading_font(t), t.colors.text_secondary);
+            painter.galley(
+                pos2(
+                    rect.left() + t.spacing.m,
+                    rect.center().y - galley.size().y / 2.0,
+                ),
+                galley,
+                t.colors.text_secondary,
+            );
+            // Read as a label, which the keys never focus and the pointer never chooses.
+            ui.interact(rect, id, Sense::hover())
+                .widget_info(|| WidgetInfo::labeled(Role::Label, true, text));
             return None;
         }
         let (_, rect) = ui.allocate_space(vec2(layout.width, t.sizes.row));
@@ -1102,6 +1142,20 @@ mod tests {
         assert_eq!(step(&entries, Some(2), -1), Some(0));
         assert_eq!(step(&entries, Some(4), 1), Some(0));
         assert_eq!(step(&[Entry::Separator], None, 1), None);
+    }
+
+    #[test]
+    fn steps_and_letters_skip_headings() {
+        let entries = vec![
+            Entry::Heading("Applies".into()),
+            Item::new("all", "All").into(),
+            Entry::Heading("Also".into()),
+            Item::new("parts", "Parts").into(),
+        ];
+        assert_eq!(step(&entries, None, 1), Some(1));
+        assert_eq!(step(&entries, Some(1), 1), Some(3));
+        assert_eq!(step(&entries, Some(3), 1), Some(1));
+        assert_eq!(starting_with(&entries, Some(1), 'a', false), Some(1));
     }
 
     #[test]
