@@ -123,6 +123,10 @@ setting_column = 260.0
 setting_switch_width = 32.0
 setting_switch_height = 18.0
 setting_switch_knob = 12.0
+cursor_well = 30.0
+cursor_face = 22.0
+cursor_face_alone = 24.0
+cursor_chevron = 11.0
 tools_panel = 320.0
 section_list = 240.0
 

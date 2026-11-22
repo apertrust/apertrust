@@ -493,6 +493,14 @@ pub struct Sizes {
     pub setting_switch_width: f32,
     pub setting_switch_height: f32,
     pub setting_switch_knob: f32,
+    /// The cursors' well's track, a face and a chevron filling it but for `spacing.xxs`
+    /// above and below (`docs/cursors.md`, The well).
+    pub cursor_well: f32,
+    /// A face's width beside its chevron, and a chevron's, right against it.
+    pub cursor_face: f32,
+    pub cursor_chevron: f32,
+    /// The width of a face with no chevron: a group of one with no settings.
+    pub cursor_face_alone: f32,
     /// The Tools panel's usual width; a theme file may still name it `side_panel`
     /// ([`OLD_SIZES`]).
     #[serde(alias = "side_panel")]
@@ -773,6 +781,8 @@ impl Theme {
                 TEXT,
             ),
             ("accent_text", c.accent_text, "panel", c.panel, TEXT),
+            // The cursors' well: the chosen cursor's icon on its track.
+            ("accent_text", c.accent_text, "sunken", c.sunken, CONTROL),
             ("text_on_accent", c.text_on_accent, "accent", c.accent, TEXT),
             (
                 "text_on_accent",

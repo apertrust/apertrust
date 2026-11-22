@@ -64,6 +64,14 @@ pub enum Icon {
     More,
     /// A quad's eyedropper: pick from the photo.
     Pick,
+    /// The Select cursor's arrow (decision 104).
+    Select,
+    /// The Pan cursor's hand (decision 104).
+    Pan,
+    /// White balance's picker cursor: the pipette with a neutral square (decision 104).
+    PickWhiteBalance,
+    /// Exposure's picker cursor: the pipette with a dot (decision 104).
+    PickExposure,
     /// A quad's line: draw on the photo.
     Line,
     Undo,
@@ -196,7 +204,7 @@ pub enum Icon {
 }
 
 impl Icon {
-    pub const ALL: [Icon; 94] = [
+    pub const ALL: [Icon; 98] = [
         Icon::Chevron,
         Icon::ChevronDown,
         Icon::ChevronEnd,
@@ -210,6 +218,10 @@ impl Icon {
         Icon::OptionsVertical,
         Icon::More,
         Icon::Pick,
+        Icon::Select,
+        Icon::Pan,
+        Icon::PickWhiteBalance,
+        Icon::PickExposure,
         Icon::Line,
         Icon::Undo,
         Icon::Redo,
@@ -395,6 +407,10 @@ impl Icon {
             Icon::OptionsVertical => derived!("options-vertical", "ellipsis-vertical", 14.0),
             Icon::More => derived!("more", "chevrons-right", 14.0),
             Icon::Pick => derived!("pick", "pipette", 14.0),
+            Icon::Select => derived!("select", "mouse-pointer-2", 16.0),
+            Icon::Pan => derived!("pan", "hand", 16.0),
+            Icon::PickWhiteBalance => derived!("pick-white-balance", "pipette", 16.0),
+            Icon::PickExposure => derived!("pick-exposure", "pipette", 16.0),
             Icon::Line => own!("line", 14.0),
             Icon::Undo => derived!("undo", "undo-2", 16.0),
             Icon::Redo => derived!("redo", "redo-2", 16.0),
@@ -494,10 +510,17 @@ impl Icon {
     /// the pixel grid and it is rendered at its size in physical pixels, so nothing is
     /// resampled; its lines are [`STROKE`] points wide whatever its size.
     pub fn paint(self, painter: &Painter, rect: Rect, color: Color32) {
+        self.paint_stroked(painter, rect, color, STROKE);
+    }
+
+    /// Draws it as [`paint`](Self::paint) does, its lines `stroke` points wide: the cursors'
+    /// well's chosen cursor at [`STROKE_HEAVY`]. The icons that keep their own box keep
+    /// their own stroke.
+    pub fn paint_stroked(self, painter: &Painter, rect: Rect, color: Color32, stroke: f32) {
         let ppp = painter.pixels_per_point();
         let pixels = (rect.width().min(rect.height()) * ppp).round().max(1.0) as u32;
         let side = pixels as f32 / ppp;
-        let Some(texture) = texture(painter.ctx(), self, pixels, side) else {
+        let Some(texture) = texture(painter.ctx(), self, pixels, side, stroke) else {
             return;
         };
         let min = (rect.center() - vec2(side, side) / 2.0).round_to_pixels(ppp);
@@ -516,6 +539,10 @@ impl Icon {
 /// as a 22-point tab. The app's icon, its caret and the caption buttons keep their own.
 pub const STROKE: f32 = 1.25;
 
+/// The chosen cursor's lines in the cursors' well, a quarter heavier than [`STROKE`], as
+/// decision 104's 2 points to an outline's 1.6 (`docs/cursors.md`, The well).
+pub const STROKE_HEAVY: f32 = STROKE * 1.25;
+
 /// An icon's file and how it is drawn (`Icon::file`).
 struct File {
     name: &'static str,
@@ -524,19 +551,26 @@ struct File {
     lucide: Option<&'static str>,
 }
 
-/// Rendered icons, by icon, size in pixels and size in points, kept for the session.
+/// Rendered icons, by icon, size in pixels, size in points and stroke in points, kept for
+/// the session.
 #[derive(Clone, Default)]
-struct Cache(HashMap<(Icon, u32, u32), TextureHandle>);
+struct Cache(HashMap<(Icon, u32, u32, u32), TextureHandle>);
 
-fn texture(ctx: &egui::Context, icon: Icon, pixels: u32, points: f32) -> Option<TextureHandle> {
+fn texture(
+    ctx: &egui::Context,
+    icon: Icon,
+    pixels: u32,
+    points: f32,
+    stroke: f32,
+) -> Option<TextureHandle> {
     let id = Id::unique("apertrust-ui icons");
-    let key = (icon, pixels, points.to_bits());
+    let key = (icon, pixels, points.to_bits(), stroke.to_bits());
     if let Some(texture) =
         ctx.data_mut(|d| d.get_temp_mut_or_default::<Cache>(id).0.get(&key).cloned())
     {
         return Some(texture);
     }
-    let image = render(icon, pixels, points)?;
+    let image = render_stroked(icon, pixels, points, stroke)?;
     let texture = ctx.load_texture(
         format!("icon {} {pixels}px", icon.name()),
         image,
@@ -552,11 +586,17 @@ fn texture(ctx: &egui::Context, icon: Icon, pixels: u32, points: f32) -> Option<
 
 /// Renders the icon in white at `pixels` × `pixels`, to be drawn `points` wide, its lines
 /// [`STROKE`] points wide; drawing it tints the white.
+#[cfg(test)]
 fn render(icon: Icon, pixels: u32, points: f32) -> Option<ColorImage> {
+    render_stroked(icon, pixels, points, STROKE)
+}
+
+/// Renders it as `render` does, its lines `stroke` points wide.
+fn render_stroked(icon: Icon, pixels: u32, points: f32, stroke: f32) -> Option<ColorImage> {
     let mut source = icon.source().replace("currentColor", "#FFFFFF");
     if !icon.keeps_its_box() {
         // Every file of Lucide's grid sets its 2-unit stroke once, on the <svg> element.
-        let units = STROKE * 24.0 / points;
+        let units = stroke * 24.0 / points;
         source = source.replace(r#"stroke-width="2""#, &format!(r#"stroke-width="{units}""#));
     }
     let tree = usvg::Tree::from_str(&source, &usvg::Options::default()).ok()?;
@@ -828,6 +868,14 @@ mod tests {
                 "{width} points wide at {pixels} pixels, {ppp} a point"
             );
         }
+    }
+
+    #[test]
+    fn the_heavy_stroke_is_a_quarter_heavier() {
+        // The menu's three level lines, at twice the size, as a chosen cursor is drawn.
+        let image = render_stroked(Icon::Menu, 32, 16.0, STROKE_HEAVY).unwrap();
+        let width = ink_down(&image, 16) / 3.0 / 2.0;
+        assert!((width - STROKE_HEAVY).abs() < 0.1, "{width} points wide");
     }
 
     #[test]
