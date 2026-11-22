@@ -664,6 +664,52 @@ fn hidden_by_flag(_entry: &fs::DirEntry) -> bool {
     false
 }
 
+/// Whether the file whose metadata `meta` is has its data on the disk: false for a cloud
+/// provider's placeholder whose contents are elsewhere, which a read would download and
+/// which nothing reads in the background (decision 53). From the metadata already read,
+/// with no call of its own: the Mac's file flags ([`local_by_flags`]), Windows' attributes
+/// ([`local_by_attributes`]); elsewhere every file is on the disk.
+#[cfg(target_os = "macos")]
+pub fn is_local(meta: &fs::Metadata) -> bool {
+    use std::os::macos::fs::MetadataExt as _;
+    local_by_flags(meta.st_flags())
+}
+
+#[cfg(windows)]
+pub fn is_local(meta: &fs::Metadata) -> bool {
+    use std::os::windows::fs::MetadataExt as _;
+    local_by_attributes(meta.file_attributes())
+}
+
+#[cfg(not(any(target_os = "macos", windows)))]
+pub fn is_local(_meta: &fs::Metadata) -> bool {
+    true
+}
+
+/// `SF_DATALESS` in `<sys/stat.h>`: the file's data is not on the disk, as iCloud Drive
+/// leaves a file that Optimise Mac Storage has evicted.
+const SF_DATALESS: u32 = 0x4000_0000;
+
+/// `FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS` in `winnt.h`: the file's data is fetched when it
+/// is read, as OneDrive leaves a file that Files On-Demand has freed.
+const FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS: u32 = 0x0040_0000;
+
+/// `FILE_ATTRIBUTE_RECALL_ON_OPEN` in `winnt.h`: the file is fetched when it is opened.
+const FILE_ATTRIBUTE_RECALL_ON_OPEN: u32 = 0x0004_0000;
+
+/// Whether a file of the Mac's file flags `flags` (`st_flags`) has its data on the disk:
+/// not where they hold `SF_DATALESS`. Plain arithmetic, so it is tested on every system.
+pub fn local_by_flags(flags: u32) -> bool {
+    flags & SF_DATALESS == 0
+}
+
+/// Whether a file of Windows' attributes `attributes` has its data on the disk: not where
+/// they hold `FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS` or `FILE_ATTRIBUTE_RECALL_ON_OPEN`.
+/// Plain arithmetic, so it is tested on every system.
+pub fn local_by_attributes(attributes: u32) -> bool {
+    attributes & (FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS | FILE_ATTRIBUTE_RECALL_ON_OPEN) == 0
+}
+
 /// Whether `name` ends in `.extension`, in any case.
 fn has_extension(name: &str, extension: &str) -> bool {
     name.rsplit_once('.')
@@ -771,7 +817,42 @@ pub(crate) mod stall {
 
 #[cfg(test)]
 mod tests {
-    use super::browser_order;
+    use super::*;
+
+    /// The Mac's dataless flag and Windows' two recall attributes, each alone or among
+    /// others, say a file is not on the disk; other flags, or none, say it is. A file just
+    /// written is on the disk, wherever the test runs.
+    #[test]
+    fn a_dataless_or_recall_flag_is_not_local() {
+        // `UF_HIDDEN`, `SF_ARCHIVED` and `UF_COMPRESSED`, which a file on the disk may hold.
+        const OTHER_FLAGS: u32 = 0x8000 | 0x1_0000 | 0x20;
+        assert!(local_by_flags(0));
+        assert!(local_by_flags(OTHER_FLAGS));
+        assert!(!local_by_flags(SF_DATALESS));
+        assert!(!local_by_flags(SF_DATALESS | OTHER_FLAGS));
+
+        // Read-only, hidden, archive, pinned and unpinned, which a cloud file on the disk
+        // may hold too.
+        const OTHER_ATTRIBUTES: u32 = 0x1 | 0x2 | 0x20 | 0x8_0000 | 0x10_0000;
+        assert!(local_by_attributes(0));
+        assert!(local_by_attributes(OTHER_ATTRIBUTES));
+        for recall in [
+            FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS,
+            FILE_ATTRIBUTE_RECALL_ON_OPEN,
+            FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS | FILE_ATTRIBUTE_RECALL_ON_OPEN,
+        ] {
+            assert!(!local_by_attributes(recall), "{recall:#x}");
+            assert!(
+                !local_by_attributes(recall | OTHER_ATTRIBUTES),
+                "{recall:#x}"
+            );
+        }
+
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("A.ARW");
+        fs::write(&path, b"a raw").unwrap();
+        assert!(is_local(&fs::metadata(&path).unwrap()));
+    }
 
     #[test]
     fn names_sort_as_a_file_browser_lists_them() {

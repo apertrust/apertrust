@@ -634,7 +634,37 @@ pub type RawStamp = [u8; 24];
 /// The [`RawStamp`] of the file at `path`; `None` where its size or modified time cannot
 /// be read.
 pub fn raw_stamp(path: &Path) -> Option<RawStamp> {
+    stamp_of(&std::fs::metadata(path).ok()?)
+}
+
+/// A raw's file as one look at its metadata gives it, before it is read.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RawState {
+    /// Its [`RawStamp`]; `None` where its modified time cannot be read or comes before
+    /// 1970, so nothing of it is cached or remembered.
+    pub stamp: Option<RawStamp>,
+    /// Whether its data is on the disk ([`crate::listing::is_local`]): false for a cloud
+    /// file not on the disk, which nothing reads in the background (decision 53), whatever
+    /// its stamp.
+    pub local: bool,
+}
+
+/// The [`RawState`] of the file at `path`, from one `std::fs::metadata`, in place of
+/// [`raw_stamp`] where the caller would read the file next; `None` where its metadata
+/// cannot be read.
+pub fn raw_state(path: &Path) -> Option<RawState> {
     let meta = std::fs::metadata(path).ok()?;
+    let local = crate::listing::is_local(&meta);
+    #[cfg(any(test, feature = "testing"))]
+    let local = local && !crate::testing::evicted(path);
+    Some(RawState {
+        stamp: stamp_of(&meta),
+        local,
+    })
+}
+
+/// The [`RawStamp`] of a file of metadata `meta`.
+fn stamp_of(meta: &std::fs::Metadata) -> Option<RawStamp> {
     let since = meta.modified().ok()?.duration_since(UNIX_EPOCH).ok()?;
     let mut stamp = [0; 24];
     stamp[..8].copy_from_slice(&meta.len().to_le_bytes());
@@ -1427,6 +1457,43 @@ mod tests {
         assert_eq!(fingerprints.get(&gone, &stamp), None);
         assert_eq!(fingerprints.get(&gone, &stamp), None);
         assert_eq!(reads(), 4, "what cannot be read is not kept");
+    }
+
+    /// A raw's state is its stamp and whether it is on the disk, read with no read of the
+    /// file: a file just written is, one the test hook evicts is not until it is restored,
+    /// and one that is not there has none. One modified before 1970 has no stamp, and is
+    /// still told not on the disk when it is not.
+    #[test]
+    fn a_raw_s_state_is_its_stamp_and_whether_it_is_on_the_disk() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("A.ARW");
+        fs::write(&path, b"a raw").unwrap();
+        let stamp = raw_stamp(&path);
+        assert!(stamp.is_some());
+        let state = |local| Some(RawState { stamp, local });
+        assert_eq!(raw_state(&path), state(true));
+        crate::testing::evict(&path);
+        assert_eq!(raw_state(&path), state(false));
+        crate::testing::restore(&path);
+        assert_eq!(raw_state(&path), state(true));
+        assert_eq!(raw_state(&dir.path().join("gone.ARW")), None);
+
+        let old = dir.path().join("B.ARW");
+        fs::write(&old, b"an old raw").unwrap();
+        before_1970(&old);
+        assert_eq!(raw_stamp(&old), None);
+        let unstamped = |local| Some(RawState { stamp: None, local });
+        assert_eq!(raw_state(&old), unstamped(true));
+        crate::testing::evict(&old);
+        assert_eq!(raw_state(&old), unstamped(false));
+        crate::testing::restore(&old);
+    }
+
+    /// Dates the file at `path` a day before 1970.
+    fn before_1970(path: &Path) {
+        let file = fs::File::options().write(true).open(path).unwrap();
+        file.set_modified(UNIX_EPOCH - Duration::from_secs(86_400))
+            .unwrap();
     }
 
     #[test]

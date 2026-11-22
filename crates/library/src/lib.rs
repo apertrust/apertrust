@@ -31,6 +31,8 @@ pub mod index;
 pub mod listing;
 pub mod ops;
 pub mod sidecar;
+#[cfg(any(test, feature = "testing"))]
+pub mod testing;
 pub mod walk;
 pub mod xmp;
 
