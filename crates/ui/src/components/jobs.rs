@@ -31,7 +31,9 @@
 //!   running with the ✕ that cancels it, the detail under the bar, "To" its destination
 //!   with the time it ended, or a failure's item, file and cause; then its buttons, Show in
 //!   Finder where it has a destination, and Try again and Dismiss on a failed row. The list
-//!   is as tall as its first five rows, and scrolls past them.
+//!   is as tall as its first five rows, and scrolls past them. A row the app gives a menu
+//!   (decision 91) is a Tab stop, and asks for it ([`ActivityAction::Menu`]), which the app
+//!   builds and opens.
 //! - **Plain data in, actions out.** The caller passes the jobs as the app mirrors them from
 //!   the session's events and applies the [`ActivityAction`] it gets back; the component
 //!   knows no engine type, and keeps only what it last announced and its rows' heights, in
@@ -55,7 +57,7 @@ use egui::{
 };
 
 use super::plate::{Plate, Touch, paint_focus, paint_plate};
-use super::{Button, IconButton, quiet_scroll};
+use super::{Button, IconButton, context_click, focus_ring_centred, menu_asked, quiet_scroll};
 use crate::i18n::{Args, Translator};
 use crate::{Icon, fonts, theme, translator};
 
@@ -202,6 +204,10 @@ pub struct Job {
     /// When it ended, by the session's clock: the time after its destination once it
     /// finished or was cancelled.
     pub ended_at: Option<SystemTime>,
+    /// Whether its row has a menu, the app's (decision 91): the row is then a Tab stop,
+    /// and a right-click on it, or the menu key, Shift+F10 or a screen reader's
+    /// ShowContextMenu while it has the focus, asks for it ([`ActivityAction::Menu`]).
+    pub menu: bool,
 }
 
 impl Job {
@@ -220,6 +226,7 @@ impl Job {
             failure: None,
             retry: false,
             ended_at: None,
+            menu: false,
         }
     }
 
@@ -276,6 +283,11 @@ impl Job {
         self.ended_at = Some(at);
         self
     }
+
+    pub fn menu(mut self, menu: bool) -> Self {
+        self.menu = menu;
+        self
+    }
 }
 
 /// Each kind of job's icon, as its row shows it on a tile at its start (decision 72). A
@@ -311,7 +323,7 @@ pub enum FileManager {
 
 impl FileManager {
     /// The message of Show in Finder, Explorer or Files, as it names itself.
-    pub fn show_message(self) -> &'static str {
+    pub const fn show_message(self) -> &'static str {
         match self {
             FileManager::Finder => "activity-show-finder",
             FileManager::Explorer => "activity-show-explorer",
@@ -322,7 +334,8 @@ impl FileManager {
 
 /// What the user asked of a job, or of the window's rows. The app does it: reveals the
 /// destination through the platform, asks the session to stop the job or to try it again,
-/// and forgets a failed job that is dismissed, or every finished and cancelled one.
+/// forgets a failed job that is dismissed, or every finished and cancelled one, and opens
+/// a row's menu.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ActivityAction {
     ShowFolder(JobId),
@@ -331,6 +344,22 @@ pub enum ActivityAction {
     Dismiss(JobId),
     /// Clear Finished, in the footer: every finished and cancelled row, never a failed one.
     ClearFinished,
+    /// A row's menu asked for (decision 91), on a row that has one ([`Job::menu`]).
+    Menu(RowMenu),
+}
+
+/// A row's menu asked for: by a right-click on the row, its buttons and failure line
+/// included, or the Mac's Control-click off them, at the pointer; or by the menu key,
+/// Shift+F10 or a screen reader's
+/// ShowContextMenu on the focused row, under it. The app builds the menu and opens it
+/// through the popup service, the focus going back to the row as it closes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RowMenu {
+    pub job: JobId,
+    /// Where it hangs from, in points.
+    pub at: Pos2,
+    /// The row's id, the menu's opener (`popup::Request::opened_by`).
+    pub row: Id,
 }
 
 /// The jobs: the spinner and the window's content.
@@ -596,14 +625,23 @@ impl<'a> Jobs<'a> {
     }
 
     /// One job's row: a group named by its title, its kind's tile at its start, then its
-    /// title, its bar, its lines and its buttons.
+    /// title, its bar, its lines and its buttons. One with a menu ([`Job::menu`]) is a Tab
+    /// stop before its buttons, ringed while it has the focus, and asks for its menu
+    /// ([`RowMenu`]).
     fn row(&self, ui: &mut Ui, job: &Job, words: &Translator) -> Option<ActivityAction> {
         let t = theme(ui.ctx());
         let title = row_title(words, job);
         let mut action = None;
-        ui.scope_builder(
+        // Below its buttons, which keep their own clicks.
+        let sense = if job.menu {
+            Sense::click()
+        } else {
+            Sense::hover()
+        };
+        let drawn = ui.scope_builder(
             UiBuilder::new()
                 .id_salt("job row")
+                .sense(sense)
                 .accessibility_role(Role::Group)
                 .accessibility_label(title.clone()),
             |ui| {
@@ -622,6 +660,20 @@ impl<'a> Jobs<'a> {
                     });
             },
         );
+        if job.menu {
+            let response = drawn.response;
+            if response.has_focus() {
+                focus_ring_centred(ui.painter(), response.rect, &t);
+            }
+            if let Some(at) = menu_at(ui, &response) {
+                let row = response.id;
+                action = Some(ActivityAction::Menu(RowMenu {
+                    job: job.id,
+                    at,
+                    row,
+                }));
+            }
+        }
         action
     }
 
@@ -700,6 +752,19 @@ impl<'a> Jobs<'a> {
     }
 }
 
+/// Where a row's menu hangs from, if it was asked for this frame: at the pointer for a
+/// right-click anywhere on the row, its buttons and failure line included, or the Mac's
+/// Control-click off them, which they take as their own click; under the row for the menu
+/// key, Shift+F10 or a screen reader's ShowContextMenu.
+fn menu_at(ui: &Ui, row: &Response) -> Option<Pos2> {
+    if menu_asked(ui.ctx(), row) {
+        return Some(row.rect.left_bottom());
+    }
+    let pointer = ui.input(|i| i.pointer.interact_pos());
+    let right = ui.input(|i| i.pointer.secondary_clicked()) && ui.rect_contains_pointer(row.rect);
+    (right || context_click(ui.ctx(), row)).then(|| pointer.unwrap_or(row.rect.left_bottom()))
+}
+
 /// The words for a job that has just started, for the live region.
 fn started(words: &Translator, job: &Job) -> String {
     let mut args = Args::new();
@@ -763,17 +828,16 @@ fn details(ui: &mut Ui, job: &Job, words: &Translator) {
         }
         JobPhase::Failed => {
             if let Some(failure) = &job.failure {
-                let mut args = Args::new();
-                args.set("photo", failure.item.as_str());
-                args.set("file", failure.file.as_str());
-                args.set("cause", failure.cause.as_str());
-                let id = match (failure.item.is_empty(), failure.file.is_empty()) {
-                    (false, false) => "activity-failure",
-                    (false, true) => "activity-failure-photo",
-                    (true, _) => "activity-failure-cause",
-                };
-                let reason = words.text_with(id, Some(&args));
-                line(ui, &reason, small, t.colors.error, false);
+                // Selectable, so it is copied with the platform's copy key as well as by
+                // the row's Copy Error (decision 91).
+                let mut reason = LayoutJob::simple(
+                    failure_line(words, failure),
+                    small,
+                    t.colors.error,
+                    ui.available_width(),
+                );
+                reason.halign = Align::LEFT;
+                ui.add(egui::Label::new(reason).selectable(true));
             }
             return;
         }
@@ -791,6 +855,23 @@ fn details(ui: &mut Ui, job: &Job, words: &Translator) {
         };
         line(ui, &to, small, quiet, true);
     }
+}
+
+/// A failure as its row says it, in `error` under the title, as text that can be
+/// selected and copied: its item and file where it names them, and its cause,
+/// "IMG_2051.ARW: could not write IMG_2051.jpg: the disk is full.", which the app's Copy
+/// Error copies too.
+pub fn failure_line(words: &Translator, failure: &JobFailure) -> String {
+    let mut args = Args::new();
+    args.set("photo", failure.item.as_str());
+    args.set("file", failure.file.as_str());
+    args.set("cause", failure.cause.as_str());
+    let id = match (failure.item.is_empty(), failure.file.is_empty()) {
+        (false, false) => "activity-failure",
+        (false, true) => "activity-failure-photo",
+        (true, _) => "activity-failure-cause",
+    };
+    words.text_with(id, Some(&args))
 }
 
 /// `at` on the local clock, hours and minutes: "14:02".

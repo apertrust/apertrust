@@ -901,6 +901,59 @@ fn a_failure_names_the_photo_and_file_only_where_it_has_them() {
     }
 }
 
+/// Decision 91: a failure's line is text that can be selected and copied with the
+/// platform's copy key, so a failure's words are reached without the row's menu, its Copy
+/// Error copying the same, `failure_line`'s.
+#[test]
+fn a_failure_s_line_is_selected_and_copied_as_failure_line_words_it() {
+    let failure = JobFailure {
+        item: "IMG_1.ARW".to_owned(),
+        file: "IMG_1.jpg".to_owned(),
+        cause: "the disk is full".to_owned(),
+    };
+    let words = Translator::new(Locale::EnGb);
+    let text = apertrust_ui::components::failure_line(&words, &failure);
+    let mut harness = window(vec![
+        export(7, JobPhase::Failed).failure(failure).menu(true),
+    ]);
+    harness.run();
+    let shown = harness.get_by_label(&text).rect();
+    // A drag across the whole line selects it.
+    let (from, to) = (shown.left_center(), shown.right_center() + vec2(4.0, 0.0));
+    harness.hover_at(from);
+    harness.run();
+    harness.event(egui::Event::PointerButton {
+        pos: from,
+        button: egui::PointerButton::Primary,
+        pressed: true,
+        modifiers: egui::Modifiers::NONE,
+    });
+    harness.run();
+    harness.hover_at(to);
+    harness.run();
+    harness.event(egui::Event::PointerButton {
+        pos: to,
+        button: egui::PointerButton::Primary,
+        pressed: false,
+        modifiers: egui::Modifiers::NONE,
+    });
+    harness.run();
+    harness.event(egui::Event::Copy);
+    harness.step();
+    let copied = &harness.output().platform_output.commands;
+    assert!(
+        copied.contains(&egui::OutputCommand::CopyText(text.clone())),
+        "{copied:?}"
+    );
+    // Selecting asks for nothing of the job.
+    harness.run();
+    assert!(
+        harness.state().actions.is_empty(),
+        "{:?}",
+        harness.state().actions
+    );
+}
+
 #[test]
 fn the_file_manager_names_the_button_by_platform() {
     for (manager, label) in [
@@ -1009,6 +1062,114 @@ fn a_queued_job_says_so_and_one_that_cannot_be_cancelled_has_no_cancel() {
         .click();
     harness.run();
     assert_eq!(harness.state().actions, vec![ActivityAction::Dismiss(4)]);
+}
+
+/// Right-clicks at `pos`, in frames of their own.
+fn right_click<T>(harness: &mut Harness<'_, T>, pos: egui::Pos2) {
+    harness.hover_at(pos);
+    harness.run();
+    for pressed in [true, false] {
+        harness.event(egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Secondary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        });
+    }
+    harness.run();
+}
+
+/// The menus the window asked for, by job and where each hangs from.
+fn menus(harness: &Harness<'_, Win>) -> Vec<(u64, egui::Pos2)> {
+    let menu = |action: &ActivityAction| match action {
+        ActivityAction::Menu(menu) => Some((menu.job, menu.at)),
+        _ => None,
+    };
+    harness.state().actions.iter().filter_map(menu).collect()
+}
+
+/// Decision 91: a row the app gives a menu asks for it by a right-click anywhere on it, its
+/// buttons included, at the pointer, and by the menu key, Shift+F10 or a screen reader's
+/// ShowContextMenu while it has the focus, under it, a Tab stop before its buttons. A row
+/// with none asks for nothing and is no Tab stop.
+#[test]
+fn a_row_with_a_menu_asks_for_it_by_a_right_click_or_its_keys() {
+    let mut harness = window(vec![
+        export(2, JobPhase::Running).menu(true),
+        export(1, JobPhase::Finished),
+    ]);
+    harness.run();
+    // A group has no bounds of its own: its bar's are the row's.
+    let bar = |harness: &Harness<'_, Win>| {
+        let running = row(harness, "Exporting 3 / 12 to file on disk");
+        running.get_by_role(Role::ProgressIndicator).rect()
+    };
+    let title = bar(&harness).left_top() - vec2(0.0, 8.0);
+    right_click(&mut harness, title);
+    assert_eq!(menus(&harness), [(2, title)]);
+    // On its Show in Finder, which keeps its own click.
+    let show = row(&harness, "Exporting 3 / 12 to file on disk")
+        .get_by_label("Show in Finder")
+        .rect()
+        .center();
+    right_click(&mut harness, show);
+    assert_eq!(menus(&harness), [(2, title), (2, show)]);
+    // The finished row has none.
+    let finished = row(&harness, "12 photos exported")
+        .get_by_label("Show in Finder")
+        .rect()
+        .center();
+    right_click(&mut harness, finished);
+    assert_eq!(menus(&harness).len(), 2);
+    harness.state_mut().actions.clear();
+
+    // Tab reaches the row before its ✕; the keys ask for its menu under it.
+    harness.key_press(Key::Tab);
+    harness.run();
+    let focused = row(&harness, "Exporting 3 / 12 to file on disk");
+    assert!(focused.accesskit_node().is_focused());
+    for (modifiers, key) in [
+        (egui::Modifiers::NONE, Key::Menu),
+        (egui::Modifiers::SHIFT, Key::F10),
+    ] {
+        harness.key_press_modifiers(modifiers, key);
+        harness.run();
+        let asked = menus(&harness);
+        let &(job, at) = asked.last().expect("asked");
+        // Under the row, at its start: below its buttons, left of its bar.
+        let (bar, show) = (bar(&harness), show);
+        assert!(
+            job == 2 && at.x < bar.left() && at.y > show.y,
+            "{key:?}: {at:?}"
+        );
+    }
+    let under = menus(&harness)[0].1;
+    let node = row(&harness, "Exporting 3 / 12 to file on disk").accesskit_node();
+    let show = egui::accesskit::Action::ShowContextMenu;
+    assert!(node.data().supports_action(show), "the row offers its menu");
+    let (target_node, target_tree) = node.locate();
+    harness.event(egui::Event::AccessKitActionRequest(
+        egui::accesskit::ActionRequest {
+            target_node,
+            target_tree,
+            action: show,
+            data: None,
+        },
+    ));
+    harness.run();
+    assert_eq!(menus(&harness), [(2, under); 3]);
+    let finished = row(&harness, "12 photos exported").accesskit_node();
+    assert!(!finished.data().supports_action(show));
+    // Then its ✕, then its Show in Finder, then the finished row's button: no stop on it.
+    for label in ["Cancel", "Show in Finder", "Show in Finder"] {
+        harness.key_press(Key::Tab);
+        harness.run();
+        let focused = harness
+            .query_all_by_role(Role::Button)
+            .find(|n| n.accesskit_node().is_focused());
+        let name = focused.and_then(|n| n.accesskit_node().label());
+        assert_eq!(name.as_deref(), Some(label));
+    }
 }
 
 #[test]
