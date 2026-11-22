@@ -2,7 +2,7 @@
 
 A cursor decides what a press on the photo does. One is chosen at a time, and it stays chosen until another is chosen: Select, the default, selects and moves marks on the photo and pans a zoomed photo from empty photo; Pan always pans; a picker cursor sets White balance or Exposure from the area clicked or drawn; later, mask cursors paint a layer's mask, retouch cursors heal spots, annotation cursors mark the photo, and Copy and apply copies one photo's edit onto others. This document describes the well on the Toolbar where cursors are chosen, the groups and their settings, the keys, the pointer on the photo, the API every owner of cursors uses, and how the work is built. Pickers themselves are in [pickers.md](pickers.md), the Toolbar in [gui.md](gui.md#the-toolbar), layers and masks in [layers.md](layers.md).
 
-**Status.** [Decision 104](decisions/0104-cursors-one-chosen-at-a-time-in-a-well-on-the-toolbar.md) records the design, with the options considered. Built, 104.1: the one-shot pick a picker cursor will send, `PickerCommand::Once`, and `Region::pressed` (79.17 of [pickers.md](pickers.md#a-one-shot-pick)); 104.3: the well in the design system, `CursorWell`, in the gallery ([The well](#the-well)). Planned: Phase 2 builds Select, Pan and Pick with White balance and Exposure, their declarations and the app ([The plan](#the-plan)); Copy and apply comes in Phase 3, the Mask and Retouch cursors with layers in Phase 4, Annotate later with its own decision. Today a drag on a zoomed photo pans it, and a tool's picker starts from its button alone.
+**Status.** [Decision 104](decisions/0104-cursors-one-chosen-at-a-time-in-a-well-on-the-toolbar.md) records the design, with the options considered. Built, 104.1: the one-shot pick a picker cursor will send, `PickerCommand::Once`, and `Region::pressed` (79.17 of [pickers.md](pickers.md#a-one-shot-pick)); 104.2: the declarations in `apertrust-tools` and their checks, with White balance's and Exposure's picker cursors and their words ([The API](#the-api)); 104.3: the well in the design system, `CursorWell`, in the gallery ([The well](#the-well)). Planned: Phase 2 builds Select, Pan and Pick with White balance and Exposure in the app ([The plan](#the-plan)); Copy and apply comes in Phase 3, the Mask and Retouch cursors with layers in Phase 4, Annotate later with its own decision. Today a drag on a zoomed photo pans it, and a tool's picker starts from its button alone.
 
 ## What it serves
 
@@ -171,7 +171,7 @@ Each later group's settings are chosen with that group: Mask's and Retouch's wit
 
 ## The API
 
-**In `apertrust-tools`**, data only, no egui, so a tool declares its cursor beside its pickers:
+**In `apertrust-tools`** (built, 104.2), data only, no egui, so a tool declares its cursor beside its pickers:
 
 ```rust
 /// One cursor of the well.
@@ -212,7 +212,7 @@ pub struct ToolCursor {
 ```
 
 - **`ToolDefinition::cursors: &'static [ToolCursor]`,** in the parent every tool embeds, as `menus` and `toolbar` are (decisions 91 to 93). A tool's cursor runs no code of the tool's own.
-- **`ProcessingDefinition::check` refuses** a cursor naming a picker the tool does not declare, or one that writes no control (a picker that only shows, a reference's); a group other than Pick; a gesture other than a click and an area, or an area for a point picker; a surface other than the Viewer; two cursors for one picker, two of one id, and options on a picker cursor. A utility's `cursors` stay empty until the Colour readout's design.
+- **`ProcessingDefinition::check` refuses** a cursor naming a picker the tool does not declare, or one that writes no control (a picker that only shows, a reference's); a group other than Pick; no gesture, one twice, a gesture other than a click and an area, or an area for a point picker; surfaces other than the Viewer alone; two cursors for one picker, two of one id or an id not snake_case, and options on a picker cursor. A utility's `cursors` stay empty until the Colour readout's design, `UtilityDefinition::check` refusing any.
 - **The first two:** White balance's `spot`, its key K, and Exposure's `exposure`, with no key, each with a click and an area, and each with an icon of its own, not its picker's, so the Pick face shows which is active: White balance's `pick-white-balance`, the pipette with a neutral square badge, and Exposure's `pick-exposure`, the pipette with a dot badge.
 
 **In the app:**
@@ -286,7 +286,7 @@ No new crate.
 
 ## Tests
 
-- **The tools** (`definition.rs`): each refusal of the check; White balance's and Exposure's cursors accepted; a test holding every cursor's icon name to one `apertrust-ui` has.
+- **The tools** (built): each refusal of the check (`definition.rs`) and a utility's cursor refused (`utility.rs`); a cursor's words, its name and, unless its picker's words follow a setting, how (`messages.rs`); White balance's and Exposure's cursors, each naming its picker, every cursor's icon one `apertrust-ui` has and no key on two cursors (`tests/builtin.rs`), and every cursor's words in en-GB with the rest of a definition's.
 - **`Region::pressed`** against darktable's new box restated (`darkroom.c:4064-4073`), clamped at each edge, and the app's press on the photo with a picker on making the same area.
 - **The session:** `Once`'s tests, listed with it ([pickers.md](pickers.md#tests)).
 - **The design system** (`crates/ui/tests`): the well's states in each theme, a face's click and a chevron's, the list's items, checks and settings, the keys inside the well, the AccessKit tree, snapshots of Phase 2's well and of every group, dark and light.
@@ -299,7 +299,7 @@ Phase 2, one pull request each, each reviewed before the next that needs it:
 | # | Delivers | Touches | Out of scope |
 | --- | --- | --- | --- |
 | 104.1 | Built: `PickerCommand::Once` and `Region::pressed`, with their tests (79.17) | tools, engine | the app |
-| 104.2 | `CursorDef`, `CursorGroup`, `CursorGroupDef`, `Gesture`, `Surface`, `ToolCursor`, `ToolDefinition::cursors` and the check; White balance's and Exposure's cursors and their words in every language | tools | the app |
+| 104.2 | Built: `CursorDef`, `CursorGroup`, `CursorGroupDef`, `Gesture`, `Surface`, `ToolCursor`, `ToolDefinition::cursors` and the check; White balance's and Exposure's cursors and their words in every language | tools | the app |
 | 104.3 | Built: the well in the design system, faces, chevrons, states, the list with its settings, keys and AccessKit, in the gallery with snapshots | ui | amounts, the app |
 | 104.4 | The app: the mode, the registry, `CursorOwner`, Select and Pan, the tools' owner; the gestures and pointers over the photo; the well on the Toolbar between two flexible spaces and the narrowing with it; the cursor actions with Esc, K and A held; Pick's Show the last pick in the settings schema | app, settings schema | the toolbar's list, holds on one key, Copy and apply |
 
