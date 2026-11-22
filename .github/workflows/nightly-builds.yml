@@ -337,6 +337,13 @@ jobs:
             [ "$safe" = "$file" ] || mv -- "$file" "$safe"
           done
           ls -l
+      # Each file's SHA-256, in sha256sum's format, published beside them.
+      - name: List the checksums
+        working-directory: dist
+        run: |
+          sha256sum -- * >../SHA256SUMS
+          mv ../SHA256SUMS .
+          cat SHA256SUMS
       # The release is made again, its tag with it, through the Releases API: GitHub
       # refuses the job's token a `git push` of a tag whose commit changes workflow files.
       - name: Replace the nightly release
