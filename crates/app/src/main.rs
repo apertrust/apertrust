@@ -17082,6 +17082,88 @@ mod tests {
         );
     }
 
+    /// Through a real session: while Exposure is dragged at 100% upstream of the tone
+    /// equalizer's round, the frame of each change is the fitted one, the detail pending
+    /// (decision 99), and the Viewer draws it scaled up smoothly over the whole photo area,
+    /// where the detail would be, its values under the cursor blank, with no Rendering… for
+    /// the drag; the drag's end brings the detail, drawn pixel for pixel.
+    #[test]
+    fn an_upstream_drag_draws_the_fitted_frame_enlarged_while_the_detail_is_pending() {
+        use crate::mirror::tests::{Live, scratch};
+        use apertrust_engine::session::Command;
+        use apertrust_engine::view::{View, ViewScale, place};
+        use apertrust_tools::ControlValue;
+
+        let Some(mut live) = Live::start() else {
+            return;
+        };
+        let folder = scratch("zoom-drag");
+        live.open(&folder.join("drag.ARW"));
+        live.until_live();
+        let set = |tool: &str, control: &str, value: f32, done: bool| Command::SetControl {
+            tool: tool.to_owned(),
+            control: control.to_owned(),
+            value: ControlValue::Number(value),
+            done,
+        };
+        let answered =
+            |sent: u64| move |m: &Mirror| m.frame.as_ref().is_some_and(|f| f.through >= sent);
+        let on = live.session.send(set("toneequal", "blending", 10.0, true));
+        live.until(answered(on));
+        let view = View {
+            scale: ViewScale::Factor(1.0),
+            centre: [0.4, 0.6],
+        };
+        let viewed = live.session.send(Command::View(view));
+        live.until(answered(viewed));
+        let bounds = (64, 48);
+        let mut sent = Some((viewed, Instant::now(), view));
+
+        let drag = live.session.send(set("exposure", "exposure", 1.2, false));
+        live.until(answered(drag));
+        let frame = live.mirror.frame.clone().expect("the drag's frame");
+        assert!(frame.detail_pending && frame.overview.is_none());
+        let placement = place(frame.place.extent, bounds, &view);
+        let (under, shown) = photo_layers(&frame.place, None, &placement);
+        assert_eq!(under, None);
+        assert_eq!(shown.filter, viewport::Filter::Smooth);
+        let area = area_size(&placement, bounds);
+        let [across, down] = covered(&shown, [frame.width, frame.height]);
+        assert!(across.start <= 0.0 && across.end >= area.x, "{across:?}");
+        assert!(down.start <= 0.0 && down.end >= area.y, "{down:?}");
+        let rect = egui::Rect::from_min_size(egui::Pos2::ZERO, area);
+        let pixel = viewport::frame_pixel(
+            &frame.place,
+            [frame.width, frame.height],
+            &placement,
+            rect,
+            1.0,
+            rect.center(),
+        );
+        assert_eq!(pixel, None, "a scaled guess");
+        // No Rendering…, a second on: the drag sends no view, and the view sent is told.
+        let later = Instant::now() + mirror::RENDERING_AFTER;
+        let told = (live.mirror.view.as_ref()).map(|told| (told.through, told.placement));
+        let room = zoom::Room {
+            extent: frame.place.extent,
+            bounds,
+        };
+        assert_eq!(
+            view_rendering(&mut sent, told, Some(&room), later),
+            (false, None)
+        );
+        assert!(!live.mirror.rendering(later));
+
+        // The drag's end: the detail, pixel for pixel.
+        let end = live.session.send(set("exposure", "exposure", 1.2, true));
+        live.until(|m| answered(end)(m) && m.frame.as_ref().is_some_and(|f| !f.detail_pending));
+        let frame = live.mirror.frame.clone().expect("the detail");
+        assert_eq!(frame.place.scale, 1.0);
+        let (_, shown) = photo_layers(&frame.place, None, &placement);
+        assert_eq!(shown.filter, viewport::Filter::Exact);
+        let _ = std::fs::remove_dir_all(&folder);
+    }
+
     #[test]
     fn a_pan_never_shows_the_surround_inside_an_overflowing_axis() {
         // At 100%, the detail of the view's centre with its overview, panned step by step
