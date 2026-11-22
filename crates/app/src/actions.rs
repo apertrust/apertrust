@@ -1106,7 +1106,7 @@ pub static ACTIONS: [Action; 131] = [
         scope: Scope::App,
         trigger: Trigger::Press,
         available: |s| s.compress && on_main_window(s) && !s.modal,
-        emits: Emit::Command(Command::Compress),
+        emits: Emit::Command(Command::Compress { up_to: None }),
     },
     Action {
         id: ActionId::TRUNCATE_HISTORY,
@@ -1115,7 +1115,7 @@ pub static ACTIONS: [Action; 131] = [
         scope: Scope::App,
         trigger: Trigger::Press,
         available: |s| s.truncate && on_main_window(s) && !s.modal,
-        emits: Emit::Command(Command::Truncate),
+        emits: Emit::Command(Command::Truncate { after: None }),
     },
     // History's ⋯ item, drawn disabled until styles come (Phase 3).
     Action {

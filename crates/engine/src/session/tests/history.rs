@@ -1440,8 +1440,8 @@ fn the_history_s_commands_are_refused_while_not_live_and_view_only() {
             Command::Undo,
             Command::Redo,
             Command::GoTo { step: None },
-            Command::Compress,
-            Command::Truncate,
+            Command::Compress { up_to: None },
+            Command::Truncate { after: None },
             Command::DiscardHistory,
             Command::Step {
                 source: StepSource::You,
@@ -2896,7 +2896,7 @@ fn compress_keeps_each_tool_s_last_step_and_undo_brings_the_log_back() {
     driven.writes();
     let edited = edit(&driven);
     let clock = saved(&path).clocks()[0];
-    let compressed = driven.run([Command::Compress]);
+    let compressed = driven.run([Command::Compress { up_to: None }]);
     assert_eq!(kinds(&compressed), ["values", "history"]);
     let after = history(&compressed);
     assert_eq!(shown(after), (vec![ids[1], ids[2]], 2));
@@ -2918,7 +2918,7 @@ fn compress_keeps_each_tool_s_last_step_and_undo_brings_the_log_back() {
     assert_eq!(shown(history(&redone)), (vec![ids[1], ids[2]], 2));
     assert_saved(&driven, &path, SAVING);
     // Nothing more to compress: no record, nothing written.
-    let again = driven.run([Command::Compress]);
+    let again = driven.run([Command::Compress { up_to: None }]);
     assert!(histories(&again).is_empty(), "{again:?}");
     assert!(driven.writes().is_empty());
     remove(&path);
@@ -2938,7 +2938,7 @@ fn truncate_drops_the_steps_after_the_end_and_undo_brings_them_back() {
     }
     let ids = fold_ids(&driven);
     driven.run([Command::GoTo { step: Some(ids[0]) }]);
-    let truncated = driven.run([Command::Truncate]);
+    let truncated = driven.run([Command::Truncate { after: None }]);
     let after = history(&truncated);
     assert_eq!(shown(after), (vec![ids[0]], 1));
     assert_eq!(after.undo, Some(Move::Truncate));
@@ -2952,11 +2952,109 @@ fn truncate_drops_the_steps_after_the_end_and_undo_brings_them_back() {
     assert_saved(&driven, &path, SAVING);
     // At Original, every step.
     driven.run([Command::GoTo { step: None }]);
-    let emptied = driven.run([Command::Truncate]);
+    let emptied = driven.run([Command::Truncate { after: None }]);
     assert_eq!(shown(history(&emptied)), (vec![], 0));
     assert_eq!(edit(&driven), Edit::default());
     let read = assert_saved(&driven, &path, SAVING);
     assert!(read.log.steps().is_empty());
+    remove(&path);
+}
+
+/// Compress and Truncate with a step, a History step's Compress up to Here and Truncate
+/// after Here (decision 91): the end just after the step and the log rewritten there as
+/// one undo record, so one Undo puts back the log and the end together, and Redo does it
+/// again; each saved.
+#[test]
+fn compress_and_truncate_at_a_step_are_one_move_that_one_undo_takes_back() {
+    let path = scratch("history-compress-up-to");
+    let mut driven = Driven::new(SAVING);
+    driven.open(&path);
+    let mut times = Times::new();
+    for value in [0.25, 0.5] {
+        let at = times.apart();
+        driven.run_at(at, [set("brightness", ControlValue::Number(value), true)]);
+    }
+    driven.run_at(times.apart(), [amount(30.0, true)]);
+    driven.run_at(
+        times.apart(),
+        [set("brightness", ControlValue::Number(0.75), true)],
+    );
+    // The end on the last step, Sample's.
+    let ids = fold_ids(&driven);
+    let edited = edit(&driven);
+    let compressed = driven.run([Command::Compress {
+        up_to: Some(ids[2]),
+    }]);
+    let after = history(&compressed);
+    assert_eq!(shown(after), (vec![ids[1], ids[2]], 2));
+    assert_eq!((after.undo, after.redo), (Some(Move::Compress), None));
+    assert_eq!(brightness(&compressed), ControlValue::Number(0.5));
+    assert_saved(&driven, &path, SAVING);
+    // One Undo: every step back and the end on the last, the edit as it was.
+    let undone = driven.run([Command::Undo]);
+    let back = history(&undone);
+    assert_eq!(shown(back), (ids.clone(), 4));
+    assert_eq!(back.redo, Some(Move::Compress));
+    assert_eq!(edit(&driven), edited);
+    assert_saved(&driven, &path, SAVING);
+    let redone = driven.run([Command::Redo]);
+    assert_eq!(shown(history(&redone)), (vec![ids[1], ids[2]], 2));
+    assert_saved(&driven, &path, SAVING);
+    driven.run([Command::Undo]);
+    // Truncate after the first step: the rest dropped, the end on it.
+    let truncated = driven.run([Command::Truncate {
+        after: Some(ids[0]),
+    }]);
+    let after = history(&truncated);
+    assert_eq!(shown(after), (vec![ids[0]], 1));
+    assert_eq!(after.undo, Some(Move::Truncate));
+    assert_eq!(brightness(&truncated), ControlValue::Number(0.25));
+    assert_saved(&driven, &path, SAVING);
+    let undone = driven.run([Command::Undo]);
+    assert_eq!(shown(history(&undone)), (ids, 4));
+    assert_eq!(edit(&driven), edited);
+    assert_saved(&driven, &path, SAVING);
+    remove(&path);
+}
+
+/// Compress or Truncate naming a step not in the log is refused, as `GoTo`'s is: the log,
+/// its end and the edit stay as they were, and nothing is written.
+#[test]
+fn compress_and_truncate_at_an_unknown_step_are_refused() {
+    let path = scratch("history-compress-unknown");
+    let mut driven = Driven::new(SAVING);
+    driven.open(&path);
+    let mut times = Times::new();
+    for value in [0.25, 0.5] {
+        let at = times.apart();
+        driven.run_at(at, [set("brightness", ControlValue::Number(value), true)]);
+    }
+    driven.writes();
+    let ids = fold_ids(&driven);
+    let edited = edit(&driven);
+    let unknown = StepId(!ids[0].0);
+    let commands = [
+        Command::Compress {
+            up_to: Some(unknown),
+        },
+        Command::Truncate {
+            after: Some(unknown),
+        },
+    ];
+    for command in commands {
+        let events = driven.run([command]);
+        assert!(
+            matches!(
+                failures(&events)[..],
+                [SessionError::UnknownStep { step }] if *step == unknown
+            ),
+            "{events:?}"
+        );
+        assert!(histories(&events).is_empty(), "{events:?}");
+        assert!(driven.writes().is_empty());
+        assert_eq!(fold_ids(&driven), ids);
+        assert_eq!(edit(&driven), edited);
+    }
     remove(&path);
 }
 
@@ -2970,7 +3068,7 @@ fn compress_right_after_reset_leaves_an_empty_history() {
     driven.run([set("brightness", ControlValue::Number(0.5), true)]);
     driven.run([amount(30.0, true)]);
     driven.run([Command::Reset]);
-    let compressed = driven.run([Command::Compress]);
+    let compressed = driven.run([Command::Compress { up_to: None }]);
     assert_eq!(shown(history(&compressed)), (vec![], 0));
     assert_eq!(edit(&driven), Edit::default());
     let read = assert_saved(&driven, &path, SAVING);
@@ -3131,7 +3229,7 @@ fn a_compress_not_yet_saved_over_another_program_s_step_is_not_kept_and_told() {
     driven.open(&path);
     two_steps(&mut driven);
     add_elsewhere(&path, 40.0);
-    let compressed = driven.run([Command::Compress]);
+    let compressed = driven.run([Command::Compress { up_to: None }]);
     assert_eq!(history(&compressed).steps.len(), 1);
     assert!(driven.writes().is_empty());
     let taken = driven.engine.newer_file(false);
@@ -3159,7 +3257,10 @@ fn compress_and_truncate_among_the_default_steps_change_nothing_shown() {
         step: Some(defaults[0]),
     }]);
     assert!(!on(&first, "exposure"));
-    for command in [Command::Compress, Command::Truncate] {
+    for command in [
+        Command::Compress { up_to: None },
+        Command::Truncate { after: None },
+    ] {
         let rewritten = driven.run([command]);
         assert_eq!(kinds(&rewritten), ["values", "history"], "{rewritten:?}");
         assert!(!on(&rewritten, "exposure") && !on(&rewritten, "channelmixerrgb"));
@@ -3234,7 +3335,7 @@ fn a_compress_undone_is_not_told_when_a_newer_file_is_taken_in() {
         driven.run_at(at, [set("brightness", ControlValue::Number(value), true)]);
     }
     let ids = fold_ids(&driven);
-    driven.run([Command::Compress]);
+    driven.run([Command::Compress { up_to: None }]);
     driven.run([Command::Undo]);
     driven.run([Command::GoTo { step: Some(ids[0]) }]);
     driven.writes();

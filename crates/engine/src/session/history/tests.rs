@@ -333,13 +333,15 @@ fn checked(history: &mut PhotoHistory, edit: &Edit, redo: bool, context: &str) -
 /// Truncate leave what the photo shows as it was, at the end and at Original, wherever the
 /// end is past Original, among the default steps too, and keep the default steps whole; at
 /// end 0, and Discard History anywhere, leave no step, the default steps given again, the
-/// photo its defaults. Undo puts the log back as it was, its steps and its end, and Redo
-/// makes it again, each once.
+/// photo its defaults. Half of Compress's and Truncate's name a step, as a History step's
+/// menu does, and make the log `Log::compressed` and `truncated` make with the end just
+/// after it, the photo then showing that step. Undo puts the log back as it was, its steps
+/// and its end, and Redo makes it again, each once.
 #[test]
 fn compress_truncate_and_discard_are_undone_and_redone_whole() {
     let mut rewrites = [0; 3];
-    // How many rewrites had the end among the default steps, and at Original.
-    let (mut among, mut original) = (0, 0);
+    // How many rewrites had the end among the default steps, at Original, and named a step.
+    let (mut among, mut original, mut stepped) = (0, 0, 0);
     for seed in 1..=60 {
         let mut random = Random(0x2545_f491_4f6c_dd1d ^ seed);
         let defaults = if seed > 30 { DEFAULTS } else { &[] };
@@ -371,11 +373,25 @@ fn compress_truncate_and_discard_are_undone_and_redone_whole() {
                 edit.unapplied = history.unapplied(&edit);
             }
             let context = format!("seed {seed}, round {round}");
-            let (log, end) = (history.log.clone(), history.log.end());
+            let log = history.log.clone();
             let which = random.below(3) as usize;
+            // Half of Compress's and Truncate's name a step, a History step's menu's
+            // (decision 91): the log as though the end were just after it.
+            let steps = log.steps();
+            let named = (which < 2 && !steps.is_empty() && random.below(2) == 0)
+                .then(|| steps[random.below(steps.len() as u64) as usize].id);
+            let mut at_step = log.clone();
+            if let Some(step) = named {
+                at_step.set_end(log.position(step).expect("in the log") + 1);
+            }
+            let end = at_step.end();
             let rewritten = match which {
-                0 => history.compress(&edit, defaults),
-                1 => history.truncate(&edit, defaults),
+                0 => history
+                    .compress(&edit, named, defaults)
+                    .expect("a step in the log"),
+                1 => history
+                    .truncate(&edit, named, defaults)
+                    .expect("a step in the log"),
                 _ => history.discard(&edit, defaults),
             };
             let Some(rewritten) = rewritten else {
@@ -391,7 +407,17 @@ fn compress_truncate_and_discard_are_undone_and_redone_whole() {
                     if end < log.defaults() {
                         among += 1;
                     }
-                    assert_eq!(rewritten, log.fold(), "{context}");
+                    if named.is_some() {
+                        stepped += 1;
+                    }
+                    // The log as Compress or Truncate makes it from the end, at the step
+                    // where one is named.
+                    let expected = match which {
+                        0 => at_step.compressed(),
+                        _ => at_step.truncated(),
+                    };
+                    assert_eq!(made, expected, "{context}");
+                    assert_eq!(rewritten, at_step.fold(), "{context}");
                     assert_eq!(made.fold_to(0), log.fold_to(0), "{context}");
                     assert_eq!(made.defaults(), log.defaults(), "{context}");
                 }
@@ -418,8 +444,8 @@ fn compress_truncate_and_discard_are_undone_and_redone_whole() {
     }
     assert!(rewrites.iter().all(|&count| count > 0), "{rewrites:?}");
     assert!(
-        among > 0 && original > 0,
-        "{among} among, {original} at Original"
+        among > 0 && original > 0 && stepped > 0,
+        "{among} among, {original} at Original, {stepped} at a step"
     );
 }
 
