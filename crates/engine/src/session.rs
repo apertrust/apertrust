@@ -1039,13 +1039,21 @@ pub struct Frame {
     pub latency_ms: f64,
     /// Where it lies in the photo (decision 99): at Fit, the whole photo at the fitted scale
     /// for the bounds it was rendered for, its origin (0, 0); zoomed past Fit, the detail's
-    /// region at the scale rendered, its origin the region's corner.
+    /// region at the scale rendered, its origin the region's corner, but while the detail
+    /// is pending ([`Self::detail_pending`]), the fitted frame's as at Fit.
     pub place: FramePlace,
     /// Zoomed past Fit, the fitted viewport's frame, the whole photo at the fitted scale,
     /// which a client draws, enlarged to the zoom, wherever the detail does not reach,
     /// and which the scopes count and the Colour picker samples (decision 99); `None` at
-    /// Fit, where the frame is that.
+    /// Fit and while the detail is pending, where the frame is that, and in a detail
+    /// frame whose fitted frame follows.
     pub overview: Option<Overview>,
+    /// Zoomed past Fit, whether the detail is pending (decision 99): during a gesture
+    /// whose change would rerun a whole-image round of the detail, the frame is the fitted
+    /// pipeline's, placed as at Fit, which a client draws enlarged where the detail would
+    /// be; the detail, its rounds run, follows the gesture's end, its cancel or any other
+    /// command that keeps the photo open. `false` otherwise.
+    pub detail_pending: bool,
 }
 
 /// The fitted viewport's frame beside a zoomed one ([`Frame::overview`]): RGBA `f32`, as a
@@ -2808,6 +2816,10 @@ struct Detail {
     scale: f64,
     /// Whether the frame published last is its.
     shown: bool,
+    /// Whether a gesture's change left it as it was, its rounds due, the frame published
+    /// last the fitted one standing in for it (decision 99): the next batch that is not
+    /// the gesture's changes alone renders it.
+    pending: bool,
 }
 
 /// What an edit command did: whether the image may have changed, whether it completes a
@@ -3027,7 +3039,7 @@ impl Engine {
         let Some(since) = self.overview_behind else {
             return events;
         };
-        let rendered = self.render(since, &mut events);
+        let rendered = self.render(since, false, &mut events);
         self.answer_view(&rendered, &mut events, 0);
         match rendered {
             Ok(Some(frame)) => events.push(Event::Frame(frame)),
@@ -3291,8 +3303,12 @@ impl Engine {
         // The batch's last `View`, by its number: its refusal is told where the frame
         // stays at Fit (decision 99).
         let mut viewed = None;
+        // Whether every command is a change of a gesture, as a drag sends them (decision
+        // 99).
+        let mut gesture_only = true;
         for (at, command) in batch {
             self.applied += 1;
+            gesture_only &= history::gesture_of(&command).is_some();
             // Values follow every change asked for, failed or not, so a client's own
             // value is replaced by the engine's either way.
             values |= on_edit(&command);
@@ -3525,13 +3541,19 @@ impl Engine {
         // region elsewhere (decision 99). One the session cannot render past Fit renders
         // the fitted frame, and is refused.
         render |= viewed.is_some() && self.zoom_wanted() != self.zoom_shown().map(Ok);
+        // A batch of a gesture's changes alone, the gesture still under way, renders the
+        // fitted frame alone where its change would rerun a whole-image round of the detail;
+        // any other batch renders a detail a drag left pending: the gesture's end, its
+        // cancel or any other command (decision 99).
+        let dragging = gesture_only && (self.open.as_ref()).is_some_and(|o| o.gesture.is_some());
+        render |= !dragging && self.detail_pending();
         // A `View` of the frame shown, on a live photo, is answered as it is: nothing is
         // left for a later render to refuse it for.
         if viewed.is_some() && !render && (self.open.as_ref()).is_some_and(|o| o.input.is_some()) {
             self.view_asked = None;
         }
         if render {
-            let rendered = self.render(since, &mut events);
+            let rendered = self.render(since, dragging, &mut events);
             self.answer_view(&rendered, &mut events, facts);
             match rendered {
                 Ok(Some(frame)) => {
@@ -3605,6 +3627,14 @@ impl Engine {
     fn zoom_shown(&self) -> Option<([u32; 4], f64)> {
         let detail = self.open.as_ref()?.detail.as_ref()?;
         detail.shown.then_some((detail.region, detail.scale))
+    }
+
+    /// Whether a gesture's change left the detail pending, the fitted frame standing in for
+    /// it (decision 99).
+    fn detail_pending(&self) -> bool {
+        (self.open.as_ref())
+            .and_then(|open| open.detail.as_ref())
+            .is_some_and(|detail| detail.pending)
     }
 
     /// Whether the History tab's eye hides any tool of the open photo, while which a
@@ -4316,7 +4346,7 @@ impl Engine {
             self.save();
         }
         if changed && !closing && self.open.as_ref().is_some_and(|open| open.input.is_some()) {
-            let rendered = self.render(Instant::now(), &mut events);
+            let rendered = self.render(Instant::now(), false, &mut events);
             self.answer_view(&rendered, &mut events, facts);
             match rendered {
                 Ok(Some(frame)) => events.push(Event::Frame(frame)),
@@ -4643,7 +4673,7 @@ impl Engine {
         // The decode's image context may size the photo otherwise than its metadata.
         events.extend(self.view_event());
         // A `View` sent while the photo opened is answered by its first frame.
-        let rendered = self.render(started, events);
+        let rendered = self.render(started, false, events);
         self.answer_view(&rendered, events, facts);
         match rendered {
             Ok(Some(frame)) => events.push(Event::Frame(frame)),
@@ -5123,19 +5153,23 @@ impl Engine {
     /// tool whose binding fails is left out of it and reported in `events`, once until
     /// it binds again. A tool's colour picker on is measured at its operation in the
     /// render's own submission; a reduction there the GPU refuses turns the pickers off,
-    /// and the frame is rendered again without it.
+    /// and the frame is rendered again without it. `dragging` where it answers a batch of
+    /// a gesture's changes alone, the gesture still under way: zoomed past Fit, a change
+    /// that would rerun a whole-image round of the detail then leaves the detail pending
+    /// and renders the fitted frame alone (decision 99).
     fn render(
         &mut self,
         since: Instant,
+        dragging: bool,
         events: &mut Vec<Event>,
     ) -> Result<Option<Frame>, SessionError> {
         let mut reduced = false;
         // A tool's picker measures nothing while the eye hides a tool (decision 78).
         if !self.pickers.probing() || self.hiding() {
-            return self.render_frame(since, events, false, &mut reduced);
+            return self.render_frame(since, dragging, events, false, &mut reduced);
         }
         let (rendered, error) =
-            self.caught(|engine| engine.render_frame(since, events, true, &mut reduced));
+            self.caught(|engine| engine.render_frame(since, dragging, events, true, &mut reduced));
         let Some(error) = error else {
             return rendered;
         };
@@ -5160,7 +5194,7 @@ impl Engine {
         // Without the reduction: only where that one renders was the reduction to blame,
         // and the pickers go off; where it fails too, the error is the frame's.
         let (again, retry_error) =
-            self.caught(|engine| engine.render_frame(since, events, false, &mut reduced));
+            self.caught(|engine| engine.render_frame(since, dragging, events, false, &mut reduced));
         if let Some(retry_error) = retry_error {
             start_over(self);
             return Err(SessionError::Gpu(retry_error));
@@ -5265,7 +5299,7 @@ impl Engine {
             )));
         }
         events.extend(self.view_event());
-        let rendered = self.render(Instant::now(), &mut events);
+        let rendered = self.render(Instant::now(), false, &mut events);
         self.answer_view(&rendered, &mut events, 0);
         match rendered {
             Ok(Some(frame)) => events.push(Event::Frame(frame)),
@@ -5310,6 +5344,7 @@ impl Engine {
     fn render_frame(
         &mut self,
         since: Instant,
+        dragging: bool,
         events: &mut Vec<Event>,
         probe: bool,
         reduced: &mut bool,
@@ -5469,6 +5504,9 @@ impl Engine {
         // A tool's colour picker measured at its operation while what it reads changes,
         // in the same submission, right after the operation's last pass.
         let mut recorded = None;
+        // Whether a gesture's change leaves the detail pending, the fitted frame standing
+        // in for it (decision 99).
+        let mut detail_pending = false;
         'detail: {
             let Some((region, scale, planned)) = detail else {
                 break 'detail;
@@ -5478,8 +5516,9 @@ impl Engine {
             let fitted_due = fresh || !pipeline.rendered();
             let (source, key) = (pipeline.detail_source()).expect("a viewport's first cache point");
             // What the frame shown last is, kept should this render not publish one.
-            let was_shown = (open.detail.as_ref())
-                .map_or((region, scale, false), |d| (d.region, d.scale, d.shown));
+            let was_shown = (open.detail.as_ref()).map_or((region, scale, false, false), |d| {
+                (d.region, d.scale, d.shown, d.pending)
+            });
             let (old, old_display, mut results) = match open.detail.take() {
                 Some(old) => (Some(old.pipeline), Some(old.display), old.results),
                 None => (None, None, Results::with_kernels(pipeline.shared_kernels())),
@@ -5516,6 +5555,27 @@ impl Engine {
                     self.zoom_refused = refuse(error.to_string());
                     break 'detail;
                 }
+            };
+            // During a gesture, a change that would rerun a whole-image round leaves the
+            // detail as it is, pending, and the frame is the fitted one, as at Fit (decision
+            // 99): the drag runs no round, and the detail, its rounds run, follows the
+            // gesture's end. A detail not built yet renders.
+            let (old, old_display) = match (old, old_display) {
+                (Some(kept), Some(display)) if dragging && !rounds.is_empty() => {
+                    let (region, scale, ..) = was_shown;
+                    open.detail = Some(Detail {
+                        pipeline: kept,
+                        results,
+                        display,
+                        region,
+                        scale,
+                        shown: false,
+                        pending: true,
+                    });
+                    detail_pending = true;
+                    break 'detail;
+                }
+                old => old,
             };
             let round_bytes = rounds.bytes();
             #[cfg(test)]
@@ -5680,7 +5740,7 @@ impl Engine {
                     if rendered_detail {
                         detail.forget_render();
                     }
-                    let (region, scale, shown) = was_shown;
+                    let (region, scale, shown, pending) = was_shown;
                     open.detail = Some(Detail {
                         pipeline: detail,
                         results,
@@ -5688,6 +5748,7 @@ impl Engine {
                         region,
                         scale,
                         shown,
+                        pending,
                     });
                     return Err(error.into());
                 }
@@ -5720,6 +5781,7 @@ impl Engine {
                 region,
                 scale,
                 shown: true,
+                pending: false,
             });
             if peak > open.zoom_peak {
                 open.zoom_peak = peak;
@@ -5754,11 +5816,14 @@ impl Engine {
                 latency_ms: since.elapsed().as_secs_f64() * 1e3,
                 place: FramePlace::detail(extent, region, scale),
                 overview,
+                detail_pending: false,
             }));
         }
-        // At Fit the detail pipeline is kept, not rendered.
+        // At Fit the detail pipeline is kept, not rendered; past it, a gesture's change
+        // leaves it pending, the fitted frame standing in for it.
         if let Some(detail) = &mut open.detail {
             detail.shown = false;
+            detail.pending = detail_pending;
         }
         let place = FramePlace::fitted(extent, (width, height));
         let probe = Self::probe(
@@ -5800,6 +5865,7 @@ impl Engine {
             latency_ms: since.elapsed().as_secs_f64() * 1e3,
             place,
             overview: None,
+            detail_pending,
         }))
     }
 }

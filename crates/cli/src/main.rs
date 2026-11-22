@@ -209,9 +209,10 @@ enum Command {
         /// Resize to --width and --height, then a View. The engine renders the visible
         /// region at the zoom's scale, at most 100%, beside the fitted frame (decision 99),
         /// or at Fit and below the fitted frame alone. Times entering the zoom
-        /// and the --changes exposure changes there, the detail's frame first, a whole-image
-        /// round's tiles before it where an upstream change runs one, and the fitted frame
-        /// after it, each timed;
+        /// and the --changes exposure changes there, a drag's, the detail's frame first and
+        /// the fitted frame after it, each timed, or where a change would rerun a
+        /// whole-image round the fitted frame alone, the detail pending until the drag's
+        /// end, which renders it after the round's tiles, timed;
         /// --png writes the zoomed frame.
         #[arg(
             long,
