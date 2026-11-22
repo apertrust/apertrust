@@ -963,8 +963,6 @@ enum Drag {
 
 /// How near an area's edges, in points, a press takes their corner, strictly within it.
 const CORNER: f32 = 6.0;
-/// A new area's half side across, as a share of the photo's width.
-const NEW_AREA: f32 = 0.02;
 
 /// What the picker on the photo did this frame ([`on_photo`]).
 #[derive(Debug, Default, PartialEq)]
@@ -1304,11 +1302,10 @@ fn pressed_on(
         ];
         return Some(Drag::Area { held, last: None });
     }
-    // As tall on screen as it is wide.
+    // As tall on screen as it is wide, as the session's one-shot pick makes it.
     let size = on.photo.size();
-    let (across, down) = (NEW_AREA, NEW_AREA * size.x / size.y.max(1.0));
-    let from = [(at[0] - across).max(0.0), (at[1] - down).max(0.0)];
-    let to = [(at[0] + across).min(1.0), (at[1] + down).min(1.0)];
+    let [left, top, right, bottom] = Region::pressed(at, size.x / size.y.max(1.0));
+    let (from, to) = ([left, top], [right, bottom]);
     commands.push(PickerCommand::Area {
         from,
         to,

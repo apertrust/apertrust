@@ -156,6 +156,21 @@ pub enum PickerCommand {
     /// The active picker off, its point and area kept for its next `On`; with none on,
     /// nothing.
     Off,
+    /// A one-shot pick, as a picker cursor's click or drag sends it (decision 104): a
+    /// tool's picker on for one reading of `region`, its pick applied, then off again. An
+    /// area is read as sent; a point as darktable's click reads it, an area picker reading
+    /// the area a press there starts ([`Region::pressed`]). Its tool's turning on, as `On`
+    /// turns it on, and the pick's writes are one completed change of source Auto, one
+    /// step that never merges, none where nothing changes; the picker's own point and area
+    /// are left as they were. A picker on is turned off first. Refused as `On` is, and for
+    /// the Colour picker's picker, which writes nothing.
+    Once {
+        picker: PickerRef,
+        region: Region,
+        keys: PickKeys,
+        settings: Vec<(&'static str, ControlValue)>,
+        channel: Option<&'static str>,
+    },
 }
 
 /// The active picker's reading, `Event::Picker`'s: a fact, `None` while no picker is on.
@@ -313,6 +328,11 @@ impl Geometries {
             at = geometry.forward(*input, at).unwrap_or(at);
         }
         [0, 1].map(|a| at[a] / self.extent[a].max(1) as f32)
+    }
+
+    /// The photo's width over its height, in its pixels at full resolution.
+    pub fn aspect(&self) -> f32 {
+        self.extent[0] as f32 / self.extent[1].max(1) as f32
     }
 }
 

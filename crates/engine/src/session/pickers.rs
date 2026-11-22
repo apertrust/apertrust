@@ -31,7 +31,9 @@
 //! The session applies a tool's reading itself, through the tool's pure
 //! [`apertrust_tools::ProcessingTool::pick`]: the first after the picker turns on and each
 //! after its region moves, never one an edit upstream caused, a drag's readings one
-//! gesture. A failure turns the pickers off for the session, never the frame.
+//! gesture. A one-shot pick ([`PickerCommand::Once`]) is a tool's picker on for one
+//! reading of its own region, applied with its tool's turning on as one step, then off.
+//! A failure turns the pickers off for the session, never the frame.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::hash::{DefaultHasher, Hash, Hasher};
@@ -108,6 +110,18 @@ struct Active {
     area: bool,
     /// A tool's picker's state; `None` for the Colour picker's.
     tool: Option<OnTool>,
+    /// A one-shot pick's place ([`PickerCommand::Once`]), in the original image's
+    /// coordinates: what it reads in place of the picker's kept point and area, which it
+    /// leaves as they were.
+    once: Option<Place>,
+}
+
+/// Where a tool's picker turning on reads: its kept place of the kind asked, as `On`
+/// starts it, or a one-shot pick's region.
+#[derive(Debug, Clone, Copy)]
+enum Start {
+    Kept { area: bool },
+    Once(Region),
 }
 
 /// A tool's picker on.
@@ -499,13 +513,16 @@ pub(super) fn probing(
     let before = instances
         .iter()
         .position(|instance| instance.operation.manifest().id == operation)?;
+    // A one-shot pick measures for its one reading alone.
+    if active.once.is_some() && on.due.is_none() {
+        return None;
+    }
     let all = Geometries::of(instances, image).ok()?;
     let upstream = Geometries::of(&instances[..before], image).ok()?;
-    let place = pickers
-        .places
-        .entry(active.picker)
-        .or_default()
-        .of_kind(active.area, &all);
+    let place = match active.once {
+        Some(place) => place,
+        None => (pickers.places.entry(active.picker).or_default()).of_kind(active.area, &all),
+    };
     let at = place.region(&upstream);
     let mut tag = Probed {
         through,
@@ -611,10 +628,26 @@ impl Engine {
                 keys,
                 settings,
                 channel,
-            } => return self.picker_on(picker, area, keys, settings, channel, events),
+            } => {
+                let start = Start::Kept { area };
+                return self.picker_on(picker, start, keys, settings, channel, events);
+            }
+            PickerCommand::Once {
+                picker,
+                region,
+                keys,
+                settings,
+                channel,
+            } => {
+                let start = Start::Once(region);
+                return self.picker_on(picker, start, keys, settings, channel, events);
+            }
             command => command,
         };
-        let mut active = self.pickers.active.ok_or(SessionError::NoPicker)?;
+        // A one-shot pick's picker takes no moves: nothing is left on of it.
+        let mut active = (self.pickers.active)
+            .filter(|active| active.once.is_none())
+            .ok_or(SessionError::NoPicker)?;
         let geometries = self.geometries()?;
         let places = self.pickers.places.entry(active.picker).or_default();
         let before = (active.area, places.of_kind(active.area, &geometries));
@@ -630,14 +663,7 @@ impl Engine {
                 done,
                 keys,
             } => {
-                let [from, to] = [from, to].map(picker::clamped);
-                let area = [
-                    from[0].min(to[0]),
-                    from[1].min(to[1]),
-                    from[0].max(to[0]),
-                    from[1].max(to[1]),
-                ];
-                places.area = Some(Place::of(Region::Area(area), &geometries));
+                places.area = Some(Place::of(spanned(from, to), &geometries));
                 active.area = true;
                 (done, keys)
             }
@@ -654,6 +680,7 @@ impl Engine {
                 (true, PickKeys::default())
             }
             PickerCommand::On { .. }
+            | PickerCommand::Once { .. }
             | PickerCommand::Off
             | PickerCommand::Settings { .. }
             | PickerCommand::Channel { .. } => unreachable!("handled above"),
@@ -691,11 +718,11 @@ impl Engine {
         Ok(effect)
     }
 
-    /// [`PickerCommand::On`].
+    /// [`PickerCommand::On`], and [`PickerCommand::Once`] as `start` says.
     fn picker_on(
         &mut self,
         picker: PickerRef,
-        area: bool,
+        start: Start,
         keys: PickKeys,
         settings: Vec<(&'static str, ControlValue)>,
         channel: Option<&'static str>,
@@ -707,11 +734,20 @@ impl Engine {
         if let Some(failed) = &self.pickers.failed {
             return Err(SessionError::Pickers(failed.clone()));
         }
+        let once = matches!(start, Start::Once(_));
+        // The Colour picker's picker writes nothing: no one-shot pick of it.
+        if once && picker == PickerRef::ColourPicker {
+            return Err(SessionError::UnknownPicker);
+        }
+        // A one-shot pick measures no frame part.
         let mut effect = PickerEffect {
-            moved: true,
+            moved: !once,
             ..Default::default()
         };
         let mut tool = None;
+        // The maps the region goes through, of the edit as it will stand: taken before
+        // anything is written, so a failure leaves the edit as it was.
+        let mut turned = None;
         if let PickerRef::Tool {
             tool: id,
             picker: name,
@@ -749,6 +785,7 @@ impl Engine {
             if !planned {
                 return Err(SessionError::UnknownPicker);
             }
+            turned = Some(Geometries::of(&bound.instances, &open.image)?);
             if self.pickers.probe.is_none() {
                 match pollster::block_on(Reducer::new(&self.gpu)) {
                     Ok(mut reducer) => {
@@ -791,16 +828,18 @@ impl Engine {
                 }
                 // With the end among the default steps it applies them, darktable's first
                 // change: a step of its tool, as darktable's picker turning its module on
-                // is a history item, saved with the log.
+                // is a history item, saved with the log; a one-shot pick's, with its pick.
                 if applies {
                     if let Some(open) = &mut self.open {
                         let wrote = vec![Wrote::Tool(found.definition().tool.id.to_owned())];
                         open.history.wrote(None, wrote, std::time::Instant::now());
                         open.unsaved = true;
                     }
-                    self.step(StepSource::You, None);
+                    if !once {
+                        self.step(StepSource::You, None);
+                    }
                 }
-                (effect.values, effect.render, effect.save) = (true, true, true);
+                (effect.values, effect.render, effect.save) = (true, true, !once);
             }
             self.pickers
                 .settings
@@ -813,13 +852,13 @@ impl Engine {
             }
             self.pickers.drag += 1;
             self.pickers.released = self.pickers.drag;
-            let area = match declared.kind {
-                PickerKind::Point => false,
-                PickerKind::Area => true,
-                PickerKind::PointArea => area,
-            };
+            // A one-shot pick's turning on is held until its pick is written or found to
+            // write nothing, never a step of its own: its drag's change.
+            if once && changed {
+                self.pickers.gesture = Some(self.pickers.drag);
+            }
             tool = Some((
-                area,
+                declared.kind,
                 OnTool {
                     tool: found.definition().tool.id,
                     picker: declared,
@@ -837,14 +876,35 @@ impl Engine {
         if self.pickers.active.is_some() {
             self.picker_off(events);
         }
-        let (area, tool) = match tool {
-            Some((area, on)) => (area, Some(on)),
-            None => (area, None),
+        let geometries = match turned {
+            Some(geometries) => geometries,
+            None => self.geometries()?,
         };
-        let geometries = self.geometries()?;
-        let places = self.pickers.places.entry(picker).or_default();
-        places.of_kind(area, &geometries);
-        self.pickers.active = Some(Active { picker, area, tool });
+        let kind = tool.map(|(kind, _)| kind);
+        let (area, once) = match start {
+            Start::Kept { area } => {
+                let area = match kind {
+                    Some(PickerKind::Point) => false,
+                    Some(PickerKind::Area) => true,
+                    Some(PickerKind::PointArea) | None => area,
+                };
+                let places = self.pickers.places.entry(picker).or_default();
+                places.of_kind(area, &geometries);
+                (area, None)
+            }
+            Start::Once(region) => {
+                let region = read_once(region, kind, geometries.aspect());
+                let area = matches!(region, Region::Area(_));
+                (area, Some(Place::of(region, &geometries)))
+            }
+        };
+        let tool = tool.map(|(_, on)| on);
+        self.pickers.active = Some(Active {
+            picker,
+            area,
+            tool,
+            once,
+        });
         Ok(effect)
     }
 
@@ -965,6 +1025,10 @@ impl Engine {
                 reading: None,
             });
             self.answer(gesture, owed);
+            // The step a gesture under way made, so a client's history and Undo follow it.
+            if gesture {
+                events.extend(self.history_event());
+            }
         }
     }
 
@@ -1017,7 +1081,8 @@ impl Engine {
         size: [u32; 2],
         events: &mut Vec<Event>,
     ) {
-        let Some(active) = self.pickers.active else {
+        // A one-shot pick measures no frame part.
+        let Some(active) = self.pickers.active.filter(|active| active.once.is_none()) else {
             return;
         };
         let geometries = match self.geometries() {
@@ -1255,6 +1320,7 @@ impl Engine {
             }
             // A reading of a drag released, applied or not, may be its last.
             self.settle();
+            self.once_over(&mut events);
         }
         if let Some(error) = failed {
             self.pickers_fail(error, &mut events);
@@ -1278,6 +1344,40 @@ impl Engine {
             self.save();
         } else if self.pickers.answerable() && !self.unsaved() {
             self.save_held();
+        }
+    }
+
+    /// Before a command on the edit: a one-shot pick's turning on still held, its reading
+    /// still to come, saved as a step of its own of source Auto, so the command's step
+    /// never takes it in.
+    pub(super) fn save_held_once(&mut self) {
+        let once = (self.pickers.active).is_some_and(|active| active.once.is_some());
+        if once && self.pickers.gesture.take().is_some() {
+            self.save_picks();
+        }
+    }
+
+    /// Ends a one-shot pick still waiting for its reading, as a move through the history
+    /// comes: its reading would otherwise write over the edit the move left. Its turning on
+    /// held is a step of its own, which the move takes back or puts back, saved and sent
+    /// with the move's.
+    pub(super) fn once_off(&mut self, events: &mut Vec<Event>) {
+        if (self.pickers.active).is_some_and(|active| active.once.is_some()) {
+            if self.pickers.gesture.take().is_some() {
+                self.step(StepSource::Auto, None);
+            }
+            self.picker_off(events);
+        }
+    }
+
+    /// Turns a one-shot pick's picker off once its one reading is handled
+    /// ([`PickerCommand::Once`]): applied, with nothing to apply, or missing what it reads,
+    /// the step its drag made sent before the picker's end.
+    fn once_over(&mut self, events: &mut Vec<Event>) {
+        let once = (self.pickers.active).is_some_and(|active| active.once.is_some());
+        if once && self.pickers.complete(self.pickers.drag) {
+            events.extend(self.history_event());
+            self.picker_off(events);
         }
     }
 
@@ -1556,6 +1656,10 @@ impl Engine {
             });
         }
         self.answer(gesture, owed);
+        // The step a gesture under way made, as `picker_off` sends it.
+        if gesture {
+            events.extend(self.history_event());
+        }
     }
 
     /// Whether the photo is live (decision 77): open, its raw uploaded, no open under way.
@@ -1569,6 +1673,32 @@ impl Engine {
         let open = self.open.as_ref().ok_or(SessionError::NotLive)?;
         let bound = edit::instances(&open.shown(), self.operations, &self.tools, &open.image);
         Ok(Geometries::of(&bound.instances, &open.image)?)
+    }
+}
+
+/// The area from one corner, `from`, to the other, `to`, in any order, each clamped to the
+/// photo.
+fn spanned(from: [f32; 2], to: [f32; 2]) -> Region {
+    let [from, to] = [from, to].map(picker::clamped);
+    Region::Area([
+        from[0].min(to[0]),
+        from[1].min(to[1]),
+        from[0].max(to[0]),
+        from[1].max(to[1]),
+    ])
+}
+
+/// What a one-shot pick of `region` reads with a picker of `kind`, on a photo of `aspect`:
+/// an area as sent, as `Area` sets it; a point as a plain click there reads in darktable,
+/// the point for a picker that takes points, the area a press there starts for an area
+/// picker ([`Region::pressed`]).
+fn read_once(region: Region, kind: Option<PickerKind>, aspect: f32) -> Region {
+    match region {
+        Region::Area([left, top, right, bottom]) => spanned([left, top], [right, bottom]),
+        Region::Point(at) if kind == Some(PickerKind::Area) => {
+            Region::Area(Region::pressed(picker::clamped(at), aspect))
+        }
+        Region::Point(at) => Region::Point(picker::clamped(at)),
     }
 }
 

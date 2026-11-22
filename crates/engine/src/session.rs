@@ -1212,25 +1212,28 @@ pub enum SessionError {
     /// its frames stay at Fit, as [`Frame::place`] says (decision 99).
     #[error("the photo stays at Fit: {0}")]
     Zoom(String),
-    /// [`PickerCommand::On`] named a picker no tool declares, or one whose operation
-    /// the plan lacks once its tool is on.
+    /// [`PickerCommand::On`] or [`PickerCommand::Once`] named a picker no tool declares,
+    /// or one whose operation the plan lacks once its tool is on; `Once`, the Colour
+    /// picker's too.
     #[error("no tool has that colour picker")]
     UnknownPicker,
-    /// [`PickerCommand::On`] or [`PickerCommand::Settings`] named a setting none of the
-    /// tool's pickers reads.
+    /// [`PickerCommand::On`], [`PickerCommand::Once`] or [`PickerCommand::Settings`] named
+    /// a setting none of the tool's pickers reads.
     #[error("no colour picker of the tool reads the setting {0}")]
     UnknownSetting(&'static str),
-    /// A colour picker's point, area, switch or reset with no picker on.
+    /// A colour picker's point, area, switch or reset with no picker on, or with only a
+    /// one-shot pick's ([`PickerCommand::Once`]), which takes no moves.
     #[error("no colour picker is on")]
     NoPicker,
-    /// [`PickerCommand::On`] named a tool's picker while the History tab's eye hides a
-    /// tool ([`Command::Hide`]): its reading would be the view's, not the edit's, and
-    /// what it wrote would reach the edit and its exports (decision 78).
+    /// [`PickerCommand::On`] or [`PickerCommand::Once`] named a tool's picker while the
+    /// History tab's eye hides a tool ([`Command::Hide`]): its reading would be the view's,
+    /// not the edit's, and what it wrote would reach the edit and its exports (decision 78).
     #[error("a tool is hidden in the view")]
     Hidden,
-    /// [`PickerCommand::On`] named a tool's picker that cannot start with the settings it
-    /// carries ([`apertrust_tools::ProcessingTool::picker_ready`], decision 88), as
-    /// Exposure's toward a reference with none set, so a script cannot pick toward nothing.
+    /// [`PickerCommand::On`] or [`PickerCommand::Once`] named a tool's picker that cannot
+    /// start with the settings it carries ([`apertrust_tools::ProcessingTool::picker_ready`],
+    /// decision 88), as Exposure's toward a reference with none set, so a script cannot pick
+    /// toward nothing.
     #[error("the colour picker cannot start with these settings")]
     NotReady,
     /// The colour pickers could not be measured or read back; they are off for the rest
@@ -3532,6 +3535,19 @@ impl Engine {
                     Ok(())
                 }
                 command => {
+                    // A move through the history, or a rewrite of it, ends a one-shot pick
+                    // still waiting.
+                    if matches!(
+                        command,
+                        Command::Undo
+                            | Command::Redo
+                            | Command::GoTo { .. }
+                            | Command::Compress { .. }
+                            | Command::Truncate { .. }
+                            | Command::DiscardHistory
+                    ) {
+                        self.once_off(&mut events);
+                    }
                     let viewing = self.open.as_ref().is_some_and(|o| o.view_only.is_some());
                     let applied = self.apply_edit(command, at).map(|effect| {
                         render |= effect.render;
