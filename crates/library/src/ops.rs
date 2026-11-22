@@ -739,13 +739,36 @@ pub fn rendered_matches(version: &[u8], edit_hash: &[u8; 32]) -> bool {
     *edit_hash != UNALTERED && version == rendered_version(edit_hash)
 }
 
+/// Where a rendered thumbnail of a photo with no edit came from, which decides where it is
+/// shown (`docs/library.md`, Thumbnails).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Origin {
+    /// Made from the live photo: shown at every size, whatever `library.raw_thumbnails_from`
+    /// says, while the raw is the one it records.
+    Opened,
+    /// Made because darktable's rule shows a render there: shown only where the rule
+    /// shows one.
+    Rule,
+}
+
+impl Origin {
+    fn byte(self) -> u8 {
+        match self {
+            Origin::Rule => 0,
+            Origin::Opened => 1,
+        }
+    }
+}
+
 /// A rendered thumbnail's version for a photo with no edit: [`rendered_version`] of
 /// [`UNALTERED`], then the raw's facts darktable's rule read as it was written, so a grid
 /// read of it decides with no look at the raw: 1 or 0 for an embedded picture, its stored
 /// width and height, the raw's width and height, each a little-endian `u32`, 1 or 0 for
-/// Phase One, then the raw's [`RawStamp`] as they were read. A render whose facts could not
-/// be read is [`rendered_version`] of [`UNALTERED`] alone, so a later read looks again.
-pub fn unaltered_version(facts: &RawFacts, stamp: &RawStamp) -> Vec<u8> {
+/// Phase One; then where it came from, `origin`, 1 for [`Origin::Opened`] or 0 for
+/// [`Origin::Rule`]; then the raw's [`RawStamp`] as they were read. A render whose facts
+/// could not be read is [`rendered_version`] of [`UNALTERED`] alone, so a later read looks
+/// again.
+pub fn unaltered_version(facts: &RawFacts, stamp: &RawStamp, origin: Origin) -> Vec<u8> {
     let mut version = rendered_version(&UNALTERED);
     let (width, height) = facts.embedded.unwrap_or((0, 0));
     version.push(u8::from(facts.embedded.is_some()));
@@ -753,16 +776,28 @@ pub fn unaltered_version(facts: &RawFacts, stamp: &RawStamp) -> Vec<u8> {
         version.extend_from_slice(&word.to_le_bytes());
     }
     version.push(u8::from(facts.phase_one));
+    version.push(origin.byte());
     version.extend_from_slice(stamp);
     version
 }
 
-/// The facts a rendered thumbnail of a photo with no edit records, at the current render
-/// version and of the raw at `stamp` ([`unaltered_version`]); `None` for any other version,
-/// one of a raw since replaced or one that records none.
-pub fn unaltered_facts(version: &[u8], stamp: &RawStamp) -> Option<RawFacts> {
+/// The facts a rendered thumbnail of a photo with no edit records and where it came from,
+/// at the current render version and of the raw at `stamp` ([`unaltered_version`]); `None`
+/// for any other version, one of a raw since replaced or one that records none. A version
+/// written before renders recorded their origin, with no byte for it, is
+/// [`Origin::Rule`]'s.
+pub fn unaltered_facts(version: &[u8], stamp: &RawStamp) -> Option<(RawFacts, Origin)> {
     let recorded = version.strip_prefix(rendered_version(&UNALTERED).as_slice())?;
     let (facts, recorded) = recorded.split_at_checked(18)?;
+    let (origin, recorded) = match recorded.len() {
+        24 => (Origin::Rule, recorded),
+        25 => match recorded.split_first()? {
+            (0, rest) => (Origin::Rule, rest),
+            (1, rest) => (Origin::Opened, rest),
+            _ => return None,
+        },
+        _ => return None,
+    };
     if recorded != stamp {
         return None;
     }
@@ -778,11 +813,12 @@ pub fn unaltered_facts(version: &[u8], stamp: &RawStamp) -> Option<RawFacts> {
     let [width, height, raw_width, raw_height] = words[..] else {
         return None;
     };
-    (*present <= 1 && *phase_one <= 1).then_some(RawFacts {
+    let facts = RawFacts {
         embedded: (*present == 1).then_some((width, height)),
         raw: (raw_width, raw_height),
         phase_one: *phase_one == 1,
-    })
+    };
+    (*present <= 1 && *phase_one <= 1).then_some((facts, origin))
 }
 
 /// The edit hash a rendered thumbnail of a photo with no edit carries in its version, in
@@ -1659,10 +1695,13 @@ mod tests {
                 phase_one: true,
             },
         ] {
-            let version = unaltered_version(&facts, &stamp);
+            let version = unaltered_version(&facts, &stamp, Origin::Rule);
             assert!(rendered_unaltered(&version));
             assert!(!rendered_matches(&version, &UNALTERED));
-            assert_eq!(unaltered_facts(&version, &stamp), Some(facts));
+            assert_eq!(
+                unaltered_facts(&version, &stamp),
+                Some((facts, Origin::Rule))
+            );
             let mut replaced = stamp;
             replaced[0] ^= 1;
             assert_eq!(unaltered_facts(&version, &replaced), None);
@@ -1677,9 +1716,61 @@ mod tests {
             raw: (1, 1),
             phase_one: false,
         };
-        let mut longer = unaltered_version(&facts, &stamp);
+        let mut longer = unaltered_version(&facts, &stamp, Origin::Rule);
         longer.push(0);
         assert_eq!(unaltered_facts(&longer, &stamp), None);
+    }
+
+    /// A photo with no edit's render records where it came from, read back with its facts,
+    /// for the raw it read alone; a byte that names no origin reads as no version.
+    #[test]
+    fn an_unaltered_version_records_its_origin() {
+        let stamp = [3; 24];
+        let facts = RawFacts {
+            embedded: Some((1616, 1080)),
+            raw: (6048, 4024),
+            phase_one: false,
+        };
+        for origin in [Origin::Opened, Origin::Rule] {
+            let version = unaltered_version(&facts, &stamp, origin);
+            assert!(rendered_unaltered(&version));
+            assert!(!rendered_matches(&version, &UNALTERED));
+            assert_eq!(unaltered_facts(&version, &stamp), Some((facts, origin)));
+            let mut replaced = stamp;
+            replaced[23] ^= 1;
+            assert_eq!(unaltered_facts(&version, &replaced), None, "{origin:?}");
+        }
+        let mut unknown = unaltered_version(&facts, &stamp, Origin::Opened);
+        let at = unknown.len() - stamp.len() - 1;
+        unknown[at] = 2;
+        assert_eq!(unaltered_facts(&unknown, &stamp), None);
+    }
+
+    /// A render written before renders recorded their origin, its facts followed by the
+    /// stamp alone, reads as made by the rule, its facts as written.
+    #[test]
+    fn an_unaltered_version_without_an_origin_reads_as_rule() {
+        let stamp = [5; 24];
+        let facts = RawFacts {
+            embedded: Some((640, 480)),
+            raw: (9504, 6336),
+            phase_one: false,
+        };
+        let mut earlier = rendered_version(&UNALTERED);
+        earlier.push(1);
+        for word in [640u32, 480, 9504, 6336] {
+            earlier.extend_from_slice(&word.to_le_bytes());
+        }
+        earlier.push(0);
+        earlier.extend_from_slice(&stamp);
+        assert!(rendered_unaltered(&earlier));
+        assert_eq!(
+            unaltered_facts(&earlier, &stamp),
+            Some((facts, Origin::Rule))
+        );
+        let mut replaced = stamp;
+        replaced[0] ^= 1;
+        assert_eq!(unaltered_facts(&earlier, &replaced), None);
     }
 
     /// A grid cell's size takes darktable's level whose picture holds it: 128 takes 360 by

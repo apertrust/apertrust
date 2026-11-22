@@ -804,7 +804,8 @@ fn a_render_that_records_its_facts_is_shown_with_no_read_of_the_raw() {
         raw: (6048, 4024),
         phase_one: false,
     };
-    let version = library::unaltered_version(&recorded, &library::raw_stamp(&path).unwrap());
+    let stamp = library::raw_stamp(&path).unwrap();
+    let version = library::unaltered_version(&recorded, &stamp, library::Origin::Rule);
     let jpeg = encode(&gradient_of(32, 24)).unwrap();
     bench
         .cache

@@ -211,6 +211,7 @@ pub(crate) fn serve(
                 let path = folder.join(photo);
                 (library::raw_stamp(&path))
                     .and_then(|stamp| library::unaltered_facts(&version, &stamp))
+                    .map(|(facts, _)| facts)
                     .unwrap_or_else(|| facts(&path))
             };
             let shows = raw.renders_at(asks) || raw.shows_render(asks, &read());
