@@ -78,6 +78,7 @@ The libraries Apertrust and its command line are built from, on every platform, 
 - anstyle-query 1.1.5: MIT OR Apache-2.0
 - anstyle-wincon 3.0.11: MIT OR Apache-2.0
 - anyhow 1.0.104: MIT OR Apache-2.0
+- arboard 3.7.0: MIT OR Apache-2.0
 - arrayref 0.3.9: BSD-2-Clause
 - arrayvec 0.7.8: MIT OR Apache-2.0
 - as-raw-xcb-connection 1.0.1: MIT OR Apache-2.0
@@ -115,13 +116,16 @@ The libraries Apertrust and its command line are built from, on every platform, 
 - bytes 1.12.1: MIT
 - calendrical_calculations 0.2.4: Apache-2.0
 - calloop 0.13.0: MIT
+- calloop 0.14.5: MIT
 - calloop-wayland-source 0.3.0: MIT
+- calloop-wayland-source 0.4.1: MIT
 - cfg-if 1.0.5: MIT OR Apache-2.0
 - chrono 0.4.45: MIT OR Apache-2.0
 - clap 4.6.9: MIT OR Apache-2.0
 - clap_builder 4.6.7: MIT OR Apache-2.0
 - clap_derive 4.6.9: MIT OR Apache-2.0
 - clap_lex 1.1.1: MIT OR Apache-2.0
+- clipboard-win 5.4.3: BSL-1.0
 - codespan-reporting 0.13.1: Apache-2.0
 - color 0.3.3: Apache-2.0 OR MIT
 - colorchoice 1.0.5: MIT OR Apache-2.0
@@ -171,18 +175,22 @@ The libraries Apertrust and its command line are built from, on every platform, 
 - epaint 0.37.0: MIT OR Apache-2.0
 - equivalent 1.0.3: Apache-2.0 OR MIT
 - errno 0.3.14: MIT OR Apache-2.0
+- error-code 3.4.0: BSL-1.0
 - euclid 0.22.14: MIT OR Apache-2.0
 - event-listener 5.4.2: Apache-2.0 OR MIT
 - event-listener-strategy 0.5.4: Apache-2.0 OR MIT
 - fastrand 2.5.0: Apache-2.0 OR MIT
+- fax 0.2.7: MIT
 - fdeflate 0.3.7: MIT OR Apache-2.0
 - fearless_simd 0.4.1: Apache-2.0 OR MIT
 - fixed_decimal 0.7.3: Unicode-3.0
+- fixedbitset 0.5.7: MIT OR Apache-2.0
 - flate2 1.1.11: MIT OR Apache-2.0
 - float-cmp 0.9.0: MIT
 - fluent-bundle 0.16.0: Apache-2.0 OR MIT
 - fluent-langneg 0.13.1: Apache-2.0 OR MIT
 - fluent-syntax 0.12.0: Apache-2.0 OR MIT
+- foldhash 0.1.5: Zlib
 - foldhash 0.2.0: Zlib
 - font-types 0.12.7: MIT OR Apache-2.0
 - foreign-types 0.5.0: MIT/Apache-2.0
@@ -205,6 +213,7 @@ The libraries Apertrust and its command line are built from, on every platform, 
 - guillotiere 0.7.0: MIT/Apache-2.0
 - half 2.7.1: MIT OR Apache-2.0
 - harfrust 0.12.0: MIT
+- hashbrown 0.15.5: MIT OR Apache-2.0
 - hashbrown 0.16.1: MIT OR Apache-2.0
 - hashbrown 0.17.1: MIT OR Apache-2.0
 - heck 0.5.0: MIT OR Apache-2.0
@@ -298,6 +307,7 @@ The libraries Apertrust and its command line are built from, on every platform, 
 - ndk-sys 0.6.0+11769913: MIT OR Apache-2.0
 - no_std_io2 0.9.4: Apache-2.0 OR MIT
 - nohash-hasher 0.2.0: Apache-2.0 OR MIT
+- nom 8.0.0: MIT
 - num 0.4.3: MIT OR Apache-2.0
 - num-bigint 0.4.8: MIT OR Apache-2.0
 - num-complex 0.4.6: MIT OR Apache-2.0
@@ -329,11 +339,13 @@ The libraries Apertrust and its command line are built from, on every platform, 
 - orbclient 0.3.55: MIT
 - ordered-float 5.5.1: MIT
 - ordered-stream 0.2.0: MIT OR Apache-2.0
+- os_pipe 1.2.3: MIT
 - parking 2.2.1: Apache-2.0 OR MIT
 - parking_lot 0.12.5: MIT OR Apache-2.0
 - parking_lot_core 0.9.12: MIT OR Apache-2.0
 - peniko 0.6.1: Apache-2.0 OR MIT
 - percent-encoding 2.3.2: MIT OR Apache-2.0
+- petgraph 0.8.3: MIT OR Apache-2.0
 - phf 0.14.0: MIT
 - phf_generator 0.14.0: MIT
 - phf_macros 0.14.0: MIT
@@ -357,6 +369,7 @@ The libraries Apertrust and its command line are built from, on every platform, 
 - profiling 1.0.18: MIT OR Apache-2.0
 - pulldown-cmark 0.13.6: MIT
 - pxfm 0.1.30: BSD-3-Clause OR Apache-2.0
+- quick-error 2.0.1: MIT/Apache-2.0
 - quick-xml 0.41.0: MIT
 - quick-xml 0.42.0: MIT
 - quote 1.0.47: MIT OR Apache-2.0
@@ -409,6 +422,8 @@ The libraries Apertrust and its command line are built from, on every platform, 
 - slotmap 1.1.1: Zlib
 - smallvec 1.16.4: MIT OR Apache-2.0
 - smithay-client-toolkit 0.19.2: MIT
+- smithay-client-toolkit 0.20.0: MIT
+- smithay-clipboard 0.7.3: MIT
 - smol_str 0.2.2: MIT OR Apache-2.0
 - spirv 0.4.0+sdk-1.4.341.0: Apache-2.0
 - stable_deref_trait 1.2.1: MIT OR Apache-2.0
@@ -426,6 +441,7 @@ The libraries Apertrust and its command line are built from, on every platform, 
 - thiserror-impl 1.0.69: MIT OR Apache-2.0
 - thiserror-impl 2.0.21: MIT OR Apache-2.0
 - thread_local 1.1.10: MIT OR Apache-2.0
+- tiff 0.11.3: MIT
 - tiny-skia 0.12.0: BSD-3-Clause
 - tiny-skia-path 0.12.0: BSD-3-Clause
 - tinystr 0.8.5: Unicode-3.0
@@ -444,6 +460,7 @@ The libraries Apertrust and its command line are built from, on every platform, 
 - tracing-core 0.1.36: MIT
 - tracing-log 0.2.0: MIT
 - tracing-subscriber 0.3.23: MIT
+- tree_magic_mini 3.2.2: MIT
 - type-map 0.5.1: MIT/Apache-2.0
 - uds_windows 1.2.1: MIT
 - unic-langid 0.9.6: MIT OR Apache-2.0
@@ -473,6 +490,8 @@ The libraries Apertrust and its command line are built from, on every platform, 
 - wayland-csd-frame 0.3.0: MIT
 - wayland-cursor 0.31.14: MIT
 - wayland-protocols 0.32.13: MIT
+- wayland-protocols-experimental 20250721.0.1: MIT
+- wayland-protocols-misc 0.3.12: MIT
 - wayland-protocols-plasma 0.3.12: MIT
 - wayland-protocols-wlr 0.3.12: MIT
 - wayland-scanner 0.31.11: MIT
@@ -517,6 +536,7 @@ The libraries Apertrust and its command line are built from, on every platform, 
 - winnow 0.7.15: MIT
 - winnow 1.0.4: MIT
 - wit-bindgen 0.57.1: Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT
+- wl-clipboard-rs 0.9.5: MIT OR Apache-2.0
 - writeable 0.6.4: Unicode-3.0
 - x11-dl 2.21.0: MIT
 - x11rb 0.13.2: MIT OR Apache-2.0
