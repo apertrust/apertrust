@@ -30,6 +30,7 @@ Local edits need masks. darktable gives each module instance its own mask and le
 - **Feather and Edge** refine the layer's whole mask after its parts: a blur and a guided filter.
 - **Range parts are read once per layer** on the photo with Image's edits and no layer's, at a reference point, scene-linear after colour calibration. The result serves every instance in the layer, so the mask looks the same whatever tools the layer holds and no layer's mask depends on another layer's edits. Per-tool evaluation stays as an advanced option.
 - **Shapes** are stored in the original image's coordinates and mapped forward through the geometry ([0016](0016-geometry-for-operations-that-move-pixels.md)).
+- **Drawn** from the Layers section's buttons or from the Mask cursors on the Toolbar's well, Brush, Linear gradient, Radial gradient, AI object and Path ([0104](0104-cursors-one-chosen-at-a-time-in-a-well-on-the-toolbar.md)): one state, so a part's button pressed chooses its cursor, which the well shows, and the cursor chosen shows the button on. Each stroke or shape is one step on the chosen layer's mask.
 
 **AI parts** store their request (the model, the class or the clicked point) and the resulting raster in `.apdata`:
 
@@ -40,7 +41,7 @@ Local edits need masks. darktable gives each module instance its own mask and le
 
 **The list,** top to bottom: the adjustment layers, then the retouch layers, then Image, a thin divider between the two kinds of layer and no headings; a new layer goes at the top of its kind.
 
-**Retouch layers,** heal, clone and AI erase, each holding many spots, apply first whatever their place in the list, since retouch runs before the adjustments; their type icon's tooltip says so. They have opacity, hide, rename and delete as any layer, and move only among the retouch layers. darktable's retouch module is ported as these layers in Phase 4, not in the first pass.
+**Retouch layers,** heal, clone and AI erase, each holding many spots, apply first whatever their place in the list, since retouch runs before the adjustments; their type icon's tooltip says so. They have opacity, hide, rename and delete as any layer, and move only among the retouch layers. Their spots are drawn from the Layers section's buttons or the Retouch cursors, Heal and Clone, one state as a mask's are. darktable's retouch module is ported as these layers in Phase 4, not in the first pass.
 
 **Global tools stay on Image:** the raw stage, lens correction, geometry and the others a tool's page marks background only, shown unavailable on a layer with the reason. A tone mapper on a layer replaces Image's within the layer's mask, never stacked on it ([0033](0033-one-tone-mapper-per-edit.md)).
 
@@ -73,4 +74,5 @@ Local edits need masks. darktable gives each module instance its own mask and le
 - A layer's `base` for bindings, and how a tool's defaults and unavailable controls follow from running on Image or on a layer (darktable's per-instance defaults, such as exposure's), are designed with layers.
 - darktable's two "sharpen demosaicing" presets of diffuse or sharpen are left out: they need an instance moved before input colour, and Demosaic's capture sharpening does that job there.
 - Golden comparisons with darktable cover opacity for the operations that mix linearly, drawn shapes and the refinement; range parts and layer order are checked by Apertrust's own invariants.
+- The Mask and Retouch cursors ([0104](0104-cursors-one-chosen-at-a-time-in-a-well-on-the-toolbar.md)) come with layers: their group settings, amounts, keys and what a press does with no layer to draw on are designed with them.
 - Spikes before Phase 4's interface: the layer graph (15 layers, 100 brush strokes and 5 AI parts at 60 MP on the M4, the RTX 5060 and lavapipe), masks on the GPU (brushes and paths), shapes through the geometry, and AI parts through ONNX Runtime ([0060](0060-ai-inference-with-onnx-runtime.md)).
