@@ -1118,6 +1118,15 @@ cursor-list =
         [settings] Ustawienia: { $group }
        *[both] Kursory i ustawienia: { $group }
     }
+cursor-select = Zaznaczanie
+cursor-select-how = Kliknij znacznik na zdjęciu, aby go zaznaczyć, przeciągnij, aby go przesunąć; przeciągnij gdzie indziej, aby przesunąć widok
+cursor-pan = Przesuwanie
+cursor-pan-how = Przeciągnij, aby przesunąć powiększone zdjęcie, także nad znacznikami
+cursor-group-select = Zaznaczanie
+cursor-group-pan = Przesuwanie
+cursor-group-pick = Próbniki
+cursor-setting-pick-show-last = Pokazuj ostatnią próbkę na zdjęciu
+cursor-well-no-photo = Otwórz zdjęcie, aby wybrać kursor
 
 ## Próbki pipety (docs/pickers.md, Declaring pickers).
 picker-patch-input = Wejście

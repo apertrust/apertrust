@@ -214,6 +214,11 @@ impl ActionId {
     /// Settings' Restart now, in no menu yet.
     pub const RESTART: ActionId = ActionId("restart");
     pub const PEEK: ActionId = ActionId("peek");
+    /// The cursors (decision 104): Select, chosen by Esc where nothing focused keeps it,
+    /// and Pan, borrowed while A is held; a tool's are made as the app starts
+    /// ([`cursor_actions`]).
+    pub const CURSOR_SELECT: ActionId = ActionId("cursor-select");
+    pub const CURSOR_PAN: ActionId = ActionId("cursor-pan");
     pub const NEXT_PHOTO: ActionId = ActionId("next-photo");
     pub const PREVIOUS_PHOTO: ActionId = ActionId("previous-photo");
     /// The photo's zoom, View's items and the viewer bar's zoom menu's: in, out, Fit and
@@ -387,6 +392,10 @@ pub enum Intent {
     Restart,
     /// Held, never applied: the sections read it ([`Keys::held`]) and peek.
     Peek,
+    /// The cursor chosen, which decides what a press on the photo does (decision 104):
+    /// its key, its face in the well or its line in its group's list. Pan's key is held
+    /// alone, read as [`Keys::held`], borrowing Pan while it is down.
+    Cursor(crate::cursors::Cursor),
     /// The Browser's sort, its direction, the thumbnails' size or where the panel is, as
     /// the browser bar's menus choose them, or its Labels turned on or off.
     BrowserBar(BrowserBarAction),
@@ -622,6 +631,10 @@ pub struct State {
     /// The background behind the photo, whose item is shown checked; None for a theme's
     /// own surround that is none of the six.
     pub background: Option<Background>,
+    /// Whether a widget had the keys as the last frame ended, a focused control, a field,
+    /// an open list or Find Tool…'s search: Escape is then theirs, left in the input for
+    /// them, egui having taken the focus from them as the frame began (decision 104).
+    pub escape_kept: bool,
 }
 
 /// Whether each of the Select menu's items would change the selection
@@ -1030,7 +1043,7 @@ const fn to_tab<const I: usize>(message: &'static str) -> Action {
 
 /// Every action, in the order a keyboard map lists them (`docs/gui.md`, The default
 /// keyboard map). Slider keys are not here: they are the slider's own (`SliderRow`).
-pub static ACTIONS: [Action; 138] = [
+pub static ACTIONS: [Action; 140] = [
     // About Apertrust, in the app menu on the Mac and in Help on Windows and Linux.
     Action {
         id: ActionId::ABOUT,
@@ -1756,6 +1769,27 @@ pub static ACTIONS: [Action; 138] = [
         available: |s| s.photo,
         emits: Emit::Intent(Intent::Peek),
     },
+    // The cursors (decision 104; `docs/cursors.md`, Keys): Select on Esc, which a widget
+    // that had the keys keeps ([`State::escape_kept`]); and Pan while A is held, as H's
+    // peek is. Each while a photo is shown.
+    Action {
+        id: ActionId::CURSOR_SELECT,
+        message: "cursor-select",
+        keys: &[plain(Key::Escape)],
+        scope: Scope::View(View::Edit),
+        trigger: Trigger::Press,
+        available: cursor_available,
+        emits: Emit::Intent(Intent::Cursor(crate::cursors::Cursor::SELECT)),
+    },
+    Action {
+        id: ActionId::CURSOR_PAN,
+        message: "cursor-pan",
+        keys: &[plain(Key::A)],
+        scope: Scope::View(View::Edit),
+        trigger: Trigger::Hold,
+        available: cursor_available,
+        emits: Emit::Intent(Intent::Cursor(crate::cursors::Cursor::PAN)),
+    },
     Action {
         id: ActionId::NEXT_PHOTO,
         message: "action-next-photo",
@@ -2103,12 +2137,13 @@ pub fn named(id: &str) -> Option<&'static Action> {
     all().find(|a| a.id.0 == id)
 }
 
-/// Every action: [`ACTIONS`], then the tools' own ([`tool_actions`]), then the
-/// workspaces' ([`workspace_actions`]).
+/// Every action: [`ACTIONS`], then the tools' own ([`tool_actions`]), then the tools'
+/// cursors' ([`cursor_actions`]), then the workspaces' ([`workspace_actions`]).
 pub fn all() -> impl Iterator<Item = &'static Action> {
     ACTIONS
         .iter()
         .chain(tool_actions())
+        .chain(cursor_actions())
         .chain(workspace_actions())
 }
 
@@ -2167,6 +2202,62 @@ fn own_actions(definition: &'static ProcessingDefinition) -> Vec<(&'static str, 
 /// only, on the main window, with no modal dialog over it, as its button is enabled.
 fn tool_action_available(state: &State) -> bool {
     state.editable && on_main_window(state) && no_modal_dialog(state)
+}
+
+/// The tools' picker cursors' actions (decision 104; `docs/cursors.md`, Actions and words),
+/// made once as the app starts from their declarations: `tool-<tool>-cursor-<cursor>`, its
+/// words the cursor's name, its key the cursor's own where it declares one, as White
+/// balance's K, in the view's scope. Each chooses its cursor while a photo is shown, as
+/// its face in the well does.
+pub fn cursor_actions() -> &'static [Action] {
+    static MADE: std::sync::OnceLock<Vec<Action>> = std::sync::OnceLock::new();
+    MADE.get_or_init(|| {
+        let leak = |text: String| -> &'static str { Box::leak(text.into_boxed_str()) };
+        let mut made = Vec::new();
+        for entry in crate::cursors::registry().entries() {
+            let crate::cursors::Owner::Tool(tool) = entry.cursor.owner else {
+                continue;
+            };
+            let id = apertrust_tools::messages::cursor(tool, entry.cursor.id);
+            let keys: Vec<Binding> = (entry.def.key.and_then(Shortcut::parse))
+                .map(|shortcut| Binding {
+                    shortcut,
+                    on: Platforms::All,
+                })
+                .into_iter()
+                .collect();
+            let id = leak(id);
+            made.push(Action {
+                id: ActionId(id),
+                message: id,
+                keys: Box::leak(keys.into_boxed_slice()),
+                scope: Scope::View(View::Edit),
+                trigger: Trigger::Press,
+                available: cursor_available,
+                emits: Emit::Intent(Intent::Cursor(entry.cursor)),
+            });
+        }
+        made
+    })
+}
+
+/// A tool's picker cursor's action: `tool-<tool>-cursor-<cursor>`, as made by
+/// [`cursor_actions`].
+pub fn cursor_action(cursor: crate::cursors::Cursor) -> ActionId {
+    let crate::cursors::Owner::Tool(tool) = cursor.owner else {
+        return ActionId::CURSOR_SELECT;
+    };
+    let id = apertrust_tools::messages::cursor(tool, cursor.id);
+    (cursor_actions().iter())
+        .find(|action| action.id.0 == id)
+        .map_or(ActionId::CURSOR_SELECT, |action| action.id)
+}
+
+/// Whether a cursor can be chosen: a photo shown, on the main window, with no modal dialog
+/// over it, as the well is enabled (`docs/cursors.md`, The well). One that cannot act yet
+/// is chosen all the same, and says why.
+fn cursor_available(state: &State) -> bool {
+    state.photo && on_main_window(state) && no_modal_dialog(state)
 }
 
 /// The workspaces' actions made so far ([`workspace`]), the built-in ones first.
@@ -2543,6 +2634,8 @@ impl Shortcut {
         }
         parts.push(match self.key {
             Key::Space => tr.text("key-space"),
+            // As darktable and the keys print it.
+            Key::Escape => "Esc".to_owned(),
             Key::Backspace if mac => "Delete".to_owned(),
             Key::Delete if mac => "Forward Delete".to_owned(),
             Key::Enter if mac => "Return".to_owned(),
@@ -2939,6 +3032,12 @@ fn take_presses(
             modifiers,
             typed,
         };
+        // A plain Escape stays with the widget that had the keys as the last frame ended,
+        // which egui has taken the focus from already: a field's cancel, a list's close.
+        if key == Key::Escape && modifiers.is_none() && state.escape_kept {
+            taken.push(false);
+            continue;
+        }
         let found = press_action(keymap, state, focus, &press, mac);
         if let Some(action) = found {
             let fires = match action.trigger {
@@ -3169,6 +3268,7 @@ pub(crate) mod tests {
             browser: crate::settings::BrowserSettings::default(),
             shown: true,
             background: Some(Background::Dark),
+            escape_kept: false,
         }
     }
 
@@ -3593,6 +3693,29 @@ pub(crate) mod tests {
             assert_eq!(pressed, [ActionId::SELECT_ALL], "{os:?}");
             let [press, _] = field_keys(ActionId::SELECT_ALL, os).expect("Select All's");
             assert_eq!(press, ctrl_a()[0], "{os:?}");
+        }
+    }
+
+    /// A plain Escape after a focused field stays the field's, choosing no cursor; an
+    /// Escape with a modifier the user bound still runs its action.
+    #[test]
+    fn a_kept_escape_holds_back_only_the_plain_key() {
+        for os in PLATFORMS {
+            let mac = os == OperatingSystem::Mac;
+            let (keymap, warnings) = Keymap::load(os, &overrides(&[("show-log", &["Ctrl+Esc"])]));
+            assert!(warnings.is_empty(), "{os:?}: {warnings:?}");
+            let state = State {
+                escape_kept: true,
+                ..everything()
+            };
+            let plain = || vec![key_event(Key::Escape, Modifiers::NONE)];
+            let mut events = plain();
+            let pressed = take_presses(&mut events, &keymap, &state, Focus::None, mac);
+            assert!(pressed.is_empty(), "{os:?}: {pressed:?}");
+            assert_eq!(events, plain(), "{os:?}: left to the field");
+            let mut events = vec![key_event(Key::Escape, held(Modifiers::COMMAND, mac))];
+            let pressed = take_presses(&mut events, &keymap, &state, Focus::None, mac);
+            assert_eq!(pressed, [ActionId::SHOW_LOG], "{os:?}");
         }
     }
 

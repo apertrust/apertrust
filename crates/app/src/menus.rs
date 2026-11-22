@@ -1906,8 +1906,9 @@ mod tests {
     /// Tools Panel Tab lists the tabs a workspace shows (decision 96); and the zoom's
     /// scales but Fit and 100%, the viewer bar's zoom menu's alone, and its Shift forms and
     /// the pan actions, keys alone (`docs/gui.md`, View); and a job's row's menu's, which act
-    /// on its job alone (decision 91).
-    const LEFT_OUT: [ActionId; 62] = [
+    /// on its job alone (decision 91); and the cursors', the well's and their keys' alone
+    /// (decision 104).
+    const LEFT_OUT: [ActionId; 64] = [
         ActionId::EDIT_VIEW,
         ActionId::NEXT_REGION,
         ActionId::PREVIOUS_REGION,
@@ -1978,6 +1979,9 @@ mod tests {
         ActionId::PAN_PAGE_RIGHT,
         ActionId::PAN_PAGE_UP,
         ActionId::PAN_PAGE_DOWN,
+        // The cursors, chosen from the well and their keys (decision 104), Pan held.
+        ActionId::CURSOR_SELECT,
+        ActionId::CURSOR_PAN,
     ];
 
     /// The actions only the Mac's menus hold: Close Window, since Windows and Linux close
@@ -2082,6 +2086,7 @@ mod tests {
             browser: crate::settings::BrowserSettings::default(),
             shown: true,
             background: Some(apertrust_ui::Background::Dark),
+            escape_kept: false,
         }
     }
 
