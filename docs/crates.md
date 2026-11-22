@@ -6,7 +6,7 @@ Each crate lives in `crates/<name>`, its package name without `apertrust-`: the 
 
 ## How they depend on each other
 
-The arrows are normal dependencies. `apertrust-base` is left out: nearly every crate uses it. The engine never depends on the operations: each binary hands it `apertrust-operations`' list.
+The arrows are normal dependencies. `apertrust-base` is left out: nearly every crate uses it. The engine never depends on the operations: each binary hands it `apertrust-operations`' list. The root `Cargo.toml`'s `[workspace.metadata.crate-deps]` holds each crate's rule, the workspace crates it may depend on and the libraries it never may, and `tools/check-crate-deps.py` fails on a manifest that breaks one; dev-dependencies, the tests', may reach up the layers.
 
 ```mermaid
 flowchart TD
@@ -21,6 +21,7 @@ flowchart TD
     golden --> operations
     operations --> op["apertrust-op-&lt;id&gt;"]
     op --> plugin[apertrust-plugin]
+    op --> color
     engine --> modules[apertrust-tools]
     engine --> library[apertrust-library]
     engine --> export[apertrust-export]
