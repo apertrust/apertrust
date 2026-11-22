@@ -6021,11 +6021,13 @@ impl App {
         };
         let stop = photo_stop(ui, stop_area, &name, &value);
         // A scroll or a drag moves a zoomed photo, drawn at once where it moves to; a picker
-        // on takes the drag, never the scroll (`docs/gui.md`, Panning).
+        // on takes the drag, never the scroll, and so does a picker cursor, but while A is
+        // held (`docs/gui.md`, Panning; `docs/cursors.md`, On the photo).
         if let (Some(room), Some(placed)) = (&room, &placed)
             && open
         {
-            let drags = self.mirror.pickers.active().is_none();
+            let picker = self.mirror.pickers.active().is_some();
+            let drags = matches!(self.shell.cursors.press(picker), cursors::Press::Pan);
             self.shell.zoom = pan_photo(ui, placed.photo, self.shell.zoom, room, drags);
         }
         // A right-click round the photo chooses the background behind it; the photo itself
@@ -6178,8 +6180,17 @@ impl App {
                 .details(&details)
                 .show(ui, placed.caption);
         }
-        if let Some((area, photo, pixels)) = picking {
-            self.picker_on_photo(ui, area, photo, pixels);
+        // The picker on takes the photo; with none, the cursor chosen acts there. A photo
+        // not yet live shows its picture, where a cursor that cannot act says so.
+        let waiting = (placed.as_ref())
+            .filter(|_| photo.is_some() && !live)
+            .map(|placed| (placed.photo, placed.photo, [1, 1]));
+        if self.mirror.pickers.active().is_some() {
+            if let Some((area, photo, pixels)) = picking {
+                self.picker_on_photo(ui, area, photo, pixels);
+            }
+        } else if let Some((area, photo, pixels)) = picking.or(waiting) {
+            self.cursor_on_photo(ui, area, photo, pixels);
         }
         if open {
             zoom_live_region(ui, slot.left_top(), &self.shell.zoom_said);
@@ -6266,6 +6277,79 @@ impl App {
             ui.ctx().request_repaint_after(wait);
         }
         pickers::live_region(ui, area.left_bottom(), self.said.text());
+    }
+
+    /// The cursor chosen over the photo area `area`, the whole photo's rectangle on the
+    /// screen `photo`, `pixels` of the frame's scale, while no picker is on
+    /// (`docs/cursors.md`, On the photo): the last pick's mark where Show the last pick is
+    /// on, read out once; a picker cursor's pointer, its click or drag sent as one
+    /// `PickerCommand::Once`, the view moved by a drag past the area's edge. Select's and
+    /// Pan's drags are the pan's ([`pan_photo`]).
+    fn cursor_on_photo(
+        &mut self,
+        ui: &mut egui::Ui,
+        area: egui::Rect,
+        photo: egui::Rect,
+        pixels: [u32; 2],
+    ) {
+        let words = translator(ui.ctx());
+        let mode = &mut self.shell.cursors;
+        if let Some(number) = mode.last_shown()
+            && let Some(reading) = self.mirror.pickers.once(number)
+        {
+            cursors::paint_last(ui, area, photo, pixels, reading.region);
+        }
+        // What the last pick changed, read out once its reading has come.
+        if let Some((number, before)) = mode.to_say()
+            && let Some(reading) = self.mirror.pickers.once(number)
+        {
+            let tools = self.mirror.tools();
+            let text = pickers::said(reading, before, &self.mirror.values, tools, &words);
+            mode.say(text);
+        }
+        pickers::live_region(ui, area.left_bottom(), mode.told());
+        let cursors::Press::Pick(entry) = mode.press(false) else {
+            return;
+        };
+        let shell = &self.shell;
+        let cx = cursors::Context {
+            why: shell.pick_why.as_deref(),
+            hidden: shell.peeking,
+            settings: &shell.tool_settings,
+            photo: shell.pick_photo.as_deref(),
+            words: &words,
+        };
+        let ready = cursors::ready(&entry, &cx).is_ok();
+        let on = cursors::OnPhoto {
+            area,
+            photo,
+            pixels,
+            ready,
+            cursor: entry.cursor,
+        };
+        let pressed = cursors::on_photo(ui, &on);
+        // Past the area's edge, the view follows the pointer each frame, as a picker's.
+        if let (Some(overshoot), Some(room)) = (pressed.pan, self.shell.room) {
+            let moved = -overshoot * ui.pixels_per_point();
+            let panned = self.shell.zoom.panned(moved, &room);
+            if panned != self.shell.zoom {
+                self.shell.zoom = panned;
+                ui.ctx().request_repaint();
+            }
+        }
+        let settings = &self.shell.tool_settings;
+        let Some(command) =
+            (pressed.input).and_then(|input| cursors::finish(&entry, input, settings))
+        else {
+            return;
+        };
+        let PickerCommand::Once { picker, .. } = command else {
+            return;
+        };
+        let before = pickers::tool_values(picker, &self.mirror.values);
+        let number = self.send_picker(command, ui.ctx());
+        self.mirror.pickers.once_sent(number, picker);
+        self.shell.cursors.picked(number, before);
     }
 
     /// The Viewer's right-click menus, hung from the pointer where `slot` was
@@ -7477,6 +7561,8 @@ impl eframe::App for App {
         // its menus against the key window.
         let drawn = self.state_in_window(&ctx);
         let peek = keys.held.contains(&ActionId::PEEK);
+        // A held borrows Pan while it is down (decision 104).
+        (self.shell.cursors).hold_pan(keys.held.contains(&ActionId::CURSOR_PAN));
         self.follow_cursors(&ctx);
         let keyed = keys.pressed;
         let mut run = Vec::new();
@@ -17949,11 +18035,266 @@ mod tests {
         }
     }
 
+    /// What the cursors' harness keeps: the zoom, the cursor mode, and the one-shot picks
+    /// a picker cursor sent.
+    struct Pointing {
+        zoomed: zoom::Zoomed,
+        mode: cursors::Mode,
+        sent: Vec<PickerCommand>,
+        /// Whether a picker is on, which takes the photo.
+        picker: bool,
+    }
+
+    /// The photo area as `App::viewer` pans it and hands it to the cursor acting
+    /// (decision 104; `docs/cursors.md`, On the photo): [`PAN_AREA`] at `zoomed` in
+    /// [`ZOOM_ROOM`], the whole photo's rectangle where the zoom places it, a picker
+    /// cursor's gesture sent as `finish` makes it, ready unless `why` says otherwise.
+    fn pointing(zoomed: zoom::Zoomed, chosen: cursors::Cursor) -> Harness<'static, Pointing> {
+        let mut mode = cursors::Mode::new(true);
+        mode.choose(chosen);
+        Harness::builder()
+            .with_size(egui::vec2(1300.0, 940.0))
+            .with_pixels_per_point(2.0)
+            .with_context_setup(|ctx| apertrust_ui::install(ctx, Theme::default()))
+            .build_ui_state(
+                |ui, pointing: &mut Pointing| {
+                    let press = pointing.mode.press(pointing.picker);
+                    let drags = matches!(press, cursors::Press::Pan);
+                    let room = &ZOOM_ROOM;
+                    pointing.zoomed = pan_photo(ui, PAN_AREA, pointing.zoomed, room, drags);
+                    let placement = room.place(&pointing.zoomed);
+                    let photo = whole_photo(PAN_AREA, &placement, 2.0);
+                    let cursors::Press::Pick(entry) = press else {
+                        return;
+                    };
+                    let on = cursors::OnPhoto {
+                        area: PAN_AREA,
+                        photo,
+                        pixels: placement.size,
+                        ready: true,
+                        cursor: entry.cursor,
+                    };
+                    let input = cursors::on_photo(ui, &on).input;
+                    let settings = settings::ToolSettings::new();
+                    let sent = input.and_then(|input| cursors::finish(&entry, input, &settings));
+                    pointing.sent.extend(sent);
+                },
+                Pointing {
+                    zoomed,
+                    mode,
+                    sent: Vec::new(),
+                    picker: false,
+                },
+            )
+    }
+
     /// White balance's cursor (decision 104).
     const SPOT: cursors::Cursor = cursors::Cursor {
         owner: cursors::Owner::Tool("temperature"),
         id: "spot",
     };
+
+    /// A click with White balance's cursor sends one `Once` at the point clicked, in the
+    /// photo's coordinates, at Fit and zoomed, which the session reads as the area a press
+    /// there starts (`Region::pressed`); a drag sends one with the area dragged, on its
+    /// release alone.
+    #[test]
+    fn a_picker_cursor_picks_once_where_it_is_clicked_or_dragged() {
+        use apertrust_engine::session::Region;
+        let hundred = zoomed_to(zoom::Scale::Factor(1.0), [0.5, 0.5]);
+        for zoomed in [zoom::Zoomed::FIT, hundred] {
+            let mut harness = pointing(zoomed, SPOT);
+            harness.run();
+            let placement = ZOOM_ROOM.place(&zoomed);
+            let photo = whole_photo(PAN_AREA, &placement, 2.0);
+            let at = |x: f32, y: f32| {
+                let p = (egui::pos2(x, y) - photo.min) / photo.size();
+                [p.x, p.y]
+            };
+            let click = egui::pos2(600.0, 400.0);
+            harness.hover_at(click);
+            harness.drag_at(click);
+            harness.run();
+            harness.drop_at(click);
+            harness.run();
+            let sent = std::mem::take(&mut harness.state_mut().sent);
+            let [PickerCommand::Once { region, picker, .. }] = sent.as_slice() else {
+                panic!("{zoomed:?}: {sent:?}");
+            };
+            assert_eq!(*region, Region::Point(at(600.0, 400.0)), "{zoomed:?}");
+            assert_eq!(
+                *picker,
+                PickerRef::Tool {
+                    tool: "temperature",
+                    picker: "spot"
+                }
+            );
+            // The area the session reads: 2 % of the photo's width each way.
+            let aspect = photo.width() / photo.height();
+            let [x, y] = at(600.0, 400.0);
+            let pressed = Region::pressed([x, y], aspect);
+            assert!((pressed[2] - pressed[0] - 0.04).abs() < 1e-6, "{pressed:?}");
+            assert_eq!(harness.state().zoomed, zoomed);
+
+            // A drag: nothing while it is drawn, one pick of the area on its release.
+            let (from, to) = (egui::pos2(500.0, 300.0), egui::pos2(700.0, 500.0));
+            harness.hover_at(from);
+            harness.drag_at(from);
+            harness.run();
+            harness.hover_at(egui::pos2(600.0, 400.0));
+            harness.run();
+            harness.hover_at(to);
+            harness.run();
+            assert!(harness.state().sent.is_empty());
+            harness.drop_at(to);
+            harness.run();
+            let sent = std::mem::take(&mut harness.state_mut().sent);
+            let [from, to] = [at(500.0, 300.0), at(700.0, 500.0)];
+            let area = Region::Area([from[0], from[1], to[0], to[1]]);
+            assert!(
+                matches!(sent.as_slice(), [PickerCommand::Once { region, .. }] if *region == area),
+                "{zoomed:?}: {sent:?}"
+            );
+            // The photo did not move.
+            assert_eq!(harness.state().zoomed, zoomed);
+        }
+    }
+
+    /// Select's drag and Pan's pan a zoomed photo as the built drag does, Select's on empty
+    /// photo since no marks are drawn yet (stored samples, 79.14); a picker cursor's drag
+    /// picks and pans nothing, but with A held, which borrows Pan, it pans; a picker on
+    /// takes the photo from every cursor.
+    #[test]
+    fn select_and_pan_pan_and_a_held_pans_from_a_picker_cursor() {
+        let hundred = zoomed_to(zoom::Scale::Factor(1.0), [0.5, 0.5]);
+        let drag_on = |harness: &mut Harness<'_, Pointing>| {
+            let from = PAN_AREA.center();
+            harness.hover_at(from);
+            harness.drag_at(from);
+            harness.run();
+            harness.hover_at(from + egui::vec2(120.0, 0.0));
+            harness.run();
+            harness.drop_at(from + egui::vec2(120.0, 0.0));
+            harness.run();
+        };
+        let cases = [
+            (cursors::Cursor::SELECT, false, false, true),
+            (cursors::Cursor::PAN, false, false, true),
+            (SPOT, false, false, false),
+            (SPOT, true, false, true),
+            (cursors::Cursor::SELECT, false, true, false),
+            (SPOT, true, true, false),
+        ];
+        for (chosen, held, picker, pans) in cases {
+            let mut harness = pointing(hundred, chosen);
+            harness.state_mut().mode.hold_pan(held);
+            harness.state_mut().picker = picker;
+            harness.run();
+            drag_on(&mut harness);
+            let state = harness.state();
+            let moved = state.zoomed != hundred;
+            assert_eq!(moved, pans, "{chosen:?}, A held {held}, picker {picker}");
+            let picked = !state.sent.is_empty();
+            assert_eq!(picked, !pans && !picker, "{chosen:?}: {:?}", state.sent);
+            // A held gives the picker cursor back as it is let go.
+            assert_eq!(state.mode.chosen(), chosen);
+        }
+    }
+
+    /// A drag that A held takes from a picker cursor, or another cursor chosen while it is
+    /// held, is given up: its release picks nothing and pans nothing, and the next tap picks
+    /// (`docs/cursors.md`, On the photo).
+    #[test]
+    fn a_drag_is_given_up_by_a_held_and_by_another_cursor() {
+        let exposure = cursors::Cursor {
+            owner: cursors::Owner::Tool("exposure"),
+            id: "exposure",
+        };
+        let hundred = zoomed_to(zoom::Scale::Factor(1.0), [0.5, 0.5]);
+        let (from, to) = (egui::pos2(500.0, 300.0), egui::pos2(700.0, 500.0));
+        for borrow in [true, false] {
+            let mut harness = pointing(hundred, exposure);
+            harness.run();
+            harness.hover_at(from);
+            harness.drag_at(from);
+            harness.run();
+            harness.hover_at(egui::pos2(600.0, 400.0));
+            harness.run();
+            if borrow {
+                harness.state_mut().mode.hold_pan(true);
+                harness.hover_at(egui::pos2(650.0, 450.0));
+                harness.run();
+                harness.state_mut().mode.hold_pan(false);
+            } else {
+                harness.state_mut().mode.choose(SPOT);
+            }
+            harness.hover_at(to);
+            harness.run();
+            harness.drop_at(to);
+            harness.run();
+            harness.hover_at(from);
+            harness.run();
+            let state = harness.state();
+            assert!(state.sent.is_empty(), "A held {borrow}: {:?}", state.sent);
+            assert_eq!(state.zoomed, hundred, "A held {borrow}");
+            // The next tap picks once.
+            harness.drag_at(from);
+            harness.run();
+            harness.drop_at(from);
+            harness.run();
+            assert_eq!(harness.state().sent.len(), 1, "A held {borrow}");
+        }
+    }
+
+    /// Over the photo, a picker cursor shows the crosshair, or the not-allowed pointer where
+    /// it cannot act, a press then sending nothing; Select and Pan keep the pan's hand.
+    #[test]
+    fn a_picker_cursor_s_pointer_is_the_crosshair_or_not_allowed() {
+        let pointer =
+            |harness: &Harness<'_, Pointing>| harness.output().platform_output.cursor_icon;
+        let hundred = zoomed_to(zoom::Scale::Factor(1.0), [0.5, 0.5]);
+        let mut harness = pointing(hundred, SPOT);
+        harness.hover_at(PAN_AREA.center());
+        harness.run();
+        assert_eq!(pointer(&harness), egui::CursorIcon::Crosshair);
+        let mut harness = pointing(hundred, cursors::Cursor::PAN);
+        harness.hover_at(PAN_AREA.center());
+        harness.run();
+        assert_eq!(pointer(&harness), egui::CursorIcon::Grab);
+
+        let mut harness = Harness::builder()
+            .with_size(egui::vec2(800.0, 600.0))
+            .with_context_setup(|ctx| apertrust_ui::install(ctx, Theme::default()))
+            .build_ui_state(
+                |ui, presses: &mut Vec<cursors::CursorInput>| {
+                    let area = egui::Rect::from_min_size(
+                        egui::pos2(100.0, 100.0),
+                        egui::vec2(400.0, 300.0),
+                    );
+                    let on = cursors::OnPhoto {
+                        area,
+                        photo: area,
+                        pixels: [400, 300],
+                        ready: false,
+                        cursor: SPOT,
+                    };
+                    presses.extend(cursors::on_photo(ui, &on).input);
+                },
+                Vec::new(),
+            );
+        let at = egui::pos2(300.0, 250.0);
+        harness.hover_at(at);
+        harness.run();
+        assert_eq!(
+            harness.output().platform_output.cursor_icon,
+            egui::CursorIcon::NotAllowed
+        );
+        harness.drag_at(at);
+        harness.run();
+        harness.drop_at(at);
+        harness.run();
+        assert!(harness.state().is_empty());
+    }
 
     #[test]
     fn a_zoom_draws_on_the_frame_of_its_input() {
@@ -21219,6 +21560,8 @@ mod tests {
                     bench.shell.close_menu(&keys.pressed);
                     bench.pressed.extend(&keys.pressed);
                     bench.held.clone_from(&keys.held);
+                    // A held borrows Pan, as `App::ui` reads it.
+                    (bench.shell.cursors).hold_pan(keys.held.contains(&ActionId::CURSOR_PAN));
                     let keyed = keys.pressed.len();
                     let mut run = keys.pressed;
                     let top = ui.scope(|ui| {
@@ -24714,7 +25057,8 @@ mod tests {
 
     /// The cursors' well on the Toolbar (decision 104; `docs/cursors.md`): Select chosen at
     /// start; each cursor chosen from its face, its group's list and its key, which the
-    /// well shows checked; Esc back to Select; K White balance's.
+    /// well shows checked; Esc back to Select; K White balance's; A held borrowing Pan and
+    /// giving the cursor back on release.
     #[test]
     fn the_cursors_are_chosen_from_the_well_and_their_keys() {
         let chosen = |harness: &Harness<'_, Bench>| harness.state().shell.cursors.chosen();
@@ -24761,6 +25105,15 @@ mod tests {
                     .active(apertrust_tools::CursorGroup::Pick),
                 Some(SPOT)
             );
+            // A held borrows Pan, the cursor chosen coming back on release.
+            harness.key_down(Key::A);
+            harness.run();
+            assert_eq!(harness.state().held, vec![ActionId::CURSOR_PAN]);
+            assert_eq!(harness.state().shell.cursors.acting(), cursors::Cursor::PAN);
+            assert_eq!(chosen(&harness), SPOT);
+            harness.key_up(Key::A);
+            harness.run();
+            assert_eq!(harness.state().shell.cursors.acting(), SPOT);
             // Esc: the chevron its list gave the focus back to takes the first, and the
             // next, with nothing focused, goes back to Select.
             harness.key_press(Key::Escape);

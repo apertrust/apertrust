@@ -78,6 +78,10 @@ pub struct Mirror {
     /// Each picker's last point and area this session, as the session keeps them across
     /// photos: where `Switch` goes, shown before its reading arrives.
     places: BTreeMap<PickerRef, Places>,
+    /// The one-shot pick a picker cursor sent last (decision 104), by its command's number,
+    /// with its picker, and its reading once it arrives: the last pick's mark, and what
+    /// the live region says of it. Never the active picker's, whose place it leaves alone.
+    once: Option<(u64, PickerRef, Option<PickerReading>)>,
 }
 
 /// A picker's last point and area, each with the command it is through.
@@ -163,10 +167,32 @@ impl Mirror {
         }
     }
 
+    /// The command numbered `number` is a one-shot pick with `picker` ([`PickerCommand::Once`]).
+    pub fn once_sent(&mut self, number: u64, picker: PickerRef) {
+        self.once = Some((number, picker, None));
+    }
+
+    /// The reading of the one-shot pick numbered `number`, once it has arrived.
+    pub fn once(&self, number: u64) -> Option<&PickerReading> {
+        let (sent, _, reading) = self.once.as_ref()?;
+        (*sent == number).then_some(reading.as_ref()).flatten()
+    }
+
     /// The session's `Event::Picker`, through the first `through` commands: what the app
     /// asked by one of them is answered, a picker turned on included where the session
-    /// turned it off again before its first reading, as a change of its tool does.
+    /// turned it off again before its first reading, as a change of its tool does. A
+    /// one-shot pick's reading, which comes before its picker's end in the same batch, is
+    /// kept as the one-shot's, never shown as a picker on.
     pub fn apply(&mut self, through: u64, reading: Option<PickerReading>) {
+        if let (Some((number, picker, kept @ None)), Some(read)) = (&mut self.once, &reading)
+            && through >= *number
+            && read.picker == *picker
+            && self.asked.is_none()
+            && self.reading.is_none()
+        {
+            *kept = reading;
+            return;
+        }
         let answered = |sent: Option<u64>| sent.is_some_and(|n| n <= through);
         if answered(self.asked.map(|(n, _)| n)) {
             self.asked = None;
@@ -487,11 +513,13 @@ pub fn applies(command: &PickerCommand) -> bool {
 }
 
 /// Whether `command` completes a change where its pick writes, as the session saves it:
-/// `On`, `Switch`, `Reset`, and a move's release (`docs/pickers.md`, What a pick writes).
+/// `On`, a one-shot pick, `Switch`, `Reset`, and a move's release (`docs/pickers.md`, What
+/// a pick writes).
 pub fn completes(command: &PickerCommand) -> bool {
     matches!(
         command,
         PickerCommand::On { .. }
+            | PickerCommand::Once { .. }
             | PickerCommand::Switch
             | PickerCommand::Reset
             | PickerCommand::Point { done: true, .. }
@@ -506,7 +534,7 @@ pub fn completes(command: &PickerCommand) -> bool {
 pub fn completes_edit(command: &PickerCommand, active: Option<PickerRef>) -> bool {
     let picker = match command {
         PickerCommand::Settings { .. } => return true,
-        PickerCommand::On { picker, .. } => Some(*picker),
+        PickerCommand::On { picker, .. } | PickerCommand::Once { picker, .. } => Some(*picker),
         _ => active,
     };
     matches!(picker, Some(PickerRef::Tool { .. })) && completes(command)
@@ -544,7 +572,7 @@ fn command_alone(modifiers: Modifiers, mac: bool) -> bool {
 
 /// Whether a primary press with `modifiers` is the Mac's right-click, Control-click with
 /// no Cmd, as everywhere in the app (`docs/gui.md`, Popups).
-fn mac_right_click(modifiers: Modifiers, mac: bool) -> bool {
+pub fn mac_right_click(modifiers: Modifiers, mac: bool) -> bool {
     mac && modifiers.ctrl && !modifiers.mac_cmd
 }
 
@@ -1439,7 +1467,7 @@ fn key_command(key: PickerKey, region: Region, pixel: [f32; 2]) -> Option<Picker
 
 /// `to`, moved where needed to be at least a frame pixel from `from` on each axis, inside
 /// the photo.
-fn at_least_a_pixel(from: [f32; 2], to: [f32; 2], pixel: [f32; 2]) -> [f32; 2] {
+pub fn at_least_a_pixel(from: [f32; 2], to: [f32; 2], pixel: [f32; 2]) -> [f32; 2] {
     let apart = |a: f32, b: f32, least: f32| {
         if (b - a).abs() >= least {
             b
@@ -1565,7 +1593,7 @@ impl Said {
 }
 
 /// The controls of `picker`'s tool, as `values` show them.
-fn tool_values(picker: PickerRef, values: &Values) -> Vec<(&'static str, ControlValue)> {
+pub fn tool_values(picker: PickerRef, values: &Values) -> Vec<(&'static str, ControlValue)> {
     let PickerRef::Tool { tool, .. } = picker else {
         return Vec::new();
     };
@@ -1586,7 +1614,7 @@ fn tool_values(picker: PickerRef, values: &Values) -> Vec<(&'static str, Control
 /// What `reading` read out says: for a picker with a Last pick row, that row's words
 /// ([`LastPickWords::said`]); else each control its pick wrote that differs from `before`,
 /// with its value, or the frame's mean colour.
-fn said(
+pub fn said(
     reading: &PickerReading,
     before: &[(&'static str, ControlValue)],
     values: &Values,
@@ -2630,6 +2658,39 @@ mod tests {
         assert_eq!(mirror.active(), None);
         mirror.apply(6, None);
         assert_eq!((mirror.active(), mirror.region()), (None, None));
+    }
+
+    /// A one-shot pick's reading, which comes in the batch that ends it, is kept as the
+    /// one-shot's, never shown as a picker on nor kept as its picker's place, until another
+    /// photo; it completes a change, so the save state waits for its write (decision 104).
+    #[test]
+    fn a_one_shot_pick_s_reading_is_kept_as_its_own() {
+        let mut mirror = Mirror::default();
+        let area = Region::Area([0.1, 0.2, 0.3, 0.4]);
+        let once = PickerCommand::Once {
+            picker: BRIGHTNESS,
+            region: Region::Point([0.2, 0.3]),
+            keys: PickKeys::default(),
+            settings: Vec::new(),
+            channel: None,
+        };
+        assert!(completes_edit(&once, None));
+        mirror.once_sent(3, BRIGHTNESS);
+        assert_eq!(mirror.once(3), None);
+        // Another picker's reading is not its.
+        mirror.apply(3, Some(reading(SPREAD, Region::Point([0.5, 0.5]), 3)));
+        assert_eq!(mirror.once(3), None);
+        mirror.apply(3, None);
+        mirror.apply(3, Some(reading(BRIGHTNESS, area, 3)));
+        mirror.apply(3, None);
+        assert_eq!(mirror.once(3).map(|r| r.region), Some(area));
+        assert_eq!((mirror.active(), mirror.reading()), (None, None));
+        // The picker's own places are left alone: Switch goes to its default.
+        mirror.asked(4, Some((BRIGHTNESS, false)));
+        assert_eq!(mirror.switched(Region::Point([0.5, 0.5])), DEFAULT_AREA);
+        assert_eq!(mirror.once(5), None);
+        mirror.forget();
+        assert_eq!(mirror.once(3), None);
     }
 
     /// The viewer bar names the tool and the picker, its control's label on a quad, and
