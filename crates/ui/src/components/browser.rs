@@ -294,7 +294,8 @@ pub enum BarOption {
 
 impl BrowserBarAction {
     /// The browser bar's options menu, in its order: Show Labels, then Position ▸ Left,
-    /// Right, Bottom.
+    /// Right, Bottom. The app's menu on the Browser's empty space lists the same, after
+    /// Select All and Select None (decision 91), so the two hold the same items.
     pub const OPTIONS: [BarOption; 2] = [
         BarOption::Choice(BrowserBarAction::Labels),
         BarOption::Submenu {

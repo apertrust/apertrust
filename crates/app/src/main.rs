@@ -115,9 +115,9 @@ use apertrust_ui::components::{
     ActivityAction, Available, Browser, BrowserAction, BrowserEdge, BrowserEdgeAction,
     BrowserPosition, CellMenu, CellRating, FindBar, FindBarAction, Jobs, Margin, Marker,
     MenuButtonStyle, PanelBody, PanelEdge, PanelEdgeAction, PanelTab, PhotoCaption, PhotoFrame,
-    PickerAction, Placed, SaveState, ScopeView, TabBar, TabBarAction, Thumb, Toggle, Toolbar,
-    ToolbarAction, ToolsPanelPosition, ViewMarks, ViewerBar, ViewerBarAction, Zoom, browser_lines,
-    browser_thickness,
+    PickerAction, Placed, SaveState, ScopeView, SpaceMenu, TabBar, TabBarAction, Thumb, Toggle,
+    Toolbar, ToolbarAction, ToolsPanelPosition, ViewMarks, ViewerBar, ViewerBarAction, Zoom,
+    browser_lines, browser_thickness,
 };
 use apertrust_ui::{
     Background, Builtin, Locale, Theme, Translator, components, popup, theme, tr, translator,
@@ -5643,8 +5643,9 @@ impl App {
     /// in sight without one are asked for (`thumbnails.rs`), a photo alone's from its own
     /// file, nothing of its folder read. A cell's right-click, or its menu keys, opens its
     /// photo's menu, the photo made active first unless it is already
-    /// ([`App::thumbnail_menu`]). Returns the action a choice in the browser bar's menus,
-    /// its Labels or the cell's menu runs.
+    /// ([`App::thumbnail_menu`]); a right-click on its empty space, or the menu keys with
+    /// no cell focused, opens its own ([`browser_menu`]). Returns the action a choice in
+    /// the browser bar's menus, its Labels, the cell's menu or the Browser's own runs.
     fn browser(&mut self, ui: &mut egui::Ui, lines: usize) -> Option<ActionId> {
         self.thumbnails.sync(ui.ctx(), &self.mirror.folder);
         let browser = self.shell.browser;
@@ -5653,7 +5654,7 @@ impl App {
         // shorter side must cover the square.
         let side = browser.thumbnails.side() * if browser.square_thumbnails { 1.5 } else { 1.0 };
         let size = thumbnails::size_for(side, ui.pixels_per_point());
-        let (picked, asked, bar, menu) = {
+        let (picked, asked, bar, menu, space) = {
             let mirror = &self.mirror;
             let textures = &self.thumbnails;
             let listing = match &mirror.folder.folder {
@@ -5703,7 +5704,7 @@ impl App {
             });
             let shown = order.get(output.shown).unwrap_or_default();
             let asked = (self.thumbnails_asked).command(&mirror.folder, shown, size);
-            (picked, asked, output.bar, menu)
+            (picked, asked, output.bar, menu, output.space_menu)
         };
         if let Some(asked) = asked {
             self.session.send(Command::Library(asked));
@@ -5724,7 +5725,10 @@ impl App {
         }
         let id = ui.make_persistent_id("thumbnail menu");
         let chosen = self.thumbnail_menu(ui.ctx(), id, menu);
-        bar.map(|chosen| ActionId(chosen.id())).or(chosen)
+        let id = ui.make_persistent_id("browser menu");
+        let state = self.state(ui.ctx());
+        let own = browser_menu(ui.ctx(), id, space, &self.shell.keymap, &state);
+        bar.map(|chosen| ActionId(chosen.id())).or(chosen).or(own)
     }
 
     /// A thumbnail's menu (decision 91), the popup `id`, asked for on a cell this frame by
@@ -7238,6 +7242,26 @@ fn central_menu(
         })
     });
     context_popup(ctx, id, opened, keymap, state, asked)
+}
+
+/// The Browser's own menu (decision 91), the popup `id`, asked for this frame by `asked`
+/// on its empty space or from the keys with no cell focused: Select All, Select None and
+/// the browser bar's options, built from `keymap` and `state` (`menus::Place::Browser`),
+/// drawn while open; returns the action of the item chosen in it.
+fn browser_menu(
+    ctx: &egui::Context,
+    id: egui::Id,
+    asked: Option<SpaceMenu>,
+    keymap: &Keymap,
+    state: &State,
+) -> Option<ActionId> {
+    let opened = asked.map(|menu| Opened {
+        place: menus::Place::Browser,
+        target: menus::Target::App,
+        anchor: egui::Rect::from_min_size(menu.at, egui::Vec2::ZERO),
+        opener: menu.opener,
+    });
+    context_popup(ctx, id, opened, keymap, state, None)
 }
 
 /// What a context menu opened with: its place and target, where it hangs from, and the
@@ -25369,9 +25393,9 @@ mod tests {
 
     /// The shell with the Browser of the folder `/photos`, `a.ARW` to `e.ARW`, drawn from
     /// the app's mirror as [`App::browser`] draws it, on Linux: the keys read first, the
-    /// Toolbar, whose ☰ holds Select, the Browser, then what the keys, the menu and the
-    /// Browser asked for, sent through `selection` as the app sends it. The test answers
-    /// as the session, telling the mirror.
+    /// Toolbar, whose ☰ holds Select, the Browser with its own menu, then what the keys,
+    /// the menus and the Browser asked for, sent through `selection` as the app sends it.
+    /// The test answers as the session, telling the mirror.
     struct Browsing {
         shell: Shell,
         mirror: Mirror,
@@ -25396,9 +25420,10 @@ mod tests {
             .build_ui_state(
                 |ui, browsing: &mut Browsing| {
                     let ctx = ui.ctx().clone();
-                    // As `App::shell_state` reads the selection.
+                    // As `App::shell_state` reads the selection and the photos shown.
                     let state = |ctx: &egui::Context, browsing: &Browsing| State {
                         select: selection::selectable(&browsing.mirror),
+                        shown: !browsing.mirror.folder.order().is_empty(),
                         ..browsing.shell.state(ctx, false, false)
                     };
                     let now = state(&ctx, browsing);
@@ -25431,6 +25456,9 @@ mod tests {
                     let output = Browser::new(order.len(), mirror.folder.active_shown(), thumb)
                         .count(selected, total)
                         .show(ui);
+                    let (id, now) = (ui.make_persistent_id("browser menu"), state(&ctx, browsing));
+                    let keymap = &browsing.shell.keymap;
+                    run.extend(browser_menu(&ctx, id, output.space_menu, keymap, &now));
                     for id in run {
                         let state = state(&ctx, browsing);
                         let send = &mut sender(&mut browsing.sent);
@@ -25612,6 +25640,79 @@ mod tests {
         assert!(matches!(harness.state().mirror.photo, PhotoState::None));
         assert_eq!(selected(&harness, "a.ARW"), Some(false));
         assert!(harness.query_by_label("3 of 5 photos selected").is_none());
+    }
+
+    /// Decision 91: a right-click on the Browser's empty space, after the last cell, opens
+    /// its own menu, named Browser: Select All and Select None send the session's commands
+    /// as Select's items do, each enabled where it would change the selection, and the
+    /// browser bar's options follow them. Shift+F10 on the browser bar's Sort, no cell
+    /// focused, opens it, the focus going back to Sort as it closes; on a focused cell it
+    /// opens no Browser menu.
+    #[test]
+    fn the_browser_s_empty_space_opens_its_own_menu_whose_select_items_act() {
+        use apertrust_engine::session::SelectionCommand;
+
+        let menu = |harness: &Harness<'_, Browsing>| {
+            harness
+                .query_by_role_and_label(Role::Menu, "Browser")
+                .is_some()
+        };
+        let enabled = |harness: &Harness<'_, Browsing>, name: &str| {
+            let menu = harness.get_by_role_and_label(Role::Menu, "Browser");
+            !menu.get_by_label(name).accesskit_node().is_disabled()
+        };
+        let mut harness = browsing();
+        harness.state_mut().told(&[], None, false);
+        harness.run();
+        let last = harness.get_by_label("e.ARW").rect();
+        let after = egui::pos2(last.right() + 40.0, last.center().y);
+        right_click_at(&mut harness, after);
+        assert!(menu(&harness));
+        assert!(enabled(&harness, "Select all"));
+        assert!(!enabled(&harness, "Select none"), "nothing to clear");
+        assert!(enabled(&harness, "Show labels"));
+        assert!(enabled(&harness, "Position"));
+        harness
+            .get_by_role_and_label(Role::MenuItem, "Select all")
+            .click();
+        harness.run();
+        let all = Command::Selection(SelectionCommand::All);
+        assert_eq!(harness.state().sent.last(), Some(&all));
+        assert!(!menu(&harness), "it closed");
+
+        // Every photo selected, b active: Select None clears them.
+        let names = ["a.ARW", "b.ARW", "c.ARW", "d.ARW", "e.ARW"];
+        harness.state_mut().told(&names, Some("b.ARW"), true);
+        harness.run();
+        right_click_at(&mut harness, after);
+        assert!(!enabled(&harness, "Select all"), "every photo selected");
+        harness
+            .get_by_role_and_label(Role::MenuItem, "Select none")
+            .click();
+        harness.run();
+        let clear = Command::Selection(SelectionCommand::Clear);
+        assert_eq!(harness.state().sent.last(), Some(&clear));
+
+        // From the keys on Sort; Escape gives Sort the focus back.
+        harness.get_by_role_and_label(Role::Button, "Sort").focus();
+        harness.run();
+        harness.key_press_modifiers(Modifiers::SHIFT, Key::F10);
+        harness.run();
+        assert!(menu(&harness));
+        harness.key_press(Key::Escape);
+        harness.run();
+        assert!(!menu(&harness));
+        let sort = harness.get_by_role_and_label(Role::Button, "Sort");
+        assert!(
+            sort.accesskit_node().is_focused(),
+            "the focus is back on Sort"
+        );
+        // A focused cell's keys are its photo's, never the Browser's.
+        harness.get_by_label("c.ARW").focus();
+        harness.run();
+        harness.key_press(Key::Menu);
+        harness.run();
+        assert!(!menu(&harness));
     }
 
     #[test]

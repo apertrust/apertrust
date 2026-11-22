@@ -1088,7 +1088,7 @@ Native popup menus on the Mac for plain lists and context menus; drawn everywher
   Each is opened by its button, or ↓ on it, and closed by a second press or Esc, with the focus back on the button, which stays lit while its menu is open (`components::pull_down`, `popup::button_menu`).
 - On the Mac, the native service, which shows every one of them, ⋯, », ⋮ and `Choice`'s list, as AppKit's menu, in the main window and in a dialog's (below). Windows and Linux keep the drawn ones.
 
-Context menus are built as a pull-down at the pointer, or under the control from the keys (`components::context_menu`), native on the Mac as every pull-down is: the photo, a thumbnail, the surround, the browser bar, Collections' folder rows and a History step have one. Where context menus open and what tools add to them is [Context menus](#context-menus) (decision 91). Not built: the slider popup, darktable's fine control, drawn on every platform (decision 42; [The slider popup](#the-slider-popup), planned in [its cards](#slider-values-the-build-in-cards)).
+Context menus are built as a pull-down at the pointer, or under the control from the keys (`components::context_menu`), native on the Mac as every pull-down is: the photo, a thumbnail, the surround, the Browser's empty space, the browser bar, Collections' folder rows and a History step have one. Where context menus open and what tools add to them is [Context menus](#context-menus) (decision 91). Not built: the slider popup, darktable's fine control, drawn on every platform (decision 42; [The slider popup](#the-slider-popup), planned in [its cards](#slider-values-the-build-in-cards)).
 
 | Popup | macOS | Windows, Linux, web browser |
 | --- | --- | --- |
@@ -1192,7 +1192,7 @@ Decision 91; its first slice is built. A right-click menu opens only in a named 
 | The surround (`Surround`) | No | View › Background's items | Built |
 | The browser bar | No | Show Labels, Position ▸; Help, last, planned (decision 97) | Built |
 | Collections' folder rows | No | Show in Folder, Open | Built |
-| The Browser's empty area | No | The browser bar's options, Select All, Select None | Later |
+| The Browser's empty area (`Browser`), between and after the cells, all of it with no photos | No | Select All, Select None, —, then the browser bar's options, Show Labels and Position ▸, from the list the browser bar builds its own from | Built |
 | A History step (`Step`), a default step among them | No | Go to Step, Show Tool, —, Compress up to Here, Truncate after Here, each acting on the step ([history.md](history.md#the-history-tab)) | Built |
 | The jobs window's rows | No | Cancel, Show in Folder, Copy Error | Later |
 | The Tools panel's tab bar (`TabBar`), a tab's icon or its empty end | No | Find Tool…, Show Hidden Tools, Workspace ▸ (ending in Restore Defaults), —, Reset Tab, Processing Order; the same items in the Tools panel's ⋮ ([The tab bar's menu](#the-tab-bars-menu)) | Decision 96's step 5 |
@@ -1229,7 +1229,7 @@ A place opens to tools' items only by a decision of its own, which adds it to `a
 
 **Building a menu,** `menus::context(place, target)`:
 
-1. Every item for the place, the app's and the tools', is sorted by `(section, order)`. The surround's holds View › Background's items alone, read from `BACKGROUND`.
+1. Every item for the place, the app's and the tools', is sorted by `(section, order)`. The surround's holds View › Background's items alone, read from `BACKGROUND`. The Browser's empty area's holds Select All and Select None, a line, then the browser bar's options, read from `BrowserBarAction::OPTIONS`, the list the browser bar builds its own options menu from, so the two hold the same items (`menus::browser_items`). It draws an item that cannot run disabled, as the menu bar does, so with no photos Show Labels rests there, as View › Show Labels does, where the browser bar's own menu keeps it; like the browser bar's, it shows no keys.
 2. A separator falls wherever `section` changes; a section with no item shown, empty or all hidden, leaves no line.
 3. A test fails on two items with the same `(section, order)` in one menu, built as it shows: the photo's and a thumbnail's with every tool's items, and each tool's and utility's ⋯ with the app's items and its own. Two tools may share a `(section, order)` in their own ⋯.
 4. In the photo's and a thumbnail's menus an item whose action cannot run on the target is hidden, whatever stops it; one that waits only for the photo to become live, as while the photo open is still opening, is shown disabled. ⋯, a pull-down from a button, keeps the pull-down's rule: an item that cannot run is drawn disabled with its tip.
@@ -1241,13 +1241,13 @@ A place opens to tools' items only by a decision of its own, which adds it to `a
 
 - **On the photo:** the active photo, with the point under the pointer in the photo's coordinates as pickers take them, none from the keys; an action that needs a point is hidden without one. Export… there is File › Export…'s: it reveals the Export tool, whose button exports the selection, and its words say how many.
 - **On a thumbnail:** the selection, which always holds its photo. Opening its menu, by a right-click or from the keys on its focused cell, opens its photo first unless it is the active one ([Selection and the active photo](#selection-and-the-active-photo)): a photo in the selection keeps it, one outside it is selected alone. So Reset, which acts on the active photo alone, acts on the photo the menu was opened on, and while several are selected it is hidden, as any item that acts on one photo alone is. Export… stays shown with several selected, saying how many ("Export 12 Photos…"); it reveals the Export tool, whose button exports the selection.
-- **In ⋯:** its tool. **On the surround:** the app.
+- **In ⋯:** its tool. **On the surround and the Browser's empty area:** the app.
 
 **Opening.**
 
 - A right-click opens a menu, as does a Control-click on the Mac; on a focused element, Shift+F10, the Menu key and AccessKit's ShowContextMenu do too (`components::context_menu`). It opens at the pointer, or under the element from the keys, natively on the Mac and drawn elsewhere.
 - While a picker is on, the photo's right-click is the picker's ([pickers.md](pickers.md#on-the-photo)), and later a mask's while one is being drawn.
-- The photo is a focus stop only while it overflows its area, zoomed in too far to show whole, and keeps no keys of its own then ([The zoom](#the-zoom-by-keyboard-and-to-screen-readers)), so its menu has no key; a focused thumbnail's opens with Shift+F10 and the Menu key. A long press on touch and pen opens it in Touch mode, planned ([Touch mode](#touch-mode)).
+- The photo is a focus stop only while it overflows its area, zoomed in too far to show whole, and keeps no keys of its own then ([The zoom](#the-zoom-by-keyboard-and-to-screen-readers)), so its menu has no key; a focused thumbnail's opens with Shift+F10 and the Menu key, and the Browser's own, on its empty area, with them on the browser bar's Sort or Zoom, the Browser focused with no cell focused, or with AccessKit's ShowContextMenu on Sort, Zoom or its list. A long press on touch and pen opens it in Touch mode, planned ([Touch mode](#touch-mode)).
 
 **While it is open** (`context_popup` in `main.rs`):
 
@@ -2673,6 +2673,7 @@ With several photos selected, the rating, reject and label keys, Apply Edit and 
 | Double-click, or Enter | As a click: that photo active, the selection staying where it holds it | That photo alone |
 | A click on empty space: between the cells, after the last to the Browser's edge, in a cell's square round a fitted picture, or on its caption outside the rating's row and the file name | Selects nothing, as darktable's lighttable does: the active photo closes as File › Close does, its edit saved, and none opens, even with the active photo alone selected, where Select None is disabled; with nothing selected and no photo open, nothing. Ctrl-click (Cmd on a Mac) and Shift-click there do nothing, so a missed Ctrl-click never drops a selection | Nothing |
 | Right-click | The context menu ([Context menus](#context-menus)) opens the photo first, as a click does, and acts on the selection | The same |
+| A right-click on empty space between and after the cells, all of the Browser with no photos | The Browser's own menu: Select All, Select None, then the browser bar's options ([Context menus](#context-menus)) | — |
 
 - **The keys,** the same in every layout:
   - → and Space, ← and Backspace: with several selected, the active photo moves through the selection in the Browser's sort, which stays; with one, to the next or previous photo of the folder or album, selected alone; at either end they stop, Next Photo or Previous Photo disabled, and with no active photo they open the first or the last (built for a folder and for photos opened alone, in the order opened);
@@ -3415,6 +3416,7 @@ The current folder's or album's thumbnails, in a column at the window's left by 
 
 - It shows the open folder's photos in the browser bar's sort, or the photos opened alone ([one photo](library.md#one-photo)) in the order opened, the photo open being the active cell, outlined thicker than a selected one, both in the icons' grey.
 - It is never hidden and is empty with no folder and no photos opened alone. A folder with no raws shows, centred in it and muted (`text_secondary`), a struck-through photo (`Icon::PhotoOff`, Lucide's `image-off`), "No photos available" (`folder-empty`) under it and, where the folder's listing found subfolders, the ones Collections' tree shows under it, "Choose a subfolder in Collections." (`folder-empty-hint`) smaller under that; nothing is listed for the hint. Each line is wrapped to the panel's width, so a one-column side holds them too (`Browser::empty` and `empty_hint`; snapshots `browser-empty` and `browser-empty-left`).
+- A right-click on its empty space, between and after the cells, opens its own menu, Select All, Select None, then the browser bar's options ([Context menus](#context-menus)); a cell's, its square round a fitted picture included, opens its photo's.
 - A click or Enter opens a photo, selected alone. In a folder, Ctrl-click, Ctrl+Space and Shift-click select several, each selected photo's cell ringed ([Selection and the active photo](#selection-and-the-active-photo)); among photos opened alone they do nothing. With a cell focused, the arrows move to the cell beside it in the layout, Home and End to the first and last, scrolling to keep it in sight, and the active photo is scrolled into view when it changes ([Its keys](#its-keys)).
 - A cell shows its photo's thumbnail ([The cell](#the-cell)). Until Apertrust renders its own, a thumbnail is the camera's embedded JPEG, turned upright by the photo's orientation and shown unmarked, as darktable shows it. Until it comes the file name stands in a box of the square's size; a photo whose thumbnail came with no picture shows No preview yet ([The cell](#the-cell)).
 - **Asking for them:** the panel reports the cells it drew (`BrowserOutput::shown`), and the app asks the session for those with no thumbnail at the cell's size, each once while it stays in sight, in the panel's order, as one `LibraryCommand::Thumbnails`, or for photos opened alone, by path, one `LibraryCommand::PhotoThumbnails`, which reads each photo's own file and nothing of its folder (`crates/app/src/thumbnails.rs`). The size is the cell's side in physical pixels rounded up to 128, 256, 512 or 1024, so a change of the interface's scale or of the thumbnails' size asks again only past a step, a thumbnail at another size standing in meanwhile. A photo that leaves the panel's sight and comes back without its thumbnail is asked for again, so one the session's stack of 30 dropped comes in the end.
@@ -3534,6 +3536,7 @@ Two icon buttons, **Sort** at its start and **Zoom** at its end, and between the
 - **The options menu,** a right-click anywhere on the browser bar, a column or a row:
   - **Show Labels**, checked while the thumbnails show their captions, shows them or hides them ([The cell](#the-cell)), the same as View › Show Labels. On by default. A change lays the panel out again on that frame: each cell gains or loses its caption, and the panel's rows, its height and its edge's step count it, so the panel keeps its number of rows, as tall as they now are, up to half the window.
   - **Position ›** Left, Right, Bottom, the one in use checked ([Its position](#its-position)).
+  - The Browser's own menu, on its empty space, lists the same items after Select All and Select None, both built from `BrowserBarAction::OPTIONS` ([Context menus](#context-menus)).
 - **States:**
 
   | State | Sort | Zoom | Count |
@@ -3545,6 +3548,7 @@ Two icon buttons, **Sort** at its start and **Zoom** at its end, and between the
 - **Keys and focus.**
   - Sort, Zoom and Show Labels have no default keys. Ctrl+= and Ctrl+− zoom the photo, even after a click on a thumbnail; + and − with the thumbnails focused would take Czech and Slovak keyboards' 1 key, which rates. Their items are actions a user may give keys (`sort-…`, `thumbnails-…`, `show-labels`, `browser-position-…`), and they are in the View menu.
   - In the Browser's F6 region the thumbnails come first, so F6 lands on them; Tab then reaches Sort and Zoom, then the edge. A menu closing gives the focus back to its button.
+  - Shift+F10 and the Menu key on Sort or Zoom open the Browser's own menu, its options with Select All and Select None, under the button, the focus going back to it as it closes ([Context menus](#context-menus)).
 - **Screen readers.** The browser bar is a toolbar named "Browser bar", in either form.
   - Sort is a button with a menu, named "Sort", its value the order ("Capture time, ascending").
   - Zoom is a button with a menu, named "Thumbnail size", its value the size.
