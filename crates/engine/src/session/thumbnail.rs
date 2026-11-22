@@ -63,8 +63,8 @@ use apertrust_base::cache::THUMBNAILS;
 use apertrust_export::Image;
 use apertrust_export::jpeg::{self, Options, Subsample};
 use apertrust_library::ops::{
-    self as library, Fingerprints, Identity, LibraryEvent, RawFacts, RawThumbnails, Thumbnail,
-    ThumbnailKey,
+    self as library, Fingerprints, Identity, LibraryEvent, Origin, RawFacts, RawThumbnails,
+    Thumbnail, ThumbnailKey,
 };
 
 use super::cache::Upkeep;
@@ -200,22 +200,25 @@ pub(crate) fn serve(
         rendered_hit(upkeep, &key.slot)
             .or_else(|| hit(upkeep, key).map(|image| (key.version.clone(), image)))
     });
-    // A render of a photo with no edit stands where darktable's rule shows one for this
-    // raw at this size, decided from the facts its version records of the raw as it is,
-    // the raw read only for a render that records none or of a raw since replaced; else
-    // the embedded picture takes its slot, the render's version what it replaces.
+    // A render of a photo with no edit made from the live photo stands at every size while
+    // its raw is the one it records, by the stamp its identity read. One the rule made
+    // stands where darktable's rule shows one for this raw at this size, decided from the
+    // facts its version records of the raw as it is, the raw read only for a render that
+    // records none or of a raw since replaced; else the embedded picture takes its slot,
+    // the render's version what it replaces.
     let asks = (size, size);
     let (found, unaltered) = match found {
         Some((version, image)) if library::rendered_unaltered(&version) => {
-            let read = || {
-                let path = folder.join(photo);
-                (library::raw_stamp(&path))
-                    .and_then(|stamp| library::unaltered_facts(&version, &stamp))
-                    .map(|(facts, _)| facts)
-                    .unwrap_or_else(|| facts(&path))
+            let shows = || {
+                let recorded = (identity.as_ref())
+                    .and_then(|photo| library::unaltered_facts(&version, &photo.stamp));
+                match recorded {
+                    Some((_, Origin::Opened)) => true,
+                    Some((recorded, Origin::Rule)) => raw.shows_render(asks, &recorded),
+                    None => raw.shows_render(asks, &facts(&path)),
+                }
             };
-            let shows = raw.renders_at(asks) || raw.shows_render(asks, &read());
-            if shows {
+            if raw.renders_at(asks) || shows() {
                 (Some((version, image)), None)
             } else {
                 (None, Some(version))

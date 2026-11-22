@@ -49,7 +49,7 @@ use std::time::Instant;
 
 use apertrust_base::cache::THUMBNAILS;
 use apertrust_base::jobs::{Context, Interrupted};
-use apertrust_library::ops::{self as library, RawStamp, RawThumbnails, Thumbnail};
+use apertrust_library::ops::{self as library, Origin, RawStamp, RawThumbnails, Thumbnail};
 use apertrust_plugin::{Format, ImageContext, ImageDesc, Operation};
 use apertrust_raw::{Exif, Pixels, RawImage};
 use apertrust_tools::ProcessingTool;
@@ -442,9 +442,10 @@ fn since(started: Instant) -> f64 {
 fn body(run: &Run, context: &Context<'_>, delivery: &mut Delivery) {
     let (open, name) = (run.open, sidecar::file_name(&run.path));
     let cancelled = || context.cancelled();
-    // Step 1, the rendered thumbnail; one of the photo with no edit only where the
-    // setting shows it at the panel's size, decided from the raw's facts it records, else
-    // after the embedded picture where that depends on its size.
+    // Step 1, the rendered thumbnail; one of the photo with no edit made from the live
+    // photo whatever the setting, while its raw is the one it records; one the rule made
+    // only where the setting shows it at the panel's size, decided from the raw's facts it
+    // records, else after the embedded picture where that depends on its size.
     let room = run.room.unwrap_or((u32::MAX, u32::MAX));
     let stamp = library::raw_stamp(&run.path);
     // The fingerprint first, which step 1's slots are keyed by and step 2's file names
@@ -471,21 +472,23 @@ fn body(run: &Run, context: &Context<'_>, delivery: &mut Delivery) {
         return;
     }
     let recorded = |version: &[u8]| {
-        (stamp.as_ref())
-            .and_then(|stamp| library::unaltered_facts(version, stamp))
-            .map(|(facts, _)| facts)
+        (stamp.as_ref()).and_then(|stamp| library::unaltered_facts(version, stamp))
     };
     let mut embedded_read = EmbeddedRead::Unread;
     let (rendered, unaltered) = match rendered {
         Some((version, picture)) if run.raw.renders_at(room) => {
-            if let Some(facts) = recorded(&version) {
+            if let Some((facts, _)) = recorded(&version) {
                 embedded_read = EmbeddedRead::Sized(facts.embedded);
             }
             (Some(picture), None)
         }
         Some((version, picture)) if library::rendered_unaltered(&version) => {
             match recorded(&version) {
-                Some(facts) => {
+                Some((facts, Origin::Opened)) => {
+                    embedded_read = EmbeddedRead::Sized(facts.embedded);
+                    (Some(picture), None)
+                }
+                Some((facts, Origin::Rule)) => {
                     embedded_read = EmbeddedRead::Sized(facts.embedded);
                     (run.raw.shows_render(room, &facts).then_some(picture), None)
                 }

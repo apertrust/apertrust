@@ -2126,15 +2126,19 @@ fn write_edits(
         };
         let failed = result.is_err();
         // A held acknowledgement preserves the original packet, including its build
-        // and formatting. Its thumbnail identity must describe those actual bytes.
+        // and formatting. Its thumbnail identity must describe those actual bytes, or
+        // `UNALTERED` where there is no file, as a cancelled gesture on a photo never
+        // edited leaves it.
         let saved_hash = if failed {
             None
         } else if write {
             Some(apertrust_library::index::hash(xml.as_bytes()))
         } else {
-            std::fs::read(&path)
-                .ok()
-                .map(|bytes| apertrust_library::index::hash(&bytes))
+            match std::fs::read(&path) {
+                Ok(bytes) => Some(apertrust_library::index::hash(&bytes)),
+                Err(error) if error.kind() == io::ErrorKind::NotFound => Some(library::UNALTERED),
+                Err(_) => None,
+            }
         };
         let (event, stamp) = match result {
             Ok(stamp) => {
@@ -2649,6 +2653,13 @@ struct Open {
     thumbnail_hash: Option<[u8; 32]>,
     thumbnail_saved_at: Option<Instant>,
     thumbnail_through: Option<u64>,
+    /// Whether the edit it opened with renders as a photo with no edit does, told as it
+    /// goes live, until a change is handed over to be written: while it is, its thumbnail
+    /// is due [`thumbnail::rendered::UNEDITED_SETTLE`] after its first live frame
+    /// published (`shown_at`), none before, and none is made as it leaves.
+    unedited: bool,
+    /// When its first live frame was published, once the viewport's size is known.
+    shown_at: Option<Instant>,
     /// Whether Phase One made the raw, whose embedded picture darktable never takes.
     phase_one: bool,
     /// What its open read of the raw's embedded picture, for darktable's raw-thumbnail
@@ -3156,6 +3167,13 @@ impl Engine {
             }
             self.pickers.discard();
             events.push(Event::Failed(SessionError::Gpu(error)));
+        }
+        // The photo is shown from its first frame published.
+        if events.iter().any(|event| matches!(event, Event::Frame(_)))
+            && let Some(open) = &mut self.open
+            && open.shown_at.is_none()
+        {
+            open.shown_at = Some(Instant::now());
         }
         events
     }
@@ -4148,6 +4166,11 @@ impl Engine {
                 open.history.handed();
                 held
             };
+            // A change handed over to be written edits the photo: it leaves the path of one
+            // never edited for good, whatever it holds.
+            if !held {
+                open.unedited = false;
+            }
             let xml = open.xml(self.operations, &self.tools, &self.build);
             if !held || self.writer.failed(&open.sidecar) {
                 let hash = apertrust_library::index::hash(xml.as_bytes());
@@ -4623,6 +4646,8 @@ impl Engine {
             thumbnail_hash: hash,
             thumbnail_saved_at: Some(Instant::now()),
             thumbnail_through: None,
+            unedited: false,
+            shown_at: None,
             phase_one,
             embedded: open::EmbeddedRead::Unread,
             stamp: None,
@@ -4775,6 +4800,13 @@ impl Engine {
             Ok(Some(frame)) => events.push(Event::Frame(frame)),
             Ok(None) => {}
             Err(error) => events.push(Event::Failed(error)),
+        }
+        // A photo opened with no edit: its thumbnail waits for a dwell from its first frame
+        // drawn, this one or the first after a `Resize`.
+        let unedited = (self.open.as_ref())
+            .is_some_and(|open| open.thumbnail_through.is_none() && self.renders_unedited(open));
+        if let Some(open) = &mut self.open {
+            open.unedited = unedited;
         }
         let at = started.elapsed().as_secs_f64() * 1e3;
         tracing::debug!(target: "perf", "open {name}: live, at {at:.0} ms");
@@ -13799,10 +13831,14 @@ mod tests {
             let deadline = Instant::now() + TEST_WAIT;
             loop {
                 step(driven);
-                // A photo with no edit's render records its raw's facts.
+                // A photo with no edit's render records its raw's facts, made from the live
+                // photo.
                 let stamp = library::raw_stamp(path).expect("the raw's stamp");
                 let current = |version: &Vec<u8>| match *hash == library::UNALTERED {
-                    true => library::unaltered_facts(version, &stamp).is_some(),
+                    true => matches!(
+                        library::unaltered_facts(version, &stamp),
+                        Some((_, library::Origin::Opened))
+                    ),
                     false => library::rendered_matches(version, hash),
                 };
                 if slots(cache, path)
@@ -14264,14 +14300,15 @@ mod tests {
             remove(&path);
         }
 
-        /// Under never, a photo with no edit whose raw holds an embedded picture is never
-        /// rendered, explicit default parameters included, and a reset puts the embedded
-        /// picture back in place of the edit's render.
+        /// Under never, a photo with no edit whose raw holds an embedded picture is rendered
+        /// once opened, as its defaults, and explicit default parameters render as no edit
+        /// does: its render stands, made already, with no second still.
         #[test]
-        fn defaults_keep_the_embedded_picture_and_reset_puts_it_back() {
+        fn explicit_defaults_keep_the_render_of_the_defaults() {
             let (mut driven, cache, path) = cached_embedded("rendered-defaults");
-            driven.engine.thumbnail_tick(true);
-            embedded_only(&mut driven, &cache, &path);
+            shown(&mut driven);
+            written(&mut driven, &cache, &path, &library::UNALTERED);
+            finish(&mut driven);
             driven.run([
                 Command::Set {
                     operation: "colorout".into(),
@@ -14281,28 +14318,17 @@ mod tests {
                 Command::RetrySave,
             ]);
             driven.engine.writer.flush(None);
-            driven.engine.thumbnail_tick(true);
-            embedded_only(&mut driven, &cache, &path);
-            driven.run([set("brightness", ControlValue::Number(1.0), true)]);
-            driven.engine.writer.flush(None);
-            driven.engine.thumbnail_tick(true);
-            let hash = library_hash(&sidecar::path_for(&path));
-            written(&mut driven, &cache, &path, &hash);
-            driven.run([Command::Reset]);
-            driven.engine.writer.flush(None);
-            driven.engine.thumbnail_tick(true);
-            embedded_only(&mut driven, &cache, &path);
-            let embedded = |slot: &Option<Vec<u8>>| {
-                slot.as_ref()
-                    .is_some_and(|version| version.starts_with(library::EMBEDDED))
-            };
-            assert!(slots(&cache, &path).iter().all(embedded));
+            shown(&mut driven);
+            finish(&mut driven);
+            assert_eq!(driven.engine.rendered_thumbnails.stills, 1);
+            written(&mut driven, &cache, &path, &library::UNALTERED);
             drop(driven);
             remove(&path);
         }
 
-        /// The camera's picture of a raw replaced since the open is another raw's: never
-        /// kept under the open raw's slots, which keep it while the raw is unchanged.
+        /// The camera's picture of a raw replaced since the open, written in place of a
+        /// refused still of the photo with no edit, is another raw's: never kept under the
+        /// open raw's slots, which keep it while the raw is unchanged.
         #[test]
         fn an_embedded_picture_of_a_raw_replaced_since_the_open_is_not_kept() {
             for replaced in [false, true] {
@@ -14312,7 +14338,8 @@ mod tests {
                 if replaced {
                     std::fs::write(&path, b"another synthetic raw").unwrap();
                 }
-                driven.run([Command::Close]);
+                driven.engine.limits.budget = 1;
+                shown(&mut driven);
                 finish(&mut driven);
                 for slot in &opened {
                     let version = cache.version(THUMBNAILS, slot).unwrap();
@@ -14513,7 +14540,8 @@ mod tests {
             driven.engine.writer.flush(None);
             assert_eq!(std::fs::read_to_string(&sidecar).unwrap(), xml, "held");
             assert_eq!(library::thumbnail_copy(&path), None);
-            driven.engine.thumbnail_tick(true);
+            // At the defaults and never edited, it is rendered once shown past its dwell.
+            shown(&mut driven);
             written(&mut driven, &cache, &path, &library::UNALTERED);
             drop(driven);
             remove(&path);
@@ -14907,37 +14935,35 @@ mod tests {
                 .collect()
         }
 
-        /// A photo never edited is rendered as it leaves where darktable's rule renders it:
-        /// under never, only a raw with no embedded picture; under always, every photo, its
-        /// version the defaults' own. Back to never, a photo with an embedded picture puts
-        /// it back after an edit's reset.
+        /// A photo never edited is rendered once shown past its settle, whatever the setting,
+        /// its version the defaults' own, made from the live photo: under never with no
+        /// embedded picture and with one; under always, made already, no second render, nor
+        /// back under never.
         #[test]
-        fn an_unedited_photo_is_rendered_as_the_setting_says() {
+        fn an_unedited_photo_is_rendered_whatever_the_setting() {
             // No embedded picture: rendered under never.
             let (mut driven, cache, path) = cached("rendered-unedited");
-            driven.engine.thumbnail_tick(true);
+            shown(&mut driven);
             written(&mut driven, &cache, &path, &library::UNALTERED);
             finish(&mut driven);
             assert!(!sidecar::path_for(&path).exists(), "no sidecar is written");
             drop(driven);
             remove(&path);
-            // An embedded picture: kept under never, rendered under always.
+            // An embedded picture: rendered under never too.
             let (mut driven, cache, path) = cached_embedded("rendered-unedited-embedded");
-            driven.engine.thumbnail_tick(true);
-            embedded_only(&mut driven, &cache, &path);
-            raw_thumbnails(&mut driven, library::RawThumbnails::Always);
-            driven.engine.thumbnail_tick(true);
+            shown(&mut driven);
             written(&mut driven, &cache, &path, &library::UNALTERED);
             finish(&mut driven);
-            // Made already: no second render.
-            driven.engine.thumbnail_tick(true);
-            assert_eq!(driven.engine.jobs.control.pending(), 0);
-            raw_thumbnails(&mut driven, library::RawThumbnails::Never);
-            driven.run([set("brightness", ControlValue::Number(0.8), true)]);
-            driven.run([Command::Reset]);
-            driven.engine.writer.flush(None);
-            driven.engine.thumbnail_tick(true);
-            embedded_only(&mut driven, &cache, &path);
+            // Made already: no second render under always, nor back under never.
+            for raw in [
+                library::RawThumbnails::Always,
+                library::RawThumbnails::Never,
+            ] {
+                raw_thumbnails(&mut driven, raw);
+                shown(&mut driven);
+                assert_eq!(driven.engine.jobs.control.pending(), 0, "{raw:?}");
+            }
+            assert_eq!(driven.engine.rendered_thumbnails.stills, 1);
             drop(driven);
             remove(&path);
         }
@@ -14960,44 +14986,28 @@ mod tests {
             (driven.engine.rendered_thumbnails.stills, first)
         }
 
-        /// A photo with no edit prepares a still only where a size shows its render, and
-        /// none once its render is made, read in the next session from what the render
-        /// records of the raw: under never, none as it leaves with an embedded picture, its
-        /// slots the camera's; one for a raw with none, then none. Under auto and 720p with
-        /// the 64 by 48 embedded picture, one, then none, its render the next session's
-        /// first picture.
+        /// A photo with no edit prepares one still once shown past its settle, whatever the
+        /// setting and whether its raw holds an embedded picture, and none once its render is made, read
+        /// in the next session from what the render records of the raw, which is that
+        /// session's first picture.
         #[test]
-        fn a_photo_with_no_edit_prepares_a_still_only_where_one_shows() {
+        fn a_photo_with_no_edit_prepares_one_still_then_none() {
             use library::RawThumbnails::{Auto, Never, P720};
-            let (mut driven, cache, path) = cached_embedded("still-never-embedded");
-            raw_thumbnails(&mut driven, Never);
-            driven.run([Command::Close]);
-            embedded_only(&mut driven, &cache, &path);
-            finish(&mut driven);
-            assert_eq!(driven.engine.rendered_thumbnails.stills, 0);
-            drop(driven);
-            remove(&path);
-            let (mut driven, cache, path) = cached("still-never-none");
-            raw_thumbnails(&mut driven, Never);
-            driven.run([Command::Close]);
-            written(&mut driven, &cache, &path, &library::UNALTERED);
-            finish(&mut driven);
-            assert_eq!(driven.engine.rendered_thumbnails.stills, 1);
-            drop(driven);
-            let (stills, _) = next_session(&path, Never);
-            assert_eq!(stills, 0, "made already");
-            remove(&path);
-            for raw in [Auto, P720] {
-                let name = format!("still-{raw:?}-embedded");
-                let (mut driven, cache, path) = cached_embedded(&name);
+            for (raw, embedded) in [(Never, true), (Never, false), (Auto, true), (P720, true)] {
+                let name = format!("still-{raw:?}-{embedded}");
+                let (mut driven, cache, path) = if embedded {
+                    cached_embedded(&name)
+                } else {
+                    cached(&name)
+                };
                 raw_thumbnails(&mut driven, raw);
-                driven.run([Command::Close]);
+                shown(&mut driven);
                 written(&mut driven, &cache, &path, &library::UNALTERED);
                 finish(&mut driven);
                 assert_eq!(driven.engine.rendered_thumbnails.stills, 1, "{raw:?}");
                 drop(driven);
                 let next = next_session(&path, raw);
-                assert_eq!(next, (0, PreviewSource::Rendered), "{raw:?}");
+                assert_eq!(next, (0, PreviewSource::Rendered), "{raw:?}, {embedded}");
                 remove(&path);
             }
         }
@@ -15016,7 +15026,7 @@ mod tests {
                 } else {
                     std::fs::remove_file(&path).unwrap();
                 }
-                driven.run([Command::Close]);
+                shown(&mut driven);
                 finish(&mut driven);
                 let version = cache.version(THUMBNAILS, &slot).unwrap();
                 let plain = library::rendered_version(&library::UNALTERED);
@@ -15071,6 +15081,504 @@ mod tests {
                     PreviewSource::Embedded
                 };
                 assert_eq!(preview.source, source, "{raw:?}, embedded {embedded}");
+                drop(driven);
+                remove(&path);
+            }
+        }
+
+        /// Ages the open photo, never edited in this session, past its settle: the moment it
+        /// opened, and its first live frame where it opened with no edit.
+        fn settled_unedited(driven: &mut Driven) {
+            let open = driven.engine.open.as_mut().expect("an open photo");
+            let at = open.thumbnail_saved_at.expect("opened");
+            open.thumbnail_saved_at = Some(at - Duration::from_secs(2));
+            open.shown_at = (open.shown_at).map(|at| at - Duration::from_secs(2));
+        }
+
+        /// The open photo, never edited, shown past its settle, then its thumbnail's tick.
+        fn shown(driven: &mut Driven) {
+            settled_unedited(driven);
+            driven.engine.thumbnail_tick(false);
+        }
+
+        /// The size of the picture the cache holds in the slot of `path` at `size`.
+        fn kept_size(cache: &Cache, path: &Path, size: u32) -> (u32, u32) {
+            let slot = slot_of(path, size);
+            let (_, jpeg) = cache.read_any(THUMBNAILS, &slot).unwrap().unwrap();
+            let image = apertrust_raw::read_jpeg(&jpeg).unwrap();
+            (image.width, image.height)
+        }
+
+        /// The picture of `path` at 256 a grid read sends, asked for by its path.
+        fn grid_read(driven: &mut Driven, path: &Path) -> Option<(u32, u32)> {
+            driven.run([alone(&[&path.to_owned()])]);
+            let told = alone_told(driven, 1);
+            let image = (told.iter()).find_map(|event| match event {
+                LibraryEvent::PhotoThumbnail {
+                    path: at, image, ..
+                } if at == path => Some(image.clone()),
+                _ => None,
+            });
+            let image = image.expect("the photo's thumbnail");
+            image.map(|image| (image.width, image.height))
+        }
+
+        /// Whether every slot of `path` holds the camera's embedded picture.
+        fn all_embedded(cache: &Cache, path: &Path) -> bool {
+            slots(cache, path).iter().all(|slot| {
+                slot.as_ref()
+                    .is_some_and(|version| version.starts_with(library::EMBEDDED))
+            })
+        }
+
+        /// Under never, a photo opened and looked at, never edited, gets Apertrust's render
+        /// at every size once it has been live a settle, made from the live photo, and a
+        /// grid read sends that render, not the 64 by 48 embedded picture.
+        #[test]
+        fn an_opened_photo_never_edited_gets_its_render() {
+            let (mut driven, cache, path) = cached_embedded("opened-never-edited");
+            // Live a moment ago: it waits for the settle.
+            driven.engine.thumbnail_tick(false);
+            assert_eq!(driven.engine.rendered_thumbnails.job(&path), None);
+            let wait = driven
+                .engine
+                .thumbnail_wait()
+                .expect("a wake for the settle");
+            assert!(wait > Duration::ZERO, "{wait:?}");
+            settled_unedited(&mut driven);
+            driven.engine.thumbnail_tick(false);
+            written(&mut driven, &cache, &path, &library::UNALTERED);
+            finish(&mut driven);
+            assert_eq!(driven.engine.rendered_thumbnails.stills, 1);
+            assert!(!sidecar::path_for(&path).exists(), "no sidecar is written");
+            let rendered = kept_size(&cache, &path, 256);
+            assert_ne!(rendered, (64, 48));
+            assert_eq!(grid_read(&mut driven, &path), Some(rendered));
+            written(&mut driven, &cache, &path, &library::UNALTERED);
+            finish(&mut driven);
+            drop(driven);
+            remove(&path);
+        }
+
+        /// A photo opened with an edit, nothing changed, its render not in the cache, is
+        /// rendered once live a settle: the render of its edit.
+        #[test]
+        fn an_opened_edited_photo_without_a_current_render_gets_one() {
+            let path = scratch("opened-edited-no-render").with_file_name("embedded.ARW");
+            std::fs::write(&path, b"synthetic raw").unwrap();
+            let mut driven = Driven::new(&[&Sample]);
+            driven.open(&path);
+            driven.run([set("brightness", ControlValue::Number(0.8), true)]);
+            driven.engine.writer.flush(None);
+            drop(driven);
+            let hash = library_hash(&sidecar::path_for(&path));
+            let mut driven = Driven::new(&[&Sample]);
+            let cache = with_cache(&mut driven, path.parent().unwrap());
+            driven.open(&path);
+            assert_eq!(slots(&cache, &path), [None, None, None, None]);
+            settled_unedited(&mut driven);
+            driven.engine.thumbnail_tick(false);
+            written(&mut driven, &cache, &path, &hash);
+            finish(&mut driven);
+            drop(driven);
+            remove(&path);
+        }
+
+        /// Under never, an edit rendered, then `back` to the defaults: the render of the
+        /// defaults, made from the live photo, takes every slot, not the embedded picture.
+        fn back_to_the_defaults_keeps_their_render(name: &str, back: Command) {
+            let (mut driven, cache, path) = cached_embedded(name);
+            driven.run([set("brightness", ControlValue::Number(1.0), true)]);
+            driven.engine.writer.flush(None);
+            settled(&mut driven, &path);
+            driven.engine.thumbnail_tick(false);
+            let hash = library_hash(&sidecar::path_for(&path));
+            written(&mut driven, &cache, &path, &hash);
+            finish(&mut driven);
+            let events = driven.run([back]);
+            assert!(failures(&events).is_empty(), "{events:?}");
+            driven.engine.writer.flush(None);
+            settled(&mut driven, &path);
+            driven.engine.thumbnail_tick(false);
+            written(&mut driven, &cache, &path, &library::UNALTERED);
+            finish(&mut driven);
+            assert_eq!(driven.engine.rendered_thumbnails.stills, 2);
+            assert_ne!(kept_size(&cache, &path, 256), (64, 48));
+            drop(driven);
+            remove(&path);
+        }
+
+        #[test]
+        fn a_reset_keeps_the_render_of_the_defaults() {
+            back_to_the_defaults_keeps_their_render("reset-render", Command::Reset);
+        }
+
+        #[test]
+        fn discarding_history_keeps_the_render_of_the_defaults() {
+            back_to_the_defaults_keeps_their_render("discard-render", Command::DiscardHistory);
+        }
+
+        #[test]
+        fn going_to_original_keeps_the_render_of_the_defaults() {
+            back_to_the_defaults_keeps_their_render(
+                "original-render",
+                Command::GoTo { step: None },
+            );
+        }
+
+        /// A photo never edited, left for another before its settle, starts no still and
+        /// writes nothing, so its slots keep what Raw thumbnails from shows.
+        #[test]
+        fn a_photo_never_edited_left_before_its_settle_keeps_what_the_rule_shows() {
+            let (mut driven, cache, path) = cached_embedded("left-before-settle");
+            let other = path.with_file_name("other.ARW");
+            std::fs::write(&other, b"synthetic raw").unwrap();
+            driven.run([Command::Open(other.clone())]);
+            assert_eq!(driven.engine.rendered_thumbnails.job(&path), None);
+            driven.settle();
+            finish(&mut driven);
+            assert_eq!(driven.engine.rendered_thumbnails.stills, 0);
+            assert_eq!(slots(&cache, &path), [None, None, None, None]);
+            drop(driven);
+            remove(&path);
+        }
+
+        /// A photo never edited waits `UNEDITED_SETTLE` after its first live frame, then gets
+        /// its render while shown; left with the still under way, the still is hurried and
+        /// finished.
+        #[test]
+        fn a_photo_never_edited_shown_past_its_settle_gets_its_render() {
+            use thumbnail::rendered::UNEDITED_SETTLE;
+            let (mut driven, cache, path) = cached_embedded("shown-past-settle");
+            driven.engine.thumbnail_tick(false);
+            assert_eq!(driven.engine.rendered_thumbnails.job(&path), None);
+            let wait = driven
+                .engine
+                .thumbnail_wait()
+                .expect("a wake for the dwell");
+            assert!(wait > Duration::ZERO && wait <= UNEDITED_SETTLE, "{wait:?}");
+            shown(&mut driven);
+            assert!(driven.engine.rendered_thumbnails.job(&path).is_some());
+            let other = path.with_file_name("other.ARW");
+            std::fs::write(&other, b"synthetic raw").unwrap();
+            driven.run([Command::Open(other.clone())]);
+            written(&mut driven, &cache, &path, &library::UNALTERED);
+            finish(&mut driven);
+            assert_eq!(driven.engine.rendered_thumbnails.stills, 1);
+            drop(driven);
+            remove(&path);
+        }
+
+        /// A photo never edited opened before the viewport's size is known is live with no
+        /// frame drawn: no still is tried, nor a retry put off, until its first frame, after
+        /// a `Resize` 500 ms later; its render is then due `UNEDITED_SETTLE` after that frame.
+        #[test]
+        fn a_photo_never_edited_waits_for_its_first_frame_drawn() {
+            use thumbnail::rendered::UNEDITED_SETTLE;
+            let path = scratch("first-frame-drawn").with_file_name("embedded.ARW");
+            std::fs::write(&path, b"synthetic raw").unwrap();
+            let mut driven = Driven::new(&[&Sample]);
+            let cache = with_cache(&mut driven, path.parent().unwrap());
+            driven.run([Command::Open(path.clone())]);
+            driven.settle();
+            assert!(driven.engine.open.as_ref().unwrap().input.is_some(), "live");
+            assert_eq!(driven.engine.thumbnail_wait(), None);
+            std::thread::sleep(Duration::from_millis(500));
+            settled_unedited(&mut driven);
+            driven.engine.thumbnail_tick(false);
+            assert_eq!(driven.engine.rendered_thumbnails.job(&path), None);
+            assert_eq!(driven.engine.rendered_thumbnails.stills, 0);
+            let events = driven.run([Command::Resize {
+                width: 40,
+                height: 40,
+            }]);
+            assert!(
+                events.iter().any(|e| matches!(e, Event::Frame(_))),
+                "{events:?}"
+            );
+            let wait = driven
+                .engine
+                .thumbnail_wait()
+                .expect("a wake for the dwell");
+            assert!(wait > Duration::ZERO && wait <= UNEDITED_SETTLE, "{wait:?}");
+            shown(&mut driven);
+            written(&mut driven, &cache, &path, &library::UNALTERED);
+            finish(&mut driven);
+            assert_eq!(driven.engine.rendered_thumbnails.stills, 1);
+            drop(driven);
+            remove(&path);
+        }
+
+        /// A frame dropped for a GPU error is no frame shown: the photo's dwell starts from
+        /// its first frame published.
+        #[test]
+        fn a_photo_is_shown_from_its_first_frame_published() {
+            use thumbnail::rendered::UNEDITED_SETTLE;
+            let path = scratch("first-frame-published").with_file_name("embedded.ARW");
+            std::fs::write(&path, b"synthetic raw").unwrap();
+            let mut driven = Driven::new(&[&Sample]);
+            let cache = with_cache(&mut driven, path.parent().unwrap());
+            driven.run([Command::Open(path.clone())]);
+            driven.settle();
+            driven.engine.poison = Some(Poison::Always);
+            let size = |width| Command::Resize { width, height: 40 };
+            let events = driven.run([size(40)]);
+            assert!(
+                matches!(failures(&events)[..], [SessionError::Gpu(_)]),
+                "{events:?}"
+            );
+            assert!(!events.iter().any(|e| matches!(e, Event::Frame(_))));
+            assert_eq!(driven.engine.open.as_ref().unwrap().shown_at, None);
+            assert_eq!(driven.engine.thumbnail_wait(), None);
+            driven.engine.poison = None;
+            let events = driven.run([size(41)]);
+            assert!(
+                events.iter().any(|e| matches!(e, Event::Frame(_))),
+                "{events:?}"
+            );
+            let first = driven.engine.open.as_ref().unwrap().shown_at;
+            assert!(first.is_some());
+            let wait = driven
+                .engine
+                .thumbnail_wait()
+                .expect("a wake for the dwell");
+            assert!(wait > Duration::ZERO && wait <= UNEDITED_SETTLE, "{wait:?}");
+            // Later frames leave it as it was.
+            driven.run([size(42)]);
+            assert_eq!(driven.engine.open.as_ref().unwrap().shown_at, first);
+            shown(&mut driven);
+            written(&mut driven, &cache, &path, &library::UNALTERED);
+            finish(&mut driven);
+            drop(driven);
+            remove(&path);
+        }
+
+        /// A gesture cancelled on a photo never edited hands the writer a held save that
+        /// finds no sidecar: the photo is still never edited, and gets its render once shown
+        /// past its dwell.
+        #[test]
+        fn a_gesture_cancelled_on_a_photo_never_edited_keeps_its_render_due() {
+            let (mut driven, cache, path) = cached_embedded("cancelled-pristine");
+            driven.run([set("brightness", ControlValue::Number(1.2), false)]);
+            driven.run([Command::CancelGesture {
+                tool: "sample".into(),
+            }]);
+            driven.engine.writer.flush(None);
+            assert!(!sidecar::path_for(&path).exists(), "no sidecar is written");
+            assert!(
+                driven
+                    .engine
+                    .open
+                    .as_ref()
+                    .unwrap()
+                    .thumbnail_through
+                    .is_some()
+            );
+            shown(&mut driven);
+            written(&mut driven, &cache, &path, &library::UNALTERED);
+            finish(&mut driven);
+            assert_eq!(driven.engine.rendered_thumbnails.stills, 1);
+            drop(driven);
+            remove(&path);
+        }
+
+        /// A gesture cancelled on a photo opened with a sidecar at the defaults hands the
+        /// writer a held save of the bytes it opened with: the photo is still never edited,
+        /// due `UNEDITED_SETTLE` after its first frame, and gets its render once shown past
+        /// it.
+        #[test]
+        fn a_gesture_cancelled_on_a_photo_opened_at_the_defaults_keeps_its_render_due() {
+            use thumbnail::rendered::UNEDITED_SETTLE;
+            let path = scratch("cancelled-defaults").with_file_name("embedded.ARW");
+            std::fs::write(&path, b"synthetic raw").unwrap();
+            // A sidecar at the defaults: an edit, then a reset.
+            let mut driven = Driven::new(&[&Sample]);
+            driven.open(&path);
+            driven.run([set("brightness", ControlValue::Number(1.2), true)]);
+            driven.run([Command::Reset]);
+            driven.engine.writer.flush(None);
+            drop(driven);
+            let sidecar = sidecar::path_for(&path);
+            let bytes = std::fs::read(&sidecar).expect("a sidecar");
+            let mut driven = Driven::new(&[&Sample]);
+            let cache = with_cache(&mut driven, path.parent().unwrap());
+            driven.open(&path);
+            assert!(driven.engine.open.as_ref().unwrap().unedited);
+            driven.run([set("brightness", ControlValue::Number(1.2), false)]);
+            driven.run([Command::CancelGesture {
+                tool: "sample".into(),
+            }]);
+            driven.engine.writer.flush(None);
+            assert_eq!(std::fs::read(&sidecar).unwrap(), bytes);
+            assert!(
+                driven
+                    .engine
+                    .open
+                    .as_ref()
+                    .unwrap()
+                    .thumbnail_through
+                    .is_some()
+            );
+            let wait = driven
+                .engine
+                .thumbnail_wait()
+                .expect("a wake for the dwell");
+            assert!(wait <= UNEDITED_SETTLE, "{wait:?}");
+            shown(&mut driven);
+            written(&mut driven, &cache, &path, &library::UNALTERED);
+            finish(&mut driven);
+            assert_eq!(driven.engine.rendered_thumbnails.stills, 1);
+            drop(driven);
+            remove(&path);
+        }
+
+        /// A photo never edited, rendered, closed, its raw given another stamp, its bytes and
+        /// so its slots the same, and opened again, is not done with: shown past its dwell, it
+        /// gets a new render recording the raw as it is now.
+        #[test]
+        fn a_raw_replaced_between_opens_gets_a_new_render() {
+            use std::time::SystemTime;
+            let (mut driven, cache, path) = cached_embedded("replaced-between-opens");
+            shown(&mut driven);
+            written(&mut driven, &cache, &path, &library::UNALTERED);
+            finish(&mut driven);
+            driven.run([Command::Close]);
+            std::fs::File::options()
+                .write(true)
+                .open(&path)
+                .and_then(|file| file.set_modified(SystemTime::now() + Duration::from_secs(5)))
+                .unwrap();
+            driven.run([Command::Open(path.clone())]);
+            driven.settle();
+            shown(&mut driven);
+            written(&mut driven, &cache, &path, &library::UNALTERED);
+            finish(&mut driven);
+            assert_eq!(driven.engine.rendered_thumbnails.stills, 2);
+            drop(driven);
+            remove(&path);
+        }
+
+        /// An edited photo left for another before its saved edit settles is rendered as it
+        /// leaves.
+        #[test]
+        fn an_edited_photo_left_before_its_settle_is_rendered_as_it_leaves() {
+            let (mut driven, cache, path) = cached_embedded("edited-left-before-settle");
+            driven.run([set("brightness", ControlValue::Number(0.8), true)]);
+            driven.engine.writer.flush(None);
+            let hash = library_hash(&sidecar::path_for(&path));
+            let other = path.with_file_name("other.ARW");
+            std::fs::write(&other, b"synthetic raw").unwrap();
+            driven.run([Command::Open(other.clone())]);
+            written(&mut driven, &cache, &path, &hash);
+            finish(&mut driven);
+            assert_eq!(driven.engine.rendered_thumbnails.stills, 1);
+            drop(driven);
+            remove(&path);
+        }
+
+        /// A photo left for another before its first live frame, its decode held, gets
+        /// nothing: no still, no slot written.
+        #[test]
+        fn a_photo_left_before_its_first_live_frame_gets_nothing() {
+            let path = scratch("left-before-live").with_file_name("embedded.ARW");
+            let other = path.with_file_name("other.ARW");
+            for raw in [&path, &other] {
+                std::fs::write(raw, b"synthetic raw").unwrap();
+            }
+            let mut driven = Driven::new(&[&Sample]);
+            let cache = with_cache(&mut driven, path.parent().unwrap());
+            let (hold, begun, permit) = export_job::testing::Hold::new();
+            driven.run([
+                Command::HoldDecode(hold),
+                Command::Resize {
+                    width: 40,
+                    height: 40,
+                },
+            ]);
+            let first = driven.engine.applied + 1;
+            driven.run([Command::Open(path.clone())]);
+            driven.pump(|engine, _| engine.decoding == [first]);
+            begun
+                .recv_timeout(TEST_WAIT)
+                .expect("the first's decode begins");
+            driven.run([Command::Open(other.clone())]);
+            permit.send(()).unwrap();
+            driven.settle();
+            driven.engine.thumbnail_tick(false);
+            finish(&mut driven);
+            assert_eq!(driven.engine.rendered_thumbnails.stills, 0);
+            assert_eq!(slots(&cache, &path), [None, None, None, None]);
+            drop(driven);
+            remove(&path);
+        }
+
+        /// Under never, a photo with an embedded picture rendered while shown, then opened in
+        /// the next session, shows that render first, with no second still.
+        #[test]
+        fn an_opened_render_is_the_opening_picture_under_never() {
+            let (mut driven, cache, path) = cached_embedded("opened-first-picture");
+            shown(&mut driven);
+            written(&mut driven, &cache, &path, &library::UNALTERED);
+            finish(&mut driven);
+            drop(driven);
+            let next = next_session(&path, library::RawThumbnails::Never);
+            assert_eq!(next, (0, PreviewSource::Rendered));
+            remove(&path);
+        }
+
+        /// A render made from the live photo whose raw was replaced since, by another
+        /// stamp, is judged by the rule: under never, the next open's first picture is the
+        /// embedded one. A grid read's is `serve`'s test.
+        #[test]
+        fn an_opened_render_of_a_replaced_raw_follows_the_rule() {
+            use std::time::SystemTime;
+            let (mut driven, cache, path) = cached_embedded("opened-replaced");
+            shown(&mut driven);
+            written(&mut driven, &cache, &path, &library::UNALTERED);
+            finish(&mut driven);
+            drop(driven);
+            let (_, first) = next_session(&path, library::RawThumbnails::Never);
+            assert_eq!(first, PreviewSource::Rendered);
+            // Another stamp, its bytes and so its slots the same.
+            std::fs::File::options()
+                .write(true)
+                .open(&path)
+                .and_then(|file| file.set_modified(SystemTime::now() + Duration::from_secs(5)))
+                .unwrap();
+            let (_, first) = next_session(&path, library::RawThumbnails::Never);
+            assert_eq!(first, PreviewSource::Embedded);
+            remove(&path);
+        }
+
+        /// A photo never edited whose still is refused, its buffers past the budget, gets
+        /// the camera's embedded picture at every size, versioned as the embedded picture,
+        /// or no slot where its raw holds none, and is not tried again for the same edit.
+        #[test]
+        fn a_refused_still_of_an_unedited_photo_writes_the_embedded_picture() {
+            for embedded in [true, false] {
+                let name = format!("unedited-refused-{embedded}");
+                let (mut driven, cache, path) = if embedded {
+                    cached_embedded(&name)
+                } else {
+                    cached(&name)
+                };
+                settled_unedited(&mut driven);
+                driven.engine.limits.budget = 1;
+                driven.engine.thumbnail_tick(false);
+                embedded_only(&mut driven, &cache, &path);
+                finish(&mut driven);
+                if embedded {
+                    assert!(all_embedded(&cache, &path));
+                    assert_eq!(kept_size(&cache, &path, 256), (64, 48));
+                } else {
+                    assert_eq!(slots(&cache, &path), [None, None, None, None]);
+                }
+                assert_eq!(driven.engine.thumbnail_wait(), None, "{embedded}");
+                driven.engine.thumbnail_tick(false);
+                assert_eq!(driven.engine.jobs.control.pending(), 0, "{embedded}");
+                driven.engine.thumbnail_tick(true);
+                assert_eq!(driven.engine.jobs.control.pending(), 0, "{embedded}");
+                assert_eq!(driven.engine.rendered_thumbnails.stills, 1, "{embedded}");
                 drop(driven);
                 remove(&path);
             }
