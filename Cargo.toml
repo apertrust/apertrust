@@ -165,6 +165,86 @@ unsafe_code = "deny"
 dbg_macro = "warn"
 todo = "warn"
 
+# Each crate's place in the layers, which tools/check-crate-deps.py checks every manifest
+# against: `may`, the workspace crates it may depend on, or "any" for a binary, which puts
+# the others together; `never`, the crates it may not depend on, whatever `may` says;
+# `why`, the rule, named when a manifest breaks it. "apertrust-op-*" stands for every
+# operation crate. Each `may` but apertrust-base's own names apertrust-base, the bottom
+# layer every program sets up (decision 43). A crate with no rule fails, so a new crate
+# states its place when it lands (decision 65).
+[workspace.metadata.crate-deps.apertrust]
+may = "any"
+never = ["apertrust-raw"]
+why = "the app reaches the raw and the four layers of the library through the session, and its presets module directly (decisions 54, 58 and 106)"
+
+[workspace.metadata.crate-deps.apertrust-cli]
+may = "any"
+
+[workspace.metadata.crate-deps.apertrust-golden]
+may = "any"
+
+[workspace.metadata.crate-deps.apertrust-engine]
+may = [
+    "apertrust-plugin",
+    "apertrust-color",
+    "apertrust-raw",
+    "apertrust-tools",
+    "apertrust-base",
+    "apertrust-export",
+    "apertrust-library",
+]
+never = ["egui", "eframe", "winit"]
+why = "the engine never depends on an operation crate or a client, nor on UI code (decisions 20 and 58)"
+
+[workspace.metadata.crate-deps.apertrust-plugin]
+may = ["apertrust-base"]
+never = ["wgpu"]
+why = "the operation interface is plain data, with no wgpu (decision 21)"
+
+[workspace.metadata.crate-deps.apertrust-color]
+may = ["apertrust-base"]
+why = "shared colour maths, under the operations (decision 65)"
+
+[workspace.metadata.crate-deps."apertrust-op-*"]
+may = ["apertrust-plugin", "apertrust-color", "apertrust-base"]
+why = "an operation is its kernel, setup, manifest and schema behind the interface, its shared maths in apertrust-color (decisions 20 and 65)"
+
+[workspace.metadata.crate-deps.apertrust-operations]
+may = ["apertrust-op-*", "apertrust-plugin", "apertrust-base"]
+why = "the list of built-in operations (decision 20)"
+
+[workspace.metadata.crate-deps.apertrust-tools]
+may = ["apertrust-plugin", "apertrust-color", "apertrust-base"]
+never = ["egui", "eframe", "wgpu"]
+why = "tools depend on no egui, wgpu, engine or operation crate (decision 28)"
+
+[workspace.metadata.crate-deps.apertrust-library]
+may = ["apertrust-base", "apertrust-raw"]
+never = ["wgpu"]
+why = "the library never depends on the engine, tools, plugin or wgpu (decision 54)"
+
+[workspace.metadata.crate-deps.apertrust-export]
+may = ["apertrust-base", "apertrust-color"]
+never = ["wgpu"]
+why = "what an export writes and where, with no GPU (decision 56)"
+
+[workspace.metadata.crate-deps.apertrust-raw]
+may = ["apertrust-base"]
+why = "raw decoding through rawler, in its own types (decision 23)"
+
+[workspace.metadata.crate-deps.apertrust-base]
+may = []
+never = ["wgpu", "egui", "eframe", "winit"]
+why = "nothing about images, colour, the GPU or the UI (decision 43)"
+
+[workspace.metadata.crate-deps.apertrust-ui]
+may = ["apertrust-base"]
+why = "the design system has no engine or tool types, and uses apertrust-base for settings::Choice alone (decision 36)"
+
+[workspace.metadata.crate-deps.apertrust-display]
+may = ["apertrust-base"]
+why = "the window platform code, an FFI crate (decision 65)"
+
 # Decoding a 60 MP raw with an unoptimised decoder takes seconds, so rawler is
 # optimised in debug builds too.
 [profile.dev.package.rawler]
