@@ -24,7 +24,8 @@
 //!
 //! Built: the view, its placement and the frame's place; past Fit, the region the detail
 //! pipeline renders at the scale rendered ([`rendered`]), the visible rectangle with its
-//! margin, and whether a pan stays inside it ([`covers`]).
+//! margin, and whether a pan stays inside it ([`covers`]); a centre mapped through a turn
+//! or a flip of the photo ([`reoriented`]).
 
 use crate::pipeline::{at_scale, fit_scale};
 
@@ -294,6 +295,60 @@ pub fn covers(region: [u32; 4], visible: [f64; 4]) -> bool {
         && top + WHOLE >= y
         && left + seen_width <= x + width + WHOLE
         && top + seen_height <= y + height + WHOLE
+}
+
+/// The photo's orientation, as Orientation's settings give it (`apertrust_tools::orientation`):
+/// darktable's `dt_image_orientation_t`, flip x, flip y and swap xy, applied to the unturned
+/// image in that order (`flip.c`, `distort_transform`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Orientation {
+    pub flip_x: bool,
+    pub flip_y: bool,
+    pub swap_xy: bool,
+}
+
+impl Orientation {
+    /// The orientation of darktable's flip `bits`.
+    pub fn from_bits(bits: u8) -> Orientation {
+        use apertrust_tools::orientation::{FLIP_X, FLIP_Y, SWAP_XY};
+        Orientation {
+            flip_x: bits & FLIP_X != 0,
+            flip_y: bits & FLIP_Y != 0,
+            swap_xy: bits & SWAP_XY != 0,
+        }
+    }
+
+    /// The orientation Orientation's option `choice` shows the photo of `image` in, the
+    /// photo's own at auto (`apertrust_tools::orientation::shown_bits`).
+    pub fn shown(choice: u32, image: &apertrust_plugin::ImageContext) -> Orientation {
+        Orientation::from_bits(apertrust_tools::orientation::shown_bits(choice, image))
+    }
+
+    /// Where this orientation shows the point `at` of the unturned image, 0 to 1 across and
+    /// down.
+    pub fn forward(self, [x, y]: [f32; 2]) -> [f32; 2] {
+        let x = if self.flip_x { 1.0 - x } else { x };
+        let y = if self.flip_y { 1.0 - y } else { y };
+        if self.swap_xy { [y, x] } else { [x, y] }
+    }
+
+    /// The point of the unturned image this orientation shows at `at`: [`Self::forward`]
+    /// undone, the axes swapped back, then the flips.
+    pub fn backward(self, [x, y]: [f32; 2]) -> [f32; 2] {
+        let [x, y] = if self.swap_xy { [y, x] } else { [x, y] };
+        let x = if self.flip_x { 1.0 - x } else { x };
+        let y = if self.flip_y { 1.0 - y } else { y };
+        [x, y]
+    }
+}
+
+/// The centre `c`, in the photo's coordinates as orientation `from` shows it, mapped to
+/// orientation `to`, so it stays on the same point of the scene: back to the unturned
+/// image through `from`, then forward through `to`. Not clamped: [`place`] keeps it inside
+/// the edges. The session maps its view through a turn of the photo with it, and a client
+/// its own centre, so the two never disagree (decision 99).
+pub fn reoriented(c: [f32; 2], from: Orientation, to: Orientation) -> [f32; 2] {
+    to.forward(from.backward(c))
 }
 
 #[cfg(test)]
@@ -699,5 +754,81 @@ mod tests {
         // One side whole, the other with its margin.
         let view = at(ViewScale::Factor(1.0), [0.25, 0.5]);
         assert_eq!(region_of([6000, 1000], &view), [64, 0, 2880, 1000]);
+    }
+
+    /// darktable's eight orientations, by their flip bits.
+    fn orientations() -> impl Iterator<Item = Orientation> {
+        (0..8).map(Orientation::from_bits)
+    }
+
+    /// Points across the photo: its corners, its middle and some between.
+    const POINTS: [[f32; 2]; 7] = [
+        [0.0, 0.0],
+        [1.0, 0.0],
+        [0.0, 1.0],
+        [0.5, 0.5],
+        [0.3, 0.7],
+        [0.9, 0.1],
+        [0.25, 0.6],
+    ];
+
+    fn close_at(a: [f32; 2], b: [f32; 2]) -> bool {
+        (a[0] - b[0]).abs() < 1e-5 && (a[1] - b[1]).abs() < 1e-5
+    }
+
+    #[test]
+    fn reoriented_round_trips_through_every_orientation() {
+        for from in orientations() {
+            for to in orientations() {
+                for c in POINTS {
+                    let there = reoriented(c, from, to);
+                    let back = reoriented(there, to, from);
+                    assert!(close_at(back, c), "{from:?} to {to:?}: {c:?} {back:?}");
+                }
+            }
+            // Through itself, nothing moves.
+            for c in POINTS {
+                assert!(close_at(reoriented(c, from, from), c), "{from:?}");
+            }
+        }
+    }
+
+    /// A quarter turn clockwise maps (x, y) to (1 − y, x) and a horizontal flip to
+    /// (1 − x, y); every one of darktable's four buttons, from every orientation, keeps the
+    /// centre on the scene's point it showed: the unturned image's point under it is the
+    /// same before and after.
+    #[test]
+    fn a_quarter_turn_maps_the_centre_onto_the_same_scene_point() {
+        use apertrust_tools::orientation::{ACTIONS, turn};
+        let none = Orientation::default();
+        let bits = |action| Orientation::from_bits(turn(action, 0).expect("a button"));
+        for c in POINTS {
+            let [x, y] = c;
+            assert!(close_at(
+                reoriented(c, none, bits("rotate_cw")),
+                [1.0 - y, x]
+            ));
+            assert!(close_at(
+                reoriented(c, none, bits("rotate_ccw")),
+                [y, 1.0 - x]
+            ));
+            let flipped = reoriented(c, none, bits("flip_horizontally"));
+            assert!(close_at(flipped, [1.0 - x, y]));
+            assert!(close_at(
+                reoriented(c, none, bits("flip_vertically")),
+                [x, 1.0 - y]
+            ));
+        }
+        for start in 0..8 {
+            let from = Orientation::from_bits(start);
+            for action in ACTIONS {
+                let to = Orientation::from_bits(turn(action, start).expect("a button"));
+                for c in POINTS {
+                    let scene = from.backward(c);
+                    let mapped = reoriented(c, from, to);
+                    assert!(close_at(to.backward(mapped), scene), "{from:?} {action}");
+                }
+            }
+        }
     }
 }
