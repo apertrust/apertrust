@@ -234,7 +234,7 @@ Details: [ai.md](ai.md).
 
 ### Testing
 
-During the migration, every ported operation is compared with darktable-cli by ΔE2000 with its own tolerance, the whole pipeline is compared on the raw.pixls.us corpus, gradients are checked against finite differences, and every tool's invariants are tests (decisions 61 to 63).
+During the migration, every ported operation is compared with darktable-cli by ΔE2000 with its own tolerance, its references rendered by darktable's official build, never one compiled for the local CPU (decision 103), the whole pipeline is compared on the raw.pixls.us corpus, gradients are checked against finite differences, and every tool's invariants are tests (decisions 61 to 63).
 
 Details: [testing.md](testing.md), the `golden-tests` skill.
 

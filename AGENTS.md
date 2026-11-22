@@ -36,7 +36,7 @@ A free, non-destructive, cross-platform raw photo editor ([docs/principles.md](d
 - Exit criteria: every raw.pixls.us sample both decoders read as a colour mosaic (29 of the 40), rendered as `apertrust-cli export` does before rounding to 8 bits, within a mean ΔE2000 of 0.01 of darktable's 16-bit render and at most 0.01% of pixels over 2.3, with Apertrust's crop and levels on both sides (decisions 23 and 62).
 - 27 pass (`apertrust-golden pipeline`); Sony's two lossy ARWs wait for rawler's dither-seed fix.
 - WARP is timed. lavapipe binds at most 128 MiB at once, less than the 61 MP raw's 233 MiB mosaic, so such passes run in row strips and the rest in tiles (decision 14), byte-identical on the M4 at that limit; its timing waits for the workflow's next run.
-- Phase 0's gate has passed: every golden case on the M4, an RTX 5060 and a Radeon 780M, and a fast viewport on macOS and Linux.
+- Phase 0's gate has passed: its golden cases on the M4, an RTX 5060 and a Radeon 780M, and a fast viewport on macOS and Linux. Every port's golden results are recorded on the M4; on the Radeon 780M the tone equalizer's cases pass too, against darktable's official AppImage (decision 103).
 
 ## Project skills
 
@@ -147,7 +147,7 @@ APERTRUST_BLESS=1 cargo test --release -p apertrust-raw -- --ignored   # accept 
 
 ### Golden-image harness
 
-It runs locally only. It needs darktable-cli (`DARKTABLE_CLI`, `PATH` or the default install location) and darktable's integration-test images; `pipeline` needs the raw.pixls.us corpus (`test-images/raw.pixls.us` or `APERTRUST_RAW_CORPUS`, names `<Make>/<Model>/<file>`). A port passes when its kernel's output is within the case's ΔE2000 tolerance of darktable's; `gradient` checks the Slang derivatives against finite differences and forward against reverse mode. The `golden-tests` skill explains the rest.
+It runs locally only. It needs darktable-cli from darktable's official build of the reference release, never one compiled for the local CPU (decision 103): on Linux the release's AppImage, unpacked with `--appimage-extract` and run through a wrapper that sources its `apprun-hooks/`, named by `DARKTABLE_CLI` or found on `PATH`, the harness never looking in `/opt/darktable`, where darktable's `build.sh` installs a native build; on macOS the dmg's app in `/Applications`; on Windows the installer's (`DARKTABLE_CLI`, `PATH` or the platform's official install location; [docs/testing.md](docs/testing.md#the-golden-image-harness-during-the-migration)). A switch of build deletes `target/golden` first. It also needs darktable's integration-test images; `pipeline` needs the raw.pixls.us corpus (`test-images/raw.pixls.us` or `APERTRUST_RAW_CORPUS`, names `<Make>/<Model>/<file>`). A port passes when its kernel's output is within the case's ΔE2000 tolerance of darktable's; `gradient` checks the Slang derivatives against finite differences and forward against reverse mode. The `golden-tests` skill explains the rest.
 
 ```sh
 export APERTRUST_TEST_IMAGES=~/Developer/darktable/src/tests/integration/images

@@ -571,7 +571,7 @@ How:
 
 ## Results
 
-On the Apple M4 (Metal), `apertrust-golden run` and `gradient` at full resolution, 3908×2602, with the module at darktable's place and the sidecars in the tests' own order, colorin an identity (decision 22; Test plan). The filtered cases take each case raw's readout as darktable's `piece->iwidth` (Setup). Times are the median GPU time per whole render of the one-instance plan. Other vendors' GPUs are still to run, so the status is ported, not verified.
+On the Apple M4 (Metal), `apertrust-golden run` and `gradient` at full resolution, 3908×2602, with the module at darktable's place and the sidecars in the tests' own order, colorin an identity (decision 22; Test plan). The filtered cases take each case raw's readout as darktable's `piece->iwidth` (Setup). Times are the median GPU time per whole render of the one-instance plan. The references come from darktable's official macOS build (decision 103). Of other vendors' GPUs only the Radeon 780M has run, below, so the status is ported, not verified.
 
 | Case | Module effect, mean ΔE2000 | ΔE2000 mean | p95 | max | Pixels over 0.05 | Median GPU time per render, three runs |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -588,6 +588,10 @@ On the Apple M4 (Metal), `apertrust-golden run` and `gradient` at full resolutio
 - The filtered cases match darktable as closely as the per-pixel ones: the mask's rounding, through the recursion and the blend, adds about 0.0001 to the mean and 0.0005 to the max, far inside the tolerance.
 - darktable's loops restated on the CPU in `src/filters.rs`, with the f64 curve, render the same four filtered cases at means of 0.0002 to 0.0004 and maxima of 0.0012 to 0.0015 (`the_restated_filters_render_darktables_cases`, ignored as it needs darktable).
 - Quantised, outside the cases (Deliberate differences): test 0080's bands with the preset's mask settings and quantisation 0.5 EV give a mean of 0.0003, p95 0.0008 and a max of 6.36, 2 pixels over 0.05, with one iteration, and a mean of 0.0025, p95 0.0011 and a max of 11.50, 16,151 pixels over 0.05, 0.16%, with five. The restatement in Rust gives 6.27 with 3 pixels over, and 11.08 with five iterations.
+
+**On the Radeon 780M** (Vulkan, Linux, a Ryzen 7 8845HS), `apertrust-golden run` against references from darktable's official `Darktable-5.6.2-x86_64.AppImage`: all seven cases pass, the four filtered ones among them, at means of 0.0002 to 0.0013, maxima of at most 0.0037 and no pixel over.
+
+**Against a local build compiled for the CPU** (`-march=native`, with darktable's `-O3 -ffast-math`), the four filtered cases fail their tolerances: all four the maximum of 0.050, three of them the mean of 0.010 too (means of 0.0099 to 0.0197, maxima up to 1.06), hundreds of thousands of pixels over. darktable's mask differs, by up to 0.06 EV in flat areas and on saturated labels: that build's `eigf_variance_analysis`, `eigf_blending` and `luminance_mask` loops are AVX-512 code with fused multiply-adds, where the AppImage's are baseline x86-64 with none. Apertrust is not the cause: the first public commit fails the same way, and the restatement in `src/filters.rs`, on the CPU, gives the GPU kernel's numbers. So references come only from darktable's official build (decision 103).
 
 ### Gradients without a filter
 
