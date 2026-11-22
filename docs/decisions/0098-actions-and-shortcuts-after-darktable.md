@@ -55,6 +55,7 @@ The registry stays flat by id. Each action gains an **owner**, which places it i
 | A control or a view coordinate | `tool-<tool>-control-<control>` | `iop/<module>/<section>/<label>` |
 | A button or a `Row::Action` | `tool-<tool>-<action>` (built, 91) | the button's |
 | A picker | `tool-<tool>-picker-<picker>` | the picker's toggle |
+| A one-shot pick a tool's menus name (`MenuEntry::Pick`, [0079](0079-colour-pickers-one-api-for-tools-and-the-colour-picker.md)) | `tool-<tool>-pick-<picker>` | none |
 | A tool's setting row | `tool-<tool>-setting-<setting>` | a widget on a conf key |
 | A preset row | `tool-<tool>-preset_row-<id>` | a combobox |
 | A preset | `tool-<tool>-preset-<name>`, with the presets API | `iop/<module>/preset/<name>` |
@@ -75,6 +76,7 @@ Every action is generated from `ToolDefinition` as the app starts, as decision 9
 | `Row::Choice`, `Row::Preset` | `dropdown`, each option an `item:` |
 | `Row::Toggle`, `Row::Pickers`' buttons | `toggle` |
 | `Row::Buttons`' buttons, `Row::Action` | `button` |
+| `MenuEntry::Pick` in `ToolDefinition::menus` | `button`, run only from the photo's menu, with its point |
 | A slider's quad | the slider's `button` element |
 | `Row::Setting` | `slider`, `dropdown`, `toggle` or `entry`, by its kind |
 | `Row::Custom` (the curve, the equalizer, the wheels) | what darktable defines for that module's widget, listed in its port spec |

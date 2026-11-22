@@ -107,6 +107,8 @@ A pick and another option move no memory, as darktable's callbacks for them leav
 
 Nothing else is written, and no follow write runs after it ([pickers.md](../pickers.md#what-a-pick-writes)); an area with no red photosite writes nothing, as darktable returns on an empty reading. It shows no patch, as darktable's white balance has none. A pick is one step of source Auto, undoable as any change. The raw stage runs at full resolution, so the mean is over the export's photosites, not darktable's downscaled preview ([pickers.md](../pickers.md#the-scale)); a picker whose operation runs in tiles reads nothing.
 
+**From the photo's menu** (planned, decision 79's 79.17): "Set White Balance from Here", `MenuEntry::Pick("spot")`, in `EDIT` at 200 after Reset, a one-shot pick at the point right-clicked: `spot` reads the area a press there starts, 2 % of the photo's width each way, on the mosaic at full resolution, its pick writes the coefficients and from image area as above, and the picker is off again, one step of source Auto ([pickers.md](../pickers.md#a-one-shot-pick)). Where the operation runs in a tiled viewport's tiles it reads nothing and writes nothing, as the picker does.
+
 **Deliberate differences:**
 
 - darktable writes the fourth coefficient too. Emerald (`various`) is not ported and stays as it is: nothing reads it on a three-colour sensor, and temperature ports no four-colour one.

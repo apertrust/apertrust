@@ -239,6 +239,7 @@ darktable's picker on Exposure (`exposure.c:1211-1218`), an area picker of the e
 - **Highlight preservation mode** takes its held-back exposure off what the pick writes where it is on: darktable's `_auto_set_exposure` adds it to the exposure it inverts (`:957-959`).
 - **A change of Picker target or Lightness** applies the latest reading again toward the new target, as darktable's settings callback does (`:1170-1175`).
 - **darktable's measure mode is gone** (decision 88): the reference row's picker, `reference`, measures an area instead, by measure mode's arithmetic: the L the area renders at at the current exposure, held to 0 to 100, handed back as `reference_lightness` and written nowhere in the edit.
+- **From the photo's menu** (planned, decision 79's 79.17): "Set Exposure from Here", `MenuEntry::Pick("exposure")`, in `EDIT` at 300 after White balance's, a one-shot pick at the point right-clicked: the `exposure` picker reads the area a press there starts, its pick writes what the picker's does there, toward Picker target, Last pick and its warnings following, and the picker is off again, one step of source Auto. Hidden while the picker is not ready, toward Reference with none set ([pickers.md](../pickers.md#a-one-shot-pick)).
 
 ## Design choices
 

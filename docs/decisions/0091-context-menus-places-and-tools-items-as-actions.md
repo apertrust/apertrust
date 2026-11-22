@@ -47,12 +47,13 @@ A tool's section already has its own buttons: reset, presets and options (⋯). 
   - it has no default keys and works in the view's scope;
   - it is available while the photo takes edits, live and not open for viewing only, on the main window, with no modal dialog over it;
   - a button's runs as pressing the button does: `Intent::ToolAction`, then `Change::Action` on the tool's values the mirror holds, `ProcessingTool::action`, and a `SetControl` for each control it writes, one change and one history step;
-  - a `Row::Action`'s, whose row is drawn disabled until what it runs is built, is listed and never runs.
+  - a `Row::Action`'s, whose row is drawn disabled until what it runs is built, is listed and never runs;
+  - a one-shot pick's, one for each picker the tool's menus name (`MenuEntry::Pick`, below), `tool-<tool>-pick-<picker>`, worded `tool-<tool>-picker-<picker>-here`, runs with its menu's target, sending `PickerCommand::Once` at the target's point with the tool's settings, one change and one history step where the tool or its values change, none where nothing does (planned, [0079](0079-colour-pickers-one-api-for-tools-and-the-colour-picker.md)'s 79.17).
 - A utility's items are the registry actions it already has, as History's Reset is `reset`.
 
 **Tools declare their items as data.** Every item, a tool's, a utility's or the app's, is a `MenuItem { place: Place, section: Section, order: u32, entry: MenuEntry }`, so the app's items and the tools' are placed by one rule.
 
-- `MenuEntry::Action(id)` is one action. `MenuEntry::Submenu { title, actions }` is a submenu of actions, one level deep: `title` a message id, `actions` at least one, each once, in order. A submenu counts as one item towards its place's limit. A submenu a tool declares holds at most eight actions (`MOST_IN_SUBMENU`), which `check_menus` checks; the app's own submenus, built from what it lists, as Background ▸, Workspace ▸ and a tool's ⋯'s Move Tool to Tab ▸ and Show Tool in Tab ▸ with up to twelve tabs ([0096](0096-workspaces-as-files-hidden-tools-and-finding-a-tool.md)), are not bound by it.
+- `MenuEntry::Action(id)` is one action. `MenuEntry::Pick(picker)`, planned, is a one-shot pick of one of the tool's pickers (below). `MenuEntry::Submenu { title, actions }` is a submenu of actions, one level deep: `title` a message id, `actions` at least one, each once, in order. A submenu counts as one item towards its place's limit. A submenu a tool declares holds at most eight actions (`MOST_IN_SUBMENU`), which `check_menus` checks; the app's own submenus, built from what it lists, as Background ▸, Workspace ▸ and a tool's ⋯'s Move Tool to Tab ▸ and Show Tool in Tab ▸ with up to twelve tabs ([0096](0096-workspaces-as-files-hidden-tools-and-finding-a-tool.md)), are not bound by it.
 - A processing tool: `ToolDefinition::menus: &'static [MenuItem]` in its `ProcessingDefinition`, each action one of the tool's own, a submenu's children included.
 - A utility: `ToolDefinition::menus` in its `UtilityDefinition`, in `utility::UTILITIES`, each action the registry action that runs it.
 - Both are one field, `ToolDefinition::menus`, of the parent every tool's definition embeds ([0093](0093-one-tool-model-processing-tools-and-utility-tools.md)). Built with the shared ⋯ (step 93.3), its items at `Place::Options` are the tool's ⋯, before the layout's, History's Compress History, Truncate History, Create a Style… and Discard History… among them, Truncate History an item of its own.
@@ -67,7 +68,7 @@ A tool's section already has its own buttons: reset, presets and options (⋯). 
 - The gaps leave room to put an item between two others without renumbering them.
 - A tool with nothing to add declares nothing.
 - `ProcessingDefinition::check` refuses an item that names none of the tool's actions (`UnknownMenuAction`), an action listed twice in one place, a submenu's children included (`DuplicateMenuItem`), a submenu of no action or of more than eight (`SubmenuItems`), and more than two items in one place among `Photo` and `Thumbnail`, or more than four in `Options` (`MenuItems`), through `check_menus`, and the section rules through `check_section`. An app test holds the utilities' items to the same limits and to actions the registry declares, each in the menu bar on every platform.
-- A picker is no item yet: an item that picks at the pointer waits for the open question below.
+- **A one-shot pick** (planned, 79.17) is `MenuEntry::Pick(picker)`, one of the tool's pickers, on the photo alone, the one place whose target carries a point: `check_menus` refuses it at any other place (`PickPlace`) and `ProcessingDefinition::check` a picker the tool does not declare (`UnknownMenuPicker`); it counts as one item. It picks once at the point right-clicked, as pressing the picker, clicking there and pressing it again would, and is off again ([pickers.md](../pickers.md#a-one-shot-pick)). The first two, in `EDIT` after Reset in the pipeline's order: White balance's "Set White Balance from Here" (200) and Exposure's "Set Exposure from Here" (300). Its other way is its picker, whose button is in the tool's section by construction.
 
 **How a menu is built.** The app builds every menu, `menus::context(place, target)`, from the app's items for the place and the items tools and utilities add. The surround's is View › Background's items alone, read from `menus::BACKGROUND`.
 
@@ -81,7 +82,7 @@ A tool's section already has its own buttons: reset, presets and options (⋯). 
 
 **What an item acts on**, `Target`:
 
-- On the photo: the active photo, with the point under the pointer in the photo's coordinates as pickers take them (79), or no point when the menu opens from the keys. An action that needs a point is hidden without one. Export… there is File › Export…'s: it reveals the Export tool, whose button exports the selection, and its words say how many.
+- On the photo: the active photo, with the point under the pointer in the photo's coordinates as pickers take them (79), or no point when the menu opens from the keys. A one-shot pick, the one action that needs a point, is hidden without one; it is also hidden while its picker is not ready (`ProcessingTool::picker_ready` with the settings the app keeps), and while a tool is hidden by the History tab's eye. Export… there is File › Export…'s: it reveals the Export tool, whose button exports the selection, and its words say how many.
 - On a thumbnail: the selection, which always holds its photo. Opening its menu, by a right-click or from the keys on its focused cell, opens its photo first unless it is the active one ([0037](0037-one-view-the-photos-tab.md)): a photo in the selection keeps it, one outside it is selected alone. So Reset, which acts on the active photo alone, acts on the photo the menu was opened on, and while several photos are selected it is hidden, as any item that acts on one photo alone is. Export… stays shown with several selected, saying how many ("Export 12 Photos…"); it reveals the Export tool, whose button exports the selection.
 - In ⋯: its tool.
 - On the surround: the app.
@@ -99,13 +100,13 @@ A tool's section already has its own buttons: reset, presets and options (⋯). 
 - **The photo's and a thumbnail's act on the photo asked for as they opened.** When another photo becomes the one asked for while one is open, by a drop, Open… or an open asked for earlier, the menu is dismissed, taking no answer, so it never acts on a photo other than its own.
 - **The Mac's native menu is modal:** nothing changes while it is open, and it keeps what it opened with until it closes.
 
-**Every item is reachable without a right-click:** in the menu bar, in its tool's section or ⋯, in the Tools panel's ⋮ for the tab bar's, or by its keys. A right-click menu is a shortcut and never the only way. A tool's action has its row or button by construction, and a test holds every utility's item to a menu bar item.
+**Every item is reachable without a right-click:** in the menu bar, in its tool's section or ⋯, in the Tools panel's ⋮ for the tab bar's, or by its keys. A right-click menu is a shortcut and never the only way. A tool's action has its row or button by construction, a one-shot pick its picker's button in the tool's section, and a test holds every utility's item to a menu bar item.
 
 **The places' items now:**
 
 | Place | The app's items | Tools' items | The menu reads |
 | --- | --- | --- | --- |
-| The photo | Export… (`EXPORT`, 100); Background ▸ (`VIEW`, 100); Show in Finder joining once folder mode can reveal a photo | History's Reset (`EDIT`, 100); Orientation's Orientation ▸ (`VIEW`, 200), its four buttons: rotate 90° anticlockwise, rotate 90° clockwise, flip horizontally and flip vertically | Reset, —, Export…, —, Background ▸, Orientation ▸ |
+| The photo | Export… (`EXPORT`, 100); Background ▸ (`VIEW`, 100); Show in Finder joining once folder mode can reveal a photo | History's Reset (`EDIT`, 100); Orientation's Orientation ▸ (`VIEW`, 200), its four buttons: rotate 90° anticlockwise, rotate 90° clockwise, flip horizontally and flip vertically; planned (79.17), White balance's Set White Balance from Here (`EDIT`, 200) and Exposure's Set Exposure from Here (`EDIT`, 300) | Reset, —, Export…, —, Background ▸, Orientation ▸; with the planned items, Reset, Set White Balance from Here, Set Exposure from Here, —, Export…, —, Background ▸, Orientation ▸ |
 | A thumbnail | Export… (`EXPORT`, 100); Show in Folder once built | History's Reset (`EDIT`, 100), hidden while several photos are selected, since it acts on one photo | Reset, —, Export… |
 | ⋯ | Reset, then Copy Settings and Paste Settings with Copy and Apply Parts (Phase 3), in `EDIT`; the layout's items ([0083](0083-the-side-panels-layout-dragged-and-floating.md), [0096](0096-workspaces-as-files-hidden-tools-and-finding-a-tool.md): Pin Tool or Unpin Tool, Move Tool to Tab ▸ and Remove Tool, or Show Tool in Tab ▸ alone for a hidden tool) in `LAYOUT` | The tool's own, in a section of its choosing between them; History's are Compress History, Truncate History, Create a Style… and Discard History…, each an item of its own ([0093](0093-one-tool-model-processing-tools-and-utility-tools.md)) | — |
 
@@ -122,7 +123,7 @@ Discard History… is in no context menu: it stays in Edit and History's ⋯ ([0
 - the items: History's Reset in both menus, and Orientation ▸ on the photo, after Background ▸, the first submenu a tool adds;
 - the tests: the limits and the section rules, the menus' size, a repeated `(section, order)` in one menu, Background ▸ equal to View › Background, every item reachable elsewhere, the photo's and a thumbnail's menus as they read, and the generated actions' ids, words, availability and keys.
 
-Pickers as items, the other places, and the app's items in ⋯, Reset, Copy Settings and Paste Settings, come later; ⋯ is built through `menus::context` with each tool's declared items (decision 93's step 93.3, `menus::options`).
+One-shot picks as items (79.17), the other places, and the app's items in ⋯, Reset, Copy Settings and Paste Settings, come later; ⋯ is built through `menus::context` with each tool's declared items (decision 93's step 93.3, `menus::options`).
 
 ## Options considered
 
@@ -149,9 +150,8 @@ Pickers as items, the other places, and the app's items in ⋯, Reset, Copy Sett
   - the app's own items as `MenuItem`s, `menus::APP_ITEMS`;
   - tests of the limits, of the menu's size, of a repeated `(section, order)` in one menu, of Background ▸ against View › Background, and of every item being reachable elsewhere.
 - `apertrust-ui`: the Browser reports a cell's right-click and its menu keys, with the cell (`BrowserOutput::menu`). It still holds no tool types.
-- The engine and the session protocol are unchanged: an item runs an action that already sends its command.
+- The engine and the session protocol gain nothing for menus but decision 79's `PickerCommand::Once`, which a one-shot pick's item sends; every other item runs an action that already sends its command.
 - Decision 92's tools' items on the toolbar are these generated actions.
 - Decisions 83 and 86 no longer open anything on a right-click on a section's header.
 - Open:
-  - An item that picks at the pointer, such as "Set Exposure from Here", needs a pick at one point that starts, reads and ends as one completed change, which the picker commands (79) may not express. It is settled when a tool first adds one.
-  - A processing tool's generated action is available while the photo takes edits (a utility's items name registry actions, each with its own availability, [0093](0093-one-tool-model-processing-tools-and-utility-tools.md)); it does not ask whether its own control can take a change on that photo, as its row in the panel may. Every built tool's buttons apply to every photo, so nothing differs yet. It is settled when a tool's action first cannot run on a photo that takes edits, by an availability the tool declares or the app derives from its definition.
+  - A processing tool's generated button or `Row::Action` action is available while the photo takes edits (a utility's items name registry actions, each with its own availability, [0093](0093-one-tool-model-processing-tools-and-utility-tools.md)); it does not ask whether its own control can take a change on that photo, as its row in the panel may. Every built tool's buttons apply to every photo, so nothing differs yet. It is settled when a tool's action first cannot run on a photo that takes edits, by an availability the tool declares or the app derives from its definition, as a one-shot pick's is derived from its picker's readiness.

@@ -210,6 +210,7 @@ darktable's colour pickers and its Colour picker, one API (decision 79; [pickers
 - [ ] 79.14 Stored samples through the session.
 - [ ] 79.15 The scopes restricted to the Colour picker's selection.
 - [ ] 79.16 The Colour picker, hidden by default, its place to be decided: the live sample, numbered stored samples, statistics and colour modes, samples on the photo.
+- [ ] 79.17 The one-shot pick: `PickerCommand::Once`, a tool's picker on for one reading at a point, applied as one step and off again; Set White Balance from Here and Set Exposure from Here in the photo's menu (decision 91).
 
 ### Scopes
 
